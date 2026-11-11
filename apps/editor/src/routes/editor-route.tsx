@@ -23,6 +23,7 @@ import {
   useSaveState,
 } from "../context/document-context";
 import { AssetOpenDocumentsProvider } from "../context/asset-open-provider";
+import { AssetThumbnailDocumentsProvider } from "../context/asset-thumbnail-provider";
 import { AssetCreateDocumentsProvider } from "../context/asset-create-provider";
 import { TagDocumentsProvider } from "../context/tag-documents-provider";
 import { GraphPinDefaultsProvider } from "../context/graph-pin-defaults-provider";
@@ -613,36 +614,38 @@ export default function EditorRoute({
       subscribeDocumentIdentity={subscribeDocumentIdentity}
     >
       <AssetOpenDocumentsProvider>
-        <AssetCreateDocumentsProvider>
-          <TagDocumentsProvider>
-            <GraphPinDefaultsProvider>
-              <DocumentValidationProvider>
-                <BreakpointsProvider>
-                  <WatchesProvider>
-                    <PlayProvider>
-                      <MaterialRenderControlProvider>
-                        <EditorUtilityRuntime />
-                        <EditorExtensionsRuntime />
-                        <TestAudioHostStats />
-                        <TestParticleHostStats />
-                        <ModelThumbnailCaptureHost />
-                        <ProjectSearchProvider>
-                          <ExtensionCommandHost>
-                            <PlayAwareKeybinds>
-                              {gallery
-                                ? <ComponentGallery />
-                                : profileRegion("editor-layout", <EditorLayout />)}
-                            </PlayAwareKeybinds>
-                          </ExtensionCommandHost>
-                        </ProjectSearchProvider>
-                      </MaterialRenderControlProvider>
-                    </PlayProvider>
-                  </WatchesProvider>
-                </BreakpointsProvider>
-              </DocumentValidationProvider>
-            </GraphPinDefaultsProvider>
-          </TagDocumentsProvider>
-        </AssetCreateDocumentsProvider>
+        <AssetThumbnailDocumentsProvider>
+          <AssetCreateDocumentsProvider>
+            <TagDocumentsProvider>
+              <GraphPinDefaultsProvider>
+                <DocumentValidationProvider>
+                  <BreakpointsProvider>
+                    <WatchesProvider>
+                      <PlayProvider>
+                        <MaterialRenderControlProvider>
+                          <EditorUtilityRuntime />
+                          <EditorExtensionsRuntime />
+                          <TestAudioHostStats />
+                          <TestParticleHostStats />
+                          <ModelThumbnailCaptureHost />
+                          <ProjectSearchProvider>
+                            <ExtensionCommandHost>
+                              <PlayAwareKeybinds>
+                                {gallery
+                                  ? <ComponentGallery />
+                                  : profileRegion("editor-layout", <EditorLayout />)}
+                              </PlayAwareKeybinds>
+                            </ExtensionCommandHost>
+                          </ProjectSearchProvider>
+                        </MaterialRenderControlProvider>
+                      </PlayProvider>
+                    </WatchesProvider>
+                  </BreakpointsProvider>
+                </DocumentValidationProvider>
+              </GraphPinDefaultsProvider>
+            </TagDocumentsProvider>
+          </AssetCreateDocumentsProvider>
+        </AssetThumbnailDocumentsProvider>
       </AssetOpenDocumentsProvider>
     </EditorSessionStateProvider>,
   );

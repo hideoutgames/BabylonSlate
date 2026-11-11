@@ -11,24 +11,31 @@ export interface AppIdentity {
   buildNumber: number;
   /**
    * Texture asset whose source image becomes the app icon of every package;
-   * null keeps each platform's default. Packaging requires a square image of
-   * at least `APP_ICON_MIN_SIZE` pixels.
+   * null keeps each platform's default. Any size works: packaging cuts the
+   * centre square (`appIconCrop`) and scales it to every icon size.
    */
   iconTextureGuid: string | null;
 }
 
 export const DEFAULT_APP_IDENTITY: AppIdentity = { appId: "", displayName: "", buildNumber: 1, iconTextureGuid: null };
 
-/** The smallest App Icon source edge: the largest icon a package holds (macOS 512 pt at 2x, the iOS App Store icon). */
-export const APP_ICON_MIN_SIZE = 1024;
+/** The largest icon a package holds (macOS 512 pt at 2x, the iOS App Store icon); smaller sources are scaled up. */
+export const APP_ICON_SHARP_SIZE = 1024;
 
-/** Why an App Icon source of this size cannot be packaged, or null when it can. */
-export function appIconSizeProblem(size: { width: number; height: number }): string | null {
-  if (size.width !== size.height) return `The App Icon must be square; this image is ${size.width} × ${size.height}.`;
-  if (size.width < APP_ICON_MIN_SIZE) {
-    return `The App Icon must be at least ${APP_ICON_MIN_SIZE} × ${APP_ICON_MIN_SIZE}; this image is ${size.width} × ${size.height}.`;
-  }
-  return null;
+/** The square of an App Icon source that becomes the icon: the centre, as large as the shorter side. */
+export function appIconCrop(size: { width: number; height: number }): { x: number; y: number; edge: number } {
+  const edge = Math.min(size.width, size.height);
+  return { x: Math.floor((size.width - edge) / 2), y: Math.floor((size.height - edge) / 2), edge };
+}
+
+/** A note when an App Icon source is cropped or scaled up, or null when it is used as it is. Never blocks packaging. */
+export function appIconSizeHint(size: { width: number; height: number }): string | null {
+  const { edge } = appIconCrop(size);
+  const notes = [
+    size.width !== size.height ? `The centre ${edge} × ${edge} is used.` : null,
+    edge < APP_ICON_SHARP_SIZE ? `Icons up to ${APP_ICON_SHARP_SIZE} × ${APP_ICON_SHARP_SIZE} are scaled up and may look soft.` : null,
+  ].filter(Boolean);
+  return notes.length > 0 ? `This image is ${size.width} × ${size.height}. ${notes.join(" ")}` : null;
 }
 
 /**

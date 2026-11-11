@@ -12,6 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@haptic/ui/components/tooltip";
+import { PickerAssetGuidContext } from "./asset-thumbnail";
 
 export type AssetOpenApi = {
   canOpen: (guid: string) => boolean;
@@ -60,7 +61,9 @@ export function AssetPickerControl({
 
   return (
     <div data-slot="asset-picker-control" className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-1">
-      <div className="min-w-0">{children}</div>
+      <div className="min-w-0">
+        <PickerAssetGuidContext.Provider value={guid || null}>{children}</PickerAssetGuidContext.Provider>
+      </div>
       {showOpen && api ? (
         <div className="relative aspect-square h-full w-auto shrink-0">
           <Tooltip>

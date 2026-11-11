@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
+import { AssetThumbnail, PickerAssetGuidContext, useAssetThumbnailUrl } from "./asset-thumbnail";
 import { TypeVisualIcon, resolveTypeVisual, type TypeVisualQuery } from "./type-visuals";
 
 export interface PickerIdentityProps {
@@ -15,9 +16,13 @@ export function PickerIdentity({
   leading,
   visual,
 }: PickerIdentityProps) {
+  // A closed Texture picker shows the Texture itself in place of the type icon.
+  const pickedGuid = useContext(PickerAssetGuidContext);
+  const thumbnailUrl = useAssetThumbnailUrl(!leading && visual?.assetType === "Texture" ? pickedGuid : null);
   const glyph =
     leading ??
-    (visual ? <TypeVisualIcon visual={resolveTypeVisual(visual)} /> : null);
+    (thumbnailUrl ? <AssetThumbnail url={thumbnailUrl} className="size-[22px]" data-testid="picker-thumbnail" />
+      : visual ? <TypeVisualIcon visual={resolveTypeVisual(visual)} /> : null);
   return (
     <span className="flex min-w-0 items-center gap-2">
       {glyph}

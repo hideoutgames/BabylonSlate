@@ -291,6 +291,12 @@ export {
   type AssetOpenApi,
 } from "./asset-picker-control";
 export {
+  AssetThumbnail,
+  AssetThumbnailProvider,
+  useAssetThumbnailUrl,
+  type AssetThumbnailApi,
+} from "./asset-thumbnail";
+export {
   AssetCreateProvider,
   useAssetCreate,
   type AssetCreateApi,

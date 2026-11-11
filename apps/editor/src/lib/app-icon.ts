@@ -1,4 +1,4 @@
-import { appIconSizeProblem } from "@haptic/core";
+import { appIconCrop, appIconSizeHint } from "@haptic/core";
 import type { IndexedAsset } from "@haptic/assets";
 import { APP_ICON_SIZES, encodeOpaquePng, type AppIconImages } from "@haptic/exporter/app-icon";
 
@@ -24,11 +24,16 @@ export async function readAppIconSource(host: AppIconSourceHost, guid: string): 
   return new Blob([new Uint8Array(bytes)], { type: pixels.mime ?? "image/png" });
 }
 
-/** The App Icon Texture's problem as Project Settings shows it: missing, or a source size packaging refuses. */
+/** The App Icon Texture's problem as Project Settings shows it: only a missing Texture; any size packages. */
 export function appIconTextureProblem(asset: IndexedAsset | undefined): string | null {
-  if (!asset || asset.header.type !== "Texture") return "The Texture is missing.";
+  return !asset || asset.header.type !== "Texture" ? "The Texture is missing." : null;
+}
+
+/** Project Settings' note for an App Icon Texture that packaging crops or scales up, from its recorded source size. */
+export function appIconTextureHint(asset: IndexedAsset | undefined): string | null {
+  if (!asset || asset.header.type !== "Texture") return null;
   const { width, height } = asset.header.payload;
-  return typeof width === "number" && typeof height === "number" ? appIconSizeProblem({ width, height }) : null;
+  return typeof width === "number" && typeof height === "number" && width > 0 && height > 0 ? appIconSizeHint({ width, height }) : null;
 }
 
 function drawSquare(source: CanvasImageSource, from: number, to: number): OffscreenCanvas {
@@ -41,19 +46,29 @@ function drawSquare(source: CanvasImageSource, from: number, to: number): Offscr
   return canvas;
 }
 
+/** The source's centre square (`appIconCrop`) at full resolution. */
+function centreSquare(bitmap: ImageBitmap): { level: CanvasImageSource; edge: number } {
+  const { x, y, edge } = appIconCrop(bitmap);
+  if (edge === 0) throw new Error(`The App Icon Texture has no pixels. ${CHOOSE_ANOTHER}`);
+  if (bitmap.width === bitmap.height) return { level: bitmap, edge };
+  const canvas = new OffscreenCanvas(edge, edge);
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("The App Icon could not be drawn: this browser has no 2D canvas.");
+  context.drawImage(bitmap, x, y, edge, edge, 0, 0, edge, edge);
+  return { level: canvas, edge };
+}
+
 /**
- * PNGs of the source image at every `APP_ICON_SIZES` edge. Each size is drawn
- * from a copy at most twice its size, halving from the source, so small icons
- * average every source pixel instead of sampling a few.
+ * PNGs of the source's centre square at every `APP_ICON_SIZES` edge. Each
+ * size is drawn from a copy at most twice its size, halving from the source,
+ * so small icons average every source pixel instead of sampling a few; sizes
+ * above the source's edge are scaled up from it.
  */
 export async function renderAppIconImages(source: Blob): Promise<AppIconImages> {
   const bitmap = await createImageBitmap(source);
   try {
-    const problem = appIconSizeProblem(bitmap);
-    if (problem) throw new Error(`${problem} ${CHOOSE_ANOTHER}`);
+    let { level, edge } = centreSquare(bitmap);
     const images = new Map<number, Uint8Array>();
-    let level: CanvasImageSource = bitmap;
-    let edge = bitmap.width;
     for (const size of [...APP_ICON_SIZES].sort((a, b) => b - a)) {
       while (edge / 2 >= size) {
         const half = Math.floor(edge / 2);
