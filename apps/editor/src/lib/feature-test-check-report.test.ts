@@ -137,14 +137,15 @@ describe("formatFeatureTestCheckReport", () => {
           work: { drawn: 400, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 40,
             readinessProbeMs: 800, outlineReadinessChecks: 0,
             readinessProbeReasons: { meshAdded: 20, particleBind: 12, shadowMap: 5, membership: 5, spawnWarm: 4, other: 2, outline: 1 },
-            readinessSwapRechecks: 9, failedReadinessProbes: 3, scopedReadinessProbes: 0, scopedReadinessMismatches: 0 } },
+            readinessSwapRechecks: 9, failedReadinessProbes: 3, scopedReadinessProbes: 30, scopedReadinessMismatches: 2 } },
           commands: [], benchmark: [], logs: [] },
         session: null,
       }],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     // Equal counts are named alphabetically; failed, other and outline fall past the sixth.
-    expect(lines).toContain("  Readiness probes: 40 in 400 drawn frames · 20.0 ms each · 2.0 ms per drawn frame · causes: mesh added 20, particle bind 12, swap recheck 9, membership count 5, shadow map 5, spawn warm-up 4");
+    // 30 of the probes asked only the meshes their causes named; a verification run found two of those wrong.
+    expect(lines).toContain("  Readiness probes: 40 in 400 drawn frames (30 asked only the changed meshes) · 20.0 ms each · 2.0 ms per drawn frame · causes: mesh added 20, particle bind 12, swap recheck 9, membership count 5, shadow map 5, spawn warm-up 4 · 2 of those DISAGREED with a probe of every mesh");
   });
 
   it("recommends the highest quality tier every benchmarked scene holds at 60 and 30 fps", () => {
