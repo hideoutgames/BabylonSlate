@@ -1268,7 +1268,7 @@ describe("Profile", () => {
     let attempts = 0;
     const work = {
       graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0,
-      readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0,
+      readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
     };
     const editor = fakeEditor({}, undefined, (now, commands) => {
       for (; attempts < Math.floor(now / 25); attempts++) {
@@ -1330,7 +1330,7 @@ describe("Profile", () => {
         drawn, held: 0,
         rendererWork: {
           graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: drawn, readinessProbeMs: drawn * 30, outlineReadinessChecks: 0,
-          readinessProbeReasons: { meshAdded: drawn, prepare: 3 }, readinessSwapRechecks: 0, failedReadinessProbes: drawn * 2,
+          readinessProbeReasons: { meshAdded: drawn, prepare: 3 }, readinessSwapRechecks: 0, failedReadinessProbes: drawn * 2, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
         },
       };
     };
@@ -1346,7 +1346,7 @@ describe("Profile", () => {
       drawn: 20,
       work: {
         graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 20, readinessProbeMs: 600, outlineReadinessChecks: 0,
-        readinessProbeReasons: { meshAdded: 20 }, readinessSwapRechecks: 0, failedReadinessProbes: 40,
+        readinessProbeReasons: { meshAdded: 20 }, readinessSwapRechecks: 0, failedReadinessProbes: 40, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
       },
     });
     expect(quick.firstDrawsBeforeSweep).toBeUndefined();

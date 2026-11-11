@@ -29,6 +29,7 @@ import { prepareNodeMaterialParticleBindings, syncParticleBlendProgram } from ".
 import { createParticleReadinessPlaceholder } from "./particle-readiness-texture";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 import { markSceneReadinessDirty } from "./scene-perf";
+import type { SceneReadinessScope } from "./scene-readiness-signal";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 
@@ -408,6 +409,9 @@ function adoptLoadedParticleShaders(system: IParticleSystem): void {
   if (store.particlesVertexShader && store.particlesPixelShader) internals._shadersLoaded = true;
 }
 
+/** A particle system's Material draws no mesh: a probe for its bind asks the system and the bind's check, no mesh. */
+const NO_MESHES: SceneReadinessScope = [];
+
 /** Settles a pending bind: with its successor's bind when one replaces it, or at once (a disposed system). */
 const pendingParticleMaterials = new WeakMap<IParticleSystem, (successor?: Promise<void>) => void>();
 
@@ -451,7 +455,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
     scene.removeIsReadyCheck(readiness);
     system.onDisposeObservable.remove(disposeObserver);
     stopBound();
-    markSceneReadinessDirty(scene, "particleCancel");
+    markSceneReadinessDirty(scene, "particleCancel", NO_MESHES);
     if (successor) successor.then(resolve, reject);
     else resolve();
   };
@@ -460,7 +464,7 @@ function bindReadyParticleMaterial(system: IParticleSystem, material: NodeMateri
   scene.addIsReadyCheck(readiness);
   // Custom checks join strict readiness without a Scene observable; admit the
   // new check by invalidating the coordinator's cached readiness result.
-  markSceneReadinessDirty(scene, "particleBind");
+  markSceneReadinessDirty(scene, "particleBind", NO_MESHES);
   const fail = (error: unknown) => {
     if (pendingParticleMaterials.get(system) !== cancel) return;
     reject(error);

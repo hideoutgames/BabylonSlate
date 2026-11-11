@@ -89,6 +89,10 @@ export type RenderDiagnostics = {
     readinessSwapRechecks: number;
     /** Strict checks that found the scene not ready. */
     failedReadinessProbes: number;
+    /** Strict checks that asked only the meshes the marked changes named, not every mesh of the Scene. */
+    scopedReadinessProbes: number;
+    /** Scoped checks a check of every mesh disagreed with, counted only while that verification is on. */
+    scopedReadinessMismatches: number;
   };
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;

@@ -168,7 +168,10 @@ function readinessText(sampled: NonNullable<FeatureTestCheckSceneResult["play"][
   if (!probes) return `none in ${sampled.drawn} drawn frames`;
   const perFrame = sampled.drawn > 0 ? ` · ${(ms / sampled.drawn).toFixed(1)} ms per drawn frame` : "";
   const causes = readinessCauses(sampled.work);
-  return `${probes} in ${sampled.drawn} drawn frames · ${(ms / probes).toFixed(1)} ms each${perFrame}${causes ? ` · causes: ${causes}` : ""}`;
+  const { scopedReadinessProbes: scoped, scopedReadinessMismatches: mismatches } = sampled.work;
+  const narrowed = scoped ? ` (${scoped} asked only the changed meshes)` : "";
+  const disagreed = mismatches ? ` · ${mismatches} of those DISAGREED with a probe of every mesh` : "";
+  return `${probes} in ${sampled.drawn} drawn frames${narrowed} · ${(ms / probes).toFixed(1)} ms each${perFrame}${causes ? ` · causes: ${causes}` : ""}${disagreed}`;
 }
 
 /** Plain words for each reason a readiness probe ran (`RenderDiagnostics.rendererWork.readinessProbeReasons`). */

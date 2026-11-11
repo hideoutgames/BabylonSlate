@@ -14,6 +14,7 @@ import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { isRenderTargetProbeReady } from "./readiness-scope";
 import { isRevealPending, noteRevealPipelines } from "./reveal-pending";
 import { lookUpPipelines, registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
@@ -511,7 +512,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
         if (!map.getInternalTexture()) return false;
         continue;
       }
-      if (withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
+      if (withSceneReadinessState(this.scene, () => isRenderTargetProbeReady(map))) continue;
       // A steady frame never waits for a caster's depth variant. A map that has not drawn yet samples neutrally (lit)
       // and draws on the first frame every caster is ready (`record`), as a swapping Material adopts its new variant;
       // a drawn map keeps drawing without the caster (Babylon skips it and redraws the map until it is ready, a

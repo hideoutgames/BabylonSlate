@@ -558,10 +558,10 @@ export class SceneShadowController {
     const hadPending = this.pending.size > 0;
     // Whether a pending mesh came out receiving differently, or joined or left the casters: what changes a Material
     // variant or a map's list. A pool member that changes moves to another group, which marks readiness itself.
-    let applied = false;
+    const applied: AbstractMesh[] = [];
     const leaveCasters = (mesh: AbstractMesh) => {
       if (!this.meshes.delete(mesh)) return;
-      applied = true;
+      applied.push(mesh);
       this.spatial.remove(mesh);
       this.maps.retained?.release(mesh);
       this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
@@ -569,7 +569,7 @@ export class SceneShadowController {
     const setFlags = (mesh: AbstractMesh, receives: boolean, casts: boolean) => {
       const received = mesh.receiveShadows;
       setMeshShadowFlags(mesh, receives, casts);
-      if (mesh.receiveShadows !== received) applied = true;
+      if (mesh.receiveShadows !== received) applied.push(mesh);
     };
     for (const mesh of this.pending) {
       if (mesh.isDisposed() || !this.listed(mesh)) continue;
@@ -592,7 +592,7 @@ export class SceneShadowController {
         leaveCasters(mesh);
         continue;
       }
-      if (!this.meshes.has(mesh)) applied = true;
+      if (!this.meshes.has(mesh)) applied.push(mesh);
       this.meshes.add(mesh);
       this.spatial.add(mesh);
       partitionShadowGeometry(mesh);
@@ -601,8 +601,8 @@ export class SceneShadowController {
     this.pending.clear();
     // Caster participation and receiveShadows changed material defines or map
     // membership; cached strict readiness no longer applies. A pending mesh that came out as it was (one that neither
-    // casts nor receives, one queued twice) changed neither.
-    if (applied) markSceneReadinessDirty(scene, "shadowCasters");
+    // casts nor receives, one queued twice) changed neither. Only those meshes' variants and their maps' lists changed.
+    if (applied.length) markSceneReadinessDirty(scene, "shadowCasters", applied);
     let changed = hadPending;
     // Without a map nothing reads caster state, so the walk waits for the first
     // allocation; kept snapshots make the late walk report only real changes.

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
 import { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { onSceneReadinessDirty } from "./scene-readiness-signal";
@@ -117,7 +118,11 @@ it("stales readiness for a new mesh only when it comes to cast or receive", asyn
   const { scene, controller } = fixture();
   controller.sync();
   const marks: string[] = [];
-  onSceneReadinessDirty(scene, (reason) => marks.push(reason));
+  const scopes: (readonly AbstractMesh[] | undefined)[] = [];
+  onSceneReadinessDirty(scene, (reason, scope) => {
+    marks.push(reason);
+    if (reason === "shadowCasters") scopes.push(scope);
+  });
   const settle = async () => {
     // Babylon announces an added mesh on a later task; the next sync applies what is pending.
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -128,9 +133,11 @@ it("stales readiness for a new mesh only when it comes to cast or receive", asyn
   await settle();
   expect(marks).not.toContain("shadowCasters");
   // A mesh that joins the casters and receives changes its Material's variant and the maps' lists.
-  MeshBuilder.CreateBox("crate", {}, scene);
+  const crate = MeshBuilder.CreateBox("crate", {}, scene);
   await settle();
   expect(marks.filter((reason) => reason === "shadowCasters")).toHaveLength(1);
+  // Only that mesh's variants and its maps' lists changed: a steady frame probes it alone.
+  expect(scopes.map((scope) => [...new Set(scope)])).toEqual([[crate]]);
   // Nothing pending: nothing more.
   controller.sync();
   expect(marks.filter((reason) => reason === "shadowCasters")).toHaveLength(1);

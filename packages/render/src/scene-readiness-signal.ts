@@ -1,3 +1,4 @@
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 
@@ -83,20 +84,28 @@ export type SceneReadinessDirtyReason =
   | "streamAdmission" | "spawnWarm"
   | "other";
 
-const readinessDirtyListeners = new WeakMap<Scene, Set<(reason: SceneReadinessDirtyReason) => void>>();
+/**
+ * The only meshes whose variants a change can have touched (none for a change no mesh draws with: a particle system's
+ * Material). A view's steady frames then probe those alone (`readiness-scope.ts`). Omitted, the change can have touched
+ * any mesh.
+ */
+export type SceneReadinessScope = readonly AbstractMesh[];
+
+type ReadinessDirtyListener = (reason: SceneReadinessDirtyReason, scope?: SceneReadinessScope) => void;
+const readinessDirtyListeners = new WeakMap<Scene, Set<ReadinessDirtyListener>>();
 
 /**
  * Project-owned rendering-definition changes that Babylon observables do not
  * cover mark the scene's cached strict readiness result stale.
  */
-export function markSceneReadinessDirty(scene: Scene, reason: SceneReadinessDirtyReason = "other"): void {
-  for (const listener of readinessDirtyListeners.get(scene) ?? []) listener(reason);
+export function markSceneReadinessDirty(scene: Scene, reason: SceneReadinessDirtyReason = "other", scope?: SceneReadinessScope): void {
+  for (const listener of readinessDirtyListeners.get(scene) ?? []) listener(reason, scope);
 }
 
 /** Subscribe to strict-readiness invalidations; returns an unsubscribe. */
 export function onSceneReadinessDirty(
   scene: Scene,
-  listener: (reason: SceneReadinessDirtyReason) => void,
+  listener: ReadinessDirtyListener,
 ): () => void {
   let listeners = readinessDirtyListeners.get(scene);
   if (!listeners) {
