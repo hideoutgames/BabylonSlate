@@ -98,7 +98,7 @@ export function ViewportToolbar({
   const { applySceneChange } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const doc = useOpenDocument(documentId);
-  const { flySpeed, gridSize, snapTranslate, snapRotateDeg, snapScale } =
+  const { flySpeed, gridSize, snapTranslate, snapRotateDeg, snapScale, showFps } =
     useEditorViewportPrefs();
   const [numberPrompt, setNumberPrompt] = useState<null | "grid" | "camera">(
     null,
@@ -297,6 +297,16 @@ export function ViewportToolbar({
       closeOnClick: false,
       testId: `${testIdPrefix}viewport-show-collisions-toggle`,
       onCheckedChange: setCollisionsVisible,
+    },
+    {
+      // An editor preference: every viewport shows or hides its counter together.
+      type: "checkbox",
+      id: "show-fps",
+      label: "Show FPS",
+      checked: showFps,
+      closeOnClick: false,
+      testId: `${testIdPrefix}viewport-show-fps-toggle`,
+      onCheckedChange: (enabled: boolean) => void patchEngineViewportPrefs({ viewportShowFps: enabled }),
     },
   ];
   const gridValue: SnapValues = {

@@ -7,6 +7,7 @@ import { applyViewportJoystickSteer, createEngine, EDITOR_CANVAS_COLOR_SCHEME, s
 import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { ViewportToolbar } from "../components/viewport-toolbar";
+import { ViewportFpsCounter } from "../components/viewport-fps-counter";
 import { selectProxies, selectProxy, TimelineClipAssetSource, useSelectedProxies, useTimelineClipAsset } from "../components/timeline-clip-asset-editor";
 import { usePlay } from "../context/play-context";
 import { useDocumentActions, useProjectState } from "../context/document-context";
@@ -347,11 +348,12 @@ function ClipPreview(_props: IDockviewPanelProps) {
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background" data-testid="timeline-clip-preview-panel">
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-center gap-1.5 p-2">
         <div className="pointer-events-auto toolbar-island">
           {/* The proxies move with the clip; the gizmo keys them or moves their preview placement. */}
           <ViewportToolbar testIdPrefix="timeline-clip-" showViewportModeToggle={false} showGameCamera={false} />
         </div>
+        <ViewportFpsCounter scheduler={() => engineRef.current?.scheduler} className="mr-1 self-end" testId="timeline-clip-viewport-fps" />
       </div>
       {marqueeRect ? <div
         data-testid="timeline-clip-viewport-marquee"

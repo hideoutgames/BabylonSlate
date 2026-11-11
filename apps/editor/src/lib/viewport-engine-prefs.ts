@@ -15,6 +15,7 @@ export function useEditorViewportPrefs(): {
   snapScale: number;
   editorTextureLodEnabled: boolean;
   editorTextureLodQuality: number;
+  showFps: boolean;
 } {
   const { settings } = useAppSettings();
 
@@ -30,6 +31,7 @@ export function useEditorViewportPrefs(): {
     snapScale: settings.viewportSnapScale,
     editorTextureLodEnabled: settings.editorTextureLodEnabled,
     editorTextureLodQuality: settings.editorTextureLodQuality,
+    showFps: settings.viewportShowFps,
   };
 }
 
@@ -39,6 +41,7 @@ export async function patchEngineViewportPrefs(patch: {
   viewportSnapTranslate?: number;
   viewportSnapRotateDeg?: number;
   viewportSnapScale?: number;
+  viewportShowFps?: boolean;
 }): Promise<void> {
   await updateActiveViewportPrefs(patch);
 }

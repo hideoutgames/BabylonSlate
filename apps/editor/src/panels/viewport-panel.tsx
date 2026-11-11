@@ -42,6 +42,7 @@ import {
 } from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
+import { ViewportFpsCounter } from "../components/viewport-fps-counter";
 import { useExtensionMenuItems } from "../components/use-extension-menu-items";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
@@ -630,7 +631,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       data-scene-ready={sceneReady ? "true" : "false"}
       {...bind}
     >
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-center gap-1.5 p-2">
         <div
           className="pointer-events-auto toolbar-island"
           data-testid="viewport-panel-frame"
@@ -643,6 +644,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             showGizmoTools={!overlayTransformBox}
           />}
         </div>
+        <ViewportFpsCounter scheduler={() => engineRef.current?.scheduler} className="mr-1 self-end" />
       </div>
       <canvas
         ref={canvasRef}
