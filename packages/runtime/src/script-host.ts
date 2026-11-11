@@ -33,6 +33,7 @@ import { DispatcherBindings } from "./script-dispatchers";
 import type { ScriptHostServices } from "./script-host-services";
 import { ScriptMaterialOwnership } from "./script-material-ownership";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
+import { isThenable } from "./tick-wait";
 
 export type { AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices, SpawnActorOptions } from "./script-host-services";
 export type {
@@ -685,9 +686,9 @@ export class ScriptHost {
     );
     try {
       const result = this.invokeEntry(object, entry.script, exportName, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
-      if (result instanceof Promise) {
+      if (isThenable(result)) {
         // Call Interface is not latent: a latent implementation's outputs are the pin defaults.
-        void result.catch((error) => this.reportLatentError(error, object));
+        result.then(undefined, (error) => this.reportLatentError(error, object));
         return {};
       }
       return (
@@ -737,7 +738,9 @@ export class ScriptHost {
         );
         try {
           const result = this.invokeEntry(self, entry.script, point.name, () => fn(ctx));
-          if (result instanceof Promise) void result.catch((error) => this.reportLatentError(error, self));
+          // A latent entry returns its wait: a Promise from hand-written code, else the compiled
+          // module's own thenable, which settles inside the tick its last wait ended in.
+          if (isThenable(result)) result.then(undefined, (error) => this.reportLatentError(error, self));
         } catch (error) {
           this.services.reportError(error);
           if (isInfiniteLoopError(error)) throw error;

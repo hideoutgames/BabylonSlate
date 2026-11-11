@@ -112,7 +112,7 @@ export const functionCallNodes: NodeDefinition[] = [
       const invoked = runtime
         ? `ctx.callComponentFunction(${targetExpr}, ${JSON.stringify(runtime)}, { ${args.join(", ")} })`
         : `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
-      const call = latent ? `await ${invoked}` : invoked;
+      const call = latent ? `(yield ${invoked})` : invoked;
       const outPins = ctx.node.pins.filter(
         (pinDef) => pinDef.direction === "out" && pinDef.kind === "data",
       );

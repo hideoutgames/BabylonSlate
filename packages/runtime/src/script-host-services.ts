@@ -197,14 +197,15 @@ export interface ScriptHostServices {
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync?(command: string): Promise<{ success: boolean; output: string }>;
-  delay(seconds: number, owner?: EngineObject | null): Promise<void>;
+  /** A `TickWait` in a simulation, which resumes its graph inside the tick the wait ends in. */
+  delay(seconds: number, owner?: EngineObject | null): PromiseLike<void>;
   /** Resolves in the next tick, counted like `delay` while the owner may run. */
-  delayOneTick?(owner?: EngineObject | null): Promise<void>;
+  delayOneTick?(owner?: EngineObject | null): PromiseLike<void>;
   /** Restarts `key`'s wait for `owner`; the earlier wait rejects with a `retriggered` cancellation. */
-  retriggerableDelay?(key: string, seconds: number, owner?: EngineObject | null): Promise<void>;
+  retriggerableDelay?(key: string, seconds: number, owner?: EngineObject | null): PromiseLike<void>;
   /** Set Timer By Event and the Timer Handle nodes (`ScriptTimers`). */
   timers?: import("./runtime-host-timing").ScriptTimerService;
-  tween?(request: TweenRequest): Promise<boolean>;
+  tween?(request: TweenRequest): PromiseLike<boolean>;
   isTweenSessionActive?(): boolean;
   reportError(error: unknown): void;
   /** Debugger loop guard; omitted in release players. */

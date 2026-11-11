@@ -63,6 +63,7 @@ import {
 import type { ScriptHostServices } from "./script-host-services";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
 import { LatentCallAborted, RuntimeContinuationCancelled } from "./simulation-waits";
+import { isThenable, TickWait } from "./tick-wait";
 import { tweenOwnerAlive } from "./tween-runtime";
 import { isReadOnlyTweenProperty, propertyTweenReference, tweenStorageValue } from "./tween-targets";
 
@@ -737,7 +738,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           // Every module exporting the function runs in order. A latent one is
           // awaited before the next starts; the last result is returned. A
           // continuation stops once its receiver may no longer run.
-          const run = (start: number, result: unknown): Record<string, unknown> | Promise<Record<string, unknown>> => {
+          const run = (start: number, result: unknown): Record<string, unknown> | PromiseLike<Record<string, unknown>> => {
             if (start > 0 && receiver && !host.canInvokeOwner(receiver)) return record(result);
             for (let index = start; index < scripts.length; index++) {
               const entry = scripts[index]!;
@@ -746,9 +747,10 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
               const nested = new NestedContext(receiver, deltaSeconds, tickIndex, fnArgs ?? {}, tick, nestedExtras, entry.script.assetGuid);
               try {
                 const value = host.invokeEntry(receiver, entry.script, functionName, () => (fn as (ctx: ScriptContext) => unknown)(nested));
-                if (value instanceof Promise) {
+                if (isThenable(value)) {
                   const previous = result;
-                  const settled = value.then(
+                  // A `TickWait` chain: the caller resumes in the tick the function finished in.
+                  const settled = TickWait.from(value).then(
                     (resolved) => {
                       resumeCaller();
                       return run(index + 1, resolved);
@@ -762,8 +764,6 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
                       return run(index + 1, previous);
                     },
                   );
-                  // A caller that does not await the Call must not leave the rejection unhandled.
-                  settled.catch(() => {});
                   return settled;
                 }
                 result = value;

@@ -848,9 +848,9 @@ describe("script compiler service", () => {
       path: "assets/Hero.class.hasset",
       classId: "Hero",
     });
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
-    expect(script?.source).toContain("export async function onBeginPlay");
-    expect(script?.source).toContain("export async function Wait");
+    expect(script?.source).toMatch(/\(yield ctx\.invokeFunction\([^,]+,\s*"Wait"/);
+    expect(script?.source).toContain("export function onBeginPlay(ctx) {\n  return __latent(");
+    expect(script?.source).toContain("export function Wait(ctx) {\n  return __latent(");
     expect(
       script?.entryPoints.find((entry) => entry.event === "onBeginPlay")?.isAsync,
     ).toBe(true);
@@ -862,10 +862,10 @@ describe("script compiler service", () => {
       classId: "Hero",
     });
     expect(script?.source).toMatch(
-      /await\s+ctx\.invokeFunction\([^,]+,\s*"WaitThenJump"/,
+      /\(yield ctx\.invokeFunction\([^,]+,\s*"WaitThenJump"/,
     );
-    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
-    expect(script?.source).toContain("export async function WaitThenJump");
+    expect(script?.source).toMatch(/\(yield ctx\.invokeFunction\([^,]+,\s*"Wait"/);
+    expect(script?.source).toContain("export function WaitThenJump(ctx) {\n  return __latent(");
   });
 
   it("does not await Call Function when the Function is synchronous", () => {
@@ -930,7 +930,7 @@ describe("script compiler service", () => {
       },
       { path: "assets/Hero.class.hasset", classId: "Hero" },
     );
-    expect(script?.source).not.toMatch(/await\s+ctx\.invokeFunction/);
+    expect(script?.source).not.toMatch(/\(yield ctx\.invokeFunction/);
     expect(script?.source).toContain("export function onBeginPlay");
     expect(script?.source).toContain("export function Jump");
   });
@@ -1651,9 +1651,9 @@ describe("GraphScriptCompileCache", () => {
     ]);
     const callerScript = scripts.find((script) => script.classId === "Caller");
     expect(callerScript?.source).toMatch(
-      /await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/,
+      /\(yield ctx\.invokeFunction\([^,]+,\s*"Wait"/,
     );
-    expect(callerScript?.source).toContain("export async function onBeginPlay");
+    expect(callerScript?.source).toContain("export function onBeginPlay(ctx) {\n  return __latent(");
   });
 
   it("recompiles a caller when Delay is added to another class Function", () => {
@@ -1795,7 +1795,7 @@ describe("GraphScriptCompileCache", () => {
     );
     expect(
       first.find((script) => script.classId === "Caller")?.source,
-    ).not.toMatch(/await\s+ctx\.invokeFunction/);
+    ).not.toMatch(/\(yield ctx\.invokeFunction/);
     expect(cache.compiles).toBe(2);
     const second = compileGraphDocuments(
       [
@@ -1814,7 +1814,7 @@ describe("GraphScriptCompileCache", () => {
     );
     expect(
       second.find((script) => script.classId === "Caller")?.source,
-    ).toMatch(/await\s+ctx\.invokeFunction/);
+    ).toMatch(/\(yield ctx\.invokeFunction/);
     expect(cache.compiles).toBeGreaterThan(2);
   });
 
@@ -1861,11 +1861,11 @@ describe("GraphScriptCompileCache", () => {
     expect(cache.compiles).toBe(3);
     const waiter = { path: "assets/Waiter.class.hasset", content: withFunction("Wait", true), classId: "Waiter" };
     const unrelated = compileGraphDocuments([callerDocument, guard, waiter], { cache });
-    expect(unrelated.find((script) => script.classId === "Caller")?.source).not.toMatch(/await\s+ctx\.invokeFunction/);
+    expect(unrelated.find((script) => script.classId === "Caller")?.source).not.toMatch(/\(yield ctx\.invokeFunction/);
     // Reparented under Waiter, Guard inherits its latent Wait with the same latent set: the unchanged Caller
     // must now await it, so it cannot come from the cache.
     const reparented = compileGraphDocuments([callerDocument, { ...guard, parentClassId: "Waiter" }, waiter], { cache });
-    expect(reparented.find((script) => script.classId === "Caller")?.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
+    expect(reparented.find((script) => script.classId === "Caller")?.source).toMatch(/\(yield ctx\.invokeFunction\([^,]+,\s*"Wait"/);
   });
 
   it("fingerprints type schemas instead of embedding them in every cache key", () => {

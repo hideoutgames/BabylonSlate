@@ -44,8 +44,8 @@ export type CodegenContext = {
     bodyAnchors?: readonly HoistBodyAnchor[],
   ): void;
   /**
-   * Mark the entry point `async`. Required before emitting `await`; latent
-   * definitions are marked automatically.
+   * Mark the entry point latent: it compiles to a generator, and a statement waits with
+   * `(yield <thenable>)`, never `await`. Latent definitions are marked automatically.
    */
   requestAsync(): void;
   /**

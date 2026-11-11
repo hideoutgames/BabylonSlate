@@ -3,6 +3,7 @@ import {
   type EasingCurve, type TweenValue, type TweenValueType,
 } from "@haptic/core";
 import { ActorComponent, type EngineObject } from "@haptic/object-model";
+import { TickWait } from "./tick-wait";
 
 /** Storage identity is separate from its current value, including for scalar locals. */
 export type TweenReference = {
@@ -53,13 +54,14 @@ export class TweenRuntime {
     this.canRun = canRun;
   }
 
-  start(request: TweenRequest): Promise<boolean> {
+  /** Settles when the tween ends, inside the `advance` that ended it. */
+  start(request: TweenRequest): TickWait<boolean> {
     const { reference } = request;
     const a = cloneTweenValue(request.type, request.a);
     const b = cloneTweenValue(request.type, request.b);
     if (this.stopped || !reference || !reference.identity || typeof reference.set !== "function" ||
       !Number.isFinite(request.duration) || a === null || b === null ||
-      !tweenOwnerAlive(request.owner) || !tweenOwnerAlive(reference.owner)) return Promise.resolve(false);
+      !tweenOwnerAlive(request.owner) || !tweenOwnerAlive(reference.owner)) return TickWait.from(false);
     const channels = reference.channels ?? [reference.property];
     for (const previous of this.active) {
       if (previous.reference.identity === reference.identity &&
@@ -67,7 +69,7 @@ export class TweenRuntime {
         this.finish(previous, false);
       }
     }
-    return new Promise<boolean>((resolve, reject) => {
+    return TickWait.start<boolean>((resolve, reject) => {
       const tween: ActiveTween = { ...request, reference: { ...reference, channels: [...channels] },
         a, b, curve: parseEasingCurve(request.curve), elapsed: 0, started: false, resolve, reject };
       this.active.add(tween);

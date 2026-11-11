@@ -278,7 +278,7 @@ export const debugNodes: NodeDefinition[] = [
       // Row names can equal the exec pins' names, so look up the prefixed ids.
       const args = ["ctx", ...inputs.map((i) => ctx.input(`in_${i.name}`))].join(", ");
       if (isAsync) ctx.requestAsync();
-      const call = isAsync ? `await ${fnName}(${args})` : `${fnName}(${args})`;
+      const call = isAsync ? `(yield ${fnName}(${args}))` : `${fnName}(${args})`;
       if (outputs.length === 0) {
         ctx.emit(`${call};`);
         return;
@@ -305,7 +305,7 @@ export const debugNodes: NodeDefinition[] = [
       const success = ctx.output("success");
       const output = ctx.output("output");
       ctx.emit(
-        `({ success: ${success}, output: ${output} } = await ctx.executeConsoleCommandAsync(${ctx.input("command")}));`,
+        `({ success: ${success}, output: ${output} } = (yield ctx.executeConsoleCommandAsync(${ctx.input("command")})));`,
       );
     },
   },

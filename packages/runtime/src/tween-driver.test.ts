@@ -106,17 +106,45 @@ describe("Tween runtime integration", () => {
     } finally { runtime.stop(); }
   });
 
-  it.each(["stop", "destroy"] as const)("does not resume Completed after %s before the completion microtask", async action => {
+  it("steps a Delay One Tick chain once per tick when one frame runs several catch-up ticks", async () => {
+    const registry = createDefaultNodeRegistry();
+    const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
+      ({ id, typeId, properties, pins: registry.get(typeId)!.pins(properties), position: { x: 0, y: 0 } });
+    const steps = ["a", "b", "c"];
+    // Begin Play -> (Delay One Tick -> Print) three times.
+    const graph: LogicGraph = { id: "chain", kind: "event", nodes: [
+      node("begin", "flow.event.beginPlay"),
+      ...steps.flatMap((step) => [node(`wait-${step}`, "timers.delayOneTick"), node(`log-${step}`, "debug.log", { "default:message": step })]),
+    ], edges: steps.flatMap((step, index) => [
+      { id: `in-${step}`, sourceNodeId: index === 0 ? "begin" : `log-${steps[index - 1]}`, sourcePinId: "execOut", targetNodeId: `wait-${step}`, targetPinId: "execIn" },
+      { id: `out-${step}`, sourceNodeId: `wait-${step}`, sourcePinId: "execOut", targetNodeId: `log-${step}`, targetPinId: "execIn" },
+    ]) };
+    const compiled = compileGraph(graph, { registry, assetGuid: "chain" });
+    const commands: CommandMessage[] = [];
+    const dt = 1 / 60;
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt, onCommand: command => commands.push(command) });
+    try {
+      await runtime.loadScripts([{ classId: "Chain", assetGuid: "chain", source: compiled.source, anchors: compiled.anchors, entryPoints: compiled.entryPoints }]);
+      runtime.start();
+      runtime.spawnScriptedActor({ classId: "Chain" });
+      // One frame that owes four ticks: Begin Play in the first, then one step in each of the next three.
+      runtime.advance(4 * dt);
+      // Read before any microtask runs. Waits resumed by promises would all still be pending
+      // here, and the chain would move one step per frame however many ticks the frame ran.
+      expect(commands.flatMap(command => command.type === "log" && command.category === "Script" ? [command.message] : [])).toEqual(steps);
+    } finally { runtime.stop(); }
+  });
+
+  it("runs Completed inside the tick the tween ends in, not in a microtask after it", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt: 2, onCommand: command => commands.push(command) });
     try {
       await runtime.loadScripts([floatScript()]); runtime.start();
-      const actor = runtime.spawnScriptedActor({ classId: "TweenActor" })!;
+      runtime.spawnScriptedActor({ classId: "TweenActor" });
       runtime.tick();
-      if (action === "stop") runtime.stop();
-      else { runtime.getWorld().destroyActor(actor.guid); runtime.getWorld().flushPending(); }
-      await flush();
-      expect(commands.some(command => command.type === "log" && command.message === "completed")).toBe(false);
+      // No await between the tick and this read: the graph continued in the tick's own stack,
+      // so a frame that runs several ticks resumes each wait in its own tick.
+      expect(commands.some(command => command.type === "log" && command.message === "completed")).toBe(true);
     } finally { runtime.stop(); }
   });
 

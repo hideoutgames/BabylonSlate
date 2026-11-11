@@ -50,7 +50,7 @@ function loadNode(
       const priority = blocking ? '"High"' : ctx.input("priority");
       ctx.emit(`const ${value} = ${ctx.input(input.id)};`);
       ctx.emit(`const ${handle} = ctx.${request}(${target}, { priority: ${priority}, sessionWide: ${ctx.input("sessionWide")} });`);
-      ctx.emit(`const ${result} = await ctx.waitForAssetLoad(${handle}${blocking ? ", { blocking: true }" : ""});`);
+      ctx.emit(`const ${result} = (yield ctx.waitForAssetLoad(${handle}${blocking ? ", { blocking: true }" : ""}));`);
       if (subject !== "class") ctx.emit(`${ctx.output(passThrough)} = ${value};`);
       ctx.emit(`${ctx.output("handle")} = ${handle};`);
       ctx.emit(`${ctx.output("error")} = ${result}.errorMessage;`);
@@ -102,7 +102,7 @@ export const assetLoadingNodes: NodeDefinition[] = [
     ],
     codegen: ctx => {
       const result = `__loadResult_${ctx.node.id.replace(/[^A-Za-z0-9_$]/g, "_")}`;
-      ctx.emit(`const ${result} = await ctx.waitForAssetLoad(${ctx.input("handle")});`);
+      ctx.emit(`const ${result} = (yield ctx.waitForAssetLoad(${ctx.input("handle")}));`);
       ctx.emit(`${ctx.output("error")} = ${result}.errorMessage;`);
       ctx.branch?.(`${result}.success`, "Completed", "Failed");
     },

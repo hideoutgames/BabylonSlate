@@ -178,7 +178,7 @@ describe("compiler emits runnable JavaScript", () => {
     expect(logs).toEqual(["12"]);
   });
 
-  it("makes the entry point async when a latent node awaits", async () => {
+  it("makes the entry point latent when a node waits, and its result a wait for the whole entry", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -204,7 +204,6 @@ describe("compiler emits runnable JavaScript", () => {
     };
 
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain(`export async function run(ctx)`);
     expect(compiled.isAsync).toBe(true);
     const mod = loadModule(compiled.source);
     const logs: string[] = [];

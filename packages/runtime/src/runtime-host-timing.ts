@@ -3,6 +3,7 @@ import type { LatentDelays } from "./latent-delays";
 import type { ScriptTimers } from "./script-timers";
 import type { ScriptHostServices } from "./script-host";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
+import { TickWait } from "./tick-wait";
 import type { TweenRuntime } from "./tween-runtime";
 
 interface TimingHostDeps {
@@ -22,16 +23,18 @@ export function createTimingHostBindings(deps: TimingHostDeps): Pick<ScriptHostS
   "tween" | "isTweenSessionActive" | "delay" | "delayOneTick" | "retriggerableDelay" | "timers"> {
   // A boundary requested after the timer fired still holds the continuation;
   // a destroyed owner's continuation is cancelled there.
+  // The delay and tween systems settle these inside a tick, and a `TickWait` resumes its graph
+  // there and then: a continuation runs in the tick its wait ended in, not after the frame's ticks.
   const wait = (owner: EngineObject | null | undefined, start: (resolve: () => void, reject: (error: unknown) => void) => void) =>
-    new Promise<void>((resolve, reject) => {
+    TickWait.start<void>((resolve, reject) => {
       if (deps.stopped()) { resolve(); return; }
       start(resolve, reject);
     }).then(() => deps.continueSimulation(owner ?? null));
   return {
-    tween: (request) => deps.tweens.start(request).then(async completed => {
+    tween: (request) => deps.tweens.start(request).then((completed): boolean | PromiseLike<boolean> => {
       if (!completed) return false;
-      { const pending = deps.continueSimulation(request.owner ?? null); if (pending) await pending; }
-      return true;
+      const pending = deps.continueSimulation(request.owner ?? null);
+      return pending ? pending.then(() => true) : true;
     }),
     isTweenSessionActive: () => !deps.stopped(),
     delay: (seconds, owner) => wait(owner, (resolve) => deps.delays.add(seconds, resolve, owner)),

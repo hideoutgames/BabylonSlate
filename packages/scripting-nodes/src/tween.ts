@@ -46,7 +46,7 @@ function tweenNode(
       const call = target
         ? `ctx.tweenProperty(${ctx.input("target")}, ${JSON.stringify(property)}, ${args}${transformSpace ? `, ${ctx.input("space")}` : ""})`
         : `ctx.tweenValue(${ctx.reference!("target")}, ${args})`;
-      ctx.continueIf(`await ${call}`);
+      ctx.continueIf(`(yield ${call})`);
     },
   };
 }

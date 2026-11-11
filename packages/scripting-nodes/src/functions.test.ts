@@ -343,7 +343,7 @@ describe("functions.call", () => {
     expect(compiled.source).not.toContain("ctx.self");
   });
 
-  it("awaits invokeFunction when the target Function is latent", () => {
+  it("waits for invokeFunction when the target Function is latent", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -376,9 +376,9 @@ describe("functions.call", () => {
       isLatentFunction: (classId, functionName) =>
         classId === "Hero" && functionName === "Wait",
     });
-    expect(compiled.source).toMatch(/await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/);
+    // The generated text is the contract with the host here: the entry yields the Call's wait.
+    expect(compiled.source).toMatch(/\(yield ctx\.invokeFunction\([^,]+,\s*"Wait"/);
     expect(compiled.entryPoints[0]?.isAsync).toBe(true);
-    expect(compiled.source).toContain("export async function onBeginPlay");
   });
 
   it("does not await invokeFunction for a sync Function", () => {
@@ -414,7 +414,7 @@ describe("functions.call", () => {
       registry,
       isLatentFunction: () => false,
     });
-    expect(compiled.source).not.toMatch(/await\s+ctx\.invokeFunction/);
+    expect(compiled.source).not.toMatch(/\(yield ctx\.invokeFunction/);
     expect(compiled.entryPoints[0]?.isAsync).toBe(false);
     expect(compiled.source).toContain("export function onBeginPlay");
   });

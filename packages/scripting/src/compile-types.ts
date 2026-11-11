@@ -23,7 +23,7 @@ export type CompiledEntryPoint = {
   nodeId?: string;
   /** The graph the entry node is in, for diagnostics that open it. */
   graphId?: string;
-  /** True when the entry point awaits a latent node and must be awaited. */
+  /** True when the entry point waits on a latent node: calling it returns a thenable for its end. */
   isAsync: boolean;
   /** Prefab component id when this entry is bound to an attached component. */
   componentId?: string;
