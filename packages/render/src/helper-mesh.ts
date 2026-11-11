@@ -39,14 +39,34 @@ export function markEditorHelperMesh(mesh: { metadata: unknown }): void {
 }
 
 /**
- * The one predicate for editor/debug helper meshes. Water contacts, render-target captures,
- * viewport shading modes and shadow casting all use it, so a new helper only needs one tag.
+ * Each object's last answer, valid while its metadata is the same object and its name the same string: every writer
+ * of a helper flag replaces the metadata object (as `markEditorHelperMesh` does), never edits it in place.
  */
-export function isEditorHelperMesh(mesh: { name: string; metadata: unknown }): boolean {
-  const meta = mesh.metadata as Record<string, unknown> | null;
+const answers = new WeakMap<object, { metadata: unknown; name: string; helper: boolean }>();
+
+function helperByTags(metadata: unknown, name: string): boolean {
+  const meta = metadata as Record<string, unknown> | null;
   if (meta && typeof meta === "object") {
     for (const flag of HELPER_METADATA_FLAGS) if (meta[flag]) return true;
   }
-  if (mesh.name === GRID_MESH_NAME || mesh.name === CAMERA_BOUNDS_MESH_NAME) return true;
-  return HELPER_NAME_PREFIXES.some((prefix) => mesh.name.startsWith(prefix));
+  if (name === GRID_MESH_NAME || name === CAMERA_BOUNDS_MESH_NAME) return true;
+  return HELPER_NAME_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
+
+/**
+ * The one predicate for editor/debug helper meshes. Water contacts, render-target captures,
+ * viewport shading modes and shadow casting all use it, so a new helper only needs one tag.
+ * Set a helper flag by replacing the mesh's metadata object, never by editing it in place.
+ */
+export function isEditorHelperMesh(mesh: { name: string; metadata: unknown }): boolean {
+  const metadata = mesh.metadata, name = mesh.name;
+  const answer = answers.get(mesh);
+  if (answer && answer.metadata === metadata && answer.name === name) return answer.helper;
+  const helper = helperByTags(metadata, name);
+  if (answer) {
+    answer.metadata = metadata;
+    answer.name = name;
+    answer.helper = helper;
+  } else answers.set(mesh, { metadata, name, helper });
+  return helper;
 }
