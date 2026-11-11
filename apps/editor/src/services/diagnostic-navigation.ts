@@ -88,6 +88,24 @@ export interface SessionReportNavigationHost {
 const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /**
+ * Focus a diagnostic's node. The graph frames a node when its focus changes, so
+ * choosing the node the editor already holds (the same row again, after the view
+ * moved) clears the focus and focuses it again on the next task.
+ */
+export async function focusDiagnosticNode(
+  host: Pick<SessionReportNavigationHost, "currentFocus" | "setFocusDiagnostic">,
+  focus: Diagnostic,
+  destinationScopeKey?: string,
+): Promise<void> {
+  const held = host.currentFocus();
+  if (focus.nodeId && held?.nodeId === focus.nodeId && held.assetGuid === focus.assetGuid) {
+    host.setFocusDiagnostic(null);
+    await nextTask();
+  }
+  host.setFocusDiagnostic(focus, destinationScopeKey);
+}
+
+/**
  * Open the entry's source and focus the node. The report stays open either
  * way: the caller shows `message` when the entry cannot be opened.
  */
@@ -117,14 +135,7 @@ export async function navigateToSessionReportEntry(
     nodeId: nav.focusedNodeId || undefined,
     bodyLine: nav.bodyLine,
   };
-  // The graph frames a node when its focus changes; choosing the same row again
-  // after panning away must change it back.
-  const held = host.currentFocus();
-  if (focus.nodeId && held?.nodeId === focus.nodeId && held.assetGuid === focus.assetGuid) {
-    host.setFocusDiagnostic(null);
-    await nextTask();
-  }
-  host.setFocusDiagnostic(focus, id);
+  await focusDiagnosticNode(host, focus, id);
 
   const fail = (message: string): SessionReportNavigationResult => {
     host.setFocusDiagnostic(null);

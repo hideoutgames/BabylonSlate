@@ -26,6 +26,7 @@ const diagnostics = vi.hoisted(() => ({
   current: [] as Diagnostic[],
 }));
 const scene = vi.hoisted(() => ({ physicsWorld: "3d" as "2d" | "3d" }));
+const sceneSelection = vi.hoisted(() => ({ current: [] as string[] }));
 // A Model with no simple collision shapes, and one with a shape.
 const registry = vi.hoisted(() => ({
   getByGuid: (guid: string) => guid === "hollow" || guid === "solid"
@@ -87,20 +88,31 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   activeDocumentId: "scene:assets/Main.scene.hasset",
 })));
 
-vi.mock("../context/validation-context", () => ({
-  useValidation: () => ({
-    diagnostics: diagnostics.current,
-    setDiagnostics,
-    setFocusDiagnostic,
-  }),
-}));
+// The focus is state, as in ValidationProvider; the spy records each request.
+vi.mock("../context/validation-context", async () => {
+  const { useState } = await import("react");
+  return {
+    useValidation: () => {
+      const [focusDiagnostic, setFocus] = useState<Diagnostic | null>(null);
+      return {
+        diagnostics: diagnostics.current,
+        setDiagnostics,
+        focusDiagnostic,
+        setFocusDiagnostic: (next: Diagnostic | null, destination?: string) => {
+          setFocusDiagnostic(...(destination === undefined ? [next] : [next, destination]));
+          setFocus(next);
+        },
+      };
+    },
+  };
+});
 
 vi.mock("../context/play-context", () => ({
   usePlay: () => ({ clearFocusedNode }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
-  useOptionalSceneEditing: () => ({ selectActor }),
+  useOptionalSceneEditing: () => ({ selectActor, selectedActorIds: sceneSelection.current }),
 }));
 
 const VIEWPORT = '[data-slot="scroll-area-viewport"]';
@@ -135,6 +147,7 @@ afterEach(() => {
   clearFocusedNode.mockClear();
   diagnostics.current = [pairingWarning];
   scene.physicsWorld = "3d";
+  sceneSelection.current = [];
 });
 
 describe("CompilerResultsPanel", () => {
@@ -182,21 +195,53 @@ describe("CompilerResultsPanel", () => {
     expect(setFocusDiagnostic).toHaveBeenCalled();
   });
 
-  it("focuses the graph node when a diagnostic with a nodeId is tapped", () => {
-    const graphDiagnostic: Diagnostic = {
-      severity: "error",
-      code: "graph.missing_exec",
-      message: "Exec pin is not connected.",
-      assetGuid: "assets/Hero.class.hasset",
-      graphId: "graph:assets/Hero.class.hasset",
-      nodeId: "tick",
-    };
+  const graphDiagnostic: Diagnostic = {
+    severity: "error",
+    code: "graph.missing_exec",
+    message: "Exec pin is not connected.",
+    assetGuid: "assets/Hero.class.hasset",
+    graphId: "graph:assets/Hero.class.hasset",
+    nodeId: "tick",
+  };
+
+  it("focuses the graph node when a diagnostic with a nodeId is tapped", async () => {
     diagnostics.current = [graphDiagnostic];
     render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("compiler-result-row"));
     expect(setFocusDiagnostic).toHaveBeenCalledWith(graphDiagnostic, graphDiagnostic.graphId);
-    expect(setActiveDocument).toHaveBeenCalledWith(graphDiagnostic.graphId);
+    await waitFor(() => expect(setActiveDocument).toHaveBeenCalledWith(graphDiagnostic.graphId));
     expect(clearFocusedNode).toHaveBeenCalled();
+  });
+
+  it("frames the node again when the focused row is chosen again", async () => {
+    diagnostics.current = [graphDiagnostic];
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    const row = screen.getByTestId("compiler-result-row");
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(row);
+    // The graph frames when its focus changes: cleared, then focused again.
+    await waitFor(() => expect(setFocusDiagnostic.mock.calls).toEqual([
+      [graphDiagnostic, graphDiagnostic.graphId],
+      [null],
+      [graphDiagnostic, graphDiagnostic.graphId],
+    ]));
+    expect(screen.getByTestId("compiler-result-row").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("unselects an Actor row once the user selects another Actor", () => {
+    const view = render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("compiler-result-row"));
+    sceneSelection.current = ["hero"];
+    view.rerender(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("compiler-result-row").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("region", { name: "Diagnostic Details" })).not.toBeNull();
+
+    sceneSelection.current = ["statue"];
+    view.rerender(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    expect(setFocusDiagnostic).toHaveBeenLastCalledWith(null);
+    expect(screen.getByTestId("compiler-result-row").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("region", { name: "Diagnostic Details" })).toBeNull();
   });
 
   it("windows a large diagnostic set to the viewport plus overscan", () => {

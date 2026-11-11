@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { documentSceneMode } from "../shell/scene-document-layout";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
@@ -23,7 +23,8 @@ import {
 } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
-import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
+import { documentIdToRevealForDiagnostic, focusDiagnosticNode } from "../services/diagnostic-navigation";
+import { useEndFocusOnDeselect } from "../lib/use-end-focus-on-deselect";
 import {
   MODEL_DOCUMENT_KINDS,
   modelSimpleColliderCounter,
@@ -63,10 +64,11 @@ function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] 
 }
 
 const SCENE_DOCUMENT_KINDS = ["scene", "scene-layer"] as const;
+const NO_ACTORS: readonly string[] = [];
 
 export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
+  const { diagnostics, setDiagnostics, focusDiagnostic, setFocusDiagnostic } = useValidation();
   const { clearFocusedNode } = usePlay();
   const { setActiveDocument } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
@@ -142,8 +144,16 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
       rows[index]?.kind === "header" ? TREE_ROW_HEIGHT : WINDOWED_LIST_TOUCH_ROW_HEIGHT,
     [rows],
   );
-  const [selectedDiagnostic, setSelectedDiagnostic] = useState<Diagnostic | null>(null);
-  const selected = selectedDiagnostic && diagnostics.includes(selectedDiagnostic) ? selectedDiagnostic : null;
+  // The row the editor is focused on is the selected one; it unselects when the focus ends.
+  const selected = focusDiagnostic && diagnostics.includes(focusDiagnostic) ? focusDiagnostic : null;
+  const endFocus = useCallback(() => setFocusDiagnostic(null), [setFocusDiagnostic]);
+  // An Actor row's focus ends once the user selects something else in the scene;
+  // a node row's ends in its graph.
+  useEndFocusOnDeselect(
+    focusDiagnostic?.actorId,
+    sceneEditing?.selectedActorIds ?? NO_ACTORS,
+    endFocus,
+  );
 
   return (
     <PanelFrame data-testid="compiler-results">
@@ -194,15 +204,21 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                   selected={d === selected}
                   testId="compiler-result-row"
                   onSelect={() => {
-                    setSelectedDiagnostic(d);
                     clearFocusedNode();
                     if (d.actorId) sceneEditing?.selectActor(d.actorId);
                     const revealId = documentIdToRevealForDiagnostic(
                       d,
                       openDocuments.map((doc) => doc.id),
                     );
-                    setFocusDiagnostic(d, revealId ?? undefined);
-                    if (revealId) setActiveDocument(revealId);
+                    // Choosing the focused row again frames its node again. The tab
+                    // changes after the focus is set, which carries it there.
+                    void focusDiagnosticNode(
+                      { currentFocus: () => focusDiagnostic, setFocusDiagnostic },
+                      d,
+                      revealId ?? undefined,
+                    ).then(() => {
+                      if (revealId) setActiveDocument(revealId);
+                    });
                   }}
                 />
               );
@@ -210,7 +226,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
           </WindowedList>
         </ScrollArea>
       )}
-      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}\n${selected.graphId}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}${selected.pinId ? `\nPin: ${selected.pinId}` : ""}`} onClose={() => setSelectedDiagnostic(null)} /> : null}
+      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}\n${selected.graphId}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}${selected.pinId ? `\nPin: ${selected.pinId}` : ""}`} onClose={endFocus} /> : null}
     </PanelFrame>
   );
 }
