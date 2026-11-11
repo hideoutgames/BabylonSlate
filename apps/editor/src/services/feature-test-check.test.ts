@@ -1071,6 +1071,8 @@ describe("Profile", () => {
       ["shadows medium", ["quality shadows medium"], [], true],
       ["screen shadows off", ["quality shadows screen off"], [], false],
       ["reflection shadows off", ["quality shadows reflections off"], [], false],
+      ["mirrors moving actors", ["quality geometry mirrors movingActors"], [], true],
+      ["mirrors environment", ["quality geometry mirrors environment"], [], false],
       ["AO off", ["quality postprocessing ambientOcclusion off"], [], true],
       ["SSR off", ["quality postprocessing reflections off"], [], true],
       ["volumetrics off", ["quality postprocessing volumetricLighting off"], [], true],
@@ -1095,10 +1097,10 @@ describe("Profile", () => {
     ]);
     // A baseline before every step and one after the last: every step sits between two baselines.
     const sequence = breakdownSequence(featureTestProfilePlan(SESSION).views);
-    expect(sequence).toHaveLength(29);
+    expect(sequence).toHaveLength(33);
     expect(sequence.slice(0, 5).map((step) => step.label)).toEqual(["baseline 1", "captures off", "baseline 2", "shadows off", "baseline 3"]);
     expect(sequence.filter((_, index) => index % 2 === 0).every((step) => step.baseline && !step.commands.length)).toBe(true);
-    expect(sequence.at(-1)!.label).toBe("baseline 15");
+    expect(sequence.at(-1)!.label).toBe("baseline 17");
   });
 
   it("reads the session's state from a baseline's fingerprint, with Play's defaults for what it lacks", () => {
@@ -1312,7 +1314,7 @@ describe("Profile", () => {
     ]);
     // 90 s of waiting, then the 3 s settle.
     expect(waits.find((wait) => wait.step === "main: measuring shadows off")!.ms).toBe(93_000);
-    expect(samples.at(-1)!.label).toBe("baseline 15");
+    expect(samples.at(-1)!.label).toBe("baseline 17");
     expect(report.scenes[0]!.problems).toEqual([`shadows off: ${shadows.failed[0]}`]);
   });
 
@@ -1377,10 +1379,12 @@ describe("Profile", () => {
       ["volumetrics off", "already post.volumetricLighting false", null],
     ]);
     const labels = rows.map((sample) => sample.label);
-    expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("AO off") + 2))
-      .toEqual(["shadows off", "baseline 3", "shadows medium", "screen shadows off", "reflection shadows off", "AO off", "baseline 7"]);
+    expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("AO off") + 2)).toEqual([
+      "shadows off", "baseline 3", "shadows medium", "screen shadows off", "reflection shadows off",
+      "mirrors moving actors", "baseline 7", "mirrors environment", "baseline 8", "AO off", "baseline 9",
+    ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
-    expect(main!.problems).toEqual(["baseline 14: framesinflight 3 failed: Refused."]);
+    expect(main!.problems).toEqual(["baseline 16: framesinflight 3 failed: Refused."]);
     expect(main!.play.profile!.endChanges).toEqual(["presentation.framesInFlight=off"]);
   });
 });

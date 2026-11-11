@@ -270,6 +270,9 @@ export function featureTestProfileSteps(state: FeatureTestProfileState): Feature
     { label: "screen shadows off", commands: ["quality shadows screen off"], fields: ["shadows.screen"] },
     // The reflections' own sun maps (on at Ultra): the main scene's Mirrors.
     { label: "reflection shadows off", commands: ["quality shadows reflections off"], fields: ["shadows.reflections"] },
+    // The cap on what every Mirror draws live: only the actors that can move (part of what drawing none saves), then none.
+    { label: "mirrors moving actors", commands: ["quality geometry mirrors movingActors"], fields: ["geometry.mirrors"], overlaps: true },
+    { label: "mirrors environment", commands: ["quality geometry mirrors environment"], fields: ["geometry.mirrors"] },
     { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
     { label: "SSR off", commands: ["quality postprocessing reflections off"], fields: ["post.reflections"], overlaps: true },
     { label: "volumetrics off", commands: ["quality postprocessing volumetricLighting off"], fields: ["post.volumetricLighting"], overlaps: true },
