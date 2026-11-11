@@ -23,6 +23,11 @@ export const DRAW_BATCH_WORLD_KINDS = ["batchWorld0", "batchWorld1", "batchWorld
 export const DRAW_BATCH_COLOR_KIND = "batchColor";
 export const DRAW_BATCH_TINT_KIND = "batchTint";
 /**
+ * The vertex attribute a batch of the unlit Material carries each member's texel grid in (`unlitTexelGrid`): the size
+ * of the member's image and where it starts on the texture the batch samples.
+ */
+export const DRAW_BATCH_TEXEL_KIND = "batchTexel";
+/**
  * The vertex attributes a batch of a text Material's glyphs carries each glyph's own values in: its rectangle on the
  * atlas, its rectangle in the text's Material space, and its span colour with its visibility.
  */

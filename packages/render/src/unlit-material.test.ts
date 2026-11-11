@@ -13,7 +13,7 @@ import { drawsAlphaCoverage } from "./alpha-to-coverage";
 import { isDrawBatchMesh, markDrawBatchMesh } from "./draw-batch-world-block";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
 import { materialIneligibility } from "./instance-pool";
-import { unlitBinding } from "./unlit-material-blocks";
+import { unlitBinding, unlitTexelGrid } from "./unlit-material-blocks";
 import { ensureLatticeShadowAdapter, releaseLatticeShadowAdapter } from "./lattice-deformer-binding";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { hasStockVertexStage } from "./shadow-material-policy";
@@ -138,6 +138,92 @@ describe("unlit Material", () => {
     expect(batched).toContain("#define HAPTIC_BATCH\n");
     expect(batched.replace("#define HAPTIC_BATCH\n", "")).toBe(own);
     expect(batch.subMeshes[0]!.effect).not.toBe(member.subMeshes[0]!.effect);
+  });
+
+  it("finds the texel a nearest texture's UV falls in and samples its centre, on the mesh's grid or a batch's per vertex", async () => {
+    const target = scene();
+    const member = MeshBuilder.CreatePlane("member", {}, target);
+    const batch = MeshBuilder.CreatePlane("batch", {}, target);
+    markDrawBatchMesh(batch);
+    const image = RawTexture.CreateRGBATexture(new Uint8Array(64 * 32 * 4), 64, 32, target, false, false, Texture.NEAREST_SAMPLINGMODE);
+    image.isReady = () => true;
+    image.wrapU = Texture.WRAP_ADDRESSMODE;
+    image.wrapV = Texture.CLAMP_ADDRESSMODE;
+    const material = setUnlitMaterial(member, world, binding({ texture: image }));
+    setUnlitMaterial(batch, world, binding({ texture: image }));
+    await ready(material, member);
+    await ready(material, batch);
+    // The shader text is the contract here: a draw of an image's own texture and a batch that samples the image from a
+    // shared page must find the texel by the same expressions on the same UV.
+    const vertex = material.compiledShaders.split("// Fragment shader")[0]!.replace(/\s+/g, " ");
+    const fragment = material.compiledShaders.split("// Fragment shader")[1]!.replace(/\s+/g, " ");
+    expect(vertex).toContain("#ifdef HAPTIC_BATCH attribute vec4 batchTexel; #endif");
+    for (const stage of [vertex, fragment]) expect(stage).toContain("#ifdef HAPTIC_BATCH flat varying vec4 v_batchTexel; #endif");
+    // The grid: the mesh's own, bound, or a batch member's, flat from its vertices.
+    const grid = fragment.match(/#ifdef HAPTIC_BATCH vec4 (\w+) = v_batchTexel; #else vec4 \1 = unlitTexel; #endif/)?.[1];
+    expect(grid).toBeDefined();
+    // The size of the texture the draw samples is the sampler's own, never one a texture object records.
+    const sampled = fragment.match(/vec2 (\w+) = vec2\(textureSize\(unlitTextureSampler, 0\)\);/)?.[1];
+    expect(sampled).toBeDefined();
+    // The image is the whole of it (a negative origin), or a cell of the grid's own size.
+    const size = fragment.match(new RegExp(`vec2 (\\w+) = ${grid}\\.z < 0\\.0 \\? ${sampled} : abs\\(${grid}\\.xy\\);`))?.[1];
+    expect(size).toBeDefined();
+    // The texel the interpolated UV falls in.
+    const found = fragment.match(new RegExp(`vec2 (\\w+) = floor\\((v_\\w+) \\* ${size}\\);`));
+    expect(found).not.toBeNull();
+    const [, texel, uv] = found!;
+    // Outside the image it is taken as the texture's sampler takes it: to the edge, or around where the grid's sign is
+    // negative.
+    expect(fragment).toContain(`${texel} = mix(clamp(${texel}, vec2(0.0), ${size} - vec2(1.0)), ` +
+      `${texel} - ${size} * floor(${texel} / ${size}), step(${grid}.xy, vec2(-0.5)));`);
+    // Its centre on the sampled texture, where the image starts at the grid's origin; a texture without a grid is
+    // sampled at the UV as it is.
+    const lookup = fragment.match(new RegExp(
+      `vec2 (\\w+) = ${grid}\\.x != 0\\.0 \\? \\(max\\(${grid}\\.zw, vec2\\(0\\.0\\)\\) \\+ ${texel} \\+ vec2\\(0\\.5\\)\\) / ${sampled} : ${uv};`))?.[1];
+    expect(lookup).toBeDefined();
+    expect(fragment).toContain(`texture2D(unlitTextureSampler, ${lookup})`);
+    // Nothing else samples the texture.
+    expect(fragment.split("texture2D(unlitTextureSampler").length - 1).toBe(1);
+    // A draw binds how its texture leaves its image along each axis (it repeats along U here and clamps along V), over
+    // the whole of the texture.
+    const effect = member.subMeshes[0]!.effect!;
+    const bound = new Map<string, number[]>();
+    vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
+    material.getBlockByPredicate((block) => block.getClassName() === "UnlitSurfaceBlock")!.bind(effect, material, member);
+    expect(bound.get("unlitTexel")).toEqual([-1, 1, -1, -1]);
+    // The size a texture object records is never bound: Babylon leaves a mip-mapped KTX2 it decoded to plain colour
+    // at its last level's, which a grid of that size would draw as one texel.
+    image.getInternalTexture()!.width = 1;
+    image.getInternalTexture()!.height = 1;
+    bound.clear();
+    material.getBlockByPredicate((block) => block.getClassName() === "UnlitSurfaceBlock")!.bind(effect, material, member);
+    expect(bound.get("unlitTexel")).toEqual([-1, 1, -1, -1]);
+    expect([...bound.keys()].filter((name) => /page|size/i.test(name))).toEqual([]);
+  });
+
+  it("gives a texel grid to a texture sampled nearest that repeats or clamps, and to no other", () => {
+    const target = scene();
+    const image = RawTexture.CreateRGBATexture(new Uint8Array(64 * 32 * 4), 64, 32, target, false, false, Texture.NEAREST_SAMPLINGMODE);
+    const grid = (edit: (texture: RawTexture) => void = () => {}) => {
+      image.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
+      image.wrapU = image.wrapV = Texture.WRAP_ADDRESSMODE;
+      edit(image);
+      const out = [9, 9, 9, 9];
+      unlitTexelGrid(image, out, 1);
+      return out;
+    };
+    // Per axis, -1 where the texture repeats and 1 where it clamps; written at the offset asked for, and nowhere else.
+    expect(grid()).toEqual([9, -1, -1, 9]);
+    expect(grid((texture) => { texture.wrapU = Texture.CLAMP_ADDRESSMODE; })).toEqual([9, 1, -1, 9]);
+    expect(grid((texture) => { texture.wrapV = Texture.CLAMP_ADDRESSMODE; })).toEqual([9, -1, 1, 9]);
+    // A mirrored repeat is the sampler's alone, as is every filtered lookup.
+    expect(grid((texture) => { texture.wrapU = Texture.MIRROR_ADDRESSMODE; })).toEqual([9, 0, 0, 9]);
+    expect(grid((texture) => { texture.wrapV = Texture.MIRROR_ADDRESSMODE; })).toEqual([9, 0, 0, 9]);
+    for (const mode of [Texture.BILINEAR_SAMPLINGMODE, Texture.TRILINEAR_SAMPLINGMODE, Texture.NEAREST_NEAREST_MIPLINEAR, Texture.NEAREST_LINEAR])
+      expect(grid((texture) => { texture.updateSamplingMode(mode); }), String(mode)).toEqual([9, 0, 0, 9]);
+    const none = [9, 9];
+    unlitTexelGrid(null, none);
+    expect(none).toEqual([0, 0]);
   });
 
   it("samples an MSDF atlas with a program of its own, its outline bound per mesh", async () => {
