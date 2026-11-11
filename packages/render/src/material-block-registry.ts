@@ -330,6 +330,39 @@ const reflectAdapter: BlockAdapter = (context) => {
   };
 };
 
+/**
+ * Modulo with the sign of A on every backend: `sign(a) * mod(|a|, |b|)`. Babylon's block alone is
+ * GLSL `mod` (the sign of B) on WebGL2 and WGSL `%` (the sign of A) on WebGPU; the two agree
+ * once both operands are positive.
+ */
+const moduloAdapter: BlockAdapter = ({ name, operation }) => {
+  const a = new ElbowBlock(`${name}_a`);
+  const b = new ElbowBlock(`${name}_b`);
+  a.input.type = b.input.type = babylonTypeFor(operation.resolvedType);
+  const trig = (suffix: string, kind: TrigonometryBlockOperations) => {
+    const block = new TrigonometryBlock(`${name}_${suffix}`);
+    block.operation = kind;
+    return block;
+  };
+  const absA = trig("absA", TrigonometryBlockOperations.Abs);
+  const absB = trig("absB", TrigonometryBlockOperations.Abs);
+  const sign = trig("sign", TrigonometryBlockOperations.Sign);
+  const mod = new ModBlock(`${name}_mod`);
+  const result = new MultiplyBlock(name);
+  a.output.connectTo(absA.input);
+  a.output.connectTo(sign.input);
+  b.output.connectTo(absB.input);
+  absA.output.connectTo(mod.left);
+  absB.output.connectTo(mod.right);
+  sign.output.connectTo(result.left);
+  mod.output.connectTo(result.right);
+  return {
+    blocks: [a, b, absA, absB, sign, mod, result],
+    inputs: { a: a.input, b: b.input },
+    outputs: { out: result.output },
+  };
+};
+
 /** Babylon has no fwidth block; compose it from the derivative pair. */
 const fwidthAdapter: BlockAdapter = ({ name }) => {
   const derivative = new DerivativeBlock(name);
@@ -434,7 +467,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   "math.divide": binary(DivideBlock),
   "math.min": binary(MinBlock),
   "math.max": binary(MaxBlock),
-  "math.mod": binary(ModBlock),
+  "math.mod": moduloAdapter,
   "math.negate": ({ name }) => {
     const block = new NegateBlock(name);
     return single(block, { value: block.value }, { out: block.output });

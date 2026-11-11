@@ -20,6 +20,9 @@ Samples a texture at a chosen mip level instead of the level the GPU would pick.
 | --- | --- | --- |
 | RGBA | Vector 4 |  |
 | RGB | Vector 3 |  |
+| R | Float |  |
+| G | Float |  |
+| B | Float |  |
 | A | Float |  |
 | Texture | Texture | The texture this node samples, for passing on to other nodes. |
 

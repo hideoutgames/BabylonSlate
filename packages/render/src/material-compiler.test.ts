@@ -422,7 +422,10 @@ describe("material compiler", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({ id: "normal", type: "shading.normalMap", position: { x: 0, y: 0 }, properties: {} });
     doc.edges.push({ id: "normal-output", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "output", targetPinId: "normal" });
-    const result = compileMaterialPlan(planFor(doc), { scene, name: "missing-packed-normal" });
+    // A plan whose Normal Map has no Packed input at all: Babylon refuses the block only when it builds.
+    const plan = structuredClone(planFor(doc));
+    delete plan.operations.find((operation) => operation.id === "normal")!.inputs.packed;
+    const result = compileMaterialPlan(plan, { scene, name: "missing-packed-normal" });
     if (!result.ok) {
       expect(result.diagnostics.some((error) => error.code === "material.compile.buildFailed")).toBe(true);
       return;

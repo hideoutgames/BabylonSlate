@@ -6,6 +6,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { ModBlock } from "@babylonjs/core/Materials/Node/Blocks/modBlock";
 import { MultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/multiplyBlock";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { PrecisionDate } from "@babylonjs/core/Misc/precisionDate";
@@ -85,6 +86,30 @@ describe("material node contracts", () => {
     const conversions = result.material.attachedBlocks.filter((block): block is TrigonometryBlock =>
       block instanceof TrigonometryBlock && block.input.connectedPoint?.ownerBlock instanceof ArcTan2Block);
     expect(conversions.map((block) => block.operation)).toEqual([T.Degrees, T.Degrees, T.Degrees]);
+  });
+  it("compiles Modulo over positive operands and restores the sign of A, as both backends then agree", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "a", "input.time");
+    node(doc, "mod", "math.mod");
+    wire(doc, "a", "time", "mod", "a");
+    wire(doc, "mod", "out", "output", "emissive");
+    const result = await compile(doc);
+    const mod = result.material.attachedBlocks.find((block): block is ModBlock => block instanceof ModBlock)!;
+    const operation = (point: NodeMaterialConnectionPoint) => {
+      const source = point.connectedPoint?.ownerBlock;
+      return source instanceof TrigonometryBlock ? source.operation : undefined;
+    };
+    // GLSL `mod` takes the sign of B and WGSL `%` the sign of A; with |A| and |B| they are the same.
+    expect([operation(mod.left), operation(mod.right)]).toEqual([T.Abs, T.Abs]);
+    const scaled = mod.output.endpoints.map((point) => point.ownerBlock).find((block): block is MultiplyBlock => block instanceof MultiplyBlock)!;
+    expect(operation(scaled.left)).toBe(T.Sign);
+  });
+  it.each([["color.desaturate", "out"], ["shading.normalMap", "normal"]])("builds a %s whose inputs are all unwired", async (type, output) => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "lone", type);
+    wire(doc, "lone", output, "output", "emissive");
+    // Babylon refuses to build a block whose required input has neither a wire nor a default.
+    expect((await compile(doc)).ok).toBe(true);
   });
   it.each(["uv", "height"])("keeps Landscape %s anchored to absolute scene coordinates when the render origin moves", async (kind) => {
     const doc = createDefaultMaterialDocument("Terrain", "landscape");
