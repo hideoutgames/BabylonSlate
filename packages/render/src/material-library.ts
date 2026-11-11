@@ -580,7 +580,7 @@ export class MaterialLibrary {
         rebindMaterial(scene, candidate.material, existing.material);
       }
       candidate.dispose();
-      markSceneReadinessDirty(scene);
+      markSceneReadinessDirty(scene, "materialLibrary");
       if (this.options.onTextureError) this.options.onTextureError(diagnostic);
       else console.warn(`[render] Material "${assetGuid}" could not be linked: ${diagnostic.message}`);
     });

@@ -325,7 +325,7 @@ export class SceneShadowController {
         this.entries.get(light)?.generator?.dispose();
         this.entries.delete(light);
         this.views.forgetLight(light);
-        markSceneReadinessDirty(this.scene);
+        markSceneReadinessDirty(this.scene, "shadowMap");
       });
     }
     entry.requested = requested;
@@ -597,7 +597,7 @@ export class SceneShadowController {
     this.pending.clear();
     // Caster participation and receiveShadows changed material defines or map
     // membership; cached strict readiness no longer applies.
-    if (hadPending) markSceneReadinessDirty(scene);
+    if (hadPending) markSceneReadinessDirty(scene, "shadowCasters");
     let changed = hadPending;
     // Without a map nothing reads caster state, so the walk waits for the first
     // allocation; kept snapshots make the late walk report only real changes.
@@ -652,7 +652,7 @@ export class SceneShadowController {
     const release = (entry: Entry) => {
       if (entry.generator) {
         entry.generator.dispose();
-        markSceneReadinessDirty(scene);
+        markSceneReadinessDirty(scene, "shadowMap");
         invalidateShadowReceiverHandoffs(scene);
         changed = true;
       }
@@ -720,7 +720,7 @@ export class SceneShadowController {
         invalidateShadowReceiverHandoffs(scene);
         donor.light._markMeshesAsLightDirty();
         entry.light._markMeshesAsLightDirty();
-        markSceneReadinessDirty(scene);
+        markSceneReadinessDirty(scene, "shadowMap");
       }
       entry.generator = generator;
       entry.key = donor.key;
@@ -803,7 +803,7 @@ export class SceneShadowController {
           materialsDirty = true;
           changed = true;
           scene.markAllMaterialsAsDirty(Material.LightDirtyFlag);
-          markSceneReadinessDirty(scene);
+          markSceneReadinessDirty(scene, "shadowMap");
           invalidateShadowReceiverHandoffs(scene);
         }
         maintainCascades(entry);
@@ -828,7 +828,7 @@ export class SceneShadowController {
           entry.generator = generator;
           // Receivers may bind the new map before its first draw (a view keeps drawing while its casters compile).
           neutralUntilRendered(generator);
-          markSceneReadinessDirty(scene);
+          markSceneReadinessDirty(scene, "shadowMap");
           invalidateShadowReceiverHandoffs(scene);
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;

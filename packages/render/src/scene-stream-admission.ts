@@ -165,7 +165,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
       // Keep its exclusion until the resource leaves the Scene.
       return;
     }
-    restore(); scopes.delete(scene); markSceneReadinessDirty(scene);
+    restore(); scopes.delete(scene); markSceneReadinessDirty(scene, "streamAdmission");
   };
   const sync = () => {
     prune();
@@ -190,7 +190,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
     }
   };
   const clear = () => {
-    restore(); streams.clear(); scopes.delete(scene); syncedMeshes = undefined; markSceneReadinessDirty(scene);
+    restore(); streams.clear(); scopes.delete(scene); syncedMeshes = undefined; markSceneReadinessDirty(scene, "streamAdmission");
   };
   return {
     sync,
@@ -210,7 +210,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
           const previous = streams.get(actorGuid);
           if (previous && previous.loadId >= streamLoadId) return;
           streams.set(actorGuid, { loadId: streamLoadId, loading: true });
-          ensureScope(); markSceneReadinessDirty(scene);
+          ensureScope(); markSceneReadinessDirty(scene, "streamAdmission");
           break;
         }
         case "removed": {
@@ -262,7 +262,7 @@ export function createSceneStreamAdmission(scene: Scene, binding: SnapshotSceneB
         if (stream) stream.loading = false;
       }
       sync();
-      markSceneReadinessDirty(scene);
+      markSceneReadinessDirty(scene, "streamAdmission");
       prune();
       return true;
     },

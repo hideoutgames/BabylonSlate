@@ -389,8 +389,8 @@ function syncWaterQuality(scene: Scene, state: SceneRendering, next: Readonly<Wa
   if (sameWaterQuality(state.water, next)) return;
   state.water = waterQualityValues(next);
   state.waterRevision = ++waterRevisions;
-  markSceneReadinessDirty(scene);
-  for (const follower of state.followers) markSceneReadinessDirty(follower);
+  markSceneReadinessDirty(scene, "renderSettings");
+  for (const follower of state.followers) markSceneReadinessDirty(follower, "renderSettings");
 }
 
 /**
@@ -400,8 +400,8 @@ function syncWaterQuality(scene: Scene, state: SceneRendering, next: Readonly<Wa
 export function bumpSceneWaterRevision(scene: Scene): void {
   const owner = renderSettingsOwner(scene), state = sceneRenderingSettings(owner);
   state.waterRevision = ++waterRevisions;
-  markSceneReadinessDirty(owner);
-  for (const follower of state.followers) markSceneReadinessDirty(follower);
+  markSceneReadinessDirty(owner, "renderSettings");
+  for (const follower of state.followers) markSceneReadinessDirty(follower, "renderSettings");
 }
 
 /** The Scene whose project quality `scene` renders with: itself unless it follows another. */
@@ -427,7 +427,7 @@ export function followSceneRenderSettings(scene: Scene, owner: Scene): void {
     });
   settingsOwners.set(scene, root);
   sceneRenderingSettings(root).followers.add(scene);
-  if (!sameWaterQuality(before, sceneWaterQuality(scene))) markSceneReadinessDirty(scene);
+  if (!sameWaterQuality(before, sceneWaterQuality(scene))) markSceneReadinessDirty(scene, "renderSettings");
 }
 
 /** The highest texture anisotropy a quality tier offers (Ultra). */

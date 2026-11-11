@@ -365,7 +365,7 @@ function follow2DLighting(scene: Scene): void {
       if (binding?.shading !== "2d" || !binding.material || mesh.material !== binding.material) continue;
       binding.material = drawAlbedo(mesh, binding);
     }
-    markSceneReadinessDirty(scene);
+    markSceneReadinessDirty(scene, "meshAssets");
   });
 }
 
@@ -385,7 +385,7 @@ export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): v
   const blended = material?.needAlphaBlendingForMesh(mesh);
   mesh.visibility = visibility;
   // The draw moves between the opaque and transparent lists; no shader changes.
-  if (material && blended !== material.needAlphaBlendingForMesh(mesh)) markSceneReadinessDirty(mesh.getScene());
+  if (material && blended !== material.needAlphaBlendingForMesh(mesh)) markSceneReadinessDirty(mesh.getScene(), "blendChange");
 }
 
 /** Restore the mesh's owned construction material after a borrowed assignment clears. */
