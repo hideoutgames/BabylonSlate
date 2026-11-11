@@ -35,7 +35,7 @@ import {
   type PlayCounters,
   type PlayPresentation,
 } from "../services/feature-test-check";
-import { DRAW_PASSES, type OverlayAloneReason, type RenderDiagnostics } from "@haptic/render";
+import { DRAW_PASSES, type OverlayAloneReason, type RenderDiagnostics, type SceneReadinessDirtyReason } from "@haptic/render";
 import { clipText, formatDiagnosticEnvironment, type DiagnosticEnvironment } from "./diagnostic-info";
 
 export type FeatureTestCheckEnvironment = DiagnosticEnvironment;
@@ -167,7 +167,41 @@ function readinessText(sampled: NonNullable<FeatureTestCheckSceneResult["play"][
   const { strictReadinessChecks: probes, readinessProbeMs: ms } = sampled.work;
   if (!probes) return `none in ${sampled.drawn} drawn frames`;
   const perFrame = sampled.drawn > 0 ? ` · ${(ms / sampled.drawn).toFixed(1)} ms per drawn frame` : "";
-  return `${probes} in ${sampled.drawn} drawn frames · ${(ms / probes).toFixed(1)} ms each${perFrame}`;
+  const causes = readinessCauses(sampled.work);
+  return `${probes} in ${sampled.drawn} drawn frames · ${(ms / probes).toFixed(1)} ms each${perFrame}${causes ? ` · causes: ${causes}` : ""}`;
+}
+
+/** Plain words for each reason a readiness probe ran (`RenderDiagnostics.rendererWork.readinessProbeReasons`). */
+const READINESS_REASON_WORDS: Record<SceneReadinessDirtyReason, string> = {
+  meshAdded: "mesh added", meshRemoved: "mesh removed", materialAdded: "material added",
+  materialRemoved: "material removed", lightAdded: "light added", lightRemoved: "light removed",
+  lightEnabled: "light enabled change", textureAdded: "texture added", textureRemoved: "texture removed",
+  cameraAdded: "camera added", cameraRemoved: "camera removed", activeCamera: "active camera",
+  skeletonAdded: "skeleton added", skeletonRemoved: "skeleton removed", membership: "membership count",
+  meshMaterial: "mesh material change", outline: "outline", shadowRestale: "shadow set change",
+  prepare: "preparation", invalidate: "invalidation", output: "output change", shadowCasters: "shadow casters",
+  shadowMap: "shadow map", particleBind: "particle bind", particleCancel: "particle cancel",
+  particlePreparation: "particle preparation", particlePrepared: "particle prepared", layerStyle: "layer style",
+  instanceRekey: "instance rekey", renderSettings: "render settings", environmentLighting: "environment lighting",
+  reflectionProbes: "reflection probes", materialLibrary: "material library", materialParameters: "material parameters",
+  materialInstance: "material instance", meshAssets: "mesh assets", blendChange: "blend change", lattice: "lattice",
+  sceneLighting: "scene lighting", streamAdmission: "stream admission", spawnWarm: "spawn warm-up", other: "other",
+};
+
+/** The most readiness probe causes a report line lists. */
+const MAX_READINESS_CAUSES = 6;
+
+/**
+ * Why the sampled readiness probes ran, most frequent first: each marked reason, the probes that only rechecked a
+ * pending variant swap, and the probes that failed. Empty when nothing was counted.
+ */
+function readinessCauses(work: NonNullable<FeatureTestCheckSceneResult["play"]["work"]>["work"]): string {
+  const causes: [string, number][] = Object.entries(work.readinessProbeReasons)
+    .map(([reason, count]) => [READINESS_REASON_WORDS[reason as SceneReadinessDirtyReason], count ?? 0]);
+  causes.push(["swap recheck", work.readinessSwapRechecks], ["failed", work.failedReadinessProbes]);
+  return causes.filter(([, count]) => count > 0)
+    .sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b))
+    .slice(0, MAX_READINESS_CAUSES).map(([words, count]) => `${words} ${count}`).join(", ");
 }
 
 function frames(stats: FrameStats | null): string {

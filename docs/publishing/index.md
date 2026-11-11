@@ -89,7 +89,7 @@ To sign and notarize with your Developer ID:
 
 Packaging then signs the app, sends it to Apple and attaches the notarization ticket, which can take several minutes. Without a profile, the app is signed but not notarized, and other Macs block it until a player allows it.
 
-The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's. Until you set an App ID, the app uses a placeholder such as `com.example.spacegame` and Packaging reminds you.
+The app's ID, name, version and build number come from **Project Settings > Export > App Identity**. Until you set an App ID, the app uses a placeholder such as `com.example.spacegame` and Packaging reminds you.
 
 ## Android games
 
@@ -115,7 +115,7 @@ Android installs only signed apps. Without a keystore, Haptic signs with Android
 
 The passwords stay in this computer's secret store. For Google Play, this key is your upload key: Play signs the app players download.
 
-The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's. Android calls the build number the version code: raise it for every upload, and keep it at most 2,100,000,000.
+The app's ID, name, version and build number come from **Project Settings > Export > App Identity**. Android calls the build number the version code: raise it for every upload, and keep it at most 2,100,000,000.
 
 In the game, the device's Back button acts as <kbd>Esc</kbd>.
 
@@ -136,7 +136,7 @@ Xcode signs the game for your team and makes or renews its provisioning profile 
 | App Store (default) | Uploading to TestFlight and the App Store with Apple's **Transporter** app. Needs an [app icon](#app-icon). |
 | Development | Installing on the devices registered to your team, for example from Xcode's **Window > Devices and Simulators** |
 
-The app's ID, name and build number come from **Project Settings > Export > App Identity**; its version is the project's, which iOS needs as up to three numbers, such as `1.2.3`. Raise the build number for every upload. Packaging can take several minutes.
+The app's ID, name, version and build number come from **Project Settings > Export > App Identity**. iOS needs the version as up to three numbers, such as `1.2.3`. Raise the build number for every upload. Packaging can take several minutes.
 
 ## Packaging settings
 
@@ -149,8 +149,10 @@ These settings are in **Project Settings > Export**, under **Game Packaging**, *
 | File Count Fail | File count above which the export fails. Default 1000. |
 | App ID | Identifies a native app to the operating system and app stores, such as `com.studio.game`: two or more parts of letters and digits, each starting with a letter. Keep it once you publish. |
 | Display Name | The name under the app's icon. The project name when empty. |
+| Project Version | The version players see, such as `1.2.3`. iOS needs up to three numbers. Graphs read it with **Get Project Version**. |
 | App Icon | The Texture every package uses as its icon. See [App icon](#app-icon). |
-| Build Number | Raise it for every upload to an app store. |
+| Build Number | Raise it for every upload to an app store. Locked while **Auto Increment Build Number** is on. Graphs read it with **Get Build Number**. |
+| Auto Increment Build Number | Adds 1 to the Build Number after every package you keep, on any platform, so each package gets the next number. A cancelled save or a failed package keeps it. Off by default. The change is a project setting: it is saved with the project. |
 | Always Package Folders | Folders whose assets always ship, even when nothing references them. Subfolders are included. |
 
 **Export Project**, under **Project Backup** on the same page, makes an editable backup of the project instead. See [Projects](../projects/index.md).

@@ -9,6 +9,8 @@ export interface AppIdentity {
   displayName: string;
   /** Increases with every store upload; a positive integer. */
   buildNumber: number;
+  /** Adds 1 to `buildNumber` after every package, whatever the platform (`advanceBuildNumber`). */
+  autoIncrementBuildNumber: boolean;
   /**
    * Texture asset whose source image becomes the app icon of every package;
    * null keeps each platform's default. Any size works: packaging cuts the
@@ -17,7 +19,7 @@ export interface AppIdentity {
   iconTextureGuid: string | null;
 }
 
-export const DEFAULT_APP_IDENTITY: AppIdentity = { appId: "", displayName: "", buildNumber: 1, iconTextureGuid: null };
+export const DEFAULT_APP_IDENTITY: AppIdentity = { appId: "", displayName: "", buildNumber: 1, autoIncrementBuildNumber: false, iconTextureGuid: null };
 
 /** The largest icon a package holds (macOS 512 pt at 2x, the iOS App Store icon); smaller sources are scaled up. */
 export const APP_ICON_SHARP_SIZE = 1024;
@@ -64,6 +66,7 @@ export function normalizeAppIdentity(value: unknown): AppIdentity {
     buildNumber: typeof raw.buildNumber === "number" && Number.isSafeInteger(raw.buildNumber) && raw.buildNumber >= 1
       ? raw.buildNumber
       : DEFAULT_APP_IDENTITY.buildNumber,
+    autoIncrementBuildNumber: raw.autoIncrementBuildNumber === true,
     iconTextureGuid: typeof raw.iconTextureGuid === "string" && raw.iconTextureGuid.trim() ? raw.iconTextureGuid.trim() : null,
   };
 }
@@ -74,6 +77,19 @@ export function resolvedAppIdentity(identity: AppIdentity, projectName: string):
     appId: identity.appId || defaultAppId(projectName),
     displayName: identity.displayName || projectName.trim() || "Game",
     buildNumber: identity.buildNumber,
+    autoIncrementBuildNumber: identity.autoIncrementBuildNumber,
     iconTextureGuid: identity.iconTextureGuid,
   };
+}
+
+/**
+ * The identity after a package built with `builtNumber`: with Auto Increment
+ * Build Number on, the next package gets one more (never less than the number
+ * already set); otherwise it is unchanged. Null when nothing changes.
+ */
+export function advanceBuildNumber(identity: AppIdentity, builtNumber: number): AppIdentity | null {
+  if (!identity.autoIncrementBuildNumber) return null;
+  const next = Math.max(identity.buildNumber, builtNumber + 1);
+  if (!Number.isSafeInteger(next) || next === identity.buildNumber) return null;
+  return { ...identity, buildNumber: next };
 }

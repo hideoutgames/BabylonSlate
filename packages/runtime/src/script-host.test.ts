@@ -151,6 +151,7 @@ describe("script host runs compiled graphs", () => {
   it.each([
     ["project.getName", "name", "Orbit Workshop"],
     ["project.getVersion", "version", "2.4.0-beta.3"],
+    ["project.getBuildNumber", "buildNumber", "42"],
   ])("executes %s from session metadata", async (typeId, pinId, expected) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
@@ -159,7 +160,7 @@ describe("script host runs compiled graphs", () => {
       edges: [edge("exec", "tick", "execOut", "log", "execIn"), edge("value", "value", pinId, "log", "message")],
     };
     const commands: CommandMessage[] = [];
-    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "preview", project: { name: "Orbit Workshop", version: "2.4.0-beta.3" } }, command => commands.push(command));
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "preview", project: { name: "Orbit Workshop", version: "2.4.0-beta.3", buildNumber: 42 } }, command => commands.push(command));
     try {
       await runtime.loadScripts([toScript(graph, registry, "Identity", "identity")]);
       runtime.spawnScriptedActor({ classId: "Identity" });

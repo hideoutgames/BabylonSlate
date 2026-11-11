@@ -14,4 +14,4 @@ Returns the version of the project as text.
 
 ## Notes
 
-- Set the version in **Project Settings &gt; General**. It works the same in Play and in an exported game.
+- Set the version in **Project Settings &gt; Export &gt; App Identity**. It works the same in Play and in an exported game.

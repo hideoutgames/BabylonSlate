@@ -31,7 +31,9 @@ import { pipelinesWarm, requestPipelineWarm } from "./variant-pipeline-warmup";
 // Re-exported for in-package importers of this module. Modules in scene-perf's
 // transitive import graph must import these from the leaves, or they close an
 // import cycle back through this file.
-export { markSceneReadinessDirty, onSceneReadinessDirty, withSceneReadinessState } from "./scene-readiness-signal";
+export {
+  markSceneReadinessDirty, onSceneReadinessDirty, type SceneReadinessDirtyReason, withSceneReadinessState,
+} from "./scene-readiness-signal";
 export {
   createStallDeadline,
   SCENE_DRIVER_COMPILE_TIMEOUT_MS,

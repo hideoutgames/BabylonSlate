@@ -42,7 +42,7 @@ import { settlePlayViewCulling } from "./play-view-culling";
 import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
-import { isSceneFrameReady, withSceneReadinessState } from "./scene-perf";
+import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
 import { syncSceneLighting } from "./scene-lighting";
@@ -256,9 +256,24 @@ export class ForwardSceneFrameGraph {
   /** Effects this graph's readiness probes requested and that were not ready when their probe ended. */
   readonly requestedEffects = new Set<Effect>();
 
+  /**
+   * Why the strict probes ran, counted while measuring (`measureWork`): each probe counts once for every reason marked
+   * since the last passing probe; one with none, run only because a variant swap was pending, counts a swap recheck.
+   */
+  private readonly probeReasons: Partial<Record<SceneReadinessDirtyReason, number>> = {};
+  private readonly markedReasons = new Set<SceneReadinessDirtyReason>();
+  /** `recheckVariantSwaps` re-armed the probe since the last passing one. */
+  private swapRecheckMarked = false;
+  private swapRechecks = 0;
+  private failedProbes = 0;
+
   diagnostics() {
     this.measureWork = true;
-    return { ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks };
+    return {
+      ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
+      readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
+      failedReadinessProbes: this.failedProbes,
+    };
   }
   private graph: FrameGraph | undefined;
   private readonly retainedGraphs = new Map<FrameGraph, { count: number; release?: () => void }>();
@@ -365,28 +380,28 @@ export class ForwardSceneFrameGraph {
     this.seedsFromSceneDepth = options.seedsFromSceneDepth === true && !options.auxiliary;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
-    const mark = () => this.markReadinessDirty();
+    const mark = (reason: SceneReadinessDirtyReason) => () => this.markReadinessDirty(reason);
     const watch = <T>(observable: Observable<T>, notify: (event: T) => void) => {
       const observer = observable.add(notify);
       this.readinessDetach.push(() => observable.remove(observer));
     };
-    watch(scene.onNewMeshAddedObservable, (mesh) => { this.watchMesh(mesh); mark(); });
-    watch(scene.onMeshRemovedObservable, (mesh) => { this.unwatchMesh(mesh); mark(); });
-    watch(scene.onNewMaterialAddedObservable, mark);
-    watch(scene.onMaterialRemovedObservable, mark);
-    watch(scene.onNewLightAddedObservable, (light) => { this.watchLight(light); mark(); });
-    watch(scene.onLightRemovedObservable, (light) => { this.unwatchLight(light); mark(); });
-    watch(scene.onNewTextureAddedObservable, mark);
-    watch(scene.onTextureRemovedObservable, mark);
-    watch(scene.onNewCameraAddedObservable, mark);
-    watch(scene.onCameraRemovedObservable, mark);
+    watch(scene.onNewMeshAddedObservable, (mesh) => { this.watchMesh(mesh); this.markReadinessDirty("meshAdded"); });
+    watch(scene.onMeshRemovedObservable, (mesh) => { this.unwatchMesh(mesh); this.markReadinessDirty("meshRemoved"); });
+    watch(scene.onNewMaterialAddedObservable, mark("materialAdded"));
+    watch(scene.onMaterialRemovedObservable, mark("materialRemoved"));
+    watch(scene.onNewLightAddedObservable, (light) => { this.watchLight(light); this.markReadinessDirty("lightAdded"); });
+    watch(scene.onLightRemovedObservable, (light) => { this.unwatchLight(light); this.markReadinessDirty("lightRemoved"); });
+    watch(scene.onNewTextureAddedObservable, mark("textureAdded"));
+    watch(scene.onTextureRemovedObservable, mark("textureRemoved"));
+    watch(scene.onNewCameraAddedObservable, mark("cameraAdded"));
+    watch(scene.onCameraRemovedObservable, mark("cameraRemoved"));
     // Babylon clears and restores activeCamera inside its own graph render;
     // the coordinator also pins it per frame. Only authored changes count.
     watch(scene.onActiveCameraChanged, () => {
-      if (!graphCameraWrites.has(scene) && !renderTargetCaptureDrawing.has(scene)) mark();
+      if (!graphCameraWrites.has(scene) && !renderTargetCaptureDrawing.has(scene)) this.markReadinessDirty("activeCamera");
     });
-    watch(scene.onNewSkeletonAddedObservable, mark);
-    watch(scene.onSkeletonRemovedObservable, mark);
+    watch(scene.onNewSkeletonAddedObservable, mark("skeletonAdded"));
+    watch(scene.onSkeletonRemovedObservable, mark("skeletonRemoved"));
     for (const mesh of scene.meshes) this.watchMesh(mesh);
     for (const light of scene.lights) this.watchLight(light);
     // Babylon 9.29 clears activeCamera at the start of its graph render method.
@@ -639,7 +654,7 @@ export class ForwardSceneFrameGraph {
     this.failedOutput = undefined;
     // A new run (a scene switch, a changed Material library) can give every mesh new geometry variants.
     this.drawnGeometryPasses.clear();
-    this.markReadinessDirty();
+    this.markReadinessDirty("invalidate");
   }
 
   /** Steady-state frames skip the strict probe until a change marks it dirty. */
@@ -655,7 +670,9 @@ export class ForwardSceneFrameGraph {
    * ready (a frozen one would keep its previous Effect). Inputs did not change, so admission stays.
    */
   recheckVariantSwaps(): void {
-    if (this.variantSwaps) this.readinessDirtyFlag = true;
+    if (!this.variantSwaps) return;
+    this.readinessDirtyFlag = true;
+    if (this.measureWork) this.swapRecheckMarked = true;
   }
 
   /**
@@ -671,7 +688,9 @@ export class ForwardSceneFrameGraph {
     return false;
   }
 
-  markReadinessDirty(): void {
+  /** `reason` is for diagnostics only, recorded only while measuring (`diagnostics`). */
+  markReadinessDirty(reason: SceneReadinessDirtyReason = "other"): void {
+    if (this.measureWork) this.markedReasons.add(reason);
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
     // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.
@@ -688,6 +707,8 @@ export class ForwardSceneFrameGraph {
   /** A graph-level probe passed: it covers the outline task along with every other task. */
   private markGraphProbed(): void {
     this.readinessDirtyFlag = false;
+    this.markedReasons.clear();
+    this.swapRecheckMarked = false;
     this.variantSwaps = this.probeSwapped;
     // A preparation marks its probe after the probe's tolerance scope closed.
     this.swapProbe = this.probeSwapped && this.probeTolerated
@@ -722,7 +743,7 @@ export class ForwardSceneFrameGraph {
       // source dirties that mesh's attributes in the scene's draw too, and
       // without a prepared outline task nothing narrower exists to probe.
       const sourcesChanged = (this.outlineView?.sourceRevision ?? 0) !== this.probedOutlineSources;
-      if (sourcesChanged || !this.outlineTask) this.markReadinessDirty();
+      if (sourcesChanged || !this.outlineTask) this.markReadinessDirty("outline");
       else this.markOutlineDirty();
     }
     const membership = this.membership;
@@ -734,7 +755,7 @@ export class ForwardSceneFrameGraph {
       changed = true;
     }
     // The first call only records the sizes.
-    if (changed && this.membershipRecorded) this.markReadinessDirty();
+    if (changed && this.membershipRecorded) this.markReadinessDirty("membership");
     this.membershipRecorded = true;
   }
 
@@ -788,15 +809,33 @@ export class ForwardSceneFrameGraph {
       if (!this.isReady()) return false;
     } else {
       this.strictChecks += 1;
+      this.noteStrictProbe();
       // Built-in water is left out: which variant it draws depends on the plan the next preparation makes from the
       // current demand, and that preparation's own probe compiles it under the pass that draws it.
       // An auxiliary view draws only inside the scene view's ready frames, and
       // the scene probe would bind (refit) shadow maps for its camera.
-      if (!this.auxiliary && !this.timedProbe(() => this.collectingEffects(() => isSceneFrameReady(this.scene, [], isBuiltInWaterMesh)))) return false;
+      if (!this.auxiliary && !this.timedProbe(() => this.collectingEffects(() => isSceneFrameReady(this.scene, [], isBuiltInWaterMesh)))) {
+        this.noteFailedProbe();
+        return false;
+      }
       // A graph that is pending or stale is fully probed when its preparation finishes.
     }
     this.markGraphProbed();
     return true;
+  }
+
+  /** A strict probe runs: count why, while measuring. */
+  private noteStrictProbe(): void {
+    if (!this.measureWork) return;
+    if (!this.markedReasons.size) {
+      if (this.swapRecheckMarked) this.swapRechecks += 1;
+      return;
+    }
+    for (const reason of this.markedReasons) this.probeReasons[reason] = (this.probeReasons[reason] ?? 0) + 1;
+  }
+
+  private noteFailedProbe(): void {
+    if (this.measureWork) this.failedProbes += 1;
   }
 
   /** Runs a strict readiness check (each counts in `strictChecks`), adding its time once a reader asked (`diagnostics`). */
@@ -814,7 +853,7 @@ export class ForwardSceneFrameGraph {
     if (this.meshMaterialObservers.has(mesh)) return;
     this.meshMaterialObservers.set(
       mesh,
-      mesh.onMaterialChangedObservable.add(() => this.markReadinessDirty()),
+      mesh.onMaterialChangedObservable.add(() => this.markReadinessDirty("meshMaterial")),
     );
   }
 
@@ -829,7 +868,7 @@ export class ForwardSceneFrameGraph {
     if (this.lightEnabledObservers.has(light)) return;
     this.lightEnabledObservers.set(
       light,
-      light.onEnabledStateChangedObservable.add(() => this.markReadinessDirty()),
+      light.onEnabledStateChangedObservable.add(() => this.markReadinessDirty("lightEnabled")),
     );
   }
 
@@ -852,7 +891,7 @@ export class ForwardSceneFrameGraph {
   /** `tolerateVariantSwaps`: probe as a steady frame does (a preparation a steady frame requested). */
   prepare(camera: Camera, assertCurrent: () => void = () => {}, tolerateVariantSwaps = false): Promise<ForwardSceneGraphResult> {
     assertCurrent();
-    this.markReadinessDirty();
+    this.markReadinessDirty("prepare");
     if (this.pending) return this.pending.then((result) => { assertCurrent(); return result; });
     if (!this.unavailable(camera)) this.syncShadowAdmission(camera);
     this.refreshFailure(camera);
@@ -894,7 +933,7 @@ export class ForwardSceneFrameGraph {
     const reason = this.unsupported(camera) ?? this.failure;
     if (reason) return { path: "frameGraph", reason, ready: false, preparationRequired: true };
     const outputCurrent = this.outputMatches(this.output(camera));
-    if (this.graph && !outputCurrent) this.markReadinessDirty();
+    if (this.graph && !outputCurrent) this.markReadinessDirty("output");
     if (this.pending) return { path: "frameGraph", ready: false };
     if (!this.graph || this.preparedPostProcessRevision !== this.postProcessRevision ||
       this.preparedEffectsKey !== this.effectsKey(camera) || !this.outlineMatches() || !this.waterMatches(camera) ||
@@ -931,7 +970,7 @@ export class ForwardSceneFrameGraph {
       !outputCurrent
         ? "FrameGraph preparation is required."
         : undefined);
-    if (this.graph && !outputCurrent) this.markReadinessDirty();
+    if (this.graph && !outputCurrent) this.markReadinessDirty("output");
     // The scene's view keeps its camera active; an auxiliary view leaves the owner's in place.
     if (!this.auxiliary) this.setActiveCamera(camera);
     if (reason) return { path: "frameGraph", reason, rendered: false };
@@ -1610,6 +1649,7 @@ export class ForwardSceneFrameGraph {
 
   private probeReady(): boolean {
     this.strictChecks += 1;
+    this.noteStrictProbe();
     const cameras = this.scene.activeCameras;
     const objectList = this.objects!.objectList;
     const geometry = this.postProcessGraph?.geometryTask;
@@ -1632,7 +1672,7 @@ export class ForwardSceneFrameGraph {
       if (geometry) geometry.objectList = this.cull!.objectList;
       if (spatial) spatial.objectList = spatial.seed ? this.sceneDepthLacks(this.cull!.objectList) : this.cull!.objectList;
       this.water?.beginProbe(this.cull!.objectList);
-      return withSceneReadinessState(this.scene, () => {
+      const passed = withSceneReadinessState(this.scene, () => {
         const camera = this.objects!.camera;
         // Keep scene-owned camera/material/pass readiness alongside the task's
         // own render-pass variants, without waiting on unrelated Engine effects.
@@ -1646,6 +1686,8 @@ export class ForwardSceneFrameGraph {
         // earlier probes already accepted; the next probe sees the final state.
         return ready && (this.outlineView?.sourceRevision ?? 0) === sources;
       });
+      if (!passed) this.noteFailedProbe();
+      return passed;
     } finally {
       this.water?.endProbe();
       this.objects!.objectList = objectList;
@@ -1689,7 +1731,7 @@ export class ForwardSceneFrameGraph {
    * the next probe binds it to the receivers, and a steady frame keeps drawing while a new map's casters compile.
    */
   private restaleChangedShadows(): void {
-    if (this.shadows?.needsPreparation()) this.markReadinessDirty();
+    if (this.shadows?.needsPreparation()) this.markReadinessDirty("shadowRestale");
   }
 
   /** Re-probe what the pending invalidations stale: the whole graph, or only the outline task. */
@@ -1739,7 +1781,7 @@ export class ForwardSceneFrameGraph {
       });
       // A mask admitting an instance source late changes the scene's own draw state.
       if (this.outlineView && this.outlineView.sourceRevision !== this.probedOutlineSources) {
-        this.markReadinessDirty();
+        this.markReadinessDirty("outline");
         return false;
       }
       return ready;

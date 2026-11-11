@@ -83,7 +83,7 @@ export interface RuntimeDriverOptions {
   frameCap?: number;
   /** Serialized trace retention budget in bytes for this session. */
   traceByteBudget?: number;
-  project?: { name: string; version: string };
+  project?: { name: string; version: string; buildNumber: number };
   /** Where the session runs (the System nodes read it); `DEFAULT_GAME_ENVIRONMENT` when omitted. */
   environment?: GameEnvironment;
   /** URL of the game's `legal/THIRD-PARTY-NOTICES.txt` (same origin); Get Third-Party Notices fails without one. */

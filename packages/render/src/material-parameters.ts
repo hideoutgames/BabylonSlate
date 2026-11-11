@@ -128,7 +128,7 @@ export function createMaterialParameterBindings(
     }
     // A new texture assignment or its deferred load changes material defines
     // and readiness; reopen the cached strict probe.
-    markSceneReadinessDirty(scene);
+    markSceneReadinessDirty(scene, "materialParameters");
     const blocked = scene.blockMaterialDirtyMechanism;
     scene.blockMaterialDirtyMechanism = false;
     try {

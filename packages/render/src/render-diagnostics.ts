@@ -13,6 +13,7 @@ import { sceneLightingLimits } from "./scene-lighting";
 import { autoLodDiagnostics, liveMeshCount } from "./model-lod";
 import { sceneOcclusionDiagnostics } from "./view-occlusion";
 import type { RenderScheduler } from "./render-scheduler";
+import type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
 import type { FirstDrawStats, ProgramInventory } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
@@ -79,6 +80,15 @@ export type RenderDiagnostics = {
     readinessProbeMs: number;
     /** Outline-task-only probes after a membership or style change. */
     outlineReadinessChecks: number;
+    /**
+     * Why the strict checks ran, counted from the first reading on: each check counts once for every reason marked
+     * since the last check that passed. Reasons never counted are absent.
+     */
+    readinessProbeReasons: Partial<Record<SceneReadinessDirtyReason, number>>;
+    /** Strict checks with no reason marked, run only because a variant swap was still pending. */
+    readinessSwapRechecks: number;
+    /** Strict checks that found the scene not ready. */
+    failedReadinessProbes: number;
   };
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;

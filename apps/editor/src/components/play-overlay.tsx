@@ -125,7 +125,7 @@ export interface PlayOverlayProps {
   physics?: PlayPhysicsSettings;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
-  project?: { name: string; version: string };
+  project?: { name: string; version: string; buildNumber: number };
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneCatalog?: Array<{ guid: string; name: string }>;

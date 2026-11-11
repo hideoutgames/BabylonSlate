@@ -1,3 +1,4 @@
+import { isThumbnailableAssetType } from "@haptic/assets";
 import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 import { FolderPlusIcon, Grid2x2Icon, PlusIcon, UploadIcon } from "lucide-react";
 import { useContextMenu, useContextMenuGesture, type ContextMenuItem } from "@haptic/editor-kit";
@@ -236,8 +237,9 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
             const asset = assetRegistry?.getByGuid(guid);
             if (!asset) return false;
             const type = asset.header.type;
-            return type === "Model" || type === "Animation" || type === "Material" || type === "Tileset" || type === "Tilemap" ||
-              (type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, classParentOf));
+            return type === "Class"
+              ? classDocumentShowsPrefab(asset.header.parentClass, classParentOf)
+              : isThumbnailableAssetType(type);
           }),
           singleAssetType:
             guids.length === 1 && folders.length === 0

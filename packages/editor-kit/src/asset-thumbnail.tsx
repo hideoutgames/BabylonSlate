@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { thumbnailMime } from "@haptic/assets";
+import { isCheckeredThumbnailType, isThumbnailableAssetType, thumbnailMime } from "@haptic/assets";
 import { cn } from "@haptic/ui/lib/utils";
+import { TypeVisualIcon, resolveTypeVisual } from "./type-visuals";
 
 /** Reads asset thumbnails for closed pickers: the project's stored thumbnail bytes and a version that changes when one is rewritten. */
 export type AssetThumbnailApi = {
@@ -53,16 +54,39 @@ const CHECKERBOARD = {
   backgroundSize: "8px 8px",
 };
 
-/** A square thumbnail, the image scaled to fit over a checkerboard wherever it is transparent or letterboxed. */
-export function AssetThumbnail({ url, className, "data-testid": testId }: { url: string; className?: string; "data-testid"?: string }) {
+/**
+ * A square thumbnail, the image scaled to fit. Textures and tile assets sit on
+ * a checkerboard wherever they are transparent or letterboxed; rendered
+ * captures (Models, Materials, Prefabs) on the muted background.
+ */
+export function AssetThumbnail({ url, type = "Texture", className, "data-testid": testId }: {
+  url: string;
+  /** The asset type: whether the checkerboard shows through. */
+  type?: string;
+  className?: string;
+  "data-testid"?: string;
+}) {
+  const checkered = isCheckeredThumbnailType(type);
   return (
     <span
       data-slot="asset-thumbnail"
       data-testid={testId}
-      className={cn("grid shrink-0 place-items-center overflow-hidden rounded-[3px]", className)}
-      style={CHECKERBOARD}
+      className={cn("grid shrink-0 place-items-center overflow-hidden rounded-[3px]", !checkered && "bg-muted", className)}
+      style={checkered ? CHECKERBOARD : undefined}
     >
       <img src={url} alt="" draggable={false} className="size-full object-contain" />
     </span>
   );
+}
+
+/**
+ * A Pick Asset row's glyph: the asset's thumbnail once it loads, otherwise its
+ * type icon. Only types that have thumbnails ask for one
+ * (`isThumbnailableAssetType`); an asset without a stored thumbnail keeps the icon.
+ */
+export function AssetRowGlyph({ guid, type }: { guid: string; type: string }) {
+  const url = useAssetThumbnailUrl(isThumbnailableAssetType(type) ? guid : null);
+  return url
+    ? <AssetThumbnail url={url} type={type} className="size-[22px]" data-testid={`asset-row-thumbnail-${guid}`} />
+    : <TypeVisualIcon visual={resolveTypeVisual({ assetType: type })} />;
 }

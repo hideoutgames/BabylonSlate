@@ -1197,10 +1197,10 @@ export class ParticleService {
       if (entry.systems.some((record) => record.pending)) {
         const readiness = { isReady: () => isSceneStreamSlotPending(host, entry.command.slotId) };
         host.addIsReadyCheck(readiness);
-        markSceneReadinessDirty(host);
+        markSceneReadinessDirty(host, "particlePreparation");
         entry.preparationCheck = () => {
           host.removeIsReadyCheck(readiness);
-          markSceneReadinessDirty(host);
+          markSceneReadinessDirty(host, "particlePrepared");
         };
         entry.stopBound = boundParticlePreparation(host.getEngine(), () => {
           const waiting = entry.systems.filter((record) => record.pending).length;

@@ -39,6 +39,7 @@ import {
   type AntiAliasingMode,
 } from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
+import { noteVariantSwap, probeVariantSwaps } from "./variant-swaps";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { setSceneOutputScale } from "./scene-output-scale";
 import { ParticleService } from "./particle-service";
@@ -691,6 +692,91 @@ it("adds up the time its strict readiness checks take, once its diagnostics were
     expect(after.readinessProbeMs % 3).toBe(0);
   } finally {
     clock.mockRestore();
+    graph.dispose();
+  }
+});
+
+it("counts why each strict readiness check ran, once its diagnostics were read", async () => {
+  const { scene, camera } = host();
+  MeshBuilder.CreateBox("box", {}, scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    // Before a reader asks, nothing is recorded.
+    graph.markReadinessDirty("renderSettings");
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(graph.diagnostics().readinessProbeReasons).toEqual({});
+    MeshBuilder.CreateBox("added", {}, scene);
+    // Babylon announces an added mesh in a later task.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const checks = graph.strictReadinessChecks;
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(graph.strictReadinessChecks).toBe(checks + 1);
+    const after = graph.diagnostics();
+    expect(after.readinessProbeReasons.meshAdded).toBe(1);
+    expect(after.readinessProbeReasons.renderSettings).toBeUndefined();
+    // A passing check clears the reasons: an unchanged Scene adds none.
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(graph.diagnostics().readinessProbeReasons).toEqual(after.readinessProbeReasons);
+  } finally {
+    graph.dispose();
+  }
+});
+
+it("counts a failed strict readiness check once for each pending reason, until one passes", async () => {
+  const { scene, camera } = host();
+  const mesh = MeshBuilder.CreateBox("box", {}, scene);
+  const material = new StandardMaterial("stubbed", scene);
+  mesh.material = material;
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const probe = vi.spyOn(material, "isReadyForSubMesh").mockReturnValue(false);
+    graph.markReadinessDirty("materialParameters");
+    expect(graph.sceneStrictlyReady(camera)).toBe(false);
+    expect(graph.sceneStrictlyReady(camera)).toBe(false);
+    probe.mockRestore();
+    await vi.waitFor(() => expect(graph.sceneStrictlyReady(camera)).toBe(true));
+    const counted = graph.diagnostics();
+    expect(counted.failedReadinessProbes).toBeGreaterThanOrEqual(2);
+    expect(counted.readinessProbeReasons.materialParameters).toBe(counted.failedReadinessProbes + 1);
+  } finally {
+    graph.dispose();
+  }
+});
+
+it("counts a strict readiness check run only for a pending variant swap as a swap recheck", async () => {
+  const { scene, camera } = host();
+  const mesh = MeshBuilder.CreateBox("box", {}, scene);
+  const material = new StandardMaterial("swapping", scene);
+  mesh.material = material;
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    // A steady frame's check finds the mesh still drawing its previous Effect while its new variant compiles.
+    const ready = material.isReadyForSubMesh.bind(material);
+    const swapping = vi.spyOn(material, "isReadyForSubMesh").mockImplementation((...args) => {
+      noteVariantSwap();
+      return ready(...args);
+    });
+    graph.markReadinessDirty("lightEnabled");
+    expect(probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera))).toBe(true);
+    swapping.mockRestore();
+    const marked = graph.diagnostics();
+    expect(marked).toMatchObject({ readinessProbeReasons: { lightEnabled: 1 }, readinessSwapRechecks: 0 });
+    // The next steady frame checks again with nothing marked, only because the swap was pending.
+    graph.recheckVariantSwaps();
+    expect(probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera))).toBe(true);
+    const rechecked = graph.diagnostics();
+    expect(rechecked.strictReadinessChecks).toBe(marked.strictReadinessChecks + 1);
+    expect(rechecked.readinessSwapRechecks).toBe(1);
+    expect(rechecked.readinessProbeReasons).toEqual(marked.readinessProbeReasons);
+  } finally {
     graph.dispose();
   }
 });

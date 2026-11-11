@@ -67,20 +67,36 @@ export function withSceneReadinessState<T>(scene: Scene, probe: () => T): T {
   return result;
 }
 
-const readinessDirtyListeners = new WeakMap<Scene, Set<() => void>>();
+/**
+ * Why a scene's cached strict readiness result went stale. Diagnostics only: the Scene renderer counts, per strict
+ * probe, the reasons marked since its last passing probe (`RenderDiagnostics.rendererWork.readinessProbeReasons`).
+ */
+export type SceneReadinessDirtyReason =
+  // The Scene renderer's own Babylon observables and checks.
+  | "meshAdded" | "meshRemoved" | "materialAdded" | "materialRemoved" | "lightAdded" | "lightRemoved" | "lightEnabled"
+  | "textureAdded" | "textureRemoved" | "cameraAdded" | "cameraRemoved" | "activeCamera" | "skeletonAdded"
+  | "skeletonRemoved" | "membership" | "meshMaterial" | "outline" | "shadowRestale" | "prepare" | "invalidate" | "output"
+  // Project-owned changes (`markSceneReadinessDirty`).
+  | "shadowCasters" | "shadowMap" | "particleBind" | "particleCancel" | "particlePreparation" | "particlePrepared"
+  | "layerStyle" | "instanceRekey" | "renderSettings" | "environmentLighting" | "reflectionProbes" | "materialLibrary"
+  | "materialParameters" | "materialInstance" | "meshAssets" | "blendChange" | "lattice" | "sceneLighting"
+  | "streamAdmission" | "spawnWarm"
+  | "other";
+
+const readinessDirtyListeners = new WeakMap<Scene, Set<(reason: SceneReadinessDirtyReason) => void>>();
 
 /**
  * Project-owned rendering-definition changes that Babylon observables do not
  * cover mark the scene's cached strict readiness result stale.
  */
-export function markSceneReadinessDirty(scene: Scene): void {
-  for (const listener of readinessDirtyListeners.get(scene) ?? []) listener();
+export function markSceneReadinessDirty(scene: Scene, reason: SceneReadinessDirtyReason = "other"): void {
+  for (const listener of readinessDirtyListeners.get(scene) ?? []) listener(reason);
 }
 
 /** Subscribe to strict-readiness invalidations; returns an unsubscribe. */
 export function onSceneReadinessDirty(
   scene: Scene,
-  listener: () => void,
+  listener: (reason: SceneReadinessDirtyReason) => void,
 ): () => void {
   let listeners = readinessDirtyListeners.get(scene);
   if (!listeners) {

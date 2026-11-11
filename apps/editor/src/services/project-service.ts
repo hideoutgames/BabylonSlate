@@ -108,6 +108,7 @@ import {
   searchNodeTitles,
 } from "../lib/search-catalog";
 import { isPluginDocumentReadOnly } from "../lib/plugin-ui";
+import { requestProjectThumbnails } from "../lib/model-thumbnail-queue";
 import {
   normalizeProjectFolderName,
   type BuiltInStarterKind,
@@ -723,6 +724,8 @@ export class ProjectService {
           guid,
           name: projectName,
         });
+        // Template and imported projects bring no derived thumbnails; the editor generates them.
+        requestProjectThumbnails(guid);
         const appearance = normalizeProjectAppearance(options.appearance);
         if (appearance) {
           const manifest = JSON.parse(
@@ -1211,6 +1214,8 @@ export class ProjectService {
     }
     if (kind === "feature-test") await scaffoldFeatureTest(this.starterHost(), document);
     if (renderOptions?.pixelArt) await scaffoldPixelArtFonts(this.starterHost(), document);
+    // Starter assets are written without thumbnails; the editor generates them.
+    requestProjectThumbnails(this.projectGuid);
     return {
       document,
       layouts: createEmptyLayouts(),

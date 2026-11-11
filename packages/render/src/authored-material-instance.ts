@@ -161,7 +161,7 @@ export function applyAuthoredMaterialInstance(
   }
   const request: Request = { key, signature, material, release: () => releaseInstance(key, guid) };
   owned.pending = request;
-  markSceneReadinessDirty(visual.getScene());
+  markSceneReadinessDirty(visual.getScene(), "materialInstance");
   const preparation = (ownedMaterialPreparation(material) ?? Promise.resolve([])).then((diagnostics) => {
     if (owned.pending !== request || visual.isDisposed() || visual.getScene().isDisposed) return;
     if (diagnostics.length) throw new Error(diagnostics.map((entry) => entry.message).join("; "));
@@ -171,7 +171,7 @@ export function applyAuthoredMaterialInstance(
     owned.preparation = undefined;
     owned.apply(request.material);
     previous?.release();
-    markSceneReadinessDirty(visual.getScene());
+    markSceneReadinessDirty(visual.getScene(), "materialInstance");
     owned.onPublished?.();
   }).catch((error: unknown) => {
     if (owned.pending !== request) return;

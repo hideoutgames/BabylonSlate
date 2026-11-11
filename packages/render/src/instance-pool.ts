@@ -234,7 +234,7 @@ export class SceneInstancePool {
     member._syncSubMeshes();
     this.rekeys += 1;
     this.emptied(previous);
-    markSceneReadinessDirty(this.scene);
+    markSceneReadinessDirty(this.scene, "instanceRekey");
   }
 
   /** `member`'s group key, or undefined for a mesh outside the pool. */

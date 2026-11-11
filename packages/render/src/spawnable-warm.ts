@@ -112,7 +112,7 @@ function keepForPipelineWarmup(scene: Scene, staged: readonly AbstractMesh[], di
     if (staged.every((mesh) => mesh.isDisposed() || pipelinesWarmed(mesh)) || performance.now() - since >= SPAWNABLE_PIPELINE_WARM_MS)
       release();
     // A settled view probes no more: ask it to, so its next steady frame warms them.
-    else markSceneReadinessDirty(scene);
+    else markSceneReadinessDirty(scene, "spawnWarm");
   });
   const disposed = scene.onDisposeObservable.addOnce(release);
 }

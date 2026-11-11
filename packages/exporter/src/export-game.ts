@@ -313,7 +313,7 @@ export async function exportGame(
   const manifest: GameManifest = {
     assetCatalogVersion: 1,
     ...(options.saveGame ? { saveGame: structuredClone(options.saveGame) } : {}),
-    project: { name: options.project?.name ?? "", version: options.project?.version ?? "" },
+    project: { name: options.project?.name ?? "", version: options.project?.version ?? "", buildNumber: options.project?.buildNumber ?? 1 },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
     startupSceneGuid: options.startupSceneGuid,
@@ -413,9 +413,11 @@ export function parseGameManifest(source: string): GameManifest {
     .filter(field => parsed[field] === undefined || parsed[field] === null);
   if (missing.length > 0) throw new Error(`game.json has no ${missing.join(", ")}; ${OUTDATED_MANIFEST}`);
   const project: unknown = parsed.project;
+  const buildNumber = (project as { buildNumber?: unknown } | null)?.buildNumber;
   if (!project || typeof project !== "object" || typeof (project as { name?: unknown }).name !== "string" ||
-    typeof (project as { version?: unknown }).version !== "string") {
-    throw new Error(`game.json has no project name and version; ${OUTDATED_MANIFEST}`);
+    typeof (project as { version?: unknown }).version !== "string" ||
+    typeof buildNumber !== "number" || !Number.isSafeInteger(buildNumber) || buildNumber < 1) {
+    throw new Error(`game.json has no project name, version and build number; ${OUTDATED_MANIFEST}`);
   }
   if (!isBuildPlatform(parsed.platform)) throw new Error(`game.json names no known platform; ${OUTDATED_MANIFEST}`);
   const sortingLayers: unknown = parsed.sortingLayers;
@@ -439,7 +441,7 @@ export function parseGameManifest(source: string): GameManifest {
     focusNavigation: normalizeFocusNavigationSettings(parsed.focusNavigation),
     playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
     garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(parsed.garbageCollectionIntervalTicks),
-    project: { name: parsed.project!.name, version: parsed.project!.version },
+    project: { name: parsed.project!.name, version: parsed.project!.version, buildNumber: parsed.project!.buildNumber },
     globalFallback: normalizeGlobalFallback(parsed.globalFallback),
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),
