@@ -89,6 +89,10 @@ export class ScriptHost {
   private readonly lineageByClassId = new Map<string, readonly LoadedScript[][]>();
   /** `hooksFor` results per class id; cleared with the lineage they derive from. */
   private readonly hooksByClassId = new Map<string, LifecycleHooks<EngineObject>>();
+  /** `classTicks` results per class id; cleared with the lineage they derive from. */
+  private readonly tickingByClassId = new Map<string, boolean>();
+  /** `functionScriptsFor` results per class id and export name; cleared with the lineage they derive from. */
+  private readonly functionScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
   /**
    * `eventScriptsFor` results of the lifecycle events a hook dispatches each
    * tick, per class id and event. They depend only on the lineage, so they are
@@ -161,10 +165,9 @@ export class ScriptHost {
       registerSaveMigration: (service, fromVersion, owner, event) => this.registerSaveMigration(service, fromVersion, owner, event),
       eventScriptsFor: (classId, event, self, componentId) => this.eventScriptsFor(classId, event, self, componentId),
       functionScriptsFor: (classId, exportName) => this.functionScriptsFor(classId, exportName),
-      // Forwarded as given, so an omitted argument still takes its default.
-      dispatchEvent: (...args) => this.dispatchEvent(...args),
-      invokeEntry: <T>(owner: EngineObject | null, script: CompiledScript, exportName: string, invoke: () => T): T =>
-        this.invokeEntry(owner, script, exportName, invoke),
+      dispatchEvent: (loaded, event, self, deltaSeconds, tickIndex, commandArgs, extras, componentId) =>
+        this.dispatchEvent(loaded, event, self, deltaSeconds, tickIndex, commandArgs, extras, componentId),
+      invokeEntry: (owner, script, exportName, fn, ctx) => this.invokeEntry(owner, script, exportName, fn, ctx),
       reportLatentError: (error, owner) => this.reportLatentError(error, owner),
     };
     this.Context = createScriptContextClass(this.contextHost);
@@ -277,6 +280,8 @@ export class ScriptHost {
   private clearLineageCaches(): void {
     this.lineageByClassId.clear();
     this.hooksByClassId.clear();
+    this.tickingByClassId.clear();
+    this.functionScriptsByClassId.clear();
     this.lifecycleScriptsByClassId.clear();
     this.inputScriptsByClassId.clear();
   }
@@ -323,16 +328,18 @@ export class ScriptHost {
     self: EngineObject | null,
     componentId?: string,
   ): LoadedScript[] | undefined {
-    return this.scriptLineage(classId).find((loaded) =>
-      loaded.some((entry) =>
-        entry.script.entryPoints.some(
-          (point) =>
-            point.event === event &&
-            typeof entry.exports[point.name] === "function" &&
-            entryMatchesComponentInvoke(point.componentId, componentId, self),
-        ),
-      ),
-    );
+    // Called for every custom event and Call Parent, so it reads the entry point index and allocates nothing.
+    const lineage = this.scriptLineage(classId);
+    for (let depth = 0; depth < lineage.length; depth++) {
+      const loaded = lineage[depth]!;
+      for (let index = 0; index < loaded.length; index++) {
+        const points = this.entryPointsFor(loaded[index]!, event);
+        for (let p = 0; p < points.length; p++) {
+          if (entryMatchesComponentInvoke(points[p]!.point.componentId, componentId, self)) return loaded;
+        }
+      }
+    }
+    return undefined;
   }
 
   /** The nearest class in `classId`'s lineage that exports function `exportName`. */
@@ -340,9 +347,15 @@ export class ScriptHost {
     classId: string,
     exportName: string,
   ): LoadedScript[] | undefined {
-    return this.scriptLineage(classId).find((loaded) =>
-      loaded.some((entry) => typeof entry.exports[exportName] === "function"),
+    let byName = this.functionScriptsByClassId.get(classId);
+    if (!byName) this.functionScriptsByClassId.set(classId, byName = new Map());
+    const cached = byName.get(exportName);
+    if (cached !== undefined) return cached ?? undefined;
+    const loaded = this.scriptLineage(classId).find((scripts) =>
+      scripts.some((entry) => typeof entry.exports[exportName] === "function"),
     );
+    byName.set(exportName, loaded ?? null);
+    return loaded;
   }
 
   /**
@@ -373,6 +386,19 @@ export class ScriptHost {
       this.inputScriptsByClassId.set(classId, scripts);
     }
     return scripts;
+  }
+
+  /**
+   * Whether a tick has anything to run for `classId`: an Event Tick or an input event somewhere in
+   * its lineage. Objects of a Class without either skip tick admission (`LifecycleHooks.ticks`).
+   */
+  classTicks(classId: string): boolean {
+    let ticks = this.tickingByClassId.get(classId);
+    if (ticks === undefined) {
+      ticks = this.lifecycleScriptsFor(classId, "onTick") !== undefined || this.inputScriptsFor(classId).length > 0;
+      this.tickingByClassId.set(classId, ticks);
+    }
+    return ticks;
   }
 
   /**
@@ -532,14 +558,26 @@ export class ScriptHost {
     }
   }
 
-  /** `invokeOwned` for a compiled entry point, which the cost meter times while a profile records. */
-  private invokeEntry<T>(owner: EngineObject | null, script: CompiledScript, exportName: string, invoke: () => T): T {
+  /**
+   * Runs a compiled entry point as `owner`, which the cost meter times while a profile records. It
+   * takes the function and its context, not a closure over them: it runs for every script call.
+   */
+  private invokeEntry(owner: EngineObject | null, script: CompiledScript, exportName: string, fn: (ctx: ScriptContext) => unknown, ctx: ScriptContext): unknown {
     const meter = this.costMeter;
-    if (meter === null) return this.invokeOwned(owner, invoke);
+    const previous = this.invokingOwner;
+    this.invokingOwner = owner;
+    if (meter === null) {
+      try {
+        return fn(ctx);
+      } finally {
+        this.invokingOwner = previous;
+      }
+    }
     meter.enter(script, exportName);
     try {
-      return this.invokeOwned(owner, invoke);
+      return fn(ctx);
     } finally {
+      this.invokingOwner = previous;
       meter.exit();
     }
   }
@@ -607,7 +645,7 @@ export class ScriptHost {
       self, 0, 0, {}, extras, loaded[0]!.script.assetGuid,
     );
     try {
-      const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", () => (evaluate as (context: ScriptContext) => unknown)(ctx));
+      const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", evaluate as (context: ScriptContext) => unknown, ctx);
       if (!result || typeof result !== "object") return undefined;
       const row = result as { enter?: unknown; exit?: unknown };
       return {
@@ -691,7 +729,7 @@ export class ScriptHost {
       object, frame?.deltaSeconds ?? 0, frame?.tickIndex ?? 0, args, undefined, entry.script.assetGuid,
     );
     try {
-      const result = this.invokeEntry(object, entry.script, exportName, () => (fn as (ctx: ScriptContext) => unknown)(ctx));
+      const result = this.invokeEntry(object, entry.script, exportName, fn as (ctx: ScriptContext) => unknown, ctx);
       if (isThenable(result)) {
         // Call Interface is not latent: a latent implementation's outputs are the pin defaults.
         result.then(undefined, (error) => this.reportLatentError(error, object));
@@ -721,7 +759,7 @@ export class ScriptHost {
     self: EngineObject | null,
     deltaSeconds: number,
     tickIndex: number,
-    commandArgs: Record<string, unknown> = {},
+    commandArgs?: Record<string, unknown>,
     extras?: ScriptExtras,
     componentId?: string,
   ): { error: unknown } | null {
@@ -736,7 +774,7 @@ export class ScriptHost {
           self, deltaSeconds, tickIndex, commandArgs, extras, entry.script.assetGuid,
         );
         try {
-          const result = this.invokeEntry(self, entry.script, point.name, () => fn(ctx));
+          const result = this.invokeEntry(self, entry.script, point.name, fn, ctx);
           // A latent entry returns its wait: a Promise from hand-written code, else the compiled
           // module's own thenable, which settles inside the tick its last wait ended in.
           if (isThenable(result)) result.then(undefined, (error) => this.reportLatentError(error, self));
@@ -825,7 +863,7 @@ export class ScriptHost {
     self: EngineObject | null,
     deltaSeconds: number,
     tickIndex: number,
-    commandArgs: Record<string, unknown> = {},
+    commandArgs?: Record<string, unknown>,
     extras?: ScriptExtras,
     flowNamespace = "",
   ): ScriptContext {

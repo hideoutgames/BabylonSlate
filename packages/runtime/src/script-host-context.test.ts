@@ -173,6 +173,20 @@ describe("ScriptContext shape", () => {
     expect(second.random).toBe(first.random);
   });
 
+  it("holds only the call's own values on each context, and shares one arguments object between calls that pass none", () => {
+    const host = new ScriptHost(services());
+    const first = host.createContext(new Actor({ classId: "Hero", guid: "a" }), 0.1, 1);
+    const second = host.createContext(null, 0, 0);
+
+    // Every script call builds a context: anything stored per context is written per call.
+    expect(Object.keys(first)).toEqual(["self", "deltaSeconds", "tickIndex", "debugTrace", "commandArgs"]);
+    expect(first.args).toBe(second.args);
+    expect(Object.isFrozen(first.args)).toBe(true);
+    // What moved to the prototype still reads through the context.
+    expect(first.gamepadConnections).toEqual([]);
+    expect(first.btFinish?.("success")).toBeUndefined();
+  });
+
   it("shares one set of members between a host's contexts, and none with another host", () => {
     const host = new ScriptHost(services());
     const first = host.createContext(null, 0, 0);

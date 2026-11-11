@@ -8,7 +8,7 @@ import {
   arrayOf,
   defaultValueLiteral,
 } from "@haptic/scripting";
-import { VALUE_INDEX_OF, hasValueTypePin } from "./map";
+import { hasValueTypePin, valueIndexOf } from "./map";
 
 const T = RESOLVING_WILDCARD;
 
@@ -22,7 +22,7 @@ function itemIndexExpr(
   item: string,
 ): string {
   return hasValueTypePin(ctx, "item")
-    ? `${VALUE_INDEX_OF}(${array},${item})`
+    ? `${valueIndexOf(ctx)}(${array},${item})`
     : `${array}.indexOf(${item})`;
 }
 

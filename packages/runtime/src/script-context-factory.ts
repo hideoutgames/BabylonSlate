@@ -73,6 +73,8 @@ const EMPTY_DATA = new RuntimeDataCatalog();
 const UNAVAILABLE_EDITOR_DATA = createUnavailableEditorDataApi();
 /** Behaviour Tree hooks of a context without a Behaviour Tree run: they do nothing and read nothing. */
 const NO_BT_HOOK = (): undefined => undefined;
+/** The arguments of a call that passes none: shared, so nothing may write to it. */
+const NO_ARGS: Record<string, unknown> = Object.freeze({});
 const NO_GAMEPAD_CONNECTIONS: NonNullable<ScriptContext["gamepadConnections"]> = Object.freeze([]);
 
 const ASSET_LOADING_UNAVAILABLE = "Asset loading is unavailable in this host";
@@ -108,7 +110,7 @@ export interface ScriptContextHost extends ComponentFunctionHost {
     extras?: ScriptExtras,
     componentId?: string,
   ): { error: unknown } | null;
-  invokeEntry<T>(owner: EngineObject | null, script: CompiledScript, exportName: string, invoke: () => T): T;
+  invokeEntry(owner: EngineObject | null, script: CompiledScript, exportName: string, fn: (ctx: ScriptContext) => unknown, ctx: ScriptContext): unknown;
   reportLatentError(error: unknown, owner: EngineObject | null): void;
 }
 
@@ -203,22 +205,13 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
   };
 
   class Context implements Pick<ScriptContext, CallValueKey> {
-    data: ScriptContext["data"];
-    editorData: ScriptContext["editorData"];
+    // A context is built for every script call, so it holds only what differs per call; the rest are
+    // accessors on the prototype.
     self: ScriptContext["self"];
     deltaSeconds: number;
     tickIndex: number;
     debugTrace: ScriptContext["debugTrace"];
     commandArgs: ScriptContext["commandArgs"];
-    args: ScriptContext["args"];
-    animFacts: ScriptContext["animFacts"];
-    inputBindings: ScriptContext["inputBindings"];
-    getInputState: ScriptContext["getInputState"];
-    gamepadConnections: ScriptContext["gamepadConnections"];
-    btFinish: ScriptContext["btFinish"];
-    btEvaluate: ScriptContext["btEvaluate"];
-    getBlackboard: ScriptContext["getBlackboard"];
-    setBlackboard: ScriptContext["setBlackboard"];
     /** The instance whose variables the call reads: `self`, or an Animation Graph's component. */
     readonly #store: NonNullable<ScriptExtras["variableStore"]> | EngineObject | null;
     /** Also the Scene query caller: queries answer from this object's world, so a static Function Library call keeps its caller's. */
@@ -230,13 +223,11 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       self: EngineObject | null,
       deltaSeconds: number,
       tickIndex: number,
-      commandArgs: Record<string, unknown> = {},
+      commandArgs: Record<string, unknown> = NO_ARGS,
       extras?: ScriptExtras,
       flowNamespace = "",
     ) {
       const store = extras?.variableStore ?? self;
-      this.data = services.data ?? EMPTY_DATA;
-      this.editorData = services.editorData ?? UNAVAILABLE_EDITOR_DATA;
       this.self = self;
       this.deltaSeconds = deltaSeconds;
       this.tickIndex = tickIndex;
@@ -244,20 +235,23 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       // while the graph's instance is its component (the variable store).
       this.debugTrace = host.debugTraceFor(store);
       this.commandArgs = commandArgs;
-      this.args = commandArgs;
-      this.animFacts = extras?.animFacts;
-      this.inputBindings = services.inputBindings;
-      this.getInputState = services.getInputState;
-      this.gamepadConnections = input?.gamepadConnections ?? NO_GAMEPAD_CONNECTIONS;
-      this.btFinish = extras?.btFinish ?? NO_BT_HOOK;
-      this.btEvaluate = extras?.btEvaluate ?? NO_BT_HOOK;
-      this.getBlackboard = extras?.getBlackboard ?? NO_BT_HOOK;
-      this.setBlackboard = extras?.setBlackboard ?? NO_BT_HOOK;
       this.#store = store;
       this.#owner = self ?? extras?.callerOwner ?? null;
       this.#extras = extras;
       this.#flowNamespace = flowNamespace;
     }
+
+    get args(): ScriptContext["args"] { return this.commandArgs; }
+    get data(): ScriptContext["data"] { return services.data ?? EMPTY_DATA; }
+    get editorData(): ScriptContext["editorData"] { return services.editorData ?? UNAVAILABLE_EDITOR_DATA; }
+    get inputBindings(): ScriptContext["inputBindings"] { return services.inputBindings; }
+    get getInputState(): ScriptContext["getInputState"] { return services.getInputState; }
+    get gamepadConnections(): ScriptContext["gamepadConnections"] { return input?.gamepadConnections ?? NO_GAMEPAD_CONNECTIONS; }
+    get animFacts(): ScriptContext["animFacts"] { return this.#extras?.animFacts; }
+    get btFinish(): ScriptContext["btFinish"] { return this.#extras?.btFinish ?? NO_BT_HOOK; }
+    get btEvaluate(): ScriptContext["btEvaluate"] { return this.#extras?.btEvaluate ?? NO_BT_HOOK; }
+    get getBlackboard(): ScriptContext["getBlackboard"] { return this.#extras?.getBlackboard ?? NO_BT_HOOK; }
+    get setBlackboard(): ScriptContext["setBlackboard"] { return this.#extras?.setBlackboard ?? NO_BT_HOOK; }
 
     static {
       // The class as scripts see it: its methods and the host members are on the prototype, which the class type omits.
@@ -683,13 +677,13 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           // The event runs inside the caller's frame: delta, tick index and input
           // follow it. Caller extras (Behaviour Tree, Animation Graph) belong to
           // the calling script and stay behind.
-          const dispatch = (object: EngineObject, componentId?: string) => {
-            const loaded = host.eventScriptsFor(object.classId, eventName, object, componentId);
-            if (!loaded || !host.canInvokeOwner(object)) return;
-            host.dispatchEvent(loaded, eventName, object, deltaSeconds, tickIndex, eventArgs ?? {}, undefined, componentId);
-          };
-          dispatch(receiver);
-          if (receiver instanceof ActorComponent && receiver.owner) dispatch(receiver.owner, receiver.guid);
+          const loaded = host.eventScriptsFor(receiver.classId, eventName, receiver);
+          if (loaded) host.dispatchEvent(loaded, eventName, receiver, deltaSeconds, tickIndex, eventArgs ?? undefined);
+          // A component's event also runs on the actor that owns it, as that component's event.
+          const owner = receiver instanceof ActorComponent ? receiver.owner : null;
+          if (!owner) return;
+          const owned = host.eventScriptsFor(owner.classId, eventName, owner, receiver.guid);
+          if (owned && host.canInvokeOwner(owner)) host.dispatchEvent(owned, eventName, owner, deltaSeconds, tickIndex, eventArgs ?? undefined, undefined, receiver.guid);
         },
         callDispatcher(owner, name, values) {
           host.dispatchers.call(
@@ -771,7 +765,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
               if (typeof fn !== "function") continue;
               const nested = new NestedContext(receiver, deltaSeconds, tickIndex, fnArgs ?? {}, nestedExtras, entry.script.assetGuid);
               try {
-                const value = host.invokeEntry(receiver, entry.script, functionName, () => (fn as (ctx: ScriptContext) => unknown)(nested));
+                const value = host.invokeEntry(receiver, entry.script, functionName, fn as (ctx: ScriptContext) => unknown, nested as unknown as ScriptContext);
                 if (isThenable(value)) {
                   const previous = result;
                   // A `TickWait` chain: the caller resumes in the tick the function finished in.

@@ -14,6 +14,7 @@ import {
   type NodeRegistry,
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
+import { VALUE_HELPERS } from "./map";
 
 function node(
   registry: NodeRegistry,
@@ -242,5 +243,51 @@ describe("map nodes", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(runLog(compiled.source)).toEqual(["true", "2", "1", "true"]);
+  });
+});
+
+describe("value comparison helpers", () => {
+  const helpers = new Function(`${VALUE_HELPERS} return { __valueEquals, __storedKey, __valueIndexOf };`)() as {
+    __valueEquals(a: unknown, b: unknown): boolean;
+    __storedKey(map: Map<unknown, unknown>, key: unknown): unknown;
+    __valueIndexOf(list: readonly unknown[], value: unknown): number;
+  };
+
+  it("compares Map-typed Structure fields entry by entry, with value-type keys", () => {
+    const loadout = (ammo: number, slot = { x: 1, y: 0 }) => ({ Name: "Rifle", Ammo: new Map([["clip", ammo]]), Slots: new Map([[slot, "primary"]]) });
+
+    expect(helpers.__valueEquals(loadout(30), loadout(30))).toBe(true);
+    expect(helpers.__valueEquals(loadout(30), loadout(12))).toBe(false);
+    expect(helpers.__valueEquals(loadout(30), loadout(30, { x: 2, y: 0 }))).toBe(false);
+    expect(helpers.__valueEquals(new Map([["a", 1]]), new Map([["a", 1], ["b", 2]]))).toBe(false);
+    expect(helpers.__valueEquals(new Map(), {})).toBe(false);
+    expect(helpers.__valueIndexOf([loadout(12), loadout(30)], loadout(30))).toBe(1);
+  });
+
+  it("are declared once in a module, however many nodes use them", () => {
+    const registry = createDefaultNodeRegistry();
+    const key = { x: 1, y: 2, z: 3 };
+    const graph: LogicGraph = {
+      id: "g", kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "vec", "vector.make3", { "default:x": 1, "default:y": 2, "default:z": 3 }),
+        node(registry, "make", "map.make", { count: 1, "default:value0": 1 }),
+        node(registry, "has", "map.has", { "default:key": key }),
+        node(registry, "get", "map.get", { "default:key": key }),
+        node(registry, "logHas", "debug.log"),
+        node(registry, "logGet", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "logHas", "execIn"), edge("e2", "logHas", "execOut", "logGet", "execIn"),
+        edge("e0", "vec", "out", "make", "key0"),
+        edge("e3", "make", "out", "has", "map"), edge("e4", "make", "out", "get", "map"),
+        edge("e5", "has", "out", "logHas", "message"), edge("e6", "get", "out", "logGet", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+
+    expect(compiled.source.split("__valueEquals=").length - 1).toBe(1);
+    expect(runLog(compiled.source)).toEqual(["true", "1"]);
   });
 });

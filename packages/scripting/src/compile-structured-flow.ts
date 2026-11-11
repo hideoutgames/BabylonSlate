@@ -172,15 +172,12 @@ export function emitStructuredFlow(
       const firstExpr = ctx.input(meta.firstIndexPin);
       const lastExpr = ctx.input(meta.lastIndexPin);
       const iter = `__i_${jsIdent(node.id)}`;
-      const bound = `__bound_${jsIdent(node.id)}`;
-      emitBody(s, `  {`, anchor);
+      const bound = "__loopBound";
       // Like `| 0` without the int32 wrap: Int pins carry safe integers.
       // A non-finite bound (Int division by zero) is 0, not an endless loop.
-      emitBody(
-        s,
-        `    const ${bound} = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; };`,
-        anchor,
-      );
+      // A module helper, so running the loop builds no function.
+      ctx.hoist("const __loopBound = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; };");
+      emitBody(s, `  {`, anchor);
       // The first Last Index check shares the For Loop's statement with
       // First Index; each later check is a statement of its own.
       const epochUpdate = `${iter}++, __stmt++) {`;
@@ -244,9 +241,11 @@ export function emitStructuredFlow(
       const snap = `__snap_${jsIdent(node.id)}`;
       const iter = `__i_${jsIdent(node.id)}`;
       emitBody(s, `  {`, anchor);
+      // The loop walks a copy, so its body may change the Map. A Map is copied once, not twice.
+      ctx.hoist("const __mapEntries = (m) => m instanceof Map ? [...m] : [...new Map(m ?? [])];");
       emitBody(
         s,
-        `    const ${snap} = [...(new Map(${mapExpr} ?? [])).entries()];`,
+        `    const ${snap} = __mapEntries(${mapExpr});`,
         anchor,
       );
       const opening = emitBody(

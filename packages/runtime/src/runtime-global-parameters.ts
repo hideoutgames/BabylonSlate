@@ -87,6 +87,10 @@ export class RuntimeGlobalParameters {
     const resolved = this.resolve(collection, name, types);
     if (!resolved) return null;
     const fitted = resizeGlobalParameterValue(value, resolved.parameter.type);
+    // A graph that sets the value it already has, as one driven from Event Tick does, sends nothing:
+    // the renderer would otherwise re-evaluate every Material that reads the collection.
+    const current = this.valueOf(resolved.guid, resolved.parameter);
+    if (current.length === fitted.length && fitted.every((entry, index) => entry === current[index])) return resolved.parameter;
     this.values.set(valueKey(resolved.guid, resolved.parameter.id), fitted);
     this.emit({ type: "setGlobalParameter", collectionGuid: resolved.guid, parameterId: resolved.parameter.id, value: [...fitted] });
     return resolved.parameter;

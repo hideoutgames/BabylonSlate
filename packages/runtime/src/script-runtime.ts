@@ -39,7 +39,7 @@ interface ScriptRuntimeOptions {
 interface ScriptRuntimeHost {
   world(): World;
   stopped(): boolean;
-  scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor">;
+  scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "classTicks" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor">;
   /** Live streamed Scenes, whose classes keep their sources on replacement. */
   streams(): Pick<SceneStreams, "scenes">;
   registerAnchors(label: string, anchors: readonly AnchorEntry[]): void;
@@ -217,6 +217,7 @@ export class ScriptRuntime {
         this.admission.runCreation(self, () => scripts().hooksFor(self.classId)?.onCreation?.(self));
       },
       onTick: (self, ctx) => this.admission.guardTick(scripts().hooksFor(self.classId), self, ctx),
+      ticks: (self) => scripts().classTicks(self.classId),
       onDestroyed: (self) => this.admission.runDestroyed(self, () => scripts().hooksFor(self.classId)?.onDestroyed?.(self)),
     };
   }
@@ -228,7 +229,7 @@ export class ScriptRuntime {
     const ctx = { dt, tickIndex: world.clock.tickIndex, world };
     for (const owner of [world.currentScene, ...world.getSceneLayers()]) {
       if (gamePaused && !(owner instanceof SceneLayer && owner.tickOnPause)) continue;
-      if (owner && !owner.destroyed && this.admission.isCreated(owner) && this.admission.canRun(owner)) owner.callOnTick(ctx);
+      if (owner && !owner.destroyed && owner.ticks && this.admission.isCreated(owner) && this.admission.canRun(owner)) owner.callOnTick(ctx);
     }
   }
 

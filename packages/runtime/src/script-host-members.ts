@@ -45,7 +45,7 @@ import {
   type RandomStream,
   type SaveGameValue,
 } from "@haptic/core";
-import { Actor, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
+import { Actor, type ActorComponent, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
 import { createObjectMembers } from "./script-object-members";
 import { createPhysicsMembers } from "./script-physics-members";
@@ -162,6 +162,46 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     const text = `Assertion failed${summary ? `: ${summary}` : ""}${detail ? ` (${detail})` : ""}`;
     if (services.assertFailed) services.assertFailed(text);
     else services.log("error", "Assert", text);
+  };
+  /**
+   * Writes a camera or light property and re-sends its actor to the renderer. A graph that sets the
+   * value it already has, as one driven from Event Tick does, sends nothing.
+   */
+  const writeIllumination = (target: unknown, component: ActorComponent | null | undefined, name: string, value: number | boolean | readonly number[]): void => {
+    if (!component) return;
+    const current = component.getVariable(name);
+    const unchanged = Array.isArray(value)
+      ? Array.isArray(current) && current.length === value.length && value.every((entry, index) => current[index] === entry)
+      : current === value;
+    if (unchanged) return;
+    component.setVariable(name, value);
+    services.updateIllumination?.(target);
+  };
+  /**
+   * The live world's actors of `classId` or a subclass, in world order: appended to `into`, or with
+   * no list the first one. Neighbouring actors are usually of one Class, so the answer for the last
+   * Class seen is reused instead of walking its ancestry again.
+   */
+  const actorsOfClass = (classId: unknown, into: Actor[] | null): Actor | null => {
+    const target = String(classId ?? "");
+    if (!target) return null;
+    const actors = services.getActors?.() ?? [];
+    const classes = services.classRegistry;
+    let lastId = "";
+    let lastMatches = false;
+    for (let index = 0; index < actors.length; index++) {
+      const actor = actors[index]!;
+      const id = actor.classId;
+      if (!id) continue;
+      if (id !== lastId) {
+        lastId = id;
+        lastMatches = id === target || (classes?.isA(id, target) ?? false);
+      }
+      if (!lastMatches) continue;
+      if (!into) return actor;
+      into.push(actor);
+    }
+    return null;
   };
   const members: HostContextMembers = {
     getSaveData: <TData extends object>() => requireSaveGameService(services).getSaveData() as TData,
@@ -409,27 +449,11 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     curveTimeRange,
     floatCurveValueRange,
     getAllActorsOfClass: (classId) => {
-      const target = String(classId ?? "");
-      const actors = services.getActors?.() ?? [];
-      if (!target) return [];
-      return actors.filter((actor) => {
-        const id = actor.classId;
-        if (!id) return false;
-        return id === target || (services.classRegistry?.isA(id, target) ?? false);
-      });
+      const found: Actor[] = [];
+      actorsOfClass(classId, found);
+      return found;
     },
-    getActorOfClass: (classId) => {
-      const target = String(classId ?? "");
-      const actors = services.getActors?.() ?? [];
-      if (!target) return null;
-      return (
-        actors.find((actor) => {
-          const id = actor.classId;
-          if (!id) return false;
-          return id === target || (services.classRegistry?.isA(id, target) ?? false);
-        }) ?? null
-      );
-    },
+    getActorOfClass: (classId) => actorsOfClass(classId, null),
     attachActor: (child, parent) => {
       const actor = asActor(child);
       const target = asActor(parent);
@@ -613,34 +637,19 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
     getCameraFieldOfView: (target) =>
       Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),
-    setCameraFieldOfView: (target, fov) => {
-      cameraComponentOf(target)?.setVariable("fieldOfView", Number(fov));
-      services.updateIllumination?.(target);
-    },
+    setCameraFieldOfView: (target, fov) => writeIllumination(target, cameraComponentOf(target), "fieldOfView", Number(fov)),
     getCameraOrthographicSize: (target) =>
       Number(
         cameraComponentOf(target)?.getVariable("orthographicSize") ?? 5,
       ),
-    setCameraOrthographicSize: (target, size) => {
-      cameraComponentOf(target)?.setVariable("orthographicSize", Number(size));
-      services.updateIllumination?.(target);
-    },
-    setLightEnabled: (target, enabled) => {
-      lightComponentOf(target)?.setVariable("enabled", Boolean(enabled));
-      services.updateIllumination?.(target);
-    },
-    setLightColor: (target, color) => {
-      lightComponentOf(target)?.setVariable("color", [
-        Number(color?.x ?? 1),
-        Number(color?.y ?? 1),
-        Number(color?.z ?? 1),
-      ]);
-      services.updateIllumination?.(target);
-    },
-    setLightIntensity: (target, intensity) => {
-      lightComponentOf(target)?.setVariable("intensity", Number(intensity));
-      services.updateIllumination?.(target);
-    },
+    setCameraOrthographicSize: (target, size) => writeIllumination(target, cameraComponentOf(target), "orthographicSize", Number(size)),
+    setLightEnabled: (target, enabled) => writeIllumination(target, lightComponentOf(target), "enabled", Boolean(enabled)),
+    setLightColor: (target, color) => writeIllumination(target, lightComponentOf(target), "color", [
+      Number(color?.x ?? 1),
+      Number(color?.y ?? 1),
+      Number(color?.z ?? 1),
+    ]),
+    setLightIntensity: (target, intensity) => writeIllumination(target, lightComponentOf(target), "intensity", Number(intensity)),
     findPathTo: (from, to) => services.findPathTo?.(from, to) ?? [],
     isPathValid: (from, to) => services.isPathValid?.(from, to) ?? false,
     getClosestNavigablePoint: (point) =>

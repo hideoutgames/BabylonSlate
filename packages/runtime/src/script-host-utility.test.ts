@@ -270,6 +270,27 @@ describe("ScriptHost utility bindings", () => {
     expect(ctx.getAllComponentsOfType("Health")).toEqual([]);
   });
 
+  it("re-sends a light or camera to the renderer only when a setter changes its value", () => {
+    const actor = new Actor({ classId: "Actor" });
+    const light = new ActorComponent({ classId: "LightComponent" });
+    actor.attachComponent(light);
+    const sent: unknown[] = [];
+    const ctx = new ScriptHost(stubServices({ updateIllumination: (target) => { sent.push(target); } })).createContext(null, 0, 0);
+
+    ctx.setLightIntensity(actor, 2);
+    ctx.setLightIntensity(actor, 2);
+    ctx.setLightColor(actor, { x: 1, y: 0, z: 0 });
+    ctx.setLightColor(actor, { x: 1, y: 0, z: 0 });
+    ctx.setLightEnabled(actor, false);
+    ctx.setLightEnabled(actor, false);
+
+    expect(sent).toEqual([actor, actor, actor]);
+    expect([light.getVariable("intensity"), light.getVariable("color"), light.getVariable("enabled")]).toEqual([2, [1, 0, 0], false]);
+    // An actor without a light sends nothing.
+    ctx.setLightIntensity(new Actor({ classId: "Actor" }), 3);
+    expect(sent).toHaveLength(3);
+  });
+
   it("component queries handle missing types and worlds and match exact classes without a registry", () => {
     const actor = new Actor({ classId: "Actor" });
     const component = new ActorComponent({ classId: "MeshComponent" });
