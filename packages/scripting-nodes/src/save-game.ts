@@ -1,6 +1,6 @@
 import {
   arrayOf, mapOf, objectRef, assetRef, BOXED_WILDCARD, BOOL, EXEC, INT, STRING,
-  pin, pinTypeForMember, structRef, type NodeDefinition, type PinType,
+  defaultValueLiteral, pin, pinTypeForMember, structRef, type NodeDefinition, type PinType,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
 
@@ -53,7 +53,7 @@ function operation(method: string, title: string, valueType?: PinType): NodeDefi
       ctx.emit(`${ctx.output("success")} = ${result}.ok;`);
       ctx.emit(`${ctx.output("errorCode")} = ${result}.ok ? "" : ${result}.error.code;`);
       ctx.emit(`${ctx.output("errorMessage")} = ${result}.ok ? "" : ${result}.error.message;`);
-      if (valueType) ctx.emit(`${ctx.output("value")} = ${result}.ok ? ${result}.value : ${method === "listSaves" ? "[]" : "null"};`);
+      if (valueType) ctx.emit(`${ctx.output("value")} = ${result}.ok ? ${result}.value : ${defaultValueLiteral(valueType)};`);
       ctx.branch?.(`${result}.ok`, "Completed", "Failed");
     },
   };

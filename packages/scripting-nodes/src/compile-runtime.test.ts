@@ -91,6 +91,26 @@ describe("compiler emits runnable JavaScript", () => {
     expect(ctx.received[1]).toBe(ctx.items);
     expect(ctx.received[2]).toBe(ctx.lookup);
   });
+  it.each([false, true])("keeps the outputs an Execute JavaScript body assigned before an early return (async=%s)", async (async) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = { id: "g", kind: "event", nodes: [
+      node(registry, "entry", "flow.entry"),
+      node(registry, "js", "debug.executeJavaScript", jsProps(
+        `${async ? "await Promise.resolve();" : ""} first = value + 1;\nif (value > 0) return;\nfirst = 99;`, "first", { async, "default:in_value": 1 })),
+      node(registry, "log", "debug.log"),
+    ], edges: [
+      edge("e1", "entry", "execOut", "js", "execIn"),
+      edge("e2", "js", "execOut", "log", "execIn"),
+      edge("e3", "js", "out_first", "log", "message"),
+    ] };
+    const logged: unknown[] = [];
+    await (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).run as (ctx: unknown) => unknown)({
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logged.push(value),
+    });
+    expect(logged).toEqual([2]);
+  });
+
   it("supports two ExecuteJavaScript nodes in one exec chain", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
