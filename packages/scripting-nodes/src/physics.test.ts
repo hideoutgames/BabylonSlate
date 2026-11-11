@@ -118,6 +118,8 @@ describe("physics nodes", () => {
       element: { kind: "objectRef", classId: "Actor" },
     });
     expect(pins.find((pin) => pin.id === "count")?.type.kind).toBe("int");
+    // An unwired Radius is a usable sphere, as on the other shape queries.
+    expect(pins.find((pin) => pin.id === "radius")?.defaultValue).toBe(0.5);
     const { ctx, emits } = emitCtx({
       input: (name) =>
         name === "center" ? "c" : name === "radius" ? "r" : "channel",
@@ -145,6 +147,7 @@ describe("physics nodes", () => {
       ]),
     );
     expect(pins.find((pin) => pin.id === "radius")?.type.kind).toBe("float");
+    expect(pins.find((pin) => pin.id === "radius")?.defaultValue).toBe(0.5);
     const { ctx, emits } = emitCtx({
       input: (name) =>
         name === "start"
@@ -419,9 +422,8 @@ describe("physics nodes", () => {
       ["multiTrace", null, { position: zero, rotation: { x: 0, y: 0, z: 0, w: 1 } },
         { position: { x: 9, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } }, "Static", []],
     ]);
-    expect(calls.filter(([name]) => name === "rotatorToQuat")).toEqual([
-      ["rotatorToQuat", { pitch: 0, yaw: 90, roll: 0 }], ["rotatorToQuat", { pitch: 0, yaw: 90, roll: 0 }],
-    ]);
+    // Orientation is read once for both ends of the sweep.
+    expect(calls.filter(([name]) => name === "rotatorToQuat")).toEqual([["rotatorToQuat", { pitch: 0, yaw: 90, roll: 0 }]]);
     expect(logs).toEqual([true]);
   });
 

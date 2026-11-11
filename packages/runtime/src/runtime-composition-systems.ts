@@ -1,6 +1,6 @@
 import type { TilemapPayload, TilesetPayload } from "@haptic/assets";
 import { ScalabilitySession } from "@haptic/core";
-import { World, type Actor, type ClassRegistry } from "@haptic/object-model";
+import { World, type Actor, type ClassRegistry, type WorldInputProvider } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { AudioParticleEmitter } from "./audio-particle-emitter";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
@@ -443,15 +443,16 @@ export function createUIControls(rt: RuntimeComposition): UIControls2DRuntime {
   });
 }
 
-export function installWorldInputProvider(rt: RuntimeComposition): void {
-  rt.world.setInputProvider(createWorldInputProvider({
+/** The session's device input, read by the World's tick contexts and by every script call. */
+export function createRuntimeInput(rt: RuntimeComposition): WorldInputProvider {
+  return createWorldInputProvider({
     resolved: () => rt.resolvedInput,
     connections: rt.connectionBox,
     frameId: () => rt.frameId,
     emit: (command) => rt.emit(command),
     requestDeviceMotion: () => requestDeviceMotion(rt),
     calibrateTilt: () => rt.resolver.calibrateTilt(),
-  }));
+  });
 }
 
 export function createScriptDebug(rt: RuntimeComposition): ScriptDebugObserver {

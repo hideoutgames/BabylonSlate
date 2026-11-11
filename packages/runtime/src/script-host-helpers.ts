@@ -1,4 +1,4 @@
-import { isSceneLayerAnchorActor, SaveGameError, type SaveGameService } from "@haptic/core";
+import { isSceneLayerAnchorActor, SaveGameError, type SaveGameResult, type SaveGameService } from "@haptic/core";
 import { Actor, ActorComponent, Scene, SceneLayer, type EngineObject } from "@haptic/object-model";
 import type { Vec3 } from "@haptic/physics";
 import { actorLabel } from "./actor-world-transform";
@@ -8,6 +8,11 @@ import type { ScriptHostServices } from "./script-host-services";
 export function requireSaveGameService(services: ScriptHostServices): SaveGameService {
   if (!services.saveGame) throw new SaveGameError("unavailable", "Select a default Save Game in Project Settings before using save data.");
   return services.saveGame;
+}
+
+/** The result of a save operation on a project with no default Save Game. */
+export async function saveGameUnavailable<T>(): Promise<SaveGameResult<T>> {
+  return { ok: false, error: { code: "unavailable", message: "Select a default Save Game in Project Settings before using saves." } };
 }
 
 export function* componentsOfType(

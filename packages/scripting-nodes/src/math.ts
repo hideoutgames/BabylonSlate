@@ -486,7 +486,7 @@ export const mathNodes: NodeDefinition[] = [
       pin("out", "Out", "out", INT),
     ],
     codegen: (ctx) => ({
-      out: `ctx.random.int((${ctx.input("min")}) | 0, (${ctx.input("max")}) | 0)`,
+      out: `ctx.random.int(${ctx.input("min")}, ${ctx.input("max")})`,
     }),
   },
   {

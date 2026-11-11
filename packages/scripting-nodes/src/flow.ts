@@ -648,9 +648,11 @@ export const flowNodes: NodeDefinition[] = [
     },
   },
   {
+    // Compiles to an export named `run` that no host dispatches: tools and tests call it.
     id: "flow.entry",
     title: "Entry",
     category: "flow",
+    internal: true,
     pins: () => [pin("execOut", "then", "out", EXEC)],
     codegen: () => {
       /* entry is a no-op marker */
@@ -958,7 +960,6 @@ export const flowNodes: NodeDefinition[] = [
     },
     structuredFlow: {
       kind: "doOnce",
-      execPin: "exec",
       resetPin: "reset",
       thenPin: "then",
     },
@@ -979,7 +980,6 @@ export const flowNodes: NodeDefinition[] = [
     },
     structuredFlow: {
       kind: "doN",
-      execPin: "exec",
       nPin: "n",
       resetPin: "reset",
       thenPin: "then",
@@ -1001,7 +1001,6 @@ export const flowNodes: NodeDefinition[] = [
     },
     structuredFlow: {
       kind: "flipFlop",
-      execPin: "exec",
       aPin: "a",
       bPin: "b",
       isAPin: "isA",
@@ -1023,7 +1022,6 @@ export const flowNodes: NodeDefinition[] = [
     },
     structuredFlow: {
       kind: "gate",
-      enterPin: "enter",
       openPin: "open",
       closePin: "close",
       togglePin: "toggle",

@@ -25,7 +25,6 @@ import { createDefaultNodeRegistry } from "./index";
 import {
   selectNodes,
   selectOptionPinId,
-  titleCaseSelectMember,
 } from "./select";
 import { enumMembersOf, enumValueOf } from "./enum";
 
@@ -113,9 +112,7 @@ describe("select nodes", () => {
       selectOptionPinId("Blue"),
       "out",
     ]);
-    expect(pins.find((pin) => pin.id === selectOptionPinId("Red"))?.name).toBe(
-      titleCaseSelectMember("Red"),
-    );
+    expect(pins.find((pin) => pin.id === selectOptionPinId("Red"))?.name).toBe("Red");
     const option = pins.find((pin) => pin.id === selectOptionPinId("None"))!;
     const out = pins.find((pin) => pin.id === "out")!;
     expect(option.type).toEqual(RESOLVING_WILDCARD);

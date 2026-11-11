@@ -422,7 +422,11 @@ export type ControlMessage =
       /** Browser safe-area insets in CSS pixels. */
       safeAreaInsets?: Partial<import("@haptic/core").OverlaySafeAreaInsets>;
     }
-  | { type: "audioVoiceEnded"; voiceId: string }
+  /**
+   * A voice the runtime started is no longer playing: it played to its end, or (`dropped`) it never
+   * started or was stolen at the voice cap, which runs no Event On Audio Finished.
+   */
+  | { type: "audioVoiceEnded"; voiceId: string; dropped?: boolean }
   /**
    * A ParticleComponent stopped playing on the render host: its drain completed after a
    * Once system finished (`finished`) or after Stop (`stopped`), or its bundle has no

@@ -62,6 +62,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     canRunOwner: (owner) => rt.admission.canRun(owner),
     inputBindings: rt.resolver.bindings,
     getInputState: (input) => rt.resolver.getInputState(input),
+    input: rt.worldInput,
     interfaceRegistry: rt.world.interfaceRegistry,
     classRegistry: registry,
     checkInfiniteLoop: () => rt.loopGuard.check(),

@@ -896,4 +896,33 @@ describe("component script API", () => {
     expect(commands.some((command) => command.type === "log" && command.category === "Finished" && command.message === "decoy")).toBe(false);
     runtime.stop();
   });
+
+  it("stops treating a dropped voice as playing without running Event On Audio Finished", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: sceneOf([createActor("speaker", "Speaker", {
+        classId: "Hero",
+        components: [{ id: "audio-1", classId: "AudioComponent", properties: { audioAssetGuid: "jump", playOnStart: true } }],
+      })]),
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([script(
+      'export function onAudioFinished(ctx) { ctx.log("log", "Finished", "ran"); }',
+      { entryPoints: [{ name: "onAudioFinished", event: "onAudioFinished", isAsync: false, componentId: "audio-1" }] },
+    )]);
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+    const voices = (runtime as unknown as { voices: { isLive(voiceId: string): boolean } }).voices;
+    expect(voices.isLive("audio-1")).toBe(true);
+
+    // The host could not load the sound.
+    runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "audio-1", dropped: true });
+
+    expect(voices.isLive("audio-1")).toBe(false);
+    expect(commands.some((command) => command.type === "log" && command.category === "Finished")).toBe(false);
+    runtime.stop();
+  });
 });

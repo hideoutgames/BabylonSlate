@@ -38,6 +38,7 @@ import type { ScriptDebugObserver } from "./script-debug";
 import { ScriptBreakpoints } from "./script-breakpoints";
 import {
   type World,
+  type WorldInputProvider,
   ClassRegistry,
   createDebugInspectSnapshot,
   type Actor,
@@ -172,7 +173,7 @@ import {
   createTickPipeline,
   createUIControls,
   createWorld,
-  installWorldInputProvider,
+  createRuntimeInput,
 } from "./runtime-composition-systems";
 import { createScriptHost } from "./runtime-composition-script-host";
 import { breakpointHit, reportRuntimeError } from "./runtime-error-reporting";
@@ -279,6 +280,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   readonly connectionBox: {
     current: ResolvedInputTick["gamepadConnections"];
   } = { current: [] };
+  readonly worldInput: WorldInputProvider;
 
   // Logs and diagnostics.
   readonly logs = new LogRingBuffer(512);
@@ -553,7 +555,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.layers = createLayers(this);
 
     // 6. World input.
-    installWorldInputProvider(this);
+    this.worldInput = createRuntimeInput(this);
+    this.world.setInputProvider(this.worldInput);
 
     // 7. Script data and the ScriptHost.
     this.dataCatalog = new RuntimeDataCatalog(options.dataAssets);
@@ -580,6 +583,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       this.timelines.forget(object);
       this.admission.drop(object);
       this.scriptHost.releaseObject(object);
+      // Its load handles end with it, as a destroyed actor's do.
+      this.assetPreloads.releaseOwner(object.guid);
     });
 
     // 8. Lifecycle hooks, in Stop order.
@@ -745,6 +750,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     const voiceId = String(message.voiceId ?? "").trim();
     if (!voiceId) return;
     this.voices.ended(voiceId);
+    if (message.dropped) return;
     for (const actor of this.world.getActors()) {
       if (actor.destroyed) continue;
       const component = actor.components.find(

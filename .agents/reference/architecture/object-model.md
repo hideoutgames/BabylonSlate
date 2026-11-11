@@ -39,7 +39,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 2. `sceneSubsystems`: main Scene's SceneSubsystems; gated by `canTickScene` then `canTickSceneSubsystem`.
 3. `actors` (spawn order) → 4. `components` (attach order) → 5. `objects` (`addTickingObject` order: Create Object objects with Tickable Object; destroyed ones are dropped in place, ones added during the phase tick next tick; the list is not a root) → 6. `physics` (backend `step` + write-back, filled by `@haptic/physics`) → 7. `postPhysics` (boundary only).
 
-Every phase of a tick receives the same `TickContext` (`dt`, `tickIndex`, World and the input provider's members), built once per `tick()`; a new one is built each tick because latent script contexts keep theirs.
+Every phase of a tick receives the same `TickContext` (`dt`, `tickIndex`, World and the input provider's members), built once per `tick()`. Script calls do not read input from it: they use the ScriptHost's `input` service ([input](input.md#runtime)).
 
 `World.gamePaused` (Set Game Paused; the runtime sets it before each tick) narrows every phase to what ticks on pause: phase 1 ticks only a Game Instance with `tickOnPause` and no GameSubsystems; phases 2, 5 and 6 are skipped; phases 3–4 tick only actors for which `ticksWhilePaused` holds (`Actor.tickOnPause`, from Actor Defaults, or a SceneLayer with `tickOnPause` that owns the actor) and their components. The check precedes admission and has no side effects.
 

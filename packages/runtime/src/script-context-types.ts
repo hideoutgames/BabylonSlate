@@ -40,7 +40,6 @@ import type {
   PostProcessMaterialObject,
   Scene,
   SceneLayer,
-  TickContext,
   TimelineClipObject,
 } from "@haptic/object-model";
 import type { ColliderShape, OverlapResult, PhysicsTransform, TeleportOptions, Vec3 } from "@haptic/physics";
@@ -437,7 +436,6 @@ export interface ScriptContext {
   unloadSceneAsync(target: unknown): void;
   loadSceneBlocking(target: unknown): Promise<void>;
   unloadSceneBlocking(target: unknown): Promise<void>;
-  prepareAssets(assets: readonly string[]): Promise<void>;
   /**
    * Load handles (opaque strings) owned by the calling object, else the current
    * Scene, else the session (`sessionWide`). `requestAssetLoad` and
@@ -559,12 +557,7 @@ export interface ScriptContext {
     functionName: string,
     args?: Record<string, unknown>,
   ): Record<string, unknown> | PromiseLike<Record<string, unknown>>;
-  isActionHeld(action: string): boolean;
-  wasActionPressed?(action: string): boolean;
-  wasActionReleased?(action: string): boolean;
   getPressedKeys?(): readonly InputKey[];
-  getAxis(axis: string): number;
-  getAxis2D(axis: string): { x: number; y: number };
   getCursorPosition(): { x: number; y: number; pressed: boolean };
   /** This tick's contacts in Finger order, including those lifted this tick. */
   getTouches?(): readonly TouchInput[];
@@ -658,8 +651,6 @@ export interface ScriptContext {
   createSceneLayerAsync(assetGuid: string, zOrder?: number): Promise<SceneLayer | null>;
   removeSceneLayer(layer: EngineObject | string | null | undefined): void;
   clearSceneLayers(): void;
-  setFocusTarget(target: unknown): boolean;
-  clearFocusTarget(target: unknown): void;
   /** The new pass's Material Object, or null when nothing was registered. */
   registerSceneLayerPostProcess(
     layer: EngineObject | string | null | undefined,
@@ -784,8 +775,8 @@ export type ScriptExtras = Partial<BtScriptExtras> & {
   callerOwner?: EngineObject | null;
 };
 
-/** The calling frame a nested dispatch inherits: delta, tick index and input. */
-export type CallerFrame = { deltaSeconds: number; tickIndex: number; tick?: TickContext };
+/** The calling frame a nested dispatch inherits: delta and tick index. */
+export type CallerFrame = { deltaSeconds: number; tickIndex: number };
 
 export type CompiledScript = ScriptBundleEntry;
 
@@ -801,8 +792,7 @@ export type LoadedScript = {
  * is a value set per call or a method reading the call from its context (`createScriptContextClass`).
  */
 export type HostContextKey =
-  | "getSaveData" | "getSaveField" | "setSaveField" | "newGame" | "saveGame" | "loadGame" | "listSaves"
-  | "deleteSave" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
+  | "getSaveData" | "getSaveField" | "setSaveField" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
   | "setGlobalFloatParameter" | "setGlobalVectorParameter" | "setGlobalColorParameter"
   | "getGlobalFloatParameter" | "getGlobalVectorParameter" | "getGlobalColorParameter"
@@ -832,10 +822,10 @@ export type HostContextKey =
   | "getProjectVersion" | "getDeltaSeconds" | "getFrameCount" | "getTimeNow" | "getDateNow" | "getTimeMs"
   | "getTimeDilation" | "setTimeDilation" | "getGameTimeSeconds" | "getRealTimeSeconds" | "getLocalTimeNow"
   | "getLocalDateNow" | "setGamePaused" | "isGamePaused" | "quitGame" | "getPlatform" | "isTouchDevice" | "isInEditor" | "isDevelopmentBuild"
-  | "getViewportSize" | "getLocale" | "copyToClipboard" | "openUrl" | "newGuid" | "getThirdPartyNotices" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
+  | "getViewportSize" | "getLocale" | "copyToClipboard" | "openUrl" | "newGuid" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
-  | "setFocusTarget" | "clearFocusTarget" | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
+  | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
   | "registerScenePostProcess" | "unregisterScenePostProcess"
   | "getOwningSceneLayer"
   | "getScalability" | "requestScalability" | "possessCamera" | "possessCameraWithBlend" | "getSceneCameraManager" | "getRenderTargetMode"

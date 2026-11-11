@@ -34,6 +34,13 @@ it("exposes runtime geometry functions only on typed component targets and retai
     .toContainEqual({ name: "positions", typeId: "float", direction: "in", container: "array" });
 });
 
+describe("Add Node catalog", () => {
+  it("leaves out internal nodes, which no host runs", () => {
+    expect(registry.get("flow.entry")?.internal).toBe(true);
+    expect(scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Rig" }).map((node) => node.id)).not.toContain("flow.entry");
+  });
+});
+
 describe("custom event declaration validation", () => {
   it.each([
     { declaration: true, name: "Ping", missing: false },

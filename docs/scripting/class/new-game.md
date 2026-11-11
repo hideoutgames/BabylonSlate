@@ -29,3 +29,4 @@ Resets the game's save data to its defaults, ready for a fresh playthrough.
 - Actors registered for saving return to their starting state, and registered spawned actors are removed.
 - Saved slots are not deleted; a damaged slot needs [**Delete Save**](delete-save.md) before it can be replaced.
 - Latent: the node finishes later without pausing the rest of the game.
+- If the object that ran the node is destroyed before it finishes, the operation still completes but neither **Completed** nor **Failed** runs.

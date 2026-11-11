@@ -551,7 +551,7 @@ export interface CreateEngineOptions {
     safeAreaInsets?: { left: number; right: number; top: number; bottom: number };
   }) => void;
   /** Finished non-looping AudioComponent voice (Play graph On Audio Finished). */
-  onAudioVoiceEnded?: (voiceId: string) => void;
+  onAudioVoiceEnded?: (voiceId: string, dropped?: boolean) => void;
   /** A ParticleComponent stopped playing (Play graph On Particles Finished and Is Playing). */
   onParticlePlaybackEnded?: (report: import("./particle-service").ParticlePlaybackEndedReport) => void;
 }

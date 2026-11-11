@@ -21,5 +21,5 @@ Returns true when an actor has a component of a given type.
 
 ## Notes
 
-- Only components of exactly that type count; components of a derived type do not.
+- A component of a derived type counts too, as in [**Get Component**](get-component.md).
 - Returns false, and logs an error, when **Actor** is connected to a reference that is empty.

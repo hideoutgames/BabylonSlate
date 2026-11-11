@@ -30,6 +30,7 @@ import type {
   TimelineClipInstance,
   TimelineClipObject,
   TimelineObject,
+  WorldInputProvider,
 } from "@haptic/object-model";
 import type {
   ColliderShape,
@@ -84,6 +85,11 @@ export interface ScriptHostServices {
   canRunOwner?(owner: EngineObject): boolean;
   inputBindings?: InputBindingControls;
   getInputState?: (input: InputTypeValue) => InputValueState | null;
+  /**
+   * The session's device input: cursor, touches, keys, motion, rumble and vibration. A script reads it
+   * from any call, not only one a tick dispatched.
+   */
+  input?: WorldInputProvider;
   getProjectName?(): string;
   getProjectVersion?(): string;
   /** The simulation step the current tick captured (fixed step × time dilation). Absent outside a simulation. */

@@ -32,22 +32,10 @@ describe("ScriptHost flowState", () => {
     const host = new ScriptHost(stubServices());
     const actor = new Actor({ classId: "Hero", guid: "hero" });
     const first = host.createContext(
-      actor,
-      0,
-      0,
-      {},
-      undefined,
-      undefined,
-      "script-a",
+      actor, 0, 0, {}, undefined, "script-a",
     );
     const second = host.createContext(
-      actor,
-      0,
-      0,
-      {},
-      undefined,
-      undefined,
-      "script-b",
+      actor, 0, 0, {}, undefined, "script-b",
     );
 
     first.flowState("gate").open = true;
@@ -77,13 +65,7 @@ describe("ScriptHost flowState", () => {
     expect(
       host
         .createContext(
-          actor,
-          0,
-          0,
-          {},
-          undefined,
-          undefined,
-          "hero-logic",
+          actor, 0, 0, {}, undefined, "hero-logic",
         )
         .flowState("gate1").open,
     ).toBe(true);
@@ -93,13 +75,7 @@ describe("ScriptHost flowState", () => {
     expect(
       host
         .createContext(
-          actor,
-          0,
-          0,
-          {},
-          undefined,
-          undefined,
-          "hero-logic",
+          actor, 0, 0, {}, undefined, "hero-logic",
         )
         .flowState("gate1").open,
     ).toBeUndefined();

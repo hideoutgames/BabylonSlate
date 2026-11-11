@@ -16,7 +16,8 @@ import { docsRoot, NODE_GRAPHS } from "./sidebar";
 /** Every catalog node as `<graph folder>/<node id>`, the key node pages use. */
 function catalogNodeKeys(): string[] {
   return [
-    ...allNodeDefinitions().map((def) => `${scriptGraphFolder(def.id)}/${def.id}`),
+    // An internal node is offered nowhere, so it has no page.
+    ...allNodeDefinitions().filter((def) => !def.internal).map((def) => `${scriptGraphFolder(def.id)}/${def.id}`),
     ...MATERIAL_CATALOG.map((def) => `material/${def.type}`),
     ...PARTICLE_CATALOG.map((def) => `particle/${def.type}`),
     ...[...BT_COMPOSITE_CATALOG, ...BT_TASK_CATALOG, ...BT_DECORATOR_CATALOG, ...BT_SERVICE_CATALOG].map(

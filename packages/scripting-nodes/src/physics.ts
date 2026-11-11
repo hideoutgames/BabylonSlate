@@ -57,9 +57,11 @@ const hitPins = () => [
 /** A box (Half Size) or capsule (Radius, Half Height along its Up axis) query shape. */
 const boxShape = (ctx: Codegen) => `{ kind: "box", halfExtents: ${ctx.input("halfSize")} }`;
 const capsuleShape = (ctx: Codegen) => `{ kind: "capsule", radius: ${ctx.input("radius")}, halfHeight: ${ctx.input("halfHeight")} }`;
-/** A pose at `position`, turned by the Orientation pin, or unturned for a node without one. */
+/** The statement that reads the Orientation pin once into `__rot`, for the poses of one query. */
+const readOrientation = (ctx: Codegen) => `const __rot = ctx.rotatorToQuat(${ctx.input("orientation")});`;
+/** A pose at `position`, turned by `__rot` (see `readOrientation`), or unturned for a node without an Orientation pin. */
 const pose = (ctx: Codegen, position: string, oriented: boolean) =>
-  `{ position: ${ctx.input(position)}, rotation: ${oriented ? `ctx.rotatorToQuat(${ctx.input("orientation")})` : "{ x: 0, y: 0, z: 0, w: 1 }"} }`;
+  `{ position: ${ctx.input(position)}, rotation: ${oriented ? "__rot" : "{ x: 0, y: 0, z: 0, w: 1 }"} }`;
 
 /** Box Trace and Capsule Trace: a linear sweep of the shape at Orientation, first hit only. */
 function shapeTraceNode(id: string, title: string, shapePins: () => GraphPin[], shape: (ctx: Codegen) => string, description: string): NodeDefinition {
@@ -76,7 +78,7 @@ function shapeTraceNode(id: string, title: string, shapePins: () => GraphPin[], 
       ...hitPins(),
     ],
     codegen: (ctx) => {
-      emitMappedHit(ctx, `ctx.shapeSweep(${shape(ctx)}, ${pose(ctx, "start", true)}, ${pose(ctx, "end", true)}, ${ctx.input("channel")}, ${ctx.input("actorsToIgnore")})`);
+      emitMappedHit(ctx, `ctx.shapeSweep(${shape(ctx)}, ${pose(ctx, "start", true)}, ${pose(ctx, "end", true)}, ${ctx.input("channel")}, ${ctx.input("actorsToIgnore")})`, readOrientation(ctx));
     },
   };
 }
@@ -118,7 +120,7 @@ function shapeOverlapNode(id: string, title: string, shapePins: () => GraphPin[]
     ],
     codegen: (ctx) => {
       const actors = ctx.output("actors");
-      ctx.emit(`${actors} = ctx.shapeOverlap(${shape(ctx)}, ${pose(ctx, "center", true)}, ${ctx.input("channel")}); ${ctx.output("count")} = ${actors}.length;`);
+      ctx.emit(`{ ${readOrientation(ctx)} ${actors} = ctx.shapeOverlap(${shape(ctx)}, ${pose(ctx, "center", true)}, ${ctx.input("channel")}); ${ctx.output("count")} = ${actors}.length; }`);
     },
   };
 }
@@ -152,6 +154,7 @@ function velocityWrite(id: string, title: string, inName: string, angular: boole
 function emitMappedHit(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
   expr: string,
+  setup = "",
 ): void {
   const hitResult = ctx.output("hitResult");
   const hit = ctx.output("hit");
@@ -160,7 +163,7 @@ function emitMappedHit(
   const distance = ctx.output("distance");
   const actor = ctx.output("actor");
   ctx.emit(
-    `{ const __hit = ${expr}; ${hitResult} = { Hit: __hit.hit === true, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 0, z: 0 }, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 }; ${hit} = __hit.hit === true; ${location} = __hit.location ?? { x: 0, y: 0, z: 0 }; ${normal} = __hit.normal ?? { x: 0, y: 0, z: 0 }; ${distance} = __hit.distance ?? 0; ${actor} = __hit.actor ?? null; }`,
+    `{ ${setup} const __hit = ${expr}; ${hitResult} = { Hit: __hit.hit === true, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 0, z: 0 }, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 }; ${hit} = __hit.hit === true; ${location} = __hit.location ?? { x: 0, y: 0, z: 0 }; ${normal} = __hit.normal ?? { x: 0, y: 0, z: 0 }; ${distance} = __hit.distance ?? 0; ${actor} = __hit.actor ?? null; }`,
   );
 }
 
@@ -301,7 +304,7 @@ export const physicsNodes: NodeDefinition[] = [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
       pin("center", "Center", "in", VEC3),
-      pin("radius", "Radius", "in", FLOAT),
+      radiusPin(0.5),
       pin("channel", "Channel", "in", COLLISION_CHANNEL, "data", true),
       pin("actors", "Actors", "out", ACTOR_ARRAY),
       pin("count", "Count", "out", INT),
@@ -323,7 +326,7 @@ export const physicsNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
       pin("start", "Start", "in", VEC3),
       pin("end", "End", "in", VEC3),
-      pin("radius", "Radius", "in", FLOAT),
+      radiusPin(0.5),
       pin("channel", "Channel", "in", COLLISION_CHANNEL, "data", true),
       pin("hitResult", "Hit Result", "out", HIT_RESULT),
       pin("hit", "Hit", "out", BOOL),

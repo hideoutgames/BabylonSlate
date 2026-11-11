@@ -88,6 +88,8 @@ export type NodeDefinition = {
   declaredPinOrder?: boolean;
   /** Hidden from runtime graph palettes unless the host is an editor graph. */
   editorOnly?: boolean;
+  /** A compile root for tools and tests: no Add Node list offers it and it has no reference page. */
+  internal?: boolean;
   /**
    * Class ids whose graphs (and their subclasses') offer this node in Add Node;
    * absent or empty means every Class that allows it otherwise.

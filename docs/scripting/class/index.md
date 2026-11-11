@@ -72,7 +72,6 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Break](break.md) | Leaves the loop it is inside and continues from that loop's Completed output. |
 | [Do N](do-n.md) | Lets execution through up to N times, then blocks it until it is reset. |
 | [Do Once](do-once.md) | Lets execution through the first time only, until it is reset. |
-| [Entry](entry.md) | Starts an execution chain that no game event triggers. |
 | [Flip Flop](flip-flop.md) | Alternates between two outputs each time it runs, starting with A. |
 | [For Each](for-each.md) | Runs Loop Body once for every element of an array. |
 | [For Each Map](for-each-map.md) | Runs Loop Body once for every key and value pair in a map. |

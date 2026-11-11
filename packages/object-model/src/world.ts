@@ -808,8 +808,7 @@ export class World {
 
   /**
    * One context per tick, shared by every phase: `dt` and the input provider
-   * are fixed for the tick. Latent script contexts keep it, so it is never reused
-   * for a later tick.
+   * are fixed for the tick.
    */
   private tickContext(tickIndex: number): TickContext {
     return {
