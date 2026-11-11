@@ -15,7 +15,7 @@ describe("formatFeatureTestCheckReport", () => {
       cpuMs: 4.2, gpuMs: null, gpuStatus: "unsupported", width: 2048, height: 1536, scalingLevel: 1,
       qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } },
       // The last frame's split; the report prefers the medians sampled while Play was measured.
-      drawPasses: { objects: 9, layers: 33 },
+      drawPasses: { objects: 9, layers: 33 }, drawPassMs: { objects: 30 },
       layerBatches: { visuals: 181, draws: 60, batches: 9, batched: 130, alone: { single: 1, material: 30, transform: 4, vertexColor: 0, other: 2, unmatched: 14 } },
       programs: {
         programs: 120, neverDrawn: 35, passes: { objects: 50, layers: 15, shadows: 20 }, shaders: 70, mostVariants: 6,
@@ -41,7 +41,8 @@ describe("formatFeatureTestCheckReport", () => {
           snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 8 * 1048576, rendering },
           counters: {
             draws: { median: 400, min: 390, max: 410, samples: 10 }, cpuMs: { median: 40, min: 38, max: 44, samples: 10 }, gpuMs: null,
-            drawPasses: { objects: 10, shadows: 0, post: 2, layers: 30 }, cpuMsWithoutDraws: { median: 12, min: 11, max: 13, samples: 4 },
+            drawPasses: { objects: 10, shadows: 0, post: 2, layers: 30 },
+            drawPassMs: { objects: 6.26, mirrors: 8.24, shadows: 0, other: 0.04, post: 1 }, cpuMsWithoutDraws: { median: 12, min: 11, max: 13, samples: 4 },
           },
           presentation: {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "Render pipelines are compiling.": 1, "Scene is not ready to render.": 3 } },
@@ -74,6 +75,8 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  > ft_stats: ok in 1.2 s · FeatureTest score 0, spinners 4, spawned 0");
     // What drew the frame, the most first, and what the Engine compiled for it.
     expect(lines).toContain("  Draws per pass: layers 30, objects 10, post 2");
+    // Its main-thread time by pass, right below: the most first, one decimal, a pass under 0.05 ms left out.
+    expect(lines[lines.indexOf("  Draws per pass: layers 30, objects 10, post 2") + 1]).toBe("  CPU per pass: mirrors 8.2 ms, objects 6.3 ms, post 1.0 ms");
     // The layers' visuals: 130 of the 181 drew in 9 batches; the 51 others took a draw each, by reason, the most first.
     expect(lines).toContain("  Scene Layers: 181 visuals in 60 draws · 130 in 9 batches · alone: 30 another Material, 14 nothing else drew the same, 4 mirrored, 2 other, 1 only draw of its pass");
     expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
@@ -158,6 +161,7 @@ describe("formatFeatureTestCheckReport", () => {
           sample("ultra", 40, 30)].map((entry, index) => ({
           ...entry, framesInFlight: { mode: 2 as const, skipped: [1, 0, 2, 9][index]! },
           drawPasses: { objects: 124, geometry: [0, 0, 81, 81][index]!, outlines: 101, layers: 98 },
+          drawPassMs: { objects: [3.04, 3.1, 4.48, 4.5][index]!, geometry: [0, 0, 1.2, 1.2][index]!, outlines: 0.6, layers: 0.02, other: 0.3 },
           programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {}, shaders: 100, mostVariants: 9, splitBy: [] },
         }))),
         scene("heavy", [sample("low", 59, 20), sample("medium", 35, 40), sample("high", 25, 60),
@@ -169,16 +173,25 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Highest tier at 60 fps: high · at 30 fps: ultra");
     // The passes some profile drew in, in the frame's order; a profile that drew none in a pass shows 0.
     const table = lines.indexOf("  Draws per pass (median per frame):");
-    expect(lines.slice(table + 1, table + 6)).toEqual([
+    expect(lines.slice(table + 1, table + 12)).toEqual([
       "    Profile           objects geometry outlines layers",
       "    low               124     0        101      98",
       "    medium            124     0        101      98",
       "    high              124     81       101      98",
       "    ultra             124     81       101      98",
+      // Then each profile's main-thread time by pass, over the passes some profile spent 0.05 ms or more in.
+      "  CPU per pass (median ms per frame):",
+      "    Profile           objects geometry outlines other",
+      "    low               3.0     0.0      0.6      0.3",
+      "    medium            3.1     0.0      0.6      0.3",
+      "    high              4.5     1.2      0.6      0.3",
+      "    ultra             4.5     1.2      0.6      0.3",
     ]);
     expect(lines).toContain("  Programs after each profile: low 280 (90 never drawn) · medium 290 (92 never drawn) · high 310 (95 never drawn) · ultra 320 (96 never drawn)");
     // The heavy scene's samples attribute no draws and report no programs.
     expect(lines.filter((line) => line === "  Draws per pass: unreported")).toHaveLength(1);
+    // Nor time them: no CPU table.
+    expect(lines.filter((line) => line.startsWith("  CPU per pass"))).toHaveLength(1);
     expect(lines.filter((line) => line.startsWith("  Programs after each profile"))).toHaveLength(1);
     // Each scene's header states the GPU backpressure it ran under, or that its samples did not measure it.
     expect(lines.filter((line) => line.startsWith("  Frames in flight: "))).toEqual([

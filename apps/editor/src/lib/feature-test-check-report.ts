@@ -143,6 +143,30 @@ function drawPassTable(samples: readonly FeatureTestBenchmarkSample[], column: s
   return lines;
 }
 
+/** Pass times under this many ms a report leaves out: they print as 0.0. */
+const MIN_PASS_MS = 0.05;
+
+/** Main-thread ms by pass, most first: `mirrors 8.2 ms, objects 6.3 ms`; empty without any. */
+function cpuPassText(passMs: Partial<Record<string, number>> | null | undefined): string {
+  return Object.entries(passMs ?? {}).filter(([, ms]) => (ms ?? 0) >= MIN_PASS_MS).sort((a, b) => b[1]! - a[1]!)
+    .map(([pass, ms]) => `${pass} ${ms!.toFixed(1)} ms`).join(", ");
+}
+
+/**
+ * The CPU-per-pass table of a sweep's samples, laid out as `drawPassTable`, over the passes some row spent time in;
+ * nothing without a timed sample.
+ */
+function cpuPassTable(samples: readonly FeatureTestBenchmarkSample[], column: string, width: number): string[] {
+  const passes = DRAW_PASSES.filter((pass) => samples.some((sample) => (sample.drawPassMs?.[pass] ?? 0) >= MIN_PASS_MS));
+  if (!passes.length) return [];
+  const lines = ["  CPU per pass (median ms per frame):", `    ${pad(column, width)}${passes.map((pass) => pad(pass, Math.max(pass.length + 1, 7))).join("")}`.trimEnd()];
+  for (const sample of samples) {
+    if (!sample.drawPassMs) continue;
+    lines.push(`    ${pad(sample.label, width)}${passes.map((pass) => pad((sample.drawPassMs![pass] ?? 0).toFixed(1), Math.max(pass.length + 1, 7))).join("")}`.trimEnd());
+  }
+  return lines;
+}
+
 /** A long frame and what it held; time outside the Engine's frame is scripts, layout, garbage collection or waiting. */
 function longFrame(frame: LongFrame): string {
   const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
@@ -279,6 +303,8 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       if (r?.qualityLimits.length) lines.push(`  Quality limits: ${clip(r.qualityLimits.join("; "))}`);
       const passes = firstDrawPasses(counters?.drawPasses ?? r?.drawPasses);
       if (passes) lines.push(`  Draws per pass: ${passes}`);
+      const passMs = cpuPassText(counters?.drawPassMs ?? r?.drawPassMs);
+      if (passMs) lines.push(`  CPU per pass: ${passMs}`);
       if (r?.layerBatches?.visuals) lines.push(`  Scene Layers: ${layerBatchesText(r.layerBatches)}`);
       if (r?.shadowRetained?.casters) lines.push(`  Shadow casters: ${retainedShadowsText(r.shadowRetained)}`);
       const withoutDraws = cpuWithoutDrawsText(counters);
@@ -345,7 +371,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
     }
     lines.push(`  Highest tier at 60 fps: ${bestProfile([play.benchmark], SMOOTH) ?? "none"} · at 30 fps: ${bestProfile([play.benchmark], PLAYABLE) ?? "none"}`);
     // What each tier draws, and what it compiled: a tier that draws as much as another scales pixels only.
-    lines.push(...drawPassTable(play.benchmark, "Profile", 18));
+    lines.push(...drawPassTable(play.benchmark, "Profile", 18), ...cpuPassTable(play.benchmark, "Profile", 18));
     const programs = play.benchmark.filter((sample) => sample.programs);
     if (programs.length) lines.push(`  Programs after each profile: ${programs.map((sample) => `${sample.label} ${sample.programs!.programs} (${sample.programs!.neverDrawn} never drawn)`).join(" · ")}`);
   }
@@ -564,7 +590,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     const change = profileDelta(samples, sample);
     lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(deltaText(change.frame), 16)}${pad(deltaText(change.cpu), 16)}${profileNotes(sample, first)}`.trimEnd());
   }
-  lines.push(...drawPassTable(samples, "Step", 22));
+  lines.push(...drawPassTable(samples, "Step", 22), ...cpuPassTable(samples, "Step", 22));
   const ranking = profileRanking(samples);
   lines.push("  Ranked by frame-time saving:");
   ranking.forEach((entry, index) => lines.push(

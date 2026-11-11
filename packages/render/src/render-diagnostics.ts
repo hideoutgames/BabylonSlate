@@ -48,6 +48,12 @@ export type RenderDiagnostics = {
    */
   drawPasses?: DrawPassCounts;
   /**
+   * The main-thread time, in ms, of the view's last timed frame by the pass running (`draw-passes.ts`), attributed as
+   * `drawPasses` is; they add up to the attributed part of that frame's `cpuMs`. Reading diagnostics times the frames
+   * from the next one on: all zero before a timed frame. Absent where the view does not attribute them.
+   */
+  drawPassMs?: DrawPassCounts;
+  /**
    * The Scene Layers of the view's last drawn frame: the visuals they drew, in how many draws and batches, and why the
    * rest drew on their own (`OverlayBatchStats`); all zero where it drew none.
    */
