@@ -319,5 +319,9 @@ describe("asset input event compilation", () => {
     snapshot = { ...snapshot, held: true, value: true };
     (mod.onInput as (ctx: unknown) => void)(ctx);
     expect(logs).toEqual(["released", "started", "held"]);
+    // The phase orders are module constants: the entry, which runs every tick, builds no array.
+    const entry = compiled.source.slice(compiled.source.indexOf("export function onInput"));
+    expect(entry).not.toContain('["');
+    expect(compiled.source).toContain('const __inputHeldPhases = ["released", "started", "held"]');
   });
 });

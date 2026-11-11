@@ -136,6 +136,28 @@ describe("in-process runtime driver", () => {
     runtime.stop();
   });
 
+  it("skips tick admission for a scripted actor whose Class has no Event Tick, until a reload adds one", async () => {
+    const runtime = createInProcessRuntime({ seed: 7, maxActors: 8, dt: 1 / 60 });
+    const idle = (source: string, event: string) => ({ assetGuid: "idle-script", classId: "Idle", anchors: [], source,
+      entryPoints: [{ name: "run", event, isAsync: false }] });
+    await runtime.loadScripts([
+      idle("export function run(ctx) {}", "onBeginPlay"),
+      { assetGuid: "ticker-script", classId: "Ticker", anchors: [], source: "export function run(ctx) {}",
+        entryPoints: [{ name: "run", event: "onTick", isAsync: false }] },
+    ]);
+    runtime.start();
+    const quiet = runtime.spawnScriptedActor({ classId: "Idle" })!;
+    const busy = runtime.spawnScriptedActor({ classId: "Ticker" })!;
+
+    expect([quiet.ticks, busy.ticks]).toEqual([false, true]);
+
+    await runtime.loadScripts([idle("export function run(ctx) { ctx.self.setVariable('ticked', true); }", "onTick")]);
+    expect(quiet.ticks).toBe(true);
+    runtime.tick();
+    expect(quiet.getVariable("ticked")).toBe(true);
+    runtime.stop();
+  });
+
   it("ticks a world and writes snapshot headers", async () => {
     const runtime = createInProcessRuntime({
       seed: 7,

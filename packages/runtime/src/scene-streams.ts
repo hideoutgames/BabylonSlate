@@ -176,7 +176,7 @@ export class SceneStreams implements RuntimeSubsystem {
     for (const stream of this.streams.values()) {
       if (!canTick()) break;
       // Its SceneScript ticks once its Begin Play has run.
-      if (this.ready(stream) && this.admission.isCreated(stream.scene)) {
+      if (stream.scene.ticks && this.ready(stream) && this.admission.isCreated(stream.scene)) {
         const world = this.host.world();
         stream.scene.callOnTick({ dt, tickIndex: world.clock.tickIndex, world });
       }

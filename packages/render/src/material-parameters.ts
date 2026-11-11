@@ -116,14 +116,20 @@ export function createMaterialParameterBindings(
     if (disposed) return;
     parameterRevisions.set(material, (parameterRevisions.get(material) ?? 0) + 1);
     const scene = material.getScene();
+    if (!textures) {
+      // A value is a uniform: the next bind uploads it once the Scene forgets which Material it bound
+      // last, also for a frozen Play Material. Nothing about the shader changes, so no submesh is marked
+      // dirty: `markDirty` walks every mesh of the Scene, and a script may write a parameter every tick.
+      scene.resetCachedMaterial();
+      return;
+    }
     // A new texture assignment or its deferred load changes material defines
     // and readiness; reopen the cached strict probe.
-    if (textures) markSceneReadinessDirty(scene);
+    markSceneReadinessDirty(scene);
     const blocked = scene.blockMaterialDirtyMechanism;
     scene.blockMaterialDirtyMechanism = false;
     try {
-      material.markDirty(textures);
-      // Frozen Play materials must upload changed uniforms on the next bind.
+      material.markDirty(true);
       scene.resetCachedMaterial();
     } finally {
       scene.blockMaterialDirtyMechanism = blocked;

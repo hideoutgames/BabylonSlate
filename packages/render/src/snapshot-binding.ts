@@ -133,6 +133,16 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
     name: string,
     value: MaterialParameterValue,
   ) => boolean;
+  /**
+   * Sets one parameter on a component's own Material when it exists (`MaterialLibrary.setParameter`); false when it
+   * does not, and the caller resolves and binds it.
+   */
+  setMaterialInstanceParameter?: (
+    assetGuid: string,
+    options: { scene: Scene; unlit?: boolean; instanceKey: string },
+    name: string,
+    value: MaterialParameterValue,
+  ) => boolean;
   /** Resolves an assigned Material guid to a scene-local compiled material. */
   resolveMaterial?: (
     assetGuid: string,

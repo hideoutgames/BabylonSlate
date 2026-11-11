@@ -32,11 +32,6 @@ export function syncParticleBlendProgram(system: IParticleSystem): void {
   (material as unknown as ParticleMaterialInternals)._createEffectForParticles(system, BaseParticleSystem.BLENDMODE_MULTIPLY);
 }
 
-/** The live authored material, shared with capture feedback checks. */
-export function particleMaterialForSystem(system: IParticleSystem): NodeMaterial | undefined {
-  return boundMaterials.get(system);
-}
-
 /**
  * Babylon 9.29's recursive particle binder passes its original empty defines
  * string to a replacement observer. A cached Effect can then append observers

@@ -62,6 +62,11 @@ export interface WorldLike {
 export type LifecycleHooks<T extends EngineObject = EngineObject> = {
   onCreation?: (self: T) => void;
   onTick?: (self: T, ctx: TickContext) => void;
+  /**
+   * Whether `onTick` has anything to run for `self` now; absent means it always has. The World asks
+   * before tick admission, so it must be cheap and free of side effects.
+   */
+  ticks?: (self: T) => boolean;
   onDestroyed?: (self: T) => void;
 };
 
@@ -203,9 +208,10 @@ export class EngineObject {
     this.hooks.onCreation?.(this);
   }
 
-  /** Whether a tick hook is bound: without one `callOnTick` does nothing, so the World skips its tick admission. */
+  /** Whether a tick hook is bound and has something to run: otherwise `callOnTick` does nothing, so the World skips its tick admission. */
   get ticks(): boolean {
-    return this.hooks.onTick !== undefined;
+    const hooks = this.hooks;
+    return hooks.onTick !== undefined && (hooks.ticks === undefined || hooks.ticks(this));
   }
 
   callOnTick(ctx: TickContext): void {

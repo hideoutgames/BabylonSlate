@@ -205,6 +205,11 @@ function functionPlumbingDefinition(
   };
 }
 
+/** The output node of every Material domain. */
+const MATERIAL_TERMINAL_NODE_TYPES: ReadonlySet<string> = new Set(
+  (["surface", "landscape", "text", "postProcess", "particle"] as const).map((domain) => terminalNodeTypeFor(domain)),
+);
+
 function validateGraph(
   graph: GraphLike,
   options: ValidateGraphOptions,
@@ -438,7 +443,8 @@ function validateGraph(
       const required = pin.required ?? pin.type.kind === "texture";
       if (!required) continue;
       const wired = wiredInputs.get(node.id)?.has(pin.id) ?? false;
-      if (wired || pin.defaultValue) continue;
+      // Only a wire or an assigned texture satisfies a Texture pin; a numeric default cannot.
+      if (wired || (pin.defaultValue && pin.type.kind !== "texture")) continue;
       if (pin.type.kind === "texture") {
         const guid = node.properties.textureGuid;
         if (typeof guid === "string" && guid !== "") continue;
@@ -462,6 +468,16 @@ export function validateMaterialDocument(
 ): MaterialDiagnostic[] {
   const diagnostics = validateGraph(doc, { ...context, functions: context.functions ?? {}, domain: doc.domain });
   diagnostics.push(...validateCalledFunctions(doc, context, doc.domain));
+  // Function Input and Function Output only mean something inside a Material Function: here they would do nothing.
+  for (const node of doc.nodes) {
+    if (node.type !== "function.input" && node.type !== "function.output") continue;
+    diagnostics.push({
+      code: "material.function.misplaced",
+      message: `"${materialNodeDefinition(node.type)?.title ?? node.type}" can only be used in a Material Function`,
+      severity: "error",
+      nodeId: node.id,
+    });
+  }
   const terminalType = terminalNodeTypeFor(doc.domain);
   const terminals = doc.nodes.filter((node) => node.type === terminalType);
   if (terminals.length === 0) {
@@ -679,6 +695,16 @@ export function validateMaterialFunctionDocument(
   });
   diagnostics.push(...validateFunctionInterface(fn));
   diagnostics.push(...validateCalledFunctions(fn, context));
+  // A Material's output node has nothing to write to in a function: its results leave through Function Output.
+  for (const node of fn.nodes) {
+    if (!MATERIAL_TERMINAL_NODE_TYPES.has(node.type)) continue;
+    diagnostics.push({
+      code: "material.function.misplaced",
+      message: `"${materialNodeDefinition(node.type)?.title ?? node.type}" cannot be used in a Material Function; return values through Function Output`,
+      severity: "error",
+      nodeId: node.id,
+    });
+  }
 
   const dependencies = collectFunctionDependencies(fn, context.functions ?? {});
   if (dependencies.recursion) {

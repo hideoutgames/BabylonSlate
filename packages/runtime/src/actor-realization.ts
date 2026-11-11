@@ -92,6 +92,8 @@ export class ActorRealization {
       onTick: hooks?.onTick
         ? (self, ctx) => this.admission.guardTick(hooks, self, ctx)
         : undefined,
+      // Asked on every tick, so a reload that adds or removes Event Tick reaches a live actor.
+      ticks: () => this.host.scripts().classTicks(classId),
       onDestroyed: (self) => {
         this.host.overlay().retireSwitcher(self);
         this.admission.runDestroyed(self, () => hooks?.onDestroyed?.(self));
@@ -113,6 +115,7 @@ export class ActorRealization {
       onTick: isLockedEngineClassId(classId)
         ? undefined
         : (self, ctx) => this.admission.guardTick(this.host.scripts().hooksFor(classId), self, ctx),
+      ticks: () => this.host.scripts().classTicks(classId),
       onDestroyed: (self) => {
         this.admission.runDestroyed(self, () => this.host.scripts().hooksFor(classId)?.onDestroyed?.(self));
         this.host.dynamicMeshes().remove(self);
@@ -172,6 +175,7 @@ export class ActorRealization {
         onTick: hooks.onTick
           ? (self, ctx) => this.admission.guardTick(hooks, self, ctx)
           : undefined,
+        ticks: () => scripts.classTicks(options.classId),
         onDestroyed: (self) =>
           this.admission.runDestroyed(self, () => hooks.onDestroyed?.(self)),
       },

@@ -70,9 +70,11 @@ export function emitInputEventEntry(
     }
     // A release/repress in one tick finishes the old hold before starting anew.
     const phases = `__phases_${jsIdent(node.id)}`;
+    // Module constants: the entry runs every tick and must not build the order each time.
+    ctx.hoist('const __inputHeldPhases = ["released", "started", "held"], __inputPhases = ["started", "released"];');
     emitBody(
       s,
-      `  const ${phases} = ${snapshot}?.held ? ["released", "started", "held"] : ["started", "released"];`,
+      `  const ${phases} = ${snapshot}?.held ? __inputHeldPhases : __inputPhases;`,
       anchor,
     );
     emitBody(s, `  for (const __phase of ${phases}) {`, anchor);
@@ -169,9 +171,10 @@ export function emitInputEventEntry(
     const padIndexSlot = ctx.output("index");
     emitBody(
       s,
-      `  for (const __pad of (ctx.gamepadConnections ?? []).filter((c) => c.connected === ${connected})) {`,
+      `  for (const __pad of ctx.gamepadConnections ?? []) {`,
       anchor,
     );
+    emitBody(s, `    if (__pad.connected !== ${connected}) continue;`, anchor);
     if (s.instrumentLoops) emitBody(s, `    ${loopCheck(s, anchor.nodeId)}`, anchor);
     emitBody(s, `    ${padIndexSlot} = __pad.gamepadIndex;`, anchor);
     emitExecProbes(s, node.id);

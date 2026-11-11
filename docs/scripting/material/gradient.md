@@ -27,3 +27,4 @@ Maps a Value from 0 to 1 onto a colour gradient that you edit in the **Inspector
 ## Notes
 
 - Values below the first stop or above the last stop use that stop's colour.
+- Stop colours are picked like a [Color](color.md) node's and blended in linear space.

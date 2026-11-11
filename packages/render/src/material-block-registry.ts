@@ -168,11 +168,17 @@ function babylonValueFor(
   }
 }
 
+/**
+ * An input block holding `components`. By default it is a shader constant: the value is written into the shader,
+ * so it costs nothing per bind and the driver can fold it. `uniform` keeps it a uniform for a value that changes
+ * after the build (a parameter, a global parameter).
+ */
 export function createConstantBlock(
   name: string,
   type: MaterialValueType,
   components: readonly number[],
   asColor = false,
+  uniform = false,
 ): InputBlock {
   // Colors go through Color3/Color4 so the merged Babylon type matches the
   // pins that PBR and fragment output expect.
@@ -187,6 +193,8 @@ export function createConstantBlock(
   const block = new InputBlock(uniformName, undefined, babylonType);
   block.value = babylonValueFor(type, components, asColor);
   block.convertToLinearSpace = asColor;
+  // A value that is not finite cannot be written as a shader literal.
+  block.isConstant = !uniform && components.every((component) => Number.isFinite(component));
   return block;
 }
 
@@ -829,7 +837,10 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const block = new GradientBlock(name);
     const stops = [...new Map(materialGradientStops(operation.properties.stops).map((stop) => [stop.position, stop])).values()];
     if (stops.length === 1) stops.push({ position: stops[0]!.position === 1 ? 0 : 1, color: stops[0]!.color });
-    block.colorSteps = stops.sort((a, b) => a.position - b.position).map((stop) => new GradientBlockColorStep(stop.position, Color3.FromArray(stop.color)));
+    // A stop's colour is picked like a Color node's, so it goes to linear space as that one does (`createConstantBlock`),
+    // by the exact sRGB curve the Engine is created with (`useExactSrgbConversions`).
+    block.colorSteps = stops.sort((a, b) => a.position - b.position)
+      .map((stop) => new GradientBlockColorStep(stop.position, Color3.FromArray(stop.color).toLinearSpace(true)));
     return single(block, { value: block.gradient }, { out: block.output });
   },
   /**

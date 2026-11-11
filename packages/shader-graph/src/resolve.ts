@@ -44,7 +44,8 @@ export function callDefinition(
       id: pin.id,
       name: pin.name,
       type: { kind: pin.type },
-      ...(pin.defaultValue ? { defaultValue: pin.defaultValue } : {}),
+      // A Texture input has no value to fall back on: a default kept from an earlier numeric type is not one.
+      ...(pin.defaultValue && pin.type !== "texture" ? { defaultValue: pin.defaultValue } : {}),
     })),
     outputs: fn.outputs.map((pin) => ({
       id: pin.id,

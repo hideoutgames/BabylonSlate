@@ -38,7 +38,24 @@ describe("runtime global parameters", () => {
     expect(globals.get("more", "Glow", ["color"]).found).toBe(true);
   });
 
-  it("tells the renderer about every value it sets or drops", () => {
+  it("tells the renderer nothing when a value is set to what it already is", () => {
+    const commands: unknown[] = [];
+    const globals = new RuntimeGlobalParameters(undefined, (command) => commands.push(command));
+    globals.replaceCatalog(catalog);
+
+    // Heat defaults to 1; Wind is set to (3, 4) once, then again every tick.
+    expect(globals.set("fx", "Heat", [1], ["float"])?.id).toBe("heat");
+    globals.set("fx", "Wind", [3, 4], ["vec2"]);
+    globals.set("fx", "Wind", [3, 4], ["vec2"]);
+    globals.set("fx", "Wind", [3, 5], ["vec2"]);
+
+    expect(commands).toEqual([
+      { type: "setGlobalParameter", collectionGuid: "fx", parameterId: "wind", value: [3, 4] },
+      { type: "setGlobalParameter", collectionGuid: "fx", parameterId: "wind", value: [3, 5] },
+    ]);
+  });
+
+  it("tells the renderer about every value it changes or drops", () => {
     const commands: unknown[] = [];
     const globals = new RuntimeGlobalParameters(undefined, (command) => commands.push(command));
     globals.replaceCatalog(catalog);

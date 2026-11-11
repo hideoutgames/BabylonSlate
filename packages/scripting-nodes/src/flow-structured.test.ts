@@ -235,7 +235,9 @@ describe("structured flow compile + runtime", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toMatch(/\.entries\s*\(/);
+    // The snapshot helper is a module constant, and the loop builds no function of its own.
+    expect(compiled.source).toContain("const __mapEntries = ");
+    expect(compiled.source).toContain("= __mapEntries(");
 
     const mod = loadModule(compiled.source);
     const logs: string[] = [];

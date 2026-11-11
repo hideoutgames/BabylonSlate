@@ -17,7 +17,7 @@ import {
   ENGINE_EASING_CURVE_ENUM_ID,
 } from "@haptic/scripting";
 import { hoistedCall } from "./hoisted-helper";
-import { VALUE_INDEX_OF, hasValueTypePin } from "./map";
+import { hasValueTypePin, valueIndexOf } from "./map";
 
 type Ctx = Parameters<NodeDefinition["codegen"]>[0];
 type Input = [id: string, name: string, type: PinType, defaultValue?: unknown];
@@ -269,7 +269,7 @@ const ARRAY_NODES: NodeDefinition[] = [
     "A copy of Array in ascending order, or descending with Descending. Numbers sort by value, text alphabetically by character code.", ["sort", "order"]),
   arrayAction("array.addUnique", "Add Unique Array Item", [pin("item", "Item", "in", T)], [pin("index", "Index", "out", INT)],
     (ctx, array) => {
-      const index = hasValueTypePin(ctx, "item") ? `${VALUE_INDEX_OF}(__a, __item)` : "__a.indexOf(__item)";
+      const index = hasValueTypePin(ctx, "item") ? `${valueIndexOf(ctx)}(__a, __item)` : "__a.indexOf(__item)";
       return `{ const __a = ${array}; const __item = ${ctx.input("item")}; let __i = ${index}; if (__i < 0) { __i = __a.length; __a.push(__item); } ${ctx.output("out")} = __a; ${ctx.output("index")} = __i; }`;
     },
     "Array with Item appended unless it already holds an equal item. Index is where Item is in the result.", ["append unique", "add if missing"]),

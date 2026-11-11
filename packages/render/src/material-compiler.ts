@@ -325,12 +325,6 @@ function anchorNodeId(operation: MaterialOperation): string {
   return operation.source.callPath[0] ?? operation.source.nodeId;
 }
 
-function colorPins(nodeType: string): Set<string> {
-  return nodeType === "const.color" || nodeType === "param.color"
-    ? new Set(["out"])
-    : new Set();
-}
-
 /** Babylon removes digits before allocating unique shader symbols. Collapse the
  * separators after that removal so generated node IDs cannot introduce GLSL's
  * reserved double underscore, including when an adapter appends a suffix. */
@@ -582,8 +576,9 @@ export function compileMaterialPlan(
       const perInstance = operation.source.callPath.length === 0 && isPerInstanceParameter(operation.nodeType, operation.properties);
       const kind = operation.nodeType === "param.color" ? "color" : "float";
       const block = perInstance
-        ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length), kind)
-        : createConstantBlock(operationBlockName(operation.id), type, value, asColor);
+        ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length, kind), kind)
+        // A parameter stays a uniform, which `setParameter` rewrites; a constant node is written into the shader.
+        : createConstantBlock(operationBlockName(operation.id), type, value, asColor, operation.nodeType.startsWith("param."));
       if (perInstance) instanceParameters.push({
         name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,
         value: kind === "color" ? { kind, value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1] } : { kind, value: value[0] ?? 0 },
@@ -673,7 +668,6 @@ export function compileMaterialPlan(
       }
     }
 
-    const colored = colorPins(operation.nodeType);
     for (const [pinId, operand] of Object.entries(operation.inputs)) {
       const target = realization.inputs[pinId];
       if (!target) continue;
@@ -681,7 +675,7 @@ export function compileMaterialPlan(
         const point = pointForOperand(
           operand,
           operationBlockName(`${operation.id}_${pinId}`),
-          colored.has(pinId),
+          false,
         );
         if (!point) continue;
         point.connectTo(target);
@@ -1878,11 +1872,19 @@ export async function prewarmMaterial(
   // with authored textures, rendering readiness owns their pending upload;
   // do not start Babylon's uncancellable compilation poll before it finishes.
   if (material.attachedBlocks.some((block) => block instanceof TextMaterialBlock && !block.isReady(mesh))) return;
+  if (mesh.isDisposed()) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const bound = createHeldThreadBound(SCENE_SHADER_WARM_TIMEOUT_MS, undefined, renewOnCompileProgress(mesh.getEngine()));
+  // Babylon's compile poll never settles for a Material disposed while it polls (a replaced or superseded one), and
+  // nothing will draw that variant: the warm-up ends there instead of waiting out its bound and reporting a stall.
+  let gone!: () => void;
+  const disposed = new Promise<void>((resolve) => { gone = resolve; });
+  const materialGone = material.onDisposeObservable.addOnce(gone);
+  const meshGone = mesh.onDisposeObservable.addOnce(gone);
   try {
     await Promise.race([
       material.forceCompilationAsync(mesh),
+      disposed,
       new Promise<never>((_, reject) => {
         const check = () => {
           if (bound.expired()) reject(new MaterialCompileStalled());
@@ -1893,5 +1895,7 @@ export async function prewarmMaterial(
     ]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    material.onDisposeObservable.remove(materialGone);
+    mesh.onDisposeObservable.remove(meshGone);
   }
 }

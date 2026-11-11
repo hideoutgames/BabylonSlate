@@ -122,12 +122,22 @@ export function applySetMaterialParameter(
     };
     binding.materialParameters.set(key, parameters);
   }
+  // Before this write: whether the target already had values, and so possibly a Material of its own.
+  const hadValues = parameters.values.size > 0;
   parameters.values.set(command.parameterName, command.parameter);
   const restart = pendingMaterialPreparations.get(binding)?.get(command.slotId);
   if (restart) { restart(); return; }
   const root = binding.meshes.get(command.slotId);
+  if (!root) return;
+  // A target that already draws a Material of its own takes the value in place: its meshes are bound to that
+  // Material, so nothing needs resolving or binding again. A script may write a parameter every tick.
+  if (hadValues && binding.setMaterialInstanceParameter?.(command.materialAssetGuid, {
+    scene: root.getScene(),
+    ...(wantsOverlayUnlitMaterial(binding, command.slotId) ? { unlit: true } : {}),
+    instanceKey: key,
+  }, command.parameterName, command.parameter)) return;
   // A component's private values reach only its own meshes; an empty id is a whole-actor write.
-  if (root) applyMaterialToActorMeshes(binding, command.slotId, root, command.componentId || undefined);
+  applyMaterialToActorMeshes(binding, command.slotId, root, command.componentId || undefined);
 }
 
 /** Unique Material guids currently recorded on Play meshes. */

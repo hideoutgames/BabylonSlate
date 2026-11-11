@@ -357,7 +357,12 @@ export class MaterialLibrary {
     }
     if (materialCompileFailed(compiled)) {
       textures.dispose();
-      if (failsPlan(compiled.diagnostics)) failures.set(failureKey, { hash, diagnostics: compiled.diagnostics });
+      // A texture the host does not have fails every build of this generation, and where the hash carries each
+      // texture's identity a texture that arrives later makes a new generation: remember the failure, so each mesh
+      // that asks for the Material does not compile it again.
+      const missing = this.options.textureIdentity !== undefined &&
+        compiled.diagnostics.some((diagnostic) => diagnostic.code === "material.missingTexture");
+      if (missing || failsPlan(compiled.diagnostics)) failures.set(failureKey, { hash, diagnostics: compiled.diagnostics });
       return { ok: false, diagnostics: compiled.diagnostics };
     }
     compiled.material.name = compiled.material.id = materialName;
@@ -737,6 +742,10 @@ export class MaterialLibrary {
     );
   }
 
+  /**
+   * Sets a parameter on the Material built, or being built, for `assetGuid` and the instance, without resolving
+   * it: false when there is none. A component whose own Material exists takes a script's later values this way.
+   */
   setParameter(
     scene: Scene,
     assetGuid: string,

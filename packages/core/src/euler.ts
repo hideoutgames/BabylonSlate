@@ -6,52 +6,36 @@ export type QuaternionTuple = [number, number, number, number];
 const DEG = Math.PI / 180;
 const RAD = 180 / Math.PI;
 
-/** Pitch (X), yaw (Y), roll (Z) in degrees → quaternion (YXZ / Babylon yaw-pitch-roll). */
-export function eulerDegreesToQuaternion(
-  euler: EulerDegrees,
-): QuaternionTuple {
-  const x = euler[0] * DEG;
-  const y = euler[1] * DEG;
-  const z = euler[2] * DEG;
+// The scalar kernels below write their result into these slots instead of returning an array or
+// an object: the rotation nodes run every tick, and a combined operation chains several kernels.
+// A caller reads the slots before it runs another kernel.
+let outX = 0;
+let outY = 0;
+let outZ = 0;
+let outW = 1;
+let outPitch = 0;
+let outYaw = 0;
+let outRoll = 0;
+
+/** Pitch (X), yaw (Y), roll (Z) in degrees to a quaternion in `outX`..`outW` (YXZ / Babylon yaw-pitch-roll). */
+function eulerToQuat(pitch: number, yaw: number, roll: number): void {
+  const x = pitch * DEG;
+  const y = yaw * DEG;
+  const z = roll * DEG;
   const c1 = Math.cos(x / 2);
   const c2 = Math.cos(y / 2);
   const c3 = Math.cos(z / 2);
   const s1 = Math.sin(x / 2);
   const s2 = Math.sin(y / 2);
   const s3 = Math.sin(z / 2);
-  return [
-    s1 * c2 * c3 + c1 * s2 * s3,
-    c1 * s2 * c3 - s1 * c2 * s3,
-    c1 * c2 * s3 - s1 * s2 * c3,
-    c1 * c2 * c3 + s1 * s2 * s3,
-  ];
+  outX = s1 * c2 * c3 + c1 * s2 * s3;
+  outY = c1 * s2 * c3 - s1 * c2 * s3;
+  outZ = c1 * c2 * s3 - s1 * s2 * c3;
+  outW = c1 * c2 * c3 + s1 * s2 * s3;
 }
 
-/**
- * Quaternion that aims Babylon local +Z from `from` toward `target`
- * (YXZ yaw/pitch, no roll). Degenerate when the two points coincide.
- */
-export function lookAtRotation(
-  from: readonly [number, number, number],
-  target: readonly [number, number, number] = [0, 0, 0],
-): QuaternionTuple {
-  const dx = target[0] - from[0];
-  const dy = target[1] - from[1];
-  const dz = target[2] - from[2];
-  const horiz = Math.hypot(dx, dz);
-  if (horiz < 1e-8 && Math.abs(dy) < 1e-8) {
-    return [0, 0, 0, 1];
-  }
-  const yaw = Math.atan2(dx, dz) * RAD;
-  const pitch = Math.atan2(-dy, horiz) * RAD;
-  return eulerDegreesToQuaternion([pitch, yaw, 0]);
-}
-
-/** Inverse of {@link eulerDegreesToQuaternion}. */
-export function quaternionToEulerDegrees(
-  q: QuaternionTuple,
-): EulerDegrees {
-  const [qx, qy, qz, qw] = q;
+/** Inverse of `eulerToQuat`, into `outPitch`, `outYaw` and `outRoll`. */
+function quatToEuler(qx: number, qy: number, qz: number, qw: number): void {
   const sinp = 2 * (qw * qx - qy * qz);
   let x: number;
   let y: number;
@@ -65,107 +49,184 @@ export function quaternionToEulerDegrees(
     y = Math.atan2(2 * (qy * qw - qz * qx), 1 - 2 * (qy * qy + qz * qz));
     z = 0;
   }
-  return [x * RAD, y * RAD, z * RAD];
+  outPitch = x * RAD;
+  outYaw = y * RAD;
+  outRoll = z * RAD;
+}
+
+/** Pitch (X), yaw (Y), roll (Z) in degrees → quaternion (YXZ / Babylon yaw-pitch-roll). */
+export function eulerDegreesToQuaternion(
+  euler: EulerDegrees,
+): QuaternionTuple {
+  eulerToQuat(euler[0], euler[1], euler[2]);
+  return [outX, outY, outZ, outW];
+}
+
+/**
+ * Quaternion that aims Babylon local +Z from `from` toward `target`
+ * (YXZ yaw/pitch, no roll). Degenerate when the two points coincide.
+ */
+export function lookAtRotation(
+  from: readonly [number, number, number],
+  target: readonly [number, number, number] = [0, 0, 0],
+): QuaternionTuple {
+  lookAt(from[0], from[1], from[2], target[0], target[1], target[2]);
+  return [outX, outY, outZ, outW];
+}
+
+/** `lookAtRotation` on scalars, into `outX`..`outW`. */
+function lookAt(fx: number, fy: number, fz: number, tx: number, ty: number, tz: number): void {
+  const dx = tx - fx;
+  const dy = ty - fy;
+  const dz = tz - fz;
+  const horiz = Math.hypot(dx, dz);
+  if (horiz < 1e-8 && Math.abs(dy) < 1e-8) {
+    outX = 0;
+    outY = 0;
+    outZ = 0;
+    outW = 1;
+    return;
+  }
+  eulerToQuat(Math.atan2(-dy, horiz) * RAD, Math.atan2(dx, dz) * RAD, 0);
+}
+
+/** Inverse of {@link eulerDegreesToQuaternion}. */
+export function quaternionToEulerDegrees(
+  q: QuaternionTuple,
+): EulerDegrees {
+  quatToEuler(q[0], q[1], q[2], q[3]);
+  return [outPitch, outYaw, outRoll];
 }
 
 export type RotatorObject = { pitch: number; yaw: number; roll: number };
 export type QuatObject = { x: number; y: number; z: number; w: number };
 export type Vec3Object = { x: number; y: number; z: number };
 
-function readRotator(value: Partial<RotatorObject> | null | undefined): RotatorObject {
-  return {
-    pitch: Number(value?.pitch ?? 0),
-    yaw: Number(value?.yaw ?? 0),
-    roll: Number(value?.roll ?? 0),
-  };
+type RotatorInput = Partial<RotatorObject> | null | undefined;
+type QuatInput = Partial<QuatObject> | null | undefined;
+type Vec3Input = Partial<Vec3Object> | null | undefined;
+
+/** A rotator pin value as a quaternion in `outX`..`outW`; a missing component is 0. */
+function loadRotator(value: RotatorInput): void {
+  eulerToQuat(Number(value?.pitch ?? 0), Number(value?.yaw ?? 0), Number(value?.roll ?? 0));
 }
 
-function readQuat(value: Partial<QuatObject> | null | undefined): QuatObject {
-  const x = Number(value?.x ?? 0);
-  const y = Number(value?.y ?? 0);
-  const z = Number(value?.z ?? 0);
-  const w = Number(value?.w ?? 1);
-  if (x === 0 && y === 0 && z === 0 && w === 0) {
-    return { x: 0, y: 0, z: 0, w: 1 };
-  }
-  return { x, y, z, w };
+/** A quaternion pin value in `outX`..`outW`: a missing one, or all zeros, is the identity. */
+function loadQuat(value: QuatInput): void {
+  setQuat(Number(value?.x ?? 0), Number(value?.y ?? 0), Number(value?.z ?? 0), Number(value?.w ?? 1));
 }
 
-function readVec3(value: Partial<Vec3Object> | null | undefined): Vec3Object {
-  return {
-    x: Number(value?.x ?? 0),
-    y: Number(value?.y ?? 0),
-    z: Number(value?.z ?? 0),
-  };
-}
-
-export function rotatorToQuat(
-  rotator: Partial<RotatorObject> | null | undefined,
-): QuatObject {
-  const r = readRotator(rotator);
-  const [x, y, z, w] = eulerDegreesToQuaternion([r.pitch, r.yaw, r.roll]);
-  return { x, y, z, w };
+/** `(x, y, z, w)` in `outX`..`outW`, with all zeros read as the identity. */
+function setQuat(x: number, y: number, z: number, w: number): void {
+  const zero = x === 0 && y === 0 && z === 0 && w === 0;
+  outX = x;
+  outY = y;
+  outZ = z;
+  outW = zero ? 1 : w;
 }
 
 /**
- * `value` as a rotation: scaled to unit length. Make Quaternion and arithmetic on quaternions can
- * hand over any length, and the formulas below assume one: (0, 1, 0, 1) is a 90° yaw, not 116°.
+ * Scales the quaternion in `outX`..`outW` to unit length. Make Quaternion and arithmetic on
+ * quaternions can hand over any length, and the formulas below assume one: (0, 1, 0, 1) is a 90°
+ * yaw, not 116°.
  */
-function readRotation(value: Partial<QuatObject> | null | undefined): QuatObject {
-  const q = readQuat(value);
-  const length = Math.hypot(q.x, q.y, q.z, q.w);
-  if (!(length > 0) || !Number.isFinite(length)) return { x: 0, y: 0, z: 0, w: 1 };
-  if (Math.abs(length - 1) < 1e-9) return q;
-  return { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length };
+function normalizeOut(): void {
+  const length = Math.hypot(outX, outY, outZ, outW);
+  if (!(length > 0) || !Number.isFinite(length)) {
+    outX = 0;
+    outY = 0;
+    outZ = 0;
+    outW = 1;
+    return;
+  }
+  if (Math.abs(length - 1) < 1e-9) return;
+  outX /= length;
+  outY /= length;
+  outZ /= length;
+  outW /= length;
 }
 
-export function quatToRotator(
-  quat: Partial<QuatObject> | null | undefined,
-): RotatorObject {
-  const q = readRotation(quat);
-  const [pitch, yaw, roll] = quaternionToEulerDegrees([q.x, q.y, q.z, q.w]);
-  return { pitch, yaw, roll };
+/** The Hamilton product `a * b`, into `outX`..`outW`. */
+function multiply(ax: number, ay: number, az: number, aw: number, bx: number, by: number, bz: number, bw: number): void {
+  outX = aw * bx + ax * bw + ay * bz - az * by;
+  outY = aw * by - ax * bz + ay * bw + az * bx;
+  outZ = aw * bz + ax * by - ay * bx + az * bw;
+  outW = aw * bw - ax * bx - ay * by - az * bz;
 }
 
-export function multiplyQuats(
-  a: Partial<QuatObject> | null | undefined,
-  b: Partial<QuatObject> | null | undefined,
-): QuatObject {
-  const left = readQuat(a);
-  const right = readQuat(b);
-  return {
-    x: left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
-    y: left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
-    z: left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
-    w: left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z,
-  };
+/** The rotation in `outX`..`outW` as a rotator, into `outPitch`, `outYaw` and `outRoll`. */
+function outToEuler(): void {
+  setQuat(outX, outY, outZ, outW);
+  normalizeOut();
+  quatToEuler(outX, outY, outZ, outW);
 }
 
-export function inverseQuat(
-  quat: Partial<QuatObject> | null | undefined,
-): QuatObject {
-  const q = readRotation(quat);
-  return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
+function outQuat(): QuatObject {
+  return { x: outX, y: outY, z: outZ, w: outW };
 }
 
-export function combineRotators(
-  a: Partial<RotatorObject> | null | undefined,
-  b: Partial<RotatorObject> | null | undefined,
-): RotatorObject {
-  return quatToRotator(multiplyQuats(rotatorToQuat(a), rotatorToQuat(b)));
+function outRotator(): RotatorObject {
+  return { pitch: outPitch, yaw: outYaw, roll: outRoll };
 }
 
-export function inverseRotator(
-  rotator: Partial<RotatorObject> | null | undefined,
-): RotatorObject {
-  return quatToRotator(inverseQuat(rotatorToQuat(rotator)));
+export function rotatorToQuat(rotator: RotatorInput): QuatObject {
+  loadRotator(rotator);
+  return outQuat();
 }
 
-export function deltaRotator(
-  from: Partial<RotatorObject> | null | undefined,
-  to: Partial<RotatorObject> | null | undefined,
-): RotatorObject {
-  return combineRotators(inverseRotator(from), to);
+export function quatToRotator(quat: QuatInput): RotatorObject {
+  loadQuat(quat);
+  outToEuler();
+  return outRotator();
+}
+
+export function multiplyQuats(a: QuatInput, b: QuatInput): QuatObject {
+  loadQuat(a);
+  const ax = outX, ay = outY, az = outZ, aw = outW;
+  loadQuat(b);
+  multiply(ax, ay, az, aw, outX, outY, outZ, outW);
+  return outQuat();
+}
+
+export function inverseQuat(quat: QuatInput): QuatObject {
+  loadQuat(quat);
+  normalizeOut();
+  return { x: -outX, y: -outY, z: -outZ, w: outW };
+}
+
+/** `a` then `b` as one rotator, into `outPitch`, `outYaw` and `outRoll`. */
+function combine(aPitch: number, aYaw: number, aRoll: number, b: RotatorInput): void {
+  eulerToQuat(aPitch, aYaw, aRoll);
+  const ax = outX, ay = outY, az = outZ, aw = outW;
+  loadRotator(b);
+  multiply(ax, ay, az, aw, outX, outY, outZ, outW);
+  outToEuler();
+}
+
+/** The inverse of `rotator`, into `outPitch`, `outYaw` and `outRoll`. */
+function invert(rotator: RotatorInput): void {
+  loadRotator(rotator);
+  normalizeOut();
+  outX = -outX;
+  outY = -outY;
+  outZ = -outZ;
+  outToEuler();
+}
+
+export function combineRotators(a: RotatorInput, b: RotatorInput): RotatorObject {
+  combine(Number(a?.pitch ?? 0), Number(a?.yaw ?? 0), Number(a?.roll ?? 0), b);
+  return outRotator();
+}
+
+export function inverseRotator(rotator: RotatorInput): RotatorObject {
+  invert(rotator);
+  return outRotator();
+}
+
+export function deltaRotator(from: RotatorInput, to: RotatorInput): RotatorObject {
+  invert(from);
+  combine(outPitch, outYaw, outRoll, to);
+  return outRotator();
 }
 
 function clamp01(value: number): number {
@@ -174,104 +235,101 @@ function clamp01(value: number): number {
   return value;
 }
 
-export function slerpQuats(
-  a: Partial<QuatObject> | null | undefined,
-  b: Partial<QuatObject> | null | undefined,
-  alpha: number,
-): QuatObject {
-  let left = readQuat(a);
-  const right = readQuat(b);
+/** The shortest-arc interpolation from `a` to `b`, into `outX`..`outW`; `t` is clamped to 0..1. */
+function slerp(ax: number, ay: number, az: number, aw: number, bx: number, by: number, bz: number, bw: number, alpha: number): void {
   const t = clamp01(Number(alpha));
-  let dot =
-    left.x * right.x + left.y * right.y + left.z * right.z + left.w * right.w;
+  let dot = ax * bx + ay * by + az * bz + aw * bw;
   if (dot < 0) {
-    left = { x: -left.x, y: -left.y, z: -left.z, w: -left.w };
+    ax = -ax;
+    ay = -ay;
+    az = -az;
+    aw = -aw;
     dot = -dot;
   }
   if (dot > 0.9995) {
-    return {
-      x: left.x + (right.x - left.x) * t,
-      y: left.y + (right.y - left.y) * t,
-      z: left.z + (right.z - left.z) * t,
-      w: left.w + (right.w - left.w) * t,
-    };
+    outX = ax + (bx - ax) * t;
+    outY = ay + (by - ay) * t;
+    outZ = az + (bz - az) * t;
+    outW = aw + (bw - aw) * t;
+    return;
   }
   const theta = Math.acos(Math.min(1, dot));
   const sinTheta = Math.sin(theta);
   const w0 = Math.sin((1 - t) * theta) / sinTheta;
   const w1 = Math.sin(t * theta) / sinTheta;
+  outX = ax * w0 + bx * w1;
+  outY = ay * w0 + by * w1;
+  outZ = az * w0 + bz * w1;
+  outW = aw * w0 + bw * w1;
+}
+
+export function slerpQuats(a: QuatInput, b: QuatInput, alpha: number): QuatObject {
+  loadQuat(a);
+  const ax = outX, ay = outY, az = outZ, aw = outW;
+  loadQuat(b);
+  slerp(ax, ay, az, aw, outX, outY, outZ, outW, alpha);
+  return outQuat();
+}
+
+export function lerpRotator(a: RotatorInput, b: RotatorInput, alpha: number): RotatorObject {
+  loadRotator(a);
+  const ax = outX, ay = outY, az = outZ, aw = outW;
+  loadRotator(b);
+  slerp(ax, ay, az, aw, outX, outY, outZ, outW, alpha);
+  outToEuler();
+  return outRotator();
+}
+
+/** `(vx, vy, vz)` turned by the unit quaternion in `outX`..`outW`. */
+function rotated(vx: number, vy: number, vz: number): Vec3Object {
+  const qx = outX, qy = outY, qz = outZ, qw = outW;
+  const tx = 2 * (qy * vz - qz * vy);
+  const ty = 2 * (qz * vx - qx * vz);
+  const tz = 2 * (qx * vy - qy * vx);
   return {
-    x: left.x * w0 + right.x * w1,
-    y: left.y * w0 + right.y * w1,
-    z: left.z * w0 + right.z * w1,
-    w: left.w * w0 + right.w * w1,
+    x: vx + qw * tx + (qy * tz - qz * ty),
+    y: vy + qw * ty + (qz * tx - qx * tz),
+    z: vz + qw * tz + (qx * ty - qy * tx),
   };
 }
 
-export function lerpRotator(
-  a: Partial<RotatorObject> | null | undefined,
-  b: Partial<RotatorObject> | null | undefined,
-  alpha: number,
-): RotatorObject {
-  return quatToRotator(slerpQuats(rotatorToQuat(a), rotatorToQuat(b), alpha));
+export function quatRotateVector(quat: QuatInput, vector: Vec3Input): Vec3Object {
+  loadQuat(quat);
+  normalizeOut();
+  return rotated(Number(vector?.x ?? 0), Number(vector?.y ?? 0), Number(vector?.z ?? 0));
 }
 
-export function quatRotateVector(
-  quat: Partial<QuatObject> | null | undefined,
-  vector: Partial<Vec3Object> | null | undefined,
-): Vec3Object {
-  const q = readRotation(quat);
-  const v = readVec3(vector);
-  const tx = 2 * (q.y * v.z - q.z * v.y);
-  const ty = 2 * (q.z * v.x - q.x * v.z);
-  const tz = 2 * (q.x * v.y - q.y * v.x);
-  return {
-    x: v.x + q.w * tx + (q.y * tz - q.z * ty),
-    y: v.y + q.w * ty + (q.z * tx - q.x * tz),
-    z: v.z + q.w * tz + (q.x * ty - q.y * tx),
-  };
+/** The axis `(vx, vy, vz)` of an object turned by `rotator`. */
+function rotatorAxis(rotator: RotatorInput, vx: number, vy: number, vz: number): Vec3Object {
+  loadRotator(rotator);
+  normalizeOut();
+  return rotated(vx, vy, vz);
 }
 
-export function rotatorForward(
-  rotator: Partial<RotatorObject> | null | undefined,
-): Vec3Object {
-  return quatRotateVector(rotatorToQuat(rotator), { x: 0, y: 0, z: 1 });
+export function rotatorForward(rotator: RotatorInput): Vec3Object {
+  return rotatorAxis(rotator, 0, 0, 1);
 }
 
-export function rotatorRight(
-  rotator: Partial<RotatorObject> | null | undefined,
-): Vec3Object {
-  return quatRotateVector(rotatorToQuat(rotator), { x: 1, y: 0, z: 0 });
+export function rotatorRight(rotator: RotatorInput): Vec3Object {
+  return rotatorAxis(rotator, 1, 0, 0);
 }
 
-export function rotatorUp(
-  rotator: Partial<RotatorObject> | null | undefined,
-): Vec3Object {
-  return quatRotateVector(rotatorToQuat(rotator), { x: 0, y: 1, z: 0 });
+export function rotatorUp(rotator: RotatorInput): Vec3Object {
+  return rotatorAxis(rotator, 0, 1, 0);
 }
 
-export function lookAtRotator(
-  from: Partial<Vec3Object> | null | undefined,
-  target: Partial<Vec3Object> | null | undefined,
-): RotatorObject {
-  const start = readVec3(from);
-  const end = readVec3(target);
-  return quatToRotator(
-    tupleToQuat(
-      lookAtRotation([start.x, start.y, start.z], [end.x, end.y, end.z]),
-    ),
+export function lookAtRotator(from: Vec3Input, target: Vec3Input): RotatorObject {
+  lookAt(
+    Number(from?.x ?? 0), Number(from?.y ?? 0), Number(from?.z ?? 0),
+    Number(target?.x ?? 0), Number(target?.y ?? 0), Number(target?.z ?? 0),
   );
+  outToEuler();
+  return outRotator();
 }
 
-export function normalizeQuat(
-  quat: Partial<QuatObject> | null | undefined,
-): QuatObject {
-  const q = readQuat(quat);
-  const length = Math.hypot(q.x, q.y, q.z, q.w);
+export function normalizeQuat(quat: QuatInput): QuatObject {
+  loadQuat(quat);
+  const length = Math.hypot(outX, outY, outZ, outW);
   if (length < 1e-8) return { x: 0, y: 0, z: 0, w: 1 };
-  return { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length };
-}
-
-function tupleToQuat(tuple: QuaternionTuple): QuatObject {
-  return { x: tuple[0], y: tuple[1], z: tuple[2], w: tuple[3] };
+  return { x: outX / length, y: outY / length, z: outZ / length, w: outW / length };
 }

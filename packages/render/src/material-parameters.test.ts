@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -12,6 +12,7 @@ import {
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
+import { materialParameterRevision } from "./material-parameters";
 import { MaterialLibrary } from "./material-library";
 import * as snapshots from "./snapshot-apply";
 
@@ -162,6 +163,28 @@ describe("material parameter bindings", () => {
     expect(
       compiled.setParameter("Roughness", { kind: "float", value: 0.1 }),
     ).toBe(false);
+  });
+
+  it("makes the next bind upload a changed value without marking any submesh dirty", () => {
+    const scene = host();
+    const lowered = lowerMaterialDocument(parameterDocument());
+    if (!lowered.ok) throw new Error("Invalid fixture");
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: "parameters" });
+    if (!compiled.ok) throw new Error("Compile failed");
+    disposers.push(compiled.dispose);
+    // `markDirty` walks every mesh of the Scene; a script may write a parameter every tick.
+    const walked = vi.spyOn(compiled.material, "markDirty");
+    const forgotten = vi.spyOn(scene, "resetCachedMaterial");
+    const revision = materialParameterRevision(compiled.material)!;
+
+    expect(compiled.setParameter("Roughness", { kind: "float", value: 0.8 })).toBe(true);
+
+    expect(walked).not.toHaveBeenCalled();
+    expect(forgotten).toHaveBeenCalledTimes(1);
+    expect(materialParameterRevision(compiled.material)).toBe(revision + 1);
+    // Writing the value it already has changes nothing.
+    expect(compiled.setParameter("Roughness", { kind: "float", value: 0.8 })).toBe(true);
+    expect(forgotten).toHaveBeenCalledTimes(1);
   });
 
   it("binds Vector2 and Vector3 parameters as linear vector uniforms", () => {
@@ -350,6 +373,8 @@ describe("runtime material parameters", () => {
     binding.releaseMaterialInstance = (key) => library.releaseInstance(key);
     binding.validateMaterialParameter = (_guid, name, value) =>
       library.acceptsParameter(doc, name, value);
+    binding.setMaterialInstanceParameter = (guid, options, name, value) =>
+      library.setParameter(options.scene, guid, name, value, options);
     disposers.push(() => library.dispose());
     return { scene, binding, library };
   }
@@ -399,6 +424,31 @@ describe("runtime material parameters", () => {
     expect(binding.meshes.get(1)!.material).toBe(first);
     snapshots.retirePlaySlot(binding, 1);
     expect(binding.materialParameters.size).toBe(0);
+  });
+
+  it("sets a later value on the actor's own Material in place, without resolving or binding it again", () => {
+    const { scene, binding, library } = setup();
+    snapshots.applyAssignMaterial(scene, binding, { type: "assignMaterial", slotId: 1, materialAssetGuid: "mat" });
+    snapshots.applyAssignMesh(scene, binding, { type: "assignMesh", slotId: 1, meshKind: "box", meshAssetGuid: null });
+    const write = (value: number) => snapshots.applySetMaterialParameter(binding, {
+      type: "setMaterialParameter", slotId: 1, materialAssetGuid: "mat", parameterName: "Roughness", parameter: { kind: "float", value },
+    });
+    const roughness = () => (binding.meshes.get(1)!.material as import("@babylonjs/core").NodeMaterial).getBlockByName("roughness");
+    // The first write gives the actor a Material of its own.
+    write(0.7);
+    const own = binding.meshes.get(1)!.material!;
+    expect(roughness()).toMatchObject({ value: 0.7 });
+    const resolved = vi.spyOn(library, "resolve");
+
+    // A script writing every tick: each later value lands on that Material directly.
+    write(0.2);
+    write(0.9);
+
+    expect(resolved).not.toHaveBeenCalled();
+    expect(binding.meshes.get(1)!.material).toBe(own);
+    expect(roughness()).toMatchObject({ value: 0.9 });
+    // The recorded value, which a rebuilt mesh replays, follows too.
+    expect([...binding.materialParameters.values()].map((entry) => entry.values.get("Roughness"))).toEqual([{ kind: "float", value: 0.9 }]);
   });
 
   it("retires only the despawned slot's assignments and private instances, not a slot whose id starts the same", () => {

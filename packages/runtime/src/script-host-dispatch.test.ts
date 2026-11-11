@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { InfiniteLoopError } from "@haptic/debugger";
-import { Actor, ActorComponent, InterfaceRegistry, type TickContext } from "@haptic/object-model";
+import { Actor, ActorComponent, ClassRegistry, InterfaceRegistry, type TickContext } from "@haptic/object-model";
 import { ScriptHost, type CompiledScript, type ScriptHostServices } from "./script-host";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 
@@ -75,6 +75,25 @@ describe("ScriptHost nested dispatch", () => {
 
     expect(ctx.invokeFunction(caller, "Read", {})).toEqual({ hp: 99 });
     expect(ctx.invokeFunction(other, "Read", {})).toEqual({ hp: 7 });
+  });
+
+  it("reports whether a tick has anything to run for a Class: its own or an inherited Event Tick, or an input event", async () => {
+    const classRegistry = new ClassRegistry();
+    for (const [id, parentClassId] of [["Idle", "Actor"], ["Ticker", "Actor"], ["Child", "Ticker"], ["Listener", "Actor"]] as const) {
+      classRegistry.register({ id, parentClassId, kind: "actor", variables: [], implementedInterfaces: [] });
+    }
+    const host = new ScriptHost(services({ classRegistry }));
+    const entry = (name: string, event: string) => ({ entryPoints: [{ name, event, isAsync: false }] });
+    await host.load(script("Idle", "export function begin(ctx) {}", entry("begin", "onBeginPlay")));
+    await host.load(script("Ticker", "export function tick(ctx) {}", entry("tick", "onTick")));
+    await host.load(script("Child", "export function begin(ctx) {}", { ...entry("begin", "onBeginPlay"), parentClassId: "Ticker" }));
+    await host.load(script("Listener", "export function input(ctx) {}", entry("input", "onInput")));
+
+    expect(["Idle", "Ticker", "Child", "Listener", "Unscripted"].map((classId) => host.classTicks(classId)))
+      .toEqual([false, true, true, true, false]);
+    // A reload that adds Event Tick is seen at once.
+    await host.load(script("Idle", "export function tick(ctx) {}", entry("tick", "onTick")));
+    expect(host.classTicks("Idle")).toBe(true);
   });
 
   it("indexes a module's entry points on its first dispatch instead of scanning them on every tick", async () => {

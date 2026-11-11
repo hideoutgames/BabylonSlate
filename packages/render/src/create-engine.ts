@@ -1046,6 +1046,8 @@ function initializeEngine(
   };
   binding.releaseMaterialInstance = (key, assetGuid) =>
     materialLibrary.releaseInstance(key, assetGuid);
+  binding.setMaterialInstanceParameter = (guid, options, name, value) =>
+    materialLibrary.setParameter(options.scene, guid, name, value, options);
   binding.validateMaterialParameter = (guid, name, value) => {
     const document = materialDocuments.get(guid);
     return (

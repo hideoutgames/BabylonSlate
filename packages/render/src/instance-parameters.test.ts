@@ -41,16 +41,35 @@ describe("per-instance Material parameters", () => {
   it("reads a parameter marked Per Instance from an instanced attribute, the others from uniforms", () => {
     const { material } = tinted(true);
     const attributes = material.getInputBlocks().filter((block) => block.isAttribute).map((block) => block.name);
-    expect(attributes).toContain(instanceParameterAttribute(0));
-    expect(material.getInputBlocks().find((block) => block.name === instanceParameterAttribute(0))?.isUniform).toBe(false);
-    expect(instanceParameterOf(material, "Tint")).toEqual({ name: "Tint", attribute: instanceParameterAttribute(0), kind: "color" });
+    const attribute = instanceParameterAttribute(0, "color");
+    expect(attributes).toContain(attribute);
+    expect(material.getInputBlocks().find((block) => block.name === attribute)?.isUniform).toBe(false);
+    expect(instanceParameterOf(material, "Tint")).toEqual({ name: "Tint", attribute, kind: "color" });
     expect(instanceParameterOf(material, "Grit")).toBeUndefined();
-    expect(tinted(false).material.getInputBlocks().some((block: InputBlock) => block.name.startsWith("instanceParameter_"))).toBe(false);
+    expect(tinted(false).material.getInputBlocks().some((block: InputBlock) => block.name.startsWith("instanceParameter"))).toBe(false);
   });
 
-  it("names attributes with letters only, as Babylon strips digits", () => {
-    expect([0, 1, 25, 26, 27].map(instanceParameterAttribute)).toEqual(
-      ["instanceParameter_a", "instanceParameter_b", "instanceParameter_z", "instanceParameter_aa", "instanceParameter_ab"]);
+  it("names attributes with letters only, as Babylon strips digits, and by kind", () => {
+    expect([0, 1, 25, 26, 27].map((index) => instanceParameterAttribute(index, "float"))).toEqual(
+      ["instanceParameterFloat_a", "instanceParameterFloat_b", "instanceParameterFloat_z", "instanceParameterFloat_aa", "instanceParameterFloat_ab"]);
+    expect(instanceParameterAttribute(0, "color")).toBe("instanceParameterColor_a");
+  });
+
+  it("keeps a Float and a Color apart on a mesh that draws one Material and then another", () => {
+    const { scene, material } = tinted(true);
+    // Each Material's first per-instance parameter: a Color in one, a Float in the other.
+    const gritty = tinted(false, true, scene).material;
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    box.material = material;
+    material.isReadyForSubMesh(box, box.subMeshes[0]!, true);
+    box.material = gritty;
+    gritty.isReadyForSubMesh(box, box.subMeshes[0]!, true);
+
+    const [tint, grit] = [instanceParameterOf(material, "Tint")!.attribute, instanceParameterOf(gritty, "Grit")!.attribute];
+    // A mesh registers an attribute's width once, so one name for both would keep the Color's four components.
+    expect(grit).not.toBe(tint);
+    expect(box.instancedBuffers[grit]).toBe(0.3);
+    expect((box.instancedBuffers[tint] as Color4).equalsWithEpsilon(linear(1, 0.5, 0.25))).toBe(true);
   });
 
   it("registers the attribute on a mesh the Material draws, holding its value in linear space, and on a source's instances", () => {
@@ -83,7 +102,7 @@ describe("per-instance Material parameters", () => {
 
   it("keeps a member's own value through a move to another group, and writes the next Material's over another's", () => {
     const { scene, material } = tinted(true);
-    // Its first per-instance attribute is the Float Grit: the same attribute name as Tint's.
+    // Its first per-instance attribute is the Float Grit.
     const gritty = tinted(false, true, scene).material;
     const pool = sceneInstancePool(scene);
     const geometry = { key: "box", build: (_scene: Scene, name: string) => MeshBuilder.CreateBox(name, {}, scene) };
@@ -91,7 +110,7 @@ describe("per-instance Material parameters", () => {
     const [mine, plain] = [pool.join(key(material), "mine"), pool.join(key(material), "plain")];
     material.isReadyForSubMesh(mine.sourceMesh, mine.sourceMesh.subMeshes[0]!, true);
     const attribute = instanceParameterOf(material, "Tint")!.attribute;
-    expect(instanceParameterOf(gritty, "Grit")!.attribute).toBe(attribute);
+    const grit = instanceParameterOf(gritty, "Grit")!.attribute;
     setMeshInstanceParameters(mine, material, new Map([["Tint", { kind: "color", value: [0, 1, 0, 1] }]]));
     // Another group of the same Material (a receive change), and one of the gritty Material, each prepared first.
     const unreceived = pool.join(key(material, false), "unreceived");
@@ -101,7 +120,7 @@ describe("per-instance Material parameters", () => {
     pool.rekey(mine, key(material, false));
     pool.rekey(plain, key(gritty));
     expect((mine.instancedBuffers[attribute] as Color4).equalsWithEpsilon(linear(0, 1, 0))).toBe(true);
-    expect(plain.instancedBuffers[attribute]).toBe(0.3);
+    expect(plain.instancedBuffers[grit]).toBe(0.3);
   });
 
   it("names per-instance parameters as such only when every one is", () => {
