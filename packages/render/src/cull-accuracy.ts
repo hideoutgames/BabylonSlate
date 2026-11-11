@@ -1,6 +1,7 @@
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { posedBeyondBounds } from "./play-view-culling";
+import { followPose, updatePoseBounds } from "./pose-bounds";
 
 /**
  * How a view's cull tests a mesh. Babylon's default asks only whether the bounding sphere touches the frustum, and a
@@ -14,12 +15,15 @@ const STRATEGY = AbstractMesh.CULLINGSTRATEGY_OPTIMISTIC_INCLUSION;
 const scenes = new WeakSet<Scene>();
 
 /**
- * A mesh a pose moves on the GPU (`posedBeyondBounds`) is drawn whatever the view: culled by its bounds, a character
- * would vanish at the screen's edge while its pose still reached into the view, or stay hidden where its rest pose
- * stands away from its vertices as authored. Play's own cull keeps the same meshes (`keepsDrawingOutsideView`).
+ * A skinned mesh's bounds follow its skeleton where they can (`followPose`), so it is culled like any mesh. A mesh a
+ * pose moves on the GPU with no bounds to follow it (`posedBeyondBounds`) is drawn whatever the view: culled by its
+ * bounds, it would vanish at the screen's edge while its pose still reached into the view, or stay hidden where its
+ * rest pose stands away from its vertices as authored. Play's own cull keeps the same meshes
+ * (`keepsDrawingOutsideView`).
  */
 function settle(mesh: AbstractMesh): void {
   mesh.cullingStrategy = STRATEGY;
+  followPose(mesh);
   if (posedBeyondBounds(mesh)) mesh.alwaysSelectAsActiveMesh = true;
 }
 
@@ -32,6 +36,9 @@ export function cullSceneByWhatShows(scene: Scene): void {
   if (scenes.has(scene)) return;
   scenes.add(scene);
   for (const mesh of scene.meshes) settle(mesh);
+  // Posed meshes' bounds follow their skeletons before anything of the frame culls by them: first of the Scene's
+  // before-render work, where mirror, capture and probe lists are built, and so before the view's and the shadows'.
+  scene.onBeforeRenderObservable.add(() => updatePoseBounds(scene), undefined, true);
   // Babylon announces a new mesh on a later task, when a loader has given it its skeleton: until then it is culled
   // by its sphere, which only keeps more.
   scene.onNewMeshAddedObservable.add(settle);

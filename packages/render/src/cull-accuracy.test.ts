@@ -12,6 +12,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { cullSceneByWhatShows } from "./cull-accuracy";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
+import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });
@@ -56,6 +57,38 @@ it("culls a long mesh by its box where its sphere alone would keep it, and a mes
   const observers = scene.onNewMeshAddedObservable.observers.length;
   cullSceneByWhatShows(scene);
   expect(scene.onNewMeshAddedObservable.observers.length).toBe(observers);
+});
+
+it("culls a skinned mesh by where its skeleton poses it, not by where it was authored", async () => {
+  const { scene, seen } = fixture();
+  const engine = scene.getEngine();
+  /** A frame's before-render work, where the bounds take the frame's pose. */
+  const frame = () => {
+    engine.beginFrame();
+    scene.onBeforeRenderObservable.notifyObservers(scene);
+    engine.endFrame();
+  };
+  const here = skinnedRig(scene), away = skinnedRig(scene);
+  // Stands far beside the view, and is posed into it: its skeleton's root carries it back thirty units.
+  const reaching = skinnedStrip(scene, here.skeleton, "reaching");
+  reaching.position.set(30, 0, 10);
+  // Stands in the view, and is posed out of it.
+  const leaving = skinnedStrip(scene, away.skeleton, "leaving");
+  leaving.position.set(0, 0, 10);
+  for (const mesh of [reaching, leaving]) mesh.computeWorldMatrix(true);
+  await announced();
+  cullSceneByWhatShows(scene);
+  // Bounds follow both: neither is marked drawn whatever the view.
+  expect([reaching.alwaysSelectAsActiveMesh, leaving.alwaysSelectAsActiveMesh]).toEqual([false, false]);
+  // As authored, each is where it stands.
+  frame();
+  expect(seen(reaching, leaving)).toEqual({ reaching: false, leaving: true });
+  here.root.position = new Vector3(-30, 0, 0);
+  away.root.position = new Vector3(30, 0, 0);
+  // Until the frame's before-render work, the cull still has the last frame's pose.
+  expect(seen(reaching, leaving)).toEqual({ reaching: false, leaving: true });
+  frame();
+  expect(seen(reaching, leaving)).toEqual({ reaching: true, leaving: false });
 });
 
 it("never culls a mesh a pose moves on the GPU, whose bounds do not follow the pose", async () => {

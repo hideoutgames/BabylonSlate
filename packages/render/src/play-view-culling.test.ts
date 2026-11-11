@@ -13,6 +13,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { applyMaterialBounds } from "./material-bounds";
 import { drawWhateverTheView, installPlayViewCulling, markBoundsHoldInstances, settlePlayViewCulling } from "./play-view-culling";
+import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 import { markWaterSurfaceMesh } from "./water-mesh-surface";
 
 const engines: NullEngine[] = [];
@@ -65,4 +66,30 @@ it("culls Play's meshes by view, except those whose bounds do not hold or that t
   // instances alone).
   expect(padded.getBoundingInfo().boundingBox.maximum.asArray()).toEqual([2.5, 2.5, 2.5]);
   expect(cell.getBoundingInfo().boundingBox.center.equalsWithEpsilon(new Vector3(10, 0, 0), 1e-6)).toBe(true);
+});
+
+it("culls a skinned mesh by bounds that follow its skeleton, where they can", () => {
+  const engine = new NullEngine();
+  engines.push(engine);
+  const scene = new Scene(engine);
+  scene.performancePriority = ScenePerformancePriority.Intermediate;
+  installPlayViewCulling(scene);
+  const { skeleton, arm } = skinnedRig(scene);
+  const character = skinnedStrip(scene, skeleton, "character");
+  const instance = character.createInstance("instance");
+  // Morph targets move vertices past any bone's reach: no bounds follow those.
+  const morphed = skinnedStrip(scene, skeleton, "morphed");
+  morphed.morphTargetManager = new MorphTargetManager(scene);
+  // The arm carries the strip's upper edge five units along x before the first cull.
+  arm.position = new Vector3(5, 2, 0);
+  const meshes = [character, instance, morphed];
+  expect(meshes.every((mesh) => mesh.alwaysSelectAsActiveMesh)).toBe(true);
+  settlePlayViewCulling(scene);
+  expect(Object.fromEntries(meshes.map((mesh) => [mesh.name, mesh.alwaysSelectAsActiveMesh]))).toEqual({
+    character: false, instance: false, morphed: true,
+  });
+  // The cull that follows already tests the pose: the strip as authored ends at x = 1.
+  expect(character.getBoundingInfo().boundingBox.maximumWorld.x).toBeCloseTo(6, 2);
+  expect(instance.getBoundingInfo().boundingBox.maximumWorld.x).toBeCloseTo(6, 2);
+  expect(morphed.getBoundingInfo().boundingBox.maximumWorld.x).toBe(1);
 });

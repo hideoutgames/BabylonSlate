@@ -6,7 +6,9 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { casterWithinShadowRange } from "./shadow-mesh-policy";
+import { followPose, updatePoseBounds } from "./pose-bounds";
+import { casterWithinShadowRange, deformsWithinBounds } from "./shadow-mesh-policy";
+import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 
 const light = Vector3.Zero();
 const RANGE = 10;
@@ -52,6 +54,27 @@ describe("casterWithinShadowRange", () => {
       expect(casterWithinShadowRange(caster(RANGE + radius * 1.5), light, RANGE)).toBe(false);
     },
   );
+
+  it("reaches a skinned caster whose bounds follow its pose only as far as those bounds", () => {
+    const { skeleton, root } = skinnedRig(scene);
+    const strip = skinnedStrip(scene, skeleton);
+    // Posed along +x until its nearest edge is a quarter of its radius past the light's range.
+    const radius = strip.getBoundingInfo().boundingSphere.radiusWorld;
+    root.position = new Vector3(RANGE + radius * 1.25 - 0.5, -1, 0);
+    // Not followed, its bounds are its vertices as authored, around the light: it reaches whatever its pose.
+    expect(deformsWithinBounds(strip)).toBe(false);
+    expect(casterWithinShadowRange(strip, light, RANGE)).toBe(true);
+    expect(followPose(strip)).toBe(true);
+    expect(deformsWithinBounds(strip)).toBe(true);
+    // Followed, its sphere stands where it is posed: a rigid caster's rule, with no second radius.
+    expect(Vector3.Distance(strip.getBoundingInfo().boundingSphere.centerWorld, light)).toBeCloseTo(RANGE + radius * 1.25, 1);
+    expect(casterWithinShadowRange(strip, light, RANGE)).toBe(false);
+    root.position = new Vector3(RANGE + radius * 0.5 - 0.5, -1, 0);
+    engine.beginFrame();
+    updatePoseBounds(scene);
+    engine.endFrame();
+    expect(casterWithinShadowRange(strip, light, RANGE)).toBe(true);
+  });
 
   it("treats a non-finite range as reaching every caster", () => {
     expect(casterWithinShadowRange(caster(1e6), light, Infinity)).toBe(true);

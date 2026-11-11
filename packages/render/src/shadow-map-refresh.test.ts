@@ -8,6 +8,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
 import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Scene } from "@babylonjs/core/scene";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -26,6 +27,8 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { followPose, updatePoseBounds } from "./pose-bounds";
+import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 import { ReflectedContent } from "./reflected-content";
 import type { AtlasCascadedShadowGenerator } from "./shadow-atlas";
 import { HAPTIC_SHADOW_VIEW_VEC4S, hapticLightBuffer, hapticShadowViews, writeHapticLights } from "./haptic-lights";
@@ -738,6 +741,64 @@ describe("cascaded sun refresh", () => {
     near.onBeforeRenderObservable.remove(hook);
     settle();
     expect(render()).toBe(0);
+  });
+
+  it("draws a skinned caster into the cascades its pose reaches, once its bounds follow its skeleton", async () => {
+    const sun = await cascadedSun();
+    const { scene, map, material } = sun;
+    const engine = scene.getEngine();
+    const controller = sceneShadowController(scene);
+    const { skeleton, root } = skinnedRig(scene);
+    // Stands by the camera, in the first cascade.
+    const character = skinnedStrip(scene, skeleton, "character");
+    character.material = material;
+    character.position.set(2, 1, 0);
+    // What a rigid caster of the pose's own box does is what the posed one must: a box where the strip is posed.
+    const reference = MeshBuilder.CreateBox("reference", { width: 1, height: 2, depth: 0.02 }, scene);
+    reference.material = material;
+    for (const mesh of [character, reference]) controller.setParticipation(mesh, { castShadows: true });
+    const listed = (mesh: AbstractMesh) => [0, 1].map((layer) => [...(map.getCustomRenderList!(layer, map.renderList!, map.renderList!.length) ?? [])].includes(mesh));
+    /** Poses the strip `x`, `z` from where it stands, with the reference box around the posed strip. */
+    const pose = (x: number, z: number) => {
+      root.position = new Vector3(x, 0, z);
+      reference.position.set(2 + x + 0.5, 1 + 1, z);
+      reference.computeWorldMatrix(true);
+      character.computeWorldMatrix(true);
+      engine.beginFrame();
+      updatePoseBounds(scene);
+      engine.endFrame();
+      sun.render();
+    };
+    // Beyond the first cascade's split, inside the second: thirty units ahead, as the per-cascade caster above.
+    pose(-2, 30);
+    expect(listed(reference)).toEqual([false, true]);
+    // Not followed, its bounds say nothing of its pose: every cascade draws it.
+    expect(listed(character)).toEqual([true, true]);
+    // A Scene's cull follows it (`cullSceneByWhatShows`, `settlePlayViewCulling`): now it draws where the box does.
+    expect(followPose(character)).toBe(true);
+    expect(listed(character)).toEqual([false, true]);
+    // Posed back to where it stands, it leaves the far cascade's list for the near one's, as the box does.
+    pose(0, 0);
+    expect(listed(character)).toEqual(listed(reference));
+    expect(listed(character)[0]).toBe(true);
+  });
+
+  it("leaves a skinned caster too small for a later cascade's texels out of it, once its bounds follow its skeleton", async () => {
+    const sun = await cascadedSun();
+    const { scene, map, material } = sun;
+    const { skeleton, root } = skinnedRig(scene);
+    // A strip four hundredths wide, as the small rigid caster below, posed thirty units ahead in the second cascade.
+    const tiny = skinnedStrip(scene, skeleton, "tiny", [0, 0, 0, 0.04, 0, 0, 0, 0.04, 0, 0.04, 0.04, 0]);
+    tiny.material = material;
+    tiny.position.set(0, 1, 0);
+    root.position = new Vector3(0, 0, 30);
+    sceneShadowController(scene).setParticipation(tiny, { castShadows: true });
+    sun.render();
+    const listed = () => [...(map.getCustomRenderList!(1, map.renderList!, map.renderList!.length) ?? [])].includes(tiny);
+    // Deforming bounds are not the caster's: it is drawn in case.
+    expect(listed()).toBe(true);
+    expect(followPose(tiny)).toBe(true);
+    expect(listed()).toBe(false);
   });
 
   describe("small far casters", () => {
