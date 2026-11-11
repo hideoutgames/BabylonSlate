@@ -468,6 +468,8 @@ export interface ScriptContext {
   getSceneState(target: unknown): SceneStreamingState;
   getProjectName(): string;
   getProjectVersion(): string;
+  /** Get Build Number: the App Identity Build Number the project (or the package) was built with. */
+  getBuildNumber(): number;
   /** Get Delta Seconds: the current simulation step (fixed step × time dilation); 0 outside a simulation. */
   getDeltaSeconds(): number;
   /** Get Current Frame Count: frames finished since Play started; 0 outside a simulation. */
@@ -841,7 +843,7 @@ export type HostContextKey =
   | "getAllComponentsOfType" | "getSceneLoadingProgress" | "getTargetSceneName" | "releaseAssetLoad"
   | "getAssetLoadHandleState" | "getAssetLoadHandleProgress" | "getAssetLoadState" | "loadSceneAsync"
   | "unloadSceneAsync" | "isSceneLoaded" | "getSceneLoadProgress" | "getSceneState" | "getProjectName"
-  | "getProjectVersion" | "getDeltaSeconds" | "getFrameCount" | "getTimeNow" | "getDateNow" | "getTimeMs"
+  | "getProjectVersion" | "getBuildNumber" | "getDeltaSeconds" | "getFrameCount" | "getTimeNow" | "getDateNow" | "getTimeMs"
   | "getTimeDilation" | "setTimeDilation" | "getGameTimeSeconds" | "getRealTimeSeconds" | "getLocalTimeNow"
   | "getLocalDateNow" | "setGamePaused" | "isGamePaused" | "quitGame" | "getPlatform" | "isTouchDevice" | "isInEditor" | "isDevelopmentBuild"
   | "getViewportSize" | "getLocale" | "copyToClipboard" | "openUrl" | "newGuid" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"

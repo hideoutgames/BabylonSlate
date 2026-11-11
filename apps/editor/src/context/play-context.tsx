@@ -1223,7 +1223,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             physics={presentedPlay?.physics}
             sceneAssetGuid={playSceneGuid}
             scene={presentedPlay?.scene}
-            project={projectDocument?.metadata}
+            project={projectDocument
+              ? { ...projectDocument.metadata, buildNumber: projectDocument.settings.appIdentity.buildNumber }
+              : undefined}
             saveGame={playSaveGame}
             gameInstanceClass={projectDocument?.settings.gameInstanceClass ?? undefined}
             // Each content field is the overlay prop of the same name; `satisfies` rejects a field

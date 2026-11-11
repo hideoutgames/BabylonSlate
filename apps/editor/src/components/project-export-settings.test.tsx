@@ -50,13 +50,14 @@ function renderSettings(appId = "", options: { iconTextureGuid?: string | null; 
     appId, displayName: "", buildNumber: 3, autoIncrementBuildNumber: options.autoIncrementBuildNumber ?? false, iconTextureGuid: options.iconTextureGuid ?? null,
   };
   const updateProjectSettings = vi.fn();
+  const updateProjectVersion = vi.fn();
   const setAppIconPickerOpen = vi.fn();
   for (const asset of options.assets ?? []) context.assets.set(asset.header.guid, asset);
   const assetRegistry = { getByGuid: (guid: string) => context.assets.get(guid) } as never;
   render(<ProjectExportSettings projectDocument={projectDocument} updateProjectSettings={updateProjectSettings}
-    assetRegistry={assetRegistry} setAppIconPickerOpen={setAppIconPickerOpen}
+    updateProjectVersion={updateProjectVersion} assetRegistry={assetRegistry} setAppIconPickerOpen={setAppIconPickerOpen}
     exportProjectBusy={false} exportProjectError={null} exportNotice={null} handleExport={async () => {}} />);
-  return Object.assign(updateProjectSettings, { setAppIconPickerOpen });
+  return Object.assign(updateProjectSettings, { setAppIconPickerOpen, updateProjectVersion });
 }
 
 describe("App Identity", () => {
@@ -80,6 +81,17 @@ describe("App Identity", () => {
     expect(name.placeholder).toBe("Harbour Run");
     fireEvent.change(name, { target: { value: "Harbour" } });
     expect(update).toHaveBeenLastCalledWith({ appIdentity: { appId: "com.studio.harbour", displayName: "Harbour", buildNumber: 3, autoIncrementBuildNumber: false, iconTextureGuid: null } });
+  });
+
+  it("edits the Project Version under Display Name", () => {
+    const update = renderSettings("com.studio.harbour");
+    const rows = [...document.querySelectorAll("[data-testid^='setting'], [data-testid='settings-project-version']")]
+      .map((element) => element.getAttribute("data-testid"));
+    expect(rows.indexOf("settings-project-version")).toBe(rows.indexOf("setting-app-display-name") + 1);
+    const version = screen.getByTestId("settings-project-version") as HTMLInputElement;
+    expect(version.value).toBe("1.0.0");
+    fireEvent.change(version, { target: { value: "1.2.0" } });
+    expect(update.updateProjectVersion).toHaveBeenCalledWith("1.2.0");
   });
 
   it("turns on Auto Increment Build Number, which locks the Build Number field", () => {

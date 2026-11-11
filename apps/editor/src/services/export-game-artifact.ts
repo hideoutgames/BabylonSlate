@@ -125,7 +125,9 @@ export async function exportProjectGameArtifact(
       : (exportDocument?.settings.startupSceneGuid ?? null);
   return collectAndExportGame({
     startupSceneGuid,
-    project: exportDocument?.metadata,
+    project: exportDocument
+      ? { ...exportDocument.metadata, buildNumber: exportDocument.settings.appIdentity.buildNumber }
+      : undefined,
     projectId: projectService.guid ?? undefined,
     saveGameSettings: exportDocument?.settings.saveGame,
     defaultFontGuid: exportDocument?.settings.fonts.defaultFontGuid ?? null,

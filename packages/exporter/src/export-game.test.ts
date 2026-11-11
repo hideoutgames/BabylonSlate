@@ -28,7 +28,7 @@ describe("exportGame", () => {
   it("titles the page with the project and ships the App Icon as its favicon only when one is set", async () => {
     const playerFiles = new Map([["index.html", new TextEncoder().encode("<html><head><title>Game</title></head><body></body></html>")]]);
     const options = { platform: "web" as const, bundleDebugger: false, startupSceneGuid: "scene-1", scripts: [], assets: [], playerFiles,
-      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, project: { name: "Orbit Workshop", version: "1.0.0" } };
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, project: { name: "Orbit Workshop", version: "1.0.0", buildNumber: 1 } };
     const plain = await exportGame(options);
     if (!plain.ok) throw new Error(plain.error);
     expect(new TextDecoder().decode(plain.value.files.get("index.html"))).toBe("<html><head><title>Orbit Workshop</title></head><body></body></html>");
@@ -181,7 +181,7 @@ describe("exportGame", () => {
   it("retains project identity in release builds", async () => {
     const result = await exportGame({
       platform: "web",
-      project: { name: "Orbit Workshop", version: "2.4.0-beta.3" },
+      project: { name: "Orbit Workshop", version: "2.4.0-beta.3", buildNumber: 42 },
       bundleDebugger: false,
       startupSceneGuid: "scene-1",
       renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -189,7 +189,11 @@ describe("exportGame", () => {
     });
     if (!result.ok) throw new Error("Export failed");
     const stored = new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE));
-    expect(parseGameManifest(stored).project).toEqual({ name: "Orbit Workshop", version: "2.4.0-beta.3" });
+    expect(parseGameManifest(stored).project).toEqual({ name: "Orbit Workshop", version: "2.4.0-beta.3", buildNumber: 42 });
+    // A manifest without a build number predates this exporter: the game is exported again.
+    const withoutBuild = JSON.parse(stored) as { project: Record<string, unknown> };
+    delete withoutBuild.project.buildNumber;
+    expect(() => parseGameManifest(JSON.stringify(withoutBuild))).toThrow(/no project name, version and build number/);
   });
   it("puts index.html at the zip root and records startupSceneGuid", async () => {
     const cel = normalizeCelShadingSettings({ shadowBands: 5, lightMixing: "blend",

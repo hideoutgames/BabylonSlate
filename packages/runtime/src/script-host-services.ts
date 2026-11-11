@@ -92,6 +92,8 @@ export interface ScriptHostServices {
   input?: WorldInputProvider;
   getProjectName?(): string;
   getProjectVersion?(): string;
+  /** Project Settings > Export > App Identity > Build Number of the running project or package. */
+  getBuildNumber?(): number;
   /** The simulation step the current tick captured (fixed step × time dilation). Absent outside a simulation. */
   getDeltaSeconds?(): number;
   /** Frames finished since the session started. Absent outside a simulation. */

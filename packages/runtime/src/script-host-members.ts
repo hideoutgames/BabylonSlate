@@ -523,6 +523,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getSceneState: (target) => services.getSceneState?.(target) ?? "Unloaded",
     getProjectName: () => services.getProjectName?.() ?? "",
     getProjectVersion: () => services.getProjectVersion?.() ?? "",
+    getBuildNumber: () => services.getBuildNumber?.() ?? 1,
     getDeltaSeconds: () => services.getDeltaSeconds?.() ?? 0,
     getFrameCount: () => services.getFrameCount?.() ?? 0,
     getTimeNow: () => utcTimeOfDay(Date.now()),

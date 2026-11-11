@@ -187,7 +187,7 @@ export function playLoadControl(options: {
   garbageCollectionIntervalTicks?: number;
   traceByteBudget?: number;
   renderSettings?: Partial<import("@haptic/core").RenderProjectSettings>;
-  project?: { name: string; version: string };
+  project?: { name: string; version: string; buildNumber: number };
   /** Where the session runs: the editor's device, inside the editor, a development build. */
   environment?: import("@haptic/core").GameEnvironment;
   thirdPartyNoticesUrl?: string;

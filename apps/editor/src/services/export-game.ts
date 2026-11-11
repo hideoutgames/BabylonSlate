@@ -101,7 +101,7 @@ export type ExportPluginDescriptor = PluginGraphInput;
 export type CollectExportGameParams = {
   projectId?: string;
   saveGameSettings?: import("@haptic/core").SaveGameProjectSettings;
-  project?: { name: string; version: string };
+  project?: { name: string; version: string; buildNumber: number };
   startupSceneGuid: string | null;
   gameInstanceClass?: string | null;
   audioMixerGuid?: string | null;

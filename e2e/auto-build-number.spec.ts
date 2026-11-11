@@ -19,9 +19,13 @@ async function packageWeb(page: Page): Promise<void> {
   await expect(page.getByTestId("packaging-dialog")).toHaveCount(0);
 }
 
-test("Auto Increment Build Number locks the field and adds 1 after every package", async ({ page }, testInfo) => {
+test("App Identity holds Project Version, and Auto Increment Build Number locks the field and adds 1 after every package", async ({ page }, testInfo) => {
   await openMinimalTestProject(page);
   await openExportSettings(page);
+  // Project Version sits in App Identity, under Display Name.
+  await expect(page.getByTestId("settings-project-version")).toHaveValue("1.0.0");
+  const displayBottom = (await page.getByTestId("setting-app-display-name").boundingBox())!;
+  expect((await page.getByTestId("settings-project-version").boundingBox())!.y).toBeGreaterThan(displayBottom.y);
   const buildNumber = page.getByTestId("setting-app-build-number");
   const field = buildNumber.locator("input").or(buildNumber.and(page.locator("input"))).first();
   await expect(field).toHaveValue("1");

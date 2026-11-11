@@ -124,7 +124,7 @@ export type GameManifest = {
   assetCatalogVersion: 1;
   saveGame?: import("@haptic/core").SaveGameConfiguration;
   /** Authored build identity; every export writes it. Editor Play's in-memory catalog has none. */
-  project?: { name: string; version: string };
+  project?: { name: string; version: string; buildNumber: number };
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   startupSceneGuid: string;
@@ -170,7 +170,7 @@ export type ExportGameOptions = {
   /** Project Global Fallback; missing or blank writes `sans-serif`. */
   globalFallback?: string;
   saveGame?: import("@haptic/core").SaveGameConfiguration;
-  project?: { name: string; version: string };
+  project?: { name: string; version: string; buildNumber: number };
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   bundleDebugger: boolean;
