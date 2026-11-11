@@ -2961,6 +2961,9 @@ function initializeEngine(
         firstDraws?.pause();
         const sceneLoadId = command.sceneLoadId;
         instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
+        // The load prepares the view once its Scene, camera and quality are in. A preparation a frame of the world it
+        // replaces asked for (the empty world before the first Scene) would be rebuilt for each of those.
+        worldRenderer.supersedeRequestedPreparation();
         worldRenderer.invalidate();
         // A presented load's starting-state draw ends here: the next level keeps none of its Effects.
         endStartingDraw();
