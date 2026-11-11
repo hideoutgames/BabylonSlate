@@ -464,6 +464,29 @@ index 517e24c3ff098b6717db92924b5c4e21332c1f0a..db039329c78de733894dbe71bcaa2c1f
          }, {
              attributes: origEffect.getAttributesNames(),
              uniformsNames: uniforms,
+diff --git a/Meshes/mesh.pure.js b/Meshes/mesh.pure.js
+index 4b5dc52902b25c69fa8fad82bc9a8067ee48ad6b..8a8974d1399a12b4621f0af950819a323019fa5d 100644
+--- a/Meshes/mesh.pure.js
++++ b/Meshes/mesh.pure.js
+@@ -1188,6 +1188,18 @@ export class Mesh extends AbstractMesh {
+      */
+     _registerInstanceForRenderId(instance, renderId) {
+         const instanceDataStorage = this._instanceDataStorage.useMonoDataStorageRenderPass ? this._instanceDataStorage.dataStorageRenderPass : this._getInstanceDataStorage();
++        // A frame graph draws every pass through an object renderer and never runs _preActivate, which starts this
++        // record anew, so the mono storage kept the list of every render id. Start a new record with each engine frame.
++        const frameId = this._instanceDataStorage.engine.frameId;
++        const previous = instanceDataStorage.visibleInstances;
++        if (previous && instanceDataStorage.visibleInstancesFrameId !== frameId && this._instanceDataStorage.useMonoDataStorageRenderPass && !this._instanceDataStorage.isFrozen) {
++            instanceDataStorage.visibleInstances = {
++                defaultRenderId: renderId,
++                selfDefaultRenderId: this._renderId,
++                intermediateDefaultRenderId: previous.intermediateDefaultRenderId,
++            };
++        }
++        instanceDataStorage.visibleInstancesFrameId = frameId;
+         if (!instanceDataStorage.visibleInstances) {
+             instanceDataStorage.visibleInstances = {
+                 defaultRenderId: renderId,
 diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
 index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a9810a5d22f9 100644
 --- a/Misc/khronosTextureContainer2.js
