@@ -64,6 +64,7 @@ Contributor reference for Haptic's visual scripting: Class graph IR, pin types, 
 - Diagnostic messages name pins and events by display label (`humanizePropertyLabel` / `formatEventTitle`, both in `core`), never by pin id.
 - Runs on edit (250 ms debounce, open graph), save (document + dependents), editor Compile (compiles every project graph; Compiler Results keeps only the focused class's diagnostics, like edit-time validation), pre-Play (dependency closure of the played scene, Game Instance and subsystems), export (adds export-only rules) and CI golden fixtures (`packages/scripting/fixtures/`, one broken graph per code).
 - Warnings never block. Errors block Play through a dialog with **Play Anyway** per run; there is no persistent bypass. Demote noisy rules rather than hardening the dialog.
+- A diagnostic focus (`setFocusDiagnostic`) is a navigation request the graph frames when it changes. Choosing the node already held goes through `focusDiagnosticNode` (clear, next task, focus again; `diagnostic-navigation.ts`). It ends once its node, or Actor, was selected and the selection moves off it (`useEndFocusOnDeselect`, run by the graph panel that holds the node and by Compiler Results for Actor rows). Compiler Results' selected row is the focus, so it unselects with it.
 - Parent cycles are refused at write time (Attach Actor, Attach To Bone, `parentId` sets) with a warning; loaded data breaks cycles at load.
 
 ## Compiler and codegen invariants
