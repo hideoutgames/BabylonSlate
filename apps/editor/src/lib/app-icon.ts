@@ -58,6 +58,24 @@ function centreSquare(bitmap: ImageBitmap): { level: CanvasImageSource; edge: nu
   return { level: canvas, edge };
 }
 
+/** Draws the centre square at each edge, largest first, halving from the source so every edge averages the pixels below it. */
+async function drawAppIconEdges(source: Blob, edges: readonly number[], each: (size: number, canvas: OffscreenCanvas) => Promise<void>): Promise<void> {
+  const bitmap = await createImageBitmap(source);
+  try {
+    let { level, edge } = centreSquare(bitmap);
+    for (const size of [...edges].sort((a, b) => b - a)) {
+      while (edge / 2 >= size) {
+        const half = Math.floor(edge / 2);
+        level = drawSquare(level, edge, half);
+        edge = half;
+      }
+      await each(size, drawSquare(level, edge, size));
+    }
+  } finally {
+    bitmap.close();
+  }
+}
+
 /**
  * PNGs of the source's centre square at every `APP_ICON_SIZES` edge. Each
  * size is drawn from a copy at most twice its size, halving from the source,
@@ -65,23 +83,21 @@ function centreSquare(bitmap: ImageBitmap): { level: CanvasImageSource; edge: nu
  * above the source's edge are scaled up from it.
  */
 export async function renderAppIconImages(source: Blob): Promise<AppIconImages> {
-  const bitmap = await createImageBitmap(source);
-  try {
-    let { level, edge } = centreSquare(bitmap);
-    const images = new Map<number, Uint8Array>();
-    for (const size of [...APP_ICON_SIZES].sort((a, b) => b - a)) {
-      while (edge / 2 >= size) {
-        const half = Math.floor(edge / 2);
-        level = drawSquare(level, edge, half);
-        edge = half;
-      }
-      const blob = await drawSquare(level, edge, size).convertToBlob({ type: "image/png" });
-      images.set(size, new Uint8Array(await blob.arrayBuffer()));
-    }
-    return images;
-  } finally {
-    bitmap.close();
-  }
+  const images = new Map<number, Uint8Array>();
+  await drawAppIconEdges(source, APP_ICON_SIZES, async (size, canvas) => {
+    const blob = await canvas.convertToBlob({ type: "image/png" });
+    images.set(size, new Uint8Array(await blob.arrayBuffer()));
+  });
+  return images;
+}
+
+/** The editor's preview of the App Icon: the centre square that packages use, as one PNG `edge` pixels wide. */
+export async function renderAppIconPreview(source: Blob, edge = 256): Promise<Blob> {
+  let preview: Blob | null = null;
+  await drawAppIconEdges(source, [edge], async (_size, canvas) => {
+    preview = await canvas.convertToBlob({ type: "image/png" });
+  });
+  return preview!;
 }
 
 /** An App Icon PNG laid over black as an RGB PNG without an alpha channel, which the App Store requires. */

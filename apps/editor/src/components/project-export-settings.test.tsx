@@ -1,16 +1,42 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createEmptyProject } from "@haptic/core";
 import type { IndexedAsset } from "@haptic/assets";
 import { ProjectExportSettings } from "./project-export-settings";
 
-vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock());
+const context = vi.hoisted(() => ({ assets: new Map<string, unknown>(), chunkReads: [] as string[] }));
+vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
+  assetRegistry: { getByGuid: (guid: string) => context.assets.get(guid), listRoots: () => [] },
+  readAssetChunk: async (path: string, chunkId: string) => {
+    context.chunkReads.push(`${path}#${chunkId}`);
+    return new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  },
+}) as never));
+// Canvas drawing is the browser's: the preview is whatever it draws from the source.
+vi.mock("../lib/app-icon", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../lib/app-icon")>(),
+  renderAppIconPreview: async (source: Blob) => source,
+}));
 
-afterEach(() => cleanup());
+const urls = vi.hoisted(() => ({ created: 0, revoked: [] as string[] }));
+beforeEach(() => {
+  urls.created = 0;
+  urls.revoked = [];
+  vi.stubGlobal("URL", Object.assign(Object.create(URL), {
+    createObjectURL: () => `blob:icon-${++urls.created}`,
+    revokeObjectURL: (url: string) => { urls.revoked.push(url); },
+  }));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  context.assets.clear();
+  context.chunkReads = [];
+});
 
-/** A Texture as the registry indexes it, with its source size. */
+/** A Texture as the registry indexes it, with its source size and source pixels chunk. */
 function texture(guid: string, name: string, width: number, height: number): IndexedAsset {
-  return { header: { guid, name, type: "Texture", payload: { width, height }, chunks: [], dependencies: [] }, path: `assets/${name}.hasset`, rootId: "project" } as unknown as IndexedAsset;
+  return { header: { guid, name, type: "Texture", payload: { width, height }, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png" }], dependencies: [] }, path: `assets/${name}.hasset`, rootId: "project" } as unknown as IndexedAsset;
 }
 
 function renderSettings(appId = "", options: { iconTextureGuid?: string | null; assets?: IndexedAsset[] } = {}) {
@@ -18,8 +44,8 @@ function renderSettings(appId = "", options: { iconTextureGuid?: string | null; 
   projectDocument.settings.appIdentity = { appId, displayName: "", buildNumber: 3, iconTextureGuid: options.iconTextureGuid ?? null };
   const updateProjectSettings = vi.fn();
   const setAppIconPickerOpen = vi.fn();
-  const assets = new Map((options.assets ?? []).map((asset) => [asset.header.guid, asset]));
-  const assetRegistry = { getByGuid: (guid: string) => assets.get(guid) } as never;
+  for (const asset of options.assets ?? []) context.assets.set(asset.header.guid, asset);
+  const assetRegistry = { getByGuid: (guid: string) => context.assets.get(guid) } as never;
   render(<ProjectExportSettings projectDocument={projectDocument} updateProjectSettings={updateProjectSettings}
     assetRegistry={assetRegistry} setAppIconPickerOpen={setAppIconPickerOpen}
     exportProjectBusy={false} exportProjectError={null} exportNotice={null} handleExport={async () => {}} />);
@@ -58,16 +84,41 @@ describe("App Identity", () => {
     expect(update.setAppIconPickerOpen).toHaveBeenCalledExactlyOnceWith(true);
   });
 
-  it("flags an App Icon packaging would refuse: missing, not square or too small", () => {
-    for (const [assets, message] of [
-      [[], "The Texture is missing."],
-      [[texture("tex-icon", "T_Banner", 2048, 1024)], "The App Icon must be square; this image is 2048 × 1024."],
-      [[texture("tex-icon", "T_Small", 512, 512)], "The App Icon must be at least 1024 × 1024; this image is 512 × 512."],
+  it("refuses only a missing App Icon Texture, and notes one packaging crops or scales up", () => {
+    renderSettings("", { iconTextureGuid: "tex-icon" });
+    expect(screen.getByText("The Texture is missing.")).toBeTruthy();
+    expect(screen.getByTestId("setting-app-icon").getAttribute("aria-invalid")).toBe("true");
+    expect(screen.queryByTestId("app-icon-previews")).toBeNull();
+    cleanup();
+    for (const [asset, note] of [
+      [texture("tex-icon", "T_Banner", 2048, 1024), "This image is 2048 × 1024. The centre 1024 × 1024 is used."],
+      [texture("tex-icon", "T_Small", 512, 512), "This image is 512 × 512. Icons up to 1024 × 1024 are scaled up and may look soft."],
     ] as const) {
-      renderSettings("", { iconTextureGuid: "tex-icon", assets: [...assets] });
-      expect(screen.getByText(message)).toBeTruthy();
-      expect(screen.getByTestId("setting-app-icon").getAttribute("aria-invalid")).toBe("true");
+      renderSettings("", { iconTextureGuid: "tex-icon", assets: [asset] });
+      expect(screen.getByTestId("setting-app-icon-hint").textContent).toBe(note);
+      expect(screen.getByTestId("setting-app-icon").getAttribute("aria-invalid")).toBeNull();
       cleanup();
     }
+  });
+
+  it("previews the App Icon from the Texture's source pixels on every platform", async () => {
+    renderSettings("", { iconTextureGuid: "tex-icon", assets: [texture("tex-icon", "T_Icon", 1024, 1024)] });
+    const previews = await screen.findByTestId("app-icon-previews");
+    expect(context.chunkReads).toEqual(["assets/T_Icon.hasset#pixels"]);
+    for (const platform of ["ios", "android", "desktop", "web"]) {
+      expect(screen.getByTestId(`app-icon-preview-${platform}`).querySelector("img")!.getAttribute("src")).toBe("blob:icon-1");
+    }
+    expect(previews.querySelector('[data-shape="ios"]')).toBeTruthy();
+    expect(previews.querySelector('[data-shape="android"]')).toBeTruthy();
+    // The web tab carries the app's name: the project's, until a Display Name is set.
+    expect(screen.getByTestId("app-icon-preview-web").textContent).toContain("Harbour Run");
+    cleanup();
+    await waitFor(() => expect(urls.revoked).toEqual(["blob:icon-1"]));
+  });
+
+  it("shows no preview without an App Icon", () => {
+    renderSettings();
+    expect(screen.queryByTestId("app-icon-previews")).toBeNull();
+    expect(screen.queryByTestId("setting-app-icon-hint")).toBeNull();
   });
 });

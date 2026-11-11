@@ -13,8 +13,14 @@ import { PackagingDialog } from "./packaging-dialog";
 const { exportGameArtifact, zipExportedGame, project, shells } = vi.hoisted(() => ({
   exportGameArtifact: vi.fn(),
   zipExportedGame: vi.fn(),
-  project: { startupSceneGuid: "scene-main" as string | null },
+  project: { startupSceneGuid: "scene-main" as string | null, iconTextureGuid: null as string | null },
   shells: { manifest: null as GameShellManifest | null, loadDesktopShell: vi.fn() },
+}));
+
+// Canvas drawing is the browser's: the preview is whatever it draws from the source.
+vi.mock("../lib/app-icon", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../lib/app-icon")>(),
+  renderAppIconPreview: async (source: Blob) => source,
 }));
 
 vi.mock("../lib/game-shells", async (importOriginal) => ({
@@ -36,14 +42,18 @@ const SHELLS: GameShellManifest = {
 vi.mock("../context/document-context", async () => {
   const { createEmptyProject } = await import("@haptic/core");
   const scene = { header: { guid: "scene-main", name: "MainMenu", type: "Scene" }, path: "assets/MainMenu.scene.hasset" };
+  const icon = { header: { guid: "tex-icon", name: "T_AppIcon", type: "Texture", payload: { width: 1024, height: 1024 }, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png" }] }, path: "assets/T_AppIcon.hasset" };
+  const assets = new Map<string, unknown>([[scene.header.guid, scene], [icon.header.guid, icon]]);
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
     const projectDocument = createEmptyProject("Harbour Run");
     projectDocument.settings.startupSceneGuid = project.startupSceneGuid;
+    projectDocument.settings.appIdentity.iconTextureGuid = project.iconTextureGuid;
     projectDocument.settings.alwaysPackageFolders = ["assets/Audio", "assets/Localization"];
     return {
       projectDocument,
       projectGuid: "harbour-guid",
-      assetRegistry: { list: () => [scene], getByGuid: (guid: string) => (guid === scene.header.guid ? scene : undefined) },
+      assetRegistry: { list: () => [scene], getByGuid: (guid: string) => assets.get(guid) },
+      readAssetChunk: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
       exportGameArtifact,
       zipExportedGame,
     };
@@ -55,6 +65,7 @@ afterEach(() => {
   exportGameArtifact.mockReset();
   zipExportedGame.mockReset();
   project.startupSceneGuid = "scene-main";
+  project.iconTextureGuid = null;
   shells.manifest = null;
   shells.loadDesktopShell.mockReset();
   vi.restoreAllMocks();
@@ -103,6 +114,31 @@ it("packages the project for the web and downloads the archive named after it", 
   expect(screen.getByText("Game package downloaded. Check your downloads.")).toBeTruthy();
 });
 
+it("shows the App Icon in each platform's shape, with the platform as a badge, or the platform mark without one", async () => {
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:icon");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  await renderDialog();
+  expect(screen.queryByTestId("packaging-app-icon")).toBeNull();
+  expect(screen.getByTestId("packaging-app-icon-name").textContent).toBe("Not Set");
+  cleanup();
+
+  project.iconTextureGuid = "tex-icon";
+  await renderDialog();
+  const tile = await screen.findByTestId("packaging-app-icon");
+  expect(tile.querySelector("img")!.getAttribute("src")).toBe("blob:icon");
+  expect(tile.querySelector("[data-shape]")!.getAttribute("data-shape")).toBe("square");
+  expect(screen.getByTestId("packaging-app-icon-name").textContent).toBe("T_AppIcon");
+  (globalThis as { haptic?: unknown }).haptic = { gameShell: { platform: "linux", arch: "x64", runtime: vi.fn(), packageAndroid: vi.fn(), androidSettings: vi.fn(async () => ({ java: null, sdk: null, keystore: null, alias: "", toolchain: { javaHome: "/jdk", javaVersion: 21, sdk: "/sdk", problems: [] } })) } };
+  try {
+    cleanup();
+    await renderDialog();
+    await act(async () => { fireEvent.click(screen.getByTestId("packaging-target-android")); });
+    expect((await screen.findByTestId("packaging-app-icon")).querySelector("[data-shape]")!.getAttribute("data-shape")).toBe("android");
+  } finally {
+    delete (globalThis as { haptic?: unknown }).haptic;
+  }
+});
+
 it("groups platforms into Available and Unavailable and explains an unavailable one", async () => {
   await renderDialog();
   const available = within(screen.getByRole("group", { name: "Available" }));
@@ -130,7 +166,7 @@ it.each([
 ])("keeps Package unavailable while the Startup Scene is %s and links to Game settings", async (guid, shown) => {
   project.startupSceneGuid = guid;
   const { onOpenProjectSettings } = await renderDialog();
-  expect(summary().getByText(shown)).toBeTruthy();
+  expect(within(summary().getByText("Startup Scene").parentElement!).getByText(shown)).toBeTruthy();
   expect(screen.getByTestId("packaging-package").hasAttribute("disabled")).toBe(true);
   fireEvent.click(within(screen.getByTestId("packaging-startup-scene")).getByRole("button", { name: "Game Settings" }));
   expect(onOpenProjectSettings).toHaveBeenCalledWith("game");
@@ -361,6 +397,8 @@ it("packages an iOS game on a Mac with this Mac's team, and asks for an App Icon
     expect(screen.getByTestId("packaging-ios-xcode").textContent).toBe("26.6");
     // The project has no App Icon, which the App Store requires.
     expect(screen.getByTestId("packaging-ios-icon-missing")).toBeTruthy();
+    expect(screen.getByTestId("packaging-app-icon-name").textContent).toBe("Not Set");
+    expect(screen.getByTestId("packaging-app-icon-name").className).toContain("text-(--warning)");
     expect((screen.getByTestId("packaging-package") as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(screen.getByTestId("packaging-ios-development"));
