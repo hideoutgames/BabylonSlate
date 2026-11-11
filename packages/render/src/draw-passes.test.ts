@@ -92,6 +92,67 @@ describe("DrawPassFrame", () => {
     expect(frame.last).toMatchObject({ mirrors: 1, other: 2 });
     expect(frame.current).toMatchObject({ mirrors: 6, other: 0 });
   });
+
+  /** A main-thread clock the test advances, as each pass's JavaScript does. */
+  const clock = () => {
+    let now = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    return (ms: number) => { now += ms; };
+  };
+
+  it("times each pass as it counts draws: the innermost pass running, an owner keeping what it nests, summing to the frame", () => {
+    const { engine } = counter();
+    const spend = clock();
+    const frame = new DrawPassFrame(engine);
+    frame.timePasses();
+    beginDrawPassFrame(frame);
+    spend(1);
+    enterDrawPass(engine, "shadows");
+    spend(4);
+    leaveDrawPass(engine);
+    withDrawPass(engine, "captures", () => {
+      spend(2);
+      enterDrawPass(engine, "shadows");
+      spend(3);
+      leaveDrawPass(engine);
+      enterDrawPass(engine, "objects");
+      spend(5);
+      leaveDrawPass(engine);
+    });
+    enterDrawPass(engine, "objects");
+    spend(7);
+    enterDrawPass(engine, "post");
+    spend(2);
+    leaveDrawPass(engine);
+    spend(1);
+    leaveDrawPass(engine);
+    spend(1);
+    endDrawPassFrame(frame);
+    // After the frame ended: no pass's.
+    spend(9);
+    publishDrawPassFrame(frame);
+    expect(frame.lastMs).toEqual({ ...emptyDrawPasses(), other: 2, shadows: 4, captures: 10, objects: 8, post: 2 });
+    expect(Object.values(frame.lastMs).reduce((sum, ms) => sum + ms, 0)).toBe(26);
+  });
+
+  it("times nothing until asked, and from the next frame begun once asked mid-frame", () => {
+    const { engine } = counter();
+    const spend = clock();
+    const frame = new DrawPassFrame(engine);
+    const render = () => {
+      beginDrawPassFrame(frame);
+      spend(1);
+      withDrawPass(engine, "mirrors", () => spend(3));
+      if (!asked) { asked = true; frame.timePasses(); }
+      spend(2);
+      endDrawPassFrame(frame);
+      publishDrawPassFrame(frame);
+      return { ...frame.lastMs };
+    };
+    let asked = false;
+    expect(render()).toEqual(emptyDrawPasses());
+    expect(render()).toEqual({ ...emptyDrawPasses(), other: 3, mirrors: 3 });
+  });
 });
 
 describe("draw passes of a Forward graph frame", () => {

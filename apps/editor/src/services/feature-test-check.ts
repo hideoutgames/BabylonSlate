@@ -683,6 +683,8 @@ export interface FeatureTestBenchmarkSample {
   unsettled?: { firstDraws: number; compiling: number; settleMs: number };
   /** Each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`); absent where unattributed. */
   drawPasses?: Partial<Record<DrawPass, number>>;
+  /** Each pass's median main-thread ms per frame while sampled (`RenderDiagnostics.drawPassMs`); absent where untimed. */
+  drawPassMs?: Partial<Record<DrawPass, number>>;
   /** The programs the Engine held as the sample ended (`RenderDiagnostics.programs`); absent on WebGPU. */
   programs?: NonNullable<RenderDiagnostics["programs"]>;
   /**
@@ -762,6 +764,8 @@ export interface PlayCounters {
   gpuMs: CounterStats | null;
   /** Each pass's median draw calls per frame while sampled (`RenderDiagnostics.drawPasses`); absent where unattributed. */
   drawPasses?: Partial<Record<DrawPass, number>> | null;
+  /** Each pass's median main-thread ms per frame while sampled (`RenderDiagnostics.drawPassMs`); absent where untimed. */
+  drawPassMs?: Partial<Record<DrawPass, number>> | null;
   /**
    * A frame's CPU time with its draws, clears and uniform uploads turned into no-ops (`PlayProbe.stubWebGlDraws`),
    * sampled right after `cpuMs`: what the engine's own JavaScript and state setting cost, so the rest of `cpuMs` is
@@ -1185,7 +1189,7 @@ async function checkScene(
     const workBefore = play.snapshot().rendering?.rendererWork;
     const sampled = await sampleWithCounters(play, deps.sampleFrames(limits.playSampleMs, signal), deps, signal);
     result.play.frames = sampled.frames;
-    result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu, drawPasses: sampled.drawPasses };
+    result.play.counters = { draws: sampled.draws, cpuMs: sampled.cpu, gpuMs: sampled.gpu, drawPasses: sampled.drawPasses, drawPassMs: sampled.drawPassMs };
     result.play.runtimeFps = play.runtimeFps();
     result.play.snapshot = play.snapshot();
     const sampledWork = rendererWorkSince(workBefore, result.play.snapshot.rendering?.rendererWork);
@@ -1659,6 +1663,7 @@ async function benchmarkProfiles(
       ...(work ? { work } : {}),
       ...(memory ? { memory } : {}),
       ...(sampled.drawPasses ? { drawPasses: sampled.drawPasses } : {}),
+      ...(sampled.drawPassMs ? { drawPassMs: sampled.drawPassMs } : {}),
       ...(rendering?.programs ? { programs: rendering.programs } : {}),
       ...(interleaved ? {
         ...(gpuBusy && rendering?.gpuBusy ? { gpuBusy: { ...rendering.gpuBusy } } : {}),
@@ -1835,12 +1840,14 @@ async function sampleWithCounters(
   frames: FrameStats | null; draws: CounterStats | null; cpu: CounterStats | null; gpu: CounterStats | null; compiling: number;
   occlusion: FeatureTestBenchmarkSample["occlusion"] | null;
   drawPasses: FeatureTestBenchmarkSample["drawPasses"] | null;
+  drawPassMs: FeatureTestBenchmarkSample["drawPassMs"] | null;
 }> {
   let compiling = 0;
   const cpu: number[] = [];
   const gpu: number[] = [];
   const draws: number[] = [];
   const passes = new Map<DrawPass, number[]>();
+  const passMs = new Map<DrawPass, number[]>();
   const occlusion = { tested: [] as number[], culled: [] as number[], triangles: [] as number[], ms: [] as number[] };
   let sampling = true;
   const done = frames.finally(() => { sampling = false; });
@@ -1856,6 +1863,13 @@ async function sampleWithCounters(
         const counts = passes.get(pass) ?? [];
         counts.push(count);
         passes.set(pass, counts);
+      }
+      // Before the view's first timed frame (reading diagnostics starts the timing) every pass reads zero.
+      const timed = rendering.drawPassMs && Object.values(rendering.drawPassMs).some((ms) => ms > 0);
+      for (const [pass, ms] of Object.entries(timed ? rendering.drawPassMs! : {}) as [DrawPass, number][]) {
+        const times = passMs.get(pass) ?? [];
+        times.push(ms);
+        passMs.set(pass, times);
       }
       if (rendering.occlusion) {
         occlusion.tested.push(rendering.occlusion.tested);
@@ -1873,6 +1887,7 @@ async function sampleWithCounters(
       tested: median(occlusion.tested), culled: median(occlusion.culled), triangles: median(occlusion.triangles), ms: median(occlusion.ms),
     } : null,
     drawPasses: passes.size ? Object.fromEntries([...passes].map(([pass, counts]) => [pass, median(counts)])) : null,
+    drawPassMs: passMs.size ? Object.fromEntries([...passMs].map(([pass, times]) => [pass, median(times)])) : null,
   };
 }
 
