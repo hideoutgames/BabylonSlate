@@ -25,7 +25,9 @@ If packaging fails, the reason appears in the **Packaging** window.
 
 Set **Project Settings > Export > App Identity > App Icon** to a Texture, and every package uses it as its icon. Without one, each platform keeps its default icon.
 
-Use a square image of at least 1024 × 1024 pixels; Haptic scales it down to each size a platform needs. Packaging uses the image the Texture was imported from, not its compressed copy, so the Texture's settings don't affect the icon. The App Icon row shows a message when the Texture is missing, not square or too small, and packaging fails with the same reason.
+Any image size works. Haptic uses the image's centre square, cutting equal parts from the longer sides of a non-square image, and scales it to each size a platform needs. Use 1024 × 1024 pixels or larger so the biggest icons stay sharp; a smaller image is scaled up, and the App Icon row says so, as it does when it crops. Packaging uses the image the Texture was imported from, not its compressed copy, so the Texture's settings don't affect the icon. The App Icon row shows an error only when the Texture is missing.
+
+**Icon Preview**, under the App Icon row, shows the icon as each platform presents it: iOS in its rounded square over black, Android filling the launcher's circle, desktop as it is, and the web as a browser-tab icon beside the Display Name. The **Packaging** window shows the icon in the selected platform's shape, and its summary names the App Icon Texture.
 
 | Package | Where the icon appears |
 | --- | --- |

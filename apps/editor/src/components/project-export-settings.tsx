@@ -5,6 +5,8 @@ import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert
 import { Button } from "@haptic/ui/components/button";
 import {
   Field,
+  FieldContent,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -80,9 +82,14 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
         />
       </Field>
       <Field className="settings-field" data-invalid={iconError ? true : undefined}>
-        <LabelHint hint="Packages use the Texture's centre square; 1024 × 1024 or larger stays sharp at every size.">
-          <FieldLabel htmlFor="setting-app-icon">App Icon</FieldLabel>
-        </LabelHint>
+        <FieldContent>
+          <LabelHint hint="Packages use the Texture's centre square; 1024 × 1024 or larger stays sharp at every size.">
+            <FieldLabel htmlFor="setting-app-icon">App Icon</FieldLabel>
+          </LabelHint>
+          {iconHint ? (
+            <FieldDescription id="setting-app-icon-hint" className="text-(--warning)" data-testid="setting-app-icon-hint">{iconHint}</FieldDescription>
+          ) : null}
+        </FieldContent>
         <div className="flex min-w-0 flex-col gap-1">
           <AssetPickerControl value={identity.iconTextureGuid}>
             <Button
@@ -99,9 +106,6 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
             </Button>
           </AssetPickerControl>
           {iconError ? <FieldError id="setting-app-icon-error">{iconError}</FieldError> : null}
-          {iconHint ? (
-            <p id="setting-app-icon-hint" className="text-xs text-(--warning)" data-testid="setting-app-icon-hint">{iconHint}</p>
-          ) : null}
         </div>
       </Field>
       {iconPreviewUrl ? (
