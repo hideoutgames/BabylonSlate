@@ -142,7 +142,7 @@ export function NumericDragField({
       setDragging(true);
       event.currentTarget.setPointerCapture?.(event.pointerId);
     },
-    [disabled, value],
+    [disabled, perItem, value],
   );
 
   const onPointerMove = useCallback(
