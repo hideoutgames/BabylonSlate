@@ -123,7 +123,7 @@ describe("formatFeatureTestCheckReport", () => {
       scenes: [{
         name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 900, phase: null, frames: null, error: null, gpu: null },
-        play: { status: "loaded", ms: 3000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null,
+        play: { status: "loaded", ms: 3000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null,
           // 40 probes: a probe counts once for each reason marked since the last that passed, so causes overlap.
           work: { drawn: 400, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 40,
             readinessProbeMs: 800, outlineReadinessChecks: 0,
