@@ -21,9 +21,11 @@ import {
   PropertyGrid,
   TypeVisualIcon,
   humanizePropertyLabel,
+  mergePropertyRows,
   resolveTypeVisual,
   walkAncestry,
   type ClassPickerEntry,
+  type PropertyRow,
 } from "@haptic/editor-kit";
 import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { useRegistryState } from "../context/document-context";
@@ -36,6 +38,7 @@ import { scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   componentPropertyRows,
   type AssetPickRequest,
+  type ComponentPropertyContext,
   type ComponentPropertyUpdate,
 } from "../lib/component-property-rows";
 import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
@@ -53,29 +56,9 @@ import { particleSystemGuidsOf, useParticleSystemParameters } from "../lib/use-p
 
 const MODEL_KINDS = ["model"] as const;
 
-export function PrefabComponentDetails({
-  actorClassId,
-  component,
-  components,
-  sceneLayerClasses,
-  sortingLayers,
-  collisionLayers,
-  collisionPresets,
-  physicsWorld,
-  viewportMode,
-  pickerAssets,
-  parentOf,
-  assetLabel,
-  assetType,
-  fontHasFacetype,
-  fontHasMsdfJson,
-  fontHasMsdfPng,
-  fontPixelSize,
-  onUpdate,
-  onUpdateTransform,
-}: {
+/** What a prefab component's Details read from the Inspector, for one component or several. */
+interface PrefabDetailsSharedProps {
   actorClassId: string;
-  component: SerializedComponent;
   components: readonly SerializedComponent[];
   sceneLayerClasses: ClassPickerEntry[];
   sortingLayers: readonly string[];
@@ -97,23 +80,128 @@ export function PrefabComponentDetails({
   fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
   fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
   fontPixelSize?: (guid: string | null | undefined) => number;
-  onUpdate: ComponentPropertyUpdate;
-  onUpdateTransform: (transform: SerializedTransform) => void;
-}) {
+}
+
+/** Components whose Details have no local Transform. */
+const NO_TRANSFORM_CLASSES = new Set(["2DAnchorComponent", "MovementComponent", "DeformerComponent", "SaveGameComponent"]);
+
+/** The row context every prefab component's Details share, and the Material domains the asset picker filters by. */
+function usePrefabRowContext(props: PrefabDetailsSharedProps): {
+  context: Omit<ComponentPropertyContext, "onPickAsset">;
+  materialDomains: Record<string, string>;
+} {
+  const {
+    actorClassId, components, sceneLayerClasses, sortingLayers, collisionLayers, collisionPresets, physicsWorld,
+    parentOf, assetLabel, assetType, fontHasFacetype, fontHasMsdfJson, fontHasMsdfPng, fontPixelSize,
+  } = props;
   const { assetRegistry, registryEpoch } = useRegistryState();
   const areaEmissionStatus = useAreaEmissionStatus();
-  const linkedScale = useLinkedScale();
   // Open Class and Model tabs override saved content in these rows.
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   // Kept across renders, so a gizmo drag does not walk every Class again.
   const classGraphs = useClassGraphs();
-  const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const materialDomains = useMemo(() => {
     void registryEpoch;
     return materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
   }, [assetRegistry, materialDocuments, registryEpoch]);
+  return {
+    materialDomains,
+    context: {
+      sortingLayers,
+      collisionLayers,
+      collisionPresets,
+      assetLabel,
+      assetType,
+      modelMaterialSlots: (guid) => normalizeModelPayload(
+        modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
+          ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
+      ).materialSlots,
+      fontHasFacetype,
+      fontHasMsdfJson,
+      fontHasMsdfPng,
+      fontPixelSize,
+      physicsWorld,
+      areaEmissionStatus,
+      actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
+      actorVariableNames: () => saveGameVariableNames(actorClassId, classGraphs, parentOf),
+      componentVariableNames: (classId) => saveGameVariableNames(classId, classGraphs, parentOf),
+      sceneLayerClasses: sceneLayerClasses,
+      focusTargets: components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` })),
+    },
+  };
+}
+
+/** Coupled properties an asset pick writes with the asset: a Font without an MSDF pair stores Bitmap in the same edit. */
+function assetPickAlsoSet(
+  component: SerializedComponent,
+  property: string,
+  guid: string | null,
+  props: Pick<PrefabDetailsSharedProps, "fontHasMsdfJson" | "fontHasMsdfPng">,
+): Record<string, unknown> | undefined {
+  const bitmapFont =
+    property === "fontAssetGuid" &&
+    (component.classId === "2DTextComponent" ||
+      component.classId === "2DRichTextComponent") &&
+    !(guid && props.fontHasMsdfJson?.(guid) && props.fontHasMsdfPng?.(guid));
+  return bitmapFont ? { renderer: "bitmap" } : undefined;
+}
+
+/** The asset picker a component's asset row opens; `onPick` gets a pick the request allows. */
+function PrefabAssetPicker({
+  assetPick,
+  setAssetPick,
+  pickerAssets,
+  materialDomains,
+  modelMaterials,
+  onPick,
+}: {
+  assetPick: AssetPickRequest | null;
+  setAssetPick: (request: AssetPickRequest | null) => void;
+  pickerAssets: PrefabDetailsSharedProps["pickerAssets"];
+  materialDomains: Record<string, string>;
+  /** Offer the Model's own Materials (a Mesh with a Model). */
+  modelMaterials: boolean;
+  onPick: (request: AssetPickRequest, guid: string | null) => void;
+}) {
+  return (
+    <AssetPicker
+      open={assetPick !== null}
+      onOpenChange={(open) => {
+        if (!open) setAssetPick(null);
+      }}
+      assets={assetPick?.materialDomain ? pickerAssets.filter((asset) => materialDomains[asset.guid] === assetPick.materialDomain) : assetPick?.property === "materialGuid" && modelMaterials
+        ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
+        : pickerAssets}
+      allowedTypes={assetPick?.allowedTypes}
+      title={assetPick?.title ?? "Pick Asset"}
+      allowNone
+      onPick={(guid) => {
+        if (!assetPick) return;
+        if (guid && assetPick.materialDomain && materialDomains[guid] !== assetPick.materialDomain) return;
+        onPick(assetPick, guid);
+        setAssetPick(null);
+      }}
+      data-testid="inspector-prefab-asset-picker"
+    />
+  );
+}
+
+export function PrefabComponentDetails({
+  component,
+  onUpdate,
+  onUpdateTransform,
+  ...shared
+}: PrefabDetailsSharedProps & {
+  component: SerializedComponent;
+  onUpdate: ComponentPropertyUpdate;
+  onUpdateTransform: (transform: SerializedTransform) => void;
+}) {
+  const { actorClassId, viewportMode, parentOf, pickerAssets } = shared;
+  const linkedScale = useLinkedScale();
+  const { context, materialDomains } = usePrefabRowContext(shared);
+  const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
   const particleParameters = useParticleSystemParameters(particleSystemGuidsOf({ components: [component] }));
   const parameterRows = component.classId === "ParticleComponent"
     ? particleParameterOverrideRows(PREFAB_ROOT_ID, component,
@@ -124,7 +212,7 @@ export function PrefabComponentDetails({
       className="flex flex-col gap-3 p-3"
       data-testid="inspector-prefab-component"
     >
-      {component.classId !== "2DAnchorComponent" && component.classId !== "MovementComponent" && component.classId !== "DeformerComponent" && component.classId !== "SaveGameComponent" && <PropertyGrid
+      {!NO_TRANSFORM_CLASSES.has(component.classId) && <PropertyGrid
         title="Transform"
         rows={spatialTransformPropertyRows(
           component.id,
@@ -156,29 +244,7 @@ export function PrefabComponentDetails({
           />
         ) : null}
         <PropertyGrid
-          rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
-            sortingLayers,
-            collisionLayers,
-            collisionPresets,
-            assetLabel,
-            assetType,
-            modelMaterialSlots: (guid) => normalizeModelPayload(
-              modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
-                ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
-            ).materialSlots,
-            fontHasFacetype,
-            fontHasMsdfJson,
-            fontHasMsdfPng,
-            fontPixelSize,
-            physicsWorld,
-            onPickAsset: setAssetPick,
-            areaEmissionStatus,
-            actorComponents: (targetId) => targetId === PREFAB_ROOT_ID ? components : [],
-            actorVariableNames: () => saveGameVariableNames(actorClassId, classGraphs, parentOf),
-            componentVariableNames: (classId) => saveGameVariableNames(classId, classGraphs, parentOf),
-            sceneLayerClasses: sceneLayerClasses,
-            focusTargets: components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` })),
-          })}
+          rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, { ...context, onPickAsset: setAssetPick })}
         />
         {parameterRows.length ? (
           <PropertyGrid title="Parameters" rows={parameterRows} data-testid={`particle-parameters-grid-${component.id}`} />
@@ -233,30 +299,99 @@ export function PrefabComponentDetails({
           />
         </Field>
       ) : null}
-      <AssetPicker
-        open={assetPick !== null}
-        onOpenChange={(open) => {
-          if (!open) setAssetPick(null);
-        }}
-        assets={assetPick?.materialDomain ? pickerAssets.filter((asset) => materialDomains[asset.guid] === assetPick.materialDomain) : assetPick?.property === "materialGuid" && component.classId === "MeshComponent" && component.properties.assetGuid
-          ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
-          : pickerAssets}
-        allowedTypes={assetPick?.allowedTypes}
-        title={assetPick?.title ?? "Pick Asset"}
-        allowNone
-        onPick={(guid) => {
-          if (!assetPick) return;
-          if (guid && assetPick.materialDomain && materialDomains[guid] !== assetPick.materialDomain) return;
-          // A Font without an MSDF pair stores Bitmap in the same edit as the Font.
-          const bitmapFont =
-            assetPick.property === "fontAssetGuid" &&
-            (component.classId === "2DTextComponent" ||
-              component.classId === "2DRichTextComponent") &&
-            !(guid && fontHasMsdfJson?.(guid) && fontHasMsdfPng?.(guid));
-          onUpdate(assetPick.property, guid, bitmapFont ? { renderer: "bitmap" } : undefined);
-          setAssetPick(null);
-        }}
-        data-testid="inspector-prefab-asset-picker"
+      <PrefabAssetPicker
+        assetPick={assetPick}
+        setAssetPick={setAssetPick}
+        pickerAssets={pickerAssets}
+        materialDomains={materialDomains}
+        modelMaterials={component.classId === "MeshComponent" && Boolean(component.properties.assetGuid)}
+        onPick={(request, guid) => onUpdate(request.property, guid, assetPickAlsoSet(component, request.property, guid, shared))}
+      />
+    </div>
+  );
+}
+
+/** A Details row id without its component's own prefix, so several components' rows match by property. */
+function componentRowKey(componentId: string, rowId: string): string {
+  for (const prefix of [`${PREFAB_ROOT_ID}-${componentId}-`, `${componentId}-`]) {
+    if (rowId.startsWith(prefix)) return rowId.slice(prefix.length);
+  }
+  return rowId;
+}
+
+/**
+ * Several selected prefab components: only the Transform and Details rows
+ * every one has, by property and kind, so two Meshes share Mesh Kind and a
+ * Light and a Mesh share only what both have. Values that differ show Mixed
+ * Values; an edit changes each component in one `batch` (one Undo step).
+ * Lists, text bodies and other custom sections stay with a single component.
+ */
+export function PrefabComponentsDetails({
+  selected,
+  batch,
+  onUpdate,
+  onUpdateTransform,
+  ...shared
+}: PrefabDetailsSharedProps & {
+  /** Two or more components. */
+  selected: readonly SerializedComponent[];
+  /** Runs one edit's per-component changes as one change. */
+  batch: (apply: () => void) => void;
+  onUpdate: (componentId: string, ...update: Parameters<ComponentPropertyUpdate>) => void;
+  onUpdateTransform: (componentId: string, transform: SerializedTransform) => void;
+}) {
+  const { actorClassId, viewportMode, pickerAssets } = shared;
+  const linkedScale = useLinkedScale();
+  const { context, materialDomains } = usePrefabRowContext(shared);
+  const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
+  const particleParameters = useParticleSystemParameters(particleSystemGuidsOf({ components: selected }));
+  const keys = new Map<PropertyRow, string>();
+  const merge = (build: (component: SerializedComponent, update: ComponentPropertyUpdate) => PropertyRow[]) =>
+    mergePropertyRows(selected.map((component) => {
+      const rows = build(component, (...update) => onUpdate(component.id, ...update));
+      for (const row of rows) keys.set(row, componentRowKey(component.id, row.id));
+      return rows;
+    }), { key: (row) => keys.get(row) ?? row.id, batch });
+  const transformRows = selected.some((component) => NO_TRANSFORM_CLASSES.has(component.classId))
+    ? []
+    : merge((component) => spatialTransformPropertyRows(
+        component.id,
+        viewportMode,
+        component.transform ?? identitySerializedTransform(),
+        (transform) => onUpdateTransform(component.id, transform),
+        { scaleLink: linkedScale.link(scaleLinkKey.classComponent(actorClassId, component.id)) },
+      ));
+  const rows = merge((component, update) =>
+    componentPropertyRows(PREFAB_ROOT_ID, component, update, { ...context, onPickAsset: setAssetPick }));
+  const parameterRows = selected.every((component) => component.classId === "ParticleComponent")
+    ? merge((component, update) => particleParameterOverrideRows(PREFAB_ROOT_ID, component,
+      particleParameters.get(String(component.properties.particleSystemGuid ?? "")) ?? [], update))
+    : [];
+  return (
+    <div className="flex flex-col gap-3 p-3" data-testid="inspector-prefab-multi">
+      {transformRows.length > 0 ? (
+        <PropertyGrid title="Transform" rows={transformRows} data-testid="prefab-component-transform-grid" />
+      ) : null}
+      <div className="overflow-hidden rounded-lg border border-border/60 bg-sidebar">
+        <div className="flex items-center gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
+          <span className="truncate text-sm font-medium">{`${selected.length} Components`}</span>
+        </div>
+        {rows.length > 0 ? <PropertyGrid rows={rows} data-testid="inspector-prefab-multi-properties" /> : null}
+        {parameterRows.length > 0 ? (
+          <PropertyGrid title="Parameters" rows={parameterRows} data-testid="particle-parameters-grid-multi" />
+        ) : null}
+      </div>
+      <PrefabAssetPicker
+        assetPick={assetPick}
+        setAssetPick={setAssetPick}
+        pickerAssets={pickerAssets}
+        materialDomains={materialDomains}
+        modelMaterials={selected.every((component) => component.classId === "MeshComponent" && Boolean(component.properties.assetGuid))}
+        onPick={(request, guid) => batch(() => {
+          for (const component of selected) {
+            onUpdate(component.id, request.property, guid, assetPickAlsoSet(component, request.property, guid, shared));
+          }
+        })}
       />
     </div>
   );

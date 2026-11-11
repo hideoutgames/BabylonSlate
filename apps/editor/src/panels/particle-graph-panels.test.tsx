@@ -108,20 +108,23 @@ beforeEach(() => {
 const panelProps = {} as IDockviewPanelProps;
 
 /** Details over a real undo stack; `endGesture` stands in for the editor's gesture boundaries. */
-function renderDetails(initial: ParticleGraphDocument, selectedNodeId: string | null = null) {
+function renderDetails(initial: ParticleGraphDocument, selected: string | readonly string[] | null = null) {
+  const selectedNodeIds = selected === null ? [] : typeof selected === "string" ? [selected] : selected;
   const stack = new DocumentEditStack<Record<string, unknown>>({
     maxEntries: 50,
     maxBytes: 1_000_000,
   });
   let current = initial;
+  let changes = 0;
   function History() {
     const [doc, setDoc] = useState(current);
     current = doc;
     return (
       <ParticleGraphDetails
         document={normalizeParticleGraphDocument(doc)}
-        selectedNodeId={selectedNodeId}
+        selectedNodeIds={selectedNodeIds}
         onChange={(next, mergeKey) => {
+          changes += 1;
           const before = doc as unknown as Record<string, unknown>;
           const after = next as unknown as Record<string, unknown>;
           current = stack.apply(before, new SetAssetDocumentCommand(before, after, mergeKey))
@@ -132,7 +135,7 @@ function renderDetails(initial: ParticleGraphDocument, selectedNodeId: string | 
     );
   }
   render(<History />);
-  return { stack, read: () => normalizeParticleGraphDocument(current) };
+  return { stack, read: () => normalizeParticleGraphDocument(current), changes: () => changes };
 }
 
 // Out-of-range numbers commit their clamped value when the field loses focus.
@@ -414,6 +417,67 @@ describe("ParticleGraphDetails", () => {
       value: number[];
     }>;
     expect(stops[0]).toEqual({ position: 0, value: [1, 2, 1] });
+  });
+});
+
+describe("ParticleGraphDetails with several nodes selected", () => {
+  /** A Condition and a Multiply: both have A and B; B defaults to 0 on the Condition and 1 on the Multiply. */
+  function conditionAndMultiply(): ParticleGraphDocument {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push(
+      { id: "condition", type: "logic.condition", position: { x: 0, y: 0 }, properties: {} },
+      { id: "times", type: "math.multiply", position: { x: 0, y: 200 }, properties: {} },
+    );
+    return doc;
+  }
+
+  it("shows the inputs a Condition and a Multiply share, Mixed Values where they differ, and nothing only one has", () => {
+    renderDetails(conditionAndMultiply(), ["condition", "times"]);
+    expect(screen.getByTestId("module-stage-node").textContent).toContain("2 Nodes");
+    expect(screen.getByTestId<HTMLInputElement>("property-a").value).toBe("0");
+    expect(screen.getByTestId<HTMLInputElement>("property-b").value).toBe("Mixed Values");
+    for (const conditionOnly of ["property-test", "property-epsilon", "property-whenTrue"]) {
+      expect(screen.queryByTestId(conditionOnly)).toBeNull();
+    }
+  });
+
+  it("adds typed math to each node's own value as one change and one undo entry", () => {
+    const history = renderDetails(conditionAndMultiply(), ["condition", "times"]);
+    const b = screen.getByTestId("property-b");
+    fireEvent.focus(b);
+    fireEvent.change(b, { target: { value: "Mixed Values+4" } });
+    expect(history.changes()).toBe(1);
+    expect(nodeOf(history.read(), "condition").properties["default:b"]).toEqual([4]);
+    expect(nodeOf(history.read(), "times").properties["default:b"]).toEqual([5]);
+    fireEvent.blur(b);
+    expect(history.stack.undoDepth).toBe(1);
+  });
+
+  it("hides Min and Max when one Random Range is a Float and the other a Vector3", () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push(
+      { id: "float", type: "random.range", position: { x: 0, y: 0 }, properties: newParticleNodeProperties("random.range") },
+      { id: "vector", type: "random.range", position: { x: 0, y: 200 }, properties: { ...newParticleNodeProperties("random.range"), valueType: "vec3" } },
+    );
+    renderDetails(doc, ["float", "vector"]);
+    expect(screen.getByTestId("property-valueType").textContent).toContain("Mixed Values");
+    expect(screen.getByTestId("property-lock")).toBeTruthy();
+    expect(screen.queryByTestId("property-min")).toBeNull();
+    expect(screen.queryByTestId("property-max")).toBeNull();
+  });
+
+  it("picks one Noise Texture for every selected Noise node", async () => {
+    const doc = createDefaultParticleGraphDocument("Embers");
+    doc.nodes.push(
+      { id: "noise", type: "update.noise", position: { x: 0, y: 0 }, properties: { textureGuid: null } },
+      { id: "noise2", type: "update.noise", position: { x: 0, y: 200 }, properties: { textureGuid: null } },
+    );
+    const history = renderDetails(doc, ["noise", "noise2"]);
+    fireEvent.click(screen.getByTestId("property-textureGuid"));
+    fireEvent.click(await screen.findByTestId("search-item-tex-clouds"));
+    expect(history.changes()).toBe(1);
+    expect(nodeOf(history.read(), "noise").properties.textureGuid).toBe("tex-clouds");
+    expect(nodeOf(history.read(), "noise2").properties.textureGuid).toBe("tex-clouds");
   });
 });
 

@@ -27,6 +27,7 @@ import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
+import { useNodeSelection } from "../lib/node-selection";
 
 /** A preview build problem as `ParticleService` reports it (node-anchored when known). */
 export interface ParticleGraphBuildDiagnostic {
@@ -58,7 +59,11 @@ export interface ParticleGraphEditingValue {
     key: string,
     diagnostics: readonly ParticleGraphBuildDiagnostic[],
   ) => void;
+  /** Every selected node; Details shows the properties they share. */
+  selectedNodeIds: readonly string[];
+  /** The first selected node. */
   selectedNodeId: string | null;
+  setSelectedNodeIds: (nodeIds: readonly string[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
   focusedNodeId: string | null;
   /** Frames a node on the canvas and shows it in Details. */
@@ -229,12 +234,12 @@ export function ParticleGraphEditingProvider({
     [diagnostics, previewKey, report],
   );
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const { selectedNodeIds, selectedNodeId, setSelectedNodeIds, setSelectedNodeId } = useNodeSelection();
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const focusNode = useCallback((nodeId: string) => {
     setFocusedNodeId(nodeId);
     setSelectedNodeId(nodeId);
-  }, []);
+  }, [setSelectedNodeId]);
 
   const value = useMemo<ParticleGraphEditingValue>(
     () => ({
@@ -246,7 +251,9 @@ export function ParticleGraphEditingProvider({
       errorCount,
       previewDocument,
       reportBuildDiagnostics,
+      selectedNodeIds,
       selectedNodeId,
+      setSelectedNodeIds,
       setSelectedNodeId,
       focusedNodeId,
       focusNode,
@@ -263,6 +270,9 @@ export function ParticleGraphEditingProvider({
       previewDocument,
       reportBuildDiagnostics,
       selectedNodeId,
+      selectedNodeIds,
+      setSelectedNodeId,
+      setSelectedNodeIds,
     ],
   );
 

@@ -5,6 +5,7 @@ import { cn } from "@haptic/ui/lib/utils";
 import {
   evaluateNumericExpression,
   formatNumericDisplay,
+  MIXED_VALUES_LABEL,
 } from "./numeric-expression";
 import { useSelectAllOnActivate } from "./select-all-on-activate";
 import { stripNumberUnit, withNumberUnit } from "./number-units";
@@ -18,6 +19,17 @@ export interface NumericDragFieldProps {
   value: number;
   /** Different selected values; `value` remains the scrub/expression baseline. */
   mixed?: boolean;
+  /**
+   * A multi-selection's own values, `value`'s first. With `onItemsChange` a
+   * mixed field shows `Mixed Values` as its text, and typing or scrubbing
+   * changes each item from its own value: `Mixed Values+4` adds 4 to each,
+   * `*2` doubles each, a plain number sets them all.
+   */
+  itemValues?: readonly number[];
+  /** Per-item values for every live change of a mixed field with `itemValues`; replaces `onChange` there. */
+  onItemsChange?: (values: number[]) => void;
+  /** Per-item end of a scrub or typed edit (see `onDragEnd`). */
+  onItemsEnd?: (values: number[], source: "drag" | "typed") => void;
   /** World units (or degrees) per pixel of horizontal drag. */
   sensitivity?: number;
   /** Maximum displayed decimal places while idle; stored values are never rounded. */
@@ -59,6 +71,9 @@ export function NumericDragField({
   "aria-label": ariaLabel,
   value,
   mixed = false,
+  itemValues,
+  onItemsChange,
+  onItemsEnd,
   sensitivity = 0.01,
   precision = 2,
   min,
@@ -73,6 +88,21 @@ export function NumericDragField({
 }: NumericDragFieldProps) {
   const evaluate = (raw: string, baseline: number) =>
     evaluateNumericExpression(stripNumberUnit(raw, unit), baseline);
+  // A mixed multi-selection edits each item from its own value.
+  const perItem = mixed && itemValues && itemValues.length > 1 && onItemsChange ? itemValues : undefined;
+  const itemBaselinesRef = useRef<readonly number[]>(perItem ?? []);
+  /** Each item's result, or undefined when one of them does not evaluate or is out of range. */
+  const evaluateItems = (raw: string, clampValues: boolean): number[] | undefined => {
+    const values: number[] = [];
+    for (const baseline of itemBaselinesRef.current) {
+      const parsed = evaluate(raw, baseline);
+      if (parsed === undefined) return undefined;
+      const next = clamp(parsed, min, max);
+      if ((!clampValues && next !== parsed) || validate?.(next)) return undefined;
+      values.push(next);
+    }
+    return values;
+  };
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -80,6 +110,8 @@ export function NumericDragField({
     latest: number;
     /** Whether this scrub has sent a value through `onChange`. */
     sent: boolean;
+    /** A mixed multi-selection's latest per-item values. */
+    items?: number[];
   } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [draft, setDraft] = useState<string | null>(null);
@@ -99,6 +131,7 @@ export function NumericDragField({
       if (disabled || event.button !== 0 || event.isPrimary === false) return;
       setError(null);
       setNotice(null);
+      itemBaselinesRef.current = perItem ?? [];
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -109,13 +142,26 @@ export function NumericDragField({
       setDragging(true);
       event.currentTarget.setPointerCapture?.(event.pointerId);
     },
-    [disabled, value],
+    [disabled, perItem, value],
   );
 
   const onPointerMove = useCallback(
     (event: PointerEvent<HTMLSpanElement>) => {
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
+      if (itemBaselinesRef.current.length > 1 && onItemsChange) {
+        // Each item moves by the drag from its own value.
+        const delta = event.clientX - drag.startX;
+        const values = itemBaselinesRef.current.map((start) =>
+          clamp(scrubValue(start, delta, sensitivity, scrubSnapStrength()), min, max));
+        if (values.some((next) => validate?.(next))) return;
+        if (values[0] === drag.latest && drag.sent) return;
+        drag.latest = values[0]!;
+        drag.sent = true;
+        drag.items = values;
+        onItemsChange(values);
+        return;
+      }
       // Round values hold for a few pixels so they are easy to land on.
       const scrubbed = scrubValue(drag.startValue, event.clientX - drag.startX, sensitivity, scrubSnapStrength());
       const next = clamp(scrubbed, min, max);
@@ -128,7 +174,7 @@ export function NumericDragField({
       drag.sent = true;
       onChange(next);
     },
-    [max, min, mixed, onChange, sensitivity, validate],
+    [max, min, mixed, onChange, onItemsChange, sensitivity, validate],
   );
 
   const endDrag = useCallback(
@@ -137,9 +183,10 @@ export function NumericDragField({
       if (!drag || drag.pointerId !== event.pointerId) return;
       dragRef.current = null;
       setDragging(false);
-      onDragEnd?.(drag.latest, "drag");
+      if (drag.items) onItemsEnd?.(drag.items, "drag");
+      else onDragEnd?.(drag.latest, "drag");
     },
-    [onDragEnd],
+    [onDragEnd, onItemsEnd],
   );
 
   // The platform took the pointer (system gesture, palm rejection): restore
@@ -150,10 +197,16 @@ export function NumericDragField({
       if (!drag || drag.pointerId !== event.pointerId) return;
       dragRef.current = null;
       setDragging(false);
+      if (drag.items && onItemsChange) {
+        const start = [...itemBaselinesRef.current];
+        onItemsChange(start);
+        onItemsEnd?.(start, "drag");
+        return;
+      }
       if (drag.latest !== drag.startValue) onChange(drag.startValue);
       onDragEnd?.(drag.startValue, "drag");
     },
-    [onChange, onDragEnd],
+    [onChange, onDragEnd, onItemsChange, onItemsEnd],
   );
 
   return (
@@ -198,7 +251,8 @@ export function NumericDragField({
           spellCheck={false}
           id={id}
           className={cn(
-            "h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 rounded-md border border-input bg-control px-1.5 py-0 text-xs",
+            // A narrow axis cuts Mixed Values with an ellipsis rather than mid-word.
+            "h-[var(--chrome-row,28px)] min-h-[var(--chrome-row,28px)] w-full min-w-0 text-ellipsis rounded-md border border-input bg-control px-1.5 py-0 text-xs",
             !label && "pr-6",
           )}
           aria-label={ariaLabel ?? (label || undefined)}
@@ -206,14 +260,22 @@ export function NumericDragField({
           aria-describedby={error || notice ? errorId : undefined}
           data-testid={testId}
           disabled={disabled}
-          value={draft ?? (mixed ? "" : withNumberUnit(formatNumericDisplay(value, precision), unit))}
-          placeholder={mixed ? "Mixed" : undefined}
+          value={draft ?? (perItem ? MIXED_VALUES_LABEL : mixed ? "" : withNumberUnit(formatNumericDisplay(value, precision), unit))}
+          placeholder={mixed && !perItem ? MIXED_VALUES_LABEL : undefined}
           onChange={(event) => {
             const raw = event.target.value;
-            if (draft === null) baselineRef.current = value;
+            if (draft === null) {
+              baselineRef.current = value;
+              itemBaselinesRef.current = perItem ?? [];
+            }
             setDraft(raw);
             setError(null);
             setNotice(null);
+            if (itemBaselinesRef.current.length > 1 && onItemsChange) {
+              const values = evaluateItems(raw, false);
+              if (values) onItemsChange(values);
+              return;
+            }
             const parsed = evaluate(raw, baselineRef.current);
             if (parsed === undefined) return;
             if (parsed !== clamp(parsed, min, max) || validate?.(parsed)) return;
@@ -235,7 +297,8 @@ export function NumericDragField({
               event.stopPropagation();
               cancelledRef.current = true;
               liveRef.current = undefined;
-              if (draft !== null) onChange(baselineRef.current);
+              if (draft !== null && itemBaselinesRef.current.length > 1 && onItemsChange) onItemsChange([...itemBaselinesRef.current]);
+              else if (draft !== null) onChange(baselineRef.current);
               setDraft(null);
               setError(null);
               setNotice(null);
@@ -252,6 +315,18 @@ export function NumericDragField({
               return;
             }
             if (draft === null) return;
+            if (itemBaselinesRef.current.length > 1 && onItemsChange) {
+              const values = evaluateItems(draft, true);
+              if (values) {
+                onItemsChange(values);
+                onItemsEnd?.(values, "typed");
+              } else {
+                setError("Invalid expression. Restored the values.");
+                onItemsChange([...itemBaselinesRef.current]);
+              }
+              setDraft(null);
+              return;
+            }
             const parsed = evaluate(draft, baselineRef.current);
             const next = parsed === undefined ? undefined : clamp(parsed, min, max);
             const validationError = next === undefined ? undefined : validate?.(next);

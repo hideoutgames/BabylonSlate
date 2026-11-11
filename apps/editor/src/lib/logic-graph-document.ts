@@ -15,7 +15,7 @@ import {
   type SerializedGraph,
   type SerializedScene,
 } from "@haptic/core";
-import { diffGraphCommands, type EditCommand } from "@haptic/edit";
+import { diffGraphCommands, graphEditMergeKey } from "@haptic/edit";
 import { pruneEventMembersToNodes } from "./class-members";
 import {
   animGraphMembersFromVariables,
@@ -743,11 +743,7 @@ export function logicGraphEditMergeKey(
   next: SerializedGraph,
 ): string | undefined {
   if (!previous) return undefined;
-  const commands: EditCommand<SerializedGraph>[] = diffGraphCommands(
-    previous,
-    next,
-  );
-  const key = commands.length === 1 ? commands[0]!.mergeKey : undefined;
+  const key = graphEditMergeKey(diffGraphCommands(previous, next));
   return key ? `logic-graph:${key}` : undefined;
 }
 

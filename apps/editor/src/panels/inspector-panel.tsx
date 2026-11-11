@@ -55,7 +55,7 @@ import {
   componentGraphMembers,
 } from "../lib/component-graph-members";
 import { classDocumentShowsPrefab, classIdFromClassAsset } from "../lib/content-browser-helpers";
-import { physicsWorldFromOpenDocuments, prefabComponentLabel } from "./add-component-catalog";
+import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
   applyLogicGraphCommit,
   commitLogicGraph,
@@ -72,8 +72,8 @@ import { delegateSignatureEntries } from "../lib/delegate-signatures";
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { ClassMemberDetails } from "./inspector-class-member-details";
-import { PrefabComponentDetails } from "./inspector-prefab-component-details";
-import { GraphNodeDetails } from "./inspector-graph-node-details";
+import { PrefabComponentDetails, PrefabComponentsDetails } from "./inspector-prefab-component-details";
+import { GraphNodeDetails, GraphNodesDetails } from "./inspector-graph-node-details";
 import type { CommittedPinRowIds } from "./inspector-member-rows";
 import { useInspectorCatalogs } from "./use-inspector-catalogs";
 
@@ -111,6 +111,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     updateComponent,
     updateComponentTransform,
     setComponentCategory,
+    batchComponentEdits,
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [parentClassPickOpen, setParentClassPickOpen] = useState(false);
@@ -234,15 +235,22 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     selectedMember,
     selectedNodeIds,
   ]);
-  const needsPinHydration = Boolean(selectedSerializedNode && (
-    isDataGraphNode(selectedSerializedNode.type) ||
-    selectedSerializedNode.type === "struct.make" ||
-    selectedSerializedNode.type === "struct.break" ||
-    selectedSerializedNode.type === "debug.executeJavaScript" ||
-    selectedSerializedNode.type === "tags.select" ||
-    !Array.isArray(selectedSerializedNode.data.__pins) ||
-    selectedSerializedNode.data.__pins.length === 0
-  ));
+  // Several selected nodes share one Inspector: the rows they all have.
+  const selectedSerializedNodes = useMemo(() => {
+    if (!inspectGraph || selectedMember || selectedNodeIds.length < 2) return [];
+    const byId = new Map(inspectGraph.nodes.map((node) => [node.id, node]));
+    return selectedNodeIds.flatMap((id) => byId.get(id) ?? []);
+  }, [inspectGraph, selectedMember, selectedNodeIds]);
+  const multiNode = selectedSerializedNodes.length > 1;
+  const needsPinHydration = (multiNode ? selectedSerializedNodes : selectedSerializedNode ? [selectedSerializedNode] : [])
+    .some((node) =>
+      isDataGraphNode(node.type) ||
+      node.type === "struct.make" ||
+      node.type === "struct.break" ||
+      node.type === "debug.executeJavaScript" ||
+      node.type === "tags.select" ||
+      !Array.isArray(node.data.__pins) ||
+      node.data.__pins.length === 0);
   // Reuse editor metadata when present. Loaded graphs without pins share one
   // hydrated view across selection changes; edits still persist the raw graph.
   const hydratedInspectGraph = useMemo(() => {
@@ -287,6 +295,10 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         (node) => node.id === selectedSerializedNode?.id,
       ) ?? null
     : selectedSerializedNode;
+  const selectedNodes = hydratedInspectGraph
+    ? selectedSerializedNodes.flatMap((selected) =>
+        hydratedInspectGraph.nodes.find((node) => node.id === selected.id) ?? [])
+    : selectedSerializedNodes;
 
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
@@ -295,36 +307,39 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     DEFAULT_COLLISION_LAYERS;
   const physicsWorld = physicsWorldFromOpenDocuments(worldDocuments);
 
-  const selectedPrefabComponentIds = prefabSelectedIds.filter(
-    (id) => id !== PREFAB_ROOT_ID,
+  const selectedPrefabComponents = prefabComponents.filter(
+    (component) => component.id !== PREFAB_ROOT_ID && prefabSelectedIds.includes(component.id),
   );
+  // Only a component view builds these; the class ancestry walk is not free.
+  const prefabDetailsProps = () => ({
+    actorClassId: documentComponentClassId(doc?.ref),
+    components: prefabComponents,
+    sceneLayerClasses: objectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor")),
+    sortingLayers,
+    collisionLayers,
+    collisionPresets: projectDocument?.settings.physics?.collisionPresets,
+    physicsWorld,
+    viewportMode,
+    pickerAssets,
+    parentOf,
+    assetLabel,
+    assetType,
+    fontHasFacetype,
+    fontHasMsdfJson,
+    fontHasMsdfPng,
+    fontPixelSize,
+  });
 
-  if (selectedPrefabComponentIds.length > 1) {
+  if (selectedPrefabComponents.length > 1) {
     return (
       <PanelFrame data-testid="inspector-panel">
-        <div
-          className="flex flex-col gap-2 p-3"
-          data-testid="inspector-prefab-multi"
-        >
-          <p className="text-sm font-semibold text-foreground">
-            {`${selectedPrefabComponentIds.length} Components`}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Select one component to edit its properties. Use the Components
-            panel to reorder or reparent this selection.
-          </p>
-          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
-            {prefabComponents
-              .filter((component) =>
-                selectedPrefabComponentIds.includes(component.id),
-              )
-              .map((component) => (
-                <li key={component.id}>
-                  {prefabComponentLabel(component, assetLabel)}
-                </li>
-              ))}
-          </ul>
-        </div>
+        <PrefabComponentsDetails
+          {...prefabDetailsProps()}
+          selected={selectedPrefabComponents}
+          batch={batchComponentEdits}
+          onUpdate={updateComponent}
+          onUpdateTransform={updateComponentTransform}
+        />
       </PanelFrame>
     );
   }
@@ -338,23 +353,8 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     return (
       <PanelFrame data-testid="inspector-panel">
         <PrefabComponentDetails
-          actorClassId={documentComponentClassId(doc?.ref)}
+          {...prefabDetailsProps()}
           component={selectedPrefabComponent}
-          components={prefabComponents}
-          sceneLayerClasses={objectClassEntries.filter(entry => walkAncestry(entry.id, parentOf).includes("SceneLayerActor"))}
-          sortingLayers={sortingLayers}
-          collisionLayers={collisionLayers}
-          collisionPresets={projectDocument?.settings.physics?.collisionPresets}
-          physicsWorld={physicsWorld}
-          viewportMode={viewportMode}
-          pickerAssets={pickerAssets}
-          parentOf={parentOf}
-          assetLabel={assetLabel}
-          assetType={assetType}
-          fontHasFacetype={fontHasFacetype}
-          fontHasMsdfJson={fontHasMsdfJson}
-          fontHasMsdfPng={fontHasMsdfPng}
-          fontPixelSize={fontPixelSize}
           onUpdate={(property, value, alsoSet) =>
             updateComponent(selectedPrefabComponent.id, property, value, alsoSet)
           }
@@ -549,6 +549,26 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
             gizmo on Prefab Root to move that origin relative to the components.
           </p>
         ) : null}
+      </PanelFrame>
+    );
+  }
+
+  if (graph && multiNode && selectedNodes.length > 1) {
+    return (
+      <PanelFrame data-testid="inspector-panel">
+        <GraphNodesDetails
+          graph={graph}
+          inspectGraph={inspectGraph}
+          hydratedInspectGraph={hydratedInspectGraph}
+          selectedNodes={selectedNodes}
+          activeFunctionId={activeFunctionId}
+          catalogs={catalogs}
+          persistGraph={persistGraph}
+          classPinPick={classPinPick}
+          setClassPinPick={setClassPinPick}
+          assetPinPick={assetPinPick}
+          setAssetPinPick={setAssetPinPick}
+        />
       </PanelFrame>
     );
   }

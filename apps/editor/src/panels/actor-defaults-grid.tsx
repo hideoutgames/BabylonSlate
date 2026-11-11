@@ -25,19 +25,24 @@ type ActorDefaultFlag = "generateHitEvents" | "generateOverlapEvents" | "tickOnP
 type ClassDefaults = Pick<SerializedGraph, "actorDefaults" | "gameInstanceDefaults">;
 
 /**
- * The ancestors of `parentClass`, nearest first, and the defaults each ancestor Class
+ * Each listed Class's ancestors, nearest first, and the defaults each ancestor Class
  * authors. Open Class tabs override saved ancestors.
  */
-function useAncestorClassDefaults(parentClass: string): { ancestors: string[]; defaultsOf: Record<string, ClassDefaults | undefined> } {
+function useClassAncestorDefaults(classIds: readonly string[]): { ancestry: ReadonlyMap<string, string[]>; defaultsOf: Record<string, ClassDefaults | undefined> } {
   const { loadGraphDocument } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const classDocuments = useOpenDocumentsOfKinds(CLASS_KINDS);
   const assets = useMemo(() => { void registryEpoch; return assetRegistry?.list() ?? []; }, [assetRegistry, registryEpoch]);
-  const ancestors = useMemo(() => walkAncestry(parentClass, classParentLookup(assets)), [assets, parentClass]);
+  // Keyed by the ids, not the array, so callers may pass a fresh list each render.
+  const classKey = [...new Set(classIds)].join("\n");
+  const ancestry = useMemo(() => {
+    const parentOf = classParentLookup(assets);
+    return new Map(classKey.split("\n").filter(Boolean).map(id => [id, walkAncestry(id, parentOf)] as const));
+  }, [assets, classKey]);
   const ancestorAssets = useMemo(() => {
-    const ids = new Set(ancestors);
+    const ids = new Set([...ancestry.values()].flat());
     return assets.filter(asset => asset.header.type === "Class" && ids.has(classIdFromClassAsset(asset)));
-  }, [ancestors, assets]);
+  }, [ancestry, assets]);
   // Closed ancestors are read from disk only when that set changes, not on every edit to an open Class.
   const closedAncestorPaths = ancestorAssets
     .filter(asset => !classDocuments.some(doc => doc.ref.path === asset.path))
@@ -67,13 +72,27 @@ function useAncestorClassDefaults(parentClass: string): { ancestors: string[]; d
     () => ({ ...lastOpenDefaults.current, ...savedDefaults, ...openDefaults }),
     [openDefaults, savedDefaults],
   );
-  return { ancestors, defaultsOf };
+  return { ancestry, defaultsOf };
 }
 
-/** The Tags a Class gives its actors: its own Actor Defaults, else the nearest ancestor's. */
-export function useInheritedActorTags(classId: string): TagContainer {
-  const { ancestors, defaultsOf } = useAncestorClassDefaults(classId);
-  return resolveActorTags(ancestors.map(id => defaultsOf[id]?.actorDefaults));
+/** The ancestors of `parentClass`, nearest first, and the defaults each ancestor Class authors. */
+function useAncestorClassDefaults(parentClass: string): { ancestors: string[]; defaultsOf: Record<string, ClassDefaults | undefined> } {
+  const { ancestry, defaultsOf } = useClassAncestorDefaults([parentClass]);
+  return { ancestors: ancestry.get(parentClass) ?? [], defaultsOf };
+}
+
+/**
+ * The Tags each listed Class gives its actors: its own Actor Defaults, else the nearest
+ * ancestor's. Read a Class not in the list and it gives none.
+ */
+export function useInheritedActorTags(classIds: readonly string[]): (classId: string) => TagContainer {
+  const { ancestry, defaultsOf } = useClassAncestorDefaults(classIds);
+  return useMemo(() => {
+    const tags = new Map([...ancestry].map(([id, ancestors]) =>
+      [id, resolveActorTags(ancestors.map(ancestor => defaultsOf[ancestor]?.actorDefaults))] as const));
+    const none = resolveActorTags([]);
+    return (classId: string) => tags.get(classId) ?? none;
+  }, [ancestry, defaultsOf]);
 }
 
 /** Two Tag Containers hold the same Tags, in any order. */

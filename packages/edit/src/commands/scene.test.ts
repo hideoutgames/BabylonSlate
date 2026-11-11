@@ -39,7 +39,7 @@ import {
 } from "./scene";
 import { ReorderFolderCommand, SetSceneScriptCommand } from "./scene-fields";
 import { SetTimelineClipCommand } from "./scene-timeline";
-import { diffSceneCommands, planSceneChange } from "./scene-diff";
+import { diffSceneCommands, planSceneChange, sceneEditMergeKey } from "./scene-diff";
 import { EditSession } from "../session";
 import { commandToJournalPayload, reviveCommand } from "../journal";
 
@@ -849,6 +849,29 @@ describe("diffSceneCommands round trip", () => {
       }),
       { numRuns: 300 },
     );
+  });
+});
+
+describe("sceneEditMergeKey", () => {
+  it("keys a field edit on several actors by that set, and leaves structural edits unkeyed", () => {
+    const before = baseScene();
+    before.actors[1]!.components = [createMeshComponent("c2", "box")];
+    const edit = (change: (scene: SerializedScene) => void) => {
+      const after = structuredClone(before);
+      change(after);
+      return sceneEditMergeKey(planSceneChange(before, after));
+    };
+    const setSize = (size: number, actors = [0, 1]) => (scene: SerializedScene) => {
+      for (const index of actors) scene.actors[index]!.components[0]!.properties.size = size;
+    };
+    const pair = edit(setSize(2));
+    expect(pair).toBeDefined();
+    expect(edit(setSize(3))).toBe(pair);
+    expect(edit(setSize(2, [0]))).not.toBe(pair);
+    expect(edit((scene) => {
+      setSize(2)(scene);
+      scene.actors[1]!.components.push(createMeshComponent("c3", "sphere"));
+    })).toBeUndefined();
   });
 });
 

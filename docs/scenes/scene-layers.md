@@ -9,6 +9,8 @@ A Scene Layer is a flat 2D overlay that draws on top of the world: a HUD, a paus
 3. Add actors with **+** in the **Outliner**. In a Scene Layer, **Featured** lists only the built-in 2D elements (**2D Panel**, **2D Text**, **2D Button** and the rest), and the **Overlay** category holds them too. You can also drag them from the **Assets** window, which lists the built-in 2D elements first ([Place from the Assets window](actors.md#place-from-the-assets-window)).
 4. Select an actor and use the box around it: drag inside to move, drag a handle to resize, drag the knob above it to rotate. For **2D Text**, resizing changes the text box rather than the letters. While the actor's **Scale** is linked in the **Inspector**, resizing keeps its proportions: an edge handle scales the other axis about the box's middle, and a corner keeps the aspect ratio.
 
+With several actors selected, the **Inspector** shows what they all have and edits them together, as in a scene ([Several actors](actors.md#several-actors)).
+
 With nothing selected, the **Inspector** shows the layer's settings:
 
 | Setting | Description |

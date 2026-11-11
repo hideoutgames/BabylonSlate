@@ -85,7 +85,7 @@ test("M5: shared Details edits preserve other axes and survive group Undo and re
   await b.click({ modifiers: ["Control"] });
   await expect(a).toHaveAttribute("aria-selected", "true");
   await expect(b).toHaveAttribute("aria-selected", "true");
-  await expect(x).toHaveAttribute("placeholder", "Mixed");
+  await expect(x).toHaveValue("Mixed Values");
   await x.fill("9");
   await x.press("Tab");
   await expect(page.getByTestId("save-all-project")).toBeEnabled();

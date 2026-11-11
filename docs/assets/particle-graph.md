@@ -14,6 +14,7 @@ Double-tap the asset to open it. The window has **Graph**, **Preview**, **Inspec
 - **Preview** plays the emitter. While the graph has errors it shows **Graph Has Errors** and keeps the last valid result.
 - **Compiler Results** lists errors to fix.
 - Select **Emitter Output**, or nothing, to edit the emitter settings in the **Inspector**.
+- Select several nodes to edit what they all have, such as **A** and **B** for a **Condition** and a **Multiply**. A field whose values differ shows **Mixed Values**. An edit changes every selected node, and typing a sum such as `Mixed Values+4` changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)).
 
 ## Settings
 
@@ -37,7 +38,7 @@ A parameter is a value gameplay can set while the emitter runs. Each parameter h
 - Right-click a [Float](../scripting/particle/float.md), [Vector2](../scripting/particle/vector2.md), [Vector3](../scripting/particle/vector3.md) or [Color](../scripting/particle/color.md) node, or long-press it, and choose **Convert to Parameter**. The node becomes a Parameter node of a new parameter whose default is the constant's value. Its wires stay.
 - On a Parameter node, **Convert to Constant** does the reverse: the node becomes a constant holding the parameter's default.
 
-Select a Parameter node to edit its parameter in the **Inspector**.
+Select a Parameter node to edit its parameter in the **Inspector**. With several Parameter nodes selected, the **Inspector** shows their **Type** and **Default**, but not **Name**, which each parameter keeps.
 
 | Setting | Description |
 | --- | --- |

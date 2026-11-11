@@ -11,7 +11,7 @@ export { EditSession, DEFAULT_EDIT_BYTE_BUDGET } from "./session";
 export {
   SetNodeDataCommand,
 } from "./commands/graph";
-export { diffGraphCommands } from "./commands/graph-diff";
+export { diffGraphCommands, graphEditMergeKey } from "./commands/graph-diff";
 export {
   RemoveActorCommand,
   SetActorTransformCommand,
@@ -23,7 +23,7 @@ export {
   type ActorTransformEntry,
   type SceneEditCommand,
 } from "./commands/scene";
-export { diffSceneCommands, planSceneChange } from "./commands/scene-diff";
+export { diffSceneCommands, planSceneChange, sceneEditMergeKey } from "./commands/scene-diff";
 export { ReplaceSceneCommand } from "./commands/replace-scene";
 export {
   type JournalLine,

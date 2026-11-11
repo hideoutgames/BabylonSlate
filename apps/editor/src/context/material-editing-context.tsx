@@ -60,6 +60,7 @@ import { useMaterialInstanceSources } from "./material-instance-sources";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { textureUploadSignature } from "../lib/texture-upload-signature";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
+import { useNodeSelection } from "../lib/node-selection";
 
 const FUNCTION_KINDS = ["material-function"] as const;
 
@@ -103,7 +104,11 @@ export interface MaterialEditingValue {
   instance: MaterialInstanceEditing | null;
   previewState: MaterialPreviewState;
   compileDiagnostics: MaterialDiagnostic[];
+  /** Every selected node; Details shows the properties they share. */
+  selectedNodeIds: readonly string[];
+  /** The first selected node. */
   selectedNodeId: string | null;
+  setSelectedNodeIds: (nodeIds: readonly string[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
   focusedNodeId: string | null;
   focusNode: (nodeId: string) => void;
@@ -157,7 +162,7 @@ export function MaterialEditingProvider({
   const [compileDiagnostics, setCompileDiagnostics] = useState<
     MaterialDiagnostic[]
   >([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const { selectedNodeIds, selectedNodeId, setSelectedNodeIds, setSelectedNodeId } = useNodeSelection();
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
@@ -735,7 +740,9 @@ export function MaterialEditingProvider({
       instance,
       previewState,
       compileDiagnostics,
+      selectedNodeIds,
       selectedNodeId,
+      setSelectedNodeIds,
       setSelectedNodeId,
       focusedNodeId,
       focusNode: (nodeId: string) => setFocusedNodeId(nodeId),
@@ -754,6 +761,9 @@ export function MaterialEditingProvider({
       previewState,
       requestRender,
       selectedNodeId,
+      selectedNodeIds,
+      setSelectedNodeId,
+      setSelectedNodeIds,
     ],
   );
 
