@@ -12,6 +12,7 @@ import { createDefaultParticleGraphDocument, type ParticleGraphDocument } from "
 import { PARTICLE_UPDATE_SPEED } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { ParticleService, type ParticlePlaybackEndedReport } from "./particle-service";
+import { participatesInShadows } from "./shadow-mesh-policy";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
@@ -943,6 +944,9 @@ describe("Spawn Emitter", () => {
     expect(spawnedNodes(scene)).toHaveLength(0);
     frame();
     expect(spawnedNodes(scene)).toHaveLength(2);
+    // Like a slot's emitter, a spawned one's geometry-less anchor stays out of shadows: as a caster it would refresh
+    // the shadow maps every frame it lives.
+    expect(spawnedNodes(scene).map(participatesInShadows)).toEqual([false, false]);
     expect(scene.particleSystems).toHaveLength(3);
     expect(service.stats().systems).toBe(3);
     expect(leases.filter((key) => key.includes(":spawn:spark"))).toHaveLength(3);
