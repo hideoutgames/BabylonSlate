@@ -43,6 +43,7 @@ import { noteVariantSwap, probeVariantSwaps } from "./variant-swaps";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { setSceneOutputScale } from "./scene-output-scale";
 import { ParticleService } from "./particle-service";
+import { createParticleReadinessTexture } from "./particle-system-factory";
 import {
   allowSceneScreenShadows,
   sceneRenderingSettings,
@@ -836,6 +837,68 @@ it("re-probes strict readiness exactly once after each invalidating change", asy
   });
   await expectOneCheck(() => light.setEnabled(false));
   await expectOneCheck(() => graph.invalidate());
+  graph.dispose();
+});
+
+it("probes nothing for what leaves the Scene, nor for a particle system's readiness placeholder", async () => {
+  const { scene, camera } = host();
+  MeshBuilder.CreateBox("kept", {}, scene);
+  const leaving = MeshBuilder.CreateBox("leaving", {}, scene);
+  const source = MeshBuilder.CreateBox("source", {}, scene);
+  const [first, last] = [source.createInstance("first"), source.createInstance("last")];
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  const probesOver = async (change: () => void) => {
+    const before = graph.strictReadinessChecks;
+    change();
+    // Past the task on which Babylon announces what was added.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    return graph.strictReadinessChecks - before;
+  };
+  // A mesh that leaves needs nothing compiled, and an instance leaves its source drawing as before.
+  expect(await probesOver(() => leaving.dispose())).toBe(0);
+  expect(await probesOver(() => first.dispose())).toBe(0);
+  // The placeholder a particle system holds for Babylon's own readiness is drawn by nothing.
+  let placeholder!: RawTexture;
+  expect(await probesOver(() => { placeholder = createParticleReadinessTexture(scene); })).toBe(0);
+  expect(await probesOver(() => placeholder.dispose())).toBe(0);
+  // A source that loses its last instance draws without instancing again: another variant.
+  let before = graph.strictReadinessChecks;
+  last.dispose();
+  await vi.waitFor(() => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
+  expect(graph.strictReadinessChecks).toBeGreaterThan(before);
+  // Any other texture may be one a Material is about to sample.
+  before = graph.strictReadinessChecks;
+  RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, scene);
+  graph.render(camera);
+  expect(graph.strictReadinessChecks).toBe(before + 1);
+  graph.dispose();
+});
+
+it("probes once for a mesh it found before Babylon announced it, and still for one added as another leaves", async () => {
+  const { scene, camera } = host();
+  const first = MeshBuilder.CreateBox("first", {}, scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  // Drawn before the announcement: the Scene's mesh count gives the new mesh away, and it is probed until ready.
+  MeshBuilder.CreateBox("added", {}, scene);
+  let probed = graph.strictReadinessChecks;
+  graph.render(camera);
+  expect(graph.strictReadinessChecks).toBeGreaterThan(probed);
+  // The announcement, a task later, finds it probed.
+  await vi.waitFor(() => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
+  probed = graph.strictReadinessChecks;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.strictReadinessChecks).toBe(probed);
+  // One mesh joins as another leaves: the count is what it was, and the new mesh is still probed.
+  MeshBuilder.CreateBox("swapped in", {}, scene);
+  first.dispose();
+  graph.render(camera);
+  expect(graph.strictReadinessChecks).toBeGreaterThan(probed);
   graph.dispose();
 });
 

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascadedShadowGenerator";
 import { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { onSceneReadinessDirty } from "./scene-readiness-signal";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
@@ -110,6 +112,29 @@ function cascadeDepthBias(generator: CascadedShadowGenerator, layer: number, siz
   const depth = generator.getCascadeMaxExtents(layer)!.z - generator.getCascadeMinExtents(layer)!.z;
   return Math.max(authored, Math.min(0.05, cascadeTexel(generator, layer, size) / 4 / depth / 1.5));
 }
+
+it("stales readiness for a new mesh only when it comes to cast or receive", async () => {
+  const { scene, controller } = fixture();
+  controller.sync();
+  const marks: string[] = [];
+  onSceneReadinessDirty(scene, (reason) => marks.push(reason));
+  const settle = async () => {
+    // Babylon announces an added mesh on a later task; the next sync applies what is pending.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.sync();
+  };
+  // A particle emitter's anchor neither casts nor receives: it comes out of the sync as it went in.
+  new Mesh("particleEmitter:spark", scene);
+  await settle();
+  expect(marks).not.toContain("shadowCasters");
+  // A mesh that joins the casters and receives changes its Material's variant and the maps' lists.
+  MeshBuilder.CreateBox("crate", {}, scene);
+  await settle();
+  expect(marks.filter((reason) => reason === "shadowCasters")).toHaveLength(1);
+  // Nothing pending: nothing more.
+  controller.sync();
+  expect(marks.filter((reason) => reason === "shadowCasters")).toHaveLength(1);
+});
 
 describe("shared shadow lifecycle", () => {
   it("draws the sun's cascades as tiles of the light block's atlas, built with the level's cascade count", () => {
