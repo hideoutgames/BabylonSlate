@@ -357,9 +357,10 @@ export class ForwardSceneFrameGraph {
   private readonly knownMeshes = new WeakSet<AbstractMesh>();
   /** Meshes the membership count found, and marked, before Babylon announced them. */
   private readonly foundBeforeAnnounced = new WeakSet<AbstractMesh>();
-  /** Removals Babylon announced since the last membership count (it announces a removal at once). */
+  /** Mesh removals Babylon announced since the last membership count (it announces a removal at once). */
   private removedMeshes = 0;
-  private removedParticleSystems = 0;
+  /** The Scene's particle systems this graph has seen. */
+  private readonly knownParticleSystems = new WeakSet<object>();
   private strictChecks = 0;
   // One-shot record of readiness()'s admission for an immediately following
   // render. Any invalidation bumps the revision; a strict probe bumps checks.
@@ -416,7 +417,6 @@ export class ForwardSceneFrameGraph {
       // instancing again (Babylon has taken the instance off its source before it announces the removal).
       if (mesh.isAnInstance && (mesh as InstancedMesh).sourceMesh.instances.length === 0) this.markReadinessDirty("meshRemoved");
     });
-    watch(scene.onParticleSystemRemovedObservable, () => { this.removedParticleSystems += 1; });
     watch(scene.onNewMaterialAddedObservable, mark("materialAdded"));
     watch(scene.onMaterialRemovedObservable, mark("materialRemoved"));
     watch(scene.onNewLightAddedObservable, (light) => { this.watchLight(light); this.markReadinessDirty("lightAdded"); });
@@ -441,6 +441,7 @@ export class ForwardSceneFrameGraph {
       this.watchMesh(mesh);
       this.knownMeshes.add(mesh);
     }
+    for (const system of scene.particleSystems) this.knownParticleSystems.add(system);
     for (const light of scene.lights) this.watchLight(light);
     // Babylon 9.29 clears activeCamera at the start of its graph render method.
     // Restore it before existing lighting/floating-origin/lifecycle observers.
@@ -788,15 +789,20 @@ export class ForwardSceneFrameGraph {
     let changed = false;
     for (let index = 0; index < membershipCounts.length; index += 1) {
       const count = membershipCounts[index]!(this.scene);
-      // Meshes and particle systems that left need nothing compiled: a count that fell by exactly the removals
-      // announced since the last one holds no addition (one that fell by fewer does, added in the same frame).
-      const removed = index === MESH_COUNT ? this.removedMeshes : index === PARTICLE_SYSTEM_COUNT ? this.removedParticleSystems : 0;
       const previous = membership[index];
       membership[index] = count;
+      if (index === PARTICLE_SYSTEM_COUNT) {
+        // A particle system that left needs nothing compiled, and Babylon takes a disposed one out of the Scene
+        // without announcing it: a changed count counts only when it holds a system not seen before.
+        if (count !== previous && (this.holdsNewParticleSystem() || previous === undefined)) changed = true;
+        continue;
+      }
+      // Meshes that left need nothing compiled either: a count that fell by exactly the removals announced since the
+      // last one holds no addition (one that fell by fewer does, added in the same frame).
+      const removed = index === MESH_COUNT ? this.removedMeshes : 0;
       if (previous === undefined || count !== previous - removed) changed = true;
     }
     this.removedMeshes = 0;
-    this.removedParticleSystems = 0;
     // The first call only records the sizes.
     if (changed && this.membershipRecorded) {
       // Babylon will announce these meshes on a later task: this mark stands for that one.
@@ -808,6 +814,17 @@ export class ForwardSceneFrameGraph {
       this.markReadinessDirty("membership");
     }
     this.membershipRecorded = true;
+  }
+
+  /** Whether the Scene holds a particle system this graph has not seen; every one it holds counts as seen afterwards. */
+  private holdsNewParticleSystem(): boolean {
+    let found = false;
+    for (const system of this.scene.particleSystems) {
+      if (this.knownParticleSystems.has(system)) continue;
+      this.knownParticleSystems.add(system);
+      found = true;
+    }
+    return found;
   }
 
   /** Assign activeCamera without tripping any graph's readiness-dirty subscription. */

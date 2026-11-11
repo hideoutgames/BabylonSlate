@@ -588,8 +588,15 @@ it("draws Play particle systems on graph frames", async () => {
   for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   // Babylon draws a particle system only when its emitter survives the graph's Cull Objects task.
   expect(draw).toHaveBeenCalledTimes(3);
-  graph.dispose();
+  // Babylon takes a disposed particle system out of the Scene without announcing it. It leaves nothing to compile:
+  // the frames after it probe nothing.
+  const probed = graph.strictReadinessChecks;
   service.dispose();
+  expect(scene.particleSystems).toHaveLength(0);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.strictReadinessChecks).toBe(probed);
+  graph.dispose();
 });
 
 it("draws a transparent depth pre-pass with its depth-only variant and the colour pass with the full one, frozen or not", async () => {
