@@ -105,6 +105,35 @@ describe("shared pure expression compilation", () => {
     expect(entry(compileTransitionRuleGraph(graph, { assetGuid: "rule", registry }).source, "evaluate")({})).toEqual({ enter: "", exit: true });
   });
 
+  it("compiles a transition rule as one statement: a shared volatile node is read once per evaluation, and a node neither result reads costs nothing", () => {
+    const { graph, registry, node, wire } = fixture(0, true);
+    registry.register({ id: "anim.rule.exitState", title: "Exit", category: "animation", pins: () => [pin("value", "value", "in", BOOL)], codegen: () => {} });
+    graph.nodes.push(node("positive", "positive"), node("alsoPositive", "positive"), node("enter", "anim.rule.enterState"), node("exit", "anim.rule.exitState"));
+    wire("value", "positive", "value"); wire("value", "alsoPositive", "value");
+    wire("positive", "enter", "value"); wire("alsoPositive", "exit", "value");
+    // Instrumentation meant for exec chains leaves a rule alone: it has no recorder to call.
+    const compiled = compileTransitionRuleGraph(graph, { assetGuid: "rule", registry, instrumentExecutionTrace: true, instrumentInfiniteLoops: true });
+    expect(compiled.source).not.toMatch(/__dbg|__bp|checkInfiniteLoop/);
+    // The fixture's Select chain is wired to neither result.
+    expect(compiled.source).not.toContain("ctx.enabled");
+    const evaluate = entry(compiled.source, "evaluate");
+    let reads = 0;
+    const ctx = { read: () => { reads++; return reads % 2; } };
+    // Read twice, the two results would disagree.
+    expect(evaluate(ctx)).toEqual({ enter: true, exit: true });
+    expect(reads).toBe(1);
+    expect(evaluate(ctx)).toEqual({ enter: false, exit: false });
+    expect(reads).toBe(2);
+  });
+
+  it("lets a transition through whose result is unwired or wired to a node that is not pure", () => {
+    const { graph, registry, node, wire } = fixture(0);
+    registry.register({ id: "impure", title: "Impure", category: "debug", pins: () => [pin("out", "out", "out", BOOL)], codegen: () => {} });
+    graph.nodes.push(node("impure", "impure"), node("enter", "anim.rule.enterState"));
+    wire("impure", "enter", "value");
+    expect(entry(compileTransitionRuleGraph(graph, { assetGuid: "rule", registry }).source, "evaluate")({})).toEqual({ enter: true, exit: true });
+  });
+
   it("reads a shared volatile node once per statement, keeps short-circuit laziness, and sees writes between statements", () => {
     const { graph, registry } = fixture(8, true);
     const run = entry(compileGraph(graph, { assetGuid: "volatile", registry }).source, "onBeginPlay");
