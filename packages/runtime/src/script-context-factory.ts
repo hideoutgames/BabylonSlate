@@ -129,7 +129,7 @@ type CallMethods = Omit<ScriptContext, HostContextKey | CallValueKey | "random">
 
 function migrationData(extras: ScriptExtras | undefined, commandArgs: Record<string, unknown>): SaveGameMigrationData {
   const data = extras?.saveMigrationData ?? commandArgs.saveMigrationData as SaveGameMigrationData | undefined;
-  if (!data) throw new SaveGameError("invalid", "Migration fields are available only inside Event Save Migration.");
+  if (!data) throw new SaveGameError("invalid", "Migration fields are available only inside Event On Save Migration.");
   return data;
 }
 

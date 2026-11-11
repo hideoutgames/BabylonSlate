@@ -24,4 +24,4 @@ Locks the rendered output to a fixed width and height, with black bars if needed
 ## Notes
 
 - Width and Height are in pixels.
-- [**Reset to Project Defaults**](reset-to-project-defaults.md) restores the output size set in the project.
+- [**Reset Scalability To Project Defaults**](reset-scalability-to-project-defaults.md) restores the output size set in the project.

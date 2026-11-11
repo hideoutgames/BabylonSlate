@@ -18,7 +18,7 @@ The new actor holds a Scene Streaming component and a 3D Text label that shows t
 ## Notes
 
 - World scenes only.
-- Nothing loads by itself. Use [Load Scene Async](../scripting/class/load-scene-async.md) or [Load Scene Blocking](../scripting/class/load-scene-blocking.md) with the streaming actor as the target, and the matching unload nodes to remove it.
+- Nothing loads by itself. Use [Load Scene (Async)](../scripting/class/load-scene-async.md) or [Load Scene (Blocking)](../scripting/class/load-scene-blocking.md) with the streaming actor as the target, and the matching unload nodes to remove it.
 - The streamed Scene must use the same Physics World (3D or 2D) as the Scene that loads it.
 - The editor never shows the streamed Scene's actors. They appear only in Play.
 - Renaming the target Scene updates the label.

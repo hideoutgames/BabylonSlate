@@ -169,7 +169,7 @@ export const sceneObjectNodes: NodeDefinition[] = [
     category: "tags",
     pure: true,
     description: "True when one of the actor's Tags is Tag or, unless Exact Match is on, a child of it.",
-    pins: () => [selfActorPin("target", "Target"), input("tag", "Tag", TAG, 0), input("exact", "Exact Match", BOOL, false), pin("out", "Result", "out", BOOL)],
+    pins: () => [selfActorPin("target", "Target"), input("tag", "Tag", TAG, 0), input("exact", "Exact Match", BOOL, false), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `__tags.has(ctx.getActorTags(${ctx.input("target")}), ${ctx.input("tag")}, ${ctx.input("exact")})` }),
   },
   execNode("tags.addActorTag", "Add Actor Tag", "tags", "Gives the actor Tag for the rest of its life, unless removed.",
@@ -206,7 +206,7 @@ export const sceneObjectNodes: NodeDefinition[] = [
     category: "object",
     pure: true,
     description: "True when Test Class is Parent Class or one of its child Classes.",
-    pins: () => [pin("testClass", "Test Class", "in", classRef("Object")), pin("parentClass", "Parent Class", "in", classRef("Object")), pin("out", "Result", "out", BOOL)],
+    pins: () => [pin("testClass", "Test Class", "in", classRef("Object")), pin("parentClass", "Parent Class", "in", classRef("Object")), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `ctx.classIsChildOf(${ctx.input("testClass")}, ${ctx.input("parentClass")})` }),
   },
   {

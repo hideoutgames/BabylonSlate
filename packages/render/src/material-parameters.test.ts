@@ -164,7 +164,7 @@ describe("material parameter bindings", () => {
     ).toBe(false);
   });
 
-  it("binds Vector 2 and Vector 3 parameters as linear vector uniforms", () => {
+  it("binds Vector2 and Vector3 parameters as linear vector uniforms", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(

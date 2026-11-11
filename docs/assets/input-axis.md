@@ -28,7 +28,7 @@ Double-tap the asset to open it. The window has **Bindings** and an **Inspector*
 
 ## Use it
 
-In a graph, add the axis's **Event** node from the **Input** category of **Add Node**. Its **Value** pin returns a number, or a Vector 2 for a 2D axis. See [Input](../input/index.md).
+In a graph, add the axis's **Event** node from the **Input** category of **Add Node**. Its **Value** pin returns a number, or a Vector2 for a 2D axis. See [Input](../input/index.md).
 
 ## Related
 

@@ -23,12 +23,12 @@ Casts a ray from the active camera through a touch and returns what it hits.
 | Out | Exec |  |
 | Hit Result | HitResult | The hit as a single structure. Use the separate pins when you need only some of its values. |
 | Hit | Boolean |  |
-| Location | Vector 3 |  |
-| Normal | Vector 3 |  |
+| Location | Vector3 |  |
+| Normal | Vector3 |  |
 | Distance | Float | Distance from the start of the ray to the hit. |
 | Actor | Actor Reference | The actor that was hit. Empty on a miss. |
-| World Origin | Vector 3 | Where the ray starts, at the camera. |
-| World Direction | Vector 3 | The direction the ray points. |
+| World Origin | Vector3 | Where the ray starts, at the camera. |
+| World Direction | Vector3 | The direction the ray points. |
 
 ## Notes
 

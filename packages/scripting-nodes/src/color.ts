@@ -60,7 +60,7 @@ export const colorNodes: NodeDefinition[] = [
   {
     id: "color.nearlyEqual",
     searchAliases: ["≈","~="],
-    title: "Color Nearly Equal",
+    title: "Nearly Equal Color",
     category: "color",
     pure: true,
     pins: () => [

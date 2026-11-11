@@ -12,7 +12,7 @@ Sets how fast an actor's Rigid Body spins.
 | --- | --- | --- |
 | In | Exec |  |
 | Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
-| Angular Velocity | Vector 3 | Degrees per second about each world axis. |
+| Angular Velocity | Vector3 | Degrees per second about each world axis. |
 | Add To Current | Boolean | Adds **Angular Velocity** to the current spin instead of replacing it. |
 
 ## Outputs

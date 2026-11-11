@@ -20,5 +20,5 @@ Returns the part of the input after the decimal point.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- Accepts a Float, Vector2, Vector3 or Color, and works on each component.
 - Negative values keep their sign, so -1.25 becomes -0.25.

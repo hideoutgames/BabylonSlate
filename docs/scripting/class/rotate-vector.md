@@ -11,13 +11,13 @@ Rotates a vector by a quaternion and returns the result.
 | Pin | Type |
 | --- | --- |
 | Quaternion | Quaternion |
-| Vector | Vector 3 |
+| Vector | Vector3 |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

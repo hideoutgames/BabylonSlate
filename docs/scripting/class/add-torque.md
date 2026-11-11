@@ -12,7 +12,7 @@ Twists an actor's Rigid Body for one frame.
 | --- | --- | --- |
 | In | Exec |  |
 | Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
-| Torque | Vector 3 | The world axis to turn about. Its length is the strength. |
+| Torque | Vector3 | The world axis to turn about. Its length is the strength. |
 
 ## Outputs
 

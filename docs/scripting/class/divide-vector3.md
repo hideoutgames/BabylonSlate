@@ -10,14 +10,14 @@ Divides the first vector by the second, component by component.
 
 | Pin | Type |
 | --- | --- |
-| A | Vector 3 |
-| B | Vector 3 |
+| A | Vector3 |
+| B | Vector3 |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

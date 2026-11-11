@@ -10,9 +10,9 @@ Returns the water asset's simulated ocean at this point: the wave offset, height
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Offset | Vector 3 | Displacement in world units to add to the vertex position. |
+| Offset | Vector3 | Displacement in world units to add to the vertex position. |
 | Wave Height | Float | Vertical wave displacement in metres. |
-| Normal | Vector 3 | World-space normal of the displaced surface. |
+| Normal | Vector3 | World-space normal of the displaced surface. |
 | Crest Foam | Float | Foam on breaking crests, 0 to 1. It lingers and fades behind the crests. |
 | Subsurface | Float | Sunlight scattered through the wave crests toward the camera, times the asset's **Subsurface**. Strongest looking toward the sun across tall crests; 0 looking down. Built-in water adds Shallow Color times it to Deep Color. |
 | Simulation Time | Float | Time in seconds that drives the waves. |

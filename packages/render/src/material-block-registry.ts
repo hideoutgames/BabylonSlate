@@ -105,9 +105,9 @@ export interface MaterialPlumbing {
   worldOrigin?: NodeMaterialConnectionPoint;
   view?: NodeMaterialConnectionPoint;
   viewProjection?: NodeMaterialConnectionPoint;
-  /** Vector 3 for graph pins. */
+  /** Vector3 for graph pins. */
   worldNormal?: NodeMaterialConnectionPoint;
-  /** Vector 4 for Babylon blocks that register a Vector 4 normal. */
+  /** Vector4 for Babylon blocks that register a Vector4 normal. */
   worldNormal4?: NodeMaterialConnectionPoint;
   worldTangent?: NodeMaterialConnectionPoint;
   cameraPosition?: NodeMaterialConnectionPoint;
@@ -363,6 +363,28 @@ const moduloAdapter: BlockAdapter = ({ name, operation }) => {
   };
 };
 
+/**
+ * A 3D noise block's realisation. With Coordinates unwired it exposes a `uv` input instead, which
+ * the compiler feeds the mesh or screen UV like any unwired UV: the noise then shows its pattern
+ * at once, as Voronoi does, where a constant coordinate would give one flat value.
+ */
+function noiseCoordinates(
+  name: string,
+  block: NodeMaterialBlock,
+  seed: NodeMaterialConnectionPoint,
+  unwired: boolean,
+  inputs: Record<string, NodeMaterialConnectionPoint>,
+  outputs: Record<string, NodeMaterialConnectionPoint>,
+): BlockRealization {
+  if (!unwired) return single(block, { coordinates: seed, ...inputs }, outputs);
+  // (u, v, 1): what wiring the UV node into Coordinates gives, by the vector widening rule.
+  const flat = new VectorMergerBlock(`${name}_uv`);
+  const depth = createConstantBlock(`${name}_uvDepth`, "float", [1]);
+  depth.output.connectTo(flat.z);
+  flat.xyzOut.connectTo(seed);
+  return { blocks: [flat, depth, block], inputs: { uv: flat.xyIn, ...inputs }, outputs };
+}
+
 /** Babylon has no fwidth block; compose it from the derivative pair. */
 const fwidthAdapter: BlockAdapter = ({ name }) => {
   const derivative = new DerivativeBlock(name);
@@ -449,17 +471,22 @@ const attributeInput = (
 };
 
 const ADAPTERS: Record<string, BlockAdapter> = {
-  "noise.perlin": ({ name }) => {
+  "noise.perlin": ({ name, operation }) => {
     const block = new SimplexPerlin3DBlock(name);
-    return single(block, { coordinates: block.seed }, { out: block.output });
+    return noiseCoordinates(name, block, block.seed, operation.inputs.coordinates === undefined, {}, { out: block.output });
   },
   "noise.voronoi": ({ name }) => {
     const block = new SlateVoronoiNoiseBlock(name);
     return single(block, { uv: block.seed, offset: block.offset, density: block.density }, { out: block.output, cells: block.cells });
   },
-  "noise.worley": ({ name }) => {
+  "noise.worley": ({ name, operation }) => {
     const block = new WorleyNoise3DBlock(name);
-    return single(block, { coordinates: block.seed, jitter: block.jitter }, { out: block.output, f1: block.x, f2: block.y });
+    return noiseCoordinates(name, block, block.seed, operation.inputs.coordinates === undefined,
+      { jitter: block.jitter }, { out: block.output, f1: block.x, f2: block.y });
+  },
+  "math.oneMinus": ({ name }) => {
+    const block = new OneMinusBlock(name);
+    return single(block, { value: block.input }, { out: block.output });
   },
   "math.add": binary(AddBlock),
   "math.subtract": binary(SubtractBlock),
@@ -850,7 +877,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     plumbing.worldNormal4?.connectTo(normal.input);
     normal.output.connectTo(block.worldNormal);
     if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
-    // Babylon emits a Vector 4 normal; the graph pin is a Vector 3.
+    // Babylon emits a Vector4 normal; the graph pin is a Vector3.
     const split = new VectorSplitterBlock(`${name}_xyz`);
     block.output.connectTo(split.xyzw);
     return {
@@ -902,7 +929,7 @@ ADAPTERS["input.worldPosition"] = ({ name, plumbing }) => {
     const block = attributeVector(name, "position", 3);
     return single(block, {}, { position: block.output });
   }
-  // The plumbed world position is a Vector 4; the graph pin is a Vector 3.
+  // The plumbed world position is a Vector4; the graph pin is a Vector3.
   const split = new VectorSplitterBlock(`${name}_xyz`);
   plumbing.worldPosition.connectTo(split.xyzw);
   if (plumbing.worldOrigin) {

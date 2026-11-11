@@ -170,9 +170,9 @@ describe("pinRefusalReason", () => {
   const floatOut: SerializedPin = { ...stringOut, id: "f", type: { kind: "float" } };
 
   it("names both types, output first, when data types differ", () => {
-    expect(pinRefusalReason(floatOut, vec3In)).toBe("Float does not connect to Vector 3");
+    expect(pinRefusalReason(floatOut, vec3In)).toBe("Float does not connect to Vector3");
     // Dragging from the input names the output first as well.
-    expect(pinRefusalReason(vec3In, floatOut)).toBe("Float does not connect to Vector 3");
+    expect(pinRefusalReason(vec3In, floatOut)).toBe("Float does not connect to Vector3");
   });
 
   it("explains exec against data and output against output", () => {
@@ -205,7 +205,7 @@ describe("pinRefusalReason", () => {
 describe("pinTypeDisplayName", () => {
   it("reads like the pin type picker and describes containers", () => {
     expect(pinTypeDisplayName({ kind: "quat" })).toBe("Quaternion");
-    expect(pinTypeDisplayName({ kind: "array", element: { kind: "vec2" } })).toBe("Vector 2 Array");
+    expect(pinTypeDisplayName({ kind: "array", element: { kind: "vec2" } })).toBe("Vector2 Array");
     expect(
       pinTypeDisplayName({ kind: "map", key: { kind: "string" }, value: { kind: "float" } }),
     ).toBe("String to Float Map");
@@ -443,7 +443,7 @@ describe("filterPaletteForPin", () => {
     };
     const switchTeam: PaletteNode = {
       id: "enum.switch:enum-team",
-      title: "Switch on Team",
+      title: "Switch On Team",
       category: "enum",
       pins: [execIn, enumIn],
     };
@@ -538,12 +538,12 @@ describe("filterPaletteForPin", () => {
     ).toEqual(["literal.makeInt"]);
   });
 
-  it("prefers Switch on Int and Switch on String for matching selector pins", () => {
+  it("prefers Switch On Int and Switch On String for matching selector pins", () => {
     const assignable: PinCompatibilityRule = (outgoing, incoming) =>
       isAssignable(outgoing.type as PinType, incoming.type as PinType);
     const switchInt: PaletteNode = {
       id: "flow.switchInt",
-      title: "Switch on Int",
+      title: "Switch On Int",
       category: "flow",
       pins: [
         {
@@ -571,7 +571,7 @@ describe("filterPaletteForPin", () => {
     };
     const switchString: PaletteNode = {
       id: "flow.switchString",
-      title: "Switch on String",
+      title: "Switch On String",
       category: "flow",
       pins: [
         {
@@ -923,7 +923,7 @@ describe("filterPaletteForPin", () => {
     const castHero: PaletteNode = {
       id: "casting.cast:Hero",
       nodeType: "casting.cast",
-      title: "Cast to Hero",
+      title: "Cast To Hero",
       category: "casting",
       pins: [execIn, objectIn, asHero],
       defaultData: { "default:class": "Hero" },

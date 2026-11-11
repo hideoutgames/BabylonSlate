@@ -11,7 +11,7 @@ import {
 export const behaviourTreeNodes: NodeDefinition[] = [
   {
     id: "bt.event.activate",
-    title: "On Activate",
+    title: "Event On Activate",
     category: "behaviour-tree",
     pure: true,
     pins: () => [pin("execOut", "then", "out", EXEC)],
@@ -21,7 +21,7 @@ export const behaviourTreeNodes: NodeDefinition[] = [
   },
   {
     id: "bt.event.tick",
-    title: "On Tick",
+    title: "Event On Tick",
     category: "behaviour-tree",
     pure: true,
     pins: () => [pin("execOut", "then", "out", EXEC)],
@@ -31,7 +31,7 @@ export const behaviourTreeNodes: NodeDefinition[] = [
   },
   {
     id: "bt.event.abort",
-    title: "On Abort",
+    title: "Event On Abort",
     category: "behaviour-tree",
     pure: true,
     pins: () => [pin("execOut", "then", "out", EXEC)],
@@ -41,7 +41,7 @@ export const behaviourTreeNodes: NodeDefinition[] = [
   },
   {
     id: "bt.event.evaluate",
-    title: "On Evaluate",
+    title: "Event On Evaluate",
     category: "behaviour-tree",
     pure: true,
     pins: () => [pin("execOut", "then", "out", EXEC)],

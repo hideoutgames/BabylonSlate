@@ -90,7 +90,7 @@ Drag from a **Layer Camera** reference for its members:
 
 | Member | Description |
 | --- | --- |
-| **Get Camera Location**, **Set Camera Location** | The point at the centre of the view (Vector 2). |
+| **Get Camera Location**, **Set Camera Location** | The point at the centre of the view (Vector2). |
 | **Add Camera Offset** | Moves the camera by **Delta** from where it is now. |
 | **Get Camera Rotation**, **Set Camera Rotation** | The camera's angle in degrees. Positive turns the camera counter-clockwise, so the content turns clockwise on screen. |
 | **Get Camera Zoom**, **Set Camera Zoom** | 1 is the normal size; 2 shows half the view at twice the size. Values below 0.01 are raised to 0.01. |

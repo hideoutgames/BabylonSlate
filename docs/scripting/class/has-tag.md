@@ -18,7 +18,7 @@ Returns true when a TagContainer holds a Tag, or a child of that Tag.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

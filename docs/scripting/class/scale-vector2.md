@@ -10,14 +10,14 @@ Multiplies every component of a vector by one number.
 
 | Pin | Type |
 | --- | --- |
-| V | Vector 2 |
+| V | Vector2 |
 | S | Float |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 2 |
+| Out | Vector2 |
 
 ## Notes
 

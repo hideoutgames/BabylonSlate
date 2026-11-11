@@ -893,7 +893,7 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
       gNode("has-tag", "tags.has", 480, 420, { "default:tag": types.tags.scripting, "default:exact": false }),
       gNode("tag-branch", "flow.branch", 760, 260),
       printText("tagged", 1000, 260, "ft-script-tag", "Spinner tagged FeatureTest.Scripting"),
-      onPulsedNode("bind-pulsed", 480, 600, "flow.dispatcher.bind", "Bind Event to On Pulsed"),
+      onPulsedNode("bind-pulsed", 480, 600, "flow.dispatcher.bind", "Bind Event To On Pulsed"),
       delay("pulse-delay", 760, 600, 2),
       callEvent("pulse-call", 1040, 600, pulse, { "default:Strength": 2.5 }),
       gNode(pulsedEcho.id, "flow.event.custom", 1240, 860, { title: "Event Pulsed Echo", name: pulsedEcho.name, pins: pulsedEcho.pins }),
@@ -1550,7 +1550,7 @@ async function saveDataProbe(
       gNode("assert-falloff", "debug.assertEqual", 1420, 0, { "default:expected": 75, "default:message": "Evaluate Float Curve read the wrong Damage Falloff" }),
       getVar("get-spawn-count", spawnCount, 1420, 400),
       gNode("clamp-spawn", "range.clampInt", 1660, 400, { "default:value": 9 }),
-      gNode("assert-spawn", "debug.assertEqual", 1660, 0, { "default:expected": 5, "default:message": "Clamp Integer To Range ignored Spawn Count" }),
+      gNode("assert-spawn", "debug.assertEqual", 1660, 0, { "default:expected": 5, "default:message": "Clamp Int To Range ignored Spawn Count" }),
       gNode("falloff-object", "curveObject.getFloat", 2140, 400, { "default:curveAsset": types.curves.float }),
       gNode("falloff-at", "curveObject.valueAtTimeFloat", 2380, 400, { "default:time": 1 }),
       gNode("assert-asset", "debug.assertEqual", 2140, 0, { "default:expected": 80, "default:message": "Get Float Curve Object read the wrong FT_DataFalloffCurve value" }),
@@ -1584,7 +1584,7 @@ async function saveDataProbe(
       gNode("assert-date", "debug.assert", 4540, -200, { "default:message": "Get Date Now has no Month" }),
       gNode("time-ms", "time.getTimeMs", 5260, -380),
       gNode("time-ms-positive", "math.greater", 5500, -380),
-      gNode("assert-time-ms", "debug.assert", 5260, -200, { "default:message": "Get Time MS read no Unix time" }),
+      gNode("assert-time-ms", "debug.assert", 5260, -200, { "default:message": "Get Time In Milliseconds read no Unix time" }),
       gNode("dilation", "time.getTimeDilation", 5740, -380),
       gNode("dilation-positive", "math.greater", 5980, -380),
       gNode("assert-dilation", "debug.assert", 5740, -200, { "default:message": "Get Time Dilation read no game speed" }),
@@ -1849,7 +1849,7 @@ async function saveSaveProbe(ctx: FeatureTestContext, types: ScriptingTypes, fon
   return { ref, components };
 }
 
-/** Scene Streaming Actor Class: Begin Play waits, then Load Scene Async on itself. */
+/** Scene Streaming Actor Class: Begin Play waits, then Load Scene (Async) on itself. */
 async function saveStreamLoader(ctx: FeatureTestContext): Promise<PlacedClass> {
   const components = createSceneStreamingActor("prefab").components;
   const graph = classGraph({
@@ -2043,7 +2043,7 @@ async function saveSpawnCommand(ctx: FeatureTestContext): Promise<void> {
   await saveClass(ctx, CLASS.spawnCommand, "DebugCommand", graph);
 }
 
-/** `ft_stream`: toggles the Stream Loader's room (Load / Unload Scene Async). */
+/** `ft_stream`: toggles the Stream Loader's room (Load / Unload Scene (Async)). */
 async function saveStreamCommand(ctx: FeatureTestContext): Promise<void> {
   const graph = classGraph({
     nodes: [

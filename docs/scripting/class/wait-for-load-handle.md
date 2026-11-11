@@ -11,7 +11,7 @@ Waits for a load handle to finish loading while gameplay continues.
 | Pin | Type | Description |
 | --- | --- | --- |
 | Exec | Exec |  |
-| Handle | String | The handle from an async load node or [**Request Async Load**](request-async-load.md). |
+| Handle | String | The handle from an async load node or [**Request Load (Async)**](request-load-async.md). |
 
 ## Outputs
 

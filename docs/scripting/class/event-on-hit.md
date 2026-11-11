@@ -13,8 +13,8 @@ Runs on each physics step that the actor's collider touches another solid collid
 | Out | Exec |  |
 | Hit Result | HitResult | Contact details: the location, normal and other actor. |
 | Other Actor | Actor Reference | The actor that this collider touched. |
-| Location | Vector 3 | World position of the contact. |
-| Normal | Vector 3 | Contact normal, pointing from this actor towards the other one. |
+| Location | Vector3 | World position of the contact. |
+| Normal | Vector3 | Contact normal, pointing from this actor towards the other one. |
 
 ## Notes
 

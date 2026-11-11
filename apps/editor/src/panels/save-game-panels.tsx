@@ -54,7 +54,7 @@ type FieldPickerType = (typeof FIELD_PICKER_TYPES)[number];
 const MAP_KEY_PICKER_TYPES = ["int", "float", "string", "tag", "enum", "class", "asset"] as const;
 const FIELD_PICKER_LABELS: Record<FieldPickerType, string> = {
   bool: "Boolean", int: "Integer", float: "Float", string: "String", tag: "Tag", tagContainer: "TagContainer", enum: "Enum",
-  vec2: "Vector 2", vec3: "Vector 3", vec4: "Vector 4", rotator: "Rotator", quat: "Quaternion", color: "Color", transform: "Transform",
+  vec2: "Vector2", vec3: "Vector3", vec4: "Vector4", rotator: "Rotator", quat: "Quaternion", color: "Color", transform: "Transform",
   actor: "Actor Reference", class: "Class Reference", asset: "Asset Reference", struct: "Structure",
 };
 const FIELD_TYPES_BY_PICKER: Partial<Record<FieldPickerType, SaveGameFieldType>> = { vec2: "vector2", vec3: "vector3", vec4: "vector4", tagContainer: "struct" };
@@ -219,7 +219,7 @@ function DefaultValueEditor({ field, value, onChange, label = "Default Value" }:
     }
     case "actor": row = { ...base, kind: "text", value: "None", readOnly: true, description: "Assign an actor reference from gameplay. Saved references reconnect to the actor when loaded.", onChange: () => undefined }; break;
     default: {
-      // Tag, Enum, Vector 2 and 4, Rotator, Quaternion, Color and Structures share the Class Variable default controls.
+      // Tag, Enum, Vector2 and 4, Rotator, Quaternion, Color and Structures share the Class Variable default controls.
       const structure = fieldPickerType(field) === "struct";
       const rows = variableDefaultPropertyRows(saveFieldPinTypeId(field.type), value, (next) => onChange(cloneSaveGameValue(next)), {
         typeClassId: field.structId ?? field.enumId, schemas: catalog.schemas, enumMembers: catalog.enumMembers, pinId: id,

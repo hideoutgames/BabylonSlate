@@ -10,8 +10,8 @@ Returns the distance between two points.
 
 | Pin | Type |
 | --- | --- |
-| A | Vector 3 |
-| B | Vector 3 |
+| A | Vector3 |
+| B | Vector3 |
 
 ## Outputs
 

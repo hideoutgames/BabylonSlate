@@ -22,4 +22,4 @@ Returns the objects bound to a proxy of a Timeline Clip asset instance.
 
 - Add Node lists one for each proxy of a clip asset, such as **Get Door Proxy**. Pick another under **Proxy** in the **Inspector**.
 - A bound object that was destroyed is left out.
-- Use [For Each](for-each.md) to act on each bound object, or [Array Length](array-length.md) to count them.
+- Use [For Each](for-each.md) to act on each bound object, or [Get Array Length](get-array-length.md) to count them.

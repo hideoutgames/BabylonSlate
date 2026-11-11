@@ -45,7 +45,7 @@ The **Parameters** module binds targets to parameter names, so gameplay can chan
 | Speed Scale | Float | Multiplies Speed. |
 | Size Scale | Float | Multiplies Size. |
 | Color Tint | Color | Multiplies Color. |
-| Gravity | Vector 3 | Replaces the Gravity module's acceleration while the module is on. |
+| Gravity | Vector3 | Replaces the Gravity module's acceleration while the module is on. |
 
 One name has one type in an emitter: two targets can share a name only when their types match.
 

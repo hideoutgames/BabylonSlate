@@ -182,7 +182,7 @@ export const transformNodes: NodeDefinition[] = [
   },
   {
     id: "transform.addWorldOffset",
-    title: "Add World Offset",
+    title: "Add Actor World Offset",
     category: "transform",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),

@@ -10,14 +10,14 @@ Returns the vector perpendicular to both A and B.
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| A | Vector 3 | (0, 0, 0) |
-| B | Vector 3 | (0, 0, 0) |
+| A | Vector3 | (0, 0, 0) |
+| B | Vector3 | (0, 0, 0) |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

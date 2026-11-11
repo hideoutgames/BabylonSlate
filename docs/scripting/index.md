@@ -40,7 +40,7 @@ In Class, Material and Particle graphs, Add Node learns from the nodes you add f
 - Drag from one pin to another. With **Tap To Connect Pins** on in **Engine Settings > Accessibility**, you can also tap a pin and then a pin on the other side, starting from either one. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead.
 - A data input takes one wire. Connecting a new wire replaces the old one.
 - An execution output drives one wire; an execution input accepts several. Connecting a second wire from an execution output replaces the first and shows **Replaced the existing wire. Use a Sequence to run several.** To run several nodes in order, wire the output to a [Sequence](class/sequence.md).
-- While you drag a wire over a pin it cannot connect to, a label gives the reason, such as **Float does not connect to Vector 3**.
+- While you drag a wire over a pin it cannot connect to, a label gives the reason, such as **Float does not connect to Vector3**.
 - Most unconnected data inputs show an inline value you can edit on the node or in the **Inspector**. Object and actor inputs must be wired, unless the node's page says an unconnected one uses the actor running the graph.
 - Shake a node while dragging it to disconnect all its wires.
 

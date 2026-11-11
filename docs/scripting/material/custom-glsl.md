@@ -11,7 +11,7 @@ Runs your own GLSL function body, with the inputs and outputs you define in the 
 | Setting | Description |
 | --- | --- |
 | Return Name | The name and label of the primary output pin. |
-| Return Type | The type of the primary output: Float, Vector 2, Vector 3 or Vector 4. |
+| Return Type | The type of the primary output: Float, Vector2, Vector3 or Vector4. |
 | Inputs | The input pins. Each name becomes a variable in the function body, and names are case sensitive. |
 | Additional Outputs | Extra output pins. Assign each by name in the body before returning. |
 | Function Body | The GLSL statements that return the primary output. Shader globals, sampler declarations and preprocessor directives are not allowed; use input pins instead. |

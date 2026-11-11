@@ -12,8 +12,8 @@ Blocks part of the navigation mesh with an unwalkable box or cylinder.
 | --- | --- | --- |
 | In | Exec |  |
 | Kind | NavObstacleKind | Box or Cylinder. Defaults to Box. |
-| Pose | Vector 3 | Centre of the volume, in world units. |
-| Size | Vector 3 | Full extent of the volume along each axis. |
+| Pose | Vector3 | Centre of the volume, in world units. |
+| Size | Vector3 | Full extent of the volume along each axis. |
 
 ## Outputs
 

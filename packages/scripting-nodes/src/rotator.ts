@@ -122,7 +122,7 @@ export const rotatorNodes: NodeDefinition[] = [
   {
     id: "rotator.nearlyEqual",
     searchAliases: ["≈","~="],
-    title: "Rotator Nearly Equal",
+    title: "Nearly Equal Rotator",
     category: "rotator",
     pure: true,
     pins: () => [

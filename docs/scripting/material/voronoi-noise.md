@@ -10,7 +10,7 @@ Returns a cell pattern: the distance to the nearest cell point and a random valu
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| UV | Vector 2 |  | Position to sample; the mesh or screen UV when unconnected. |
+| UV | Vector2 |  | Position to sample; the mesh or screen UV when unconnected. |
 | Offset | Float | 0 | Moves the cell points. Animate it with [**Time**](time.md) for moving cells. |
 | Density | Float | 5 | Number of cells per UV unit. |
 

@@ -3306,7 +3306,7 @@ describe("GraphEditor", () => {
           type: "array.length",
           position: { x: 0, y: 0 },
           data: {
-            title: "Array Length",
+            title: "Get Array Length",
             __nodeType: "array.length",
             __category: "array",
             __pure: true,
@@ -3484,7 +3484,7 @@ describe("GraphEditor", () => {
           type: "flow.dispatcher.bind",
           position: { x: 400, y: 0 },
           data: {
-            title: "Bind Event to On Hit",
+            title: "Bind Event To On Hit",
             __nodeType: "flow.dispatcher.bind",
             __category: "eventDispatchers",
             __pins: [
@@ -3527,7 +3527,7 @@ describe("GraphEditor", () => {
           type: "map.get",
           position: { x: 0, y: 0 },
           data: {
-            title: "Map Get",
+            title: "Get Map Value",
             __nodeType: "map.get",
             __category: "map",
             __pure: true,

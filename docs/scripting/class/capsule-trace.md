@@ -11,8 +11,8 @@ Sweeps a capsule from a start point to an end point and reports the first hit.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Start | Vector 3 |  |
-| End | Vector 3 |  |
+| Start | Vector3 |  |
+| End | Vector3 |  |
 | Radius | Float | Defaults to 0.5. |
 | Half Height | Float | Half the length of the capsule's straight part, along its up axis. Defaults to 0.5. |
 | Orientation | Rotator | Turns the shape. Defaults to no turn. |
@@ -26,8 +26,8 @@ Sweeps a capsule from a start point to an end point and reports the first hit.
 | Out | Exec |  |
 | Hit Result | HitResult | All results in one structure. Use **Break Hit Result** to read its fields. |
 | Hit | Boolean |  |
-| Location | Vector 3 | The point on the surface that was hit. |
-| Normal | Vector 3 |  |
+| Location | Vector3 | The point on the surface that was hit. |
+| Normal | Vector3 |  |
 | Distance | Float | How far the shape's centre travelled before the hit, in world units. |
 | Actor | Actor Reference | The actor that was hit, or an empty reference on a miss. |
 

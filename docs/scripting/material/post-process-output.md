@@ -10,7 +10,7 @@ Sets the colour of each pixel in a post-process pass.
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| Color | Vector 4 | (0, 0, 0, 1) |
+| Color | Vector4 | (0, 0, 0, 1) |
 
 ## Notes
 

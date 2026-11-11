@@ -29,7 +29,7 @@ function node(
   };
 }
 
-describe("Switch on Int / Switch on String catalog", () => {
+describe("Switch On Int / Switch On String catalog", () => {
   it("builds exec in, typed selector, encoded case outs, and Default from cases", () => {
     const registry = createDefaultNodeRegistry();
     const intPins = registry.get("flow.switchInt")!.pins({ cases: [0, 2, 1] });
@@ -89,8 +89,8 @@ describe("Switch on Int / Switch on String catalog", () => {
   });
 });
 
-describe("Switch on Int / Switch on String compile", () => {
-  it("compiles Switch on Int to if/else if/else on integer literals", () => {
+describe("Switch On Int / Switch On String compile", () => {
+  it("compiles Switch On Int to if/else if/else on integer literals", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -185,7 +185,7 @@ describe("Switch on Int / Switch on String compile", () => {
     expect({ reads, logs }).toEqual({ reads: 1, logs: [casePin] });
   });
 
-  it("compiles Switch on String against encoded case pin values", () => {
+  it("compiles Switch On String against encoded case pin values", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",

@@ -215,7 +215,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "math.greaterEqual",
     searchAliases: [">=","≥","a >= b"],
-    title: "Greater or Equal",
+    title: "Greater Or Equal",
     category: "math",
     pure: true,
     pins: () => [
@@ -243,7 +243,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "math.lessEqual",
     searchAliases: ["<=","≤","a <= b"],
-    title: "Less or Equal",
+    title: "Less Or Equal",
     category: "math",
     pure: true,
     pins: () => [
@@ -258,7 +258,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "boolean.and",
     searchAliases: ["&&","∧","a && b"],
-    title: "Boolean And",
+    title: "And Bool",
     category: "math",
     pure: true,
     pins: () => [
@@ -273,7 +273,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "boolean.or",
     searchAliases: ["||","∨","a || b"],
-    title: "Boolean Or",
+    title: "Or Bool",
     category: "math",
     pure: true,
     pins: () => [
@@ -288,7 +288,7 @@ export const mathNodes: NodeDefinition[] = [
   {
     id: "boolean.not",
     searchAliases: ["!","¬","!x"],
-    title: "Boolean Not",
+    title: "Not Bool",
     category: "math",
     pure: true,
     pins: () => [

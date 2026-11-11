@@ -63,8 +63,8 @@ Drag from an instance's **Timeline Clip** pin for each proxy's nodes, titled wit
 
 | Node | Does |
 | --- | --- |
-| [Bind Actor to Timeline Proxy](../scripting/class/bind-actor-to-timeline-proxy.md), such as **Bind Door Proxy** | Adds an actor to an Actor proxy. |
-| [Bind Component to Timeline Proxy](../scripting/class/bind-component-to-timeline-proxy.md), such as **Bind Handle Glow Proxy** | Adds a component to a Component proxy. |
+| [Bind Actor To Timeline Proxy](../scripting/class/bind-actor-to-timeline-proxy.md), such as **Bind Door Proxy** | Adds an actor to an Actor proxy. |
+| [Bind Component To Timeline Proxy](../scripting/class/bind-component-to-timeline-proxy.md), such as **Bind Handle Glow Proxy** | Adds a component to a Component proxy. |
 | [Unbind Timeline Proxy](../scripting/class/unbind-timeline-proxy.md) | Clears every object bound to the proxy: its tracks stop applying. |
 | [Get Timeline Proxy](../scripting/class/get-timeline-proxy.md) | Returns the objects bound to the proxy, as an array. |
 | [Unbind All Timeline Proxies](../scripting/class/unbind-all-timeline-proxies.md) | Clears every proxy of the instance. |

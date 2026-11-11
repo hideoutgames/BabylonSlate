@@ -12,7 +12,7 @@ Sets the component's scale in the world; it stays attached and keeps that place 
 | --- | --- |
 | In | Exec |
 | Target | Component Reference |
-| New Scale | Vector 3 |
+| New Scale | Vector3 |
 
 ## Outputs
 

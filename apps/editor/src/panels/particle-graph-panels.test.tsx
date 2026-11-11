@@ -381,7 +381,7 @@ describe("ParticleGraphDetails", () => {
     expect(history.read().parameters[0]!.name).toBe("Glow");
     type("property-parameterDefault", "3");
     expect(history.read().parameters[0]!.defaultValue).toEqual([3]);
-    await pickOption("property-parameterType", "Vector 2");
+    await pickOption("property-parameterType", "Vector2");
     expect(history.read().parameters[0]).toMatchObject({ type: "vec2", defaultValue: [3, 3] });
     expect(nodeOf(history.read(), "a").properties.valueType).toBe("vec2");
   });
@@ -407,7 +407,7 @@ describe("ParticleGraphDetails", () => {
     expect(screen.getByRole("button", { name: "Add Key" })).toBeTruthy();
 
     // Float stops splat into the new width; editing one axis keeps the others.
-    await pickOption("property-valueType", "Vector 3");
+    await pickOption("property-valueType", "Vector3");
     type("property-stop-0-value-y", "2");
     const stops = nodeOf(history.read(), "gradient").properties.stops as Array<{
       position: number;

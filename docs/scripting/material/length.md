@@ -4,7 +4,7 @@ node: vector.length
 
 # Length
 
-Returns the length of a Vector 3.
+Returns the length of a Vector3.
 
 ## Inputs
 

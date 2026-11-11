@@ -237,7 +237,7 @@ function hudLayer(refs: LayerRefs): SerializedSceneLayer {
 }
 
 /**
- * Event Scalability Changed on the Scene Layer itself: each FT_HUD prints the
+ * Event On Scalability Changed on the Scene Layer itself: each FT_HUD prints the
  * status of the renderer's answer to a quality request, such as `ft_cel` or
  * `quality low`.
  */

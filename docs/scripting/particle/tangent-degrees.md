@@ -20,5 +20,5 @@ Returns the tangent of an angle in degrees.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- Accepts a Float, Vector2, Vector3 or Color, and works on each component.
 - [**Tangent (Radians)**](tangent.md) works in radians.

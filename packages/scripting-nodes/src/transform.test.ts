@@ -48,14 +48,14 @@ describe("transform nodes", () => {
     expect(compiled.source).toContain("ctx.setActorRotation");
   });
 
-  it("registers Add World Offset and compiles through ctx.addActorWorldOffset", () => {
+  it("registers Add Actor World Offset and compiles through ctx.addActorWorldOffset", () => {
     expect(transformNodes.map((entry) => entry.id)).toContain(
       "transform.addWorldOffset",
     );
     expect(
       transformNodes.find((entry) => entry.id === "transform.addWorldOffset")
         ?.title,
-    ).toBe("Add World Offset");
+    ).toBe("Add Actor World Offset");
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",

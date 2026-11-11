@@ -17,7 +17,7 @@ Returns true when two Tags are the same Tag.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

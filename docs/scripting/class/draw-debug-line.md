@@ -11,8 +11,8 @@ Draws a line between two world positions.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Start | Vector 3 |  |
-| End | Vector 3 |  |
+| Start | Vector3 |  |
+| End | Vector3 |  |
 | Thickness | Float | Values above 1 draw a thicker line; 1 or less draws a thin line. |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |
 | Duration | Float | Seconds the shape stays visible. 0 shows it for one simulation tick, so call the node every tick to keep it on screen. |

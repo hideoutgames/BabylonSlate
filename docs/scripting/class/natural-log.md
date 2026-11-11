@@ -16,7 +16,7 @@ Returns the natural logarithm of a number.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

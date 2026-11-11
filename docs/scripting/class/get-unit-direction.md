@@ -10,14 +10,14 @@ Returns the one-unit direction from one point to another.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| From | Vector 3 |  |
-| To | Vector 3 |  |
+| From | Vector3 |  |
+| To | Vector3 |  |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

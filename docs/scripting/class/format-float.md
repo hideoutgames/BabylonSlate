@@ -17,7 +17,7 @@ Turns a number into text with a fixed number of decimals.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | String |
+| Out | String |
 
 ## Notes
 

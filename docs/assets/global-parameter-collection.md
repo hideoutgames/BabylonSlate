@@ -1,6 +1,6 @@
 # Global Parameter Collection
 
-A **Global Parameter Collection** holds named Float, Vector 2, Vector 3 and Color values that the whole game shares while it plays, such as wind strength or a sky tint. Any Class graph can set a value, and every graph, Material and Particle Graph that reads it uses the new value.
+A **Global Parameter Collection** holds named Float, Vector2, Vector3 and Color values that the whole game shares while it plays, such as wind strength or a sky tint. Any Class graph can set a value, and every graph, Material and Particle Graph that reads it uses the new value.
 
 ## Create
 
@@ -13,7 +13,7 @@ Double-tap a collection to open it. The **Parameters** window lists its paramete
 | Setting | Description |
 | --- | --- |
 | Name | The name Class graphs set and read it by, up to 64 characters. Names are unique in the collection: a name that is already taken gets **_1**, **_2** and so on. |
-| Type | **Float**, **Vector 2**, **Vector 3** or **Color**. Changing it resizes the default. |
+| Type | **Float**, **Vector2**, **Vector3** or **Color**. Changing it resizes the default. |
 | Default | The value the parameter has when Play starts. |
 
 Reorder or delete a parameter with the buttons on its row. Reopen a closed window from the **Windows** menu.

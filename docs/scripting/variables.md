@@ -44,7 +44,7 @@ Use [Is Valid](class/is-valid.md) or **Validated Get** before using an Object or
 
 ## Arrays and maps
 
-Work with containers through the **Array** and **Map** nodes, such as [Array Get](class/array-get.md), [Map Get](class/map-get.md) and [For Each](class/for-each.md). [Make Array](class/make-array.md) and [Make Map](class/make-map.md) build one from wired values.
+Work with containers through the **Array** and **Map** nodes, such as [Get Array Item](class/get-array-item.md), [Get Map Value](class/get-map-value.md) and [For Each](class/for-each.md). [Make Array](class/make-array.md) and [Make Map](class/make-map.md) build one from wired values.
 
 ## Component variables
 

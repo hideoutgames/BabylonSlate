@@ -4,7 +4,7 @@ node: vector.combine
 
 # Combine
 
-Builds a Vector 2, Vector 3 or Color from separate Float values.
+Builds a Vector2, Vector3 or Color from separate Float values.
 
 ## Inputs
 
@@ -19,8 +19,8 @@ Builds a Vector 2, Vector 3 or Color from separate Float values.
 
 | Pin | Type |
 | --- | --- |
-| XY | Vector 2 |
-| XYZ | Vector 3 |
+| XY | Vector2 |
+| XYZ | Vector3 |
 | Color | Color |
 
 ## Notes

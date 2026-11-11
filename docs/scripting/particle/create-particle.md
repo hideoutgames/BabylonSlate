@@ -15,7 +15,7 @@ Starts the Particle chain and sets each new particle's speed, lifetime, colour, 
 | Color | Color | (1, 1, 1, 1) | Starting colour. A later [**Update Color**](update-color.md) replaces it unless its input reads [**Initial Color**](initial-color.md) or [**Particle Color**](particle-color.md). |
 | Dead Color | Color | (0, 0, 0, 0) | The colour that [**Fade To Dead Color**](fade-to-dead-color.md) blends each particle towards over its life. |
 | Size | Float | 1 | Starting size. A particle is drawn at **Size** multiplied by **Scale**. |
-| Scale | Vector 2 | (1, 1) | Width and height multipliers applied to **Size**. |
+| Scale | Vector2 | (1, 1) | Width and height multipliers applied to **Size**. |
 | Angle (Radians) | Float (rad) | 0 | Starting rotation. With **Angle Unit** set to **Degrees** the pin reads **Angle (Degrees)** and takes degrees. |
 
 ## Outputs

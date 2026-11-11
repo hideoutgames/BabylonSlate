@@ -2,7 +2,7 @@
 node: flow.switchInt
 ---
 
-# Switch on Int
+# Switch On Int
 
 Runs the output whose number matches an integer value, or Default if none match.
 

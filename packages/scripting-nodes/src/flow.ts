@@ -401,7 +401,7 @@ export const flowNodes: NodeDefinition[] = [
     { id: "lowerValue", name: "Lower Value", type: FLOAT }, { id: "upperValue", name: "Upper Value", type: FLOAT },
   ]),
   argsEvent("flow.event.uiCheckedChanged", "Event On Checked Changed", [{ id: "checked", name: "Checked", type: BOOL }]),
-  argsEvent("flow.event.uiTextChanged", "Event On Text Changed", [{ id: "text", name: "Text", type: STRING }]),
+  argsEvent("flow.event.uiTextChanged", "Event On UI Text Changed", [{ id: "text", name: "Text", type: STRING }]),
   argsEvent("flow.event.uiTextSubmitted", "Event On Text Submitted", [{ id: "text", name: "Text", type: STRING }]),
   argsEvent("flow.event.uiSelectionChanged", "Event On Selection Changed", [
     { id: "index", name: "Index", type: INT }, { id: "value", name: "Value", type: STRING },
@@ -594,7 +594,7 @@ export const flowNodes: NodeDefinition[] = [
   },
   {
     id: "flow.event.editorBeginPlay",
-    title: "Event Editor On Begin Play",
+    title: "Event On Editor Begin Play",
     category: "flow",
     pure: true,
     editorOnly: true,
@@ -688,7 +688,7 @@ export const flowNodes: NodeDefinition[] = [
   },
   {
     id: "flow.switchInt",
-    title: "Switch on Int",
+    title: "Switch On Int",
     category: "flow",
     pins: (properties) => [
       pin("execIn", "exec", "in", EXEC),
@@ -709,7 +709,7 @@ export const flowNodes: NodeDefinition[] = [
   },
   {
     id: "flow.switchString",
-    title: "Switch on String",
+    title: "Switch On String",
     category: "flow",
     pins: (properties) => [
       pin("execIn", "exec", "in", EXEC),

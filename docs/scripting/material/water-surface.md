@@ -14,7 +14,7 @@ Returns water data for the current point: wave height, bank distance, depth, tim
 | Bank Distance | Float | Distance from the nearest bank in metres; 0 at the shore. |
 | Water Depth | Float | Depth of the water body in metres. |
 | Simulation Time | Float | Time in seconds that drives the waves. |
-| Local Flow | Vector 3 | World-space direction and speed of the water current. |
+| Local Flow | Vector3 | World-space direction and speed of the water current. |
 
 ## Notes
 

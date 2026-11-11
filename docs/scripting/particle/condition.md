@@ -30,5 +30,5 @@ Returns one of two values depending on how two numbers compare.
 
 ## Notes
 
-- **A** and **B** are Floats, while **When True** and **When False** can be a Float, Vector 2, Vector 3 or Color.
+- **A** and **B** are Floats, while **When True** and **When False** can be a Float, Vector2, Vector3 or Color.
 - And, Or and Xor treat any non-zero value as true.

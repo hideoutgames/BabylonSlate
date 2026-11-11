@@ -12,7 +12,7 @@ Pushes an actor's Rigid Body for one frame.
 | --- | --- | --- |
 | In | Exec |  |
 | Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
-| Force | Vector 3 | The push in world directions. Its length is the strength. |
+| Force | Vector3 | The push in world directions. Its length is the strength. |
 
 ## Outputs
 

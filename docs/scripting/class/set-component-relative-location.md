@@ -12,7 +12,7 @@ Sets the component's location relative to the component it is attached to, or to
 | --- | --- |
 | In | Exec |
 | Target | Component Reference |
-| New Location | Vector 3 |
+| New Location | Vector3 |
 
 ## Outputs
 

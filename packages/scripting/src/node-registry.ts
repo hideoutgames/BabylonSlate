@@ -101,7 +101,7 @@ export type NodeDefinition = {
   developmentOnlyByDefault?: boolean;
   /**
    * Structured control-flow discriminator. Preferred over scattered typeId
-   * checks for Switch on Int / String, loops / Break, and stateful flow.
+   * checks for Switch On Int / String, loops / Break, and stateful flow.
    */
   structuredFlow?: StructuredFlowMeta;
 };

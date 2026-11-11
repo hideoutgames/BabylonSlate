@@ -18,7 +18,7 @@ Limits an angle in degrees to an arc.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

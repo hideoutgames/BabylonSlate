@@ -2,7 +2,7 @@
 node: flow.dispatcher.unbindAll
 ---
 
-# Unbind All Events from Event Dispatcher
+# Unbind All Events From Event Dispatcher
 
 Removes every event bound to an Event Dispatcher.
 
@@ -21,4 +21,4 @@ Removes every event bound to an Event Dispatcher.
 
 ## Notes
 
-- **Add Node** names it after the dispatcher, such as **Unbind All Events from On Damaged**.
+- **Add Node** names it after the dispatcher, such as **Unbind All Events From On Damaged**.

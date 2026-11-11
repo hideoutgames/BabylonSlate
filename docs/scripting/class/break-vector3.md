@@ -4,13 +4,13 @@ node: vector.break3
 
 # Break Vector3
 
-Splits a Vector 3 into its X, Y and Z numbers.
+Splits a Vector3 into its X, Y and Z numbers.
 
 ## Inputs
 
 | Pin | Type |
 | --- | --- |
-| In | Vector 3 |
+| In | Vector3 |
 
 ## Outputs
 

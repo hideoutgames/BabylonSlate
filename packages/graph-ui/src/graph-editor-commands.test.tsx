@@ -474,8 +474,8 @@ describe("wire feedback", () => {
 
   it("says why the hovered pin refuses a wire, naming the output first", () => {
     const refusal = renderWithRefusal();
-    expect(refusal(["src", "f"], ["dst", "v"])).toBe("Float does not connect to Vector 3");
-    expect(refusal(["dst", "v"], ["src", "f"])).toBe("Float does not connect to Vector 3");
+    expect(refusal(["src", "f"], ["dst", "v"])).toBe("Float does not connect to Vector3");
+    expect(refusal(["dst", "v"], ["src", "f"])).toBe("Float does not connect to Vector3");
     expect(refusal(["src", "execOut"], ["dst", "n"])).toBe("Exec does not connect to Float");
     expect(refusal(["src", "f"], ["dst", "execIn"])).toBe("Float does not connect to Exec");
     expect(refusal(["src", "f"], ["dst", "n"])).toBeNull();

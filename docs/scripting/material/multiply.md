@@ -11,7 +11,7 @@ Multiplies two values together, component by component.
 | Pin | Type | Default |
 | --- | --- | --- |
 | A | Any | 0 |
-| B | Any | 0 |
+| B | Any | 1 |
 
 ## Outputs
 
@@ -21,5 +21,5 @@ Multiplies two values together, component by component.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color. A Float is applied to every component of the other input.
+- Accepts a Float, Vector2, Vector3 or Color. A Float is applied to every component of the other input.
 - Two different vector types cannot be mixed; use [**Split**](split.md) and [**Combine**](combine.md) to convert.

@@ -29,7 +29,7 @@ To manage a Save Game's fields in one place, choose a **Data Definition** under 
 | Setting | Description |
 | --- | --- |
 | Name | The field's name. Renaming keeps the value already saved. |
-| Type | **Boolean**, **Integer**, **Float**, **String**, **Tag**, **TagContainer**, **Enum**, **Vector 2**, **Vector 3**, **Vector 4**, **Rotator**, **Quaternion**, **Color**, **Transform**, **Actor Reference**, **Class Reference**, **Asset Reference** or **Structure**. |
+| Type | **Boolean**, **Integer**, **Float**, **String**, **Tag**, **TagContainer**, **Enum**, **Vector2**, **Vector3**, **Vector4**, **Rotator**, **Quaternion**, **Color**, **Transform**, **Actor Reference**, **Class Reference**, **Asset Reference** or **Structure**. |
 | Structure | For a **Structure** field, the Structure it holds, such as **Int Range** or **Float Curve**. Only Structures without object references can be saved, nested Structures included. |
 | Enum | For an **Enum** field, the Enum it holds. The field saves the member's name. |
 | Container | **Single**, **Array** or **Map**. |

@@ -21,4 +21,4 @@ Returns 0 when a value is below an edge, and 1 otherwise.
 
 ## Notes
 
-- Accepts a Float, Vector 2 or Vector 3, but not a Color.
+- Accepts a Float, Vector2 or Vector3, but not a Color.

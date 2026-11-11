@@ -11,7 +11,7 @@ Draws a wireframe sphere at a world position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
+| Center | Vector3 |  |
 | Radius | Float | Sphere radius in world units. |
 | Segments | Float | Number of rings and meridians. Rounded and limited to 4 to 64; higher is smoother but costs more. |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |

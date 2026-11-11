@@ -11,7 +11,7 @@ Draws a camera view frustum from a position and rotation.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Origin | Vector 3 |  |
+| Origin | Vector3 |  |
 | Rotation | Rotator | Orientation in degrees (pitch, yaw, roll). |
 | FOV | Float | Vertical field of view in degrees. Limited to 1 to 179. |
 | Aspect | Float | Width divided by height. Defaults to 16:9. |

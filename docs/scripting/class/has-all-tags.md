@@ -18,7 +18,7 @@ Returns true when a TagContainer matches every Tag in a second TagContainer.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

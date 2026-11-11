@@ -20,4 +20,4 @@ Converts the input from radians to degrees.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- Accepts a Float, Vector2, Vector3 or Color, and works on each component.

@@ -11,14 +11,14 @@ Samples a texture at UV and returns its colour, its separate channels and the te
 | Pin | Type | Description |
 | --- | --- | --- |
 | Texture | Texture | Connect a [**Texture Parameter**](texture-parameter.md) or another node's Texture output. Leave it unconnected to use the texture picked in the **Inspector**. |
-| UV | Vector 2 | Where to sample. When unconnected, uses the mesh UV, the particle UV or [**Screen UV**](screen-uv.md), depending on the material's domain. |
+| UV | Vector2 | Where to sample. When unconnected, uses the mesh UV, the particle UV or [**Screen UV**](screen-uv.md), depending on the material's domain. |
 
 ## Outputs
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| RGBA | Vector 4 |  |
-| RGB | Vector 3 |  |
+| RGBA | Vector4 |  |
+| RGB | Vector3 |  |
 | R | Float |  |
 | G | Float |  |
 | B | Float |  |

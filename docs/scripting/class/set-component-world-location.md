@@ -12,7 +12,7 @@ Sets the component's location in the world; it stays attached and keeps that pla
 | --- | --- |
 | In | Exec |
 | Target | Component Reference |
-| New Location | Vector 3 |
+| New Location | Vector3 |
 
 ## Outputs
 

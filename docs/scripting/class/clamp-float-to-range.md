@@ -17,7 +17,7 @@ Returns **Value** limited to the range.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Result | Float |  |
+| Out | Float |  |
 
 ## Notes
 

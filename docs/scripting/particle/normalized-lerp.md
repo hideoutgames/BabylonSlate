@@ -22,5 +22,5 @@ Blends from one direction to another by an amount between 0 and 1 and returns th
 
 ## Notes
 
-- **A**, **B** and **Out** are a Vector 2 or a Vector 3 (Vector 3 until a vector is wired).
+- **A**, **B** and **Out** are a Vector2 or a Vector3 (Vector3 until a vector is wired).
 - It blends like [Lerp](lerp.md), then scales the result to length 1, so it suits directions. A result of length 0 stays 0.

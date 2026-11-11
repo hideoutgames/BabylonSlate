@@ -17,7 +17,7 @@ Returns the bits set in either of two integers.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Integer |
+| Out | Integer |
 
 ## Notes
 

@@ -62,7 +62,7 @@ describe("rotator nodes", () => {
     [{ pitch: 0, yaw: 360, roll: -180 }, { pitch: 720, yaw: 0, roll: 180 }, "true"],
     [{ pitch: 0, yaw: 359.9995, roll: 0 }, { pitch: 0, yaw: 0, roll: 0 }, "true"],
     [{ pitch: 0, yaw: 10, roll: 0 }, { pitch: 0, yaw: 370.1, roll: 0 }, "false"],
-  ])("Rotator Nearly Equal compares %o and %o with wrapped axes", (a, b, expected) => {
+  ])("Nearly Equal Rotator compares %o and %o with wrapped axes", (a, b, expected) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",

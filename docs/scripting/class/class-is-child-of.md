@@ -17,7 +17,7 @@ True when Test Class is Parent Class or one of its child Classes.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

@@ -23,7 +23,7 @@ Creates a new actor from a Class and returns a reference to it, pausing the game
 
 ## Notes
 
-- Loads the Class and its resources at High priority and pauses game simulation (ticks, physics, timers and tweens) until the actor can be created, like [**Load Class Blocking**](load-class-blocking.md). Loading and rendering preparation continue, so no game time passes before the actor exists.
+- Loads the Class and its resources at High priority and pauses game simulation (ticks, physics, timers and tweens) until the actor can be created, like [**Load Class (Blocking)**](load-class-blocking.md). Loading and rendering preparation continue, so no game time passes before the actor exists.
 - To keep the game running while the Class loads, use [**Spawn Actor (Async)**](spawn-actor-async.md).
 - Returns an empty reference if the actor cannot be created, for example when **Class ID** is empty.
 - Latent: execution continues once the actor exists.

@@ -11,7 +11,7 @@ Accelerates every particle by changing its direction each frame.
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
 | Particle | Particle |  |  |
-| Acceleration | Vector 3 (m/s²) | (0, -9.81, 0) | Acceleration in metres per second squared. The default points straight down. |
+| Acceleration | Vector3 (m/s²) | (0, -9.81, 0) | Acceleration in metres per second squared. The default points straight down. |
 
 ## Outputs
 

@@ -4,7 +4,7 @@ node: material.resetVectorParameter
 
 # Reset Material Vector Parameter
 
-Restores a Vector 2 or Vector 3 parameter on a Material Object to its original value.
+Restores a Vector2 or Vector3 parameter on a Material Object to its original value.
 
 ## Inputs
 

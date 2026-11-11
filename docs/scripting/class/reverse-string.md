@@ -16,7 +16,7 @@ Returns a string with its characters in reverse order.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | String |
+| Out | String |
 
 ## Notes
 

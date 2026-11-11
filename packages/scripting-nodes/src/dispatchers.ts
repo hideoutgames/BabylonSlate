@@ -45,7 +45,7 @@ export function isDispatcherNodeType(typeId: string): boolean {
   return DISPATCHER_NODE_IDS.has(typeId);
 }
 
-/** Canvas title of a dispatcher node: `Call On Damaged`, `Bind Event to On Damaged`. */
+/** Canvas title of a dispatcher node: `Call On Damaged`, `Bind Event To On Damaged`. */
 export function dispatcherNodeTitle(
   action: DispatcherNodeAction,
   dispatcherName: string,
@@ -54,11 +54,11 @@ export function dispatcherNodeTitle(
     case "call":
       return `Call ${dispatcherName}`;
     case "bind":
-      return `Bind Event to ${dispatcherName}`;
+      return `Bind Event To ${dispatcherName}`;
     case "unbind":
-      return `Unbind Event from ${dispatcherName}`;
+      return `Unbind Event From ${dispatcherName}`;
     case "unbindAll":
-      return `Unbind All Events from ${dispatcherName}`;
+      return `Unbind All Events From ${dispatcherName}`;
   }
 }
 
@@ -198,19 +198,19 @@ export const dispatcherNodes: NodeDefinition[] = [
   },
   bindingNode(
     DISPATCHER_NODE_TYPE_IDS.bind,
-    "Bind Event to Event Dispatcher",
+    "Bind Event To Event Dispatcher",
     "Adds Event to the Event Dispatcher on Target. Binding the same event twice keeps one binding.",
     "bindDispatcher",
   ),
   bindingNode(
     DISPATCHER_NODE_TYPE_IDS.unbind,
-    "Unbind Event from Event Dispatcher",
+    "Unbind Event From Event Dispatcher",
     "Removes Event from the Event Dispatcher on Target.",
     "unbindDispatcher",
   ),
   {
     id: DISPATCHER_NODE_TYPE_IDS.unbindAll,
-    title: "Unbind All Events from Event Dispatcher",
+    title: "Unbind All Events From Event Dispatcher",
     category: EVENT_DISPATCHER_CATEGORY,
     description: "Removes every event bound to the Event Dispatcher on Target.",
     pins: (properties) => [...execPins(), dispatcherTarget(properties)],

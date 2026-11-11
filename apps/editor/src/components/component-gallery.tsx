@@ -184,8 +184,8 @@ function GalleryChecklistDialog() {
         description="Pick one or more properties. Properties already on this clip are checked."
         groups={[
           { id: "actor", label: "Actor", items: [
-            { id: "Location", label: "Location", included: true, trailing: mark("vec3", "Vector 3") },
-            { id: "Scale", label: "Scale", trailing: mark("vec3", "Vector 3") },
+            { id: "Location", label: "Location", included: true, trailing: mark("vec3", "Vector3") },
+            { id: "Scale", label: "Scale", trailing: mark("vec3", "Vector3") },
             { id: "Visible", label: "Visible", trailing: mark("bool", "Bool") },
           ] },
           { id: "glow", label: "Handle Glow (Light Component)", items: [

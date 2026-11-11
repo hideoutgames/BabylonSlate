@@ -16,7 +16,7 @@ Returns the direction to an actor's right, as a unit vector along its right axis
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

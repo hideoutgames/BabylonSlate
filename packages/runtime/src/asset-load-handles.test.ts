@@ -151,7 +151,7 @@ describe("script load handles in a running session", () => {
     try {
       const [request] = requests(commands);
       expect(request).toMatchObject({ assetGuids: ["boss-class"], ownerId: "actor" });
-      expect(String(actor.getVariable("early"))).toContain("Async Load Class");
+      expect(String(actor.getVariable("early"))).toContain("Load Class (Async)");
       await runtime.loadScripts([{ classId: "Boss", parentClassId: "Actor", assetGuid: "boss-class", anchors: [], source: "", entryPoints: [] }]);
       runtime.setAssetLoadStates([{ guid: "boss-class", state: "ready" }]);
       runtime.notifyAssetPreloadResult({ preloadId: request!.preloadId, success: true });

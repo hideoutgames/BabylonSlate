@@ -21,8 +21,8 @@ export const PARTICLE_NUMERIC_TYPES: readonly ParticleNumericType[] = [
 
 const LABELS: Record<ParticleValueType, string> = {
   float: "Float",
-  vec2: "Vector 2",
-  vec3: "Vector 3",
+  vec2: "Vector2",
+  vec3: "Vector3",
   color: "Color",
   particle: "Particle",
 };

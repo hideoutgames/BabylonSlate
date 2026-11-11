@@ -11,7 +11,7 @@ Picks a random walkable point within a radius of a position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
+| Center | Vector3 |  |
 | Radius | Float | Search distance in world units. |
 
 ## Outputs
@@ -19,7 +19,7 @@ Picks a random walkable point within a radius of a position.
 | Pin | Type |
 | --- | --- |
 | Out | Exec |
-| Point | Vector 3 |
+| Point | Vector3 |
 | Found | Boolean |
 
 ## Notes

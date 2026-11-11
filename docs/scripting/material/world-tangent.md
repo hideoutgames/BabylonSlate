@@ -10,7 +10,7 @@ Returns the surface tangent direction in world space, scaled to a length of 1.
 
 | Pin | Type |
 | --- | --- |
-| Tangent | Vector 3 |
+| Tangent | Vector3 |
 
 ## Notes
 

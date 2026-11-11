@@ -166,7 +166,7 @@ function emitSurfaceVaryings(state: NodeMaterialBuildState): void {
 
 /**
  * Fragment locals every water node starts from: `swnData` and `swnFlow` (neutral off a water mesh: no bank, 1 m deep,
- * still) and `swnPos`, the absolute world position of `position` (a Vector 4 expression).
+ * still) and `swnPos`, the absolute world position of `position` (a Vector4 expression).
  */
 function surfaceLocals(state: NodeMaterialBuildState, position: string): string {
   const wgsl = wgslOf(state), input = wgsl ? "fragmentInputs." : "";

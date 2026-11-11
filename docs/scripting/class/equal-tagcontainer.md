@@ -17,7 +17,7 @@ Returns true when two TagContainers hold exactly the same Tags.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

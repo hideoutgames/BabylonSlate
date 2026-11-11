@@ -16,8 +16,8 @@ Choose **Enum** as a variable or pin type, then pick the Enum under **Enum Type*
 | --- | --- |
 | **Make** *Name* | Returns one member, chosen on the node. See [Make Enum](class/make-enum.md). |
 | **Equal** *Name*, **Not Equal** *Name* | Compares two values. See [Equal Enum](class/equal-enum.md) and [Not Equal Enum](class/not-equal-enum.md). |
-| *Name* **to String** | Returns the member's name as text. See [Enum to String](class/enum-to-string.md). |
-| **Switch on** *Name* | Runs one execution output per member, plus **Default**. See [Switch on Enum](class/switch-on-enum.md). |
+| *Name* **to String** | Returns the member's name as text. See [To String (Enum)](class/to-string-enum.md). |
+| **Switch on** *Name* | Runs one execution output per member, plus **Default**. See [Switch On Enum](class/switch-on-enum.md). |
 | **Select** *Name* | Returns the value wired to the matching member. See [Select](class/select.md). |
 
 Drag from an Enum pin to see these nodes first. When you remove a member, Switch and Select nodes lose that member's pin and its wires.
@@ -45,7 +45,7 @@ Haptic also provides Enums and Structures that are not assets but appear in the 
 
 - Enums: **Collision Channel**, **Curve Interpolation**, **Curve Extrapolation**, **Easing Curve**, **Key**, **Particles Finished Reason**, **Platform** (returned by [Get Platform](class/get-platform.md)), **Render Target Mode**, **Timeline Loop Mode**, **Touch Phase** and **Touch Type**.
 - Structures: **Hit Result** (returned by collision events and traces), **TagContainer**, **Save Game Info**, **Touch** (returned by the [touch nodes](../input/index.md#touch)), **Time** and **Date** (returned by [Get Time Now](class/get-time-now.md) and [Get Date Now](class/get-date-now.md)), **Seed** (read and advanced by the [Seeded Random](random-numbers.md#seeds) nodes), and **Timer Handle** (returned by [Set Timer By Event](class/set-timer-by-event.md)).
-- Ranges and curves: **Int Range**, **Float Range**, **Vector 2 Range**, **Vector Range**, **Rotator Range**, **Float Curve**, **Vector Curve** and **Color Curve**, with their nodes. See [Curves and ranges](curves-and-ranges.md).
+- Ranges and curves: **Int Range**, **Float Range**, **Vector2 Range**, **Vector Range**, **Rotator Range**, **Float Curve**, **Vector Curve** and **Color Curve**, with their nodes. See [Curves and ranges](curves-and-ranges.md).
 
 Vectors, Rotator, Color and Transform have their own Make and Break nodes, such as [Make Transform](class/make-transform.md) and [Break Color](class/break-color.md).
 

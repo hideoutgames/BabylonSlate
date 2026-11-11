@@ -22,6 +22,6 @@ Sets a field of the save being migrated, chosen by its permanent field ID.
 
 ## Notes
 
-- Only valid inside [**Event Save Migration**](event-save-migration.md); elsewhere it reports an error.
+- Only valid inside [**Event On Save Migration**](event-on-save-migration.md); elsewhere it reports an error.
 - The change applies to a staged copy, and the stored save is not rewritten until you save explicitly.
 - Actor fields take persistent ID strings.

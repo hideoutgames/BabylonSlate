@@ -10,14 +10,14 @@ Multiplies two vectors together, component by component.
 
 | Pin | Type |
 | --- | --- |
-| A | Vector 2 |
-| B | Vector 2 |
+| A | Vector2 |
+| B | Vector2 |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 2 |
+| Out | Vector2 |
 
 ## Notes
 

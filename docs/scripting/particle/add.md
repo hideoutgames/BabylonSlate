@@ -21,5 +21,5 @@ Returns the sum of two values, component by component.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color. A Float is applied to every component of the other input.
+- Accepts a Float, Vector2, Vector3 or Color. A Float is applied to every component of the other input.
 - Two different vector types cannot be mixed; use [**Split**](split.md) and [**Combine**](combine.md) to convert.

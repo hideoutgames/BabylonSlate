@@ -435,7 +435,7 @@ function surfaceMaterial(name: string, albedoGuid: string, tintGuid: string, pul
 
 /**
  * Dark lit base with color bands scrolling up the mesh (UV V + time) as emissive light. Band
- * Tiling (Vector 2) scales the UVs and Glow Tint (Vector 3) tints the light; their defaults
+ * Tiling (Vector2) scales the UVs and Glow Tint (Vector3) tints the light; their defaults
  * leave the look unchanged.
  */
 function emissiveMaterial(name: string): MaterialDocument {

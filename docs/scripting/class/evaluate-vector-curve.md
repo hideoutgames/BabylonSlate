@@ -17,7 +17,7 @@ Returns the Vector Curve's value at **Time**.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Value | Vector 3 |  |
+| Value | Vector3 |  |
 
 ## Notes
 

@@ -11,7 +11,7 @@ import {
 } from "./document";
 
 describe("material document", () => {
-  it("keeps new Color Parameter Vector 4 connections intact", () => {
+  it("keeps new Color Parameter Vector4 connections intact", () => {
     const doc = normalizeMaterialDocument({
       nodes: [{ id: "tint", type: "param.color", properties: { name: "Tint" } }],
       edges: [{ id: "tint-edge", sourceNodeId: "tint", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" }],

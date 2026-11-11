@@ -8,7 +8,7 @@ A Scene and a Scene Layer can each carry a script of their own: the **Scene Scri
 2. In the toolbar, set **Scene Mode** to **Script**. A Scene offers **Design**, **Landscape**, **Foliage**, **Script** and **Timeline**; a Scene Layer offers **Design**, **Script** and **Timeline**.
 3. Script mode shows the **Event Graph**, the **Script** panel with its variables, functions and events, the **Inspector** and **Compiler Results**. **Design** returns to the viewport.
 
-A new script starts with [Event Begin Play](class/event-begin-play.md) and [Event Tick](class/event-tick.md). Add **Event Destroyed** ([Event On Actor Destroyed](class/event-on-actor-destroyed.md)) from the **Script** panel's events to clean up. A Scene Layer Script can also add [Event Scalability Changed](class/event-scalability-changed.md), for example to adapt the layer when the player lowers the quality.
+A new script starts with [Event Begin Play](class/event-begin-play.md) and [Event Tick](class/event-tick.md). Add **Event Destroyed** ([Event On Actor Destroyed](class/event-on-actor-destroyed.md)) from the **Script** panel's events to clean up. A Scene Layer Script can also add [Event On Scalability Changed](class/event-on-scalability-changed.md), for example to adapt the layer when the player lowers the quality.
 
 ## When the script runs
 

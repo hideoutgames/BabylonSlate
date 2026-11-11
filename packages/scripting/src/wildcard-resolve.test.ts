@@ -77,7 +77,7 @@ describe("resolveWildcardPinTypes", () => {
     expect(result.conflicts).toEqual([]);
   });
 
-  it("binds T from array<float> on Array Get and recolors out as float", () => {
+  it("binds T from array<float> on Get Array Item and recolors out as float", () => {
     const result = resolveWildcardPinTypes(
       arrayGetGraph([
         {
@@ -154,7 +154,7 @@ describe("resolveWildcardPinTypes", () => {
     expect(result.conflicts[0]?.nodeId).toBe("append");
   });
 
-  it("propagates T from Array Get out into Append item", () => {
+  it("propagates T from Get Array Item out into Append item", () => {
     const result = resolveWildcardPinTypes({
       nodes: [
         { id: "src", pins: [{ id: "out", type: arrayOf(FLOAT) }] },

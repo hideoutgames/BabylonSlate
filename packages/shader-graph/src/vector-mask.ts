@@ -9,9 +9,9 @@ export function vectorMaskChannels(properties: Record<string, unknown>) {
 export function vectorMaskDefinition(node: MaterialGraphNode, base: MaterialNodeDefinition): MaterialNodeDefinition {
   const channels = vectorMaskChannels(node.properties);
   const kind: MaterialValueType = (["float", "float", "vec2", "vec3", "vec4"] as const)[channels.length]!;
-  return { ...base, title: `VectorMask(${channels.join("").toUpperCase()})`, outputs: [{ id: "out", name: "Out", type: { kind }, ...(kind === "vec4" ? { colorHint: true } : {}) }] };
+  return { ...base, title: `Component Mask (${channels.join("").toUpperCase()})`, outputs: [{ id: "out", name: "Out", type: { kind }, ...(kind === "vec4" ? { colorHint: true } : {}) }] };
 }
-/** The Value pin is always Vector 4, so only an empty channel selection can be wrong. */
+/** The Value pin is always Vector4, so only an empty channel selection can be wrong. */
 export function vectorMaskError(properties: Record<string, unknown>): string | null {
-  return vectorMaskChannels(properties).length ? null : "VectorMask requires at least one channel";
+  return vectorMaskChannels(properties).length ? null : "Component Mask requires at least one channel";
 }

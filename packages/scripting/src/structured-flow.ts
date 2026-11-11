@@ -4,7 +4,7 @@
  * flow nodes. Branch / Sequence / Enum Switch keep their existing emission
  * paths for source stability.
  *
- * Owns Switch on Int / String and loop / stateful kinds (forLoop, Do Once,
+ * Owns Switch On Int / String and loop / stateful kinds (forLoop, Do Once,
  * Gate, …). Compiler emits loops and stateful flow from these discriminators
  * while preserving Branch / Sequence / Enum Switch source behavior.
  */

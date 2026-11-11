@@ -111,6 +111,27 @@ describe("material node contracts", () => {
     // Babylon refuses to build a block whose required input has neither a wire nor a default.
     expect((await compile(doc)).ok).toBe(true);
   });
+  it("compiles One Minus as Babylon's block on the wired value", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "time", "input.time");
+    node(doc, "invert", "math.oneMinus");
+    wire(doc, "time", "time", "invert", "value");
+    wire(doc, "invert", "out", "output", "emissive");
+    const result = await compile(doc);
+    const block = result.material.attachedBlocks.find((entry) => entry.getClassName() === "OneMinusBlock")!;
+    expect(block.inputs[0]!.connectedPoint?.ownerBlock.name).toBe("time");
+  });
+  it.each(["noise.perlin", "noise.worley"])("feeds an unwired %s the mesh UV, so it shows a pattern instead of one flat value", async (type) => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "noise", type);
+    wire(doc, "noise", type === "noise.perlin" ? "out" : "f1", "output", "emissive");
+    const result = await compile(doc);
+    const noise = result.material.getBlockByName("noise")!;
+    const seed = noise.getInputByName("seed")!.connectedPoint!.ownerBlock as VectorMergerBlock;
+    expect(seed).toBeInstanceOf(VectorMergerBlock);
+    // The compiler wired its UV into the pair of channels the noise reads.
+    expect(seed.xyIn.isConnected).toBe(true);
+  });
   it.each(["uv", "height"])("keeps Landscape %s anchored to absolute scene coordinates when the render origin moves", async (kind) => {
     const doc = createDefaultMaterialDocument("Terrain", "landscape");
     doc.edges = [];
@@ -376,7 +397,7 @@ describe("material node contracts", () => {
     scene.render();
     scene.render();
   });
-  it("compiles Vertex Normal (World Space) in vertex displacement and fragment color", async () => {
+  it("compiles Vertex Normal (World) in vertex displacement and fragment color", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "normal", "input.vertexNormalWS");
     wire(doc, "normal", "normal", "output", "worldPositionOffset");
@@ -409,7 +430,7 @@ describe("material node contracts", () => {
     wire(doc, "color", "xyzw", "output", "color");
     await compile(doc);
   });
-  it("compiles nonadjacent VectorMask channels in RGBA order", async () => {
+  it("compiles nonadjacent Component Mask channels in RGBA order", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "value", "const.vec3", { value: [0.2, 0.5, 0.8] });
     node(doc, "mask", "vector.mask", { b: true });
@@ -451,7 +472,7 @@ describe("material node contracts", () => {
     expect(result.setParameter("Minimum", { kind: "float", value: 0.2 })).toBe(true);
   });
 
-  it.each(["vector.refract", "logic.lessThan", "logic.equal"])("compiles ordinary Vector 3 inputs for %s", async (type) => {
+  it.each(["vector.refract", "logic.lessThan", "logic.equal"])("compiles ordinary Vector3 inputs for %s", async (type) => {
     const doc = createDefaultMaterialDocument();
     node(doc, "a", "const.vec3", { value: [0, 0, -1] });
     node(doc, "b", "const.vec3", { value: [0, 0, 1] });

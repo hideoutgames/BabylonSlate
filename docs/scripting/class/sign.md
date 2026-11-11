@@ -20,4 +20,4 @@ Returns -1, 0 or 1 depending on the sign of the input.
 
 ## Notes
 
-- Accepts a Float, Vector 2, Vector 3 or Color, and works on each component.
+- Accepts a Float, Vector2, Vector3 or Color, and works on each component.

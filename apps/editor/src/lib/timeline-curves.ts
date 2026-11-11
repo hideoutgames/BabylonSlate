@@ -4,7 +4,7 @@ import type { NewId } from "./timeline-track-edits";
 
 /**
  * A Timeline track as the shared curve editor shows it: Float as a float
- * curve, Vector 2, Vector and Rotator (pitch, yaw, roll as X, Y, Z) as a vector
+ * curve, Vector2, Vector and Rotator (pitch, yaw, roll as X, Y, Z) as a vector
  * curve, Color as a color curve. Stepped types have no curve.
  */
 
@@ -17,7 +17,7 @@ export function timelineCurveKind(valueType: TimelineValueType): CurveEditorKind
   }
 }
 
-/** Channels the curve editor shows: Vector 2 has no Z. */
+/** Channels the curve editor shows: Vector2 has no Z. */
 export function timelineCurveChannels(valueType: TimelineValueType): boolean[] | undefined {
   return valueType === "vec2" ? [true, true, false] : undefined;
 }

@@ -4,13 +4,13 @@ node: vector.break2
 
 # Break Vector2
 
-Splits a Vector 2 into its X and Y numbers.
+Splits a Vector2 into its X and Y numbers.
 
 ## Inputs
 
 | Pin | Type |
 | --- | --- |
-| In | Vector 2 |
+| In | Vector2 |
 
 ## Outputs
 

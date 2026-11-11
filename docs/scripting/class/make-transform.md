@@ -10,9 +10,9 @@ Builds a transform from a location, a rotation and an optional scale.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Location | Vector 3 |  |
+| Location | Vector3 |  |
 | Rotation | Rotator |  |
-| Scale | Vector 3 | Defaults to 1 on every axis. |
+| Scale | Vector3 | Defaults to 1 on every axis. |
 
 ## Outputs
 

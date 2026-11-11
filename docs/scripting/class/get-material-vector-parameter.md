@@ -4,7 +4,7 @@ node: material.getVectorParameter
 
 # Get Material Vector Parameter
 
-Returns the current value of a named Vector 2 or Vector 3 parameter on a Material Object.
+Returns the current value of a named Vector2 or Vector3 parameter on a Material Object.
 
 ## Inputs
 
@@ -17,10 +17,10 @@ Returns the current value of a named Vector 2 or Vector 3 parameter on a Materia
 
 | Pin | Type |
 | --- | --- |
-| Value | Vector 3 |
+| Value | Vector3 |
 | Found | Boolean |
 
 ## Notes
 
-- A Vector 2 parameter returns its **X** and **Y** with **Z** 0.
-- **Found** is false, and **Value** is 0, 0, 0, when the parameter does not exist, is not a Vector 2 or Vector 3, or the Material Object is no longer valid.
+- A Vector2 parameter returns its **X** and **Y** with **Z** 0.
+- **Found** is false, and **Value** is 0, 0, 0, when the parameter does not exist, is not a Vector2 or Vector3, or the Material Object is no longer valid.

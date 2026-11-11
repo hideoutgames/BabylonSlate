@@ -12,7 +12,7 @@ type DataGraphMetadata = {
 
 /** Metadata shared by graph hydration, validation and both default editors. */
 export const DATA_GRAPH_NODES = {
-  "data.readEntryAsync": { title: "Async Read Unknown Data Entry", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath", definitionPin: true },
+  "data.readEntryAsync": { title: "Read Unknown Data Entry (Async)", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath", definitionPin: true },
   "data.readEntry": { title: "Read Data Entry", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath" },
   "data.readUnknownEntry": { title: "Read Unknown Data Entry", operation: "Read", required: true, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: false }], definitionPath: "entryPath", definitionPin: true },
   "data.getChildren": { title: "Get Data Children", operation: "Get", required: false, schema: false, assetPin: "tree", assetType: "DataTree", pathPins: [{ pinId: "entryPath", root: true }] },

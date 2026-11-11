@@ -50,7 +50,7 @@ function boundGraph(eventPins: GraphClassMember["pins"]): SerializedGraph {
         id: "bind",
         type: "flow.dispatcher.bind",
         position: { x: 300, y: 0 },
-        data: { title: "Bind Event to On Damaged", name: "On Damaged", implicitSelf: true, pins: ON_DAMAGED.pins },
+        data: { title: "Bind Event To On Damaged", name: "On Damaged", implicitSelf: true, pins: ON_DAMAGED.pins },
       },
     ],
     edges: [{ id: "e", source: "listener", sourceHandle: "OutputDelegate", target: "bind", targetHandle: "event" }],
@@ -76,7 +76,7 @@ describe("Event Dispatcher members", () => {
 
     const next = patchClassMember(graph, "on-damaged", { name: "On Hurt", pins: inputs }, "Enemy");
 
-    expect(nodeData(next, "bind")).toMatchObject({ name: "On Hurt", title: "Bind Event to On Hurt", pins: inputs });
+    expect(nodeData(next, "bind")).toMatchObject({ name: "On Hurt", title: "Bind Event To On Hurt", pins: inputs });
     expect(nodeData(next, "listener")?.pins).toEqual([{ name: "Amount", typeId: "int", direction: "out" }]);
     expect(next.members?.find((member) => member.id === "callback")).toMatchObject({
       typeClassId: "Enemy::On Hurt",
@@ -128,7 +128,7 @@ describe("Event Dispatcher members", () => {
       graph: enemy(), memberIds: ["on-damaged"], members: rows, position: { x: 10, y: 20 }, dispatcherAction: "unbindAll", classId: "Enemy",
     });
     expect(placed.graph.nodes.map((node) => [node.type, node.data.title])).toEqual([
-      ["flow.dispatcher.unbindAll", "Unbind All Events from On Damaged"],
+      ["flow.dispatcher.unbindAll", "Unbind All Events From On Damaged"],
     ]);
   });
 });
@@ -168,9 +168,9 @@ describe("Event Dispatcher Add Node rows", () => {
 
     expect(rows.filter((row) => !row.outOfContext).map((row) => [row.title, row.defaultData?.implicitSelf])).toEqual([
       ["Call On Damaged", false],
-      ["Bind Event to On Damaged", false],
-      ["Unbind Event from On Damaged", false],
-      ["Unbind All Events from On Damaged", false],
+      ["Bind Event To On Damaged", false],
+      ["Unbind Event From On Damaged", false],
+      ["Unbind All Events From On Damaged", false],
       ["Assign On Damaged", false],
     ]);
     const assign = rows.find((row) => row.title === "Assign On Damaged");
@@ -201,7 +201,7 @@ describe("Event Dispatcher Add Node rows", () => {
 
   it("leave out rows that add a custom event inside a function", () => {
     const titles = palette({ classId: "Enemy", graph: enemy(), activeFunctionId: "fn" }).map((row) => row.title);
-    expect(titles).toEqual(["Call On Damaged", "Bind Event to On Damaged", "Unbind Event from On Damaged", "Unbind All Events from On Damaged"]);
+    expect(titles).toEqual(["Call On Damaged", "Bind Event To On Damaged", "Unbind Event From On Damaged", "Unbind All Events From On Damaged"]);
   });
 });
 

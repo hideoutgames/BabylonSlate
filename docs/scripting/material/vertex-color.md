@@ -10,7 +10,7 @@ Returns the vertex colour painted on the mesh, including alpha.
 
 | Pin | Type |
 | --- | --- |
-| Color | Vector 4 |
+| Color | Vector4 |
 
 ## Notes
 

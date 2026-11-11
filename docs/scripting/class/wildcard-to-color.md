@@ -2,7 +2,7 @@
 node: wildcard.to_color
 ---
 
-# Wildcard To color
+# Wildcard To Color
 
 Converts an Any value to a Color and reports whether it worked.
 

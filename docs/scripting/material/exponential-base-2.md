@@ -1,0 +1,23 @@
+---
+node: math.exp2
+---
+
+# Exponential (Base 2)
+
+Returns 2 raised to the power of the input.
+
+## Inputs
+
+| Pin | Type | Default |
+| --- | --- | --- |
+| Value | Any | 0 |
+
+## Outputs
+
+| Pin | Type |
+| --- | --- |
+| Out | Any |
+
+## Notes
+
+- Accepts a Float, Vector2, Vector3 or Color, and works on each component.

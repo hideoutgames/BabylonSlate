@@ -11,7 +11,7 @@ Returns the actors whose colliders overlap a sphere at a given point.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
+| Center | Vector3 |  |
 | Radius | Float |  |
 | Channel | CollisionChannel | Limits which colliders count, as on [**Line Trace**](line-trace.md). Defaults to All. |
 

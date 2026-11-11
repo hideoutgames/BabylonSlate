@@ -757,7 +757,7 @@ function delegateInputRows(
 /**
  * Give each custom event that takes nothing the signature of the delegate
  * input its Output Delegate was just wired to, as Unreal does: wiring an empty
- * event to Bind Event to On Damaged gives it On Damaged's inputs, names
+ * event to Bind Event To On Damaged gives it On Damaged's inputs, names
  * included, in the same change.
  */
 export function adoptBoundEventSignatures(

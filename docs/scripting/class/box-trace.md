@@ -11,9 +11,9 @@ Sweeps a box from a start point to an end point and reports the first hit.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Start | Vector 3 |  |
-| End | Vector 3 |  |
-| Half Size | Vector 3 | Half the box's size along each axis, in world units. Defaults to 0.5. |
+| Start | Vector3 |  |
+| End | Vector3 |  |
+| Half Size | Vector3 | Half the box's size along each axis, in world units. Defaults to 0.5. |
 | Orientation | Rotator | Turns the shape. Defaults to no turn. |
 | Channel | CollisionChannel | Limits which colliders count, as on [**Line Trace**](line-trace.md). Defaults to All. |
 | Actors To Ignore | Array of Actor Reference | Actors the query passes through. |
@@ -25,8 +25,8 @@ Sweeps a box from a start point to an end point and reports the first hit.
 | Out | Exec |  |
 | Hit Result | HitResult | All results in one structure. Use **Break Hit Result** to read its fields. |
 | Hit | Boolean |  |
-| Location | Vector 3 | The point on the surface that was hit. |
-| Normal | Vector 3 |  |
+| Location | Vector3 | The point on the surface that was hit. |
+| Normal | Vector3 |  |
 | Distance | Float | How far the shape's centre travelled before the hit, in world units. |
 | Actor | Actor Reference | The actor that was hit, or an empty reference on a miss. |
 

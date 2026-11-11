@@ -10,7 +10,7 @@ Returns the current width and height scale of the particle.
 
 | Pin | Type |
 | --- | --- |
-| Scale | Vector 2 |
+| Scale | Vector2 |
 
 ## Notes
 

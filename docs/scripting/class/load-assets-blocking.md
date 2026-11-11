@@ -2,7 +2,7 @@
 node: assets.loadManyBlocking
 ---
 
-# Load Assets Blocking
+# Load Assets (Blocking)
 
 Loads several assets together at High priority and pauses the game until loading finishes.
 

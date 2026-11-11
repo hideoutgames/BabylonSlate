@@ -147,7 +147,7 @@ describe("game instance nodes", () => {
     expect(sceneCompiled.source).toContain("ctx.getSceneReference()");
   });
 
-  it("feeds the session Game Instance into Cast to the project's class", () => {
+  it("feeds the session Game Instance into Cast To the project's class", () => {
     const registry = createDefaultNodeRegistry();
     const node = (
       id: string,

@@ -22,7 +22,7 @@ Keys are values of the **Key** enum: keyboard keys, five mouse buttons, and the 
 
 1. Call **Get Input Bindings** for the input and show one row per binding, using its **Label** and **Key**.
 2. When the player picks a row, store that **Input Binding** in a variable and set a Boolean such as Waiting to true.
-3. Add [On Any Key Pressed](../scripting/class/on-any-key-pressed.md). Behind a [Branch](../scripting/class/branch.md) on Waiting, pass its **Key** and the stored binding to **Set Input Axis Binding** (or **Set Input Action Binding**).
+3. Add [Event On Any Key Pressed](../scripting/class/event-on-any-key-pressed.md). Behind a [Branch](../scripting/class/branch.md) on Waiting, pass its **Key** and the stored binding to **Set Input Axis Binding** (or **Set Input Action Binding**).
 4. When **Success** is true, set Waiting to false and refresh the menu.
 
 Replacing W in a WASD binding keeps it on the Y direction with a positive value, so only the key changes.

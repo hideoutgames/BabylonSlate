@@ -18,7 +18,7 @@ True when one of the actor's Tags is Tag or, unless Exact Match is on, a child o
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

@@ -57,4 +57,4 @@ Every actor has its own **Tags**, so scripts can find and group actors without a
 
 Tags added or removed during Play are not saved to the scene.
 
-Other useful nodes: [Make Tag](class/make-tag.md), [Make TagContainer](class/make-tagcontainer.md), [Get Tags](class/get-tags.md), [Tag Count](class/tag-count.md) and [Tag To String](class/tag-to-string.md).
+Other useful nodes: [Make Tag](class/make-tag.md), [Make TagContainer](class/make-tagcontainer.md), [Get Tags](class/get-tags.md), [Get Tag Count](class/get-tag-count.md) and [To String (Tag)](class/to-string-tag.md).

@@ -109,17 +109,44 @@ const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "math.min": ["min","min(a,b)"],
   "math.max": ["max","max(a,b)"],
   "math.clamp": ["clamp(x,min,max)"],
-  "math.saturate": ["clamp(x,0,1)","saturate(x)"],
   "math.mix": ["lerp","mix(a,b,t)","lerp(a,b,t)","a+(b-a)*t"],
   "math.step": ["step(edge,x)"],
   "math.smoothstep": ["smoothstep","smoothstep(a,b,x)"],
-  "math.remap": ["remap(x,a,b,c,d)"],
-  "logic.equal": ["=","==","===","a == b"],
-  "logic.notEqual": ["!=","!==","≠","a != b"],
-  "logic.lessThan": ["<","a < b"],
-  "logic.greaterThan": [">","a > b"],
   "vector.normalize": ["normalize(x)","x/length(x)"],
   "vector.reflect": ["reflect(i,n)"],
+  // Names from other engines and shading languages.
+  "math.oneMinus": ["1-x","1 - x","one minus","invert","complement","oneminus"],
+  "math.remap": ["remap(x,a,b,c,d)","map range","remap range","fit"],
+  "math.saturate": ["clamp(x,0,1)","saturate(x)","clamp01","clamp 0 1"],
+  "vector.combine": ["append","make","merge","make vector","float2","float3","float4"],
+  "vector.split": ["break","separate","components","break vector"],
+  "vector.mask": ["mask","component mask","swizzle","channel"],
+  "vector.length": ["magnitude","length(x)"],
+  "vector.cross": ["cross","cross(a,b)","a × b"],
+  "logic.select": ["if","branch","ternary","switch","condition ? a : b"],
+  "logic.equal": ["=","==","===","a == b","compare"],
+  "logic.notEqual": ["!=","!==","≠","a != b","compare"],
+  "logic.lessThan": ["<","a < b","compare"],
+  "logic.greaterThan": [">","a > b","compare"],
+  "texture.transformUv": ["tiling","offset","panner","rotator","scale uv","tile"],
+  "texture.sample": ["texture 2d","sample texture","tex2d","texture2d"],
+  "texture.sampleLod": ["texture 2d lod","sample level","mip"],
+  "input.uv": ["texcoord","texture coordinate","uv0","uv1"],
+  "input.viewDirection": ["camera vector","view vector","eye"],
+  "input.worldPosition": ["absolute world position","position ws"],
+  "input.vertexColor": ["vertex colour","color attribute"],
+  "input.time": ["game time","seconds","elapsed"],
+  "shading.fresnel": ["rim","rim light","edge glow"],
+  "shading.normalMap": ["unpack normal","tangent normal","bump"],
+  "color.desaturate": ["saturation","grayscale","greyscale","luminance"],
+  "color.gradient": ["ramp","color ramp","gradient map"],
+  "param.float": ["scalar parameter","float property"],
+  "param.color": ["color property","tint"],
+  "param.texture": ["texture object","texture property","sampler"],
+  "custom.glsl": ["custom expression","custom function","code","shader code"],
+  "noise.perlin": ["gradient noise","noise"],
+  "const.color": ["rgb","colour"],
+  "derivative.fwidth": ["fwidth","filter width"],
 };
 
 /**
@@ -178,7 +205,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "const.vec2",
-    title: "Vector 2",
+    title: "Vector2",
     category: "Constants",
     searchAliases: ["V2", "Vec2", "Float2"],
     cost: 0,
@@ -187,7 +214,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "const.vec3",
-    title: "Vector 3",
+    title: "Vector3",
     category: "Constants",
     searchAliases: ["V3", "Vec3", "Float3"],
     cost: 0,
@@ -196,7 +223,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "const.vec4",
-    title: "Vector 4",
+    title: "Vector4",
     category: "Constants",
     searchAliases: ["V4", "Vec4", "Float4"],
     cost: 0,
@@ -221,7 +248,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "param.vec2",
-    title: "Vector 2 Parameter",
+    title: "Vector2 Parameter",
     category: "Parameter",
     cost: 0,
     inputs: [],
@@ -229,7 +256,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
   },
   {
     type: "param.vec3",
-    title: "Vector 3 Parameter",
+    title: "Vector3 Parameter",
     category: "Parameter",
     cost: 0,
     inputs: [],
@@ -267,7 +294,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
 ];
 
 const INPUT_NODES: MaterialNodeDefinition[] = [
-  { type: "input.vertexNormalWS", title: "Vertex Normal (World Space)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
+  { type: "input.vertexNormalWS", title: "Vertex Normal (World)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
   { type: "input.vertexNormal", title: "Vertex Normal (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
   { type: "input.vertexPosition", title: "Vertex Position (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "position", name: "Position", type: VEC3 }] },
   {
@@ -562,7 +589,8 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
 const MATH_NODES: MaterialNodeDefinition[] = [
   generic("math.add", "Add", "Math", ["a", "b"]),
   generic("math.subtract", "Subtract", "Math", ["a", "b"]),
-  generic("math.multiply", "Multiply", "Math", ["a", "b"]),
+  // B = 1 is the identity: a Multiply with only A wired passes A through instead of going black.
+  generic("math.multiply", "Multiply", "Math", ["a", "b"], 1, { b: 1 }),
   generic("math.divide", "Divide", "Math", ["a", "b"], 1, { b: 1 }),
   unaryGeneric("math.negate", "Negate"),
   unaryGeneric("math.reciprocal", "Reciprocal", "Math", 1, 1),
@@ -584,9 +612,9 @@ const MATH_NODES: MaterialNodeDefinition[] = [
   generic("math.atan2Degrees", "Arctangent 2 (Degrees)", "Math", ["y", "x"], 5, { x: 1 }),
   generic("math.pow", "Power", "Math", ["base", "exponent"], 3, { exponent: 1 }),
   unaryGeneric("math.exp", "Exponential", "Math", 2),
-  unaryGeneric("math.exp2", "Exponential 2", "Math", 2),
+  unaryGeneric("math.exp2", "Exponential (Base 2)", "Math", 2),
   unaryGeneric("math.log", "Logarithm", "Math", 2, 1),
-  unaryGeneric("math.log2", "Logarithm 2", "Math", 2, 1),
+  unaryGeneric("math.log2", "Logarithm (Base 2)", "Math", 2, 1),
   unaryGeneric("math.sqrt", "Square Root", "Math", 2),
   unaryGeneric("math.inverseSqrt", "Inverse Square Root", "Math", 2, 1),
   unaryGeneric("math.abs", "Absolute"),
@@ -600,7 +628,8 @@ const MATH_NODES: MaterialNodeDefinition[] = [
   generic("math.max", "Maximum", "Math", ["a", "b"]),
   generic("math.clamp", "Clamp", "Math", ["value", "min", "max"], 2, { max: 1 }),
   unaryGeneric("math.saturate", "Saturate"),
-  generic("math.mix", "Mix", "Math", ["a", "b", "alpha"], 2),
+  unaryGeneric("math.oneMinus", "One Minus"),
+  generic("math.mix", "Mix", "Math", ["a", "b", "alpha"], 2, { b: 1, alpha: 0.5 }),
   generic("math.step", "Step", "Math", ["edge", "value"]),
   generic(
     "math.smoothstep",
@@ -620,7 +649,8 @@ const NOISE_NODES: MaterialNodeDefinition[] = [
     category: "Noise",
     searchAliases: ["PerlinNoise", "simplex", "Simplex Perlin 3D"],
     cost: 32,
-    inputs: [{ id: "coordinates", name: "Coordinates", type: VEC3, defaultValue: [0, 0, 0] }],
+    // No default: unwired, the compiler feeds it the mesh or screen UV, as Voronoi's UV.
+    inputs: [{ id: "coordinates", name: "Coordinates", type: VEC3 }],
     outputs: [{ id: "out", name: "Value", type: FLOAT }],
   },
   {
@@ -646,7 +676,7 @@ const NOISE_NODES: MaterialNodeDefinition[] = [
     searchAliases: ["WorleyNoise", "cellular", "Worley 3D"],
     cost: 64,
     inputs: [
-      { id: "coordinates", name: "Coordinates", type: VEC3, defaultValue: [0, 0, 0] },
+      { id: "coordinates", name: "Coordinates", type: VEC3 },
       { id: "jitter", name: "Jitter", type: FLOAT, defaultValue: [1] },
     ],
     outputs: [
@@ -733,7 +763,7 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
     ],
   },
   {
-    type: "vector.mask", title: "VectorMask(R)", category: "Vector", cost: 0,
+    type: "vector.mask", title: "Component Mask (R)", category: "Vector", cost: 0,
     inputs: [{ id: "value", name: "Value", type: VEC4, defaultValue: [0, 0, 0, 0] }],
     outputs: [{ id: "out", name: "Out", type: FLOAT }],
   },
@@ -1066,6 +1096,13 @@ const LANDSCAPE_NODES: MaterialNodeDefinition[] = [
       { id: "weight", name: "Weight", type: FLOAT, defaultValue: [0] }], outputs: [{ id: "color", name: "Color", type: VEC3 }] },
 ];
 
+/** A node's own aliases plus the table's, so any node can be listed there. */
+function withSearchAliases(definition: MaterialNodeDefinition): MaterialNodeDefinition {
+  const listed = MATERIAL_SEARCH_ALIASES[definition.type];
+  if (!listed || listed === definition.searchAliases) return definition;
+  return { ...definition, searchAliases: [...(definition.searchAliases ?? []), ...listed] };
+}
+
 export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
   ...LANDSCAPE_NODES,
   ...CONSTANT_NODES,
@@ -1080,7 +1117,7 @@ export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
   ...CUSTOM_NODES,
   ...FUNCTION_NODES,
   ...OUTPUT_NODES,
-];
+].map(withSearchAliases);
 
 const BY_TYPE = new Map(
   MATERIAL_CATALOG.map((definition) => [definition.type, definition]),

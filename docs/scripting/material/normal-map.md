@@ -10,15 +10,15 @@ Turns a normal map colour into a world-space normal that follows the surface's s
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| Packed | Vector 3 | (0.5, 0.5, 1) | The raw colour of a normal map texture, such as the RGB output of [**Texture Sample**](texture-sample.md) set to Data (Linear). Unconnected, it is the flat normal, which leaves the surface as it is. |
-| UV | Vector 2 |  | The UV used to sample the normal map; the mesh UV when unconnected. |
+| Packed | Vector3 | (0.5, 0.5, 1) | The raw colour of a normal map texture, such as the RGB output of [**Texture Sample**](texture-sample.md) set to Data (Linear). Unconnected, it is the flat normal, which leaves the surface as it is. |
+| UV | Vector2 |  | The UV used to sample the normal map; the mesh UV when unconnected. |
 | Strength | Float | 1 | Scales how strongly the map bends the normal; 1 is the default. |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Normal | Vector 3 |
+| Normal | Vector3 |
 
 ## Notes
 

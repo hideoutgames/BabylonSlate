@@ -10,13 +10,13 @@ Returns the reflection a Mirror component shows at the current point of its surf
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| Offset | Vector 2 | (0, 0) | Shifts where the reflection is read, in fractions of the view's width and height. Small values distort it, for ripples or warped glass. |
+| Offset | Vector2 | (0, 0) | Shifts where the reflection is read, in fractions of the view's width and height. Small values distort it, for ripples or warped glass. |
 
 ## Outputs
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Color | Vector 3 | Reflected colour, as linear colour. |
+| Color | Vector3 | Reflected colour, as linear colour. |
 
 ## Notes
 

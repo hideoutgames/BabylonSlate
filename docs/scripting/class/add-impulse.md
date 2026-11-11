@@ -12,7 +12,7 @@ Applies an instant push to an actor's dynamic Rigid Body.
 | --- | --- | --- |
 | In | Exec |  |
 | Target | Actor Reference | Left unconnected the pin shows **Self** and uses the actor running the graph. |
-| Impulse | Vector 3 |  |
+| Impulse | Vector3 |  |
 | Strength | Float | Multiplies the impulse. Defaults to 1. |
 
 ## Outputs

@@ -56,10 +56,10 @@ export function rangePin(id: string, name: string, spec: RangeSpec) {
 
 /** The Random … In Range nodes, by id suffix and title; Seeded Random has one of each. */
 export const RANDOM_RANGE_NODES: ReadonlyArray<{ id: string; title: string; spec: RangeSpec }> = [
-  { id: "Int", title: "Integer", spec: INT_SPEC },
+  { id: "Int", title: "Int", spec: INT_SPEC },
   { id: "Float", title: "Float", spec: FLOAT_SPEC },
-  { id: "Vector2", title: "Vector 2", spec: VECTOR2_SPEC },
-  { id: "Vector", title: "Vector", spec: VECTOR_SPEC },
+  { id: "Vector2", title: "Vector2", spec: VECTOR2_SPEC },
+  { id: "Vector", title: "Vector3", spec: VECTOR_SPEC },
   { id: "Rotator", title: "Rotator", spec: ROTATOR_SPEC },
 ];
 
@@ -84,7 +84,7 @@ function clampNode(id: string, title: string, spec: RangeSpec): NodeDefinition {
     pins: () => [
       pin("value", "Value", "in", spec.type),
       rangePin("range", "Range", spec),
-      pin("result", "Result", "out", spec.type),
+      pin("result", "Out", "out", spec.type),
     ],
     codegen: (ctx) => ({
       result: `ctx.clampToRange(${JSON.stringify(spec.kind)}, ${ctx.input("value")}, ${ctx.input("range")})`,
@@ -102,7 +102,7 @@ function inRangeNode(id: string, title: string, spec: RangeSpec): NodeDefinition
     pins: () => [
       pin("value", "Value", "in", spec.type),
       rangePin("range", "Range", spec),
-      pin("result", "Result", "out", BOOL),
+      pin("result", "Out", "out", BOOL),
     ],
     codegen: (ctx) => ({
       result: `ctx.isInRange(${JSON.stringify(spec.kind)}, ${ctx.input("value")}, ${ctx.input("range")})`,
@@ -133,15 +133,15 @@ function curveObjectNodes(spec: CurveSpec): NodeDefinition[] {
       pins: () => [pin("curveAsset", "Curve Asset", "in", spec.asset), pin("object", "Object", "out", spec.object)],
       codegen: (ctx) => ({ object: `ctx.getCurveObject(${kind}, ${ctx.input("curveAsset")})` }),
     },
-    read("valueAtTime", "Get Value At Time", () => [target(), pin("time", "Time", "in", FLOAT), pin("value", "Value", "out", spec.value)],
+    read("valueAtTime", `Get Value At Time (${spec.title} Curve)`, () => [target(), pin("time", "Time", "in", FLOAT), pin("value", "Value", "out", spec.value)],
       (ctx) => ({ value: `ctx.curveObjectValue(${kind}, ${ctx.input("target")}, ${ctx.input("time")})` })),
-    read("timeRange", "Get Time Range", () => [target(), pin("timeRange", "Time Range", "out", FLOAT_RANGE)],
+    read("timeRange", `Get Time Range (${spec.title} Curve)`, () => [target(), pin("timeRange", "Time Range", "out", FLOAT_RANGE)],
       (ctx) => ({ timeRange: `ctx.curveObjectTimeRange(${ctx.input("target")})` })),
-    read("keyCount", "Get Key Count", () => [target(), pin("count", "Count", "out", INT)],
+    read("keyCount", `Get Key Count (${spec.title} Curve)`, () => [target(), pin("count", "Count", "out", INT)],
       (ctx) => ({ count: `ctx.curveObjectKeyCount(${ctx.input("target")})` })),
     read("curve", `Get ${spec.title} Curve`, () => [target(), pin("curve", "Curve", "out", spec.curve)],
       (ctx) => ({ curve: `ctx.curveObjectCurve(${kind}, ${ctx.input("target")})` })),
-    ...(spec.kind === "float" ? [read("valueRange", "Get Value Range", () => [target(), pin("valueRange", "Value Range", "out", FLOAT_RANGE)],
+    ...(spec.kind === "float" ? [read("valueRange", `Get Value Range (${spec.title} Curve)`, () => [target(), pin("valueRange", "Value Range", "out", FLOAT_RANGE)],
       (ctx) => ({ valueRange: `ctx.curveObjectValueRange(${ctx.input("target")})` }))] : []),
   ];
 }
@@ -182,10 +182,10 @@ function timeRangeNode(spec: CurveSpec): NodeDefinition {
 
 export const curveRangeNodes: NodeDefinition[] = [
   ...RANDOM_RANGE_NODES.map((entry) => randomNode(entry.id, entry.title, entry.spec)),
-  clampNode("Int", "Integer", INT_SPEC),
+  clampNode("Int", "Int", INT_SPEC),
   clampNode("Float", "Float", FLOAT_SPEC),
-  clampNode("Vector", "Vector", VECTOR_SPEC),
-  inRangeNode("Int", "Integer", INT_SPEC),
+  clampNode("Vector", "Vector3", VECTOR_SPEC),
+  inRangeNode("Int", "Int", INT_SPEC),
   inRangeNode("Float", "Float", FLOAT_SPEC),
   {
     id: "range.lerpFloat",
@@ -211,7 +211,7 @@ export const curveRangeNodes: NodeDefinition[] = [
       rangePin("from", "From", FLOAT_SPEC),
       rangePin("to", "To", FLOAT_SPEC),
       pin("clamp", "Clamp", "in", BOOL),
-      pin("result", "Result", "out", FLOAT),
+      pin("result", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
       result: `ctx.mapFloatRange(${ctx.input("value")}, ${ctx.input("from")}, ${ctx.input("to")}, ${ctx.input("clamp")})`,

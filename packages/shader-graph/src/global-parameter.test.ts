@@ -45,7 +45,7 @@ describe("Material Global Parameter node", () => {
     expect(hydrated(material({ collectionGuid: "fx", parameterId: "tint", valueType: "color" }), catalog))
       .toEqual({ title: "Sky Tint (Global Color)", outputs: ["out:vec4", "rgb:vec3"] });
     expect(hydrated(material({ collectionGuid: "fx", parameterId: "wind", valueType: "vec3" }), catalog))
-      .toEqual({ title: "Wind Direction (Global Vector 3)", outputs: ["out:vec3"] });
+      .toEqual({ title: "Wind Direction (Global Vector3)", outputs: ["out:vec3"] });
     expect(hydrated(material({ collectionGuid: "fx" }), catalog)).toEqual({ title: "Global Parameter", outputs: [] });
     // Without the project's collections the node keeps its type but cannot name it.
     expect(hydrated(material({ collectionGuid: "fx", parameterId: "wind", valueType: "float" })))
@@ -62,11 +62,11 @@ describe("Material Global Parameter node", () => {
 
   it("drops wires from outputs the new selection lacks", () => {
     const color = material({ collectionGuid: "fx", parameterId: "tint", valueType: "color" }, "rgb");
-    // Color → Vector 3: RGB is gone.
+    // Color → Vector3: RGB is gone.
     const vector = selectMaterialGlobalParameter(color, "global", "fx", { id: "wind", type: "vec3" });
     expect(vector.nodes.find((node) => node.id === "global")?.properties).toEqual({ collectionGuid: "fx", parameterId: "wind", valueType: "vec3" });
     expect(vector.edges.some((edge) => edge.sourceNodeId === "global")).toBe(false);
-    // A Vector 3's Out stays wired when it becomes a Color.
+    // A Vector3's Out stays wired when it becomes a Color.
     const wired = material({ collectionGuid: "fx", parameterId: "wind", valueType: "vec3" }, "out");
     expect(selectMaterialGlobalParameter(wired, "global", "fx", { id: "tint", type: "color" }).edges.some((edge) => edge.id === "global-base")).toBe(true);
     // The collection alone leaves no outputs; no collection clears the node.
@@ -85,7 +85,7 @@ describe("Material Global Parameter node", () => {
     expect(warnings({ collectionGuid: "fx", parameterId: "gone", valueType: "color" }))
       .toEqual(["warning: Global Parameter's parameter is no longer in its collection; it reads 0"]);
     expect(warnings({ collectionGuid: "fx", parameterId: "wind", valueType: "float" }))
-      .toEqual(["warning: \"Wind Direction\" is now a Vector 3 parameter; select it again to update this node"]);
+      .toEqual(["warning: \"Wind Direction\" is now a Vector3 parameter; select it again to update this node"]);
   });
 
   it("depends on the collection it reads, so Play and exports carry it", () => {

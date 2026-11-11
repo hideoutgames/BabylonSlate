@@ -126,8 +126,8 @@ export interface ParticlePaletteNode {
 /** Add Node **Parameter** entries that place a Parameter node of a new parameter, one per value type. */
 const NEW_PARAMETER_ENTRIES: readonly { type: ParticleNumericType; title: string }[] = [
   { type: "float", title: "Float Parameter" },
-  { type: "vec2", title: "Vector 2 Parameter" },
-  { type: "vec3", title: "Vector 3 Parameter" },
+  { type: "vec2", title: "Vector2 Parameter" },
+  { type: "vec3", title: "Vector3 Parameter" },
   { type: "color", title: "Color Parameter" },
 ];
 

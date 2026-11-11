@@ -4,14 +4,14 @@ node: vector.dot
 
 # Dot Product
 
-Returns the dot product of two Vector 3 values.
+Returns the dot product of two Vector3 values.
 
 ## Inputs
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| A | Vector 3 | (0, 0, 0) |
-| B | Vector 3 | (0, 0, 0) |
+| A | Vector3 | (0, 0, 0) |
+| B | Vector3 | (0, 0, 0) |
 
 ## Outputs
 

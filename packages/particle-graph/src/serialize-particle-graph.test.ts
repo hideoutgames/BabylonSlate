@@ -162,8 +162,8 @@ describe("particle graph canvas adapter", () => {
     const entries = palette.filter((entry) => entry.nodeType === "input.parameter");
     expect(entries.map(({ id, title, category }) => ({ id, title, category }))).toEqual([
       { id: "input.parameter:new:float", title: "Float Parameter", category: "Parameter" },
-      { id: "input.parameter:new:vec2", title: "Vector 2 Parameter", category: "Parameter" },
-      { id: "input.parameter:new:vec3", title: "Vector 3 Parameter", category: "Parameter" },
+      { id: "input.parameter:new:vec2", title: "Vector2 Parameter", category: "Parameter" },
+      { id: "input.parameter:new:vec3", title: "Vector3 Parameter", category: "Parameter" },
       { id: "input.parameter:new:color", title: "Color Parameter", category: "Parameter" },
     ]);
     // No parameter yet; the editor declares one when it is placed.

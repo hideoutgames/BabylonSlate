@@ -23,5 +23,5 @@ Sets how fast game time runs, for slow motion or a freeze.
 
 - Takes effect from the next simulation step, for everything that moves with game time: physics, animation, tweens, [**Delay**](delay.md) and the **Delta Seconds** of [**Event Tick**](event-tick.md) and [**Get Delta Seconds**](get-delta-seconds.md).
 - Events keep running at the same rate. At 0, **Event Tick** still runs, but its **Delta Seconds** is 0, so anything scaled by it stands still.
-- For something that should keep normal speed, such as a pause menu, use [**Get Real Time Seconds**](get-real-time-seconds.md).
+- For something that should keep normal speed, such as a pause menu, use [**Get Real Time In Seconds**](get-real-time-in-seconds.md).
 - The same as the `slomo` console command.

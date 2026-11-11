@@ -42,14 +42,14 @@ export function normalizeIntSwitchCases(raw: unknown): {
     if (typeof entry === "string" && entry.trim() === "") {
       warnings.push({
         code: "flow.switch.empty_case",
-        message: "Empty Switch on Int case was removed.",
+        message: "Empty Switch On Int case was removed.",
       });
       continue;
     }
     if (entry === "" || entry === null || entry === undefined) {
       warnings.push({
         code: "flow.switch.empty_case",
-        message: "Empty Switch on Int case was removed.",
+        message: "Empty Switch On Int case was removed.",
       });
       continue;
     }
@@ -64,7 +64,7 @@ export function normalizeIntSwitchCases(raw: unknown): {
     if (!Number.isInteger(numeric)) {
       warnings.push({
         code: "flow.switch.invalid_int",
-        message: "Non-integer Switch on Int case was removed.",
+        message: "Non-integer Switch On Int case was removed.",
         value: String(entry),
       });
       continue;
@@ -74,7 +74,7 @@ export function normalizeIntSwitchCases(raw: unknown): {
     if (seen.has(value)) {
       warnings.push({
         code: "flow.switch.duplicate_case",
-        message: `Duplicate Switch on Int case ${value} was removed.`,
+        message: `Duplicate Switch On Int case ${value} was removed.`,
         value: String(value),
       });
       continue;
@@ -98,14 +98,14 @@ export function normalizeStringSwitchCases(raw: unknown): {
     if (entry === null || entry === undefined) {
       warnings.push({
         code: "flow.switch.empty_case",
-        message: "Empty Switch on String case was removed.",
+        message: "Empty Switch On String case was removed.",
       });
       continue;
     }
     if (typeof entry !== "string") {
       warnings.push({
         code: "flow.switch.invalid_string",
-        message: "Non-string Switch on String case was removed.",
+        message: "Non-string Switch On String case was removed.",
         value: String(entry),
       });
       continue;
@@ -113,14 +113,14 @@ export function normalizeStringSwitchCases(raw: unknown): {
     if (entry.trim() === "") {
       warnings.push({
         code: "flow.switch.empty_case",
-        message: "Empty Switch on String case was removed.",
+        message: "Empty Switch On String case was removed.",
       });
       continue;
     }
     if (seen.has(entry)) {
       warnings.push({
         code: "flow.switch.duplicate_case",
-        message: `Duplicate Switch on String case ${JSON.stringify(entry)} was removed.`,
+        message: `Duplicate Switch On String case ${JSON.stringify(entry)} was removed.`,
         value: entry,
       });
       continue;

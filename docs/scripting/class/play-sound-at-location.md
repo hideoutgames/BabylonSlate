@@ -12,7 +12,7 @@ Plays an Audio asset at a fixed point in the world.
 | --- | --- | --- |
 | In | Exec |  |
 | Sound | Audio Asset |  |
-| Location | Vector 3 | Where the sound is heard from. |
+| Location | Vector3 | Where the sound is heard from. |
 | Volume | Float | Level from 0 to 1, multiplied with the Audio asset's own volume. Defaults to 1, and other values are clamped. |
 | Pitch Multiplier | Float | Multiplies the Audio asset's pitch, from 0.25 to 4. Defaults to 1. |
 

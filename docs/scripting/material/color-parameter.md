@@ -10,15 +10,15 @@ Outputs a named colour that can be changed at runtime or overridden per Material
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| RGBA | Vector 4 | Red, green, blue and alpha. |
-| RGB | Vector 3 | Red, green and blue only, for three-channel inputs such as **Base Color**. |
+| RGBA | Vector4 | Red, green, blue and alpha. |
+| RGB | Vector3 | Red, green and blue only, for three-channel inputs such as **Base Color**. |
 
 ## Settings
 
 | Setting | Description |
 | --- | --- |
 | Parameter Name | The unique name used to set the parameter from a Node Graph or a Material Instance. A taken name gets **_1**, **_2** and so on. |
-| Type | **Float**, **Vector 2**, **Vector 3**, **Color** or **Texture**. Changing it turns the node into that parameter, resizing the default. |
+| Type | **Float**, **Vector2**, **Vector3**, **Color** or **Texture**. Changing it turns the node into that parameter, resizing the default. |
 | Per Instance | Lets each actor drawn with the material have its own value while still drawing together with the others. |
 | Color | The default colour, picked with the colour picker. |
 | Default Value | The default red, green, blue and alpha values as numbers. |

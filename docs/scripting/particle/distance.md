@@ -4,14 +4,14 @@ node: vector.distance
 
 # Distance
 
-Returns the straight-line distance between two Vector 3 positions.
+Returns the straight-line distance between two Vector3 positions.
 
 ## Inputs
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| A | Vector 3 | (0, 0, 0) |
-| B | Vector 3 | (0, 0, 0) |
+| A | Vector3 | (0, 0, 0) |
+| B | Vector3 | (0, 0, 0) |
 
 ## Outputs
 

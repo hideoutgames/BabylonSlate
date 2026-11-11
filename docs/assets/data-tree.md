@@ -40,4 +40,4 @@ Double-tap a Data Tree to open it.
 - [Data Definition](data-definition.md)
 - [Read Data Entry](../scripting/class/read-data-entry.md)
 - [Read Unknown Data Entry](../scripting/class/read-unknown-data-entry.md)
-- [Async Read Unknown Data Entry](../scripting/class/async-read-unknown-data-entry.md)
+- [Read Unknown Data Entry (Async)](../scripting/class/read-unknown-data-entry-async.md)

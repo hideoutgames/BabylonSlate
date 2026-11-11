@@ -470,7 +470,7 @@ export interface ScriptContext {
   getTimeNow(): TimeOfDay;
   /** Get Date Now: the engine Date Structure for the wall clock in UTC. */
   getDateNow(): CalendarDate;
-  /** Get Time MS: Unix time in milliseconds. */
+  /** Get Time In Milliseconds: Unix time in milliseconds. */
   getTimeMs(): number;
   /** Get Time Dilation: 1 is normal speed; 1 outside a simulation. */
   getTimeDilation(): number;
@@ -478,7 +478,7 @@ export interface ScriptContext {
   setTimeDilation(rate: unknown): void;
   /** Get Game Time In Seconds: dilated steps since the session started, including the current one. */
   getGameTimeSeconds(): number;
-  /** Get Real Time Seconds: the same steps without time dilation. */
+  /** Get Real Time In Seconds: the same steps without time dilation. */
   getRealTimeSeconds(): number;
   /** Get Local Time Now: the engine Time Structure in the device's time zone. */
   getLocalTimeNow(): TimeOfDay;
@@ -532,11 +532,11 @@ export interface ScriptContext {
     kind: "event" | "function",
     params: readonly string[],
   ): EventDelegate | null;
-  /** Bind Event to <Dispatcher>: adds `delegate` once to `owner`'s dispatcher `name`. */
+  /** Bind Event To <Dispatcher>: adds `delegate` once to `owner`'s dispatcher `name`. */
   bindDispatcher(owner: unknown, name: string, delegate: unknown): void;
-  /** Unbind Event from <Dispatcher>. */
+  /** Unbind Event From <Dispatcher>. */
   unbindDispatcher(owner: unknown, name: string, delegate: unknown): void;
-  /** Unbind All Events from <Dispatcher>. */
+  /** Unbind All Events From <Dispatcher>. */
   unbindAllDispatcher(owner: unknown, name: string): void;
   /**
    * Call <Dispatcher>: runs every event bound to `owner`'s dispatcher `name`
@@ -682,11 +682,11 @@ export interface ScriptContext {
   ): void;
   /** Set Global Float / Vector / Color Parameter: the session value of `name` in Global Parameter Collection `collection`. */
   setGlobalFloatParameter(collection: unknown, name: string, value: number): void;
-  /** A Vector 2 parameter takes X and Y. */
+  /** A Vector2 parameter takes X and Y. */
   setGlobalVectorParameter(collection: unknown, name: string, value: Vec3): void;
   setGlobalColorParameter(collection: unknown, name: string, value: ScriptColor): void;
   getGlobalFloatParameter(collection: unknown, name: string): { found: boolean; value: number };
-  /** A Vector 2 parameter reads with Z 0. */
+  /** A Vector2 parameter reads with Z 0. */
   getGlobalVectorParameter(collection: unknown, name: string): { found: boolean; value: Vec3 };
   getGlobalColorParameter(collection: unknown, name: string): { found: boolean; value: ScriptColor };
   setMaterialColorParameter(
@@ -694,7 +694,7 @@ export interface ScriptContext {
     name: string,
     value: ScriptColor,
   ): void;
-  /** A Vector 2 parameter takes X and Y. */
+  /** A Vector2 parameter takes X and Y. */
   setMaterialVectorParameter(material: unknown, name: string, value: Vec3): void;
   setMaterialTextureParameter(
     material: unknown,
@@ -705,7 +705,7 @@ export interface ScriptContext {
   getPostProcessEntry(owner: unknown, entryId: string): PostProcessMaterialObject | null;
   getMaterialFloatParameter(material: unknown, name: string): { found: boolean; value: number };
   getMaterialColorParameter(material: unknown, name: string): { found: boolean; value: ScriptColor };
-  /** A Vector 2 parameter reads with Z 0. */
+  /** A Vector2 parameter reads with Z 0. */
   getMaterialVectorParameter(material: unknown, name: string): { found: boolean; value: Vec3 };
   getMaterialTextureParameter(material: unknown, name: string): { found: boolean; value: string | null };
   resetMaterialFloatParameter(material: unknown, name: string): boolean;

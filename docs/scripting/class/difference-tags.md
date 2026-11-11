@@ -17,7 +17,7 @@ Returns a TagContainer with the Tags from the first that are not in the second.
 
 | Pin | Type |
 | --- | --- |
-| Result | TagContainer |
+| Out | TagContainer |
 
 ## Notes
 

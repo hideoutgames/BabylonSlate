@@ -10,7 +10,7 @@ Returns the particle's direction multiplied by the seconds simulated this frame.
 
 | Pin | Type |
 | --- | --- |
-| Scaled Direction | Vector 3 |
+| Scaled Direction | Vector3 |
 
 ## Notes
 

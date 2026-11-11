@@ -32,7 +32,7 @@ function pinType(graphNode: GraphNode, pinId: string) {
   return graphNode.pins.find((entry) => entry.id === pinId)?.type;
 }
 
-/** Begin Play → Bind Event to the graph's own On Damaged, its Event wired from `source.sourcePin`. */
+/** Begin Play → Bind Event To the graph's own On Damaged, its Event wired from `source.sourcePin`. */
 function bindGraph(registry: NodeRegistry, source: GraphNode, sourcePin: string): LogicGraph {
   return {
     id: "g",

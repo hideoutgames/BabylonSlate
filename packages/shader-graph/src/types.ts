@@ -25,9 +25,9 @@ const COMPONENTS: Record<MaterialValueType, number> = {
 
 const LABELS: Record<MaterialValueType, string> = {
   float: "Float",
-  vec2: "Vector 2",
-  vec3: "Vector 3",
-  vec4: "Vector 4",
+  vec2: "Vector2",
+  vec3: "Vector3",
+  vec4: "Vector4",
   texture: "Texture",
 };
 

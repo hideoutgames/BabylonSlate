@@ -22,7 +22,7 @@ function compare(id: string, title: string, operator: string): NodeDefinition {
   return {
     id, title, category: "tags", pure: true,
     searchAliases: [operator],
-    pins: () => [input("a", "A", TAG), input("b", "B", TAG), pin("out", "Result", "out", BOOL)],
+    pins: () => [input("a", "A", TAG), input("b", "B", TAG), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `(${ctx.input("a")} ${operator} ${ctx.input("b")})` }),
   };
 }
@@ -30,7 +30,7 @@ function compare(id: string, title: string, operator: string): NodeDefinition {
 function binaryContainer(id: string, title: string, operation: string, type = TAG_CONTAINER): NodeDefinition {
   return {
     id, title, category: "tags", pure: true,
-    pins: () => [input("a", "A", TAG_CONTAINER), input("b", "B", TAG_CONTAINER), pin("out", "Result", "out", type)],
+    pins: () => [input("a", "A", TAG_CONTAINER), input("b", "B", TAG_CONTAINER), pin("out", "Out", "out", type)],
     codegen: (ctx) => ({ out: `__tags.${operation}(${ctx.input("a")}, ${ctx.input("b")})` }),
   };
 }
@@ -83,28 +83,28 @@ export const tagNodes: NodeDefinition[] = [
   {
     id: "tags.matches", title: "Matches Tag", category: "tags", pure: true,
     description: "A child Tag matches its parent categories unless Exact Match is enabled.",
-    pins: () => [input("value", "Tag", TAG), input("query", "Query", TAG), exactPin(), pin("out", "Result", "out", BOOL)],
+    pins: () => [input("value", "Tag", TAG), input("query", "Query", TAG), exactPin(), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `__tags.match(${ctx.input("value")}, ${ctx.input("query")}, ${ctx.input("exact")})` }),
   },
   {
     id: "tags.isValid", title: "Is Valid Tag", category: "tags", pure: true,
-    pins: () => [input("value", "Tag", TAG), pin("out", "Result", "out", BOOL)],
+    pins: () => [input("value", "Tag", TAG), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `__tags.valid(${ctx.input("value")})` }),
   },
   {
-    id: "tags.toString", title: "Tag To String", category: "tags", pure: true,
+    id: "tags.toString", title: "To String (Tag)", category: "tags", pure: true,
     pins: () => [input("value", "Tag", TAG), pin("out", "Name", "out", STRING)],
     codegen: (ctx) => ({ out: `__tags.name(${ctx.input("value")})` }),
   },
   {
     id: "tags.has", title: "Has Tag", category: "tags", pure: true,
-    pins: () => [input("container", "Container", TAG_CONTAINER), input("tag", "Tag", TAG), exactPin(), pin("out", "Result", "out", BOOL)],
+    pins: () => [input("container", "Container", TAG_CONTAINER), input("tag", "Tag", TAG), exactPin(), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `__tags.has(${ctx.input("container")}, ${ctx.input("tag")}, ${ctx.input("exact")})` }),
   },
   ...(["Any", "All"] as const).map((quantifier): NodeDefinition => ({
     id: `tags.has${quantifier}`, title: `Has ${quantifier} Tags`, category: "tags", pure: true,
     description: quantifier === "Any" ? "True when at least one query Tag matches; empty queries return false." : "True when every query Tag matches; empty queries return true.",
-    pins: () => [input("container", "Container", TAG_CONTAINER), input("queries", "Queries", TAG_CONTAINER), exactPin(), pin("out", "Result", "out", BOOL)],
+    pins: () => [input("container", "Container", TAG_CONTAINER), input("queries", "Queries", TAG_CONTAINER), exactPin(), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `__tags.${quantifier.toLowerCase()}(${ctx.input("container")}, ${ctx.input("queries")}, ${ctx.input("exact")})` }),
   })),
   ...(["Add", "Remove"] as const).map((operation): NodeDefinition => ({
@@ -119,13 +119,13 @@ export const tagNodes: NodeDefinition[] = [
     codegen: () => ({ out: "({ Tags: [] })" }),
   },
   {
-    id: "tags.count", title: "Tag Count", category: "tags", pure: true,
+    id: "tags.count", title: "Get Tag Count", category: "tags", pure: true,
     pins: () => [input("container", "Container", TAG_CONTAINER), pin("out", "Count", "out", INT)],
     codegen: (ctx) => ({ out: `__tags.container(${ctx.input("container")}).Tags.length` }),
   },
   {
     id: "tags.isEmpty", title: "Is TagContainer Empty", category: "tags", pure: true,
-    pins: () => [input("container", "Container", TAG_CONTAINER), pin("out", "Result", "out", BOOL)],
+    pins: () => [input("container", "Container", TAG_CONTAINER), pin("out", "Out", "out", BOOL)],
     codegen: (ctx) => ({ out: `(__tags.container(${ctx.input("container")}).Tags.length === 0)` }),
   },
   binaryContainer("tags.containerEquals", "Equal TagContainer", "equals", BOOL),
@@ -149,7 +149,7 @@ export const tagNodes: NodeDefinition[] = [
     pins: (properties) => [
       input("index", "Tag", TAG), exactPin(true),
       ...tagCasesOf(properties).map((tag) => input(tagOptionPinId(tag), caseName(properties, tag), RESOLVING_WILDCARD)),
-      input("default", "Default", RESOLVING_WILDCARD), pin("out", "Result", "out", RESOLVING_WILDCARD),
+      input("default", "Default", RESOLVING_WILDCARD), pin("out", "Out", "out", RESOLVING_WILDCARD),
     ],
     codegen: (ctx) => {
       const cases = tagCasesOf(ctx.node.properties);

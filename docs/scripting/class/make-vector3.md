@@ -4,7 +4,7 @@ node: vector.make3
 
 # Make Vector3
 
-Builds a Vector 3 from X, Y and Z numbers.
+Builds a Vector3 from X, Y and Z numbers.
 
 ## Inputs
 
@@ -18,4 +18,4 @@ Builds a Vector 3 from X, Y and Z numbers.
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |

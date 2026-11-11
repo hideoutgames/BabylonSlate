@@ -10,7 +10,7 @@ A Save Game stores a player's progress, such as coins or the last checkpoint, in
 4. Under **Save Setup**, choose **Use As Project Default**. You can also pick it in **Project Settings > Save Games > Default Definition**.
 5. Optionally change **Default Slot** and **Default Profile**. Use profiles to keep several players' saves apart, and slots for manual saves. Keep the names short and not empty: **Project Settings > Save Games** marks a **Default Slot** or **Default Profile** that a save cannot store.
 
-Fields can be Boolean, Integer, Float, String, Tag, TagContainer, Enum, Vector 2, Vector 3, Vector 4, Rotator, Quaternion, Color, Transform, Actor Reference, Class Reference, Asset Reference or Structure, as one value, an Array or a Map. A Map field's **Get Save** node returns a Map, and **Set Save** takes one. A Structure field holds any Structure without object references, such as an **Int Range** or a **Float Curve** ([Curves and ranges](curves-and-ranges.md)); choose it under **Structure**. An Enum field holds one member of the Enum you choose under **Enum**. To keep the fields in one place, a Save Game can take them from a [Data Definition](../assets/save-game.md#fields-from-a-data-definition). Renaming a field keeps existing saves working. When an older save loads, fields it does not have get their default value.
+Fields can be Boolean, Integer, Float, String, Tag, TagContainer, Enum, Vector2, Vector3, Vector4, Rotator, Quaternion, Color, Transform, Actor Reference, Class Reference, Asset Reference or Structure, as one value, an Array or a Map. A Map field's **Get Save** node returns a Map, and **Set Save** takes one. A Structure field holds any Structure without object references, such as an **Int Range** or a **Float Curve** ([Curves and ranges](curves-and-ranges.md)); choose it under **Structure**. An Enum field holds one member of the Enum you choose under **Enum**. To keep the fields in one place, a Save Game can take them from a [Data Definition](../assets/save-game.md#fields-from-a-data-definition). Renaming a field keeps existing saves working. When an older save loads, fields it does not have get their default value.
 
 ## Save and load
 
@@ -52,7 +52,7 @@ Saved actors belong to the scene that is active when you save; switch to that sc
 Renaming a field or adding one with a default needs no extra work. For other changes, such as new units, raise **Advanced > Schema Version** in the Save Game's **Inspector**, then:
 
 1. In **Event On Init**, before **Load Game**, call [Register Save Migration](class/register-save-migration.md) with **From Version** set to the old version.
-2. Handle [Event Save Migration](class/event-save-migration.md) and convert values with the **Get Migration** and **Set Migration** field nodes, or [Get Migration Field](class/get-migration-field.md) and [Set Migration Field](class/set-migration-field.md).
+2. Handle [Event On Save Migration](class/event-on-save-migration.md) and convert values with the **Get Migration** and **Set Migration** field nodes, or [Get Migration Field](class/get-migration-field.md) and [Set Migration Field](class/set-migration-field.md).
 3. Register a step for every version up to the current one.
 
 ## Test saves in the editor

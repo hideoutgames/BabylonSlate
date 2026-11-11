@@ -311,7 +311,7 @@ describe("ScriptHost utility bindings", () => {
     expect(shown).toEqual(["Door Guard", ""]);
   });
 
-  it("Add World Offset mutates actor location in place", () => {
+  it("Add Actor World Offset mutates actor location in place", () => {
     const actor = new Actor({ classId: "Actor" });
     actor.transform.position.x = 1;
     actor.transform.position.y = 2;

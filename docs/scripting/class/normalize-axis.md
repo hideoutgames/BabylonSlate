@@ -16,7 +16,7 @@ Wraps an angle in degrees to between -180 and 180.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

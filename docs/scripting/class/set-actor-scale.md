@@ -12,7 +12,7 @@ Sets the scale of an actor on each axis.
 | --- | --- |
 | In | Exec |
 | Target | Actor Reference |
-| Scale | Vector 3 |
+| Scale | Vector3 |
 
 ## Outputs
 

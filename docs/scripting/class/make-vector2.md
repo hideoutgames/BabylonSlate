@@ -4,7 +4,7 @@ node: vector.make2
 
 # Make Vector2
 
-Builds a Vector 2 from X and Y numbers.
+Builds a Vector2 from X and Y numbers.
 
 ## Inputs
 
@@ -17,4 +17,4 @@ Builds a Vector 2 from X and Y numbers.
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 2 |
+| Out | Vector2 |

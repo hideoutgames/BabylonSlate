@@ -49,7 +49,7 @@ function registry(): NodeRegistry {
   });
   nodes.register({
     id: "input.onAnyKeyPressed",
-    title: "On Any Key Pressed",
+    title: "Event On Any Key Pressed",
     category: "input",
     pins: () => [
       pin("Then", "Then", "out", EXEC),

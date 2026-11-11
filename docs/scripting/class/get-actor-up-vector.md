@@ -16,7 +16,7 @@ Returns the direction above an actor, as a unit vector along its up axis.
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

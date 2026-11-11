@@ -16,7 +16,7 @@ Returns true when a Tag exists in the project's Tags.
 
 | Pin | Type |
 | --- | --- |
-| Result | Boolean |
+| Out | Boolean |
 
 ## Notes
 

@@ -378,7 +378,7 @@ describe("Material details panel", () => {
     view.rerender(<MaterialDetailsPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("property-material-global-parameter-parameter"));
     const tint = await screen.findByRole("option", { name: "Sky Tint (Color)" });
-    expect(screen.getByRole("option", { name: "Wind (Vector 3)" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Wind (Vector3)" })).toBeTruthy();
     fireEvent.pointerDown(tint);
     fireEvent.click(tint);
     expect(lastCommit().nodes.find((node) => node.id === "global")?.properties).toEqual({
@@ -568,7 +568,7 @@ describe("Material graph panel", () => {
     harness.content = lastCommit() as unknown as Record<string, unknown>;
     view.rerender(<MaterialDetailsPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("property-parameterType"));
-    const vector = await screen.findByRole("option", { name: "Vector 3" });
+    const vector = await screen.findByRole("option", { name: "Vector3" });
     fireEvent.pointerDown(vector);
     fireEvent.click(vector);
     expect(lastCommit().nodes.find((node) => node.id === "renamed")).toMatchObject({

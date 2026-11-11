@@ -10,7 +10,7 @@ Returns the texture coordinates of the surface, particle quad or text glyph bein
 
 | Pin | Type |
 | --- | --- |
-| UV | Vector 2 |
+| UV | Vector2 |
 
 ## Settings
 

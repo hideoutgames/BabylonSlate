@@ -32,7 +32,7 @@ describe("runtime global parameters", () => {
     // A streamed Scene lists only its own collections; the others stay.
     globals.mergeCatalog({ more: [{ id: "glow", name: "Glow", type: "color", defaultValue: [1, 1, 1, 1] }] });
     expect(globals.get("fx", "Heat", ["float"]).value).toEqual([5]);
-    // Wind became a Vector 3: its Vector 2 value no longer fits.
+    // Wind became a Vector3: its Vector2 value no longer fits.
     globals.mergeCatalog({ fx: [catalog.fx[0], { id: "wind", name: "Wind", type: "vec3", defaultValue: [0, 0, 1] }] });
     expect(globals.get("fx", "Wind", ["vec3"]).value).toEqual([0, 0, 1]);
     expect(globals.get("more", "Glow", ["color"]).found).toBe(true);
@@ -44,7 +44,7 @@ describe("runtime global parameters", () => {
     globals.replaceCatalog(catalog);
     globals.set("fx", "Wind", [3, 4, 5], ["vec2", "vec3"]);
     globals.set("fx", "Missing", [1], ["float"]);
-    // Wind becomes a Vector 3, so the renderer drops its Vector 2 value too.
+    // Wind becomes a Vector3, so the renderer drops its Vector2 value too.
     globals.mergeCatalog({ fx: [catalog.fx[0], { id: "wind", name: "Wind", type: "vec3", defaultValue: [0, 0, 1] }] });
     expect(commands).toEqual([
       { type: "setGlobalParameter", collectionGuid: "fx", parameterId: "wind", value: [3, 4] },

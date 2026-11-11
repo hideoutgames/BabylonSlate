@@ -11,7 +11,7 @@ Pushes each particle with a random force read from a noise texture, so particles
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
 | Particle | Particle |  |  |
-| Strength | Vector 3 (m/s²) | (2, 2, 2) | The largest push on each axis, in metres per second squared. |
+| Strength | Vector3 (m/s²) | (2, 2, 2) | The largest push on each axis, in metres per second squared. |
 
 ## Outputs
 

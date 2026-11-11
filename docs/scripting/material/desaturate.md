@@ -10,14 +10,14 @@ Blends a colour toward grey by the amount set in Level.
 
 | Pin | Type | Default |
 | --- | --- | --- |
-| Color | Vector 3 | (1, 1, 1) |
+| Color | Vector3 | (1, 1, 1) |
 | Level | Float | 1 |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

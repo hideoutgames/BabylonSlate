@@ -10,7 +10,7 @@ Returns the position of the surface point in world space, in metres.
 
 | Pin | Type |
 | --- | --- |
-| Position | Vector 3 |
+| Position | Vector3 |
 
 ## Notes
 

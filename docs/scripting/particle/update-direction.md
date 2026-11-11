@@ -11,7 +11,7 @@ Sets the velocity of every particle each frame.
 | Pin | Type | Description |
 | --- | --- | --- |
 | Particle | Particle |  |
-| Direction | Vector 3 | Velocity in metres per second. |
+| Direction | Vector3 | Velocity in metres per second. |
 
 ## Outputs
 

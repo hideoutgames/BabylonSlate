@@ -22,5 +22,5 @@ Limits a value so that it stays between a minimum and a maximum.
 
 ## Notes
 
-- Accepts a Float, Vector 2 or Vector 3, but not a Color.
+- Accepts a Float, Vector2 or Vector3, but not a Color.
 - **Min** and **Max** are Floats applied to every component.

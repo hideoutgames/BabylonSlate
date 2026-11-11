@@ -33,4 +33,4 @@ Runs when a chosen Input Axis moves away from zero, stays active or returns to z
 ## Notes
 
 - Only in event graphs of classes that support [**Event Tick**](event-tick.md), not in functions or Animation Graphs.
-- **Value** is a Vector 2 for a 2D axis, and a number from -1 to 1 for a 1D axis.
+- **Value** is a Vector2 for a 2D axis, and a number from -1 to 1 for a 1D axis.

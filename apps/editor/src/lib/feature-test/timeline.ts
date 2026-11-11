@@ -189,7 +189,7 @@ export function placeTimelinePavilion(ctx: FeatureTestContext, scene: Serialized
 /**
  * `FT_TimelineListener` and its actor in the pavilion. Begin Play: Get
  * Timeline Object Reference From Timeline Asset on its `Story` variable
- * (Asset Type Timeline, FT_Timeline), Bind Event to On Door Open (Door Loop),
+ * (Asset Type Timeline, FT_Timeline), Bind Event To On Door Open (Door Loop),
  * and assert Get Loaded Timeline Clips holds only Door Loop (FT_World loads
  * no other clip of FT_Timeline). The handler asserts the Angle and the clip.
  */
@@ -212,7 +212,7 @@ export async function placeTimelineListener(ctx: FeatureTestContext, scene: Seri
       gNode("begin", "flow.event.beginPlay", 0, 0),
       getVar("get-story", story, 0, 200),
       gNode("timeline", TIMELINE_FROM_ASSET_NODE_ID, 240, 200),
-      gNode("bind", "flow.dispatcher.bind", 520, 0, { title: `Bind Event to ${name}`, name, classId: timelineClassId(timelineGuid), implicitSelf: false, pins }),
+      gNode("bind", "flow.dispatcher.bind", 520, 0, { title: `Bind Event To ${name}`, name, classId: timelineClassId(timelineGuid), implicitSelf: false, pins }),
       gNode("loaded", TIMELINE_LOADED_CLIPS_NODE_ID, 520, 200),
       gNode("loaded-count", "array.length", 780, 200),
       gNode("assert-loaded", "debug.assertEqual", 780, 0, { "default:expected": 1, "default:message": "FT_World should load only Door Loop of FT_Timeline" }),
@@ -244,7 +244,7 @@ export async function placeTimelineListener(ctx: FeatureTestContext, scene: Seri
  * handle on each face. Begin Play: Create FT_DoorSwing Timeline Clip on
  * FT_Timeline's Timeline with Door bound to Self, keep the instance in
  * `Swing`, Bind Handle Glow Proxy to both lights (one proxy holds both; all
- * Relative, so each door swings from where it stands), Bind Event to its On
+ * Relative, so each door swings from where it stands), Bind Event To its On
  * Swing Open, play it and assert Get Handle Glow Proxy holds the two lights.
  * Two are placed, turned differently, beside the pavilion.
  */
@@ -275,7 +275,7 @@ export async function placeTimelineSwingDoors(ctx: FeatureTestContext, scene: Se
       gNode("create", TIMELINE_CREATE_CLIP_NODE_ID, 280, 0, create),
       setVar("keep", swing, 560, 0),
       gNode("bind", "flow.dispatcher.bind", 820, 0, {
-        title: `Bind Event to ${SWING_OPEN_EVENT}`, name: SWING_OPEN_EVENT, classId: clipClassId, implicitSelf: false, pins: [],
+        title: `Bind Event To ${SWING_OPEN_EVENT}`, name: SWING_OPEN_EVENT, classId: clipClassId, implicitSelf: false, pins: [],
       }),
       gNode("bind-glow", TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, 700, 200, { ...glowProxy }),
       gNode("bind-back-glow", TIMELINE_PROXY_BIND_COMPONENT_NODE_ID, 700, 400, { ...glowProxy }),

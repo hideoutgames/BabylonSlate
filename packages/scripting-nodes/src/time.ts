@@ -112,7 +112,7 @@ export const timeNodes: NodeDefinition[] = [
   },
   {
     id: "time.getRealTimeSeconds",
-    title: "Get Real Time Seconds",
+    title: "Get Real Time In Seconds",
     category: "time",
     description: "Returns the time since Play started, in seconds, ignoring time dilation.",
     searchAliases: ["elapsed", "unscaled time", "real time", "time since start"],
@@ -122,7 +122,7 @@ export const timeNodes: NodeDefinition[] = [
   },
   {
     id: "time.getTimeMs",
-    title: "Get Time MS",
+    title: "Get Time In Milliseconds",
     category: "time",
     description: "Returns the current Unix time: milliseconds since 1 January 1970 UTC.",
     searchAliases: ["unix", "epoch", "timestamp", "milliseconds", "now"],

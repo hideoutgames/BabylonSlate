@@ -116,7 +116,7 @@ describe("enum nodes", () => {
     expect(compiled.source).toContain('"Blue"');
   });
 
-  it("compiles Switch on Enum to if/else if/else on member names", () => {
+  it("compiles Switch On Enum to if/else if/else on member names", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",

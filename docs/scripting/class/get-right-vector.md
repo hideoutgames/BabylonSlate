@@ -16,7 +16,7 @@ Returns the right direction of a rotator as a unit vector.
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

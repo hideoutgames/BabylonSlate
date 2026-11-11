@@ -11,14 +11,14 @@ Finds the point on the navigation mesh nearest to a position.
 | Pin | Type |
 | --- | --- |
 | In | Exec |
-| Point | Vector 3 |
+| Point | Vector3 |
 
 ## Outputs
 
 | Pin | Type |
 | --- | --- |
 | Out | Exec |
-| Closest | Vector 3 |
+| Closest | Vector3 |
 | Found | Boolean |
 
 ## Notes

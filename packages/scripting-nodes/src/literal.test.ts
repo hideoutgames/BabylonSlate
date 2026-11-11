@@ -53,7 +53,7 @@ describe("literal nodes", () => {
       classRef("Object"),
     );
     expect(registry.get("literal.makeAsset")!.title).toBe("Make Asset");
-    expect(registry.get("literal.makeQuat")!.title).toBe("Make Quaternion");
+    expect(registry.get("literal.makeQuat")!.title).toBe("Make Quaternion (Literal)");
     expect(registry.get("literal.makeQuat")!.pins({})[0]?.type).toEqual({
       kind: "quat",
     });

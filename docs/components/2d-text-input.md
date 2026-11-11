@@ -31,7 +31,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Tex
 - <kbd>Enter</kbd> confirms. <kbd>Escape</kbd> puts back the text from before the edit.
 - Text that is wider than the field shrinks to fit.
 - Change the text from a graph with **Set Text**.
-- [Event On Text Changed](../scripting/class/event-on-ui-text-changed.md) runs as the text changes. [Event On Text Submitted](../scripting/class/event-on-text-submitted.md) runs when the player confirms it.
+- [Event On UI Text Changed](../scripting/class/event-on-ui-text-changed.md) runs as the text changes. [Event On Text Submitted](../scripting/class/event-on-text-submitted.md) runs when the player confirms it.
 
 ## Related
 

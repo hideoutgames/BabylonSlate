@@ -122,7 +122,7 @@ describe("range and curve nodes", () => {
     expect(run([inRange], { node: "in", pin: "result", type: { kind: "bool" } })).toBe(true);
   });
 
-  it("draws Random Integer In Range from the seeded generator, repeatably", () => {
+  it("draws Random Int In Range from the seeded generator, repeatably", () => {
     const random = () => node(registry, "random", "range.randomInt", { "default:range": { Min: 1, Max: 100 } });
     const draw = (seed: number) => run([random()], { node: "random", pin: "value", type: { kind: "int" } }, [], seed);
     const expected = randomInRange("int", { Min: 1, Max: 100 }, createSeededRng(42));

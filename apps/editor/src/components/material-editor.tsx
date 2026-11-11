@@ -269,14 +269,14 @@ function useTextureExists(): (guid: string) => boolean {
 
 const MATERIAL_PARAMETER_TYPE_OPTIONS: { value: MaterialParameterValueType; label: string }[] = [
   { value: "float", label: "Float" },
-  { value: "vec2", label: "Vector 2" },
-  { value: "vec3", label: "Vector 3" },
+  { value: "vec2", label: "Vector2" },
+  { value: "vec3", label: "Vector3" },
   { value: "color", label: "Color" },
   { value: "texture", label: "Texture" },
 ];
 
 /**
- * The node menu's **Convert to Parameter** on a Float, Vector 2, Vector 3 or Color Constant and
+ * The node menu's **Convert to Parameter** on a Float, Vector2, Vector3 or Color Constant and
  * **Convert to Constant** on a parameter that is not a Texture. It reads the document as it is
  * when picked.
  */

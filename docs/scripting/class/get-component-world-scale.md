@@ -16,7 +16,7 @@ Returns the component's scale in the world.
 
 | Pin | Type |
 | --- | --- |
-| World Scale | Vector 3 |
+| World Scale | Vector3 |
 
 ## Notes
 

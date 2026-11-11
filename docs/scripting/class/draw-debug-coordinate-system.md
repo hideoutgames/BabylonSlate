@@ -11,7 +11,7 @@ Draws red, green and blue axis lines for a position and rotation.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Origin | Vector 3 |  |
+| Origin | Vector3 |  |
 | Rotation | Rotator | Orientation in degrees (pitch, yaw, roll). |
 | Scale | Float | Length of each axis line in world units. |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |

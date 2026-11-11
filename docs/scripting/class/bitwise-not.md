@@ -16,7 +16,7 @@ Flips every bit of an integer.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Integer |
+| Out | Integer |
 
 ## Notes
 

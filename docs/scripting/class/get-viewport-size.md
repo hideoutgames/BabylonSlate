@@ -10,7 +10,7 @@ Returns the size of the game view.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Size | Vector 2 | Width and height in pixels. |
+| Size | Vector2 | Width and height in pixels. |
 | Aspect Ratio | Float | Width divided by height, such as 1.78 for a 16:9 view. |
 
 ## Notes

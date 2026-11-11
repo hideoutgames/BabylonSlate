@@ -63,7 +63,7 @@ function helperNode(
 
 const value = (type: PinType = FLOAT): Input => ["value", "Value", type];
 const ab = (type: PinType): Input[] => [["a", "A", type], ["b", "B", type]];
-const out = (type: PinType, name = "Return Value"): [string, string, PinType] => ["out", name, type];
+const out = (type: PinType, name = "Out"): [string, string, PinType] => ["out", name, type];
 
 /** Wraps degrees into (-180, 180]. */
 const NORMALIZE_AXIS_BODY = "{ const w = ((a % 360) + 360) % 360; return w > 180 ? w - 360 : w; }";
@@ -108,7 +108,7 @@ const MATH_NODES: NodeDefinition[] = [
       pin("b", "B", "in", FLOAT, "data", true, 1),
       pin("alpha", "Alpha", "in", FLOAT),
       pin("curve", "Curve", "in", enumRef(ENGINE_EASING_CURVE_ENUM_ID), "data", true, "linear"),
-      pin("out", "Return Value", "out", FLOAT),
+      pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
       out: hoistedCall(ctx, "__util_ease", "a, b, t", "(a + (b - a) * t)",
@@ -125,7 +125,7 @@ const MATH_NODES: NodeDefinition[] = [
       + " const d = n(a - center); return d > half ? n(center + half) : d < -half ? n(center - half) : n(a); }",
     "Angle in degrees limited to the arc from Min Angle Degrees round to Max Angle Degrees, returned between -180 and 180.", ["limit angle"],
     [NORMALIZE_AXIS]),
-  pureNode("math.xor", "Boolean Xor", "math", ab(BOOL), out(BOOL), (a, b) => `((${a}) !== (${b}))`,
+  pureNode("math.xor", "Xor Bool", "math", ab(BOOL), out(BOOL), (a, b) => `((${a}) !== (${b}))`,
     "True when exactly one of A and B is true.", ["xor", "exclusive or"]),
   pureNode("math.bitwiseAnd", "Bitwise And", "math", ab(INT), out(INT), (a, b) => `((${a}) & (${b}))`,
     "The bits set in both A and B.", ["&", "and bits", "mask"]),
@@ -139,21 +139,21 @@ const MATH_NODES: NodeDefinition[] = [
     "Value's bits moved Shift places toward the high end; each place doubles it.", ["<<", "bit shift"]),
   pureNode("math.shiftRight", "Shift Right", "math", [value(INT), ["shift", "Shift", INT, 1]], out(INT), (v, s) => `((${v}) >> (${s}))`,
     "Value's bits moved Shift places toward the low end, keeping its sign; each place halves it, rounding down.", [">>", "bit shift"]),
-  helperNode("math.floatInterpTo", "Float Interp To", "math", interpPins(FLOAT), out(FLOAT),
+  helperNode("math.floatInterpTo", "Interp To Float", "math", interpPins(FLOAT), out(FLOAT),
     "__util_finterp", "c, t, dt, s", `(s <= 0 ? t : (t - c) * (t - c) < ${ARRIVED} ? t : c + (t - c) * Math.min(Math.max(dt * s, 0), 1))`,
     "Moves Current toward Target by a share of the remaining distance each call, so it slows as it arrives. Interp Speed 0 jumps to Target.", ["finterp", "interp to", "smooth follow"]),
-  helperNode("math.floatInterpToConstant", "Float Interp To Constant", "math", interpPins(FLOAT), out(FLOAT),
+  helperNode("math.floatInterpToConstant", "Interp To Constant Float", "math", interpPins(FLOAT), out(FLOAT),
     "__util_finterpConst", "c, t, dt, s", `(s <= 0 ? t : (t - c) * (t - c) < ${ARRIVED} ? t : c + Math.min(Math.max(t - c, -dt * s), dt * s))`,
     "Moves Current toward Target by at most Interp Speed per second. Interp Speed 0 jumps to Target.", ["finterp constant", "move towards"]),
 ];
 
 const VECTOR_NODES: NodeDefinition[] = [
-  helperNode("vector.interpTo", "Vector Interp To", "vector", interpPins(VEC3), out(VEC3),
+  helperNode("vector.interpTo", "Interp To Vector3", "vector", interpPins(VEC3), out(VEC3),
     "__util_vinterp", "c, t, dt, s",
     `{ const dx = t.x - c.x, dy = t.y - c.y, dz = t.z - c.z; if (s <= 0 || dx * dx + dy * dy + dz * dz < ${ARRIVED}) return { ...t };`
       + ` const k = Math.min(Math.max(dt * s, 0), 1); return ${VEC("c.x + dx * k", "c.y + dy * k", "c.z + dz * k")}; }`,
     "Moves Current toward Target by a share of the remaining distance each call, so it slows as it arrives. Interp Speed 0 jumps to Target.", ["vinterp", "interp to", "smooth follow"]),
-  helperNode("vector.interpToConstant", "Vector Interp To Constant", "vector", interpPins(VEC3), out(VEC3),
+  helperNode("vector.interpToConstant", "Interp To Constant Vector3", "vector", interpPins(VEC3), out(VEC3),
     "__util_vinterpConst", "c, t, dt, s",
     `{ const dx = t.x - c.x, dy = t.y - c.y, dz = t.z - c.z, d = Math.hypot(dx, dy, dz); const step = dt * s;`
       + ` if (s <= 0 || d * d < ${ARRIVED} || d <= step) return { ...t }; if (!(step > 0)) return { ...c };`
@@ -163,37 +163,37 @@ const VECTOR_NODES: NodeDefinition[] = [
     "__util_unitDirection", "f, t",
     `{ const dx = t.x - f.x, dy = t.y - f.y, dz = t.z - f.z, d = Math.hypot(dx, dy, dz); return d > 1e-8 ? ${VEC("dx / d", "dy / d", "dz / d")} : ${VEC("0", "0", "0")}; }`,
     "The direction from From to To, one unit long. Zero when they are the same point.", ["direction", "look direction"]),
-  helperNode("vector.angleBetween", "Angle Between Vectors", "vector", ab(VEC3), out(FLOAT, "Degrees"),
+  helperNode("vector.angleBetween", "Angle Between Vector3", "vector", ab(VEC3), out(FLOAT, "Degrees"),
     "__util_angleBetween", "a, b",
     "{ const l = Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z); if (!(l > 0)) return 0;"
       + " return Math.acos(Math.min(1, Math.max(-1, (a.x * b.x + a.y * b.y + a.z * b.z) / l))) * 180 / Math.PI; }",
     "The angle between A and B in degrees, from 0 to 180. 0 when either is zero.", ["angle", "angle between"]),
-  helperNode("vector.projectOnTo", "Project Vector On To Vector", "vector", [["vector", "Vector", VEC3], ["target", "Target", VEC3]], out(VEC3),
+  helperNode("vector.projectOnTo", "Project Vector3 On To Vector3", "vector", [["vector", "Vector", VEC3], ["target", "Target", VEC3]], out(VEC3),
     "__util_project", "v, t",
     `{ const l = t.x * t.x + t.y * t.y + t.z * t.z; if (!(l > 0)) return ${VEC("0", "0", "0")}; const k = (v.x * t.x + v.y * t.y + v.z * t.z) / l;`
       + ` return ${VEC("t.x * k", "t.y * k", "t.z * k")}; }`,
     "The part of Vector that points along Target. Zero when Target is zero.", ["project"]),
-  helperNode("vector.projectOnToPlane", "Project Vector On To Plane", "vector", [["vector", "Vector", VEC3], ["planeNormal", "Plane Normal", VEC3]], out(VEC3),
+  helperNode("vector.projectOnToPlane", "Project Vector3 On To Plane", "vector", [["vector", "Vector", VEC3], ["planeNormal", "Plane Normal", VEC3]], out(VEC3),
     "__util_projectPlane", "v, n",
     `{ const l = n.x * n.x + n.y * n.y + n.z * n.z; if (!(l > 0)) return { ...v }; const k = (v.x * n.x + v.y * n.y + v.z * n.z) / l;`
       + ` return ${VEC("v.x - n.x * k", "v.y - n.y * k", "v.z - n.z * k")}; }`,
     "Vector with the part along Plane Normal removed, so it lies flat in the plane. Plane Normal need not be one unit long.", ["flatten", "project plane"]),
-  helperNode("vector.mirrorByNormal", "Mirror Vector By Normal", "vector", [["vector", "Vector", VEC3], ["normal", "Normal", VEC3]], out(VEC3),
+  helperNode("vector.mirrorByNormal", "Mirror Vector3 By Normal", "vector", [["vector", "Vector", VEC3], ["normal", "Normal", VEC3]], out(VEC3),
     "__util_mirror", "v, n",
     `{ const l = n.x * n.x + n.y * n.y + n.z * n.z; if (!(l > 0)) return { ...v }; const k = 2 * (v.x * n.x + v.y * n.y + v.z * n.z) / l;`
       + ` return ${VEC("v.x - n.x * k", "v.y - n.y * k", "v.z - n.z * k")}; }`,
     "Vector bounced off a surface facing Normal, as a ball's velocity bounces off a wall.", ["reflect", "bounce", "mirror"]),
-  helperNode("vector.clampSize", "Clamp Vector Size", "vector", [["vector", "Vector", VEC3], ["min", "Min", FLOAT, 0], ["max", "Max", FLOAT, 1]], out(VEC3),
+  helperNode("vector.clampSize", "Clamp Vector3 Size", "vector", [["vector", "Vector", VEC3], ["min", "Min", FLOAT, 0], ["max", "Max", FLOAT, 1]], out(VEC3),
     "__util_clampSize", "v, lo, hi",
     `{ const d = Math.hypot(v.x, v.y, v.z); if (!(d > 1e-8)) return { ...v }; const k = Math.min(Math.max(d, lo), Math.max(lo, hi)) / d;`
       + ` return ${VEC("v.x * k", "v.y * k", "v.z * k")}; }`,
     "Vector in the same direction, with its length kept between Min and Max. A zero vector stays zero.", ["clamp length", "limit speed"]),
-  helperNode("vector.nearlyEqual", "Vector3 Nearly Equal", "vector", [...ab(VEC3), ["tolerance", "Tolerance", FLOAT, 0.0001]], out(BOOL),
+  helperNode("vector.nearlyEqual", "Nearly Equal Vector3", "vector", [...ab(VEC3), ["tolerance", "Tolerance", FLOAT, 0.0001]], out(BOOL),
     "__util_nearlyEqual3", "a, b, t", "(Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t && Math.abs(a.z - b.z) <= t)",
     "True when every axis of A and B differs by no more than Tolerance.", ["equal", "approximately"]),
   helperNode("vector.negate", "Negate Vector3", "vector", [["vector", "Vector", VEC3]], out(VEC3),
     "__util_negate3", "v", VEC("-v.x", "-v.y", "-v.z"), "Vector pointing the opposite way.", ["invert", "reverse", "opposite"]),
-  helperNode("rotator.interpTo", "Rotator Interp To", "rotator", interpPins(ROTATOR), out(ROTATOR),
+  helperNode("rotator.interpTo", "Interp To Rotator", "rotator", interpPins(ROTATOR), out(ROTATOR),
     "__util_rinterp", "c, t, dt, s",
     `{ const n = __util_normalizeAxis; const dp = n(t.pitch - c.pitch), dy = n(t.yaw - c.yaw), dr = n(t.roll - c.roll);`
       + ` if (s <= 0 || dp * dp + dy * dy + dr * dr < ${ARRIVED}) return { ...t }; const k = Math.min(Math.max(dt * s, 0), 1);`
@@ -210,7 +210,7 @@ const STRING_NODES: NodeDefinition[] = [
   helperNode("string.reverse", "Reverse String", "string", [["string", "String", STRING]], out(STRING),
     "__util_reverseString", "s", "Array.from(String(s ?? \"\")).reverse().join(\"\")",
     "String with its characters in the opposite order.", ["reverse", "backwards"]),
-  pureNode("string.isEmpty", "String Is Empty", "string", [["string", "String", STRING]], out(BOOL),
+  pureNode("string.isEmpty", "Is String Empty", "string", [["string", "String", STRING]], out(BOOL),
     (s) => `(String(${s} ?? "").length === 0)`, "True when String has no characters.", ["is empty", "empty string", "blank"]),
   helperNode("string.padLeft", "Pad Left", "string",
     [["string", "String", STRING], ["length", "Length", INT, 0], ["padCharacter", "Pad Character", STRING, " "]], out(STRING),
@@ -267,7 +267,7 @@ const ARRAY_NODES: NodeDefinition[] = [
     // Descending is read once, before the sort: the comparator runs for every pair.
     (ctx, array) => `{ const __dir = ${ctx.input("descending")} === true ? -1 : 1; ${ctx.output("out")} = ${array}.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0) * __dir); }`,
     "A copy of Array in ascending order, or descending with Descending. Numbers sort by value, text alphabetically by character code.", ["sort", "order"]),
-  arrayAction("array.addUnique", "Add Unique", [pin("item", "Item", "in", T)], [pin("index", "Index", "out", INT)],
+  arrayAction("array.addUnique", "Add Unique Array Item", [pin("item", "Item", "in", T)], [pin("index", "Index", "out", INT)],
     (ctx, array) => {
       const index = hasValueTypePin(ctx, "item") ? `${VALUE_INDEX_OF}(__a, __item)` : "__a.indexOf(__item)";
       return `{ const __a = ${array}; const __item = ${ctx.input("item")}; let __i = ${index}; if (__i < 0) { __i = __a.length; __a.push(__item); } ${ctx.output("out")} = __a; ${ctx.output("index")} = __i; }`;

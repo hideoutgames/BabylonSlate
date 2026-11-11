@@ -2,7 +2,7 @@
 node: wildcard.to_float
 ---
 
-# Wildcard To float
+# Wildcard To Float
 
 Converts an Any value to a Float and reports whether it worked.
 

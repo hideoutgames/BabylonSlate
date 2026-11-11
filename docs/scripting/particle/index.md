@@ -80,8 +80,8 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 | --- | --- |
 | [Color](color.md) | Returns a fixed colour, including alpha, that you set in the **Inspector**. |
 | [Float](float.md) | Returns a fixed number that you set in the **Inspector**. |
-| [Vector 2](vector-2.md) | Returns a fixed Vector 2 that you set in the **Inspector**. |
-| [Vector 3](vector-3.md) | Returns a fixed Vector 3 that you set in the **Inspector**. |
+| [Vector2](vector2.md) | Returns a fixed Vector2 that you set in the **Inspector**. |
+| [Vector3](vector3.md) | Returns a fixed Vector3 that you set in the **Inspector**. |
 
 ## Parameter
 
@@ -147,11 +147,11 @@ Nodes for Particle Graph emitters, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
-| [Combine](combine.md) | Builds a Vector 2, Vector 3 or Color from separate Float values. |
-| [Distance](distance.md) | Returns the straight-line distance between two Vector 3 positions. |
-| [Dot Product](dot-product.md) | Returns the dot product of two Vector 3 values. |
-| [Length](length.md) | Returns the length of a Vector 3. |
-| [Split](split.md) | Splits a Vector 2, Vector 3 or Color into separate Float components. |
+| [Combine](combine.md) | Builds a Vector2, Vector3 or Color from separate Float values. |
+| [Distance](distance.md) | Returns the straight-line distance between two Vector3 positions. |
+| [Dot Product](dot-product.md) | Returns the dot product of two Vector3 values. |
+| [Length](length.md) | Returns the length of a Vector3. |
+| [Split](split.md) | Splits a Vector2, Vector3 or Color into separate Float components. |
 
 ## Logic
 

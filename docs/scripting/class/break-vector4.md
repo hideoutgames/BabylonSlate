@@ -4,13 +4,13 @@ node: vector.break4
 
 # Break Vector4
 
-Splits a Vector 4 into its X, Y, Z and W numbers.
+Splits a Vector4 into its X, Y, Z and W numbers.
 
 ## Inputs
 
 | Pin | Type |
 | --- | --- |
-| In | Vector 4 |
+| In | Vector4 |
 
 ## Outputs
 

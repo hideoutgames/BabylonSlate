@@ -11,8 +11,8 @@ Sweeps a sphere from a start point to an end point and reports the first hit.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Start | Vector 3 |  |
-| End | Vector 3 |  |
+| Start | Vector3 |  |
+| End | Vector3 |  |
 | Radius | Float |  |
 | Channel | CollisionChannel | Limits which colliders the sphere can hit, as on [**Line Trace**](line-trace.md). Defaults to All. |
 
@@ -23,8 +23,8 @@ Sweeps a sphere from a start point to an end point and reports the first hit.
 | Out | Exec |  |
 | Hit Result | HitResult | All results in one structure. Use **Break Hit Result** to read its fields. |
 | Hit | Boolean |  |
-| Location | Vector 3 | The point on the surface that was hit. |
-| Normal | Vector 3 |  |
+| Location | Vector3 | The point on the surface that was hit. |
+| Normal | Vector3 |  |
 | Distance | Float | How far the centre of the sphere travelled before the hit, in world units. |
 | Actor | Actor Reference | The actor that was hit, or an empty reference on a miss. |
 

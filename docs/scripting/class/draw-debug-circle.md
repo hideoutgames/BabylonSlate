@@ -11,7 +11,7 @@ Draws a circle outline at a world position.
 | Pin | Type | Description |
 | --- | --- | --- |
 | In | Exec |  |
-| Center | Vector 3 |  |
+| Center | Vector3 |  |
 | Radius | Float | Circle radius in world units. |
 | Rotation | Rotator | Orientation in degrees (pitch, yaw, roll). |
 | Color | Color | Line colour. Alpha is ignored. Defaults to white. |

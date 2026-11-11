@@ -16,7 +16,7 @@ Multiplies a number by itself.
 
 | Pin | Type |
 | --- | --- |
-| Return Value | Float |
+| Out | Float |
 
 ## Notes
 

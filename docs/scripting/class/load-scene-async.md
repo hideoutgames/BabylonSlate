@@ -2,7 +2,7 @@
 node: sceneStreaming.loadSceneAsync
 ---
 
-# Load Scene Async
+# Load Scene (Async)
 
 Starts loading a Scene Streaming Actor's Scene while the game keeps running.
 

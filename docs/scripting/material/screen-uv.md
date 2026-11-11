@@ -10,7 +10,7 @@ Returns where the current pixel sits on the screen, from 0 to 1 on each axis.
 
 | Pin | Type |
 | --- | --- |
-| UV | Vector 2 |
+| UV | Vector2 |
 
 ## Notes
 

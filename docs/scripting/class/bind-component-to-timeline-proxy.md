@@ -2,7 +2,7 @@
 node: timelineProxy.bindComponent
 ---
 
-# Bind Component to Timeline Proxy
+# Bind Component To Timeline Proxy
 
 Adds a component to a Component proxy of a Timeline Clip asset instance, so the proxy's tracks animate it.
 

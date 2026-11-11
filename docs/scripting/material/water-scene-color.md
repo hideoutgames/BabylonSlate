@@ -10,14 +10,14 @@ Returns the scene behind the water at this point, bent by the waves as built-in 
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| Normal | Vector 3 |  | The surface normal that bends the view. The [**Water Waves**](water-waves.md) Normal when unconnected, else straight up. |
+| Normal | Vector3 |  | The surface normal that bends the view. The [**Water Waves**](water-waves.md) Normal when unconnected, else straight up. |
 | Refraction | Float |  | How far the view bends. The asset's **Refraction** when unconnected. |
 
 ## Outputs
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Color | Vector 3 | Linear colour of what lies behind the water. Black where Available is 0. |
+| Color | Vector3 | Linear colour of what lies behind the water. Black where Available is 0. |
 | Available | Float | 1 where Color came from the scene, 0 where it is not available. It eases from 0 to 1 just behind the silhouette of an object in front of the water. |
 
 ## Notes

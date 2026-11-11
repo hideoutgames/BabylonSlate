@@ -18,7 +18,7 @@ const definitionPin = () => pin(DATA_DEFINITION_PIN_ID, "Data Definition", "in",
 /** Data Definitions supply typed values; trees are navigated by exact name paths. */
 export const dataNodes: NodeDefinition[] = [
   {
-    id: "data.readEntryAsync", title: "Async Read Unknown Data Entry", category: "data", latent: true,
+    id: "data.readEntryAsync", title: "Read Unknown Data Entry (Async)", category: "data", latent: true,
     description: "Loads a Data Tree chosen while the game runs and the Data Definition picked on the node, then reads an independent entry copy. Ownership follows this runtime object.",
     searchAliases: ["data tree", "load data", "record", "configuration", "read data entry async"],
     pins: properties => [

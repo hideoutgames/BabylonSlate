@@ -16,7 +16,7 @@ Maps a Value from 0 to 1 onto a colour gradient that you edit in the **Inspector
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Settings
 

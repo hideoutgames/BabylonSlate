@@ -307,9 +307,9 @@ const PIN_TYPE_LABEL: Record<string, string> = {
   float: "Float",
   string: "String",
   tag: "Tag",
-  vec2: "Vector 2",
-  vec3: "Vector 3",
-  vec4: "Vector 4",
+  vec2: "Vector2",
+  vec3: "Vector3",
+  vec4: "Vector4",
   rotator: "Rotator",
   quat: "Quaternion",
   color: "Color",
@@ -331,7 +331,7 @@ function pinTypeText(value: unknown): string {
   return typeof value === "string" ? value.trim().replace(/^engine:/, "") : "";
 }
 
-/** The type as a player of the editor reads it: `Float`, `Vector 3`, `Door`, `Class (Door)`. */
+/** The type as a player of the editor reads it: `Float`, `Vector3`, `Door`, `Class (Door)`. */
 export function pinTypeDisplayName(
   type: PinTypeLike,
   names?: PinTypeNames,

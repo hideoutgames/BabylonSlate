@@ -16,7 +16,7 @@ Returns the component's location in the world.
 
 | Pin | Type |
 | --- | --- |
-| World Location | Vector 3 |
+| World Location | Vector3 |
 
 ## Notes
 

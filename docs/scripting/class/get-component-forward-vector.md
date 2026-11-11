@@ -16,7 +16,7 @@ Returns the component's forward direction in the world, of length 1.
 
 | Pin | Type |
 | --- | --- |
-| Out | Vector 3 |
+| Out | Vector3 |
 
 ## Notes
 

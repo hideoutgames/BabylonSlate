@@ -19,10 +19,10 @@ Nothing loads by itself. Call these nodes with the Scene Streaming actor as **Ta
 
 | Node | What it does |
 | --- | --- |
-| [Load Scene Async](../scripting/class/load-scene-async.md) | Starts loading while the game keeps running. |
-| [Load Scene Blocking](../scripting/class/load-scene-blocking.md) | Pauses the game until the scene is ready, then continues. |
-| [Unload Scene Async](../scripting/class/unload-scene-async.md) | Starts removing the streamed scene while the game keeps running. |
-| [Unload Scene Blocking](../scripting/class/unload-scene-blocking.md) | Pauses the game until the streamed scene is removed. |
+| [Load Scene (Async)](../scripting/class/load-scene-async.md) | Starts loading while the game keeps running. |
+| [Load Scene (Blocking)](../scripting/class/load-scene-blocking.md) | Pauses the game until the scene is ready, then continues. |
+| [Unload Scene (Async)](../scripting/class/unload-scene-async.md) | Starts removing the streamed scene while the game keeps running. |
+| [Unload Scene (Blocking)](../scripting/class/unload-scene-blocking.md) | Pauses the game until the streamed scene is removed. |
 
 To check on a load, use [Is Scene Loaded](../scripting/class/is-scene-loaded.md), [Get Scene State](../scripting/class/get-scene-state.md) (Unloaded, Loading, Loaded or Unloading), [Get Scene Load Progress](../scripting/class/get-scene-load-progress.md) (0 to 1) and [Get Target Scene Name](../scripting/class/get-target-scene-name.md). A Scene Subsystem receives [Event On Streamed Scene Loaded](../scripting/class/event-on-streamed-scene-loaded.md) and [Event On Streamed Scene Unloaded](../scripting/class/event-on-streamed-scene-unloaded.md).
 
