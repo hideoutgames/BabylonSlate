@@ -72,6 +72,11 @@ export type CodegenState = {
    */
   readonly sharedInputNodes: ReadonlySet<string>;
   /**
+   * Pure data outputs (`<node id>:<pin id>`) that two or more wires read. Each is memoized per
+   * executing statement, so its readers see one evaluation of it.
+   */
+  readonly sharedOutputs: ReadonlySet<string>;
+  /**
    * Statement-scoped memos: each holds the value computed during the current
    * `__stmt` epoch. Every emitted exec node, each While Loop condition check
    * and each For Loop bound check after the first starts a new epoch.
@@ -131,6 +136,7 @@ export function createCodegenState(
         })
         .map((node) => node.id),
     ),
+    sharedOutputs: sharedPureOutputs(graph, index, options),
     memoDecls: [],
     memoByKey: new Map<string, string>(),
     useEpoch: false,
@@ -138,6 +144,26 @@ export function createCodegenState(
     outputDecls: new Map<string, string>(),
     isAsync: false,
   };
+}
+
+function sharedPureOutputs(graph: LogicGraph, index: GraphIndex, options: CompileOptions): Set<string> {
+  const shared = new Set<string>();
+  for (const node of graph.nodes) {
+    if (!options.registry.get(node.typeId)?.pure) continue;
+    const readers = new Map<string, number>();
+    for (const edge of index.outgoing(node.id)) {
+      const pin = findPin(node, edge.sourcePinId);
+      if (pin?.kind !== "data") continue;
+      // A variable's own output stays a live read: a node of the same statement can write it
+      // through a reference (a Seeded Random draw moves its Seed on), and a later reader of the
+      // statement must see that.
+      if (pin.reference === "writable" || pin.byReference === true) continue;
+      const count = (readers.get(edge.sourcePinId) ?? 0) + 1;
+      readers.set(edge.sourcePinId, count);
+      if (count === 2) shared.add(`${node.id}:${edge.sourcePinId}`);
+    }
+  }
+  return shared;
 }
 
 /** Resets the per-entry fields before an entry point is emitted. */

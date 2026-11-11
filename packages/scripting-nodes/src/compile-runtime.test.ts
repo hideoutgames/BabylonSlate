@@ -111,6 +111,33 @@ describe("compiler emits runnable JavaScript", () => {
     expect(logged).toEqual([2]);
   });
 
+  it("gives both inputs of an Add the one number a Random Float drew for that exec node", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = { id: "g", kind: "event", nodes: [
+      node(registry, "entry", "flow.entry"),
+      node(registry, "random", "math.random"),
+      node(registry, "add", "math.add"),
+      node(registry, "first", "debug.log"),
+      node(registry, "second", "debug.log"),
+    ], edges: [
+      edge("e1", "entry", "execOut", "first", "execIn"),
+      edge("e2", "first", "execOut", "second", "execIn"),
+      edge("e3", "random", "out", "add", "a"),
+      edge("e4", "random", "out", "add", "b"),
+      edge("e5", "add", "out", "first", "message"),
+      edge("e6", "add", "out", "second", "message"),
+    ] };
+    let draws = 0;
+    const logged: unknown[] = [];
+    (loadModule(compileGraph(graph, { assetGuid: "a", registry }).source).run as (ctx: unknown) => void)({
+      random: { float: () => (draws += 1) },
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logged.push(value),
+    });
+    // One draw per exec node that reads it: 1 + 1, then 2 + 2. A draw per wire would log 3 and 7.
+    expect({ draws, logged }).toEqual({ draws: 2, logged: [2, 4] });
+  });
+
   it("supports two ExecuteJavaScript nodes in one exec chain", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

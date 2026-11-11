@@ -21,14 +21,19 @@ export function createPureExpressions(graph: LogicGraph, registry: NodeRegistry)
     transparent.set(node.id, result);
     return result;
   }
+  /** A value no later read can see change: an immutable kind computed from constants alone. */
+  function isConstant(node: GraphNode, pin: GraphPin): boolean {
+    const immutable = ["bool", "int", "tag", "float", "string", "enumRef", "classRef", "assetRef"].includes(pin.type.kind);
+    return immutable && isTransparent(node);
+  }
   return {
     declarations,
+    isConstant,
     expression(node: GraphNode, pin: GraphPin, expression: string): string {
       if (expression.length <= 512) return `(${expression})`;
       const name = `_pure_${declarations.length}`;
       // Mutable values preserve the identity/allocation semantics of each read.
-      const immutable = ["bool", "int", "tag", "float", "string", "enumRef", "classRef", "assetRef"].includes(pin.type.kind);
-      if (immutable && isTransparent(node)) {
+      if (isConstant(node, pin)) {
         declarations.push(`  let ${name}_ready = false, ${name}_value;\n  const ${name} = () => { if (!${name}_ready) { ${name}_value = (${expression}); ${name}_ready = true; } return ${name}_value; };`);
       } else {
         declarations.push(`  const ${name} = () => (${expression});`);
