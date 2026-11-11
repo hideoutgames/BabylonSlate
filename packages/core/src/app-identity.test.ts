@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appIconSizeProblem, defaultAppId, isValidAppId, normalizeAppIdentity, resolvedAppIdentity } from "./app-identity";
+import { appIconCrop, appIconSizeHint, defaultAppId, isValidAppId, normalizeAppIdentity, resolvedAppIdentity } from "./app-identity";
 
 describe("App identity", () => {
   it("accept only app IDs Apple and Android both accept", () => {
@@ -21,10 +21,18 @@ describe("App identity", () => {
     for (const iconTextureGuid of ["", "  ", 7, null]) expect(normalizeAppIdentity({ iconTextureGuid }).iconTextureGuid).toBeNull();
   });
 
-  it("accept an App Icon source only when square and at least 1024 pixels", () => {
-    expect(appIconSizeProblem({ width: 1024, height: 1024 })).toBeNull();
-    expect(appIconSizeProblem({ width: 2048, height: 2048 })).toBeNull();
-    expect(appIconSizeProblem({ width: 1024, height: 1023 })).toBe("The App Icon must be square; this image is 1024 × 1023.");
-    expect(appIconSizeProblem({ width: 1023, height: 1023 })).toBe("The App Icon must be at least 1024 × 1024; this image is 1023 × 1023.");
+  it("cut the centre square of any App Icon source", () => {
+    expect(appIconCrop({ width: 1024, height: 1024 })).toEqual({ x: 0, y: 0, edge: 1024 });
+    expect(appIconCrop({ width: 1920, height: 1080 })).toEqual({ x: 420, y: 0, edge: 1080 });
+    expect(appIconCrop({ width: 300, height: 501 })).toEqual({ x: 0, y: 100, edge: 300 });
+  });
+
+  it("note a cropped or scaled-up App Icon source without refusing it", () => {
+    expect(appIconSizeHint({ width: 1024, height: 1024 })).toBeNull();
+    expect(appIconSizeHint({ width: 4096, height: 4096 })).toBeNull();
+    expect(appIconSizeHint({ width: 2048, height: 1024 })).toBe("This image is 2048 × 1024. The centre 1024 × 1024 is used.");
+    expect(appIconSizeHint({ width: 1023, height: 1023 })).toBe("This image is 1023 × 1023. Icons up to 1024 × 1024 are scaled up and may look soft.");
+    expect(appIconSizeHint({ width: 640, height: 480 })).toBe(
+      "This image is 640 × 480. The centre 480 × 480 is used. Icons up to 1024 × 1024 are scaled up and may look soft.");
   });
 });

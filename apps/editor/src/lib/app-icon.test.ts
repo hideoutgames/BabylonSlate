@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IndexedAsset } from "@haptic/assets";
-import { appIconTextureProblem, readAppIconSource, type AppIconSourceHost } from "./app-icon";
+import { appIconTextureHint, appIconTextureProblem, readAppIconSource, type AppIconSourceHost } from "./app-icon";
 
 type Chunk = { id: string; kind?: string; mime?: string };
 
@@ -39,10 +39,14 @@ describe("App Icon source", () => {
     await expect(readAppIconSource(host(asset("Texture", [{ id: "pixels", kind: "pixels" }])), "tex-icon")).rejects.toThrow("has no source image");
   });
 
-  it("flags a Texture packaging would refuse from its source size, and passes one whose size is unknown", () => {
+  it("refuses only a missing Texture, and notes one packaging crops or scales up", () => {
     expect(appIconTextureProblem(undefined)).toBe("The Texture is missing.");
-    expect(appIconTextureProblem(asset("Texture", [], { width: 1024, height: 1024 }))).toBeNull();
-    expect(appIconTextureProblem(asset("Texture", [], { width: 640, height: 640 }))).toBe("The App Icon must be at least 1024 × 1024; this image is 640 × 640.");
-    expect(appIconTextureProblem(asset("Texture", []))).toBeNull();
+    expect(appIconTextureProblem(asset("Material", []))).toBe("The Texture is missing.");
+    expect(appIconTextureProblem(asset("Texture", [], { width: 640, height: 480 }))).toBeNull();
+    expect(appIconTextureHint(asset("Texture", [], { width: 1024, height: 1024 }))).toBeNull();
+    expect(appIconTextureHint(asset("Texture", [], { width: 640, height: 640 })))
+      .toBe("This image is 640 × 640. Icons up to 1024 × 1024 are scaled up and may look soft.");
+    expect(appIconTextureHint(asset("Texture", []))).toBeNull();
+    expect(appIconTextureHint(undefined)).toBeNull();
   });
 });

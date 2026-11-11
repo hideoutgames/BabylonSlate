@@ -5,6 +5,8 @@ import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert
 import { Button } from "@haptic/ui/components/button";
 import {
   Field,
+  FieldContent,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -12,7 +14,8 @@ import {
 import { Input } from "@haptic/ui/components/input";
 import { Switch } from "@haptic/ui/components/switch";
 import type { DocumentActions, RegistryState } from "../context/document-context-types";
-import { appIconTextureProblem } from "../lib/app-icon";
+import { appIconTextureHint, appIconTextureProblem } from "../lib/app-icon";
+import { AppIconPlatformPreviews, useAppIconPreviewUrl } from "./app-icon-preview";
 import { AlwaysPackageFoldersField } from "./always-package-folders-field";
 import { SettingsSection } from "./settings-section";
 import type { ProjectExport } from "./use-project-export";
@@ -35,6 +38,8 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
   const identity = projectDocument.settings.appIdentity;
   const iconAsset = identity.iconTextureGuid ? assetRegistry?.getByGuid(identity.iconTextureGuid) : undefined;
   const iconError = identity.iconTextureGuid ? appIconTextureProblem(iconAsset) : null;
+  const iconHint = identity.iconTextureGuid ? appIconTextureHint(iconAsset) : null;
+  const iconPreviewUrl = useAppIconPreviewUrl(identity.iconTextureGuid);
   const [appIdDraft, setAppIdDraft] = useState<string | null>(null);
   const appIdText = appIdDraft ?? identity.appId;
   const appIdError = appIdText.trim() && !isValidAppId(appIdText.trim())
@@ -77,9 +82,14 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
         />
       </Field>
       <Field className="settings-field" data-invalid={iconError ? true : undefined}>
-        <LabelHint hint="Use a square Texture of at least 1024 × 1024 pixels.">
-          <FieldLabel htmlFor="setting-app-icon">App Icon</FieldLabel>
-        </LabelHint>
+        <FieldContent>
+          <LabelHint hint="Packages use the Texture's centre square; 1024 × 1024 or larger stays sharp at every size.">
+            <FieldLabel htmlFor="setting-app-icon">App Icon</FieldLabel>
+          </LabelHint>
+          {iconHint ? (
+            <FieldDescription id="setting-app-icon-hint" className="text-(--warning)" data-testid="setting-app-icon-hint">{iconHint}</FieldDescription>
+          ) : null}
+        </FieldContent>
         <div className="flex min-w-0 flex-col gap-1">
           <AssetPickerControl value={identity.iconTextureGuid}>
             <Button
@@ -88,7 +98,7 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
               className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
               onClick={() => setAppIconPickerOpen(true)}
               aria-invalid={iconError ? true : undefined}
-              aria-describedby={iconError ? "setting-app-icon-error" : undefined}
+              aria-describedby={iconError ? "setting-app-icon-error" : iconHint ? "setting-app-icon-hint" : undefined}
               data-testid="setting-app-icon"
               id="setting-app-icon"
             >
@@ -98,6 +108,12 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
           {iconError ? <FieldError id="setting-app-icon-error">{iconError}</FieldError> : null}
         </div>
       </Field>
+      {iconPreviewUrl ? (
+        <Field className="settings-row">
+          <FieldLabel>Icon Preview</FieldLabel>
+          <AppIconPlatformPreviews url={iconPreviewUrl} displayName={identity.displayName || projectDocument.metadata.name} />
+        </Field>
+      ) : null}
       <Field className="settings-field">
         <LabelHint hint="Raise it for every upload to an app store. The version is the project's, in General.">
           <FieldLabel htmlFor="setting-app-build-number">Build Number</FieldLabel>

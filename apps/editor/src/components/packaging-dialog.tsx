@@ -1,10 +1,5 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DownloadIcon } from "lucide-react";
-import SiHtml5 from "@icons-pack/react-simple-icons/icons/SiHtml5";
-import Android from "react-bootstrap-icons/dist/icons/android";
-import Apple from "react-bootstrap-icons/dist/icons/apple";
-import Tux from "react-bootstrap-icons/dist/icons/tux";
-import Windows from "react-bootstrap-icons/dist/icons/windows";
 import { defaultExportPreset } from "@haptic/core";
 import { resolvedAppIdentity } from "@haptic/core";
 import { desktopGameNames, macGameNames } from "@haptic/exporter/native-desktop";
@@ -28,24 +23,9 @@ import { useAppSettings } from "../context/app-settings-context";
 import { useProjectState, useRegistryState } from "../context/document-context";
 import { useAndroidPackaging } from "../lib/android-packaging";
 import { packagingTargets, type PackagingTarget } from "../lib/packaging-targets";
+import { AppIconImage, appIconShape, useAppIconPreviewUrl } from "./app-icon-preview";
+import { PLATFORM_MARKS } from "./platform-marks";
 import { gameArchiveName, useGameExport, useGameShells, type LinuxPackageFormat } from "./use-game-export";
-
-type MarkProps = { className?: string; title?: string; "aria-hidden"?: boolean };
-
-/**
- * Platform marks: Bootstrap Icons, and Simple Icons' HTML5 shield for Web
- * (Bootstrap Icons has none). Each is imported from its own module. macOS and
- * iOS share the Apple mark. Brand colours come from the `--platform-*` tokens;
- * Apple and Linux use the text colour.
- */
-const MARKS: Record<PackagingTarget["id"], { Mark: ComponentType<MarkProps>; color?: string }> = {
-  web: { Mark: SiHtml5, color: "text-platform-web" },
-  windows: { Mark: Windows, color: "text-platform-windows" },
-  linux: { Mark: Tux },
-  macos: { Mark: Apple },
-  android: { Mark: Android, color: "text-platform-android" },
-  ios: { Mark: Apple },
-};
 
 function targetGroups(targets: readonly PackagingTarget[]) {
   return [
@@ -62,7 +42,7 @@ function unavailableReason(target: PackagingTarget): string {
 }
 
 function PlatformMark({ target, className }: { target: PackagingTarget; className?: string }) {
-  const { Mark, color } = MARKS[target.id];
+  const { Mark, color } = PLATFORM_MARKS[target.id];
   // An empty title keeps the mark decorative: SiHtml5 otherwise adds an "HTML5" title to the label and a tooltip.
   return <Mark aria-hidden title="" className={cn("shrink-0", target.available ? color : "text-muted-foreground", className)} />;
 }
@@ -131,10 +111,23 @@ export function PackagingDialog({
   const bundleDebugger = (settings?.exportPresets[0] ?? defaultExportPreset()).bundleDebugger;
   const xcode = useXcode(open && target.id === "ios" && target.available);
   const iosSigning = useAppSettings().settings.iosSigning;
-  const missingIosIcon = iosFormat === "app-store" && !settings?.appIdentity.iconTextureGuid;
+  const iconGuid = settings?.appIdentity.iconTextureGuid ?? null;
+  const iconAsset = iconGuid ? assetRegistry?.getByGuid(iconGuid) : undefined;
+  const iconUrl = useAppIconPreviewUrl(open ? iconGuid : null);
+  const missingIosIcon = iosFormat === "app-store" && !iconGuid;
   const iosReady = xcode !== null && xcode.problems.length === 0 && Boolean(iosSigning.teamId) && !missingIosIcon;
   const canPackage = target.available && Boolean(projectDocument) && Boolean(startupScene) && !busy
     && (target.id !== "android" || androidReady) && (target.id !== "ios" || iosReady);
+
+  const appIconRow = (
+    <div className="flex items-center justify-between gap-3 px-3 py-1.5">
+      <dt className="text-muted-foreground">App Icon</dt>
+      <dd className={cn("flex min-w-0 items-center gap-1.5 font-medium", (missingIosIcon || (iconGuid && !iconAsset)) && "text-(--warning)")} data-testid="packaging-app-icon-name">
+        {iconUrl ? <AppIconImage url={iconUrl} shape={appIconShape(target.id)} className={cn("size-4", appIconShape(target.id) === "square" && "rounded-[3px]")} /> : null}
+        <span className="truncate">{!iconGuid ? "Not Set" : iconAsset ? iconAsset.header.name : "Missing"}</span>
+      </dd>
+    </div>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -178,9 +171,18 @@ export function PackagingDialog({
           </nav>
           <div className="flex min-w-0 flex-col gap-3 p-4" data-testid="packaging-detail">
             <div className="flex items-center gap-3">
-              <span className="grid size-12 shrink-0 place-items-center rounded-xl border bg-muted">
-                <PlatformMark target={target} className="size-7" />
-              </span>
+              {target.available && iconUrl ? (
+                <span className="relative shrink-0" data-testid="packaging-app-icon">
+                  <AppIconImage url={iconUrl} shape={appIconShape(target.id)} className={cn("size-12", appIconShape(target.id) === "square" && "rounded-[10px]")} />
+                  <span className="absolute -right-1.5 -bottom-1.5 grid size-5 place-items-center rounded-md border bg-popover">
+                    <PlatformMark target={target} className="size-3" />
+                  </span>
+                </span>
+              ) : (
+                <span className="grid size-12 shrink-0 place-items-center rounded-xl border bg-muted">
+                  <PlatformMark target={target} className="size-7" />
+                </span>
+              )}
               <div className="flex min-w-0 flex-col gap-0.5">
                 <h3 className="text-sm font-semibold">{target.label}</h3>
                 <p className="text-xs text-muted-foreground">{target.description}</p>
@@ -203,6 +205,7 @@ export function PackagingDialog({
                           : gameArchiveName(projectName)}
                     </dd>
                   </div>
+                  {target.id === "web" || target.id === "windows" || target.id === "linux" ? appIconRow : null}
                   {target.id === "linux" ? (
                     <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                       <dt id="packaging-linux-format" className="text-muted-foreground">Format</dt>
@@ -243,6 +246,7 @@ export function PackagingDialog({
                         <dt className="text-muted-foreground">App ID</dt>
                         <dd className={cn("truncate font-mono text-xs", placeholderAppId && "text-(--warning)")} data-testid="packaging-app-id">{appIdentity?.appId}</dd>
                       </div>
+                      {appIconRow}
                       <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                         <dt className="text-muted-foreground">Signing</dt>
                         <dd className="truncate font-medium" data-testid="packaging-android-signing">
@@ -279,6 +283,7 @@ export function PackagingDialog({
                         <dt className="text-muted-foreground">App ID</dt>
                         <dd className={cn("truncate font-mono text-xs", placeholderAppId && "text-(--warning)")} data-testid="packaging-app-id">{appIdentity?.appId}</dd>
                       </div>
+                      {appIconRow}
                       <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                         <dt className="text-muted-foreground">Team</dt>
                         <dd className={cn("truncate font-mono text-xs", !iosSigning.teamId && "text-(--warning)")} data-testid="packaging-ios-team">
@@ -299,6 +304,7 @@ export function PackagingDialog({
                         <dt className="text-muted-foreground">App ID</dt>
                         <dd className={cn("truncate font-mono text-xs", placeholderAppId && "text-(--warning)")} data-testid="packaging-app-id">{appIdentity?.appId}</dd>
                       </div>
+                      {appIconRow}
                       <div className="flex items-center justify-between gap-3 px-3 py-1.5">
                         <dt className="text-muted-foreground">Signing</dt>
                         <dd className="truncate font-medium" data-testid="packaging-mac-signing">
