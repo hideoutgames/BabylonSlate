@@ -30,7 +30,7 @@ export const dataNodes: NodeDefinition[] = [
       const result = ctx.output("value");
       const error = ctx.output("error");
       ctx.emit(`${error} = "";`);
-      ctx.emit(`try { ${result} = await ctx.readDataEntryAsync(${ctx.input("tree")}, ${ctx.input("entryPath")}, ${JSON.stringify(dataDefinitionPinGuid(ctx.node.properties))}); } catch (error) { if (error?.name === "AbortError") throw error; ${result} = null; ${error} = error instanceof Error ? error.message : String(error); }`);
+      ctx.emit(`try { ${result} = (yield ctx.readDataEntryAsync(${ctx.input("tree")}, ${ctx.input("entryPath")}, ${JSON.stringify(dataDefinitionPinGuid(ctx.node.properties))})); } catch (error) { if (error?.name === "AbortError") throw error; ${result} = null; ${error} = error instanceof Error ? error.message : String(error); }`);
       ctx.emit(`${ctx.output("found")} = ${result} !== null;`);
       ctx.branch?.(`${error} === ""`, "Completed", "Failed");
     },

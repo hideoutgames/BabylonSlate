@@ -169,46 +169,55 @@ describe("runtime session boundaries", () => {
     } finally { runtime.stop(); }
   });
 
-  it.each(["resume", "stop"] as const)("holds a completed engine delay until %s resolves the session", async (finish) => {
+  /**
+   * An actor whose Begin Play waits on a short Delay and whose Tick logs "tick". The Delay ends in
+   * the tick's Delays phase, after the actors ticked, and a graph resumes inside that tick: only a
+   * pause requested earlier in the same tick can still hold the continuation.
+   */
+  const delayedScript = (body: string) => ({ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
+    source: `export async function begin(ctx) { ${body} }\nexport function tick(ctx) { ctx.log("log", "test", "tick"); }`,
+    entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }, { name: "tick", event: "onTick", isAsync: false }] });
+  const testLogs = (commands: CommandMessage[]) =>
+    commands.flatMap(command => command.type === "log" && command.category === "test" && command.message !== "tick" ? [command.message] : []);
+
+  it.each(["resume", "stop"] as const)("holds a delay that ends in a tick a pause was requested in until %s resolves the session", async (finish) => {
     const commands: CommandMessage[] = [];
+    let pauseOnTick = true;
     const runtime = makeRuntime({ playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Delayed" })] },
-      onCommand: command => commands.push(command) });
-    await runtime.loadScripts([{ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
-      source: 'export async function begin(ctx) { await ctx.delay(0.01); ctx.log("log", "test", "continued"); }',
-      entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+      onCommand: command => {
+        commands.push(command);
+        if (pauseOnTick && command.type === "log" && command.message === "tick") { pauseOnTick = false; runtime.pause(); }
+      } });
+    await runtime.loadScripts([delayedScript('await ctx.delay(0.01); ctx.log("log", "test", "continued");')]);
     try {
       runtime.realizePlayWorld(); runtime.start(); runtime.tick();
-      await runtime.requestSessionBoundary({ sessionGeneration: 7, requestId: 1,
-        action: { kind: "pause", reason: "user", paused: true } });
       await flush();
-      expect(commands.some(command => command.type === "log" && command.message === "continued")).toBe(false);
+      expect(testLogs(commands)).toEqual([]);
       if (finish === "resume") runtime.resume(); else runtime.stop();
       await flush();
-      expect(commands.some(command => command.type === "log" && command.message === "continued")).toBe(finish === "resume");
+      expect(testLogs(commands)).toEqual(finish === "resume" ? ["continued"] : []);
       expect(commands.some(command => command.type === "diagnostic")).toBe(false);
     } finally { runtime.stop(); }
   });
 
   it("ends a held continuation whose owner was destroyed during Pause without a diagnostic", async () => {
     const commands: CommandMessage[] = [];
+    let pauseOnTick = true;
     const runtime = makeRuntime({ playScene: { ...createDefaultScene(), actors: [createActor("actor", "Actor", { classId: "Delayed" })] },
-      onCommand: command => commands.push(command) });
-    await runtime.loadScripts([{ classId: "Delayed", parentClassId: "Actor", assetGuid: "delayed", anchors: [],
-      source: `export async function begin(ctx) {
-        try { await ctx.delay(0.01); } catch (error) { ctx.log("log", "test", "ended " + error.message); throw error; }
-        ctx.log("log", "test", "continued");
-      }`,
-      entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: true }] }]);
+      onCommand: command => {
+        commands.push(command);
+        if (pauseOnTick && command.type === "log" && command.message === "tick") { pauseOnTick = false; runtime.pause(); }
+      } });
+    await runtime.loadScripts([delayedScript(`try { await ctx.delay(0.01); } catch (error) { ctx.log("log", "test", "ended " + error.message); throw error; }
+        ctx.log("log", "test", "continued");`)]);
     try {
       runtime.realizePlayWorld(); runtime.start(); runtime.tick();
-      // The Delay completed in that tick; Pause holds its continuation.
-      runtime.pause();
+      // The Delay ended in that tick; the Pause requested during it holds its continuation.
       await flush();
       expect(runtime.executeConsoleCommand('destroyactor "actor"').success).toBe(true);
       runtime.resume();
       await flush();
-      const logs = commands.flatMap(command => command.type === "log" && command.category === "test" ? [command.message] : []);
-      expect(logs).toEqual(["ended Script continuation cancelled: its owner was destroyed."]);
+      expect(testLogs(commands)).toEqual(["ended Script continuation cancelled: its owner was destroyed."]);
       expect(commands.filter(command => command.type === "diagnostic")).toEqual([]);
     } finally { runtime.stop(); }
   });

@@ -49,7 +49,7 @@ function operation(method: string, title: string, valueType?: PinType): NodeDefi
       const args = method === "newGame" ? "" : method === "listSaves"
         ? `{ profile: ${ctx.input("profile")} || undefined }`
         : `{ slot: ${ctx.input("slot")} || undefined, profile: ${ctx.input("profile")} || undefined }`;
-      ctx.emit(`const ${result} = await ctx.${method}(${args});`);
+      ctx.emit(`const ${result} = (yield ctx.${method}(${args}));`);
       ctx.emit(`${ctx.output("success")} = ${result}.ok;`);
       ctx.emit(`${ctx.output("errorCode")} = ${result}.ok ? "" : ${result}.error.code;`);
       ctx.emit(`${ctx.output("errorMessage")} = ${result}.ok ? "" : ${result}.error.message;`);

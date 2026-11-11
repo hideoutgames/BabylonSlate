@@ -46,7 +46,7 @@ export const timerNodes: NodeDefinition[] = [
       pin("duration", "duration", "in", FLOAT),
     ],
     codegen: (ctx) => {
-      ctx.emit(`await ctx.delay(${ctx.input("duration")});`);
+      ctx.emit(`yield ctx.delay(${ctx.input("duration")});`);
     },
   },
   {
@@ -61,7 +61,7 @@ export const timerNodes: NodeDefinition[] = [
     ],
     // Keyed by node: a later call restarts the wait and only that call continues.
     codegen: (ctx) => {
-      ctx.emit(`await ctx.retriggerableDelay(${JSON.stringify(ctx.node.id)}, ${ctx.input("duration")});`);
+      ctx.emit(`yield ctx.retriggerableDelay(${JSON.stringify(ctx.node.id)}, ${ctx.input("duration")});`);
     },
   },
   {
@@ -74,7 +74,7 @@ export const timerNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
     ],
     codegen: (ctx) => {
-      ctx.emit("await ctx.delayOneTick();");
+      ctx.emit("yield ctx.delayOneTick();");
     },
   },
   {

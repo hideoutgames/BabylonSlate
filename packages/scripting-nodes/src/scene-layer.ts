@@ -90,7 +90,7 @@ export const sceneLayerNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(
-        `${out} = await ctx.createSceneLayerAsync(${ctx.input("asset")}, ${ctx.input("zOrder")});`,
+        `${out} = (yield ctx.createSceneLayerAsync(${ctx.input("asset")}, ${ctx.input("zOrder")}));`,
       );
     },
   },

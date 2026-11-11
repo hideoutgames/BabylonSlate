@@ -31,7 +31,7 @@ function setter(
     ],
     codegen: (ctx) => {
       ctx.emit(
-        `${kind === "Texture" ? "await " : ""}ctx.setMaterial${kind}Parameter${kind === "Texture" ? "Async" : ""}(${ctx.input("Material")}, ${ctx.input("Name")}, ${ctx.input("Value")});`,
+        `${kind === "Texture" ? "yield " : ""}ctx.setMaterial${kind}Parameter${kind === "Texture" ? "Async" : ""}(${ctx.input("Material")}, ${ctx.input("Name")}, ${ctx.input("Value")});`,
       );
     },
   };
@@ -94,7 +94,7 @@ export const materialNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) =>
       ctx.emit(
-        `${ctx.output("Material")} = await ctx.setMeshMaterialAsync(${ctx.input("Target")}, ${ctx.input("Instance")});`,
+        `${ctx.output("Material")} = (yield ctx.setMeshMaterialAsync(${ctx.input("Target")}, ${ctx.input("Instance")}));`,
       ),
   },
   {

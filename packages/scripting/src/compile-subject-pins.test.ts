@@ -42,7 +42,7 @@ function registry(): NodeRegistry {
     // Its work is the continuation: Completed runs only when the wait finishes.
     { id: "wait", title: "Wait", category: "test", latent: true,
       pins: () => [pin("execIn", "exec", "in", EXEC), pin("execOut", "Completed", "out", EXEC), subject("target", "Target")],
-      codegen: (ctx) => ctx.continueIf?.(`await ctx.wait(${ctx.input("target")})`) },
+      codegen: (ctx) => ctx.continueIf?.(`(yield ctx.wait(${ctx.input("target")}))`) },
     { id: "log", title: "Log", category: "test",
       pins: () => [pin("execIn", "exec", "in", EXEC), pin("execOut", "then", "out", EXEC), pin("value", "Value", "in", FLOAT)],
       codegen: (ctx) => ctx.emit(`ctx.log(${ctx.input("value")});`) },

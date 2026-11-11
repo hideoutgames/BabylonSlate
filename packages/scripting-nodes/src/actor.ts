@@ -39,7 +39,7 @@ function spawnNode(
     codegen: (ctx) => {
       const options = blocking ? ", { blocking: true }" : "";
       ctx.emit(
-        `${ctx.output("out")} = await ctx.${call}(${ctx.input("classId")}, ${ctx.input("transform")}${options});`,
+        `${ctx.output("out")} = (yield ctx.${call}(${ctx.input("classId")}, ${ctx.input("transform")}${options}));`,
       );
     },
   };

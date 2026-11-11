@@ -45,7 +45,7 @@ function nodeDefinition(extension: ExtensionDescriptor, node: ExtensionNodeContr
         const result = ctx.shared?.(call) ?? call;
         return Object.fromEntries(node.outputs.map((output) => [output.id, `(${result})?.[${JSON.stringify(output.id)}]`]));
       }
-      const value = node.latent ? `await ${call}` : call;
+      const value = node.latent ? `(yield ${call})` : call;
       if (node.outputs.length === 0) {
         ctx.emit(`${value};`);
       } else if (node.outputs.length === 1) {

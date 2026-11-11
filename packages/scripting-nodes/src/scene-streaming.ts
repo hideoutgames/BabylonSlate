@@ -39,7 +39,7 @@ function operation(method: string, title: string, blocking: boolean, description
       subject(pin("target", "Target", "in", TARGET)),
     ],
     codegen: (ctx) => {
-      ctx.emit(`${blocking ? "await " : ""}ctx.${method}(${ctx.input("target")});`);
+      ctx.emit(`${blocking ? "yield " : ""}ctx.${method}(${ctx.input("target")});`);
     },
   };
 }

@@ -35,7 +35,7 @@ export const projectNodes: NodeDefinition[] = [
     ],
     codegen: ctx => {
       const result = `__notices_${ctx.node.id.replace(/[^A-Za-z0-9_$]/g, "_")}`;
-      ctx.emit(`const ${result} = await ctx.getThirdPartyNotices();`);
+      ctx.emit(`const ${result} = (yield ctx.getThirdPartyNotices());`);
       ctx.emit(`${ctx.output("notices")} = ${result}.text;`);
       ctx.emit(`${ctx.output("error")} = ${result}.errorMessage;`);
       ctx.branch?.(`${result}.success`, "Completed", "Failed");

@@ -138,8 +138,8 @@ export interface ScriptContext {
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
   variableReference(target: EngineObject | null | undefined, name: string, implicitSelf?: boolean): TweenReference | null;
-  tweenValue(reference: TweenReference | null, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown): Promise<boolean>;
-  tweenProperty(target: unknown, property: string, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown, space?: unknown): Promise<boolean>;
+  tweenValue(reference: TweenReference | null, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown): PromiseLike<boolean>;
+  tweenProperty(target: unknown, property: string, type: TweenValueType, a: unknown, b: unknown, duration: number, curve: unknown, space?: unknown): PromiseLike<boolean>;
   getVariableFrom(target: EngineObject | null | undefined, name: string): unknown;
   setVariableOn(
     target: EngineObject | null | undefined,
@@ -388,10 +388,10 @@ export interface ScriptContext {
   getOwner(actor: EngineObject | null | undefined): Actor | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   executeConsoleCommandAsync(command: string): Promise<{ success: boolean; output: string }>;
-  delay(seconds: number): Promise<void>;
-  delayOneTick(): Promise<void>;
+  delay(seconds: number): PromiseLike<void>;
+  delayOneTick(): PromiseLike<void>;
   /** Waits `seconds` after this node's latest call for `self`; an earlier waiting call ends. */
-  retriggerableDelay(nodeId: string, seconds: number): Promise<void>;
+  retriggerableDelay(nodeId: string, seconds: number): PromiseLike<void>;
   commandArgs: Record<string, unknown>;
   /** Alias of `commandArgs` so function Input nodes can read `ctx.args`. */
   args: Record<string, unknown>;
@@ -558,7 +558,7 @@ export interface ScriptContext {
     target: EngineObject | string | null | undefined,
     functionName: string,
     args?: Record<string, unknown>,
-  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  ): Record<string, unknown> | PromiseLike<Record<string, unknown>>;
   isActionHeld(action: string): boolean;
   wasActionPressed?(action: string): boolean;
   wasActionReleased?(action: string): boolean;

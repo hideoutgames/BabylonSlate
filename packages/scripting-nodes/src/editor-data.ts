@@ -19,7 +19,7 @@ const hasValues = (properties: Record<string, unknown>) => !!definitionGuid(prop
 function emitResult(ctx: CodegenContext, call: string, fallback: string): void {
   const result = `${ctx.output("value")}_result`;
   ctx.emit("{");
-  ctx.emit(`const ${result} = await ctx.editorData.${call};`);
+  ctx.emit(`const ${result} = (yield ctx.editorData.${call});`);
   ctx.emit(`${ctx.output("success")} = ${result}.success;`);
   ctx.emit(`${ctx.output("error")} = ${result}.error;`);
   ctx.emit(`${ctx.output("value")} = ${result}.value ?? ${fallback};`);

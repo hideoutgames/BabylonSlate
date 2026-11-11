@@ -49,6 +49,29 @@ export function modulePreamble(graph: LogicGraph, options: CompileOptions): stri
   return preamble;
 }
 
+/**
+ * Runs a latent entry's generator and returns its wait. Each `yield` hands over what the entry
+ * waits on: a thenable is waited for, anything else continues at once. A thenable that settles
+ * synchronously (the runtime's tick waits) resumes the generator in that same call stack, so a
+ * Delay continues inside the tick it ended in; a Promise resumes it in a microtask. A rejected
+ * wait is thrown into the generator, which ends the entry through its `finally`. The result is a
+ * minimal thenable: `then` calls back at once when the entry has finished, else when it does.
+ * One line, declared with `var`, so concatenated modules may repeat it.
+ */
+const LATENT_DRIVER = "var __latent = (it) => { let state = 0, value, waiting = []; " +
+  "const settle = (s, v) => { state = s; value = v; for (const w of waiting.splice(0)) w[s - 1]?.(v); }; " +
+  "const step = (input, thrown) => { for (;;) { let r; " +
+  "try { r = thrown ? it.throw(input) : it.next(input); } catch (error) { settle(2, error); return; } " +
+  "if (r.done) { settle(1, r.value); return; } " +
+  "const wait = r.value; " +
+  "if (wait == null || typeof wait.then !== \"function\") { input = wait; thrown = false; continue; } " +
+  "let inline = true, resumed = false; " +
+  "wait.then((v) => { if (inline) { resumed = true; input = v; thrown = false; } else step(v, false); }, " +
+  "(e) => { if (inline) { resumed = true; input = e; thrown = true; } else step(e, true); }); " +
+  "inline = false; if (!resumed) return; } }; " +
+  "step(undefined, false); " +
+  "return { then(onDone, onFail) { if (state === 0) waiting.push([onDone, onFail]); else (state === 1 ? onDone : onFail)?.(value); } }; };";
+
 /** One exported function: its entry point, function-scope declarations and statements. */
 export type CompiledEntry = {
   entry: CompiledEntryPoint;
@@ -112,6 +135,7 @@ export function assembleModule(
   exportName: string,
 ): CompileResult {
   const finalLines = [...preamble];
+  if (compiledEntries.some((compiled) => compiled.entry.isAsync)) finalLines.push(LATENT_DRIVER);
   const anchors: CompileAnchor[] = [];
 
   // Chunks without body anchors (math helpers) go first. A stack frame inside
@@ -142,9 +166,10 @@ export function assembleModule(
   }
 
   for (const compiled of compiledEntries) {
-    finalLines.push(
-      `export ${compiled.entry.isAsync ? "async " : ""}function ${compiled.entry.name}(ctx) {`,
-    );
+    // A latent entry is a generator that yields each wait; `__latent` runs it. The export stays an
+    // ordinary function, whose result is the entry's wait.
+    finalLines.push(`export function ${compiled.entry.name}(ctx) {`);
+    if (compiled.entry.isAsync) finalLines.push("  return __latent((function* () {");
     const preamble = s.options.localPreamble ?? [];
     if (preamble.length) {
       finalLines.push(...preamble);
@@ -163,6 +188,7 @@ export function assembleModule(
       }
     }
     if (held.length > 0) finalLines.push(`  } finally { __haptic_frame?.(); }`);
+    if (compiled.entry.isAsync) finalLines.push("  })());");
     finalLines.push(`}`);
   }
 
