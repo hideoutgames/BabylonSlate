@@ -5,7 +5,7 @@ import { asActor, finiteVector } from "./script-host-helpers";
 import type { ScriptHostServices } from "./script-host-services";
 
 type PhysicsMemberKey =
-  | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType"
+  | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "getMotionType"
   | "setActorCollisionEnabled" | "isActorCollisionEnabled";
 
 const DEGREES = 180 / Math.PI;
@@ -88,6 +88,11 @@ export function createPhysicsMembers(services: ScriptHostServices): Pick<HostCon
       if (!body || !value || body.getVariable("motionType") === value) return;
       body.setVariable("motionType", value);
       services.refreshComponent?.(body, "motionType");
+    },
+    getMotionType: (actor) => {
+      const body = liveActor(actor)?.components.find((component) => component.classId === "RigidBodyComponent" && !component.destroyed);
+      const value = body?.getVariable("motionType");
+      return Object.keys(MOTION_TYPES).find((member) => MOTION_TYPES[member] === value) ?? "Static";
     },
     setActorCollisionEnabled: (actor, enabled) => {
       const target = liveActor(actor);

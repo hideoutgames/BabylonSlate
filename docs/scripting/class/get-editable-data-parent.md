@@ -18,14 +18,14 @@ Returns the path of an entry's parent, including unsaved edits.
 
 | Pin | Type |
 | --- | --- |
-| Then | Exec |
-| Success | Boolean |
+| Completed | Exec |
+| Failed | Exec |
 | Error | String |
 | Parent Path | String |
 
 ## Notes
 
 - A top-level entry returns an empty path; a missing entry fails.
-- Only in Editor Utility graphs; check **Success** before using the path.
+- Only in Editor Utility graphs; use the path from **Completed**.
 - Latent: the node finishes later without pausing the rest of the game.
 - Editor Utility graphs only.

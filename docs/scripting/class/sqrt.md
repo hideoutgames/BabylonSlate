@@ -20,5 +20,4 @@ Returns the square root of the input.
 
 ## Notes
 
-- Accepts a Float, Vector2, Vector3 or Color, and works on each component.
-- A negative **Value** gives an invalid result.
+- A negative input gives 0.

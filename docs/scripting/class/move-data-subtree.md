@@ -20,15 +20,15 @@ Moves an entry and its children under a new parent in a Data Tree.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Then | Exec |  |
-| Success | Boolean |  |
-| Error | String |  |
+| Completed | Exec |  |
+| Failed | Exec |  |
+| Error | String | Why the node failed; empty on success. |
 | Entry Path | String | The entry's new path. |
 
 ## Notes
 
 - Values and child order are kept; a move that would create a loop or a duplicate sibling name fails.
 - **Index** -1 appends at the end; other values count from zero and must fall within the parent's children.
-- Only in Editor Utility graphs; check **Success** before using **Entry Path**.
+- Only in Editor Utility graphs; use **Entry Path** from **Completed**.
 - Latent: the node finishes later without pausing the rest of the game.
 - Editor Utility graphs only.

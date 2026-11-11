@@ -15,7 +15,7 @@ import { isNumericType, typesAreAssignable, type MaterialValueType } from "./typ
 import { isMaterialParameterNode, materialParameterName } from "./parameters";
 import { customGlslDefinition, newCustomGlslProperties } from "./custom-glsl";
 import { callDefinition, createTypeResolver, plumbingDefinition } from "./resolve";
-import { vectorMaskDefinition } from "./vector-mask";
+import { swizzleDefinition, vectorMaskDefinition } from "./vector-mask";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition } from "./global-parameter";
 
 /** Pin shape the shared graph shell renders and connects. */
@@ -74,6 +74,7 @@ export function pinsForMaterialNode(
     definition = plumbingDefinition(definition, type, fn);
   }
   if (definition && type === "vector.mask") definition = vectorMaskDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties ?? {} }, definition);
+  if (definition && type === "vector.swizzle") definition = swizzleDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties ?? {} }, definition);
   if (definition && type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) definition = materialGlobalParameterDefinition({ properties: context.properties ?? {} }, definition);
   if (definition && type === "custom.glsl" && context.properties) {
     definition = customGlslDefinition({ id: "", type, position: { x: 0, y: 0 }, properties: context.properties }, definition);
@@ -92,6 +93,11 @@ export interface MaterialPaletteNode {
   category: string;
   searchAliases?: readonly string[];
   pins: MaterialGraphPin[];
+}
+
+/** The nodes Add Node offers: the palette without the output node, which every Material already has exactly one of. */
+export function materialAddNodePalette(domain: MaterialDomain): MaterialPaletteNode[] {
+  return materialPaletteNodes(domain).filter((node) => !materialNodeDefinition(node.id)?.terminal);
 }
 
 export function materialPaletteNodes(

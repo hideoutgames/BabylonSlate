@@ -50,6 +50,7 @@ export type { TypeResolver } from "./resolve";
 export {
   hydrateMaterialGraphForEditor,
   materialGraphToSerialized,
+  materialAddNodePalette,
   materialPaletteNodes,
   materialPinsAreCompatible,
   pinsForMaterialNode,

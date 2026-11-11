@@ -21,4 +21,4 @@ Returns the first number divided by the second.
 
 ## Notes
 
-- Dividing by zero gives infinity, or not-a-number when both inputs are zero.
+- A **B** of zero gives 0.

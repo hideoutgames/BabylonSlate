@@ -21,4 +21,4 @@ Raises a base number to the power of an exponent.
 
 ## Notes
 
-- A negative base with a fractional exponent gives not-a-number.
+- A negative base with a fractional exponent has no real result and gives 0, as does 0 raised to a negative exponent.

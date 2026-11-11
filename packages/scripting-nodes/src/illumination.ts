@@ -115,6 +115,39 @@ export const illuminationNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "light.getEnabled",
+    title: "Is Light Enabled",
+    category: "light",
+    pure: true,
+    pins: () => [
+      subject(pin("target", "Target", "in", LIGHT)),
+      pin("out", "Enabled", "out", BOOL),
+    ],
+    codegen: (ctx) => ({ out: `ctx.isLightEnabled(${ctx.input("target")})` }),
+  },
+  {
+    id: "light.getColor",
+    title: "Get Light Color",
+    category: "light",
+    pure: true,
+    pins: () => [
+      subject(pin("target", "Target", "in", LIGHT)),
+      pin("out", "Color", "out", COLOR),
+    ],
+    codegen: (ctx) => ({ out: `ctx.getLightColor(${ctx.input("target")})` }),
+  },
+  {
+    id: "light.getIntensity",
+    title: "Get Light Intensity",
+    category: "light",
+    pure: true,
+    pins: () => [
+      subject(pin("target", "Target", "in", LIGHT)),
+      pin("out", "Intensity", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: `ctx.getLightIntensity(${ctx.input("target")})` }),
+  },
+  {
     id: "light.setEnabled",
     title: "Set Light Enabled",
     category: "light",

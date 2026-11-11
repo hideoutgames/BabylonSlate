@@ -21,4 +21,4 @@ Divides the first vector by the second, component by component.
 
 ## Notes
 
-- A component divided by zero gives infinity, or not-a-number when both are zero.
+- A component divided by zero gives 0.

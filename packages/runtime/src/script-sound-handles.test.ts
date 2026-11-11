@@ -22,6 +22,19 @@ function soundContext() {
 }
 
 describe("Sound Handle nodes", () => {
+  it("reads a playing sound's volume, mid-fade included, and 0 once it has stopped", () => {
+    const { ctx, voices, emit } = soundContext();
+    const sound = ctx.playSound("clip", 0.5);
+    expect(ctx.getSoundVolume(sound)).toBe(0.5);
+
+    ctx.fadeInSound(sound, 2, 0.8);
+    for (const command of voices.advance(1)) emit(command);
+    expect(ctx.getSoundVolume(sound)).toBeCloseTo(0.4, 9);
+
+    ctx.stopSoundHandle(sound);
+    expect([ctx.getSoundVolume(sound), ctx.getSoundVolume({ Id: 0 }), ctx.getSoundVolume(null)]).toEqual([0, 0, 0]);
+  });
+
   it("names each script voice by its handle and drives it through the handle", () => {
     const { ctx, voices, commands, emit } = soundContext();
     const first = ctx.playSound("clip", 0.5);

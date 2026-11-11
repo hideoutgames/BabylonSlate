@@ -2,7 +2,7 @@
 node: vector.mask
 ---
 
-# Component Mask (R)
+# Component Mask (X)
 
 Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller vector.
 
@@ -22,13 +22,13 @@ Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller
 
 | Setting | Description |
 | --- | --- |
-| R | Include the red (first) channel. |
-| G | Include the green (second) channel. |
-| B | Include the blue (third) channel. |
-| A | Include the alpha (fourth) channel. |
+| X | Include the first component (red of a colour). |
+| Y | Include the second component (green). |
+| Z | Include the third component (blue). |
+| W | Include the fourth component (alpha). |
 
 ## Notes
 
-- Choose the channels with the R, G, B and A toggles in the **Inspector**. At least one must stay on.
-- The output is a Float for one channel, or a Vector2, 3 or 4 for more, in R, G, B, A order.
+- Choose the components with the X, Y, Z and W toggles in the **Inspector**. At least one must stay on.
+- The output is a Float for one component, or a Vector2, 3 or 4 for more, in X, Y, Z, W order. [**Swizzle**](swizzle.md) reorders or repeats components.
 - A Float input fills every channel. A narrower vector fills the missing channels with 1.

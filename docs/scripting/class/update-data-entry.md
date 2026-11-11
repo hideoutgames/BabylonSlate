@@ -19,9 +19,9 @@ Changes the values of an existing Data Tree entry.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Then | Exec |  |
-| Success | Boolean |  |
-| Error | String |  |
+| Completed | Exec |  |
+| Failed | Exec |  |
+| Error | String | Why the node failed; empty on success. |
 | Entry Path | String | The path of the updated entry. |
 
 ## Settings
@@ -34,6 +34,6 @@ Changes the values of an existing Data Tree entry.
 
 - The change is one undoable edit; nested scalar fields merge, while arrays and maps you supply replace their contents.
 - Fails if the entry uses a different Data Definition from the node, or still needs the Definition's changes applied.
-- Only in Editor Utility graphs; check **Success** before using **Entry Path**.
+- Only in Editor Utility graphs; use **Entry Path** from **Completed**.
 - Latent: the node finishes later without pausing the rest of the game.
 - Editor Utility graphs only.

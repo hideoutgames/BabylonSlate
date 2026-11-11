@@ -78,7 +78,7 @@ describe("material node contracts", () => {
   });
   it("compiles Arctangent 2 (Degrees) per component as Atan2 then Radians To Degrees", async () => {
     const doc = createDefaultMaterialDocument();
-    node(doc, "direction", "input.vertexNormalWS");
+    node(doc, "direction", "input.worldNormal");
     node(doc, "angle", "math.atan2Degrees");
     wire(doc, "direction", "normal", "angle", "y");
     wire(doc, "angle", "out", "output", "emissive");
@@ -165,13 +165,14 @@ describe("material node contracts", () => {
   it.each(["layer1", "layer2", "layer3", "layer4"])("compiles Landscape coordinates, height, slope and painted %s into a surface", async (layer) => {
     const doc = createDefaultMaterialDocument("Terrain", "landscape");
     doc.edges = [];
-    for (const type of ["uv", "height", "slope", "layers", "blend"]) node(doc, type, `landscape.${type}`);
+    for (const type of ["uv", "height", "slope", "layers"]) node(doc, type, `landscape.${type}`);
+    node(doc, "blend", "math.mix");
     node(doc, "noise", "noise.perlin");
     wire(doc, "uv", "uv", "noise", "coordinates");
-    wire(doc, "noise", "out", "blend", "layer");
-    wire(doc, "baseColor", "out", "blend", "base");
-    wire(doc, "layers", layer, "blend", "weight");
-    wire(doc, "blend", "color", "output", "baseColor");
+    wire(doc, "noise", "out", "blend", "b");
+    wire(doc, "baseColor", "out", "blend", "a");
+    wire(doc, "layers", layer, "blend", "alpha");
+    wire(doc, "blend", "out", "output", "baseColor");
     wire(doc, "height", "height", "output", "worldPositionOffset");
     wire(doc, "slope", "slope", "output", "roughness");
     const result = await compile(doc);
@@ -394,7 +395,7 @@ describe("material node contracts", () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "time", "input.time");
     node(doc, "sine", "math.sin");
-    node(doc, "normal", "input.vertexNormalWS");
+    node(doc, "normal", "input.worldNormal");
     node(doc, "multiply", "math.multiply");
     wire(doc, "time", "time", "sine", "value");
     wire(doc, "sine", "out", "multiply", timePin);
@@ -410,9 +411,9 @@ describe("material node contracts", () => {
     scene.render();
     scene.render();
   });
-  it("compiles Vertex Normal (World) in vertex displacement and fragment color", async () => {
+  it("compiles World Normal in vertex displacement and fragment color", async () => {
     const doc = createDefaultMaterialDocument();
-    node(doc, "normal", "input.vertexNormalWS");
+    node(doc, "normal", "input.worldNormal");
     wire(doc, "normal", "normal", "output", "worldPositionOffset");
     wire(doc, "normal", "normal", "output", "emissive");
     await compile(doc);

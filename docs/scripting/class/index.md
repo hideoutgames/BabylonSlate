@@ -165,9 +165,10 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Abs](abs.md) | Returns the input with any negative sign removed. |
+| [Abs Int](abs-int.md) | Returns a whole number with any negative sign removed. |
 | [Acos (Degrees)](acos-degrees.md) | Returns the arccosine of the input as an angle in degrees. |
 | [Acos (Radians)](acos.md) | Returns the arccosine of the input as an angle in radians. |
-| [Add](add.md) | Returns the sum of two values, component by component. |
+| [Add](add.md) | Returns the sum of two numbers. |
 | [Add Int](add-int.md) | Returns the sum of two whole numbers. |
 | [Asin (Degrees)](asin-degrees.md) | Returns the arcsine of the input as an angle in degrees. |
 | [Asin (Radians)](asin.md) | Returns the arcsine of the input as an angle in radians. |
@@ -185,6 +186,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Xor Bool](xor-bool.md) | Returns true when exactly one of two booleans is true. |
 | [Ceil](ceil.md) | Rounds the input up to the nearest whole number. |
 | [Clamp](clamp.md) | Limits a value so that it stays between a minimum and a maximum. |
+| [Clamp Int](clamp-int.md) | Limits a whole number so that it stays between a minimum and a maximum. |
 | [Clamp Angle](clamp-angle.md) | Limits an angle in degrees to an arc. |
 | [Cos (Degrees)](cos-degrees.md) | Returns the cosine of an angle in degrees. |
 | [Cos (Radians)](cos.md) | Returns the cosine of an angle in radians. |
@@ -204,14 +206,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Less Or Equal](less-or-equal.md) | Returns true when **A** is less than or equal to **B**. |
 | [Less Than](less-than.md) | Returns true when **A** is less than **B**. |
 | [Logarithm](logarithm.md) | Returns the logarithm of a number to a chosen base. |
-| [Max](max.md) | Returns the larger of two values, component by component. |
-| [Min](min.md) | Returns the smaller of two values, component by component. |
+| [Max](max.md) | Returns the larger of two numbers. |
+| [Max Int](max-int.md) | Returns the larger of two whole numbers. |
+| [Min](min.md) | Returns the smaller of two numbers. |
+| [Min Int](min-int.md) | Returns the smaller of two whole numbers. |
 | [Modulo](modulo.md) | Returns the remainder after dividing one Float by another. |
 | [Modulo Int](modulo-int.md) | Returns the remainder after dividing one whole number by another. |
 | [Multiply](multiply.md) | Returns the product of two numbers. |
 | [Multiply Int](multiply-int.md) | Returns the product of two whole numbers. |
 | [Natural Log](natural-log.md) | Returns the natural logarithm of a number. |
-| [Nearly Equal](nearly-equal.md) | Returns true when two numbers differ by less than a very small amount. |
+| [Nearly Equal](nearly-equal.md) | Returns true when two numbers are almost the same. |
 | [Negate](negate.md) | Flips the sign of the input. |
 | [Normalize Axis](normalize-axis.md) | Wraps an angle in degrees to between -180 and 180. |
 | [Not Equal](not-equal.md) | Returns true when two numbers are not exactly equal. |
@@ -221,6 +225,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Shift Left](shift-left.md) | Moves an integer's bits toward the high end. |
 | [Shift Right](shift-right.md) | Moves an integer's bits toward the low end. |
 | [Sign](sign.md) | Returns -1, 0 or 1 depending on the sign of the input. |
+| [Sign Int](sign-int.md) | Returns -1, 0 or 1 depending on the sign of a whole number. |
 | [Sin (Degrees)](sin-degrees.md) | Returns the sine of an angle in degrees. |
 | [Sin (Radians)](sin.md) | Returns the sine of an angle in radians. |
 | [Snap To Grid](snap-to-grid.md) | Rounds a number to the nearest multiple of a grid size. |
@@ -267,6 +272,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Multiply Vector3](multiply-vector3.md) | Multiplies two vectors together, component by component. |
 | [Multiply Vector4](multiply-vector4.md) | Multiplies two vectors together, component by component. |
 | [Negate Vector3](negate-vector3.md) | Returns a vector pointing the opposite way. |
+| [Negate Vector2](negate-vector2.md) | Returns a vector pointing the opposite way. |
+| [Negate Vector4](negate-vector4.md) | Returns a vector pointing the opposite way. |
 | [Normalize Vector2](normalize-vector2.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector3](normalize-vector3.md) | Returns the vector scaled to a length of 1, keeping its direction. |
 | [Normalize Vector4](normalize-vector4.md) | Returns the vector scaled to a length of 1, keeping its direction. |
@@ -279,12 +286,16 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Subtract Vector3](subtract-vector3.md) | Returns the first vector minus the second, component by component. |
 | [Subtract Vector4](subtract-vector4.md) | Returns the first vector minus the second, component by component. |
 | [Interp To Vector3](interp-to-vector3.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
+| [Interp To Vector2](interp-to-vector2.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
+| [Interp To Vector4](interp-to-vector4.md) | Moves a vector smoothly toward a target, slowing as it arrives. |
 | [Interp To Constant Vector3](interp-to-constant-vector3.md) | Moves a vector straight toward a target at a steady speed. |
 | [Length Vector2](length-vector2.md) | Returns the length of a vector. |
 | [Length Squared Vector2](length-squared-vector2.md) | Returns the length of a vector multiplied by itself. |
 | [Length Vector3](length-vector3.md) | Returns the length of a vector. |
 | [Length Squared Vector3](length-squared-vector3.md) | Returns the length of a vector multiplied by itself. |
 | [Nearly Equal Vector3](nearly-equal-vector3.md) | Returns true when two vectors are almost the same. |
+| [Nearly Equal Vector2](nearly-equal-vector2.md) | Returns true when two vectors are almost the same. |
+| [Nearly Equal Vector4](nearly-equal-vector4.md) | Returns true when two vectors are almost the same. |
 | [Length Vector4](length-vector4.md) | Returns the length of a vector. |
 | [Length Squared Vector4](length-squared-vector4.md) | Returns the length of a vector multiplied by itself. |
 
@@ -689,6 +700,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
+| [Get Light Color](get-light-color.md) | Returns the colour of a light. |
+| [Get Light Intensity](get-light-intensity.md) | Returns how bright a light is. |
+| [Is Light Enabled](is-light-enabled.md) | Returns whether a light is on. |
 | [Set Light Color](set-light-color.md) | Sets the colour of a light. |
 | [Set Light Enabled](set-light-enabled.md) | Turns a light on or off. |
 | [Set Light Intensity](set-light-intensity.md) | Sets how bright a light is. |
@@ -713,6 +727,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Multi Sphere Trace](multi-sphere-trace.md) | Sweeps a sphere from a start point to an end point and reports every actor it touches. |
 | [Sample Water Surface](sample-water-surface.md) | Samples the rendered water surface at a world position, including wave motion. |
 | [Set Actor Enable Collision](set-actor-enable-collision.md) | Turns all of an actor's collision off, or back on. |
+| [Get Motion Type](get-motion-type.md) | Returns how an actor's Rigid Body moves: Dynamic, Kinematic or Static. |
 | [Set Motion Type](set-motion-type.md) | Changes how an actor's Rigid Body moves, such as turning physics simulation on or off. |
 | [Set Physics Angular Velocity In Degrees](set-physics-angular-velocity-in-degrees.md) | Sets how fast an actor's Rigid Body spins. |
 | [Set Physics Linear Velocity](set-physics-linear-velocity.md) | Sets how fast an actor's Rigid Body moves. |
@@ -761,6 +776,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | --- | --- |
 | [Fade In Sound](fade-in-sound.md) | Raises a sound from silent to a volume over time. |
 | [Fade Out Sound](fade-out-sound.md) | Lowers a sound to silent over time, then stops it. |
+| [Get Sound Volume](get-sound-volume.md) | Returns the volume of a playing sound. |
 | [Is Sound Playing](is-sound-playing.md) | Returns whether a sound is still playing. |
 | [Play Sound](play-sound.md) | Plays an Audio asset, positioned at the actor running the graph when the sound is spatial. |
 | [Play Sound At Location](play-sound-at-location.md) | Plays an Audio asset at a fixed point in the world. |

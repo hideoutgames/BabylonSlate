@@ -18,8 +18,8 @@ Reads the values of one Data Tree entry, including unsaved edits.
 
 | Pin | Type |
 | --- | --- |
-| Then | Exec |
-| Success | Boolean |
+| Completed | Exec |
+| Failed | Exec |
 | Error | String |
 | Value | Structure |
 
@@ -32,7 +32,7 @@ Reads the values of one Data Tree entry, including unsaved edits.
 ## Notes
 
 - Fails if the entry has no Data Definition, uses a different one from the node, or has invalid values.
-- Check **Success** before using **Value**.
+- Use **Value** from **Completed**.
 - Only in Editor Utility graphs.
 - Latent: the node finishes later without pausing the rest of the game.
 - Editor Utility graphs only.

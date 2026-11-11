@@ -20,9 +20,8 @@ Deletes a saved slot, including the older copies kept for migration.
 | --- | --- | --- |
 | Completed | Exec |  |
 | Failed | Exec |  |
-| Success | Boolean |  |
+| Error | String | Why the node failed; empty on success. |
 | Error Code | String | Empty on success; otherwise missing, corrupt, incompatible, storage-full, unavailable, invalid or apply-failed. |
-| Error Message | String |  |
 
 ## Notes
 

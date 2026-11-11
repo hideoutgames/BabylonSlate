@@ -1,5 +1,5 @@
 import {
-  arrayOf, mapOf, objectRef, assetRef, BOXED_WILDCARD, BOOL, EXEC, INT, STRING,
+  arrayOf, mapOf, objectRef, assetRef, BOXED_WILDCARD, EXEC, INT, STRING,
   defaultValueLiteral, pin, pinTypeForMember, structRef, type NodeDefinition, type PinType,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
@@ -40,8 +40,8 @@ function operation(method: string, title: string, valueType?: PinType): NodeDefi
       pin("execIn", "Exec", "in", EXEC),
       pin("completed", "Completed", "out", EXEC), pin("failed", "Failed", "out", EXEC),
       ...(method === "newGame" ? [] : method === "listSaves" ? slotPins().slice(1) : slotPins()),
-      pin("success", "Success", "out", BOOL),
-      pin("errorCode", "Error Code", "out", STRING), pin("errorMessage", "Error Message", "out", STRING),
+      // Failure is the Failed pin and Error, as on every latent node; Error Code names the kind for a Switch.
+      pin("error", "Error", "out", STRING), pin("errorCode", "Error Code", "out", STRING),
       ...(valueType ? [pin("value", method === "listSaves" ? "Saves" : method === "newGame" ? "Save Data" : "Save", "out", valueType)] : []),
     ],
     codegen: (ctx) => {
@@ -50,9 +50,8 @@ function operation(method: string, title: string, valueType?: PinType): NodeDefi
         ? `{ profile: ${ctx.input("profile")} || undefined }`
         : `{ slot: ${ctx.input("slot")} || undefined, profile: ${ctx.input("profile")} || undefined }`;
       ctx.emit(`const ${result} = (yield ctx.${method}(${args}));`);
-      ctx.emit(`${ctx.output("success")} = ${result}.ok;`);
+      ctx.emit(`${ctx.output("error")} = ${result}.ok ? "" : ${result}.error.message;`);
       ctx.emit(`${ctx.output("errorCode")} = ${result}.ok ? "" : ${result}.error.code;`);
-      ctx.emit(`${ctx.output("errorMessage")} = ${result}.ok ? "" : ${result}.error.message;`);
       if (valueType) ctx.emit(`${ctx.output("value")} = ${result}.ok ? ${result}.value : ${defaultValueLiteral(valueType)};`);
       ctx.branch?.(`${result}.ok`, "Completed", "Failed");
     },

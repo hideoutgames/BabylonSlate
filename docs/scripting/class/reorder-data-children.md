@@ -19,15 +19,15 @@ Sets the order of an entry's immediate children in a Data Tree.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Then | Exec |  |
-| Success | Boolean |  |
-| Error | String |  |
+| Completed | Exec |  |
+| Failed | Exec |  |
+| Error | String | Why the node failed; empty on success. |
 | Data Tree | DataTree Asset | The Data Tree that was reordered. |
 
 ## Notes
 
 - Include every immediate child path exactly once, or the operation fails.
 - The change is one undoable edit on the open tree.
-- Only in Editor Utility graphs; check **Success** before using the result.
+- Only in Editor Utility graphs; check **Completed** before using the result.
 - Latent: the node finishes later without pausing the rest of the game.
 - Editor Utility graphs only.

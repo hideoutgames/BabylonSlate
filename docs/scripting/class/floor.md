@@ -20,5 +20,4 @@ Rounds the input down to the nearest whole number.
 
 ## Notes
 
-- Accepts a Float, Vector2, Vector3 or Color, and works on each component.
 - Negative values round away from zero, so -1.5 becomes -2.

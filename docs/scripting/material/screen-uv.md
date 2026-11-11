@@ -14,4 +14,5 @@ Returns where the current pixel sits on the screen, from 0 to 1 on each axis.
 
 ## Notes
 
-- Only in Post Process materials, in the fragment stage.
+- (0, 0) is the bottom left of the screen and (1, 1) the top right.
+- In every material domain, in the fragment stage.

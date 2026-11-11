@@ -12,12 +12,15 @@ import {
   RESOLVING_WILDCARD,
   ROTATOR,
   STRING,
+  VEC2,
   VEC3,
+  VEC4,
   defaultValueLiteral,
   ENGINE_EASING_CURVE_ENUM_ID,
 } from "@haptic/scripting";
 import { hoistedCall } from "./hoisted-helper";
 import { hasValueTypePin, valueIndexOf } from "./map";
+import { NEARLY_EQUAL_TOLERANCE } from "./math";
 
 type Ctx = Parameters<NodeDefinition["codegen"]>[0];
 type Input = [id: string, name: string, type: PinType, defaultValue?: unknown];
@@ -139,6 +142,17 @@ const MATH_NODES: NodeDefinition[] = [
     "Value's bits moved Shift places toward the high end; each place doubles it.", ["<<", "bit shift"]),
   pureNode("math.shiftRight", "Shift Right", "math", [value(INT), ["shift", "Shift", INT, 1]], out(INT), (v, s) => `((${v}) >> (${s}))`,
     "Value's bits moved Shift places toward the low end, keeping its sign; each place halves it, rounding down.", [">>", "bit shift"]),
+  pureNode("math.abs_int", "Abs Int", "math", [value(INT)], out(INT), (v) => `Math.abs(${v})`,
+    "Value without its sign.", ["abs", "|x|"]),
+  pureNode("math.min_int", "Min Int", "math", ab(INT), out(INT), (a, b) => `Math.min((${a}), (${b}))`,
+    "The smaller of A and B.", ["min", "min(a,b)"]),
+  pureNode("math.max_int", "Max Int", "math", ab(INT), out(INT), (a, b) => `Math.max((${a}), (${b}))`,
+    "The larger of A and B.", ["max", "max(a,b)"]),
+  pureNode("math.clamp_int", "Clamp Int", "math", [value(INT), ["min", "Min", INT, 0], ["max", "Max", INT, 1]], out(INT),
+    (v, lo, hi) => `Math.min((${hi}), Math.max((${lo}), (${v})))`,
+    "Value kept between Min and Max.", ["clamp(x,min,max)"]),
+  pureNode("math.sign_int", "Sign Int", "math", [value(INT)], out(INT), (v) => `Math.sign(${v})`,
+    "-1, 0 or 1 by the sign of Value.", ["sign(x)", "sgn"]),
   helperNode("math.floatInterpTo", "Interp To Float", "math", interpPins(FLOAT), out(FLOAT),
     "__util_finterp", "c, t, dt, s", `(s <= 0 ? t : (t - c) * (t - c) < ${ARRIVED} ? t : c + (t - c) * Math.min(Math.max(dt * s, 0), 1))`,
     "Moves Current toward Target by a share of the remaining distance each call, so it slows as it arrives. Interp Speed 0 jumps to Target.", ["finterp", "interp to", "smooth follow"]),
@@ -188,11 +202,24 @@ const VECTOR_NODES: NodeDefinition[] = [
     `{ const d = Math.hypot(v.x, v.y, v.z); if (!(d > 1e-8)) return { ...v }; const k = Math.min(Math.max(d, lo), Math.max(lo, hi)) / d;`
       + ` return ${VEC("v.x * k", "v.y * k", "v.z * k")}; }`,
     "Vector in the same direction, with its length kept between Min and Max. A zero vector stays zero.", ["clamp length", "limit speed"]),
-  helperNode("vector.nearlyEqual", "Nearly Equal Vector3", "vector", [...ab(VEC3), ["tolerance", "Tolerance", FLOAT, 0.0001]], out(BOOL),
+  helperNode("vector.nearlyEqual", "Nearly Equal Vector3", "vector", [...ab(VEC3), ["tolerance", "Tolerance", FLOAT, NEARLY_EQUAL_TOLERANCE]], out(BOOL),
     "__util_nearlyEqual3", "a, b, t", "(Math.abs(a.x - b.x) <= t && Math.abs(a.y - b.y) <= t && Math.abs(a.z - b.z) <= t)",
     "True when every axis of A and B differs by no more than Tolerance.", ["equal", "approximately"]),
   helperNode("vector.negate", "Negate Vector3", "vector", [["vector", "Vector", VEC3]], out(VEC3),
     "__util_negate3", "v", VEC("-v.x", "-v.y", "-v.z"), "Vector pointing the opposite way.", ["invert", "reverse", "opposite"]),
+  ...([[VEC2, "Vector2", "2", ["x", "y"]], [VEC4, "Vector4", "4", ["x", "y", "z", "w"]]] as const).flatMap(([type, label, suffix, axes]) => [
+    helperNode(`vector.negate${suffix}`, `Negate ${label}`, "vector", [["vector", "Vector", type]], out(type),
+      `__util_negate${suffix}`, "v", `({ ${axes.map((axis) => `${axis}: -v.${axis}`).join(", ")} })`,
+      "Vector pointing the opposite way.", ["invert", "reverse", "opposite"]),
+    helperNode(`vector.nearlyEqual${suffix}`, `Nearly Equal ${label}`, "vector", [...ab(type), ["tolerance", "Tolerance", FLOAT, NEARLY_EQUAL_TOLERANCE]], out(BOOL),
+      `__util_nearlyEqual${suffix}`, "a, b, t", `(${axes.map((axis) => `Math.abs(a.${axis} - b.${axis}) <= t`).join(" && ")})`,
+      "True when every axis of A and B differs by no more than Tolerance.", ["equal", "approximately"]),
+    helperNode(`vector.interpTo${suffix}`, `Interp To ${label}`, "vector", interpPins(type), out(type),
+      `__util_vinterp${suffix}`, "c, t, dt, s",
+      `{ ${axes.map((axis) => `const d${axis} = t.${axis} - c.${axis};`).join(" ")} if (s <= 0 || ${axes.map((axis) => `d${axis} * d${axis}`).join(" + ")} < ${ARRIVED}) return { ...t };`
+        + ` const k = Math.min(Math.max(dt * s, 0), 1); return { ${axes.map((axis) => `${axis}: c.${axis} + d${axis} * k`).join(", ")} }; }`,
+      "Moves Current toward Target by a share of the remaining distance each call, so it slows as it arrives. Interp Speed 0 jumps to Target.", ["vinterp", "interp to", "smooth follow"]),
+  ]),
   helperNode("rotator.interpTo", "Interp To Rotator", "rotator", interpPins(ROTATOR), out(ROTATOR),
     "__util_rinterp", "c, t, dt, s",
     `{ const n = __util_normalizeAxis; const dp = n(t.pitch - c.pitch), dy = n(t.yaw - c.yaw), dr = n(t.roll - c.roll);`
@@ -263,19 +290,31 @@ function extremeOf(id: string, title: string, type: PinType, max: boolean): Node
 }
 
 const ARRAY_NODES: NodeDefinition[] = [
-  arrayAction("array.sort", "Sort Array", [pin("descending", "Descending", "in", BOOL, "data", true, false)], [],
-    // Descending is read once, before the sort: the comparator runs for every pair.
-    (ctx, array) => `{ const __dir = ${ctx.input("descending")} === true ? -1 : 1; ${ctx.output("out")} = ${array}.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0) * __dir); }`,
-    "A copy of Array in ascending order, or descending with Descending. Numbers sort by value, text alphabetically by character code.", ["sort", "order"]),
+  {
+    id: "array.sort", title: "Sort Array", category: "array", pure: true,
+    description: "A copy of Array in ascending order, or descending with Descending. Numbers sort by value, text alphabetically by character code.",
+    searchAliases: ["sort", "order"],
+    pins: () => [
+      pin("array", "Array", "in", arrayOf(T)),
+      pin("descending", "Descending", "in", BOOL, "data", true, false),
+      pin("out", "Out", "out", arrayOf(T)),
+    ],
+    // A module helper: Descending is read once, before the sort, as the comparator runs for every pair.
+    codegen: (ctx) => ({
+      out: hoistedCall(ctx, "__util_sort", "a, d",
+        "{ const dir = d === true ? -1 : 1; return (a ?? []).slice().sort((x, y) => (x < y ? -1 : x > y ? 1 : 0) * dir); }",
+        [ctx.input("array"), ctx.input("descending")]),
+    }),
+  },
   arrayAction("array.addUnique", "Add Unique Array Item", [pin("item", "Item", "in", T)], [pin("index", "Index", "out", INT)],
     (ctx, array) => {
       const index = hasValueTypePin(ctx, "item") ? `${valueIndexOf(ctx)}(__a, __item)` : "__a.indexOf(__item)";
       return `{ const __a = ${array}; const __item = ${ctx.input("item")}; let __i = ${index}; if (__i < 0) { __i = __a.length; __a.push(__item); } ${ctx.output("out")} = __a; ${ctx.output("index")} = __i; }`;
     },
     "Array with Item appended unless it already holds an equal item. Index is where Item is in the result.", ["append unique", "add if missing"]),
-  arrayAction("array.swap", "Swap Array Items", [pin("first", "First Index", "in", INT), pin("second", "Second Index", "in", INT, "data", true, 1)], [],
-    (ctx, array) => `{ const __a = ${array}; const __i = ${ctx.input("first")}, __j = ${ctx.input("second")}; if (Number.isInteger(__i) && Number.isInteger(__j) && __i >= 0 && __j >= 0 && __i < __a.length && __j < __a.length) { const __t = __a[__i]; __a[__i] = __a[__j]; __a[__j] = __t; } ${ctx.output("out")} = __a; }`,
-    "Array with the items at First Index and Second Index changed places. Unchanged when either index is outside the array.", ["swap", "exchange"]),
+  arrayAction("array.swap", "Swap Array Items", [pin("first", "First Index", "in", INT), pin("second", "Second Index", "in", INT, "data", true, 1)], [pin("success", "Success", "out", BOOL)],
+    (ctx, array) => `{ const __a = ${array}; const __i = ${ctx.input("first")}, __j = ${ctx.input("second")}; ${ctx.output("success")} = Number.isInteger(__i) && Number.isInteger(__j) && __i >= 0 && __j >= 0 && __i < __a.length && __j < __a.length; if (${ctx.output("success")}) { const __t = __a[__i]; __a[__i] = __a[__j]; __a[__j] = __t; } ${ctx.output("out")} = __a; }`,
+    "Array with the items at First Index and Second Index changed places. Unchanged, with Success off, when either index is outside the array.", ["swap", "exchange"]),
   arrayAction("array.resize", "Resize Array", [pin("size", "Size", "in", INT)], [],
     (ctx, array) => {
       const item = ctx.node.pins.find((entry) => entry.id === "out")?.type;

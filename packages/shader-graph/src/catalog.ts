@@ -72,7 +72,7 @@ const TEXTURE: MaterialPinType = { kind: "texture" };
 const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "math.add": ["+","a + b","plus","sum"],
   "math.subtract": ["-","−","a - b","minus"],
-  "math.multiply": ["*","×","·","a * b","a × b","product"],
+  "math.multiply": ["*","×","·","a * b","a × b","product","blend multiply"],
   "math.divide": ["/","÷","a / b","quotient"],
   "math.negate": ["-","−","-x","negation"],
   "math.reciprocal": ["1/x","1 / x","inverse"],
@@ -106,8 +106,8 @@ const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "math.round": ["round(x)"],
   "math.fract": ["fract","frac","fract(x)","x-floor(x)"],
   "math.mod": ["%","mod","fmod","a % b","mod(a,b)","remainder"],
-  "math.min": ["min","min(a,b)"],
-  "math.max": ["max","max(a,b)"],
+  "math.min": ["min","min(a,b)","darken","blend darken"],
+  "math.max": ["max","max(a,b)","lighten","blend lighten"],
   "math.clamp": ["clamp(x,min,max)"],
   "math.mix": ["lerp","mix(a,b,t)","lerp(a,b,t)","a+(b-a)*t"],
   "math.step": ["step(edge,x)"],
@@ -120,7 +120,11 @@ const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "math.saturate": ["clamp(x,0,1)","saturate(x)","clamp01","clamp 0 1"],
   "vector.combine": ["append","make","merge","make vector","float2","float3","float4"],
   "vector.split": ["break","separate","components","break vector"],
-  "vector.mask": ["mask","component mask","swizzle","channel"],
+  "vector.mask": ["mask","component mask","channel"],
+  "vector.swizzle": ["reorder","rearrange","channels","xzy","bgr"],
+  "input.objectPosition": ["actor position","pivot","object origin"],
+  "input.screenUv": ["screen position","pixel position","viewport uv"],
+  "texture.triplanar": ["tri-planar","world aligned texture","box mapping"],
   "vector.length": ["magnitude","length(x)"],
   "vector.cross": ["cross","cross(a,b)","a × b"],
   "logic.select": ["if","branch","ternary","switch","condition ? a : b"],
@@ -128,7 +132,23 @@ const MATERIAL_SEARCH_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "logic.notEqual": ["!=","!==","≠","a != b","compare"],
   "logic.lessThan": ["<","a < b","compare"],
   "logic.greaterThan": [">","a > b","compare"],
-  "texture.transformUv": ["tiling","offset","panner","rotator","scale uv","tile"],
+  "logic.lessOrEqual": ["<=","≤","a <= b","compare"],
+  "logic.greaterOrEqual": [">=","≥","a >= b","compare"],
+  "logic.and": ["&&","and","both"],
+  "logic.or": ["||","or","either"],
+  "logic.not": ["!","not","invert mask"],
+  "texture.panner": ["scroll","scroll uv","pan"],
+  "texture.rotator": ["rotate uv","spin"],
+  "texture.flipbook": ["sprite sheet","sub uv","animation frames","atlas"],
+  "shading.normalBlend": ["blend normals","combine normals","detail normal"],
+  "color.luminance": ["brightness","luma","grayscale","greyscale"],
+  "color.contrast": ["cheap contrast"],
+  "color.posterize": ["quantize","steps","banding"],
+  "color.blendScreen": ["screen","blend mode"],
+  "color.blendOverlay": ["overlay","blend mode"],
+  "color.rgbToHsl": ["hsv","hue","saturation","rgb to hsv"],
+  "color.hslToRgb": ["hsv","hue","saturation","hsv to rgb"],
+  "texture.transformUv": ["tiling","offset","scale uv","tile"],
   "texture.sample": ["texture 2d","sample texture","tex2d","texture2d"],
   "texture.sampleLod": ["texture 2d lod","sample level","mip"],
   "input.uv": ["texcoord","texture coordinate","uv0","uv1"],
@@ -271,6 +291,7 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
     outputs: [
       { id: "out", name: "RGBA", type: VEC4, colorHint: true },
       { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
+      { id: "a", name: "A", type: FLOAT },
     ],
   },
   {
@@ -294,7 +315,6 @@ const CONSTANT_NODES: MaterialNodeDefinition[] = [
 ];
 
 const INPUT_NODES: MaterialNodeDefinition[] = [
-  { type: "input.vertexNormalWS", title: "Vertex Normal (World)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
   { type: "input.vertexNormal", title: "Vertex Normal (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "normal", name: "Normal", type: VEC3 }] },
   { type: "input.vertexPosition", title: "Vertex Position (Local)", category: "Input", domains: ["surface"], cost: 0, inputs: [], outputs: [{ id: "position", name: "Position", type: VEC3 }] },
   {
@@ -445,7 +465,21 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     domains: ["surface"],
     cost: 0,
     inputs: [],
-    outputs: [{ id: "color", name: "Color", type: VEC4, colorHint: true }],
+    outputs: [
+      { id: "color", name: "RGBA", type: VEC4, colorHint: true },
+      { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
+      { id: "a", name: "A", type: FLOAT },
+    ],
+  },
+  {
+    // The mesh's own origin in the scene: the same for every pixel of one mesh or instance.
+    type: "input.objectPosition",
+    title: "Object Position",
+    category: "Input",
+    domains: ["surface"],
+    cost: 1,
+    inputs: [],
+    outputs: [{ id: "position", name: "Position", type: VEC3 }],
   },
   {
     type: "input.worldPosition",
@@ -493,10 +527,10 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     outputs: [{ id: "position", name: "Position", type: VEC3 }],
   },
   {
+    // The pixel's place on the screen, 0 to 1 from the bottom left, in every domain.
     type: "input.screenUv",
     title: "Screen UV",
     category: "Input",
-    domains: ["postProcess"],
     stages: ["fragment"],
     cost: 0,
     inputs: [],
@@ -511,7 +545,11 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     cost: 2,
     samples: 1,
     inputs: [{ id: "uv", name: "UV", type: VEC2 }],
-    outputs: [{ id: "color", name: "Color", type: VEC4, colorHint: true }],
+    outputs: [
+      { id: "color", name: "RGBA", type: VEC4, colorHint: true },
+      { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
+      { id: "a", name: "A", type: FLOAT },
+    ],
   },
   {
     // The reflection a Mirror component drew, read at the surface's own screen position; black on any other mesh.
@@ -582,7 +620,11 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     stages: ["fragment"],
     cost: 0,
     inputs: [],
-    outputs: [{ id: "color", name: "Color", type: VEC4, colorHint: true }],
+    outputs: [
+      { id: "color", name: "RGBA", type: VEC4, colorHint: true },
+      { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
+      { id: "a", name: "A", type: FLOAT },
+    ],
   },
 ];
 
@@ -763,9 +805,15 @@ const VECTOR_NODES: MaterialNodeDefinition[] = [
     ],
   },
   {
-    type: "vector.mask", title: "Component Mask (R)", category: "Vector", cost: 0,
+    type: "vector.mask", title: "Component Mask (X)", category: "Vector", cost: 0,
     inputs: [{ id: "value", name: "Value", type: VEC4, defaultValue: [0, 0, 0, 0] }],
     outputs: [{ id: "out", name: "Out", type: FLOAT }],
+  },
+  {
+    // The output follows the Components property (`swizzleDefinition`).
+    type: "vector.swizzle", title: "Swizzle (XYZ)", category: "Vector", cost: 0,
+    inputs: [{ id: "value", name: "Value", type: VEC4, defaultValue: [0, 0, 0, 0] }],
+    outputs: [{ id: "out", name: "Out", type: VEC3 }],
   },
   {
     type: "vector.split",
@@ -787,6 +835,12 @@ const LOGIC_NODES: MaterialNodeDefinition[] = [
   generic("logic.notEqual", "Not Equal", "Logic", ["a", "b"]),
   generic("logic.lessThan", "Less Than", "Logic", ["a", "b"]),
   generic("logic.greaterThan", "Greater Than", "Logic", ["a", "b"]),
+  generic("logic.lessOrEqual", "Less Or Equal", "Logic", ["a", "b"]),
+  generic("logic.greaterOrEqual", "Greater Or Equal", "Logic", ["a", "b"]),
+  // Masks: a value above 0.5 is true, as Select reads its Condition, and the result is 1 or 0.
+  generic("logic.and", "And", "Logic", ["a", "b"]),
+  generic("logic.or", "Or", "Logic", ["a", "b"]),
+  unaryGeneric("logic.not", "Not", "Logic"),
   {
     type: "logic.select",
     searchAliases: ["?:", "condition ? a : b"],
@@ -794,7 +848,8 @@ const LOGIC_NODES: MaterialNodeDefinition[] = [
     category: "Logic",
     cost: 1,
     inputs: [
-      { id: "condition", name: "Condition", type: FLOAT, defaultValue: [0] },
+      // A Float picks the whole value; a vector picks each component by its own.
+      { id: "condition", name: "Condition", type: GENERIC, defaultValue: [0] },
       { id: "whenTrue", name: "When True", type: GENERIC, defaultValue: [0] },
       { id: "whenFalse", name: "When False", type: GENERIC, defaultValue: [0] },
     ],
@@ -890,10 +945,68 @@ const TEXTURE_NODES: MaterialNodeDefinition[] = [
     inputs: [
       { id: "uv", name: "UV", type: VEC2 },
       { id: "tiling", name: "Tiling", type: VEC2, defaultValue: [1, 1] },
-      { id: "rotation", name: "Rotation", type: FLOAT, defaultValue: [0] },
+      { id: "rotation", name: "Rotation (Radians)", type: FLOAT, defaultValue: [0] },
       { id: "offset", name: "Offset", type: VEC2, defaultValue: [0, 0] },
     ],
     outputs: [{ id: "out", name: "Out", type: VEC2 }],
+  },
+  {
+    type: "texture.panner",
+    title: "Panner",
+    category: "Texture",
+    cost: 2,
+    inputs: [
+      { id: "uv", name: "UV", type: VEC2 },
+      { id: "speed", name: "Speed", type: VEC2, defaultValue: [0.1, 0] },
+      // No default: unwired, the node reads the game's Time.
+      { id: "time", name: "Time", type: FLOAT },
+    ],
+    outputs: [{ id: "out", name: "Out", type: VEC2 }],
+  },
+  {
+    type: "texture.rotator",
+    title: "Rotator",
+    category: "Texture",
+    cost: 3,
+    inputs: [
+      { id: "uv", name: "UV", type: VEC2 },
+      { id: "center", name: "Center", type: VEC2, defaultValue: [0.5, 0.5] },
+      { id: "angle", name: "Angle (Radians)", type: FLOAT, defaultValue: [0] },
+    ],
+    outputs: [{ id: "out", name: "Out", type: VEC2 }],
+  },
+  {
+    type: "texture.flipbook",
+    title: "Flipbook",
+    category: "Texture",
+    cost: 6,
+    inputs: [
+      { id: "uv", name: "UV", type: VEC2 },
+      { id: "columns", name: "Columns", type: FLOAT, defaultValue: [4] },
+      { id: "rows", name: "Rows", type: FLOAT, defaultValue: [4] },
+      { id: "frame", name: "Frame", type: FLOAT, defaultValue: [0] },
+    ],
+    outputs: [{ id: "out", name: "Out", type: VEC2 }],
+  },
+  {
+    // Three samples projected along the world axes and blended by the normal: no UVs and no stretching.
+    type: "texture.triplanar",
+    title: "Triplanar",
+    category: "Texture",
+    domains: ["surface"],
+    stages: ["fragment"],
+    cost: 8,
+    samples: 3,
+    inputs: [
+      { id: "texture", name: "Texture", type: TEXTURE },
+      { id: "scale", name: "Scale", type: FLOAT, defaultValue: [1] },
+      { id: "sharpness", name: "Sharpness", type: FLOAT, defaultValue: [1] },
+    ],
+    outputs: [
+      { id: "rgba", name: "RGBA", type: VEC4, colorHint: true },
+      { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
+      { id: "a", name: "A", type: FLOAT },
+    ],
   },
 ];
 
@@ -926,6 +1039,18 @@ const SHADING_NODES: MaterialNodeDefinition[] = [
     outputs: [{ id: "normal", name: "Normal", type: VEC3 }],
   },
   {
+    type: "shading.normalBlend",
+    title: "Normal Blend",
+    category: "Shading",
+    cost: 4,
+    inputs: [
+      // Two packed normal map colours; the flat normal leaves the other as it is.
+      { id: "a", name: "A", type: VEC3, defaultValue: [0.5, 0.5, 1] },
+      { id: "b", name: "B", type: VEC3, defaultValue: [0.5, 0.5, 1] },
+    ],
+    outputs: [{ id: "out", name: "Packed", type: VEC3 }],
+  },
+  {
     type: "color.desaturate",
     title: "Desaturate",
     category: "Color",
@@ -943,6 +1068,74 @@ const SHADING_NODES: MaterialNodeDefinition[] = [
     cost: 3,
     inputs: [{ id: "value", name: "Value", type: FLOAT, defaultValue: [0] }],
     outputs: [{ id: "out", name: "Out", type: VEC3, colorHint: true }],
+  },
+  {
+    type: "color.luminance",
+    title: "Luminance",
+    category: "Color",
+    cost: 1,
+    inputs: [{ id: "color", name: "Color", type: VEC3, colorHint: true, defaultValue: [1, 1, 1] }],
+    outputs: [{ id: "out", name: "Out", type: FLOAT }],
+  },
+  {
+    type: "color.contrast",
+    title: "Contrast",
+    category: "Color",
+    cost: 2,
+    inputs: [
+      { id: "color", name: "Color", type: VEC3, colorHint: true, defaultValue: [1, 1, 1] },
+      { id: "contrast", name: "Contrast", type: FLOAT, defaultValue: [1] },
+    ],
+    outputs: [{ id: "out", name: "Out", type: VEC3, colorHint: true }],
+  },
+  {
+    type: "color.posterize",
+    title: "Posterize",
+    category: "Color",
+    cost: 2,
+    inputs: [
+      { id: "value", name: "Value", type: GENERIC, defaultValue: [0] },
+      { id: "steps", name: "Steps", type: FLOAT, defaultValue: [4] },
+    ],
+    outputs: [{ id: "out", name: "Out", type: GENERIC }],
+  },
+  {
+    type: "color.blendScreen",
+    title: "Blend Screen",
+    category: "Color",
+    cost: 3,
+    inputs: [
+      { id: "base", name: "Base", type: GENERIC, defaultValue: [0] },
+      { id: "blend", name: "Blend", type: GENERIC, defaultValue: [0] },
+    ],
+    outputs: [{ id: "out", name: "Out", type: GENERIC }],
+  },
+  {
+    type: "color.blendOverlay",
+    title: "Blend Overlay",
+    category: "Color",
+    cost: 5,
+    inputs: [
+      { id: "base", name: "Base", type: GENERIC, defaultValue: [0.5] },
+      { id: "blend", name: "Blend", type: GENERIC, defaultValue: [0.5] },
+    ],
+    outputs: [{ id: "out", name: "Out", type: GENERIC }],
+  },
+  {
+    type: "color.rgbToHsl",
+    title: "RGB To HSL",
+    category: "Color",
+    cost: 6,
+    inputs: [{ id: "color", name: "RGB", type: VEC3, colorHint: true, defaultValue: [1, 1, 1] }],
+    outputs: [{ id: "out", name: "HSL", type: VEC3 }],
+  },
+  {
+    type: "color.hslToRgb",
+    title: "HSL To RGB",
+    category: "Color",
+    cost: 6,
+    inputs: [{ id: "hsl", name: "HSL", type: VEC3, defaultValue: [0, 0, 1] }],
+    outputs: [{ id: "out", name: "RGB", type: VEC3, colorHint: true }],
   },
 ];
 
@@ -1090,10 +1283,6 @@ const LANDSCAPE_NODES: MaterialNodeDefinition[] = [
     inputs: [], outputs: [{ id: "slope", name: "Slope", type: FLOAT }] },
   { type: "landscape.layers", title: "Landscape Paint Layers", category: "Landscape", domains: ["landscape"], cost: 0,
     inputs: [], outputs: [1, 2, 3, 4].map((n) => ({ id: `layer${n}`, name: `Layer ${n}`, type: FLOAT })) },
-  { type: "landscape.blend", title: "Landscape Layer Blend", category: "Landscape", domains: ["landscape"], cost: 1,
-    inputs: [{ id: "base", name: "Base", type: VEC3, defaultValue: [0.3, 0.3, 0.3] },
-      { id: "layer", name: "Layer", type: VEC3, defaultValue: [0.8, 0.8, 0.8] },
-      { id: "weight", name: "Weight", type: FLOAT, defaultValue: [0] }], outputs: [{ id: "color", name: "Color", type: VEC3 }] },
 ];
 
 /** A node's own aliases plus the table's, so any node can be listed there. */

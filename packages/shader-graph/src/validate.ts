@@ -32,7 +32,7 @@ import type {
 } from "./document";
 import { callDefinition, createTypeResolver } from "./resolve";
 import { customGlslDefinition, customGlslFunctionBodyError, customGlslInterfaceError } from "./custom-glsl";
-import { vectorMaskDefinition, vectorMaskError } from "./vector-mask";
+import { swizzleDefinition, swizzleError, vectorMaskDefinition, vectorMaskError } from "./vector-mask";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, materialGlobalParameterDefinition, validateMaterialGlobalParameter } from "./global-parameter";
 import { validateMaterialParameterNames } from "./parameters";
 import {
@@ -157,6 +157,7 @@ function definitionForNode(
   }
   const definition = materialNodeDefinition(node.type);
   if (definition && node.type === "vector.mask") return vectorMaskDefinition(node, definition);
+  if (definition && node.type === "vector.swizzle") return swizzleDefinition(node, definition);
   if (definition && node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) return materialGlobalParameterDefinition(node, definition);
   return definition && node.type === "custom.glsl" ? customGlslDefinition(node, definition) : definition;
 }
@@ -270,6 +271,10 @@ function validateGraph(
     if (node.type === "vector.mask") {
       const message = vectorMaskError(node.properties);
       if (message) diagnostics.push({ code: "material.vectorMask", message, severity: "error", nodeId: node.id, pinId: "value" });
+    }
+    if (node.type === "vector.swizzle") {
+      const message = swizzleError(node.properties);
+      if (message) diagnostics.push({ code: "material.swizzle", message, severity: "error", nodeId: node.id, pinId: "value" });
     }
     if (node.type === "custom.glsl") {
       const message = customGlslInterfaceError(node.properties) ?? customGlslFunctionBodyError(customGlslBody(node));

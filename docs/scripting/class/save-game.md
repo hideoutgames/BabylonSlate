@@ -20,9 +20,8 @@ Writes the current save data to a slot.
 | --- | --- | --- |
 | Completed | Exec |  |
 | Failed | Exec |  |
-| Success | Boolean |  |
+| Error | String | Why the node failed; empty on success. |
 | Error Code | String | Empty on success; otherwise missing, corrupt, incompatible, storage-full, unavailable, invalid or apply-failed. |
-| Error Message | String |  |
 | Save | SaveGameInfo | Details of the save that was written: its slot, profile, sequence number and time. |
 
 ## Notes

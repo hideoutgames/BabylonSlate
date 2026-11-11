@@ -43,7 +43,7 @@ describe("Material Global Parameter node", () => {
 
   it("is named after its parameter and takes its type's outputs; without a parameter it has none", () => {
     expect(hydrated(material({ collectionGuid: "fx", parameterId: "tint", valueType: "color" }), catalog))
-      .toEqual({ title: "Sky Tint (Global Color)", outputs: ["out:vec4", "rgb:vec3"] });
+      .toEqual({ title: "Sky Tint (Global Color)", outputs: ["out:vec4", "rgb:vec3", "a:float"] });
     expect(hydrated(material({ collectionGuid: "fx", parameterId: "wind", valueType: "vec3" }), catalog))
       .toEqual({ title: "Wind Direction (Global Vector3)", outputs: ["out:vec3"] });
     expect(hydrated(material({ collectionGuid: "fx" }), catalog)).toEqual({ title: "Global Parameter", outputs: [] });

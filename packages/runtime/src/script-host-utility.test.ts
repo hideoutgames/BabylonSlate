@@ -286,9 +286,13 @@ describe("ScriptHost utility bindings", () => {
 
     expect(sent).toEqual([actor, actor, actor]);
     expect([light.getVariable("intensity"), light.getVariable("color"), light.getVariable("enabled")]).toEqual([2, [1, 0, 0], false]);
-    // An actor without a light sends nothing.
-    ctx.setLightIntensity(new Actor({ classId: "Actor" }), 3);
+    // The getters read what the setters wrote.
+    expect([ctx.getLightIntensity(actor), ctx.getLightColor(actor), ctx.isLightEnabled(actor)]).toEqual([2, { x: 1, y: 0, z: 0, w: 1 }, false]);
+    // An actor without a light sends nothing, and reads as an unlit white light.
+    const plain = new Actor({ classId: "Actor" });
+    ctx.setLightIntensity(plain, 3);
     expect(sent).toHaveLength(3);
+    expect([ctx.getLightIntensity(plain), ctx.getLightColor(plain), ctx.isLightEnabled(plain)]).toEqual([0, { x: 1, y: 1, z: 1, w: 1 }, false]);
   });
 
   it("component queries handle missing types and worlds and match exact classes without a registry", () => {

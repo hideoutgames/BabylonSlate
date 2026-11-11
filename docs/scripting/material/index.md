@@ -18,6 +18,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Camera Position](camera-position.md) | Returns the position of the camera in world space. |
 | [Environment Sample](environment-sample.md) | Returns the colour of the scene's environment lighting in a direction, blurred by roughness. |
 | [Mirror Reflection](mirror-reflection.md) | Returns the reflection a Mirror component shows at the current point of its surface. |
+| [Object Position](object-position.md) | Returns the position of the mesh's origin in world space, in metres. |
 | [Particle Color](particle-color.md) | Returns the colour and alpha the emitter gives to the particle being drawn. |
 | [Scene Color](scene-color.md) | Returns the colour of the rendered scene at a position on the screen. |
 | [Scene Depth](scene-depth.md) | Returns the linear depth of the rendered scene at a position on the screen. |
@@ -28,7 +29,6 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [UV](uv.md) | Returns the texture coordinates of the surface, particle quad or text glyph being drawn. |
 | [Vertex Color](vertex-color.md) | Returns the vertex colour painted on the mesh, including alpha. |
 | [Vertex Normal (Local)](vertex-normal-local.md) | Returns the vertex normal in the mesh's local space, including morph target changes. |
-| [Vertex Normal (World)](vertex-normal-world.md) | Returns the vertex normal in world space, scaled to a length of 1. |
 | [Vertex Position (Local)](vertex-position-local.md) | Returns the vertex position in the mesh's local space, including morph target changes. |
 | [View Direction](view-direction.md) | Returns the direction from the surface point toward the camera, scaled to a length of 1. |
 | [Water Surface](water-surface.md) | Returns water data for the current point: wave height, bank distance, depth, time and flow. |
@@ -38,7 +38,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Water Reflection](water-reflection.md) | Returns what the water mirrors at this point, and how strongly it reflects. |
 | [Water Scene Color](water-scene-color.md) | Returns the scene behind the water at this point, bent by the waves as built-in Refraction bends it. |
 | [Water Waves](water-waves.md) | Returns the water asset's simulated ocean at this point: the wave offset, height, normal, breaking-crest foam and the sunlight glowing through the crests. |
-| [World Normal](world-normal.md) | Returns the surface normal in world space. |
+| [World Normal](world-normal.md) | Returns the surface normal in world space, scaled to a length of 1. |
 | [World Position](world-position.md) | Returns the position of the surface point in world space, in metres. |
 | [World Tangent](world-tangent.md) | Returns the surface tangent direction in world space, scaled to a length of 1. |
 
@@ -126,16 +126,22 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Reflect](reflect.md) | Reflects Incident around Normal and returns the bounced direction. |
 | [Refract](refract.md) | Bends the Incident direction as it passes through a surface with the given Normal and Eta. |
 | [Split](split.md) | Splits a Vector2, Vector3 or Color into separate Float components. |
-| [Component Mask (R)](component-mask.md) | Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller vector. |
+| [Component Mask (X)](component-mask.md) | Extracts chosen components from a Vector4 and outputs them as a Float or a smaller vector. |
+| [Swizzle (XYZ)](swizzle.md) | Reorders or repeats the components of a vector. |
 
 ## Logic
 
 | Node | Description |
 | --- | --- |
+| [And](and.md) | Returns 1 where both A and B are true and 0 otherwise. |
 | [Equal](equal.md) | Returns 1 where A equals B and 0 where it does not. |
+| [Greater Or Equal](greater-or-equal.md) | Returns 1 where A is greater than or equal to B and 0 otherwise. |
 | [Greater Than](greater-than.md) | Returns 1 where A is greater than B and 0 otherwise. |
+| [Less Or Equal](less-or-equal.md) | Returns 1 where A is less than or equal to B and 0 otherwise. |
 | [Less Than](less-than.md) | Returns 1 where A is less than B and 0 otherwise. |
+| [Not](not.md) | Returns 0 where Value is true and 1 where it is not. |
 | [Not Equal](not-equal.md) | Returns 1 where A differs from B and 0 where it is equal. |
+| [Or](or.md) | Returns 1 where A or B is true and 0 where neither is. |
 | [Select](select.md) | Chooses between When True and When False using Condition. |
 
 ## Derivative
@@ -158,23 +164,35 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
+| [Flipbook](flipbook.md) | Returns the UV of one cell of a sprite sheet, for playing a sequence of frames from one texture. |
+| [Panner](panner.md) | Scrolls UV coordinates at a steady speed. |
+| [Rotator](rotator.md) | Rotates UV coordinates around a centre point. |
 | [Texture Sample](texture-sample.md) | Samples a texture at UV and returns its colour, its separate channels and the texture itself. |
 | [Texture Sample LOD](texture-sample-lod.md) | Samples a texture at a chosen mip level instead of the level the GPU would pick. |
-| [Transform UV](transform-uv.md) | Scales and offsets UV coordinates, for tiling and scrolling textures. |
+| [Transform UV](transform-uv.md) | Scales, rotates and offsets UV coordinates, for tiling, turning and scrolling textures. |
+| [Triplanar](triplanar.md) | Samples a texture along the three world axes and blends the results by the surface normal. |
 
 ## Shading
 
 | Node | Description |
 | --- | --- |
 | [Fresnel](fresnel.md) | Returns a value that is 0 where the surface faces the camera and rises to 1 at its edges, for rim lighting. |
+| [Normal Blend](normal-blend.md) | Combines two normal map colours into one, for adding a detail normal map to a base one. |
 | [Normal Map](normal-map.md) | Turns a normal map colour into a world-space normal that follows the surface's shape. |
 
 ## Color
 
 | Node | Description |
 | --- | --- |
+| [Blend Overlay](blend-overlay.md) | Darkens the dark parts of Base and lightens the light parts by Blend. |
+| [Blend Screen](blend-screen.md) | Lightens Base by Blend, as the Screen blend mode of an image editor does. |
+| [Contrast](contrast.md) | Pushes a colour away from or toward mid grey. |
 | [Desaturate](desaturate.md) | Blends a colour toward grey by the amount set in Level. |
 | [Gradient](gradient.md) | Maps a Value from 0 to 1 onto a colour gradient that you edit in the **Inspector**. |
+| [HSL To RGB](hsl-to-rgb.md) | Converts hue, saturation and lightness to a colour. |
+| [Luminance](luminance.md) | Returns how bright a colour is, as one Float. |
+| [Posterize](posterize.md) | Rounds Value down to a fixed number of even steps, for banded shading. |
+| [RGB To HSL](rgb-to-hsl.md) | Converts a colour to hue, saturation and lightness. |
 
 ## Landscape
 
@@ -182,7 +200,6 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | --- | --- |
 | [Landscape Coordinates](landscape-coordinates.md) | Returns texture coordinates from the world X and Z position, for tiling textures across a landscape. |
 | [Landscape Height](landscape-height.md) | Returns the height of the ground at each point, as its world Y position in metres. |
-| [Landscape Layer Blend](landscape-layer-blend.md) | Mixes a Base colour toward a Layer colour by a weight. |
 | [Landscape Paint Layers](landscape-paint-layers.md) | Returns the paint weight of each of the four landscape paint layers at each point. |
 | [Landscape Slope](landscape-slope.md) | Returns how steep the ground is, from 0 on flat ground to 1 on a vertical face. |
 

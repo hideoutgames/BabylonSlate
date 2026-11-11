@@ -1,13 +1,15 @@
 import {
-  arrayOf, assetRef, BOOL, EXEC, INT, pin, STRING, structRef,
+  arrayOf, assetRef, EXEC, INT, pin, STRING, structRef,
   type CodegenContext, type NodeDefinition,
 } from "@haptic/scripting";
 
 const TREE = assetRef("DataTree");
 const PATHS = arrayOf(STRING);
+/** Failure is the Failed pin and Error, as on every latent node. */
 const resultPins = () => [
-  pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC),
-  pin("success", "Success", "out", BOOL), pin("error", "Error", "out", STRING),
+  pin("execIn", "Exec", "in", EXEC),
+  pin("completed", "Completed", "out", EXEC), pin("failed", "Failed", "out", EXEC),
+  pin("error", "Error", "out", STRING),
 ];
 const treePin = () => pin("tree", "Data Tree", "in", TREE);
 const pathPin = (id = "entryPath", label = "Entry Path", root = false) => pin(id, label, "in", STRING, "data", root, root ? "" : undefined);
@@ -18,12 +20,10 @@ const hasValues = (properties: Record<string, unknown>) => !!definitionGuid(prop
 
 function emitResult(ctx: CodegenContext, call: string, fallback: string): void {
   const result = `${ctx.output("value")}_result`;
-  ctx.emit("{");
   ctx.emit(`const ${result} = (yield ctx.editorData.${call});`);
-  ctx.emit(`${ctx.output("success")} = ${result}.success;`);
   ctx.emit(`${ctx.output("error")} = ${result}.error;`);
   ctx.emit(`${ctx.output("value")} = ${result}.value ?? ${fallback};`);
-  ctx.emit("}");
+  ctx.branch?.(`${result}.success`, "Completed", "Failed");
 }
 const common = { category: "editor", editorOnly: true, latent: true } as const;
 
@@ -42,7 +42,7 @@ export const editorDataNodes: NodeDefinition[] = [
   },
   {
     ...common, id: "editorData.readEntry", title: "Read Editable Data Entry",
-    description: "Reads owned values at an exact path using the selected Definition. Check Success before using Value.",
+    description: "Reads owned values at an exact path using the selected Definition. Value is set when Completed runs.",
     pins: (properties) => [...resultPins(), treePin(), pathPin(), pin("value", "Value", "out", structRef(definitionGuid(properties)))],
     codegen: (ctx) => emitResult(ctx, `readEntry(${ctx.input("tree")}, ${ctx.input("entryPath")}, ${definitionLiteral(ctx)})`, "{}"),
   },

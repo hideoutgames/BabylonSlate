@@ -47,12 +47,36 @@ function binary(
       pin("out", "out", "out", type),
     ],
     codegen: (ctx) => ({
-      out: type === INT && (op === "/" || op === "%")
-        ? intDivisionExpr(ctx, ctx.input("a"), ctx.input("b"), op)
+      out: op === "/" || op === "%"
+        ? type === INT
+          ? intDivisionExpr(ctx, ctx.input("a"), ctx.input("b"), op)
+          : floatDivisionExpr(ctx, ctx.input("a"), ctx.input("b"), op)
         : `(${ctx.input("a")} ${op} ${ctx.input("b")})`,
     }),
   };
 }
+
+/**
+ * Divide and Modulo on Floats. A zero divisor yields 0, as on Ints: no math node hands NaN or
+ * Infinity to the nodes after it for an input outside its domain.
+ */
+function floatDivisionExpr(
+  ctx: Parameters<NodeDefinition["codegen"]>[0],
+  a: string,
+  b: string,
+  op: "/" | "%",
+): string {
+  return hoistedCall(
+    ctx,
+    op === "/" ? "__math_div" : "__math_mod",
+    "a, b",
+    `(b === 0 ? 0 : a ${op} b)`,
+    [a, b],
+  );
+}
+
+/** The default Tolerance of every Nearly Equal node: the largest difference that still counts as equal. */
+export const NEARLY_EQUAL_TOLERANCE = 0.0001;
 
 /** One-input trig node: `expr` maps the input expression to the output expression. */
 function trigNode(
@@ -75,6 +99,8 @@ function trigNode(
   };
 }
 
+/** `value` held to -1..1, the domain of Asin and Acos: a dot product a rounding error above 1 reads as 1, not NaN. */
+const unitRange = (value: string) => `Math.min(1, Math.max(-1, ${value}))`;
 const toRadians = (value: string) => `((${value}) * Math.PI / 180)`;
 const toDegrees = (value: string) => `((${value}) * 180 / Math.PI)`;
 
@@ -109,10 +135,10 @@ const TRIG_NODES: NodeDefinition[] = [
   trigNode("math.cosDegrees", "Cos (Degrees)", ["cos", "cosd", "cosine degrees"], (value) => `Math.cos(${toRadians(value)})`),
   trigNode("math.tan", "Tan (Radians)", ["tan", "tan(x)", "tangent"], (value) => `Math.tan(${value})`),
   trigNode("math.tanDegrees", "Tan (Degrees)", ["tan", "tand", "tangent degrees"], (value) => `Math.tan(${toRadians(value)})`),
-  trigNode("math.asin", "Asin (Radians)", ["asin", "asin(x)", "arcsine", "inverse sine"], (value) => `Math.asin(${value})`),
-  trigNode("math.asinDegrees", "Asin (Degrees)", ["asin", "asind", "arcsine degrees"], (value) => toDegrees(`Math.asin(${value})`)),
-  trigNode("math.acos", "Acos (Radians)", ["acos", "acos(x)", "arccosine", "inverse cosine"], (value) => `Math.acos(${value})`),
-  trigNode("math.acosDegrees", "Acos (Degrees)", ["acos", "acosd", "arccosine degrees"], (value) => toDegrees(`Math.acos(${value})`)),
+  trigNode("math.asin", "Asin (Radians)", ["asin", "asin(x)", "arcsine", "inverse sine"], (value) => `Math.asin(${unitRange(value)})`),
+  trigNode("math.asinDegrees", "Asin (Degrees)", ["asin", "asind", "arcsine degrees"], (value) => toDegrees(`Math.asin(${unitRange(value)})`)),
+  trigNode("math.acos", "Acos (Radians)", ["acos", "acos(x)", "arccosine", "inverse cosine"], (value) => `Math.acos(${unitRange(value)})`),
+  trigNode("math.acosDegrees", "Acos (Degrees)", ["acos", "acosd", "arccosine degrees"], (value) => toDegrees(`Math.acos(${unitRange(value)})`)),
   trigNode("math.atan", "Atan (Radians)", ["atan", "atan(x)", "arctangent", "inverse tangent"], (value) => `Math.atan(${value})`),
   trigNode("math.atanDegrees", "Atan (Degrees)", ["atan", "atand", "arctangent degrees"], (value) => toDegrees(`Math.atan(${value})`)),
   atan2Node("math.atan2", "Atan2 (Radians)", ["atan2", "atan2(y,x)", "angle of vector"], false),
@@ -161,12 +187,13 @@ export const mathNodes: NodeDefinition[] = [
     category: "math",
     pure: true,
     pins: () => [
-      pin("a", "a", "in", FLOAT),
-      pin("b", "b", "in", FLOAT),
-      pin("out", "out", "out", BOOL),
+      pin("a", "A", "in", FLOAT),
+      pin("b", "B", "in", FLOAT),
+      pin("tolerance", "Tolerance", "in", FLOAT, "data", true, NEARLY_EQUAL_TOLERANCE),
+      pin("out", "Out", "out", BOOL),
     ],
     codegen: (ctx) => ({
-      out: `(Math.abs((${ctx.input("a")}) - (${ctx.input("b")})) < 1e-6)`,
+      out: `(Math.abs((${ctx.input("a")}) - (${ctx.input("b")})) <= (${ctx.input("tolerance")}))`,
     }),
   },
   {
@@ -451,8 +478,9 @@ export const mathNodes: NodeDefinition[] = [
       pin("exp", "Exp", "in", FLOAT),
       pin("out", "Out", "out", FLOAT),
     ],
+    // A negative Base with a fractional Exp, or 0 with a negative one, has no real result: 0.
     codegen: (ctx) => ({
-      out: `Math.pow((${ctx.input("base")}), (${ctx.input("exp")}))`,
+      out: hoistedCall(ctx, "__math_pow", "b, e", "{ const p = Math.pow(b, e); return Number.isFinite(p) ? p : 0; }", [ctx.input("base"), ctx.input("exp")]),
     }),
   },
   {
@@ -465,7 +493,8 @@ export const mathNodes: NodeDefinition[] = [
       pin("in", "In", "in", FLOAT),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: `Math.sqrt(${ctx.input("in")})` }),
+    // A negative value has no real root: 0, like Natural Log outside its domain.
+    codegen: (ctx) => ({ out: hoistedCall(ctx, "__math_sqrt", "v", "(v > 0 ? Math.sqrt(v) : 0)", [ctx.input("in")]) }),
   },
   {
     id: "math.random",

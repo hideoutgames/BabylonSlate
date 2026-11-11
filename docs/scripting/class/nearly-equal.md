@@ -4,14 +4,15 @@ node: math.compare
 
 # Nearly Equal
 
-Returns true when two numbers differ by less than a very small amount.
+Returns true when two numbers are almost the same.
 
 ## Inputs
 
-| Pin | Type |
-| --- | --- |
-| A | Float |
-| B | Float |
+| Pin | Type | Description |
+| --- | --- | --- |
+| A | Float |  |
+| B | Float |  |
+| Tolerance | Float | Defaults to 0.0001. |
 
 ## Outputs
 
@@ -21,4 +22,5 @@ Returns true when two numbers differ by less than a very small amount.
 
 ## Notes
 
-- The tolerance is 0.000001. Use it instead of [**Equal**](equal.md) when comparing calculated values.
+- **A** and **B** must differ by no more than **Tolerance**.
+- Use it instead of [**Equal**](equal.md) when comparing calculated values.

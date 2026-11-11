@@ -131,7 +131,7 @@ interface AudioHostDeps {
   scriptVoiceId(): string;
   emit(command: CommandMessage): void;
   /** The session's live voices and their fades (`RuntimeVoices`). */
-  voices: Pick<RuntimeVoices, "isLive" | "fade">;
+  voices: Pick<RuntimeVoices, "isLive" | "fade" | "volumeOf">;
 }
 
 /** Script audio and particle calls: sounds, particle playback and mixer volumes. */
@@ -158,6 +158,7 @@ export function createAudioHostBindings(deps: AudioHostDeps): Pick<ScriptHostSer
     scriptVoiceId: () => deps.scriptVoiceId(),
     soundVoices: {
       isPlaying: (voiceId) => deps.voices.isLive(voiceId),
+      volume: (voiceId) => deps.voices.volumeOf(voiceId),
       // Only voices this session started and has not stopped: a stale handle sends nothing.
       setVolume: (voiceId, volume) => {
         if (deps.voices.isLive(voiceId)) for (const command of deps.voices.fade(voiceId, 0, volume)) deps.emit(command);

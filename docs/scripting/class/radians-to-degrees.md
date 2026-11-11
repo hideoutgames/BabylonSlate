@@ -17,7 +17,3 @@ Converts the input from radians to degrees.
 | Pin | Type |
 | --- | --- |
 | Out | Float |
-
-## Notes
-
-- Accepts a Float, Vector2, Vector3 or Color, and works on each component.

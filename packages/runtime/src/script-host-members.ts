@@ -650,6 +650,19 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       Number(color?.z ?? 1),
     ]),
     setLightIntensity: (target, intensity) => writeIllumination(target, lightComponentOf(target), "intensity", Number(intensity)),
+    isLightEnabled: (target) => {
+      const light = lightComponentOf(target);
+      return !!light && light.getVariable("enabled") !== false;
+    },
+    getLightColor: (target) => {
+      const color = lightComponentOf(target)?.getVariable("color");
+      const channel = (index: number) => Array.isArray(color) && Number.isFinite(Number(color[index])) ? Number(color[index]) : 1;
+      return { x: channel(0), y: channel(1), z: channel(2), w: 1 };
+    },
+    getLightIntensity: (target) => {
+      const light = lightComponentOf(target);
+      return light ? Number(light.getVariable("intensity") ?? 1) : 0;
+    },
     findPathTo: (from, to) => services.findPathTo?.(from, to) ?? [],
     isPathValid: (from, to) => services.isPathValid?.(from, to) ?? false,
     getClosestNavigablePoint: (point) =>
@@ -719,6 +732,10 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     isSoundPlaying: (handle) => {
       const voiceId = soundVoiceId(handle);
       return voiceId ? services.soundVoices?.isPlaying(voiceId) ?? false : false;
+    },
+    getSoundVolume: (handle) => {
+      const voiceId = soundVoiceId(handle);
+      return voiceId ? services.soundVoices?.volume(voiceId) ?? 0 : 0;
     },
     // The sampler clamps Alpha to 0..1 and reads a non-finite one as 0.
     easeAlpha: (curve, alpha) => sampleEasingCurve(parseEasingCurve(curve), Number(alpha)),
