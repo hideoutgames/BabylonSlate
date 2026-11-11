@@ -123,8 +123,20 @@ function AppIdentitySection({ projectDocument, updateProjectSettings, assetRegis
           data-testid="setting-app-build-number"
           min={1}
           integer
+          disabled={identity.autoIncrementBuildNumber}
           value={identity.buildNumber}
           onChange={(value) => update({ buildNumber: Math.max(1, Math.round(value)) })}
+        />
+      </Field>
+      <Field orientation="horizontal" className="settings-field">
+        <LabelHint hint="Adds 1 to the Build Number after every package, on any platform. The Build Number shows the number the next package gets.">
+          <FieldLabel htmlFor="setting-app-build-number-auto">Auto Increment Build Number</FieldLabel>
+        </LabelHint>
+        <Switch
+          id="setting-app-build-number-auto"
+          data-testid="setting-app-build-number-auto"
+          checked={identity.autoIncrementBuildNumber}
+          onCheckedChange={(checked) => update({ autoIncrementBuildNumber: checked === true })}
         />
       </Field>
     </SettingsSection>

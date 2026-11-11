@@ -150,7 +150,8 @@ These settings are in **Project Settings > Export**, under **Game Packaging**, *
 | App ID | Identifies a native app to the operating system and app stores, such as `com.studio.game`: two or more parts of letters and digits, each starting with a letter. Keep it once you publish. |
 | Display Name | The name under the app's icon. The project name when empty. |
 | App Icon | The Texture every package uses as its icon. See [App icon](#app-icon). |
-| Build Number | Raise it for every upload to an app store. |
+| Build Number | Raise it for every upload to an app store. Locked while **Auto Increment Build Number** is on. |
+| Auto Increment Build Number | Adds 1 to the Build Number after every package you keep, on any platform, so each package gets the next number. A cancelled save or a failed package keeps it. Off by default. The change is a project setting: it is saved with the project. |
 | Always Package Folders | Folders whose assets always ship, even when nothing references them. Subfolders are included. |
 
 **Export Project**, under **Project Backup** on the same page, makes an editable backup of the project instead. See [Projects](../projects/index.md).

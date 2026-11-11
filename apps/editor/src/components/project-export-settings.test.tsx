@@ -4,6 +4,11 @@ import { createEmptyProject } from "@haptic/core";
 import type { IndexedAsset } from "@haptic/assets";
 import { ProjectExportSettings } from "./project-export-settings";
 
+// Base UI dispatches PointerEvent when activating its native switch input.
+if (typeof window.PointerEvent === "undefined") {
+  window.PointerEvent = MouseEvent as unknown as typeof PointerEvent;
+}
+
 const context = vi.hoisted(() => ({ assets: new Map<string, unknown>(), chunkReads: [] as string[] }));
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
   assetRegistry: { getByGuid: (guid: string) => context.assets.get(guid), listRoots: () => [] },
@@ -39,9 +44,11 @@ function texture(guid: string, name: string, width: number, height: number): Ind
   return { header: { guid, name, type: "Texture", payload: { width, height }, chunks: [{ id: "pixels", kind: "pixels", mime: "image/png" }], dependencies: [] }, path: `assets/${name}.hasset`, rootId: "project" } as unknown as IndexedAsset;
 }
 
-function renderSettings(appId = "", options: { iconTextureGuid?: string | null; assets?: IndexedAsset[] } = {}) {
+function renderSettings(appId = "", options: { iconTextureGuid?: string | null; assets?: IndexedAsset[]; autoIncrementBuildNumber?: boolean } = {}) {
   const projectDocument = createEmptyProject("Harbour Run");
-  projectDocument.settings.appIdentity = { appId, displayName: "", buildNumber: 3, iconTextureGuid: options.iconTextureGuid ?? null };
+  projectDocument.settings.appIdentity = {
+    appId, displayName: "", buildNumber: 3, autoIncrementBuildNumber: options.autoIncrementBuildNumber ?? false, iconTextureGuid: options.iconTextureGuid ?? null,
+  };
   const updateProjectSettings = vi.fn();
   const setAppIconPickerOpen = vi.fn();
   for (const asset of options.assets ?? []) context.assets.set(asset.header.guid, asset);
@@ -63,7 +70,7 @@ describe("App Identity", () => {
     expect(update).not.toHaveBeenCalled();
 
     fireEvent.change(appId, { target: { value: "com.studio.harbour" } });
-    expect(update).toHaveBeenLastCalledWith({ appIdentity: { appId: "com.studio.harbour", displayName: "", buildNumber: 3, iconTextureGuid: null } });
+    expect(update).toHaveBeenLastCalledWith({ appIdentity: { appId: "com.studio.harbour", displayName: "", buildNumber: 3, autoIncrementBuildNumber: false, iconTextureGuid: null } });
     expect(screen.queryByText(/Use two or more parts/)).toBeNull();
   });
 
@@ -72,7 +79,24 @@ describe("App Identity", () => {
     const name = screen.getByTestId("setting-app-display-name") as HTMLInputElement;
     expect(name.placeholder).toBe("Harbour Run");
     fireEvent.change(name, { target: { value: "Harbour" } });
-    expect(update).toHaveBeenLastCalledWith({ appIdentity: { appId: "com.studio.harbour", displayName: "Harbour", buildNumber: 3, iconTextureGuid: null } });
+    expect(update).toHaveBeenLastCalledWith({ appIdentity: { appId: "com.studio.harbour", displayName: "Harbour", buildNumber: 3, autoIncrementBuildNumber: false, iconTextureGuid: null } });
+  });
+
+  it("turns on Auto Increment Build Number, which locks the Build Number field", () => {
+    const update = renderSettings("com.studio.harbour");
+    const buildNumber = screen.getByTestId("setting-app-build-number").querySelector("input") ?? screen.getByTestId("setting-app-build-number");
+    expect((buildNumber as HTMLInputElement).disabled).toBe(false);
+    const toggle = screen.getByRole("switch", { name: "Auto Increment Build Number" });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(update).toHaveBeenLastCalledWith({ appIdentity: { appId: "com.studio.harbour", displayName: "", buildNumber: 3, autoIncrementBuildNumber: true, iconTextureGuid: null } });
+    cleanup();
+
+    renderSettings("com.studio.harbour", { autoIncrementBuildNumber: true });
+    const locked = screen.getByTestId("setting-app-build-number").querySelector("input") ?? screen.getByTestId("setting-app-build-number");
+    expect((locked as HTMLInputElement).disabled).toBe(true);
+    expect((locked as HTMLInputElement).value).toBe("3");
+    expect(screen.getByRole("switch", { name: "Auto Increment Build Number" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("shows the App Icon Texture and opens the Texture picker", () => {

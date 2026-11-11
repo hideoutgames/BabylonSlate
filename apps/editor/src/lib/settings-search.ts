@@ -64,6 +64,7 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["Display Name", "setting-app-display-name"],
       ["App Icon", "setting-app-icon"],
       ["Build Number", "setting-app-build-number"],
+      ["Auto Increment Build Number", "setting-app-build-number-auto"],
     ]],
     ["alwaysPackageFolders", "Always Package Folders", [["Always Package Folders"]]],
     ["projectBackup", "Project Backup", [["Export Project Backup", "export-project"]]],

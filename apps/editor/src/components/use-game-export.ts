@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { isErr, resolvedAppIdentity, type ProjectDocument } from "@haptic/core";
-import { getElectronGameShellBridge, type EngineSettings } from "@haptic/vfs";
+import { useEffect, useRef, useState } from "react";
+import { advanceBuildNumber, isErr, resolvedAppIdentity, type ProjectDocument } from "@haptic/core";
+import { getElectronGameShellBridge, type EngineSettings, type SaveFileResult } from "@haptic/vfs";
 import { ANDROID_ICON_SIZES, type AndroidPackageFormat } from "@haptic/exporter/native-android";
 import type { IosPackageFormat } from "@haptic/exporter/native-ios";
 import { opaqueAppIconPng } from "../lib/app-icon";
@@ -61,11 +61,16 @@ export function useGameExport(
   projectDocument: ProjectDocument | null,
   options: { manifest: GameShellManifest | null; projectGuid: string | null },
 ): GameExport {
-  const { exportGameArtifact, zipExportedGame } = useDocumentActions();
+  const { exportGameArtifact, zipExportedGame, updateProjectSettings } = useDocumentActions();
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The project as it is when a package finishes, so the increment keeps settings changed meanwhile.
+  const latestProjectRef = useRef(projectDocument);
+  useEffect(() => {
+    latestProjectRef.current = projectDocument;
+  }, [projectDocument]);
 
   const packageTarget = async (target: PackagingTarget, packageOptions: PackageOptions = {}) => {
     if (!projectDocument || busy || !target.available) return;
@@ -73,6 +78,15 @@ export function useGameExport(
     setStage(COLLECTING);
     setError(null);
     setNotice(null);
+    const builtNumber = projectDocument.settings.appIdentity.buildNumber;
+    /** Shows where the package went; a package that was kept (not a cancelled save) moves the Build Number on. */
+    const delivered = (subject: string, result: SaveFileResult) => {
+      setNotice(savedFileNotice(subject, result));
+      if (result === "cancelled") return;
+      const current = latestProjectRef.current?.settings.appIdentity;
+      const next = current ? advanceBuildNumber(current, builtNumber) : null;
+      if (next) updateProjectSettings({ appIdentity: next });
+    };
     try {
       const result = await exportGameArtifact({ platform: target.id, projectSnapshot: projectDocument });
       if (isErr(result)) {
@@ -96,7 +110,7 @@ export function useGameExport(
           icon: iconPng ? await opaqueAppIconPng(iconPng) : null,
           teamId: packageOptions.iosSigning?.teamId ?? "",
         });
-        setNotice(savedFileNotice(format === "development" ? "Development iOS game" : "iOS game", await saveExportFile(packaged.bytes, packaged.fileName, "application/octet-stream")));
+        delivered(format === "development" ? "Development iOS game" : "iOS game", await saveExportFile(packaged.bytes, packaged.fileName, "application/octet-stream"));
         return;
       }
       if (target.id === "android") {
@@ -115,12 +129,12 @@ export function useGameExport(
           icon: appIcon ? ANDROID_ICON_SIZES.map((size) => [size, appIcon.get(size)!]) : null,
         });
         const subject = packaged.debugSigned ? "Debug-signed Android game" : "Android game";
-        setNotice(savedFileNotice(subject, await saveExportFile(packaged.bytes, packaged.fileName, ANDROID_TYPES[packageOptions.androidFormat ?? "apk"])));
+        delivered(subject, await saveExportFile(packaged.bytes, packaged.fileName, ANDROID_TYPES[packageOptions.androidFormat ?? "apk"]));
         return;
       }
       if (!target.desktopTarget) {
         const archive = await zipExportedGame(result.value);
-        setNotice(savedFileNotice("Game package", await saveZipArchive(archive, gameArchiveName(projectDocument.metadata.name))));
+        delivered("Game package", await saveZipArchive(archive, gameArchiveName(projectDocument.metadata.name)));
         return;
       }
       if (!options.manifest) throw new Error(`This copy of Haptic cannot package ${target.label} games.`);
@@ -144,7 +158,7 @@ export function useGameExport(
           identity: signing.identity,
           notaryProfile: signing.identity ? signing.notaryProfile : "",
         });
-        setNotice(savedFileNotice(packaged.notarized ? "Notarized macOS game" : "macOS game", await saveZipArchive(packaged.bytes, packaged.fileName)));
+        delivered(packaged.notarized ? "Notarized macOS game" : "macOS game", await saveZipArchive(packaged.bytes, packaged.fileName));
         return;
       }
       setStage(`Adding the ${target.label} player.`);
@@ -161,7 +175,7 @@ export function useGameExport(
       if (target.desktopTarget === "linux-x64" && (packageOptions.linuxFormat ?? "deb") === "deb") {
         const { packageLinuxDeb } = await import("@haptic/exporter/native-deb");
         const packaged = packageLinuxDeb(input);
-        setNotice(savedFileNotice("Linux package", await saveExportFile(packaged.bytes, packaged.fileName, "application/vnd.debian.binary-package")));
+        delivered("Linux package", await saveExportFile(packaged.bytes, packaged.fileName, "application/vnd.debian.binary-package"));
         return;
       }
       if (target.desktopTarget === "windows-x64" && input.icon) setStage("Adding the App Icon to the Windows executable.");
@@ -169,7 +183,7 @@ export function useGameExport(
       const packaged = target.desktopTarget === "windows-x64"
         ? (await import("@haptic/exporter/native-windows")).packageWindowsGame(input)
         : (await import("@haptic/exporter/native-desktop")).packageDesktopGame(input);
-      setNotice(savedFileNotice(`${target.label} game`, await saveZipArchive(packaged.bytes, packaged.fileName)));
+      delivered(`${target.label} game`, await saveZipArchive(packaged.bytes, packaged.fileName));
     } catch (cause) {
       console.error("[editor] Packaging failed", cause);
       setError(exportGameFailureMessage(cause));
