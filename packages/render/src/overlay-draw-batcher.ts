@@ -1,6 +1,7 @@
 import { Buffer, VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Material } from "@babylonjs/core/Materials/material";
+import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { Matrix } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -10,17 +11,18 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { FloatArray, IndicesArray } from "@babylonjs/core/types";
 import type { OverlayLayoutRect } from "@haptic/core";
 import {
-  DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TEXT_KINDS, DRAW_BATCH_TINT_KIND, DRAW_BATCH_WORLD_KINDS, isBoundedMaterial, isDrawBatchMaterial,
+  DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TEXEL_KIND, DRAW_BATCH_TEXT_KINDS, DRAW_BATCH_TINT_KIND, DRAW_BATCH_WORLD_KINDS, isBoundedMaterial, isDrawBatchMaterial,
   isDrawBatchTextMaterial, markDrawBatchMesh,
 } from "./draw-batch-world-block";
 import { sceneDrawBatcher, setSceneDrawBatcher, type SceneDrawBatcher } from "./draw-batching";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
+import { LayerImageAtlas, type LayerImageCell } from "./layer-image-atlas";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
 import { overlayVisualStyle, shareOverlayVisualStyle } from "./overlay-visual-style";
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
 import { isUnlitMaterial } from "./unlit-material";
-import { setUnlitBinding, unlitBinding, type UnlitBinding } from "./unlit-material-blocks";
+import { setUnlitBinding, unlitBinding, unlitTexelGrid, type UnlitBinding } from "./unlit-material-blocks";
 
 /**
  * Draw batching for a Scene's sorted passes (Scene Layers): consecutive-in-effect draws of the unlit Material, or of an
@@ -37,6 +39,11 @@ import { setUnlitBinding, unlitBinding, type UnlitBinding } from "./unlit-materi
  *   first member. Each member's own colour, alpha and overlay tint go with its vertices (`drawBatchValue`), so members
  *   that differ in those alone still share a draw. An authored Material's members share Receive Shadows, the one
  *   other value its lighting binds per mesh, and the batch carries their normals, tangents and second UVs too.
+ * - **Images.** Members whose small images sit on the Scene's shared page (`layer-image-atlas.ts`) sample the page in
+ *   place of their own textures, so they share a draw whatever their images. Each vertex carries its member's texel
+ *   grid (`unlitTexelGrid`: the image's size, and where its cell starts on the page): the unlit graph finds the texel
+ *   a member's own UV falls in and samples that texel's centre, on the page as on the image's own texture, so both
+ *   read the same texel of the same values.
  * - **Vertices.** A batch holds its members' own vertices and, for each vertex, the rows of its member's world
  *   matrix as the member's draw uploads them (the floating origin's translation minus the eye, then 32-bit). The
  *   Material's vertex stage builds the world matrix from those for a batch's mesh (`DrawBatchWorldBlock`), so every
@@ -90,6 +97,8 @@ interface Entry {
   mesh: Mesh | null;
   material: Material | null;
   binding: UnlitBinding | null;
+  /** Where the binding's image is on the Scene's shared page, when a batch may sample it there. */
+  cell: LayerImageCell | null;
   /** A text Material's glyph: what it binds for itself. */
   text: TextMaterialBinding | null;
   clip: OverlayLayoutRect | null;
@@ -129,7 +138,7 @@ interface Slot {
   /** Each vertex's world matrix, three rows of four floats, in `worldBuffer` (the `DRAW_BATCH_WORLD_KINDS` attributes). */
   worlds: Float32Array;
   worldBuffer: Buffer | null;
-  /** Each vertex's colour with alpha, then its tint: eight floats, in `styleBuffer` (the two style attributes). */
+  /** Each vertex's colour with alpha, its tint, then its texel grid: twelve floats, in `styleBuffer` (the three style attributes). */
   styles: Float32Array;
   styleBuffer: Buffer | null;
   /** A batch of glyphs: each vertex's atlas rectangle, Material rectangle, and colour with visibility (`textBuffer`). */
@@ -141,6 +150,8 @@ interface Slot {
   /** The members' Effect and the batch's last found to differ by the batch's define alone. */
   memberEffect: Effect | null;
   batchEffect: Effect | null;
+  /** The binding a batch that samples the shared page draws: its first member's, with the page for its texture. */
+  pageBinding: UnlitBinding | null;
 }
 
 const bakes = new WeakMap<Mesh, Bake>();
@@ -253,8 +264,8 @@ function boundPositions(bake: Bake): void {
 
 /** Floats of a world matrix a batch carries per vertex: three rows. */
 const WORLD_FLOATS = 12;
-/** Floats of a member's own values a batch carries per vertex: its colour with alpha, then its tint. */
-const STYLE_FLOATS = 8;
+/** Floats of a member's own values a batch carries per vertex: its colour with alpha, its tint, then its texel grid. */
+const STYLE_FLOATS = 12;
 /**
  * The vertex data a batch carries besides positions, where its members have it: UVs for any Material, and for an
  * authored one, whose graph may read them, normals, tangents and second UVs.
@@ -270,12 +281,12 @@ const WEBGPU_VERTEX_BUFFERS = 8;
 
 /**
  * The vertex buffers a batch of `layout` binds: positions, each extra kind, the three world rows, and the tint (with
- * the colour for the unlit Material).
+ * the colour and the texel grid for the unlit Material).
  */
 function vertexBuffers(layout: number, unlit: boolean): number {
   let extras = 0;
   for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) if (layout & (1 << kind)) extras += 1;
-  return 1 + extras + DRAW_BATCH_WORLD_KINDS.length + (unlit ? 2 : 1) + (layout & TEXT_LAYOUT ? DRAW_BATCH_TEXT_KINDS.length : 0);
+  return 1 + extras + DRAW_BATCH_WORLD_KINDS.length + (unlit ? 3 : 1) + (layout & TEXT_LAYOUT ? DRAW_BATCH_TEXT_KINDS.length : 0);
 }
 
 /**
@@ -301,16 +312,39 @@ function sameColor(a: readonly number[], b: readonly number[]): boolean {
   return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 }
 
+/** The texture a batch of `entry` samples: the shared page its image is on, else its binding's own. */
+function sampled(entry: Entry): BaseTexture | null {
+  return entry.cell?.page ?? entry.binding!.texture;
+}
+
 /**
- * Whether two unlit bindings bind the same values (`bindUnlitUniforms`) but for the colour and alpha, which a batch
+ * Whether two unlit draws bind the same values (`bindUnlitUniforms`) but for the colour and alpha, which a batch
  * carries per vertex.
  */
-function sameBinding(a: UnlitBinding, b: UnlitBinding): boolean {
+function sameBinding(entryA: Entry, entryB: Entry): boolean {
+  const a = entryA.binding!, b = entryB.binding!;
   if (a === b) return true;
-  if (a.texture !== b.texture || a.cutoff !== b.cutoff || a.blend !== b.blend || a.textureAlpha !== b.textureAlpha || a.twoSided !== b.twoSided)
+  if (sampled(entryA) !== sampled(entryB) || a.cutoff !== b.cutoff || a.blend !== b.blend || a.textureAlpha !== b.textureAlpha || a.twoSided !== b.twoSided)
     return false;
   if (!a.msdf || !b.msdf) return !a.msdf && !b.msdf;
   return sameColor(a.msdf.strokeColor, b.msdf.strokeColor) && a.msdf.strokeWidth === b.msdf.strokeWidth;
+}
+
+/** `binding` with `page` for its texture, in the slot's own object. */
+function pageBinding(slot: Slot, binding: UnlitBinding, page: BaseTexture): UnlitBinding {
+  const own = (slot.pageBinding ??= { ...binding });
+  own.texture = page; own.color = binding.color; own.alpha = binding.alpha; own.cutoff = binding.cutoff; own.blend = binding.blend;
+  own.textureAlpha = binding.textureAlpha; own.twoSided = binding.twoSided; own.msdf = binding.msdf;
+  return own;
+}
+
+/**
+ * Whether `texture`'s matrix gives the unlit graph the UVs it was given (`UnlitUvBlock`): a `Texture`'s unmoved one,
+ * which Babylon builds with its translation in the third row, or the identity of any other texture.
+ */
+function keepsUvs(texture: BaseTexture): boolean {
+  const matrix = texture.getTextureMatrix();
+  return matrix.isIdentityAs3x2() || matrix.isIdentity();
 }
 
 /** Whether two clips scissor the same: their rectangles (each layout entry carries its own copy). */
@@ -330,7 +364,7 @@ function sameDraw(a: Entry, b: Entry): boolean {
       !sameColor(a.text.outlineColor, b.text.outlineColor)) return false;
   } else if (meshA.visibility !== meshB.visibility) return false;
   // What else a draw binds per mesh: the unlit binding, or an authored Material's lighting term, Receive Shadows.
-  if (a.binding && b.binding) return sameBinding(a.binding, b.binding);
+  if (a.binding && b.binding) return sameBinding(a, b);
   return meshA.receiveShadows === meshB.receiveShadows;
 }
 
@@ -354,7 +388,7 @@ function overlapsAny(bounds: Bounds, others: readonly Bounds[]): boolean {
 
 /** What batches of one draw share, to find them quickly: the texture they sample or, untextured, their Material. */
 function drawKey(entry: Entry): object {
-  return entry.binding?.texture ?? entry.text?.atlas ?? entry.material!;
+  return entry.cell?.page ?? entry.binding?.texture ?? entry.text?.atlas ?? entry.material!;
 }
 
 /**
@@ -375,11 +409,27 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   private disposed = false;
   private readonly scratchCorner = { x: 0, y: 0, z: 0 };
   private readonly scratchStyle = new Float32Array(STYLE_FLOATS);
+  private readonly scratchGrid = [0, 0];
   private readonly scratchGlyph = new Float32Array(TEXT_FLOATS);
   private readonly scratchViewport = new Viewport(0, 0, 1, 1);
+  /** The Scene's shared page of small images, which its batches sample; null while they sample their own textures. */
+  private atlas: LayerImageAtlas | null;
 
   constructor(scene: Scene) {
     this.scene = scene;
+    this.atlas = new LayerImageAtlas(scene);
+  }
+
+  /** Whether batches sample the Scene's shared page of small images (they do unless turned off, as a proof does). */
+  setImagePages(enabled: boolean): void {
+    if (enabled === !!this.atlas || this.disposed) return;
+    this.atlas?.dispose();
+    this.atlas = enabled ? new LayerImageAtlas(this.scene) : null;
+  }
+
+  /** The shared page's images and those drawn there. */
+  get imagePages(): { images: number; drawn: number } {
+    return this.atlas?.counts ?? { images: 0, drawn: 0 };
   }
 
   draw(sorted: readonly SubMesh[], count: number, transparent: boolean, drawOne: (subMesh: SubMesh) => void): void {
@@ -401,7 +451,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     let candidates = 0;
     for (let index = 0; index < count; index += 1) {
       const entry = (entries[index] ??= {
-        subMesh: sorted[index]!, mesh: null, material: null, binding: null, text: null, clip: null, bake: null, extras: EXTRA_KINDS.map(() => null), layout: 0, indices: null,
+        subMesh: sorted[index]!, mesh: null, material: null, binding: null, cell: null, text: null, clip: null, bake: null, extras: EXTRA_KINDS.map(() => null), layout: 0, indices: null,
         minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1,
       });
       entry.subMesh = sorted[index]!;
@@ -439,10 +489,12 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     this.slots.length = 0;
     this.entries.length = 0;
     this.batches.length = 0;
+    this.atlas?.dispose();
+    this.atlas = null;
   }
 
   private release(entry: Entry): void {
-    entry.mesh = null; entry.material = null; entry.binding = null; entry.text = null; entry.clip = null; entry.bake = null; entry.indices = null;
+    entry.mesh = null; entry.material = null; entry.binding = null; entry.cell = null; entry.text = null; entry.clip = null; entry.bake = null; entry.indices = null;
     entry.extras.fill(null);
     entry.layout = 0;
     entry.batch = -1;
@@ -496,12 +548,24 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     entry.mesh = mesh;
     entry.material = material;
     entry.binding = unlit ? unlitBinding(mesh) : null;
+    entry.cell = this.cellOf(entry.binding?.texture);
     entry.text = text;
     entry.clip = clip ?? null;
     entry.bake = bake;
     entry.layout = layout;
     entry.indices = indices;
     return null;
+  }
+
+  /**
+   * Where a draw's image is on the shared page, when a batch may sample it there in place of `texture`: the texture's
+   * matrix leaves the UVs as they are (the page's does), its lookups are taken on its texel grid (so a texel's centre
+   * is all a lookup reads, on either texture), and the page holds it.
+   */
+  private cellOf(texture: BaseTexture | null | undefined): LayerImageCell | null {
+    if (!texture || !this.atlas || !keepsUvs(texture)) return null;
+    unlitTexelGrid(texture, this.scratchGrid);
+    return this.scratchGrid[0] !== 0 ? this.atlas.cell(texture) : null;
   }
 
   /** Projected bounds of every draw, two of the viewport's pixels wider on each side; unbounded when not known. */
@@ -630,7 +694,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const slot = this.slotFor(first.layout);
     const mesh = slot.mesh;
     if (mesh.material !== first.material) mesh.material = first.material;
-    if (first.binding) setUnlitBinding(mesh, first.binding);
+    if (first.binding) setUnlitBinding(mesh, first.cell ? pageBinding(slot, first.binding, first.cell.page) : first.binding);
     else {
       if (first.text) bindTextMaterialGlyph(mesh, first.text);
       mesh.receiveShadows = member.receiveShadows;
@@ -689,6 +753,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       slot = {
         mesh, layout, vertexCapacity: 0, indexCapacity: 0, positions: new Float32Array(0), extras: EXTRA_KINDS.map(() => null), worlds: new Float32Array(0),
         worldBuffer: null, styles: new Float32Array(0), styleBuffer: null, texts: new Float32Array(0), textBuffer: null, indices: new Uint16Array(0), vertexCount: 0, indexCount: 0, memberEffect: null, batchEffect: null,
+        pageBinding: null,
       };
       this.slots.push(slot);
     }
@@ -748,6 +813,9 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       const binding = entry.binding, { opacity, tint } = overlayVisualStyle(entry.mesh!);
       style[0] = binding?.color[0] ?? 1; style[1] = binding?.color[1] ?? 1; style[2] = binding?.color[2] ?? 1; style[3] = binding?.alpha ?? 1;
       style[4] = tint[0]; style[5] = tint[1]; style[6] = tint[2]; style[7] = tint[3] * opacity;
+      // The texel grid the member's own draw binds, and where its image starts on the texture this batch samples.
+      unlitTexelGrid(binding?.texture ?? null, style, 8);
+      style[10] = entry.cell?.x ?? 0; style[11] = entry.cell?.y ?? 0;
       for (let offset = 0, at = vertex * STYLE_FLOATS; offset < memberVertices * STYLE_FLOATS; offset += 1, at += 1) {
         const value = style[offset % STYLE_FLOATS]!;
         if (styles[at] !== value) { styles[at] = value; stylesChanged = true; }
@@ -798,7 +866,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         const world = slot.worldBuffer = new Buffer(mesh.getEngine(), worlds, true, WORLD_FLOATS);
         DRAW_BATCH_WORLD_KINDS.forEach((kind, row) => mesh.setVerticesBuffer(world.createVertexBuffer(kind, row * 4, 4)));
         const styled = slot.styleBuffer = new Buffer(mesh.getEngine(), styles, true, STYLE_FLOATS);
-        [DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND].forEach((kind, part) => mesh.setVerticesBuffer(styled.createVertexBuffer(kind, part * 4, 4)));
+        [DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, DRAW_BATCH_TEXEL_KIND].forEach((kind, part) => mesh.setVerticesBuffer(styled.createVertexBuffer(kind, part * 4, 4)));
         slot.textBuffer = null;
         if (slot.layout & TEXT_LAYOUT) {
           const glyphs = slot.textBuffer = new Buffer(mesh.getEngine(), texts, true, TEXT_FLOATS);
@@ -860,6 +928,21 @@ function drawsNow(entry: Entry): boolean {
   const instances = mesh._getInstancesRenderList(entry.subMesh._id, false);
   if (instances.mustReturn || !instances.renderSelf[entry.subMesh._id] || instances.hardwareInstancedRendering[entry.subMesh._id]) return false;
   return entry.material!.isReadyForSubMesh(mesh, entry.subMesh, false);
+}
+
+/**
+ * Whether `scene`'s batches sample its shared page of small images (`layer-image-atlas.ts`); on with batching. A proof
+ * turns it off to draw each batch from its members' own textures.
+ */
+export function setSceneImagePages(scene: Scene, enabled: boolean): void {
+  const batcher = sceneDrawBatcher(scene);
+  if (batcher instanceof OverlayDrawBatcher) batcher.setImagePages(enabled);
+}
+
+/** The images on `scene`'s shared page and those drawn there; zeros for a Scene that does not batch. */
+export function sceneImagePages(scene: Scene): { images: number; drawn: number } {
+  const batcher = sceneDrawBatcher(scene);
+  return batcher instanceof OverlayDrawBatcher ? batcher.imagePages : { images: 0, drawn: 0 };
 }
 
 /**

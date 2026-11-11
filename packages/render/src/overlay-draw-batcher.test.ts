@@ -3,6 +3,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -12,7 +13,10 @@ import { sceneDrawBatcher } from "./draw-batching";
 import { beginEngineDrawCallFrame } from "./draw-calls";
 import { beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, publishDrawPassFrame, withDrawPass } from "./draw-passes";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats, setSceneDrawBatching } from "./overlay-draw-batcher";
+import {
+  copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats, sceneImagePages, setSceneDrawBatching, setSceneImagePages,
+} from "./overlay-draw-batcher";
+import { managedRenderReservations } from "./managed-render-resources";
 import { OverlayLayoutRenderer } from "./overlay-layout-render";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
@@ -22,6 +26,7 @@ import { createSpriteQuad, setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-
 import { compileMaterialPlan } from "./material-compiler";
 import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
 import { setUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -29,12 +34,16 @@ afterEach(() => {
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-/** A Play compositor with one Scene Layer, on a NullEngine whose draws count as WebGL2's do (one per draw call). */
-function host() {
+/**
+ * A Play compositor with one Scene Layer, on a NullEngine whose draws count as WebGL2's do (one per draw call). With
+ * `webgl2` it also reads texels by index as WebGL2 does, which the layer's shared page of small images needs.
+ */
+function host(options: { webgl2?: boolean } = {}) {
   const engine = adaptNullEngineFrameGraph(new NullEngine({
     renderWidth: 1280, renderHeight: 720, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1,
   }));
   engines.push(engine);
+  if (options.webgl2) Object.defineProperty(engine, "webGLVersion", { get: () => 2 });
   engine.drawElementsType = function (this: NullEngine) { this._reportDrawCall(); };
   engine.drawArraysType = function (this: NullEngine) { this._reportDrawCall(); };
   const compositor = new SceneLayerCompositor({ engine });
@@ -100,6 +109,28 @@ function sprite(scene: Scene, name: string, x: number, texture: RawTexture): Mes
     { texture, color: [1, 1, 1], alpha: 1, cutoff: 0.4, blend: false, textureAlpha: true, twoSided: false });
   mesh.position.x = x;
   return mesh;
+}
+
+/** A square image as the resource cache loads a layer's: nearest, without mips, with alpha, repeating. */
+function layerImage(scene: Scene, edge: number): RawTexture {
+  const texture = RawTexture.CreateRGBATexture(new Uint8Array(edge * edge * 4).fill(255), edge, edge, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+  texture.hasAlpha = true;
+  // A raw texture clamps where a loaded one repeats.
+  texture.wrapU = texture.wrapV = Texture.WRAP_ADDRESSMODE;
+  return texture;
+}
+
+/** Each member's texel grid as a batch carries it, by where the member stands (the translation its world rows end in). */
+function batchGrids(mesh: Mesh): Record<string, number[]> {
+  const at = (kind: string, vertex: number) => Array.from(mesh.getVerticesData(kind)!.slice(vertex * 4, vertex * 4 + 4));
+  const grids = new Map<number, number[]>();
+  for (let vertex = 0; vertex < mesh.subMeshes[0]!.verticesCount; vertex += 1) {
+    const x = at("batchWorld0", vertex)[3]!, grid = at("batchTexel", vertex);
+    // Every vertex of a member carries the member's grid.
+    expect(grids.get(x) ?? grid).toEqual(grid);
+    grids.set(x, grid);
+  }
+  return Object.fromEntries(grids);
 }
 
 /**
@@ -650,6 +681,165 @@ describe("Scene Layer draw batching", () => {
     expect({ batched, unbatched }).toEqual({ batched: 57, unbatched: 195 });
     // Batch meshes join no Scene list: nothing culls, picks, probes or counts them.
     expect(scene.meshes).toHaveLength(meshes);
+    await compositor.dispose();
+  });
+
+  it("draws visuals of different small images in one draw, from the layer's shared page", async () => {
+    const { engine, compositor, scene } = host({ webgl2: true });
+    const edges = [16, 32, 8];
+    const sprites = edges.map((edge, index) => sprite(scene, `sprite${index}`, -2 + index * 2, layerImage(scene, edge)));
+    // One shows a frame of its image, as an animated sprite does.
+    setSpriteQuadUvs(sprites[1]!, { u0: 0.5, v0: 0.25, u1: 0.75, v1: 0.5 });
+    await compositor.prepare("hud", () => {});
+    // The frame that first draws them asks for their cells, in its draw order: each still samples its own texture.
+    const first = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(new Set(first)).toEqual(new Set(sprites));
+    expect(first).toHaveLength(3);
+    expect(sceneImagePages(scene)).toEqual({ images: 3, drawn: 0 });
+    // From the next frame on, one draw samples the page.
+    const drawn = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(drawn).toHaveLength(1);
+    const batch = drawn[0]!;
+    expect(sprites).not.toContain(batch);
+    expect(unlitBinding(batch).texture!.name).toBe("layer-image-atlas:alpha");
+    expect(sceneImagePages(scene)).toEqual({ images: 3, drawn: 3 });
+    // Each member carries its image's size (negative: its texture repeats, as a loaded image's does) and where its
+    // cell starts: cells sit side by side on the first shelf in the order asked for.
+    const order = first.map((mesh) => sprites.indexOf(mesh));
+    const starts = order.map((_sprite, index) => order.slice(0, index).reduce((sum, before) => sum + edges[before]!, 0));
+    expect(batchGrids(batch)).toEqual(Object.fromEntries(order.map((index, place) => [String(-2 + index * 2), [-edges[index]!, -edges[index]!, starts[place]!, 0]])));
+    // Its UVs are its own, a frame of its image included: the texel they fall in is found from them, as in its own draw.
+    const uvs = new Map<number, number[]>();
+    const all = batch.getVerticesData("uv")!, rows = batch.getVerticesData("batchWorld0")!;
+    for (let vertex = 0; vertex < 12; vertex += 1) uvs.set(rows[vertex * 4 + 3]!, [...(uvs.get(rows[vertex * 4 + 3]!) ?? []), all[vertex * 2]!, all[vertex * 2 + 1]!]);
+    expect(Object.fromEntries(uvs)).toEqual({ "-2": [0, 0, 1, 0, 1, 1, 0, 1], "0": [0.5, 0.25, 0.75, 0.25, 0.75, 0.5, 0.5, 0.5], "2": [0, 0, 1, 0, 1, 1, 0, 1] });
+    // The members keep their own bindings: a draw of one alone is as it was.
+    for (const mesh of sprites) expect(unlitBinding(mesh).texture!.name).not.toContain("layer-image-atlas");
+    expect(layerDraws(engine, compositor)).toBe(1);
+    await compositor.dispose();
+  });
+
+  it("carries each member's own texel grid in a batch of one texture, with no cell", async () => {
+    const { engine, compositor, scene } = host();
+    // No page here (the engine reads no texels by index): two sprites of one nearest image still share a draw.
+    const texture = layerImage(scene, 32);
+    texture.wrapU = Texture.CLAMP_ADDRESSMODE;
+    sprite(scene, "left", -2, texture);
+    sprite(scene, "right", 2, texture);
+    await compositor.prepare("hud", () => {});
+    layerDraws(engine, compositor, 1);
+    const drawn = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(drawn).toHaveLength(1);
+    expect(unlitBinding(drawn[0]!).texture).toBe(texture);
+    // The image's size, positive where its texture clamps and negative where it repeats; it starts at the texture's origin.
+    expect(batchGrids(drawn[0]!)).toEqual({ "-2": [32, -32, 0, 0], "2": [32, -32, 0, 0] });
+    // A filtered texture has no grid: the sampler takes its lookups as they are.
+    texture.updateSamplingMode(Texture.BILINEAR_SAMPLINGMODE);
+    expect(batchGrids(drawnMeshes(() => layerDraws(engine, compositor, 1))[0]!)).toEqual({ "-2": [0, 0, 0, 0], "2": [0, 0, 0, 0] });
+    await compositor.dispose();
+  });
+
+  it("keeps a visual on its own texture when a lookup on the page would not read what its own texture gives", async () => {
+    const { engine, compositor, scene } = host({ webgl2: true });
+    const names = ["plain", "tiled", "moved", "filtered", "mirrored", "other"];
+    const sprites = names.map((name, index) => sprite(scene, name, -5 + index * 2, layerImage(scene, 16)));
+    const [, tiled, moved, filtered, mirrored] = sprites as [Mesh, Mesh, Mesh, Mesh, Mesh, Mesh];
+    // Repeats its image twice across: the texel is found within the image, as its own texture's sampler wraps it.
+    setSpriteQuadUvs(tiled, { u0: 0, v0: 0, u1: 2, v1: 1 });
+    // A texture offset moves every lookup, which the page's own matrix would not.
+    (unlitBinding(moved).texture as Texture).uOffset = 0.25;
+    // Filtered lookups blend neighbouring texels, a cell's neighbours on the page.
+    (unlitBinding(filtered).texture as Texture).updateSamplingMode(Texture.BILINEAR_SAMPLINGMODE);
+    // A mirrored repeat is the sampler's alone.
+    unlitBinding(mirrored).texture!.wrapU = Texture.MIRROR_ADDRESSMODE;
+    await compositor.prepare("hud", () => {});
+    layerDraws(engine, compositor, 1);
+    const drawn = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    // Three share the page, the tiled one among them; the others draw themselves, from their own textures.
+    expect(drawn).toHaveLength(4);
+    expect(drawn.filter((mesh) => sprites.includes(mesh)).map((mesh) => mesh.name).sort()).toEqual(["filtered", "mirrored", "moved"]);
+    const batch = drawn.find((mesh) => !sprites.includes(mesh))!;
+    expect(unlitBinding(batch).texture!.name).toBe("layer-image-atlas:alpha");
+    expect(Object.keys(batchGrids(batch)).sort()).toEqual(["-3", "-5", "5"]);
+    // The page holds the images that are drawn from it, and no other.
+    expect(sceneImagePages(scene)).toEqual({ images: 3, drawn: 3 });
+    await compositor.dispose();
+  });
+
+  it("does not share a draw between images whose textures differ in alpha", async () => {
+    const { engine, compositor, scene } = host({ webgl2: true });
+    const sprites = [0, 1, 2, 3].map((index) => sprite(scene, `sprite${index}`, -3 + index * 2, layerImage(scene, 16)));
+    // The texture's alpha is bound with the texture: a draw has one value of it.
+    for (const index of [1, 3]) unlitBinding(sprites[index]).texture!.hasAlpha = false;
+    await compositor.prepare("hud", () => {});
+    layerDraws(engine, compositor, 1);
+    const drawn = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(drawn.map((mesh) => unlitBinding(mesh).texture!.name).sort()).toEqual(["layer-image-atlas:alpha", "layer-image-atlas:opaque"]);
+    expect(drawn.map((mesh) => Object.keys(batchGrids(mesh)).sort())).toEqual(
+      drawn.map((mesh) => unlitBinding(mesh).texture!.hasAlpha ? ["-3", "1"] : ["-1", "3"]));
+    await compositor.dispose();
+  });
+
+  it("draws each batch from its members' own textures while the shared page is off", async () => {
+    const { engine, compositor, scene } = host({ webgl2: true });
+    const sprites = [0, 1, 2].map((index) => sprite(scene, `sprite${index}`, -2 + index * 2, layerImage(scene, 16)));
+    await compositor.prepare("hud", () => {});
+    expect(layerDraws(engine, compositor)).toBe(1);
+    setSceneImagePages(scene, false);
+    expect(sceneImagePages(scene)).toEqual({ images: 0, drawn: 0 });
+    const own = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(new Set(own)).toEqual(new Set(sprites));
+    expect(layerDraws(engine, compositor)).toBe(3);
+    setSceneImagePages(scene, true);
+    expect(layerDraws(engine, compositor)).toBe(1);
+    await compositor.dispose();
+  });
+
+  it("binds a page batch's values as its first member binds them now, and gives the page back with the batcher", async () => {
+    const { engine, compositor, scene } = host({ webgl2: true });
+    const key = { textured: true, backFaceCulling: true, fog: true, role: "world" } as const;
+    const before = managedRenderReservations(engine).reservedBytes;
+    const sprites = [0, 1].map((index) => sprite(scene, `sprite${index}`, -2 + index * 4, layerImage(scene, 16)));
+    await compositor.prepare("hud", () => {});
+    layerDraws(engine, compositor, 1);
+    const values = (mesh: Mesh) => ({ ...unlitBinding(mesh), texture: unlitBinding(mesh).texture!.name });
+    const cutout = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(cutout.map(values)).toEqual([
+      { texture: "layer-image-atlas:alpha", color: [1, 1, 1], alpha: 1, cutoff: 0.4, blend: false, textureAlpha: true, twoSided: false },
+    ]);
+    // The sprites now blend, read no alpha from their textures and show both sides: the same batch mesh draws them so.
+    for (const mesh of sprites)
+      setUnlitMaterial(mesh, key, { texture: unlitBinding(mesh).texture, color: [1, 0.5, 0.25], alpha: 0.5, cutoff: 0, blend: true, textureAlpha: false, twoSided: true });
+    const blended = drawnMeshes(() => layerDraws(engine, compositor, 1));
+    expect(blended).toEqual(cutout);
+    expect(blended.map(values)).toEqual([
+      { texture: "layer-image-atlas:alpha", color: [1, 0.5, 0.25], alpha: 0.5, cutoff: 0, blend: true, textureAlpha: false, twoSided: true },
+    ]);
+    // The page is the batcher's: 512 × 512 texels of four bytes on the ledger while it batches.
+    expect(managedRenderReservations(engine).reservedBytes - before).toBe(512 * 512 * 4);
+    setSceneDrawBatching(scene, false);
+    await Promise.resolve();
+    expect(managedRenderReservations(engine).reservedBytes).toBe(before);
+    await compositor.dispose();
+  });
+
+  it("draws the Feature Test HUD in fewer draws when its icons share a page", async () => {
+    const { engine, compositor, scene } = host({ webgl2: true });
+    const textures = new Map<string, RawTexture>();
+    buildSceneLayerHud(scene, {
+      texture: (guid) => {
+        let found = textures.get(guid);
+        if (!found) textures.set(guid, (found = layerImage(scene, 64)));
+        return found;
+      },
+    });
+    await compositor.prepare("hud", () => {});
+    const shared = layerDraws(engine, compositor);
+    expect(sceneImagePages(scene)).toEqual({ images: 7, drawn: 7 });
+    setSceneImagePages(scene, false);
+    const own = layerDraws(engine, compositor);
+    // The row of turned widgets draws its seven icons in one draw in place of seven, as far as draw order allows.
+    expect({ shared, own }).toEqual({ shared: 26, own: 32 });
     await compositor.dispose();
   });
 });

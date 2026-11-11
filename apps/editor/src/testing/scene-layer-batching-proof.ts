@@ -3,19 +3,28 @@
  * second tinted background with an authored Material, and a line of text with an authored Text Material) drawn
  * by a Play compositor over a cleared backbuffer, with batching on and off, under the default layer camera, a panned
  * and zoomed one and a turned one. Each pair of images must match exactly; the batched draws are fewer.
+ *
+ * With `images` "nearest" the icons are sampled as a layer's images are (nearest, no mips), so the batcher puts them on
+ * the Scene's shared page (`layer-image-atlas.ts`): each case also draws batched with the page off, whose draws the
+ * page must undercut. Sprites that read past their images join them (`pastTheirImages`): what a cell answers there
+ * must be what the image's own sampler answers.
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import type { Scene } from "@babylonjs/core/scene";
 import type { LayerCameraState } from "@haptic/core";
 import { createAppWebGpuEngine } from "@haptic/render";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
-import { setSceneDrawBatching } from "../../../../packages/render/src/overlay-draw-batcher";
+import { sceneImagePages, setSceneDrawBatching, setSceneImagePages } from "../../../../packages/render/src/overlay-draw-batcher";
 import { SceneLayerCompositor } from "../../../../packages/render/src/scene-layer-compositor";
 import { buildSceneLayerHud } from "../../../../packages/render/src/scene-layer-hud-fixture";
+import { createSpriteQuad, setSpriteQuadUvs } from "../../../../packages/render/src/sprite-quad";
+import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
 import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 960;
@@ -43,7 +52,39 @@ function iconPixels(seed: number): Uint8Array {
   return pixels;
 }
 
-export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu") {
+/** The images `pastTheirImages` adds to the page. */
+const PAST_IMAGES = 3;
+
+/**
+ * Sprites whose UVs leave their image or run backwards, at sizes that put pixel centres on the lines between texels:
+ * repeated, held at the edge, turned over, and mirrored (the last has no cell: only its sampler mirrors).
+ */
+function pastTheirImages(scene: Scene): void {
+  const image = (seed: number, wrap: number) => {
+    const texture = RawTexture.CreateRGBATexture(iconPixels(seed), 64, 64, scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+    texture.hasAlpha = true;
+    texture.wrapU = texture.wrapV = wrap;
+    return texture;
+  };
+  const repeated = image(11, Texture.WRAP_ADDRESSMODE);
+  const sprites: Array<[string, RawTexture, { u0: number; v0: number; u1: number; v1: number }, number]> = [
+    ["repeated", repeated, { u0: 0, v0: 0, u1: 2.5, v1: 1.5 }, 1.37],
+    ["held", image(12, Texture.CLAMP_ADDRESSMODE), { u0: -0.5, v0: -0.25, u1: 1.5, v1: 1.25 }, 1.37],
+    ["turned over", image(13, Texture.WRAP_ADDRESSMODE), { u0: 1, v0: 1, u1: 0, v1: 0 }, 0.75],
+    ["mirrored", image(14, Texture.MIRROR_ADDRESSMODE), { u0: 0, v0: 0, u1: 2, v1: 2 }, 1.37],
+    ["whole", repeated, { u0: 0, v0: 0, u1: 1, v1: 1 }, 0.75],
+  ];
+  sprites.forEach(([name, texture, uvs, scale], index) => {
+    const mesh = createSpriteQuad(scene, `past:${name}`, { pivot: { x: 0.5, y: 0.5 }, width: 64, height: 64 }, 100);
+    setUnlitMaterial(mesh, { textured: true, backFaceCulling: true, fog: true, role: "world" },
+      { texture, color: [1, 1, 1], alpha: 1, cutoff: 0.4, blend: false, textureAlpha: true, twoSided: false });
+    setSpriteQuadUvs(mesh, uvs);
+    mesh.position.set(-5 + index * 2.5, 1.5, -0.3);
+    mesh.scaling.setAll(scale);
+  });
+}
+
+export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu", images: "filtered" | "nearest" = "filtered") {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
@@ -77,10 +118,18 @@ export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu") {
       textMaterial: text.material,
       texture: (guid) => {
         let texture = textures.get(guid);
-        if (!texture) textures.set(guid, (texture = RawTexture.CreateRGBATexture(iconPixels(textures.size), 64, 64, layer.scene)));
+        if (!texture) {
+          if (images === "nearest") {
+            texture = RawTexture.CreateRGBATexture(iconPixels(textures.size), 64, 64, layer.scene, false, false, Texture.NEAREST_SAMPLINGMODE);
+            // As the resource cache loads a layer's image.
+            texture.hasAlpha = true;
+          } else texture = RawTexture.CreateRGBATexture(iconPixels(textures.size), 64, 64, layer.scene);
+          textures.set(guid, texture);
+        }
         return texture;
       },
     });
+    if (images === "nearest") pastTheirImages(layer.scene);
     const drawCalls = () => readEngineDrawCalls(engine as unknown as Parameters<typeof readEngineDrawCalls>[0]);
     /** Draws the layer over the background until a frame draws it ready, then a few more; the last frame's image and draws. */
     const draw = async () => {
@@ -111,11 +160,15 @@ export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu") {
       compositor.setCamera("hud", camera);
       setSceneDrawBatching(layer.scene, true);
       const batched = await draw();
+      const pages = sceneImagePages(layer.scene);
+      // The same batches from their members' own textures: what the page saves.
+      setSceneImagePages(layer.scene, false);
+      const ownTextures = (await draw()).draws;
       setSceneDrawBatching(layer.scene, false);
       const unbatched = await draw();
-      cases.push({ name, batched, unbatched });
+      cases.push({ name, batched, unbatched, pages, ownTextures });
     }
-    return { width: WIDTH, height: HEIGHT, cases };
+    return { width: WIDTH, height: HEIGHT, cases, pageImages: images === "nearest" ? textures.size + PAST_IMAGES : 0 };
   } finally {
     await compositor.dispose();
     engine.dispose();

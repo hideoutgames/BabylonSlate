@@ -9,6 +9,7 @@ import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -16,7 +17,7 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { ALPHA_COVERAGE_UNIFORM, coverageClip, drawsAlphaCoverage } from "./alpha-to-coverage";
 import { geometryOutputWrite } from "./geometry-surface-output-block";
-import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TINT_KIND, drawBatchValue } from "./draw-batch-world-block";
+import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TEXEL_KIND, DRAW_BATCH_TINT_KIND, drawBatchValue } from "./draw-batch-world-block";
 import { overlayVisualStyle } from "./overlay-visual-style";
 
 /**
@@ -86,7 +87,34 @@ const U = {
   tint: "unlitTint",
   geometry: "unlitGeometry",
   msdf: "unlitMsdf",
+  texel: "unlitTexel",
+  page: "unlitPage",
 } as const;
+
+/**
+ * The texel grid lookups of `texture` are taken on, into `out` at `offset`: the texture's width and height, each
+ * negative where the texture repeats along it (and positive where it clamps), or zeros for a texture whose lookups the
+ * sampler takes as they are.
+ *
+ * A texture sampled nearest has a grid: the unlit graph finds the texel a UV falls in itself and samples that texel's
+ * centre (`UnlitSurfaceBlock`), in place of leaving a UV that falls on the line between two texels to the sampler's
+ * rounding. A draw of the image's own texture and a batch that samples the image from a shared page
+ * (`layer-image-atlas.ts`) then find the same texel by the same arithmetic on the same UV, whatever the device. A
+ * filtered texture, and one that mirrors, has none.
+ */
+export function unlitTexelGrid(texture: BaseTexture | null, out: number[] | Float32Array, offset = 0): void {
+  out[offset] = out[offset + 1] = 0;
+  if (!texture || texture.samplingMode !== Constants.TEXTURE_NEAREST_NEAREST) return;
+  const wrapU = texture.wrapU, wrapV = texture.wrapV;
+  if ((wrapU !== Constants.TEXTURE_WRAP_ADDRESSMODE && wrapU !== Constants.TEXTURE_CLAMP_ADDRESSMODE) ||
+    (wrapV !== Constants.TEXTURE_WRAP_ADDRESSMODE && wrapV !== Constants.TEXTURE_CLAMP_ADDRESSMODE)) return;
+  const { width, height } = texture.getSize();
+  if (!(width > 0 && height > 0)) return;
+  out[offset] = wrapU === Constants.TEXTURE_WRAP_ADDRESSMODE ? -width : width;
+  out[offset + 1] = wrapV === Constants.TEXTURE_WRAP_ADDRESSMODE ? -height : height;
+}
+
+const scratchGrid = [0, 0];
 
 /** Whether the mesh's vertex colours carry alpha (Standard's `VERTEXALPHA`). */
 function vertexAlpha(mesh: AbstractMesh): boolean {
@@ -100,6 +128,11 @@ function bindUnlitUniforms(effect: Effect, material: NodeMaterial, mesh: Abstrac
     const texture = binding.texture ?? fallback;
     effect.setTexture(U.sampler, texture);
     if (texture) effect.setMatrix(U.matrix, texture.getTextureMatrix());
+    // The mesh's own grid, which a batch carries per vertex; and the size of the texture it samples, a page for a batch.
+    unlitTexelGrid(binding.texture, scratchGrid);
+    effect.setFloat4(U.texel, scratchGrid[0]!, scratchGrid[1]!, 0, 0);
+    const size = texture?.getSize();
+    effect.setFloat4(U.page, size?.width ? 1 / size.width : 1, size?.height ? 1 / size.height : 1, 0, 0);
   }
   effect.setFloat4(U.color, binding.color[0], binding.color[1], binding.color[2], binding.alpha);
   if (msdf) {
@@ -218,7 +251,26 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
     // Standard's normal without a normal attribute (`default.fragment`); outside any branch, as derivatives need.
     state.compilationString += `${state._declareOutput(this.faceNormal)} = normalize(cross(${wgsl ? "dpdx" : "dFdx"}(${position}.xyz), ${wgsl ? "dpdy" : "dFdy"}(${position}.xyz)));\n`;
     if (this.textured && this.uv.isConnected) interpolateAtCentroid(state, this.uv);
-    const uv = this.uv.isConnected ? this.uv.associatedVariableName : `${wgsl ? "vec2f" : "vec2"}(0.0)`;
+    const vec2 = state._getShaderType(Types.Vector2);
+    let uv = this.uv.isConnected ? this.uv.associatedVariableName : `${vec2}(0.0)`;
+    if (this.textured) {
+      // A texture sampled nearest: the texel the UV falls in, found here, and its centre sampled (`unlitTexelGrid`).
+      // The grid is the mesh's own, bound or a draw batch's per vertex: the image's size (negative where it repeats)
+      // and where the image starts on the sampled texture, whose texel size is bound.
+      state._emitUniformFromString(U.texel, Types.Vector4);
+      state._emitUniformFromString(U.page, Types.Vector4);
+      const grid = drawBatchValue(state, DRAW_BATCH_TEXEL_KIND, `${u}${U.texel}`);
+      const size = state._getFreeVariableName("unlitGridSize"), texel = state._getFreeVariableName("unlitTexelIndex");
+      const lookup = state._getFreeVariableName("unlitLookup");
+      const centre = `(${grid}.zw + ${texel} + ${vec2}(0.5)) * ${u}${U.page}.xy`;
+      state.compilationString += `${state._declareLocalVar(size, Types.Vector2)} = abs(${grid}.xy);\n`
+        + `${state._declareLocalVar(texel, Types.Vector2)} = floor(${uv} * ${size});\n`
+        // Outside the image, as the texture's own sampler takes it: around, or to the edge.
+        + `${texel} = mix(clamp(${texel}, ${vec2}(0.0), max(${size} - ${vec2}(1.0), ${vec2}(0.0))), `
+        + `${texel} - ${size} * floor(${texel} / max(${size}, ${vec2}(1.0))), step(${grid}.xy, ${vec2}(-0.5)));\n`
+        + `${state._declareLocalVar(lookup, Types.Vector2)} = ${wgsl ? `select(${uv}, ${centre}, ${size}.x > 0.0)` : `${size}.x > 0.0 ? ${centre} : ${uv}`};\n`;
+      uv = lookup;
+    }
     state.compilationString += `${state._declareLocalVar(sample, Types.Vector4)} = ${this.textured
       ? (wgsl ? `textureSample(${U.sampler}, ${U.sampler}Sampler, ${uv})` : `texture2D(${U.sampler}, ${uv})`)
       : `${vec4}(1.0)`};\n`;
