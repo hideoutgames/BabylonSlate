@@ -353,6 +353,59 @@ index 677079dbbeaeeed37feb51fc976b9c2fb0f34423..c7823a5ea1f5a31047b5748814c0f044
                          particleSystem.setCustomEffect(effect, blendMode);
                          this._createEffectForParticles(particleSystem, blendMode, onCompiled, onError, effect, defines, particleSystemDefinesJoined); // add the effect.onBindObservable observer
                          return;
+diff --git a/Materials/drawWrapper.js b/Materials/drawWrapper.js
+index df96b9251e1cf54537807d5ee4b5ac654020dba9..cb13d9fb2536d4dc4bd595a76ee00970101011d3 100644
+--- a/Materials/drawWrapper.js
++++ b/Materials/drawWrapper.js
+@@ -1,4 +1,39 @@
+ import { TimingTools } from "../Misc/timingTools.js";
++/**
++ * Disposes an effect now, or once its WebGL program has linked when this is its last reference: the browser goes on
++ * asking a program deleted while it links in parallel for its link status, which leaves an error on the context.
++ */
++function DisposeOnceLinked(effect) {
++    const engine = effect.getEngine();
++    const pipeline = effect.getPipelineContext();
++    const linking = !effect.isDisposed && !engine.isDisposed && !engine.isWebGPU && effect._refCount === 1 &&
++        pipeline && pipeline.isAsync && pipeline.program && !effect.isReady() &&
++        !(effect.getCompilationError() && effect.allFallbacksProcessed());
++    if (!linking) {
++        effect.dispose();
++        return;
++    }
++    let released = false;
++    const release = () => {
++        if (released) {
++            return;
++        }
++        released = true;
++        clearTimeout(timer);
++        effect.onCompileObservable.remove(compiled);
++        effect.onErrorObservable.remove(failed);
++        // The compile observers run inside the pipeline's finalizer: release once it has returned.
++        TimingTools.SetImmediate(() => effect.dispose());
++    };
++    const compiled = effect.onCompileObservable.add(release);
++    const failed = effect.onErrorObservable.add(() => {
++        if (effect.allFallbacksProcessed()) {
++            release();
++        }
++    });
++    // A lost context or a driver that never reports must not keep the effect for ever.
++    const timer = setTimeout(release, 15000);
++}
+ /**
+  * Wrapper for an effect and its associated material context and draw context.
+  * This class is meant to encapsulate the effect and its related contexts, allowing for easier management of rendering states.
+@@ -73,7 +108,7 @@ export class DrawWrapper {
+             else {
+                 TimingTools.SetImmediate(() => {
+                     effect.getEngine().onEndFrameObservable.addOnce(() => {
+-                        effect.dispose();
++                        DisposeOnceLinked(effect);
+                     });
+                 });
+             }
 diff --git a/Materials/effect.pure.js b/Materials/effect.pure.js
 index 801aa3c223053ecfb677eb540ffe18ad03b03025..94cc6e2a27e92f4b473d28aef56700624bc1081b 100644
 --- a/Materials/effect.pure.js
