@@ -3394,6 +3394,67 @@ describe("GraphEditor", () => {
     expect(exec.style.width).not.toContain("0.6");
   });
 
+  it("draws a variable output as a reference pin only while it is wired into a reference input", () => {
+    const seed = { kind: "structRef", guid: "engine:Seed" };
+    const getter = (id: string, y: number, type: { kind: string; guid?: string }) => ({
+      id,
+      type: "variables.get",
+      position: { x: 0, y },
+      data: {
+        title: id,
+        __nodeType: "variables.get",
+        __category: "variables",
+        __pure: true,
+        __pins: [{ id: "value", name: id, kind: "data" as const, direction: "out" as const, type, reference: "writable" as const }],
+      },
+    });
+    const graph: GraphDocument = {
+      nodes: [
+        getter("loot", 0, seed),
+        getter("spare", 100, seed),
+        getter("count", 200, { kind: "int" }),
+        {
+          id: "roll",
+          type: "random.seededFloat",
+          position: { x: 300, y: 0 },
+          data: {
+            title: "Seeded Random Float",
+            __nodeType: "random.seededFloat",
+            __category: "random",
+            __pure: true,
+            __pins: [
+              { id: "seed", name: "Seed", kind: "data", direction: "in", type: seed, reference: "required" },
+              { id: "out", name: "Out", kind: "data", direction: "out", type: { kind: "float" } },
+            ],
+          },
+        },
+        {
+          id: "add",
+          type: "math.addInt",
+          position: { x: 300, y: 200 },
+          data: {
+            title: "Add",
+            __nodeType: "math.addInt",
+            __category: "math",
+            __pure: true,
+            __pins: [{ id: "a", name: "A", kind: "data", direction: "in", type: { kind: "int" } }],
+          },
+        },
+      ],
+      edges: [
+        { id: "by-ref", source: "loot", sourceHandle: "value", target: "roll", targetHandle: "seed" },
+        { id: "by-value", source: "count", sourceHandle: "value", target: "add", targetHandle: "a" },
+      ],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const shape = (node: string) =>
+      container.querySelector(`[data-id="${node}"] [data-pin-id="value"] [data-pin-shape]`)?.getAttribute("data-pin-shape");
+    expect(shape("loot")).toBe("reference");
+    expect(shape("count")).toBe("circle");
+    expect(shape("spare")).toBe("circle");
+  });
+
   it("draws a custom event's delegate as a square in its title bar, dark-filled until wired", () => {
     const delegate = { kind: "delegate", inputs: [{ kind: "float" }], outputs: [] };
     const customEvent = (id: string, y: number) => ({

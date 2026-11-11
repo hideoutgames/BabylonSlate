@@ -43,7 +43,7 @@ import {
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
-import { isPinWired } from "./pin-connections";
+import { isPinWired, passesReference } from "./pin-connections";
 
 export type CanvasNode = Node<Record<string, unknown>>;
 
@@ -145,13 +145,16 @@ function PinVisual({
   type,
   pin,
   connected,
+  byReference = false,
 }: {
   type: PinTypeRef;
   pin?: SerializedPin;
   connected: boolean;
+  /** A variable output wired into a reference input: drawn as the reference it passes. */
+  byReference?: boolean;
 }) {
   const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
-  const shape = pinVisualShape(type, pin);
+  const shape = byReference ? "reference" : pinVisualShape(type, pin);
   const color = pinCssVar(type);
   const glyph = (
     <PinShapeGlyph
@@ -202,6 +205,7 @@ function PinHandle({
   const { onPinTap, pinDisplayType } = useGraphEditorContext();
   const isSource = pin.direction === "out";
   const displayType = pinDisplayType(nodeId, pin.id) ?? pin.type;
+  const byReference = useStore((state) => passesReference(state.edges, state.nodeLookup, nodeId, pin));
 
   return (
     <Handle
@@ -235,7 +239,7 @@ function PinHandle({
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
-      <PinVisual type={displayType} pin={pin} connected={connected} />
+      <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} />
     </Handle>
   );
 }
