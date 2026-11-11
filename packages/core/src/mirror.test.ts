@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMirrorProperties } from "./mirror";
+import { capMirrorReflects, parseMirrorProperties } from "./mirror";
 import { normalizeScene } from "./scene";
 
 describe("mirror authoring", () => {
@@ -17,6 +17,16 @@ describe("mirror authoring", () => {
     expect(parseMirrorProperties({ reflects: "environment" }).reflects).toBe("environment");
     expect(parseMirrorProperties({ reflects: "nothing" }).reflects).toBe("everything");
     expect(parseMirrorProperties({ reflects: 2 }).reflects).toBe("everything");
+  });
+
+  it("caps what a Mirror draws at whichever of its own Reflects and the quality level's draws less", () => {
+    expect(capMirrorReflects("everything", "everything")).toBe("everything");
+    expect(capMirrorReflects("everything", "movingActors")).toBe("movingActors");
+    expect(capMirrorReflects("everything", "environment")).toBe("environment");
+    expect(capMirrorReflects("movingActors", "everything")).toBe("movingActors");
+    expect(capMirrorReflects("movingActors", "environment")).toBe("environment");
+    expect(capMirrorReflects("environment", "everything")).toBe("environment");
+    expect(capMirrorReflects("environment", "movingActors")).toBe("environment");
   });
 
   it("normalizes Mirror components when a scene loads", () => {

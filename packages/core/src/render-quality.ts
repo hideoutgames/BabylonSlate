@@ -8,6 +8,7 @@ import {
   type ShadowSettings,
 } from "./shadows";
 import type { RenderProjectSettings } from "./project";
+import { MIRROR_REFLECTS, type MirrorReflects } from "./mirror";
 
 export const QUALITY_LEVELS = ["low", "medium", "high", "ultra"] as const;
 export type QualityLevel = (typeof QUALITY_LEVELS)[number];
@@ -52,6 +53,16 @@ export interface GeometryQuality extends QualitySelection {
   lodDistanceScale: number;
   /** Play leaves out meshes wholly hidden behind occluders (on at every level). */
   occlusionCulling: boolean;
+  /**
+   * The most a Mirror draws live at this level, whatever its own Reflects asks (`capMirrorReflects`): Everything leaves
+   * each Mirror as authored.
+   */
+  mirrorReflections: MirrorReflects;
+}
+/** A console value for the Mirror cap, whatever its case; undefined for anything else. */
+function parseMirrorReflections(value: string | undefined): MirrorReflects | undefined {
+  const lower = value?.toLowerCase();
+  return MIRROR_REFLECTS.find((entry) => entry.toLowerCase() === lower);
 }
 export const LOD_DISTANCE_SCALE_MIN = 0.25;
 export const LOD_DISTANCE_SCALE_MAX = 4;
@@ -208,7 +219,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 6 },
     resolution: { scale: 0.85, dynamic: true, minScale: 0.5, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 384 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: true },
+    geometry: { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: true, mirrorReflections: "everything" },
     // A budget phone draws water as a blended surface reflecting the sky: no scene copy, no mirror pass, the cheapest
     // shading and two small FFT cascades.
     water: {
@@ -222,7 +233,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 32 },
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 768 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: true },
+    geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: true, mirrorReflections: "everything" },
     // The A16 keeps refraction and screen-space object reflections, with no planar re-render of the scene for flat
     // water, a half-resolution scene copy, and Low's mesh, FFT texels and contact cells (an iPad's sustained frame spent
     // about 2 ms on 0.75's mesh and 2 ms on 128's FFT texels), with a third cascade.
@@ -238,7 +249,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 1024 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 1.5, occlusionCulling: true },
+    geometry: { autoLod: true, lodDistanceScale: 1.5, occlusionCulling: true, mirrorReflections: "everything" },
     water: {
       shadingDetail: "high", meshDensity: 1, contactResolution: 1024,
       refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 16,
@@ -250,7 +261,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 256 },
     resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 16, byteBudget: 2048 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 2, occlusionCulling: true },
+    geometry: { autoLod: true, lodDistanceScale: 2, occlusionCulling: true, mirrorReflections: "everything" },
     water: {
       shadingDetail: "ultra", meshDensity: 1.5, contactResolution: 1024,
       refraction: true, refractionScale: 1, reflections: "planar", reflectionSteps: 24,
@@ -341,6 +352,9 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         typeof geometry?.occlusionCulling === "boolean"
           ? geometry.occlusionCulling
           : defaults.geometry.occlusionCulling,
+      mirrorReflections: MIRROR_REFLECTS.includes(geometry?.mirrorReflections as MirrorReflects)
+        ? geometry!.mirrorReflections as MirrorReflects
+        : defaults.geometry.mirrorReflections,
     },
     water: normalizeWaterQuality(water),
     postprocessing: {
@@ -740,6 +754,11 @@ export class RenderingQualitySession {
           ...this.overrides,
           geometry: { ...this.overrides.geometry, occlusionCulling: value === "on" },
         };
+      else if (group === "geometry" && choice === "mirrors" && parseMirrorReflections(value))
+        this.overrides = {
+          ...this.overrides,
+          geometry: { ...this.overrides.geometry, mirrorReflections: parseMirrorReflections(value) },
+        };
       else if (
         group === "geometry" &&
         choice === "distance" &&
@@ -822,5 +841,6 @@ export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): 
     "post.antiAliasing": post.antiAliasing,
     "resolution.scale": String(quality.resolution.scale),
     "geometry.occlusion": String(quality.geometry.occlusionCulling),
+    "geometry.mirrors": quality.geometry.mirrorReflections,
   };
 }

@@ -11,6 +11,11 @@ const MIN_MIRROR_RESOLUTION_SCALE = 0.1;
 export const MIRROR_REFLECTS = ["everything", "movingActors", "environment"] as const;
 export type MirrorReflects = (typeof MIRROR_REFLECTS)[number];
 
+/** What a Mirror that asks for `reflects` draws under a quality level's `cap`: the one of the two that draws less. */
+export function capMirrorReflects(reflects: MirrorReflects, cap: MirrorReflects): MirrorReflects {
+  return MIRROR_REFLECTS.indexOf(cap) > MIRROR_REFLECTS.indexOf(reflects) ? cap : reflects;
+}
+
 /** Authored data only. The reflection target, mirror camera and surface mesh belong to the view. */
 export type MirrorProperties = {
   enabled: boolean;

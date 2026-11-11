@@ -32,6 +32,8 @@ import {
   type QualityLevel,
   type WaterReflectionMode,
   type WaterShadingDetail,
+  MIRROR_REFLECTS,
+  type MirrorReflects,
   type PostProcessingEffectField,
 } from "@haptic/core";
 import { LabelHint, NumberField } from "@haptic/editor-kit";
@@ -73,6 +75,11 @@ const antiAliasingLabels: Record<AntiAliasingMode, string> = {
   msaa2: "MSAA 2x",
   fxaa: "FXAA",
   off: "Off",
+};
+const mirrorLabels: Record<MirrorReflects, string> = {
+  everything: "Everything",
+  movingActors: "Moving Actors",
+  environment: "Environment",
 };
 const reflectionLabels: Record<WaterReflectionMode, string> = {
   sky: "Sky Only",
@@ -297,6 +304,31 @@ export function RenderQualityFields({
             checked={effective.geometry.occlusionCulling}
             onCheckedChange={(occlusionCulling) => edit("geometry", { occlusionCulling })}
           />
+        </Field>
+        <Field className="settings-field">
+          <LabelHint hint="The most a Mirror draws live, whatever its own Reflects asks. Everything leaves each Mirror as authored.">
+            <FieldLabel htmlFor="quality-geometry-mirrors">Mirror Reflections</FieldLabel>
+          </LabelHint>
+          <Select
+            value={effective.geometry.mirrorReflections}
+            onValueChange={(mirrorReflections) => {
+              if (MIRROR_REFLECTS.includes(mirrorReflections as MirrorReflects))
+                edit("geometry", { mirrorReflections: mirrorReflections as MirrorReflects });
+            }}
+          >
+            <SelectTrigger id="quality-geometry-mirrors">
+              <SelectValue>{mirrorLabels[effective.geometry.mirrorReflections]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {MIRROR_REFLECTS.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {mirrorLabels[mode]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </Field>
         <h4 className="settings-group-heading">Water</h4>
         <Field className="settings-field">

@@ -12,7 +12,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, expect, it, vi } from "vitest";
-import { DEFAULT_RENDER_EFFECTS, normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "./mirrors";
@@ -512,4 +512,56 @@ it("compiles the environment into a surface that does not reflect everything, an
   expect(bare.values.get("slateMirrorEye")).toEqual([0, 1, 0, 0]);
   expect(bare.values.get("slateMirrorBackdrop")!.map((value) => Math.round(value * 10) / 10)).toEqual([0.2, 0.3, 0.4]);
   expect((bare.sampled.get("slateMirrorEnvironmentSampler") as unknown as { name: string }).name).toBe("haptic:environmentPlaceholder");
+});
+
+it("draws no more into a Mirror than the quality level allows, and what the Mirror asks for when that is less", () => {
+  const { scene, surface, passes, frame } = reflectedPair("everything");
+  const cap = (mirrorReflections: "everything" | "movingActors" | "environment") =>
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { mirrorReflections } }) });
+  const material = surface.material!;
+  // Its defines are prepared again, a frozen Material's too: once per change of what the surface shows.
+  const dirtied = vi.spyOn(material, "markDirty");
+  expect(frame()).toEqual(["mirror:mirror"]);
+  expect(passes.at(-1)![0]!.meshes).toEqual(["wall", "mover", "sky"]);
+  expect(dirtied).not.toHaveBeenCalled();
+  // The level allows only the actors that move: the surface's Material compiles its other variant, and the image
+  // drawn before is not kept.
+  cap("movingActors");
+  expect(frame()).toEqual(["mirror:mirror"]);
+  expect(passes.at(-1)![0]).toMatchObject({ meshes: ["mover"], clear: [0, 0, 0, 1], blend: [1, 0, 0, 0] });
+  expect(mirrorReflectionBinding(surface)!.reflects).toBe("movingActors");
+  expect(dirtied).toHaveBeenCalledTimes(1);
+  expect(frame()).toEqual([]);
+  // The level allows no reflection: the surface gives its storage back.
+  cap("environment");
+  expect(frame()).toEqual([]);
+  expect(mirrorDiagnostics(scene)).toMatchObject({ targets: 0 });
+  expect(mirrorReflectionBinding(surface)).toMatchObject({ reflects: "environment", texture: null });
+  // No cap again: everything, drawn anew.
+  cap("everything");
+  expect(frame()).toEqual(["mirror:mirror"]);
+  expect(passes.at(-1)![0]).toMatchObject({ meshes: ["wall", "mover", "sky"], blend: null });
+  expect(dirtied).toHaveBeenCalledTimes(3);
+});
+
+it("draws a Mirror again when the quality level changes what its image holds, though it lists the same meshes", () => {
+  const { scene, wall, sky, passes, frame } = reflectedPair("everything");
+  // Only the box that moves is left: both values list it alone.
+  wall.dispose();
+  sky.dispose();
+  // The first draws settle (a draw follows its list from then on); after them the still view keeps its image.
+  frame();
+  frame();
+  expect(frame()).toEqual([]);
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { mirrorReflections: "movingActors" } }) });
+  // The image of everything has no alpha that says where nothing drew.
+  expect(frame()).toEqual(["mirror:mirror"]);
+  expect(passes.at(-1)![0]).toMatchObject({ meshes: ["mover"], clear: [0, 0, 0, 1], blend: [1, 0, 0, 0] });
+});
+
+it("keeps a Mirror that asks for less than the quality level allows as it asks", () => {
+  const { scene, surface, frame } = reflectedPair("environment");
+  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { mirrorReflections: "movingActors" } }) });
+  expect(frame()).toEqual([]);
+  expect(mirrorReflectionBinding(surface)!.reflects).toBe("environment");
 });

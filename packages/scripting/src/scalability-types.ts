@@ -20,6 +20,7 @@ export const SCALABILITY_ENUMS: EngineEnum[] = [
   enumeration("ColorPipeline", ["legacyDisplay", "sceneLinear"]),
   enumeration("WaterShadingDetail", ["low", "medium", "high", "ultra"]),
   enumeration("WaterReflectionMode", ["sky", "screenSpace", "planar"]),
+  enumeration("MirrorReflects", ["everything", "movingActors", "environment"]),
 ];
 const field = (name: string, typeId: string, defaultValue?: unknown, typeClassId?: string): StructField =>
   ({ name, typeId, ...(defaultValue !== undefined ? { defaultValue } : {}), ...(typeClassId ? { typeClassId: `engine:${typeClassId}` } : {}) });
@@ -38,7 +39,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("TextureQuality", [number("lodBias", medium.textures.lodBias), number("anisotropy", medium.textures.anisotropy),
     number("byteBudget", medium.textures.byteBudget)]),
   define("GeometryQuality", [bool("autoLod", medium.geometry.autoLod), number("lodDistanceScale", medium.geometry.lodDistanceScale),
-    bool("occlusionCulling", medium.geometry.occlusionCulling)]),
+    bool("occlusionCulling", medium.geometry.occlusionCulling), choice("mirrorReflections", "MirrorReflects", medium.geometry.mirrorReflections)]),
   // Defaults equal the Medium tier; normalization rounds integer fields and snaps FFT Size.
   define("WaterQuality", [choice("shadingDetail", "WaterShadingDetail", medium.water.shadingDetail), number("meshDensity", medium.water.meshDensity),
     number("contactResolution", medium.water.contactResolution), bool("refraction", medium.water.refraction),
