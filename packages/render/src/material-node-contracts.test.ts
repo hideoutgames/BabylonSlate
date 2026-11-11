@@ -121,6 +121,19 @@ describe("material node contracts", () => {
     const block = result.material.attachedBlocks.find((entry) => entry.getClassName() === "OneMinusBlock")!;
     expect(block.inputs[0]!.connectedPoint?.ownerBlock.name).toBe("time");
   });
+  it("writes Gradient stop colours in linear space, as a Color node of the same picked colour is", async () => {
+    const doc = createDefaultMaterialDocument();
+    node(doc, "ramp", "color.gradient", { stops: [{ position: 0, color: [0.5, 0.5, 0.5] }, { position: 1, color: [1, 0, 0] }] });
+    wire(doc, "ramp", "out", "output", "emissive");
+    const result = await compile(doc);
+    const block = result.material.getBlockByName("ramp") as unknown as { colorSteps: Array<{ step: number; color: { r: number; g: number; b: number } }> };
+
+    // sRGB 0.5 is about 0.214 linear; the ends of the range are unchanged.
+    expect(block.colorSteps.map((stop) => stop.step)).toEqual([0, 1]);
+    expect(block.colorSteps[0]!.color.r).toBeCloseTo(0.214, 3);
+    expect(block.colorSteps[1]!.color.r).toBeCloseTo(1, 6);
+    expect(block.colorSteps[1]!.color.g).toBe(0);
+  });
   it.each(["noise.perlin", "noise.worley"])("feeds an unwired %s the mesh UV, so it shows a pattern instead of one flat value", async (type) => {
     const doc = createDefaultMaterialDocument();
     node(doc, "noise", type);

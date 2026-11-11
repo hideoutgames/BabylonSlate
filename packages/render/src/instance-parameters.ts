@@ -34,14 +34,18 @@ interface MaterialInstanceParameters {
 
 const materials = new WeakMap<Material, MaterialInstanceParameters>();
 
-/** The attribute of a Material's `index`th per-instance parameter: letters only, as Babylon strips digits from names. */
-export function instanceParameterAttribute(index: number): string {
+/**
+ * The attribute of a Material's `index`th per-instance parameter: letters only, as Babylon strips digits from
+ * names. The name carries the kind, because a mesh registers an attribute's width once: a mesh that drew a Float
+ * under a name and then draws another Material's Color under it would keep the one-component buffer.
+ */
+export function instanceParameterAttribute(index: number, kind: InstanceParameter["kind"]): string {
   let letters = "";
   for (let rest = index; ; rest = Math.floor(rest / 26) - 1) {
     letters = String.fromCharCode(97 + (rest % 26)) + letters;
     if (rest < 26) break;
   }
-  return `instanceParameter_${letters}`;
+  return `instanceParameter${kind === "float" ? "Float" : "Color"}_${letters}`;
 }
 
 /** The block a per-instance Float or Color parameter compiles to: an instanced attribute, never a uniform. */

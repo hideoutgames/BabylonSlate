@@ -376,6 +376,34 @@ describe("material library", () => {
     expect(compiled()).toBe(1);
   });
 
+  it("remembers that a Material's texture is missing until the texture arrives, where the hash carries its identity", () => {
+    const scene = host();
+    let fingerprint: string | undefined = undefined;
+    const asked: string[] = [];
+    const library = new MaterialLibrary({
+      onTextureError: vi.fn(),
+      textureIdentity: () => fingerprint,
+      acquireTexture: (guid) => { asked.push(guid); return null; },
+    });
+    disposers.push(() => library.dispose());
+    const doc = textureDocument("tex-1");
+    const first = library.acquire(scene, "material", doc);
+    expect(first.ok).toBe(false);
+    const attempts = asked.length;
+    expect(attempts).toBeGreaterThan(0);
+
+    // Each further mesh that asks gets the failure without another build.
+    const again = library.acquire(scene, "material", doc);
+    expect(again.ok).toBe(false);
+    expect(library.resolve(scene, "material", doc)).toBeNull();
+    expect(asked).toHaveLength(attempts);
+
+    // The texture's bytes arrive: a new generation, built again.
+    fingerprint = "bytes-1";
+    library.acquire(scene, "material", doc);
+    expect(asked.length).toBeGreaterThan(attempts);
+  });
+
   /** A bound Material whose program the Engine cannot link, retired and latched. */
   async function latchedFailure() {
     const scene = host();

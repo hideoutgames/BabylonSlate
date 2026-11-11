@@ -248,6 +248,25 @@ function multiplyMaterial(): MaterialDocument {
 }
 
 describe("material compiler", () => {
+  it("writes literals into the shader as constants and keeps a parameter as a uniform it can rewrite", () => {
+    const doc = createDefaultMaterialDocument("literals");
+    doc.nodes.push({ id: "grit", type: "param.float", position: { x: 0, y: 100 }, properties: { name: "Grit", value: [0.3] } });
+    doc.edges.push({ id: "e-grit", sourceNodeId: "grit", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+    const result = compileMaterialPlan(planFor(doc), { scene: host(), name: "literals" });
+    if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    disposers.push(() => result.material.dispose());
+    const values = result.material.getInputBlocks().filter((block) => block.isUniform && !block.isSystemValue);
+
+    expect(result.setParameter("Grit", { kind: "float", value: 0.7 })).toBe(true);
+    const parameter = values.filter((block) => block.value === 0.7);
+    expect(parameter).toHaveLength(1);
+    expect(parameter[0]!.isConstant).toBe(false);
+    // Everything else the graph holds a value for is a literal: no uniform to send on every bind.
+    const literals = values.filter((block) => block !== parameter[0]);
+    expect(literals.length).toBeGreaterThan(0);
+    expect(literals.every((block) => block.isConstant)).toBe(true);
+  });
+
   it.each(["pbr", "unlit"] as const)("builds %s fog in WGSL by the one rule every surface fogs by", async (shadingModel) => {
     const scene = host();
     vi.spyOn(scene.getEngine(), "isWebGPU", "get").mockReturnValue(true);
@@ -2073,7 +2092,7 @@ describe("material compiler", () => {
       const effects = (scene.getEngine() as unknown as { _compiledEffects: Record<string, unknown> })._compiledEffects;
       /** Another shader variant finishes compiling on the Engine. */
       const finishShader = (key: string) => { effects[key] = { isReady: () => true, getCompilationError: () => "" }; };
-      return { clock, outcome: () => outcome, compiled: () => compiled(), finishShader };
+      return { clock, outcome: () => outcome, compiled: () => compiled(), finishShader, material: result.material, mesh };
     }
 
     it("waits out a compile poll that held the thread past the shader warm bound", async () => {
@@ -2085,6 +2104,20 @@ describe("material compiler", () => {
       compiled();
       await vi.advanceTimersByTimeAsync(0);
       expect(outcome()).toBe("ready");
+    });
+
+    it.each(["material", "mesh"] as const)("ends at once, reporting no stall, when its %s is disposed while it compiles", async (target) => {
+      const pending = pendingCompile();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pending.outcome()).toBe("pending");
+
+      pending[target].dispose();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(pending.outcome()).toBe("ready");
+      // Nothing is left polling for the stall.
+      await pending.clock.run(2 * SCENE_SHADER_WARM_TIMEOUT_MS);
+      expect(pending.outcome()).toBe("ready");
     });
 
     it("still reports a compile that never finishes once the credit budget is spent", async () => {

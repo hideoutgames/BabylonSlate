@@ -257,6 +257,34 @@ export function lowerMaterialDocument(
   doc: MaterialDocument,
   context: MaterialLowerContext = {},
 ): MaterialLowerResult {
+  try {
+    return lowerWithinBudget(doc, context);
+  } catch (error) {
+    if (!(error instanceof PlanTooLarge)) throw error;
+    return {
+      ok: false,
+      diagnostics: [{
+        code: "material.tooLarge",
+        message: `The Material expands to more than ${MATERIAL_MAX_OPERATIONS} operations once its Material Functions are inlined; nested functions that each call another several times multiply quickly`,
+        severity: "error",
+      }],
+    };
+  }
+}
+
+/**
+ * The most operations a plan may hold. Every call of a Material Function is inlined, so functions nested N deep
+ * that each call the next twice expand to 2^N copies: the bound stops that before it exhausts memory, far above
+ * any Material a shader could run.
+ */
+export const MATERIAL_MAX_OPERATIONS = 4096;
+
+class PlanTooLarge extends Error {}
+
+function lowerWithinBudget(
+  doc: MaterialDocument,
+  context: MaterialLowerContext,
+): MaterialLowerResult {
   const diagnostics = validateMaterialDocument(doc, context);
   if (diagnostics.some((row) => row.severity === "error")) {
     return { ok: false, diagnostics };
@@ -441,11 +469,14 @@ export function lowerMaterialDocument(
         ...(frame.functionGuid ? { functionGuid: frame.functionGuid } : {}),
       },
     };
+    if (operations.length >= MATERIAL_MAX_OPERATIONS) throw new PlanTooLarge();
     emitted.set(id, operation);
     operations.push(operation);
 
+    // A texture assigned on the node is what it samples only while nothing is wired into its Texture pin: a wire
+    // wins, and a guid left on the node from before must not load a texture nothing draws.
     const textureGuid = node.properties.textureGuid;
-    if (typeof textureGuid === "string" && textureGuid !== "") {
+    if (typeof textureGuid === "string" && textureGuid !== "" && lookup.incoming(node.id, "texture") === undefined) {
       textures.push({ operationId: id, textureGuid, ...(node.properties.filter === "nearest" ? { filter: "nearest" as const } : {}) });
     }
     return operation;

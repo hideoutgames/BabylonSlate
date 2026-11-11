@@ -21,7 +21,7 @@ export function createGlobalParameterBlock(
   const { collectionGuid, parameterId, valueType } = selection;
   const read = () => globalParameterComponents(source, collectionGuid, parameterId, valueType);
   const initial = read();
-  const block = createConstantBlock(name, BLOCK_TYPES[valueType], initial, valueType === "color");
+  const block = createConstantBlock(name, BLOCK_TYPES[valueType], initial, valueType === "color", true);
   let revision = source.revision;
   let scalar = initial[0] ?? 0;
   // Babylon transmits a Color uniform from `block.value` even with a callback, so vectors and

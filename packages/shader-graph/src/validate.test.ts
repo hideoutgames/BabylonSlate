@@ -6,7 +6,7 @@ import {
   type MaterialFunctionDocument,
 } from "./document";
 import { newCustomGlslProperties } from "./custom-glsl";
-import { collectFunctionDependencies, validateMaterialDocument } from "./validate";
+import { collectFunctionDependencies, validateMaterialDocument, validateMaterialFunctionDocument } from "./validate";
 
 function codes(doc: MaterialDocument, context = {}): string[] {
   return validateMaterialDocument(doc, context).map((row) => row.code);
@@ -440,6 +440,30 @@ describe("material validation", () => {
         functions: { "fn-1": fn },
       }),
     ).toEqual([]);
+  });
+
+  it("does not let a numeric default kept from an earlier type satisfy a function's Texture input", () => {
+    const fn = createDefaultMaterialFunctionDocument("Sample");
+    // The input was a Float with a default, then retyped to Texture.
+    fn.inputs = [{ id: "in_map", name: "Map", type: "texture", defaultValue: [0.5] }];
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn-1" } });
+
+    expect(validateMaterialDocument(doc, { functions: { "fn-1": fn } }))
+      .toContainEqual(expect.objectContaining({ code: "material.missingInput", nodeId: "call", pinId: "in_map" }));
+  });
+
+  it("flags Function Input and Function Output in a Material, and a Material output node in a function", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "stray", type: "function.input", position: { x: 0, y: 0 }, properties: {} });
+    expect(validateMaterialDocument(doc)).toContainEqual(expect.objectContaining({ code: "material.function.misplaced", nodeId: "stray" }));
+
+    const fn = createDefaultMaterialFunctionDocument("Tint");
+    fn.nodes.push({ id: "surface", type: "output.surface", position: { x: 0, y: 0 }, properties: {} });
+    expect(validateMaterialFunctionDocument(fn)).toContainEqual(expect.objectContaining({ code: "material.function.misplaced", nodeId: "surface" }));
+    // Each graph's own plumbing is not flagged.
+    expect(validateMaterialDocument(createDefaultMaterialDocument()).map((row) => row.code)).not.toContain("material.function.misplaced");
+    expect(validateMaterialFunctionDocument(createDefaultMaterialFunctionDocument("Tint")).map((row) => row.code)).not.toContain("material.function.misplaced");
   });
 
   it("flags recursive function dependencies", () => {

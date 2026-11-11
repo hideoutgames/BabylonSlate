@@ -6,7 +6,7 @@ import {
   type MaterialDocument,
 } from "./document";
 import { newCustomGlslProperties } from "./custom-glsl";
-import { lowerMaterialDocument, materialCompileKeyFromLowering } from "./lower";
+import { lowerMaterialDocument, materialCompileKeyFromLowering, MATERIAL_MAX_OPERATIONS } from "./lower";
 import { isPerInstanceParameter } from "./parameters";
 
 const materialCompileKey = (document: MaterialDocument) => materialCompileKeyFromLowering(document, lowerMaterialDocument(document));
@@ -491,6 +491,61 @@ describe("material lowering", () => {
     expect(result.plan.textures).toEqual([
       { operationId: "sample", textureGuid: "tex-inline" },
     ]);
+  });
+
+  it("binds only the wired Texture Parameter when a sample node still holds an earlier texture of its own", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "albedo", type: "param.texture", position: { x: 0, y: 0 }, properties: { name: "Albedo", textureGuid: "tex-wired" } },
+      { id: "sample", type: "texture.sample", position: { x: 0, y: 0 }, properties: { textureGuid: "tex-stale" } },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      { id: "e-texture", sourceNodeId: "albedo", sourcePinId: "out", targetNodeId: "sample", targetPinId: "texture" },
+      { id: "e-sample", sourceNodeId: "sample", sourcePinId: "rgb", targetNodeId: "output", targetPinId: "baseColor" },
+    );
+    const result = lowerMaterialDocument(doc);
+    if (!result.ok) throw new Error(result.diagnostics.map((row) => row.code).join(", "));
+
+    expect(result.plan.textures).toEqual([{ operationId: "albedo", textureGuid: "tex-wired" }]);
+    expect(result.plan.dependencies.textures).toEqual(["tex-wired"]);
+  });
+
+  it("refuses a Material whose nested functions expand past the operation limit", () => {
+    const edge = (id: string, sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) =>
+      ({ id, sourceNodeId, sourcePinId, targetNodeId, targetPinId });
+    /** `depth` functions, each calling the next one twice: 2^depth copies of the last. */
+    const nested = (depth: number) => {
+      const functions: Record<string, ReturnType<typeof createDefaultMaterialFunctionDocument>> = {};
+      for (let level = 0; level < depth; level++) {
+        const fn = createDefaultMaterialFunctionDocument(`Level ${level}`);
+        const last = level === depth - 1;
+        fn.nodes.push({ id: "mix", type: last ? "math.multiply" : "math.add", position: { x: 0, y: 0 }, properties: {} });
+        if (last) {
+          fn.edges = [edge("in", "inputs", "in_value", "mix", "a"), edge("out", "mix", "out", "outputs", "out_value")];
+        } else {
+          for (const side of ["a", "b"]) {
+            fn.nodes.push({ id: side, type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: `fn-${level + 1}` } });
+          }
+          fn.edges = [
+            edge("in-a", "inputs", "in_value", "a", "in_value"), edge("in-b", "inputs", "in_value", "b", "in_value"),
+            edge("a-mix", "a", "out_value", "mix", "a"), edge("b-mix", "b", "out_value", "mix", "b"),
+            edge("out", "mix", "out", "outputs", "out_value"),
+          ];
+        }
+        functions[`fn-${level}`] = fn;
+      }
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push({ id: "call", type: "function.call", position: { x: 0, y: 0 }, properties: { functionGuid: "fn-0" } });
+      doc.edges = doc.edges.filter((entry) => entry.id !== "e-color-output");
+      doc.edges.push(edge("e-color-call", "baseColor", "out", "call", "in_value"), edge("e-call-output", "call", "out_value", "output", "baseColor"));
+      return lowerMaterialDocument(doc, { functions });
+    };
+
+    const small = nested(4);
+    expect(small.ok && small.plan.operations.length).toBeLessThan(MATERIAL_MAX_OPERATIONS);
+    const huge = nested(14);
+    expect(huge).toEqual({ ok: false, diagnostics: [expect.objectContaining({ code: "material.tooLarge", severity: "error" })] });
   });
 
   it("inlines a material function call with namespaced operation ids", () => {
