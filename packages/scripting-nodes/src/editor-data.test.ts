@@ -1,26 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { BOOL, compileGraph, createUnavailableEditorDataApi, EXEC, pin, STRING, structRef, type GraphNode, type LogicGraph } from "@haptic/scripting";
+import { compileGraph, createUnavailableEditorDataApi, EXEC, pin, STRING, structRef, type GraphNode, type LogicGraph } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
 
 function graph() {
   const registry = createDefaultNodeRegistry();
   registry.register({
     id: "test.capture", title: "Capture", category: "test",
-    pins: () => [pin("execIn", "Exec", "in", EXEC), pin("success", "Success", "in", BOOL), pin("error", "Error", "in", STRING), pin("values", "Values", "in", structRef("item"))],
-    codegen: (ctx) => { ctx.emit(`ctx.capture(${ctx.input("success")}, ${ctx.input("error")}, ${ctx.input("values")});`); },
+    pins: () => [pin("execIn", "Exec", "in", EXEC), pin("error", "Error", "in", STRING), pin("values", "Values", "in", structRef("item"))],
+    // Which exec pin of the node under test ran it.
+    codegen: (ctx) => { ctx.emit(`ctx.capture(${JSON.stringify(ctx.node.properties.ran)}, ${ctx.input("error")}, ${ctx.input("values")});`); },
   });
   const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode => ({
     id, typeId, properties, pins: registry.get(typeId)!.pins(properties), position: { x: 0, y: 0 },
   });
   const edge = (sourceNodeId: string, sourcePinId: string, targetNodeId: string, targetPinId: string) => ({
-    id: `${sourceNodeId}-${sourcePinId}-${targetPinId}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId,
+    id: `${sourceNodeId}-${sourcePinId}-${targetNodeId}-${targetPinId}`, sourceNodeId, sourcePinId, targetNodeId, targetPinId,
   });
   const source: LogicGraph = { id: "utility", kind: "event", nodes: [
     node("start", "flow.event.editorStartup"),
     node("read", "editorData.readEntry", { definitionGuid: "item", "default:tree": "shop", "default:entryPath": "Sword" }),
-    node("capture", "test.capture"),
-  ], edges: [edge("start", "execOut", "read", "execIn"), edge("read", "execOut", "capture", "execIn"),
-    edge("read", "success", "capture", "success"), edge("read", "error", "capture", "error"), edge("read", "value", "capture", "values")] };
+    node("done", "test.capture", { ran: "completed" }),
+    node("refused", "test.capture", { ran: "failed" }),
+  ], edges: [edge("start", "execOut", "read", "execIn"),
+    edge("read", "completed", "done", "execIn"), edge("read", "failed", "refused", "execIn"),
+    ...["done", "refused"].flatMap((id) => [edge("read", "error", id, "error"), edge("read", "value", id, "values")])] };
   const compiled = compileGraph(source, { assetGuid: "tools", registry });
   const js = compiled.source.replace(/export\s+(async\s+)?function\s+/g, "$1function ");
   return new Function(`${js}\nreturn onEditorStartup;`)() as (ctx: Record<string, unknown>) => Promise<void>;
@@ -39,13 +42,13 @@ describe("Editor data nodes", () => {
     expect(calls).toEqual([["shop", "Sword", "item"]]);
     finish({ success: true, value: { Price: 18 }, error: "" });
     await run;
-    expect(calls).toEqual([["shop", "Sword", "item"], [true, "", { Price: 18 }]]);
+    expect(calls).toEqual([["shop", "Sword", "item"], ["completed", "", { Price: 18 }]]);
   });
 
   it("reports an explicit failure when editor capabilities are absent instead of providing authoring access", async () => {
     const calls: unknown[][] = [];
     await graph()({ editorData: createUnavailableEditorDataApi(), capture: (...values: unknown[]) => { calls.push(values); } });
-    expect(calls).toEqual([[false, expect.stringContaining("Editor Utility Objects"), {}]]);
+    expect(calls).toEqual([["failed", expect.stringContaining("Editor Utility Objects"), {}]]);
     expect(await createUnavailableEditorDataApi().createTree("Unexpected", "item")).toMatchObject({ success: false, value: null });
   });
 
@@ -67,7 +70,8 @@ describe("Editor data nodes", () => {
       node("move", "editorData.moveEntry", { "default:newParentPath": "Loot" }),
       node("remove", "editorData.removeEntry", { definitionGuid: "item" }),
     ], edges: [
-      ...ids.slice(1).map((id, index) => edge(ids[index]!, "execOut", id, "execIn")),
+      // Each edit runs from the one before it completing.
+      ...ids.slice(1).map((id, index) => edge(ids[index]!, index === 0 ? "execOut" : "completed", id, "execIn")),
       ...["add", "update", "reorder", "move", "remove"].map((id) => edge("create", "value", id, "tree")),
       edge("add", "value", "update", "entryPath"), edge("add", "value", "move", "entryPath"), edge("move", "value", "remove", "entryPath"),
     ] };

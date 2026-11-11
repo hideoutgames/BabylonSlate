@@ -19,9 +19,8 @@ Lists the saved slots of a profile.
 | --- | --- | --- |
 | Completed | Exec |  |
 | Failed | Exec |  |
-| Success | Boolean |  |
+| Error | String | Why the node failed; empty on success. |
 | Error Code | String | Empty on success; otherwise missing, corrupt, incompatible, storage-full, unavailable, invalid or apply-failed. |
-| Error Message | String |  |
 | Saves | Array of SaveGameInfo | One entry per slot, sorted by slot name. Empty if the node fails. |
 
 ## Notes

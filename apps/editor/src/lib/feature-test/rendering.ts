@@ -594,7 +594,8 @@ async function saveScalabilityCommands(ctx: FeatureTestContext): Promise<void> {
         gNode("apply", entry.node, 300, 0, entry.data),
         gNode("report", "debug.reportCommand", 600, 0, { "default:success": true, "default:output": entry.report }),
       ],
-      edges: gChain("run", "apply", "report"),
+      // A latent node continues from Completed, the others from their one exec output.
+      edges: [gExec("run", "apply"), gExec("apply", "report", entry.node === "debug.executeConsoleCommand" ? "completed" : "execOut")],
     });
     await ctx.saveClass({ folder: RENDER_FOLDER, name: entry.name, parentClass: "DebugCommand", graph });
   }

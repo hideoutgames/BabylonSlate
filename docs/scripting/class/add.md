@@ -4,7 +4,7 @@ node: math.add
 
 # Add
 
-Returns the sum of two values, component by component.
+Returns the sum of two numbers.
 
 ## Inputs
 

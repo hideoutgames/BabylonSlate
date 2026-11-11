@@ -229,15 +229,13 @@ export function deltaRotator(from: RotatorInput, to: RotatorInput): RotatorObjec
   return outRotator();
 }
 
-function clamp01(value: number): number {
-  if (value <= 0) return 0;
-  if (value >= 1) return 1;
-  return value;
-}
-
-/** The shortest-arc interpolation from `a` to `b`, into `outX`..`outW`; `t` is clamped to 0..1. */
+/**
+ * The shortest-arc interpolation from `a` to `b`, into `outX`..`outW`. Alpha is not clamped: like Lerp on
+ * Floats and Vectors, a value outside 0..1 carries on past either end. An Alpha that is not a number is 0.
+ */
 function slerp(ax: number, ay: number, az: number, aw: number, bx: number, by: number, bz: number, bw: number, alpha: number): void {
-  const t = clamp01(Number(alpha));
+  const value = Number(alpha);
+  const t = Number.isFinite(value) ? value : 0;
   let dot = ax * bx + ay * by + az * bz + aw * bw;
   if (dot < 0) {
     ax = -ax;

@@ -388,6 +388,15 @@ export const physicsNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "physics.getMotionType",
+    title: "Get Motion Type",
+    category: "physics",
+    pure: true,
+    description: "The Motion Type of Target's Rigid Body. Static when Target has none.",
+    pins: () => [selfActorPin("target", "Target"), pin("out", "Motion Type", "out", MOTION_TYPE)],
+    codegen: (ctx) => ({ out: `ctx.getMotionType(${ctx.input("target")})` }),
+  },
+  {
     id: "physics.setMotionType",
     title: "Set Motion Type",
     category: "physics",

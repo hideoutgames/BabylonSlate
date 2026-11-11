@@ -302,6 +302,8 @@ export interface ScriptContext {
   /** Fade Out Sound: to silent over `seconds`, then stops the voice. */
   fadeOutSound(handle: unknown, seconds: unknown): void;
   isSoundPlaying(handle: unknown): boolean;
+  /** Get Sound Volume: the play-call volume of a playing sound, 0 otherwise. */
+  getSoundVolume(handle: unknown): number;
   /** Get Physics Linear Velocity, or Angular Velocity In Degrees (`angular`): the body's, zero without one. */
   physicsVelocity(actor: unknown, angular: boolean): Vec3;
   /** Set Physics Linear Velocity, or Angular Velocity In Degrees (`angular`), optionally added to the current one. */
@@ -312,6 +314,8 @@ export interface ScriptContext {
   addTorque(actor: unknown, torque: unknown, deltaSeconds: unknown): void;
   /** Set Motion Type: the actor's first Rigid Body's Motion Type, from a Motion Type enum member. */
   setMotionType(actor: unknown, motionType: unknown): void;
+  /** Get Motion Type: the actor's first Rigid Body's Motion Type as an enum member; Static without one. */
+  getMotionType(actor: unknown): string;
   /** Set Actor Enable Collision: while off, the actor's shapes block and overlap nothing and queries skip it. */
   setActorCollisionEnabled(actor: unknown, enabled: unknown): void;
   isActorCollisionEnabled(actor: unknown): boolean;
@@ -729,6 +733,12 @@ export interface ScriptContext {
     color: { x: number; y: number; z: number; w?: number },
   ): void;
   setLightIntensity(target: unknown, intensity: number): void;
+  /** Is Light Enabled: false for a target without a light. */
+  isLightEnabled(target: unknown): boolean;
+  /** Get Light Color: white, with alpha 1, for a target without a light. */
+  getLightColor(target: unknown): { x: number; y: number; z: number; w: number };
+  /** Get Light Intensity: 0 for a target without a light. */
+  getLightIntensity(target: unknown): number;
   btFinish(result: "success" | "failure"): void;
   btEvaluate(value: boolean): void;
   getBlackboard(key: string): unknown;
@@ -809,8 +819,8 @@ export type HostContextKey =
   | "teleportActor" | "getActorTags" | "setActorTags" | "getObjectClass" | "classIsChildOf" | "getDisplayName"
   | "playCameraShake" | "playCameraShakeOnSceneLayer" | "playWorldCameraShake" | "stopCameraShake" | "stopAllCameraShakes"
   | "setCameraShakePaused" | "setCameraShakeScale" | "isCameraShakePlaying" | "isCameraShakePaused"
-  | "stopSoundHandle" | "setSoundVolume" | "setSoundPitch" | "fadeInSound" | "fadeOutSound" | "isSoundPlaying"
-  | "easeAlpha" | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "setActorCollisionEnabled"
+  | "stopSoundHandle" | "setSoundVolume" | "setSoundPitch" | "fadeInSound" | "fadeOutSound" | "isSoundPlaying" | "getSoundVolume"
+  | "easeAlpha" | "physicsVelocity" | "setPhysicsVelocity" | "addForce" | "addTorque" | "setMotionType" | "getMotionType" | "setActorCollisionEnabled"
   | "isActorCollisionEnabled"
   | "clearTimer" | "setTimerPaused" | "timerExists" | "isTimerActive" | "isTimerPaused" | "timerRemaining" | "timerElapsed" | "clampToRange" | "isInRange" | "lerpFloatRange"
   | "mapFloatRange" | "evaluateCurve" | "curveTimeRange" | "floatCurveValueRange" | "getCurveObject"
@@ -831,6 +841,6 @@ export type HostContextKey =
   | "getScalability" | "requestScalability" | "possessCamera" | "possessCameraWithBlend" | "getSceneCameraManager" | "getRenderTargetMode"
   | "getRenderTargetTextureTarget" | "captureRenderTarget" | "recaptureReflectionProbes" | "getRenderTargetCaptureProperty"
   | "setRenderTargetCaptureProperty" | "getCameraFieldOfView" | "setCameraFieldOfView" | "getCameraOrthographicSize"
-  | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "findPathTo"
+  | "setCameraOrthographicSize" | "setLightEnabled" | "setLightColor" | "setLightIntensity" | "isLightEnabled" | "getLightColor" | "getLightIntensity" | "findPathTo"
   | "isPathValid" | "getClosestNavigablePoint" | "getRandomPointInRadius" | "addObstacle" | "removeObstacle";
 export type HostContextMembers = Pick<ScriptContext, HostContextKey>;

@@ -10,7 +10,6 @@ Returns a copy of an array with one item added to the end.
 
 | Pin | Type |
 | --- | --- |
-| In | Exec |
 | Array | Array of Wildcard |
 | Item | Wildcard |
 
@@ -18,9 +17,9 @@ Returns a copy of an array with one item added to the end.
 
 | Pin | Type |
 | --- | --- |
-| Out | Exec |
 | Out | Array of Wildcard |
 
 ## Notes
 
 - The input array is not changed. Assign **Out** to a variable to keep the result.
+- A pure node: it has no execution pins and is evaluated when its result is read.

@@ -145,7 +145,9 @@ describe("script physics members", () => {
 
       // Set Motion Type writes the Rigid Body and the body follows: Static now answers the Static channel.
       expect(ctx.lineTrace({ x: -5, y: 0, z: 0 }, { x: 5, y: 0, z: 0 }, "Static", { drawDebug: false }).hit).toBe(false);
+      expect(ctx.getMotionType(ball)).toBe("Dynamic");
       ctx.setMotionType(ball, "Static");
+      expect(ctx.getMotionType(ball)).toBe("Static");
       expect(ball.components.find((component) => component.classId === "RigidBodyComponent")!.getVariable("motionType")).toBe("static");
       expect(ctx.lineTrace({ x: -5, y: 0, z: 0 }, { x: 5, y: 0, z: 0 }, "Static", { drawDebug: false }).actor?.guid).toBe("ball");
       ctx.setMotionType(ball, "Floating");

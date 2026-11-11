@@ -231,7 +231,7 @@ describe("compiler emits runnable JavaScript", () => {
         edge("e1", "entry", "execOut", "seq", "execIn"),
         edge("e2", "seq", "then0", "cmd", "execIn"),
         edge("e3", "seq", "then1", "cmd", "execIn"),
-        edge("e4", "cmd", "execOut", "log", "execIn"),
+        edge("e4", "cmd", "completed", "log", "execIn"),
         edge("e5", "cmd", "output", "log", "message"),
       ],
     };
@@ -265,8 +265,7 @@ describe("compiler emits runnable JavaScript", () => {
       ],
       edges: [
         edge("e1", "entry", "execOut", "cmd", "execIn"),
-        edge("e2", "cmd", "execOut", "branch", "execIn"),
-        edge("e3", "cmd", "success", "branch", "condition"),
+        edge("e2", "cmd", "completed", "branch", "execIn"),
         edge("e4", "branch", "true", "log", "execIn"),
         edge("e5", "cmd", "output", "log", "message"),
       ],

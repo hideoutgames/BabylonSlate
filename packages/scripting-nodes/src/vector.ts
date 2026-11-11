@@ -34,7 +34,8 @@ function componentWise(
     ctx,
     `__vec_${OP_NAMES[op]}_${axes.join("")}`,
     "a, b",
-    `({ ${axes.map((axis) => `${axis}: a.${axis} ${op} b.${axis}`).join(", ")} })`,
+    // A zero component of the divisor yields 0 for that component, as Divide does on Floats.
+    `({ ${axes.map((axis) => op === "/" ? `${axis}: b.${axis} === 0 ? 0 : a.${axis} / b.${axis}` : `${axis}: a.${axis} ${op} b.${axis}`).join(", ")} })`,
     [a, b],
   );
 }

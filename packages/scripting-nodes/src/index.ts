@@ -1,3 +1,4 @@
+import { withNodeDescriptions } from "./node-descriptions";
 import { waterNodes } from "./water";
 import { EVENT_BY_TYPE_ID, NodeRegistry, type NodeDefinition } from "@haptic/scripting";
 import { catalogEventDefinitions, flowNodes } from "./flow";
@@ -123,7 +124,7 @@ export * from "./objects";
 export * from "./curves-ranges";
 
 export function allNodeDefinitions(): NodeDefinition[] {
-  return [
+  return withNodeDescriptions([
     ...flowNodes,
     ...mathNodes,
     ...vectorNodes,
@@ -186,7 +187,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...quatNodes,
     ...tagNodes,
     ...curveRangeNodes,
-  ];
+  ]);
 }
 
 // Call Parent takes its pins from the event it calls, wherever that event is defined.

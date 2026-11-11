@@ -34,7 +34,7 @@ Some nodes exist only in editor tool graphs and show a striped **Editor Only** f
 - [Add Data Entry](class/add-data-entry.md), [Update Data Entry](class/update-data-entry.md), [Move Data Subtree](class/move-data-subtree.md), [Remove Data Subtree](class/remove-data-subtree.md) and [Reorder Data Children](class/reorder-data-children.md).
 - [Read Editable Data Tree](class/read-editable-data-tree.md) and [Read Editable Data Entry](class/read-editable-data-entry.md).
 
-These nodes wait until the change finishes, then report **Success** and an **Error** message. Entry edits can be undone like any other edit; a new Data Tree is saved as a file straight away.
+These nodes wait until the change finishes, then run **Completed** or **Failed**, with an **Error** message on failure. Entry edits can be undone like any other edit; a new Data Tree is saved as a file straight away.
 
 ## Notes
 

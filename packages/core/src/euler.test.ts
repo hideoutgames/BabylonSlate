@@ -3,6 +3,8 @@ import {
   combineRotators,
   eulerDegreesToQuaternion,
   inverseRotator,
+  lerpRotator,
+  slerpQuats,
   lookAtRotation,
   lookAtRotator,
   inverseQuat,
@@ -124,6 +126,19 @@ describe("rotator object helpers", () => {
     expect(rotated.x).toBeCloseTo(1, 4);
     expect(rotated.y).toBeCloseTo(0, 4);
     expect(rotated.z).toBeCloseTo(0, 4);
+  });
+
+  it("interpolates rotators and quaternions past either end, without clamping Alpha", () => {
+    const from = { pitch: 0, yaw: 0, roll: 0 };
+    const to = { pitch: 0, yaw: 60, roll: 0 };
+    expect(lerpRotator(from, to, 0.5).yaw).toBeCloseTo(30, 5);
+    // Alpha 2 carries on as far again; -1 goes the other way.
+    expect(lerpRotator(from, to, 2).yaw).toBeCloseTo(120, 5);
+    expect(lerpRotator(from, to, -1).yaw).toBeCloseTo(-60, 5);
+    const beyond = slerpQuats(rotatorToQuat(from), rotatorToQuat(to), 2);
+    expect(quatToRotator(beyond).yaw).toBeCloseTo(120, 5);
+    // An Alpha that is not a number is 0.
+    expect(lerpRotator(from, to, Number.NaN).yaw).toBeCloseTo(0, 5);
   });
 
   it("normalizes a quaternion to unit length", () => {

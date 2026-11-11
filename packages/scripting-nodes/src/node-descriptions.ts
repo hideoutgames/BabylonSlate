@@ -1,0 +1,152 @@
+import type { NodeDefinition } from "@haptic/scripting";
+
+/**
+ * Tooltips for nodes whose definition carries none, by node id. Kept to a few words, and only for
+ * nodes whose title does not already say what they do: Add Vector3 needs none. A node's reference
+ * page holds the detail. A definition's own `description` always wins.
+ */
+export const NODE_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  // Flow
+  "flow.branch": "Runs True or False by Condition.",
+  "flow.sequence": "Runs each output in order.",
+  "flow.doOnce": "Runs once, until Reset.",
+  "flow.doN": "Runs the first N times, until Reset.",
+  "flow.flipFlop": "Alternates between A and B, starting with A.",
+  "flow.gate": "Passes execution through while open. Starts closed.",
+  "flow.forLoop": "Runs Loop Body for each index from First to Last.",
+  "flow.forLoopWithBreak": "For Loop that Break can leave early.",
+  "flow.forEach": "Runs Loop Body for each item.",
+  "flow.forEachWithBreak": "For Each that Break can leave early.",
+  "flow.forEachMap": "Runs Loop Body for each key and value.",
+  "flow.forEachMapWithBreak": "For Each Map that Break can leave early.",
+  "flow.whileLoop": "Repeats Loop Body while Condition is true.",
+  "flow.break": "Leaves the loop and continues from its Completed.",
+  "flow.switchInt": "Runs the output that matches Value.",
+  "flow.switchString": "Runs the output that matches Value.",
+  "enum.switch": "Runs the output of the matching member.",
+  "flow.event.init": "Runs once when the object is created.",
+  "flow.event.end": "Runs once when the object shuts down.",
+  "flow.event.custom": "An event of your own that graphs can call.",
+  "flow.event.call": "Runs a custom event on Target, then continues.",
+  "flow.event.callParent": "Runs the parent Class's version of this event.",
+  "variables.getValidated": "Is Valid when the variable holds a live object.",
+  // Timers
+  "timers.delay": "Continues after Duration seconds of game time.",
+  "timers.delayOneTick": "Continues on the next tick.",
+  "timers.retriggerableDelay": "Delay that starts over each time it is called.",
+  // Math
+  "math.div": "A divided by B. 0 when B is 0.",
+  "math.div_int": "Whole division, rounded toward zero. 0 when B is 0.",
+  "math.mod": "Remainder of A / B, with the sign of A.",
+  "math.mod_int": "Remainder of A / B, with the sign of A.",
+  "math.compare": "True when A and B differ by no more than Tolerance.",
+  "math.lerp": "A to B by Alpha. Alpha is not clamped.",
+  "math.sign": "-1, 0 or 1 by the sign of the input.",
+  "math.power": "Base raised to Exp.",
+  "math.sqrt": "Square root. 0 for a negative input.",
+  "math.ceil": "Rounds up.",
+  "math.floor": "Rounds down.",
+  "math.round": "Rounds to the nearest whole number.",
+  "math.random": "0 up to, not including, 1.",
+  "math.randomInt": "Min to Max, both included.",
+  "casting.floatToInt": "Drops the fractional part.",
+  // Vector
+  "vector.dot2": "Dot product.",
+  "vector.dot3": "Dot product.",
+  "vector.dot4": "Dot product.",
+  "vector.cross3": "Cross product: a vector at right angles to both.",
+  "vector.normalize2": "Same direction, length 1. Zero stays zero.",
+  "vector.normalize3": "Same direction, length 1. Zero stays zero.",
+  "vector.normalize4": "Same direction, length 1. Zero stays zero.",
+  "vector.lengthSquared2": "Length without the square root. Cheaper to compare.",
+  "vector.lengthSquared3": "Length without the square root. Cheaper to compare.",
+  "vector.lengthSquared4": "Length without the square root. Cheaper to compare.",
+  "vector.scale2": "Every component multiplied by one number.",
+  "vector.scale3": "Every component multiplied by one number.",
+  "vector.scale4": "Every component multiplied by one number.",
+  "vector.div2": "Component by component. 0 where B is 0.",
+  "vector.div3": "Component by component. 0 where B is 0.",
+  "vector.div4": "Component by component. 0 where B is 0.",
+  // Rotator and Quaternion
+  "rotator.combine": "A, then B, as one rotation.",
+  "rotator.delta": "The rotation that turns From into To.",
+  "rotator.lookAt": "The rotation at From that faces Target. Roll is 0.",
+  "rotator.lerp": "A smooth turn from A to B by Alpha. Not clamped.",
+  "quat.slerp": "A smooth turn from A to B by Alpha. Not clamped.",
+  "quat.rotateVector": "Vector turned by the quaternion.",
+  // Array, Map and String
+  "array.find": "Index of the first equal item, or -1.",
+  "array.lastIndex": "Length minus 1. -1 when empty.",
+  "array.slice": "Items from Start up to, not including, End.",
+  "array.removeItem": "A copy without the first equal item.",
+  "array.insert": "A copy with Item at Index. Index may be the length.",
+  "array.set": "A copy with the item at Index replaced.",
+  "map.break": "Keys and Values as two arrays in the same order.",
+  "string.format": "Replaces each {name} in Format with its input.",
+  "string.substring": "Characters from Start up to, not including, End.",
+  "string.join": "The items as one string, with Separator between them.",
+  "string.split": "The parts of the string between each Separator.",
+  // Types
+  "casting.cast": "Object as the chosen Class. Success is off when it is not one.",
+  "wildcard.is": "True when the value's type name matches.",
+  "wildcard.typeOf": "The name of the value's type, such as int or vec3.",
+  "enum.select": "The input wired to the matching member.",
+  "tags.has": "True for the Tag or one of its children.",
+  "tags.union": "Tags in either container.",
+  "tags.intersection": "Tags in both containers.",
+  "tags.difference": "Tags of the first that are not in the second.",
+  "range.lerpFloat": "Min to Max by Alpha. Alpha is not clamped.",
+  "range.mapFloat": "Value moved from the From range to the To range.",
+  // Actors and components
+  "actor.isValid": "True for an object that exists and is not destroyed.",
+  "actor.getOfClass": "The first actor of Class or a subclass.",
+  "actor.getAllOfClass": "Every actor of Class or a subclass.",
+  "actor.attach": "Makes the actor a child that follows Parent.",
+  "actor.attachToBone": "Makes the actor follow a bone of Target's model.",
+  "actor.detach": "Removes the actor's parent.",
+  "actor.spawn": "Loads the Class without holding the game, then spawns.",
+  "actor.spawnBlocking": "Holds the game while the Class loads, then spawns.",
+  "actor.deferredSpawn": "Creates the actor without starting it. Finish with Finish Deferred Spawn Actor.",
+  "actor.deferredSpawnBlocking": "Creates the actor without starting it. Finish with Finish Deferred Spawn Actor.",
+  "actor.finishDeferredSpawn": "Starts a deferred actor and runs its Begin Play.",
+  "component.get": "The first component of Class or a subclass.",
+  "component.has": "True when Target has a component of Class or a subclass.",
+  "physics.addImpulse": "An instant push on a Dynamic Rigid Body.",
+  "physics.moveCharacter": "Moves by a distance, sliding along solid colliders.",
+  "physics.lineTrace": "The first hit along the line from Start to End.",
+  "physics.sphereOverlap": "The actors whose colliders touch the sphere.",
+  "physics.shapeSweep": "The first hit of a sphere moved from Start to End.",
+  "navigation.moveTo": "Walks the actor to Destination along the navigation mesh.",
+  // Scene
+  "scene.change": "Leaves the current Scene and loads another.",
+  "scene-layer.clear": "Removes every Scene Layer and its actors.",
+  "gameInstance.getSceneLoadingProgress": "How far the main Scene has loaded, from 0 to 1.",
+  "render-target.capture": "Requests one capture now.",
+  // Input
+  "input.calibrateTilt": "Makes the device's current pose zero tilt.",
+  "input.findTouch": "This tick's touch with the given Finger.",
+  "input.getTouch": "This tick's touch at Index, lowest Finger first.",
+  "input.exportBindings": "The player's binding changes as text to save.",
+  "input.importBindings": "Applies binding changes from Export Input Bindings.",
+  "input.resetInput": "Restores one input to its authored bindings.",
+  "input.resetAllBindings": "Restores every input to its authored bindings.",
+  // Debug
+  "debug.print": "Shows any value on screen during Play.",
+  "debug.printString": "Shows a string on screen during Play.",
+  "debug.log": "Writes a message to the Output Log.",
+  "debug.assert": "Reports an error when Condition is false.",
+  "debug.assertEqual": "Reports an error when the two values differ.",
+  "debug.assertIsValid": "Reports an error for an empty or destroyed object.",
+  "debug.reportCommand": "Sets the result of the running console command.",
+  // Behaviour Tree
+  "bt.finish": "Ends the running task with success or failure.",
+  "bt.returnCondition": "Sets whether the decorator lets its branch run.",
+};
+
+/** `definitions`, each without a description of its own given its entry of `NODE_DESCRIPTIONS`. */
+export function withNodeDescriptions(definitions: readonly NodeDefinition[]): NodeDefinition[] {
+  return definitions.map((definition) => {
+    const description = definition.description ? undefined : NODE_DESCRIPTIONS[definition.id];
+    return description ? { ...definition, description } : definition;
+  });
+}

@@ -108,9 +108,9 @@ describe("array-map nodes", () => {
         node(registry, "log", "debug.log"),
       ],
       edges: [
-        edge("e1", "entry", "execOut", "append", "execIn"),
+        // Append is pure: it runs when Log reads the length.
+        edge("e1", "entry", "execOut", "log", "execIn"),
         edge("e2", "make", "out", "append", "array"),
-        edge("e3", "append", "execOut", "log", "execIn"),
         edge("e4", "append", "out", "len", "array"),
         edge("e5", "len", "out", "log", "message"),
       ],
@@ -129,7 +129,7 @@ describe("array-map nodes", () => {
     expect(runLog(compiled.source)).toEqual(["3"]);
   });
 
-  it("compiles an Get Array Item miss to the typed default and a false Valid flag", () => {
+  it("compiles a Get Array Item miss to the typed default and Success off", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
@@ -148,7 +148,7 @@ describe("array-map nodes", () => {
         edge("e4", "branch", "then0", "logValue", "execIn"),
         edge("e5", "branch", "then1", "logValid", "execIn"),
         edge("e6", "get", "out", "logValue", "message"),
-        edge("e7", "get", "valid", "logValid", "message"),
+        edge("e7", "get", "success", "logValid", "message"),
       ],
     };
     const make = graph.nodes.find((entry) => entry.id === "make")!;
@@ -160,7 +160,7 @@ describe("array-map nodes", () => {
     for (const pin of get.pins) {
       if (pin.id === "array") pin.type = arrayOf(INT);
       if (pin.id === "out") pin.type = INT;
-      if (pin.id === "valid") pin.type = BOOL;
+      if (pin.id === "success") pin.type = BOOL;
     }
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(runLog(compiled.source)).toEqual(["0", "false"]);
@@ -188,9 +188,9 @@ describe("array-map nodes", () => {
         node(registry, "log", "debug.log"),
       ],
       edges: [
-        edge("e1", "entry", "execOut", "rev", "execIn"),
+        // Reverse is pure, like Slice.
+        edge("e1", "entry", "execOut", "log", "execIn"),
         edge("e2", "make", "out", "rev", "array"),
-        edge("e3", "rev", "execOut", "log", "execIn"),
         edge("e4", "rev", "out", "slice", "array"),
         edge("e5", "slice", "out", "first", "array"),
         edge("e6", "first", "out", "log", "message"),
@@ -314,10 +314,10 @@ describe("array-map nodes", () => {
         node(registry, "log", "debug.log"),
       ],
       edges: [
-        edge("e1", "entry", "execOut", "appendArr", "execIn"),
+        // Append Array is pure; Set Array Item runs it.
+        edge("e1", "entry", "execOut", "set", "execIn"),
         edge("e2", "makeA", "out", "appendArr", "array"),
         edge("e3", "makeB", "out", "appendArr", "other"),
-        edge("e4", "appendArr", "execOut", "set", "execIn"),
         edge("e5", "appendArr", "out", "set", "array"),
         edge("e6", "set", "execOut", "log", "execIn"),
         edge("e7", "set", "out", "len", "array"),
@@ -342,5 +342,45 @@ describe("array-map nodes", () => {
     }
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(runLog(compiled.source)).toEqual(["3"]);
+  });
+
+  it.each([
+    // Index, Success, resulting length
+    [1, "true", "4"],
+    [3, "true", "4"],
+    [4, "false", "3"],
+    [-1, "false", "3"],
+  ])("Insert Array Item at %s reports Success %s and leaves a bad index's array unchanged", (index, success, length) => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g", kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "make", "array.make", { count: 3, "default:item0": 1, "default:item1": 2, "default:item2": 3 }),
+        node(registry, "insert", "array.insert", { "default:index": index, "default:item": 9 }),
+        node(registry, "len", "array.length"),
+        node(registry, "logSuccess", "debug.log"),
+        node(registry, "logLength", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "insert", "execIn"),
+        edge("e2", "make", "out", "insert", "array"),
+        edge("e3", "insert", "execOut", "logSuccess", "execIn"),
+        edge("e4", "logSuccess", "execOut", "logLength", "execIn"),
+        edge("e5", "insert", "success", "logSuccess", "message"),
+        edge("e6", "insert", "out", "len", "array"),
+        edge("e7", "len", "out", "logLength", "message"),
+      ],
+    };
+    expect(runLog(compileGraph(graph, { assetGuid: "a", registry }).source)).toEqual([success, length]);
+  });
+
+  it("offers Append, Append Array and Reverse as pure nodes, like Slice", () => {
+    const registry = createDefaultNodeRegistry();
+    for (const id of ["array.append", "array.appendArray", "array.reverse", "array.sort", "array.slice"]) {
+      const def = registry.get(id)!;
+      expect(def.pure, id).toBe(true);
+      expect(def.pins({}).some((pin) => pin.kind === "exec"), id).toBe(false);
+    }
   });
 });

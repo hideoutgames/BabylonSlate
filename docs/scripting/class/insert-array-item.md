@@ -17,13 +17,14 @@ Returns a copy of an array with an item inserted at an index.
 
 ## Outputs
 
-| Pin | Type |
-| --- | --- |
-| Out | Exec |
-| Out | Array of Wildcard |
+| Pin | Type | Description |
+| --- | --- | --- |
+| Out | Exec |  |
+| Out | Array of Wildcard |  |
+| Success | Boolean | True when the item was inserted. |
 
 ## Notes
 
 - Items from **Index** onward move one place later.
-- An **Index** below 0 inserts at the start, and one at or past the end adds the item to the end.
+- An **Index** equal to the array's length adds the item to the end. Any other **Index** outside the array inserts nothing: **Out** is the array unchanged and **Success** is false.
 - The input array is not changed; assign **Out** to a variable to keep the result.

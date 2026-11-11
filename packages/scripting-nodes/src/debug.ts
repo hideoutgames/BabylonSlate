@@ -294,19 +294,21 @@ export const debugNodes: NodeDefinition[] = [
     latent: true,
     title: "Execute Console Command",
     category: "debug",
+    // Failure is the Failed pin and Error, as on every latent node; Output is what the command printed either way.
     pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      pin("command", "command", "in", STRING),
-      pin("success", "success", "out", BOOL),
-      pin("output", "output", "out", STRING),
+      pin("execIn", "Exec", "in", EXEC),
+      pin("completed", "Completed", "out", EXEC),
+      pin("failed", "Failed", "out", EXEC),
+      pin("command", "Command", "in", STRING),
+      pin("output", "Output", "out", STRING),
+      pin("error", "Error", "out", STRING),
     ],
     codegen: (ctx) => {
-      const success = ctx.output("success");
-      const output = ctx.output("output");
-      ctx.emit(
-        `({ success: ${success}, output: ${output} } = (yield ctx.executeConsoleCommandAsync(${ctx.input("command")})));`,
-      );
+      const result = `__command_${ctx.node.id.replace(/[^A-Za-z0-9_$]/g, "_")}`;
+      ctx.emit(`const ${result} = (yield ctx.executeConsoleCommandAsync(${ctx.input("command")}));`);
+      ctx.emit(`${ctx.output("output")} = ${result}.output;`);
+      ctx.emit(`${ctx.output("error")} = ${result}.success ? "" : ${result}.output;`);
+      ctx.branch?.(`${result}.success`, "Completed", "Failed");
     },
   },
   {

@@ -19,9 +19,9 @@ Adds a new entry to a Data Tree under a parent entry.
 
 | Pin | Type | Description |
 | --- | --- | --- |
-| Then | Exec |  |
-| Success | Boolean |  |
-| Error | String |  |
+| Completed | Exec |  |
+| Failed | Exec |  |
+| Error | String | Why the node failed; empty on success. |
 | Entry Path | String | The path of the new entry. |
 
 ## Settings
@@ -35,6 +35,6 @@ Adds a new entry to a Data Tree under a parent entry.
 
 - The change is one undoable edit on the open tree; save the tree to keep it.
 - Defaults are copied once when the entry is created, and values never inherit from the parent.
-- Only in Editor Utility graphs; check **Success** before using **Entry Path**.
+- Only in Editor Utility graphs; use **Entry Path** from **Completed**.
 - Latent: the node finishes later without pausing the rest of the game.
 - Editor Utility graphs only.

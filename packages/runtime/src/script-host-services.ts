@@ -379,6 +379,8 @@ export interface ScriptHostServices {
   /** Sound Handle nodes over the session's live voices, by voice id. */
   soundVoices?: {
     isPlaying(voiceId: string): boolean;
+    /** The play-call volume of a playing voice, 0 otherwise. */
+    volume(voiceId: string): number;
     setVolume(voiceId: string, volume: number): void;
     setPitch(voiceId: string, pitch: number): void;
     /** Ramp to `to` over `seconds` of real time, from `from` or the current volume, then stop when `stopAtEnd`. */

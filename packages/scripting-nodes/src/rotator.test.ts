@@ -59,17 +59,21 @@ describe("rotator nodes", () => {
   });
 
   it.each([
-    [{ pitch: 0, yaw: 360, roll: -180 }, { pitch: 720, yaw: 0, roll: 180 }, "true"],
-    [{ pitch: 0, yaw: 359.9995, roll: 0 }, { pitch: 0, yaw: 0, roll: 0 }, "true"],
-    [{ pitch: 0, yaw: 10, roll: 0 }, { pitch: 0, yaw: 370.1, roll: 0 }, "false"],
-  ])("Nearly Equal Rotator compares %o and %o with wrapped axes", (a, b, expected) => {
+    [{ pitch: 0, yaw: 360, roll: -180 }, { pitch: 720, yaw: 0, roll: 180 }, undefined, "true"],
+    // Within the default Tolerance of 0.0001 degrees, and outside it.
+    [{ pitch: 0, yaw: 359.99995, roll: 0 }, { pitch: 0, yaw: 0, roll: 0 }, undefined, "true"],
+    [{ pitch: 0, yaw: 359.9995, roll: 0 }, { pitch: 0, yaw: 0, roll: 0 }, undefined, "false"],
+    // A wider Tolerance accepts it.
+    [{ pitch: 0, yaw: 359.9995, roll: 0 }, { pitch: 0, yaw: 0, roll: 0 }, 0.001, "true"],
+    [{ pitch: 0, yaw: 10, roll: 0 }, { pitch: 0, yaw: 370.1, roll: 0 }, undefined, "false"],
+  ])("Nearly Equal Rotator compares %o and %o with wrapped axes (Tolerance %s)", (a, b, tolerance, expected) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "eq", "rotator.nearlyEqual", { "default:a": a, "default:b": b }),
+        node(registry, "eq", "rotator.nearlyEqual", { "default:a": a, "default:b": b, ...(tolerance === undefined ? {} : { "default:tolerance": tolerance }) }),
         node(registry, "log", "debug.log"),
       ],
       edges: [

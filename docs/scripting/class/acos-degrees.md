@@ -20,5 +20,5 @@ Returns the arccosine of the input as an angle in degrees.
 
 ## Notes
 
-- Inputs outside -1 to 1 return NaN.
+- An input outside -1 to 1 is read as the nearest of the two.
 - [**Acos (Radians)**](acos.md) works in radians.

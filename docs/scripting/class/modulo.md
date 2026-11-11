@@ -21,4 +21,4 @@ Returns the remainder after dividing one Float by another.
 
 ## Notes
 
-- The result has the sign of **A**, and a **B** of 0 gives an invalid result.
+- The result has the sign of **A**. A **B** of zero gives 0.

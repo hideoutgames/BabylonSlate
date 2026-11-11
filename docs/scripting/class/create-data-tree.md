@@ -18,8 +18,8 @@ Creates a new, empty Data Tree asset in the project.
 
 | Pin | Type |
 | --- | --- |
-| Then | Exec |
-| Success | Boolean |
+| Completed | Exec |
+| Failed | Exec |
 | Error | String |
 | Data Tree | DataTree Asset |
 
@@ -33,6 +33,6 @@ Creates a new, empty Data Tree asset in the project.
 
 - **Folder** is relative to the project's content folder and cannot climb out of it.
 - An existing asset is never overwritten, and the new tree is saved straight away.
-- Only in Editor Utility graphs; check **Success** before using the tree.
+- Only in Editor Utility graphs; use the tree from **Completed**.
 - Latent: the node finishes later without pausing the rest of the game.
 - Editor Utility graphs only.

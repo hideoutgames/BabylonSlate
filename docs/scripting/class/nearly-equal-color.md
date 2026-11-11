@@ -8,10 +8,11 @@ Returns true when two colours are equal within a small tolerance.
 
 ## Inputs
 
-| Pin | Type |
-| --- | --- |
-| A | Color |
-| B | Color |
+| Pin | Type | Description |
+| --- | --- | --- |
+| A | Color |  |
+| B | Color |  |
+| Tolerance | Float | Defaults to 0.0001. |
 
 ## Outputs
 
@@ -21,4 +22,4 @@ Returns true when two colours are equal within a small tolerance.
 
 ## Notes
 
-- Each channel, including alpha, may differ by less than 0.000001.
+- Each channel, including alpha, must differ by no more than **Tolerance**.

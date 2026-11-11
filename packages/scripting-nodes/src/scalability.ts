@@ -37,7 +37,7 @@ export const scalabilityNodes: NodeDefinition[] = [
     } },
   setter("setPreset", "Set Scalability Preset", "Apply a session quality tier. CEL/PBR, outline appearance and artistic effects remain independently authored.",
     [input("preset", "Preset", enumRef("engine:ScalabilityPreset"), "medium")], (ctx) => `{ kind: "preset", preset: ${ctx.input("preset")} }`),
-  setter("setRenderScale", "Set Render Scale", "Set fixed render scale (0.25–1). Disables dynamic resolution. Wait for the settings-changed event for effective values.",
+  setter("setRenderScale", "Set Render Scale", "Set fixed render scale (0.25 to 1). Disables dynamic resolution. Wait for the settings-changed event for effective values.",
     [input("scale", "Scale", FLOAT, 1)], (ctx) => `((s) => ({ kind: "patch", render: { quality: { resolution: { scale: s, minScale: s, dynamic: false } } } }))(${ctx.input("scale")})`),
   setter("setResolution", "Set Render Resolution", "Lock the output dimensions with letterboxing. Reset Scalability To Project Defaults restores the authored output policy.",
     [input("width", "Width", INT, 1920), input("height", "Height", INT, 1080)], (ctx) => `{ kind: "patch", render: { width: ${ctx.input("width")}, height: ${ctx.input("height")}, customResolution: true, blackBars: true } }`),

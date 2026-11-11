@@ -4,7 +4,7 @@ node: math.max
 
 # Max
 
-Returns the larger of two values, component by component.
+Returns the larger of two numbers.
 
 ## Inputs
 

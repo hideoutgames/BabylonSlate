@@ -6,6 +6,7 @@ import {
   FLOAT,
 } from "@haptic/scripting";
 import { hoistedCall } from "./hoisted-helper";
+import { NEARLY_EQUAL_TOLERANCE } from "./math";
 
 /**
  * Color channels. Each node binds its color inputs once, so an impure color
@@ -66,15 +67,16 @@ export const colorNodes: NodeDefinition[] = [
     pins: () => [
       pin("a", "A", "in", COLOR),
       pin("b", "B", "in", COLOR),
+      pin("tolerance", "Tolerance", "in", FLOAT, "data", true, NEARLY_EQUAL_TOLERANCE),
       pin("out", "Out", "out", BOOL),
     ],
     codegen: (ctx) => ({
       out: hoistedCall(
         ctx,
         "__color_nearlyEqual",
-        "a, b",
-        CHANNELS.map((c) => `Math.abs(a.${c} - b.${c}) < 1e-6`).join(" && "),
-        [ctx.input("a"), ctx.input("b")],
+        "a, b, t",
+        CHANNELS.map((c) => `Math.abs(a.${c} - b.${c}) <= t`).join(" && "),
+        [ctx.input("a"), ctx.input("b"), ctx.input("tolerance")],
       ),
     }),
   },

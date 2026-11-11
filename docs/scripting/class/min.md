@@ -4,7 +4,7 @@ node: math.min
 
 # Min
 
-Returns the smaller of two values, component by component.
+Returns the smaller of two numbers.
 
 ## Inputs
 

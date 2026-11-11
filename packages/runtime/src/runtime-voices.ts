@@ -85,6 +85,11 @@ export class RuntimeVoices {
     return this.live.has(voiceId);
   }
 
+  /** The play-call volume a live voice has now, mid-fade included; 0 for a voice that is not live. */
+  volumeOf(voiceId: string): number {
+    return this.live.get(voiceId)?.volume ?? 0;
+  }
+
   /** Gives a `playSound` that names an asset but no clip or pitch draws its draws. */
   prepare(command: CommandMessage): CommandMessage {
     if (command.type !== "playSound" || !command.assetGuid) return command;

@@ -82,6 +82,15 @@ export const audioNodes: NodeDefinition[] = [
     () => [pin("duration", "Fade Out Duration", "in", FLOAT, "data", true, 1)],
     (ctx) => `ctx.fadeOutSound(${ctx.input("handle")}, ${ctx.input("duration")})`),
   {
+    id: "audio.getSoundVolume",
+    title: "Get Sound Volume",
+    category: "audio",
+    pure: true,
+    description: "The playing sound's volume, mid-fade included. 0 once it has ended.",
+    pins: () => [handleIn(), pin("volume", "Volume", "out", FLOAT)],
+    codegen: (ctx) => ({ volume: `ctx.getSoundVolume(${ctx.input("handle")})` }),
+  },
+  {
     id: "audio.isSoundPlaying",
     title: "Is Sound Playing",
     category: "audio",

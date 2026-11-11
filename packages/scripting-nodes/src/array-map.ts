@@ -70,14 +70,14 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("array", "Array", "in", arrayOf(T)),
       pin("index", "Index", "in", INT),
       pin("out", "Out", "out", T),
-      pin("valid", "Valid", "out", BOOL),
+      pin("success", "Success", "out", BOOL),
     ],
     codegen: (ctx) => {
       const array = ctx.input("array");
       const index = ctx.input("index");
       const fallback = outFallback(ctx);
       return {
-        valid: `((a,i)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length;})(${array},${index})`,
+        success: `((a,i)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length;})(${array},${index})`,
         out: `((a,i,d)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length?l[i]:d;})(${array},${index},${fallback})`,
       };
     },
@@ -171,37 +171,29 @@ export const arrayMapNodes: NodeDefinition[] = [
     id: "array.append",
     title: "Append Array Item",
     category: "array",
+    pure: true,
     pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
       pin("array", "Array", "in", arrayOf(T)),
       pin("item", "Item", "in", T),
       pin("out", "Out", "out", arrayOf(T)),
     ],
-    codegen: (ctx) => {
-      const out = ctx.output("out");
-      ctx.emit(
-        `${out} = ((${ctx.input("array")})??[]).concat([${ctx.input("item")}]);`,
-      );
-    },
+    codegen: (ctx) => ({
+      out: `((${ctx.input("array")})??[]).concat([${ctx.input("item")}])`,
+    }),
   },
   {
     id: "array.appendArray",
     title: "Append Array",
     category: "array",
+    pure: true,
     pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
       pin("array", "Array", "in", arrayOf(T)),
       pin("other", "Other", "in", arrayOf(T)),
       pin("out", "Out", "out", arrayOf(T)),
     ],
-    codegen: (ctx) => {
-      const out = ctx.output("out");
-      ctx.emit(
-        `${out} = ((${ctx.input("array")})??[]).concat((${ctx.input("other")})??[]);`,
-      );
-    },
+    codegen: (ctx) => ({
+      out: `((${ctx.input("array")})??[]).concat((${ctx.input("other")})??[])`,
+    }),
   },
   {
     id: "array.set",
@@ -240,14 +232,16 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("index", "Index", "in", INT),
       pin("item", "Item", "in", T),
       pin("out", "Out", "out", arrayOf(T)),
+      pin("success", "Success", "out", BOOL),
     ],
     codegen: (ctx) => {
       const out = ctx.output("out");
+      const success = ctx.output("success");
       const index = ctx.input("index");
       ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
-      // Read the index once; a non-finite index inserts at the front.
+      // Read the index once. Index may be the length, which appends; anything else outside the array inserts nothing.
       ctx.emit(
-        `{ const __i = ${index}; ${out}.splice(Number.isFinite(__i)?Math.max(0,Math.trunc(__i)):0, 0, ${ctx.input("item")}); }`,
+        `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<=${out}.length; if (${success}) { ${out}.splice(__i, 0, ${ctx.input("item")}); } }`,
       );
     },
   },
@@ -312,16 +306,14 @@ export const arrayMapNodes: NodeDefinition[] = [
     id: "array.reverse",
     title: "Reverse Array",
     category: "array",
+    pure: true,
     pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
       pin("array", "Array", "in", arrayOf(T)),
       pin("out", "Out", "out", arrayOf(T)),
     ],
-    codegen: (ctx) => {
-      const out = ctx.output("out");
-      ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice().reverse();`);
-    },
+    codegen: (ctx) => ({
+      out: `((${ctx.input("array")})??[]).slice().reverse()`,
+    }),
   },
   {
     id: "array.slice",

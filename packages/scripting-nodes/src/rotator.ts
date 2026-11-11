@@ -7,6 +7,7 @@ import {
   VEC3,
 } from "@haptic/scripting";
 import { hoistedCall } from "./hoisted-helper";
+import { NEARLY_EQUAL_TOLERANCE } from "./math";
 
 export const rotatorNodes: NodeDefinition[] = [
   {
@@ -128,18 +129,19 @@ export const rotatorNodes: NodeDefinition[] = [
     pins: () => [
       pin("a", "A", "in", ROTATOR),
       pin("b", "B", "in", ROTATOR),
+      pin("tolerance", "Tolerance", "in", FLOAT, "data", true, NEARLY_EQUAL_TOLERANCE),
       pin("out", "Out", "out", BOOL),
     ],
-    // Each axis difference wraps to [-180, 180), so 0 and 360 are equal.
+    // Each axis difference wraps to [-180, 180), so 0 and 360 are equal. Tolerance is in degrees.
     codegen: (ctx) => {
       ctx.hoist("var __rot_axisDelta = (x) => Math.abs((((x % 360) + 540) % 360) - 180);");
       return {
         out: hoistedCall(
           ctx,
           "__rot_nearlyEqual",
-          "a, b",
-          "__rot_axisDelta(a?.pitch - b?.pitch) < 1e-3 && __rot_axisDelta(a?.yaw - b?.yaw) < 1e-3 && __rot_axisDelta(a?.roll - b?.roll) < 1e-3",
-          [ctx.input("a"), ctx.input("b")],
+          "a, b, t",
+          "__rot_axisDelta(a?.pitch - b?.pitch) <= t && __rot_axisDelta(a?.yaw - b?.yaw) <= t && __rot_axisDelta(a?.roll - b?.roll) <= t",
+          [ctx.input("a"), ctx.input("b"), ctx.input("tolerance")],
         ),
       };
     },

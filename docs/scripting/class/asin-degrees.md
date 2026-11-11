@@ -20,5 +20,5 @@ Returns the arcsine of the input as an angle in degrees.
 
 ## Notes
 
-- Inputs outside -1 to 1 return NaN.
+- An input outside -1 to 1 is read as the nearest of the two.
 - [**Asin (Radians)**](asin.md) works in radians.

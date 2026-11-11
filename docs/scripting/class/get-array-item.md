@@ -18,7 +18,7 @@ Returns the item at an index, and whether that index exists.
 | Pin | Type | Description |
 | --- | --- | --- |
 | Out | Wildcard |  |
-| Valid | Boolean | True when **Index** points at an item in the array. |
+| Success | Boolean | True when **Index** points at an item in the array. |
 
 ## Notes
 

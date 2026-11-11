@@ -17,11 +17,12 @@ Returns a copy of an array with two items swapped.
 
 ## Outputs
 
-| Pin | Type |
-| --- | --- |
-| Out | Exec |
-| Out | Array of Wildcard |
+| Pin | Type | Description |
+| --- | --- | --- |
+| Out | Exec |  |
+| Out | Array of Wildcard |  |
+| Success | Boolean | True when the items were swapped. |
 
 ## Notes
 
-- Nothing is swapped when either index is outside the array.
+- When either index is outside the array, nothing is swapped: **Out** is the array unchanged and **Success** is false.
