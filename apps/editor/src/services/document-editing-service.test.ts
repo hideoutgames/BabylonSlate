@@ -188,6 +188,29 @@ describe("DocumentEditingService", () => {
     expect(documents.getDocument(id)!.content).toEqual(saved);
   });
 
+  it("keeps a component scrub or rename on several selected actors as one Undo step, and a new gesture apart", async () => {
+    const { documents, editSession, editing, open } = createEditing();
+    const light = (actorId: string, range: number) => createActor(actorId, actorId, {
+      components: [{ id: `${actorId}-light`, classId: "LightComponent", properties: { range } }],
+    });
+    const scene = (range: number, names = ["a", "b"]): SerializedScene => ({
+      ...createDefaultScene("3d"),
+      actors: [light("a", range), light("b", range + 10)].map((actor, index) => ({ ...actor, name: names[index]! })),
+    });
+    await open(SCENE_REF, scene(1));
+    const saved = documents.getDocument(SCENE_ID)!.content;
+
+    for (const range of [2, 3, 4]) expect(await editing.applySceneChange(SCENE_ID, scene(range))).toBe(true);
+    expect(editSession.getStack(SCENE_ID).undoDepth).toBe(1);
+    for (const name of ["R", "Re"]) expect(await editing.applySceneChange(SCENE_ID, scene(4, [name, name]))).toBe(true);
+    expect(editSession.getStack(SCENE_ID).undoDepth).toBe(2);
+    editSession.getStack(SCENE_ID).endGesture();
+    expect(await editing.applySceneChange(SCENE_ID, scene(4, ["Red", "Red"]))).toBe(true);
+    expect(editSession.getStack(SCENE_ID).undoDepth).toBe(3);
+    for (let step = 0; step < 3; step += 1) editing.stepHistory("undo", SCENE_ID);
+    expect(documents.getDocument(SCENE_ID)!.content).toEqual(saved);
+  });
+
   it.each([
     {
       kind: "graph" as const,

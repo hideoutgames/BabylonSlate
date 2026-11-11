@@ -103,7 +103,8 @@ function mergeRow(rows: PropertyRow[], batch: (apply: () => void) => void): Prop
     }
     case "vector3": {
       const typed = rows as Row<"vector3">[];
-      const axisCount = (first as Row<"vector3">).value.length;
+      // Only the shown axes: a 2D row's hidden Z may differ without the row being mixed.
+      const axisCount = ((first as Row<"vector3">).axes ?? ["X", "Y", "Z"]).length;
       const mixedAxes = Array.from({ length: axisCount }, (_, axis) =>
         !same(typed.map((row) => row.value[axis])) || typed.some((row) => row.mixedAxes?.[axis] ?? row.mixed === true));
       const withAxis = (value: Vector3Value, axis: number, next: number) => {

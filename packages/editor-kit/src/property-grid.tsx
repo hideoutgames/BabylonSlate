@@ -423,13 +423,19 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
 function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }) {
   const [draft, setDraft] = useState<string | null>(null);
   const baselineRef = useRef(row.value);
+  // A mixed multi-selection has no one value to restore: its edit applies
+  // only when it finishes, so Escape leaves every item's own text.
+  const deferredRef = useRef(false);
   const cancelledRef = useRef(false);
   const handlers = {
     onChange: (event: { target: { value: string } }) => {
       if (row.readOnly) return;
-      if (draft === null) baselineRef.current = row.value;
+      if (draft === null) {
+        baselineRef.current = row.value;
+        deferredRef.current = row.mixed === true;
+      }
       setDraft(event.target.value);
-      row.onChange(event.target.value);
+      if (!deferredRef.current) row.onChange(event.target.value);
     },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (row.readOnly || event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -437,7 +443,7 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
         event.preventDefault();
         event.stopPropagation();
         cancelledRef.current = true;
-        if (draft !== null) row.onChange(baselineRef.current);
+        if (draft !== null && !deferredRef.current) row.onChange(baselineRef.current);
         setDraft(null);
         event.currentTarget.blur();
       } else if (event.key === "Enter" && !row.multiline) {
@@ -448,8 +454,10 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
     onBlur: (event: { target: { value: string } }) => {
       // Focus alone is not an edit; commit only text typed since focus.
       if (!row.readOnly && !cancelledRef.current && draft !== null) {
+        if (deferredRef.current) row.onChange(event.target.value);
         row.onCommit?.(event.target.value);
       }
+      deferredRef.current = false;
       cancelledRef.current = false;
       setDraft(null);
     },

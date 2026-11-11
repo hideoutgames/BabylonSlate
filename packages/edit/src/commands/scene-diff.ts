@@ -51,6 +51,7 @@ import {
 } from "./scene-fields";
 import { ReplaceSceneCommand } from "./replace-scene";
 import { diffGraphCommands, graphEditMergeKey } from "./graph-diff";
+import type { EditCommand } from "../command";
 
 function transformEqual(a: SerializedTransform, b: SerializedTransform): boolean {
   return (
@@ -504,4 +505,29 @@ export function planSceneChange(
     return commands.length > 0 && jsonEquivalent(applied, before) ? [] : commands;
   }
   return [new ReplaceSceneCommand(jsonCopy(before), jsonCopy(target))];
+}
+
+/** Field edits a multi-selection's Inspector edit makes, one per actor or component. */
+const FIELD_EDIT_COMMANDS = [
+  RenameActorCommand,
+  SetActorTransformCommand,
+  SetActorPropertiesCommand,
+  SetComponentPropertyCommand,
+  SetComponentTransformCommand,
+];
+
+/**
+ * The key one Scene edit's commands continue a gesture under: its single
+ * command's key, or, for field edits on several actors or components (a
+ * multi-selection's Inspector edit), one key for that set, so scrubbing it is
+ * one Undo step as it is for one actor. Any other mix of commands has none.
+ */
+export function sceneEditMergeKey(
+  commands: readonly EditCommand<SerializedScene>[],
+): string | undefined {
+  if (commands.length === 1) return commands[0]!.mergeKey;
+  if (commands.length === 0 || !commands.every((command) => FIELD_EDIT_COMMANDS.some((type) => command instanceof type))) {
+    return undefined;
+  }
+  return `fields:${commands.map((command) => command.mergeKey).sort().join("|")}`;
 }

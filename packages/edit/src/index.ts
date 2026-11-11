@@ -23,7 +23,7 @@ export {
   type ActorTransformEntry,
   type SceneEditCommand,
 } from "./commands/scene";
-export { diffSceneCommands, planSceneChange } from "./commands/scene-diff";
+export { diffSceneCommands, planSceneChange, sceneEditMergeKey } from "./commands/scene-diff";
 export { ReplaceSceneCommand } from "./commands/replace-scene";
 export {
   type JournalLine,

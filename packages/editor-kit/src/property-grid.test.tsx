@@ -865,4 +865,23 @@ describe("PropertyGrid", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith([1, 1, 1, 1]);
   });
+
+  it("applies a mixed text row's edit when it finishes, and Escape leaves every item's own text", () => {
+    const onChange = vi.fn();
+    const onCommit = vi.fn();
+    render(<PropertyGrid rows={[{ kind: "text", id: "name", label: "Name", value: "Hero", mixed: true, onChange, onCommit }]} />);
+    const input = screen.getByTestId("property-name") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(input.placeholder).toBe("Mixed Values");
+    input.focus();
+    fireEvent.change(input, { target: { value: "Guard" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onChange).not.toHaveBeenCalled();
+    input.focus();
+    fireEvent.change(input, { target: { value: "Guard" } });
+    fireEvent.blur(input, { target: { value: "Guard" } });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("Guard");
+    expect(onCommit).toHaveBeenCalledWith("Guard");
+  });
 });

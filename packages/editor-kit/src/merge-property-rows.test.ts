@@ -52,6 +52,13 @@ describe("mergePropertyRows", () => {
     merged[0]!.onAxisChange!(0, 9);
     expect(onChange[0]).toHaveBeenCalledWith([9, 2, 3]);
     expect(onChange[1]).toHaveBeenCalledWith([9, 5, 3]);
+
+    // A 2D row shows X and Y; a differing hidden Z leaves it unmixed.
+    const [planar] = mergePropertyRows([
+      [{ kind: "vector3", id: "scale", label: "Scale", value: [1, 1, 3], axes: ["X", "Y"], onChange: vi.fn() }],
+      [{ kind: "vector3", id: "scale", label: "Scale", value: [1, 1, 6], axes: ["X", "Y"], onChange: vi.fn() }],
+    ], { batch: (apply) => apply() }) as Array<Extract<PropertyRow, { kind: "vector3" }>>;
+    expect([planar!.mixed, planar!.mixedAxes]).toEqual([false, [false, false]]);
   });
 
   it("sets or clears only the flags bits an edit changed, on each item", () => {

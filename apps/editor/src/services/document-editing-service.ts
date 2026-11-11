@@ -15,6 +15,7 @@ import {
   graphEditMergeKey,
   PatchTilemapDocumentCommand,
   planSceneChange,
+  sceneEditMergeKey,
   replayJournalLines,
   resolveJournalLines,
   ReplaceSceneCommand,
@@ -185,7 +186,8 @@ export class DocumentEditingService {
       return false;
     }
     const result = this.editSession.applyBatch(id, previous, commands, {
-      mergeKey: options?.mergeKey,
+      // A field edit on several actors coalesces as one actor's does.
+      mergeKey: options?.mergeKey ?? (commands.length > 1 ? sceneEditMergeKey(commands) : undefined),
       amend: options?.mergeKey !== undefined,
     })!;
     this.documents.updateScene(id, result.doc);
