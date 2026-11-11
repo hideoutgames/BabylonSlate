@@ -28,7 +28,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [UV](uv.md) | Returns the texture coordinates of the surface, particle quad or text glyph being drawn. |
 | [Vertex Color](vertex-color.md) | Returns the vertex colour painted on the mesh, including alpha. |
 | [Vertex Normal (Local)](vertex-normal-local.md) | Returns the vertex normal in the mesh's local space, including morph target changes. |
-| [Vertex Normal (World Space)](vertex-normal-world-space.md) | Returns the vertex normal in world space, scaled to a length of 1. |
+| [Vertex Normal (World)](vertex-normal-world.md) | Returns the vertex normal in world space, scaled to a length of 1. |
 | [Vertex Position (Local)](vertex-position-local.md) | Returns the vertex position in the mesh's local space, including morph target changes. |
 | [View Direction](view-direction.md) | Returns the direction from the surface point toward the camera, scaled to a length of 1. |
 | [Water Surface](water-surface.md) | Returns water data for the current point: wave height, bank distance, depth, time and flow. |
@@ -84,12 +84,12 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Degrees To Radians](degrees-to-radians.md) | Converts the input from degrees to radians. |
 | [Divide](divide.md) | Divides one value by another, component by component. |
 | [Exponential](exponential.md) | Returns e raised to the power of the input. |
-| [Exponential 2](exponential-2.md) | Returns 2 raised to the power of the input. |
+| [Exponential (Base 2)](exponential-base-2.md) | Returns 2 raised to the power of the input. |
 | [Floor](floor.md) | Rounds the input down to the nearest whole number. |
 | [Fraction](fraction.md) | Returns the part of the input after the decimal point. |
 | [Inverse Square Root](inverse-square-root.md) | Returns 1 divided by the square root of Value. |
 | [Logarithm](logarithm.md) | Returns the natural logarithm of the input. |
-| [Logarithm 2](logarithm-2.md) | Returns the base-2 logarithm of Value. |
+| [Logarithm (Base 2)](logarithm-base-2.md) | Returns the base-2 logarithm of Value. |
 | [Maximum](maximum.md) | Returns the larger of two values, component by component. |
 | [Minimum](minimum.md) | Returns the smaller of two values, component by component. |
 | [Mix](mix.md) | Blends from A to B by the amount in Alpha. |
@@ -102,6 +102,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Remap](remap.md) | Rescales Value from the range From Min to From Max into the range To Min to To Max. |
 | [Round](round.md) | Rounds the input to the nearest whole number. |
 | [Saturate](saturate.md) | Limits Value to the range 0 to 1. |
+| [One Minus](one-minus.md) | Returns 1 minus Value, inverting a mask. |
 | [Sign](sign.md) | Returns -1, 0 or 1 depending on the sign of the input. |
 | [Sine (Degrees)](sine-degrees.md) | Returns the sine of an angle in degrees. |
 | [Sine (Radians)](sine.md) | Returns the sine of an angle in radians. |
@@ -125,7 +126,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 | [Reflect](reflect.md) | Reflects Incident around Normal and returns the bounced direction. |
 | [Refract](refract.md) | Bends the Incident direction as it passes through a surface with the given Normal and Eta. |
 | [Split](split.md) | Splits a Vector2, Vector3 or Color into separate Float components. |
-| [VectorMask(R)](vectormask-r.md) | Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller vector. |
+| [Component Mask (R)](component-mask.md) | Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller vector. |
 
 ## Logic
 

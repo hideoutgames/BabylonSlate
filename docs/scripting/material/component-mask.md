@@ -2,7 +2,7 @@
 node: vector.mask
 ---
 
-# VectorMask(R)
+# Component Mask (R)
 
 Extracts chosen channels from a Vector4 and outputs them as a Float or a smaller vector.
 

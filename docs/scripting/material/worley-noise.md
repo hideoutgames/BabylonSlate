@@ -10,7 +10,7 @@ Returns 3D cell noise as distances to the nearest and second-nearest feature poi
 
 | Pin | Type | Default | Description |
 | --- | --- | --- | --- |
-| Coordinates | Vector3 | (0, 0, 0) | Position to sample. Multiply it to change the scale of the noise. |
+| Coordinates | Vector3 |  | Position to sample; the mesh or screen UV when unconnected. Multiply it to change the scale of the noise. |
 | Jitter | Float | 1 | How far the points move from a regular grid: 0 is a regular grid and 1 is fully random. |
 
 ## Outputs

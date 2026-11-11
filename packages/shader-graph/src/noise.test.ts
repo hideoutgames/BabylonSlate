@@ -22,7 +22,7 @@ describe("material noise graphs", () => {
     expect(lowered.plan.cost.weight).toBeGreaterThan(1);
   });
 
-  it("provides Perlin coordinate defaults and Voronoi controls while leaving UV available for the compiler fallback", () => {
+  it("provides Voronoi controls while leaving Perlin's Coordinates and Voronoi's UV for the compiler's UV fallback", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push(
       { id: "perlin", type: "noise.perlin", position: { x: 0, y: 0 }, properties: {} },
@@ -35,7 +35,8 @@ describe("material noise graphs", () => {
     const lowered = lowerMaterialDocument(doc);
     expect(lowered.ok).toBe(true);
     if (!lowered.ok) return;
-    expect(lowered.plan.operations.find((operation) => operation.id === "perlin")?.inputs.coordinates).toEqual({ kind: "constant", type: "vec3", value: [0, 0, 0] });
+    // A constant here would give the whole surface one noise value.
+    expect(lowered.plan.operations.find((operation) => operation.id === "perlin")?.inputs).toEqual({});
     expect(lowered.plan.operations.find((operation) => operation.id === "voronoi")?.inputs).toEqual({
       offset: { kind: "constant", type: "float", value: [0] },
       density: { kind: "constant", type: "float", value: [5] },

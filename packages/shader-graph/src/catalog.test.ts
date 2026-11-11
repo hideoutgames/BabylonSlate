@@ -198,6 +198,17 @@ describe("material node catalog", () => {
     expect(defaultOf("math.remap", "toMax")).toBeGreaterThan(defaultOf("math.remap", "toMin"));
   });
 
+  it("defaults a half-wired Multiply and Mix to something visible, and lists other engines' names for search", () => {
+    const defaultOf = (type: string, pin: string) => materialNodeDefinition(type)!.inputs.find((entry) => entry.id === pin)!.defaultValue;
+    // Multiply by 1 passes A through; by 0 an unwired B would turn the result black.
+    expect(defaultOf("math.multiply", "b")).toEqual([1]);
+    expect(defaultOf("math.mix", "alpha")).toEqual([0.5]);
+    // Nodes of every kind take their aliases from the table, not only the generic math ones.
+    expect(materialNodeDefinition("vector.combine")!.searchAliases).toContain("append");
+    expect(materialNodeDefinition("math.oneMinus")!.searchAliases).toContain("1-x");
+    expect(materialNodeDefinition("noise.perlin")!.searchAliases).toEqual(expect.arrayContaining(["simplex", "gradient noise"]));
+  });
+
   it("costs a texture sample above a scalar multiply", () => {
     const sample = materialNodeDefinition("texture.sample")!;
     const multiply = materialNodeDefinition("math.multiply")!;

@@ -11,7 +11,7 @@ Multiplies two values together, component by component.
 | Pin | Type | Default |
 | --- | --- | --- |
 | A | Any | 0 |
-| B | Any | 0 |
+| B | Any | 1 |
 
 ## Outputs
 
