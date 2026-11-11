@@ -27,7 +27,8 @@ import { renderTargetAllocationBytes } from "./render-target-resource-cost";
  * - **Sampling.** Nearest, which reads the base level alone: only such a texture has a texel grid. The batcher asks
  *   for a texture's cell while it has one, at every draw, as Nearest Texture Filtering changes the mode in place
  *   (`nearest-textures.ts`).
- * - **Size.** Each side at most `CELL_EDGE`, so one image cannot take the page.
+ * - **Size.** Each side at most `CELL_EDGE`, so one image cannot take the page, and a single level of storage, whose
+ *   recorded size a cell can be copied by.
  *
  * A cell is drawn before the Scene's next frame (the first of its `onBeforeRenderObservable` work) and is given out
  * only once drawn; until then, and for an image the page has no room for, the visual keeps its own texture. A cell
@@ -136,6 +137,9 @@ function copies(internal: InternalTexture): boolean {
   if (internal.isCube || internal.is3D || internal.is2DArray || internal.isMultiview || internal.samples > 1) return false;
   if (internal.type !== Constants.TEXTURETYPE_UNSIGNED_BYTE || internal._compression || internal._useSRGBBuffer || internal._isRGBD) return false;
   if (internal.format !== Constants.TEXTUREFORMAT_RGBA && internal.format !== Constants.TEXTUREFORMAT_RGB) return false;
+  // A cell is copied by the size the texture records, which is its storage's for a single level only: Babylon leaves
+  // a mip-mapped KTX2 it decoded to plain colour at its last level's.
+  if (internal.useMipMaps) return false;
   return internal.width >= 1 && internal.height >= 1 && internal.width <= CELL_EDGE && internal.height <= CELL_EDGE;
 }
 

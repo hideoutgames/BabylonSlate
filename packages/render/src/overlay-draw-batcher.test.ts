@@ -731,11 +731,12 @@ describe("Scene Layer draw batching", () => {
     const drawn = drawnMeshes(() => layerDraws(engine, compositor, 1));
     expect(drawn).toHaveLength(1);
     expect(unlitBinding(drawn[0]!).texture).toBe(texture);
-    // The image's size, positive where its texture clamps and negative where it repeats; it starts at the texture's origin.
-    expect(batchGrids(drawn[0]!)).toEqual({ "-2": [32, -32, 0, 0], "2": [32, -32, 0, 0] });
+    // As each member's own draw binds it: 1 where the texture clamps and -1 where it repeats, over the whole of the
+    // texture (a negative origin), whose size the sampler gives.
+    expect(batchGrids(drawn[0]!)).toEqual({ "-2": [1, -1, -1, -1], "2": [1, -1, -1, -1] });
     // A filtered texture has no grid: the sampler takes its lookups as they are.
     texture.updateSamplingMode(Texture.BILINEAR_SAMPLINGMODE);
-    expect(batchGrids(drawnMeshes(() => layerDraws(engine, compositor, 1))[0]!)).toEqual({ "-2": [0, 0, 0, 0], "2": [0, 0, 0, 0] });
+    expect(batchGrids(drawnMeshes(() => layerDraws(engine, compositor, 1))[0]!)).toEqual({ "-2": [0, 0, -1, -1], "2": [0, 0, -1, -1] });
     await compositor.dispose();
   });
 

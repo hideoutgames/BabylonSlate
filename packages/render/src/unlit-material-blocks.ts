@@ -88,19 +88,20 @@ const U = {
   geometry: "unlitGeometry",
   msdf: "unlitMsdf",
   texel: "unlitTexel",
-  page: "unlitPage",
 } as const;
 
 /**
- * The texel grid lookups of `texture` are taken on, into `out` at `offset`: the texture's width and height, each
- * negative where the texture repeats along it (and positive where it clamps), or zeros for a texture whose lookups the
- * sampler takes as they are.
+ * Whether lookups of `texture` are taken on its texel grid, into `out` at `offset`, for each axis: 0 when the sampler
+ * takes them as they are, else 1 where the texture clamps along the axis and -1 where it repeats.
  *
  * A texture sampled nearest has a grid: the unlit graph finds the texel a UV falls in itself and samples that texel's
  * centre (`UnlitSurfaceBlock`), in place of leaving a UV that falls on the line between two texels to the sampler's
  * rounding. A draw of the image's own texture and a batch that samples the image from a shared page
  * (`layer-image-atlas.ts`) then find the same texel by the same arithmetic on the same UV, whatever the device. A
  * filtered texture, and one that mirrors, has none.
+ *
+ * The grid's size is the GPU texture's own, which the graph asks the sampler for: the size a texture object records is
+ * not always its storage's (Babylon leaves a mip-mapped KTX2 it decoded to plain colour at its last level's).
  */
 export function unlitTexelGrid(texture: BaseTexture | null, out: number[] | Float32Array, offset = 0): void {
   out[offset] = out[offset + 1] = 0;
@@ -108,11 +109,12 @@ export function unlitTexelGrid(texture: BaseTexture | null, out: number[] | Floa
   const wrapU = texture.wrapU, wrapV = texture.wrapV;
   if ((wrapU !== Constants.TEXTURE_WRAP_ADDRESSMODE && wrapU !== Constants.TEXTURE_CLAMP_ADDRESSMODE) ||
     (wrapV !== Constants.TEXTURE_WRAP_ADDRESSMODE && wrapV !== Constants.TEXTURE_CLAMP_ADDRESSMODE)) return;
-  const { width, height } = texture.getSize();
-  if (!(width > 0 && height > 0)) return;
-  out[offset] = wrapU === Constants.TEXTURE_WRAP_ADDRESSMODE ? -width : width;
-  out[offset + 1] = wrapV === Constants.TEXTURE_WRAP_ADDRESSMODE ? -height : height;
+  out[offset] = wrapU === Constants.TEXTURE_WRAP_ADDRESSMODE ? -1 : 1;
+  out[offset + 1] = wrapV === Constants.TEXTURE_WRAP_ADDRESSMODE ? -1 : 1;
 }
+
+/** The last two values of a grid whose image is the whole of the texture a draw samples (no cell of a page). */
+export const UNLIT_TEXEL_WHOLE = -1;
 
 const scratchGrid = [0, 0];
 
@@ -128,11 +130,9 @@ function bindUnlitUniforms(effect: Effect, material: NodeMaterial, mesh: Abstrac
     const texture = binding.texture ?? fallback;
     effect.setTexture(U.sampler, texture);
     if (texture) effect.setMatrix(U.matrix, texture.getTextureMatrix());
-    // The mesh's own grid, which a batch carries per vertex; and the size of the texture it samples, a page for a batch.
+    // The mesh's own grid, over the whole of its texture; a batch carries each member's per vertex.
     unlitTexelGrid(binding.texture, scratchGrid);
-    effect.setFloat4(U.texel, scratchGrid[0]!, scratchGrid[1]!, 0, 0);
-    const size = texture?.getSize();
-    effect.setFloat4(U.page, size?.width ? 1 / size.width : 1, size?.height ? 1 / size.height : 1, 0, 0);
+    effect.setFloat4(U.texel, scratchGrid[0]!, scratchGrid[1]!, UNLIT_TEXEL_WHOLE, UNLIT_TEXEL_WHOLE);
   }
   effect.setFloat4(U.color, binding.color[0], binding.color[1], binding.color[2], binding.alpha);
   if (msdf) {
@@ -255,20 +255,24 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
     let uv = this.uv.isConnected ? this.uv.associatedVariableName : `${vec2}(0.0)`;
     if (this.textured) {
       // A texture sampled nearest: the texel the UV falls in, found here, and its centre sampled (`unlitTexelGrid`).
-      // The grid is the mesh's own, bound or a draw batch's per vertex: the image's size (negative where it repeats)
-      // and where the image starts on the sampled texture, whose texel size is bound.
+      // The grid is the mesh's own, bound or a draw batch's per vertex. Its first two values say how each axis leaves
+      // the image (0: no grid; 1 clamps, -1 repeats), scaled by the image's size where the image is a cell of the
+      // sampled texture (a page), whose origin the last two then are; they are negative where the image is the whole
+      // texture, whose size is the sampler's.
       state._emitUniformFromString(U.texel, Types.Vector4);
-      state._emitUniformFromString(U.page, Types.Vector4);
       const grid = drawBatchValue(state, DRAW_BATCH_TEXEL_KIND, `${u}${U.texel}`);
-      const size = state._getFreeVariableName("unlitGridSize"), texel = state._getFreeVariableName("unlitTexelIndex");
-      const lookup = state._getFreeVariableName("unlitLookup");
-      const centre = `(${grid}.zw + ${texel} + ${vec2}(0.5)) * ${u}${U.page}.xy`;
-      state.compilationString += `${state._declareLocalVar(size, Types.Vector2)} = abs(${grid}.xy);\n`
+      const sampled = state._getFreeVariableName("unlitSampledSize"), size = state._getFreeVariableName("unlitGridSize");
+      const texel = state._getFreeVariableName("unlitTexelIndex"), lookup = state._getFreeVariableName("unlitLookup");
+      const dimensions = wgsl ? `vec2f(textureDimensions(${U.sampler}, 0))` : `vec2(textureSize(${U.sampler}, 0))`;
+      const whole = `${grid}.z < 0.0`;
+      const centre = `(max(${grid}.zw, ${vec2}(0.0)) + ${texel} + ${vec2}(0.5)) / ${sampled}`;
+      state.compilationString += `${state._declareLocalVar(sampled, Types.Vector2)} = ${dimensions};\n`
+        + `${state._declareLocalVar(size, Types.Vector2)} = ${wgsl ? `select(abs(${grid}.xy), ${sampled}, ${whole})` : `${whole} ? ${sampled} : abs(${grid}.xy)`};\n`
         + `${state._declareLocalVar(texel, Types.Vector2)} = floor(${uv} * ${size});\n`
-        // Outside the image, as the texture's own sampler takes it: around, or to the edge.
-        + `${texel} = mix(clamp(${texel}, ${vec2}(0.0), max(${size} - ${vec2}(1.0), ${vec2}(0.0))), `
-        + `${texel} - ${size} * floor(${texel} / max(${size}, ${vec2}(1.0))), step(${grid}.xy, ${vec2}(-0.5)));\n`
-        + `${state._declareLocalVar(lookup, Types.Vector2)} = ${wgsl ? `select(${uv}, ${centre}, ${size}.x > 0.0)` : `${size}.x > 0.0 ? ${centre} : ${uv}`};\n`;
+        // Outside the image, as the texture's own sampler takes it: to the edge, or around where it repeats.
+        + `${texel} = mix(clamp(${texel}, ${vec2}(0.0), ${size} - ${vec2}(1.0)), `
+        + `${texel} - ${size} * floor(${texel} / ${size}), step(${grid}.xy, ${vec2}(-0.5)));\n`
+        + `${state._declareLocalVar(lookup, Types.Vector2)} = ${wgsl ? `select(${uv}, ${centre}, ${grid}.x != 0.0)` : `${grid}.x != 0.0 ? ${centre} : ${uv}`};\n`;
       uv = lookup;
     }
     state.compilationString += `${state._declareLocalVar(sample, Types.Vector4)} = ${this.textured

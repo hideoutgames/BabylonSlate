@@ -162,29 +162,43 @@ describe("unlit Material", () => {
     // The grid: the mesh's own, bound, or a batch member's, flat from its vertices.
     const grid = fragment.match(/#ifdef HAPTIC_BATCH vec4 (\w+) = v_batchTexel; #else vec4 \1 = unlitTexel; #endif/)?.[1];
     expect(grid).toBeDefined();
-    const size = fragment.match(new RegExp(`vec2 (\\w+) = abs\\(${grid}\\.xy\\);`))?.[1];
+    // The size of the texture the draw samples is the sampler's own, never one a texture object records.
+    const sampled = fragment.match(/vec2 (\w+) = vec2\(textureSize\(unlitTextureSampler, 0\)\);/)?.[1];
+    expect(sampled).toBeDefined();
+    // The image is the whole of it (a negative origin), or a cell of the grid's own size.
+    const size = fragment.match(new RegExp(`vec2 (\\w+) = ${grid}\\.z < 0\\.0 \\? ${sampled} : abs\\(${grid}\\.xy\\);`))?.[1];
     expect(size).toBeDefined();
     // The texel the interpolated UV falls in.
     const found = fragment.match(new RegExp(`vec2 (\\w+) = floor\\((v_\\w+) \\* ${size}\\);`));
     expect(found).not.toBeNull();
     const [, texel, uv] = found!;
-    // Outside the image it is taken as the texture's sampler takes it: to the edge, or around where the size is negative.
-    expect(fragment).toContain(`${texel} = mix(clamp(${texel}, vec2(0.0), max(${size} - vec2(1.0), vec2(0.0))), ` +
-      `${texel} - ${size} * floor(${texel} / max(${size}, vec2(1.0))), step(${grid}.xy, vec2(-0.5)));`);
-    // Its centre on the sampled texture, where the image starts at the grid's offset; a texture without a grid is
+    // Outside the image it is taken as the texture's sampler takes it: to the edge, or around where the grid's sign is
+    // negative.
+    expect(fragment).toContain(`${texel} = mix(clamp(${texel}, vec2(0.0), ${size} - vec2(1.0)), ` +
+      `${texel} - ${size} * floor(${texel} / ${size}), step(${grid}.xy, vec2(-0.5)));`);
+    // Its centre on the sampled texture, where the image starts at the grid's origin; a texture without a grid is
     // sampled at the UV as it is.
-    const lookup = fragment.match(new RegExp(`vec2 (\\w+) = ${size}\\.x > 0\\.0 \\? \\(${grid}\\.zw \\+ ${texel} \\+ vec2\\(0\\.5\\)\\) \\* unlitPage\\.xy : ${uv};`))?.[1];
+    const lookup = fragment.match(new RegExp(
+      `vec2 (\\w+) = ${grid}\\.x != 0\\.0 \\? \\(max\\(${grid}\\.zw, vec2\\(0\\.0\\)\\) \\+ ${texel} \\+ vec2\\(0\\.5\\)\\) / ${sampled} : ${uv};`))?.[1];
     expect(lookup).toBeDefined();
     expect(fragment).toContain(`texture2D(unlitTextureSampler, ${lookup})`);
     // Nothing else samples the texture.
     expect(fragment.split("texture2D(unlitTextureSampler").length - 1).toBe(1);
-    // A draw binds its texture's grid and the texel size of the texture it samples.
+    // A draw binds how its texture leaves its image along each axis (it repeats along U here and clamps along V), over
+    // the whole of the texture.
     const effect = member.subMeshes[0]!.effect!;
     const bound = new Map<string, number[]>();
     vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
     material.getBlockByPredicate((block) => block.getClassName() === "UnlitSurfaceBlock")!.bind(effect, material, member);
-    expect(bound.get("unlitTexel")).toEqual([-64, 32, 0, 0]);
-    expect(bound.get("unlitPage")).toEqual([1 / 64, 1 / 32, 0, 0]);
+    expect(bound.get("unlitTexel")).toEqual([-1, 1, -1, -1]);
+    // The size a texture object records is never bound: Babylon leaves a mip-mapped KTX2 it decoded to plain colour
+    // at its last level's, which a grid of that size would draw as one texel.
+    image.getInternalTexture()!.width = 1;
+    image.getInternalTexture()!.height = 1;
+    bound.clear();
+    material.getBlockByPredicate((block) => block.getClassName() === "UnlitSurfaceBlock")!.bind(effect, material, member);
+    expect(bound.get("unlitTexel")).toEqual([-1, 1, -1, -1]);
+    expect([...bound.keys()].filter((name) => /page|size/i.test(name))).toEqual([]);
   });
 
   it("gives a texel grid to a texture sampled nearest that repeats or clamps, and to no other", () => {
@@ -198,10 +212,10 @@ describe("unlit Material", () => {
       unlitTexelGrid(image, out, 1);
       return out;
     };
-    // The size, negative along an axis the texture repeats on; written at the offset asked for, and nowhere else.
-    expect(grid()).toEqual([9, -64, -32, 9]);
-    expect(grid((texture) => { texture.wrapU = Texture.CLAMP_ADDRESSMODE; })).toEqual([9, 64, -32, 9]);
-    expect(grid((texture) => { texture.wrapV = Texture.CLAMP_ADDRESSMODE; })).toEqual([9, -64, 32, 9]);
+    // Per axis, -1 where the texture repeats and 1 where it clamps; written at the offset asked for, and nowhere else.
+    expect(grid()).toEqual([9, -1, -1, 9]);
+    expect(grid((texture) => { texture.wrapU = Texture.CLAMP_ADDRESSMODE; })).toEqual([9, 1, -1, 9]);
+    expect(grid((texture) => { texture.wrapV = Texture.CLAMP_ADDRESSMODE; })).toEqual([9, -1, 1, 9]);
     // A mirrored repeat is the sampler's alone, as is every filtered lookup.
     expect(grid((texture) => { texture.wrapU = Texture.MIRROR_ADDRESSMODE; })).toEqual([9, 0, 0, 9]);
     expect(grid((texture) => { texture.wrapV = Texture.MIRROR_ADDRESSMODE; })).toEqual([9, 0, 0, 9]);

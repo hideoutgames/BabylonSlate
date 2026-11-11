@@ -22,7 +22,7 @@ import { overlayVisualStyle, shareOverlayVisualStyle } from "./overlay-visual-st
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
 import { isUnlitMaterial } from "./unlit-material";
-import { setUnlitBinding, unlitBinding, unlitTexelGrid, type UnlitBinding } from "./unlit-material-blocks";
+import { setUnlitBinding, UNLIT_TEXEL_WHOLE, unlitBinding, unlitTexelGrid, type UnlitBinding } from "./unlit-material-blocks";
 
 /**
  * Draw batching for a Scene's sorted passes (Scene Layers): consecutive-in-effect draws of the unlit Material, or of an
@@ -41,9 +41,9 @@ import { setUnlitBinding, unlitBinding, unlitTexelGrid, type UnlitBinding } from
  *   other value its lighting binds per mesh, and the batch carries their normals, tangents and second UVs too.
  * - **Images.** Members whose small images sit on the Scene's shared page (`layer-image-atlas.ts`) sample the page in
  *   place of their own textures, so they share a draw whatever their images. Each vertex carries its member's texel
- *   grid (`unlitTexelGrid`: the image's size, and where its cell starts on the page): the unlit graph finds the texel
- *   a member's own UV falls in and samples that texel's centre, on the page as on the image's own texture, so both
- *   read the same texel of the same values.
+ *   grid (`unlitTexelGrid`, with the size of its image's cell and where the cell starts on the page): the unlit graph
+ *   finds the texel a member's own UV falls in and samples that texel's centre, on the page as on the image's own
+ *   texture, so both read the same texel of the same values.
  * - **Vertices.** A batch holds its members' own vertices and, for each vertex, the rows of its member's world
  *   matrix as the member's draw uploads them (the floating origin's translation minus the eye, then 32-bit). The
  *   Material's vertex stage builds the world matrix from those for a batch's mesh (`DrawBatchWorldBlock`), so every
@@ -813,9 +813,12 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       const binding = entry.binding, { opacity, tint } = overlayVisualStyle(entry.mesh!);
       style[0] = binding?.color[0] ?? 1; style[1] = binding?.color[1] ?? 1; style[2] = binding?.color[2] ?? 1; style[3] = binding?.alpha ?? 1;
       style[4] = tint[0]; style[5] = tint[1]; style[6] = tint[2]; style[7] = tint[3] * opacity;
-      // The texel grid the member's own draw binds, and where its image starts on the texture this batch samples.
+      // The texel grid the member's own draw binds: over the whole of the texture, or over its image's cell where
+      // this batch samples the page.
       unlitTexelGrid(binding?.texture ?? null, style, 8);
-      style[10] = entry.cell?.x ?? 0; style[11] = entry.cell?.y ?? 0;
+      const cell = entry.cell;
+      if (cell) { style[8]! *= cell.width; style[9]! *= cell.height; }
+      style[10] = cell?.x ?? UNLIT_TEXEL_WHOLE; style[11] = cell?.y ?? UNLIT_TEXEL_WHOLE;
       for (let offset = 0, at = vertex * STYLE_FLOATS; offset < memberVertices * STYLE_FLOATS; offset += 1, at += 1) {
         const value = style[offset % STYLE_FLOATS]!;
         if (styles[at] !== value) { styles[at] = value; stylesChanged = true; }

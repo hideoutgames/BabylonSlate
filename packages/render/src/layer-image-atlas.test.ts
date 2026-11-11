@@ -144,6 +144,8 @@ describe("the layer image atlas", () => {
       compressed: texture((made) => { made.getInternalTexture()!._compression = "astc"; }),
       luminance: texture((made) => { made.getInternalTexture()!.format = Constants.TEXTUREFORMAT_LUMINANCE; }),
       cube: texture((made) => { made.getInternalTexture()!.isCube = true; }),
+      // The size a mip-mapped texture records is not always its first level's, which a cell is copied by.
+      mips: texture((made) => { made.getInternalTexture()!.generateMipMaps = true; }),
     };
     const taken = { largest: image(scene, 256, 256), rgb: texture((made) => { made.getInternalTexture()!.format = Constants.TEXTUREFORMAT_RGB; }) };
     for (const made of [...Object.values(refused), ...Object.values(taken)]) atlas.cell(made);
