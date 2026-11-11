@@ -336,6 +336,16 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
   const { projectDocument } = useProjectState();
+  // One object per identity, so an unrelated document edit does not re-render the running game's overlay.
+  const projectName = projectDocument?.metadata.name;
+  const projectVersion = projectDocument?.metadata.version;
+  const projectBuildNumber = projectDocument?.settings.appIdentity?.buildNumber ?? 1;
+  const playProject = useMemo(
+    () => (projectName === undefined || projectVersion === undefined
+      ? undefined
+      : { name: projectName, version: projectVersion, buildNumber: projectBuildNumber }),
+    [projectBuildNumber, projectName, projectVersion],
+  );
   const { assetRegistry, registryEpoch, projectGuid, extensionService } = useRegistryState();
   const { migrationPending } = useEditorShellState();
   const { dirtyDocuments, projectDirty } = useSaveState();
@@ -1223,9 +1233,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             physics={presentedPlay?.physics}
             sceneAssetGuid={playSceneGuid}
             scene={presentedPlay?.scene}
-            project={projectDocument
-              ? { ...projectDocument.metadata, buildNumber: projectDocument.settings.appIdentity.buildNumber }
-              : undefined}
+            project={playProject}
             saveGame={playSaveGame}
             gameInstanceClass={projectDocument?.settings.gameInstanceClass ?? undefined}
             // Each content field is the overlay prop of the same name; `satisfies` rejects a field

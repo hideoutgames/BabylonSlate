@@ -62,7 +62,7 @@ export function EditorUtilityRuntime() {
   const latest = {
     appendLog,
     metadata: projectDocument?.metadata,
-    buildNumber: projectDocument?.settings.appIdentity.buildNumber ?? 1,
+    buildNumber: projectDocument?.settings.appIdentity?.buildNumber ?? 1,
     collectScripts: collectEditorUtilityScripts,
     getOpenDocuments,
     documents,
