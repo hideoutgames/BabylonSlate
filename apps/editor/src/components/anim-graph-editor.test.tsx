@@ -391,6 +391,31 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
   });
 
+  it("shows the rows two selected states share and adds typed math to each state's Speed in one change", async () => {
+    const doc = locoGraph();
+    doc.states.find((state) => state.id === "run")!.speed = 2;
+    const { container } = renderAnimGraph(doc);
+    await waitFor(() => expect(screen.getByTestId("anim-state-node-run")).toBeTruthy());
+    fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="idle"]')!);
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="run"]')!);
+    fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
+    await waitFor(() => expect(screen.getByTestId("anim-graph-details").textContent).toContain("2 States"));
+    // Names, the entry state and transitions stay per state; Idle plays an Animation and Run a Sprite.
+    expect(screen.queryByTestId("property-name")).toBeNull();
+    expect(screen.queryByTestId("property-entry")).toBeNull();
+    expect(screen.queryByTestId("anim-graph-transition-idle-to-run")).toBeNull();
+    expect(screen.queryByTestId("property-clipAsset")).toBeNull();
+    expect(screen.getByTestId("property-clipKind").textContent).toContain("Mixed Values");
+    const speed = screen.getByTestId<HTMLInputElement>("property-speed");
+    expect(speed.value).toBe("Mixed Values");
+    store.applyAssetDocumentChange.mockClear();
+    fireEvent.focus(speed);
+    fireEvent.change(speed, { target: { value: "Mixed Values+4" } });
+    expect(store.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+    expect(lastCommit().states.map((state) => [state.id, state.speed])).toEqual([["idle", 5], ["run", 6]]);
+  });
+
   it("opens a nested transition rule graph from Details", async () => {
     renderAnimGraph(locoGraph());
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));

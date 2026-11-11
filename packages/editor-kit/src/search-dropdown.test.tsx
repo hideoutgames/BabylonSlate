@@ -162,23 +162,30 @@ describe("SearchDropdown", () => {
     expect(screen.getByText("No matches")).toBeTruthy();
   });
 
-  it("fades the results edge while more rows are below, and stops once scrolled to the end", () => {
+  it("fades the results edges while rows continue past them, and stops at each end", () => {
     render(
       <SearchDropdown open title="Types" items={items} onSelect={() => {}} data-testid="palette">
         <button type="button">Types</button>
       </SearchDropdown>,
     );
+    // The fade masks the scroller itself, so it begins at the same edge that clips the rows.
     const results = screen.getByTestId("palette-results");
-    const fade = screen.getByTestId("palette-more-below");
-    expect(fade.hasAttribute("data-visible")).toBe(false);
+    expect(results.hasAttribute("data-fade-below")).toBe(false);
+    expect(results.hasAttribute("data-fade-above")).toBe(false);
     Object.defineProperties(results, {
       clientHeight: { configurable: true, value: 100 },
       scrollHeight: { configurable: true, value: 300 },
     });
     fireEvent.scroll(results);
-    expect(fade.hasAttribute("data-visible")).toBe(true);
+    expect(results.hasAttribute("data-fade-below")).toBe(true);
+    expect(results.hasAttribute("data-fade-above")).toBe(false);
+    results.scrollTop = 100;
+    fireEvent.scroll(results);
+    expect(results.hasAttribute("data-fade-above")).toBe(true);
+    expect(results.hasAttribute("data-fade-below")).toBe(true);
     results.scrollTop = 200;
     fireEvent.scroll(results);
-    expect(fade.hasAttribute("data-visible")).toBe(false);
+    expect(results.hasAttribute("data-fade-below")).toBe(false);
+    expect(results.hasAttribute("data-fade-above")).toBe(true);
   });
 });

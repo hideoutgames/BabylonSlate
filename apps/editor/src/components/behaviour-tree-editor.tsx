@@ -57,6 +57,7 @@ import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
   humanizePropertyLabel,
+  mergePropertyRows,
   pinPickerColorVar,
   pinPickerLabel,
   useCatalogSearchState,
@@ -74,6 +75,7 @@ import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { asTree, commitBehaviourTreeGraphChange } from "../lib/behaviour-tree-graph-commit";
 import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { pinDefaultPropertyRows } from "../lib/graph-inspector";
+import { documentBatch } from "../lib/document-batch";
 import { documentId } from "@haptic/core";
 import {
   useDocumentActions,
@@ -376,6 +378,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     attachmentId,
     focusedNodeId,
     setSelectedId,
+    setSelectedIds,
     setAttachmentId,
     setAttachmentCatalog,
   } = useBehaviourTreeEditing();
@@ -586,9 +589,10 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
         return;
       }
       canvasSelectedId.current = nextId;
-      setSelectedId(nextId);
+      setSelectedIds(nodeIds);
       setAttachmentId((current) => {
-        if (!current) return null;
+        // Several nodes show the properties they share, never one node's attachment.
+        if (!current || nodeIds.length > 1) return null;
         const owner = doc.nodes.find((node) => node.id === nextId);
         if (!owner) return null;
         const onNode =
@@ -597,7 +601,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
         return onNode ? current : null;
       });
     },
-    [setAttachmentId, setSelectedId],
+    [setAttachmentId, setSelectedId, setSelectedIds],
   );
 
   const toolbarExtra = useMemo(
@@ -845,19 +849,25 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     assets,
   } = useBehaviourTreeDocument();
   const {
-    selectedId,
+    selectedIds,
     attachmentId,
     attachmentCatalog,
     setAttachmentId,
     setAttachmentCatalog,
   } = useBehaviourTreeEditing();
   const catalogSearch = useCatalogSearchState();
-  const [assetPick, setAssetPick] = useState<{
-    key: string;
-    assetType: string;
-    write: (value: string | null) => void;
-  } | null>(null);
-  const selected = doc.nodes.find((node) => node.id === selectedId) ?? null;
+  const [assetPick, setAssetPick] = useState<BtAssetPick | null>(null);
+  const selectedNodes = selectedIds.flatMap((id) => doc.nodes.find((node) => node.id === id) ?? []);
+  // Several nodes show the rows they share; attachments stay per node.
+  const multi = selectedNodes.length > 1;
+  const selected = multi ? null : (selectedNodes[0] ?? null);
+  const edit = documentBatch(doc, commit);
+  /** Gathers every selected node's asset pick when a shared asset row opens the picker. */
+  const pickCollector: { requests: BtAssetPick[] | null } = { requests: null };
+  const pickAsset = (request: BtAssetPick) => {
+    if (pickCollector.requests) pickCollector.requests.push(request);
+    else setAssetPick(request);
+  };
   const attachment =
     selected?.decorators.find((row) => row.id === attachmentId) ??
     selected?.services.find((row) => row.id === attachmentId) ??
@@ -996,8 +1006,10 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
             label: field.label,
             value: guid || null,
             placeholder: "None",
+            // Several nodes share an asset row only when it takes the same asset type.
+            ...(multi ? { assetTypes: [field.assetType ?? "Audio"] } : {}),
             onPick: () =>
-              setAssetPick({
+              pickAsset({
                 key: field.key,
                 assetType: field.assetType ?? "Audio",
                 write: (value) => {
@@ -1040,42 +1052,72 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     });
   };
 
-  const rows: PropertyRow[] = [];
-  if (selected && !attachment) {
+  /** A node's Class and property rows; they read and write through `edit`, so a batch changes every selected node at once. */
+  const nodeRows = (node: BtNode): PropertyRow[] => {
     const classOptions = (
-      selected.kind === "task" ? BT_TASK_CATALOG : BT_COMPOSITE_CATALOG
+      node.kind === "task" ? BT_TASK_CATALOG : BT_COMPOSITE_CATALOG
     ).map((entry) => ({ value: entry.classId, label: entry.title }));
-    rows.push({
-      id: "classId",
-      kind: "enum",
-      label: "Class",
-      value: selected.classId,
-      options: classOptions.some((row) => row.value === selected.classId)
-        ? classOptions
-        : [{ value: selected.classId, label: titleForBtClassId(selected.classId) }, ...classOptions],
-      onChange: (classId) =>
-        commit(
-          patchNode(doc, selected.id, {
-            classId,
-            kind: kindForCatalogClassId(classId, parentOf),
-            properties: { ...selected.properties },
-          }),
-        ),
-    });
-    rows.push(
+    return [
+      {
+        id: "classId",
+        kind: "enum",
+        label: "Class",
+        value: node.classId,
+        options: classOptions.some((row) => row.value === node.classId)
+          ? classOptions
+          : [{ value: node.classId, label: titleForBtClassId(node.classId) }, ...classOptions],
+        onChange: (classId) =>
+          edit.write(
+            patchNode(edit.read(), node.id, {
+              classId,
+              kind: kindForCatalogClassId(classId, parentOf),
+              properties: { ...node.properties },
+            }),
+          ),
+      },
       ...toRows(
-        propertyFieldsForClassId(selected.classId, selected.properties),
-        selected.properties,
-        (updates) =>
-        commit(
-          patchNode(doc, selected.id, {
-            properties: { ...selected.properties, ...updates },
-          }),
-          btFieldMergeKey(selected.id, "node", updates),
-        ),
+        propertyFieldsForClassId(node.classId, node.properties),
+        node.properties,
+        (updates) => {
+          const current = edit.read();
+          const latest = current.nodes.find((row) => row.id === node.id) ?? node;
+          edit.write(
+            patchNode(current, node.id, {
+              properties: { ...latest.properties, ...updates },
+            }),
+            btFieldMergeKey(node.id, "node", updates),
+          );
+        },
       ),
-    );
+    ];
+  };
+
+  const rows: PropertyRow[] = [];
+  if (multi) {
+    const items = selectedNodes.map(nodeRows);
+    rows.push(...mergePropertyRows(items, { batch: edit.batch }).map((row): PropertyRow => row.kind !== "asset" ? row : {
+      ...row,
+      // One pick goes to every selected node, each through its own write.
+      onPick: () => {
+        const requests: BtAssetPick[] = [];
+        pickCollector.requests = requests;
+        try {
+          for (const itemRows of items) {
+            const entry = itemRows.find((candidate) => candidate.id === row.id);
+            if (entry?.kind === "asset") entry.onPick();
+          }
+        } finally {
+          pickCollector.requests = null;
+        }
+        if (requests.length === 0) return;
+        setAssetPick({
+          ...requests[0]!,
+          write: (value) => edit.batch(() => requests.forEach((request) => request.write(value))),
+        });
+      },
+    }));
   }
+  if (selected && !attachment) rows.push(...nodeRows(selected));
   if (selected && attachment && isDecorator) {
     const classOptions = decoratorCatalog.map((entry) => ({
       value: entry.classId,
@@ -1232,7 +1274,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame>
       <div data-testid="bt-details" className="flex flex-col gap-2 p-2">
-        <PropertyGrid rows={rows} />
+        <PropertyGrid title={multi ? `${selectedNodes.length} Nodes` : undefined} rows={rows} />
         {selected && attachment && "observedKeys" in attachment ? (
           <NamedListEditor
             title="Observed Keys"
@@ -1305,7 +1347,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
               </div>
             ) : null}
           </div>
-        ) : (
+        ) : multi ? null : (
           <p className="text-sm text-muted-foreground">Select a node</p>
         )}
       </div>
@@ -1369,6 +1411,13 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       </CatalogDialog>
     </PanelFrame>
   );
+}
+
+/** The asset picker's request: which property, which asset type, and how a pick is written. */
+interface BtAssetPick {
+  key: string;
+  assetType: string;
+  write: (value: string | null) => void;
 }
 
 function patchNode(

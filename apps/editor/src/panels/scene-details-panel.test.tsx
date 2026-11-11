@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import type { RenderEffectsSettings, SerializedComponent, SerializedScene, ShadowSettings } from "@haptic/core";
+import type { RenderEffectsSettings, SerializedComponent, SerializedScene, ShadowSettings, TagDefinition } from "@haptic/core";
 import {
+  ACTOR_TAGS_PROPERTY,
+  normalizeTagContainer,
   createActor,
   createDefaultScene,
   createDefaultSceneLayer,
@@ -20,7 +22,8 @@ import {
   quaternionToEulerDegrees,
   sceneLayerToEditorScene,
 } from "@haptic/core";
-import { AssetCreateProvider } from "@haptic/editor-kit";
+import { AssetCreateProvider, TagProvider } from "@haptic/editor-kit";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { SceneDetailsPanel } from "./scene-details-panel";
 import { RENDERING_SETTINGS_SECTIONS } from "../components/rendering-settings-sections";
 import { AppSettingsProvider } from "../context/app-settings-context";
@@ -45,6 +48,7 @@ const harness = vi.hoisted(() => ({
   selectedActorIds: [] as string[],
   shapeEditTarget: null as SceneShapeEditTarget | null,
   setShapeEditTarget: vi.fn<(target: SceneShapeEditTarget | null) => void>(),
+  setSelectedActorIds: vi.fn<(ids: string[]) => void>(),
   scene: null as SerializedScene | null,
   prefabComponents: [] as SerializedComponent[],
   /** Assets a test creates after mount; the registry mock lists them. */
@@ -66,14 +70,14 @@ vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: harness.documentId }),
 }));
 
-vi.mock("../context/scene-editing-context", () => ({
+vi.mock("../context/scene-editing-context", async (importOriginal) => ({
   useSceneEditing: () => ({
     selectedActorIds: harness.selectedActorIds,
-    setSelectedActorIds: vi.fn(),
+    setSelectedActorIds: harness.setSelectedActorIds,
     shapeEditTarget: harness.shapeEditTarget,
     setShapeEditTarget: harness.setShapeEditTarget,
   }),
-  selectionAfterLockChange: (ids: string[]) => ids,
+  selectionAfterLockChange: (await importOriginal<typeof import("../context/scene-editing-context")>()).selectionAfterLockChange,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -187,6 +191,7 @@ beforeEach(() => {
   harness.selectedActorIds = [];
   harness.shapeEditTarget = null;
   harness.setShapeEditTarget.mockReset();
+  harness.setSelectedActorIds.mockReset();
   harness.documentKind = "scene";
   harness.documentId = "scene:assets/Main.scene.hasset";
   harness.render.mode = "pbr";
@@ -235,9 +240,9 @@ describe("scene shape editing", () => {
     expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 
-  it("disables shape targeting for locked actors and multiple selected actors", () => {
+  it("disables shape targeting for a locked actor and leaves it out of a shared multi-selection card", () => {
     const actor = createActor("path", "Path", { components: [{ id: "curve", classId: "SplineComponent", properties: {} }], locked: true });
-    scene().actors = [actor, createActor("other", "Other")];
+    scene().actors = [actor, createActor("other", "Other", { components: [{ id: "other-curve", classId: "SplineComponent", properties: {} }] })];
     harness.selectedActorIds = [actor.id];
     const panel = () => <SceneDetailsPanel {...({} as IDockviewPanelProps)} />;
     const view = render(panel());
@@ -245,7 +250,8 @@ describe("scene shape editing", () => {
     actor.locked = false;
     harness.selectedActorIds = [actor.id, "other"];
     view.rerender(panel());
-    fireEvent.click(screen.getByTestId("component-shape-edit-curve"));
+    expect(screen.getByTestId("component-card-curve")).toBeTruthy();
+    expect(screen.queryByTestId("component-shape-edit-curve")).toBeNull();
     expect(harness.setShapeEditTarget).not.toHaveBeenCalled();
   });
 });
@@ -379,13 +385,13 @@ describe("shared actor Details", () => {
     }
   });
 
-  it("shows differing axes as Mixed and resets the whole selected property", () => {
+  it("shows differing axes as Mixed Values and resets the whole selected property", () => {
     scene().actors[0]!.transform.position = [0, 0, 0];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(
       (screen.getByTestId("property-actor-position-x") as HTMLInputElement)
-        .placeholder,
-    ).toBe("Mixed");
+        .value,
+    ).toBe("Mixed Values");
     const reset = screen.getByTestId(
       "property-actor-position-reset",
     ) as HTMLButtonElement;
@@ -463,8 +469,10 @@ describe("shared actor Details", () => {
     ).toBe(true);
   });
 
-  it("edits shared visibility without renaming other selected actors", () => {
+  it("edits shared visibility, and renames every selected actor from a mixed Name when the edit finishes, each in one Scene change", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("primary-actor-grid")).toBeNull();
+    expect(screen.getByTestId("actor-transform-grid").textContent).toContain("2 Actors");
     fireEvent.click(screen.getByTestId("property-actor-visible"));
     const next = harness.applySceneChange.mock.calls.at(-1)![1];
     expect(next.actors.map((actor) => actor.visible)).toEqual([
@@ -472,14 +480,48 @@ describe("shared actor Details", () => {
       false,
       true,
     ]);
-    fireEvent.change(screen.getByTestId("property-actor-name"), {
-      target: { value: "Renamed" },
-    });
+    const name = screen.getByTestId("property-actor-name") as HTMLInputElement;
+    expect([name.value, name.placeholder]).toEqual(["", "Mixed Values"]);
+    // Escape leaves every actor its own name: a mixed name applies only when the edit finishes.
+    name.focus();
+    fireEvent.change(name, { target: { value: "Renamed" } });
+    fireEvent.keyDown(name, { key: "Escape" });
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    name.focus();
+    fireEvent.change(name, { target: { value: "Renamed" } });
+    fireEvent.blur(name, { target: { value: "Renamed" } });
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(2);
     expect(
       harness.applySceneChange.mock.calls
         .at(-1)![1]
         .actors.map((actor) => actor.name),
-    ).toEqual(["Renamed", "Beta", "Control"]);
+    ).toEqual(["Renamed", "Renamed", "Control"]);
+  });
+
+  it("locks every selected actor from a mixed Locked and drops them from the selection", () => {
+    scene().actors[1]!.locked = true;
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const locked = screen.getByTestId("property-actor-locked");
+    expect(locked.getAttribute("aria-checked")).toBe("mixed");
+    fireEvent.click(locked);
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    expect(harness.applySceneChange.mock.calls[0]![1].actors.map((actor) => actor.locked)).toEqual([true, true, false]);
+    expect(harness.setSelectedActorIds).toHaveBeenLastCalledWith([]);
+  });
+
+  it.each([
+    ["Position X", "property-actor-position-x", "3d", [[5, 2, 3], [8, 5, 6]]],
+    // Z-Order counts toward the camera: orders -3 and -6 become 1 and -2.
+    ["Z-Order", "property-actor-z-order", "2d", [[1, 2, -1], [4, 5, 2]]],
+  ] as const)("adds typed math to each actor's own %s in one Scene change", (_label, testId, mode, expected) => {
+    scene().viewportMode = mode;
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const input = screen.getByTestId(testId) as HTMLInputElement;
+    expect(input.value).toBe("Mixed Values");
+    fireEvent.change(input, { target: { value: "Mixed Values+4" } });
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    const next = harness.applySceneChange.mock.calls[0]![1];
+    expect(next.actors.map((actor) => actor.transform.position)).toEqual([...expected, [0, 0, 0]]);
   });
 
   it("shows mixed visibility and applies the checked state to the selection", () => {
@@ -495,29 +537,90 @@ describe("shared actor Details", () => {
     ).toEqual([true, true, true]);
   });
 
-  it("keeps component removal restricted to the primary actor", () => {
+  it("edits each actor's first component of a shared class in one Scene change and hides unshared classes", () => {
+    const light = (id: string, range: number): SerializedComponent => ({
+      id, classId: "LightComponent", properties: { lightKind: "point", range, castShadows: false },
+    });
+    scene().actors[0]!.components = [createMeshComponent("mesh-a", "box"), light("light-a", 10)];
+    scene().actors[1]!.components = [light("light-b", 20), light("light-b2", 30)];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("component-card-mesh-a")).toBeNull();
+    expect(screen.getByTestId("component-card-light-a")).toBeTruthy();
+    expect(screen.queryByTestId("component-card-light-b")).toBeNull();
+    expect(screen.queryByTestId("component-up-light-a")).toBeNull();
+    const range = screen.getByTestId("property-a-light-a-range") as HTMLInputElement;
+    expect(range.value).toBe("Mixed Values");
+    fireEvent.change(range, { target: { value: "Mixed Values+4" } });
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    const ranges = (next: SerializedScene) =>
+      next.actors.slice(0, 2).map((actor) => actor.components.map((component) => component.properties.range));
+    expect(ranges(harness.applySceneChange.mock.calls[0]![1])).toEqual([[undefined, 14], [24, 30]]);
+    fireEvent.click(screen.getByTestId("property-a-light-a-castShadows"));
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(2);
+    const shadows = harness.applySceneChange.mock.calls[1]![1].actors.slice(0, 2)
+      .map((actor) => actor.components.map((component) => component.properties.castShadows));
+    expect(shadows).toEqual([[undefined, true], [true, false]]);
+  });
+
+  it("picks an asset for a shared component on every selected actor in one Scene change", async () => {
     scene().actors[0]!.components = [createMeshComponent("mesh-a", "box")];
     scene().actors[1]!.components = [createMeshComponent("mesh-b", "sphere")];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.getByTestId("primary-actor-grid").textContent).toContain(
-      "Primary Actor: Alpha",
-    );
+    fireEvent.click(screen.getByTestId("property-a-mesh-a-assetGuid"));
+    fireEvent.click(await screen.findByTestId("search-item-mesh-1"));
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    const next = harness.applySceneChange.mock.calls[0]![1];
+    expect(next.actors.slice(0, 2).map((actor) => actor.components[0]!.properties.assetGuid)).toEqual(["mesh-1", "mesh-1"]);
+  });
+
+  it("removes a shared component from, and adds a component to, every selected actor", () => {
+    scene().actors[0]!.components = [createMeshComponent("mesh-a", "box")];
+    scene().actors[1]!.components = [createMeshComponent("mesh-b", "sphere")];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("component-remove-mesh-a"));
-    const next = harness.applySceneChange.mock.calls.at(-1)![1];
-    expect(next.actors[0]!.components).toEqual([]);
-    expect(next.actors[1]!.components).toEqual(scene().actors[1]!.components);
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    const removed = harness.applySceneChange.mock.calls[0]![1];
+    expect(removed.actors.map((actor) => actor.components)).toEqual([[], [], scene().actors[2]!.components]);
+    fireEvent.click(screen.getByRole("button", { name: "Add Component To 2 Actors" }));
+    fireEvent.click(screen.getByTestId("add-component-catalog-item-asset-mesh-1"));
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(2);
+    const added = harness.applySceneChange.mock.calls[1]![1];
+    expect(added.actors.map((actor) => actor.components.at(-1)?.properties.assetGuid)).toEqual(["mesh-1", "mesh-1", undefined]);
+    expect(added.actors.slice(0, 2).map((actor) => actor.components.at(-1)!.id)).toEqual(["a-component-2", "b-component-2"]);
   });
 });
 
 describe("SceneDetailsPanel authoring", () => {
-  it("shows a placed actor's Tags only while one actor is selected", () => {
-    harness.selectedActorIds = [scene().actors[0]!.id];
-    const { unmount } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.getByTestId("property-actor-tags")).toBeTruthy();
-    unmount();
-    harness.selectedActorIds = scene().actors.slice(0, 2).map((actor) => actor.id);
-    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    expect(screen.queryByTestId("property-actor-tags")).toBeNull();
+  it("adds or removes a picked Tag on every selected actor and keeps each actor's other Tags", () => {
+    const entries: TagDefinition[] = [
+      { id: 1, path: "Damage", parentId: 0 },
+      { id: 2, path: "Enemy", parentId: 0 },
+      { id: 3, path: "Boss", parentId: 0 },
+    ];
+    scene().actors = [
+      createActor("a", "Alpha", { properties: { [ACTOR_TAGS_PROPERTY]: { Tags: [1, 2] } } }),
+      createActor("b", "Beta", { properties: { [ACTOR_TAGS_PROPERTY]: { Tags: [1, 3] } } }),
+    ];
+    harness.selectedActorIds = ["a", "b"];
+    render(<TagProvider entries={entries}><SceneDetailsPanel {...({} as IDockviewPanelProps)} /></TagProvider>);
+    const trigger = screen.getByTestId("property-actor-tags");
+    expect(trigger.textContent).toContain("Mixed Values");
+    fireEvent.click(trigger);
+    const pick = (path: string) => {
+      const row = screen.getByText(path).closest('[role="treeitem"]')!;
+      act(() => {
+        dispatchPointerEvent(row, "pointerdown");
+        dispatchPointerEvent(row, "pointerup");
+      });
+    };
+    const tags = () => harness.applySceneChange.mock.lastCall![1].actors
+      .map((actor) => normalizeTagContainer(actor.properties?.[ACTOR_TAGS_PROPERTY]).Tags);
+    pick("Enemy");
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(1);
+    expect(tags()).toEqual([[1, 2], [1, 3, 2]]);
+    pick("Damage");
+    expect(harness.applySceneChange).toHaveBeenCalledTimes(2);
+    expect(tags()).toEqual([[2], [3]]);
   });
 
   it("edits an Outliner anchor's offsets without exposing a transform or visibility", () => {

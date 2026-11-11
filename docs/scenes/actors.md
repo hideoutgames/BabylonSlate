@@ -64,9 +64,18 @@ Selecting an actor shows its **Name**, **Position**, **Rotation** (in degrees), 
 
 The link button beside **Scale** keeps the actor's proportions: while it is on, changing one axis scales the others by the same amount. If the axis you change is 0, the other axes take the same value. The **Scale** gizmo follows the link too: dragging its X, Y or Z handle scales the other axes by the same amount. In a [Scene Layer](scene-layers.md), the box around the actor keeps its proportions the same way. The link starts off. Each actor, component and collider remembers its own link on this device; it is not saved in the project.
 
-With several actors selected, the heading reads **N Actors** and edits apply to all of them; values that differ show as mixed. The Scale link shows as on only when every selected actor is linked, and pressing it links or unlinks them all. Linked actors keep their own proportions; the others change only the axis you edit. The Scale gizmo and the Scene Layer box work the same way: dragging scales every selected actor on that axis, and linked actors also keep their own proportions. When every selected actor is linked, the whole selection scales together. The **Primary Actor** section holds the name and lock of the actor whose components are shown.
-
 Use **Filter Properties** at the top to find a field by name. Right-click or hold a property for **Copy** and **Paste**, for example to give one actor another's **Position**; see [Editor tour](../start/editor-tour.md#scene-panels).
+
+### Several actors
+
+With several actors selected, the heading reads **N Actors** and the **Inspector** shows what they all have ([multi-selection](../start/editor-tour.md#scene-panels)):
+
+- **Name**, **Position**, **Rotation**, **Scale**, **Z-Order**, **Visible**, **Locked** and **Tags**. A field whose values differ shows **Mixed Values**. Typing a name renames every selected actor. In **Tags**, picking a tag adds it to every selected actor, or removes it from all of them, and keeps each actor's other tags.
+- One card for each kind of component that every selected actor has, such as **Mesh**. It shows the properties those components share and edits each actor's component. An actor with two components of that kind uses the first. Components that only some of the actors have are not shown.
+
+Each edit applies to every selected actor as one undo step. In a number field, `Mixed Values+4` moves each actor from its own value. Renaming a card or using its remove button changes that component on every selected actor, and **+** adds the component you pick to each of them. Reordering and **Edit In Viewport** work on one actor at a time, as do a card's extra editors such as **Text** or **Bake NavMesh**.
+
+The Scale link shows as on only when every selected actor is linked, and pressing it links or unlinks them all. Linked actors keep their own proportions; the others change only the axis you edit. The Scale gizmo and the Scene Layer box work the same way: dragging scales every selected actor on that axis, and linked actors also keep their own proportions. When every selected actor is linked, the whole selection scales together.
 
 ## Add components
 

@@ -416,7 +416,7 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 - Undoing back to the saved content makes a document clean again; Redo makes it dirty.
 - Duplicate actor display names are allowed (ids are identity; Outliner and pickers disambiguate). Asset names, folder names and Class ids must be unique; Duplicate keeps the source transform (no automatic offset).
 - Right-click or long-press on an unselected item replaces the selection; on a selected item it keeps the group.
-- Multi-actor Inspector edits shared transform and visibility; components belong to the primary actor only.
+- Multi-actor Inspector shows only what every selected actor shares: actor rows, and one card per component class all have (each actor's first of that class). An edit changes every selected actor as one Undo step; number math (`Mixed Values+4`) applies from each actor's own value.
 - Escape in an Inspector field or colour picker cancels the uncommitted draft; Done/commit applies it.
 - The Play Debug menu controls which overlay buttons exist; the Stats HUD starts collapsed until tapped.
 - Print is HUD output; the console and log history are a separate sink. Development Only nodes run in editor Play and Preview Build and are stripped from release export.

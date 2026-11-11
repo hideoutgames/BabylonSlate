@@ -14,6 +14,7 @@ import { isCoarsePointerEnvironment } from "./prevent-document-overscroll";
 import { TOUCH_ROW_HEIGHT, useTouchUi } from "./touch-ui";
 import { SearchInput } from "./search-input";
 import { TreeView, type TreeViewNode } from "./tree-view";
+import { MIXED_VALUES_LABEL } from "./numeric-expression";
 
 export interface TagApi {
   entries: readonly TagDefinition[];
@@ -174,7 +175,7 @@ export function TagPicker(props: TagPickerProps) {
     return rows;
   }, [byId, collapsed, entries, indexed, multiple, query, selected, selectionCounts]);
   const names = [...selected].map((id) => id === 0 ? "None" : byId.get(id)?.path ?? "Missing Tag");
-  const summary = props.mixed ? "Mixed" : names.length ? names.join(", ") : multiple ? "No Tags" : "None";
+  const summary = props.mixed ? MIXED_VALUES_LABEL : names.length ? names.join(", ") : multiple ? "No Tags" : "None";
 
   const select = (tag: number) => {
     if (props.disabled || busy || !indexed) return;

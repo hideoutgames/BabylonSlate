@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +38,22 @@ const MENU_KEYS = new Set(["Escape", "ArrowDown", "ArrowUp"]);
 function pointAnchor(x: number, y: number) {
   const rect = { x, y, left: x, top: y, right: x, bottom: y, width: 0, height: 0 };
   return { getBoundingClientRect: () => ({ ...rect, toJSON: () => rect }) };
+}
+
+/** Rows fade out over this many pixels under the search field while more are above. */
+const FADE_ABOVE_PX = 12;
+/** And over this many at the bottom while more are below. */
+const FADE_BELOW_PX = 32;
+
+/** A mask that fades the scroller's own edges where rows continue past them; none when everything shows. */
+function edgeFadeMask(above: boolean, below: boolean): CSSProperties | undefined {
+  if (!above && !below) return undefined;
+  const stops = [
+    above ? `transparent 0, #000 ${FADE_ABOVE_PX}px` : "#000 0",
+    below ? `#000 calc(100% - ${FADE_BELOW_PX}px), transparent 100%` : "#000 100%",
+  ].join(", ");
+  const image = `linear-gradient(to bottom, ${stops})`;
+  return { maskImage: image, WebkitMaskImage: image };
 }
 
 /** Searchable dropdown anchored to a trigger. Use for pick lists with a nearby button. */
@@ -144,6 +160,12 @@ export function SearchDropdown({
             ref={setScrollEl}
             onScroll={measureOverflow}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1 pt-0"
+            // The fade is a mask on the scroller itself, so it starts exactly at
+            // the edge that clips the rows: no band of unfaded pixels under the
+            // search field, whatever the device pixel rounding or compositing.
+            style={edgeFadeMask(overflow.above, overflow.below)}
+            data-fade-above={overflow.above || undefined}
+            data-fade-below={overflow.below || undefined}
             data-testid={testId ? `${testId}-results` : undefined}
           >
             {grouped.map((section, index) => (
@@ -177,17 +199,6 @@ export function SearchDropdown({
               </DropdownMenuGroup>
             ) : null}
           </div>
-          <div
-            aria-hidden="true"
-            data-visible={overflow.above || undefined}
-            className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-linear-to-b from-popover to-transparent opacity-0 transition-opacity duration-150 data-visible:opacity-100"
-          />
-          <div
-            aria-hidden="true"
-            data-visible={overflow.below || undefined}
-            data-testid={testId ? `${testId}-more-below` : undefined}
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-lg bg-linear-to-t from-popover to-transparent opacity-0 transition-opacity duration-150 data-visible:opacity-100"
-          />
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

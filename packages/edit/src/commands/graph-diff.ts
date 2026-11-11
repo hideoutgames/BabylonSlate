@@ -1,4 +1,5 @@
 import type { SerializedGraph } from "@haptic/core";
+import type { EditCommand } from "../command";
 import {
   AddEdgeCommand,
   AddNodeCommand,
@@ -270,4 +271,20 @@ export function diffGraphCommands(
   }
 
   return commands;
+}
+
+/**
+ * The key one graph edit's commands continue a gesture under: its single
+ * command's key, or, for a data edit of several nodes (a multi-selection's
+ * Inspector edit), one key for that node set, so scrubbing it is one Undo
+ * step as it is for one node. Any other mix of commands has none.
+ */
+export function graphEditMergeKey(
+  commands: readonly EditCommand<SerializedGraph>[],
+): string | undefined {
+  if (commands.length === 1) return commands[0]!.mergeKey;
+  if (commands.length === 0 || !commands.every((command) => command instanceof SetNodeDataCommand)) {
+    return undefined;
+  }
+  return `nodes:${commands.map((command) => command.mergeKey).sort().join("|")}`;
 }

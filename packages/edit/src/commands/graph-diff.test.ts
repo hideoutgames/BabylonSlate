@@ -14,7 +14,7 @@ import {
   SetGraphFunctionGraphsCommand,
   SetNodeDataCommand,
 } from "./graph";
-import { diffGraphCommands } from "./graph-diff";
+import { diffGraphCommands, graphEditMergeKey } from "./graph-diff";
 import { EditSession } from "../session";
 import { commandToJournalPayload, reviveCommand } from "../journal";
 
@@ -214,6 +214,31 @@ describe("diffGraphCommands", () => {
     });
     expect(addFunction).toHaveLength(1);
     expect((addFunction[0] as SetGraphFunctionGraphsCommand).mergeKey).toBeUndefined();
+  });
+
+  it("makes a pin scrub on several selected nodes one undo step, and keeps other edits apart", () => {
+    const node = (id: string, b: number, x = 0) => ({ id, type: "math.add", position: { x, y: 0 }, data: { "default:b": b } });
+    const withB = (b: number, ids = ["add-1", "add-2"]): SerializedGraph => ({
+      nodes: ["add-1", "add-2", "add-3"].map((id) => node(id, ids.includes(id) ? b : 0)),
+      edges: [],
+    });
+    const before = withB(0);
+    const session = new EditSession();
+    let doc = before;
+    for (const value of [1, 2, 3]) {
+      const commands = diffGraphCommands(doc, withB(value));
+      doc = session.applyBatch("graph", doc, commands, { mergeKey: graphEditMergeKey(commands) })!.doc;
+    }
+    expect(session.undo("graph", doc)?.doc).toEqual(before);
+    expect(session.canUndo("graph")).toBe(false);
+
+    // The same nodes in another order share the key; another node set or a move does not.
+    const pair = graphEditMergeKey(diffGraphCommands(before, withB(1)));
+    const reversed = graphEditMergeKey(diffGraphCommands({ ...before, nodes: [...before.nodes].reverse() }, { ...withB(1), nodes: [...withB(1).nodes].reverse() }));
+    expect(pair).toBeDefined();
+    expect(reversed).toBe(pair);
+    expect(graphEditMergeKey(diffGraphCommands(before, withB(1, ["add-1", "add-3"])))).not.toBe(pair);
+    expect(graphEditMergeKey(diffGraphCommands(before, { ...withB(1), nodes: [node("add-1", 1, 50), node("add-2", 1), node("add-3", 0)] }))).toBeUndefined();
   });
 
   it("compares function graphs by content and key order, not identity", () => {

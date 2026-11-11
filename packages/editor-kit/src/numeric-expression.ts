@@ -25,6 +25,15 @@ export function formatNumericDisplay(value: number, precision = 2): string {
   );
 }
 
+/** What a field shows for a multi-selection whose values differ; in a numeric expression it stands for each item's own value. */
+export const MIXED_VALUES_LABEL = "Mixed Values";
+
+/** `Mixed Values` (any case, spacing optional) or `Mixed` at `index`; the length matched, or 0. */
+function mixedTokenLength(source: string, index: number): number {
+  const match = /^mixed(?:\s*values)?/i.exec(source.slice(index));
+  return match ? match[0].length : 0;
+}
+
 type Operator = "+" | "-" | "*" | "/";
 
 type Token =
@@ -37,6 +46,8 @@ type Token =
  * Evaluate a typed numeric draft. Incomplete text, divide-by-zero, and
  * non-finite results are undefined. A leading `*`, `/`, or `+` applies to
  * `currentValue`; a leading `-` on a number is a negative literal.
+ * `Mixed Values` anywhere stands for `currentValue`, so a multi-selection
+ * evaluates `Mixed Values+4` against each item's own value.
  */
 export function evaluateNumericExpression(
   raw: string,
@@ -44,7 +55,7 @@ export function evaluateNumericExpression(
 ): number | undefined {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
-  const tokens = tokenize(trimmed);
+  const tokens = tokenize(trimmed, currentValue);
   if (!tokens) return undefined;
   // A leading operator continues from the current value. It enters as a
   // number token, so values printed in exponent form (1e-7) still apply.
@@ -61,7 +72,7 @@ export function evaluateNumericExpression(
   return Number.isFinite(value) ? value : undefined;
 }
 
-function tokenize(source: string): Token[] | undefined {
+function tokenize(source: string, currentValue: number): Token[] | undefined {
   const tokens: Token[] = [];
   let i = 0;
   while (i < source.length) {
@@ -73,6 +84,12 @@ function tokenize(source: string): Token[] | undefined {
     if (ch === "+" || ch === "-" || ch === "*" || ch === "/") {
       tokens.push({ kind: "op", value: ch });
       i += 1;
+      continue;
+    }
+    const mixed = mixedTokenLength(source, i);
+    if (mixed) {
+      tokens.push({ kind: "number", value: currentValue });
+      i += mixed;
       continue;
     }
     if (ch === "(") {

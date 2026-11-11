@@ -7,7 +7,11 @@ import {
 import { depthFromZOrder, zOrderFromDepth, type TransformRowsMode } from "./transform-property-rows";
 import { scaleLinkKey, type LinkedScale } from "./linked-scale";
 
-/** Shared axis edits are absolute values; other axes retain each actor's values. */
+/**
+ * Shared axis edits are absolute values; other axes retain each actor's values.
+ * Every row carries each actor's own values, so a mixed axis or Z-Order types
+ * and scrubs each actor from its own value (`Mixed Values+4`).
+ */
 export function selectionTransformPropertyRows(
   actors: readonly SerializedActor[],
   mode: TransformRowsMode,
@@ -18,6 +22,7 @@ export function selectionTransformPropertyRows(
   if (!primary) return [];
   const planar = mode !== "3d";
   const twoD = mode === "2d";
+  const actorIndex = new Map(actors.map((actor, index) => [actor.id, index]));
   const rows: PropertyRow[] = [];
   for (const property of ["position", "rotation", "scale"] as const) {
     const axes = property === "position"
@@ -34,23 +39,6 @@ export function selectionTransformPropertyRows(
           Math.abs(valuesFor(actor)[axis]! - primaryValues[axis]!) > 1e-8,
       ),
     );
-    const apply = (values: Vector3Value, editedAxis?: number) => {
-      updateSelected((actor) => {
-        const next = valuesFor(actor);
-        axes.forEach((axis, index) => {
-          if (editedAxis === undefined || editedAxis === index)
-            next[axis] = values[index]!;
-        });
-        return {
-          ...actor,
-          transform: {
-            ...actor.transform,
-            [property]:
-              property === "rotation" ? eulerDegreesToQuaternion(next) : next,
-          },
-        };
-      });
-    };
     const shownValues = (values: [number, number, number]) => {
       const shown: [number, number, number] = [0, 0, 0];
       axes.forEach((axis, index) => {
@@ -59,7 +47,29 @@ export function selectionTransformPropertyRows(
       return shown;
     };
     const value = shownValues(primaryValues);
-    const actorIndex = new Map(actors.map((actor, index) => [actor.id, index]));
+    /** The actor with its shown axes set to `shown`; hidden axes keep its own values. */
+    const withShown = (actor: SerializedActor, shown: Vector3Value): SerializedActor => {
+      const next = valuesFor(actor);
+      axes.forEach((axis, index) => {
+        next[axis] = shown[index]!;
+      });
+      return {
+        ...actor,
+        transform: {
+          ...actor.transform,
+          [property]: property === "rotation" ? eulerDegreesToQuaternion(next) : next,
+        },
+      };
+    };
+    const apply = (values: Vector3Value, editedAxis?: number) => {
+      updateSelected((actor) => {
+        const shown = shownValues(valuesFor(actor));
+        axes.forEach((_, index) => {
+          if (editedAxis === undefined || editedAxis === index) shown[index] = values[index]!;
+        });
+        return withShown(actor, shown);
+      });
+    };
     rows.push({
       kind: "vector3",
       id: `actor-${property}`,
@@ -77,6 +87,12 @@ export function selectionTransformPropertyRows(
         values[axis] = next;
         apply(values, axis);
       },
+      itemValues: actors.map((actor) => shownValues(valuesFor(actor))),
+      onItemValuesChange: (itemValues) =>
+        updateSelected((actor) => {
+          const shown = itemValues[actorIndex.get(actor.id) ?? -1];
+          return shown ? withShown(actor, shown) : actor;
+        }),
       // Each actor keeps its own link; linked actors scale by their own factor.
       ...(property === "scale" && linkedScale
         ? {
@@ -84,17 +100,6 @@ export function selectionTransformPropertyRows(
             onLinkedChange: (linked: boolean) =>
               linkedScale.setLinked(actors.map((actor) => scaleLinkKey.actor(actor.id)), linked),
             itemLinked: actors.map((actor) => linkedScale.isLinked(scaleLinkKey.actor(actor.id))),
-            itemValues: actors.map((actor) => shownValues(valuesFor(actor))),
-            onItemValuesChange: (itemValues: Vector3Value[]) =>
-              updateSelected((actor) => {
-                const shown = itemValues[actorIndex.get(actor.id) ?? -1];
-                if (!shown) return actor;
-                const next = valuesFor(actor);
-                axes.forEach((axis, index) => {
-                  next[axis] = shown[index]!;
-                });
-                return { ...actor, transform: { ...actor.transform, scale: next } };
-              }),
           }
         : {}),
     });
@@ -109,20 +114,20 @@ export function selectionTransformPropertyRows(
           (actor) =>
             actor.transform.position[2] !== primary.transform.position[2],
         ),
-        onChange: (order) =>
-          updateSelected((actor) => ({
-            ...actor,
-            transform: {
-              ...actor.transform,
-              position: [
-                actor.transform.position[0],
-                actor.transform.position[1],
-                depthFromZOrder(order),
-              ],
-            },
-          })),
+        onChange: (order) => updateSelected((actor) => withZOrder(actor, order)),
+        itemValues: actors.map((actor) => zOrderFromDepth(actor.transform.position[2])),
+        onItemValuesChange: (orders) =>
+          updateSelected((actor) => {
+            const order = orders[actorIndex.get(actor.id) ?? -1];
+            return order === undefined ? actor : withZOrder(actor, order);
+          }),
       });
     }
   }
   return rows;
+}
+
+function withZOrder(actor: SerializedActor, order: number): SerializedActor {
+  const [x, y] = actor.transform.position;
+  return { ...actor, transform: { ...actor.transform, position: [x, y, depthFromZOrder(order)] } };
 }

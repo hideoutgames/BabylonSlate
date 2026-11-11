@@ -14,7 +14,7 @@ Double-tap an Animation Graph to open it. A mode switch at the top of the editor
 
 - **Graph**: each state is a node. Drag from one state to another to add a transition. Select the blend dot on a wire to edit that transition.
 - **Variables**: the graph's variables and its states. **Add Variable** and **Add State** add rows; the entry state shows an **Entry** badge.
-- **Inspector**: settings for the selected state or transition.
+- **Inspector**: settings for the selected state or transition. With several states selected, it shows the **Clip** and **Playback** settings they all have, with **Mixed Values** where they differ; **Clip Asset** appears only when they all play the same **Clip Kind**. An edit changes every selected state, and typing a sum such as `Mixed Values+4` in **Speed** changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Names, the entry state and transitions are edited one state at a time.
 - **Compiler Results**: errors and warnings.
 
 **Animation Object**

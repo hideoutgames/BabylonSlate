@@ -406,12 +406,6 @@
   height: 12px;
 }
 
-.editor-status-document {
-  overflow: hidden;
-  color: var(--foreground);
-  text-overflow: ellipsis;
-}
-
 .editor-status-version {
   overflow: hidden;
   text-overflow: ellipsis;

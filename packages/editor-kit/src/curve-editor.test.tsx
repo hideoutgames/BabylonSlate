@@ -275,7 +275,7 @@ describe("CurveEditor multi-select", () => {
     expect(pressed()).toEqual(["true", "true", "false"]);
     expect(onChange).not.toHaveBeenCalled();
     const valueField = screen.getByTestId("curve-value") as HTMLInputElement;
-    expect(valueField.placeholder).toBe("Mixed");
+    expect(valueField.placeholder).toBe("Mixed Values");
     act(() => valueField.focus());
     fireEvent.change(valueField, { target: { value: "6" } });
     fireEvent.keyDown(valueField, { key: "Enter" });

@@ -60,6 +60,7 @@ import { ContextMenuOverlay } from "./context-menu-overlay";
 import { claimContextMenuEvent, useContextMenu, type ContextMenuItem } from "./use-context-menu";
 import { canCopyPropertyRow, canPastePropertyRow, copyPropertyRow, pastePropertyRow } from "./property-clipboard";
 import { LabelHint } from "./label-hint";
+import { MIXED_VALUES_LABEL } from "./numeric-expression";
 import "./styles/property-grid.css";
 
 export type Vector3Value =
@@ -125,6 +126,14 @@ export type PropertyRow =
       precision?: number;
       onChange: (value: number) => void;
       onCommit?: (value: number) => void;
+      /**
+       * A multi-selection's own values, `value`'s first. While `mixed`, typing
+       * and scrubbing change each from its own value (`Mixed Values+4`) and
+       * report them here instead of `onChange` / `onCommit`.
+       */
+      itemValues?: number[];
+      onItemValuesChange?: (values: number[]) => void;
+      onItemValuesCommit?: (values: number[]) => void;
     })
   | (PropertyRowBase & {
       kind: "vector3";
@@ -154,6 +163,8 @@ export type PropertyRow =
       /** Per-item link state; `linked` (pressed only when all are) otherwise. */
       itemLinked?: boolean[];
       onItemValuesChange?: (values: Vector3Value[]) => void;
+      /** The end of a per-item edit (a mixed axis, or linked items). */
+      onItemValuesCommit?: (values: Vector3Value[]) => void;
     })
   | (PropertyRowBase & {
       kind: "boolean";
@@ -201,6 +212,10 @@ export type PropertyRow =
       step?: number;
       onChange: (value: number) => void;
       onCommit?: (value: number) => void;
+      /** As on number rows: a mixed multi-selection's own values. */
+      itemValues?: number[];
+      onItemValuesChange?: (values: number[]) => void;
+      onItemValuesCommit?: (values: number[]) => void;
     })
   | (PropertyRowBase & {
       kind: "flags";
@@ -408,13 +423,19 @@ function rowHasLabelTarget(row: PropertyRow): boolean {
 function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }) {
   const [draft, setDraft] = useState<string | null>(null);
   const baselineRef = useRef(row.value);
+  // A mixed multi-selection has no one value to restore: its edit applies
+  // only when it finishes, so Escape leaves every item's own text.
+  const deferredRef = useRef(false);
   const cancelledRef = useRef(false);
   const handlers = {
     onChange: (event: { target: { value: string } }) => {
       if (row.readOnly) return;
-      if (draft === null) baselineRef.current = row.value;
+      if (draft === null) {
+        baselineRef.current = row.value;
+        deferredRef.current = row.mixed === true;
+      }
       setDraft(event.target.value);
-      row.onChange(event.target.value);
+      if (!deferredRef.current) row.onChange(event.target.value);
     },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (row.readOnly || event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -422,7 +443,7 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
         event.preventDefault();
         event.stopPropagation();
         cancelledRef.current = true;
-        if (draft !== null) row.onChange(baselineRef.current);
+        if (draft !== null && !deferredRef.current) row.onChange(baselineRef.current);
         setDraft(null);
         event.currentTarget.blur();
       } else if (event.key === "Enter" && !row.multiline) {
@@ -433,8 +454,10 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
     onBlur: (event: { target: { value: string } }) => {
       // Focus alone is not an edit; commit only text typed since focus.
       if (!row.readOnly && !cancelledRef.current && draft !== null) {
+        if (deferredRef.current) row.onChange(event.target.value);
         row.onCommit?.(event.target.value);
       }
+      deferredRef.current = false;
       cancelledRef.current = false;
       setDraft(null);
     },
@@ -444,7 +467,8 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
       id={`property-${row.id}`}
       rows={3}
       className="min-h-16 resize-y px-2 py-1.5"
-      value={draft ?? row.value}
+      value={draft ?? (row.mixed ? "" : row.value)}
+      placeholder={row.mixed ? MIXED_VALUES_LABEL : undefined}
       disabled={row.disabled}
       readOnly={row.readOnly}
       {...handlers}
@@ -454,7 +478,8 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
   return <SelectAllInput
     id={`property-${row.id}`}
     className="min-h-[var(--chrome-row,28px)] px-2"
-    value={draft ?? row.value}
+    value={draft ?? (row.mixed ? "" : row.value)}
+    placeholder={row.mixed ? MIXED_VALUES_LABEL : undefined}
     disabled={row.disabled}
     readOnly={row.readOnly}
     {...handlers}
@@ -512,6 +537,22 @@ function Vector3RowControl({ row, name, linkable }: { row: Vector3Row; name: str
             aria-label={`${name} ${axis}`}
             value={row.value[index] ?? 0}
             mixed={row.mixedAxes?.[index] ?? row.mixed}
+            // An unlinked mixed axis moves each item's axis from its own value.
+            itemValues={!linked && items ? items.map((item) => item[index] ?? 0) : undefined}
+            onItemsChange={!linked && items && row.onItemValuesChange ? (values) => {
+              row.onItemValuesChange!(items.map((item, itemIndex) => {
+                const next = [...item] as Vector3Value;
+                next[index] = values[itemIndex] ?? next[index]!;
+                return next;
+              }));
+            } : undefined}
+            onItemsEnd={!linked && items ? (values) => {
+              row.onItemValuesCommit?.(items.map((item, itemIndex) => {
+                const next = [...item] as Vector3Value;
+                next[index] = values[itemIndex] ?? next[index]!;
+                return next;
+              }));
+            } : undefined}
             accent={axis.toLowerCase() as "x" | "y" | "z"}
             sensitivity={row.sensitivity}
             unit={inlineUnit(row)}
@@ -597,6 +638,9 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
           id={`property-${row.id}`}
           value={row.value}
           mixed={row.mixed}
+          itemValues={row.itemValues}
+          onItemsChange={row.onItemValuesChange}
+          onItemsEnd={row.onItemValuesCommit}
           min={row.min}
           max={row.max}
           validate={row.validate}
@@ -628,7 +672,7 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
             data-testid={`property-${row.id}`}
           />
           <span aria-hidden="true" className="text-xs text-muted-foreground">
-            {row.mixed ? "Mixed" : row.value ? "On" : "Off"}
+            {row.mixed ? MIXED_VALUES_LABEL : row.value ? "On" : "Off"}
           </span>
         </FieldLabel>
       );
@@ -656,10 +700,12 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
             {/* Base UI renders the raw value unless the label is formatted. */}
             <SelectValue>
               {(value: unknown) =>
-                humanizePropertyLabel(
-                  row.options.find((option) => option.value === value)?.label ??
-                    String(value ?? ""),
-                )
+                row.mixed
+                  ? MIXED_VALUES_LABEL
+                  : humanizePropertyLabel(
+                    row.options.find((option) => option.value === value)?.label ??
+                      String(value ?? ""),
+                  )
               }
             </SelectValue>
           </SelectTrigger>
@@ -682,6 +728,7 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
           id={`property-${row.id}`}
           aria-label={name}
           value={row.value}
+          mixed={row.mixed}
           disabled={row.disabled}
           onChange={row.onChange}
           data-testid={`property-${row.id}`}
@@ -712,6 +759,10 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
             <NumericDragField
               id={`property-${row.id}`}
               value={row.value}
+              mixed={row.mixed}
+              itemValues={row.itemValues}
+              onItemsChange={row.onItemValuesChange}
+              onItemsEnd={row.onItemValuesCommit}
               min={row.min}
               max={row.max}
               unit={inlineUnit(row)}
@@ -757,7 +808,9 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
             onClick={row.onPick}
             data-testid={`property-${row.id}`}
           >
-            {selected && (row.visual || row.displayType) ? (
+            {row.mixed ? (
+              <span className="truncate">{MIXED_VALUES_LABEL}</span>
+            ) : selected && (row.visual || row.displayType) ? (
               <PickerIdentity
                 label={
                   row.displayLabel ?? row.value ?? row.placeholder ?? "None"
@@ -855,6 +908,8 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
           aria-label={name}
           value={[r, g, b]}
           alpha={a}
+          mixed={row.mixed}
+          alphaMixed={row.mixed}
           disabled={row.disabled}
           onChange={([nextR, nextG, nextB]) => row.onChange([nextR, nextG, nextB, a])}
           onAlphaChange={(alpha) => row.onChange([r, g, b, alpha])}
