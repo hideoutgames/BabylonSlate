@@ -433,10 +433,9 @@ export class ForwardSceneFrameGraph {
       this.knownMeshes.delete(mesh);
       this.foundBeforeAnnounced.delete(mesh);
       this.removedMeshes += 1;
-      // A mesh that leaves needs nothing compiled. Its source does when that was its last instance: it draws without
-      // instancing again (Babylon has taken the instance off its source before it announces the removal).
-      const source = mesh.isAnInstance ? (mesh as InstancedMesh).sourceMesh : undefined;
-      if (source?.instances.length === 0) this.markReadinessDirty("meshRemoved", [source]);
+      // A mesh that leaves needs nothing compiled. An instance's source can: its batch may draw with another variant
+      // once the instance is gone (its last one, so it draws without instancing again; a pool group's warm-up stand-in).
+      if (mesh.isAnInstance) this.markReadinessDirty("meshRemoved", [(mesh as InstancedMesh).sourceMesh]);
     });
     watch(scene.onNewMaterialAddedObservable, mark("materialAdded"));
     watch(scene.onMaterialRemovedObservable, mark("materialRemoved"));

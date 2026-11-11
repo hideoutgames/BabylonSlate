@@ -11,6 +11,7 @@ import {
   AssetPickerControl,
   EntryListEditor,
   PanelFrame,
+  mergePropertyRows,
   PinListEditor,
   PropertyGrid,
   SelectableText,
@@ -92,6 +93,7 @@ import {
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useMaterialEditing } from "../context/material-editing-context";
+import { documentBatch, type DocumentBatch } from "../lib/document-batch";
 
 const PREVIEW_MESH_LABEL: Record<MaterialPreviewMesh, string> = {
   cube: "Cube",
@@ -357,7 +359,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
-          onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
+          onSelectionChange={editing.setSelectedNodeIds}
           focusedNodeId={editing.focusedNodeId ?? undefined}
           commitPositionsOnDragEnd
           contextMenuItemsForNode={conversionMenu}
@@ -423,7 +425,7 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           addNodeHistoryScope="material"
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
-          onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
+          onSelectionChange={editing.setSelectedNodeIds}
           commitPositionsOnDragEnd
           contextMenuItemsForNode={conversionMenu}
           onChange={(next, meta) => {
@@ -678,17 +680,17 @@ function MaterialDocumentDetails() {
     });
   }
 
-  const selected = document.nodes.find(
-    (entry) => entry.id === editing.selectedNodeId,
-  );
+  const selected = selectedMaterialNodes(document, editing.selectedNodeIds);
 
   return (
     <PanelFrame className="flex-1" data-testid="material-details-panel">
-      {selected ? (
+      {selected.length > 1 ? (
+        <MaterialNodesDetails document={document} commit={commit} nodes={selected} />
+      ) : selected.length === 1 ? (
         <MaterialNodeDetails
           document={document}
           commit={commit}
-          selectedNodeId={selected.id}
+          selectedNodeId={selected[0]!.id}
         />
       ) : (
         <div className="flex flex-col gap-2" data-testid="material-settings">
@@ -724,76 +726,78 @@ function MaterialCostSummary() {
   );
 }
 
-/** Per-node properties for the selected graph node. */
-function MaterialNodeDetails<T extends MaterialGraphDocument>({
-  document,
-  commit,
-  selectedNodeId,
-}: {
-  document: T;
-  commit: (next: T, mergeKey?: string) => void;
-  selectedNodeId: string | null;
-}) {
-  const { assetRegistry, registryEpoch } = useRegistryState();
-  const editing = useMaterialEditing();
-  const [pickOpen, setPickOpen] = useState(false);
-  const node = document.nodes.find((entry) => entry.id === selectedNodeId);
-  const isTextureNode = node?.type === "param.texture" ||
-    node?.type === "texture.sample" || node?.type === "texture.sampleLod";
-  const textureAssets = useMemo(() => {
-    void registryEpoch; // Registry contents mutate without replacing its instance.
-    if (!pickOpen || !isTextureNode) return [];
-    return (assetRegistry?.list() ?? [])
-      .filter((asset) => isMaterialSamplerTextureAsset(asset.header))
-      .map((asset) => ({
-        guid: asset.header.guid,
-        name: asset.header.name,
-        type: asset.header.type,
-        path: asset.path,
-      }));
-  }, [assetRegistry, registryEpoch, pickOpen, isTextureNode]);
-  if (!node) return null;
+/** Every selected node in the document, in selection order. */
+function selectedMaterialNodes<T extends MaterialGraphDocument>(
+  document: T,
+  ids: readonly string[],
+): T["nodes"][number][] {
+  return ids.flatMap((id) => document.nodes.find((entry) => entry.id === id) ?? []);
+}
 
-  // Keyed by node and property names: a value scrub, color drag or typed
-  // field is one undo step, while each separate click still starts a new one.
-  const setProperties = (properties: Record<string, unknown>) => {
-    const pins = node.type === "custom.glsl" && (properties.inputs || properties.outputs) ? customGlslInterface({ ...node.properties, ...properties }) : null;
-    commit({
-      ...document,
-      ...(pins ? { edges: document.edges.filter((edge) => (edge.sourceNodeId !== node.id || pins.outputs.some((pin) => pin.id === edge.sourcePinId)) && (edge.targetNodeId !== node.id || pins.inputs.some((pin) => pin.id === edge.targetPinId))) } : {}),
-      nodes: document.nodes.map((entry) =>
-        entry.id === node.id
-          ? { ...entry, properties: { ...entry.properties, ...properties } }
-          : entry,
-      ),
-    }, `material-node:${node.id}:${Object.keys(properties).sort().join(",")}`);
-  };
+/**
+ * Keyed by node and property names: a value scrub, color drag or typed field
+ * is one undo step, while each separate click still starts a new one.
+ */
+function setMaterialNodeProperties<T extends MaterialGraphDocument>(
+  edit: DocumentBatch<T>,
+  nodeId: string,
+  properties: Record<string, unknown>,
+) {
+  const document = edit.read();
+  const node = document.nodes.find((entry) => entry.id === nodeId);
+  if (!node) return;
+  const pins = node.type === "custom.glsl" && (properties.inputs || properties.outputs) ? customGlslInterface({ ...node.properties, ...properties }) : null;
+  edit.write({
+    ...document,
+    ...(pins ? { edges: document.edges.filter((edge) => (edge.sourceNodeId !== node.id || pins.outputs.some((pin) => pin.id === edge.sourcePinId)) && (edge.targetNodeId !== node.id || pins.inputs.some((pin) => pin.id === edge.targetPinId))) } : {}),
+    nodes: document.nodes.map((entry) =>
+      entry.id === node.id
+        ? { ...entry, properties: { ...entry.properties, ...properties } }
+        : entry,
+    ),
+  }, `material-node:${node.id}:${Object.keys(properties).sort().join(",")}`);
+}
+
+/**
+ * A node's Details rows. Callbacks read and write through `edit`, so a
+ * multi-selection's batch applies every node's change to one document.
+ */
+function materialNodeRows<T extends MaterialGraphDocument>(
+  node: T["nodes"][number],
+  edit: DocumentBatch<T>,
+  functions: Record<string, MaterialFunctionDocument>,
+  multi = false,
+): PropertyRow[] {
+  const setProperties = (properties: Record<string, unknown>) =>
+    setMaterialNodeProperties(edit, node.id, properties);
 
   const rows: PropertyRow[] = materialPinDefaultRows(
-    document,
+    edit.read(),
     node.id,
-    editing.functions,
+    functions,
     setProperties,
   );
   if (isMaterialParameterNode(node.type)) {
     rows.unshift({
-      id: "name",
-      kind: "text",
-      label: "Parameter Name",
-      value: materialParameterName(node),
-      onChange: () => undefined,
-      onCommit: (name) => commit(renameMaterialParameter(document, node.id, name)),
-    }, {
       id: "parameterType",
       kind: "enum",
       label: "Type",
       value: materialParameterValueType(node.type) ?? "float",
       options: MATERIAL_PARAMETER_TYPE_OPTIONS,
       // The default is resized; wires from an output the new type lacks are dropped.
-      onChange: (type) => commit(retypeMaterialParameter(document, node.id, type as MaterialParameterValueType)),
+      onChange: (type) => edit.write(retypeMaterialParameter(edit.read(), node.id, type as MaterialParameterValueType)),
+    });
+    // A parameter's name is its own, so a multi-selection never sets one name on several.
+    if (!multi) rows.unshift({
+      id: "name",
+      kind: "text",
+      label: "Parameter Name",
+      value: materialParameterName(node),
+      onChange: () => undefined,
+      onCommit: (name) => edit.write(renameMaterialParameter(edit.read(), node.id, name)),
     });
     // A Material's own Float or Color parameter can vary per actor and still draw in one batch.
-    if ((node.type === "param.float" || node.type === "param.color") && "domain" in document) rows.splice(2, 0, {
+    if ((node.type === "param.float" || node.type === "param.color") && "domain" in edit.read()) rows.splice(multi ? 1 : 2, 0, {
       id: "perInstance",
       kind: "boolean",
       label: "Per Instance",
@@ -884,6 +888,67 @@ function MaterialNodeDetails<T extends MaterialGraphDocument>({
     options: [{ value: "linear", label: "Linear" }, { value: "nearest", label: "Nearest" }],
     onChange: (filter) => setProperties({ filter }),
   });
+
+  return rows;
+}
+
+/** The rows several selected nodes share: a property or unconnected input every one has under the same name and type. */
+function MaterialNodesDetails<T extends MaterialGraphDocument>({
+  document,
+  commit,
+  nodes,
+}: {
+  document: T;
+  commit: (next: T, mergeKey?: string) => void;
+  nodes: readonly T["nodes"][number][];
+}) {
+  const editing = useMaterialEditing();
+  const edit = documentBatch(document, commit);
+  const rows = mergePropertyRows(
+    nodes.map((node) => materialNodeRows(node, edit, editing.functions, true)),
+    { batch: edit.batch },
+  );
+  return (
+    <div className="flex flex-col gap-2" data-testid="material-node-details">
+      <p className="px-3 text-xs text-muted-foreground">{`${nodes.length} Nodes`}</p>
+      {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+    </div>
+  );
+}
+
+/** Per-node properties for the selected graph node. */
+function MaterialNodeDetails<T extends MaterialGraphDocument>({
+  document,
+  commit,
+  selectedNodeId,
+}: {
+  document: T;
+  commit: (next: T, mergeKey?: string) => void;
+  selectedNodeId: string | null;
+}) {
+  const { assetRegistry, registryEpoch } = useRegistryState();
+  const editing = useMaterialEditing();
+  const [pickOpen, setPickOpen] = useState(false);
+  const node = document.nodes.find((entry) => entry.id === selectedNodeId);
+  const isTextureNode = node?.type === "param.texture" ||
+    node?.type === "texture.sample" || node?.type === "texture.sampleLod";
+  const textureAssets = useMemo(() => {
+    void registryEpoch; // Registry contents mutate without replacing its instance.
+    if (!pickOpen || !isTextureNode) return [];
+    return (assetRegistry?.list() ?? [])
+      .filter((asset) => isMaterialSamplerTextureAsset(asset.header))
+      .map((asset) => ({
+        guid: asset.header.guid,
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      }));
+  }, [assetRegistry, registryEpoch, pickOpen, isTextureNode]);
+  if (!node) return null;
+  const edit = documentBatch(document, commit);
+  const setProperties = (properties: Record<string, unknown>) =>
+    setMaterialNodeProperties(edit, node.id, properties);
+  const rows = materialNodeRows(node, edit, editing.functions);
 
   return (
     <div className="flex flex-col gap-2" data-testid="material-node-details">
@@ -1051,16 +1116,16 @@ function MaterialFunctionPicker<T extends MaterialGraphDocument>({
 function MaterialFunctionDetails() {
   const { document, commit } = useMaterialFunctionDocument();
   const editing = useMaterialEditing();
-  const selected = document.nodes.find(
-    (entry) => entry.id === editing.selectedNodeId,
-  );
+  const selected = selectedMaterialNodes(document, editing.selectedNodeIds);
   return (
     <PanelFrame className="flex-1" data-testid="material-details-panel">
-      {selected ? (
+      {selected.length > 1 ? (
+        <MaterialNodesDetails document={document} commit={commit} nodes={selected} />
+      ) : selected.length === 1 ? (
         <MaterialNodeDetails
           document={document}
           commit={commit}
-          selectedNodeId={selected.id}
+          selectedNodeId={selected[0]!.id}
         />
       ) : (
         <div data-testid="material-function-settings">

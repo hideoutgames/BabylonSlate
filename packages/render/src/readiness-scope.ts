@@ -1,5 +1,6 @@
 import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { drawingMesh } from "./instance-source";
 
 /**
  * The meshes a view's readiness probe asks, while it runs for changes that can have touched only them (a spawned mesh,
@@ -27,9 +28,12 @@ export function withReadinessProbeScope<T>(meshes: ReadonlySet<AbstractMesh>, pr
   }
 }
 
-/** Whether a scoped probe is running that leaves `mesh` out: its variants need no check. */
+/**
+ * Whether a scoped probe is running that leaves `mesh` out: its variants need no check. An instance is asked when its
+ * source is: a pass that lists only the instances probes the source's batch through them.
+ */
 export function outsideReadinessProbeScope(mesh: AbstractMesh): boolean {
-  return scope !== undefined && !scope.has(mesh);
+  return scope !== undefined && !scope.has(mesh) && !scope.has(drawingMesh(mesh));
 }
 
 /**
@@ -51,7 +55,7 @@ export function isRenderTargetProbeReady(target: RenderTargetTexture): boolean {
   const whole = target.customIsReadyFunction;
   // Babylon asks `mesh.isReady(true)` of a target without a check of its own.
   target.customIsReadyFunction = (mesh, refreshRate, preWarm) =>
-    !meshes.has(mesh) || (whole ? whole(mesh, refreshRate, preWarm) : mesh.isReady(true));
+    outsideReadinessProbeScope(mesh) || (whole ? whole(mesh, refreshRate, preWarm) : mesh.isReady(true));
   try {
     return target.isReadyForRendering();
   } finally {

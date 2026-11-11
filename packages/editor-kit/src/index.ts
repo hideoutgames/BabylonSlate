@@ -177,6 +177,8 @@ export {
   NumericDragField,
   type NumericDragFieldProps,
 } from "./numeric-drag-field";
+export { MIXED_VALUES_LABEL } from "./numeric-expression";
+export { mergePropertyRows, type MergePropertyRowsOptions } from "./merge-property-rows";
 export { NumberField, type NumberFieldProps } from "./number-field";
 export {
   formatEventMemberName,

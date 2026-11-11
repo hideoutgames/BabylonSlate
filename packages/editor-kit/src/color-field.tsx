@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { FieldError } from "@haptic/ui/components/field";
 import { NumericDragField } from "./numeric-drag-field";
 import { SelectAllInput } from "./select-all-input";
+import { MIXED_VALUES_LABEL } from "./numeric-expression";
 
 export type ColorValue = [number, number, number];
 
@@ -43,6 +44,10 @@ export interface ColorFieldProps {
   /** 0–1 opacity; when set, a trailing A field edits it. */
   alpha?: number;
   onAlphaChange?: (alpha: number) => void;
+  /** A multi-selection's colors differ: the hex field reads `Mixed Values` until one is picked. */
+  mixed?: boolean;
+  /** A multi-selection's alphas differ. */
+  alphaMixed?: boolean;
   disabled?: boolean;
   "data-testid"?: string;
 }
@@ -55,10 +60,12 @@ export function ColorField({
   onChange,
   alpha,
   onAlphaChange,
+  mixed = false,
+  alphaMixed = false,
   disabled,
   "data-testid": testId,
 }: ColorFieldProps) {
-  const committed = value ? colorToHex(value) : "";
+  const committed = value && !mixed ? colorToHex(value) : "";
   const swatch = value ? colorToHex(value) : "#000000";
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -100,6 +107,7 @@ export function ColorField({
           id={id ? `${id}-hex` : undefined}
           className="min-h-[var(--chrome-row,28px)] min-w-0 flex-1"
           value={draft ?? committed}
+          placeholder={mixed ? MIXED_VALUES_LABEL : undefined}
           disabled={disabled}
           spellCheck={false}
           autoComplete="off"
@@ -126,6 +134,7 @@ export function ColorField({
               id={id ? `${id}-alpha` : undefined}
               aria-label={ariaLabel ? `${ariaLabel} Alpha` : "Alpha"}
               value={alpha}
+              mixed={alphaMixed}
               min={0}
               max={1}
               sensitivity={0.01}

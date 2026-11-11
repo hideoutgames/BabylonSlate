@@ -61,7 +61,11 @@ function ComponentCardName({ title, onRename }: { title: string; onRename: () =>
   );
 }
 
-/** One component card's rows and state, built by the Inspector for the selected actor. */
+/**
+ * One component card's rows and state, built by the Inspector for the selected
+ * actor. In a multi-selection the card stands for one component class every
+ * selected actor has: `component` is the primary actor's, and the rows edit each.
+ */
 export interface SceneComponentDetail {
   component: SerializedComponent;
   template: SerializedComponent | undefined;
@@ -80,7 +84,12 @@ export interface SceneComponentCardProps extends SceneComponentDetail {
   actor: SerializedActor;
   scene: SerializedScene;
   parentOf: ReturnType<typeof classParentLookup>;
+  /** Changes the primary actor; the reorder and class extras use it, so they show only for one actor. */
   updateActor: (update: (actor: SerializedActor) => SerializedActor) => void;
+  /** Changes the card's component on every selected actor, as one edit. */
+  editComponent: (update: (component: SerializedComponent) => SerializedComponent) => void;
+  /** Removes the card's component from every selected actor, as one edit. */
+  removeComponent: () => void;
   renamingComponentKey: string | null;
   setRenamingComponentKey: (key: string | null) => void;
   /** Updates this render's collapse set: the filter's while a filter is typed. */
@@ -96,9 +105,10 @@ export interface SceneComponentCardProps extends SceneComponentDetail {
 /**
  * One component card in the actor Inspector: header with rename, reorder and
  * remove, the shape edit toggle, then the rows with each class's extra editor
- * in place. Holds no state (only the name's double-tap hook), so collapse and
- * rename state stay in the Inspector. A new class-specific extra also needs
- * its search words in the Inspector's `extraLabels`.
+ * in place; a multi-selection has no reorder. Holds no state (only the name's
+ * double-tap hook), so collapse and rename state stay in the Inspector. A new
+ * class-specific extra also needs its search words in the Inspector's
+ * `extraLabels`.
  */
 export function SceneComponentCard(props: SceneComponentCardProps) {
   const {
@@ -116,6 +126,8 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
     scene,
     parentOf,
     updateActor,
+    editComponent,
+    removeComponent,
     renamingComponentKey,
     setRenamingComponentKey,
     setCollapsedKeys,
@@ -146,17 +158,13 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
               onDone={(name) => {
                 setRenamingComponentKey(null);
                 if (name === null) return;
-                updateActor((entry) => ({
-                  ...entry,
-                  components: entry.components.map((candidate) => {
-                    if (candidate.id !== component.id) return candidate;
-                    const next = { ...candidate };
-                    const renamed = renamedComponentName(candidate.classId, name);
-                    if (renamed === undefined) delete next.name;
-                    else next.name = renamed;
-                    return next;
-                  }),
-                }));
+                editComponent((candidate) => {
+                  const next = { ...candidate };
+                  const renamed = renamedComponentName(candidate.classId, name);
+                  if (renamed === undefined) delete next.name;
+                  else next.name = renamed;
+                  return next;
+                });
               }}
             />
             {nameParts.detail ? (
@@ -201,31 +209,26 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
           </Button>
         )}
         <div className="flex shrink-0 items-center gap-1">
-          <IconActionButton
-            label={`Move ${title} Up`}
-            disabled={index === 0}
-            onClick={() =>
-              updateActor((entry) => {
-                const components = [...entry.components];
-                const [moved] = components.splice(index, 1);
-                components.splice(index - 1, 0, moved!);
-                return { ...entry, components };
-              })
-            }
-            data-testid={`component-up-${component.id}`}
-          >
-            <ChevronUpIcon />
-          </IconActionButton>
+          {multiSelection ? null : (
+            <IconActionButton
+              label={`Move ${title} Up`}
+              disabled={index === 0}
+              onClick={() =>
+                updateActor((entry) => {
+                  const components = [...entry.components];
+                  const [moved] = components.splice(index, 1);
+                  components.splice(index - 1, 0, moved!);
+                  return { ...entry, components };
+                })
+              }
+              data-testid={`component-up-${component.id}`}
+            >
+              <ChevronUpIcon />
+            </IconActionButton>
+          )}
           <IconActionButton
             label={`Remove ${title}`}
-            onClick={() =>
-              updateActor((entry) => ({
-                ...entry,
-                components: entry.components.filter(
-                  (candidate) => candidate.id !== component.id,
-                ),
-              }))
-            }
+            onClick={removeComponent}
             data-testid={`component-remove-${component.id}`}
           >
             <Trash2Icon />

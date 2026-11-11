@@ -871,6 +871,42 @@ describe("draw sampling", () => {
     for (let index = 1; index < counts.length; index += 1) expect(counts[index]).toBeGreaterThan(counts[index - 1]!);
   });
 
+  it("gives Play and each benchmark profile each pass's median CPU time over the reads that were timed", async () => {
+    const editor = fakeEditor({}, undefined, (now, commands) => ({ drawn: commands.length * 10 + now, held: 0 }));
+    const ms = (objects: number, mirrors: number) => ({ objects, mirrors, shadows: 0 });
+    // Each window's reads, every half second: two before the view's first timed frame (all zero), then three timed frames.
+    const window = [ms(0, 0), ms(0, 0), ms(5, 9), ms(4, 7), ms(40, 70)];
+    let read = 0;
+    const deps: FeatureTestCheckDeps = {
+      ...editor.deps,
+      play: () => {
+        const play = editor.deps.play();
+        return play && {
+          ...play,
+          snapshot: () => {
+            const snapshot = play.snapshot();
+            const drawPassMs = window[Math.min(read++, window.length - 1)]!;
+            return { ...snapshot, rendering: { cpuMs: 4, gpuMs: null, ...snapshot.rendering, drawPassMs } as NonNullable<typeof snapshot.rendering> };
+          },
+        };
+      },
+      sampleFrames: async (durationMs, signal) => {
+        read = 0;
+        const frames = await editor.deps.sampleFrames(durationMs, signal);
+        for (let tick = 0; tick < 4; tick += 1) await editor.deps.sleep(500, signal);
+        return frames;
+      },
+    };
+    const report = await runFeatureTestCheck({
+      mode: "benchmark", scenes: [scene("FT_World")], deps, signal: new AbortController().signal,
+    });
+    const play = report.scenes[0].play;
+    // The median of the timed reads (5, 4, 40 and 9, 7, 70), not of every read.
+    expect(play.counters!.drawPassMs).toEqual(ms(5, 9));
+    expect(play.benchmark).toHaveLength(4);
+    for (const sample of play.benchmark) expect(sample.drawPassMs).toEqual(ms(5, 9));
+  });
+
   it("summarises the samples by their median and range, and nothing without one", () => {
     expect(counterStats([605, 544, 605, 544])).toEqual({ median: 574.5, min: 544, max: 605, samples: 4 });
     expect(counterStats([544, 605, 544])).toEqual({ median: 544, min: 544, max: 605, samples: 3 });

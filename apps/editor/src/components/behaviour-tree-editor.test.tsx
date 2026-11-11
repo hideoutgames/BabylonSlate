@@ -609,6 +609,37 @@ describe("BehaviourTreeEditor", () => {
     expect(task?.properties.durationMs).toBe(250);
   });
 
+  it("shows the Accept Radius a Move To and a Move To Blackboard Key share and adds typed math to each in one change", async () => {
+    const doc = createDefaultBehaviourTree();
+    doc.nodes.find((node) => node.id === "sequence")!.children = ["task", "follow"];
+    const task = doc.nodes.find((node) => node.id === "task")!;
+    task.classId = "bt.task.moveTo";
+    task.properties = { destination: { x: 0, y: 0, z: 0 }, acceptRadius: 0.5 };
+    doc.nodes.push({
+      id: "follow", kind: "task", classId: "bt.task.moveToBlackboardKey",
+      children: [], decorators: [], services: [], properties: { key: "", acceptRadius: 2 },
+    });
+    renderTree(doc);
+    fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    fireEvent.click(screen.getByTestId("bt-node-follow"));
+    fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
+    await waitFor(() => expect(screen.getByTestId("bt-details").textContent).toContain("2 Nodes"));
+    expect(screen.getByTestId("property-classId").textContent).toContain("Mixed Values");
+    // Destination and Blackboard Key belong to one task each; attachments stay per node.
+    expect(screen.queryByTestId("property-destination-x")).toBeNull();
+    expect(screen.queryByTestId("property-key")).toBeNull();
+    expect(screen.queryByTestId("bt-add-decorator")).toBeNull();
+    const radius = screen.getByTestId<HTMLInputElement>("property-acceptRadius");
+    expect(radius.value).toBe("Mixed Values");
+    store.applyAssetDocumentChange.mockClear();
+    fireEvent.focus(radius);
+    fireEvent.change(radius, { target: { value: "Mixed Values+4" } });
+    expect(store.applyAssetDocumentChange.mock.calls.filter((call) => call[0] === DOC_ID)).toHaveLength(1);
+    const radii = Object.fromEntries(lastCommit().nodes.map((node) => [node.id, node.properties.acceptRadius]));
+    expect(radii).toMatchObject({ task: 4.5, follow: 6 });
+  });
+
   it("clears Details when the selected node is deselected on the canvas", async () => {
     const { container } = renderTree(treeWithWait());
     fireEvent.click(screen.getByTestId("bt-node-task"));

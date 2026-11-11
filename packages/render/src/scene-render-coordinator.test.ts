@@ -639,6 +639,34 @@ it("never presents an unready scene or draws before its graph is prepared", asyn
   renderer.dispose();
 });
 
+it("ends a preparation a frame asked for once its owner supersedes it, and never an owner's", async () => {
+  const { scene, renderer } = host();
+  // The scene is not ready, so a preparation keeps waiting.
+  let assetsReady = false;
+  scene.addIsReadyCheck({ isReady: () => assetsReady });
+  const build = vi.spyOn(ForwardSceneFrameGraph.prototype, "prepare");
+  // A frame finds the view unprepared and asks for a preparation itself.
+  expect(renderer.render()).toMatchObject({ rendered: false });
+  await vi.waitFor(() => expect(build).toHaveBeenCalledTimes(1));
+  // Left running, it restarts for an invalidation and prepares the graph again.
+  renderer.invalidate();
+  await vi.waitFor(() => expect(build).toHaveBeenCalledTimes(2));
+  // A loading owner supersedes it before its load invalidates the view: nothing is prepared for those invalidations.
+  renderer.supersedeRequestedPreparation();
+  renderer.invalidate();
+  renderer.invalidate();
+  await vi.waitFor(() => expect(renderer.preparing).toBe(false));
+  expect(build).toHaveBeenCalledTimes(2);
+  // The owner's own preparation is not ended by it, and prepares the view once.
+  const owned = renderer.prepare();
+  renderer.supersedeRequestedPreparation();
+  assetsReady = true;
+  await owned;
+  expect(build).toHaveBeenCalledTimes(3);
+  expect(renderer.render()).toMatchObject({ rendered: true });
+  renderer.dispose();
+});
+
 it("restarts camera and resized-output preparation without drawing or releasing a stale first-frame permit", async () => {
   const { options, scene, renderer } = host();
   let assetsReady = false;

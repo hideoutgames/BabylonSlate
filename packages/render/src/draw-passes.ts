@@ -34,20 +34,38 @@ const MAX_DEPTH = 32;
  * ends, and a draw counts to the innermost pass running, so nested passes are never counted twice. An owner pass (a
  * capture, mirror, probe, water reflection or Scene Layer) keeps everything nested in it, its own graph's shadow maps
  * and post-processing included.
+ *
+ * Once `timePasses` is called, each frame from the next one on also attributes its main-thread time
+ * (`performance.now()`) the same way: what runs between two pass boundaries counts to the innermost pass running, so a
+ * frame's pass times add up to the time between its begin and end.
  */
 export class DrawPassFrame {
   /** The frame being attributed. */
   readonly current: DrawPassCounts = emptyDrawPasses();
   /** The last frame the view drew (`publishDrawPassFrame`). */
   readonly last: DrawPassCounts = emptyDrawPasses();
+  /** The frame being attributed's time by pass, in ms; written only while the frame is timed. */
+  readonly currentMs: DrawPassCounts = emptyDrawPasses();
+  /** The last timed frame the view drew, in ms; all zero before one. */
+  readonly lastMs: DrawPassCounts = emptyDrawPasses();
   readonly engine: DrawCallEngine;
   private readonly passes: DrawPass[] = new Array<DrawPass>(MAX_DEPTH).fill("other");
   private readonly owners: boolean[] = new Array<boolean>(MAX_DEPTH).fill(false);
   private depth = 0;
   private mark = 0;
+  /** `timePasses` was called: frames begun from now on are timed. */
+  private timingRequested = false;
+  /** The frame being attributed is timed (latched at `begin`, so a frame is timed whole or not at all). */
+  private timed = false;
+  private timeMark = 0;
 
   constructor(engine: DrawCallEngine) {
     this.engine = engine;
+  }
+
+  /** Times every frame begun from now on. */
+  timePasses(): void {
+    this.timingRequested = true;
   }
 
   begin(): void {
@@ -56,6 +74,11 @@ export class DrawPassFrame {
     this.passes[0] = "other";
     this.owners[0] = false;
     this.mark = readEngineDrawCalls(this.engine);
+    this.timed = this.timingRequested;
+    if (this.timed) {
+      for (let index = 0; index < DRAW_PASSES.length; index += 1) this.currentMs[DRAW_PASSES[index]!] = 0;
+      this.timeMark = performance.now();
+    }
   }
 
   enter(pass: DrawPass, owner: boolean): void {
@@ -82,12 +105,27 @@ export class DrawPassFrame {
     return this.passes[Math.min(this.depth, MAX_DEPTH - 1)]!;
   }
 
-  /** Counts the draws since the last read to the pass running now. */
+  /** Counts the draws, and on a timed frame the time, since the last read to the pass running now. */
   flush(): void {
     const now = readEngineDrawCalls(this.engine);
     const drawn = now - this.mark;
     this.mark = now;
-    if (drawn > 0) this.current[this.passes[Math.min(this.depth, MAX_DEPTH - 1)]!] += drawn;
+    const pass = this.passes[Math.min(this.depth, MAX_DEPTH - 1)]!;
+    if (drawn > 0) this.current[pass] += drawn;
+    if (this.timed) {
+      const time = performance.now();
+      this.currentMs[pass] += time - this.timeMark;
+      this.timeMark = time;
+    }
+  }
+
+  /** The frame was drawn: its counts, and its times when it was timed, become `last` and `lastMs`. */
+  publish(): void {
+    for (let index = 0; index < DRAW_PASSES.length; index += 1) {
+      const pass = DRAW_PASSES[index]!;
+      this.last[pass] = this.current[pass];
+      if (this.timed) this.lastMs[pass] = this.currentMs[pass];
+    }
   }
 }
 
@@ -111,12 +149,9 @@ export function endDrawPassFrame(frame: DrawPassFrame): void {
   active = undefined;
 }
 
-/** The view drew the frame: its counts become `frame.last`. */
+/** The view drew the frame: its counts become `frame.last`, and on a timed frame its times `frame.lastMs`. */
 export function publishDrawPassFrame(frame: DrawPassFrame): void {
-  for (let index = 0; index < DRAW_PASSES.length; index += 1) {
-    const pass = DRAW_PASSES[index]!;
-    frame.last[pass] = frame.current[pass];
-  }
+  frame.publish();
 }
 
 /** Opens `pass` on `engine`'s attributed frame; a no-op outside one (previews, thumbnails, loading work). */

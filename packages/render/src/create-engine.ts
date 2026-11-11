@@ -1923,11 +1923,13 @@ function initializeEngine(
     // Babylon 9.29 exposes loop scheduling fields but keeps the native context
     // loss flag protected; this snapshot never mutates native ownership.
     const native = engine as unknown as { _contextWasLost: boolean };
+    // A diagnostics reader times the view's passes from its next frame on (`drawPassMs`).
+    drawPasses.timePasses();
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: pressureSampled ? { ...lastPressureSample } : null, gpuAttribution: gpuAttribution() }),
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
-      drawPasses: { ...drawPasses.last }, layerBatches: copyOverlayBatchStats(layerBatches.last),
+      drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
@@ -2961,6 +2963,9 @@ function initializeEngine(
         firstDraws?.pause();
         const sceneLoadId = command.sceneLoadId;
         instanceCompileHold = () => worldLoading && sceneLoadId === worldLoadId;
+        // The load prepares the view once its Scene, camera and quality are in. A preparation a frame of the world it
+        // replaces asked for (the empty world before the first Scene) would be rebuilt for each of those.
+        worldRenderer.supersedeRequestedPreparation();
         worldRenderer.invalidate();
         // A presented load's starting-state draw ends here: the next level keeps none of its Effects.
         endStartingDraw();
