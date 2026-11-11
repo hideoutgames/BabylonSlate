@@ -12,7 +12,9 @@ import { FrameGraphImageProcessingTask } from "@babylonjs/core/FrameGraph/Tasks/
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { ThinImageProcessingPostProcess } from "@babylonjs/core/PostProcesses/thinImageProcessingPostProcess";
 import type { RenderEffectsSettings } from "@haptic/core";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import {
+  disposeKeepingLinkingEffects,
   retireOwnedEffect,
   type OwnedEffectRetirement,
 } from "./owned-effect-retirement";
@@ -20,6 +22,15 @@ import {
   sceneEffectsImageProcessingConfiguration,
   type SceneEffectsPlan,
 } from "./scene-effects";
+
+/** The Effects a chain task draws with: a post-process task's own, and those of a bloom task's four stages. */
+function chainTaskEffects(task: FrameGraphTask): Array<Effect | null> {
+  if (task instanceof FrameGraphBloomTask) {
+    const { _downscale, _blurX, _blurY, _merge } = task.bloom;
+    return [_downscale, _blurX, _blurY, _merge].map((stage) => stage.drawWrapper.effect);
+  }
+  return task instanceof FrameGraphPostProcessTask ? [task.drawWrapper.effect] : [];
+}
 
 export interface SceneEffectsGraphOptions {
   frameGraph: FrameGraph;
@@ -282,7 +293,7 @@ export class SceneEffectsGraph {
     for (const task of this.tasks.splice(0)) {
       if (this.externalTasks.has(task)) continue;
       try {
-        task.dispose();
+        disposeKeepingLinkingEffects(chainTaskEffects(task), () => task.dispose());
       } catch (error) {
         errors.push(error);
       }

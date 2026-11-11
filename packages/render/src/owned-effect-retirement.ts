@@ -10,6 +10,32 @@ export interface OwnedEffectRetirement {
   isReleased(): boolean;
 }
 
+/** Whether `effect`'s WebGL program is still linking in parallel, so nothing may delete it yet. */
+function isLinking(effect: Effect | null | undefined): effect is Effect {
+  if (!effect || effect.isDisposed) return false;
+  const engine = effect.getEngine();
+  if (engine.isDisposed || engine.isWebGPU) return false;
+  const pipeline = effect.getPipelineContext();
+  return Boolean(pipeline?.isAsync && (pipeline as { program?: unknown }).program) &&
+    !effect.isReady() && !(effect.getCompilationError() && effect.allFallbacksProcessed());
+}
+
+/**
+ * Disposes an owner of `effects` that may be released right after it was built (a chain of a preparation the Scene
+ * invalidated), without deleting a program that still links: the browser goes on asking such a program for its link
+ * status, which leaves an error on the context for each. Every Effect still linking is kept until its compile settles.
+ */
+export function disposeKeepingLinkingEffects(effects: Iterable<Effect | null | undefined>, dispose: () => void): void {
+  const linking = [...new Set(effects)].filter(isLinking);
+  for (const effect of linking) effect._refCount += 1;
+  try {
+    dispose();
+  } finally {
+    // The reference held above is now the last one unless another owner shares the Effect.
+    for (const effect of linking) retireOwnedEffect(effect, () => effect.dispose());
+  }
+}
+
 /**
  * Retain one owned DrawWrapper reference while its last WebGL program compiles.
  * Pinned Babylon 9.29: native parallel compilation polls the same program after
