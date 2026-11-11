@@ -36,6 +36,7 @@ import {
   SearchDropdown,
   ToolbarStrip,
   assetRowIdentity,
+  mergePropertyRows,
   type PropertyRow,
 } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
@@ -89,6 +90,7 @@ import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { useDataCatalog } from "../lib/use-data-catalog";
 import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { applyDataGraphAssetPicks, collectDataGraphAssets } from "../lib/data-graph";
+import { documentBatch } from "../lib/document-batch";
 
 const DATA_TREE_KINDS = ["data-tree"] as const;
 
@@ -354,7 +356,7 @@ function AnimGraphVariablesList({
   showStates: boolean;
 }) {
   const { doc, commit } = useAnimGraphDocument();
-  const { selectedId, setSelectedId } = useAnimGraphEditing();
+  const { selectedIds, setSelectedId } = useAnimGraphEditing();
   return (
     <PanelFrame>
       <div className="flex flex-col gap-3 p-2">
@@ -479,10 +481,10 @@ function AnimGraphVariablesList({
               <Button
                 key={state.id}
                 type="button"
-                variant={selectedId === state.id ? "secondary" : "ghost"}
+                variant={selectedIds.includes(state.id) ? "secondary" : "ghost"}
                 size="sm"
                 className="w-full justify-between gap-2"
-                aria-pressed={selectedId === state.id}
+                aria-pressed={selectedIds.includes(state.id)}
                 data-testid={`anim-graph-state-${state.id}`}
                 onClick={() => setSelectedId(state.id)}
               >
@@ -518,7 +520,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   const runTrace = useAnimStateMachineRunTrace(graphGuid);
   const {
     selectedId,
-    setSelectedId,
+    selectedIds,
+    setSelectedIds,
     setSelectedTransitionId,
     focusedNodeId,
     openTransitionId,
@@ -780,21 +783,19 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             return { ...connection, ...next };
           }}
           onSelectionChange={(nodeIds) => {
-            queueMicrotask(() => setSelectedId(nodeIds[0] ?? null));
+            queueMicrotask(() => setSelectedIds(nodeIds));
           }}
           onEdgeSelectionChange={(edgeIds) => {
             queueMicrotask(() => setSelectedTransitionId(edgeIds[0] ?? null));
           }}
           onChange={(next) => {
-            const keepSelection = selectedId;
+            const keepSelection = selectedIds;
             queueMicrotask(() => {
               const updated = serializedToAnimGraph(next, latestDoc());
-              if (
-                keepSelection &&
-                !updated.states.some((state) => state.id === keepSelection)
-              ) {
-                setSelectedId(null);
-              }
+              const kept = keepSelection.filter((id) =>
+                updated.states.some((state) => state.id === id),
+              );
+              if (kept.length !== keepSelection.length) setSelectedIds(kept);
               commit(updated);
             });
           }}
@@ -877,7 +878,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   const { doc, commit, assetRegistry, catalog, graphGuid, assetName } = useAnimGraphDocument();
   const breakpointStore = useBreakpointStore();
   const {
-    selectedId,
+    selectedIds,
     selectedTransitionId,
     openTransitionId,
     openTransitionRule,
@@ -888,7 +889,11 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   if (openTransitionId) {
     return <InspectorPanel {..._props} />;
   }
-  const selected = doc.states.find((state) => state.id === selectedId) ?? null;
+  const selectedStates = selectedIds.flatMap((id) => doc.states.find((state) => state.id === id) ?? []);
+  // Several states show the rows they share; their names, entry and transitions stay per state.
+  const multi = selectedStates.length > 1;
+  const selected = selectedStates[0] ?? null;
+  const edit = documentBatch(doc, commit);
   const selectedTransition =
     doc.transitions.find((row) => row.id === selectedTransitionId) ?? null;
   const clip = selected?.clipId
@@ -914,20 +919,26 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     : selectedTransition
       ? [selectedTransition]
       : [];
-  const applyClipAsset = (guid: string) => {
-    if (!selected) return;
+  /** Sets a state's clip asset, keeping a clip name the new asset still has. */
+  const applyClipAsset = (stateId: string, guid: string) => {
+    const current = edit.read();
+    const state = current.states.find((row) => row.id === stateId);
+    if (!state) return;
+    const stateClip = state.clipId
+      ? current.clips.find((row) => row.id === state.clipId)
+      : undefined;
     const entry = catalog.find((row) => row.guid === guid);
     const names = entry?.clipNames ?? [];
     const nextName =
-      clipKind === "sprite"
+      (stateClip?.kind ?? "animation") === "sprite"
         ? ""
         : entry?.type === "Animation"
           ? (entry.clipName ?? "")
-          : names.includes(clip?.clipName ?? "")
-            ? clip?.clipName
+          : names.includes(stateClip?.clipName ?? "")
+            ? stateClip?.clipName
             : (names[0] ?? "");
-    commit(
-      upsertStateClip(doc, selected.id, {
+    edit.write(
+      upsertStateClip(current, stateId, {
         assetGuid: guid,
         clipName: nextName,
         ...(typeof entry?.durationMs === "number"
@@ -936,7 +947,80 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
       }),
     );
   };
-  const identityRows: PropertyRow[] = selected
+  /** One state's Clip and Playback rows; they read and write through `edit`, so a batch changes every selected state at once. */
+  const sharedStateRows = (state: AnimState): { clip: PropertyRow[]; playback: PropertyRow[] } => {
+    const stateClip = state.clipId
+      ? doc.clips.find((row) => row.id === state.clipId)
+      : undefined;
+    const kind: AnimClipKind = stateClip?.kind ?? "animation";
+    return {
+      clip: [
+        {
+          id: "clipKind",
+          kind: "enum",
+          label: "Clip Kind",
+          value: kind,
+          options: [
+            { value: "animation", label: "Animation" },
+            { value: "sprite", label: "Sprite" },
+          ],
+          onChange: (value) =>
+            edit.write(
+              upsertStateClip(edit.read(), state.id, {
+                kind: value === "sprite" ? "sprite" : "animation",
+              }),
+            ),
+        },
+        {
+          id: "clipAsset",
+          kind: "asset",
+          label: "Clip Asset",
+          value: stateClip?.assetGuid || null,
+          placeholder: "None",
+          // Several states share one Clip Asset only when they pick the same kind of clip.
+          ...(multi ? { assetTypes: [kind === "sprite" ? "SpriteAnimation" : "Animation"] } : {}),
+          onPick: () => setClipPick(true),
+          onChange: (value) => applyClipAsset(state.id, value ?? ""),
+          ...assetRowIdentity(
+            stateClip?.assetGuid
+              ? (() => {
+                  const asset = assetRegistry?.getByGuid(stateClip.assetGuid);
+                  return asset
+                    ? { name: asset.header.name, type: asset.header.type }
+                    : {
+                        name: stateClip.assetGuid,
+                        type:
+                          kind === "sprite" ? "SpriteAnimation" : "Animation",
+                      };
+                })()
+              : undefined,
+          ),
+        },
+      ],
+      playback: [
+        {
+          id: "speed",
+          kind: "number",
+          label: "Speed",
+          value: state.speed,
+          min: 0.001,
+          onChange: (speed) =>
+            edit.write(
+              patchState(edit.read(), state.id, { speed }),
+              `anim-graph:state:${state.id}:speed`,
+            ),
+        },
+        {
+          id: "loop",
+          kind: "boolean",
+          label: "Loop",
+          value: state.loop,
+          onChange: (loop) => edit.write(patchState(edit.read(), state.id, { loop })),
+        },
+      ],
+    };
+  };
+  const identityRows: PropertyRow[] = selected && !multi
     ? [
         {
           id: "name",
@@ -961,79 +1045,23 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         },
       ]
     : [];
-  const clipRows: PropertyRow[] = selected
-    ? [
-        {
-          id: "clipKind",
-          kind: "enum",
-          label: "Clip Kind",
-          value: clipKind,
-          options: [
-            { value: "animation", label: "Animation" },
-            { value: "sprite", label: "Sprite" },
-          ],
-          onChange: (value) =>
-            commit(
-              upsertStateClip(doc, selected.id, {
-                kind: value === "sprite" ? "sprite" : "animation",
-              }),
-            ),
-        },
-        {
-          id: "clipAsset",
-          kind: "asset",
-          label: "Clip Asset",
-          value: clip?.assetGuid || null,
-          placeholder: "None",
-          onPick: () => setClipPick(true),
-          onChange: (value) => applyClipAsset(value ?? ""),
-          ...assetRowIdentity(
-            clip?.assetGuid
-              ? (() => {
-                  const asset = assetRegistry?.getByGuid(clip.assetGuid);
-                  return asset
-                    ? { name: asset.header.name, type: asset.header.type }
-                    : {
-                        name: clip.assetGuid,
-                        type:
-                          clipKind === "sprite" ? "SpriteAnimation" : "Animation",
-                      };
-                })()
-              : undefined,
-          ),
-        },
-      ]
+  const stateRows = selectedStates.map(sharedStateRows);
+  const clipRows: PropertyRow[] = multi ? [] : stateRows[0]?.clip ?? [];
+  const playbackRows: PropertyRow[] = multi ? [] : stateRows[0]?.playback ?? [];
+  const sharedRows: PropertyRow[] = multi
+    ? mergePropertyRows(stateRows.map((rows) => [...rows.clip, ...rows.playback]), { batch: edit.batch })
     : [];
-  const playbackRows: PropertyRow[] = selected
-    ? [
-        {
-          id: "speed",
-          kind: "number",
-          label: "Speed",
-          value: selected.speed,
-          min: 0.001,
-          onChange: (speed) =>
-            commit(
-              patchState(doc, selected.id, { speed }),
-              `anim-graph:state:${selected.id}:speed`,
-            ),
-        },
-        {
-          id: "loop",
-          kind: "boolean",
-          label: "Loop",
-          value: selected.loop,
-          onChange: (loop) => commit(patchState(doc, selected.id, { loop })),
-        },
-      ]
-    : [];
-  const transitionBlocks = outgoing.map((transition) =>
+  const transitionBlocks = multi ? [] : outgoing.map((transition) =>
     transitionPropertyRows(doc, transition, commit, !selected),
   );
 
   return (
     <PanelFrame>
-      {selected || selectedTransition ? (
+      {multi ? (
+        <div data-testid="anim-graph-details">
+          <PropertyGrid title={`${selectedStates.length} States`} rows={sharedRows} />
+        </div>
+      ) : selected || selectedTransition ? (
         <div data-testid="anim-graph-details">
           {identityRows.length > 0 ? (
             <PropertyGrid title="State" rows={identityRows} />
@@ -1170,7 +1198,13 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         }
         allowNone
         onPick={(guid) => {
-          applyClipAsset(guid ?? "");
+          // Several states take the pick through their shared Clip Asset row.
+          const shared = sharedRows.find((row) => row.id === "clipAsset");
+          if (multi) {
+            if (shared?.kind === "asset") shared.onChange(guid ?? null);
+          } else if (selected) {
+            applyClipAsset(selected.id, guid ?? "");
+          }
           setClipPick(false);
         }}
         data-testid="anim-graph-clip-picker"

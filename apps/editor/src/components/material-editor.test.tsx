@@ -25,6 +25,8 @@ const harness: {
   requestRender: ReturnType<typeof vi.fn>;
   focusNode: ReturnType<typeof vi.fn>;
   selectedNodeId: string | null;
+  /** Several selected nodes; otherwise `selectedNodeId` alone. */
+  selectedNodeIds: string[] | null;
   registryEpoch: number;
 } = {
   content: createDefaultMaterialDocument("Rock") as unknown as Record<
@@ -37,6 +39,7 @@ const harness: {
   requestRender: vi.fn(),
   focusNode: vi.fn(),
   selectedNodeId: null,
+  selectedNodeIds: null,
   registryEpoch: 0,
 };
 let assetRegistry: AssetRegistry;
@@ -65,7 +68,9 @@ vi.mock("../context/material-editing-context", () => ({
     lowering: lowerMaterialDocument(normalizeMaterialDocument(harness.content), { functions: {} }),
     previewState: harness.previewState,
     compileDiagnostics: [],
-    selectedNodeId: harness.selectedNodeId,
+    selectedNodeIds: harness.selectedNodeIds ?? (harness.selectedNodeId ? [harness.selectedNodeId] : []),
+    selectedNodeId: harness.selectedNodeIds?.[0] ?? harness.selectedNodeId,
+    setSelectedNodeIds: vi.fn(),
     setSelectedNodeId: vi.fn(),
     focusedNodeId: null,
     focusNode: harness.focusNode,
@@ -117,6 +122,7 @@ beforeEach(async () => {
   harness.kind = "material";
   harness.previewState = createMaterialPreviewState();
   harness.selectedNodeId = null;
+  harness.selectedNodeIds = null;
   harness.applyAssetDocumentChange = vi.fn();
   harness.requestRender = vi.fn();
   harness.focusNode = vi.fn();
@@ -517,6 +523,71 @@ describe("Material details panel", () => {
     expect(
       lastCommit().nodes.find((node) => node.id === "output")?.properties,
     ).toEqual({ "default:metallic": [0.25] });
+  });
+});
+
+describe("Material details for several selected nodes", () => {
+  function selectNodes(...nodes: MaterialDocument["nodes"]) {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push(...nodes);
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeIds = nodes.map((node) => node.id);
+  }
+  const at = { x: 0, y: 0 };
+  const committedNode = (id: string) => lastCommit().nodes.find((node) => node.id === id)?.properties;
+
+  it("shows the inputs an Add and a Multiply share, with Mixed Values where their defaults differ", () => {
+    selectNodes(
+      { id: "add", type: "math.add", position: at, properties: {} },
+      { id: "multiply", type: "math.multiply", position: at, properties: {} },
+    );
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.getByTestId("material-node-details").textContent).toContain("2 Nodes");
+    expect(screen.getByTestId<HTMLInputElement>("property-a").value).toBe("0");
+    // Add's B defaults to 0 and Multiply's to 1.
+    expect(screen.getByTestId<HTMLInputElement>("property-b").value).toBe("Mixed Values");
+    expect(screen.queryByTestId("material-settings")).toBeNull();
+  });
+
+  it("adds typed math to each node's own value in one document change, and keeps one undo step while typing", () => {
+    selectNodes(
+      { id: "one", type: "const.float", position: at, properties: { value: [1] } },
+      { id: "five", type: "param.float", position: at, properties: { name: "Five", value: [5] } },
+    );
+    render(<MaterialDetailsPanel {...panelProps} />);
+    const value = screen.getByTestId<HTMLInputElement>("property-value");
+    expect(value.value).toBe("Mixed Values");
+    // Per Instance and Parameter Name belong to the parameter alone.
+    expect(document.getElementById("property-perInstance")).toBeNull();
+    expect(screen.queryByTestId("property-name")).toBeNull();
+    fireEvent.focus(value);
+    fireEvent.change(value, { target: { value: "Mixed Values+4" } });
+    expect(harness.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+    expect(committedNode("one")?.value).toEqual([5]);
+    expect(committedNode("five")?.value).toEqual([9]);
+    fireEvent.change(value, { target: { value: "Mixed Values*2" } });
+    expect(committedNode("one")?.value).toEqual([2]);
+    expect(committedNode("five")?.value).toEqual([10]);
+    const [first, second] = harness.applyAssetDocumentChange.mock.calls;
+    expect(first![2]).toEqual(expect.any(String));
+    expect(second![2]).toBe(first![2]);
+  });
+
+  it("sets a shared choice on both Texture Samples in one change and hides Filter, which only one has", async () => {
+    selectNodes(
+      { id: "sample", type: "texture.sample", position: at, properties: { colorSpace: "color" } },
+      { id: "lod", type: "texture.sampleLod", position: at, properties: { colorSpace: "color" } },
+    );
+    render(<MaterialDetailsPanel {...panelProps} />);
+    expect(screen.queryByTestId("property-filter")).toBeNull();
+    expect(screen.queryByTestId("material-node-texture")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-colorSpace"));
+    const option = await screen.findByRole("option", { name: "Data (Linear)" });
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    fireEvent.click(option);
+    expect(harness.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
+    expect(committedNode("sample")?.colorSpace).toBe("data");
+    expect(committedNode("lod")?.colorSpace).toBe("data");
   });
 });
 

@@ -12,7 +12,7 @@ Double-tap a Material Function to open it.
 
 - **Graph**: the subgraph. Start and end it with [Function Inputs](../scripting/material/function-inputs.md) and [Function Outputs](../scripting/material/function-outputs.md).
 - **Interface**: the function's pins. Under **Inputs** and **Outputs**, add pins, name them and choose their types. Select an input to set its **Default Value**.
-- **Inspector**: the function's settings, or the selected node's properties.
+- **Inspector**: the function's settings, or the selected node's properties. With several nodes selected, it shows the properties and input defaults they all have, with **Mixed Values** where they differ. An edit changes every selected node, and typing a sum such as `Mixed Values+4` changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)).
 - **Compiler Results**: problems with the graph.
 
 ## Settings

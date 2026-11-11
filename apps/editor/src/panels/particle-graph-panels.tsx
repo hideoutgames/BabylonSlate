@@ -12,6 +12,7 @@ import {
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
+  mergePropertyRows,
   type NestedMenuItem,
   type PropertyRow,
 } from "@haptic/editor-kit";
@@ -101,8 +102,10 @@ import { useSpawnPreviewEmitters } from "../lib/use-spawn-preview-emitters";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
 import { ParticleMaterialPicker } from "../components/particle-material-picker";
 import { newParticleParameterId, particleParameterValueRow } from "../lib/particle-parameter-rows";
+import { documentBatch, type DocumentBatch } from "../lib/document-batch";
 
 type Commit = (next: ParticleGraphDocument, mergeKey?: string) => void;
+type SetProperties = (patch: Record<string, unknown>, mergeKey?: string) => void;
 
 /** One undo entry per gesture on a Details field of one node. */
 function particleGraphFieldMergeKey(nodeId: string, field: string): string {
@@ -643,26 +646,27 @@ function GradientStopsEditor({
  * retypes the node. None while the parameter is missing.
  */
 function particleParameterNodeRows(
-  document: ParticleGraphDocument,
+  edit: DocumentBatch<ParticleGraphDocument>,
   node: ParticleGraphNode,
-  onChange: Commit,
+  multi: boolean,
 ): PropertyRow[] {
-  const parameter = (document.parameters ?? []).find((entry) => entry.id === node.properties.parameterId);
+  const parameter = (edit.read().parameters ?? []).find((entry) => entry.id === node.properties.parameterId);
   if (!parameter) return [];
   const update = (next: typeof parameter, mergeKey?: string) =>
-    onChange(withParticleParameter(document, next), mergeKey);
+    edit.write(withParticleParameter(edit.read(), next), mergeKey);
   return [
-    {
+    // A parameter's name is its own, so a multi-selection never sets one name on several.
+    ...(multi ? [] : [{
       id: "parameterName",
-      kind: "text",
+      kind: "text" as const,
       label: "Name",
       value: parameter.name,
       onChange: () => undefined,
-      onCommit: (text) => {
+      onCommit: (text: string) => {
         const name = normalizeParticleParameterName(text);
         if (name && name !== parameter.name) update({ ...parameter, name });
       },
-    },
+    }]),
     {
       id: "parameterType",
       kind: "enum",
@@ -688,6 +692,55 @@ function describeParticleNode(nodeType: string): string | undefined {
   return particleNodeDefinitionFor({ type: nodeType, properties: {} })?.description;
 }
 
+function setParticleNodeProperties(
+  edit: DocumentBatch<ParticleGraphDocument>,
+  nodeId: string,
+  patch: Record<string, unknown>,
+  mergeKey?: string,
+) {
+  const document = edit.read();
+  const node = document.nodes.find((entry) => entry.id === nodeId);
+  if (!node) return;
+  edit.write(withNode(document, { ...node, properties: { ...node.properties, ...patch } }), mergeKey);
+}
+
+/**
+ * A node's Details rows: its parameter, properties, unconnected inputs and
+ * asset rows. Callbacks read and write through `edit`, so a multi-selection's
+ * batch applies every node's change to one document.
+ */
+function particleNodeRows(
+  edit: DocumentBatch<ParticleGraphDocument>,
+  node: ParticleGraphNode,
+  assetRow: ParticleNodeAssetRow,
+  multi = false,
+): PropertyRow[] {
+  const setProperties: SetProperties = (patch, mergeKey) =>
+    setParticleNodeProperties(edit, node.id, patch, mergeKey);
+  const replaceNode = (next: ParticleGraphNode) => edit.write(withNode(edit.read(), next));
+  const rows = [
+    ...(node.type === PARTICLE_PARAMETER_NODE_TYPE ? particleParameterNodeRows(edit, node, multi) : []),
+    ...nodePropertyRows(node, setProperties, replaceNode),
+    ...pinDefaultRows(edit.read(), node, setProperties),
+  ];
+  if (node.type === "trigger.spawn") {
+    rows.unshift(assetRow(node, setProperties, { property: "emitterGuid", label: "Emitter", assetTypes: ["ParticleEmitter", "ParticleGraph"], placeholder: "No Emitter",
+      description: "The Particle Emitter or Particle Graph played at the particle. It runs one Duration, then its particles fade out." }));
+  }
+  if (node.type === "update.noise") {
+    rows.unshift(assetRow(node, setProperties, { property: "textureGuid", label: "Texture", assetTypes: ["Texture"], placeholder: "Built-In Noise",
+      description: typeof node.properties.textureGuid === "string"
+        ? "Its red channel sets the push; each particle reads it at its own random point."
+        : "Without a Texture the built-in noise is used." }));
+  }
+  if (node.type === "shape.mesh" && node.properties.source === "model") {
+    rows.splice(rows.findIndex((row) => row.id === "source") + 1, 0, assetRow(node, setProperties, { property: "modelGuid", label: "Model",
+      assetTypes: ["Model"], placeholder: "No Model",
+      description: "Particles spawn on the Model's triangles, placed at the emitter." }));
+  }
+  return rows;
+}
+
 function ParticleNodeDetails({
   document,
   node,
@@ -698,13 +751,10 @@ function ParticleNodeDetails({
   onChange: Commit;
 }) {
   const definition = particleNodeDefinitionFor(node);
-  const setProperties = (patch: Record<string, unknown>, mergeKey?: string) =>
-    onChange(
-      withNode(document, { ...node, properties: { ...node.properties, ...patch } }),
-      mergeKey,
-    );
-  const replaceNode = (next: ParticleGraphNode) => onChange(withNode(document, next));
-  const assets = useParticleNodeAssetPicker(node, setProperties);
+  const edit = documentBatch(document, onChange);
+  const setProperties: SetProperties = (patch, mergeKey) =>
+    setParticleNodeProperties(edit, node.id, patch, mergeKey);
+  const assets = useParticleNodeAssetPicker((property, guid) => setProperties({ [property]: guid }));
   if (!definition) {
     return (
       <ModuleStack data-testid="particle-graph-node-details">
@@ -720,29 +770,9 @@ function ParticleNodeDetails({
       </ModuleStack>
     );
   }
-  const parameterRows = node.type === PARTICLE_PARAMETER_NODE_TYPE
-    ? particleParameterNodeRows(document, node, onChange)
-    : [];
-  const rows = [
-    ...parameterRows,
-    ...nodePropertyRows(node, setProperties, replaceNode),
-    ...pinDefaultRows(document, node, setProperties),
-  ];
-  if (node.type === "trigger.spawn") {
-    rows.unshift(assets.row({ property: "emitterGuid", label: "Emitter", assetTypes: ["ParticleEmitter", "ParticleGraph"], placeholder: "No Emitter",
-      description: "The Particle Emitter or Particle Graph played at the particle. It runs one Duration, then its particles fade out." }));
-  }
-  if (node.type === "update.noise") {
-    rows.unshift(assets.row({ property: "textureGuid", label: "Texture", assetTypes: ["Texture"], placeholder: "Built-In Noise",
-      description: typeof node.properties.textureGuid === "string"
-        ? "Its red channel sets the push; each particle reads it at its own random point."
-        : "Without a Texture the built-in noise is used." }));
-  }
-  if (node.type === "shape.mesh" && node.properties.source === "model") {
-    rows.splice(rows.findIndex((row) => row.id === "source") + 1, 0, assets.row({ property: "modelGuid", label: "Model",
-      assetTypes: ["Model"], placeholder: "No Model",
-      description: "Particles spawn on the Model's triangles, placed at the emitter." }));
-  }
+  const parameterMissing = node.type === PARTICLE_PARAMETER_NODE_TYPE &&
+    !(document.parameters ?? []).some((entry) => entry.id === node.properties.parameterId);
+  const rows = particleNodeRows(edit, node, assets.row);
   return (
     <ModuleStack data-testid="particle-graph-node-details">
       <ModuleStage
@@ -751,7 +781,7 @@ function ParticleNodeDetails({
         hint={definition.description}
         accentRole={PARTICLE_STAGE_ROLE[definition.role]}
       >
-        {node.type === PARTICLE_PARAMETER_NODE_TYPE && parameterRows.length === 0 ? (
+        {parameterMissing ? (
           <p className="px-2 py-1 text-xs text-destructive" data-testid="particle-parameter-missing">
             Its parameter is missing. Convert the node to a Constant or delete it.
           </p>
@@ -786,14 +816,57 @@ function ParticleNodeDetails({
   );
 }
 
+/** Several selected nodes: the rows every one has under the same name and type. */
+function ParticleNodesDetails({
+  document,
+  nodes,
+  onChange,
+}: {
+  document: ParticleGraphDocument;
+  nodes: readonly ParticleGraphNode[];
+  onChange: Commit;
+}) {
+  const edit = documentBatch(document, onChange);
+  // A picked asset goes to every selected node through the shared row.
+  const rowsRef = useRef<PropertyRow[]>([]);
+  const assets = useParticleNodeAssetPicker((property, guid) => {
+    const row = rowsRef.current.find((entry) => entry.id === property);
+    if (row?.kind === "asset") row.onChange(guid);
+  });
+  const definitions = nodes.map((node) => particleNodeDefinitionFor(node));
+  const rows = mergePropertyRows(
+    nodes.map((node, index) => (definitions[index] ? particleNodeRows(edit, node, assets.row, true) : [])),
+    { batch: edit.batch },
+  );
+  rowsRef.current = rows;
+  const role = definitions[0]?.role;
+  return (
+    <ModuleStack data-testid="particle-graph-node-details">
+      <ModuleStage
+        id="node"
+        title={`${nodes.length} Nodes`}
+        accentRole={PARTICLE_STAGE_ROLE[role && definitions.every((definition) => definition?.role === role) ? role : "value"]}
+      >
+        {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
+        {assets.picker}
+      </ModuleStage>
+    </ModuleStack>
+  );
+}
+
 type ParticleNodeAssetType = "Texture" | "Model" | "ParticleEmitter" | "ParticleGraph";
 
-/** Rows for a node's asset properties (Noise **Texture**, Mesh Shape **Model**) and their shared picker; None clears one. */
-function useParticleNodeAssetPicker(
+type ParticleNodeAssetRow = (
   node: ParticleGraphNode,
-  setProperties: (patch: Record<string, unknown>) => void,
+  setProperties: SetProperties,
+  spec: { property: string; label: string; assetTypes: readonly ParticleNodeAssetType[]; placeholder: string; description: string },
+) => PropertyRow;
+
+/** Rows for a node's asset properties (Noise **Texture**, Mesh Shape **Model**) and their shared picker, which hands its pick to `pick`; None clears one. */
+function useParticleNodeAssetPicker(
+  pick: (property: string, guid: string | null) => void,
 ): {
-  row: (spec: { property: string; label: string; assetTypes: readonly ParticleNodeAssetType[]; placeholder: string; description: string }) => PropertyRow;
+  row: ParticleNodeAssetRow;
   picker: ReactNode;
 } {
   const { assetRegistry } = useRegistryState();
@@ -802,7 +875,7 @@ function useParticleNodeAssetPicker(
     .filter((asset) => (assetTypes as readonly string[]).includes(asset.header.type))
     .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }));
   return {
-    row: ({ property, label, assetTypes, placeholder, description }) => {
+    row: (node, setProperties, { property, label, assetTypes, placeholder, description }) => {
       const guid = typeof node.properties[property] === "string" ? (node.properties[property] as string) : null;
       const selected = guid ? assetsOf(assetTypes).find((asset) => asset.guid === guid) : undefined;
       return {
@@ -825,7 +898,7 @@ function useParticleNodeAssetPicker(
         allowedTypes={[...picking.assetTypes]}
         allowNone
         onPick={(next) => {
-          setProperties({ [picking.property]: next });
+          pick(picking.property, next);
           setPicking(null);
         }}
         data-testid={`particle-node-${picking.property}-picker`}
@@ -980,22 +1053,31 @@ function ParticleGraphSettingsDetails({
 
 /**
  * Particle Graph Details: the emitter settings with nothing (or the Emitter
- * Output) selected, otherwise the selected node's header, pin defaults and
- * properties.
+ * Output) selected, the selected node's header, pin defaults and properties,
+ * or the rows several selected nodes share.
  */
 export function ParticleGraphDetails({
   document,
-  selectedNodeId,
+  selectedNodeIds,
   onChange,
 }: {
   document: ParticleGraphDocument;
-  selectedNodeId: string | null;
+  selectedNodeIds: readonly string[];
   /** `mergeKey` groups one gesture's edits into one undo entry. */
   onChange: Commit;
 }) {
-  const node = selectedNodeId
-    ? document.nodes.find((entry) => entry.id === selectedNodeId)
-    : undefined;
+  const nodes = selectedNodeIds.flatMap((id) => document.nodes.find((entry) => entry.id === id) ?? []);
+  if (nodes.length > 1) {
+    return (
+      <ParticleNodesDetails
+        key={nodes.map((node) => `${node.id}:${node.type}`).join("|")}
+        document={document}
+        nodes={nodes}
+        onChange={onChange}
+      />
+    );
+  }
+  const node = nodes[0];
   if (node && node.type !== PARTICLE_OUTPUT_NODE_TYPE) {
     // Keyed so field drafts and list focus never carry over to another node, or across a conversion.
     return (
@@ -1163,7 +1245,7 @@ function ParticleGraphCompilerResults({
 
 function ParticleGraphCanvas() {
   const editing = useParticleGraphEditing();
-  const { document, commit, documentId, setSelectedNodeId } = editing;
+  const { document, commit, documentId, setSelectedNodeIds } = editing;
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(documentId);
   const globalParameters = useGlobalParameterCatalog();
   const initialGraph = useMemo(
@@ -1234,7 +1316,7 @@ function ParticleGraphCanvas() {
         canConnect={canConnect}
         sessionViewport={sessionViewport}
         onSessionViewportChange={onSessionViewportChange}
-        onSelectionChange={(ids) => setSelectedNodeId(ids[0] ?? null)}
+        onSelectionChange={setSelectedNodeIds}
         focusedNodeId={editing.focusedNodeId ?? undefined}
         commitPositionsOnDragEnd
         contextMenuItemsForNode={contextMenuItemsForNode}
@@ -1297,7 +1379,7 @@ export function ParticleGraphDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame className="flex-1" data-testid="particle-graph-details-panel">
       <ParticleGraphDetails
         document={editing.document}
-        selectedNodeId={editing.selectedNodeId}
+        selectedNodeIds={editing.selectedNodeIds}
         onChange={editing.commit}
       />
     </PanelFrame>
