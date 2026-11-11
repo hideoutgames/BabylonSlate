@@ -77,6 +77,12 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Draws per pass: layers 30, objects 10, post 2");
     // Its main-thread time by pass, right below: the most first, one decimal, a pass under 0.05 ms left out.
     expect(lines[lines.indexOf("  Draws per pass: layers 30, objects 10, post 2") + 1]).toBe("  CPU per pass: mirrors 8.2 ms, objects 6.3 ms, post 1.0 ms");
+    // Before the view's first timed frame: nothing sampled, and the last frame's times all zero.
+    const untimed = structuredClone(report);
+    const untimedPlay = untimed.scenes[1]!.play;
+    delete untimedPlay.counters!.drawPassMs;
+    untimedPlay.snapshot!.rendering = { ...untimedPlay.snapshot!.rendering!, drawPassMs: { objects: 0, mirrors: 0 } } as RenderDiagnostics;
+    expect(formatFeatureTestCheckReport(untimed, environment).split("\n").some((line) => line.startsWith("  CPU per pass"))).toBe(false);
     // The layers' visuals: 130 of the 181 drew in 9 batches; the 51 others took a draw each, by reason, the most first.
     expect(lines).toContain("  Scene Layers: 181 visuals in 60 draws · 130 in 9 batches · alone: 30 another Material, 14 nothing else drew the same, 4 mirrored, 2 other, 1 only draw of its pass");
     expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
