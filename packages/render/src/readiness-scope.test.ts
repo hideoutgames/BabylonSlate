@@ -7,7 +7,7 @@ import "@babylonjs/core/Meshes/instancedMesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { afterEach, expect, it } from "vitest";
-import { isRenderTargetProbeReady, outsideReadinessProbeScope, withReadinessProbeScope } from "./readiness-scope";
+import { isRenderTargetProbeReady, outsideReadinessProbeScope, readinessProbeListScope, withReadinessProbeScope } from "./readiness-scope";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -59,6 +59,23 @@ it("asks a render target for the scope's meshes only once a whole probe found it
   probed.asked.length = 0;
   expect(isRenderTargetProbeReady(probed.texture)).toBe(true);
   expect(probed.asked).toEqual([first, second]);
+});
+
+it("tells a render target's list which meshes a scoped probe asks, once a whole probe found the target ready", () => {
+  const { first, second, target } = fixture();
+  const listed = target("listed");
+  const scopes: Array<ReadonlySet<AbstractMesh> | undefined> = [];
+  listed.texture.getCustomRenderList = () => { scopes.push(readinessProbeListScope()); return [first, second]; };
+  const scope = new Set([second]);
+  // A target no whole probe has found ready lists every mesh, also inside a scoped probe; so does a whole probe.
+  expect(withReadinessProbeScope(scope, () => isRenderTargetProbeReady(listed.texture))).toBe(true);
+  expect(isRenderTargetProbeReady(listed.texture)).toBe(true);
+  expect(scopes).toEqual([undefined, undefined]);
+  expect(withReadinessProbeScope(scope, () => isRenderTargetProbeReady(listed.texture))).toBe(true);
+  expect(scopes[2]).toBe(scope);
+  // Outside the target's probe nothing is scoped: a real pass lists every mesh.
+  expect(readinessProbeListScope()).toBeUndefined();
+  withReadinessProbeScope(scope, () => expect(readinessProbeListScope()).toBeUndefined());
 });
 
 it("keeps asking every mesh of a render target that a whole probe found unready", () => {

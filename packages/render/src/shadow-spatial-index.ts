@@ -162,6 +162,24 @@ export class ShadowSpatialIndex {
     this.visit(this.root, planes, result);
     return result;
   }
+  /**
+   * `queryPlanes` kept to `meshes` and the instances they draw (a readiness probe's scope, which asks an instance when
+   * it names its source): the same casters `queryPlanes` would give among them, without visiting the others.
+   */
+  queryPlanesOf(
+    meshes: Iterable<AbstractMesh>,
+    planes: readonly Plane[],
+    result: AbstractMesh[] = [],
+  ): AbstractMesh[] {
+    this.refit();
+    result.length = 0;
+    for (const mesh of meshes) {
+      if (!result.includes(mesh)) this.visit(this.leaves.get(mesh), planes, result);
+      const instances = (mesh as AbstractMesh & { instances?: readonly AbstractMesh[] }).instances;
+      if (instances) for (const instance of instances) if (!result.includes(instance)) this.visit(this.leaves.get(instance), planes, result);
+    }
+    return result;
+  }
   private visit(
     node: Node | undefined,
     planes: readonly Plane[],

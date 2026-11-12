@@ -14,6 +14,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
+import { readinessProbeListScope } from "./readiness-scope";
 import { casterWithinShadowRange, deformsWithinBounds, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
@@ -306,7 +307,10 @@ export function createShadowGenerator(
         directionalLight && slot.entry.settings!.filter === "pcf"
           ? upstream
           : planes;
-      context.spatial.queryPlanes(activePlanes, casters);
+      // A readiness probe that asks only some meshes lists only those: the others answer without being asked.
+      const asked = readinessProbeListScope();
+      if (asked) context.spatial.queryPlanesOf(asked, activePlanes, casters);
+      else context.spatial.queryPlanes(activePlanes, casters);
       // The index never plane-culls deforming casters: one whose bounds follow its pose is culled here, by them. A
       // local map ends at its light's range, so anything that cannot reach it draws nothing.
       // A mesh a world view does not draw yet casts nothing either; on WebGPU

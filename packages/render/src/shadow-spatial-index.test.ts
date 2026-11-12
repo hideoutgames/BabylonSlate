@@ -26,6 +26,39 @@ describe("shadow caster spatial selection", () => {
       engine.dispose();
     }
   });
+  it("gives, of the meshes asked for and the instances they draw, the casters a whole query would", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const index = new ShadowSpatialIndex();
+      const inside = MeshBuilder.CreateBox("inside", {}, scene);
+      const other = MeshBuilder.CreateBox("other", {}, scene);
+      const outside = MeshBuilder.CreateBox("outside", {}, scene);
+      outside.position.x = 100;
+      const source = MeshBuilder.CreateBox("source", {}, scene);
+      const near = source.createInstance("near"), far = source.createInstance("far"), hidden = source.createInstance("hidden");
+      far.position.x = 100;
+      hidden.isVisible = false;
+      const stranger = MeshBuilder.CreateBox("not a caster", {}, scene);
+      for (const mesh of [inside, other, outside, source, near, far, hidden]) index.add(mesh);
+      // x <= 10.
+      const planes = [new Plane(-1, 0, 0, 10)];
+      const whole = index.queryPlanes(planes).slice();
+      expect(whole).toEqual(expect.arrayContaining([inside, other, source, near]));
+      const byId = (meshes: readonly { uniqueId: number }[]) => [...meshes].sort((a, b) => a.uniqueId - b.uniqueId);
+      // `other` was not asked for; `near` is, as an instance `source` draws.
+      const scoped = index.queryPlanesOf(new Set([inside, outside, source, stranger]), planes).slice();
+      expect(byId(scoped)).toEqual(byId([inside, source, near]));
+      for (const mesh of scoped) expect(whole).toContain(mesh);
+      // Asked for itself too, before or after its source, an instance is listed once.
+      expect(byId(index.queryPlanesOf(new Set([near, source]), planes))).toEqual(byId([source, near]));
+      expect(byId(index.queryPlanesOf(new Set([source, near]), planes))).toEqual(byId([source, near]));
+      expect(index.queryPlanesOf(new Set(), planes)).toEqual([]);
+      index.dispose();
+    } finally {
+      engine.dispose();
+    }
+  });
   it("refits off-screen descendants when nested parents move or are replaced", () => {
     const engine = new NullEngine();
     try {
