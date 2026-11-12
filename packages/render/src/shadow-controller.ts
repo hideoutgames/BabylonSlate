@@ -220,6 +220,8 @@ export class SceneShadowController {
         entry.resetAllocation = true;
       }
     });
+    // What the frame's walk prepared of the casters holds until the Scene's render ends (the Scene drops the observer).
+    scene.onAfterRenderObservable.add(() => this.spatial.release());
     this.queueUnknownMeshes();
     TimingTools.SetImmediate(() => {
       this.earlierAddsNotified = true;
@@ -464,6 +466,8 @@ export class SceneShadowController {
     if (!this.holdsGenerator()) return;
     this.refresh.syncCasters(this.scene, this.meshes);
     this.maps.retained?.beginFrame();
+    // From the walk to the end of this Scene render no caster moves, shows or hides: the layers' lists read them once.
+    this.spatial.prepare();
     // A sync("admission") skips the walk, so frozen cascade caster bounds follow it here.
     let casterBounds: ReturnType<ShadowCasterList["bounds"]>;
     for (const entry of this.entries.values())
