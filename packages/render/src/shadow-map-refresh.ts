@@ -177,9 +177,10 @@ export class ShadowMapRefresh {
   private revision = 0;
   private continuous = false;
 
-  private readonly casterChanged: (mesh: AbstractMesh) => void;
+  private readonly casterChanged: ((mesh: AbstractMesh) => void) | undefined;
 
-  constructor(casterChanged: (mesh: AbstractMesh) => void) {
+  /** `casterChanged` hears of each caster whose shadow-relevant state a walk found changed. */
+  constructor(casterChanged?: (mesh: AbstractMesh) => void) {
     this.casterChanged = casterChanged;
   }
 
@@ -277,7 +278,7 @@ export class ShadowMapRefresh {
       state.end();
       if (state.changed) {
         record.revision++;
-        this.casterChanged(mesh);
+        this.casterChanged?.(mesh);
       }
       const visible = enabled && mesh.isVisible && mesh.visibility > 0;
       record.safe = safeMesh && safeMaterial;

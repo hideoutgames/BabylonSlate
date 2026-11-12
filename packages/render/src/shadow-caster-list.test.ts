@@ -6,14 +6,14 @@ import { Scene } from "@babylonjs/core/scene";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { ShadowSpatialIndex } from "./shadow-spatial-index";
+import { ShadowCasterList } from "./shadow-caster-list";
 
-describe("shadow caster spatial selection", () => {
+describe("shadow caster selection", () => {
   it("retains skinned casters whose bind-pose bounds cannot describe the animated pose", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
-      const index = new ShadowSpatialIndex();
+      const index = new ShadowCasterList();
       const mesh = MeshBuilder.CreateBox("animated caster", {}, scene);
       mesh.position.x = 100;
       mesh.skeleton = new Skeleton("rig", "rig", scene);
@@ -30,7 +30,7 @@ describe("shadow caster spatial selection", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
-      const index = new ShadowSpatialIndex();
+      const index = new ShadowCasterList();
       const inside = MeshBuilder.CreateBox("inside", {}, scene);
       const other = MeshBuilder.CreateBox("other", {}, scene);
       const outside = MeshBuilder.CreateBox("outside", {}, scene);
@@ -59,30 +59,32 @@ describe("shadow caster spatial selection", () => {
       engine.dispose();
     }
   });
-  it("refits off-screen descendants when nested parents move or are replaced", () => {
+  it("follows descendants whose nested parents move or are replaced, once the caster walk has posed them", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
-      const index = new ShadowSpatialIndex();
+      const index = new ShadowCasterList();
       const parent = new TransformNode("moving actor", scene);
       const importedRoot = new TransformNode("imported model root", scene);
       importedRoot.parent = parent;
       const child = MeshBuilder.CreateBox("caster", {}, scene);
       child.parent = importedRoot;
       index.add(child);
+      // As in a frame: a new render id, then the walk asks the caster for its world matrix.
+      const posed = () => { scene.incrementRenderId(); child.computeWorldMatrix(); };
       const plane = new Plane(-1, 0, 0, 10);
       expect(index.queryPlanes([plane])).toContain(child);
+      // A frame's caster walk asks every caster for its world matrix before any layer lists (`syncCasters`).
       parent.position.x = 100;
-      parent.computeWorldMatrix(true);
+      posed();
       expect(index.queryPlanes([plane])).not.toContain(child);
       parent.position.x = 0;
-      parent.computeWorldMatrix(true);
+      posed();
       expect(index.queryPlanes([plane])).toContain(child);
       const replacement = new TransformNode("replacement parent", scene);
       importedRoot.parent = replacement;
-      importedRoot.computeWorldMatrix(true);
       replacement.position.x = 100;
-      replacement.computeWorldMatrix(true);
+      posed();
       expect(index.queryPlanes([plane])).not.toContain(child);
       index.dispose();
     } finally {
@@ -93,7 +95,7 @@ describe("shadow caster spatial selection", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
-      const index = new ShadowSpatialIndex();
+      const index = new ShadowCasterList();
       const upstream = MeshBuilder.CreateBox("off-screen upstream", {}, scene);
       upstream.position.set(0, 1000, 0);
       const distant = MeshBuilder.CreateBox("unrelated", {}, scene);
@@ -115,8 +117,17 @@ describe("shadow caster spatial selection", () => {
       distant.position.copyFrom(Vector3.Zero());
       distant.computeWorldMatrix(true);
       expect(index.queryPlanes(volume)).toContain(distant);
+      // The box around every caster, hidden ones too; a removed caster leaves it and the queries.
+      upstream.isVisible = false;
+      expect(index.queryPlanes(volume)).toEqual([distant]);
+      const bounds = index.bounds()!;
+      expect([bounds.min.y, bounds.max.y]).toEqual([-0.5, 1000.5]);
       index.remove(upstream);
       expect(index.queryPlanes(volume)).toEqual([distant]);
+      expect(index.bounds()!.max.y).toBe(0.5);
+      index.remove(distant);
+      expect(index.bounds()).toBeUndefined();
+      expect(index.queryPlanes(volume)).toEqual([]);
     } finally {
       engine.dispose();
     }

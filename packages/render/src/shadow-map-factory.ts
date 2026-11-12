@@ -18,7 +18,7 @@ import { readinessProbeListScope } from "./readiness-scope";
 import { shadowDebugOff } from "./shadow-debug";
 import { casterWithinShadowRange, deformsWithinBounds, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
-import type { ShadowSpatialIndex } from "./shadow-spatial-index";
+import type { ShadowCasterList } from "./shadow-caster-list";
 import type { RetainedShadowCasters } from "./shadow-retained-casters";
 import {
   casterNormalBias,
@@ -44,7 +44,7 @@ export type ShadowDrawCounters = { drawCalls: number; triangles: number };
 /** The controller state every map it builds reads and reports to. */
 export interface ShadowMapContext {
   readonly scene: Scene;
-  readonly spatial: ShadowSpatialIndex;
+  readonly spatial: ShadowCasterList;
   /** Every shadow caster, which a new map lists. */
   readonly casters: ReadonlySet<AbstractMesh>;
   /** Per-map closures read their current owner; a local map can move between lights. */
@@ -144,7 +144,7 @@ export function createShadowGenerator(
   mapSize: number,
   settings: ShadowSettings,
   view: Camera | null,
-  casterBounds: ReturnType<ShadowSpatialIndex["bounds"]> | undefined,
+  casterBounds: ReturnType<ShadowCasterList["bounds"]> | undefined,
   atlasEdge: number,
 ): ShadowGenerator {
   const scene = context.scene;
