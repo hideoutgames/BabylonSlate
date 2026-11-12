@@ -423,11 +423,13 @@ export function GraphPanel(
     if (!owner || !claimFocusRouting(focusDiagnostic)) return;
     if (owner.kind === "event") {
       if (functionId !== null) containerApi.getPanel(EVENT_GRAPH_PANEL_ID)?.api.setActive();
+      // The Event Graph itself, behind another tab (Prefab).
+      else if (panelApi && !panelApi.isVisible) panelApi.setActive();
     } else if (owner.functionId !== functionId) {
       const name = content?.members?.find((member) => member.id === owner.functionId)?.name;
       openFunctionGraphPanel(containerApi, owner.functionId, name ?? owner.functionId);
     }
-  }, [activeDocumentId, containerApi, documentId, focusDiagnostic, functionId]);
+  }, [activeDocumentId, containerApi, documentId, focusDiagnostic, functionId, panelApi]);
 
   const [canvasApi, setCanvasApi] = useState<GraphCanvasDropApi | null>(null);
   useEffect(() => {
@@ -503,7 +505,8 @@ export function GraphPanel(
             modelSimpleColliderCount: modelSimpleColliderCounter(assetRegistry, modelDocuments),
           },
         ),
-      ]);
+        // This document's rows only: Play and Compile rows for other assets stay.
+      ], { replaces: (d) => d.assetGuid === assetGuid || d.graphId === documentId });
     }, VALIDATION_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [

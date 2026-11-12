@@ -14,6 +14,8 @@ const setFocusDiagnostic = vi.hoisted(() => vi.fn());
 const setActiveDocument = vi.hoisted(() => vi.fn());
 const clearFocusedNode = vi.hoisted(() => vi.fn());
 const frameActor = vi.hoisted(() => vi.fn());
+const openSessionSource = vi.hoisted(() => vi.fn(async () => ({ opened: true })));
+const setSceneMode = vi.hoisted(() => vi.fn());
 const workspace = vi.hoisted(() => ({ documentId: "scene:assets/Main.scene.hasset" }));
 const pairingWarning: Diagnostic = {
   severity: "warning",
@@ -33,6 +35,10 @@ const sceneSelection = vi.hoisted(() => ({ current: [] as string[] }));
 const registry = vi.hoisted(() => ({
   getByGuid: (guid: string) => guid === "hollow" || guid === "solid"
     ? { path: `assets/${guid}.model.hasset`, header: { type: "Model", payload: { simpleColliders: guid === "solid" ? [{ id: "box" }] : [] } } }
+    : undefined,
+  // A Class that is not open, which Play reported.
+  getByPath: (path: string) => path === "assets/Arena.class.hasset"
+    ? { guid: "arena", path, header: { type: "Class", name: "Arena" } }
     : undefined,
   // Timeline Asset clip names are checked across the project's Scenes.
   list: () => [],
@@ -60,6 +66,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
             return scene.physicsWorld;
           },
         },
+        // The Scene's own script, shown in Script mode.
+        script: { nodes: [{ id: "say", type: "debug.log", position: { x: 0, y: 0 }, data: {} }], edges: [] },
         actors: [
           {
             id: "hero",
@@ -88,6 +96,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   setActiveDocument,
+  setSceneMode,
   assetRegistry: registry,
   activeDocumentId: "scene:assets/Main.scene.hasset",
 })));
@@ -112,7 +121,7 @@ vi.mock("../context/validation-context", async () => {
 });
 
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ clearFocusedNode }),
+  usePlay: () => ({ clearFocusedNode, openSessionSource }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
@@ -150,6 +159,8 @@ afterEach(() => {
   setActiveDocument.mockClear();
   clearFocusedNode.mockClear();
   frameActor.mockClear();
+  openSessionSource.mockClear();
+  setSceneMode.mockClear();
   workspace.documentId = "scene:assets/Main.scene.hasset";
   diagnostics.current = [pairingWarning];
   scene.physicsWorld = "3d";
@@ -210,16 +221,73 @@ describe("CompilerResultsPanel", () => {
     nodeId: "tick",
   };
 
-  it("focuses the graph node when a diagnostic with a nodeId is tapped", async () => {
+  it("shows another asset's row on a tap, and opens that asset at its node on Open", async () => {
+    // Play reported the Hero Class's error in the Scene's results.
     diagnostics.current = [graphDiagnostic];
     render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
-    fireEvent.click(screen.getByTestId("compiler-result-row"));
-    expect(setFocusDiagnostic).toHaveBeenCalledWith(graphDiagnostic, graphDiagnostic.graphId);
-    await waitFor(() => expect(setActiveDocument).toHaveBeenCalledWith(graphDiagnostic.graphId));
-    expect(clearFocusedNode).toHaveBeenCalled();
+    const row = screen.getByTestId("compiler-result-row");
+    fireEvent.click(row, { detail: 0 });
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("region", { name: "Diagnostic Details" })).toBeTruthy();
+    expect(openSessionSource).not.toHaveBeenCalled();
+    expect(setActiveDocument).not.toHaveBeenCalled();
+    fireEvent.click(row, { detail: 2 });
+    expect(openSessionSource).toHaveBeenCalledWith({
+      severity: "error",
+      code: "graph.missing_exec",
+      message: "Exec pin is not connected.",
+      assetGuid: "assets/Hero.class.hasset",
+      graphId: "graph:assets/Hero.class.hasset",
+      nodeId: "tick",
+      bodyLine: undefined,
+    });
+  });
+
+  it("opens a row that names its asset only in its graph id", () => {
+    diagnostics.current = [{ ...graphDiagnostic, assetGuid: "", graphId: "graph:assets/Arena.class.hasset" }];
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("compiler-result-row"), { detail: 2 });
+    expect(openSessionSource).toHaveBeenCalledWith(expect.objectContaining({ assetGuid: "assets/Arena.class.hasset" }));
+  });
+
+  it("names each group by its asset, and a function's by its Class", () => {
+    diagnostics.current = [
+      { ...graphDiagnostic, graphId: "graph:assets/Arena.class.hasset", assetGuid: "assets/Arena.class.hasset" },
+      { ...graphDiagnostic, graphId: "jump", nodeId: "inner" },
+      graphDiagnostic,
+      { ...graphDiagnostic, graphId: "graph:assets/Gone.class.hasset", assetGuid: "assets/Gone.class.hasset" },
+    ];
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    const panel = within(screen.getByTestId("compiler-results"));
+    expect(panel.getByText("Arena Class")).toBeTruthy();
+    expect(panel.getByText("Hero › Jump")).toBeTruthy();
+    expect(panel.getByText("Hero")).toBeTruthy();
+    // An asset the project no longer has keeps its id.
+    expect(panel.getByText("graph:assets/Gone.class.hasset")).toBeTruthy();
+  });
+
+  it("keeps the rows Play reported for other assets and the Scene's script when its checks run again", () => {
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    const update = setDiagnostics.mock.lastCall![1] as { replaces: (d: Diagnostic) => boolean };
+    expect(update.replaces(pairingWarning)).toBe(true);
+    expect(update.replaces(graphDiagnostic)).toBe(false);
+    expect(update.replaces({ ...pairingWarning, actorId: undefined, componentId: undefined, nodeId: "say" })).toBe(false);
+  });
+
+  it("switches the Scene to Script mode to open a node of its script", async () => {
+    diagnostics.current = [{ ...pairingWarning, actorId: undefined, componentId: undefined, code: "pin.missing_input", nodeId: "say" }];
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    const row = screen.getByTestId("compiler-result-row");
+    fireEvent.click(row, { detail: 0 });
+    expect(setSceneMode).not.toHaveBeenCalled();
+    fireEvent.click(row, { detail: 2 });
+    expect(setSceneMode).toHaveBeenCalledWith("scene:assets/Main.scene.hasset", "script");
+    // Its script graph frames the node once it shows: the focus is set again.
+    await waitFor(() => expect(setFocusDiagnostic).toHaveBeenLastCalledWith(expect.objectContaining({ nodeId: "say" })));
   });
 
   it("frames the node again when the focused row is chosen again", async () => {
+    workspace.documentId = graphDiagnostic.graphId;
     diagnostics.current = [graphDiagnostic];
     render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
     const row = screen.getByTestId("compiler-result-row");
@@ -228,9 +296,9 @@ describe("CompilerResultsPanel", () => {
     fireEvent.click(row);
     // The graph frames when its focus changes: cleared, then focused again.
     await waitFor(() => expect(setFocusDiagnostic.mock.calls).toEqual([
-      [graphDiagnostic, graphDiagnostic.graphId],
+      [graphDiagnostic],
       [null],
-      [graphDiagnostic, graphDiagnostic.graphId],
+      [graphDiagnostic],
     ]));
     expect(screen.getByTestId("compiler-result-row").getAttribute("aria-pressed")).toBe("true");
   });
@@ -263,7 +331,7 @@ describe("CompilerResultsPanel", () => {
     expect(setActive).not.toHaveBeenCalled();
     fireEvent.click(row, { detail: 2 });
     expect(setActive.mock.calls).toEqual([["graph"]]);
-    await waitFor(() => expect(setFocusDiagnostic).toHaveBeenLastCalledWith(graphDiagnostic, graphDiagnostic.graphId));
+    await waitFor(() => expect(setFocusDiagnostic).toHaveBeenLastCalledWith(graphDiagnostic));
   });
 
   it("brings a function's graph tab forward each time its row is chosen", () => {
