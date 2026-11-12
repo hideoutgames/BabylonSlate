@@ -9,7 +9,8 @@ import {
   type ComponentProps,
 } from "react";
 import { MessageDetails } from "./message-details";
-import { DiagnosticResultRow, nodeDiagnosticDetails } from "./diagnostic-result-row";
+import { DiagnosticResultRow } from "./diagnostic-result-row";
+import { nodeDiagnosticDetails } from "../lib/diagnostic-details";
 import { useRevealResultWindow } from "../lib/use-reveal-result-window";
 import { primaryDockPanel } from "../shell/window-catalog";
 import type { IDockviewPanelProps } from "dockview-react";

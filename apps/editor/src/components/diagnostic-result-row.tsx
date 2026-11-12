@@ -17,6 +17,7 @@ import {
 import { Button } from "@haptic/ui/components/button";
 import { cn } from "@haptic/ui/lib/utils";
 import { copyText } from "../lib/diagnostic-info";
+import { diagnosticRowDetails } from "../lib/diagnostic-details";
 
 const SEVERITY = {
   error: { label: "Error", copyLabel: "Copy Error", tone: "text-destructive" },
@@ -42,33 +43,6 @@ function SeverityIcon({
   if (severity === "error") return <CircleXIcon aria-hidden="true" className={className} />;
   if (severity === "warning") return <TriangleAlertIcon aria-hidden="true" className={className} />;
   return <InfoIcon aria-hidden="true" className={className} />;
-}
-
-/** The row's full text when its host gives no `details`: severity and code, message, location. */
-export function diagnosticRowDetails({
-  severity,
-  message,
-  code,
-  location,
-}: {
-  severity: keyof typeof SEVERITY;
-  message: string;
-  code?: string;
-  location?: string;
-}): string {
-  return [code ? `${severity}: ${code}` : severity, message, location]
-    .filter(Boolean)
-    .join("\n");
-}
-
-/** Diagnostic Details for a graph asset's own checks: severity and code, message, node. */
-export function nodeDiagnosticDetails(diagnostic: {
-  severity: string;
-  code: string;
-  message: string;
-  nodeId?: string;
-}): string {
-  return `${diagnostic.severity}: ${diagnostic.code}\n${diagnostic.message}${diagnostic.nodeId ? `\nNode: ${diagnostic.nodeId}` : ""}`;
 }
 
 /**

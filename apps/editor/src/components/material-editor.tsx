@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
-import { DiagnosticResultRow, nodeDiagnosticDetails } from "./diagnostic-result-row";
+import { DiagnosticResultRow } from "./diagnostic-result-row";
+import { nodeDiagnosticDetails } from "../lib/diagnostic-details";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 import { LazyGlslCodePreview } from "./lazy-code-editors";
 import { GlobalParameterNodePicker } from "./global-parameter-node-picker";
