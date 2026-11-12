@@ -1004,3 +1004,53 @@ describe("caster tracking while no map exists", () => {
     expect(geometry.onGeometryUpdated).toBe(previousGeometryUpdate);
   });
 });
+
+describe("what casters share", () => {
+  it("reads a Material and a source mesh once per walk, and every caster follows a change of either", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const material = new StandardMaterial("shared", scene);
+    const first = MeshBuilder.CreateBox("first", {}, scene);
+    const second = MeshBuilder.CreateBox("second", {}, scene);
+    first.material = second.material = material;
+    const instance = first.createInstance("instance");
+    const casters = new Set<AbstractMesh>([first, second, instance]);
+    let reads = 0, offset = 0;
+    Object.defineProperty(material, "zOffset", { get: () => { reads += 1; return offset; }, set: (value: number) => { offset = value; } });
+    const levels = vi.spyOn(first, "getLODLevels");
+    const changed: AbstractMesh[] = [];
+    const refresh = new ShadowMapRefresh((mesh) => changed.push(mesh));
+    const revisions = () => [first, second, instance].map((mesh) => refresh.casterState(mesh)!.revision);
+
+    refresh.syncCasters(scene, casters);
+    expect(reads).toBe(1);
+    // The source of two casters: itself and its instance.
+    expect(levels).toHaveBeenCalledTimes(1);
+    const walked = revisions();
+    changed.length = 0;
+    refresh.syncCasters(scene, casters);
+    expect(revisions()).toEqual(walked);
+    expect(changed).toEqual([]);
+
+    // The Material's depth state is every caster's.
+    offset = 2;
+    refresh.syncCasters(scene, casters);
+    expect(revisions()).toEqual(walked.map((revision) => revision + 1));
+    expect(changed).toEqual([first, second, instance]);
+
+    // A source's parts are its own and its instance's, not another mesh's.
+    changed.length = 0;
+    first.subMeshes[0]!.indexCount -= 3;
+    refresh.syncCasters(scene, casters);
+    expect(changed).toEqual([first, instance]);
+
+    // A caster that leaves does not hold its source.
+    changed.length = 0;
+    refresh.syncCasters(scene, new Set<AbstractMesh>([second]));
+    first.subMeshes[0]!.indexCount -= 3;
+    refresh.syncCasters(scene, casters);
+    expect(changed).toEqual([first, instance]);
+    refresh.dispose();
+  });
+});
