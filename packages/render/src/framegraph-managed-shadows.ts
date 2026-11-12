@@ -13,6 +13,7 @@ import type { FrameGraphShadowGeneratorTask } from "@babylonjs/core/FrameGraph/T
 import { findSceneShadowController } from "./shadow-controller";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
+import { shadowDebugOff } from "./shadow-debug";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetProbeReady } from "./readiness-scope";
 import { isRevealPending, noteRevealPipelines } from "./reveal-pending";
@@ -467,6 +468,8 @@ export class ManagedShadowsTask extends FrameGraphTask {
           // to list it: the map draws again. A frame that may not wait (above) draws every caster it left out.
           map.resetRefreshCounter();
         }
+        // `shadowdebug passes off`: a map that has drawn keeps the depth it holds; its refresh stays due.
+        if (!firstDraw && shadowDebugOff(this.scene, "passes")) continue;
         if (!map._shouldRender()) continue;
         // A drawn map in such a frame leaves out the draws of casters new to it whose depth pipelines are missing until
         // they exist, which those draws would otherwise create synchronously; the same frames as above draw them at once.

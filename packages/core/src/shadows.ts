@@ -270,3 +270,13 @@ export function defaultCastShadows(classId: string): boolean {
 export function componentCastsShadows(classId: string, castShadows: unknown): boolean {
   return typeof castShadows === "boolean" ? castShadows : defaultCastShadows(classId);
 }
+
+/**
+ * Parts of shadow drawing the `shadowdebug` console command switches off for a Play session, to measure what each
+ * costs (the Feature Test Check's Shadows Breakdown): the casters drawn into every map layer (`casters`: each layer is
+ * still bound and cleared, and lit surfaces still sample the maps, which hold no caster), and the map passes
+ * themselves (`passes`: no layer is bound, cleared or drawn once it has drawn its first, and lit surfaces sample the
+ * depth the maps last held).
+ */
+export const SHADOW_DEBUG_PARTS = ["casters", "passes"] as const;
+export type ShadowDebugPart = (typeof SHADOW_DEBUG_PARTS)[number];

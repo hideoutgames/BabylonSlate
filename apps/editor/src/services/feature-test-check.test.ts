@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionReportEntry } from "@haptic/runtime";
 import {
-  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RENDER_QUALITY_PROFILES, RenderingQualitySession, SHADOW_PROFILES, WATER_DEBUG_PARTS,
+  antiAliasingSamples, QUALITY_GROUPS, qualitySettingsFingerprint, RENDER_QUALITY_PROFILES, RenderingQualitySession, SHADOW_DEBUG_PARTS, SHADOW_PROFILES, WATER_DEBUG_PARTS,
   type QualityGroup, type QualityLevel,
 } from "@haptic/core";
 import {
@@ -168,6 +168,7 @@ function fingerprintAfter(
   let captures = true;
   let framesInFlight = options.framesInFlight ?? "2";
   const waterOff = new Set<string>();
+  const shadowOff = new Set<string>();
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -177,6 +178,7 @@ function fingerprintAfter(
     else if (name === "rendertargets") captures = first === "on";
     else if (name === "framesinflight") framesInFlight = first!;
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
+    else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
   }
   const quality = session.effective();
   return {
@@ -185,6 +187,7 @@ function fingerprintAfter(
     "post.enabled": String(post),
     captures: captures ? "on" : "suspended",
     "water.debug": WATER_DEBUG_PARTS.filter((part) => waterOff.has(part)).join(",") || "none",
+    "shadows.debug": SHADOW_DEBUG_PARTS.filter((part) => shadowOff.has(part)).join(",") || "none",
     "presentation.framesInFlight": framesInFlight,
   };
 }
@@ -1063,7 +1066,10 @@ describe("frame pacing", () => {
 
   it("changes, with every Breakdown step, only that step's fingerprint fields, or skips it where the base already holds its value", () => {
     // At Medium, Medium's shadows, water detail and volumetrics already hold; the add-one base turns every feature off.
-    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off", "MSAA 2x"], "add-one": [] as string[], water: [] as string[] };
+    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off", "MSAA 2x"], "add-one": [] as string[], water: [] as string[],
+      // Medium draws neither screen-space nor reflection shadows.
+      shadows: ["screen-space shadows off", "reflection shadows off"],
+    };
     for (const method of FEATURE_TEST_BREAKDOWN_METHODS) {
       const base = FEATURE_TEST_BREAKDOWN_BASES[method].commands;
       const reference = fingerprintAfter(base);

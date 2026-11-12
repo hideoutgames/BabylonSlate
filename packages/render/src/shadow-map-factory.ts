@@ -15,6 +15,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
 import { readinessProbeListScope } from "./readiness-scope";
+import { shadowDebugOff } from "./shadow-debug";
 import { casterWithinShadowRange, deformsWithinBounds, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowSpatialIndex } from "./shadow-spatial-index";
@@ -297,6 +298,11 @@ export function createShadowGenerator(
     map.getCustomRenderList = (layer) => {
       // Until this pass lists again, the shared buffer draws nothing into it.
       context.retained?.discard(generator);
+      // `shadowdebug casters off`: the layer is bound and cleared as ever, and draws no caster.
+      if (shadowDebugOff(context.scene, "casters")) {
+        casters.length = 0;
+        return casters;
+      }
       const transform =
         generator instanceof CascadedShadowGenerator
           ? generator.getCascadeTransformMatrix(layer)

@@ -1,4 +1,4 @@
-import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type WaterDebugPart } from "@haptic/core";
+import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, SHADOW_DEBUG_PARTS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type ShadowDebugPart, type WaterDebugPart } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -43,6 +43,7 @@ export const DEBUG_COMMAND_NAMES = [
   "postprocessing",
   "rendertargets",
   "waterdebug",
+  "shadowdebug",
   "gpubusy",
   "framesinflight",
   "preservebuffer",
@@ -227,6 +228,19 @@ export function builtinCommands(): RegisteredCommand[] {
         if (!host.setWaterDebug) return fail("waterdebug is unavailable here");
         host.setWaterDebug(part, enabled);
         return ok(`waterdebug ${part} ${enabled ? "on" : "off"}`);
+      },
+    },
+    {
+      name: "shadowdebug",
+      tier: "debug",
+      category: "engine",
+      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), or the map passes themselves (passes)",
+      parameters: [{ name: "part", type: "enum", enumValues: [...SHADOW_DEBUG_PARTS] }, FLAG],
+      run(args, host) {
+        const part = args.part as ShadowDebugPart, enabled = Boolean(args.enabled);
+        if (!host.setShadowDebug) return fail("shadowdebug is unavailable here");
+        host.setShadowDebug(part, enabled);
+        return ok(`shadowdebug ${part} ${enabled ? "on" : "off"}`);
       },
     },
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),

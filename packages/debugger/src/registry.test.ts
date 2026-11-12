@@ -138,6 +138,21 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["water", "prepass", "lighting", "shadows", "waves", "foam"].flatMap((part) => [`${part}:false`, `${part}:true`]));
   });
 
+  it("switches each part of shadow drawing off and on again, in debug registries only", () => {
+    const host = recordingHost();
+    host.setShadowDebug = (part, enabled) => host.calls.push(`${part}:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const part of ["casters", "passes"]) {
+      expect(debug.execute(`shadowdebug ${part} off`, host)).toEqual({ success: true, output: `shadowdebug ${part} off` });
+      expect(debug.execute(`shadowdebug ${part} on`, host)).toEqual({ success: true, output: `shadowdebug ${part} on` });
+    }
+    expect(debug.execute("shadowdebug sun off", host).success).toBe(false);
+    expect(debug.execute("shadowdebug casters maybe", host).success).toBe(false);
+    expect(release.execute("shadowdebug casters off", host).success).toBe(false);
+    expect(host.calls).toEqual(["casters", "passes"].flatMap((part) => [`${part}:false`, `${part}:true`]));
+  });
+
   it("starts and stops GPU-busy timing and stores the drawing-buffer setting, in debug registries only", () => {
     const host = recordingHost();
     host.setGpuBusyProbe = (enabled) => host.calls.push(`gpubusy:${enabled}`);
