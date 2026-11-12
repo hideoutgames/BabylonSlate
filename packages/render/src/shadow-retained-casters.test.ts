@@ -209,6 +209,55 @@ describe("RetainedShadowCasters", () => {
     expect(retained.diagnostics()).toMatchObject({ casters: 2, vertices: 48 });
   });
 
+  it("asks a caster once for the layers of a walked frame, and again in the next frame or outside one", () => {
+    const { scene, retained, box, pass, sun } = host();
+    const mesh = box("mesh"), hidden = box("hidden", 3);
+    hidden.isVisible = false;
+    const other = new ShadowGenerator(64, sun);
+    const world = vi.spyOn(mesh, "getWorldMatrix"), enabled = vi.spyOn(hidden, "isEnabled");
+    // Outside a walked frame every pass asks.
+    pass([mesh, hidden]);
+    pass([mesh, hidden], null, other);
+    expect(world.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(enabled).toHaveBeenCalledTimes(2);
+    world.mockClear(); enabled.mockClear();
+    // The frame's first layer asks, its other layers list what it found.
+    retained.beginFrame();
+    expect(pass([mesh, hidden]).taken).toEqual([true, false]);
+    const asked = world.mock.calls.length;
+    expect(pass([mesh, hidden], null, other).taken).toEqual([true, false]);
+    expect(world.mock.calls.length).toBe(asked);
+    expect(enabled).toHaveBeenCalledTimes(1);
+    // The frame ends with the Scene's render: a pass after it asks again and sees what changed since.
+    scene.onAfterRenderObservable.notifyObservers(scene);
+    hidden.isVisible = true;
+    mesh.isVisible = false;
+    expect(pass([mesh, hidden]).taken).toEqual([false, true]);
+    // So does the next walked frame, and a frame the Scene has moved on from.
+    retained.beginFrame();
+    mesh.isVisible = true;
+    expect(pass([mesh, hidden]).taken).toEqual([true, true]);
+    retained.beginFrame();
+    expect(pass([mesh, hidden]).taken).toEqual([true, true]);
+    mesh.isVisible = false;
+    (scene as unknown as { _frameId: number })._frameId += 1;
+    expect(pass([mesh, hidden]).taken).toEqual([false, true]);
+  });
+
+  it("writes a caster's row again within a frame when a layer's floating origin differs", () => {
+    const { scene, retained, box, pass, rows, sun } = host();
+    const mesh = box("mesh");
+    const other = new ShadowGenerator(64, sun);
+    retained.beginFrame();
+    pass([mesh]);
+    const sent = rows.length;
+    pass([mesh], null, other);
+    expect(rows).toHaveLength(sent);
+    vi.spyOn(scene, "floatingOriginOffset", "get").mockReturnValue(new Vector3(5, 0, 0));
+    expect(pass([mesh], null, other).taken).toEqual([true]);
+    expect(rows.length).toBeGreaterThan(sent);
+  });
+
   it("draws each cull state in a call of its own, with the state Babylon's draw of the caster sets", () => {
     const { scene, generator, box, pass, calls, states } = host();
     const plain = box("plain");
