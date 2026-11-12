@@ -1375,6 +1375,8 @@ function rendererWorkSince(
     readinessProbeReasons: heldReasonsSince(before.readinessProbeReasons, after.readinessProbeReasons),
     readinessSwapRechecks: after.readinessSwapRechecks - before.readinessSwapRechecks,
     failedReadinessProbes: after.failedReadinessProbes - before.failedReadinessProbes,
+    scopedReadinessProbes: after.scopedReadinessProbes - before.scopedReadinessProbes,
+    scopedReadinessMismatches: after.scopedReadinessMismatches - before.scopedReadinessMismatches,
   };
 }
 

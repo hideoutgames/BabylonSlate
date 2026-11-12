@@ -40,6 +40,8 @@ import {
 } from "@haptic/core";
 import { upsertFogVolumes } from "./fog-volumes";
 import { noteVariantSwap, probeVariantSwaps } from "./variant-swaps";
+import { isRevealPending } from "./reveal-pending";
+import { verifyScopedReadinessProbes } from "./readiness-scope";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { setSceneOutputScale } from "./scene-output-scale";
 import { ParticleService } from "./particle-service";
@@ -906,6 +908,142 @@ it("probes once for a mesh it found before Babylon announced it, and still for o
   graph.render(camera);
   expect(graph.strictReadinessChecks).toBeGreaterThan(probed);
   graph.dispose();
+});
+
+it("asks only the meshes a change named in a steady frame, and every mesh otherwise", async () => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  const keptMaterial = kept.material = new StandardMaterial("kept", scene);
+  const spawnedMaterial = new StandardMaterial("spawned", scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const askedKept = vi.spyOn(keptMaterial, "isReadyForSubMesh");
+    // The spawned mesh's first variant compiles over its first probes.
+    let compiling = true;
+    const compiled = spawnedMaterial.isReadyForSubMesh.bind(spawnedMaterial);
+    const askedSpawned = vi.spyOn(spawnedMaterial, "isReadyForSubMesh").mockImplementation((...args) => !compiling && compiled(...args));
+    const steadyProbe = () => {
+      askedKept.mockClear();
+      askedSpawned.mockClear();
+      return probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera));
+    };
+    const scoped = () => graph.diagnostics().scopedReadinessProbes;
+
+    // A spawned mesh: the Scene's mesh count gives it away, and only it is asked.
+    const spawned = MeshBuilder.CreateBox("spawned", {}, scene);
+    spawned.material = spawnedMaterial;
+    expect(steadyProbe()).toBe(true);
+    expect(askedSpawned).toHaveBeenCalled();
+    expect(askedKept).not.toHaveBeenCalled();
+    expect(scoped()).toBe(1);
+    // It was hidden while its first variant compiles: the rechecks that reveal it ask every mesh.
+    expect(isRevealPending(spawned)).toBe(true);
+    graph.recheckVariantSwaps();
+    expect(steadyProbe()).toBe(true);
+    expect(askedKept).toHaveBeenCalled();
+    expect(isRevealPending(spawned)).toBe(true);
+    compiling = false;
+    await vi.waitFor(() => {
+      graph.recheckVariantSwaps();
+      expect(steadyProbe()).toBe(true);
+      expect(isRevealPending(spawned)).toBe(false);
+    });
+    // The steady frame after the reveal finds no swap pending; Babylon's announcement of the mesh then marks nothing.
+    graph.recheckVariantSwaps();
+    expect(steadyProbe()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    const settled = scoped();
+
+    // A change that names no mesh (a particle system's Material, a readiness check) asks none.
+    scene.addIsReadyCheck({ isReady: () => true });
+    expect(steadyProbe()).toBe(true);
+    expect(askedKept).not.toHaveBeenCalled();
+    expect(askedSpawned).not.toHaveBeenCalled();
+    expect(scoped()).toBe(settled + 1);
+
+    // A change that can touch any mesh asks them all, also when one that named its meshes came first.
+    graph.markReadinessDirty("meshAdded", [spawned]);
+    graph.markReadinessDirty("renderSettings");
+    expect(steadyProbe()).toBe(true);
+    expect(askedKept).toHaveBeenCalled();
+    expect(askedSpawned).toHaveBeenCalled();
+    // So does a probe that tolerates no swap: a load, a preparation, a capture.
+    graph.markReadinessDirty("meshAdded", [spawned]);
+    askedKept.mockClear();
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(askedKept).toHaveBeenCalled();
+    expect(scoped()).toBe(settled + 1);
+  } finally {
+    graph.dispose();
+  }
+});
+
+it("asks a source's batch when an instance leaves or joins it, and no other mesh", async () => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  const keptMaterial = kept.material = new StandardMaterial("kept", scene);
+  const source = MeshBuilder.CreateBox("source", {}, scene);
+  const sourceMaterial = source.material = new StandardMaterial("source", scene);
+  source.createInstance("first");
+  const leaving = source.createInstance("leaving");
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const askedKept = vi.spyOn(keptMaterial, "isReadyForSubMesh");
+    const askedSource = vi.spyOn(sourceMaterial, "isReadyForSubMesh");
+    // An instance that leaves: the batch it leaves can draw with another variant.
+    leaving.dispose();
+    expect(probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera))).toBe(true);
+    expect(askedSource).toHaveBeenCalled();
+    expect(askedKept).not.toHaveBeenCalled();
+    expect(graph.diagnostics().scopedReadinessProbes).toBe(1);
+    // An instance that joins.
+    askedSource.mockClear();
+    source.createInstance("second");
+    expect(probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera))).toBe(true);
+    expect(askedSource).toHaveBeenCalled();
+    expect(askedKept).not.toHaveBeenCalled();
+  } finally {
+    graph.dispose();
+  }
+});
+
+it("counts a scoped probe that a probe of every mesh disagrees with, while verifying", async () => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  const keptMaterial = kept.material = new StandardMaterial("kept", scene);
+  const graph = new ForwardSceneFrameGraph(scene);
+  verifyScopedReadinessProbes(true);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const steadyProbe = () => probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera));
+    // A scoped mark for a change that touched no other mesh: the probe of every mesh agrees.
+    graph.markReadinessDirty("particleBind", []);
+    expect(steadyProbe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 1, scopedReadinessMismatches: 0 });
+    // A mark that names too few meshes. The kept mesh's variant changed to one the Engine already holds: nothing new
+    // compiles, and only the probe of every mesh asks for it.
+    keptMaterial.markAsDirty(Constants.MATERIAL_AllDirtyFlag);
+    graph.markReadinessDirty("particleBind", []);
+    expect(steadyProbe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 2, scopedReadinessMismatches: 1 });
+    // The kept mesh is not ready, and only the probe of every mesh sees it.
+    vi.spyOn(keptMaterial, "isReadyForSubMesh").mockReturnValue(false);
+    graph.markReadinessDirty("particleBind", []);
+    expect(steadyProbe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 3, scopedReadinessMismatches: 2 });
+  } finally {
+    verifyScopedReadinessProbes(false);
+    graph.dispose();
+  }
 });
 
 it("keeps probing every frame while unready, then caches once admitted", async () => {

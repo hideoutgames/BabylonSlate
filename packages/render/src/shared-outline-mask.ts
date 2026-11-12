@@ -14,6 +14,7 @@ import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import { AddClipPlaneUniforms, BindClipPlane, PrepareStringDefinesForClipPlanes } from "@babylonjs/core/Materials/clipPlaneMaterialHelper";
 import { BindBonesParameters, BindMorphTargetParameters, PrepareDefinesAndAttributesForMorphTargets, PushAttributesForInstances } from "@babylonjs/core/Materials/materialHelper.functions";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
+import { outsideReadinessProbeScope } from "./readiness-scope";
 import { SHARED_OUTLINE_ATTRIBUTE, type SharedOutlineGroup, type SharedOutlineView } from "./shared-outline";
 import { SHARED_OUTLINE_MASK_SHADER } from "./shared-outline-shaders";
 import type { EffectCompileFailure } from "./effect-compile-failure";
@@ -55,6 +56,7 @@ export class SharedOutlineMaskRenderer {
     this.renderer = renderer; this.view = view; this.group = group; this.compileFailure = compileFailure;
     renderer.customIsReadyFunction = (mesh, _refreshRate, preWarm) => {
       if (this.disposed || mesh.isDisposed()) return false;
+      if (outsideReadinessProbeScope(mesh)) return true;
       // The renderer performs LOD selection after this callback. Check both the
       // source here and the actual LOD again before submission. Readiness
       // probes (preWarm) always revalidate and never let a draw skip its check.

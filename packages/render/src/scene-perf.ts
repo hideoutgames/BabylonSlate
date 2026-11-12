@@ -14,6 +14,7 @@ import { prewarmMaterial } from "./material-compiler";
 import { isEngineDefaultMaterial } from "./default-material";
 import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
+import { isRenderTargetProbeReady, outsideReadinessProbeScope } from "./readiness-scope";
 import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
@@ -378,6 +379,8 @@ function drawsSomething(mesh: AbstractMesh): boolean {
  * that finds a hidden mesh ready notes it for its round too, so a mesh hidden by the view's previous run is revealed.
  */
 export function isMeshFrameReady(mesh: AbstractMesh): boolean {
+  // A probe for changes that touched other meshes only: this one's variants are as the last probe found them.
+  if (outsideReadinessProbeScope(mesh)) return true;
   const scene = mesh.getScene();
   // Native influence edits become attribute-dirty only when the manager resolves
   // its active targets. Resolve before native readiness can accept old defines.
@@ -600,7 +603,7 @@ export function isSceneFrameReady(
     }
     for (const target of renderTargets) {
       const owner = target.getScene() ?? scene;
-      if (withSceneReadinessState(owner, () => target.isReadyForRendering())) continue;
+      if (withSceneReadinessState(owner, () => isRenderTargetProbeReady(target))) continue;
       if (variantSwapsTolerated() && shadowMaps.has(target)) noteVariantSwap();
       else ready = false;
     }

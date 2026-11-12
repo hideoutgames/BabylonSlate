@@ -57,7 +57,7 @@ describe("formatFeatureTestCheckReport", () => {
             ] },
           // 140 strict readiness checks over the 280 frames drawn while sampled, 4.2 s of them.
           work: { drawn: 280, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 140, readinessProbeMs: 4200, outlineReadinessChecks: 0,
-            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0 } },
+            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0 } },
           commands: [{ line: "ft_stats", success: true, output: "FeatureTest score 0, spinners 4, spawned 0", ms: 1200 }], benchmark: [], logs: [] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 30, after: 30, leak: false, quarantined: false } },
       }],
@@ -114,7 +114,7 @@ describe("formatFeatureTestCheckReport", () => {
           firstDrawsBeforeSweep: reading(3, { objects: 3 }), firstDraws: reading(40, { objects: 20, shadows: 12, post: 8 }),
           // No readiness check ran while Play was measured.
           work: { drawn: 300, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0,
-            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0 } },
+            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0 } },
           commands: [], benchmark: [], logs: [] },
         session: null,
       }],
@@ -137,14 +137,15 @@ describe("formatFeatureTestCheckReport", () => {
           work: { drawn: 400, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 40,
             readinessProbeMs: 800, outlineReadinessChecks: 0,
             readinessProbeReasons: { meshAdded: 20, particleBind: 12, shadowMap: 5, membership: 5, spawnWarm: 4, other: 2, outline: 1 },
-            readinessSwapRechecks: 9, failedReadinessProbes: 3 } },
+            readinessSwapRechecks: 9, failedReadinessProbes: 3, scopedReadinessProbes: 30, scopedReadinessMismatches: 2 } },
           commands: [], benchmark: [], logs: [] },
         session: null,
       }],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     // Equal counts are named alphabetically; failed, other and outline fall past the sixth.
-    expect(lines).toContain("  Readiness probes: 40 in 400 drawn frames · 20.0 ms each · 2.0 ms per drawn frame · causes: mesh added 20, particle bind 12, swap recheck 9, membership count 5, shadow map 5, spawn warm-up 4");
+    // 30 of the probes asked only the meshes their causes named; a verification run found two of those wrong.
+    expect(lines).toContain("  Readiness probes: 40 in 400 drawn frames (30 asked only the changed meshes) · 20.0 ms each · 2.0 ms per drawn frame · causes: mesh added 20, particle bind 12, swap recheck 9, membership count 5, shadow map 5, spawn warm-up 4 · 2 of those DISAGREED with a probe of every mesh");
   });
 
   it("recommends the highest quality tier every benchmarked scene holds at 60 and 30 fps", () => {
@@ -450,7 +451,7 @@ describe("formatFeatureTestCheckReport", () => {
             sample("baseline 2", 83, 42, {
               work: {
                 graphBuilds: 1, strictReadinessChecks: 80, readinessProbeMs: 320, outlineReadinessChecks: 0, shadowAdmissions: 120, shadowAdmissionMs: 24,
-                readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0,
+                readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
               },
               memory: { deviceAvailableBytes: 1024 * 1048576, appAvailableBytes: 2048 * 1048576 },
             }),

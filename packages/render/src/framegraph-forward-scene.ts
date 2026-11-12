@@ -29,6 +29,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -43,6 +44,9 @@ import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
+import type { SceneReadinessScope } from "./scene-readiness-signal";
+import { verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
+import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
@@ -150,11 +154,40 @@ const membershipCounts: readonly ((scene: Scene) => number)[] = [
     ._isReadyChecks?.length ?? 0,
 ];
 
-/** Where `membershipCounts` counts the Scene's meshes and particle systems. */
+/** Where `membershipCounts` counts the Scene's meshes, particle systems and custom readiness checks. */
 const MESH_COUNT = 0;
 const PARTICLE_SYSTEM_COUNT = 6;
+const READINESS_CHECK_COUNT = 11;
 
 const NO_CULLED_MESHES: readonly AbstractMesh[] = [];
+
+/** How many Effects the Engine holds: a probe that asks for a variant no Effect exists for adds one. */
+function compiledEffectCount(engine: object): number {
+  return Object.keys((engine as { _compiledEffects?: object })._compiledEffects ?? {}).length;
+}
+
+/** Runs `run` and returns how many times it asked the Engine for an Effect, one it already holds included. */
+function countEffectRequests(engine: object, run: () => void): number {
+  const target = engine as { createEffect(...args: unknown[]): unknown };
+  const own = Object.prototype.hasOwnProperty.call(target, "createEffect");
+  const create = target.createEffect;
+  let count = 0;
+  const counting = function (this: unknown, ...args: unknown[]) {
+    count += 1;
+    return create.apply(this, args);
+  };
+  target.createEffect = counting;
+  try {
+    run();
+  } finally {
+    // A hook installed meanwhile wraps this one and stays.
+    if (target.createEffect === counting) {
+      if (own) target.createEffect = create;
+      else delete (target as { createEffect?: unknown }).createEffect;
+    }
+  }
+  return count;
+}
 /** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
 const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
 /** What a spatial geometry pass seeded from the scene's depth draws of them: the meshes that depth lacks. */
@@ -272,13 +305,18 @@ export class ForwardSceneFrameGraph {
   private swapRecheckMarked = false;
   private swapRechecks = 0;
   private failedProbes = 0;
+  /** Strict probes that asked only the meshes marked since the last passing probe (`probeScope`). */
+  private scopedProbes = 0;
+  /** Scoped probes a whole probe disagreed with, counted while verifying (`verifyScopedReadinessProbes`). */
+  private scopedMismatches = 0;
 
   diagnostics() {
     this.measureWork = true;
     return {
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
-      failedReadinessProbes: this.failedProbes,
+      failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
+      scopedReadinessMismatches: this.scopedMismatches,
     };
   }
   private graph: FrameGraph | undefined;
@@ -332,6 +370,12 @@ export class ForwardSceneFrameGraph {
     colorType: number;
   } | undefined;
   private readinessDirtyFlag = true;
+  /**
+   * What the marks since the last passing probe can have touched: any mesh (`unscopedMark`, also before the first
+   * probe), or only `scopedMeshes`, each with the source that draws it.
+   */
+  private unscopedMark = true;
+  private readonly scopedMeshes = new Set<AbstractMesh>();
   /**
    * The last passing probe tolerated a mesh drawing its previous Effect while its new variant compiles. Steady frames
    * probe again each frame until every swap is drawn (`recheckVariantSwaps`); a probe that tolerates none re-probes.
@@ -405,7 +449,7 @@ export class ForwardSceneFrameGraph {
       // and marked it, and its probe has run.
       if (this.foundBeforeAnnounced.delete(mesh)) return;
       this.knownMeshes.add(mesh);
-      this.markReadinessDirty("meshAdded");
+      this.markReadinessDirty("meshAdded", [mesh]);
     });
     watch(scene.onMeshRemovedObservable, (mesh) => {
       this.unwatchMesh(mesh);
@@ -414,7 +458,7 @@ export class ForwardSceneFrameGraph {
       this.removedMeshes += 1;
       // A mesh that leaves needs nothing compiled. An instance's source can: its batch may draw with another variant
       // once the instance is gone (its last one, so it draws without instancing again; a pool group's warm-up stand-in).
-      if (mesh.isAnInstance) this.markReadinessDirty("meshRemoved");
+      if (mesh.isAnInstance) this.markReadinessDirty("meshRemoved", [(mesh as InstancedMesh).sourceMesh]);
     });
     watch(scene.onNewMaterialAddedObservable, mark("materialAdded"));
     watch(scene.onMaterialRemovedObservable, mark("materialRemoved"));
@@ -726,9 +770,18 @@ export class ForwardSceneFrameGraph {
     return false;
   }
 
-  /** `reason` is for diagnostics only, recorded only while measuring (`diagnostics`). */
-  markReadinessDirty(reason: SceneReadinessDirtyReason = "other"): void {
+  /**
+   * `reason` is for diagnostics only, recorded only while measuring (`diagnostics`). `scope` names the only meshes
+   * whose variants the change can have touched; without one, any mesh's.
+   */
+  markReadinessDirty(reason: SceneReadinessDirtyReason = "other", scope?: SceneReadinessScope): void {
     if (this.measureWork) this.markedReasons.add(reason);
+    if (!scope) this.unscopedMark = true;
+    else for (const mesh of scope) {
+      this.scopedMeshes.add(mesh);
+      // An instance draws in its source's batch, whose variant its arrival or departure changes.
+      this.scopedMeshes.add(drawingMesh(mesh));
+    }
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
     // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.
@@ -745,6 +798,8 @@ export class ForwardSceneFrameGraph {
   /** A graph-level probe passed: it covers the outline task along with every other task. */
   private markGraphProbed(): void {
     this.readinessDirtyFlag = false;
+    this.unscopedMark = false;
+    this.scopedMeshes.clear();
     this.markedReasons.clear();
     this.swapRecheckMarked = false;
     this.variantSwaps = this.probeSwapped;
@@ -785,7 +840,10 @@ export class ForwardSceneFrameGraph {
       else this.markOutlineDirty();
     }
     const membership = this.membership;
-    let changed = false;
+    // What changed: a collection any mesh's variants can depend on, or only ones whose members are probed for
+    // themselves (new meshes; particle systems and readiness checks, which every probe asks).
+    let anyMesh = false;
+    let own = false;
     for (let index = 0; index < membershipCounts.length; index += 1) {
       const count = membershipCounts[index]!(this.scene);
       const previous = membership[index];
@@ -793,24 +851,28 @@ export class ForwardSceneFrameGraph {
       if (index === PARTICLE_SYSTEM_COUNT) {
         // A particle system that left needs nothing compiled, and Babylon takes a disposed one out of the Scene
         // without announcing it: a changed count counts only when it holds a system not seen before.
-        if (count !== previous && (this.holdsNewParticleSystem() || previous === undefined)) changed = true;
+        if (count !== previous && (this.holdsNewParticleSystem() || previous === undefined)) own = true;
         continue;
       }
       // Meshes that left need nothing compiled either: a count that fell by exactly the removals announced since the
       // last one holds no addition (one that fell by fewer does, added in the same frame).
       const removed = index === MESH_COUNT ? this.removedMeshes : 0;
-      if (previous === undefined || count !== previous - removed) changed = true;
+      if (previous !== undefined && count === previous - removed) continue;
+      if (index === MESH_COUNT || index === READINESS_CHECK_COUNT) own = true;
+      else anyMesh = true;
     }
     this.removedMeshes = 0;
     // The first call only records the sizes.
-    if (changed && this.membershipRecorded) {
+    if ((anyMesh || own) && this.membershipRecorded) {
       // Babylon will announce these meshes on a later task: this mark stands for that one.
+      const found: AbstractMesh[] = [];
       for (const mesh of this.scene.meshes) {
         if (this.knownMeshes.has(mesh)) continue;
         this.knownMeshes.add(mesh);
         this.foundBeforeAnnounced.add(mesh);
+        found.push(mesh);
       }
-      this.markReadinessDirty("membership");
+      this.markReadinessDirty("membership", anyMesh ? undefined : found);
     }
     this.membershipRecorded = true;
   }
@@ -1701,8 +1763,43 @@ export class ForwardSceneFrameGraph {
 
   /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    return this.timedProbe(() => withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
+    const round = () => this.timedProbe(() => withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
       () => revealRound(() => this.collectingEffects(() => this.probeReady()))));
+    const scope = this.probeScope();
+    if (!scope) return round();
+    if (this.measureWork) this.scopedProbes += 1;
+    if (!withReadinessProbeScope(scope, round)) return false;
+    // A mark for any mesh made by the probe itself is not covered by it: the next probe asks them all.
+    if (this.unscopedMark) {
+      this.noteFailedProbe();
+      return false;
+    }
+    if (verifiesScopedReadinessProbes() && !this.wholeProbeAgrees(round)) this.scopedMismatches += 1;
+    return true;
+  }
+
+  /**
+   * Verification: a probe of every mesh right after a scoped one that passed must pass too and ask the Engine for no
+   * Effect. One it creates is a variant the scoped probe left uncompiled; one it asks for again is a mesh outside the
+   * scope whose variant changed. A scoped probe that found a swap pending left a variant unadopted, which every probe
+   * asks for again: then only a new Effect counts.
+   */
+  private wholeProbeAgrees(round: () => boolean): boolean {
+    const engine = this.scene.getEngine();
+    const swapped = this.probeSwapped;
+    const effects = compiledEffectCount(engine);
+    let passed = false;
+    const requests = countEffectRequests(engine, () => { passed = round(); });
+    return passed && compiledEffectCount(engine) === effects && (swapped || requests === 0);
+  }
+
+  /**
+   * The meshes the next probe may be limited to, or undefined for all of them. Only a world view's steady frame is
+   * limited (a probe that tolerates no swap asks every mesh), only when every mark since the last passing probe named
+   * its meshes, and not while a swap is pending: a hidden mesh outside the scope would be revealed by no round.
+   */
+  private probeScope(): ReadonlySet<AbstractMesh> | undefined {
+    return this.unscopedMark || this.variantSwaps || !variantSwapsTolerated() ? undefined : this.scopedMeshes;
   }
 
   /** `candidates` narrowed to what a seeded spatial geometry pass draws, so its probe compiles no variant it never draws. */

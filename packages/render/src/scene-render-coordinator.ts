@@ -143,8 +143,8 @@ export class SceneRenderCoordinator {
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
       ? { auxiliary: { objects: options.auxiliary.objects, screenEffects: options.auxiliary.screenEffects } }
       : { occlusion: options.occlusion === true, seedsFromSceneDepth: options.seedsFromSceneDepth === true });
-    this.detachReadinessDirty = onSceneReadinessDirty(scene, (reason) =>
-      this.graph.markReadinessDirty(reason),
+    this.detachReadinessDirty = onSceneReadinessDirty(scene, (reason, scope) =>
+      this.graph.markReadinessDirty(reason, scope),
     );
     this.releaseWaterPlanarReflections = options.waterPlanarReflections === false
       ? () => {}
