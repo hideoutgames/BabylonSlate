@@ -30,5 +30,5 @@ Run the helper in the foreground, keep its session until it returns, and never s
 - `success` (exit code 0) means only the selected operation passed; confirm it still covers the current change. Targeted checks do not produce the cumulative preflight certificate (`deliveryEligible: true`), and targeted delivery does not need it.
 - `failure`, `cancellation`, `timeout` and `stale` never satisfy a gate. Read the bounded failure output, or only the part of `output.log` you need.
 - A free slot is an observation, not a reservation: recheck capacity immediately before marking ready. The helper never opens, readies or merges a PR.
-- CI success covers the captured head's latest pull-request Verify run and all six jobs. Other required checks, reviews, mergeability and the current head still need checking before merge.
+- CI success covers the captured head's latest pull-request Verify run and all seven jobs. Other required checks, reviews, mergeability and the current head still need checking before merge.
 - To interrupt, cancel the session gracefully: the helper handles SIGINT and SIGTERM and stops only its own child processes. Never kill processes by executable name.

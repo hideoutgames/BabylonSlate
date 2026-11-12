@@ -1,7 +1,7 @@
 name: WebKit Smoke
 
 # Optional Safari-engine smoke lane. It is not a pull-request check and must
-# not be made required: PR Verify keeps its six jobs per ready PR.
+# not be made required: PR Verify keeps its seven jobs per ready PR.
 on:
   push:
     branches: [main]
