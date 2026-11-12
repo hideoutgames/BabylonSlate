@@ -14,12 +14,18 @@ let scope: ReadonlySet<AbstractMesh> | undefined;
 /** Render targets a whole probe found ready: a scoped probe asks such a target for the scope's meshes only. */
 const probedWhole = new WeakSet<RenderTargetTexture>();
 
-/** The list of a target a scope without meshes asks. */
-const NO_MESHES: AbstractMesh[] = [];
-const noMeshes = (): AbstractMesh[] => {
-  NO_MESHES.length = 0;
-  return NO_MESHES;
-};
+/** The scope while a scoped probe asks a render target a whole probe found ready (`readinessProbeListScope`). */
+let listScope: ReadonlySet<AbstractMesh> | undefined;
+
+/**
+ * The only meshes the render target being probed is asked now, or undefined when it is asked every mesh it lists (a
+ * whole probe, a target no whole probe found ready, a real pass). A target that builds its list per pass (a shadow
+ * map culls its casters for every layer) may list just these and the instances they draw: the others answer "ready"
+ * without being asked (`outsideReadinessProbeScope`).
+ */
+export function readinessProbeListScope(): ReadonlySet<AbstractMesh> | undefined {
+  return listScope;
+}
 
 /** Whether scoped probes are followed by a whole one that must agree (`verifyScopedReadinessProbes`). */
 let verifies = false;
@@ -50,28 +56,28 @@ export function outsideReadinessProbeScope(mesh: AbstractMesh): boolean {
 export function isRenderTargetProbeReady(target: RenderTargetTexture): boolean {
   const meshes = scope;
   if (!meshes || !probedWhole.has(target)) {
-    scope = undefined;
+    const outer = listScope;
+    scope = listScope = undefined;
     try {
       const ready = target.isReadyForRendering();
       if (ready) probedWhole.add(target);
       return ready;
     } finally {
       scope = meshes;
+      listScope = outer;
     }
   }
   const whole = target.customIsReadyFunction;
-  const list = target.getCustomRenderList;
   // Babylon asks `mesh.isReady(true)` of a target without a check of its own.
   target.customIsReadyFunction = (mesh, refreshRate, preWarm) =>
     outsideReadinessProbeScope(mesh) || (whole ? whole(mesh, refreshRate, preWarm) : mesh.isReady(true));
-  // A scope without meshes (a particle system bound or cancelled) asks none of the target's list, so the list is not
-  // built: a shadow map's culls its casters for every layer. What the target checks besides its meshes still runs.
-  if (list && meshes.size === 0) target.getCustomRenderList = noMeshes;
+  const outer = listScope;
+  listScope = meshes;
   try {
     return target.isReadyForRendering();
   } finally {
+    listScope = outer;
     target.customIsReadyFunction = whole;
-    if (list && meshes.size === 0) target.getCustomRenderList = list;
   }
 }
 
