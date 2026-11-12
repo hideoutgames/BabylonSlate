@@ -185,6 +185,7 @@ export class SceneShadowController {
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, ShadowMapSlot>();
   private readonly refresh = new ShadowMapRefresh();
+  private readonly casterWalked = (mesh: AbstractMesh) => this.refresh.casterState(mesh);
   private readonly counters: ShadowDrawCounters = { drawCalls: 0, triangles: 0 };
   shadowDrawCalls(): number {
     return this.counters.drawCalls;
@@ -467,7 +468,7 @@ export class SceneShadowController {
     this.refresh.syncCasters(this.scene, this.meshes);
     this.maps.retained?.beginFrame();
     // From the walk to the end of this Scene render no caster moves, shows or hides: the layers' lists read them once.
-    this.spatial.prepare();
+    this.spatial.prepare(this.casterWalked);
     // A sync("admission") skips the walk, so frozen cascade caster bounds follow it here.
     let casterBounds: ReturnType<ShadowCasterList["bounds"]>;
     for (const entry of this.entries.values())

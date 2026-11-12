@@ -33,9 +33,10 @@ export class ShadowCasterList {
 
   /**
    * Reads every caster for the queries that follow, until `release`: call it once nothing moves, shows or hides a
-   * caster any more (after the frame's caster walk), and `release` when that ends (the Scene's render ends).
+   * caster any more (after the frame's caster walk, whose findings `walked` gives), and `release` when that ends (the
+   * Scene's render ends).
    */
-  prepare(): void {
+  prepare(walked?: (mesh: AbstractMesh) => { readonly shown: boolean } | undefined): void {
     const meshes = this.meshes, count = meshes.length;
     if (this.states.length < count) {
       const room = Math.max(64, 2 ** Math.ceil(Math.log2(count)));
@@ -45,7 +46,9 @@ export class ShadowCasterList {
     const boxes = this.boxes, states = this.states;
     for (let index = 0; index < count; index += 1) {
       const mesh = meshes[index]!;
-      if (!mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled()) {
+      // The walk already asked whether the caster is enabled and visible; one it has not seen is asked here.
+      const seen = walked?.(mesh);
+      if (seen ? !seen.shown || mesh.isDisposed() : !mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled()) {
         states[index] = 0;
         continue;
       }

@@ -60,6 +60,8 @@ type Caster = {
   unsafe: boolean;
   /** Its geometry draws within its bounds (twice its radius when it deforms): `safeMesh`, its thin instances aside. */
   bounded: boolean;
+  /** As the walk found it: enabled and visible, so a map layer may list it (`ShadowCasterList.prepare`). */
+  shown: boolean;
 };
 
 /**
@@ -188,7 +190,7 @@ export class ShadowMapRefresh {
    * What the last walk found of a caster: a revision that moves with anything its shadow depends on, and whether its
    * mesh and Material draw what its static geometry holds (`safe`), shown or hidden. Undefined before its first walk.
    */
-  casterState(mesh: AbstractMesh): { readonly revision: number; readonly safe: boolean } | undefined {
+  casterState(mesh: AbstractMesh): { readonly revision: number; readonly safe: boolean; readonly shown: boolean } | undefined {
     return this.casters.get(mesh);
   }
 
@@ -226,6 +228,7 @@ export class ShadowMapRefresh {
           safe: false,
           unsafe: false,
           bounded: false,
+          shown: false,
         };
         this.casters.set(mesh, record);
       }
@@ -280,7 +283,8 @@ export class ShadowMapRefresh {
         record.revision++;
         this.casterChanged?.(mesh);
       }
-      const visible = enabled && mesh.isVisible && mesh.visibility > 0;
+      record.shown = enabled && mesh.isVisible;
+      const visible = record.shown && mesh.visibility > 0;
       record.safe = safeMesh && safeMaterial;
       record.unsafe = visible && !record.safe;
       // Babylon's bounds leave thin instances out unless refreshed for them.
