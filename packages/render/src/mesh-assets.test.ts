@@ -8,6 +8,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   applyAlbedoTexture,
+  applySpriteVisibility,
   installTextureBytes,
   meshAssetFingerprint,
   meshAssetFingerprintWithoutModels,
@@ -482,4 +483,26 @@ describe("applyAlbedoTexture", () => {
     scene.dispose();
     engine.dispose();
   });
+});
+
+it("writes a sprite's visibility only when it changes, and marks a move between the opaque and blended lists", () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
+  const material = mesh.material = new StandardMaterial("sprite", scene);
+  const reasons: string[] = [];
+  const stop = onSceneReadinessDirty(scene, (reason) => reasons.push(reason));
+  const asked = vi.spyOn(material, "needAlphaBlendingForMesh");
+  applySpriteVisibility(mesh, 1);
+  expect(asked).not.toHaveBeenCalled();
+  applySpriteVisibility(mesh, 0.5);
+  expect(mesh.visibility).toBe(0.5);
+  expect(reasons).toEqual(["blendChange"]);
+  asked.mockClear();
+  applySpriteVisibility(mesh, 0.5);
+  expect(asked).not.toHaveBeenCalled();
+  expect(reasons).toEqual(["blendChange"]);
+  stop();
+  scene.dispose();
+  engine.dispose();
 });

@@ -46,7 +46,12 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
     });
   }
   const before = binding.style.opacity * binding.style.tint[3];
-  binding.style = parseOverlayVisualStyle(value);
+  const style = parseOverlayVisualStyle(value);
+  const held = binding.style;
+  // Asked on every tick of a fade and every redraw of a control: the same values keep the style object they have.
+  if (style.opacity === held.opacity && style.tint[0] === held.tint[0] && style.tint[1] === held.tint[1] && style.tint[2] === held.tint[2] &&
+    style.tint[3] === held.tint[3]) return;
+  binding.style = style;
   if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene(), "layerStyle");
 }
 
