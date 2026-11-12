@@ -381,6 +381,8 @@ function albedoUnlitBinding(texture: Texture | CubeTexture | null, alwaysBlend: 
 
 /** Weight changes preserve owned cutouts while opting fractional weights into blending. */
 export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): void {
+  // Asked every animation tick: an unchanged weight writes nothing.
+  if (mesh.visibility === visibility) return;
   const material = mesh.material;
   const blended = material?.needAlphaBlendingForMesh(mesh);
   mesh.visibility = visibility;

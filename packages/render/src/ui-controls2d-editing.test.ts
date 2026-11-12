@@ -97,3 +97,20 @@ it.each(["2DTextInputComponent", "2DNumericInputComponent"])("retains pointer se
   expect(visual.focused).toBe(true);
   input.release(2);
 });
+
+it("writes a control's background colour only when focus changes it, and draws the selection at its own alpha", () => {
+  const { visual } = editing();
+  const background = visual.surfaces[0]!.fallback.binding;
+  visual.setFocused(false);
+  visual.update({ classId: visual.classId, properties: visual.properties });
+  const resting = background.color;
+  visual.update({ classId: visual.classId, properties: visual.properties });
+  expect(background.color).toBe(resting);
+  visual.setFocused(true);
+  expect(background.color).not.toBe(resting);
+  expect(background.color).not.toEqual(resting);
+  visual.setFocused(false);
+  expect(background.color).toBe(resting);
+  const selection = visual.surfaces.find((surface) => surface.mesh.name.endsWith(":selection"))!;
+  expect(selection.fallback.binding.alpha).toBe(0.4);
+});

@@ -28,6 +28,11 @@ export interface UIControl2DMesh {
   textOffsetAt(x: number, y: number): number;
 }
 
+/** A control's background, at rest and with focus. */
+const BACKGROUND_HEX = "#272b35";
+const BACKGROUND = Color3.FromHexString(BACKGROUND_HEX).asArray() as [number, number, number];
+const BACKGROUND_FOCUSED = Color3.FromHexString("#3a485d").asArray() as [number, number, number];
+
 const controls = new WeakMap<AbstractMesh, UIControl2DMesh>();
 export function uiControl2DMesh(mesh: AbstractMesh): UIControl2DMesh | undefined { return controls.get(mesh); }
 
@@ -60,16 +65,16 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
   const bundle = new VisualBundle();
   const surfaces: Surface[] = [];
   const labels = new Map<string, { mesh: Mesh; key: string }>();
-  const surface = (role: Surface["role"], suffix: string, color: string): Mesh => {
+  const surface = (role: Surface["role"], suffix: string, color: string, alpha = 1): Mesh => {
     const mesh = bundle.ownRenderUser(MeshBuilder.CreatePlane(suffix, { size: 1 }, scene));
-    const fallback = applyOverlayUnlitMaterial(mesh, Color3.FromHexString(color).asArray() as [number, number, number]);
+    const fallback = applyOverlayUnlitMaterial(mesh, Color3.FromHexString(color).asArray() as [number, number, number], alpha);
     mesh.isPickable = false;
     mesh.alphaIndex = surfaces.length;
     surfaces.push({ mesh, role, fallback });
     return mesh;
   };
   try {
-    const mesh = surface("background", name, "#272b35");
+    const mesh = surface("background", name, BACKGROUND_HEX);
     const background = surfaces[0]!;
     const track = surface("track", `${name}:track`, "#525968");
     const fill = surface("fill", `${name}:fill`, "#539ce3");
@@ -77,8 +82,7 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
     const upperThumb = surface("thumb", `${name}:upper-thumb`, "#eeeeee");
     const indicator = surface("indicator", `${name}:indicator`, "#539ce3");
     const caret = surface("indicator", `${name}:caret`, "#eeeeee");
-    const selection = surface("indicator", `${name}:selection`, "#539ce3");
-    surfaces.find(entry => entry.mesh === selection)!.fallback.binding.alpha = 0.4;
+    const selection = surface("indicator", `${name}:selection`, "#539ce3", 0.4);
     for (const [index, child] of [track, fill, thumb, upperThumb, indicator, caret, selection].entries()) {
       child.parent = mesh;
       child.position.z = -0.002 * (index + 1);
@@ -147,7 +151,9 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
       mesh.metadata = { ...mesh.metadata, overlayControlMeshName: name, overlayControlComponentId: componentId,
         overlayHitTest: interactive ? "block" : "ignore", overlayHasButton: false };
       // The background and its option rows draw this binding: the colour reaches them at their next draws.
-      background.fallback.binding.color = Color3.FromHexString(visual.focused ? "#3a485d" : "#272b35").asArray() as [number, number, number];
+      // Written only when focus changes it.
+      const backgroundColor = visual.focused ? BACKGROUND_FOCUSED : BACKGROUND;
+      if (background.fallback.binding.color !== backgroundColor) background.fallback.binding.color = backgroundColor;
       if (["2DSliderComponent", "2DRangeSliderComponent", "2DProgressBarComponent"].includes(kind)) {
         const vertical = p.orientation === "vertical";
         const length = vertical ? p.height : p.width;

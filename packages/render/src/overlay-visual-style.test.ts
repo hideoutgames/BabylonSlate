@@ -78,3 +78,15 @@ it("loads authored multipliers in editor visuals and fades both joystick surface
   expect(visual.fallbacks.background.binding.alpha).toBe(0.35);
   expect(visual.fallbacks.joystick.binding.alpha).toBe(0.85);
 });
+
+it("keeps the style object while the values asked for are the ones it holds", () => {
+  const { scene } = host();
+  const mesh = MeshBuilder.CreatePlane("styled", {}, scene);
+  applyOverlayVisualStyle(mesh, { opacity: 0.5, tint: [1, 0.5, 0.25, 1] });
+  const held = overlayVisualStyle(mesh);
+  applyOverlayVisualStyle(mesh, { opacity: 0.5, tint: [1, 0.5, 0.25, 1] });
+  expect(overlayVisualStyle(mesh)).toBe(held);
+  applyOverlayVisualStyle(mesh, { opacity: 0.25, tint: [1, 0.5, 0.25, 1] });
+  expect(overlayVisualStyle(mesh)).not.toBe(held);
+  expect(overlayVisualStyle(mesh)).toEqual({ opacity: 0.25, tint: [1, 0.5, 0.25, 1] });
+});
