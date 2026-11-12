@@ -40,7 +40,7 @@ import {
   participatesInShadows,
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
-import { ShadowSpatialIndex } from "./shadow-spatial-index";
+import { ShadowCasterList } from "./shadow-caster-list";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { RetainedShadowCasters, type RetainedShadowDiagnostics } from "./shadow-retained-casters";
@@ -166,7 +166,7 @@ export class SceneShadowController {
   /** scene.meshes.length at the last scan, and synchronous removals since. */
   private knownMeshCount = 0;
   private removedSinceScan = 0;
-  private readonly spatial = new ShadowSpatialIndex();
+  private readonly spatial = new ShadowCasterList();
   private selectionCamera: Camera | null = null;
   /** The effective settings the last sync admitted by. */
   private planSettings: ShadowSettings | null = null;
@@ -184,9 +184,8 @@ export class SceneShadowController {
   private atlasReleasedFrame = -1;
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, ShadowMapSlot>();
-  private readonly refresh = new ShadowMapRefresh((mesh) =>
-    this.spatial.invalidate(mesh),
-  );
+  private readonly refresh = new ShadowMapRefresh();
+  private readonly casterWalked = (mesh: AbstractMesh) => this.refresh.casterState(mesh);
   private readonly counters: ShadowDrawCounters = { drawCalls: 0, triangles: 0 };
   shadowDrawCalls(): number {
     return this.counters.drawCalls;
@@ -222,6 +221,8 @@ export class SceneShadowController {
         entry.resetAllocation = true;
       }
     });
+    // What the frame's walk prepared of the casters holds until the Scene's render ends (the Scene drops the observer).
+    scene.onAfterRenderObservable.add(() => this.spatial.release());
     this.queueUnknownMeshes();
     TimingTools.SetImmediate(() => {
       this.earlierAddsNotified = true;
@@ -466,8 +467,10 @@ export class SceneShadowController {
     if (!this.holdsGenerator()) return;
     this.refresh.syncCasters(this.scene, this.meshes);
     this.maps.retained?.beginFrame();
+    // From the walk to the end of this Scene render no caster moves, shows or hides: the layers' lists read them once.
+    this.spatial.prepare(this.casterWalked);
     // A sync("admission") skips the walk, so frozen cascade caster bounds follow it here.
-    let casterBounds: ReturnType<ShadowSpatialIndex["bounds"]>;
+    let casterBounds: ReturnType<ShadowCasterList["bounds"]>;
     for (const entry of this.entries.values())
       if (entry.generator && !entry.standby) {
         if (entry.generator instanceof CascadedShadowGenerator) {

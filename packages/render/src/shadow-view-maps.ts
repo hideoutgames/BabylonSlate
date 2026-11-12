@@ -5,7 +5,7 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import type { Light } from "@babylonjs/core/Lights/light";
 import type { Scene } from "@babylonjs/core/scene";
 import type { ShadowSettings } from "@haptic/core";
-import type { ShadowSpatialIndex } from "./shadow-spatial-index";
+import type { ShadowCasterList } from "./shadow-caster-list";
 import { isReflectionCamera } from "./reflection-camera";
 import { isAtlasShadow } from "./shadow-atlas";
 import type { ShadowEntry as Entry } from "./shadow-entry";
@@ -54,7 +54,7 @@ export type ViewShadows = {
   /** Disposes the view's maps; settles once they are disposed. Idempotent. */
   release(): Promise<void>;
 };
-type CasterBounds = ReturnType<ShadowSpatialIndex["bounds"]>;
+type CasterBounds = ReturnType<ShadowCasterList["bounds"]>;
 
 /**
  * The per-view sun maps of a scene's shadow controller (`attachView`): one set
