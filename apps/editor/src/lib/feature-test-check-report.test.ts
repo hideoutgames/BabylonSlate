@@ -581,8 +581,10 @@ describe("formatFeatureTestCheckReport", () => {
       };
       return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Shadow casters:"));
     };
-    const stats = { casters: 209, draws: 240, vertices: 90_000, indices: 300_000, multiDraw: true, calls: 40, drawn: 500 };
+    const stats = { casters: 209, draws: 240, vertices: 90_000, indices: 300_000, instanced: false, multiDraw: true, calls: 40, drawn: 500 };
     expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer, a map layer in one call · 12.5 caster draws a call"]);
+    // Instanced (the default), a call is one range of the buffer and its instances.
+    expect(casters({ ...stats, instanced: true })).toEqual(["  Shadow casters: 209 drawn from the shared buffer, instanced by the geometry they share · 12.5 caster draws a call"]);
     // Without the extension each caster is a call, and before any map drew there is no ratio.
     expect(casters({ ...stats, multiDraw: false, calls: 0, drawn: 0 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer, one call each (no WEBGL_multi_draw)"]);
     // WebGPU retains none, and a Scene without such casters has no line.

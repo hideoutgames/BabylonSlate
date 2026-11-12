@@ -21,6 +21,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 import { markSmoothNormalShadowCaster } from "./shadow-bias";
 import { RETAINED_CALL_DRAWS, RetainedShadowCasters, setRetainedShadowCasters, type RetainedCasterState } from "./shadow-retained-casters";
+import { writeSceneShadowDebug } from "./shadow-debug";
 
 type Upload = { buffer: "vertices" | "indices"; at: number; data: number[] };
 type Call = { counts: number[]; offsets: number[]; slots: number[] };
@@ -29,6 +30,10 @@ type Call = { counts: number[]; offsets: number[]; slots: number[] };
 function recordingContext(engine: NullEngine, options: { multiDraw?: boolean } = {}) {
   const uploads: Upload[] = [];
   const calls: Call[] = [];
+  /** Instanced draws: the range drawn and the slots of its instances, read where the attribute pointed. */
+  const instanced: { count: number; offset: number; slots: number[] }[] = [];
+  let arrayUpload: number[] = [];
+  let pointer = 0;
   const single: { count: number; offset: number; slot: number }[] = [];
   const constants = new Map<string, number>([["NO_ERROR", 0]]);
   let sentSlots: number[] = [];
@@ -51,7 +56,14 @@ function recordingContext(engine: NullEngine, options: { multiDraw?: boolean } =
       if (key === "getExtension") return (name: string) => name === "WEBGL_multi_draw" && options.multiDraw !== false ? extension : null;
       if (key === "bufferSubData")
         return (target: number, at: number, data: Float32Array | Uint32Array, from: number, length: number) => {
-          uploads.push({ buffer: target === constants.get("ELEMENT_ARRAY_BUFFER") ? "indices" : "vertices", at, data: Array.from(data.subarray(from, from + length)) });
+          const sent = Array.from(data.subarray(from, from + length));
+          if (target !== constants.get("ELEMENT_ARRAY_BUFFER")) arrayUpload = sent;
+          uploads.push({ buffer: target === constants.get("ELEMENT_ARRAY_BUFFER") ? "indices" : "vertices", at, data: sent });
+        };
+      if (key === "vertexAttribPointer") return (_location: number, _size: number, _type: number, _normalized: boolean, _stride: number, offset: number) => { pointer = offset; };
+      if (key === "drawElementsInstanced")
+        return (_mode: number, count: number, _type: number, offset: number, instances: number) => {
+          instanced.push({ count, offset, slots: arrayUpload.slice(pointer / 4, pointer / 4 + instances) });
         };
       if (key === "drawElements") return (_mode: number, count: number, _type: number, offset: number) => { single.push({ count, offset, slot: sentDraw }); };
       if (key === "getError") return () => 0;
@@ -67,13 +79,15 @@ function recordingContext(engine: NullEngine, options: { multiDraw?: boolean } =
   const states = vi.spyOn(engine, "setState");
   // NullEngine keeps no attribute state to record a vertex array against.
   const arrays = vi.spyOn(engine, "recordVertexArrayObject").mockImplementation(() => ({}) as WebGLVertexArrayObject);
-  return { uploads, calls, single, rows, states, arrays };
+  return { uploads, calls, single, instanced, rows, states, arrays };
 }
 
-function host(options: { multiDraw?: boolean } = {}) {
+/** `instanced`: layers draw the casters of one range in one call (the default in a Scene); off, as `shadowdebug instancing off`. */
+function host(options: { multiDraw?: boolean; instanced?: boolean } = {}) {
   const engine = new NullEngine();
-  const { uploads, calls, single, rows, states, arrays } = recordingContext(engine, options);
+  const { uploads, calls, single, instanced, rows, states, arrays } = recordingContext(engine, options);
   const scene = new Scene(engine);
+  if (!options.instanced) writeSceneShadowDebug(scene, "instancing", false);
   const camera = new FreeCamera("camera", new Vector3(0, 2, -10), scene);
   scene.activeCamera = camera;
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);
@@ -103,7 +117,7 @@ function host(options: { multiDraw?: boolean } = {}) {
     const upload = rows.at(-1)!;
     return upload.data.slice(slot * 20, slot * 20 + 20);
   };
-  return { engine, scene, camera, sun, generator, retained, vouch, vouched, box, pass, uploads, calls, single, rows, rowOf, states, arrays };
+  return { engine, scene, camera, sun, generator, retained, vouch, vouched, box, pass, uploads, calls, single, instanced, rows, rowOf, states, arrays };
 }
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -140,6 +154,28 @@ describe("RetainedShadowCasters", () => {
     expect(engine._drawCalls.current - drawsBefore).toBe(1);
     expect(scene.getActiveIndices() - indicesBefore).toBe(72);
     expect(retained.diagnostics()).toMatchObject({ casters: 2, draws: 2, vertices: 48, indices: 72, multiDraw: true, calls: 1, drawn: 2 });
+  });
+
+  it("draws the casters of one range of the buffer in one instanced call, each instance naming its row", () => {
+    const { scene, retained, box, vouch, pass, instanced, calls, single } = host({ instanced: true });
+    const mesh = box("mesh"), other = box("other", 3);
+    const first = vouch(mesh.createInstance("first")), second = vouch(mesh.createInstance("second"));
+    // In the order listed: the mesh and its instances draw one range, the other mesh its own between them.
+    expect(pass([mesh, first, other, second]).taken).toEqual([true, true, true, true]);
+    expect(instanced).toEqual([
+      { count: 36, offset: 0, slots: [0, 1, 3] },
+      { count: 36, offset: 36 * 4, slots: [2] },
+    ]);
+    expect(calls).toEqual([]);
+    expect(single).toEqual([]);
+    expect(retained.diagnostics()).toMatchObject({ casters: 4, instanced: true, calls: 2, drawn: 4 });
+    // `shadowdebug instancing off`: every caster is a draw of its own again, in one call where the context can.
+    instanced.length = 0;
+    writeSceneShadowDebug(scene, "instancing", false);
+    pass([mesh, first, other, second]);
+    expect(instanced).toEqual([]);
+    expect(calls).toEqual([{ counts: [36, 36, 36, 36], offsets: [0, 0, 36 * 4, 0], slots: [0, 1, 2, 3] }]);
+    expect(retained.diagnostics()).toMatchObject({ instanced: false, calls: 3, drawn: 8 });
   });
 
   it("draws an instance from its source's geometry, at its own matrix", () => {
@@ -711,7 +747,7 @@ describe("a Scene's shadow maps", () => {
     Object.assign(engine.getCaps(), { maxTexturesImageUnits: 16 });
     engine._features.supportCSM = true;
     engine._features.supportShadowSamplers = true;
-    const { calls } = recordingContext(engine);
+    const { calls, instanced } = recordingContext(engine);
     const scene = new Scene(engine);
     const camera = new UniversalCamera("camera", new Vector3(0, 3, -12), scene);
     camera.setTarget(Vector3.Zero());
@@ -746,12 +782,14 @@ describe("a Scene's shadow maps", () => {
     const drawPass = () => (map as unknown as { _objectRenderer: { onBeforeRenderingManagerRenderObservable: { notifyObservers(pass: number): void } } })
       ._objectRenderer.onBeforeRenderingManagerRenderObservable.notifyObservers(0);
     drawPass();
-    expect(calls).toEqual([{ counts: [36], offsets: [0], slots: [0] }]);
+    // A Scene's layers draw instanced: one call for the one range listed.
+    expect(instanced).toEqual([{ count: 36, offset: 0, slots: [0] }]);
+    expect(calls).toEqual([]);
     // A pass that lists nothing (the sun has no such cascade) draws nothing of the list a probe left before it.
     map.getCustomRenderList!(0, map.renderList!, map.renderList!.length);
     expect(map.getCustomRenderList!(9, map.renderList!, map.renderList!.length)).toBeNull();
     drawPass();
-    expect(calls).toHaveLength(1);
+    expect(instanced).toHaveLength(1);
     // A mesh that stops casting leaves the shared buffer, and returns to it when it casts again.
     controller.setParticipation(rigid, { castShadows: false });
     controller.sync();

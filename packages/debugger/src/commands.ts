@@ -234,7 +234,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "shadowdebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), or the map passes themselves (passes)",
+      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), or the instancing of a layer's casters (instancing: each caster is a draw of its own again)",
       parameters: [{ name: "part", type: "enum", enumValues: [...SHADOW_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as ShadowDebugPart, enabled = Boolean(args.enabled);

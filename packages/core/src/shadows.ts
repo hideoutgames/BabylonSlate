@@ -276,7 +276,8 @@ export function componentCastsShadows(classId: string, castShadows: unknown): bo
  * costs (the Feature Test Check's Shadows Breakdown): the casters drawn into every map layer (`casters`: each layer is
  * still bound and cleared, and lit surfaces still sample the maps, which hold no caster), and the map passes
  * themselves (`passes`: no layer is bound, cleared or drawn once it has drawn its first, and lit surfaces sample the
- * depth the maps last held).
+ * depth the maps last held), and the instancing of the casters a layer draws (`instancing`: each caster is a draw of
+ * its own again, as before layers drew the casters of one geometry in one call; the depth drawn is the same).
  */
-export const SHADOW_DEBUG_PARTS = ["casters", "passes"] as const;
+export const SHADOW_DEBUG_PARTS = ["casters", "passes", "instancing"] as const;
 export type ShadowDebugPart = (typeof SHADOW_DEBUG_PARTS)[number];

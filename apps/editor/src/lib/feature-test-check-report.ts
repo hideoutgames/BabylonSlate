@@ -113,7 +113,8 @@ type RetainedShadows = NonNullable<RenderDiagnostics["shadowRetained"]>;
  */
 function retainedShadowsText(stats: RetainedShadows): string {
   const each = stats.calls ? ` · ${(stats.drawn / stats.calls).toFixed(1)} caster draws a call` : "";
-  return `${stats.casters} drawn from the shared buffer, ${stats.multiDraw ? "a map layer in one call" : "one call each (no WEBGL_multi_draw)"}${each}`;
+  const how = stats.instanced ? "instanced by the geometry they share" : stats.multiDraw ? "a map layer in one call" : "one call each (no WEBGL_multi_draw)";
+  return `${stats.casters} drawn from the shared buffer, ${how}${each}`;
 }
 
 /** How many causes a report names; the rest are counted. */

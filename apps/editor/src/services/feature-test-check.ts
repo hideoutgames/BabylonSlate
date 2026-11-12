@@ -242,6 +242,8 @@ export const FEATURE_TEST_BREAKDOWN_SHADOW_STEPS: readonly FeatureTestBreakdownS
   { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },
   shadowPartOff("casters", "shadow casters off"),
   shadowPartOff("passes", "shadow passes off"),
+  // Not a saving: what it adds is what drawing each caster on its own costs over drawing a geometry's casters at once.
+  shadowPartOff("instancing", "shadow instancing off"),
   { label: "shadows low", commands: ["quality shadows low"], fields: ["shadows", "shadows.filter"], overlaps: true },
   { label: "shadow filter low", commands: ["quality shadows filter low"], fields: ["shadows.filter"], overlaps: true },
   { label: "screen-space shadows off", commands: ["quality shadows screen off"], fields: ["shadows.screen"], overlaps: true },

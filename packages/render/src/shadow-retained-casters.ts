@@ -27,6 +27,7 @@ import { beginManagedRenderAllocation, type ManagedRenderLease } from "./managed
 import { isAutoLodMaster } from "./model-lod";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { isSmoothNormalShadowCaster } from "./shadow-bias";
+import { shadowDebugOff } from "./shadow-debug";
 
 /**
  * Shadow casters a map draws without Babylon's per-caster work.
@@ -38,9 +39,13 @@ import { isSmoothNormalShadowCaster } from "./shadow-bias";
  * next only in its world matrix and index range.
  *
  * So such casters are retained: their positions and normals live in one vertex buffer, their matrices in one data
- * texture, and a map layer draws those it lists in one `multiDrawElements` call per cull state (`CALL_DRAWS` draws a
- * call at most), each draw finding its matrix through `gl_DrawID`. Where the extension is missing the same buffer is
- * drawn one caster at a time, a uniform naming the draw. The vertex stage is Babylon's own (its normal bias and depth
+ * texture, and a map layer draws those it lists, per cull state, instanced: the listed casters that draw the same
+ * range of the buffer (instances of one mesh, meshes of one geometry) are one `drawElementsInstanced` call, each
+ * instance finding its matrix through an instanced attribute that names its draw. A browser turns every item of a
+ * `multiDrawElements` call into a draw of its own underneath, so a layer of two hundred casters cost two hundred
+ * draws there; instanced, it costs one per distinct range. With `shadowdebug instancing off` a layer draws as before
+ * that: one `multiDrawElements` call per cull state (`CALL_DRAWS` draws a call at most), each draw finding its matrix
+ * through `gl_DrawID`, or, where that extension is missing, one caster at a time, a uniform naming the draw. The vertex stage is Babylon's own (its normal bias and depth
  * metric chunks, its fragment shader, the generator's own defines), and the cull state and normal matrix are chosen as
  * Babylon's draw of the caster chooses them, so a retained caster writes the depth Babylon's draw of it would.
  *
@@ -53,6 +58,9 @@ const SAMPLER = "hapticRetainedDraws";
 const DRAW_UNIFORM = "hapticRetainedDraw";
 const SLOTS_UNIFORM = "hapticRetainedSlots";
 const MULTI_DRAW_DEFINE = "HAPTIC_RETAINED_MULTI_DRAW";
+const INSTANCED_DEFINE = "HAPTIC_RETAINED_INSTANCED";
+/** The instanced attribute naming each instance's draw (its row in the data texture). */
+const SLOT_ATTRIBUTE = "hapticRetainedSlot";
 /** Texels a draw's row holds: its world matrix's four columns, then (has normals, uneven scaling, 0, 0). */
 const TEXELS = 5;
 /** Draws per row of the data texture, whose width is a whole number of them. */
@@ -72,14 +80,18 @@ attribute vec3 normal;
 #include<__decl__shadowMapVertex>
 #include<shadowMapVertexExtraDeclaration>
 uniform highp sampler2D ${SAMPLER};
-#ifdef ${MULTI_DRAW_DEFINE}
+#if defined(${INSTANCED_DEFINE})
+attribute float ${SLOT_ATTRIBUTE};
+#elif defined(${MULTI_DRAW_DEFINE})
 uniform ivec4 ${SLOTS_UNIFORM}[${RETAINED_CALL_DRAWS / 4}];
 #else
 uniform int ${DRAW_UNIFORM};
 #endif
 void main(void)
 {
-#ifdef ${MULTI_DRAW_DEFINE}
+#if defined(${INSTANCED_DEFINE})
+int retainedDraw=int(${SLOT_ATTRIBUTE}+0.5);
+#elif defined(${MULTI_DRAW_DEFINE})
 int retainedDraw=${SLOTS_UNIFORM}[gl_DrawID/4][gl_DrawID%4];
 #else
 int retainedDraw=${DRAW_UNIFORM};
@@ -98,7 +110,9 @@ gl_Position=viewProjection*worldPos;
 }`;
 
 export type RetainedShadowDiagnostics = {
-  casters: number; draws: number; vertices: number; indices: number; multiDraw: boolean; calls: number; drawn: number;
+  casters: number; draws: number; vertices: number; indices: number;
+  /** A layer's casters draw instanced by the range they share; else whether a layer draws in one `multiDrawElements` call. */
+  instanced: boolean; multiDraw: boolean; calls: number; drawn: number;
 };
 
 const disabledScenes = new WeakSet<Scene>();
@@ -173,8 +187,11 @@ type Layer = {
   planes: readonly Plane[] | null;
 };
 
-/** `vao`: the shared buffers recorded for the program; null until its next draw records the buffers there are now. */
-type Program = { wrapper: DrawWrapper; effect: Effect; vao: WebGLVertexArrayObject | null };
+/**
+ * `vao`: the shared buffers recorded for the program; null until its next draw records the buffers there are now.
+ * `instanced`: the program reads each instance's draw from `SLOT_ATTRIBUTE`.
+ */
+type Program = { wrapper: DrawWrapper; effect: Effect; vao: WebGLVertexArrayObject | null; instanced: boolean };
 
 type Gpu = {
   positions: VertexBuffer;
@@ -184,6 +201,9 @@ type Gpu = {
   indexCapacity: number;
   lease: ManagedRenderLease;
 };
+
+/** The instanced attribute's buffer: one float per listed draw of the layer and cull state being drawn. */
+type Instances = { buffer: DataBuffer; capacity: number; lease: ManagedRenderLease };
 
 type MultiDraw = { multiDrawElementsWEBGL(mode: number, counts: Int32Array, countsOffset: number, type: number, offsets: Int32Array, offsetsOffset: number, drawCount: number): void };
 
@@ -235,6 +255,13 @@ export class RetainedShadowCasters {
   private indexCount = 0;
   private wasted = 0;
   private gpu: Gpu | null = null;
+  private instances: Instances | null = null;
+  /** Scratch for one cull state of a layer: its draws' slots ordered by the range they draw, and those ranges. */
+  private instanceSlots = new Float32Array(0);
+  private readonly rangeOfKey = new Map<number, number>();
+  private rangeCounts = new Int32Array(0);
+  private rangeFirsts = new Int32Array(0);
+  private rangeKeys = new Float64Array(0);
   private scratch = new Uint32Array(0);
   /** Per slot: its draw's index count and its byte offset in the indices. */
   private counted = new Int32Array(0);
@@ -270,6 +297,8 @@ export class RetainedShadowCasters {
   private sceneFrame = -1;
   private readonly frameEnd: Nullable<Observer<Scene>>;
   private refused = false;
+  /** The instanced program failed to compile: layers draw as without instancing. */
+  private instancingRefused = false;
   private disposed = false;
   private readonly restored: Nullable<Observer<AbstractEngine>>;
   /** Draw calls made, and the caster draws they stood for. */
@@ -414,6 +443,19 @@ export class RetainedShadowCasters {
     BindSceneUniformBuffer(effect, sceneBuffer);
     sceneBuffer.bindUniformBuffer();
     effect.setTexture(SAMPLER, texture);
+    // The instances' buffer is made before the vertex array is bound: making a buffer binds it through the Engine,
+    // which unbinds the vertex array. Without room for it nothing of this layer draws retained (its casters stay out
+    // of the map until a pass lists them again, as for a program that is not ready).
+    let instances: Instances | null = null;
+    if (program.instanced) {
+      let most = 0;
+      for (let group = 0; group < GROUPS; group += 1) most = Math.max(most, layer.counts[group]!);
+      instances = this.instancesFor(most);
+      if (!instances) {
+        layer.counts.fill(0);
+        return;
+      }
+    }
     engine.bindVertexArrayObject(program.vao, gpu.indices);
     const counted = this.counted, offsets = this.offsets;
     let indices = 0;
@@ -426,7 +468,12 @@ export class RetainedShadowCasters {
       if (generator.forceBackFacesOnly) engine.setState(true, 0, false, true, cullBackFaces);
       else engine.setState((group & 1) !== 0, 0, false, (group & 2) !== 0, cullBackFaces);
       engine.applyStates();
-      if (this.multiDraw) {
+      if (program.instanced) {
+        const drawn = this.drawInstanced(program, instances!, slots, count);
+        for (let index = 0; index < count; index += 1) indices += counted[slots[index]!]!;
+        engine._drawCalls.addCount(drawn, false);
+        this.calls += drawn;
+      } else if (this.multiDraw) {
         const callSlots = this.callSlots, callCounts = this.callCounts, callOffsets = this.callOffsets;
         for (let from = 0; from < count; from += RETAINED_CALL_DRAWS) {
           const draws = Math.min(RETAINED_CALL_DRAWS, count - from);
@@ -454,9 +501,96 @@ export class RetainedShadowCasters {
       }
       this.drawn += count;
     }
+    // The instances' buffer was bound past the Engine: its record of the array buffer (and vertex array) starts over.
+    if (program.instanced) (engine as unknown as EngineInternals)._resetVertexBufferBinding();
     // Babylon counts a draw's indices; the maps' triangle count reads them.
     scene._activeIndices.addCount(indices, false);
     layer.counts.fill(0);
+  }
+
+  /**
+   * Draws `count` of `slots` (one cull state of a layer, the program and vertex array bound) instanced: the draws of
+   * one range of the shared buffer in one call, their slots through `instances` (with room for `count`). Returns the
+   * calls made.
+   */
+  private drawInstanced(program: Program, instances: Instances, slots: Int32Array, count: number): number {
+    const engine = this.engine, gl = engine._gl;
+    const counted = this.counted, offsets = this.offsets;
+    if (this.instanceSlots.length < count) this.instanceSlots = new Float32Array(room(count, 256));
+    const ordered = this.instanceSlots, rangeOfKey = this.rangeOfKey;
+    rangeOfKey.clear();
+    // The ranges the draws use, in order of first use, and how many draws each has.
+    let ranges = 0;
+    for (let index = 0; index < count; index += 1) {
+      const slot = slots[index]!;
+      // A range is where its indices start and how many there are: two draws of one range differ in their rows only.
+      const key = offsets[slot]! * 16777216 + counted[slot]!;
+      let range = rangeOfKey.get(key);
+      if (range === undefined) {
+        range = ranges++;
+        rangeOfKey.set(key, range);
+        if (this.rangeCounts.length < ranges) {
+          const length = room(ranges, 64);
+          this.rangeCounts = grown(this.rangeCounts, length);
+          this.rangeFirsts = grown(this.rangeFirsts, length);
+          const keys = new Float64Array(length);
+          keys.set(this.rangeKeys);
+          this.rangeKeys = keys;
+        }
+        this.rangeCounts[range] = 0;
+        this.rangeKeys[range] = key;
+      }
+      this.rangeCounts[range]! += 1;
+    }
+    const rangeCounts = this.rangeCounts, rangeFirsts = this.rangeFirsts;
+    for (let range = 0, first = 0; range < ranges; range += 1) {
+      rangeFirsts[range] = first;
+      first += rangeCounts[range]!;
+      rangeCounts[range] = 0;
+    }
+    for (let index = 0; index < count; index += 1) {
+      const slot = slots[index]!;
+      const range = rangeOfKey.get(offsets[slot]! * 16777216 + counted[slot]!)!;
+      ordered[rangeFirsts[range]! + rangeCounts[range]!] = slot;
+      rangeCounts[range]! += 1;
+    }
+    const location = program.effect.getAttributeLocationByName(SLOT_ATTRIBUTE);
+    // Bound on the context itself: the Engine's own bind first unbinds the vertex array, which is where the
+    // attribute's pointer belongs. `draw` resets the Engine's record of the binding once the layer is drawn.
+    gl.bindBuffer(gl.ARRAY_BUFFER, instances.buffer.underlyingResource as WebGLBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, ordered, 0, count);
+    gl.enableVertexAttribArray(location);
+    gl.vertexAttribDivisor(location, 1);
+    for (let range = 0; range < ranges; range += 1) {
+      const key = this.rangeKeys[range]!;
+      const indexCount = key % 16777216, offset = (key - indexCount) / 16777216;
+      gl.vertexAttribPointer(location, 1, gl.FLOAT, false, 4, rangeFirsts[range]! * 4);
+      gl.drawElementsInstanced(gl.TRIANGLES, indexCount, gl.UNSIGNED_INT, offset, rangeCounts[range]!);
+    }
+    return ranges;
+  }
+
+  /** The instances' buffer with room for `count` draws; null when the rendering budget has no room for it. */
+  private instancesFor(count: number): Instances | null {
+    const held = this.instances;
+    if (held && held.capacity >= count) return held;
+    const capacity = room(count, 1024);
+    const lease = beginManagedRenderAllocation(this.engine, capacity * 4);
+    if (!lease) return null;
+    let buffer: DataBuffer;
+    try {
+      buffer = this.engine.createDynamicVertexBuffer(capacity * 4);
+    } catch {
+      lease.release();
+      return null;
+    }
+    lease.commit([{ handle: buffer, bytes: capacity * 4, category: "geometry" }]);
+    // A vertex array that pointed the attribute at the buffer released is pointed at this one by its next draw.
+    if (held) {
+      this.engine._releaseBuffer(held.buffer);
+      held.lease.release();
+    }
+    return (this.instances = { buffer, capacity, lease });
   }
 
   /** Forgets a caster that left the Scene's shadows. */
@@ -476,7 +610,10 @@ export class RetainedShadowCasters {
   diagnostics(): RetainedShadowDiagnostics {
     let casters = 0, draws = 0;
     for (const caster of this.casters.values()) if (caster.draws.length) { casters += 1; draws += caster.draws.length; }
-    return { casters, draws, vertices: this.vertices, indices: this.indexCount, multiDraw: this.multiDraw !== null, calls: this.calls, drawn: this.drawn };
+    return {
+      casters, draws, vertices: this.vertices, indices: this.indexCount, instanced: this.instanced(), multiDraw: this.multiDraw !== null,
+      calls: this.calls, drawn: this.drawn,
+    };
   }
 
   dispose(): void {
@@ -782,15 +919,22 @@ export class RetainedShadowCasters {
   }
 
   /** The depth program for `generator`'s defines; null when it failed. */
+  /** Whether a layer's casters draw instanced (they do unless `shadowdebug instancing off` or its program failed). */
+  private instanced(): boolean {
+    return !this.instancingRefused && !shadowDebugOff(this.scene, "instancing");
+  }
+
   private programFor(generator: ShadowGenerator): Program | null {
     const defines: string[] = [];
     (generator as unknown as GeneratorInternals)._prepareShadowDefines(NORMAL_STUB, false, defines, false);
-    if (this.multiDraw) defines.unshift("#extension GL_ANGLE_multi_draw : require", `#define ${MULTI_DRAW_DEFINE}`);
+    const instanced = this.instanced();
+    if (instanced) defines.unshift(`#define ${INSTANCED_DEFINE}`);
+    else if (this.multiDraw) defines.unshift("#extension GL_ANGLE_multi_draw : require", `#define ${MULTI_DRAW_DEFINE}`);
     const key = defines.join("\n");
     let program = this.programs.get(key);
     if (!program) {
       const effect = this.engine.createEffect({ vertex: VERTEX, fragment: "shadowMap" }, {
-        attributes: [VertexBuffer.PositionKind, VertexBuffer.NormalKind],
+        attributes: instanced ? [VertexBuffer.PositionKind, VertexBuffer.NormalKind, SLOT_ATTRIBUTE] : [VertexBuffer.PositionKind, VertexBuffer.NormalKind],
         uniformsNames: ["viewProjection", "lightDataSM", "depthValuesSM", "biasAndScaleSM", DRAW_UNIFORM, SLOTS_UNIFORM],
         uniformBuffersNames: ["Scene", "Mesh"],
         samplers: [SAMPLER],
@@ -798,15 +942,17 @@ export class RetainedShadowCasters {
         fallbacks: null,
         onCompiled: null,
         onError: (_effect, errors) => {
-          // Without `gl_DrawID` the same buffer still draws, a caster at a time; without that, Babylon's path does.
-          if (this.multiDraw) this.multiDraw = null;
+          // Without instancing a layer draws in one call through `gl_DrawID`; without that the same buffer still draws,
+          // a caster at a time; without that, Babylon's path does.
+          if (instanced) this.instancingRefused = true;
+          else if (this.multiDraw) this.multiDraw = null;
           else this.refused = true;
           console.warn(`[render] Retained shadow casters ${this.refused ? "are off" : "draw one at a time"}: their program failed to compile: ${errors}`);
         },
       }, this.engine);
       const wrapper = new DrawWrapper(this.engine);
       wrapper.setEffect(effect, key);
-      program = { wrapper, effect, vao: null };
+      program = { wrapper, effect, vao: null, instanced };
       this.programs.set(key, program);
     }
     return this.refused ? null : program;
@@ -849,6 +995,12 @@ export class RetainedShadowCasters {
     for (const program of this.programs.values()) {
       if (program.vao && release) this.engine.releaseVertexArrayObject(program.vao);
       program.vao = null;
+    }
+    const instances = this.instances;
+    if (instances) {
+      this.instances = null;
+      if (release) this.engine._releaseBuffer(instances.buffer);
+      instances.lease.release();
     }
     const gpu = this.gpu;
     if (!gpu) return;
