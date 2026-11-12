@@ -196,7 +196,7 @@ export class ShadowMapRefresh {
    * so they are not retained. Snapshots of the others stay, so a later walk
    * reports only what changed in between.
    */
-  dropRemovedCasters(meshes: ReadonlySet<AbstractMesh>): void {
+  dropRemovedCasters(meshes: ReadonlySet<AbstractMesh>, walks = false): void {
     this.lodLevels.clear();
     // Removed casters leave each map's in-range list, which refreshes that map.
     for (const [mesh, record] of this.casters) {
@@ -205,11 +205,11 @@ export class ShadowMapRefresh {
       this.casters.delete(mesh);
     }
     // A walk drops the sources its casters left; without one, a disposed source is not kept.
-    for (const source of this.sources.keys()) if (source.isDisposed()) this.sources.delete(source);
+    if (!walks) for (const source of this.sources.keys()) if (source.isDisposed()) this.sources.delete(source);
   }
 
   syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
-    this.dropRemovedCasters(meshes);
+    this.dropRemovedCasters(meshes, true);
     const walk = ++this.walk;
     for (const mesh of meshes) {
       let record = this.casters.get(mesh);

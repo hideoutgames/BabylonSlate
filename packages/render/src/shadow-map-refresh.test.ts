@@ -27,6 +27,7 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { setLatticeBinding } from "./lattice-deformer-binding";
 import { followPose, updatePoseBounds } from "./pose-bounds";
 import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
 import { ReflectedContent } from "./reflected-content";
@@ -1045,12 +1046,13 @@ describe("what casters share", () => {
     refresh.syncCasters(scene, casters);
     expect(changed).toEqual([first, instance]);
 
-    // A caster that leaves does not hold its source.
-    changed.length = 0;
-    refresh.syncCasters(scene, new Set<AbstractMesh>([second]));
-    first.subMeshes[0]!.indexCount -= 3;
+    // A cage that deforms the instance alone keeps its shadow live, and its source's cached.
+    expect(refresh.casterState(instance)!.safe).toBe(true);
+    setLatticeBinding(instance, { active: true } as Parameters<typeof setLatticeBinding>[1]);
     refresh.syncCasters(scene, casters);
-    expect(changed).toEqual([first, instance]);
+    expect(refresh.casterState(instance)!.safe).toBe(false);
+    expect(refresh.casterState(first)!.safe).toBe(true);
+    setLatticeBinding(instance);
     refresh.dispose();
   });
 });
