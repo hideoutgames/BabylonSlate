@@ -11,6 +11,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Material } from "@babylonjs/core/Materials/material";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
@@ -31,6 +32,10 @@ import { authoredActorMatrices, authoredComponentActorTransform, authoredTransfo
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { DisplayConversion } from "./display-conversion";
+import { isUnlitMaterial } from "./unlit-material";
+import { unlitBinding } from "./unlit-material-blocks";
+import { isInstanceSource } from "./instance-source";
+import { notePassListed, onPassListed } from "./pass-list-signal";
 import { buildViewProjectionMatrix, drawsInsidePlanes } from "./planar-mirror";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
@@ -84,9 +89,16 @@ export type RenderTargetCaptureDiagnostics = {
   waterSceneCopyPass: number | null;
   /** A High or Full Quality view's strict readiness probes so far; steady frames add none. */
   strictReadinessChecks: number;
+  /**
+   * What showed the output at the last scene render, which an every-frame capture draws for: a mesh in the view or a
+   * reflection, a mesh another shown capture draws, or a consumer that cannot be placed. Null: nothing shows it.
+   */
+  shownBy: "view" | "reflection" | "another capture" | "unknown consumer" | "unplaced Material" | "another Scene" | null;
 };
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
+/** How many captures' images may lie between an every-frame output and a view or reflection for it to keep drawing. */
+const SHOWN_THROUGH_CAPTURES = 3;
 /** Above 512 × 512 a High or Full Quality capture warns once: it costs about a second camera at its size. */
 const VIEW_GUIDANCE_PIXELS = 512 * 512;
 /** A High or Full Quality capture no wider or taller than this draws one sun cascade of its own. */
@@ -236,6 +248,24 @@ export class RenderTargetCaptures {
   private disposed = false;
   /** Every-frame captures skip their draws while set (`setEveryFrameSuspended`); manual requests still draw. */
   private everyFrameSuspended = false;
+  /**
+   * Which every-frame outputs something shows (`findShown`): per Render Target, the last Engine frame in which a mesh
+   * that samples it is drawn, and how many captures' images lie between it and a view or reflection (0: seen directly).
+   */
+  private readonly shown = new Map<string, { frame: number; depth: number; by: "view" | "reflection" | "another capture" }>();
+  /** The Scene's meshes that sample a capture's output this frame, each with the Render Targets it samples. */
+  private readonly consumers = new Map<AbstractMesh, readonly string[]>();
+  /** Render Targets some mesh's Material samples this frame, and those a Material no mesh draws with samples. */
+  private readonly placed = new Set<string>();
+  private readonly unplaced = new Set<string>();
+  /** This frame's answer for each Material: the Render Targets it samples, or null. */
+  private readonly materialTargets = new Map<Material, readonly string[] | null>();
+  /** Render Target Textures another Scene holds (a Scene Layer's): their targets always count as shown. */
+  private readonly heldElsewhere = new Set<string>();
+  private readonly viewPlanes = Frustum.GetPlanes(Matrix.Identity());
+  /** What showed each output at the last scene render that reached its capture (`diagnostics`). */
+  private readonly lastShownBy = new Map<string, RenderTargetCaptureDiagnostics["shownBy"]>();
+  private readonly releasePassLists: () => void;
   /** Whether manual captures not yet requested draw unpublished now (`rehearseManualCaptures`). */
   private rehearsing: () => boolean = () => false;
   /** Outputs rehearsed this starting state, and those tried and not yet drawn. */
@@ -254,6 +284,7 @@ export class RenderTargetCaptures {
     this.scene = scene;
     this.beforeRender = scene.onBeforeRenderObservable.add(() => this.render())!;
     this.releaseAuxiliaryViews = registerSceneAuxiliaryViews(scene, this.drawPendingViews);
+    this.releasePassLists = onPassListed(scene, (meshes, capture) => this.noteListed(meshes, capture));
     this.addedMesh = scene.onNewMeshAddedObservable.add(() => { this.rootsDirty = true; })!;
     this.removedMesh = scene.onMeshRemovedObservable.add(() => { this.rootsDirty = true; })!;
     scene.onDisposeObservable.addOnce(() => this.dispose());
@@ -346,6 +377,7 @@ export class RenderTargetCaptures {
     if (!this.consumerScenes.has(consumerScene)) {
       this.consumerScenes.set(consumerScene, consumerScene.onDisposeObservable.addOnce(() => this.consumerScenes.delete(consumerScene))!);
     }
+    if (consumerScene !== this.scene) this.heldElsewhere.add(guid);
     let texture = this.textures.get(guid);
     if (!texture) {
       texture = new CaptureTexture(this.scene, `renderTargetTexture:${guid}`);
@@ -378,6 +410,7 @@ export class RenderTargetCaptures {
     if (!drawing.has(this.scene)) setFirstDrawsUrgent(this.scene, false);
     if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
+    this.findShown();
     for (const [actorId, capture] of this.captures) {
       const settings = capture.settings;
       const guid = settings.renderTargetGuid;
@@ -403,6 +436,11 @@ export class RenderTargetCaptures {
       const quality = normalizeRenderTargetPayload(definition).mode === "SceneColor" ? settings.quality : "fast";
       const target = this.ensureTarget(guid, definition, actorId, capture.camera, quality);
       if (!target) continue;
+      // An every-frame capture nothing shows keeps its last image: no view, reflection or shown capture draws a mesh
+      // that samples it. Its first image is always drawn.
+      const shownBy = this.shownBy(guid);
+      this.lastShownBy.set(guid, shownBy);
+      if (settings.captureEveryFrame && target.published && shownBy === null) continue;
       // A published output keeps what its last capture showed; capture views prepare in the starting state.
       if (rehearsal && (target.published || target.view)) continue;
       if (rehearsal) this.pendingRehearsals.add(guid);
@@ -512,6 +550,7 @@ export class RenderTargetCaptures {
       taskNames: target.view?.renderer.taskNames() ?? [],
       waterSceneCopyPass: target.view?.renderer.waterSceneCopyDiagnostics()?.renderPassId ?? null,
       strictReadinessChecks: target.view?.renderer.strictReadinessChecks ?? 0,
+      shownBy: this.lastShownBy.get(renderTargetGuid) ?? null,
     }));
   }
   /** Settles once every retired capture view's native release confirmed and its output and lease are freed. */
@@ -572,7 +611,104 @@ export class RenderTargetCaptures {
       }
     }
     target.particles.length = particleCount;
-    return this.renderList(capture, target);
+    const meshes = this.renderList(capture, target);
+    notePassListed(this.scene, meshes, capture.settings.renderTargetGuid ?? undefined);
+    return meshes;
+  }
+  /**
+   * Finds who samples each capture's output and marks the outputs the Scene's view shows this frame: one sampled by an
+   * enabled, visible mesh inside the active camera's frustum (occlusion is not asked: it errs towards drawing). An
+   * output also counts as shown while its consumers cannot be placed: one that no mesh's Material samples (a consumer
+   * this scan does not know), or that a Material no mesh draws with samples (a post-process's, a particle system's).
+   * Every mesh and Material is asked each frame, a Material once, so nothing is cached that a Material or binding
+   * change could leave stale. Without an active camera every output counts as shown.
+   */
+  private findShown(): void {
+    this.consumers.clear();
+    this.materialTargets.clear();
+    this.placed.clear();
+    this.unplaced.clear();
+    if (!this.textures.size) return;
+    const frame = this.scene.getEngine().frameId;
+    const camera = this.scene.activeCamera;
+    if (camera) Frustum.GetPlanesToRef(camera.getTransformationMatrix(), this.viewPlanes);
+    for (const mesh of this.scene.meshes) {
+      const material = mesh.material;
+      if (!material) continue;
+      const sampled = this.sampledTargets(mesh, material);
+      if (!sampled) continue;
+      this.consumers.set(mesh, sampled);
+      for (const guid of sampled) this.placed.add(guid);
+      // A mesh that draws nothing itself shows nothing: one without geometry, or a source that only draws its
+      // instances, each of which is asked for itself.
+      if (mesh.getTotalVertices() === 0 || (mesh instanceof Mesh && isInstanceSource(mesh))) continue;
+      if (camera && !(mesh.isEnabled() && mesh.isVisible && mesh.visibility > 0 && (mesh.layerMask & camera.layerMask) !== 0 &&
+        drawsInsidePlanes(mesh, this.viewPlanes))) continue;
+      for (const guid of sampled) this.shown.set(guid, { frame, depth: 0, by: "view" });
+    }
+    for (const material of this.scene.materials) {
+      // A mesh's Material was asked above, an unlit Material's image is its mesh's.
+      if (this.materialTargets.has(material) || isUnlitMaterial(material)) continue;
+      for (const guid of this.materialSamples(material) ?? []) this.unplaced.add(guid);
+    }
+  }
+  /** The Render Targets `mesh` samples through `material`: an unlit Material's image is its mesh's own binding. */
+  private sampledTargets(mesh: AbstractMesh, material: Material): readonly string[] | null {
+    if (isUnlitMaterial(material)) {
+      const texture = unlitBinding(mesh).texture;
+      const guid = texture instanceof CaptureTexture ? this.targetOf(texture) : undefined;
+      return guid ? [guid] : null;
+    }
+    const sampled = this.materialTargets.get(material);
+    return sampled !== undefined ? sampled : this.materialSamples(material);
+  }
+  /** The Render Targets `material` samples (a slot container: its children, asked with it), kept for the frame. */
+  private materialSamples(material: Material): readonly string[] | null {
+    let found: string[] | null = null;
+    const materials = material instanceof MultiMaterial ? material.subMaterials : [material];
+    for (const [guid, texture] of this.textures) {
+      const target = this.textureDefinitions.get(guid)?.renderTargetGuid;
+      if (!target || found?.includes(target)) continue;
+      if (materials.some((entry) => entry?.hasTexture(texture))) (found ??= []).push(target);
+    }
+    this.materialTargets.set(material, found);
+    if (material instanceof MultiMaterial) for (const entry of materials) if (entry && !this.materialTargets.has(entry)) this.materialTargets.set(entry, null);
+    return found;
+  }
+  /** The Render Target whose output `texture` shows. */
+  private targetOf(texture: CaptureTexture): string | undefined {
+    for (const [guid, entry] of this.textures) if (entry === texture) return this.textureDefinitions.get(guid)?.renderTargetGuid ?? undefined;
+    return undefined;
+  }
+  /**
+   * A reflection or a capture is about to draw `meshes`: the outputs they sample are shown in the next frame too (a
+   * reflection lists after this frame's captures drew). An output seen only through another capture's image is one
+   * image further from a view; past `SHOWN_THROUGH_CAPTURES` it no longer counts, so captures that only show each
+   * other stop once no view or reflection shows either.
+   */
+  private noteListed(meshes: readonly AbstractMesh[], capture?: string): void {
+    if (!this.consumers.size) return;
+    const frame = this.scene.getEngine().frameId + 1;
+    const depth = capture === undefined ? 0 : (this.shown.get(capture)?.depth ?? 0) + 1;
+    if (depth > SHOWN_THROUGH_CAPTURES) return;
+    for (const mesh of meshes) {
+      const sampled = this.consumers.get(mesh);
+      if (!sampled) continue;
+      for (const guid of sampled) {
+        if (guid === capture) continue;
+        const entry = this.shown.get(guid);
+        if (!entry || entry.frame < frame || entry.depth > depth) this.shown.set(guid, { frame, depth, by: capture === undefined ? "reflection" : "another capture" });
+      }
+    }
+  }
+  /** What shows the output of `guid` this frame, or null when nothing does. */
+  private shownBy(guid: string): RenderTargetCaptureDiagnostics["shownBy"] {
+    if (!this.placed.has(guid)) return "unknown consumer";
+    if (this.unplaced.has(guid)) return "unplaced Material";
+    for (const [texture, definition] of this.textureDefinitions) if (definition.renderTargetGuid === guid && this.heldElsewhere.has(texture)) return "another Scene";
+    const entry = this.shown.get(guid);
+    if (!entry || entry.frame < this.scene.getEngine().frameId) return null;
+    return entry.by;
   }
   /** Rebuilds the actor roots after any registration or mesh change; true when it did. */
   private refreshRoots(): boolean {
@@ -1079,6 +1215,7 @@ export class RenderTargetCaptures {
     this.disposed = true;
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
     this.releaseAuxiliaryViews();
+    this.releasePassLists();
     this.pendingViews.length = 0;
     setFirstDrawsUrgent(this.scene, false);
     this.scene.onNewMeshAddedObservable.remove(this.addedMesh);

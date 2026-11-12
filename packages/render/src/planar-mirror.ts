@@ -30,6 +30,7 @@ import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease, type ManagedRenderResource,
 } from "./managed-render-resources";
+import { notePassListed } from "./pass-list-signal";
 import { markReflectionCamera } from "./reflection-camera";
 import { ReflectionSunShadows } from "./reflection-sun-shadows";
 import { isRenderTargetCaptureCandidate, renderTargetCaptureDrawing } from "./render-target-capture-state";
@@ -445,6 +446,8 @@ export function collectPlanarMirrorMeshes(
     list[count++] = mesh;
   }
   list.length = count;
+  // A capture whose image one of these shows keeps drawing while a reflection shows it.
+  notePassListed(scene, list);
 }
 
 const floatingOriginScenes = new WeakMap<Scene, () => Scene | undefined>();

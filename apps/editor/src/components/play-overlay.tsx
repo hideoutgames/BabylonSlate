@@ -1242,6 +1242,8 @@ function PlayOverlayView({
         stubWebGlDraws: (on: boolean) => boolean;
         scalability: () => ReturnType<PlaySession["handle"]["scalabilityStatus"]>;
         renderTasks: () => string[];
+        /** Every Render Target capture output, with what shows it. */
+        captures: () => ReturnType<PlaySession["handle"]["renderTargetCaptureDiagnostics"]>;
         shadowDiagnostics: () => ReturnType<typeof captureShadowDiagnostics> | null;
         setRenderSettings: PlaySession["handle"]["setRenderSettings"];
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
@@ -1262,6 +1264,7 @@ function PlayOverlayView({
       stubWebGlDraws: (on) => sessionRef.current?.handle.stubWebGlDraws(on) ?? false,
       scalability: () => sessionRef.current?.handle.scalabilityStatus(),
       renderTasks: () => sessionRef.current?.handle.renderTaskNames() ?? [],
+      captures: () => sessionRef.current?.handle.renderTargetCaptureDiagnostics() ?? [],
       shadowDiagnostics: () => {
         const handle = sessionRef.current?.handle;
         return handle ? captureShadowDiagnostics(handle.scene, { host: "play", meshes: handle.scene.meshes }) : null;
