@@ -136,6 +136,9 @@ type GeometryRange = {
 type Draw = { slot: number; part: SubMesh };
 
 type Caster = {
+  /** The walked frame that last asked the entry (`RetainedShadowCasters.beginFrame`), and whether its layers list it. */
+  seen: number;
+  listed: boolean;
   /** The scheduler's revision and the source's count of levels of detail this entry describes; -1 before the first. */
   revision: number;
   levels: number;
@@ -256,6 +259,11 @@ export class RetainedShadowCasters {
   private readonly programs = new Map<string, Program>();
   private readonly layers = new WeakMap<ShadowGenerator, Layer>();
   private current: Layer | null = null;
+  /** The walked frame whose layers share what they find of a caster (`beginFrame`); 0 outside one. */
+  private frame = 0;
+  private frames = 0;
+  private sceneFrame = -1;
+  private readonly frameEnd: Nullable<Observer<Scene>>;
   private refused = false;
   private disposed = false;
   private readonly restored: Nullable<Observer<AbstractEngine>>;
@@ -275,6 +283,7 @@ export class RetainedShadowCasters {
     this.engine = scene.getEngine() as ThinEngine;
     this.state = state;
     this.multiDraw = (this.engine._gl.getExtension("WEBGL_multi_draw") as MultiDraw | null) ?? null;
+    this.frameEnd = scene.onAfterRenderObservable.add(() => { this.frame = 0; });
     // A restored context has none of the old one's buffers: they are built again from what the casters hold.
     this.restored = this.engine.onContextRestoredObservable.add(() => {
       this.multiDraw = (this.engine._gl.getExtension("WEBGL_multi_draw") as MultiDraw | null) ?? null;
@@ -308,6 +317,17 @@ export class RetainedShadowCasters {
     return true;
   }
 
+  /**
+   * The Scene's casters were just walked for a frame (`ShadowMapRefresh.syncCasters`): until that frame ends, nothing
+   * moves, shows, hides or changes one, so each is described, and its world matrix read, by the first layer that lists
+   * it and not again by the frame's other layers. A pass outside such a frame (a readiness probe, a warm-up draw) asks
+   * every caster itself.
+   */
+  beginFrame(): void {
+    this.frame = ++this.frames;
+    this.sceneFrame = this.scene.getFrameId();
+  }
+
   /** Forgets what `generator`'s layer listed and has not drawn: a pass that lists nothing draws nothing retained. */
   discard(generator: ShadowGenerator): void {
     this.current = null;
@@ -318,12 +338,27 @@ export class RetainedShadowCasters {
   take(mesh: AbstractMesh): boolean {
     const layer = this.current;
     if (!layer) return false;
-    const caster = this.describe(mesh);
-    // Babylon's own list draws nothing of a hidden mesh: left in it, the mesh stays undrawn.
-    if (!caster || !mesh.isEnabled() || !mesh.isVisible || mesh.isBlocked) return false;
-    const world = mesh.getWorldMatrix();
-    if (world !== caster.world || world.updateFlag !== caster.worldFlag || caster.stamp !== this.stamp || this.unevenFor(mesh, caster) !== caster.uneven)
-      this.writeWorld(mesh, caster);
+    // A frame's layers ask the same casters: what the first found of one holds for the others (`beginFrame`).
+    const frame = this.frame && this.scene.getFrameId() === this.sceneFrame ? this.frame : 0;
+    let caster = frame ? this.casters.get(mesh) ?? null : null;
+    if (!caster || caster.seen !== frame || (caster.listed && caster.stamp !== this.stamp)) {
+      caster = this.describe(mesh);
+      // Babylon's own list draws nothing of a hidden mesh: left in it, the mesh stays undrawn.
+      const listed = !!caster && mesh.isEnabled() && mesh.isVisible && !mesh.isBlocked;
+      if (listed) {
+        const world = mesh.getWorldMatrix();
+        if (world !== caster!.world || world.updateFlag !== caster!.worldFlag || caster!.stamp !== this.stamp || this.unevenFor(mesh, caster!) !== caster!.uneven)
+          this.writeWorld(mesh, caster!);
+      }
+      // A caster that cannot be retained keeps its entry, without draws.
+      const entry = caster ?? this.casters.get(mesh);
+      if (entry) {
+        entry.seen = frame;
+        entry.listed = listed;
+      }
+      if (!listed) return false;
+    } else if (!caster.listed) return false;
+    caster = caster!;
     const group = caster.group;
     // A mesh of several parts leaves out those outside the map; an instance's parts carry its source's boxes.
     const planes = caster.draws.length > 1 && !caster.source ? layer.planes : null;
@@ -444,6 +479,7 @@ export class RetainedShadowCasters {
     this.disposed = true;
     this.current = null;
     this.engine.onContextRestoredObservable.remove(this.restored);
+    this.scene.onAfterRenderObservable.remove(this.frameEnd);
     this.casters.clear();
     this.geometries.clear();
     this.unindexed.clear();
@@ -468,7 +504,7 @@ export class RetainedShadowCasters {
     if (caster && caster.revision === state.revision && caster.levels === levels) return caster.draws.length ? caster : null;
     if (!caster) {
       caster = {
-        revision: -1, levels: 0, source: null, range: null, draws: [], world: null, worldFlag: -1, stamp: -1, inOrder: false, culling: 0, side: 0,
+        seen: 0, listed: false, revision: -1, levels: 0, source: null, range: null, draws: [], world: null, worldFlag: -1, stamp: -1, inOrder: false, culling: 0, side: 0,
         group: 0, uneven: false,
       };
       this.casters.set(mesh, caster);
@@ -786,6 +822,7 @@ export class RetainedShadowCasters {
       this.textureRows = 0;
     }
     if (this.disposed) return;
+    this.frame = 0;
     // Every caster describes itself again, into buffers and a texture built for the context there is now.
     for (const caster of this.casters.values()) {
       caster.draws.length = 0;
