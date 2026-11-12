@@ -61,6 +61,34 @@ it("asks a render target for the scope's meshes only once a whole probe found it
   expect(probed.asked).toEqual([first, second]);
 });
 
+it("builds no list of a render target for a scope without meshes, and still checks what else the target draws", () => {
+  const { first, second, target } = fixture();
+  const listed = target("listed");
+  let lists = 0;
+  const list = listed.texture.getCustomRenderList = () => { lists += 1; return [first, second]; };
+  // A target no whole probe has found ready builds its list, also for a scope without meshes.
+  expect(withReadinessProbeScope(new Set(), () => isRenderTargetProbeReady(listed.texture))).toBe(true);
+  expect(lists).toBe(1);
+  expect(listed.asked).toEqual([first, second]);
+  listed.asked.length = 0;
+  expect(withReadinessProbeScope(new Set(), () => isRenderTargetProbeReady(listed.texture))).toBe(true);
+  expect(lists).toBe(1);
+  expect(listed.asked).toEqual([]);
+  // Its own list is back in place for its draws; a scope that names a mesh builds it, as a whole probe does.
+  expect(listed.texture.getCustomRenderList).toBe(list);
+  expect(withReadinessProbeScope(new Set([second]), () => isRenderTargetProbeReady(listed.texture))).toBe(true);
+  expect(lists).toBe(2);
+  expect(listed.asked).toEqual([second]);
+  expect(isRenderTargetProbeReady(listed.texture)).toBe(true);
+  expect(lists).toBe(3);
+  // The particle systems a target draws are asked whatever the scope.
+  listed.texture.renderParticles = true;
+  const particles = { isReady: () => false };
+  listed.texture.particleSystemList = [particles as never];
+  expect(withReadinessProbeScope(new Set(), () => isRenderTargetProbeReady(listed.texture))).toBe(false);
+  expect(lists).toBe(3);
+});
+
 it("keeps asking every mesh of a render target that a whole probe found unready", () => {
   const { first, second, target } = fixture();
   const unready = target("unready");

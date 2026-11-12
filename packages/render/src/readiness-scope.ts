@@ -14,6 +14,13 @@ let scope: ReadonlySet<AbstractMesh> | undefined;
 /** Render targets a whole probe found ready: a scoped probe asks such a target for the scope's meshes only. */
 const probedWhole = new WeakSet<RenderTargetTexture>();
 
+/** The list of a target a scope without meshes asks. */
+const NO_MESHES: AbstractMesh[] = [];
+const noMeshes = (): AbstractMesh[] => {
+  NO_MESHES.length = 0;
+  return NO_MESHES;
+};
+
 /** Whether scoped probes are followed by a whole one that must agree (`verifyScopedReadinessProbes`). */
 let verifies = false;
 
@@ -53,13 +60,18 @@ export function isRenderTargetProbeReady(target: RenderTargetTexture): boolean {
     }
   }
   const whole = target.customIsReadyFunction;
+  const list = target.getCustomRenderList;
   // Babylon asks `mesh.isReady(true)` of a target without a check of its own.
   target.customIsReadyFunction = (mesh, refreshRate, preWarm) =>
     outsideReadinessProbeScope(mesh) || (whole ? whole(mesh, refreshRate, preWarm) : mesh.isReady(true));
+  // A scope without meshes (a particle system bound or cancelled) asks none of the target's list, so the list is not
+  // built: a shadow map's culls its casters for every layer. What the target checks besides its meshes still runs.
+  if (list && meshes.size === 0) target.getCustomRenderList = noMeshes;
   try {
     return target.isReadyForRendering();
   } finally {
     target.customIsReadyFunction = whole;
+    if (list && meshes.size === 0) target.getCustomRenderList = list;
   }
 }
 
