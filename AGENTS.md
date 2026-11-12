@@ -11,7 +11,7 @@ This is the entry point for every agent working in this repository. The engine i
 - Use standard GitHub-hosted runners only, never larger ones; `scripts/workflow-runner-policy.test.mjs` enforces it. Shrink or split a slow job instead.
 - Never put a session link or a line crediting an agent or a requester in a commit message or PR text, even when your host adds one by default; remove it before pushing or after creating the PR. The public hygiene check rejects them ([PR rules](.agents/rules/agent-workflow.md#pull-requests-and-commit-messages)).
 - Never report repository changes as complete until the PR is merged into `main`; warn prominently about unmerged work ([completion reporting](.agents/rules/agent-workflow.md#completion-reporting)).
-- Do not re-add the removed game HUD / UserInterface system.
+- In-game UI is built with Scene Layers; do not add a separate game HUD or UserInterface system.
 
 ## Required reading
 
