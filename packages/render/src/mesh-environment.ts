@@ -43,21 +43,23 @@ export function markMeshEnvironmentChanged(view: BaseTexture): void {
 }
 
 /**
- * Pinned 9.29 adapter: swaps the scene's backing field, not its setter, which
- * would mark every material dirty on each draw.
+ * Consecutive meshes sharing a material skip rebinding, and a frozen material skips its uniform buffer: a different or
+ * changed cube must rebind both.
  */
-function withMeshEnvironment<T>(material: Material, mesh: AbstractMesh, run: () => T, bound?: (view: BaseTexture | null) => void): T {
-  const scene = material.getScene() as EnvironmentScene;
-  const resolver = resolvers.get(scene);
-  if (!resolver) return run();
-  const previous = scene._environmentTexture;
-  const view = resolver(mesh) ?? previous;
-  bound?.(view);
-  if (view === previous) return run();
-  scene._environmentTexture = view;
-  try { return run(); } finally { scene._environmentTexture = previous; }
+function noteBoundView(material: Material, view: BaseTexture | null, subMesh: SubMesh): void {
+  const revision = view ? revisions.get(view) ?? 0 : 0;
+  const last = lastBound.get(material);
+  if (last && last.view === view && last.revision === revision) return;
+  // Shared materials can switch on many draws a frame: update the record in place.
+  if (last) { last.view = view; last.revision = revision; } else lastBound.set(material, { view, revision });
+  if (subMesh._drawWrapper) subMesh._drawWrapper._forceRebindOnNextCall = true;
 }
 
+/**
+ * Pinned 9.29 adapter: each wrapper resolves the mesh's cube and runs the original with it in the scene's backing
+ * field, not its setter, which would mark every material dirty on each draw. Written out in both wrappers so a draw
+ * allocates no closure.
+ */
 function install(): void {
   if (installed) return;
   installed = true;
@@ -65,19 +67,25 @@ function install(): void {
     const isReady = prototype.isReadyForSubMesh;
     const bind = prototype.bindForSubMesh;
     prototype.isReadyForSubMesh = function (mesh, subMesh, useInstances) {
-      return withMeshEnvironment(this, mesh, () => isReady.call(this, mesh, subMesh, useInstances));
+      const scene = this.getScene() as EnvironmentScene;
+      const resolver = resolvers.get(scene);
+      if (!resolver) return isReady.call(this, mesh, subMesh, useInstances);
+      const previous = scene._environmentTexture;
+      const view = resolver(mesh) ?? previous;
+      if (view === previous) return isReady.call(this, mesh, subMesh, useInstances);
+      scene._environmentTexture = view;
+      try { return isReady.call(this, mesh, subMesh, useInstances); } finally { scene._environmentTexture = previous; }
     };
     prototype.bindForSubMesh = function (world, mesh, subMesh) {
-      withMeshEnvironment(this, mesh, () => bind.call(this, world, mesh, subMesh), (view) => {
-        // Consecutive meshes sharing a material skip rebinding, and a frozen
-        // material skips its uniform buffer: a different or changed cube must rebind both.
-        const revision = view ? revisions.get(view) ?? 0 : 0;
-        const last = lastBound.get(this);
-        if (last && last.view === view && last.revision === revision) return;
-        // Shared materials can switch on many draws a frame: update the record in place.
-        if (last) { last.view = view; last.revision = revision; } else lastBound.set(this, { view, revision });
-        if (subMesh._drawWrapper) subMesh._drawWrapper._forceRebindOnNextCall = true;
-      });
+      const scene = this.getScene() as EnvironmentScene;
+      const resolver = resolvers.get(scene);
+      if (!resolver) { bind.call(this, world, mesh, subMesh); return; }
+      const previous = scene._environmentTexture;
+      const view = resolver(mesh) ?? previous;
+      noteBoundView(this, view, subMesh);
+      if (view === previous) { bind.call(this, world, mesh, subMesh); return; }
+      scene._environmentTexture = view;
+      try { bind.call(this, world, mesh, subMesh); } finally { scene._environmentTexture = previous; }
     };
   }
 }

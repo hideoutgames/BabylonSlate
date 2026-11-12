@@ -329,8 +329,8 @@ export function createShadowGenerator(
         if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&
           (!position || casterWithinShadowRange(mesh, position, range!)) &&
           (!posed || !boxOutside(mesh.getBoundingInfo().boundingBox, activePlanes)) &&
-          (!minTexels || (!posed && hasDeformingShadowBounds(mesh)) ||
-            castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels)) &&
+          (!minTexels || castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels) ||
+            (!posed && hasDeformingShadowBounds(mesh))) &&
           !retained?.take(mesh)) casters[kept++] = mesh;
       }
       casters.length = kept;

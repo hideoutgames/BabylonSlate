@@ -27,6 +27,19 @@ import { createSpriteQuad, setSpriteQuadSize } from "./sprite-quad";
 import { createText3DMesh } from "./text3d-mesh";
 import { setUnlitMaterial, type UnlitBinding } from "./unlit-material";
 
+/** Scene walks for mirror passes, counted through the real culling. */
+const walks = vi.hoisted(() => ({ count: 0 }));
+vi.mock("./planar-mirror", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./planar-mirror")>();
+  return {
+    ...actual,
+    collectPlanarMirrorMeshes: (...args: Parameters<typeof actual.collectPlanarMirrorMeshes>) => {
+      walks.count++;
+      actual.collectPlanarMirrorMeshes(...args);
+    },
+  };
+});
+
 const engines: NullEngine[] = [];
 afterEach(() => { vi.restoreAllMocks(); for (const engine of engines.splice(0)) engine.dispose(); });
 
@@ -179,6 +192,32 @@ it("redraws a static view's reflection once when what it reflects changes, then 
   behind.position.y += 1;
   behind.material = paint;
   expect(drawsOver(10)).toBe(0);
+});
+
+it("walks the scene once for a due reflection, and again for a second one drawn after another pass in the same render", () => {
+  const { scene, camera, box, passes, drawsOver } = settledMirror();
+  // Moving the view makes the reflection due: the list it was found due with is the one it draws.
+  camera.position.x += 0.1;
+  walks.count = 0;
+  expect(drawsOver(1)).toBe(1);
+  expect(walks.count).toBe(1);
+  // A second due mirror draws after the first one's pass, which may change what the scene holds (here it hides the
+  // box), so it lists again and draws what is there now.
+  mirror(scene, "far", new Vector3(0, 1, 5));
+  drawsOver(4);
+  const listed = () => passes.at(-1)!.map((pass) => [pass.target, pass.meshes]);
+  camera.position.x += 0.1;
+  expect(drawsOver(1)).toBe(2);
+  expect(listed()).toEqual([["mirror:mirror", ["box"]], ["mirror:far", ["box"]]]);
+  const render = vi.spyOn(RenderTargetTexture.prototype, "render");
+  const record = render.getMockImplementation()!;
+  render.mockImplementation(function (this: RenderTargetTexture, ...args) {
+    record.apply(this, args);
+    if (this.name === "mirror:mirror") box.isVisible = false;
+  });
+  camera.position.x += 0.1;
+  expect(drawsOver(1)).toBe(2);
+  expect(listed()).toEqual([["mirror:mirror", ["box"]], ["mirror:far", []]]);
 });
 
 it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when what an unlit mesh binds changes", () => {
