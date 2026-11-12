@@ -913,7 +913,7 @@ describe("an every-frame capture draws only while something shows its output", (
   }
 
   it("keeps its last image while the screen is outside the view, and draws again in the frame it comes back", () => {
-    const { screen, frame, place } = shown();
+    const { screen, camera, frame, place } = shown();
     // Its first image, then one a frame while the view shows the screen.
     expect([frame(), frame(), frame()]).toEqual([1, 1, 1]);
     // Behind the camera: nothing shows the output.
@@ -928,6 +928,13 @@ describe("an every-frame capture draws only while something shows its output", (
     screen.setEnabled(false);
     expect(frame()).toBe(0);
     screen.setEnabled(true);
+    expect(frame()).toBe(1);
+    // The camera turns away and back: the output is drawn in the frame the view shows the screen again.
+    place(0);
+    expect(frame()).toBe(1);
+    camera.setTarget(new Vector3(0, 0, -10));
+    expect([frame(), frame()]).toEqual([0, 0]);
+    camera.setTarget(Vector3.Zero());
     expect(frame()).toBe(1);
     // A mesh that draws nothing itself shows nothing, wherever it is: an actor's geometry-less root with the Material.
     place(-50);

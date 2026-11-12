@@ -127,7 +127,7 @@ Counts are constants in the area modules; changing one changes performance basel
 | `LAKE_CAPTURES` | 1 Full Quality capture, 256², every frame (plus its own one-cascade sun shadow map each frame) | `world.ts` |
 | `GUARD_COUNT` | 4 (crowd cap 32) | `ai.ts` |
 | `FEATURE_TEST_SCENE_LAYER_KNOBS` | list 10 000, grid 400, camera tweens 1.5 s | `scene-layers.ts` |
-| `CLUSTER_*`, `CAPTURES`, `LOD_DISTANCES` | 48 lights, 4 captures (one High Quality, 256², every frame, plus its own sun shadow maps each frame), 5 menorahs | `rendering.ts` |
+| `CLUSTER_*`, `CAPTURES`, `LOD_DISTANCES` | 48 lights, 4 captures (one High Quality, 256², every frame while a view shows its screen, plus its own sun shadow maps each frame), 5 menorahs | `rendering.ts` |
 | `FEATURE_TEST_CAMERA_TOUR` | 22-point loop at 6 m/s | `layout.ts` |
 
 ## On-device check and benchmark

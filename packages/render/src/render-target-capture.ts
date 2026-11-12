@@ -263,6 +263,7 @@ export class RenderTargetCaptures {
   /** Render Target Textures another Scene holds (a Scene Layer's): their targets always count as shown. */
   private readonly heldElsewhere = new Set<string>();
   private readonly viewPlanes = Frustum.GetPlanes(Matrix.Identity());
+  private readonly shownViewProjection = Matrix.Identity();
   /** What showed each output at the last scene render that reached its capture (`diagnostics`). */
   private readonly lastShownBy = new Map<string, RenderTargetCaptureDiagnostics["shownBy"]>();
   private readonly releasePassLists: () => void;
@@ -628,10 +629,15 @@ export class RenderTargetCaptures {
     this.materialTargets.clear();
     this.placed.clear();
     this.unplaced.clear();
-    if (!this.textures.size) return;
+    // Only every-frame captures are held back: a Scene without one (many unlit sprites, no capture) asks no mesh.
+    if (!this.textures.size || !this.capturesEveryFrame()) return;
     const frame = this.scene.getEngine().frameId;
     const camera = this.scene.activeCamera;
-    if (camera) Frustum.GetPlanesToRef(camera.getTransformationMatrix(), this.viewPlanes);
+    // The camera's pose as it is now, not the matrices its last render left: this runs before the view's own update.
+    if (camera) {
+      camera.getViewMatrix().multiplyToRef(camera.getProjectionMatrix(), this.shownViewProjection);
+      Frustum.GetPlanesToRef(this.shownViewProjection, this.viewPlanes);
+    }
     for (const mesh of this.scene.meshes) {
       const material = mesh.material;
       if (!material) continue;
@@ -651,6 +657,10 @@ export class RenderTargetCaptures {
       if (this.materialTargets.has(material) || isUnlitMaterial(material)) continue;
       for (const guid of this.materialSamples(material) ?? []) this.unplaced.add(guid);
     }
+  }
+  private capturesEveryFrame(): boolean {
+    for (const capture of this.captures.values()) if (capture.settings.enabled && capture.settings.captureEveryFrame) return true;
+    return false;
   }
   /** The Render Targets `mesh` samples through `material`: an unlit Material's image is its mesh's own binding. */
   private sampledTargets(mesh: AbstractMesh, material: Material): readonly string[] | null {
