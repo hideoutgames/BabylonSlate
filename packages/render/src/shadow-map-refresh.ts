@@ -4,6 +4,7 @@ import { CascadedShadowGenerator } from "@babylonjs/core/Lights/Shadows/cascaded
 import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { Matrix, type Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Geometry } from "@babylonjs/core/Meshes/geometry";
@@ -17,6 +18,7 @@ import { hasRevisionTrackedCableGeometry } from "./cable-mesh";
 import { hasRevisionTrackedDynamicMesh } from "./dynamic-runtime-mesh";
 import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
+import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
 import { shadowMapChanges, type ShadowChangeRegion } from "./shadow-change-journal";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
@@ -59,6 +61,26 @@ type Caster = {
   /** Its geometry draws within its bounds (twice its radius when it deforms): `safeMesh`, its thin instances aside. */
   bounded: boolean;
 };
+
+/**
+ * What casters share, read once per walk however many of them share it: a revision that moves with any value the walk
+ * follows there (never one another record held), and the walk that last read it.
+ */
+type Shared = { snapshot: Snapshot; revision: number; walk: number };
+
+/** A source mesh's part of its casters' state: its own, and each instance's. */
+type SourceState = Shared & {
+  /** Its geometry is static and it has no render hook: a caster's `safeMesh`, what the caster itself decides aside. */
+  rigid: boolean;
+  levels: boolean;
+  thin: boolean;
+  /** `canCacheShadowMaterial(material, source)`. */
+  material: Material;
+  safeMaterial: boolean;
+};
+
+/** Which of a geometry's buffers can be rewritten in place. */
+type GeometryState = { walk: number; indices: boolean; vertices: boolean; verticesBesidesPose: boolean };
 
 /** A caster as a map last saw it: what it drew and where (`ShadowMapRefresh.note`). */
 type SeenCaster = { revision: number; level: number | undefined; stamp: number; bounded: boolean; readonly box: Float64Array };
@@ -132,6 +154,12 @@ function addSeen(entry: SeenCaster, region: ShadowChangeRegion): void {
  */
 export class ShadowMapRefresh {
   private readonly casters = new Map<AbstractMesh, Caster>();
+  /** Per source mesh, Material and geometry a caster of the last walk used (`Shared`). */
+  private readonly sources = new Map<AbstractMesh, SourceState>();
+  private readonly materials = new WeakMap<Material, Shared>();
+  private readonly geometries = new WeakMap<Geometry, GeometryState>();
+  private walk = 0;
+  private sharedRevision = 0;
   /** Scratch for the cascaded map being applied: transform matrices, then x/y axis scales per cascade. */
   private readonly cascadeMatrices: ArrayLike<number>[] = [];
   private readonly cascadeScales = new Float64Array(8);
@@ -168,7 +196,7 @@ export class ShadowMapRefresh {
    * so they are not retained. Snapshots of the others stay, so a later walk
    * reports only what changed in between.
    */
-  dropRemovedCasters(meshes: ReadonlySet<AbstractMesh>): void {
+  dropRemovedCasters(meshes: ReadonlySet<AbstractMesh>, walks = false): void {
     this.lodLevels.clear();
     // Removed casters leave each map's in-range list, which refreshes that map.
     for (const [mesh, record] of this.casters) {
@@ -176,10 +204,13 @@ export class ShadowMapRefresh {
       if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
     }
+    // A walk drops the sources its casters left; without one, a disposed source is not kept.
+    if (!walks) for (const source of this.sources.keys()) if (source.isDisposed()) this.sources.delete(source);
   }
 
   syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
-    this.dropRemovedCasters(meshes);
+    this.dropRemovedCasters(meshes, true);
+    const walk = ++this.walk;
     for (const mesh of meshes) {
       let record = this.casters.get(mesh);
       if (!record) {
@@ -206,8 +237,9 @@ export class ShadowMapRefresh {
         record.geometry = geometry;
         if (geometry) watchGeometry(geometry);
       }
-      // Null once another owner replaced the shared update hook: updates are no longer counted.
-      const geometryWatch = geometry ? geometryRevision(geometry) : null;
+      const material = mesh.material ?? scene.defaultMaterial;
+      // What the caster shares with others is read once per walk: its source's part and its Material's.
+      const shared = this.sourceState(source, geometry, material, walk);
       const state = record.snapshot;
       state.begin();
       // freezeWorldMatrix(matrix), used by bone attachments, can replace/update
@@ -220,83 +252,27 @@ export class ShadowMapRefresh {
         record.worldFlag = world.updateFlag;
       }
       state.value(record.transformRevision);
-      state.value(geometry);
-      state.value(geometryWatch?.revision);
       const enabled = mesh.isEnabled();
       state.value(enabled);
       state.value(mesh.isVisible);
       state.value(mesh.visibility);
-      state.value(source instanceof Mesh ? source.sideOrientation : undefined);
-      state.value(source.skeleton);
-      state.value(source.morphTargetManager);
-      // Static thin instances (`hasStaticThinInstances`) change only by a new buffer or count.
-      if (source instanceof Mesh && source.hasThinInstances) {
-        const thin = source._thinInstanceDataStorage;
-        state.value(thin.instancesCount);
-        state.value(thin.matrixBuffer);
-        state.value(thin.previousMatrixBuffer);
-        const user = source._userThinInstanceBuffersStorage?.vertexBuffers;
-        if (user) for (const kind in user) state.value(user[kind]);
-      }
-      // An instance draws its source's parts, not its own copies of them.
-      const parts = source.subMeshes;
-      state.value(parts);
-      // Babylon leaves this unset on empty model/tilemap roots until geometry
-      // creates their first SubMesh. Keep tracking the later populated list.
-      if (parts)
-        for (const part of parts) {
-          state.value(part);
-          state.value(part.indexStart);
-          state.value(part.indexCount);
-          state.value(part.verticesStart);
-          state.value(part.verticesCount);
-          state.value(part.materialIndex);
-        }
-      const material = mesh.material ?? scene.defaultMaterial;
+      state.value(shared.revision);
       state.value(material);
-      state.value(material.alpha);
-      state.value(material.fillMode);
-      state.value(material.backFaceCulling);
-      state.value(material.cullBackFaces);
-      state.value(material.sideOrientation);
-      state.value(material.zOffset);
-      state.value(material.zOffsetUnits);
-      state.value(material.depthFunction);
-      state.value(material.disableDepthWrite);
-      state.value(material.forceDepthWrite);
-      state.value(material.useLogarithmicDepth);
-      state.value(material.needDepthPrePass);
-      state.value(material.pointSize);
-      state.value(material.shadowDepthWrapper);
-      state.value(material.metadata?.boundsPadding);
-      const safeMaterial = canCacheShadowMaterial(material, mesh);
+      state.value(this.materialState(material, walk).revision);
+      // An instance caches as its source does (`canCacheShadowMaterial`), unless a cage deforms the instance itself.
+      const safeMaterial = shared.material !== material
+        ? canCacheShadowMaterial(material, mesh)
+        : shared.safeMaterial && (source === mesh || !hasMeshLatticeDeformer(mesh));
       state.value(safeMaterial);
       // Automatic LOD levels are immutable index buffers that mirror this
       // mesh's material. Only maps that can see this caster track its level.
       const autoLod = isAutoLodMaster(mesh);
-      // Babylon 9.29 has no public index-mutability getter. updateIndices skips
-      // onGeometryUpdated for an existing dynamic buffer, including GPU-only
-      // updates, so only the known immutable state is eligible for caching.
-      // A landscape chunk's updatable buffers change only through notified vertex updates, never its indices.
-      const trackedDynamic = source instanceof Mesh && (hasRevisionTrackedDynamicMesh(source) || hasRevisionTrackedLandscapeGeometry(source));
-      // A mesh with neither geometry nor parts (an empty root or volume) draws nothing; parts without geometry stay unknown.
-      let dynamicGeometry =
-        !trackedDynamic && (geometry ? Reflect.get(geometry, "_indexBufferIsUpdatable") !== false : !!parts?.length);
-      const buffers = geometry?.getVertexBuffers();
-      const trackedCable = source instanceof Mesh && hasRevisionTrackedCableGeometry(source);
-      if (buffers)
-        for (const kind in buffers)
-          if (buffers[kind]?.isUpdatable() && !trackedDynamic && !(trackedCable && (kind === VertexBuffer.PositionKind || kind === VertexBuffer.NormalKind))) dynamicGeometry = true;
       // An instance of a mesh with levels of detail draws the level its source selects: it keeps refreshing.
       const safeMesh =
-        source instanceof Mesh &&
-        !dynamicGeometry &&
+        shared.rigid &&
         !mesh.infiniteDistance &&
         mesh.billboardMode === Mesh.BILLBOARDMODE_NONE &&
-        (source === mesh ? autoLod || !source.getLODLevels().length : !source.getLODLevels().length) &&
-        !source.onBeforeRenderObservable.hasObservers() &&
-        !source.onBeforeDrawObservable.hasObservers() &&
-        (!geometry || geometryWatch !== null);
+        (source === mesh ? autoLod || !shared.levels : !shared.levels);
       state.value(safeMesh);
       state.end();
       if (state.changed) {
@@ -307,9 +283,12 @@ export class ShadowMapRefresh {
       record.safe = safeMesh && safeMaterial;
       record.unsafe = visible && !record.safe;
       // Babylon's bounds leave thin instances out unless refreshed for them.
-      record.bounded = safeMesh && !(source instanceof Mesh && source.hasThinInstances);
+      record.bounded = safeMesh && !shared.thin;
       if (visible && autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
     }
+    // Sources no caster uses any more.
+    if (this.sources.size > meshes.size || walk % 64 === 0)
+      for (const [source, shared] of this.sources) if (shared.walk !== walk) this.sources.delete(source);
     const state = this.sceneState;
     state.begin();
     // Not the floating origin: a shadow pass offsets the casters and the light's view alike, so the depth it draws is
@@ -328,6 +307,123 @@ export class ShadowMapRefresh {
       scene.clipPlane6
     );
     if (state.changed) this.revision++;
+  }
+
+  /** Ends a shared record's read: a change gives it a revision no record held before. */
+  private read(shared: Shared, walk: number): void {
+    shared.snapshot.end();
+    if (shared.snapshot.changed) shared.revision = ++this.sharedRevision;
+    shared.walk = walk;
+  }
+
+  /** The depth and culling state of a Material, the same for every caster that draws with it. */
+  private materialState(material: Material, walk: number): Shared {
+    let shared = this.materials.get(material);
+    if (!shared) this.materials.set(material, (shared = { snapshot: new Snapshot(), revision: 0, walk: 0 }));
+    if (shared.walk === walk) return shared;
+    const state = shared.snapshot;
+    state.begin();
+    state.value(material.alpha);
+    state.value(material.fillMode);
+    state.value(material.backFaceCulling);
+    state.value(material.cullBackFaces);
+    state.value(material.sideOrientation);
+    state.value(material.zOffset);
+    state.value(material.zOffsetUnits);
+    state.value(material.depthFunction);
+    state.value(material.disableDepthWrite);
+    state.value(material.forceDepthWrite);
+    state.value(material.useLogarithmicDepth);
+    state.value(material.needDepthPrePass);
+    state.value(material.pointSize);
+    state.value(material.shadowDepthWrapper);
+    state.value(material.metadata?.boundsPadding);
+    this.read(shared, walk);
+    return shared;
+  }
+
+  private geometryState(geometry: Geometry, walk: number): GeometryState {
+    let shared = this.geometries.get(geometry);
+    if (!shared) this.geometries.set(geometry, (shared = { walk: 0, indices: true, vertices: false, verticesBesidesPose: false }));
+    if (shared.walk === walk) return shared;
+    shared.walk = walk;
+    // Babylon 9.29 has no public index-mutability getter. updateIndices skips
+    // onGeometryUpdated for an existing dynamic buffer, including GPU-only
+    // updates, so only the known immutable state is eligible for caching.
+    shared.indices = Reflect.get(geometry, "_indexBufferIsUpdatable") !== false;
+    shared.vertices = shared.verticesBesidesPose = false;
+    const buffers = geometry.getVertexBuffers();
+    if (buffers)
+      for (const kind in buffers) {
+        if (!buffers[kind]?.isUpdatable()) continue;
+        shared.vertices = true;
+        if (kind !== VertexBuffer.PositionKind && kind !== VertexBuffer.NormalKind) shared.verticesBesidesPose = true;
+      }
+    return shared;
+  }
+
+  /**
+   * The part of a caster's state that is its source mesh's (the caster itself, or the mesh an instance draws): its
+   * geometry, parts, deformers and thin instances, and whether `material` caches for it.
+   */
+  private sourceState(source: AbstractMesh, geometry: Geometry | null, material: Material, walk: number): SourceState {
+    let shared = this.sources.get(source);
+    if (!shared) {
+      shared = { snapshot: new Snapshot(), revision: 0, walk: 0, rigid: false, levels: false, thin: false, material, safeMaterial: false };
+      this.sources.set(source, shared);
+    }
+    if (shared.walk === walk) return shared;
+    // Null once another owner replaced the shared update hook: updates are no longer counted.
+    const geometryWatch = geometry ? geometryRevision(geometry) : null;
+    const state = shared.snapshot;
+    state.begin();
+    state.value(geometry);
+    state.value(geometryWatch?.revision);
+    state.value(source instanceof Mesh ? source.sideOrientation : undefined);
+    state.value(source.skeleton);
+    state.value(source.morphTargetManager);
+    // Static thin instances (`hasStaticThinInstances`) change only by a new buffer or count.
+    shared.thin = source instanceof Mesh && source.hasThinInstances;
+    if (source instanceof Mesh && source.hasThinInstances) {
+      const thin = source._thinInstanceDataStorage;
+      state.value(thin.instancesCount);
+      state.value(thin.matrixBuffer);
+      state.value(thin.previousMatrixBuffer);
+      const user = source._userThinInstanceBuffersStorage?.vertexBuffers;
+      if (user) for (const kind in user) state.value(user[kind]);
+    }
+    // An instance draws its source's parts, not its own copies of them.
+    const parts = source.subMeshes;
+    state.value(parts);
+    // Babylon leaves this unset on empty model/tilemap roots until geometry
+    // creates their first SubMesh. Keep tracking the later populated list.
+    if (parts)
+      for (const part of parts) {
+        state.value(part);
+        state.value(part.indexStart);
+        state.value(part.indexCount);
+        state.value(part.verticesStart);
+        state.value(part.verticesCount);
+        state.value(part.materialIndex);
+      }
+    // A landscape chunk's updatable buffers change only through notified vertex updates, never its indices.
+    const trackedDynamic = source instanceof Mesh && (hasRevisionTrackedDynamicMesh(source) || hasRevisionTrackedLandscapeGeometry(source));
+    const trackedCable = source instanceof Mesh && hasRevisionTrackedCableGeometry(source);
+    const buffers = geometry ? this.geometryState(geometry, walk) : null;
+    // A mesh with neither geometry nor parts (an empty root or volume) draws nothing; parts without geometry stay unknown.
+    const dynamicGeometry = !trackedDynamic &&
+      (buffers ? buffers.indices || (trackedCable ? buffers.verticesBesidesPose : buffers.vertices) : !!parts?.length);
+    shared.levels = source instanceof Mesh && source.getLODLevels().length > 0;
+    shared.rigid =
+      source instanceof Mesh &&
+      !dynamicGeometry &&
+      !source.onBeforeRenderObservable.hasObservers() &&
+      !source.onBeforeDrawObservable.hasObservers() &&
+      (!geometry || geometryWatch !== null);
+    shared.material = material;
+    shared.safeMaterial = canCacheShadowMaterial(material, source);
+    this.read(shared, walk);
+    return shared;
   }
 
   apply(generator: ShadowGenerator): void {
@@ -584,6 +680,7 @@ export class ShadowMapRefresh {
     for (const record of this.casters.values())
       if (record.geometry) unwatchGeometry(record.geometry);
     this.casters.clear();
+    this.sources.clear();
     this.lodLevels.clear();
   }
 }
