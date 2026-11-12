@@ -531,11 +531,15 @@ export function DataTreeValidationPanel(_props: IDockviewPanelProps) {
   const state = useDataAssetEditing();
   const { validation, index, focusRequest } = state;
   const errors = validation.filter((issue) => issue.severity === "error").length;
+  const openIssue = (issue: (typeof validation)[number]) => {
+    if (issue.entryId) state.focusField(issue.entryId, issue.path);
+    else state.documents.activateDockPanel("data-tree-hierarchy");
+  };
   return <PanelFrame data-testid="data-tree-validation-panel">
     <div className="sticky top-0 z-10 flex h-7 items-center border-b border-border bg-panel-header px-2 text-xs text-muted-foreground">{errors} Errors · {validation.length - errors} Warnings</div>
     {validation.length === 0 ? <DataEmpty title="No Issues">The hierarchy and typed entries are valid.</DataEmpty> : <WindowedList itemCount={validation.length} rowHeight={44}>{(position) => {
       const issue = validation[position]!;
-      return <div className={cn("h-full", position % 2 === 1 && "bg-list-stripe")}><DiagnosticResultRow severity={issue.severity} message={issue.message} location={`${issue.entryId ? index?.pathById.get(issue.entryId) ?? issue.entryId : "Tree"}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}`} selected={focusRequest?.entryId === issue.entryId && focusRequest?.path === issue.path} onSelect={() => { if (issue.entryId) state.focusField(issue.entryId, issue.path); else state.documents.activateDockPanel("data-tree-hierarchy"); }} testId="data-validation-issue" /></div>;
+      return <div className={cn("h-full", position % 2 === 1 && "bg-list-stripe")}><DiagnosticResultRow severity={issue.severity} message={issue.message} location={`${issue.entryId ? index?.pathById.get(issue.entryId) ?? issue.entryId : "Tree"}${issue.path ? ` · ${humanizePropertyLabel(issue.path)}` : ""}`} selected={focusRequest?.entryId === issue.entryId && focusRequest?.path === issue.path} onSelect={() => openIssue(issue)} onOpen={() => openIssue(issue)} testId="data-validation-issue" /></div>;
     }}</WindowedList>}
   </PanelFrame>;
 }

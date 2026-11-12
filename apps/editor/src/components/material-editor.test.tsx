@@ -612,6 +612,29 @@ describe("Material compiler results", () => {
     expect(harness.focusNode).toHaveBeenCalledWith("bogus");
   });
 
+  it("frames the node again and brings the Graph forward when a row is opened", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes.push({ id: "bogus", type: "math.doesNotExist", position: { x: 0, y: 0 }, properties: {} });
+    harness.content = doc as unknown as Record<string, unknown>;
+    // The Graph is tabbed with Compiler Results, behind it.
+    const setActive = vi.fn();
+    const props = {
+      api: { group: { id: "results" } },
+      containerApi: {
+        getPanel: (id: string) =>
+          id === "material-graph" ? { group: { id: "results" }, api: { isVisible: false, setActive } } : undefined,
+        hasMaximizedGroup: () => false,
+      },
+    } as unknown as IDockviewPanelProps;
+    render(<MaterialCompilerResultsPanel {...props} />);
+    const row = screen.getByTestId("material-diagnostic-material.unknownNode");
+    fireEvent.click(row, { detail: 0 });
+    expect(setActive).not.toHaveBeenCalled();
+    fireEvent.click(row, { detail: 2 });
+    expect(harness.focusNode.mock.calls).toEqual([["bogus"], ["bogus"]]);
+    expect(setActive).toHaveBeenCalledTimes(1);
+  });
+
   it("warns about post-process fill rate without blocking", () => {
     harness.content = createDefaultMaterialDocument(
       "Blur",

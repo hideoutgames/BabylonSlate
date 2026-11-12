@@ -195,7 +195,13 @@ export interface GraphEditorProps {
   onPinSelect?: (nodeId: string, pinId: string) => void;
   /** Highlight a node without fit-view (host list selection). */
   selectedNodeId?: string;
+  /** Selects and frames this node whenever it changes. */
   focusedNodeId?: string;
+  /**
+   * Changes to select and frame `focusedNodeId` again when the id has not
+   * changed (a Compiler Results row chosen again after the view moved).
+   */
+  focusRequest?: number;
   diagnostics?: GraphDiagnostic[];
   onNavigateRequest?: (request: NavigateRequest) => void;
   /** Double-tap / double-click a node (task class navigation). */
@@ -668,9 +674,11 @@ function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
 
 function FocusedNodeSync({
   focusedNodeId,
+  focusRequest,
   fitViewOptions,
 }: {
   focusedNodeId?: string;
+  focusRequest?: number;
   fitViewOptions: GraphViewport["focusedFitViewOptions"];
 }) {
   const { fitView, setEdges, setNodes } = useReactFlow();
@@ -682,6 +690,7 @@ function FocusedNodeSync({
 
   useEffect(() => {
     if (!focusedNodeId || !nodeExists) return;
+    void focusRequest;
 
     setNodes((current) =>
       current.map((entry) => ({
@@ -691,15 +700,16 @@ function FocusedNodeSync({
     );
     // Like a canvas click: Break Links must not act on an earlier wire.
     setEdges(withoutEdgeSelection);
-  }, [focusedNodeId, nodeExists, setEdges, setNodes]);
+  }, [focusRequest, focusedNodeId, nodeExists, setEdges, setNodes]);
 
   useEffect(() => {
     if (!focusedNodeId || !canFrame) return;
+    void focusRequest;
     void fitView({
       nodes: [{ id: focusedNodeId }],
       ...fitViewOptions,
     });
-  }, [canFrame, fitView, fitViewOptions, focusedNodeId]);
+  }, [canFrame, fitView, fitViewOptions, focusRequest, focusedNodeId]);
 
   return null;
 }
@@ -712,6 +722,7 @@ function GraphEditorCanvas({
   onEmptyCanvasClick,
   selectedNodeId,
   focusedNodeId,
+  focusRequest,
   diagnostics,
   onNavigateRequest,
   onNodeDoubleClick,
@@ -3216,6 +3227,7 @@ function GraphEditorCanvas({
           <SelectedNodeSync selectedNodeId={selectedNodeId} />
           <FocusedNodeSync
             focusedNodeId={focusedNodeId}
+            focusRequest={focusRequest}
             fitViewOptions={graphViewport.focusedFitViewOptions}
           />
         </ReactFlow>

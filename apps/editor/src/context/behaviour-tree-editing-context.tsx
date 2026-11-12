@@ -9,6 +9,7 @@ import {
 } from "react";
 import { asTree } from "../lib/behaviour-tree-graph-commit";
 import { useNodeSelection } from "../lib/node-selection";
+import { useNodeFocus } from "../lib/use-node-focus";
 import { useDocumentActions } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 
@@ -22,6 +23,8 @@ export interface BehaviourTreeEditingContextValue {
   attachmentId: string | null;
   attachmentCatalog: BehaviourTreeAttachmentCatalog | null;
   focusedNodeId: string | null;
+  /** Changes on every `focusNode`, so the canvas frames the node again. */
+  focusRequest: number;
   setSelectedIds: (ids: readonly string[]) => void;
   setSelectedId: (id: string | null) => void;
   setAttachmentId: Dispatch<SetStateAction<string | null>>;
@@ -60,7 +63,7 @@ export function BehaviourTreeEditingProvider({
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const [attachmentCatalog, setAttachmentCatalog] =
     useState<BehaviourTreeAttachmentCatalog | null>(null);
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const { focusedNodeId, focusRequest, requestFocus } = useNodeFocus();
 
   const value = useMemo<BehaviourTreeEditingContextValue>(
     () => ({
@@ -69,6 +72,7 @@ export function BehaviourTreeEditingProvider({
       attachmentId,
       attachmentCatalog,
       focusedNodeId,
+      focusRequest,
       setSelectedIds,
       setSelectedId,
       setAttachmentId,
@@ -76,10 +80,10 @@ export function BehaviourTreeEditingProvider({
       focusNode: (nodeId: string) => {
         setSelectedId(nodeId);
         setAttachmentId(null);
-        setFocusedNodeId(nodeId);
+        requestFocus(nodeId);
       },
     }),
-    [attachmentCatalog, attachmentId, focusedNodeId, selectedId, selectedIds, setSelectedId, setSelectedIds],
+    [attachmentCatalog, attachmentId, focusRequest, focusedNodeId, requestFocus, selectedId, selectedIds, setSelectedId, setSelectedIds],
   );
 
   return (

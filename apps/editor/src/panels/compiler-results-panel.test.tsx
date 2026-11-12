@@ -13,6 +13,8 @@ const setDiagnostics = vi.hoisted(() => vi.fn());
 const setFocusDiagnostic = vi.hoisted(() => vi.fn());
 const setActiveDocument = vi.hoisted(() => vi.fn());
 const clearFocusedNode = vi.hoisted(() => vi.fn());
+const frameActor = vi.hoisted(() => vi.fn());
+const workspace = vi.hoisted(() => ({ documentId: "scene:assets/Main.scene.hasset" }));
 const pairingWarning: Diagnostic = {
   severity: "warning",
   code: "physics.body_without_collider",
@@ -38,12 +40,8 @@ const registry = vi.hoisted(() => ({
 diagnostics.current = [pairingWarning];
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({
-    documentId: "scene:assets/Main.scene.hasset",
-  }),
-  useOptionalDocumentWorkspace: () => ({
-    documentId: "scene:assets/Main.scene.hasset",
-  }),
+  useDocumentWorkspace: () => ({ documentId: workspace.documentId }),
+  useOptionalDocumentWorkspace: () => ({ documentId: workspace.documentId }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -80,7 +78,13 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     {
       id: "graph:assets/Hero.class.hasset",
       ref: { kind: "graph", path: "assets/Hero.class.hasset", label: "Hero" },
-      content: { nodes: [], edges: [] },
+      // `tick` is on the Event Graph, `inner` in the Jump function's graph.
+      content: {
+        nodes: [{ id: "tick", type: "flow.event.tick", position: { x: 0, y: 0 }, data: {} }],
+        edges: [],
+        functionGraphs: { jump: { nodes: [{ id: "inner", type: "debug.log", position: { x: 0, y: 0 }, data: {} }], edges: [] } },
+        members: [{ id: "jump", name: "Jump", kind: "function" }],
+      },
     },
   ],
   setActiveDocument,
@@ -112,7 +116,7 @@ vi.mock("../context/play-context", () => ({
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
-  useOptionalSceneEditing: () => ({ selectActor, selectedActorIds: sceneSelection.current }),
+  useOptionalSceneEditing: () => ({ selectActor, frameActor, selectedActorIds: sceneSelection.current }),
 }));
 
 const VIEWPORT = '[data-slot="scroll-area-viewport"]';
@@ -145,6 +149,8 @@ afterEach(() => {
   setFocusDiagnostic.mockClear();
   setActiveDocument.mockClear();
   clearFocusedNode.mockClear();
+  frameActor.mockClear();
+  workspace.documentId = "scene:assets/Main.scene.hasset";
   diagnostics.current = [pairingWarning];
   scene.physicsWorld = "3d";
   sceneSelection.current = [];
@@ -227,6 +233,65 @@ describe("CompilerResultsPanel", () => {
       [graphDiagnostic, graphDiagnostic.graphId],
     ]));
     expect(screen.getByTestId("compiler-result-row").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  /** The Compiler Results panel in `results`, beside the windows `panels` holds by id. */
+  function dockProps(panels: Record<string, { group: string; visible: boolean }>, maximized = false) {
+    const setActive = vi.fn();
+    const containerApi = {
+      getPanel: (id: string) => {
+        const panel = panels[id];
+        return panel
+          ? { id, group: { id: panel.group }, api: { isVisible: panel.visible, title: "Jump", setActive: () => setActive(id), setTitle: vi.fn() } }
+          : undefined;
+      },
+      hasMaximizedGroup: () => maximized,
+      panels: [],
+      addPanel: vi.fn(),
+    };
+    const props = { api: { group: { id: "results" } }, containerApi } as unknown as IDockviewPanelProps;
+    return { props, setActive };
+  }
+
+  it("leaves a graph tabbed with the results behind on a choice, and brings it forward on Open", async () => {
+    workspace.documentId = graphDiagnostic.graphId;
+    diagnostics.current = [graphDiagnostic];
+    const { props, setActive } = dockProps({ graph: { group: "results", visible: false } });
+    render(<CompilerResultsPanel {...props} />);
+    const row = screen.getByTestId("compiler-result-row");
+    fireEvent.click(row, { detail: 0 });
+    expect(setActive).not.toHaveBeenCalled();
+    fireEvent.click(row, { detail: 2 });
+    expect(setActive.mock.calls).toEqual([["graph"]]);
+    await waitFor(() => expect(setFocusDiagnostic).toHaveBeenLastCalledWith(graphDiagnostic, graphDiagnostic.graphId));
+  });
+
+  it("brings a function's graph tab forward each time its row is chosen", () => {
+    workspace.documentId = graphDiagnostic.graphId;
+    const inFunction: Diagnostic = { ...graphDiagnostic, nodeId: "inner" };
+    diagnostics.current = [inFunction];
+    // The user went back to the Event Graph after the first choice.
+    const { props, setActive } = dockProps({
+      graph: { group: "main", visible: true },
+      "function-graph:jump": { group: "main", visible: false },
+    });
+    render(<CompilerResultsPanel {...props} />);
+    const row = screen.getByTestId("compiler-result-row");
+    fireEvent.click(row, { detail: 0 });
+    fireEvent.click(row, { detail: 0 });
+    expect(setActive.mock.calls).toEqual([["function-graph:jump"], ["function-graph:jump"]]);
+  });
+
+  it("frames an Actor's row in the viewport only on Open", async () => {
+    const { props, setActive } = dockProps({ viewport: { group: "main", visible: true } });
+    render(<CompilerResultsPanel {...props} />);
+    const row = screen.getByTestId("compiler-result-row");
+    fireEvent.click(row, { detail: 0 });
+    await waitFor(() => expect(setFocusDiagnostic).toHaveBeenCalled());
+    expect(frameActor).not.toHaveBeenCalled();
+    fireEvent.click(row, { detail: 2 });
+    await waitFor(() => expect(frameActor).toHaveBeenCalledWith("hero"));
+    expect(setActive.mock.calls).toEqual([["viewport"]]);
   });
 
   it("unselects an Actor row once the user selects another Actor", () => {

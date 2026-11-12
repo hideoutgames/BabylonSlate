@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageDetails } from "./message-details";
-import { DiagnosticResultRow } from "./diagnostic-result-row";
+import { DiagnosticResultRow, nodeDiagnosticDetails } from "./diagnostic-result-row";
 import { MaterialCustomGlsl } from "./material-custom-glsl";
 import { LazyGlslCodePreview } from "./lazy-code-editors";
 import { GlobalParameterNodePicker } from "./global-parameter-node-picker";
@@ -32,6 +32,8 @@ import {
 } from "@haptic/ui/components/toggle-group";
 import { GraphEditor } from "@haptic/graph-ui";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
+import { useRevealResultWindow } from "../lib/use-reveal-result-window";
+import { primaryDockPanel } from "../shell/window-catalog";
 import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
 import {
   MATERIAL_PREVIEW_MESHES,
@@ -361,6 +363,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={editing.setSelectedNodeIds}
           focusedNodeId={editing.focusedNodeId ?? undefined}
+          focusRequest={editing.focusRequest}
           commitPositionsOnDragEnd
           contextMenuItemsForNode={conversionMenu}
           onChange={(next, meta) => {
@@ -1230,14 +1233,17 @@ export function MaterialFunctionInterfacePanel(_props: IDockviewPanelProps) {
   );
 }
 
-/** Validation and compile diagnostics; tapping a row focuses its node. */
-export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
-  void _props;
+/**
+ * Validation and compile diagnostics. Tapping a row focuses its node; a
+ * double-tap or **Open** also brings the graph window forward.
+ */
+export function MaterialCompilerResultsPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const editing = useMaterialEditing();
   const textureExists = useTextureExists();
   const doc = useOpenDocument(documentId);
   const isFunction = doc?.ref.kind === "material-function";
+  const revealGraph = useRevealResultWindow(props, primaryDockPanel(isFunction ? "material-function" : "material"));
   const globalParameters = useGlobalParameterCatalog();
 
   const diagnostics = useMemo(() => {
@@ -1259,6 +1265,11 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
   const rows = [...diagnostics, ...editing.compileDiagnostics];
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<(typeof rows)[number] | null>(null);
   const selected = selectedDiagnostic && rows.some((row) => row.code === selectedDiagnostic.code && row.message === selectedDiagnostic.message && row.nodeId === selectedDiagnostic.nodeId) ? selectedDiagnostic : null;
+  const choose = (row: (typeof rows)[number], open: boolean) => {
+    setSelectedDiagnostic(row);
+    if (row.nodeId) editing.focusNode(row.nodeId);
+    revealGraph(open);
+  };
 
   return (
     <PanelFrame className="flex-1" data-testid="material-compiler-results">
@@ -1281,10 +1292,9 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
                   message={row.message}
                   code={row.code}
                   selected={selected !== null && row.code === selected.code && row.message === selected.message && row.nodeId === selected.nodeId}
-                  onSelect={() => {
-                    setSelectedDiagnostic(row);
-                    if (row.nodeId) editing.focusNode(row.nodeId);
-                  }}
+                  onSelect={() => choose(row, false)}
+                  onOpen={() => choose(row, true)}
+                  details={nodeDiagnosticDetails(row)}
                   testId={`material-diagnostic-${row.code}`}
                 />
               );
@@ -1292,7 +1302,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
           </WindowedList>
         </ScrollArea>
       )}
-      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}`} onClose={() => setSelectedDiagnostic(null)} /> : null}
+      {selected ? <MessageDetails title="Diagnostic Details" message={nodeDiagnosticDetails(selected)} onClose={() => setSelectedDiagnostic(null)} /> : null}
     </PanelFrame>
   );
 }
