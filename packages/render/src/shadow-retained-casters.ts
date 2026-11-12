@@ -918,12 +918,12 @@ export class RetainedShadowCasters {
     }
   }
 
-  /** The depth program for `generator`'s defines; null when it failed. */
   /** Whether a layer's casters draw instanced (they do unless `shadowdebug instancing off` or its program failed). */
   private instanced(): boolean {
     return !this.instancingRefused && !shadowDebugOff(this.scene, "instancing");
   }
 
+  /** The depth program for `generator`'s defines; null when it failed. */
   private programFor(generator: ShadowGenerator): Program | null {
     const defines: string[] = [];
     (generator as unknown as GeneratorInternals)._prepareShadowDefines(NORMAL_STUB, false, defines, false);
