@@ -45,11 +45,14 @@ describe("shadow caster spatial selection", () => {
       const planes = [new Plane(-1, 0, 0, 10)];
       const whole = index.queryPlanes(planes).slice();
       expect(whole).toEqual(expect.arrayContaining([inside, other, source, near]));
-      const asked = new Set([inside, outside, source, near, stranger]);
-      const scoped = index.queryPlanesOf(asked, planes);
-      // `other` was not asked for; `near` is listed once though asked for itself and as an instance of `source`.
-      expect([...scoped].sort((a, b) => a.uniqueId - b.uniqueId)).toEqual([inside, source, near].sort((a, b) => a.uniqueId - b.uniqueId));
+      const byId = (meshes: readonly { uniqueId: number }[]) => [...meshes].sort((a, b) => a.uniqueId - b.uniqueId);
+      // `other` was not asked for; `near` is, as an instance `source` draws.
+      const scoped = index.queryPlanesOf(new Set([inside, outside, source, stranger]), planes).slice();
+      expect(byId(scoped)).toEqual(byId([inside, source, near]));
       for (const mesh of scoped) expect(whole).toContain(mesh);
+      // Asked for itself too, before or after its source, an instance is listed once.
+      expect(byId(index.queryPlanesOf(new Set([near, source]), planes))).toEqual(byId([source, near]));
+      expect(byId(index.queryPlanesOf(new Set([source, near]), planes))).toEqual(byId([source, near]));
       expect(index.queryPlanesOf(new Set(), planes)).toEqual([]);
       index.dispose();
     } finally {
