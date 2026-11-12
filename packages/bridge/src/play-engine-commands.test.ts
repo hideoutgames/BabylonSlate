@@ -34,6 +34,12 @@ describe("isPlayEngineCommandType", () => {
     }
   });
 
+  it("forwards the console's render debug switches to the Play engine", () => {
+    for (const type of ["setPostProcessingDebug", "setRenderTargetCapturesDebug", "setWaterDebug", "setShadowDebug", "setGpuBusyProbeDebug"]) {
+      expect(isPlayEngineCommandType(type), type).toBe(true);
+    }
+  });
+
   it("routes bone attachments to both Play engine hosts", () => {
     expect(isPlayEngineCommandType("attachToBone")).toBe(true);
   });
