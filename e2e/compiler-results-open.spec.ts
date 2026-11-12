@@ -1,4 +1,4 @@
-import { IPAD_TEST_TAG, WEBKIT_SMOKE_TAG } from "./ipad-tag";
+import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
 import { waitForPlayOverlay } from "./play";
 import { expect, test } from "./profile-context";
@@ -38,7 +38,7 @@ async function setMannequinGraph(page: import("@playwright/test").Page, graph: u
 
 test.describe("Compiler Results", () => {
   test("Open brings a covered Event Graph forward and selects the result's node", {
-    tag: [IPAD_TEST_TAG, WEBKIT_SMOKE_TAG],
+    tag: IPAD_TEST_TAG,
   }, async ({ page, hasTouch }) => {
     await openTestProject(page);
     await setMannequinGraph(page, MISMATCHED_BRANCH);
