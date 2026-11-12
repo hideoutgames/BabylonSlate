@@ -111,7 +111,8 @@ it("keeps Fast on the lightweight capture pass: no forward view and no water sce
   await untilPublished(scene, view, captures);
   expect(captures.diagnostics()).toEqual([{
     actorId: "capture", renderTargetGuid: "target", quality: "fast", published: true, taskNames: [], waterSceneCopyPass: null,
-    strictReadinessChecks: 0,
+    // No mesh in this Scene samples the output: who shows it is not known, so the capture keeps drawing.
+    strictReadinessChecks: 0, shownBy: "unknown consumer",
   }]);
   // A Fast colour capture's pass draws its scene colour target, which one pass then stores in the output.
   const capturePass = scene.objectRenderers.find((renderer) => renderer.name === "renderTarget:target:scene")!.renderPassId;

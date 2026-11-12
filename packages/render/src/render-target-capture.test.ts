@@ -21,6 +21,7 @@ import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Material
 import "@babylonjs/core/Rendering/outlineRenderer";
 import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
+import { notePassListed } from "./pass-list-signal";
 import { DisplayConversion } from "./display-conversion";
 import { createStartingStateDraw } from "./starting-state-draw";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
@@ -889,4 +890,103 @@ it("rehearses a manual capture not yet requested in Play's starting state, unpub
   captures.rehearseManualCaptures(() => true);
   captures.render();
   expect(draws).toHaveLength(2);
+});
+
+describe("an every-frame capture draws only while something shows its output", () => {
+  /** An every-frame capture and a screen, in front of the view's camera, whose Material samples its output. */
+  function shown() {
+    const made = host();
+    const { scene, engine, captures, root, settings } = made;
+    captures.configure("capture", { ...settings, captureEveryFrame: true }, () => root);
+    const screen = MeshBuilder.CreatePlane("screen", { size: 1 }, scene);
+    const material = new StandardMaterial("screen", scene);
+    material.emissiveTexture = captures.acquireTexture("texture")!.resource;
+    screen.material = material;
+    const frame = () => {
+      (engine as unknown as { _frameId: number })._frameId += 1;
+      const before = made.draws.length;
+      captures.render();
+      return made.draws.length - before;
+    };
+    const place = (z: number) => { screen.position.z = z; screen.computeWorldMatrix(true); };
+    return { ...made, screen, material, frame, place };
+  }
+
+  it("keeps its last image while the screen is outside the view, and draws again in the frame it comes back", () => {
+    const { screen, camera, frame, place } = shown();
+    // Its first image, then one a frame while the view shows the screen.
+    expect([frame(), frame(), frame()]).toEqual([1, 1, 1]);
+    // Behind the camera: nothing shows the output.
+    place(-50);
+    expect([frame(), frame()]).toEqual([0, 0]);
+    place(0);
+    expect(frame()).toBe(1);
+    // Hidden or disabled, the screen shows nothing either.
+    screen.isVisible = false;
+    expect(frame()).toBe(0);
+    screen.isVisible = true;
+    screen.setEnabled(false);
+    expect(frame()).toBe(0);
+    screen.setEnabled(true);
+    expect(frame()).toBe(1);
+    // The camera turns away and back: the output is drawn in the frame the view shows the screen again.
+    place(0);
+    expect(frame()).toBe(1);
+    camera.setTarget(new Vector3(0, 0, -10));
+    expect([frame(), frame()]).toEqual([0, 0]);
+    camera.setTarget(Vector3.Zero());
+    expect(frame()).toBe(1);
+    // A mesh that draws nothing itself shows nothing, wherever it is: an actor's geometry-less root with the Material.
+    place(-50);
+    const root = new Mesh("root", screen.getScene());
+    root.material = screen.material;
+    expect(frame()).toBe(0);
+  });
+
+  it("keeps drawing while a consumer cannot be placed", () => {
+    const { scene, captures, screen, material, frame, place } = shown();
+    frame();
+    place(-50);
+    expect(frame()).toBe(0);
+    // A Material no mesh draws with samples it: a post-process's or a particle system's.
+    const unplaced = new StandardMaterial("unplaced", scene);
+    unplaced.emissiveTexture = material.emissiveTexture;
+    expect(frame()).toBe(1);
+    unplaced.dispose();
+    expect(frame()).toBe(0);
+    // No mesh's Material samples it at all: whoever shows it is not known here.
+    screen.material = null;
+    material.dispose();
+    expect(frame()).toBe(1);
+    // Another Scene holds its texture (a Scene Layer's image).
+    const again = new StandardMaterial("again", scene);
+    again.emissiveTexture = captures.acquireTexture("texture")!.resource;
+    screen.material = again;
+    expect(frame()).toBe(0);
+    captures.acquireTexture("texture", new Scene(scene.getEngine()));
+    expect(frame()).toBe(1);
+  });
+
+  it("draws in the frame after a reflection or another capture's pass lists the screen, not for its own pass", () => {
+    const { scene, camera, frame, place, screen } = shown();
+    // The view looks away; the capture itself faces the screen and lists it in its own pass.
+    camera.setTarget(new Vector3(0, 0, -10));
+    place(3);
+    expect([frame(), frame(), frame()]).toEqual([1, 0, 0]);
+    // A reflection that draws the screen shows the output: the capture draws in the next frame.
+    notePassListed(scene, [screen]);
+    expect([frame(), frame()]).toEqual([1, 0]);
+    // So does another capture's pass.
+    notePassListed(scene, [screen], "other");
+    expect(frame()).toBe(1);
+  });
+
+  it("still draws a manual capture when asked, whatever shows it", () => {
+    const { captures, root, settings, frame, place } = shown();
+    frame();
+    place(-50);
+    captures.configure("capture", { ...settings, captureEveryFrame: false }, () => root);
+    captures.request("capture");
+    expect([frame(), frame()]).toEqual([1, 0]);
+  });
 });

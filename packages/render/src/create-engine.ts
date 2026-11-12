@@ -3531,6 +3531,7 @@ function initializeEngine(
     },
     postProcessPassCount: () => worldRenderer.postProcessPassCount(),
     renderTaskNames: () => worldRenderer.taskNames(),
+    renderTargetCaptureDiagnostics: () => renderTargetCaptures.diagnostics(),
     sceneLayerScenes: () =>
       (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
         layerId: layer.layerId,

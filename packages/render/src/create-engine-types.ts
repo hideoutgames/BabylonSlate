@@ -249,6 +249,8 @@ export interface EngineHandle {
   postProcessPassCount: () => number;
   /** Prepared FrameGraph task names in record order, or [] before preparation. */
   renderTaskNames: () => string[];
+  /** Rendering state of every Render Target capture output (`RenderTargetCaptures.diagnostics`). Test seam. */
+  renderTargetCaptureDiagnostics: () => import("./render-target-capture").RenderTargetCaptureDiagnostics[];
   /** Unique Material guids currently assigned to Play meshes. */
   assignedMaterialGuids: () => string[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
