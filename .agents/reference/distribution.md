@@ -83,7 +83,7 @@ Every platform builds from a clean checkout without credentials; only signing, n
 
 ## Maintainer setup
 
-1. Protect `main` with required checks. Distribution requires the latest successful Verify run for the exact selected commit (static, unit and all four browser shards) plus configured branch/ruleset checks; a passing ancestor or skipped draft run does not qualify.
+1. Protect `main` with required checks. Distribution requires the latest successful Verify run for the exact selected commit (static, unit and all five browser shards) plus configured branch/ruleset checks; a passing ancestor or skipped draft run does not qualify.
 2. Create environments `testflight`, `github-release`, `macos-signing` and `android-signing`. For each, choose **Selected branches and tags**, add a branch rule for exactly `main`, allow no tags or other branches. Do not use **Protected branches only** (it can allow all branches when protection is absent).
 3. Create the App Store Connect app record for `no.hideout.babylonslate` with private groups **Test Builds** and **Release Candidates**: public links and automatic access to every build disabled, explicit membership only. Existing App Store Connect users may test internally; others get private invitations; external testing can require Beta App Review; builds expire after 90 days.
 4. Provision directly in the `testflight` environment:

@@ -3858,6 +3858,42 @@ describe("GraphEditor", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("selects and frames the focused node again on a new focus request", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onSelectionChange = vi.fn();
+      const view = (focusRequest: number) => (
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          focusedNodeId="log-a"
+          focusRequest={focusRequest}
+          onSelectionChange={onSelectionChange}
+        />
+      );
+      const { container, getByRole, rerender } = render(view(1));
+      const transform = () =>
+        (container.querySelector(".react-flow__viewport") as HTMLElement).style.transform;
+      await waitFor(() => expect(onSelectionChange).toHaveBeenLastCalledWith(["log-a"]));
+      await waitFor(() => expect(transform()).not.toBe(""));
+      const framed = transform();
+
+      // The user moves on: selects nothing and zooms the view away.
+      fireEvent.click(container.querySelector(".react-flow__pane")!);
+      await waitFor(() => expect(onSelectionChange).toHaveBeenLastCalledWith([]));
+      fireEvent.click(getByRole("button", { name: "Zoom In" }));
+      await waitFor(() => expect(transform()).not.toBe(framed));
+
+      // The same id alone changes nothing; a new request selects and frames it again.
+      rerender(view(1));
+      expect(onSelectionChange).toHaveBeenLastCalledWith([]);
+      rerender(view(2));
+      await waitFor(() => expect(onSelectionChange).toHaveBeenLastCalledWith(["log-a"]));
+      await waitFor(() => expect(transform()).toBe(framed));
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("reports an empty selection when the pane is clicked", async () => {
     const onSelectionChange = vi.fn();
     const { container, rerender } = render(

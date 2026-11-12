@@ -10,6 +10,9 @@ import {
 } from "react";
 import { MessageDetails } from "./message-details";
 import { DiagnosticResultRow } from "./diagnostic-result-row";
+import { nodeDiagnosticDetails } from "../lib/diagnostic-details";
+import { useRevealResultWindow } from "../lib/use-reveal-result-window";
+import { primaryDockPanel } from "../shell/window-catalog";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   addDecorator,
@@ -377,6 +380,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     selectedId,
     attachmentId,
     focusedNodeId,
+    focusRequest,
     setSelectedId,
     setSelectedIds,
     setAttachmentId,
@@ -660,6 +664,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           paletteNodes={paletteNodes}
           diagnostics={diagnostics}
           focusedNodeId={play.focusedNodeId ?? focusedNodeId ?? undefined}
+          focusRequest={play.focusedNodeId ? undefined : focusRequest}
           selectedAttachmentId={attachmentId}
           onAttachmentSelect={onAttachmentSelect}
           onAttachmentDoubleClick={onAttachmentDoubleClick}
@@ -790,12 +795,18 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
   );
 }
 
-export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
-  void _props;
+/** Tapping a row focuses its node; a double-tap or **Open** also brings the graph window forward. */
+export function BehaviourTreeCompilerResultsPanel(props: IDockviewPanelProps) {
   const { diagnostics } = useBehaviourTreeDocument();
   const { focusNode } = useBehaviourTreeEditing();
+  const revealGraph = useRevealResultWindow(props, primaryDockPanel("behaviour-tree"));
   const [selectedDiagnostic, setSelectedDiagnostic] = useState<(typeof diagnostics)[number] | null>(null);
   const selected = selectedDiagnostic && diagnostics.some((row) => row.code === selectedDiagnostic.code && row.message === selectedDiagnostic.message && row.nodeId === selectedDiagnostic.nodeId) ? selectedDiagnostic : null;
+  const choose = (row: (typeof diagnostics)[number], open: boolean) => {
+    setSelectedDiagnostic(row);
+    if (row.nodeId) focusNode(row.nodeId);
+    revealGraph(open);
+  };
 
   return (
     <PanelFrame className="flex-1" data-testid="behaviour-tree-compiler-results">
@@ -820,10 +831,9 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
                   message={row.message}
                   code={row.code}
                   selected={selected !== null && row.code === selected.code && row.message === selected.message && row.nodeId === selected.nodeId}
-                  onSelect={() => {
-                    setSelectedDiagnostic(row);
-                    if (row.nodeId) focusNode(row.nodeId);
-                  }}
+                  onSelect={() => choose(row, false)}
+                  onOpen={() => choose(row, true)}
+                  details={nodeDiagnosticDetails(row)}
                   testId={`behaviour-tree-diagnostic-${row.code}`}
                 />
               );
@@ -831,7 +841,7 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
           </WindowedList>
         </ScrollArea>
       )}
-      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}`} onClose={() => setSelectedDiagnostic(null)} /> : null}
+      {selected ? <MessageDetails title="Diagnostic Details" message={nodeDiagnosticDetails(selected)} onClose={() => setSelectedDiagnostic(null)} /> : null}
     </PanelFrame>
   );
 }

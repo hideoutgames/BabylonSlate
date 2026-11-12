@@ -13,7 +13,7 @@ Double-tap a Behaviour Tree to open it.
 - **Graph**: the tree. Select a composite and choose **Add Node** to add a child. Children run left to right; drag a node sideways to reorder. Long-press a node for **Add Decorator**, **Wrap In Sequence**, **Duplicate** and **Delete**. **Duplicate** copies every selected node with its children when the node is part of the selection.
 - **Blackboard**: the tree's Blackboard asset and a read-only list of its keys. While a Simulation runs it also shows the live values of the actor you watch.
 - **Inspector**: settings for the selected node. With several nodes selected, it shows the settings they all have, such as **Accept Radius** for a **Move To** and a **Move To Blackboard Key**, with **Mixed Values** where they differ. An edit changes every selected node, and typing a sum such as `Mixed Values+4` changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Decorators and services are edited one node at a time.
-- **Compiler Results**: problems such as an empty composite or a missing Blackboard key. Tap a row to select the node.
+- **Compiler Results**: problems such as an empty composite or a missing Blackboard key. Tap a row to select and frame the node, or double-tap it to also bring **Graph** forward. Right-click or hold a row to copy it.
 
 ## Watch the tree run
 

@@ -1,6 +1,12 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useMemo } from "react";
 import { documentSceneMode } from "../shell/scene-document-layout";
+import { isDockviewDocumentKind, primaryDockPanel } from "../shell/window-catalog";
+import {
+  EVENT_GRAPH_PANEL_ID,
+  functionGraphPanelId,
+  openFunctionGraphPanel,
+} from "../shell/function-graph-panels";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
 import {
@@ -17,6 +23,7 @@ import { usePlay } from "../context/play-context";
 import {
   useDocumentActions,
   useActiveDocumentId,
+  useActiveDocumentState,
   useOpenDocumentTabs,
   useOpenDocument,
   useRegistryState,
@@ -25,6 +32,9 @@ import { useOptionalDocumentWorkspace } from "../context/document-workspace-cont
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { documentIdToRevealForDiagnostic, focusDiagnosticNode } from "../services/diagnostic-navigation";
 import { useEndFocusOnDeselect } from "../lib/use-end-focus-on-deselect";
+import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
+import { serializedGraphFromDocument } from "../lib/logic-graph-document";
+import { hidesResults, mayRevealOnChoice, revealResultWindow } from "../lib/reveal-result-window";
 import {
   MODEL_DOCUMENT_KINDS,
   modelSimpleColliderCounter,
@@ -39,6 +49,19 @@ import { registryClassParentLookup } from "../lib/class-asset-lookup";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { MessageDetails } from "../components/message-details";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
+
+/** Diagnostic Details for a row, also its **Copy Details** text. */
+function compilerResultDetails(d: Diagnostic): string {
+  return `${d.severity}: ${d.code}\n${d.message}\n${d.graphId}${d.nodeId ? `\nNode: ${d.nodeId}` : ""}${d.pinId ? `\nPin: ${d.pinId}` : ""}`;
+}
+
+/** Document kinds whose Actor rows point at the primary viewport. */
+const VIEWPORT_DOCUMENT_KINDS: ReadonlySet<string> = new Set([
+  "scene",
+  "scene-layer",
+  "timeline-clip-2d",
+  "timeline-clip-3d",
+]);
 
 type CompilerRow =
   | { kind: "header"; graphId: string; errors: number; warnings: number }
@@ -66,12 +89,17 @@ function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] 
 const SCENE_DOCUMENT_KINDS = ["scene", "scene-layer"] as const;
 const NO_ACTORS: readonly string[] = [];
 
-export function CompilerResultsPanel(_props: IDockviewPanelProps) {
-  void _props;
+/**
+ * The open document's diagnostics, grouped by graph. Choosing a row focuses its
+ * node or Actor; a double-click, double-tap or **Open** also brings the window
+ * that shows it forward (`revealResultWindow`) and frames an Actor.
+ */
+export function CompilerResultsPanel(props: IDockviewPanelProps) {
   const { diagnostics, setDiagnostics, focusDiagnostic, setFocusDiagnostic } = useValidation();
   const { clearFocusedNode } = usePlay();
-  const { setActiveDocument } = useDocumentActions();
+  const { setActiveDocument, toggleDockWindow } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
+  const { animEditorMode, sceneMode } = useActiveDocumentState();
   // Labels and ids for the result headers; content edits elsewhere skip them.
   const openDocuments = useOpenDocumentTabs();
   const workspace = useOptionalDocumentWorkspace();
@@ -155,6 +183,72 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
     endFocus,
   );
 
+  /**
+   * Brings forward the window that shows `d` in this document: the Class
+   * function tab or graph that holds its node, or the viewport for an Actor.
+   */
+  const revealLocation = (d: Diagnostic, open: boolean) => {
+    const kind = doc?.ref.kind;
+    if (!kind || !isDockviewDocumentKind(kind)) return;
+    const dock = props.containerApi as IDockviewPanelProps["containerApi"] | undefined;
+    const resultsGroupId = props.api?.group?.id;
+    const graph = d.nodeId ? serializedGraphFromDocument(kind, doc?.content) : null;
+    const owner = graph && d.nodeId ? graphOwningNode(graph, d.nodeId) : null;
+    if (owner?.kind === "function") {
+      if (!dock) return;
+      const panel = dock.getPanel(functionGraphPanelId(owner.functionId));
+      // A closed function tab opens beside the Event Graph.
+      const beside = panel ?? dock.getPanel(EVENT_GRAPH_PANEL_ID);
+      const reveal = open || (panel
+        ? mayRevealOnChoice(dock, panel, resultsGroupId)
+        : !hidesResults(dock, beside?.group.id, resultsGroupId));
+      if (!reveal) return;
+      const name = graph?.members?.find((member) => member.id === owner.functionId)?.name;
+      openFunctionGraphPanel(dock, owner.functionId, name ?? owner.functionId);
+      return;
+    }
+    // A node shows in the graph that holds it (an Animation Graph's states in its
+    // State Machine); an Actor in the viewport.
+    const shown = owner?.kind === "event" || (d.nodeId && kind === "anim-graph") ||
+      (!d.nodeId && d.actorId && VIEWPORT_DOCUMENT_KINDS.has(kind));
+    if (!shown) return;
+    revealResultWindow({
+      dock,
+      resultsGroupId,
+      panelId: primaryDockPanel(kind, {
+        animEditorMode: kind === "anim-graph" ? animEditorMode : undefined,
+        sceneMode,
+      }),
+      open,
+      reopen: toggleDockWindow,
+    });
+  };
+
+  const choose = (d: Diagnostic, open: boolean) => {
+    clearFocusedNode();
+    if (d.actorId) sceneEditing?.selectActor(d.actorId);
+    const revealId = documentIdToRevealForDiagnostic(
+      d,
+      openDocuments.map((entry) => entry.id),
+    );
+    if (!revealId || revealId === documentId) {
+      // This panel brings the owning tab forward every time a row is chosen,
+      // so graph panels leave the request alone.
+      claimFocusRouting(d);
+      revealLocation(d, open);
+    }
+    // Choosing the focused row again frames its node again. The tab
+    // changes after the focus is set, which carries it there.
+    void focusDiagnosticNode(
+      { currentFocus: () => focusDiagnostic, setFocusDiagnostic },
+      d,
+      revealId ?? undefined,
+    ).then(() => {
+      if (revealId) setActiveDocument(revealId);
+      if (open && d.actorId) sceneEditing?.frameActor(d.actorId);
+    });
+  };
+
   return (
     <PanelFrame data-testid="compiler-results">
       {diagnostics.length === 0 ? (
@@ -203,30 +297,16 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                   location={d.nodeId ? `${d.nodeId}${d.pinId ? `.${d.pinId}` : ""}` : undefined}
                   selected={d === selected}
                   testId="compiler-result-row"
-                  onSelect={() => {
-                    clearFocusedNode();
-                    if (d.actorId) sceneEditing?.selectActor(d.actorId);
-                    const revealId = documentIdToRevealForDiagnostic(
-                      d,
-                      openDocuments.map((doc) => doc.id),
-                    );
-                    // Choosing the focused row again frames its node again. The tab
-                    // changes after the focus is set, which carries it there.
-                    void focusDiagnosticNode(
-                      { currentFocus: () => focusDiagnostic, setFocusDiagnostic },
-                      d,
-                      revealId ?? undefined,
-                    ).then(() => {
-                      if (revealId) setActiveDocument(revealId);
-                    });
-                  }}
+                  details={compilerResultDetails(d)}
+                  onSelect={() => choose(d, false)}
+                  onOpen={() => choose(d, true)}
                 />
               );
             }}
           </WindowedList>
         </ScrollArea>
       )}
-      {selected ? <MessageDetails title="Diagnostic Details" message={`${selected.severity}: ${selected.code}\n${selected.message}\n${selected.graphId}${selected.nodeId ? `\nNode: ${selected.nodeId}` : ""}${selected.pinId ? `\nPin: ${selected.pinId}` : ""}`} onClose={endFocus} /> : null}
+      {selected ? <MessageDetails title="Diagnostic Details" message={compilerResultDetails(selected)} onClose={endFocus} /> : null}
     </PanelFrame>
   );
 }

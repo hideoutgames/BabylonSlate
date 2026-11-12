@@ -61,6 +61,7 @@ import { useOpenDocumentsOfKinds } from "../lib/use-open-documents-of-kinds";
 import { textureUploadSignature } from "../lib/texture-upload-signature";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 import { useNodeSelection } from "../lib/node-selection";
+import { useNodeFocus } from "../lib/use-node-focus";
 
 const FUNCTION_KINDS = ["material-function"] as const;
 
@@ -111,6 +112,9 @@ export interface MaterialEditingValue {
   setSelectedNodeIds: (nodeIds: readonly string[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
   focusedNodeId: string | null;
+  /** Changes on every `focusNode`, so the canvas frames the node again. */
+  focusRequest: number;
+  /** Frames a node on the canvas and selects it. */
   focusNode: (nodeId: string) => void;
   requestRender: () => void;
   attachPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
@@ -163,7 +167,7 @@ export function MaterialEditingProvider({
     MaterialDiagnostic[]
   >([]);
   const { selectedNodeIds, selectedNodeId, setSelectedNodeIds, setSelectedNodeId } = useNodeSelection();
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const { focusedNodeId, focusRequest, requestFocus: focusNode } = useNodeFocus();
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   const [sharedEngine, setSharedEngine] = useState<AbstractEngine | null>(null);
   const [renderCoolingDown, setRenderCoolingDown] = useState(false);
@@ -745,7 +749,8 @@ export function MaterialEditingProvider({
       setSelectedNodeIds,
       setSelectedNodeId,
       focusedNodeId,
-      focusNode: (nodeId: string) => setFocusedNodeId(nodeId),
+      focusRequest,
+      focusNode,
       requestRender,
       attachPreviewCanvas: setCanvas,
       frameBudgetMs,
@@ -753,6 +758,8 @@ export function MaterialEditingProvider({
     [
       compileDiagnostics,
       document?.domain,
+      focusNode,
+      focusRequest,
       focusedNodeId,
       frameBudgetMs,
       functions,

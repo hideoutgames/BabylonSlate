@@ -12,7 +12,7 @@ Double-tap the asset to open it. The window has **Graph**, **Preview**, **Inspec
 
 - In **Graph**, wire a chain that starts at [Create Particle](../scripting/particle/create-particle.md), passes through shape and update nodes, and ends at [Emitter Output](../scripting/particle/emitter-output.md). See the [particle node reference](../scripting/particle/index.md).
 - **Preview** plays the emitter. While the graph has errors it shows **Graph Has Errors** and keeps the last valid result.
-- **Compiler Results** lists errors to fix.
+- **Compiler Results** lists errors to fix. Tap one to jump to its node, or double-tap it to also bring **Graph** forward. Right-click or hold one to copy it.
 - Select **Emitter Output**, or nothing, to edit the emitter settings in the **Inspector**.
 - Select several nodes to edit what they all have, such as **A** and **B** for a **Condition** and a **Multiply**. A field whose values differ shows **Mixed Values**. An edit changes every selected node, and typing a sum such as `Mixed Values+4` changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)).
 

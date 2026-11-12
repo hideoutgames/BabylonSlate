@@ -191,6 +191,7 @@ function SessionReportGroupSection({
                 nodeId={sessionReportNodeId(entry) ?? ""}
                 testId="session-report-row"
                 onSelect={() => onNavigate(entry)}
+                onOpen={() => onNavigate(entry)}
               />
             </li>
           ))}

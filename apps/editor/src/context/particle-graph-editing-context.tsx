@@ -1,4 +1,5 @@
 import { useGlobalParameterCatalog } from "../lib/global-parameter-catalog";
+import { useNodeFocus } from "../lib/use-node-focus";
 import {
   createContext,
   useCallback,
@@ -66,6 +67,8 @@ export interface ParticleGraphEditingValue {
   setSelectedNodeIds: (nodeIds: readonly string[]) => void;
   setSelectedNodeId: (nodeId: string | null) => void;
   focusedNodeId: string | null;
+  /** Changes on every `focusNode`, so the canvas frames the node again. */
+  focusRequest: number;
   /** Frames a node on the canvas and shows it in Details. */
   focusNode: (nodeId: string) => void;
 }
@@ -235,11 +238,11 @@ export function ParticleGraphEditingProvider({
   );
 
   const { selectedNodeIds, selectedNodeId, setSelectedNodeIds, setSelectedNodeId } = useNodeSelection();
-  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const { focusedNodeId, focusRequest, requestFocus } = useNodeFocus();
   const focusNode = useCallback((nodeId: string) => {
-    setFocusedNodeId(nodeId);
+    requestFocus(nodeId);
     setSelectedNodeId(nodeId);
-  }, [setSelectedNodeId]);
+  }, [requestFocus, setSelectedNodeId]);
 
   const value = useMemo<ParticleGraphEditingValue>(
     () => ({
@@ -256,6 +259,7 @@ export function ParticleGraphEditingProvider({
       setSelectedNodeIds,
       setSelectedNodeId,
       focusedNodeId,
+      focusRequest,
       focusNode,
     }),
     [
@@ -266,6 +270,7 @@ export function ParticleGraphEditingProvider({
       documentId,
       errorCount,
       focusNode,
+      focusRequest,
       focusedNodeId,
       previewDocument,
       reportBuildDiagnostics,

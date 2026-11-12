@@ -97,6 +97,8 @@ import {
 } from "../lib/play-particles";
 import { MessageDetails } from "../components/message-details";
 import { DiagnosticResultRow } from "../components/diagnostic-result-row";
+import { useRevealResultWindow } from "../lib/use-reveal-result-window";
+import { primaryDockPanel } from "../shell/window-catalog";
 import { ParticlePreviewCanvas } from "../components/particle-preview-canvas";
 import { useSpawnPreviewEmitters } from "../lib/use-spawn-preview-emitters";
 import { ParticlePreviewSurface } from "../components/particle-preview-surface";
@@ -1190,19 +1192,29 @@ function sameDiagnostic(a: ParticleGraphDiagnostic, b: ParticleGraphDiagnostic):
   );
 }
 
-/** Validation and build diagnostics; tapping a row focuses its node. */
+/**
+ * Validation and build diagnostics. Tapping a row focuses its node; a
+ * double-tap or **Open** also brings the graph window forward (`onReveal`).
+ */
 function ParticleGraphCompilerResults({
   document,
   rows,
   onFocusNode,
+  onReveal,
 }: {
   document: ParticleGraphDocument;
   rows: readonly ParticleGraphDiagnostic[];
   onFocusNode: (nodeId: string) => void;
+  onReveal: (open: boolean) => void;
 }) {
   const [selectedRow, setSelectedRow] = useState<ParticleGraphDiagnostic | null>(null);
   const selected =
     selectedRow && rows.some((row) => sameDiagnostic(row, selectedRow)) ? selectedRow : null;
+  const choose = (row: ParticleGraphDiagnostic, open: boolean) => {
+    setSelectedRow(row);
+    if (row.nodeId) onFocusNode(row.nodeId);
+    onReveal(open);
+  };
   return (
     <>
       {rows.length === 0 ? (
@@ -1221,10 +1233,9 @@ function ParticleGraphCompilerResults({
                   message={row.message}
                   code={row.code}
                   selected={selected !== null && sameDiagnostic(row, selected)}
-                  onSelect={() => {
-                    setSelectedRow(row);
-                    if (row.nodeId) onFocusNode(row.nodeId);
-                  }}
+                  onSelect={() => choose(row, false)}
+                  onOpen={() => choose(row, true)}
+                  details={diagnosticDetails(row, document)}
                   testId={`particle-graph-diagnostic-${row.code}`}
                 />
               );
@@ -1318,6 +1329,7 @@ function ParticleGraphCanvas() {
         onSessionViewportChange={onSessionViewportChange}
         onSelectionChange={setSelectedNodeIds}
         focusedNodeId={editing.focusedNodeId ?? undefined}
+        focusRequest={editing.focusRequest}
         commitPositionsOnDragEnd
         contextMenuItemsForNode={contextMenuItemsForNode}
         onChange={(next, meta) =>
@@ -1386,9 +1398,9 @@ export function ParticleGraphDetailsPanel(_props: IDockviewPanelProps) {
   );
 }
 
-export function ParticleGraphCompilerResultsPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function ParticleGraphCompilerResultsPanel(props: IDockviewPanelProps) {
   const editing = useParticleGraphEditing();
+  const revealGraph = useRevealResultWindow(props, primaryDockPanel("particle-graph"));
   const rows = useMemo(
     () => [...editing.diagnostics, ...editing.buildDiagnostics],
     [editing.buildDiagnostics, editing.diagnostics],
@@ -1399,6 +1411,7 @@ export function ParticleGraphCompilerResultsPanel(_props: IDockviewPanelProps) {
         document={editing.document}
         rows={rows}
         onFocusNode={editing.focusNode}
+        onReveal={revealGraph}
       />
     </PanelFrame>
   );
