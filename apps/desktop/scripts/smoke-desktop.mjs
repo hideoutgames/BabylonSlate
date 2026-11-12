@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { access, chmod, cp, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -193,9 +194,13 @@ try {
   await app.close();
   // cdb runs synchronously, so the launch timeout cannot end the relaunch while the stacks are read.
   const relaunchWatch = platform === "windows" ? setTimeout(printWindowsMainStacks, 40000) : undefined;
+  // Playwright's own protocol log for the second Windows launch, to show the request a stall leaves unanswered.
+  const playwrightDebug = platform === "windows" ? createRequire(import.meta.resolve("@playwright/test"))("playwright-core/lib/utilsBundle").debug : null;
+  playwrightDebug?.enable("pw:protocol,pw:browser");
   try {
     app = await launch();
   } finally {
+    playwrightDebug?.disable();
     clearTimeout(relaunchWatch);
   }
   page = await app.firstWindow();
