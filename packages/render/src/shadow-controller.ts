@@ -463,6 +463,7 @@ export class SceneShadowController {
   refreshShadowMaps(): void {
     if (!this.holdsGenerator()) return;
     this.refresh.syncCasters(this.scene, this.meshes);
+    this.maps.retained?.beginFrame();
     // A sync("admission") skips the walk, so frozen cascade caster bounds follow it here.
     let casterBounds: ReturnType<ShadowSpatialIndex["bounds"]>;
     for (const entry of this.entries.values())
