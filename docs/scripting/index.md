@@ -60,6 +60,8 @@ Graphs are checked as you edit. Problems appear in **Compiler Results**, and eac
 
 Warnings never block Play. A loop that never ends stops Play and reports **Infinite loop detected**.
 
+Play also lists the warnings of every class it compiled in the **Compiler Results** of the document you played from, grouped by class. Tap one to see its details; double-tap it, or choose **Open** from its menu, to open that class at the node. Each open document keeps its results while you work in another, so you can go through them one by one; the next Play or Compile replaces them.
+
 To see a class run, start a Simulation with the class open: the nodes that run light up for the object you pick, and pins show their last values ([Watch a graph run](../debugging/index.md#watch-a-graph-run)). Behaviour Trees and Animation Graphs can be watched the same way.
 
 Results you may meet while wiring:

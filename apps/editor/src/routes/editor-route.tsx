@@ -1,4 +1,4 @@
-import { lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CONTENT_BROWSER_ID } from "@haptic/core";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -19,6 +19,7 @@ import { ExternalChangeDialogs } from "../components/external-change-dialogs";
 import {
   useDocumentActions,
   useActiveDocumentId,
+  useOpenDocumentTabs,
   useEditorShellState,
   useSaveState,
 } from "../context/document-context";
@@ -596,7 +597,14 @@ function PlayAwareKeybinds({ children }: { children: ReactNode }) {
 
 function DocumentValidationProvider({ children }: { children: ReactNode }) {
   const activeDocumentId = useActiveDocumentId();
-  return <ValidationProvider scopeKey={activeDocumentId ?? undefined}>{children}</ValidationProvider>;
+  // Each open document keeps its Compiler Results; a closed one's are dropped.
+  const openDocuments = useOpenDocumentTabs();
+  const openDocumentIds = useMemo(() => openDocuments.map((doc) => doc.id), [openDocuments]);
+  return (
+    <ValidationProvider scopeKey={activeDocumentId ?? undefined} retainScopeKeys={openDocumentIds}>
+      {children}
+    </ValidationProvider>
+  );
 }
 
 export default function EditorRoute({

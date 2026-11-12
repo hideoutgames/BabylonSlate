@@ -34,25 +34,61 @@ function renderValidation() {
 }
 
 describe("ValidationProvider", () => {
-  it("clears errors and focus on document switches and ignores stale async publishers", () => {
+  it("keeps each document's list while another is active, and ignores publishers from an earlier visit", () => {
     let current!: ReturnType<typeof useValidation>;
     function Probe() { current = useValidation(); return null; }
     const view = render(<ValidationProvider scopeKey="class-a"><Probe /></ValidationProvider>);
     const error = { ...pairingWarning("Invalid graph"), severity: "error" as const };
+    const late = { ...error, message: "Reported after the switch" };
     act(() => { current.setDiagnostics([error]); current.setFocusDiagnostic(error); });
     expect(current.errorCount).toBe(1);
-    const stale = current;
+    const firstVisit = current;
     view.rerender(<ValidationProvider scopeKey="material-b"><Probe /></ValidationProvider>);
-    expect(current.errorCount).toBe(0);
+    expect(current.diagnostics).toEqual([]);
     expect(current.focusDiagnostic).toBeNull();
-    act(() => { stale.setDiagnostics([error]); stale.setFocusDiagnostic(error); });
+    // A publisher that finishes after the switch, as Play does, still reports into its own document;
+    // it cannot move the focus of the one now shown.
+    act(() => { firstVisit.setDiagnostics([error, late]); firstVisit.setFocusDiagnostic(error); });
     expect(current.diagnostics).toEqual([]);
     expect(current.focusDiagnostic).toBeNull();
     view.rerender(<ValidationProvider scopeKey="class-a"><Probe /></ValidationProvider>);
-    act(() => stale.setDiagnostics([error]));
-    expect(current.errorCount).toBe(0);
+    expect(current.diagnostics.map((entry) => entry.message)).toEqual(["Invalid graph", "Reported after the switch"]);
+    expect(current.focusDiagnostic).toBeNull();
+    act(() => firstVisit.setDiagnostics([]));
+    expect(current.errorCount).toBe(2);
     act(() => current.setDiagnostics([error]));
     expect(current.errorCount).toBe(1);
+  });
+
+  it("replaces only the rows a live check owns, and the whole list for Play", () => {
+    const validation = renderValidation();
+    const other = { ...pairingWarning("Another asset"), assetGuid: "assets/Hero.class.hasset", graphId: "graph:assets/Hero.class.hasset" };
+    const own = pairingWarning("Old scene check");
+    const ownsScene = { replaces: (d: Diagnostic) => d.assetGuid === "assets/Main.scene.hasset" };
+    act(() => validation().setDiagnostics([other, own]));
+    act(() => validation().setDiagnostics([pairingWarning("New scene check")], ownsScene));
+    expect(validation().diagnostics.map((entry) => entry.message)).toEqual(["Another asset", "New scene check"]);
+    act(() => validation().setDiagnostics([], ownsScene));
+    expect(validation().diagnostics.map((entry) => entry.message)).toEqual(["Another asset"]);
+    act(() => validation().setDiagnostics([own]));
+    expect(validation().diagnostics.map((entry) => entry.message)).toEqual(["Old scene check"]);
+  });
+
+  it("drops a closed document's list, never the active one's", () => {
+    let current!: ReturnType<typeof useValidation>;
+    function Probe() { current = useValidation(); return null; }
+    const view = (scopeKey: string, open: string[]) => (
+      <ValidationProvider scopeKey={scopeKey} retainScopeKeys={open}><Probe /></ValidationProvider>
+    );
+    const { rerender } = render(view("a", ["a", "b"]));
+    act(() => current.setDiagnostics([pairingWarning("In a")]));
+    rerender(view("b", ["a", "b"]));
+    act(() => current.setDiagnostics([pairingWarning("In b")]));
+    // a closes; b, still active, keeps its list even when its tab is not listed yet.
+    rerender(view("b", []));
+    expect(current.diagnostics.map((entry) => entry.message)).toEqual(["In b"]);
+    rerender(view("a", ["a"]));
+    expect(current.diagnostics).toEqual([]);
   });
 
   it("carries an explicit navigation target and body line into its destination only", () => {

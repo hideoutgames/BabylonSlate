@@ -54,6 +54,7 @@ import {
   animGraphNodeTypes,
 } from "@haptic/graph-ui";
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type BreakpointLocation } from "@haptic/bridge";
+import { parseDocumentId } from "@haptic/core";
 import type { Diagnostic } from "@haptic/scripting";
 import {
   useActiveDocumentState,
@@ -677,7 +678,13 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             })),
           })
         : [];
-    setDiagnostics([...animRows, ...ruleRows]);
+    // This graph's rows (its State Machine, open rule, and Animation Object): Play and Compile rows for other assets stay.
+    const path = parseDocumentId(documentId)?.path;
+    setDiagnostics([...animRows, ...ruleRows], {
+      replaces: (d) =>
+        d.assetGuid === documentId || d.assetGuid === path ||
+        d.graphId === documentId || d.graphId.startsWith(`${documentId}:`),
+    });
   }, [
     activeDocumentId,
     animEditorMode,

@@ -8,6 +8,7 @@ import type { SessionReportEntry } from "@haptic/runtime";
 import type { Diagnostic } from "@haptic/scripting";
 import type { SessionReportAsset } from "../lib/session-report-locations";
 import type { AnimEditorMode } from "../shell/anim-document-layout";
+import type { SceneMode } from "../shell/scene-document-layout";
 
 /**
  * Play / Compiler Results tap-to-navigate should show the graph that owns the
@@ -80,6 +81,7 @@ export interface SessionReportNavigationHost {
   isDocumentOpen(id: string): boolean;
   setActiveDocument(id: string): void;
   setAnimEditorMode(id: string, mode: AnimEditorMode): void;
+  setSceneMode(id: string, mode: SceneMode): void;
   requestDocumentFocus(id: string): void;
   log(line: string): void;
 }
@@ -155,6 +157,9 @@ export async function navigateToSessionReportEntry(
   } else if (document.kind === "anim-graph" && entry.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID) {
     // A state or transition breakpoint.
     host.setAnimEditorMode(id, "stateMachine");
+  } else if ((document.kind === "scene" || document.kind === "scene-layer") && nav.focusedNodeId) {
+    // A node of a Scene's script shows in Script mode.
+    host.setSceneMode(id, "script");
   }
   host.requestDocumentFocus(id);
   host.log(nav.focusedNodeId ? `Navigate to node ${nav.focusedNodeId}` : `Opened ${document.label}`);

@@ -1,9 +1,19 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Diagnostic } from "@haptic/scripting";
+
+/**
+ * How a publisher's rows join the list. Without `replaces` they replace the
+ * whole list (Play, Compile); with it they replace only the rows it matches,
+ * so a document's live checks leave the rows Play or Compile reported for
+ * other assets in place.
+ */
+export type DiagnosticsUpdate = {
+  replaces?: (diagnostic: Diagnostic) => boolean;
+};
 
 type ValidationContextValue = {
   diagnostics: Diagnostic[];
-  setDiagnostics: (d: Diagnostic[]) => void;
+  setDiagnostics: (d: Diagnostic[], update?: DiagnosticsUpdate) => void;
   focusDiagnostic: Diagnostic | null;
   /** A destination preserves explicit navigation across the next document switch. */
   setFocusDiagnostic: (d: Diagnostic | null, destinationScopeKey?: string) => void;
@@ -37,37 +47,90 @@ function sameDiagnostics(a: readonly Diagnostic[], b: readonly Diagnostic[]): bo
   );
 }
 
-export function ValidationProvider({ children, scopeKey }: { children: ReactNode; scopeKey?: string }) {
+/** One document's list. A new generation starts on every visit, so publishers from an earlier visit stop writing. */
+type ScopeSlot = { generation: object; diagnostics: Diagnostic[] };
+
+const slotKey = (scopeKey: string | undefined) => scopeKey ?? "";
+const NO_DIAGNOSTICS: Diagnostic[] = [];
+
+/**
+ * Compiler Results state, one list per document (`scopeKey`, the active
+ * document). A document keeps its list while another is active, so results
+ * Play reported in a Scene are still there after Open visits their Class.
+ * `retainScopeKeys` (the open documents) drops the lists of closed ones.
+ */
+export function ValidationProvider({
+  children,
+  scopeKey,
+  retainScopeKeys,
+}: {
+  children: ReactNode;
+  scopeKey?: string;
+  retainScopeKeys?: readonly string[];
+}) {
   const [state, setState] = useState<{
     scopeKey?: string;
-    generation: object;
-    diagnostics: Diagnostic[];
+    slots: ReadonlyMap<string, ScopeSlot>;
     focusDiagnostic: Diagnostic | null;
     focusScopeKey?: string;
-  }>({ scopeKey, generation: {}, diagnostics: [], focusDiagnostic: null });
-  // Reset before rendering consumers so an unrelated asset never inherits the
-  // previous graph's errors. Captured setters from old async passes are ignored.
+  }>(() => ({
+    scopeKey,
+    slots: new Map([[slotKey(scopeKey), { generation: {}, diagnostics: [] }]]),
+    focusDiagnostic: null,
+  }));
+  // Switch lists before rendering consumers, so an unrelated asset never shows
+  // another document's rows. Setters captured on an earlier visit are ignored.
   if (state.scopeKey !== scopeKey) {
+    const slots = new Map(state.slots);
+    slots.set(slotKey(scopeKey), {
+      generation: {},
+      diagnostics: state.slots.get(slotKey(scopeKey))?.diagnostics ?? [],
+    });
     const focusDiagnostic = state.focusScopeKey === scopeKey ? state.focusDiagnostic : null;
-    setState({ scopeKey, generation: {}, diagnostics: [], focusDiagnostic, focusScopeKey: scopeKey });
+    setState({ scopeKey, slots, focusDiagnostic, focusScopeKey: scopeKey });
   }
-  const { diagnostics, generation } = state;
+  const key = slotKey(scopeKey);
+  const slot = state.slots.get(key);
+  const generation = slot?.generation;
+  const diagnostics = slot?.diagnostics ?? NO_DIAGNOSTICS;
   const focusDiagnostic = state.focusScopeKey === scopeKey ? state.focusDiagnostic : null;
-  const setDiagnostics = useCallback((next: Diagnostic[]) => {
-    setState((current) =>
-      current.generation !== generation || sameDiagnostics(current.diagnostics, next)
-        ? current
-        : { ...current, diagnostics: next },
-    );
-  }, [generation]);
+  const setDiagnostics = useCallback((next: Diagnostic[], update?: DiagnosticsUpdate) => {
+    setState((current) => {
+      const target = current.slots.get(key);
+      if (!target || target.generation !== generation) return current;
+      const replaces = update?.replaces;
+      const merged = replaces
+        ? [...target.diagnostics.filter((entry) => !replaces(entry)), ...next]
+        : next;
+      if (sameDiagnostics(target.diagnostics, merged)) return current;
+      const slots = new Map(current.slots);
+      slots.set(key, { ...target, diagnostics: merged });
+      return { ...current, slots };
+    });
+  }, [generation, key]);
   const setFocusDiagnostic = useCallback((next: Diagnostic | null, destinationScopeKey?: string) => {
     setState((current) => {
-      if (current.generation !== generation) return current;
+      // Only the active document's current visit moves the focus.
+      if (current.scopeKey !== scopeKey || current.slots.get(key)?.generation !== generation) return current;
       const focusScopeKey = destinationScopeKey ?? current.scopeKey;
       if (current.focusDiagnostic === next && current.focusScopeKey === focusScopeKey) return current;
       return { ...current, focusDiagnostic: next, focusScopeKey };
     });
-  }, [generation]);
+  }, [generation, key, scopeKey]);
+  // Closed documents' lists go; the active one stays even before its tab is listed.
+  const retainKey = retainScopeKeys?.join("\u0000");
+  useEffect(() => {
+    if (retainKey === undefined) return;
+    const keep = new Set(retainKey.split("\u0000"));
+    setState((current) => {
+      const active = slotKey(current.scopeKey);
+      const stale = [...current.slots.keys()].filter((entry) => entry !== active && !keep.has(entry));
+      if (stale.length === 0) return current;
+      const slots = new Map(current.slots);
+      for (const entry of stale) slots.delete(entry);
+      return { ...current, slots };
+    });
+  }, [retainKey]);
   const value = useMemo(
     () => ({
       diagnostics,

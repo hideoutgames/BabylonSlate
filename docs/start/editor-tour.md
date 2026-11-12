@@ -41,7 +41,7 @@ A scene opens with these windows:
 | Output Log | Messages from the editor and from Play. |
 | Compiler Results | Errors and warnings from compiling scripts. |
 
-Tap a result in **Compiler Results** to select its node or actor, and double-tap it to open the graph or viewport that shows it, framed on the problem. Right-click or hold a result for **Open**, **Copy Error** (or **Copy Warning**) and **Copy Details**.
+Tap a result in **Compiler Results** to select its node or actor, and double-tap it to open the graph or viewport that shows it, framed on the problem. A result Play reported for another class opens that class. Right-click or hold a result for **Open**, **Copy Error** (or **Copy Warning**) and **Copy Details**.
 
 Other asset editors have their own windows, such as **Preview** and **Inspector** for a Texture. See [Scenes](../scenes/index.md) and [Actors](../scenes/actors.md).
 

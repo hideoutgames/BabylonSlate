@@ -140,6 +140,7 @@ function fakeHost(overrides: Partial<SessionReportNavigationHost> = {}) {
     isDocumentOpen: (id) => open.has(id),
     setActiveDocument: (id) => { calls.push(`activate ${id}`); },
     setAnimEditorMode: (id, mode) => { calls.push(`mode ${id} ${mode}`); },
+    setSceneMode: (id, mode) => { calls.push(`scene mode ${id} ${mode}`); },
     requestDocumentFocus: (id) => { calls.push(`keyboard ${id}`); },
     log: (line) => { calls.push(`log ${line}`); },
     ...overrides,
@@ -222,6 +223,15 @@ describe("navigateToSessionReportEntry", () => {
       host,
     );
     expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset animationObject");
+  });
+
+  it("shows a Scene's script for one of its nodes, and leaves an Actor's Scene in its mode", async () => {
+    const { host, calls } = fakeHost();
+    await navigateToSessionReportEntry(entry({ assetGuid: "arena-guid", nodeId: "spawn" }), host);
+    expect(calls).toContain("scene mode scene:assets/Arena.scene.hasset script");
+    const actor = fakeHost();
+    await navigateToSessionReportEntry(entry({ assetGuid: "arena-guid" }), actor.host);
+    expect(actor.calls.some((call) => call.startsWith("scene mode"))).toBe(false);
   });
 
   it("shows the State Machine for a state or transition breakpoint", async () => {

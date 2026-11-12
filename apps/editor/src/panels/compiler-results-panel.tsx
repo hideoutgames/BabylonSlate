@@ -16,7 +16,13 @@ import {
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
 } from "@haptic/editor-kit";
-import { normalizeTimelineClipAsset, type SerializedScene } from "@haptic/core";
+import {
+  documentKindLabel,
+  isAssetDocumentKind,
+  normalizeTimelineClipAsset,
+  parseDocumentId,
+  type SerializedScene,
+} from "@haptic/core";
 import type { Diagnostic } from "@haptic/scripting";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
@@ -30,7 +36,7 @@ import {
 } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
-import { documentIdToRevealForDiagnostic, focusDiagnosticNode } from "../services/diagnostic-navigation";
+import { focusDiagnosticNode } from "../services/diagnostic-navigation";
 import { useEndFocusOnDeselect } from "../lib/use-end-focus-on-deselect";
 import { claimFocusRouting, graphOwningNode } from "../lib/function-graph-focus";
 import { serializedGraphFromDocument } from "../lib/logic-graph-document";
@@ -55,6 +61,23 @@ function compilerResultDetails(d: Diagnostic): string {
   return `${d.severity}: ${d.code}\n${d.message}\n${d.graphId}${d.nodeId ? `\nNode: ${d.nodeId}` : ""}${d.pinId ? `\nPin: ${d.pinId}` : ""}`;
 }
 
+/**
+ * The rows a Scene's or Clip's live checks own: this document's rows that name
+ * no node (Actors, components, clips, tracks). Its script's rows and the rows
+ * Play or Compile reported for other assets stay.
+ */
+function ownLiveCheckRow(documentId: string, path: string) {
+  return (d: Diagnostic) => !d.nodeId && (d.graphId === documentId || d.assetGuid === path);
+}
+
+/**
+ * Whether a row is about this document: its own graph, functions, script or
+ * Actors, rather than another asset Play or Compile reported here.
+ */
+function belongsToDocument(d: Diagnostic, documentId: string | undefined, path: string | undefined): boolean {
+  return d.graphId === documentId || (!!path && d.assetGuid === path) || d.assetGuid === documentId;
+}
+
 /** Document kinds whose Actor rows point at the primary viewport. */
 const VIEWPORT_DOCUMENT_KINDS: ReadonlySet<string> = new Set([
   "scene",
@@ -64,7 +87,7 @@ const VIEWPORT_DOCUMENT_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 type CompilerRow =
-  | { kind: "header"; graphId: string; errors: number; warnings: number }
+  | { kind: "header"; graphId: string; assetGuid: string; errors: number; warnings: number }
   | { kind: "item"; diagnostic: Diagnostic };
 
 function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] {
@@ -78,7 +101,7 @@ function flattenCompilerRows(diagnostics: readonly Diagnostic[]): CompilerRow[] 
   for (const [graphId, list] of grouped) {
     const errors = list.filter((diagnostic) => diagnostic.severity === "error").length;
     const warnings = list.filter((diagnostic) => diagnostic.severity === "warning").length;
-    rows.push({ kind: "header", graphId, errors, warnings });
+    rows.push({ kind: "header", graphId, assetGuid: list[0]!.assetGuid, errors, warnings });
     for (const diagnostic of list) {
       rows.push({ kind: "item", diagnostic });
     }
@@ -96,8 +119,8 @@ const NO_ACTORS: readonly string[] = [];
  */
 export function CompilerResultsPanel(props: IDockviewPanelProps) {
   const { diagnostics, setDiagnostics, focusDiagnostic, setFocusDiagnostic } = useValidation();
-  const { clearFocusedNode } = usePlay();
-  const { setActiveDocument, toggleDockWindow } = useDocumentActions();
+  const { clearFocusedNode, openSessionSource } = usePlay();
+  const { setSceneMode, toggleDockWindow } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
   const { animEditorMode, sceneMode } = useActiveDocumentState();
   // Labels and ids for the result headers; content edits elsewhere skip them.
@@ -127,6 +150,7 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
     const scene = sceneContent as SerializedScene | null;
     const actors = scene?.actors ?? [];
     const options = { assetGuid: scenePath!, graphId: documentId };
+    const replaces = ownLiveCheckRow(documentId, scenePath!);
     setDiagnostics([
       ...(mainScene ? physicsPairingDiagnostics(actors, {
         ...options,
@@ -140,7 +164,7 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
         projectTimelineClips(assetRegistry?.list() ?? [], sceneDocuments), scenePath!, options,
         (guid) => assetRegistry?.getByGuid?.(guid)?.header.name,
       ),
-    ]);
+    ], { replaces });
   }, [activeDocumentId, assetRegistry, documentId, mainScene, modelDocuments, registryEpoch, sceneContent, sceneDocuments, sceneKind, scenePath, setDiagnostics, timelineProperties]);
 
   // A 2D or 3D Timeline Clip asset: its Timeline Asset and its proxies' names, Classes and placement.
@@ -162,7 +186,8 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
       classExists: (classId) => parentOf(classId) !== null,
     }, anchor),
     // The proxies as the Timeline lists them: a component a proxy's Class lost, or a variable it dropped.
-    ...timelineTrackDiagnostics(timelineProxyScene(payload, name, timelineProperties.graphs, twoD), timelineProperties, anchor)]);
+    ...timelineTrackDiagnostics(timelineProxyScene(payload, name, timelineProperties.graphs, twoD), timelineProperties, anchor)],
+    { replaces: ownLiveCheckRow(documentId, scenePath!) });
   }, [activeDocumentId, assetRegistry, clipKind, documentId, registryEpoch, sceneContent, scenePath, setDiagnostics, timelineProperties]);
 
   const rows = useMemo(() => flattenCompilerRows(diagnostics), [diagnostics]);
@@ -186,32 +211,38 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
   /**
    * Brings forward the window that shows `d` in this document: the Class
    * function tab or graph that holds its node, or the viewport for an Actor.
+   * False when a Scene switches to Script mode, whose graph routes the focus.
    */
-  const revealLocation = (d: Diagnostic, open: boolean) => {
+  const revealLocation = (d: Diagnostic, open: boolean): boolean => {
     const kind = doc?.ref.kind;
-    if (!kind || !isDockviewDocumentKind(kind)) return;
+    if (!kind || !isDockviewDocumentKind(kind)) return true;
     const dock = props.containerApi as IDockviewPanelProps["containerApi"] | undefined;
     const resultsGroupId = props.api?.group?.id;
     const graph = d.nodeId ? serializedGraphFromDocument(kind, doc?.content) : null;
     const owner = graph && d.nodeId ? graphOwningNode(graph, d.nodeId) : null;
+    if ((kind === "scene" || kind === "scene-layer") && owner && sceneMode !== "script") {
+      // A Scene's script shows in Script mode: Open switches to it, and its graph routes the focus.
+      if (open && documentId) setSceneMode(documentId, "script");
+      return false;
+    }
     if (owner?.kind === "function") {
-      if (!dock) return;
+      if (!dock) return true;
       const panel = dock.getPanel(functionGraphPanelId(owner.functionId));
       // A closed function tab opens beside the Event Graph.
       const beside = panel ?? dock.getPanel(EVENT_GRAPH_PANEL_ID);
       const reveal = open || (panel
         ? mayRevealOnChoice(dock, panel, resultsGroupId)
         : !hidesResults(dock, beside?.group.id, resultsGroupId));
-      if (!reveal) return;
+      if (!reveal) return true;
       const name = graph?.members?.find((member) => member.id === owner.functionId)?.name;
       openFunctionGraphPanel(dock, owner.functionId, name ?? owner.functionId);
-      return;
+      return true;
     }
     // A node shows in the graph that holds it (an Animation Graph's states in its
     // State Machine); an Actor in the viewport.
     const shown = owner?.kind === "event" || (d.nodeId && kind === "anim-graph") ||
       (!d.nodeId && d.actorId && VIEWPORT_DOCUMENT_KINDS.has(kind));
-    if (!shown) return;
+    if (!shown) return true;
     revealResultWindow({
       dock,
       resultsGroupId,
@@ -222,31 +253,55 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
       open,
       reopen: toggleDockWindow,
     });
+    return true;
   };
 
+  const focusHost = { currentFocus: () => focusDiagnostic, setFocusDiagnostic };
   const choose = (d: Diagnostic, open: boolean) => {
     clearFocusedNode();
-    if (d.actorId) sceneEditing?.selectActor(d.actorId);
-    const revealId = documentIdToRevealForDiagnostic(
-      d,
-      openDocuments.map((entry) => entry.id),
-    );
-    if (!revealId || revealId === documentId) {
-      // This panel brings the owning tab forward every time a row is chosen,
-      // so graph panels leave the request alone.
-      claimFocusRouting(d);
-      revealLocation(d, open);
+    if (!belongsToDocument(d, documentId, doc?.ref.path)) {
+      // Another asset's row (Play or Compile reported it here). A tap shows its
+      // details; Open opens that asset at the node, as a Session Report row does.
+      if (open) {
+        void openSessionSource({
+          severity: d.severity,
+          code: d.code,
+          message: d.message,
+          assetGuid: d.assetGuid || parseDocumentId(d.graphId)?.path,
+          graphId: d.graphId,
+          nodeId: d.nodeId,
+          bodyLine: d.bodyLine,
+        });
+      } else {
+        void focusDiagnosticNode(focusHost, d);
+      }
+      return;
     }
-    // Choosing the focused row again frames its node again. The tab
-    // changes after the focus is set, which carries it there.
-    void focusDiagnosticNode(
-      { currentFocus: () => focusDiagnostic, setFocusDiagnostic },
-      d,
-      revealId ?? undefined,
-    ).then(() => {
-      if (revealId) setActiveDocument(revealId);
+    if (d.actorId) sceneEditing?.selectActor(d.actorId);
+    // This panel brings the owning tab forward every time a row is chosen, so
+    // graph panels leave the request alone, unless a mode switch hands it to them.
+    if (revealLocation(d, open)) claimFocusRouting(d);
+    // Choosing the focused row again frames its node again.
+    void focusDiagnosticNode(focusHost, d).then(() => {
       if (open && d.actorId) sceneEditing?.frameActor(d.actorId);
     });
+  };
+
+  /** A group's name: its open tab's, the asset's (`FT DataProbe Class`), or its Class and function. */
+  const groupLabel = (graphId: string, assetGuid: string) => {
+    const open = openDocuments.find((entry) => entry.id === graphId);
+    if (open) return open.ref.label;
+    const parsed = parseDocumentId(graphId);
+    const named = parsed && isAssetDocumentKind(parsed.kind)
+      ? assetRegistry?.getByPath?.(parsed.path)?.header.name
+      : undefined;
+    if (parsed && named && isAssetDocumentKind(parsed.kind)) return `${named} ${documentKindLabel(parsed.kind)}`;
+    // A function's rows are grouped under the function's id.
+    const owner = openDocuments.find((entry) => entry.ref.path === assetGuid || entry.id === assetGuid);
+    if (!owner) return graphId;
+    const member = serializedGraphFromDocument(owner.ref.kind, owner.content)?.members
+      ?.find((entry) => entry.id === graphId);
+    return `${owner.ref.label} › ${member?.name ?? graphId}`;
   };
 
   return (
@@ -271,7 +326,7 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
                     title={row.graphId}
                   >
                     <SelectableText className="truncate text-foreground">
-                      {openDocuments.find((doc) => doc.id === row.graphId)?.ref.label ?? row.graphId}
+                      {groupLabel(row.graphId, row.assetGuid)}
                     </SelectableText>
                     <span className="ml-auto flex shrink-0 items-center gap-2 tabular-nums">
                       {row.errors > 0 ? (
