@@ -24,6 +24,7 @@ import {
   SHADOW_FIRST_CASCADE_SCALE,
   SHADOW_HALF_TILE_CASCADES,
   type SerializedComponent,
+  type ShadowDebugPart,
   type ShadowSettings,
 } from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
@@ -43,6 +44,7 @@ import { ShadowSpatialIndex } from "./shadow-spatial-index";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
 import { RetainedShadowCasters, type RetainedShadowDiagnostics } from "./shadow-retained-casters";
+import { writeSceneShadowDebug } from "./shadow-debug";
 import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { onMeshRevealed } from "./reveal-pending";
 import { forgetCasterRequests, setShadowCasterReach } from "./shadow-caster-warm";
@@ -925,6 +927,15 @@ export class SceneShadowController {
       return casterBounds;
     }, atlasEdge)) changed = true;
     return changed;
+  }
+  /**
+   * Switches one part of shadow drawing off or back on (`shadowdebug`); true when that changed it. Every map then
+   * draws again, so a map that draws once shows the switch too.
+   */
+  setDebug(part: ShadowDebugPart, enabled: boolean): boolean {
+    if (!writeSceneShadowDebug(this.scene, part, enabled)) return false;
+    this.forEachGenerator((generator) => generator.getShadowMap()?.resetRefreshCounter());
+    return true;
   }
   /** Every allocated map: the scene view's (admitted or standby) and every view's own. */
   private forEachGenerator(action: (generator: ShadowGenerator) => void): void {

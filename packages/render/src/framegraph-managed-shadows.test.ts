@@ -210,6 +210,31 @@ function cascadeBias(engine: NullEngine, generator: CascadedShadowGenerator, aut
   return { worldTexelSize, bias: Math.max(authoredDepthBias, Math.min(0.05, (0.25 * worldTexelSize) / depth / 1.5)) };
 }
 
+it("draws no map layer with shadow passes off, and binds each without its casters with casters off", async () => {
+  const { camera, mesh, controller, map, graph, render } = await fixture("spot");
+  const listed = () => map.getCustomRenderList!(0, [], 0)!.slice();
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(render()).toBe(1);
+  expect(render()).toBe(0);
+  expect(listed()).toEqual([mesh]);
+  // Passes off: the map keeps the depth it holds. Switching makes every map due, and it stays due until passes run.
+  expect(controller.setDebug("passes", false)).toBe(true);
+  expect(controller.setDebug("passes", false)).toBe(false);
+  expect(render()).toBe(0);
+  expect(render()).toBe(0);
+  expect(controller.setDebug("passes", true)).toBe(true);
+  expect(render()).toBe(1);
+  expect(render()).toBe(0);
+  // Casters off: the layer is bound and cleared once more, and lists nothing.
+  expect(controller.setDebug("casters", false)).toBe(true);
+  expect(render()).toBe(1);
+  expect(listed()).toEqual([]);
+  expect(controller.setDebug("casters", true)).toBe(true);
+  expect(render()).toBe(1);
+  expect(listed()).toEqual([mesh]);
+  graph.dispose();
+});
+
 it("binds current directional projection bias before the managed caster draw without replacing resources", async () => {
   const { engine, scene, camera, light, controller, generator, map, texture, graph, render } =
     await fixture("sun");

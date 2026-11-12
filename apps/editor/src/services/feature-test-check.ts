@@ -35,9 +35,12 @@ export const FEATURE_TEST_BENCHMARK_PROFILES: readonly { label: string; commands
  * - `remove-one`: from the Medium tier, each step turns one feature off or lowers one cost: what it saves at a shipping
  *   tier, meaningful only while that tier is below the cap.
  */
-/** `water`: what each part of water costs, removed one at a time from the Medium tier at half resolution (`FEATURE_TEST_BREAKDOWN_WATER_STEPS`). */
-export type FeatureTestBreakdownMethod = "add-one" | "remove-one" | "water";
-export const FEATURE_TEST_BREAKDOWN_METHODS: readonly FeatureTestBreakdownMethod[] = ["add-one", "remove-one", "water"];
+/**
+ * `water`: what each part of water costs, removed one at a time from the Medium tier at half resolution (`FEATURE_TEST_BREAKDOWN_WATER_STEPS`).
+ * `shadows`: what each part of shadows costs, removed the same way (`FEATURE_TEST_BREAKDOWN_SHADOW_STEPS`).
+ */
+export type FeatureTestBreakdownMethod = "add-one" | "remove-one" | "water" | "shadows";
+export const FEATURE_TEST_BREAKDOWN_METHODS: readonly FeatureTestBreakdownMethod[] = ["add-one", "remove-one", "water", "shadows"];
 export const FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD: FeatureTestBreakdownMethod = "add-one";
 
 /** What a Breakdown's baselines run: applied after `quality reset` before the warm-up and after every step. */
@@ -77,6 +80,8 @@ export const FEATURE_TEST_BREAKDOWN_BASES: Readonly<Record<FeatureTestBreakdownM
   // Half resolution keeps a tablet's GPU below the point where it drops to its slower speed (SATURATED at full
   // resolution), so each water step's change is that part's own cost.
   water: { label: "medium at resolution 0.5", commands: ["quality medium", "quality resolution scale 0.5"] },
+  // As for water: half resolution is the measuring base only, so each shadow step's change is that part's own cost.
+  shadows: { label: "medium at resolution 0.5", commands: ["quality medium", "quality resolution scale 0.5"] },
 };
 
 /**
@@ -87,6 +92,8 @@ export const ADD_ONE_CAP_MS = 30;
 
 /** Scenes a Breakdown measures unless every scene is asked for: the GPU-heaviest, and the occlusion culling yardstick. */
 export const FEATURE_TEST_BREAKDOWN_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "FT_World" || scene.name === "FT_Occlusion");
+/** A Shadows Breakdown's scenes unless every scene is asked for: the three whose frames shadows weigh on most. */
+export const FEATURE_TEST_BREAKDOWN_SHADOW_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "main" || scene.name === "FT_Occlusion" || scene.name === "FT_Stress");
 /** A Water Breakdown's scenes unless every scene is asked for: FT_World, which holds every water body kind. */
 export const FEATURE_TEST_BREAKDOWN_WATER_SCENES = FEATURE_TEST_CHECK_SCENES.filter((scene) => scene.name === "FT_World");
 
@@ -219,9 +226,32 @@ export const FEATURE_TEST_BREAKDOWN_WATER_STEPS: readonly FeatureTestBreakdownSt
   { label: "water mesh 0.75", commands: ["quality water meshDensity 0.75"], fields: ["water.meshDensity"], overlaps: true },
 ];
 
+/** A `shadowdebug` part off, undone by switching it back on (`quality reset` leaves debug switches as they are). */
+const shadowPartOff = (part: string, label: string): FeatureTestBreakdownStep => ({
+  label, commands: [`shadowdebug ${part} off`], restore: [`shadowdebug ${part} on`], fields: ["shadows.debug"], overlaps: true,
+});
+
+/**
+ * Shadows (`FEATURE_TEST_BREAKDOWN_BASES.shadows`, the Medium tier at half resolution): shadows off as a whole, then one
+ * part off, or one setting lowered, at a time. Every step but `shadows off` is a share of what that one saves
+ * (`overlaps`). `shadow casters off` leaves each map layer bound and cleared and draws nothing into it, so its saving
+ * is the casters' geometry; `shadow passes off` stops the map passes, so what it saves beyond the casters is the
+ * passes themselves; what `shadows off` saves beyond both is the sampling in lit surfaces.
+ */
+export const FEATURE_TEST_BREAKDOWN_SHADOW_STEPS: readonly FeatureTestBreakdownStep[] = [
+  { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },
+  shadowPartOff("casters", "shadow casters off"),
+  shadowPartOff("passes", "shadow passes off"),
+  { label: "shadows low", commands: ["quality shadows low"], fields: ["shadows", "shadows.filter"], overlaps: true },
+  { label: "shadow filter low", commands: ["quality shadows filter low"], fields: ["shadows.filter"], overlaps: true },
+  { label: "screen-space shadows off", commands: ["quality shadows screen off"], fields: ["shadows.screen"], overlaps: true },
+  { label: "reflection shadows off", commands: ["quality shadows reflections off"], fields: ["shadows.reflections"], overlaps: true },
+];
+
 /** The scenes a Breakdown by `method` measures: every Feature Test scene with `allScenes`. */
 export function featureTestBreakdownScenes(method: FeatureTestBreakdownMethod, allScenes: boolean): readonly { name: string; path: string }[] {
   if (allScenes) return FEATURE_TEST_CHECK_SCENES;
+  if (method === "shadows") return FEATURE_TEST_BREAKDOWN_SHADOW_SCENES;
   return method === "water" ? FEATURE_TEST_BREAKDOWN_WATER_SCENES : FEATURE_TEST_BREAKDOWN_SCENES;
 }
 
@@ -325,7 +355,7 @@ export interface FeatureTestBreakdownPlan {
   views: readonly FeatureTestBreakdownView[];
 }
 
-const OCCLUSION_STEPS: Readonly<Record<Exclude<FeatureTestBreakdownMethod, "water">, FeatureTestBreakdownStep>> = {
+const OCCLUSION_STEPS: Readonly<Record<Exclude<FeatureTestBreakdownMethod, "water" | "shadows">, FeatureTestBreakdownStep>> = {
   "add-one": { label: "occlusion on", commands: ["quality geometry occlusion on"], fields: ["geometry.occlusion"] },
   "remove-one": { label: "occlusion off", commands: ["quality geometry occlusion off"], fields: ["geometry.occlusion"] },
 };
@@ -335,7 +365,7 @@ const OCCLUSION_STEPS: Readonly<Record<Exclude<FeatureTestBreakdownMethod, "wate
  * the add-one base, on at Medium), from the street (the scene's main camera, `Camera`) and from a doorway of the rooms
  * (`Rooms Camera`), each possessed by name.
  */
-function occlusionPlan(method: Exclude<FeatureTestBreakdownMethod, "water">): FeatureTestBreakdownPlan {
+function occlusionPlan(method: Exclude<FeatureTestBreakdownMethod, "water" | "shadows">): FeatureTestBreakdownPlan {
   const step = OCCLUSION_STEPS[method];
   return {
     views: [{ steps: [step] }, { name: "rooms", enter: ['possess "Rooms Camera"'], steps: [step] }],
@@ -350,6 +380,7 @@ export function featureTestBreakdownPlan(
   sceneName: string, method: FeatureTestBreakdownMethod = FEATURE_TEST_BREAKDOWN_DEFAULT_METHOD,
 ): FeatureTestBreakdownPlan {
   if (method === "water") return { views: [{ steps: FEATURE_TEST_BREAKDOWN_WATER_STEPS }] };
+  if (method === "shadows") return { views: [{ steps: FEATURE_TEST_BREAKDOWN_SHADOW_STEPS }] };
   if (sceneName === "FT_Occlusion") return occlusionPlan(method);
   return { views: [{ steps: method === "add-one" ? FEATURE_TEST_BREAKDOWN_ADD_ONE_STEPS : FEATURE_TEST_BREAKDOWN_STEPS }] };
 }

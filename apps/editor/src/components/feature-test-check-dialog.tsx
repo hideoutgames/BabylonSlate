@@ -108,7 +108,7 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
 
 const MODES = ["quick", "full", "benchmark", "breakdown", "profile"] as const satisfies readonly FeatureTestCheckMode[];
 
-const METHOD_LABELS: Record<FeatureTestBreakdownMethod, string> = { "add-one": "Add One", "remove-one": "Remove One", water: "Water" };
+const METHOD_LABELS: Record<FeatureTestBreakdownMethod, string> = { "add-one": "Add One", "remove-one": "Remove One", water: "Water", shadows: "Shadows" };
 
 const AB_DEPS = FEATURE_TEST_AB_DEPS;
 /** How long the status shows before the A/B's reload, so it can still be cancelled. */

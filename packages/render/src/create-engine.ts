@@ -33,6 +33,7 @@ import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
+import { shadowDebugFingerprint } from "./shadow-debug";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -1172,6 +1173,7 @@ function initializeEngine(
       "post.enabled": String(postProcessingEnabled),
       captures: renderTargetCaptures.isEveryFrameSuspended() ? "suspended" : "on",
       "water.debug": waterDebugFingerprint(scene),
+      "shadows.debug": shadowDebugFingerprint(scene),
       // Engine-wide and kept across Play sessions, so a change that is not undone shows.
       "presentation.framesInFlight": String(frameBackpressure.mode),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
@@ -3195,6 +3197,7 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "setWaterDebug" && setSceneWaterDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
+      if (command.type === "setShadowDebug" && findSceneShadowController(scene)?.setDebug(command.part, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
         scheduler.invalidate("snapshot");
