@@ -12,7 +12,7 @@ import { Material } from "@babylonjs/core/Materials/material";
 import { BindSceneUniformBuffer } from "@babylonjs/core/Materials/materialHelper.functions";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import type { Plane } from "@babylonjs/core/Maths/math.plane";
-import { TmpVectors } from "@babylonjs/core/Maths/math.vector";
+import { TmpVectors, type Matrix } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Geometry } from "@babylonjs/core/Meshes/geometry";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
@@ -113,7 +113,12 @@ export function setRetainedShadowCasters(scene: Scene, enabled: boolean): void {
  * What the refresh scheduler knows of a caster: `revision` moves with anything its shadow depends on, and `safe` says
  * its mesh and Material draw what its static geometry holds (`canCacheShadowMaterial`), shown or hidden.
  */
-export type RetainedCasterState = { readonly revision: number; readonly safe: boolean };
+/**
+ * What the scheduler's walk found of a caster. `world` is the world matrix the walk computed, which a walked frame's
+ * layers read in place of asking the mesh again (Babylon re-checks a world matrix once per render id, and every map
+ * layer is one); absent where the scheduler gives none.
+ */
+export type RetainedCasterState = { readonly revision: number; readonly safe: boolean; readonly world?: Matrix | null };
 
 type GeometryRange = {
   geometry: Geometry;
@@ -346,9 +351,9 @@ export class RetainedShadowCasters {
       // Babylon's own list draws nothing of a hidden mesh: left in it, the mesh stays undrawn.
       const listed = !!caster && mesh.isEnabled() && mesh.isVisible && !mesh.isBlocked;
       if (listed) {
-        const world = mesh.getWorldMatrix();
+        const world = (frame ? this.state(mesh)?.world : null) ?? mesh.getWorldMatrix();
         if (world !== caster!.world || world.updateFlag !== caster!.worldFlag || caster!.stamp !== this.stamp || this.unevenFor(mesh, caster!) !== caster!.uneven)
-          this.writeWorld(mesh, caster!);
+          this.writeWorld(mesh, caster!, world);
       }
       // A caster that cannot be retained keeps its entry, without draws.
       const entry = caster ?? this.casters.get(mesh);
@@ -748,8 +753,7 @@ export class RetainedShadowCasters {
   }
 
   /** Writes `mesh`'s world matrix and shape into its draws' rows. */
-  private writeWorld(mesh: AbstractMesh, caster: Caster): void {
-    const world = mesh.getWorldMatrix();
+  private writeWorld(mesh: AbstractMesh, caster: Caster, world: Matrix): void {
     caster.world = world;
     caster.worldFlag = world.updateFlag;
     caster.stamp = this.stamp;

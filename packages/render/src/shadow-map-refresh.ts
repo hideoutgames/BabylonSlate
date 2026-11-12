@@ -190,7 +190,7 @@ export class ShadowMapRefresh {
    * What the last walk found of a caster: a revision that moves with anything its shadow depends on, and whether its
    * mesh and Material draw what its static geometry holds (`safe`), shown or hidden. Undefined before its first walk.
    */
-  casterState(mesh: AbstractMesh): { readonly revision: number; readonly safe: boolean; readonly shown: boolean } | undefined {
+  casterState(mesh: AbstractMesh): { readonly revision: number; readonly safe: boolean; readonly shown: boolean; readonly world: Matrix | null } | undefined {
     return this.casters.get(mesh);
   }
 
