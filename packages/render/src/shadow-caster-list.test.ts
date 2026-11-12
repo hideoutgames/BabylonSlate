@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
@@ -54,6 +54,54 @@ describe("shadow caster selection", () => {
       expect(byId(index.queryPlanesOf(new Set([near, source]), planes))).toEqual(byId([source, near]));
       expect(byId(index.queryPlanesOf(new Set([source, near]), planes))).toEqual(byId([source, near]));
       expect(index.queryPlanesOf(new Set(), planes)).toEqual([]);
+      index.dispose();
+    } finally {
+      engine.dispose();
+    }
+  });
+  it("answers a prepared frame's queries from what it read once, as the casters would answer themselves", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const index = new ShadowCasterList();
+      const inside = MeshBuilder.CreateBox("inside", {}, scene);
+      const edge = MeshBuilder.CreateBox("at the plane", {}, scene);
+      edge.position.x = 10.5;
+      const outside = MeshBuilder.CreateBox("outside", {}, scene);
+      outside.position.x = 100;
+      const hidden = MeshBuilder.CreateBox("hidden", {}, scene);
+      hidden.isVisible = false;
+      const skinned = MeshBuilder.CreateBox("skinned", {}, scene);
+      skinned.position.x = 100;
+      skinned.skeleton = new Skeleton("rig", "rig", scene);
+      for (const mesh of [inside, edge, outside, hidden, skinned]) index.add(mesh);
+      // x <= 10: the box at the plane touches it.
+      const planes = [new Plane(-1, 0, 0, 10)];
+      const live = index.queryPlanes(planes).slice();
+      expect(live).toEqual([inside, edge, skinned]);
+      // What the walk found of a caster stands for asking it; one the walk has not seen is asked.
+      const enabled = vi.spyOn(inside, "isEnabled");
+      index.prepare((mesh) => (mesh === inside ? { shown: true } : mesh === hidden ? { shown: false } : undefined));
+      expect(enabled).not.toHaveBeenCalled();
+      expect(index.queryPlanes(planes)).toEqual(live);
+      expect(index.queryPlanesOf(new Set([edge, outside]), planes)).toEqual([edge]);
+      // Until the frame ends nothing moves a caster: a query does not read them again.
+      const box = vi.spyOn(edge, "getBoundingInfo");
+      index.queryPlanes(planes);
+      expect(box).not.toHaveBeenCalled();
+      edge.position.x = 100;
+      edge.computeWorldMatrix(true);
+      index.release();
+      expect(index.queryPlanes(planes)).toEqual([inside, skinned]);
+      // A caster that joins or leaves ends what was read.
+      index.remove(skinned);
+      index.prepare();
+      // The hidden caster takes the place of the one that left: it is not answered for with what that one was.
+      index.remove(inside);
+      expect(index.queryPlanes(planes)).toEqual([]);
+      index.prepare();
+      index.add(inside);
+      expect(index.queryPlanes(planes)).toEqual([inside]);
       index.dispose();
     } finally {
       engine.dispose();

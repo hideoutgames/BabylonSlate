@@ -20,7 +20,7 @@ import { limitManagedRenderBytes, managedRenderReservations } from "./managed-re
 import { updateSceneRenderingSettings } from "./render-settings";
 import { sceneShadowController } from "./shadow-controller";
 import { markSmoothNormalShadowCaster } from "./shadow-bias";
-import { RETAINED_CALL_DRAWS, RetainedShadowCasters, setRetainedShadowCasters } from "./shadow-retained-casters";
+import { RETAINED_CALL_DRAWS, RetainedShadowCasters, setRetainedShadowCasters, type RetainedCasterState } from "./shadow-retained-casters";
 
 type Upload = { buffer: "vertices" | "indices"; at: number; data: number[] };
 type Call = { counts: number[]; offsets: number[]; slots: number[] };
@@ -78,7 +78,7 @@ function host(options: { multiDraw?: boolean } = {}) {
   scene.activeCamera = camera;
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);
   const generator = new ShadowGenerator(64, sun);
-  const vouched = new Map<AbstractMesh, { revision: number; safe: boolean }>();
+  const vouched = new Map<AbstractMesh, RetainedCasterState>();
   const retained = RetainedShadowCasters.create(scene, (mesh) => vouched.get(mesh))!;
   /** The scheduler vouches for `mesh`: its first walk, or a later one that found it changed. */
   const vouch = (mesh: AbstractMesh, safe = true) => {
@@ -242,6 +242,23 @@ describe("RetainedShadowCasters", () => {
     mesh.isVisible = false;
     (scene as unknown as { _frameId: number })._frameId += 1;
     expect(pass([mesh, hidden]).taken).toEqual([false, true]);
+  });
+
+  it("reads the world matrix the walk computed in a walked frame, and asks the mesh outside one", () => {
+    const { retained, box, pass, vouched, rowOf } = host();
+    const mesh = box("mesh", 2);
+    const walked = mesh.getWorldMatrix();
+    vouched.set(mesh, { ...vouched.get(mesh)!, world: walked });
+    const asked = vi.spyOn(mesh, "getWorldMatrix");
+    retained.beginFrame();
+    expect(pass([mesh]).taken).toEqual([true]);
+    expect(asked).not.toHaveBeenCalled();
+    expect(rowOf(0).slice(12, 15)).toEqual([2, 0, 0]);
+    // Without a walk's matrix, or outside a walked frame, the mesh is asked.
+    vouched.set(mesh, { revision: vouched.get(mesh)!.revision, safe: true });
+    retained.beginFrame();
+    pass([mesh]);
+    expect(asked).toHaveBeenCalled();
   });
 
   it("writes a caster's row again within a frame when a layer's floating origin differs", () => {
