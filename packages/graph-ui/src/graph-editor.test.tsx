@@ -1228,6 +1228,36 @@ describe("GraphEditor", () => {
       expect((onChange.mock.calls.at(-1)?.[0] as GraphDocument).edges).toHaveLength(1);
     });
 
+    it("drops the chosen pin when something else is tapped or Escape is pressed, but keeps it through a drag", () => {
+      const onChange = vi.fn();
+      const { container } = renderTapToConnect(
+        <GraphEditor initialGraph={threeLogs()} onChange={onChange} />,
+      );
+      const body = (nodeId: string) => container.querySelector(`[data-id="${nodeId}"] [data-node-role]`)!;
+      const tap = (target: Element, moveBy = 0) => {
+        dispatchPointerEvent(target, "pointerdown", { clientX: 10, clientY: 10 });
+        dispatchPointerEvent(target, "pointerup", { clientX: 10 + moveBy, clientY: 10 });
+      };
+
+      // A tap on another node drops it: the output tap then chooses a pin instead of connecting.
+      fireEvent.click(pin(container, "log-b", "execIn"));
+      tap(body("log-c"));
+      fireEvent.click(pin(container, "log-a", "execOut"));
+      expect(onChange).not.toHaveBeenCalled();
+
+      // Escape drops the output chosen just now: the input tap then chooses a pin too.
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      fireEvent.click(pin(container, "log-c", "execIn"));
+      expect(onChange).not.toHaveBeenCalled();
+
+      // A press that moves (a pan or a drag) keeps the chosen input, so the other side still connects.
+      tap(body("log-b"), 40);
+      fireEvent.click(pin(container, "log-a", "execOut"));
+      expect((onChange.mock.calls.at(-1)?.[0] as GraphDocument).edges).toEqual([
+        expect.objectContaining({ source: "log-a", target: "log-c" }),
+      ]);
+    });
+
     it("ignores pin taps while Tap To Connect Pins is off", () => {
       const onChange = vi.fn();
       const { container } = render(
