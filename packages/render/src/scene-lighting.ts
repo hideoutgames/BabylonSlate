@@ -6,6 +6,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
+import { installLightFreeMeshes } from "./light-free-meshes";
 
 type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
 
@@ -37,6 +38,8 @@ export function sceneLightingLimits(scene: Scene): string[] {
 }
 
 function installSceneLighting(scene: Scene): SceneLighting {
+  // Budget changes toggle lights every few frames; meshes whose Materials read none skip Babylon's light-dirty marks.
+  installLightFreeMeshes(scene);
   let dirty = true;
   let lightCount = -1;
   let materialCount = -1;
