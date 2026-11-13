@@ -2140,7 +2140,7 @@ describe("compileAnimGraphScripts", () => {
     ]);
     expect(scripts.map((entry) => entry.classId)).toEqual([
       "AnimGraph:graph-1",
-      "AnimPose:graph-1:locomotion/idle",
+      "AnimPose:graph-1:idle",
     ]);
     expect(scripts[1]?.source).toContain("export function evaluate(ctx)");
     expect(scripts[1]?.source).toMatch(/"player": \{ "playRate": /);

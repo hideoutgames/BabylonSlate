@@ -598,7 +598,7 @@ describe("AnimGraphEditor", () => {
     const run = screen.getByTestId("anim-state-node-run");
     fireEvent.contextMenu(run);
     fireEvent.click(screen.getByText("Add Breakpoint"));
-    expect(breakpoints.get(at("run"))?.label).toEqual({ className: "Loco", graphName: "Locomotion", nodeTitle: "Run" });
+    expect(breakpoints.get(at("run"))?.label).toEqual({ className: "Loco", graphName: "State Machine", nodeTitle: "Run" });
     expect(run.querySelector("[data-breakpoint]")?.getAttribute("data-breakpoint")).toBe("enabled");
 
     // The selected state's transition shows a button for each direction.
@@ -802,7 +802,7 @@ describe("AnimGraphEditor while a Simulation debugs the graph", () => {
   }
   const trace = (nodes: string[]) => ({
     target, instanceId: "hero", tickIndex: 1,
-    graphs: [{ assetGuid: "loco-graph", graphId: "state-machine:locomotion", nodes, edges: [], values: [] }],
+    graphs: [{ assetGuid: "loco-graph", graphId: "state-machine", nodes, edges: [], values: [] }],
   });
   const runFrames = () => act(() => { const pending = frames; frames = []; for (const frame of pending) frame(); });
 
