@@ -7,6 +7,7 @@ import {
   type AnimGraphDocument,
   type AnimGraphVariable,
   type AnimState,
+  type AnimStateAlias,
   type AnimTransition,
 } from "@haptic/anim-graph";
 import type { SerializedGraph } from "@haptic/core";
@@ -79,6 +80,7 @@ export function stateMachineGraph(
     states: AnimState[];
     transitions: AnimTransition[];
     variables: AnimGraphVariable[];
+    aliases?: AnimStateAlias[];
   },
 ): AnimGraphDocument {
   return {
@@ -90,6 +92,7 @@ export function stateMachineGraph(
       entryStateId: options.entryStateId,
       states: options.states,
       transitions: options.transitions,
+      aliases: options.aliases ?? [],
     },
     animationObject: createDefaultAnimationObjectGraph(),
   };

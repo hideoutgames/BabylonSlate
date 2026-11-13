@@ -360,6 +360,7 @@ describe("FeatureTest starter", () => {
     const clipCatalog = animClipCatalogFromAssets(reopened.registry!.list());
     const blendSpacePlayers = new Set<string>();
     const syncGroupMembers = new Map<string, number>();
+    let aliasTransitions = 0;
     for (const [type, kind, dimension] of [
       ["AnimationGraph3D", "anim-graph-3d", "3d"],
       ["AnimationGraph2D", "anim-graph-2d", "2d"],
@@ -367,6 +368,8 @@ describe("FeatureTest starter", () => {
       for (const asset of ofType(type)) {
         const graph = (await reopened.loadDocument(kind, asset.path)) as unknown as AnimGraphDocument;
         expect(validateAnimGraph(graph, clipCatalog, { dimension }).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+        const aliasIds = new Set((graph.stateMachine.aliases ?? []).map((alias) => alias.id));
+        aliasTransitions += graph.stateMachine.transitions.filter((row) => aliasIds.has(row.fromStateId)).length;
         // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
         for (const state of resolveAnimGraphClips(graph, clipCatalog).stateMachine.states) {
           for (const node of state.stateGraph.nodes) {
@@ -383,6 +386,8 @@ describe("FeatureTest starter", () => {
     expect([...blendSpacePlayers].sort()).toEqual(["anim.frame.spriteBlendSpacePlayer", "anim.pose.blendSpacePlayer"]);
     // A Sync Group is showcased: one graph has at least two players in the same group.
     expect(Math.max(0, ...syncGroupMembers.values())).toBeGreaterThan(1);
+    // A State Alias with a transition is showcased.
+    expect(aliasTransitions).toBeGreaterThan(0);
   });
 
   it("authors physics without pairing problems", async () => {

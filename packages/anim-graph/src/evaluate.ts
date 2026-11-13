@@ -1,5 +1,6 @@
 import type { SerializedGraph } from "@haptic/core";
 import {
+  animAliasStates,
   animPoseGraphKey,
   type AnimClipLayer,
   type AnimEvalState,
@@ -69,10 +70,22 @@ function machineIndex(machine: AnimStateMachine): MachineIndex {
   let index = machineIndexes.get(machine);
   if (!index) {
     const grouped = new Map<string, Array<{ row: AnimTransition; index: number }>>();
-    machine.transitions.forEach((row, position) => {
-      const group = grouped.get(row.fromStateId);
+    const add = (stateId: string, row: AnimTransition, position: number) => {
+      const group = grouped.get(stateId);
       if (group) group.push({ row, index: position });
-      else grouped.set(row.fromStateId, [{ row, index: position }]);
+      else grouped.set(stateId, [{ row, index: position }]);
+    };
+    const aliases = new Map((machine.aliases ?? []).map((alias) => [alias.id, alias]));
+    machine.transitions.forEach((row, position) => {
+      const alias = aliases.get(row.fromStateId);
+      if (!alias) {
+        add(row.fromStateId, row, position);
+        return;
+      }
+      // A State Alias's transition leaves from each state it covers, but never re-enters the one playing.
+      for (const stateId of animAliasStates(machine, alias)) {
+        if (stateId !== row.toStateId) add(stateId, row, position);
+      }
     });
     const outgoing = new Map<string, readonly AnimTransition[]>();
     for (const [stateId, entries] of grouped) {

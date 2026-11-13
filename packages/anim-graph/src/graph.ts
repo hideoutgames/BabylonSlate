@@ -62,6 +62,27 @@ export interface AnimStateMachine {
   entryStateId: string;
   states: AnimState[];
   transitions: AnimTransition[];
+  /** State Aliases: their transitions leave from every state they cover. Parse fills an empty list. */
+  aliases?: AnimStateAlias[];
+}
+
+/**
+ * A State Alias on the State Machine: transitions from it leave from every state it covers (every state with
+ * `anyState`, else `stateIds`), never into the state that is already playing. It plays nothing itself.
+ */
+export interface AnimStateAlias {
+  id: string;
+  name: string;
+  position: { x: number; y: number };
+  anyState: boolean;
+  stateIds: string[];
+}
+
+/** The states a State Alias covers, in State Machine order. */
+export function animAliasStates(machine: AnimStateMachine, alias: AnimStateAlias): string[] {
+  if (alias.anyState) return machine.states.map((state) => state.id);
+  const covered = new Set(alias.stateIds);
+  return machine.states.filter((state) => covered.has(state.id)).map((state) => state.id);
 }
 
 export interface AnimGraphDocument {
@@ -316,6 +337,7 @@ export function createDefaultAnimGraph(
       entryStateId: "idle",
       states: [{ id: "idle", name: "Idle", position: defaultAnimStatePosition(0), stateGraph: createStateGraph(dimension) }],
       transitions: [],
+      aliases: [],
     },
     animationObject: createDefaultAnimationObjectGraph(),
   };
@@ -483,6 +505,8 @@ function validateStateMachine(machine: AnimStateMachine): AnimDiagnostic[] {
   const location: AnimGraphLocation = { kind: "machine" };
   const transitionIds = new Set<string>();
   const stateIds = new Set(machine.states.map((state) => state.id));
+  const aliases = machine.aliases ?? [];
+  const aliasIds = new Set(aliases.map((alias) => alias.id));
   if (!stateIds.has(machine.entryStateId)) {
     diagnostics.push({
       code: "anim.missingEntry",
@@ -504,7 +528,21 @@ function validateStateMachine(machine: AnimStateMachine): AnimDiagnostic[] {
       stateNames.set(key, name);
     }
   }
-  const stateNameById = new Map(machine.states.map((state) => [state.id, state.name]));
+  for (const alias of aliases) {
+    const name = alias.name.trim();
+    const key = name.toLowerCase();
+    if (!name) {
+      diagnostics.push({ code: "anim.emptyStateName", message: "State Alias names cannot be empty", nodeId: alias.id, location, severity: "error" });
+    } else if (stateNames.has(key)) {
+      diagnostics.push({ code: "anim.duplicateStateName", message: `State Alias "${alias.name}" duplicates "${stateNames.get(key)}". Choose a unique name.`, nodeId: alias.id, location, severity: "error" });
+    } else {
+      stateNames.set(key, name);
+    }
+    if (animAliasStates(machine, alias).length === 0) {
+      diagnostics.push({ code: "anim.emptyAlias", message: `State Alias "${alias.name}" covers no state, so its transitions never leave`, nodeId: alias.id, location, severity: "warning" });
+    }
+  }
+  const stateNameById = new Map([...machine.states, ...aliases].map((state) => [state.id, state.name]));
   const firstByPair = new Map<string, string>();
   for (const transition of machine.transitions) {
     if (transitionIds.has(transition.id)) {
@@ -527,7 +565,9 @@ function validateStateMachine(machine: AnimStateMachine): AnimDiagnostic[] {
         severity: "warning",
       });
     }
-    if (!stateIds.has(transition.fromStateId) || !stateIds.has(transition.toStateId)) {
+    if (aliasIds.has(transition.toStateId)) {
+      diagnostics.push({ code: "anim.badTransition", message: `Transition "${transition.id}" enters a State Alias; a transition can only enter a state`, nodeId: transition.id, location, severity: "error" });
+    } else if (!(stateIds.has(transition.fromStateId) || aliasIds.has(transition.fromStateId)) || !stateIds.has(transition.toStateId)) {
       diagnostics.push({ code: "anim.badTransition", message: `Transition "${transition.id}" points at a missing state`, nodeId: transition.id, location, severity: "error" });
     }
     const enter = transition.ruleGraph.nodes.filter((node) => node.type === ANIM_RULE_ENTER_TYPE);
@@ -736,7 +776,7 @@ export function facingTransitionSides(
   return dy >= 0 ? { sourceHandle: "bottom-out", targetHandle: "top-in" } : { sourceHandle: "top-out", targetHandle: "bottom-in" };
 }
 
-function parseTransitions(value: unknown, states: readonly AnimState[]): AnimTransition[] {
+function parseTransitions(value: unknown, states: ReadonlyArray<Pick<AnimState, "id" | "position">>): AnimTransition[] {
   const transitions: AnimTransition[] = [];
   if (!Array.isArray(value)) return transitions;
   const byId = new Map(states.map((state) => [state.id, state]));
@@ -790,10 +830,29 @@ function parseStateMachine(value: unknown, dimension: AnimGraphDimension): AnimS
     typeof source.entryStateId === "string" && states.some((state) => state.id === source.entryStateId)
       ? source.entryStateId
       : states[0]?.id ?? "";
+  const stateIds = new Set(states.map((state) => state.id));
+  const aliases: AnimStateAlias[] = [];
+  if (Array.isArray(source.aliases)) {
+    for (const row of source.aliases) {
+      if (!row || typeof row !== "object") continue;
+      const alias = row as Record<string, unknown>;
+      if (typeof alias.id !== "string" || alias.id === "" || stateIds.has(alias.id)) continue;
+      aliases.push({
+        id: alias.id,
+        name: typeof alias.name === "string" && alias.name !== "" ? alias.name : alias.id,
+        position: parsePosition(alias.position) ?? defaultAnimStatePosition(states.length + aliases.length),
+        anyState: alias.anyState === true,
+        stateIds: Array.isArray(alias.stateIds)
+          ? [...new Set(alias.stateIds.filter((id): id is string => typeof id === "string" && stateIds.has(id)))]
+          : [],
+      });
+    }
+  }
   return {
     entryStateId,
     states,
-    transitions: parseTransitions(source.transitions, states),
+    transitions: parseTransitions(source.transitions, [...states, ...aliases]),
+    aliases,
   };
 }
 

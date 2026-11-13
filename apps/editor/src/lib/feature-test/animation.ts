@@ -76,7 +76,7 @@ const SCENES_FOLDER = "Scenes";
 const ANIMATION_SCENE_CAMERA = { position: [0, 2.2, -7] as Vec3, target: [0, 1, 0] as Vec3 };
 
 /** KayKit clip names (Rig_Medium General and Movement Basic, Rig_Large Movement Basic). */
-const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp" } as const;
+const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A" } as const;
 
 /**
  * Perf knob: the `FT_Stress` crowd is `columns × rows` (64) Locomotor
@@ -447,8 +447,8 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
 }
 
 /**
- * Rig_Medium: Idle ⇄ Move on Speed; Cheer starts the gestures, Interact → Pick Up by exit time, and Pick Up returns
- * to Idle once it has played.
+ * Rig_Medium: Idle ⇄ Move on Speed. The Struck State Alias covers Idle and Move: while Cheer is set either one plays
+ * Hit, then Interact → Pick Up by exit time, and Pick Up returns to Idle once it has played.
  */
 function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string): AnimGraphDocument {
   const animations = ctx.assets.kaykit.mediumAnimations;
@@ -462,14 +462,17 @@ function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string
       speedBlendSpaceState("move", "Move", 400, 220, moveBlendSpace),
       playerState("3d", "interact", "Interact", 80, 480, clip(KAYKIT_CLIPS.interact), { loop: false }),
       playerState("3d", "pick-up", "Pick Up", 400, 480, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
+      playerState("3d", "hit", "Hit", -240, 480, clip(KAYKIT_CLIPS.hit), { loop: false }),
     ],
+    aliases: [{ id: "adventurer-struck", name: "Struck", position: { x: -240, y: 220 }, anyState: false, stateIds: ["idle", "move"] }],
     variables: [SPEED, CHEER],
-    // Idle → Move wins over Idle → Interact (lower priority number runs first). Non-looping states: Exit Time 1
-    // passes once the clip has finished.
+    // Idle → Move wins over Struck → Hit (lower priority number runs first). Non-looping states: Exit Time 1 passes
+    // once the clip has finished.
     transitions: [
       transition("adventurer-idle-to-move", "idle", "move", 0.25, 0, FORWARD, [compare(SPEED, "math.greaterEqual", WALK_SPEED)]),
       transition("adventurer-move-to-idle", "move", "idle", 0.25, 0, BACKWARD, [compare(SPEED, "math.less", WALK_SPEED)]),
-      transition("adventurer-idle-to-interact", "idle", "interact", 0.2, 1, DOWNWARD, [flag(CHEER)]),
+      transition("adventurer-struck-to-hit", "adventurer-struck", "hit", 0.15, 1, DOWNWARD, [flag(CHEER)]),
+      transition("adventurer-hit-to-interact", "hit", "interact", 0.2, 0, FORWARD, [exitTime(1)]),
       transition("adventurer-interact-to-pick-up", "interact", "pick-up", 0.2, 0, FORWARD, [exitTime(1)]),
       transition("adventurer-pick-up-to-idle", "pick-up", "idle", 0.2, 0, UPWARD, [exitTime(1)]),
     ],
