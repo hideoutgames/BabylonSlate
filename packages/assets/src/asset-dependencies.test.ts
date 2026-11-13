@@ -467,4 +467,27 @@ describe("typed asset dependencies", () => {
     expect(scene.requiredClassReferences).toEqual(["CustomActor"]);
     expect(scene.requiredDependencies).toEqual([]); // Registry resolves the symbolic identity using header metadata.
   });
+
+  it("requires a Blend Space's Skeleton and every sample's Animation, and a Blend Space Player's Blend Space", () => {
+    const blendSpace = collectAssetDependencyMetadata("BlendSpace", {
+      skeletonGuid: "rig",
+      previewModelGuid: "hero",
+      axes: [{ name: "Speed", min: 0, max: 6 }],
+      samples: [{ animationGuid: "walk", x: 2 }, { animationGuid: "run", x: 6 }],
+    });
+    expect(blendSpace.dependencies).toEqual(["hero", "rig", "run", "walk"]);
+    // The Preview's Model is for the editor only.
+    expect(blendSpace.requiredDependencies).toEqual(["rig", "run", "walk"]);
+    const graph = collectAssetDependencyMetadata("AnimationGraph3D", {
+      skeletonGuid: "rig",
+      variables: [],
+      stateMachine: {
+        entryStateId: "move",
+        states: [{ id: "move", stateGraph: { nodes: [{ id: "bs", type: "anim.pose.blendSpacePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "loco" } }], edges: [] } }],
+        transitions: [],
+      },
+      animationObject: { nodes: [], edges: [] },
+    });
+    expect(graph.requiredDependencies).toEqual(["loco", "rig"]);
+  });
 });

@@ -132,6 +132,15 @@ vi.mock("../context/document-context", async () => {
             path: "assets/Atlas.texture.hasset",
           },
           {
+            header: {
+              guid: "bs-loco",
+              name: "BS_Locomotion",
+              type: "BlendSpace",
+              payload: { axes: [{ name: "Speed", min: 0, max: 6 }], samples: [{ animationGuid: "anim-1", x: 2 }] },
+            },
+            path: "assets/BS_Locomotion.blendspace.hasset",
+          },
+          {
             header: { guid: "rig", name: "Knight_Skeleton", type: "Skeleton", payload: { kind: "skin", bones: [] } },
             path: "assets/Knight_Skeleton.hasset",
           },
@@ -351,6 +360,18 @@ describe("AnimGraphEditor", () => {
     machine.states.push(
       { id: "blank", name: "Blank", position: { x: 600, y: 80 }, stateGraph: { nodes: [], edges: [] } },
       {
+        id: "moving",
+        name: "Moving",
+        position: { x: 1200, y: 80 },
+        stateGraph: {
+          nodes: [
+            { id: "bs", type: "anim.pose.blendSpacePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "bs-loco" } },
+            { id: "output", type: "anim.pose.output", position: { x: 0, y: 0 }, data: { __protected: true } },
+          ],
+          edges: [{ id: "1", source: "bs", sourceHandle: "pose", target: "output", targetHandle: "pose" }],
+        },
+      },
+      {
         id: "mixed",
         name: "Mixed",
         position: { x: 900, y: 80 },
@@ -380,6 +401,8 @@ describe("AnimGraphEditor", () => {
     );
     // A state whose graph is more than one player shows that it plays a State Graph.
     expect(screen.getByTestId("anim-state-node-clip-mixed").textContent).toBe("State Graph");
+    // A state that plays a Blend Space names it.
+    expect(screen.getByTestId("anim-state-node-clip-moving").textContent).toBe("BS_Locomotion");
   });
 
   it("adds a state from the States list", () => {

@@ -435,7 +435,7 @@ export function ContentBrowserNewAssetDialog({
                   onPick={(guid) => { if (guid) onTimelineAssetGuidChange?.(guid); setTimelinePickerOpen(false); }} />
               </Field></FieldGroup>
             ) : null}
-            {type === "AnimationGraph3D" ? (
+            {type === "AnimationGraph3D" || type === "BlendSpace" ? (
               <FieldGroup><Field><FieldLabel>Skeleton</FieldLabel>
                 <AssetPickerControl value={skeletonGuid}>
                   <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setSkeletonPickerOpen(true)} data-testid="new-asset-skeleton" disabled={busy}>

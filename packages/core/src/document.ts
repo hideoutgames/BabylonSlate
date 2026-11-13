@@ -11,6 +11,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "sprite-animation",
   "anim-graph-3d",
   "anim-graph-2d",
+  "blend-space",
   "behaviour-tree",
   "blackboard",
   "save-game",
@@ -121,6 +122,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "SpriteAnimation";
     case "anim-graph-3d":
       return "AnimationGraph3D";
+    case "blend-space":
+      return "BlendSpace";
     case "anim-graph-2d":
       return "AnimationGraph2D";
     case "behaviour-tree":
@@ -239,6 +242,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "sprite-animation";
     case "AnimationGraph3D":
       return "anim-graph-3d";
+    case "BlendSpace":
+      return "blend-space";
     case "AnimationGraph2D":
       return "anim-graph-2d";
     case "BehaviourTree":
@@ -344,6 +349,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Sprite Animation";
     case "anim-graph-3d":
       return "3D Animation Graph";
+    case "blend-space":
+      return "Blend Space";
     case "anim-graph-2d":
       return "2D Animation Graph";
     case "behaviour-tree":
@@ -491,7 +498,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|shake|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water|globalparams)\.hasset$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim3d|anim2d|blendspace|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|shake|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water|globalparams)\.hasset$/i,
         "",
       )
       .replace(/\.hasset$/i, "")

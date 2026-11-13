@@ -41,6 +41,12 @@ export const animPoseNodes: NodeDefinition[] = [
     pin("normalizedTime", "normalizedTime", "in", FLOAT, "data", true, 0),
     out(POSE),
   ]),
+  poseNode("anim.pose.blendSpacePlayer", "Blend Space Player", "Plays a Blend Space: the Animations around X and Y, in step.", () => [
+    pin("x", "x", "in", FLOAT, "data", true, 0),
+    pin("y", "y", "in", FLOAT, "data", true, 0),
+    pin("playRate", "playRate", "in", FLOAT, "data", true, 1),
+    out(POSE),
+  ]),
   poseNode("anim.pose.restPose", "Rest Pose", "The Skeleton's rest pose.", () => [out(POSE)]),
   poseNode("anim.pose.blend", "Blend", "Blends two poses by Alpha: 0 is A, 1 is B.", () => [
     pin("a", "a", "in", POSE),

@@ -37,6 +37,7 @@ import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context"
 import { AnimGraphPreviewProvider } from "../context/anim-graph-preview-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { SpriteAnimationEditingProvider } from "../context/sprite-animation-editing-context";
+import { BlendSpaceEditingProvider } from "../context/blend-space-editing-context";
 import { SkeletonEditingProvider } from "../context/skeleton-editing-context";
 import { TracePlaybackProvider } from "../context/trace-playback-context";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
@@ -401,6 +402,26 @@ export function DocumentWorkspace() {
                   </PrefabEditingProvider>
                   </AnimGraphPreviewProvider>
                 </AnimGraphEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "blend-space") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <BlendSpaceEditingProvider>
+                  <DocumentShell
+                    id={id}
+                    path={doc.ref.path}
+                    testId="document-workspace-blend-space"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell id={id} documentKind="blend-space" initialLayout={doc.layout} />
+                  </DocumentShell>
+                </BlendSpaceEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );

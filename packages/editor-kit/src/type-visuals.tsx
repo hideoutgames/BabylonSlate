@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   ActivityIcon,
   AnchorIcon,
+  ChartScatterIcon,
   ApertureIcon,
   ArrowDownUpIcon,
   BoxIcon,
@@ -351,6 +352,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   Skeleton: PersonStandingIcon,
   AnimationGraph3D: WorkflowIcon,
   AnimationGraph2D: WorkflowIcon,
+  BlendSpace: ChartScatterIcon,
   SpriteAnimation: FilmIcon,
   // Tracks over time, so it reads apart from the Film icon of animations and clips.
   Timeline: ChartGanttIcon,
@@ -410,6 +412,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Skeleton: "animation",
   AnimationGraph3D: "animation",
   AnimationGraph2D: "sprite",
+  BlendSpace: "animation",
   SpriteAnimation: "sprite",
   Timeline: "animation",
   CameraShake: "renderTarget",

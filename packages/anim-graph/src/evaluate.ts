@@ -14,13 +14,23 @@ import {
   type AnimTransition,
 } from "./graph";
 import {
+  blendSpaceAxisDelta,
+  blendSpaceAxisValue,
+  blendSpaceTriangles,
+  blendSpaceWeights,
+  type BlendSpaceLayout,
+  type BlendSpaceTriangle,
+} from "./blend-space";
+import {
   ANIM_FRAME_FLIP_TYPE,
   ANIM_FRAME_SELECT_BY_BOOL_TYPE,
   ANIM_FRAME_SELECT_BY_INT_TYPE,
   ANIM_POSE_BLEND_BY_BOOL_TYPE,
   ANIM_POSE_BLEND_BY_INT_TYPE,
+  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_BLEND_TYPE,
   ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
+  blendSpaceNodeData,
   isPoseOutputType,
   isPosePlayerType,
   poseClipData,
@@ -29,6 +39,8 @@ import {
   poseInputSource,
   poseNodeDefault,
   primaryPosePlayer,
+  type BlendSpaceNodeAxis,
+  type BlendSpaceNodeSample,
   type PoseGraphIndex,
 } from "./pose-graph";
 
@@ -36,6 +48,8 @@ type GraphNode = SerializedGraph["nodes"][number];
 
 /** A state with no player keeps a one-second looping clock for its facts. */
 const STATE_CLOCK_MS = 1000;
+/** A Blend Space sample below this weight adds no layer. */
+const BLEND_SPACE_MIN_WEIGHT = 1e-4;
 const NO_TRANSITIONS: readonly AnimTransition[] = [];
 const NO_LAYERS: readonly AnimClipLayer[] = [];
 
@@ -74,6 +88,83 @@ interface EvalContext {
   players: Record<string, AnimPlayerClock>;
   previousSelectors: Readonly<Record<string, number[]>>;
   selectors: Record<string, number[]>;
+  /** Each Blend Space Player's weights this tick, worked out once for its state clock and its layers. */
+  blendSpaces: Map<string, BlendSpaceTick>;
+}
+
+interface BlendSpaceTick {
+  samples: readonly BlendSpaceNodeSample[];
+  weights: readonly number[];
+  /** One cycle of the blend: the samples' lengths (over their rate scales) averaged by weight. */
+  cycleMs: number;
+}
+
+const EMPTY_BLEND_SPACE: BlendSpaceTick = { samples: [], weights: [], cycleMs: STATE_CLOCK_MS };
+
+/** A resolved Blend Space's layout and triangulation, kept per stored object so triangles are built once. */
+const blendSpaceLayouts = new WeakMap<
+  object,
+  { layout: BlendSpaceLayout; axes: BlendSpaceNodeAxis[]; triangles: BlendSpaceTriangle[]; samples: BlendSpaceNodeSample[] } | null
+>();
+
+function blendSpaceLayout(node: GraphNode) {
+  const raw = node.data.blendSpace;
+  if (!raw || typeof raw !== "object") return null;
+  if (blendSpaceLayouts.has(raw)) return blendSpaceLayouts.get(raw)!;
+  const space = blendSpaceNodeData(node);
+  const [first, second] = space.axes;
+  const entry = first && space.samples.length > 0
+    ? (() => {
+        const axes: BlendSpaceLayout["axes"] = second ? [first, second] : [first];
+        const layout: BlendSpaceLayout = { axes, samples: space.samples };
+        return { layout, axes: space.axes, triangles: blendSpaceTriangles(layout), samples: space.samples };
+      })()
+    : null;
+  blendSpaceLayouts.set(raw, entry);
+  return entry;
+}
+
+/** An input eased toward `target` over about the axis's Smoothing Time, the short way round a wrapping axis. */
+function smoothAxis(axis: BlendSpaceNodeAxis, previous: number | undefined, target: number, dtSeconds: number): number {
+  const value = blendSpaceAxisValue(axis, target);
+  if (previous === undefined || !(axis.smoothingSeconds > 0)) return value;
+  const step = 1 - Math.exp((-3 * Math.max(0, dtSeconds)) / axis.smoothingSeconds);
+  return blendSpaceAxisValue(axis, previous + blendSpaceAxisDelta(axis, previous, value) * step);
+}
+
+/**
+ * A Blend Space Player's tick: its X and Y eased by their Smoothing Times, the samples' weights there and the length
+ * of one shared cycle. Computed once per tick for each key (a fresh visit apart).
+ */
+function blendSpaceTick(
+  ctx: EvalContext,
+  key: string,
+  node: GraphNode,
+  data: AnimPoseData | undefined,
+  dtSeconds: number,
+  fresh: boolean,
+): BlendSpaceTick {
+  const cacheKey = fresh ? `${key}\0fresh` : key;
+  const cached = ctx.blendSpaces.get(cacheKey);
+  if (cached) return cached;
+  const resolved = blendSpaceLayout(node);
+  if (!resolved) {
+    ctx.blendSpaces.set(cacheKey, EMPTY_BLEND_SPACE);
+    return EMPTY_BLEND_SPACE;
+  }
+  const axes = resolved.axes;
+  const previous = fresh ? undefined : ctx.previousSelectors[key];
+  const input = [dataValue(data, node, "x", 0), dataValue(data, node, "y", 0)];
+  const smoothed = axes.map((axis, index) => smoothAxis(axis, previous?.[index], input[index]!, dtSeconds));
+  ctx.selectors[key] = smoothed;
+  const weights = blendSpaceWeights(resolved.layout, { x: smoothed[0]!, y: smoothed[1] ?? 0 }, resolved.triangles);
+  let cycleMs = 0;
+  resolved.samples.forEach((sample, index) => {
+    cycleMs += (weights[index] ?? 0) * (sample.durationMs / sample.rateScale);
+  });
+  const tick = { samples: resolved.samples, weights, cycleMs: cycleMs > 0 ? cycleMs : STATE_CLOCK_MS };
+  ctx.blendSpaces.set(cacheKey, tick);
+  return tick;
 }
 
 interface Clock extends AnimPlayerClock {
@@ -203,6 +294,32 @@ function visitPoseGraph(
       }
       return;
     }
+    if (node.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+      const tick = blendSpaceTick(ctx, key, node, data, dtSeconds, fresh);
+      const playRate = dataValue(data, node, "playRate", 1);
+      // Every sample shares one phase; the cycle's length follows the weights, so the phase carries over, not the time.
+      const prior = fresh ? ZERO_CLOCK : ctx.previousPlayers[key] ?? ZERO_CLOCK;
+      const clock = advanceClock(
+        { ...prior, timeMs: prior.normalised * tick.cycleMs },
+        playRate > 0 ? dtSeconds * 1000 * playRate : 0,
+        tick.cycleMs,
+        true,
+      );
+      ctx.players[key] = { timeMs: clock.timeMs, loopCount: clock.loopCount, normalised: clock.normalised };
+      tick.samples.forEach((sample, position) => {
+        const sampleWeight = tick.weights[position] ?? 0;
+        if (sampleWeight <= BLEND_SPACE_MIN_WEIGHT || weight <= 0) return;
+        layers.push({
+          stateId,
+          clipAssetGuid: sample.animationGuid,
+          clipName: sample.clipName,
+          clipKind: "animation",
+          normalisedTime: clock.normalised,
+          weight: weight * sampleWeight,
+        });
+      });
+      return;
+    }
     if (node.type === ANIM_POSE_SEQUENCE_EVALUATOR_TYPE) {
       const clip = poseClipData(node);
       const time = dataValue(data, node, "normalizedTime", 0);
@@ -293,16 +410,31 @@ function scaleLayers(layers: readonly AnimClipLayer[], weight: number): AnimClip
   return weight <= 0 ? [] : layers.map((layer) => ({ ...layer, weight: layer.weight * weight }));
 }
 
-/** A state's clock and facts: its primary player's, else a one-second looping state clock. */
-function stateTiming(state: AnimState, data: AnimPoseData | undefined): { durationMs: number; playRate: number; loop: boolean } {
+/**
+ * A state's clock and facts: its primary player's, else a one-second looping state clock. A Blend Space Player's
+ * cycle changes with its weights, so its state carries its phase over (`synced`), not its time.
+ */
+function stateTiming(
+  ctx: EvalContext,
+  stateId: string,
+  state: AnimState,
+  data: AnimPoseData | undefined,
+  dtSeconds: number,
+  fresh: boolean,
+): { durationMs: number; playRate: number; loop: boolean; synced: boolean } {
   const player = primaryPosePlayer(state.stateGraph);
-  return player ? playerTiming(player, data) : { durationMs: STATE_CLOCK_MS, playRate: 1, loop: true };
+  if (!player) return { durationMs: STATE_CLOCK_MS, playRate: 1, loop: true, synced: false };
+  if (player.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+    const tick = blendSpaceTick(ctx, `${animPoseGraphKey(stateId)}#${player.id}`, player, data, dtSeconds, fresh);
+    return { durationMs: tick.cycleMs, playRate: dataValue(data, player, "playRate", 1), loop: true, synced: true };
+  }
+  return { ...playerTiming(player, data), synced: false };
 }
 
 /** Where a state's clock starts on entry: at its primary player's start, else at 0. */
 function stateStart(state: AnimState, data: AnimPoseData | undefined, durationMs: number): AnimPlayerClock {
   const player = primaryPosePlayer(state.stateGraph);
-  return player ? playerStart(player, data, durationMs) : ZERO_CLOCK;
+  return player && player.type !== ANIM_POSE_BLEND_SPACE_PLAYER_TYPE ? playerStart(player, data, durationMs) : ZERO_CLOCK;
 }
 
 /** The State Machine's tick: run its active state's graph and transitions, and blend. */
@@ -324,9 +456,13 @@ function evaluateMachine(
   const currentKey = animPoseGraphKey(stateId);
   // Data inputs see the state's facts from before this tick's advance.
   const currentData = ctx.inputs.poseData?.(currentKey, previous && sameState ? previous.facts : null);
-  const timing = stateTiming(current, currentData);
+  const timing = stateTiming(ctx, stateId, current, currentData, dtSeconds, entered);
   const start = sameState
-    ? { timeMs: previous.timeMs, loopCount: previous.loopCount, normalised: previous.normalisedTime }
+    ? {
+        timeMs: timing.synced ? previous.normalisedTime * timing.durationMs : previous.timeMs,
+        loopCount: previous.loopCount,
+        normalised: previous.normalisedTime,
+      }
     : stateStart(current, currentData, timing.durationMs);
   const previousTotal = sameState
     ? totalNormalisedTime(previous.facts.looping, previous.loopCount, previous.normalisedTime)
@@ -356,7 +492,7 @@ function evaluateMachine(
     const next = states.get(nextId)!;
     const nextKey = animPoseGraphKey(nextId);
     const nextData = ctx.inputs.poseData?.(nextKey, null);
-    const nextTiming = stateTiming(next, nextData);
+    const nextTiming = stateTiming(ctx, nextId, next, nextData, 0, true);
     const nextStart = stateStart(next, nextData, nextTiming.durationMs);
     nextClock = { ...nextStart, justLooped: false, justFinished: false };
     nextFacts = factsFor(nextClock, nextTiming.durationMs / Math.max(0.001, nextTiming.playRate), nextTiming.loop, nextStart.normalised);
@@ -472,6 +608,7 @@ export function evaluateAnimGraph(
     players: {},
     previousSelectors: previous?.selectors ?? {},
     selectors: {},
+    blendSpaces: new Map(),
   };
   const { state, layers } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
   return { ...state, players: ctx.players, selectors: ctx.selectors, layers };

@@ -1,27 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { isPoseClipNodeType, type AnimClipLayer, type AnimGraphDocument, type AnimGraphVariable } from "@haptic/anim-graph";
 import {
-  normalizeAnimationPayload,
-  normalizeModelPayload,
-  normalizeSkeletonPayload,
-  parseSpriteAnimationPayload,
-  spriteAnimationDurationMs,
-  spriteAnimationPlayhead,
-  type SkeletonKind,
-} from "@haptic/assets";
+  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
+  blendSpaceNodeData,
+  isPoseClipNodeType,
+  type AnimClipLayer,
+  type AnimGraphDocument,
+  type AnimGraphVariable,
+} from "@haptic/anim-graph";
+import { parseSpriteAnimationPayload, spriteAnimationDurationMs, spriteAnimationPlayhead } from "@haptic/assets";
 import { PanelFrame, PropertyGrid, ToolbarStrip, type PropertyRow } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@haptic/ui/components/select";
-import { Toggle } from "@haptic/ui/components/toggle";
 import { PauseIcon, PlayIcon, RotateCcwIcon, StepForwardIcon } from "lucide-react";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { useAnimGraphPreview } from "../context/anim-graph-preview-context";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
-import { useModelSourceBytes } from "../lib/use-model-source-bytes";
+import { useAnimPreviewModel } from "../lib/use-anim-preview-model";
 import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { useAnimGraphDocument } from "./anim-graph-editor";
-import { AnimGraphPreviewCanvas, type AnimPreviewClip } from "./anim-graph-preview-canvas";
+import { AnimPreview3DView, AnimPreviewModelControls } from "./anim-preview-model-controls";
 import { IconActionButton } from "./icon-action-button";
 import { PlaybackSpeedSelect } from "./playback-controls";
 import { useResolvedSpriteAnimation } from "./sprite-animation-sources";
@@ -30,13 +27,16 @@ import { useTexturePreviews } from "./texture-preview-status";
 
 /** Waits this long after an edit before compiling the graph's rules again. */
 const RECOMPILE_DELAY_MS = 300;
-const NO_PREVIEW_MODEL = "";
 
-/** The Animation assets the graph's state graphs play (players and Sequence Evaluators), in first-use order. */
+/** The Animation assets the graph's state graphs play (players, Sequence Evaluators and Blend Space samples), in first-use order. */
 function graphAnimationGuids(doc: AnimGraphDocument): string[] {
   const guids = new Set<string>();
   for (const state of doc.stateMachine.states) {
     for (const node of state.stateGraph.nodes) {
+      if (node.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+        for (const sample of blendSpaceNodeData(node).samples) guids.add(sample.animationGuid);
+        continue;
+      }
       const guid = node.data.assetGuid;
       if (isPoseClipNodeType(node.type) && typeof guid === "string" && guid) guids.add(guid);
     }
@@ -128,121 +128,34 @@ function PreviewTransport({ extra }: { extra?: ReactNode }) {
   );
 }
 
-/** Models the 3D Preview can show: those on the graph's Skeleton, or for a graph with none, the Models its clips come from. */
-function usePreviewModels(doc: AnimGraphDocument) {
-  const { assetRegistry, registryEpoch } = useRegistryState();
-  return useMemo(() => {
-    void registryEpoch;
-    const assets = assetRegistry?.list() ?? [];
-    if (doc.skeletonGuid) {
-      return assets.filter((asset) =>
-        asset.header.type === "Model" && normalizeModelPayload(asset.header.payload ?? {}).skeletonGuid === doc.skeletonGuid);
-    }
-    const owners = new Set(graphAnimationGuids(doc).flatMap((guid) => {
-      const asset = assetRegistry?.getByGuid(guid);
-      const modelGuid = asset?.header.type === "Animation" ? normalizeAnimationPayload(asset.header.payload ?? {}).modelGuid : null;
-      return modelGuid ? [modelGuid] : [];
-    }));
-    return assets.filter((asset) => asset.header.type === "Model" && owners.has(asset.header.guid));
-  }, [assetRegistry, doc, registryEpoch]);
-}
-
 function Preview3D({ api }: { api: IDockviewPanelProps["api"] }) {
   const { doc, commit } = useAnimGraphDocument();
   const session = useAnimGraphPreview();
-  const { assetRegistry } = useRegistryState();
-  const { readAssetChunk } = useDocumentActions();
-  const models = usePreviewModels(doc);
-  const model = models.find((asset) => asset.header.guid === doc.previewModelGuid) ?? models[0];
-  const modelPayload = model ? normalizeModelPayload(model.header.payload ?? {}) : null;
-  const source = useModelSourceBytes(model?.path);
+  const animationGuids = useMemo(() => graphAnimationGuids(doc), [doc]);
+  const preview = useAnimPreviewModel({ skeletonGuid: doc.skeletonGuid, animationGuids, previewModelGuid: doc.previewModelGuid });
   const [showBones, setShowBones] = useState(false);
-  const skeleton = doc.skeletonGuid ? assetRegistry?.getByGuid(doc.skeletonGuid) : undefined;
-  const skeletonKind: SkeletonKind | null = skeleton ? normalizeSkeletonPayload(skeleton.header.payload ?? {}).kind : null;
-  const clips = useMemo((): AnimPreviewClip[] => {
-    if (!model) return [];
-    return graphAnimationGuids(doc).flatMap((guid): AnimPreviewClip[] => {
-      const asset = assetRegistry?.getByGuid(guid);
-      if (asset?.header.type !== "Animation") return [];
-      const animation = normalizeAnimationPayload(asset.header.payload ?? {});
-      if (!animation.clipName) return [];
-      if (animation.sourceAnimationGuid) {
-        const sourceAsset = assetRegistry?.getByGuid(animation.sourceAnimationGuid);
-        const sourceModel = sourceAsset?.header.type === "Animation" ? normalizeAnimationPayload(sourceAsset.header.payload ?? {}).modelGuid : null;
-        return sourceModel ? [{ animationGuid: guid, clipName: animation.clipName, source: { kind: "retarget", modelGuid: sourceModel } }] : [];
-      }
-      if (!animation.modelGuid) return [];
-      return [{
-        animationGuid: guid,
-        clipName: animation.clipName,
-        source: animation.modelGuid === model.header.guid ? { kind: "own" } : { kind: "bind", modelGuid: animation.modelGuid },
-      }];
-    });
-  }, [assetRegistry, doc, model]);
-  const readModelBytes = useCallback(async (modelGuid: string) => {
-    const path = assetRegistry?.getByGuid(modelGuid)?.path;
-    const bytes = path ? await readAssetChunk(path, "source") : null;
-    if (!bytes) throw new Error(`Model ${modelGuid} has no source to read.`);
-    return bytes;
-  }, [assetRegistry, readAssetChunk]);
   const getState = useCallback(() => session.getSnapshot().state, [session]);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PreviewTransport
         extra={
-          <>
-            <Select
-              value={model?.header.guid ?? NO_PREVIEW_MODEL}
-              onValueChange={(guid) => commit({ ...doc, previewModelGuid: guid || null })}
-              items={models.map((asset) => ({ value: asset.header.guid, label: asset.header.name }))}
-              disabled={models.length === 0}
-            >
-              <SelectTrigger size="sm" aria-label="Preview Model" className="w-32" data-testid="anim-preview-model">
-                <SelectValue placeholder="No Model" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {models.map((asset) => (
-                    <SelectItem key={asset.header.guid} value={asset.header.guid}>
-                      {asset.header.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Toggle
-              size="sm"
-              variant="outline"
-              pressed={showBones}
-              disabled={!skeletonKind}
-              aria-label="Show Bones"
-              data-testid="anim-preview-bones"
-              onPressedChange={setShowBones}
-            >
-              Bones
-            </Toggle>
-          </>
+          <AnimPreviewModelControls
+            preview={preview}
+            onModelChange={(previewModelGuid) => commit({ ...doc, previewModelGuid })}
+            showBones={showBones}
+            onShowBonesChange={setShowBones}
+            testIdPrefix="anim-preview"
+          />
         }
       />
-      <div className="relative min-h-0 flex-1" data-testid="anim-preview-3d">
-        {source.bytes && modelPayload ? (
-          <AnimGraphPreviewCanvas
-            modelBytes={source.bytes}
-            materialSlots={modelPayload.materialSlots}
-            importScale={modelPayload.importScale}
-            clips={clips}
-            readModelBytes={readModelBytes}
-            skeletonKind={skeletonKind}
-            showBones={showBones}
-            getState={getState}
-            subscribe={session.subscribe}
-          />
-        ) : (
-          <p className="p-3 text-sm text-muted-foreground" data-testid="anim-preview-empty">
-            {source.error ?? (model ? "" : doc.skeletonGuid ? "No Model is on the graph's Skeleton." : "Set the graph's Skeleton to preview it.")}
-          </p>
-        )}
-      </div>
+      <AnimPreview3DView
+        preview={preview}
+        showBones={showBones}
+        getState={getState}
+        subscribe={session.subscribe}
+        emptyText={doc.skeletonGuid ? "No Model is on the graph's Skeleton." : "Set the graph's Skeleton to preview it."}
+        data-testid="anim-preview-3d"
+      />
       <PreviewClock api={api} />
     </div>
   );

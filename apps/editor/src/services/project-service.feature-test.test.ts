@@ -8,7 +8,13 @@ import {
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@haptic/core";
-import { validateAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import {
+  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
+  blendSpaceNodeData,
+  resolveAnimGraphClips,
+  validateAnimGraph,
+  type AnimGraphDocument,
+} from "@haptic/anim-graph";
 import {
   decodeTileGid,
   normalizeAnimationPayload,
@@ -41,6 +47,7 @@ import {
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { ENGINE_BASE_CLASSES } from "../lib/class-asset-lookup";
 import {
   CREATABLE_ASSET_TYPES,
@@ -350,10 +357,21 @@ describe("FeatureTest starter", () => {
       const graph = normalizeParticleGraphDocument(await reopened.loadDocument("particle-graph", asset.path));
       expect(validateParticleGraphDocument(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
+    const clipCatalog = animClipCatalogFromAssets(reopened.registry!.list());
+    let blendSpacePlayers = 0;
     for (const asset of ofType("AnimationGraph3D")) {
       const graph = (await reopened.loadDocument("anim-graph-3d", asset.path)) as unknown as AnimGraphDocument;
-      expect(validateAnimGraph(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+      expect(validateAnimGraph(graph, clipCatalog, { dimension: "3d" }).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+      // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
+      for (const state of resolveAnimGraphClips(graph, clipCatalog).stateMachine.states) {
+        for (const node of state.stateGraph.nodes) {
+          if (node.type !== ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) continue;
+          blendSpacePlayers += 1;
+          expect(blendSpaceNodeData(node).samples.length, `${asset.path} ${state.name}`).toBeGreaterThan(1);
+        }
+      }
     }
+    expect(blendSpacePlayers).toBeGreaterThan(0);
   });
 
   it("authors physics without pairing problems", async () => {

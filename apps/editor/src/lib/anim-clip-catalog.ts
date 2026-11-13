@@ -1,5 +1,6 @@
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
+  normalizeBlendSpacePayload,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
 } from "@haptic/assets";
@@ -39,7 +40,10 @@ type CatalogAsset = {
   };
 };
 
-/** Build a clip catalog from Content Browser headers: Animation and Sprite Animation clips, and the Models and Skeletons an Animation names. */
+/**
+ * Build a clip catalog from Content Browser headers: Animation and Sprite Animation clips, the Models and Skeletons an
+ * Animation names, and Blend Spaces with their Skeleton, axes and samples.
+ */
 export function animClipCatalogFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): AnimClipCatalogEntry[] {
@@ -52,9 +56,10 @@ export function animClipCatalogFromAssets(
           ? optionalDurationMs(payload.durationMs)
           : undefined;
     const skeletonGuid =
-      asset.header.type === "Model" || asset.header.type === "Animation"
+      asset.header.type === "Model" || asset.header.type === "Animation" || asset.header.type === "BlendSpace"
         ? nullableGuid(payload.skeletonGuid)
         : undefined;
+    const blendSpace = asset.header.type === "BlendSpace" ? normalizeBlendSpacePayload(payload) : undefined;
     const modelGuid =
       asset.header.type === "Animation" ? trimmed(payload.modelGuid) : "";
     const frameCount =
@@ -72,6 +77,7 @@ export function animClipCatalogFromAssets(
       ...(frameCount !== undefined ? { frameCount } : {}),
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
+      ...(blendSpace ? { blendSpace: { axes: blendSpace.axes, samples: blendSpace.samples } } : {}),
     };
   });
 }

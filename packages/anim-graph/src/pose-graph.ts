@@ -15,6 +15,7 @@ export const ANIM_POSE_REST_TYPE = "anim.pose.restPose";
 export const ANIM_POSE_BLEND_TYPE = "anim.pose.blend";
 export const ANIM_POSE_BLEND_BY_BOOL_TYPE = "anim.pose.blendByBool";
 export const ANIM_POSE_BLEND_BY_INT_TYPE = "anim.pose.blendByInt";
+export const ANIM_POSE_BLEND_SPACE_PLAYER_TYPE = "anim.pose.blendSpacePlayer";
 export const ANIM_FRAME_OUTPUT_TYPE = "anim.frame.output";
 export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
 export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
@@ -46,6 +47,16 @@ export function isPosePlayerType(type: string): boolean {
 /** Nodes that name a clip asset: players and the Sequence Evaluator. */
 export function isPoseClipNodeType(type: string): boolean {
   return isPosePlayerType(type) || type === ANIM_POSE_SEQUENCE_EVALUATOR_TYPE;
+}
+
+/** Nodes that keep their own time, which a state's facts can follow: players and Blend Space Players. */
+export function isPoseTimeSourceType(type: string): boolean {
+  return isPosePlayerType(type) || type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE;
+}
+
+/** Nodes that name an asset (a clip or a Blend Space), which load with the graph. */
+export function isPoseAssetNodeType(type: string): boolean {
+  return isPoseClipNodeType(type) || type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE;
 }
 
 /** The pose (or frame) inputs of a node type, in order; `count` is a Blend Poses By Int / Select By Int's. */
@@ -141,7 +152,7 @@ export function primaryPosePlayer(graph: SerializedGraph): SerializedGraphNode |
   const seen = new Set<string>();
   while (node && !seen.has(node.id)) {
     seen.add(node.id);
-    if (isPosePlayerType(node.type)) return node;
+    if (isPoseTimeSourceType(node.type)) return node;
     let next: SerializedGraphNode | undefined;
     for (const pin of poseInputPins(node.type, node.data.count)) {
       next = poseInputSource(index, node.id, pin);
@@ -160,7 +171,63 @@ export function singlePlayerOf(graph: SerializedGraph): SerializedGraphNode | nu
   const posed = graph.nodes.filter((node) => node.type.startsWith("anim.pose.") || node.type.startsWith("anim.frame."));
   if (posed.length !== 2) return null;
   const player = primaryPosePlayer(graph);
-  return player && posed.includes(player) ? player : null;
+  return player && isPosePlayerType(player.type) && posed.includes(player) ? player : null;
+}
+
+/** A Blend Space axis as a Blend Space Player plays it. */
+export interface BlendSpaceNodeAxis {
+  min: number;
+  max: number;
+  wrap: boolean;
+  smoothingSeconds: number;
+}
+
+/** A Blend Space sample with its Animation's clip, filled at load (`resolveAnimGraphClips`). */
+export interface BlendSpaceNodeSample {
+  animationGuid: string;
+  clipName: string;
+  durationMs: number;
+  x: number;
+  y: number;
+  rateScale: number;
+}
+
+/** The Blend Space a Blend Space Player names, as `resolveAnimGraphClips` stores it on the node. */
+export interface BlendSpaceNodeData {
+  axes: BlendSpaceNodeAxis[];
+  samples: BlendSpaceNodeSample[];
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/** The node's resolved Blend Space; no axes and no samples before it resolves. */
+export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeData {
+  const raw = node.data.blendSpace;
+  if (!raw || typeof raw !== "object") return { axes: [], samples: [] };
+  const record = raw as Record<string, unknown>;
+  const axes = (Array.isArray(record.axes) ? record.axes : []).slice(0, 2).map((entry): BlendSpaceNodeAxis => {
+    const axis = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    const min = finiteNumber(axis.min, 0);
+    const max = finiteNumber(axis.max, min + 1);
+    return { min, max: max > min ? max : min + 1, wrap: axis.wrap === true, smoothingSeconds: Math.max(0, finiteNumber(axis.smoothingSeconds, 0)) };
+  });
+  const samples = (Array.isArray(record.samples) ? record.samples : []).flatMap((entry): BlendSpaceNodeSample[] => {
+    const sample = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    if (typeof sample.animationGuid !== "string" || !sample.animationGuid) return [];
+    const durationMs = finiteNumber(sample.durationMs, 1000);
+    const rateScale = finiteNumber(sample.rateScale, 1);
+    return [{
+      animationGuid: sample.animationGuid,
+      clipName: typeof sample.clipName === "string" ? sample.clipName : "",
+      durationMs: durationMs > 0 ? durationMs : 1000,
+      x: finiteNumber(sample.x, 0),
+      y: finiteNumber(sample.y, 0),
+      rateScale: rateScale > 0 ? rateScale : 1,
+    }];
+  });
+  return { axes, samples };
 }
 
 /** A player node's stored data for a clip. */
