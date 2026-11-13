@@ -527,12 +527,36 @@ function useAnimCanvas(canvas: AnimCanvas, api: IDockviewPanelProps["api"] | und
   return claim;
 }
 
-/** The Animation Object script: the Class-style graph each Animation Graph component runs, beside the Graph. */
+/**
+ * The Animation Object script: the Class-style graph each Animation Graph component runs, beside the Graph. Behind
+ * another tab its canvas would fit a view with no size, so the graph mounts the first time the window shows; a node of
+ * the script chosen elsewhere (Compiler Results, a breakpoint) brings the window forward, where the graph frames it.
+ */
 export function AnimObjectGraphPanel(props: IDockviewPanelProps) {
-  const claim = useAnimCanvas("animationObject", props.api);
+  const { api } = props;
+  const claim = useAnimCanvas("animationObject", api);
+  const { doc } = useAnimGraphDocument();
+  const { focusDiagnostic } = useValidation();
+  const [shown, setShown] = useState(() => api.isVisible);
+  useEffect(() => {
+    if (shown) return;
+    if (api.isVisible) {
+      setShown(true);
+      return;
+    }
+    const subscription = api.onDidVisibilityChange((event) => {
+      if (event.isVisible) setShown(true);
+    });
+    return () => subscription.dispose();
+  }, [api, shown]);
+  const focusNodeId = focusDiagnostic?.nodeId;
+  const holdsFocus = !!focusNodeId && doc.animationObject.nodes.some((node) => node.id === focusNodeId);
+  useEffect(() => {
+    if (holdsFocus && !api.isVisible) api.setActive();
+  }, [api, holdsFocus, focusDiagnostic]);
   return (
     <div className="flex h-full min-h-0 flex-col" onPointerDownCapture={claim} data-testid="anim-object-graph">
-      <GraphPanel {...props} />
+      {shown ? <GraphPanel {...props} /> : null}
     </div>
   );
 }
