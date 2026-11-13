@@ -260,10 +260,11 @@ function PinHandle({
 
 /**
  * An Animation Graph's Pose pin (Phosphor User Focus) or Frame pin (Bootstrap Image), drawn larger than other pins and
- * without a box: the icon's outline glyph while unwired, its fill glyph once wired.
+ * without a box: the icon's outline glyph while unwired, its fill glyph once wired. Phosphor pads its glyph, so the
+ * Pose pin's box is larger for the figure to read as large as the Frame pin's picture.
  */
 function AnimPinGlyph({ kind, color, connected }: { kind: "pose" | "frame"; color: string; connected: boolean }) {
-  const size = "calc(var(--graph-pin-glyph, var(--graph-pin-size, 22px)) * 1.2)";
+  const size = `calc(var(--graph-pin-glyph, var(--graph-pin-size, 22px)) * ${kind === "pose" ? 1.6 : 1.4})`;
   const FrameGlyph = connected ? ImageFillGlyph : ImageGlyph;
   return (
     <span
