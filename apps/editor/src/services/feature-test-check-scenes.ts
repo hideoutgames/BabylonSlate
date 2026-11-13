@@ -8,5 +8,6 @@ export const FEATURE_TEST_CHECK_SCENES = [
   { name: "FT_Lights", path: "assets/FeatureTest/Scenes/FT_Lights.scene.hasset" },
   { name: "FT_Occlusion", path: "assets/FeatureTest/Scenes/FT_Occlusion.scene.hasset" },
   { name: "FT_2D", path: "assets/FeatureTest/Scenes/FT_2D.scene.hasset" },
+  { name: "FT_Animation", path: "assets/FeatureTest/Scenes/FT_Animation.scene.hasset" },
   { name: "FT_Stress", path: "assets/FeatureTest/Scenes/FT_Stress.scene.hasset" },
 ] as const;

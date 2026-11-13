@@ -2,6 +2,7 @@ import {
   ANIM_EXIT_TIME_REACHED_TYPE,
   ANIM_RULE_ENTER_NODE_ID,
   animGraphMembersFromVariables,
+  createDefaultAnimationObjectGraph,
   createDefaultTransitionRuleGraph,
   validateAnimGraph,
   type AnimGraphDocument,
@@ -10,13 +11,21 @@ import {
   type AnimTransition,
 } from "@haptic/anim-graph";
 import { normalizeAnimationPayload } from "@haptic/assets";
-import type { SerializedActor, SerializedComponent, SerializedGraph } from "@haptic/core";
+import {
+  createDefaultScene,
+  lookAtRotation,
+  type SerializedActor,
+  type SerializedComponent,
+  type SerializedGraph,
+  type SerializedScene,
+} from "@haptic/core";
 import { animClipCatalogFromAssets } from "../anim-clip-catalog";
 import {
   actor,
   comp,
   meshComp,
   requireRef,
+  SCENE_SAVE_ORDER,
   tf,
   instanceComponents,
   type FeatureTestClassRef,
@@ -30,8 +39,11 @@ import { stressPoint } from "./layout";
 /**
  * Animation area: a four-state Mannequin locomotion AnimationGraph driven by
  * a Class graph (Speed and Cheer variables), a rigid node-animated door and
- * the `FT_Stress` Mannequin crowd. Skeleton coverage comes from the Basic 3D
- * Mannequin import (the door Model has no Skeleton).
+ * the `FT_Stress` Mannequin crowd. Hierarchy Skeleton coverage comes from the
+ * Basic 3D Mannequin import (the door Model has no Skeleton). `FT_Animation`
+ * holds the skinned KayKit characters: Knight and Rogue Hooded share one
+ * Skeleton and the clips of its animation libraries, under an Anim Graph that
+ * blends two State Machines; Mannequin Large runs on its own Rig_Large Skeleton.
  */
 
 /** Folder under `assets/FeatureTest/` for every animation asset. */
@@ -45,7 +57,23 @@ const FEATURE_TEST_ANIMATION_NAMES = {
   doorGraph: "FT_AnimDoorSwing",
   /** Actor Class that drives the locomotion graph's variables every Tick. */
   locomotor: "FT_AnimLocomotor",
+  /** Rig_Medium graph: Locomotion and Gestures State Machines, blended by Cheer in the Anim Graph. */
+  adventurerGraph: "FT_AnimAdventurer",
+  /** Rig_Large graph: one Move state blending Walk into Run by Speed. */
+  largeGraph: "FT_AnimLargeMannequin",
+  /** Locomotor Classes of the KayKit characters, one per Model. */
+  knight: "FT_AnimKnight",
+  rogue: "FT_AnimRogue",
+  largeMannequin: "FT_AnimLargeMannequinActor",
 } as const;
+
+/** The skinned characters' scene. */
+const ANIMATION_SCENE = "FT_Animation";
+const SCENES_FOLDER = "Scenes";
+const ANIMATION_SCENE_CAMERA = { position: [0, 2.2, -7] as Vec3, target: [0, 1, 0] as Vec3 };
+
+/** KayKit clip names (Rig_Medium General and Movement Basic, Rig_Large Movement Basic). */
+const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp" } as const;
 
 /**
  * Perf knob: the `FT_Stress` crowd is `columns × rows` (64) Locomotor
@@ -95,6 +123,8 @@ interface PlacedClass {
 interface AnimationRefs {
   locomotor: PlacedClass;
   doorGraph: string;
+  /** The KayKit characters' Classes. */
+  characters: { knight: PlacedClass; rogue: PlacedClass; largeMannequin: PlacedClass };
 }
 
 const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
@@ -108,8 +138,22 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   await authorDoorOpenDuration(ctx);
   const locomotionGraph = await saveGraph(ctx, locomotionGraphDocument(ctx));
   const doorGraph = await saveGraph(ctx, doorGraphDocument(ctx));
-  const locomotor = await saveLocomotor(ctx, locomotionGraph);
-  refsByContext.set(ctx, { locomotor, doorGraph });
+  const mannequin = requireRef(ctx.assets.mannequin.modelGuid, "the Mannequin Model");
+  const locomotor = await saveLocomotor(ctx, NAMES.locomotor, mannequin, locomotionGraph);
+  const kaykit = ctx.assets.kaykit;
+  const adventurerGraph = await saveGraph(ctx, adventurerGraphDocument(ctx));
+  const largeGraph = await saveGraph(ctx, largeMannequinGraphDocument(ctx));
+  const characters = {
+    knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph),
+    rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph),
+    largeMannequin: await saveLocomotor(
+      ctx,
+      NAMES.largeMannequin,
+      requireRef(kaykit.mannequinLarge, "the KayKit Mannequin Large Model"),
+      largeGraph,
+    ),
+  };
+  refsByContext.set(ctx, { locomotor, doorGraph, characters });
 }
 
 /**
@@ -154,6 +198,41 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
       });
     }
   }
+  await placeAnimationScene(ctx, refs, font);
+}
+
+/**
+ * `FT_Animation`: the skinned KayKit characters on a floor, facing the camera. Knight and Rogue Hooded run the
+ * same graph half a cycle apart; Mannequin Large runs its Rig_Large graph.
+ */
+async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs, font: string | null): Promise<void> {
+  const scene: SerializedScene = createDefaultScene("3d");
+  scene.name = ANIMATION_SCENE;
+  scene.actors = scene.actors.filter((entry) => entry.components.length > 0);
+  const camera = scene.actors.find((entry) => entry.id === scene.settings.defaultCameraActorId);
+  if (camera) {
+    camera.transform = tf(ANIMATION_SCENE_CAMERA.position, {
+      rotation: lookAtRotation(ANIMATION_SCENE_CAMERA.position, ANIMATION_SCENE_CAMERA.target),
+    });
+  }
+  const add = (entry: SerializedActor) => ctx.addActor(entry, { scene });
+  // Box primitives are 1.5 m; the floor is 12 × 8 m.
+  add(actor("ft-animscene-floor", "Floor", tf([0, -0.1, 1], { scale: [12 / 1.5, 0.2 / 1.5, 8 / 1.5] }), [
+    meshComp("ft-animscene-floor-mesh", "box", { collision: "simple" }),
+  ]));
+  // Facing the camera: a half turn about Y.
+  const facing = { rotationDeg: [0, 180, 0] as Vec3 };
+  const place = (placed: PlacedClass, id: string, name: string, x: number, phase: number) =>
+    add(actor(id, name, tf([x, 0, 0], facing), instanceComponents(id, placed.components), {
+      classId: placed.ref.classId,
+      properties: { Phase: phase },
+    }));
+  place(refs.characters.knight, "ft-animscene-knight", "Knight", -2.5, 0);
+  place(refs.characters.rogue, "ft-animscene-rogue", "Rogue Hooded", 0, roundTo(CYCLE_SECONDS / 2, 100));
+  place(refs.characters.largeMannequin, "ft-animscene-large", "Mannequin Large", 2.5, roundTo(CYCLE_SECONDS / 4, 100));
+  add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-1.25, 0.05, -1.6], "Shared Rig_Medium Skeleton", font));
+  add(caption("ft-animscene-caption-large", "Rig_Large Caption", [2.5, 0.05, -1.6], "Rig_Large", font));
+  await ctx.addSceneDocument({ kind: "scene", folder: SCENES_FOLDER, name: ANIMATION_SCENE, content: scene, order: SCENE_SAVE_ORDER.scene });
 }
 
 /** Save the door's Open Animation with a Duration longer than its clip, as the Inspector's Duration field does. */
@@ -297,6 +376,104 @@ function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   });
 }
 
+/** A KayKit rig's Animation, by clip name. */
+function kaykitClip(ctx: FeatureTestContext, animations: Record<string, string>, name: string): FeatureTestClip {
+  return animationClip(ctx, requireRef(animations[name], `the KayKit "${name}" Animation`));
+}
+
+/** Move state: Walk blended into Run as Speed climbs past Run Speed (Alpha = Speed - (Run Speed - 1)). */
+function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): AnimState {
+  const speed = animGraphMembersFromVariables([SPEED])[0]!;
+  return {
+    id: "move",
+    name: "Move",
+    position: { x, y: 220 },
+    stateGraph: poseGraph("3d", "blend", [
+      playerNode("3d", "walk", 60, 40, walk),
+      playerNode("3d", "run", 60, 220, run),
+      getVar("get-speed", speed, -260, 400),
+      gNode("speed-over-walk", "math.sub", 60, 400, { "default:b": RUN_SPEED - 1 }),
+      gNode("blend", "anim.pose.blend", 500, 120),
+    ], [
+      gWire("walk", "pose", "blend", "a"),
+      gWire("run", "pose", "blend", "b"),
+      gWire("get-speed", "value", "speed-over-walk", "a"),
+      gWire("speed-over-walk", "out", "blend", "alpha"),
+    ]),
+  };
+}
+
+/**
+ * Rig_Medium: the Anim Graph blends a Locomotion State Machine (Idle ⇄ Move on Speed) with a Gestures State
+ * Machine (Interact → Pick Up → Interact) by Cheer, through Blend Poses By Bool. Locomotion is first, so it is the
+ * primary State Machine.
+ */
+function adventurerGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  const animations = ctx.assets.kaykit.mediumAnimations;
+  const clip = (name: string) => kaykitClip(ctx, animations, name);
+  const cheer = animGraphMembersFromVariables([CHEER])[0]!;
+  return {
+    name: NAMES.adventurerGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    variables: [SPEED, CHEER],
+    animGraph: poseGraph("3d", "gesture-or-move", [
+      gNode("gesture-or-move", "anim.pose.blendByBool", 500, 120, { trueBlendSeconds: 0.3, falseBlendSeconds: 0.3 }),
+      gNode("machine-locomotion", "anim.pose.stateMachine", 60, 220, { machineId: "locomotion" }),
+      gNode("machine-gestures", "anim.pose.stateMachine", 60, 40, { machineId: "gestures" }),
+      getVar("get-cheer", cheer, 60, 400),
+    ], [
+      gWire("machine-gestures", "pose", "gesture-or-move", "truePose"),
+      gWire("machine-locomotion", "pose", "gesture-or-move", "falsePose"),
+      gWire("get-cheer", "value", "gesture-or-move", "active"),
+    ]),
+    stateMachines: [
+      {
+        id: "locomotion",
+        name: "Locomotion",
+        entryStateId: "idle",
+        states: [
+          playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
+          moveState(clip(KAYKIT_CLIPS.walk), clip(KAYKIT_CLIPS.run), 400),
+        ],
+        transitions: [
+          transition("adventurer-idle-to-move", "idle", "move", 0.25, 0, FORWARD, [compare(SPEED, "math.greaterEqual", WALK_SPEED)]),
+          transition("adventurer-move-to-idle", "move", "idle", 0.25, 0, BACKWARD, [compare(SPEED, "math.less", WALK_SPEED)]),
+        ],
+      },
+      {
+        id: "gestures",
+        name: "Gestures",
+        entryStateId: "interact",
+        states: [
+          playerState("3d", "interact", "Interact", 80, 220, clip(KAYKIT_CLIPS.interact), { loop: false }),
+          playerState("3d", "pick-up", "Pick Up", 400, 220, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
+        ],
+        // Non-looping states: Exit Time 1 passes once the clip has finished.
+        transitions: [
+          transition("adventurer-interact-to-pick-up", "interact", "pick-up", 0.2, 0, FORWARD, [exitTime(1)]),
+          transition("adventurer-pick-up-to-interact", "pick-up", "interact", 0.2, 0, BACKWARD, [exitTime(1)]),
+        ],
+      },
+    ],
+    animationObject: createDefaultAnimationObjectGraph(),
+  };
+}
+
+/** Rig_Large: its library has walking and running only, so one Move state blends them by Speed. */
+function largeMannequinGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  const animations = ctx.assets.kaykit.largeAnimations;
+  const clip = (name: string) => kaykitClip(ctx, animations, name);
+  return singleMachineGraph("3d", {
+    name: NAMES.largeGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.largeSkeleton, "the KayKit Rig_Large Skeleton"),
+    machineName: "Locomotion",
+    entryStateId: "move",
+    states: [moveState(clip(KAYKIT_CLIPS.walk), clip(KAYKIT_CLIPS.run), 80)],
+    transitions: [],
+    variables: [SPEED, CHEER],
+  });
+}
+
 /** An Animation's clip name and length as imported (Play re-resolves both from the catalog). */
 function animationClip(ctx: FeatureTestContext, guid: string): FeatureTestClip {
   const asset = ctx.registry.getByGuid(guid);
@@ -385,8 +562,7 @@ function ruleGraph(terms: readonly RuleTerm[]): SerializedGraph {
  * Set Anim Graph Variable Speed, then Cheer = Speed < 0.1. The graph component
  * is found by class (Get Component Ref), so instance component ids never matter.
  */
-async function saveLocomotor(ctx: FeatureTestContext, graphGuid: string): Promise<PlacedClass> {
-  const modelGuid = requireRef(ctx.assets.mannequin.modelGuid, "the Mannequin Model");
+async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: string, graphGuid: string): Promise<PlacedClass> {
   const elapsed = varMember("ft-anim-var-elapsed", "Elapsed", "float", 0, { category: "Locomotion" });
   const phase = varMember("ft-anim-var-phase", "Phase", "float", 0, { category: "Locomotion" });
   const cycleRate = varMember("ft-anim-var-cycle-rate", "CycleRate", "float", CYCLE_RATE, { category: "Locomotion" });
@@ -437,7 +613,7 @@ async function saveLocomotor(ctx: FeatureTestContext, graphGuid: string): Promis
       gWire("calm", "out", "set-cheer", "value"),
     ],
   });
-  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.locomotor, parentClass: "Actor", graph });
+  const ref = await ctx.saveClass({ folder: FOLDER, name, parentClass: "Actor", graph });
   return { ref, components };
 }
 
