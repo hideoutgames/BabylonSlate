@@ -230,8 +230,8 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
   place(refs.characters.knight, "ft-animscene-knight", "Knight", -2.5, 0);
   place(refs.characters.rogue, "ft-animscene-rogue", "Rogue Hooded", 0, roundTo(CYCLE_SECONDS / 2, 100));
   place(refs.characters.largeMannequin, "ft-animscene-large", "Mannequin Large", 2.5, roundTo(CYCLE_SECONDS / 4, 100));
-  add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-1.25, 0.05, -1.6], "Shared Rig_Medium Skeleton", font));
-  add(caption("ft-animscene-caption-large", "Rig_Large Caption", [2.5, 0.05, -1.6], "Rig_Large", font));
+  add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-1.25, 0.05, -1.6], "Shared Skeleton", font, 0.35));
+  add(caption("ft-animscene-caption-large", "Rig_Large Caption", [2.5, 0.05, -1.6], "Rig_Large", font, 0.35));
   await ctx.addSceneDocument({ kind: "scene", folder: SCENES_FOLDER, name: ANIMATION_SCENE, content: scene, order: SCENE_SAVE_ORDER.scene });
 }
 
@@ -628,11 +628,11 @@ function locomotorActor(placed: PlacedClass, id: string, name: string, position:
   });
 }
 
-function caption(id: string, name: string, position: Vec3, text: string, fontAssetGuid: string | null): SerializedActor {
+function caption(id: string, name: string, position: Vec3, text: string, fontAssetGuid: string | null, size = 0.5): SerializedActor {
   return actor(id, name, tf(position), [
     comp(`${id}-text`, "Text3DComponent", {
       text,
-      size: 0.5,
+      size,
       color: [0.9, 0.9, 0.95],
       alignment: "center",
       fontAssetGuid,
