@@ -21,7 +21,7 @@ The pages in this section cover Class graphs.
 - **Reference pins** (small diamonds) take a variable rather than a value, and the node can change that variable. See [Reference pins](pin-types.md#reference-pins).
 - **Pure nodes** have no execution pins, such as [Add](class/add.md) or [Get Actor Location](class/get-actor-location.md). They produce a value when a connected node needs it: once for each execution node that runs, however many wires leave the pure node, and again for the next execution node. A [Random Float](class/random-float.md) wired to two inputs of one node is one number; to keep a value across several execution nodes, store it in a variable.
 - **Latent nodes**, such as [Delay](class/delay.md), finish later without pausing the rest of the game. They show a clock icon.
-- **Tooltips:** hover a node's title to see what it does, or a pin name with a dotted underline to see what the pin is for. On touch, tap it. Class graphs and Particle Graphs show them where the node or pin has a description.
+- **Tooltips:** hover a node's title for a second to see what it does, or a pin name with a dotted underline to see what the pin is for. On touch, tap it. Class graphs and Particle Graphs show them where the node or pin has a description.
 
 ## Add a node
 

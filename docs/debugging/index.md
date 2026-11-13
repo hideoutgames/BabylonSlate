@@ -39,17 +39,24 @@ While a Simulation runs, its controls sit in the toolbar where **Simulate** was:
 | Control | Does |
 | --- | --- |
 | **Pause** / **Resume** | Freezes gameplay so you can inspect values that would otherwise keep changing. |
-| **Step** | While paused, advances the Simulation by one tick and pauses again. The view shows the new tick. |
 | **Stop** (red) | Ends the Simulation. Its tooltip says whether your changes are kept or discarded. |
 | **Game** / **Edit** | One button showing the current input; tap it to switch. **Game** sends keys, touch and the mouse to the game. **Edit** lets you select, inspect and move runtime objects with the **Move**, **Rotate** and **Scale** tools in the viewport. Clicking outside the game, or pressing Esc or Tab, also switches to **Edit**. |
 | **Return To Scene** | Appears when another tab is open, and brings the simulated scene back. |
 | **Debug Instance** | Appears while a Class, Behaviour Tree or Animation Graph is open. Picks which object's graph run you watch ([Watch a graph run](#watch-a-graph-run)). |
 
+While the Simulation is paused, a separate group of debugging controls sits to the left of these:
+
+| Control | Does |
+| --- | --- |
+| Asset name | Appears after a breakpoint stopped the Simulation, naming the Class, Behaviour Tree or Animation Graph it stopped in. A long name is cut short with an ellipsis; its tooltip names the event or function, the node and the object. Choose it to open the node again. |
+| **Step Back** / **Step Forward** | Walk through the nodes the watched object ran, one at a time ([Step through a run](#step-through-a-run)). |
+| **Next Frame** | Advances the Simulation by one tick and pauses again. The view shows the new tick. |
+
 The editor camera you move in **Edit** does not change the game camera. Authored documents stay read-only until you stop.
 
 ### Pause on errors
 
-When a script throws, a [Log](../scripting/class/log.md) node writes an Error, or an [Assert](../scripting/class/assert.md) fails during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Step** to advance one tick at a time. Play stops the same way and shows the editor ([Stop in Play](#stop-in-play)).
+When a script throws, a [Log](../scripting/class/log.md) node writes an Error, or an [Assert](../scripting/class/assert.md) fails during a Simulation, the Simulation pauses at the end of that tick and opens the graph at the node that caused it. The rest of that tick still runs. Choose **Resume** to carry on, or **Next Frame** to advance one tick at a time. Play stops the same way and shows the editor ([Stop in Play](#stop-in-play)).
 
 Each node pauses the game only the first time: later errors from the same node add to its count in the **Preview Session Report** without pausing again. Turn this off with **Pause On Errors** in **Engine Settings > Debugger**.
 
@@ -65,7 +72,7 @@ A breakpoint stops a Simulation or Play when a node runs. You can set one on any
 
 A red tab with a stop sign then marks the node, and a red ring marks a transition (either direction of a Both Ways pair). A striped tab or a faint ring means the breakpoint is disabled: it is kept but does not stop. Click a node's tab to remove its breakpoint. The node's menu has **Remove Breakpoint**, **Disable Breakpoint** / **Enable Breakpoint** and **Edit Breakpoint…**, and shows each one's [shortcut](../start/shortcuts.md#play). With several nodes selected, **Disable Breakpoint** turns off all their breakpoints if any is on, and **Enable Breakpoint** turns them all on; **Edit Breakpoint…** edits the node you opened the menu on.
 
-When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. The toolbar names where it stopped: the Class, the event or function, the node and the object. Choose that name to open the node again. **Debug Instance** switches to that object, and its path and pin values show from its next tick on, for example after a **Step**. Choose **Resume** to carry on, or **Step** to advance one tick at a time. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
+When any object runs a node that has a breakpoint, the Simulation finishes that tick, pauses and opens the graph at the node. The toolbar names the asset it stopped in; its tooltip adds the event or function, the node and the object. Choose the name to open the node again. **Debug Instance** switches to that object, and the frame it stopped in lights up in orange: every node it ran in that asset's graphs that tick, with their pin values, ready to [step through](#step-through-a-run). Choose **Resume** to carry on, or **Next Frame** to advance one tick at a time; the toolbar keeps naming the stop until you resume or another breakpoint stops the game. If several breakpoints are hit in the same tick, the Simulation stops at the first. You can add, remove and disable breakpoints while a Simulation runs, even though the graph is read-only, and they apply from the next time the node runs.
 
 In a Behaviour Tree, a breakpoint stops when its node starts running and when it fails, whether by its own result, a decorator, a Time Limit or an abort. A node that keeps running into the next tick does not start again; a breakpoint on the root stops at the start of every pass through the tree. The toolbar names the tree, the node, **Started** or **Failed**, and the actor, and **Debug Instance** switches to that actor.
 
@@ -91,10 +98,11 @@ When Play reaches a breakpoint or an error, the game pauses (its time, physics a
 | Control | What it does |
 | --- | --- |
 | **Resume** | Returns to the game and carries on. |
-| **Stopped At** | Names where a breakpoint stopped Play. Choose it to open the node again. |
 | **Stop** | Ends Play. |
 
-The **Debug** menu stays available. Documents are read-only until you choose **Resume** or **Stop**, but you can still add, remove and disable breakpoints. The Scene view does not redraw until Play ends. To walk through what the object ran, use the [stepping bar](#step-through-a-run) on its graph.
+To their left sits the same group of debugging controls as in a paused Simulation: the name of the asset a breakpoint stopped in, **Step Back**, **Step Forward** and **Next Frame** ([Simulate controls](#simulate-controls)). The frame Play stopped in lights up on the graph, even though nothing was watched while the game ran.
+
+The **Debug** menu stays available. Documents are read-only until you choose **Resume** or **Stop**, but you can still add, remove and disable breakpoints. The Scene view does not redraw until Play ends.
 
 ## Watch a graph run
 
@@ -120,7 +128,7 @@ When a node runs for that object, its outline turns orange and fades over a quar
 
 The execution wire that was taken lights up, and so do the data wires the node read, including those that pass through [pure nodes](../scripting/index.md#nodes-and-pins). Nodes without execution pins never get an outline of their own.
 
-Hover a data pin on a computer, or tap its name on a touch screen (tap it again, or anywhere else, to close it), to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. Pins inside a chain of [pure nodes](../scripting/index.md#nodes-and-pins), such as a variable getter feeding a **Multiply** that feeds a **Clamp**, show the value of the chain's latest run, so you can follow a value from link to link. A pure node that nothing ran through has no value yet.
+Hover a data pin on a computer (the tip opens at once), or tap its name on a touch screen (tap it again, or anywhere else, to close it), to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. Pins inside a chain of [pure nodes](../scripting/index.md#nodes-and-pins), such as a variable getter feeding a **Multiply** that feeds a **Clamp**, show the value of the chain's latest run, so you can follow a value from link to link. A pure node that nothing ran through has no value yet.
 
 The **Animation Object** mode of an Animation Graph works the same way for the object you picked.
 
@@ -143,7 +151,7 @@ The **Watches** window, opened from a Class's **Windows** menu, keeps chosen val
 - To watch a pin, choose **Watch Pin** in a Class graph node's menu, then the pin. It lists the node's outputs and the inputs that have a wire. Choose the pin again to stop watching it.
 - To watch a variable, choose **Add Watch** in the variable's menu in the **Class** panel. Inherited variables work too. A function's local variables and a component's variables can't be watched.
 
-Each row shows the latest value, as text with the same limits as a pin's tip. A variable updates whenever it changes, even when another object's script changes it. While the Simulation is paused, values hold, and a **Step** updates them. While you [step through a run](#step-through-a-run), pin watches show the value at that step; variables keep their latest value. Instead of a value, a row shows:
+Each row shows the latest value, as text with the same limits as a pin's tip. A variable updates whenever it changes, even when another object's script changes it. While the Simulation is paused, values hold, and **Next Frame** updates them. While you [step through a run](#step-through-a-run), pin watches show the value at that step; variables keep their latest value. Instead of a value, a row shows:
 
 - **Not Debugged** when no Simulation, or Play stopped in the editor, is showing that Class. Watches update only for the Class you have open, and running Play updates none until it stops at a breakpoint or an error.
 - **No Object** when **Debug Instance** is **None**.
@@ -153,16 +161,18 @@ Each row shows the latest value, as text with the same limits as a pin's tip. A 
 
 ### Step through a run
 
-While a Simulation, or Play stopped in the editor, is paused, a Class or Animation Object graph shows a stepping bar at the bottom of the canvas. It walks through the nodes the object you picked ran, one at a time and in order:
+While a Simulation, or Play stopped in the editor, is paused, the toolbar's debugging controls walk through the nodes the object you picked in **Debug Instance** ran, one at a time and in order:
 
 - **Step Back** goes to the node that ran before. From the live view it starts at the last node of the latest tick, and it crosses into earlier ticks, as far back as the last 8.
 - **Step Forward** goes to the node that ran next. At the newest one it runs the game for one more tick and stops at that tick's first node.
 
-The bar names the tick and the step, such as **Tick 120 · Step 4 of 17**, and shows **Past** while you look at an earlier step. At each step the graph opens at the node, a function's graph too, and lights the path that tick took up to it. Pin tips and pin watches show the values they had at that step. Stepping back only reviews what was recorded; it never rewinds the game.
+Between the two buttons the toolbar names the tick and the step, such as **Tick 120 · Step 4 of 17**, and shows **Past** while you look at an earlier step. At each step the graph opens at the node, a function's graph too, and lights the path that tick took up to it. Pin tips and pin watches show the values they had at that step. Stepping back only reviews what was recorded; it never rewinds the game.
 
-A tick keeps its first 200 steps. When it ran more, its last recorded step says **Later Steps Not Recorded**. The bar says **Nothing Recorded Yet** until the object has run a tick while being watched, for example right after a breakpoint stopped on an object Debug Instance was not following. Resuming, or a tick that runs some other way, returns to the live view.
+A tick keeps its first 200 steps. When it ran more, its last recorded step says **Later Steps Not Recorded**. The toolbar says **Nothing Recorded Yet** until the object has run a tick while being watched. After a breakpoint stop, the tick it stopped in is already recorded, even for an object **Debug Instance** was not following; that recording covers the graphs of the asset the breakpoint is in. Resuming, or a tick that runs some other way, returns to the live view.
 
-The graphs stay read-only: watching never changes your assets or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Simulation and Play compile Class graphs and Animation Object graphs with these checks; while nothing is watched or set, each costs a quick check per node. Preview Build and exported games do not include them, so they pay nothing for it.
+On a narrow window, **Step Back** and **Step Forward** move into the toolbar's **More Actions** menu, as does the asset name.
+
+The graphs stay read-only: watching never changes your assets or the running game. Outside a Simulation a graph shows no highlights and no tips, and editing it works as always. Simulation and Play compile Class graphs and Animation Object graphs with these checks; while nothing is watched or set, each costs a quick check per node. While breakpoints are set, objects running an asset with a breakpoint also record each tick in that asset's graphs, so a stop can show the frame it stopped in; the recording is dropped at the end of every tick that does not stop. Preview Build and exported games do not include them, so they pay nothing for it.
 
 ## Stats
 
