@@ -9,7 +9,7 @@ import {
   type AnimState,
   type AnimTransition,
 } from "@haptic/anim-graph";
-import { normalizeAnimationPayload } from "@haptic/assets";
+import { normalizeAnimationPayload, type BlendSpacePayload } from "@haptic/assets";
 import {
   createDefaultScene,
   lookAtRotation,
@@ -60,6 +60,10 @@ const FEATURE_TEST_ANIMATION_NAMES = {
   adventurerGraph: "FT_AnimAdventurer",
   /** Rig_Large graph: one Move state blending Walk into Run by Speed. */
   largeGraph: "FT_AnimLargeMannequin",
+  /** Speed Blend Space of the Mannequin's walk and sprint, for the locomotion graph's Run state. */
+  mannequinBlendSpace: "FT_AnimMannequinRun",
+  /** Speed Blend Space of Rig_Medium's Walking_A and Running_A, for the adventurers' Move state. */
+  adventurerBlendSpace: "FT_AnimAdventurerMove",
   /** Locomotor Classes of the KayKit characters, one per Model. */
   knight: "FT_AnimKnight",
   rogue: "FT_AnimRogue",
@@ -135,12 +139,26 @@ const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
  */
 export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promise<void> {
   await authorDoorOpenDuration(ctx);
-  const locomotionGraph = await saveGraph(ctx, locomotionGraphDocument(ctx));
+  const mannequinRun = await saveSpeedBlendSpace(
+    ctx,
+    NAMES.mannequinBlendSpace,
+    requireRef(ctx.assets.mannequin.skeletonGuid, "the Mannequin Skeleton"),
+    requireRef(ctx.assets.mannequin.animations[MANNEQUIN_CLIPS.walk], `the Mannequin "${MANNEQUIN_CLIPS.walk}" Animation`),
+    requireRef(ctx.assets.mannequin.animations[MANNEQUIN_CLIPS.run], `the Mannequin "${MANNEQUIN_CLIPS.run}" Animation`),
+  );
+  const adventurerMove = await saveSpeedBlendSpace(
+    ctx,
+    NAMES.adventurerBlendSpace,
+    requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    requireRef(ctx.assets.kaykit.mediumAnimations[KAYKIT_CLIPS.walk], `the KayKit "${KAYKIT_CLIPS.walk}" Animation`),
+    requireRef(ctx.assets.kaykit.mediumAnimations[KAYKIT_CLIPS.run], `the KayKit "${KAYKIT_CLIPS.run}" Animation`),
+  );
+  const locomotionGraph = await saveGraph(ctx, locomotionGraphDocument(ctx, mannequinRun));
   const doorGraph = await saveGraph(ctx, doorGraphDocument(ctx));
   const mannequin = requireRef(ctx.assets.mannequin.modelGuid, "the Mannequin Model");
   const locomotor = await saveLocomotor(ctx, NAMES.locomotor, mannequin, locomotionGraph);
   const kaykit = ctx.assets.kaykit;
-  const adventurerGraph = await saveGraph(ctx, adventurerGraphDocument(ctx));
+  const adventurerGraph = await saveGraph(ctx, adventurerGraphDocument(ctx, adventurerMove));
   const largeGraph = await saveGraph(ctx, largeMannequinGraphDocument(ctx));
   const characters = {
     knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph),
@@ -248,6 +266,46 @@ async function authorDoorOpenDuration(ctx: FeatureTestContext): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Blend Spaces
+
+/**
+ * A one-axis Speed Blend Space: `walk` alone up to Run Speed − 1, blending into `run` by Run Speed, run alone past
+ * it. Both clips share one cycle, so the feet stay in step as the blend moves.
+ */
+async function saveSpeedBlendSpace(
+  ctx: FeatureTestContext,
+  name: string,
+  skeletonGuid: string,
+  walk: string,
+  run: string,
+): Promise<string> {
+  const payload: BlendSpacePayload = {
+    skeletonGuid,
+    previewModelGuid: null,
+    axes: [{ name: "Speed", min: 0, max: 2 * SPEED_AMPLITUDE, gridDivisions: 6, smoothingSeconds: 0.2, wrap: false }],
+    samples: [
+      { animationGuid: walk, x: RUN_SPEED - 1, y: 0, rateScale: 1 },
+      { animationGuid: run, x: RUN_SPEED, y: 0, rateScale: 1 },
+    ],
+  };
+  return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
+}
+
+/** A state that plays `blendSpaceGuid` by the graph's Speed. */
+function speedBlendSpaceState(id: string, name: string, x: number, y: number, blendSpaceGuid: string): AnimState {
+  const speed = animGraphMembersFromVariables([SPEED])[0]!;
+  return {
+    id,
+    name,
+    position: { x, y },
+    stateGraph: poseGraph("3d", "locomotion", [
+      gNode("locomotion", "anim.pose.blendSpacePlayer", 60, 80, { assetGuid: blendSpaceGuid }),
+      getVar("get-speed", speed, -260, 120),
+    ], [gWire("get-speed", "value", "locomotion", "x")]),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Anim Graph documents
 
 async function saveGraph(ctx: FeatureTestContext, doc: AnimGraphDocument): Promise<string> {
@@ -267,29 +325,12 @@ async function saveGraph(ctx: FeatureTestContext, doc: AnimGraphDocument): Promi
  * clip finishes. Every condition drives Enter State; Exit State stays unwired
  * (true), so one-way and Both Ways transitions behave the same.
  */
-function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+function locomotionGraphDocument(ctx: FeatureTestContext, runBlendSpace: string): AnimGraphDocument {
   const clip = (name: string) =>
     animationClip(ctx, requireRef(ctx.assets.mannequin.animations[name], `the Mannequin "${name}" Animation`));
-  const speed = animGraphMembersFromVariables([SPEED])[0]!;
   const cheer = animGraphMembersFromVariables([CHEER])[0]!;
-  // Run blends Walk into Sprint as Speed climbs past Run Speed: Alpha = Speed - (Run Speed - 1), clamped by Blend.
-  const run: AnimState = {
-    id: "run",
-    name: "Run",
-    position: { x: 720, y: 220 },
-    stateGraph: poseGraph("3d", "blend", [
-      playerNode("3d", "walk", 60, 40, clip(MANNEQUIN_CLIPS.walk)),
-      playerNode("3d", "sprint", 60, 220, clip(MANNEQUIN_CLIPS.run)),
-      getVar("get-speed", speed, -260, 400),
-      gNode("speed-over-walk", "math.sub", 60, 400, { "default:b": RUN_SPEED - 1 }),
-      gNode("blend", "anim.pose.blend", 500, 120),
-    ], [
-      gWire("walk", "pose", "blend", "a"),
-      gWire("sprint", "pose", "blend", "b"),
-      gWire("get-speed", "value", "speed-over-walk", "a"),
-      gWire("speed-over-walk", "out", "blend", "alpha"),
-    ]),
-  };
+  // Run plays the Mannequin's Speed Blend Space: Walk into Sprint as Speed climbs past Run Speed.
+  const run = speedBlendSpaceState("run", "Run", 720, 220, runBlendSpace);
   // Cheer plays its emote while Cheer is set and settles to the rest pose otherwise.
   const cheerState: AnimState = {
     id: "cheer",
@@ -405,7 +446,7 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
  * Rig_Medium: Idle ⇄ Move on Speed; Cheer starts the gestures, Interact → Pick Up by exit time, and Pick Up returns
  * to Idle once it has played.
  */
-function adventurerGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string): AnimGraphDocument {
   const animations = ctx.assets.kaykit.mediumAnimations;
   const clip = (name: string) => kaykitClip(ctx, animations, name);
   return stateMachineGraph("3d", {
@@ -414,7 +455,7 @@ function adventurerGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
     entryStateId: "idle",
     states: [
       playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
-      moveState(clip(KAYKIT_CLIPS.walk), clip(KAYKIT_CLIPS.run), 400),
+      speedBlendSpaceState("move", "Move", 400, 220, moveBlendSpace),
       playerState("3d", "interact", "Interact", 80, 480, clip(KAYKIT_CLIPS.interact), { loop: false }),
       playerState("3d", "pick-up", "Pick Up", 400, 480, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
     ],

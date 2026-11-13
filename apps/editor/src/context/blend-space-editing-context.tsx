@@ -25,6 +25,7 @@ export function BlendSpaceEditingProvider({ children }: { children: ReactNode })
   return <BlendSpaceEditingContext.Provider value={value}>{children}</BlendSpaceEditingContext.Provider>;
 }
 
+/* eslint-disable react-refresh/only-export-components -- context module */
 /** The open Blend Space's editing state; panels outside the provider (tests) get local state. */
 export function useBlendSpaceEditing(): BlendSpaceEditingValue {
   const shared = useContext(BlendSpaceEditingContext);
@@ -32,3 +33,4 @@ export function useBlendSpaceEditing(): BlendSpaceEditingValue {
   const [previewPoint, setPreviewPoint] = useState<BlendSpacePreviewPoint | null>(null);
   return shared ?? { selectedSample, setSelectedSample, previewPoint, setPreviewPoint };
 }
+/* eslint-enable react-refresh/only-export-components */

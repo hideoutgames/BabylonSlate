@@ -20,6 +20,7 @@ import {
   patchStateMachine,
   patchTransition,
   primaryPosePlayer,
+  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   resolveAnimGraphClips,
   serializedToStateMachine,
   setTransitionBidirectional,
@@ -190,13 +191,20 @@ function patchState(
   }));
 }
 
-/** What a state plays, for its card: its single player's clip, else "State Graph". */
+/** What a state plays, for its card: its single player's clip, the Blend Space its graph plays from, else "State Graph". */
 function stateClipLabel(
   state: AnimState,
   catalog: readonly AnimClipCatalogEntry[],
 ): string {
   const player = singlePlayerOf(state.stateGraph);
-  if (!player) return primaryPosePlayer(state.stateGraph) ? "State Graph" : "No Clip";
+  if (!player) {
+    const primary = primaryPosePlayer(state.stateGraph);
+    if (primary?.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+      const guid = typeof primary.data.assetGuid === "string" ? primary.data.assetGuid : "";
+      return guid ? catalog.find((row) => row.guid === guid)?.name ?? "Missing Blend Space" : "No Blend Space";
+    }
+    return primary ? "State Graph" : "No Clip";
+  }
   const assetGuid = typeof player.data.assetGuid === "string" ? player.data.assetGuid : "";
   if (!assetGuid) return "No Clip";
   return catalog.find((row) => row.guid === assetGuid)?.name ?? "Missing Clip";

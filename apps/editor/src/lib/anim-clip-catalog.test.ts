@@ -188,4 +188,30 @@ describe("animClipCatalogFromAssets", () => {
       }),
     ]);
   });
+
+  it("lists a Blend Space with its Skeleton, axes and samples", () => {
+    const [entry] = animClipCatalogFromAssets([
+      {
+        header: {
+          guid: "bs",
+          type: "BlendSpace",
+          name: "BS_Loco",
+          payload: {
+            skeletonGuid: "rig",
+            axes: [{ name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0.2, wrap: false }],
+            samples: [{ animationGuid: "walk", x: 2, y: 0, rateScale: 1 }],
+          },
+        },
+      },
+    ]);
+    expect(entry).toMatchObject({
+      guid: "bs",
+      type: "BlendSpace",
+      skeletonGuid: "rig",
+      blendSpace: {
+        axes: [{ name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0.2, wrap: false }],
+        samples: [{ animationGuid: "walk", x: 2, y: 0, rateScale: 1 }],
+      },
+    });
+  });
 });

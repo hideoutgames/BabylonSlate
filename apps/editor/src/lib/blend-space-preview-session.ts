@@ -61,7 +61,7 @@ export class BlendSpacePreviewSession {
   setPoint(point: { x: number; y: number }): void {
     if (point.x === this.point.x && point.y === this.point.y) return;
     this.point = point;
-    if (!this.snapshot.playing) this.tick(0);
+    this.tick(0);
   }
 
   /** Real time × Speed while playing, at most a tenth of a second at once. */

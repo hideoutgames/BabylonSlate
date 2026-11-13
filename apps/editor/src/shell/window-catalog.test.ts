@@ -117,6 +117,20 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("camera-shake")).toBe("camera-shake-preview");
   });
 
+  it("opens a Blend Space on its Grid, with Animations on the left and Preview above the Inspector on the right", () => {
+    const windows = listDockWindows("blend-space");
+    expect(windows.map((entry) => [entry.id, entry.title])).toEqual([
+      ["blend-space-grid", "Grid"],
+      ["blend-space-animations", "Animations"],
+      ["blend-space-details", "Inspector"],
+      ["blend-space-preview", "Preview"],
+    ]);
+    expect(windows[1]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-grid", direction: "left" } });
+    expect(windows[2]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-grid", direction: "right" } });
+    expect(windows[3]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-details", direction: "above" } });
+    expect(primaryDockPanel("blend-space")).toBe("blend-space-grid");
+  });
+
   it("omits the Locks window when source control is off", () => {
     for (const kind of [
       "scene",

@@ -114,7 +114,9 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
     sx: PAD.left + ((x - xAxis.min) / (xAxis.max - xAxis.min)) * plotWidth,
     sy: yAxis ? PAD.top + (1 - (y - yAxis.min) / (yAxis.max - yAxis.min)) * plotHeight : PAD.top + plotHeight / 2,
   });
+  /** The axes' position under a client point, clamped to the axes; null for a point with no coordinates. */
   const fromClient = (clientX: number, clientY: number) => {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
     const rect = ref.current?.getBoundingClientRect();
     const sx = clientX - (rect?.left ?? 0);
     const sy = clientY - (rect?.top ?? 0);
@@ -145,23 +147,27 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
     }
     event.currentTarget.setPointerCapture?.(event.pointerId);
     dragRef.current = { kind: "point", pointerId: event.pointerId };
-    setPreviewPoint(fromClient(event.clientX, event.clientY));
+    const at = fromClient(event.clientX, event.clientY);
+    if (at) setPreviewPoint(at);
   };
   const onMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    const at = fromClient(event.clientX, event.clientY);
+    if (!at) return;
     if (drag.kind === "point") {
-      setPreviewPoint(fromClient(event.clientX, event.clientY));
+      setPreviewPoint(at);
     } else if (drag.kind === "sample") {
-      const next = moveBlendSpaceSample(payload, drag.index, fromClient(event.clientX, event.clientY));
+      const next = moveBlendSpaceSample(payload, drag.index, at);
       if (next !== payload) commit(next, drag.mergeKey);
     }
   };
   const onUp = (event: ReactPointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    if (drag.kind === "tap" && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 8) {
-      setPreviewPoint(fromClient(event.clientX, event.clientY));
+    const at = fromClient(event.clientX, event.clientY);
+    if (drag.kind === "tap" && at && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 8) {
+      setPreviewPoint(at);
     }
     dragRef.current = null;
   };
@@ -182,9 +188,10 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
         }}
         onDrop={(event) => {
           const guid = event.dataTransfer.getData(BLEND_SPACE_ANIMATION_DRAG);
-          if (!guid) return;
+          const at = fromClient(event.clientX, event.clientY);
+          if (!guid || !at) return;
           event.preventDefault();
-          commit(addBlendSpaceSample(payload, guid, fromClient(event.clientX, event.clientY)));
+          commit(addBlendSpaceSample(payload, guid, at));
           setSelectedSample(payload.samples.length);
         }}
       >
