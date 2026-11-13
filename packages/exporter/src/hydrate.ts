@@ -339,7 +339,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   });
 
   const animations = [...animationPayloads].map(([guid, payload]) => ({ guid, payload }));
-  const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(animations);
+  // A Model plays the Animations retargeted onto it and every other Model's Animation on its Skeleton.
+  const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(
+    animations,
+    new Map([...game.modelPayloads].map(([guid, payload]) => [guid, payload.skeletonGuid])),
+  );
   const clipCatalog: AnimClipCatalogEntry[] = [
     ...[...animationPayloads.entries()].map(([guid, payload]) => ({
       guid,

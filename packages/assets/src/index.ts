@@ -37,6 +37,7 @@ export * from "./simple-collision";
 export * from "./occluder-bake";
 export * from "./mesh-collision";
 export * from "./skeleton-payload";
+export * from "./skeleton-match";
 export * from "./animation-payload";
 export * from "./skybox-creator-payload";
 export * from "./audio-reverb";

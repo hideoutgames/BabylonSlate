@@ -39,6 +39,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Duplicate | Copy the selection in place. |
 | Rename | Rename one asset or folder on its tile (see [Rename](#rename)). References to it stay connected. |
 | Retarget… | Animations only. Retarget the selected Animations to another Skeleton. |
+| Assign Skeleton… | One Model with a Skeleton. Move the Model and its Animations onto another Skeleton with the same bones (see [Skeleton](../assets/skeleton.md#move-a-model-onto-another-skeleton)). |
 | Move… / Copy to Folder… | Move or copy the selection to a folder you pick. |
 | Copy Asset Reference | Copy the asset's ID to the clipboard. If the clipboard refuses the copy, the Content Browser says so. |
 | Show References | Open the references graph (below). |

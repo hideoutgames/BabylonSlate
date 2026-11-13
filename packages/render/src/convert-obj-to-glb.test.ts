@@ -105,7 +105,7 @@ describe("exportConvertedSceneToGlb", () => {
     expect(browse!.hasMeshes).toBe(false);
     expect(browse!.animations.map((clip) => clip.name)).toEqual(["Idle"]);
     expect(browse!.rigKind).toBe("hierarchy");
-    expect(browse!.boneNames).toEqual(["Root", "Hips"]);
+    expect(browse!.bones.map((bone) => bone.name)).toEqual(["Root", "Hips"]);
   });
 
   it("refuses a scene with neither meshes nor animations", async () => {

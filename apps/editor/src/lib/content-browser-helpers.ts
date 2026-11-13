@@ -1,6 +1,7 @@
 import type { IndexedAsset, TextureCompressionState as SavedTextureCompressionState } from "@haptic/assets";
 import {
   normalizeAnimationPayload,
+  normalizeModelPayload,
   contentEntryNameError,
   PARTICLE_SYSTEM_MAX_EMITTERS,
   renamedAssetPath,
@@ -432,6 +433,7 @@ type ContentBrowserContextAction =
   | "duplicate"
   | "rename"
   | "retarget"
+  | "assign-skeleton"
   | "move"
   | "copy"
   | "copy-asset-reference"
@@ -480,10 +482,17 @@ function createActionsForTypes(types: readonly string[], canCreateChildClass: bo
   return actions;
 }
 
+/** A Model with a Skeleton can move onto another Skeleton with the same bones. */
+export function canAssignSkeleton(modelPayload: unknown): boolean {
+  return normalizeModelPayload(modelPayload ?? {}).skeletonGuid !== null;
+}
+
 export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
   canRetarget?: boolean;
+  /** The one selected asset is a Model with a Skeleton. */
+  canAssignSkeleton?: boolean;
   canGenerateThumbnails?: boolean;
   singleAssetType?: string;
   /** Every selected asset's type, when the caller knows them. */
@@ -514,6 +523,9 @@ export function contentBrowserContextActions(options: {
   if (total === 1) actions.push("rename");
   if (options.canRetarget && options.assetCount > 0 && options.folderCount === 0) {
     actions.push("retarget");
+  }
+  if (options.canAssignSkeleton && options.assetCount === 1 && options.folderCount === 0) {
+    actions.push("assign-skeleton");
   }
   actions.push("move", "copy");
   if (options.assetCount === 1 && options.folderCount === 0) {

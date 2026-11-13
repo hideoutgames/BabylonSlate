@@ -7,6 +7,7 @@ import { Matrix, Quaternion } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { MorphTarget } from "@babylonjs/core/Morph/morphTarget";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { isRigJointNode } from "./skeleton-preview";
 
@@ -161,6 +162,39 @@ export function withTransformNodeAnimationTargets(group: AnimationGroup): {
 }
 
 /** Name-match retarget that first proxies Mesh clip targets for AnimatorAvatar. */
+/**
+ * Binds another file's clip to a Model on the same Skeleton: each channel drives the node (or morph target) of the
+ * same name under `targetRoot`, with its keys unchanged. Channels with no such node are dropped; null when none bind.
+ */
+export function bindAnimationGroupByName(source: AnimationGroup, targetRoot: TransformNode): AnimationGroup | null {
+  const nodes = new Map<string, TransformNode>();
+  for (const node of [targetRoot, ...targetRoot.getChildTransformNodes(false)]) {
+    if (!nodes.has(node.name)) nodes.set(node.name, node);
+  }
+  const morphTargets = new Map<string, MorphTarget>();
+  for (const mesh of targetRoot.getChildMeshes(false)) {
+    const manager = mesh.morphTargetManager;
+    for (let index = 0; manager && index < manager.numTargets; index++) {
+      const target = manager.getTarget(index);
+      if (!morphTargets.has(target.name)) morphTargets.set(target.name, target);
+    }
+  }
+  const group = new AnimationGroup(source.name, targetRoot.getScene());
+  for (const { animation, target } of source.targetedAnimations) {
+    const name = (target as { name?: unknown } | null)?.name;
+    if (typeof name !== "string") continue;
+    const bound = target instanceof MorphTarget ? morphTargets.get(name) : nodes.get(name);
+    if (bound) group.addTargetedAnimation(animation, bound);
+  }
+  if (group.targetedAnimations.length === 0) {
+    group.dispose();
+    return null;
+  }
+  group.from = source.from;
+  group.to = source.to;
+  return group;
+}
+
 export function retargetAnimationGroupWithMeshProxy(
   source: AnimationGroup,
   targetRoot: TransformNode,
