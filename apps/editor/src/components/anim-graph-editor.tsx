@@ -11,6 +11,7 @@ import {
   findReverseTransition,
   hydrateAnimGraphForEditor,
   animTransitionFromDrag,
+  animTransitionOnSide,
   normalizeAnimConnection,
   transitionAtWire,
   parseAnimGraphDocument,
@@ -937,6 +938,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             return { ...connection, ...next };
           }}
           connectDraggedToNode={animTransitionFromDrag}
+          edgeBreaksAtPin={animTransitionOnSide}
           onSelectionChange={(nodeIds) => {
             queueMicrotask(() => setSelectedIds(nodeIds));
           }}

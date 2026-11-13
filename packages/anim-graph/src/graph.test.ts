@@ -13,6 +13,7 @@ import {
   animPoseGraphs,
   animTransitionEdgeId,
   animTransitionFromDrag,
+  animTransitionOnSide,
   transitionAtWire,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
@@ -613,6 +614,19 @@ describe("State Machine canvas", () => {
     // On a handle: that handle's side, whichever plate.
     expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: "bottom-out", point: null })?.targetHandle).toBe("bottom-in");
     expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: null, point: null, toNodeId: "idle" })).toBeNull();
+  });
+
+  it("breaks every transition on the dragged side of a state, in or out, from either plate", () => {
+    const out = { source: "idle", target: "run", sourceHandle: "right-out", targetHandle: "left-in" };
+    const into = { source: "run", target: "idle", sourceHandle: "left-out", targetHandle: "right-in" };
+    const top = { source: "idle", target: "jump", sourceHandle: "top-out", targetHandle: "bottom-in" };
+    const breaks = (handle: string) => [out, into, top].filter((edge) => animTransitionOnSide(edge, "idle", handle));
+    expect(breaks("right-out")).toEqual([out, into]);
+    expect(breaks("right-in")).toEqual([out, into]);
+    expect(breaks("top-in")).toEqual([top]);
+    // The other state's side does not count, and a handle without a side breaks nothing.
+    expect(animTransitionOnSide(out, "run", "right-in")).toBe(false);
+    expect(animTransitionOnSide(out, "idle", "execOut")).toBe(false);
   });
 
   it("flips a one-way transition with its handles, and leaves a Both Ways pair alone", () => {

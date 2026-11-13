@@ -276,15 +276,19 @@ describe("animation graph and behaviour tree dock catalogs", () => {
     });
   });
 
-  it("anchors Animation Graph side docks to the graph, and Preview Values under the Preview, in both graph types", () => {
+  it("anchors Animation Graph side docks to the graph, the Preview above the Inspector and Preview Values under Variables, in both graph types", () => {
+    const sideColumns: Record<string, string> = {
+      "anim-graph-preview": "anim-graph-details",
+      "anim-graph-preview-values": "anim-graph-variables",
+    };
     for (const kind of ["anim-graph-3d", "anim-graph-2d"] as const) {
       for (const entry of listDockWindows(kind)) {
         if (!entry.defaultPosition) continue;
-        expect(entry.defaultPosition.referencePanelId).toBe(entry.id === "anim-graph-preview-values" ? "anim-graph-preview" : "anim-graph-graph");
+        expect(entry.defaultPosition.referencePanelId).toBe(sideColumns[entry.id] ?? "anim-graph-graph");
       }
       expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview")).toMatchObject({
         title: "Preview",
-        defaultPosition: { direction: "right" },
+        defaultPosition: { direction: "above" },
       });
       expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview-values")).toMatchObject({
         title: "Preview Values",

@@ -15,13 +15,13 @@ To make a 3D graph on a rig, right-click its Skeleton or one of its Models and c
 
 ## Editor
 
-Double-tap an Animation Graph to open it. Its **Graph** window shows the graph's State Machine; the **Animation Object** window, a tab beside it, shows the graph's script. Both are windows like any other: drag a tab to see them side by side, or reopen a closed one from **Windows**.
+Double-tap an Animation Graph to open it. Its **Graph** window shows the graph's State Machine; the **Animation Object** window, a tab beside it, shows the graph's script. The **Preview** window sits above the **Inspector**, and **Preview Values** below **Variables**. All are windows like any other: drag a tab to move one, or reopen a closed one from **Windows**.
 
 **Graph**
 
 The Graph opens on the State Machine. A bar above the canvas shows where you are: **State Machine**, then the state's name while you are in its state graph, such as **State Machine › Run**. Tap **State Machine** in it, or tap **Back**, to step out.
 
-- **State Machine**: each state is a node, and the graph starts in the entry state. Drag from any side of a state onto another state to add a transition from the state you dragged: it leaves by the side you dragged from and enters the side you release on, or the side facing the first state when you release near the middle. Dragging between the same two states again moves that transition to the new sides. Select a wire or its blend dot to edit that transition. Double-tap a state to open its state graph, or a wire to open its transition's rule.
+- **State Machine**: each state is a node, and the graph starts in the entry state. Drag from any side of a state onto another state to add a transition from the state you dragged: it leaves by the side you dragged from and enters the side you release on, or the side facing the first state when you release near the middle. Dragging between the same two states again moves that transition to the new sides. Release on empty canvas away from the state to open **Add Node** and add a state there with the transition. Release anywhere else, such as close to the state you dragged from, to remove every transition on that side of it. Select a wire or its blend dot to edit that transition. Double-tap a state to open its state graph, or a wire to open its transition's rule.
 - **Two-way transitions**: a transition back between the same two sides shares the first one's wire, with an arrow at each end. Double-tapping a shared wire opens the rule of the direction whose arrowhead is nearer where you tapped. A transition back on other sides is a wire of its own.
 - **State graph**: each state's own graph, ending in its **Output Pose** (2D: **Output Frame**), which you cannot delete. Its result is what the state plays. A new state has one [Sequence Player](../scripting/animation/sequence-player.md) (2D: [Sprite Animation Player](../scripting/animation/sprite-animation-player.md)) wired to the output. Add nodes such as [Blend](../scripting/animation/blend.md) or [Blend Poses By Bool](../scripting/animation/blend-poses-by-bool.md) to mix clips in one state, or [Flip Frame](../scripting/animation/flip-frame.md) to face a sprite the other way.
 - **Transition rule**: the graph that decides when a transition fires. **Back To State Machine** returns with the transition selected.
@@ -37,6 +37,23 @@ The panels show:
 **Animation Object**
 
 The **Animation Object** window holds a script graph that runs for each Animation Graph component using the graph. It starts with [Event Initialize Animation](../scripting/animation/event-initialize-animation.md) and [Event Update Animation](../scripting/animation/event-update-animation.md). Use it to set the graph's variables.
+
+**Preview**
+
+The **Preview** window plays the graph in the editor, without a Simulation. It runs the graph's transition rules on the values in **Preview Values**, and the State Machine's canvas lights the state that plays and each transition taken, as when you [watch the graph run](#watch-the-graph-run).
+
+| Control | Description |
+| --- | --- |
+| Play / Pause | Starts or stops the graph. It plays while the window is visible. |
+| Step | Pauses and advances one frame (1/60 s). |
+| Restart | Returns to the entry state at time 0. Preview Values are kept. |
+| Speed | 0.25× to 2×. |
+| Preview Model | 3D. The Model the Preview shows, from the Models on the graph's Skeleton, or with no Skeleton, the Models its Animations come from. The choice is saved with the graph and is used only in the editor. |
+| Bones | 3D. Shows the Skeleton's bones instead of the mesh. |
+
+The bar ends with the playing state and its time. A 3D graph plays on a floor grid; drag to orbit. A 2D graph shows the current frame on a checkerboard, flipped as the state graph flips it.
+
+**Preview Values** lists the graph's variables with the values the Preview uses. They start at each variable's default and are kept until you change them, change the variable's type or choose **Reset Values**. They never change the variables' defaults.
 
 ## Settings
 

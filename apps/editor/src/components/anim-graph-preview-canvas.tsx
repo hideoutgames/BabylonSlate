@@ -38,7 +38,7 @@ export type AnimPreviewClip = {
 };
 
 /** A stable key for a clip list, so the canvas reloads only when the clips it binds change. */
-export function animPreviewClipsKey(clips: readonly AnimPreviewClip[]): string {
+function animPreviewClipsKey(clips: readonly AnimPreviewClip[]): string {
   return clips
     .map((clip) => [clip.animationGuid, clip.clipName, clip.source.kind, "modelGuid" in clip.source ? clip.source.modelGuid : ""].join(":"))
     .join("|");

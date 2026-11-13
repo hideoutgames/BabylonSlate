@@ -861,12 +861,8 @@ export function connectEndAction(
     if (decision.pointerOverNode) return "none";
     return "add-node";
   }
-  if (mode === "zone-add-node") {
-    if (isNearSnapPin(decision)) return "connect";
-    if (decision.pointerOverNode) return "none";
-    if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
-    return "none";
-  }
+  // Zone Add Node snap-connects onto a nearby compatible pin, then releases as the default mode does.
+  if (mode === "zone-add-node" && isNearSnapPin(decision)) return "connect";
   if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
   if (shouldBreakPinConnectionsOnConnectEnd(decision)) return "break";
   return "none";
