@@ -4,24 +4,21 @@ import {
   ANIM_STATE_LAYOUT_GAP_X,
   animGraphMembersFromVariables,
   animPaletteNodes,
-  animTransitions,
   createDefaultAnimGraph,
   createStateGraph,
   defaultAnimStatePosition,
   defaultAnimVariableValue,
   findReverseTransition,
-  findStateMachine,
   hydrateAnimGraphForEditor,
-  isPoseStateMachineType,
   animTransitionFromDrag,
   normalizeAnimConnection,
+  transitionAtWire,
   parseAnimGraphDocument,
   patchPosePlayer,
   patchStateGraph,
   patchStateMachine,
   patchTransition,
   primaryPosePlayer,
-  primaryStateMachine,
   resolveAnimGraphClips,
   serializedToStateMachine,
   setTransitionBidirectional,
@@ -61,7 +58,7 @@ import {
   animGraphEdgeTypes,
   animGraphNodeTypes,
 } from "@haptic/graph-ui";
-import { animStateMachineDebugGraphId, animStateMachineOfDebugGraphId, type BreakpointLocation } from "@haptic/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type BreakpointLocation } from "@haptic/bridge";
 import { parseDocumentId, type SerializedGraph } from "@haptic/core";
 import { normalizeAnimationPayload, type IndexedAsset } from "@haptic/assets";
 import type { Diagnostic } from "@haptic/scripting";
@@ -102,7 +99,6 @@ import { applyDataGraphAssetPicks, collectDataGraphAssets } from "../lib/data-gr
 import { documentBatch } from "../lib/document-batch";
 
 const DATA_TREE_KINDS = ["data-tree"] as const;
-const NO_TRANSITIONS: readonly AnimTransition[] = [];
 
 const VARIABLE_TYPES = [
   "bool",
@@ -119,7 +115,7 @@ function asAnimGraph(
   dimension: AnimGraphDimension = "3d",
 ): AnimGraphDocument {
   return resolveAnimGraphClips(
-    parseAnimGraphDocument(payload) ?? createDefaultAnimGraph("Locomotion", { dimension }),
+    parseAnimGraphDocument(payload, dimension) ?? createDefaultAnimGraph("Locomotion", { dimension }),
     catalog,
   );
 }
@@ -163,8 +159,8 @@ function uniqueVariableName(doc: AnimGraphDocument, base = "Variable"): string {
   return `${base} ${index}`;
 }
 
-function addAnimState(doc: AnimGraphDocument, machineId: string, dimension: AnimGraphDimension): AnimGraphDocument {
-  return patchStateMachine(doc, machineId, (machine) => ({
+function addAnimState(doc: AnimGraphDocument, dimension: AnimGraphDimension): AnimGraphDocument {
+  return patchStateMachine(doc, (machine) => ({
     ...machine,
     states: [
       ...machine.states,
@@ -180,11 +176,10 @@ function addAnimState(doc: AnimGraphDocument, machineId: string, dimension: Anim
 
 function patchState(
   doc: AnimGraphDocument,
-  machineId: string,
   stateId: string,
   patch: Partial<AnimState>,
 ): AnimGraphDocument {
-  return patchStateMachine(doc, machineId, (machine) => ({
+  return patchStateMachine(doc, (machine) => ({
     ...machine,
     states: machine.states.map((state) =>
       state.id === stateId ? { ...state, ...patch } : state,
@@ -265,39 +260,33 @@ function useAnimGraphDocument() {
   }, [assetRegistry, registryEpoch, documentPath]);
   const graphGuid = graphHeader?.guid;
   const assetName = graphHeader?.name ?? doc.name;
-  // The graph on show: the editor opens on the primary State Machine, and a location whose graph is gone falls back.
+  // The graph on show: the editor opens on the State Machine, and a state whose graph is gone falls back to it.
   const editing = useAnimGraphEditing();
   const location = resolveAnimEditorLocation(doc, editing.location);
-  const machine = location.kind === "anim" ? undefined : findStateMachine(doc, location.machineId);
-  const state = location.kind === "state" ? machine?.states.find((row) => row.id === location.stateId) : undefined;
+  const machine = doc.stateMachine;
+  const state = location.kind === "state" ? machine.states.find((row) => row.id === location.stateId) : undefined;
   return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid, assetName, dimension, location, machine, state };
 }
 
-/** The location shown: the one asked for while its graph exists, else the primary State Machine, else the Anim Graph. */
+/** The location shown: a state's graph while the state exists, else the State Machine. */
 function resolveAnimEditorLocation(doc: AnimGraphDocument, location: AnimEditorLocation | null): AnimEditorLocation {
-  if (location?.kind === "anim") return location;
-  const machine = location ? findStateMachine(doc, location.machineId) : undefined;
-  if (location?.kind === "machine" && machine) return location;
-  if (location?.kind === "state" && machine?.states.some((row) => row.id === location.stateId)) return location;
-  if (location?.kind === "state" && machine) return { kind: "machine", machineId: machine.id };
-  const primary = primaryStateMachine(doc);
-  return primary ? { kind: "machine", machineId: primary.id } : { kind: "anim" };
+  if (location?.kind === "state" && doc.stateMachine.states.some((row) => row.id === location.stateId)) return location;
+  return { kind: "machine" };
 }
 
-/** A state's or transition's breakpoint, named as its State Machine shows it. */
+/** A state's or transition's breakpoint, named as the State Machine shows it. */
 function stateMachineBreakpointLabel(
   doc: AnimGraphDocument,
-  machineId: string,
   id: string,
   assetName: string,
 ): BreakpointEntry["label"] {
-  const machine = findStateMachine(doc, machineId);
-  const state = machine?.states.find((row) => row.id === id);
-  const transition = state ? undefined : machine?.transitions.find((row) => row.id === id);
+  const machine = doc.stateMachine;
+  const state = machine.states.find((row) => row.id === id);
+  const transition = state ? undefined : machine.transitions.find((row) => row.id === id);
   return {
     className: assetName,
-    graphName: machine?.name ?? "State Machine",
-    nodeTitle: state?.name ?? (transition && machine ? transitionLabel(machine, transition) : id),
+    graphName: "State Machine",
+    nodeTitle: state?.name ?? (transition ? transitionLabel(machine, transition) : id),
   };
 }
 
@@ -456,8 +445,7 @@ function AnimGraphVariablesList() {
             </div>
           ))}
         </div>
-        {machine ? (
-          <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between gap-1 px-1">
               <div className="text-sm font-medium">States</div>
               <Button
@@ -465,7 +453,7 @@ function AnimGraphVariablesList() {
                 variant="outline"
                 size="sm"
                 data-testid="anim-graph-add-state"
-                onClick={() => commit(addAnimState(doc, machine.id, dimension))}
+                onClick={() => commit(addAnimState(doc, dimension))}
               >
                 Add State
               </Button>
@@ -480,8 +468,8 @@ function AnimGraphVariablesList() {
                 aria-pressed={selectedIds.includes(state.id)}
                 data-testid={`anim-graph-state-${state.id}`}
                 onClick={() => {
-                  // A state picked while its State Machine is not on show opens it first.
-                  if (location.kind !== "machine") navigate({ kind: "machine", machineId: machine.id });
+                  // A state picked inside a state graph returns to the State Machine first.
+                  if (location.kind !== "machine") navigate({ kind: "machine" });
                   setSelectedId(state.id);
                 }}
               >
@@ -493,8 +481,7 @@ function AnimGraphVariablesList() {
                 ) : null}
               </Button>
             ))}
-          </div>
-        ) : null}
+        </div>
       </div>
     </PanelFrame>
   );
@@ -566,8 +553,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
   const claimCanvas = useAnimCanvas("stateMachine", props.api);
   const { doc, latestDoc, commit, documentId, catalog, graphGuid, assetName, dimension, location, machine, state } = useAnimGraphDocument();
   // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its transitions.
-  const machineId = location.kind === "machine" ? location.machineId : undefined;
-  const runTrace = useAnimStateMachineRunTrace(graphGuid, machineId);
+  const runTrace = useAnimStateMachineRunTrace(graphGuid, location.kind === "machine");
   const {
     selectedId,
     selectedIds,
@@ -576,6 +562,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     setSelectedTransitionId,
     focusedNodeId,
     openTransitionId,
+    openTransitionRule,
     closeTransitionRule,
     navigate,
   } = useAnimGraphEditing();
@@ -588,7 +575,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     ...Object.entries(typeCatalog.schemas.structs),
     ...Object.entries(typeCatalog.schemas.enums),
   ].map(([guid, schema]) => [guid, schema.name])), [typeCatalog.schemas]);
-  const poseKey = location.kind === "state" ? `state:${location.machineId}/${location.stateId}` : location.kind === "anim" ? "anim" : `machine:${location.machineId}`;
+  const poseKey = location.kind === "state" ? `state:${location.stateId}` : "machine";
   const ruleSurface = openTransitionId ? `rule:${openTransitionId}` : poseKey;
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
@@ -600,36 +587,36 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
   const latestDocRef = useRef(latestDoc);
   latestDocRef.current = latestDoc;
   const breakpointLabel = useCallback(
-    (id: string) => stateMachineBreakpointLabel(latestDocRef.current(), machineId ?? "", id, assetName),
-    [assetName, machineId],
+    (id: string) => stateMachineBreakpointLabel(latestDocRef.current(), id, assetName),
+    [assetName],
   );
   const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
   // The canvas's node menu and keys act on the selected states' breakpoints; Edit opens the hit count.
   const breakpoints = useMemo(
-    () => breakpointStore && graphGuid && machineId
-      ? stateMachineBreakpointView(breakpointStore, graphGuid, machineId, breakpointLabel, () => latestDocRef.current(), (nodeId) =>
+    () => breakpointStore && graphGuid
+      ? stateMachineBreakpointView(breakpointStore, graphGuid, breakpointLabel, () => latestDocRef.current(), (nodeId) =>
         editBreakpoint({
-          location: { assetGuid: graphGuid, graphId: animStateMachineDebugGraphId(machineId), nodeId },
+          location: { assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId },
           nodeTitle: breakpointLabel(nodeId).nodeTitle,
           pins: null,
         }))
       : undefined,
-    [breakpointLabel, breakpointStore, editBreakpoint, graphGuid, machineId],
+    [breakpointLabel, breakpointStore, editBreakpoint, graphGuid],
   );
-  // A stop in a State Machine (from a breakpoint or the Breakpoints window) opens that State Machine, and a stop at
-  // a transition selects it, so Details show it.
-  const focusMachineId = focusDiagnostic?.assetGuid === graphGuid ? animStateMachineOfDebugGraphId(focusDiagnostic?.graphId) : null;
-  const focusTransition = focusMachineId
-    ? findStateMachine(doc, focusMachineId)?.transitions.find((row) => row.id === focusDiagnostic?.nodeId)
+  // A stop in the State Machine (from a breakpoint or the Breakpoints window) opens it, and a stop at a transition
+  // selects it, so Details show it.
+  const focusOnMachine = focusDiagnostic?.assetGuid === graphGuid && focusDiagnostic?.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID;
+  const focusTransition = focusOnMachine
+    ? machine.transitions.find((row) => row.id === focusDiagnostic?.nodeId)
     : undefined;
   const focusTransitionId = focusTransition?.id;
   const panelApi = props.api;
   useEffect(() => {
-    if (!focusMachineId || !findStateMachine(latestDocRef.current(), focusMachineId)) return;
-    navigate({ kind: "machine", machineId: focusMachineId });
+    if (!focusOnMachine) return;
+    navigate({ kind: "machine" });
     // Behind the Animation Object tab, the Graph comes forward.
     if (panelApi && !panelApi.isVisible) panelApi.setActive();
-  }, [focusMachineId, navigate, panelApi]);
+  }, [focusOnMachine, navigate, panelApi]);
   useEffect(() => {
     if (focusTransitionId) setSelectedTransitionId(focusTransitionId);
   }, [focusTransitionId, setSelectedTransitionId]);
@@ -648,13 +635,11 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
       })),
     [diagnostics, documentId],
   );
-  const openEntry = openTransitionId
-    ? animTransitions(doc).find(({ transition }) => transition.id === openTransitionId) ?? null
+  const openTransition = openTransitionId
+    ? machine.transitions.find((transition) => transition.id === openTransitionId) ?? null
     : null;
-  const openTransition = openEntry?.transition ?? null;
-  const machineTransitions = machine?.transitions ?? NO_TRANSITIONS;
+  const machineTransitions = machine.transitions;
   const initialGraph = useMemo(() => {
-    if (!machine) return { nodes: [], edges: [] };
     const graph = hydrateAnimGraphForEditor(stateMachineToSerialized(machine));
     const clipLabels = new Map(
       machine.states.map((row) => [row.id, stateClipLabel(row, catalog)]),
@@ -681,9 +666,9 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     [doc.variables],
   );
   const ruleGraph = useMemo(() => {
-    if (!openTransition || !openEntry) return null;
+    if (!openTransition) return null;
     const oneWay = !findReverseTransition(
-      openEntry.machine.transitions,
+      machineTransitions,
       openTransition.fromStateId,
       openTransition.toStateId,
     );
@@ -695,26 +680,17 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
       defaultNodeRegistry(),
       { ...typeCatalog.schemas, dataAssets },
     );
-  }, [openEntry, openTransition, ruleMembers, typeCatalog.schemas, dataAssets]);
-  // The pose graph on show: the Anim Graph or a state's graph. State Machine nodes show their machine's name.
-  const poseSource = location.kind === "anim" ? doc.animGraph : location.kind === "state" ? state?.stateGraph ?? null : null;
+  }, [machineTransitions, openTransition, ruleMembers, typeCatalog.schemas, dataAssets]);
+  // The state graph on show.
+  const poseSource = location.kind === "state" ? state?.stateGraph ?? null : null;
   const poseGraph = useMemo(() => {
     if (!poseSource) return null;
-    const named = {
-      ...poseSource,
-      nodes: poseSource.nodes.map((node) => {
-        if (!isPoseStateMachineType(node.type)) return node;
-        const name = typeof node.data.machineId === "string" ? findStateMachine(doc, node.data.machineId)?.name : undefined;
-        return name ? { ...node, data: { ...node.data, title: name } } : node;
-      }),
-      members: ruleMembers,
-    };
-    return hydrateSerializedGraphForEditor(named, defaultNodeRegistry(), { ...typeCatalog.schemas, dataAssets });
-  }, [poseSource, doc, ruleMembers, typeCatalog.schemas, dataAssets]);
+    return hydrateSerializedGraphForEditor({ ...poseSource, members: ruleMembers }, defaultNodeRegistry(), { ...typeCatalog.schemas, dataAssets });
+  }, [poseSource, ruleMembers, typeCatalog.schemas, dataAssets]);
   const posePaletteInput = {
     parentClass: "Object",
     animationGraphHost: "pose" as const,
-    animPose: { dimension, level: location.kind === "state" ? "state" as const : "anim" as const },
+    animPose: { dimension },
     graph: { nodes: [], edges: [], members: ruleMembers },
     structures: typeCatalog.types.structures,
     dataDefinitions: typeCatalog.types.dataDefinitions,
@@ -843,7 +819,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
               className="min-w-0 truncate px-1 text-sm font-medium"
               data-testid="anim-rule-title"
             >
-              {openEntry ? transitionLabel(openEntry.machine, openTransition) : openTransition.id}
+              {transitionLabel(machine, openTransition)}
             </span>
           </ToolbarStrip>
           <GraphEditor
@@ -886,11 +862,11 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     />
   );
 
-  if (location.kind !== "machine" || !machine) {
-    const stateLocation = location.kind === "state" ? location : null;
+  if (location.kind === "state") {
+    const stateId = location.stateId;
     return (
       <PanelFrame className="flex-1">
-        <div className="flex h-full min-h-0 flex-col" data-testid="anim-pose-graph" data-pose-level={stateLocation ? "state" : "anim"} onPointerDownCapture={claimCanvas}>
+        <div className="flex h-full min-h-0 flex-col" data-testid="anim-pose-graph" onPointerDownCapture={claimCanvas}>
           {crumbs}
           {poseGraph ? (
             <GraphEditor
@@ -905,22 +881,10 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
               sessionViewport={sessionViewport}
               onSessionViewportChange={onSessionViewportChange}
               onSelectionChange={setSelectedNodeIds}
-              onNodeDoubleClick={(nodeId) => {
-                // Double-tap a State Machine node to open it.
-                const node = poseGraph.nodes.find((row) => row.id === nodeId);
-                const machineId = node && isPoseStateMachineType(node.type) ? node.data.machineId : undefined;
-                if (typeof machineId === "string" && findStateMachine(latestDoc(), machineId)) {
-                  setSelectedNodeIds([]);
-                  navigate({ kind: "machine", machineId });
-                }
-              }}
               onChange={(next) => {
                 const graph = applyDataGraphAssetPicks(poseGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
                 queueMicrotask(() => {
-                  const current = latestDoc();
-                  commit(stateLocation
-                    ? patchStateGraph(current, stateLocation.machineId, stateLocation.stateId, persistPoseGraph(graph))
-                    : withAnimGraphMachines(current, persistPoseGraph(graph), dimension));
+                  commit(patchStateGraph(latestDoc(), stateId, persistPoseGraph(graph)));
                 });
               }}
             />
@@ -935,7 +899,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
       <div className="anim-graph-canvas flex h-full min-h-0 flex-col" data-testid="anim-graph-editor" onPointerDownCapture={claimCanvas}>
         {crumbs}
         <GraphEditor
-          key={machine.id}
+          key="state-machine"
           initialGraph={initialGraph}
           runTrace={runTrace}
           breakpoints={breakpoints}
@@ -972,21 +936,23 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             // Double-tap a state to open its state graph.
             if (!machine.states.some((row) => row.id === stateId)) return;
             setSelectedNodeIds([]);
-            navigate({ kind: "state", machineId: machine.id, stateId });
+            navigate({ kind: "state", stateId });
+          }}
+          onEdgeDoubleClick={(edgeId, point) => {
+            // Double-tap a wire to open its transition's rule; on a shared wire, the direction pointing nearer.
+            const transition = transitionAtWire(machine, edgeId, point);
+            if (transition) openTransitionRule(transition.id);
           }}
           onChange={(next) => {
             const keepSelection = selectedIds;
-            const machineId = machine.id;
             queueMicrotask(() => {
               const current = latestDoc();
-              const previous = findStateMachine(current, machineId);
-              if (!previous) return;
-              const updated = serializedToStateMachine(next, previous, dimension);
+              const updated = serializedToStateMachine(next, current.stateMachine, dimension);
               const kept = keepSelection.filter((id) =>
                 updated.states.some((row) => row.id === id),
               );
               if (kept.length !== keepSelection.length) setSelectedIds(kept);
-              commit(patchStateMachine(current, machineId, () => updated));
+              commit(patchStateMachine(current, () => updated));
             });
           }}
         />
@@ -1001,56 +967,7 @@ function persistPoseGraph(graph: SerializedGraph): SerializedGraph {
   return { nodes: graph.nodes, edges: graph.edges };
 }
 
-function uniqueMachineId(doc: AnimGraphDocument): string {
-  const ids = new Set(doc.stateMachines.map((machine) => machine.id));
-  let index = 1;
-  while (ids.has(`machine-${index}`)) index += 1;
-  return `machine-${index}`;
-}
-
-function uniqueMachineName(doc: AnimGraphDocument): string {
-  const names = new Set(doc.stateMachines.map((machine) => machine.name.trim().toLowerCase()));
-  let index = 1;
-  while (names.has(`state machine ${index}`)) index += 1;
-  return `State Machine ${index}`;
-}
-
-/**
- * The Anim Graph after an edit: a State Machine node new to it (added or pasted without a machine) gets a new State
- * Machine with an Idle state, and a State Machine whose node was deleted goes with it.
- */
-function withAnimGraphMachines(doc: AnimGraphDocument, animGraph: SerializedGraph, dimension: AnimGraphDimension): AnimGraphDocument {
-  let next: AnimGraphDocument = { ...doc, animGraph };
-  const claimed = new Set<string>();
-  const nodes = animGraph.nodes.map((node) => {
-    if (!isPoseStateMachineType(node.type)) return node;
-    const machineId = typeof node.data.machineId === "string" ? node.data.machineId : "";
-    if (machineId && findStateMachine(next, machineId) && !claimed.has(machineId)) {
-      claimed.add(machineId);
-      return node;
-    }
-    const id = uniqueMachineId(next);
-    claimed.add(id);
-    next = {
-      ...next,
-      stateMachines: [...next.stateMachines, {
-        id,
-        name: uniqueMachineName(next),
-        entryStateId: "idle",
-        states: [{ id: "idle", name: "Idle", position: defaultAnimStatePosition(0), stateGraph: createStateGraph(dimension) }],
-        transitions: [],
-      }],
-    };
-    return { ...node, data: { ...node.data, machineId: id } };
-  });
-  return {
-    ...next,
-    animGraph: { ...animGraph, nodes },
-    stateMachines: next.stateMachines.filter((machine) => claimed.has(machine.id)),
-  };
-}
-
-/** Anim Graph › Locomotion › Walk / Run, with Back stepping out one level. */
+/** State Machine › Walk, with Back stepping out to the State Machine. */
 function AnimGraphBreadcrumbs({
   doc,
   location,
@@ -1060,12 +977,10 @@ function AnimGraphBreadcrumbs({
   location: AnimEditorLocation;
   onNavigate: (location: AnimEditorLocation) => void;
 }) {
-  const machine = location.kind === "anim" ? undefined : findStateMachine(doc, location.machineId);
-  const state = location.kind === "state" ? machine?.states.find((row) => row.id === location.stateId) : undefined;
+  const state = location.kind === "state" ? doc.stateMachine.states.find((row) => row.id === location.stateId) : undefined;
   const crumbs: Array<{ id: string; label: string; to: AnimEditorLocation }> = [
-    { id: "anim", label: "Anim Graph", to: { kind: "anim" } },
-    ...(machine ? [{ id: "machine", label: machine.name, to: { kind: "machine" as const, machineId: machine.id } }] : []),
-    ...(machine && state ? [{ id: "state", label: state.name, to: { kind: "state" as const, machineId: machine.id, stateId: state.id } }] : []),
+    { id: "machine", label: "State Machine", to: { kind: "machine" } },
+    ...(state ? [{ id: "state", label: state.name, to: { kind: "state" as const, stateId: state.id } }] : []),
   ];
   const back = crumbs.length > 1 ? crumbs[crumbs.length - 2]!.to : null;
   return (
@@ -1177,7 +1092,7 @@ function transitionPropertyRows(
 }
 
 export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
-  const { doc, commit, assetRegistry, catalog, graphGuid, assetName, dimension, location, machine: shownMachine } = useAnimGraphDocument();
+  const { doc, commit, assetRegistry, catalog, graphGuid, assetName, dimension, location, machine } = useAnimGraphDocument();
   const breakpointStore = useBreakpointStore();
   const {
     canvas,
@@ -1193,11 +1108,9 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   // Transition cards start open; collapsing one is remembered while the document is open.
   const [collapsedTransitionIds, setCollapsedTransitionIds] = useState<ReadonlySet<string>>(() => new Set());
   // The Animation Object script, a rule or a pose graph shows its nodes' details.
-  if (canvas === "animationObject" || openTransitionId || location.kind !== "machine" || !shownMachine) {
+  if (canvas === "animationObject" || openTransitionId || location.kind !== "machine") {
     return <InspectorPanel {..._props} />;
   }
-  const machine = shownMachine;
-  const machineId = machine.id;
   const selectedStates = selectedIds.flatMap((id) => machine.states.find((state) => state.id === id) ?? []);
   // Several states show the rows they share; their names, entry and transitions stay per state.
   const multi = selectedStates.length > 1;
@@ -1236,13 +1149,6 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         ...assetRowIdentity(skeletonAsset ? { name: skeletonAsset.header.name, type: "Skeleton" } : undefined),
       }]
     : [];
-  const machineRows: PropertyRow[] = [{
-    id: "machineName",
-    kind: "text",
-    label: "Name",
-    value: machine.name,
-    onChange: (name) => commit(patchStateMachine(doc, machineId, (row) => ({ ...row, name }))),
-  }];
   const outgoing = selected
     ? machine.transitions.filter((row) => row.fromStateId === selected.id)
     : selectedTransition
@@ -1251,11 +1157,11 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   /** Sets the clip of a state's single player; the catalog fills its name and length. */
   const applyClipAsset = (stateId: string, guid: string) => {
     const current = edit.read();
-    const state = findStateMachine(current, machineId)?.states.find((row) => row.id === stateId);
+    const state = current.stateMachine.states.find((row) => row.id === stateId);
     const player = state ? singlePlayerOf(state.stateGraph) : null;
     if (!state || !player) return;
     const entry = catalog.find((row) => row.guid === guid);
-    edit.write(patchStateGraph(current, machineId, stateId, patchPosePlayer(state.stateGraph, player.id, {
+    edit.write(patchStateGraph(current, stateId, patchPosePlayer(state.stateGraph, player.id, {
       assetGuid: guid,
       ...(entry?.type === "Animation" && entry.clipName ? { clipName: entry.clipName } : {}),
       ...(typeof entry?.durationMs === "number" ? { durationMs: entry.durationMs } : {}),
@@ -1264,10 +1170,10 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   /** Patches the single player of a state, through `edit` so a batch changes every selected state. */
   const patchPlayer = (stateId: string, settings: Parameters<typeof patchPosePlayer>[2], mergeKey?: string) => {
     const current = edit.read();
-    const state = findStateMachine(current, machineId)?.states.find((row) => row.id === stateId);
+    const state = current.stateMachine.states.find((row) => row.id === stateId);
     const player = state ? singlePlayerOf(state.stateGraph) : null;
     if (!state || !player) return;
-    edit.write(patchStateGraph(current, machineId, stateId, patchPosePlayer(state.stateGraph, player.id, settings)), mergeKey);
+    edit.write(patchStateGraph(current, stateId, patchPosePlayer(state.stateGraph, player.id, settings)), mergeKey);
   };
   /**
    * One state's Clip and Playback rows: while its graph is one player into the output they edit that player;
@@ -1328,7 +1234,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           kind: "text",
           label: "Name",
           value: selected.name,
-          onChange: (name) => commit(patchState(doc, machineId, selected.id, { name })),
+          onChange: (name) => commit(patchState(doc, selected.id, { name })),
         },
         {
           id: "entry",
@@ -1337,11 +1243,11 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           value: machine.entryStateId === selected.id,
           onChange: (value) => {
             if (value) {
-              commit(patchStateMachine(doc, machineId, (row) => ({ ...row, entryStateId: selected.id })));
+              commit(patchStateMachine(doc, (row) => ({ ...row, entryStateId: selected.id })));
               return;
             }
             const other = machine.states.find((state) => state.id !== selected.id);
-            if (other) commit(patchStateMachine(doc, machineId, (row) => ({ ...row, entryStateId: other.id })));
+            if (other) commit(patchStateMachine(doc, (row) => ({ ...row, entryStateId: other.id })));
           },
         },
       ]
@@ -1378,7 +1284,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                 variant="outline"
                 size="sm"
                 data-testid="anim-graph-open-state-graph"
-                onClick={() => navigate({ kind: "state", machineId, stateId: selected.id })}
+                onClick={() => navigate({ kind: "state", stateId: selected.id })}
               >
                 Open State Graph
               </Button>
@@ -1437,7 +1343,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                       disabled={Boolean(block.reverseRuleId)}
                       onClick={() => {
                         const next = flipTransitionDirection(doc, block.openRuleId);
-                        const flipped = findStateMachine(next, machineId)?.transitions.find(
+                        const flipped = next.stateMachine.transitions.find(
                           (row) => row.id === block.openRuleId,
                         );
                         commit(next);
@@ -1451,8 +1357,8 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                           <TransitionBreakpointButton
                             key={id}
                             store={breakpointStore}
-                            location={{ assetGuid: graphGuid, graphId: animStateMachineDebugGraphId(machineId), nodeId: id }}
-                            label={() => stateMachineBreakpointLabel(doc, machineId, id, assetName)}
+                            location={{ assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId: id }}
+                            label={() => stateMachineBreakpointLabel(doc, id, assetName)}
                             reverse={index === 1}
                           />
                         ) : null)
@@ -1466,7 +1372,6 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
       ) : (
         <div data-testid="anim-graph-details">
           {graphRows.length > 0 ? <PropertyGrid title="Graph" rows={graphRows} /> : null}
-          <PropertyGrid title="State Machine" rows={machineRows} />
           <p
             className="px-3 py-2 text-sm text-muted-foreground"
             data-testid="anim-graph-details-empty"

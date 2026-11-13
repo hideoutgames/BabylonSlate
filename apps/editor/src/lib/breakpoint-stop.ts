@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import {
-  animStateMachineOfDebugGraphId,
+  ANIM_STATE_MACHINE_DEBUG_GRAPH_ID,
   BREAKPOINT_PAUSE_CODE,
   BT_DEBUG_GRAPH_ID,
   type BreakpointEvent,
@@ -34,7 +34,7 @@ const EVENT_NAMES: Record<BreakpointEvent, string> = {
 
 /** A Behaviour Tree's or State Machine's breakpoints are keyed by the asset's guid, a Class's by its path. */
 const isGuidKeyed = (graphId: string | undefined) =>
-  graphId === BT_DEBUG_GRAPH_ID || animStateMachineOfDebugGraphId(graphId) !== null;
+  graphId === BT_DEBUG_GRAPH_ID || graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID;
 
 /**
  * The names of a breakpoint stop, from the breakpoint as it was set and the document the stop opened

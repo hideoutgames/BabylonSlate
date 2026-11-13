@@ -4,7 +4,7 @@ node: anim.frame.output
 
 # Output Frame
 
-The frame this graph shows. Every frame graph ends in one.
+The frame this graph shows. Every state graph ends in one.
 
 ## Inputs
 
@@ -14,5 +14,5 @@ The frame this graph shows. Every frame graph ends in one.
 
 ## Notes
 
-- Haptic adds it to every frame graph of a 2D Animation Graph, and you cannot delete it.
-- In the Anim Graph its frame is the one the sprite shows. In a state's graph it is that state's frame.
+- Haptic adds it to every state graph of a 2D Animation Graph, and you cannot delete it.
+- Its frame is the state's frame. During a transition with a blend time, the sprite shows the frame with more weight.

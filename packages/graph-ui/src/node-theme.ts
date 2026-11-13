@@ -23,7 +23,7 @@ export type NodeVisualRole =
   | "bt-root"
   | "bt-composite"
   | "bt-task"
-  /** Animation Graph pose nodes: players, blends, State Machines, outputs. */
+  /** Animation Graph pose nodes: players, blends, outputs. */
   | "anim-pose"
   /** Animation Graph skeletal controls acting on a pose (IK, Look At, Spring Bones). */
   | "anim-control";

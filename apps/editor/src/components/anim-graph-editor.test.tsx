@@ -19,7 +19,7 @@ import { TagProvider } from "@haptic/editor-kit";
 import { ValidationProvider } from "../context/validation-context";
 import { BreakpointStoreProvider } from "../context/breakpoints-context";
 import { BreakpointStore } from "../services/breakpoint-store";
-import { animStateMachineDebugGraphId } from "@haptic/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
@@ -254,7 +254,7 @@ function lastCommit(): AnimGraphDocument {
 }
 
 function machineOf(doc: AnimGraphDocument) {
-  return doc.stateMachines[0]!;
+  return doc.stateMachine;
 }
 
 /** The data of a state's single player. */
@@ -594,11 +594,11 @@ describe("AnimGraphEditor", () => {
         </ValidationProvider>
       </BreakpointStoreProvider>,
     );
-    const at = (nodeId: string) => ({ assetGuid: "loco-graph", graphId: animStateMachineDebugGraphId("locomotion"), nodeId });
+    const at = (nodeId: string) => ({ assetGuid: "loco-graph", graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId });
     const run = screen.getByTestId("anim-state-node-run");
     fireEvent.contextMenu(run);
     fireEvent.click(screen.getByText("Add Breakpoint"));
-    expect(breakpoints.get(at("run"))?.label).toEqual({ className: "Loco", graphName: "Locomotion", nodeTitle: "Run" });
+    expect(breakpoints.get(at("run"))?.label).toEqual({ className: "Loco", graphName: "State Machine", nodeTitle: "Run" });
     expect(run.querySelector("[data-breakpoint]")?.getAttribute("data-breakpoint")).toBe("enabled");
 
     // The selected state's transition shows a button for each direction.
@@ -724,8 +724,8 @@ describe("AnimGraphEditor", () => {
     const { container } = renderAnimGraph(locoGraph());
     await waitFor(() => expect(container.querySelector('.react-flow__node[data-id="run"]')).not.toBeNull());
     fireEvent.doubleClick(container.querySelector('.react-flow__node[data-id="run"]')!);
-    await waitFor(() => expect(screen.getByTestId("anim-pose-graph").getAttribute("data-pose-level")).toBe("state"));
-    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("Locomotion");
+    await waitFor(() => expect(screen.getByTestId("anim-pose-graph")).toBeTruthy());
+    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
     expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
     await waitFor(() => {
       expect(container.querySelector('.react-flow__node[data-id="output"] .anim-pose-output-node')).not.toBeNull();
@@ -740,25 +740,17 @@ describe("AnimGraphEditor", () => {
     renderAnimGraph(locoGraph());
     fireEvent.click(screen.getByTestId("anim-graph-state-run"));
     fireEvent.click(screen.getByTestId("anim-graph-open-state-graph"));
-    expect(screen.getByTestId("anim-pose-graph").getAttribute("data-pose-level")).toBe("state");
+    expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
+    expect(screen.getByTestId("anim-pose-graph")).toBeTruthy();
   });
 
-  it("shows the Anim Graph's State Machine nodes and opens one on double-click", async () => {
-    const { container } = renderAnimGraph(locoGraph());
-    fireEvent.click(screen.getByTestId("anim-graph-crumb-anim"));
-    expect(screen.getByTestId("anim-pose-graph").getAttribute("data-pose-level")).toBe("anim");
-    expect(screen.getByTestId("anim-graph-back")).toHaveProperty("disabled", true);
-    await waitFor(() => expect(container.querySelector('.react-flow__node[data-id="machine-locomotion"]')).not.toBeNull());
-    fireEvent.doubleClick(container.querySelector('.react-flow__node[data-id="machine-locomotion"]')!);
-    await waitFor(() => expect(screen.getByTestId("anim-graph-editor")).toBeTruthy());
-    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("Locomotion");
-  });
-
-  it("renames the State Machine from Details when nothing is selected", () => {
+  it("opens on the State Machine, the root, with nothing to step back to and no Name row", () => {
     renderAnimGraph(locoGraph());
-    fireEvent.change(screen.getByTestId("property-machineName"), { target: { value: "Upper Body" } });
-    fireEvent.blur(screen.getByTestId("property-machineName"));
-    expect(machineOf(lastCommit()).name).toBe("Upper Body");
+    expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
+    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
+    expect(screen.queryByTestId("anim-graph-crumb-state")).toBeNull();
+    expect(screen.getByTestId("anim-graph-back")).toHaveProperty("disabled", true);
+    expect(screen.queryByTestId("property-machineName")).toBeNull();
   });
 });
 
@@ -810,7 +802,7 @@ describe("AnimGraphEditor while a Simulation debugs the graph", () => {
   }
   const trace = (nodes: string[]) => ({
     target, instanceId: "hero", tickIndex: 1,
-    graphs: [{ assetGuid: "loco-graph", graphId: "state-machine:locomotion", nodes, edges: [], values: [] }],
+    graphs: [{ assetGuid: "loco-graph", graphId: "state-machine", nodes, edges: [], values: [] }],
   });
   const runFrames = () => act(() => { const pending = frames; frames = []; for (const frame of pending) frame(); });
 

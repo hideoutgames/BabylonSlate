@@ -292,12 +292,12 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "2d",
     label: "2D",
-    types: ["Sprite", "Tileset", "Tilemap"],
+    types: ["Sprite", "SpriteAnimation", "AnimationGraph2D", "Tileset", "Tilemap"],
   },
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph3D", "AnimationGraph2D", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
+    types: ["AnimationGraph3D", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
   },
   {
     id: "rendering",

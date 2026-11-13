@@ -7,21 +7,17 @@ export {
   ANIM_RULE_EXIT_TYPE,
   ANIM_STATE_LAYOUT_GAP_X,
   animGraphDimension,
-  animGraphMachineIds,
   animPoseGraphKey,
   animPoseGraphs,
   animPoseScriptClassId,
-  animTransitions,
   createDefaultAnimGraph,
   createDefaultAnimationObjectGraph,
   createDefaultTransitionRuleGraph,
   facingTransitionSides,
   decorateTransitionRuleGraph,
-  findStateMachine,
   patchStateGraph,
   patchStateMachine,
   persistTransitionRuleGraph,
-  primaryStateMachine,
   defaultAnimStatePosition,
   defaultAnimVariableValue,
   animGraphMembersFromVariables,
@@ -51,7 +47,7 @@ export {
   type AnimTransitionDecision,
   type AnimVariableTypeId,
 } from "./graph";
-export { animEvalWithJump, evaluateAnimGraph, playedStateMachines } from "./evaluate";
+export { animEvalWithJump, evaluateAnimGraph } from "./evaluate";
 export * from "./pose-graph";
 export {
   ANIM_STATE_SIDES,
@@ -63,6 +59,7 @@ export {
   hydrateAnimGraphForEditor,
   animTransitionFromDrag,
   normalizeAnimConnection,
+  transitionAtWire,
   serializedToStateMachine,
   setTransitionBidirectional,
   flipTransitionDirection,

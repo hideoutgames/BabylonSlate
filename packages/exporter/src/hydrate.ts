@@ -191,8 +191,8 @@ function normalizeEntry(entry: GameAssetIndexEntry, parsed: unknown): unknown {
     case "Water": return normalizeWaterDefinition(parsed);
     case "Tilemap": return normalizeTilemapPayload(parsed);
     case "Tileset": return normalizeTilesetPayload(parsed);
-    case "AnimationGraph3D":
-    case "AnimationGraph2D": return parseAnimGraphDocument(parsed);
+    case "AnimationGraph3D": return parseAnimGraphDocument(parsed, "3d");
+    case "AnimationGraph2D": return parseAnimGraphDocument(parsed, "2d");
     case "BehaviourTree": return parseBehaviourTreeDocument(parsed);
     case "Blackboard": return parseBlackboardDocument(parsed);
     case "Material": return normalizeMaterialDocument(parsed, name ?? "Material");

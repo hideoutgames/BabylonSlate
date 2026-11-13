@@ -29,7 +29,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@haptic/assets";
-import { animPoseGraphs, animTransitions, parseAnimGraphDocument } from "@haptic/anim-graph";
+import { animPoseGraphs, parseAnimGraphDocument } from "@haptic/anim-graph";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { embeddedScriptHost } from "../lib/embedded-script";
@@ -188,7 +188,7 @@ function openAnimGraphSignatureSlices(
       if (!parsed) return [];
       return [
         { path: `${doc.ref.path}#animation-object`, content: parsed.animationObject },
-        ...animTransitions(parsed).map(({ transition }) => ({
+        ...parsed.stateMachine.transitions.map((transition) => ({
           path: `${doc.ref.path}#rule-${transition.id}:${transition.fromStateId}>${transition.toStateId}`,
           content: transition.ruleGraph,
         })),

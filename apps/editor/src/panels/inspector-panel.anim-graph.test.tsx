@@ -75,7 +75,7 @@ function SelectionControls() {
     <button onClick={() => setCanvas("stateMachine")}>Show Graph</button>
     <button onClick={() => setCanvas("animationObject")}>Show Animation Object</button>
     <button onClick={() => openTransitionRule("idle-to-run")}>Open Rule</button>
-    <button onClick={() => navigate({ kind: "state", machineId: "locomotion", stateId: "idle" })}>Open Idle Graph</button>
+    <button onClick={() => navigate({ kind: "state", stateId: "idle" })}>Open Idle Graph</button>
     <button onClick={() => setSelectedNodeIds(["add"])}>Select Add</button>
     <button onClick={() => setSelectedNodeIds(["other"])}>Select Other</button>
   </>;
@@ -126,7 +126,7 @@ describe("Animation Object Inspector", () => {
     fireEvent.change(screen.getByTestId("property-a"), { target: { value: "5" } });
     fireEvent.blur(screen.getByTestId("property-a"));
     expect(committedDocument().animationObject.nodes.find((node) => node.id === "add")?.data).toEqual({ "default:a": 5, "default:b": 7 });
-    expect(committedDocument().stateMachines).toEqual(doc.stateMachines);
+    expect(committedDocument().stateMachine).toEqual(doc.stateMachine);
 
     fireEvent.click(screen.getByText("Select Other"));
     expect((screen.getByTestId("property-a") as HTMLInputElement).value).toBe("11");
@@ -144,7 +144,7 @@ describe("Animation Object Inspector", () => {
 
   it("reads and writes the active Animation Object when a remembered rule has the same node ID", () => {
     const doc = createDefaultAnimGraph();
-    const machine = doc.stateMachines[0]!;
+    const machine = doc.stateMachine;
     machine.states.push({ id: "run", name: "Run", position: { x: 300, y: 0 }, stateGraph: createStateGraph("3d") });
     doc.animationObject.nodes.push(addNode("add", 3, true));
     machine.transitions.push({
@@ -163,20 +163,20 @@ describe("Animation Object Inspector", () => {
     fireEvent.change(screen.getByTestId("property-a"), { target: { value: "5" } });
     fireEvent.blur(screen.getByTestId("property-a"));
     expect(committedDocument().animationObject.nodes.find((node) => node.id === "add")?.data["default:a"]).toBe(5);
-    expect(committedDocument().stateMachines[0]!.transitions[0]?.ruleGraph.nodes[0]?.data["default:a"]).toBe(20);
+    expect(committedDocument().stateMachine.transitions[0]?.ruleGraph.nodes[0]?.data["default:a"]).toBe(20);
 
     fireEvent.click(screen.getByText("Show Graph"));
     expect((screen.getByTestId("property-a") as HTMLInputElement).value).toBe("20");
     fireEvent.change(screen.getByTestId("property-a"), { target: { value: "25" } });
-    expect(committedDocument().stateMachines[0]!.transitions[0]?.ruleGraph.nodes[0]?.data["default:a"]).toBe(25);
+    expect(committedDocument().stateMachine.transitions[0]?.ruleGraph.nodes[0]?.data["default:a"]).toBe(25);
     expect(committedDocument().animationObject.nodes.find((node) => node.id === "add")?.data["default:a"]).toBe(5);
   });
 
   it("edits a data node in a state's graph and keeps the other graphs", () => {
     const doc = createDefaultAnimGraph();
-    const idle = doc.stateMachines[0]!.states[0]!;
+    const idle = doc.stateMachine.states[0]!;
     idle.stateGraph = { ...idle.stateGraph, nodes: [...idle.stateGraph.nodes, addNode("add", 3, true)] };
-    doc.stateMachines[0]!.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "idle-to-run", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(),
       sourceHandle: "right-out", targetHandle: "left-in",
     });
@@ -188,8 +188,7 @@ describe("Animation Object Inspector", () => {
     fireEvent.change(screen.getByTestId("property-a"), { target: { value: "9" } });
     fireEvent.blur(screen.getByTestId("property-a"));
     const committed = committedDocument();
-    expect(committed.stateMachines[0]!.states[0]!.stateGraph.nodes.find((node) => node.id === "add")?.data["default:a"]).toBe(9);
-    expect(committed.animGraph).toEqual(doc.animGraph);
-    expect(committed.stateMachines[0]!.transitions).toEqual(doc.stateMachines[0]!.transitions);
+    expect(committed.stateMachine.states[0]!.stateGraph.nodes.find((node) => node.id === "add")?.data["default:a"]).toBe(9);
+    expect(committed.stateMachine.transitions).toEqual(doc.stateMachine.transitions);
   });
 });

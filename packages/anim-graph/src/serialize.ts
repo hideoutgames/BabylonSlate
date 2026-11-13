@@ -192,6 +192,30 @@ function visualTransitions(
   return visual;
 }
 
+/** A state card's half size on the canvas, for the centre a wire point is measured to. */
+const STATE_CARD_HALF = { x: 100, y: 45 };
+
+/**
+ * The transition a double-click on a wire opens: the wire's own, or on a mirrored pair's shared wire the direction
+ * whose arrowhead (its target state) is nearer the point.
+ */
+export function transitionAtWire(
+  machine: AnimStateMachine,
+  edgeId: string,
+  point: { x: number; y: number } | null,
+): AnimTransition | undefined {
+  const row = machine.transitions.find((candidate) => candidate.id === edgeId);
+  if (!row) return undefined;
+  const mirrored = findMirroredReverse(machine.transitions, row);
+  if (!mirrored || !point) return row;
+  const distance = (stateId: string) => {
+    const position = machine.states.find((state) => state.id === stateId)?.position;
+    if (!position) return Number.POSITIVE_INFINITY;
+    return Math.hypot(point.x - (position.x + STATE_CARD_HALF.x), point.y - (position.y + STATE_CARD_HALF.y));
+  };
+  return distance(row.fromStateId) < distance(row.toStateId) ? mirrored : row;
+}
+
 /**
  * The id of the canvas edge that draws a transition taken from one state to another: its own, or for the second of
  * a mirrored pair, the first's. The runtime's debug trace names the transition it took by it.
@@ -208,26 +232,14 @@ export function animTransitionEdgeId(
 }
 
 function uniqueTransitionId(doc: AnimGraphDocument): string {
-  const ids = new Set(doc.stateMachines.flatMap((machine) => machine.transitions.map((row) => row.id)));
+  const ids = new Set(doc.stateMachine.transitions.map((row) => row.id));
   let index = 1;
   while (ids.has(`transition-${index}`)) index += 1;
   return `transition-${index}`;
 }
 
-/** The State Machine holding a transition; transition ids are unique across a document. */
-function machineOfTransition(doc: AnimGraphDocument, transitionId: string): AnimStateMachine | undefined {
-  return doc.stateMachines.find((machine) => machine.transitions.some((row) => row.id === transitionId));
-}
-
-function withTransitions(
-  doc: AnimGraphDocument,
-  machineId: string,
-  transitions: AnimTransition[],
-): AnimGraphDocument {
-  return {
-    ...doc,
-    stateMachines: doc.stateMachines.map((machine) => (machine.id === machineId ? { ...machine, transitions } : machine)),
-  };
+function withTransitions(doc: AnimGraphDocument, transitions: AnimTransition[]): AnimGraphDocument {
+  return { ...doc, stateMachine: { ...doc.stateMachine, transitions } };
 }
 
 export function setTransitionBidirectional(
@@ -235,9 +247,9 @@ export function setTransitionBidirectional(
   transitionId: string,
   bothWays: boolean,
 ): AnimGraphDocument {
-  const machine = machineOfTransition(doc, transitionId);
-  const transition = machine?.transitions.find((row) => row.id === transitionId);
-  if (!machine || !transition) return doc;
+  const machine = doc.stateMachine;
+  const transition = machine.transitions.find((row) => row.id === transitionId);
+  if (!transition) return doc;
   const reverse = findReverseTransition(
     machine.transitions,
     transition.fromStateId,
@@ -245,7 +257,7 @@ export function setTransitionBidirectional(
   );
   if (bothWays) {
     if (reverse) return doc;
-    return withTransitions(doc, machine.id, [
+    return withTransitions(doc, [
       ...machine.transitions,
       {
         id: uniqueTransitionId(doc),
@@ -261,23 +273,23 @@ export function setTransitionBidirectional(
     ]);
   }
   if (!reverse) return doc;
-  return withTransitions(doc, machine.id, machine.transitions.filter((row) => row.id !== reverse.id));
+  return withTransitions(doc, machine.transitions.filter((row) => row.id !== reverse.id));
 }
 
 export function flipTransitionDirection(
   doc: AnimGraphDocument,
   transitionId: string,
 ): AnimGraphDocument {
-  const machine = machineOfTransition(doc, transitionId);
-  const transition = machine?.transitions.find((row) => row.id === transitionId);
-  if (!machine || !transition) return doc;
+  const machine = doc.stateMachine;
+  const transition = machine.transitions.find((row) => row.id === transitionId);
+  if (!transition) return doc;
   const reverse = findReverseTransition(
     machine.transitions,
     transition.fromStateId,
     transition.toStateId,
   );
   if (reverse) return doc;
-  return withTransitions(doc, machine.id, machine.transitions.map((row) =>
+  return withTransitions(doc, machine.transitions.map((row) =>
     row.id === transitionId
       ? {
           ...row,
@@ -295,9 +307,7 @@ export function patchTransition(
   transitionId: string,
   patch: Partial<AnimTransition>,
 ): AnimGraphDocument {
-  const machine = machineOfTransition(doc, transitionId);
-  if (!machine) return doc;
-  return withTransitions(doc, machine.id, machine.transitions.map((row) =>
+  return withTransitions(doc, doc.stateMachine.transitions.map((row) =>
     row.id === transitionId ? { ...row, ...patch } : row,
   ));
 }

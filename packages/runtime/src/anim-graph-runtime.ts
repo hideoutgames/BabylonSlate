@@ -1,4 +1,4 @@
-import { animStateMachineDebugGraphId, type CommandMessage } from "@haptic/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/bridge";
 import type { TraceAnimGraphState } from "@haptic/debugger";
 import { Actor, ActorComponent, type EngineObject, type World } from "@haptic/object-model";
 import {
@@ -9,8 +9,6 @@ import {
   animTransitionEdgeId,
   defaultAnimVariableValue,
   evaluateAnimGraph,
-  findStateMachine,
-  primaryStateMachine,
   type AnimEvalState,
   type AnimGraphDocument,
   type AnimTransition,
@@ -24,8 +22,8 @@ import type { AnimGraphControl, ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 
 type SpriteClip = SpriteClipState;
-/** Stops on a State Machine's state or transition when it has a breakpoint. */
-type StateMachineHit = (machineId: string, id: string, event: "entered" | "taken") => void;
+/** Stops on the State Machine's state or transition when it has a breakpoint. */
+type StateMachineHit = (id: string, event: "entered" | "taken") => void;
 
 interface AnimGraphRuntimeHost {
   world(): World;
@@ -39,7 +37,7 @@ interface AnimGraphRuntimeHost {
   playAnimationOwns(slotId: number): boolean;
   scripts(): Pick<ScriptHost, "invokeAnimEvent" | "invokeAnimRule" | "invokeAnimPose">;
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
-  /** The session's node breakpoints, State Machines' included. */
+  /** The session's node breakpoints, the State Machine's included. */
   breakpoints(): ScriptBreakpoints;
   emit(command: CommandMessage): void;
 }
@@ -151,8 +149,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         const evalState = guid && this.graphByComponent.get(evalKey) === guid
           ? this.evalByComponent.get(evalKey)
           : undefined;
-        // Get Current State and Jump To State follow the primary State Machine.
-        const machine = document ? primaryStateMachine(document) : undefined;
+        const machine = document?.stateMachine;
         const stateId = evalState?.stateId ?? machine?.entryStateId;
         if (!stateId || !machine) return null;
         const state = machine.states.find((row) => row.id === stateId);
@@ -160,7 +157,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       },
       jumpToState: (state) => {
         if (!document || !hasSlot) return;
-        const match = primaryStateMachine(document)?.states.find(
+        const match = document.stateMachine.states.find(
           (row) => row.id === state || row.name === state,
         );
         if (!match || !guid) return;
@@ -209,31 +206,25 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   }
 
   /**
-   * What the followed component's State Machines did this tick, each under its own debug graph: every state it
-   * sampled (the active one, and the one a blend is leaving, whether or not they play a clip) and, when the active
-   * state changed, the transition taken. A Jump To State replaces the previous evaluation, so it is no transition.
+   * What the followed component's State Machine did this tick, under its debug graph: every state it sampled (the
+   * active one, and the one a blend is leaving, whether or not they play a clip) and, when the active state changed,
+   * the transition taken. A Jump To State replaces the previous evaluation, so it is no transition.
    */
-  private reportStateMachines(
+  private reportStateMachine(
     graphGuid: string,
     document: AnimGraphDocument,
     previous: AnimEvalState | null,
     next: AnimEvalState,
   ): void {
-    const sink = this.debugSink;
-    if (!sink) return;
-    for (const machineId in next.machines) {
-      const recorder = sink.graph(graphGuid, animStateMachineDebugGraphId(machineId));
-      if (!recorder) continue;
-      const state = next.machines[machineId]!;
-      recorder.exec(state.stateId);
-      for (const stateId in state.blendWeights) {
-        if (stateId !== state.stateId && state.blendWeights[stateId]! > 0) recorder.exec(stateId);
-      }
-      const before = previous?.machines[machineId];
-      if (before && before.stateId !== state.stateId) {
-        const edge = animTransitionEdgeId(findStateMachine(document, machineId)?.transitions ?? [], before.stateId, state.stateId);
-        if (edge !== undefined) recorder.edge(edge);
-      }
+    const recorder = this.debugSink?.graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
+    if (!recorder) return;
+    recorder.exec(next.stateId);
+    for (const stateId in next.blendWeights) {
+      if (stateId !== next.stateId && next.blendWeights[stateId]! > 0) recorder.exec(stateId);
+    }
+    if (previous && previous.stateId !== next.stateId) {
+      const edge = animTransitionEdgeId(document.stateMachine.transitions, previous.stateId, next.stateId);
+      if (edge !== undefined) recorder.edge(edge);
     }
   }
 
@@ -241,29 +232,26 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   private stateMachineBreakpoints(graphGuid: string, component: ActorComponent, actor: Actor): StateMachineHit | null {
     const breakpoints = this.host.breakpoints();
     if (breakpoints.empty) return null;
-    return (machineId, id, event) => {
-      const graph = breakpoints.graph(graphGuid, animStateMachineDebugGraphId(machineId));
+    return (id, event) => {
+      const graph = breakpoints.graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
       if (graph?.has(id)) graph.hit(id, "", component, { owner: actor, event });
     };
   }
 
   /**
-   * In order, for each State Machine: the state a new evaluation of it started in, then the transition it took and
-   * the state that entered.
+   * In order: the state a new evaluation started in, then the transition the State Machine took and the state that
+   * entered.
    */
   private reportStateBreakpoints(
     hit: StateMachineHit,
     previous: AnimEvalState | null,
     next: AnimEvalState,
-    taken: ReadonlyMap<string, AnimTransition>,
+    taken: AnimTransition | null,
   ): void {
-    for (const machineId in next.machines) {
-      const transition = taken.get(machineId);
-      if (!previous?.machines[machineId]) hit(machineId, transition?.fromStateId ?? next.machines[machineId]!.stateId, "entered");
-      if (!transition) continue;
-      hit(machineId, transition.id, "taken");
-      hit(machineId, transition.toStateId, "entered");
-    }
+    if (!previous) hit(taken?.fromStateId ?? next.stateId, "entered");
+    if (!taken) return;
+    hit(taken.id, "taken");
+    hit(taken.toStateId, "entered");
   }
 
   private tickActor(actor: Actor, dtSeconds: number): void {
@@ -292,10 +280,9 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       if (jumpTo) {
         this.pendingJumpByComponent.delete(evalKey);
         const jumped = animEvalWithJump(document, this.evalByComponent.get(evalKey) ?? null, jumpTo);
-        const primary = primaryStateMachine(document);
-        if (jumped && primary) {
+        if (jumped) {
           this.evalByComponent.set(evalKey, jumped);
-          hit?.(primary.id, jumpTo, "entered");
+          hit?.(jumpTo, "entered");
         }
       }
       const extras = {
@@ -321,7 +308,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         extras,
       );
       const previous = this.evalByComponent.get(evalKey) ?? null;
-      const taken = hit ? new Map<string, AnimTransition>() : null;
+      let taken: AnimTransition | null = null;
       const next = evaluateAnimGraph(
         document,
         previous,
@@ -333,8 +320,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
               actor,
               { variableStore: component, animFacts: facts },
             ),
-          transitionTaken: taken ? (transition, machine) => { taken.set(machine.id, transition); } : undefined,
-          // Each pose graph's wired data inputs, with the facts of the state that owns it.
+          transitionTaken: hit ? (transition) => { taken = transition; } : undefined,
+          // Each state graph's wired data inputs, with its state's facts.
           poseData: (graphKey, facts) =>
             this.host.scripts().invokeAnimPose(
               animPoseScriptClassId(guid, graphKey),
@@ -344,8 +331,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         },
       );
       this.evalByComponent.set(evalKey, next);
-      if (hit && taken) this.reportStateBreakpoints(hit, previous, next, taken);
-      if (component === this.debugComponent) this.reportStateMachines(guid, document, previous, next);
+      if (hit) this.reportStateBreakpoints(hit, previous, next, taken);
+      if (component === this.debugComponent) this.reportStateMachine(guid, document, previous, next);
       // The frame a 2D graph shows most: its heaviest Sprite Animation layer.
       let sprite: (typeof next.layers)[number] | undefined;
       for (const layer of next.layers) {

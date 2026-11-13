@@ -188,12 +188,11 @@ export type ClassEventOptions = {
   assetType?: string | null;
   editorGraph?: boolean;
   /**
-   * Animation Object event graph, a transition-rule graph, or a pose graph: the top-level Anim Graph
-   * (`animPose.level` "anim") or a state's graph ("state"). Rule and pose graphs are pure.
+   * Animation Object event graph, a transition-rule graph, or a state's pose graph. Rule and pose graphs are pure.
    */
   animationGraphHost?: "object" | "rule" | "pose";
-  /** A pose graph's dimension (3D poses or 2D frames) and level. */
-  animPose?: { dimension: "3d" | "2d"; level: "anim" | "state" };
+  /** A state graph's dimension (3D poses or 2D frames). */
+  animPose?: { dimension: "3d" | "2d" };
   /** The class's own graph: its interface members (Tickable Object) add events. */
   graph?: SerializedGraph;
 };
@@ -363,15 +362,13 @@ function isAnimCatalogNodeAllowed(
     return nodeId.startsWith("anim.state.");
   }
   if (host === "pose") {
-    const pose = options?.animPose ?? { dimension: "3d", level: "state" };
-    // The state facts describe a state, so only a state's graph reads them.
-    if (nodeId.startsWith("anim.state.")) return pose.level === "state";
+    const pose = options?.animPose ?? { dimension: "3d" };
+    // A state graph reads its state's facts.
+    if (nodeId.startsWith("anim.state.")) return true;
     const prefix = pose.dimension === "3d" ? "anim.pose." : "anim.frame.";
     if (!nodeId.startsWith(prefix)) return false;
-    // Each graph has its one protected output; State Machines belong to the top-level Anim Graph.
-    if (nodeId === `${prefix}output`) return false;
-    if (nodeId === `${prefix}stateMachine`) return pose.level === "anim";
-    return true;
+    // Each state graph has its one protected output.
+    return nodeId !== `${prefix}output`;
   }
   if (nodeId.startsWith("anim.actor.")) {
     return ancestryChain(options).includes("Actor");

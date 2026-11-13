@@ -6,7 +6,7 @@ import {
   type PosePlayerSettings,
 } from "@haptic/anim-graph";
 
-/** Graph documents for runtime tests, edited in place: each helper works on the graph's first State Machine. */
+/** Graph documents for runtime tests, edited in place: each helper works on the graph's State Machine. */
 
 /** Replaces a state's graph with one player of `clip`; `"2d"` plays it as a Sprite Animation. */
 export function setStateClip(
@@ -15,7 +15,7 @@ export function setStateClip(
   clip: PosePlayerSettings,
   dimension: AnimGraphDimension = "3d",
 ): void {
-  const state = doc.stateMachines[0]!.states.find((entry) => entry.id === stateId);
+  const state = doc.stateMachine.states.find((entry) => entry.id === stateId);
   if (!state) throw new Error(`missing state ${stateId}`);
   state.stateGraph = createStateGraph(dimension, clip);
 }
@@ -28,7 +28,7 @@ export function addClipState(
   clip: PosePlayerSettings,
   dimension: AnimGraphDimension = "3d",
 ): void {
-  const machine = doc.stateMachines[0]!;
+  const machine = doc.stateMachine;
   machine.states.push({ id, name, position: { x: 80 + machine.states.length * 280, y: 80 }, stateGraph: createStateGraph(dimension, clip) });
 }
 
@@ -40,7 +40,7 @@ export function addTransition(
   toStateId: string,
   blendSeconds = 0,
 ): void {
-  doc.stateMachines[0]!.transitions.push({
+  doc.stateMachine.transitions.push({
     id,
     fromStateId,
     toStateId,

@@ -54,7 +54,7 @@ import {
 import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import { engineScriptApiFor } from "@haptic/object-model";
 import { classGraph, gChain, gNode, gWire } from "./graph";
-import { playerNode, playerState, poseGraph, singleMachineGraph } from "./anim-pose-graphs";
+import { playerNode, playerState, poseGraph, stateMachineGraph } from "./anim-pose-graphs";
 import {
   actor,
   comp,
@@ -341,10 +341,9 @@ async function buildTorchGraph(ctx: FeatureTestContext): Promise<string> {
   };
   const animationGuid = (await ctx.createAsset("SpriteAnimation", FOLDER, NAMES.torchAnimation, { payload: payload(animation) })).guid;
   const burn = { assetGuid: animationGuid, clipName: "", durationMs: spriteAnimationDurationMs(animation) };
-  const graph: AnimGraphDocument = singleMachineGraph("2d", {
+  const graph: AnimGraphDocument = stateMachineGraph("2d", {
     name: NAMES.torchGraph,
     skeletonGuid: null,
-    machineName: "Torch",
     entryStateId: "burn",
     states: [playerState("2d", "burn", "Burn", defaultAnimStatePosition(0).x, defaultAnimStatePosition(0).y, burn)],
     transitions: [],
@@ -405,10 +404,9 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     ], [gWire("fall", "pose", "pick", "frame0"), gWire("idle", "pose", "pick", "frame1")]),
   };
 
-  const graph: AnimGraphDocument = singleMachineGraph("2d", {
+  const graph: AnimGraphDocument = stateMachineGraph("2d", {
     name: NAMES.robotGraph,
     skeletonGuid: null,
-    machineName: "Robot",
     entryStateId: "idle",
     states: [playerState("2d", "idle", "Idle", at(0).x, at(0).y, clip("idle")), walk, jump, fall],
     // One-way cycle: the disconnected Exit State sink stays true, so each exit time drives Enter State.

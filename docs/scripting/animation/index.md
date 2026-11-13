@@ -1,6 +1,6 @@
 # Animation Graph Nodes
 
-Nodes that only exist in Animation Graphs: in the Animation Object's event graph, in transition rules, and in the pose graphs of the Anim Graph and each state. Rule and pose graphs can also use pure [Class nodes](../class/index.md), such as math on a variable.
+Nodes that only exist in Animation Graphs: in the Animation Object's event graph, in transition rules, and in each state's graph. Rule and state graphs can also use pure [Class nodes](../class/index.md), such as math on a variable.
 
 ## Events
 
@@ -33,12 +33,11 @@ Nodes that only exist in Animation Graphs: in the Animation Object's event graph
 
 ## Poses
 
-Nodes of a 3D Animation Graph's pose graphs. Their **Pose** wires carry a whole Skeleton pose and connect only to other Pose pins.
+Nodes of a 3D Animation Graph's state graphs. Their **Pose** wires carry a whole Skeleton pose and connect only to other Pose pins.
 
 | Node | Description |
 | --- | --- |
-| [Output Pose](output-pose.md) | The pose this graph produces. Every pose graph ends in one. |
-| [State Machine](state-machine-pose.md) | The pose of a State Machine's active state, blended through its transitions. |
+| [Output Pose](output-pose.md) | The pose this graph produces. Every state graph ends in one. |
 | [Sequence Player](sequence-player.md) | Plays an Animation. |
 | [Sequence Evaluator](sequence-evaluator.md) | Holds an Animation at a normalized time. |
 | [Rest Pose](rest-pose.md) | The Skeleton's rest pose. |
@@ -48,12 +47,11 @@ Nodes of a 3D Animation Graph's pose graphs. Their **Pose** wires carry a whole 
 
 ## Frames
 
-Nodes of a 2D Animation Graph's frame graphs. Their **Frame** wires carry the Sprite Animation frame to show and connect only to other Frame pins.
+Nodes of a 2D Animation Graph's state graphs. Their **Frame** wires carry the Sprite Animation frame to show and connect only to other Frame pins.
 
 | Node | Description |
 | --- | --- |
-| [Output Frame](output-frame.md) | The frame this graph shows. Every frame graph ends in one. |
-| [State Machine](state-machine-frame.md) | The frame of a State Machine's active state. |
+| [Output Frame](output-frame.md) | The frame this graph shows. Every state graph ends in one. |
 | [Sprite Animation Player](sprite-animation-player.md) | Plays a Sprite Animation. |
 | [Select Frame By Bool](select-frame-by-bool.md) | Shows True Frame or False Frame as Active changes. |
 | [Select Frame By Int](select-frame-by-int.md) | Shows the frame Active Index picks. |

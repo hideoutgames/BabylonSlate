@@ -3,13 +3,12 @@ import type { SerializedGraph } from "@haptic/core";
 type SerializedGraphNode = SerializedGraph["nodes"][number];
 
 /**
- * Pose graphs: the top-level Anim Graph and each state's graph. Pose (3D) and frame (2D) wires are read here as
- * structure; data inputs (Play Rate, Alpha, Active) come from a compiled pose-data module, or from the value stored
- * on the node when the input is unwired.
+ * Pose graphs: each state's graph, ending in its Output Pose (3D) or Output Frame (2D). Pose and frame wires are read
+ * here as structure; data inputs (Play Rate, Alpha, Active) come from a compiled pose-data module, or from the value
+ * stored on the node when the input is unwired.
  */
 
 export const ANIM_POSE_OUTPUT_TYPE = "anim.pose.output";
-export const ANIM_POSE_STATE_MACHINE_TYPE = "anim.pose.stateMachine";
 export const ANIM_POSE_SEQUENCE_PLAYER_TYPE = "anim.pose.sequencePlayer";
 export const ANIM_POSE_SEQUENCE_EVALUATOR_TYPE = "anim.pose.sequenceEvaluator";
 export const ANIM_POSE_REST_TYPE = "anim.pose.restPose";
@@ -17,7 +16,6 @@ export const ANIM_POSE_BLEND_TYPE = "anim.pose.blend";
 export const ANIM_POSE_BLEND_BY_BOOL_TYPE = "anim.pose.blendByBool";
 export const ANIM_POSE_BLEND_BY_INT_TYPE = "anim.pose.blendByInt";
 export const ANIM_FRAME_OUTPUT_TYPE = "anim.frame.output";
-export const ANIM_FRAME_STATE_MACHINE_TYPE = "anim.frame.stateMachine";
 export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
 export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
 export const ANIM_FRAME_SELECT_BY_INT_TYPE = "anim.frame.selectByInt";
@@ -32,20 +30,12 @@ export function poseOutputType(dimension: AnimPoseDimension): string {
   return dimension === "3d" ? ANIM_POSE_OUTPUT_TYPE : ANIM_FRAME_OUTPUT_TYPE;
 }
 
-export function poseStateMachineType(dimension: AnimPoseDimension): string {
-  return dimension === "3d" ? ANIM_POSE_STATE_MACHINE_TYPE : ANIM_FRAME_STATE_MACHINE_TYPE;
-}
-
 export function posePlayerType(dimension: AnimPoseDimension): string {
   return dimension === "3d" ? ANIM_POSE_SEQUENCE_PLAYER_TYPE : ANIM_FRAME_PLAYER_TYPE;
 }
 
 export function isPoseOutputType(type: string): boolean {
   return type === ANIM_POSE_OUTPUT_TYPE || type === ANIM_FRAME_OUTPUT_TYPE;
-}
-
-export function isPoseStateMachineType(type: string): boolean {
-  return type === ANIM_POSE_STATE_MACHINE_TYPE || type === ANIM_FRAME_STATE_MACHINE_TYPE;
 }
 
 /** Nodes that play a clip and keep their own time. */
@@ -206,24 +196,6 @@ export function createStateGraph(dimension: AnimPoseDimension, settings: PosePla
       sourceHandle: "pose",
       target: ANIM_POSE_OUTPUT_NODE_ID,
       targetHandle: dimension === "3d" ? "pose" : "frame",
-    }],
-  };
-}
-
-/** The top-level Anim Graph: one State Machine node into the output. */
-export function createAnimGraphGraph(dimension: AnimPoseDimension, machineId: string): SerializedGraph {
-  const inputPin = dimension === "3d" ? "pose" : "frame";
-  return {
-    nodes: [
-      { id: `machine-${machineId}`, type: poseStateMachineType(dimension), position: { x: 60, y: 80 }, data: { machineId } },
-      { id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 560, y: 80 }, data: { __protected: true } },
-    ],
-    edges: [{
-      id: `machine-${machineId}:pose->${ANIM_POSE_OUTPUT_NODE_ID}:${inputPin}`,
-      source: `machine-${machineId}`,
-      sourceHandle: "pose",
-      target: ANIM_POSE_OUTPUT_NODE_ID,
-      targetHandle: inputPin,
     }],
   };
 }

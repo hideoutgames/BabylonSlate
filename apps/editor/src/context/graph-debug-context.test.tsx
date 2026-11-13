@@ -58,7 +58,7 @@ describe("run traces of Behaviour Trees and Animation Graphs", () => {
     () => ({
       store: useGraphDebugStore()!,
       tree: useBehaviourTreeRunTrace(treeGuid),
-      machine: useAnimStateMachineRunTrace(graphGuid, "locomotion"),
+      machine: useAnimStateMachineRunTrace(graphGuid, true),
       object: useAnimObjectGraphRunTrace("assets/Loco.anim3d.hasset", graphGuid),
     }),
     { wrapper: GraphDebugProvider },
@@ -89,9 +89,7 @@ describe("run traces of Behaviour Trees and Animation Graphs", () => {
     store.receiveTrace({
       target: LOCO, instanceId: "anim-1", tickIndex: 1,
       graphs: [
-        { assetGuid: "loco-graph", graphId: "state-machine:locomotion", nodes: ["run"], edges: ["idle-run"], values: [] },
-        // Another State Machine of the graph traces under its own id.
-        { assetGuid: "loco-graph", graphId: "state-machine:upper", nodes: ["wave"], edges: [], values: [] },
+        { assetGuid: "loco-graph", graphId: "state-machine", nodes: ["run"], edges: ["idle-run"], values: [] },
         { assetGuid: "assets/Loco.anim3d.hasset", graphId: "animation-object", nodes: ["update"], edges: [], values: [] },
       ],
     });

@@ -148,7 +148,7 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   }, directoryName);
   const walk = await decodeAssetDocument(await assetBytes(page, walkPath));
   expect(walk.type).toBe("Animation");
-  const machine = animation.stateMachines[0]!;
+  const machine = animation.stateMachine;
   const idleState = machine.states[0]!;
   idleState.stateGraph = patchPosePlayer(idleState.stateGraph, singlePlayerOf(idleState.stateGraph)!.id, { playRate: 0 });
   machine.states.push({

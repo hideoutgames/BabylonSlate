@@ -16,7 +16,6 @@ import {
   animPoseGraphs,
   animPoseScriptClassId,
   animRuleScriptClassId,
-  animTransitions,
   decorateTransitionRuleGraph,
   findReverseTransition,
   parseAnimGraphDocument,
@@ -874,7 +873,7 @@ function animGraphCompileCacheKey(
           key,
           graph: serializedGraphCompileSlice(`${entry.path}#pose-${key}`, graph),
         })),
-        transitions: animTransitions(parsed).map(({ transition }) => ({
+        transitions: parsed.stateMachine.transitions.map((transition) => ({
           id: transition.id,
           fromStateId: transition.fromStateId,
           toStateId: transition.toStateId,
@@ -924,9 +923,9 @@ function compileAnimGraphDocument(
       parentClassId: "Object",
     });
   }
-  for (const { machine, transition } of animTransitions(doc)) {
+  for (const transition of doc.stateMachine.transitions) {
     const oneWay = !findReverseTransition(
-      machine.transitions,
+      doc.stateMachine.transitions,
       transition.fromStateId,
       transition.toStateId,
     );

@@ -546,8 +546,7 @@ describe("commitLogicGraph", () => {
     const commit = commitLogicGraph("anim-graph-3d", doc, next);
     expect(commit.kind).toBe("asset-payload");
     if (commit.kind !== "asset-payload") return;
-    expect(commit.payload.stateMachines).toEqual(doc.stateMachines);
-    expect(commit.payload.animGraph).toEqual(doc.animGraph);
+    expect(commit.payload.stateMachine).toEqual(doc.stateMachine);
     expect(commit.payload.animationObject).toEqual({
       nodes: next.nodes,
       edges: next.edges,
