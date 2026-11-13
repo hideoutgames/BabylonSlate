@@ -19,6 +19,8 @@ export const PIN_COLOR_VAR = {
   wildcard: "var(--pin-wildcard)",
   delegate: "var(--pin-delegate)",
   particle: "var(--pin-particle)",
+  pose: "var(--pin-pose)",
+  frame: "var(--pin-frame)",
 } as const;
 
 export const PIN_KIND_COLOR_VAR: Record<string, string> = {
@@ -45,6 +47,8 @@ export const PIN_KIND_COLOR_VAR: Record<string, string> = {
   boxedWildcard: PIN_COLOR_VAR.wildcard,
   delegate: PIN_COLOR_VAR.delegate,
   particle: PIN_COLOR_VAR.particle,
+  pose: PIN_COLOR_VAR.pose,
+  frame: PIN_COLOR_VAR.frame,
 };
 
 /** Graph node header roles; `--node-*` values live in `styles/globals.css`. */
@@ -61,6 +65,8 @@ export const NODE_ROLE_COLOR_VAR = {
   "bt-root": "var(--node-bt-root)",
   "bt-composite": "var(--node-bt-composite)",
   "bt-task": "var(--node-bt-task)",
+  "anim-pose": "var(--node-anim-pose)",
+  "anim-control": "var(--node-anim-control)",
 } as const;
 
 export type NodeRole = keyof typeof NODE_ROLE_COLOR_VAR;

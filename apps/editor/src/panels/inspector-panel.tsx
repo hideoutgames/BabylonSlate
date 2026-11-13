@@ -2,7 +2,7 @@ import { SimulationInspector } from "./simulation-inspector";
 import { ActorDefaultsGrid, GameInstanceDefaultsGrid } from "./actor-defaults-grid";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { normalizeClassMemberCategory } from "@haptic/core";
+import { normalizeClassMemberCategory, isAnimGraphDocumentKind } from "@haptic/core";
 import { useMemo, useState } from "react";
 import {
   ClassPicker,
@@ -26,6 +26,7 @@ import {
 } from "@haptic/core";
 import {
   animGraphMembersFromVariables,
+  patchStateGraph,
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
   findReverseTransition,
@@ -36,7 +37,6 @@ import {
   useDocumentActions,
   useProjectState,
   useRegistryState,
-  useActiveDocumentState,
   useOpenDocument,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -96,7 +96,6 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const { applyAssetDocumentChange, reparentClassDocument } = documentActions;
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { animEditorMode } = useActiveDocumentState();
   // The open world Scene or Scene Layer sets the physics world.
   const worldDocuments = useOpenDocumentsOfKinds(WORLD_KINDS);
   const { focusDiagnostic } = useValidation();
@@ -104,6 +103,8 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
     useGraphEditing();
   const animEditing = useOptionalAnimGraphEditing();
+  // The Animation Graph canvas the Inspector follows: its State Machine side or the Animation Object script.
+  const animCanvas = animEditing?.canvas ?? "stateMachine";
   const {
     selectedId: prefabSelectedId,
     selectedIds: prefabSelectedIds,
@@ -163,25 +164,33 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const graphClassId = logicGraphHostClass(doc?.ref.kind, docPath, indexed, classIdForGraphPath).classId;
   const parsedAnim = useMemo(
     () =>
-      doc?.ref.kind === "anim-graph"
+      isAnimGraphDocumentKind(doc?.ref.kind)
         ? parseAnimGraphDocument(doc.content)
         : null,
     [doc?.content, doc?.ref.kind],
   );
-  const openRuleId = animEditorMode === "stateMachine"
+  const openRuleId = animCanvas === "stateMachine"
     ? animEditing?.openTransitionId ?? null
     : null;
   const ruleTransition =
     openRuleId && parsedAnim
-      ? (parsedAnim.transitions.find((row) => row.id === openRuleId) ?? null)
+      ? (parsedAnim.stateMachine.transitions.find((transition) => transition.id === openRuleId) ?? null)
       : null;
+  // A state's graph on show on the State Machine canvas (a rule takes precedence).
+  const animLocation = animCanvas === "stateMachine" && !ruleTransition ? animEditing?.location ?? null : null;
+  const poseState = animLocation?.kind === "state" && parsedAnim
+    ? parsedAnim.stateMachine.states.find((row) => row.id === animLocation.stateId) ?? null
+    : null;
+  const poseSource = poseState?.stateGraph ?? null;
   const graph = useMemo(
-    () => ruleTransition && parsedAnim
+    () => poseSource && parsedAnim
+      ? { ...poseSource, members: animGraphMembersFromVariables(parsedAnim.variables) }
+      : ruleTransition && parsedAnim
       ? {
           ...decorateTransitionRuleGraph(
             ruleTransition.ruleGraph,
             !findReverseTransition(
-              parsedAnim.transitions,
+              parsedAnim.stateMachine.transitions,
               ruleTransition.fromStateId,
               ruleTransition.toStateId,
             ),
@@ -189,10 +198,17 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           members: animGraphMembersFromVariables(parsedAnim.variables),
         }
       : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
-    [doc?.content, doc?.ref.kind, parsedAnim, ruleTransition],
+    [doc?.content, doc?.ref.kind, parsedAnim, ruleTransition, poseSource],
   );
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
+    if (poseState && parsedAnim) {
+      void applyAssetDocumentChange(
+        documentId,
+        patchStateGraph(parsedAnim, poseState.id, { nodes: next.nodes, edges: next.edges }) as unknown as Record<string, unknown>,
+      );
+      return;
+    }
     if (ruleTransition && parsedAnim) {
       const ruleKey = logicGraphEditMergeKey(graph, next);
       void applyAssetDocumentChange(

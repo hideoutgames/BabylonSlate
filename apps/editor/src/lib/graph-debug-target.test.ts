@@ -33,8 +33,8 @@ describe("documentGraphDebugTarget", () => {
       .toEqual({ kind: "class", classId: "Door" });
     expect(documentGraphDebugTarget({ kind: "behaviour-tree", path: "assets/Guard.bt.hasset" }, registry))
       .toEqual({ kind: "behaviourTree", assetGuid: "guid:assets/Guard.bt.hasset" });
-    expect(documentGraphDebugTarget({ kind: "anim-graph", path: "assets/Guard.anim.hasset" }, registry))
-      .toEqual({ kind: "animationGraph", assetGuid: "guid:assets/Guard.anim.hasset" });
+    expect(documentGraphDebugTarget({ kind: "anim-graph-3d", path: "assets/Guard.anim3d.hasset" }, registry))
+      .toEqual({ kind: "animationGraph", assetGuid: "guid:assets/Guard.anim3d.hasset" });
   });
 
   it("offers nothing for another document, an asset the registry does not know, or no document", () => {

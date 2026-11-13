@@ -63,6 +63,8 @@
     --color-node-bt-task: var(--node-bt-task);
     --color-node-bt-decorator: var(--node-bt-decorator);
     --color-node-bt-service: var(--node-bt-service);
+    --color-node-anim-pose: var(--node-anim-pose);
+    --color-node-anim-control: var(--node-anim-control);
     --color-node-title: var(--node-title-foreground);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
@@ -206,6 +208,8 @@
     --pin-wildcard: oklch(0.62 0.02 250);
     --pin-delegate: oklch(0.52 0.22 20);
     --pin-particle: oklch(0.40 0.07 175);
+    --pin-pose: oklch(0.32 0.03 85);
+    --pin-frame: oklch(0.36 0.04 300);
     --node-event: oklch(0.48 0.16 25);
     --node-call-parent: oklch(0.42 0.09 55);
     --node-function: oklch(0.42 0.12 250);
@@ -220,6 +224,8 @@
     --node-bt-task: oklch(0.42 0.12 220);
     --node-bt-decorator: oklch(0.48 0.12 80);
     --node-bt-service: oklch(0.45 0.10 175);
+    --node-anim-pose: oklch(0.52 0.12 95);
+    --node-anim-control: oklch(0.55 0.15 62);
     --node-dev-only-tape: oklch(0.84 0.16 90);
     --node-dev-only-stripe: oklch(0.16 0 0);
     --node-editor-only-tape: oklch(0.78 0.12 210);
@@ -333,6 +339,8 @@
     --pin-wildcard: oklch(0.72 0.02 250);
     --pin-delegate: oklch(0.65 0.20 20);
     --pin-particle: oklch(0.90 0.14 170);
+    --pin-pose: oklch(0.96 0.02 95);
+    --pin-frame: oklch(0.92 0.04 300);
     --node-event: oklch(0.48 0.16 25);
     --node-call-parent: oklch(0.42 0.09 55);
     --node-function: oklch(0.42 0.12 250);
@@ -346,6 +354,8 @@
     --node-bt-task: oklch(0.42 0.12 220);
     --node-bt-decorator: oklch(0.48 0.12 80);
     --node-bt-service: oklch(0.45 0.10 175);
+    --node-anim-pose: oklch(0.52 0.12 95);
+    --node-anim-control: oklch(0.55 0.15 62);
     --node-latent: oklch(0.55 0.14 80);
     --node-dev-only-tape: oklch(0.84 0.16 90);
     --node-dev-only-stripe: oklch(0.16 0 0);

@@ -131,6 +131,22 @@ describe("Homepage account", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("offers the Discord server from the profile menu without launcher actions", async () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const onAccountChange = vi.fn();
+    render(<HomepageAccount onAccountChange={onAccountChange} />);
+    expect(onAccountChange).toHaveBeenCalledExactlyOnceWith(null);
+    fireEvent.click(screen.getByRole("button", { name: "Guest, Not Signed In" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Discord Server" }));
+    expect(open).toHaveBeenCalledWith(
+      "https://discord.gg/7uPR4JK5q3",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    open.mockRestore();
+  });
+
   it("asks guests to sign in before subscribing when billing is configured", async () => {
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
     vi.stubEnv("VITE_REVENUECAT_WEB_API_KEY", "rcb_test_example");
@@ -165,10 +181,12 @@ describe("Homepage account", () => {
     clerk.signedIn = true;
     const onEngineSettings = vi.fn();
     const onChangelog = vi.fn();
+    const onAccountChange = vi.fn();
     const { unmount } = render(
       <HomepageAccount
         onEngineSettings={onEngineSettings}
         onChangelog={onChangelog}
+        onAccountChange={onAccountChange}
       />,
     );
     const trigger = await screen.findByRole("button", {
@@ -180,6 +198,8 @@ describe("Homepage account", () => {
       ),
     );
     expect(trigger.textContent).toContain("ada@example.test");
+    // Only the settled account is reported, never a guest while Clerk loads.
+    expect(onAccountChange.mock.calls).toEqual([["user_ada"]]);
     const open = async () => {
       fireEvent.click(trigger);
       return screen.findByRole("menu");

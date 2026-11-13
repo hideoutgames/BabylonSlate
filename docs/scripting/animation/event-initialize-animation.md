@@ -14,5 +14,5 @@ Runs once when an Animation Graph component first starts running this graph.
 
 ## Notes
 
-- Only available in the Animation Object graph of an Animation Graph asset (the **Animation Object** view).
+- Only available in the Animation Object graph of an Animation Graph asset (its **Animation Object** window).
 - Use it to set up Animation Graph variables before the first update.

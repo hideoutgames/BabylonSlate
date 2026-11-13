@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, setTransitionBidirectional, type AnimGraphDocument } from "@haptic/anim-graph";
+import {
+  createDefaultAnimGraph,
+  createDefaultTransitionRuleGraph,
+  createStateGraph,
+  setTransitionBidirectional,
+  singlePlayerOf,
+  type AnimGraphDocument,
+} from "@haptic/anim-graph";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
@@ -32,10 +39,12 @@ if (typeof window !== "undefined") {
   });
 }
 
-const DOC_ID = "anim-graph:assets/Loco.anim.hasset";
+const DOC_ID = "anim-graph:assets/Loco.anim3d.hasset";
 
 const store = vi.hoisted(() => {
   let content: Record<string, unknown> = {};
+  /** The open document's kind: a 3D graph unless a test opens a 2D one. */
+  const view = { kind: "anim-graph-3d" as "anim-graph-3d" | "anim-graph-2d" };
   const listeners = new Set<() => void>();
   return {
     applyAssetDocumentChange: vi.fn(
@@ -54,6 +63,7 @@ const store = vi.hoisted(() => {
       content = next;
       listeners.forEach((listener) => listener());
     },
+    view,
   };
 });
 
@@ -65,7 +75,7 @@ vi.mock("../context/document-context", async () => {
       openDocuments: [
         {
           id: DOC_ID,
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" },
+          ref: { kind: store.view.kind, path: "assets/Loco.anim3d.hasset" },
           content,
         },
       ],
@@ -94,7 +104,7 @@ vi.mock("../context/document-context", async () => {
               guid: "model-1",
               name: "HeroModel",
               type: "Model",
-              payload: { clipNames: ["Idle", "Walk"] },
+              payload: {},
               dependencies: ["anim-1"],
             },
             path: "assets/Hero.model.hasset",
@@ -104,7 +114,7 @@ vi.mock("../context/document-context", async () => {
               guid: "model-empty",
               name: "EmptyModel",
               type: "Model",
-              payload: { clipNames: [] },
+              payload: {},
             },
             path: "assets/Empty.model.hasset",
           },
@@ -122,6 +132,19 @@ vi.mock("../context/document-context", async () => {
             path: "assets/Atlas.texture.hasset",
           },
           {
+            header: { guid: "rig", name: "Knight_Skeleton", type: "Skeleton", payload: { kind: "skin", bones: [] } },
+            path: "assets/Knight_Skeleton.hasset",
+          },
+          {
+            header: {
+              guid: "anim-rig",
+              name: "Knight_Run",
+              type: "Animation",
+              payload: { clipName: "Run", skeletonGuid: "rig" },
+            },
+            path: "assets/Knight_Run.hasset",
+          },
+          {
             header: {
               guid: "stats", name: "Stats", type: "DataDefinition",
               payload: { fields: [{ id: "allowed", name: "Allowed", typeId: "bool", defaultValue: true }] },
@@ -137,8 +160,8 @@ vi.mock("../context/document-context", async () => {
           },
         ],
         getByPath: (path: string) =>
-          path === "assets/Loco.anim.hasset"
-            ? { header: { guid: "loco-graph", name: "Loco", type: "AnimationGraph" }, path }
+          path === "assets/Loco.anim3d.hasset"
+            ? { header: { guid: "loco-graph", name: "Loco", type: "AnimationGraph3D" }, path }
             : undefined,
         getByGuid: (guid: string) =>
           guid === "spr-1"
@@ -158,7 +181,7 @@ vi.mock("../context/document-context", async () => {
                       guid: "model-1",
                       name: "HeroModel",
                       type: "Model",
-                      payload: { clipNames: ["Idle", "Walk"] },
+                      payload: {},
                     },
                   }
                 : guid === "model-empty"
@@ -167,7 +190,7 @@ vi.mock("../context/document-context", async () => {
                         guid: "model-empty",
                         name: "EmptyModel",
                         type: "Model",
-                        payload: { clipNames: [] },
+                        payload: {},
                       },
                     }
                   : guid === "anim-1"
@@ -202,7 +225,11 @@ beforeEach(() => {
 
 const panelProps = {} as IDockviewPanelProps;
 
-function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) {
+function renderAnimGraph(
+  payload: AnimGraphDocument = createDefaultAnimGraph(),
+  kind: "anim-graph-3d" | "anim-graph-2d" = "anim-graph-3d",
+) {
+  store.view.kind = kind;
   store.reset(payload as unknown as Record<string, unknown>);
   return render(
     <ValidationProvider>
@@ -226,24 +253,26 @@ function lastCommit(): AnimGraphDocument {
   return calls[calls.length - 1]![1] as unknown as AnimGraphDocument;
 }
 
+function machineOf(doc: AnimGraphDocument) {
+  return doc.stateMachine;
+}
+
+/** The data of a state's single player. */
+function playerData(doc: AnimGraphDocument, stateId: string) {
+  const state = machineOf(doc).states.find((row) => row.id === stateId);
+  return state ? singlePlayerOf(state.stateGraph)?.data : undefined;
+}
+
 function locoGraph(): AnimGraphDocument {
   const doc = createDefaultAnimGraph();
-  doc.states.push({
+  const machine = machineOf(doc);
+  machine.states.push({
     id: "run",
     name: "Run",
-    clipId: "run-clip",
-    speed: 1,
-    loop: true,
     position: { x: 300, y: 80 },
+    stateGraph: createStateGraph("3d", { assetGuid: "anim-1", clipName: "Walk", durationMs: 400 }),
   });
-  doc.clips.push({
-    id: "run-clip",
-    kind: "sprite",
-    assetGuid: "spr-1",
-    clipName: "Run",
-    durationMs: 400,
-  });
-  doc.transitions.push({
+  machine.transitions.push({
     id: "idle-to-run",
     fromStateId: "idle",
     toStateId: "run",
@@ -316,17 +345,30 @@ describe("AnimGraphEditor", () => {
 
   it("shows each state's clip on its graph node", async () => {
     const doc = locoGraph();
-    doc.clips = doc.clips.map((clip) =>
-      clip.id === "idle-clip" ? { ...clip, assetGuid: "anim-1" } : clip,
+    const machine = machineOf(doc);
+    machine.states[0]!.stateGraph = createStateGraph("3d", { assetGuid: "anim-1" });
+    const player = (id: string) => ({ id, type: "anim.pose.sequencePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "anim-1" } });
+    machine.states.push(
+      { id: "blank", name: "Blank", position: { x: 600, y: 80 }, stateGraph: { nodes: [], edges: [] } },
+      {
+        id: "mixed",
+        name: "Mixed",
+        position: { x: 900, y: 80 },
+        stateGraph: {
+          nodes: [
+            { id: "blend", type: "anim.pose.blend", position: { x: 0, y: 0 }, data: {} },
+            player("a"),
+            player("b"),
+            { id: "output", type: "anim.pose.output", position: { x: 0, y: 0 }, data: { __protected: true } },
+          ],
+          edges: [
+            { id: "1", source: "a", sourceHandle: "pose", target: "blend", targetHandle: "a" },
+            { id: "2", source: "b", sourceHandle: "pose", target: "blend", targetHandle: "b" },
+            { id: "3", source: "blend", sourceHandle: "pose", target: "output", targetHandle: "pose" },
+          ],
+        },
+      },
     );
-    doc.states.push({
-      id: "blank",
-      name: "Blank",
-      clipId: null,
-      speed: 1,
-      loop: false,
-      position: { x: 600, y: 80 },
-    });
     renderAnimGraph(doc);
     await waitFor(() => {
       expect(screen.getByTestId("anim-state-node-clip-idle").textContent).toBe(
@@ -336,23 +378,21 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-state-node-clip-blank").textContent).toBe(
       "No Clip",
     );
+    // A state whose graph is more than one player shows that it plays a State Graph.
+    expect(screen.getByTestId("anim-state-node-clip-mixed").textContent).toBe("State Graph");
   });
 
   it("adds a state from the States list", () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-add-state"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        states: expect.arrayContaining([
-          expect.objectContaining({ id: "idle" }),
-          expect.objectContaining({ name: "State" }),
-        ]),
-      }),
-    );
-    expect(lastCommit().states).toHaveLength(2);
-    expect(lastCommit().states[1]!.position.x).toBeGreaterThan(
-      lastCommit().states[0]!.position.x,
-    );
+    const states = machineOf(lastCommit()).states;
+    expect(states).toEqual([
+      expect.objectContaining({ id: "idle" }),
+      expect.objectContaining({ name: "State" }),
+    ]);
+    expect(states[1]!.position.x).toBeGreaterThan(states[0]!.position.x);
+    // A new state plays one player of the graph's dimension.
+    expect(singlePlayerOf(states[1]!.stateGraph)?.type).toBe("anim.pose.sequencePlayer");
   });
 
   it("shows Details after selecting a state and toggles loop", () => {
@@ -361,11 +401,7 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("property-name")).toBeTruthy();
     expect(screen.getByTestId("property-loop")).toBeTruthy();
     fireEvent.click(screen.getByTestId("property-loop"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        states: [expect.objectContaining({ id: "idle", loop: false })],
-      }),
-    );
+    expect(playerData(lastCommit(), "idle")?.loop).toBe(false);
   });
 
   it("selects a state from the list without zooming the graph to that node", async () => {
@@ -393,7 +429,7 @@ describe("AnimGraphEditor", () => {
 
   it("shows the rows two selected states share and adds typed math to each state's Speed in one change", async () => {
     const doc = locoGraph();
-    doc.states.find((state) => state.id === "run")!.speed = 2;
+    machineOf(doc).states[1]!.stateGraph = createStateGraph("3d", { assetGuid: "anim-1", playRate: 2 });
     const { container } = renderAnimGraph(doc);
     await waitFor(() => expect(screen.getByTestId("anim-state-node-run")).toBeTruthy());
     fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
@@ -401,19 +437,18 @@ describe("AnimGraphEditor", () => {
     fireEvent.click(container.querySelector('.react-flow__node[data-id="run"]')!);
     fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
     await waitFor(() => expect(screen.getByTestId("anim-graph-details").textContent).toContain("2 States"));
-    // Names, the entry state and transitions stay per state; Idle plays an Animation and Run a Sprite.
+    // Names, the entry state and transitions stay per state; Idle plays no clip and Run plays Hero_Walk.
     expect(screen.queryByTestId("property-name")).toBeNull();
     expect(screen.queryByTestId("property-entry")).toBeNull();
     expect(screen.queryByTestId("anim-graph-transition-idle-to-run")).toBeNull();
-    expect(screen.queryByTestId("property-clipAsset")).toBeNull();
-    expect(screen.getByTestId("property-clipKind").textContent).toContain("Mixed Values");
+    expect(screen.getByTestId("property-clipAsset").textContent).toContain("Mixed Values");
     const speed = screen.getByTestId<HTMLInputElement>("property-speed");
     expect(speed.value).toBe("Mixed Values");
     store.applyAssetDocumentChange.mockClear();
     fireEvent.focus(speed);
     fireEvent.change(speed, { target: { value: "Mixed Values+4" } });
     expect(store.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
-    expect(lastCommit().states.map((state) => [state.id, state.speed])).toEqual([["idle", 5], ["run", 6]]);
+    expect(["idle", "run"].map((id) => [id, playerData(lastCommit(), id)?.["default:playRate"]])).toEqual([["idle", 5], ["run", 6]]);
   });
 
   it("opens a nested transition rule graph from Details", async () => {
@@ -486,7 +521,7 @@ describe("AnimGraphEditor", () => {
 
   it("hydrates typed row reads and offers Definition nodes in transition rules", async () => {
     const doc = locoGraph();
-    doc.transitions[0]!.ruleGraph.nodes.push({
+    machineOf(doc).transitions[0]!.ruleGraph.nodes.push({
       id: "read-data", type: "data.readEntry", position: { x: 300, y: 200 },
       data: { "default:tree": "settings", "default:entryPath": "Primary" },
     });
@@ -524,7 +559,7 @@ describe("AnimGraphEditor", () => {
     const flip = screen.getByTestId("anim-graph-flip-direction-idle-to-run");
     expect(flip).toHaveProperty("disabled", false);
     fireEvent.click(flip);
-    expect(lastCommit().transitions[0]).toMatchObject({
+    expect(machineOf(lastCommit()).transitions[0]).toMatchObject({
       id: "idle-to-run",
       fromStateId: "run",
       toStateId: "idle",
@@ -540,7 +575,7 @@ describe("AnimGraphEditor", () => {
   it("sets breakpoints on a state from its menu and on each direction of a Both Ways transition in Details", () => {
     const breakpoints = new BreakpointStore();
     const both = setTransitionBidirectional(locoGraph(), "idle-to-run", true);
-    const reverseId = both.transitions.find((row) => row.fromStateId === "run")!.id;
+    const reverseId = machineOf(both).transitions.find((row) => row.fromStateId === "run")!.id;
     store.reset(both as unknown as Record<string, unknown>);
     render(
       <BreakpointStoreProvider store={breakpoints}>
@@ -607,7 +642,7 @@ describe("AnimGraphEditor", () => {
         },
       ],
     };
-    doc.transitions[0]!.ruleGraph.nodes.push({
+    machineOf(doc).transitions[0]!.ruleGraph.nodes.push({
       id: "get-speed-rule",
       type: "variables.get",
       position: { x: 0, y: 0 },
@@ -628,12 +663,12 @@ describe("AnimGraphEditor", () => {
         .variableName,
     ).toBe("MoveSpeed");
     expect(
-      next.transitions[0]?.ruleGraph.nodes.find((node) => node.id === "get-speed-rule")
+      machineOf(next).transitions[0]?.ruleGraph.nodes.find((node) => node.id === "get-speed-rule")
         ?.data.variableName,
     ).toBe("MoveSpeed");
   });
 
-  it("picks an Animation clip for the selected state and hides Clip Name", async () => {
+  it("picks an Animation clip for the selected state", async () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-clipAsset"));
@@ -643,54 +678,79 @@ describe("AnimGraphEditor", () => {
     expect(screen.queryByTestId("search-item-model-1")).toBeNull();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-anim-1"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        clips: expect.arrayContaining([
-          expect.objectContaining({
-            id: "idle-clip",
-            kind: "animation",
-            assetGuid: "anim-1",
-            clipName: "Walk",
-          }),
-        ]),
-      }),
-    );
-    expect(screen.queryByTestId("property-clipName")).toBeNull();
+    expect(playerData(lastCommit(), "idle")).toMatchObject({ assetGuid: "anim-1", clipName: "Walk" });
   });
 
-  it("picks a Sprite Animation for sprite clip kind and hides Clip Name", async () => {
+  it("offers only Animations on the graph's Skeleton, and sets the Skeleton in the Graph rows", async () => {
+    renderAnimGraph(createDefaultAnimGraph("Loco", { dimension: "3d", skeletonGuid: "rig" }));
+    expect(screen.getByTestId("property-skeleton").textContent).toContain("Knight_Skeleton");
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.click(screen.getByTestId("property-clipAsset"));
+    await waitFor(() => expect(screen.getByTestId("search-item-anim-rig")).toBeTruthy());
+    // Hero_Walk has no Skeleton, so only a graph without one offers it.
+    expect(screen.queryByTestId("search-item-anim-1")).toBeNull();
+    expect(screen.queryByTestId("search-item-walk-anim")).toBeNull();
+  });
+
+  it("offers no Clip Name for a state whose clip still names a Model", () => {
+    // Clips are Animation assets: a Model plus a glTF clip name is no longer a clip.
     const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "sprite",
-      assetGuid: "",
-      clipName: "",
-      durationMs: 1000,
-    };
+    machineOf(doc).states[0]!.stateGraph = createStateGraph("3d", { assetGuid: "model-1", clipName: "Idle", durationMs: 1000 });
     renderAnimGraph(doc);
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    expect(screen.getByTestId("property-clipAsset")).toBeTruthy();
     expect(screen.queryByTestId("property-clipName")).toBeNull();
+    expect(screen.getByTestId("anim-state-node-clip-idle").textContent).toContain("HeroModel");
+  });
+
+  it("picks only Sprite Animations in a 2D graph", async () => {
+    const doc = createDefaultAnimGraph("Loco", { dimension: "2d" });
+    renderAnimGraph(doc, "anim-graph-2d");
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-clipAsset"));
     await waitFor(() => {
       expect(screen.getByTestId("search-item-walk-anim")).toBeTruthy();
     });
     expect(screen.queryByTestId("search-item-spr-1")).toBeNull();
     expect(screen.queryByTestId("search-item-model-1")).toBeNull();
+    expect(screen.queryByTestId("search-item-anim-1")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-walk-anim"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        clips: expect.arrayContaining([
-          expect.objectContaining({
-            id: "idle-clip",
-            kind: "sprite",
-            assetGuid: "walk-anim",
-            clipName: "",
-            durationMs: 250,
-          }),
-        ]),
-      }),
-    );
-    expect(screen.queryByTestId("property-clipName")).toBeNull();
+    const player = singlePlayerOf(machineOf(lastCommit()).states[0]!.stateGraph);
+    expect(player?.type).toBe("anim.frame.spritePlayer");
+    expect(player?.data).toMatchObject({ assetGuid: "walk-anim", durationMs: 250 });
+  });
+
+  it("opens a state's graph on double-click, ending in its Output Pose, and steps back out with the breadcrumbs", async () => {
+    const { container } = renderAnimGraph(locoGraph());
+    await waitFor(() => expect(container.querySelector('.react-flow__node[data-id="run"]')).not.toBeNull());
+    fireEvent.doubleClick(container.querySelector('.react-flow__node[data-id="run"]')!);
+    await waitFor(() => expect(screen.getByTestId("anim-pose-graph")).toBeTruthy());
+    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
+    expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
+    await waitFor(() => {
+      expect(container.querySelector('.react-flow__node[data-id="output"] .anim-pose-output-node')).not.toBeNull();
+      expect(container.querySelector('.react-flow__node[data-id="player"]')).not.toBeNull();
+    });
+    fireEvent.click(screen.getByTestId("anim-graph-back"));
+    await waitFor(() => expect(screen.getByTestId("anim-graph-editor")).toBeTruthy());
+    expect(screen.queryByTestId("anim-pose-graph")).toBeNull();
+  });
+
+  it("opens the selected state's graph from Details", () => {
+    renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-run"));
+    fireEvent.click(screen.getByTestId("anim-graph-open-state-graph"));
+    expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
+    expect(screen.getByTestId("anim-pose-graph")).toBeTruthy();
+  });
+
+  it("opens on the State Machine, the root, with nothing to step back to and no Name row", () => {
+    renderAnimGraph(locoGraph());
+    expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
+    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
+    expect(screen.queryByTestId("anim-graph-crumb-state")).toBeNull();
+    expect(screen.getByTestId("anim-graph-back")).toHaveProperty("disabled", true);
+    expect(screen.queryByTestId("property-machineName")).toBeNull();
   });
 });
 

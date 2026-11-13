@@ -1,5 +1,5 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import type { DockWindowDirection } from "@haptic/core";
-import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
 
 export type DockviewDocumentKind =
@@ -27,7 +27,8 @@ export type DockviewDocumentKind =
   | "material-function"
   | "material-instance"
   | "plugin-settings"
-  | "anim-graph"
+  | "anim-graph-3d"
+  | "anim-graph-2d"
   | "behaviour-tree"
   | "audio"
   | "save-game"
@@ -79,7 +80,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "material-function",
   "material-instance",
   "plugin-settings",
-  "anim-graph",
+  "anim-graph-3d",
+  "anim-graph-2d",
   "behaviour-tree",
   "audio",
   "save-game",
@@ -125,8 +127,6 @@ export type DockWindowOptions = {
   actorPrefab?: boolean;
   /** Opt-in Git LFS locking; hides the Locks window entirely when off. */
   sourceControl?: boolean;
-  /** Animation Graph State Machine vs Animation Object surface. */
-  animEditorMode?: AnimEditorMode;
   sceneMode?: SceneMode;
 };
 
@@ -157,7 +157,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "material-function": "material-function-graph",
   "material-instance": "material-instance-preview",
   "plugin-settings": "plugin-settings-details",
-  "anim-graph": "anim-graph-graph",
+  "anim-graph-3d": "anim-graph-graph",
+  "anim-graph-2d": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
   audio: "audio-preview",
   "save-game": "save-game-fields",
@@ -188,9 +189,6 @@ export function primaryDockPanel(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
 ): string {
-  if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
-    return "anim-object-graph";
-  }
   if ((kind === "scene" || kind === "scene-layer") && options?.sceneMode === "script") {
     return "graph";
   }
@@ -1072,8 +1070,15 @@ const CAMERA_SHAKE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
+/** The State Machine canvas (Graph) and the Animation Object script share the centre group as tabs. */
+const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
   { id: "anim-graph-graph", component: "anim-graph-graph", title: "Graph" },
+  {
+    id: "anim-object-graph",
+    component: "anim-object-graph",
+    title: "Animation Object",
+    defaultPosition: { referencePanelId: "anim-graph-graph", direction: "within" },
+  },
   {
     id: "anim-graph-variables",
     component: "anim-graph-variables",
@@ -1100,40 +1105,6 @@ const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
     title: "Compiler Results",
     defaultPosition: {
       referencePanelId: "anim-graph-graph",
-      direction: "below",
-      initialHeight: 160,
-    },
-  },
-];
-
-const ANIM_GRAPH_OBJECT_WINDOWS: DockWindowDefinition[] = [
-  { id: "anim-object-graph", component: "anim-object-graph", title: "Graph" },
-  {
-    id: "anim-object-variables",
-    component: "anim-object-variables",
-    title: "Variables",
-    defaultPosition: {
-      referencePanelId: "anim-object-graph",
-      direction: "left",
-      initialWidth: 224,
-    },
-  },
-  {
-    id: "anim-object-inspector",
-    component: "anim-object-inspector",
-    title: "Inspector",
-    defaultPosition: {
-      referencePanelId: "anim-object-graph",
-      direction: "right",
-      initialWidth: 280,
-    },
-  },
-  {
-    id: "anim-graph-compiler-results",
-    component: "anim-graph-compiler-results",
-    title: "Compiler Results",
-    defaultPosition: {
-      referencePanelId: "anim-object-graph",
       direction: "below",
       initialHeight: 160,
     },
@@ -1301,12 +1272,8 @@ export function listDockWindows(
   if (kind === "camera-shake") {
     return withOptionalLocks(kind, CAMERA_SHAKE_WINDOWS, options);
   }
-  if (kind === "anim-graph") {
-    const windows =
-      options?.animEditorMode === "animationObject"
-        ? ANIM_GRAPH_OBJECT_WINDOWS
-        : ANIM_GRAPH_STATE_WINDOWS;
-    return withOptionalLocks(kind, windows, options);
+  if (isAnimGraphDocumentKind(kind)) {
+    return withOptionalLocks(kind, ANIM_GRAPH_WINDOWS, options);
   }
   if (kind === "behaviour-tree") {
     return withOptionalLocks(kind, BEHAVIOUR_TREE_WINDOWS, options);

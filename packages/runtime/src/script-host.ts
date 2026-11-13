@@ -666,6 +666,32 @@ export class ScriptHost {
   }
 
   /**
+   * A pose graph's compiled data module (`AnimPose:{guid}:{graphKey}`): the wired data inputs of its pose nodes, by
+   * node id and pin name. Undefined when the module is missing or throws; the graph then uses stored values.
+   */
+  invokeAnimPose(
+    classId: string,
+    self: Actor | null,
+    extras: ScriptExtras = {},
+  ): Record<string, Record<string, unknown>> | undefined {
+    const loaded = this.byClassId.get(classId);
+    if (!loaded || loaded.length === 0) return undefined;
+    const evaluate = loaded[0]?.exports.evaluate;
+    if (typeof evaluate !== "function") return undefined;
+    const ctx = this.createContext(
+      self, 0, 0, {}, extras, loaded[0]!.script.assetGuid,
+    );
+    try {
+      const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", evaluate as (context: ScriptContext) => unknown, ctx);
+      return result && typeof result === "object" ? result as Record<string, Record<string, unknown>> : undefined;
+    } catch (error) {
+      this.services.reportError(error);
+      if (isInfiniteLoopError(error)) throw error;
+      return undefined;
+    }
+  }
+
+  /**
    * Register compiled function implementations as interface handlers on `object`.
    * Keys match `interfaceHandlerKey` (`guid:method`). Implementations declared by
    * user ancestors are inherited; the nearest declaring class wins.

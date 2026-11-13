@@ -14,6 +14,7 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
+  isAnimGraphDocumentKind,
 } from "@haptic/core";
 import { diffGraphCommands, graphEditMergeKey } from "@haptic/edit";
 import { pruneEventMembersToNodes } from "./class-members";
@@ -59,7 +60,7 @@ export function serializedGraphFromDocument(
     const script = isRecord(content) ? content.script : undefined;
     return isSerializedGraph(script) ? script : null;
   }
-  if (kind === "anim-graph") {
+  if (isAnimGraphDocumentKind(kind)) {
     const parsed = parseAnimGraphDocument(content);
     if (!parsed) return null;
     return {
@@ -77,7 +78,7 @@ export function replaceSerializedGraphInDocument(
   next: SerializedGraph,
 ): unknown {
   if (kind === "graph") return next;
-  if (kind === "anim-graph" && isRecord(content)) {
+  if (isAnimGraphDocumentKind(kind) && isRecord(content)) {
     return {
       ...content,
       animationObject: { nodes: next.nodes, edges: next.edges },
@@ -725,8 +726,9 @@ type LogicGraphCommit =
   | { kind: "graph"; graph: SerializedGraph }
   /** The whole Scene (or Scene Layer tab) with its new script, for `applySceneChange`. */
   | { kind: "scene"; scene: SerializedScene }
+  /** An Animation Graph with its new Animation Object, for `applyAssetDocumentChange`. */
   | {
-      kind: "anim-graph";
+      kind: "asset-payload";
       payload: Record<string, unknown>;
       /** Set when the edit is one graph command that coalesces (a pin default scrub). */
       mergeKey?: string;
@@ -778,18 +780,18 @@ export function commitLogicGraph(
     void _overlayDesign;
     return { kind: "scene", scene: { ...(content as unknown as SerializedScene), script } };
   }
-  if (kind === "anim-graph") {
+  if (isAnimGraphDocumentKind(kind)) {
     const payload = replaceSerializedGraphInDocument(
-      "anim-graph",
+      kind,
       content,
       next,
     );
     if (isRecord(payload)) {
       return {
-        kind: "anim-graph",
+        kind: "asset-payload",
         payload,
         mergeKey: logicGraphEditMergeKey(
-          serializedGraphFromDocument("anim-graph", content),
+          serializedGraphFromDocument(kind, content),
           next,
         ),
       };

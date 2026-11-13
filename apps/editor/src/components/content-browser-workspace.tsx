@@ -65,6 +65,8 @@ import {
 } from "../lib/content-browser-helpers";
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { writeRetargetedAnimations } from "../lib/animation-retarget";
+import { assignableSkeletons, planAssignSkeleton } from "../lib/assign-skeleton";
+import { asRecord } from "../lib/as-record";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
 import {
   CONTENT_BROWSER_GRID_GAP_PX,
@@ -148,6 +150,8 @@ function ContentBrowserWorkspaceBody({
     setActiveDocument,
     loadAssetThumbnail,
     readAssetChunk,
+    ensureAssetDocument,
+    applyAssetDocumentChange,
   } = actions;
   const play = useOptionalPlay();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
@@ -195,6 +199,7 @@ function ContentBrowserWorkspaceBody({
     return dialogNeedsOpenDocuments ? getOpenDocuments() : NO_OPEN_DOCUMENTS;
   }, [dialogNeedsOpenDocuments, openDocumentsRevision, getOpenDocuments]);
   const [retargetPickerOpen, setRetargetPickerOpen] = useState(false);
+  const [assignSkeletonPickerOpen, setAssignSkeletonPickerOpen] = useState(false);
   const [retargetErrors, setRetargetErrors] = useState<string[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const menuTargetGuidsRef = useRef<string[]>([]);
@@ -325,6 +330,43 @@ function ContentBrowserWorkspaceBody({
       refreshAssetRegistry,
       selectedRoot,
     ],
+  );
+
+  // Assign Skeleton… edits the Model, its Animations and the target Skeleton as working documents; Save writes them.
+  const handleAssignSkeleton = useCallback(
+    async (skeletonGuid: string | null) => {
+      setAssignSkeletonPickerOpen(false);
+      const modelGuid = menuTargetGuidsRef.current[0];
+      if (!skeletonGuid || !modelGuid || !assetRegistry) return;
+      const plan = planAssignSkeleton(
+        assetRegistry.list().map((asset) => ({
+          path: asset.path,
+          readOnly: assetRegistry.getRoot(asset.rootId)?.readOnly === true,
+          header: asset.header,
+        })),
+        modelGuid,
+        skeletonGuid,
+      );
+      if ("error" in plan) {
+        setOperationError(plan.error);
+        return;
+      }
+      setBusy(true);
+      try {
+        for (const edit of plan.edits) {
+          const id = await ensureAssetDocument({ kind: edit.kind, path: edit.path, label: edit.name });
+          const current = asRecord(getOpenDocuments().find((doc) => doc.id === id)?.content);
+          if (!await applyAssetDocumentChange(id, { ...current, ...edit.changes })) {
+            throw new Error(`${edit.name} could not be edited. Check its read-only or source-control lock state.`);
+          }
+        }
+      } catch (error) {
+        setOperationError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applyAssetDocumentChange, assetRegistry, ensureAssetDocument, getOpenDocuments],
   );
 
   const refuseTheirsAssetPaths = useCallback(
@@ -666,6 +708,7 @@ function ContentBrowserWorkspaceBody({
     runCopySteps,
     startRename,
     setRetargetPickerOpen,
+    setAssignSkeletonPickerOpen,
     openMoveForSnapshot,
     setReferenceGuid,
     requestDeleteSnapshot,
@@ -1023,6 +1066,26 @@ function ContentBrowserWorkspaceBody({
           void handleRetargetSkeleton(guid);
         }}
         data-testid="content-browser-retarget-picker"
+      />
+
+      <AssetPicker
+        open={assignSkeletonPickerOpen}
+        onOpenChange={setAssignSkeletonPickerOpen}
+        assets={assignSkeletonPickerOpen && menuTargetGuidsRef.current[0]
+          ? assignableSkeletons(allAssets, menuTargetGuidsRef.current[0]).map((asset) => ({
+              guid: asset.header.guid,
+              name: asset.header.name,
+              type: asset.header.type,
+              path: asset.path,
+            }))
+          : []}
+        allowedTypes={["Skeleton"]}
+        title="Assign Skeleton"
+        allowNone={false}
+        onPick={(guid) => {
+          void handleAssignSkeleton(guid);
+        }}
+        data-testid="content-browser-assign-skeleton-picker"
       />
 
       <ContentBrowserResultDialogs

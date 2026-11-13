@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import {
+  ANIM_POSE_OUTPUT_NODE_ID,
+  createDefaultAnimGraph,
+  createDefaultTransitionRuleGraph,
+  type AnimGraphDocument,
+} from "@haptic/anim-graph";
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
@@ -14,6 +19,7 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
   });
   const gate = { canTick: true, playAnimationOwns: false };
   const invokeAnimEvent = vi.fn();
+  const setSpriteClip = vi.fn();
   const runtime = new AnimGraphRuntime({
     world: () => world,
     stopped: () => false,
@@ -21,22 +27,23 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
     slot: (actor) => actors.indexOf(actor),
     hasRenderSlot: () => true,
     playAnimationOwns: () => gate.playAnimationOwns,
-    scripts: () => ({ invokeAnimEvent, invokeAnimRule: vi.fn() }),
-    setSpriteClip: () => {},
+    scripts: () => ({ invokeAnimEvent, invokeAnimRule: vi.fn(), invokeAnimPose: vi.fn() }),
+    setSpriteClip,
     breakpoints: () => breakpoints,
     frameTrace: () => null,
     emit: () => {},
   });
   runtime.register("graph", document);
-  return { actors, gate, invokeAnimEvent, runtime };
+  return { actors, gate, invokeAnimEvent, runtime, setSpriteClip };
 }
 
 describe("AnimGraphRuntime", () => {
   it("stops on a state when the graph starts in it, jumps to it or enters it, and on a transition it takes", () => {
     const document = createDefaultAnimGraph();
-    document.states.push({ ...document.states[0]!, id: "run", name: "Run" });
+    const machine = document.stateMachine;
+    machine.states.push({ ...machine.states[0]!, id: "run", name: "Run" });
     // A rule that decides nothing passes, so Idle goes to Run on every tick it is in Idle.
-    document.transitions.push({
+    machine.transitions.push({
       id: "go", fromStateId: "idle", toStateId: "run", blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(),
     });
     const hits: BreakpointHit[] = [];
@@ -77,7 +84,8 @@ describe("AnimGraphRuntime", () => {
   it("starts a component switched to another graph at that graph's entry state without the old graph's jump", () => {
     const withRun = (name: string) => {
       const document = createDefaultAnimGraph(name);
-      document.states.push({ ...document.states[0]!, id: "run", name: "Run" });
+      const machine = document.stateMachine;
+      machine.states.push({ ...machine.states[0]!, id: "run", name: "Run" });
       return document;
     };
     const { actors, invokeAnimEvent, runtime } = setup(withRun("First"));
@@ -112,5 +120,25 @@ describe("AnimGraphRuntime", () => {
     expect(first!.getVariable("Tags")).not.toBe(tags);
     expect(second!.getVariable("Tags")).not.toBe(first!.getVariable("Tags"));
     expect(first!.getVariable("Custom")).toEqual({});
+  });
+
+  it("hands the sprite collider the frame a 2D graph shows, mirrored by Flip Frame", () => {
+    const document = createDefaultAnimGraph("Robot", { dimension: "2d" });
+    document.stateMachine.states[0]!.stateGraph = {
+      nodes: [
+        { id: "flip", type: "anim.frame.flip", position: { x: 0, y: 0 }, data: { "default:flipX": true } },
+        { id: "walk", type: "anim.frame.spritePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "walk", durationMs: 400 } },
+        { id: ANIM_POSE_OUTPUT_NODE_ID, type: "anim.frame.output", position: { x: 0, y: 0 }, data: { __protected: true } },
+      ],
+      edges: [
+        { id: "a", source: "walk", sourceHandle: "pose", target: "flip", targetHandle: "frame" },
+        { id: "b", source: "flip", sourceHandle: "pose", target: ANIM_POSE_OUTPUT_NODE_ID, targetHandle: "frame" },
+      ],
+    };
+    const { actors, runtime, setSpriteClip } = setup(document);
+    runtime.tick(0.1);
+    expect(setSpriteClip).toHaveBeenLastCalledWith(actors[0], {
+      assetGuid: "walk", clipName: "", normalisedTime: expect.closeTo(0.25), stateId: "idle", flipX: true,
+    });
   });
 });

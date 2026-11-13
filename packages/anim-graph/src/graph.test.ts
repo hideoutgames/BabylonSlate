@@ -1,684 +1,400 @@
 import { describe, expect, it } from "vitest";
+import type { SerializedGraph } from "@haptic/core";
 import {
   ANIM_EVENT_INITIALIZE_TYPE,
   ANIM_EVENT_UPDATE_TYPE,
+  ANIM_POSE_OUTPUT_NODE_ID,
   ANIM_RULE_ENTER_TYPE,
   ANIM_RULE_EXIT_TYPE,
-} from "./graph";
-import {
-  ANIM_STATE_LAYOUT_GAP_X,
-  clipForState,
+  animEvalWithJump,
+  animExitTimeReached,
+  animGraphDimension,
+  animGraphMembersFromVariables,
+  animPoseGraphs,
+  animTransitionEdgeId,
+  animTransitionFromDrag,
+  transitionAtWire,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
-  evaluateAnimGraph,
-  parseAnimGraphDocument,
-  resolveAnimGraphClips,
-  validateAnimGraph,
-  animGraphToSerialized,
-  animTransitionEdgeId,
-  serializedToAnimGraph,
-  hydrateAnimGraphForEditor,
-  animGraphMembersFromVariables,
-  setTransitionBidirectional,
-  flipTransitionDirection,
+  createStateGraph,
   decorateTransitionRuleGraph,
+  evaluateAnimGraph,
+  flipTransitionDirection,
+  hydrateAnimGraphForEditor,
+  parseAnimGraphDocument,
+  patchTransition,
   persistTransitionRuleGraph,
-  animExitTimeReached,
+  primaryPosePlayer,
+  resolveAnimGraphClips,
+  serializedToStateMachine,
+  setTransitionBidirectional,
+  singlePlayerOf,
+  stateMachineToSerialized,
+  validateAnimGraph,
+  type AnimClipCatalogEntry,
   type AnimEvalState,
+  type AnimGraphDimension,
   type AnimGraphDocument,
+  type AnimGraphInputs,
+  type AnimState,
+  type AnimStateMachine,
+  type AnimTransition,
+  type PosePlayerSettings,
 } from "./index";
 
-describe("anim graph evaluator", () => {
+type GraphNode = SerializedGraph["nodes"][number];
+type GraphEdge = SerializedGraph["edges"][number];
+
+/** A state that plays one clip, `<id>-clip`, one second long. */
+function state(id: string, settings: PosePlayerSettings = {}): AnimState {
+  return {
+    id,
+    name: id.replace(/^./, (first) => first.toUpperCase()),
+    position: { x: 0, y: 0 },
+    stateGraph: createStateGraph("3d", { assetGuid: `${id}-clip`, clipName: id, durationMs: 1000, ...settings }),
+  };
+}
+
+function transition(id: string, fromStateId: string, toStateId: string, extra: Partial<AnimTransition> = {}): AnimTransition {
+  return { id, fromStateId, toStateId, blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(), ...extra };
+}
+
+/** A document whose State Machine holds `states` and `transitions` and enters `entryStateId`. */
+function machineDoc(states: AnimState[], transitions: AnimTransition[] = [], entryStateId = states[0]?.id ?? ""): AnimGraphDocument {
+  return {
+    ...createDefaultAnimGraph(),
+    stateMachine: { entryStateId, states, transitions },
+  };
+}
+
+/** A pose graph of `nodes` whose first node feeds a protected output. */
+function poseGraph(dimension: AnimGraphDimension, nodes: GraphNode[], edges: GraphEdge[] = []): SerializedGraph {
+  const pin = dimension === "3d" ? "pose" : "frame";
+  const output: GraphNode = {
+    id: ANIM_POSE_OUTPUT_NODE_ID,
+    type: dimension === "3d" ? "anim.pose.output" : "anim.frame.output",
+    position: { x: 400, y: 0 },
+    data: { __protected: true },
+  };
+  const root = nodes[0];
+  return {
+    nodes: [...nodes, output],
+    edges: root ? [...edges, wire(root.id, output.id, pin)] : edges,
+  };
+}
+
+function node(id: string, type: string, data: Record<string, unknown> = {}): GraphNode {
+  return { id, type, position: { x: 0, y: 0 }, data };
+}
+
+function wire(source: string, target: string, targetHandle: string): GraphEdge {
+  return { id: `${source}->${target}:${targetHandle}`, source, sourceHandle: "pose", target, targetHandle };
+}
+
+function player(id: string, data: Record<string, unknown> = {}): GraphNode {
+  return node(id, "anim.pose.sequencePlayer", { assetGuid: id, clipName: id, durationMs: 1000, loop: true, ...data });
+}
+
+/** Runs `ticks` evaluations of `dt` seconds from `from`. */
+function run(doc: AnimGraphDocument, dt: number, ticks: number, inputs: AnimGraphInputs = {}, from: AnimEvalState | null = null): AnimEvalState {
+  let current = from;
+  for (let tick = 0; tick < ticks; tick += 1) current = evaluateAnimGraph(doc, current, dt, inputs);
+  return current!;
+}
+
+/** Every rule closed. */
+const closed: AnimGraphInputs = { decideTransition: () => ({ enter: false, exit: true }) };
+
+const weightsByGuid = (current: AnimEvalState) =>
+  Object.fromEntries(current.layers.map((layer) => [layer.clipAssetGuid, Number(layer.weight.toFixed(3))]));
+
+describe("anim graph evaluator: State Machine", () => {
   it("stays on the looping entry clip and wraps time", () => {
-    const doc = createDefaultAnimGraph();
-    const a = evaluateAnimGraph(doc, null, 0.5, {});
-    expect(a.stateId).toBe("idle");
-    expect(a.normalisedTime).toBeCloseTo(0.5, 5);
-    const b = evaluateAnimGraph(doc, a, 0.75, {});
-    expect(b.normalisedTime).toBeCloseTo(0.25, 5);
-    expect(b.blendWeights.idle).toBe(1);
+    const next = run(machineDoc([state("idle")]), 0.6, 2, closed);
+    expect(next.stateId).toBe("idle");
+    expect(next.normalisedTime).toBeCloseTo(0.2);
+    expect(next.loopCount).toBe(1);
+    expect(next.layers).toEqual([
+      expect.objectContaining({ stateId: "idle", clipAssetGuid: "idle-clip", clipName: "idle", clipKind: "animation", weight: 1 }),
+    ]);
+    expect(next.layers[0]!.normalisedTime).toBeCloseTo(0.2);
   });
 
-  it("holds the pose of a state at Speed 0 and scales the clock of any other speed", () => {
-    const run = (speed: number) => {
-      const doc = createDefaultAnimGraph();
-      doc.states[0]!.speed = speed;
-      let state: AnimEvalState | null = null;
-      for (let tick = 0; tick < 10; tick++) state = evaluateAnimGraph(doc, state, 0.1, {});
-      return state!;
-    };
-    // The default idle clip lasts one second: ten 0.1 s ticks cover all of it at Speed 1, half at 0.5.
-    expect(run(0.5).normalisedTime).toBeCloseTo(0.5, 5);
-    const held = run(0);
-    expect(held.normalisedTime).toBe(0);
-    expect(held.timeMs).toBe(0);
+  it("holds the pose at Play Rate 0 and scales the clock by any other rate", () => {
+    expect(run(machineDoc([state("idle", { playRate: 0 })]), 0.25, 1, closed).normalisedTime).toBe(0);
+    expect(run(machineDoc([state("idle", { playRate: 2 })]), 0.25, 1, closed).normalisedTime).toBeCloseTo(0.5);
   });
 
-  it("transitions when the rule decides enter and exit", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: "run-clip",
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.clips.push({
-      id: "run-clip",
-      kind: "sprite",
-      assetGuid: "sprite-1",
-      clipName: "Run",
-      durationMs: 400,
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.1,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const next = evaluateAnimGraph(doc, null, 0.016, {
-      transitionRules: { "idle-to-run": { enter: true, exit: true } },
-    });
-    expect(next.stateId).toBe("run");
-    expect(next.normalisedTime).toBe(0);
-  });
-
-  it("reports the transition it takes, a self-transition included, and none while no rule passes", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({ ...doc.states[0]!, id: "run", name: "Run" });
-    doc.transitions.push(
-      { id: "restart", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph() },
-      { id: "idle-to-run", fromStateId: "idle", toStateId: "run", blendSeconds: 0, priority: 1, ruleGraph: createDefaultTransitionRuleGraph() },
-    );
-    const closed = { enter: false, exit: true };
-    const open = { enter: true, exit: true };
+  it("transitions when the rule decides enter and exit, and reports each transition taken", () => {
+    const doc = machineDoc([state("idle"), state("run")], [transition("idle-to-run", "idle", "run"), transition("run-to-run", "run", "run")]);
     const taken: string[] = [];
-    const transitionTaken = (transition: { id: string }) => taken.push(transition.id);
-    const idle = evaluateAnimGraph(doc, null, 0.1, {
-      transitionRules: { restart: closed, "idle-to-run": closed }, transitionTaken,
-    });
-    expect(taken).toEqual([]);
-    const restarted = evaluateAnimGraph(doc, idle, 0.1, {
-      transitionRules: { restart: open, "idle-to-run": closed }, transitionTaken,
-    });
-    expect(restarted).toMatchObject({ stateId: "idle", timeMs: 0 });
-    evaluateAnimGraph(doc, restarted, 0.1, { transitionRules: { restart: closed, "idle-to-run": open }, transitionTaken });
-    expect(taken).toEqual(["restart", "idle-to-run"]);
+    let decision = { enter: true, exit: false };
+    const inputs: AnimGraphInputs = { decideTransition: () => decision, transitionTaken: (row) => taken.push(row.id) };
+    expect(evaluateAnimGraph(doc, null, 0.1, inputs).stateId).toBe("idle");
+    decision = { enter: true, exit: true };
+    const next = evaluateAnimGraph(doc, null, 0.1, inputs);
+    expect(next.stateId).toBe("run");
+    // A self-transition restarts the state.
+    const again = evaluateAnimGraph(doc, run(doc, 0.3, 1, closed, next), 0.1, inputs);
+    expect(again.stateId).toBe("run");
+    expect(again.normalisedTime).toBe(0);
+    expect(taken).toEqual(["idle-to-run", "run-to-run"]);
   });
 
-  it("evaluates a replaced document from its own transitions", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    expect(evaluateAnimGraph(doc, null, 0.016, {}).stateId).toBe("run");
-    expect(evaluateAnimGraph({ ...doc, transitions: [] }, null, 0.016, {}).stateId).toBe("idle");
+  it("never fires a transition to a missing state, and enters the first state when the entry is missing", () => {
+    const doc = machineDoc([state("idle")], [transition("idle-to-ghost", "idle", "ghost")], "gone");
+    expect(evaluateAnimGraph(doc, null, 0.1, {}).stateId).toBe("idle");
   });
 
-  it("rejects a missing entry state", () => {
-    const doc = createDefaultAnimGraph();
-    doc.entryStateId = "missing";
-    expect(validateAnimGraph(doc).some((row) => row.code === "anim.missingEntry")).toBe(
-      true,
-    );
+  it("clamps a non-looping clip at the end and reports Just Finished once", () => {
+    const doc = machineDoc([state("idle", { loop: false })]);
+    const finished = run(doc, 0.6, 2, closed);
+    expect(finished.normalisedTime).toBe(1);
+    expect(finished.facts.justFinished).toBe(true);
+    expect(run(doc, 0.6, 1, closed, finished).facts.justFinished).toBe(false);
   });
 
-  it("reports ambiguous and empty state names on the affected state", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({ ...doc.states[0]!, id: "duplicate", name: " idle " });
-    doc.states.push({ ...doc.states[0]!, id: "unnamed", name: "  " });
-    expect(validateAnimGraph(doc)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "anim.duplicateStateName", nodeId: "duplicate", severity: "error" }),
-      expect.objectContaining({ code: "anim.emptyStateName", nodeId: "unnamed", severity: "error" }),
+  it("reports Just Looped when a looping clip wraps, counting several wraps in one tick", () => {
+    const looped = run(machineDoc([state("idle", { durationMs: 100 })]), 0.35, 1, closed);
+    expect(looped.facts.justLooped).toBe(true);
+    expect(looped.loopCount).toBe(3);
+  });
+
+  it("crossfades into weighted clip layers over the blend time captured when the transition started", () => {
+    const doc = machineDoc([state("idle"), state("run")], [transition("idle-to-run", "idle", "run", { blendSeconds: 0.4 })]);
+    const once: AnimGraphInputs = { decideTransition: (row) => ({ enter: row.id === "idle-to-run", exit: true }) };
+    const started = evaluateAnimGraph(doc, null, 0.1, once);
+    expect(started.stateId).toBe("run");
+    expect(started.blendFromStateId).toBe("idle");
+    // A later edit to the transition does not change the blend in progress.
+    const edited = patchTransition(doc, "idle-to-run", { blendSeconds: 2 });
+    const mid = evaluateAnimGraph(edited, started, 0.1, closed);
+    expect(Object.fromEntries(mid.layers.map((layer) => [layer.stateId, layer.weight]))).toEqual({
+      idle: expect.closeTo(0.5),
+      run: expect.closeTo(0.5),
+    });
+    expect(mid.blendWeights).toEqual({ idle: expect.closeTo(0.5), run: expect.closeTo(0.5) });
+    const done = run(doc, 0.1, 3, closed, mid);
+    expect(done.blendFromStateId).toBeNull();
+    expect(done.layers).toEqual([expect.objectContaining({ stateId: "run", weight: 1 })]);
+  });
+
+  it("takes the lowest-priority outgoing transition when several pass", () => {
+    const doc = machineDoc([state("idle"), state("walk"), state("run")], [
+      transition("idle-to-run", "idle", "run", { priority: 2 }),
+      transition("idle-to-walk", "idle", "walk", { priority: 1 }),
+    ]);
+    expect(evaluateAnimGraph(doc, null, 0.1, {}).stateId).toBe("walk");
+  });
+
+  it("asks a rule with the facts after this tick's advance", () => {
+    const doc = machineDoc([state("idle", { loop: false })], [transition("idle-to-idle", "idle", "idle")]);
+    const seen: boolean[] = [];
+    run(doc, 0.6, 2, {
+      decideTransition: (_row, facts) => {
+        seen.push(facts.justFinished);
+        return { enter: false, exit: true };
+      },
+    });
+    expect(seen).toEqual([false, true]);
+  });
+
+  it("jumps into a state fresh, and ignores a jump to a missing state", () => {
+    const doc = machineDoc([state("idle"), state("run")]);
+    const settled = run(doc, 0.3, 2, closed);
+    const next = evaluateAnimGraph(doc, animEvalWithJump(doc, settled, "run"), 0.1, closed);
+    expect(next.stateId).toBe("run");
+    expect(next.normalisedTime).toBeCloseTo(0.1);
+    expect(next.blendFromStateId).toBeNull();
+    expect(animEvalWithJump(doc, settled, "missing")).toBe(settled);
+  });
+});
+
+describe("anim graph exit time", () => {
+  function exitTimeDoc(options: { loop: boolean; durationMs: number }): AnimGraphDocument {
+    return machineDoc([state("idle", options), state("run")], [transition("idle-to-run", "idle", "run")]);
+  }
+
+  /** The 1-based tick that entered Run, or null. */
+  function tickEnteringRun(
+    doc: AnimGraphDocument,
+    dtSeconds: number,
+    ticks: number,
+    exitTime: number,
+    open: (tick: number) => boolean = () => true,
+  ): number | null {
+    let current: AnimEvalState | null = null;
+    for (let tick = 1; tick <= ticks; tick += 1) {
+      current = evaluateAnimGraph(doc, current, dtSeconds, {
+        decideTransition: (_row, facts) => ({ enter: open(tick) && animExitTimeReached(facts, exitTime), exit: true }),
+      });
+      if (current.stateId === "run") return tick;
+    }
+    return null;
+  }
+
+  it("fires a looping exit time of 1 on the tick that completes the loop", () => {
+    expect(tickEnteringRun(exitTimeDoc({ loop: true, durationMs: 1000 }), 0.1, 12, 1)).toBe(10);
+  });
+
+  it("fires a looping exit time the clip skips over when it wraps", () => {
+    expect(tickEnteringRun(exitTimeDoc({ loop: true, durationMs: 300 }), 1 / 60, 30, 0.95)).toBe(18);
+  });
+
+  it("waits for the next loop's crossing when the rule's other input opens late", () => {
+    expect(tickEnteringRun(exitTimeDoc({ loop: true, durationMs: 1000 }), 0.1, 20, 0.5, (tick) => tick >= 7)).toBe(15);
+  });
+
+  it("keeps a reached exit time open on a finished non-looping clip", () => {
+    expect(tickEnteringRun(exitTimeDoc({ loop: false, durationMs: 1000 }), 0.1, 20, 0.5, (tick) => tick >= 15)).toBe(15);
+  });
+
+  it.each([
+    { exitTime: 0.5, from: 2.4, to: 2.6, looping: true, want: true },
+    { exitTime: 0.5, from: 2.6, to: 2.9, looping: true, want: false },
+    { exitTime: 1.5, from: 1.4, to: 1.6, looping: true, want: true },
+    { exitTime: 1.5, from: 2.4, to: 2.6, looping: true, want: false },
+    { exitTime: 0, from: 0, to: 0.1, looping: true, want: true },
+    { exitTime: 0, from: 0.1, to: 0.2, looping: true, want: false },
+    { exitTime: 0.5, from: 1, to: 1, looping: false, want: true },
+  ])("exit time $exitTime from $from to $to (looping $looping) is $want", ({ exitTime, from, to, looping, want }) => {
+    const facts = {
+      elapsedSeconds: 0,
+      durationSeconds: 1,
+      normalisedTime: looping ? to % 1 : to,
+      remainingSeconds: 0,
+      remainingRatio: 0,
+      looping,
+      loopCount: looping ? Math.floor(to) : 0,
+      justLooped: false,
+      justFinished: false,
+      totalNormalisedTime: to,
+      previousTotalNormalisedTime: from,
+    };
+    expect(animExitTimeReached(facts, exitTime)).toBe(want);
+  });
+});
+
+describe("anim graph evaluator: pose graphs", () => {
+  const withStateGraph = (graph: SerializedGraph): AnimGraphDocument =>
+    machineDoc([{ id: "move", name: "Move", position: { x: 0, y: 0 }, stateGraph: graph }]);
+
+  it("blends two players by Alpha, stored on the node or computed by the graph's data module", () => {
+    const doc = withStateGraph(poseGraph("3d", [node("blend", "anim.pose.blend", { "default:alpha": 0.25 }), player("walk"), player("run")], [
+      wire("walk", "blend", "a"),
+      wire("run", "blend", "b"),
     ]));
-    doc.states[1]!.name = "Run";
-    doc.states[2]!.name = "Jump";
-    expect(validateAnimGraph(doc)).toEqual([]);
-  });
-
-  it("round-trips through the graph-ui serialized shape", () => {
-    const doc = createDefaultAnimGraph();
-    const next = serializedToAnimGraph(animGraphToSerialized(doc), doc);
-    expect(next.entryStateId).toBe(doc.entryStateId);
-    expect(next.states).toHaveLength(1);
-  });
-
-  it("gives palette and pasted states unique names without renaming existing states", () => {
-    const doc = createDefaultAnimGraph();
-    const graph = animGraphToSerialized(doc);
-    graph.nodes.push({ ...graph.nodes[0]!, id: "pasted", data: { title: "idle" } },
-      { ...graph.nodes[0]!, id: "pasted-again", data: { title: "Idle" } });
-    const next = serializedToAnimGraph(graph, doc);
-    expect(next.states.map((state) => state.name)).toEqual(["Idle", "idle 2", "Idle 3"]);
-    expect(validateAnimGraph(next)).toEqual([]);
-  });
-
-  it("rejects a missing clip and a dangling transition", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states[0]!.clipId = "missing-clip";
-    doc.transitions.push({
-      id: "bad",
-      fromStateId: "idle",
-      toStateId: "gone",
-      blendSeconds: 0,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const codes = validateAnimGraph(doc).map((row) => row.code);
-    expect(codes).toContain("anim.missingClip");
-    expect(codes).toContain("anim.badTransition");
-  });
-
-  it("never fires a transition to a missing state", () => {
-    const doc = createDefaultAnimGraph();
-    doc.transitions.push({
-      id: "bad",
-      fromStateId: "idle",
-      toStateId: "gone",
-      blendSeconds: 0,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const first = evaluateAnimGraph(doc, null, 0.25, {});
-    expect(first.stateId).toBe("idle");
-    // The clock keeps running instead of snapping back through the entry state.
-    expect(evaluateAnimGraph(doc, first, 0.25, {}).normalisedTime).toBeCloseTo(0.5, 5);
-  });
-
-  it("evaluates a graph whose entry state is missing instead of throwing", () => {
-    const doc = createDefaultAnimGraph();
-    doc.entryStateId = "missing";
-    expect(evaluateAnimGraph(doc, null, 0.25, {}).stateId).toBe("idle");
-    const empty = { ...doc, states: [] };
-    const idle = evaluateAnimGraph(empty, null, 0.25, {});
-    expect(idle.layers).toEqual([]);
-    expect(idle.blendWeights).toEqual({});
-  });
-
-  it("clamps a non-looping clip at the end", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states[0]!.loop = false;
-    const next = evaluateAnimGraph(doc, null, 2, {});
-    expect(next.normalisedTime).toBe(1);
-  });
-
-  it("round-trips a document-chunk payload and resolves the state clip", () => {
-    const doc = createDefaultAnimGraph("Hero");
-    const parsed = parseAnimGraphDocument(JSON.parse(JSON.stringify(doc)));
-    expect(parsed).toEqual(doc);
-    expect(parseAnimGraphDocument({ name: "bad" })).toBeNull();
-    expect(clipForState(doc, "idle")?.clipName).toBe("Idle");
-  });
-
-  it("hydrates side handles so Add Node is not an empty box", () => {
-    const hydrated = hydrateAnimGraphForEditor(
-      animGraphToSerialized(createDefaultAnimGraph()),
-    );
-    const pins = hydrated.nodes[0]?.data.__pins as Array<{
-      id: string;
-      direction: string;
-    }>;
-    expect(pins.some((pin) => pin.id === "left-in" && pin.direction === "in")).toBe(
-      true,
-    );
-    expect(
-      pins.some((pin) => pin.id === "right-out" && pin.direction === "out"),
-    ).toBe(true);
-    expect(pins.some((pin) => pin.id === "in" || pin.id === "out")).toBe(false);
-  });
-
-  it("round-trips dragged node positions through the graph-ui serialized shape", () => {
-    const doc = createDefaultAnimGraph();
-    const serialized = animGraphToSerialized(doc);
-    serialized.nodes[0]!.position = { x: 420, y: 160 };
-    const next = serializedToAnimGraph(serialized, doc);
-    expect(next.states[0]!.position).toEqual({ x: 420, y: 160 });
-    expect(animGraphToSerialized(next).nodes[0]!.position).toEqual({
-      x: 420,
-      y: 160,
-    });
-  });
-
-  it("preserves transition blend fields across a graph-ui round-trip", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: "run-clip",
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.clips.push({
-      id: "run-clip",
-      kind: "sprite",
-      assetGuid: "sprite-1",
-      clipName: "Run",
-      durationMs: 400,
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.25,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const next = serializedToAnimGraph(animGraphToSerialized(doc), doc);
-    expect(next.transitions[0]).toMatchObject({
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.25,
-    });
-  });
-
-  it("keeps transition fields when the canvas edge id changes", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.25,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const serialized = animGraphToSerialized(doc);
-    expect(serialized.edges[0]).toMatchObject({
-      id: "idle-to-run",
-      source: "idle",
-      target: "run",
-      type: "animTransition",
-    });
-    serialized.edges[0] = { ...serialized.edges[0]!, id: "canvas-edge-1" };
-    const next = serializedToAnimGraph(serialized, doc);
-    expect(next.transitions[0]).toMatchObject({
-      id: "canvas-edge-1",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.25,
-    });
-  });
-
-  it("hides the reverse canvas edge and restores it on round-trip", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    const both = setTransitionBidirectional(
-      {
-        ...doc,
-        transitions: [
-          {
-            id: "idle-to-run",
-            fromStateId: "idle",
-            toStateId: "run",
-            blendSeconds: 0.2,
-            priority: 0,
-            ruleGraph: createDefaultTransitionRuleGraph(),
-          },
-        ],
+    expect(weightsByGuid(evaluateAnimGraph(doc, null, 0.1, {}))).toEqual({ walk: 0.75, run: 0.25 });
+    const graphKeys: string[] = [];
+    const computed = evaluateAnimGraph(doc, null, 0.1, {
+      poseData: (key) => {
+        graphKeys.push(key);
+        return key === "move" ? { blend: { alpha: 0.6 } } : undefined;
       },
-      "idle-to-run",
-      true,
-    );
-    expect(both.transitions).toHaveLength(2);
-    const serialized = animGraphToSerialized(both);
-    expect(serialized.edges).toHaveLength(1);
-    expect(serialized.edges[0]?.type).toBe("animTransitionBoth");
-    expect(serialized.edges[0]).toMatchObject({
-      sourceHandle: "right-out",
-      targetHandle: "left-in",
     });
-    const next = serializedToAnimGraph(serialized, both);
-    expect(next.transitions).toHaveLength(2);
-    expect(next.transitions.map((row) => `${row.fromStateId}->${row.toStateId}`).sort()).toEqual(
-      ["idle->run", "run->idle"],
-    );
+    expect(weightsByGuid(computed)).toEqual({ walk: 0.4, run: 0.6 });
+    expect(graphKeys).toEqual(["move"]);
   });
 
-  it("names the one canvas edge a taken transition is drawn on, in either direction of a pair", () => {
-    const transition = (id: string, fromStateId: string, toStateId: string) => ({
-      id, fromStateId, toStateId, blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const transitions = [
-      transition("idle-run", "idle", "run"),
-      transition("run-idle", "run", "idle"),
-      transition("run-jump", "run", "jump"),
-      transition("run-jump-again", "run", "jump"),
-    ];
-    const edges = animGraphToSerialized({ ...createDefaultAnimGraph(), transitions }).edges.map((edge) => edge.id);
-    expect(edges).toEqual(["idle-run", "run-jump"]);
-    expect(animTransitionEdgeId(transitions, "idle", "run")).toBe("idle-run");
-    // The Both Ways pair is drawn as one edge, so the reverse transition lights it too.
-    expect(animTransitionEdgeId(transitions, "run", "idle")).toBe("idle-run");
-    expect(animTransitionEdgeId(transitions, "run", "jump")).toBe("run-jump");
-    expect(animTransitionEdgeId(transitions, "jump", "idle")).toBeUndefined();
+  it("eases Blend Poses By Bool to the other input over that input's blend time", () => {
+    const doc = withStateGraph(poseGraph("3d", [node("pick", "anim.pose.blendByBool", { falseBlendSeconds: 0.4 }), player("armed"), player("relaxed")], [
+      wire("armed", "pick", "truePose"),
+      wire("relaxed", "pick", "falsePose"),
+    ]));
+    const armed = evaluateAnimGraph(doc, null, 0.1, {});
+    expect(weightsByGuid(armed)).toEqual({ armed: 1 });
+    const off: AnimGraphInputs = { poseData: () => ({ pick: { active: false } }) };
+    const easing = evaluateAnimGraph(doc, armed, 0.2, off);
+    expect(weightsByGuid(easing)).toEqual({ armed: 0.5, relaxed: 0.5 });
+    expect(weightsByGuid(evaluateAnimGraph(doc, easing, 0.2, off))).toEqual({ relaxed: 1 });
   });
 
-  it("flips a one-way transition and no-ops when a reverse row exists", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    const oneWay = {
-      ...doc,
-      transitions: [
-        {
-          id: "idle-to-run",
-          fromStateId: "idle",
-          toStateId: "run",
-          blendSeconds: 0.2,
-          priority: 1,
-          sourceHandle: "right-out",
-          targetHandle: "left-in",
-          ruleGraph: createDefaultTransitionRuleGraph(),
-        },
-      ],
-    };
-    const flipped = flipTransitionDirection(oneWay, "idle-to-run");
-    expect(flipped.transitions[0]).toMatchObject({
-      id: "idle-to-run",
-      fromStateId: "run",
-      toStateId: "idle",
-      blendSeconds: 0.2,
-      priority: 1,
-      sourceHandle: "left-out",
-      targetHandle: "right-in",
-    });
-    const both = setTransitionBidirectional(oneWay, "idle-to-run", true);
-    expect(flipTransitionDirection(both, "idle-to-run")).toBe(both);
+  it("plays the input Blend Poses By Int picks: a Sequence Evaluator holds its time and Rest Pose adds no clip", () => {
+    const doc = withStateGraph(poseGraph("3d", [
+      node("pick", "anim.pose.blendByInt", { count: 3, blendSeconds: 0, "default:activeIndex": 1 }),
+      player("a"),
+      node("held", "anim.pose.sequenceEvaluator", { assetGuid: "door", clipName: "open", "default:normalizedTime": 0.75 }),
+      node("rest", "anim.pose.restPose"),
+    ], [wire("a", "pick", "pose0"), wire("held", "pick", "pose1"), wire("rest", "pick", "pose2")]));
+    expect(evaluateAnimGraph(doc, null, 0.1, {}).layers).toEqual([
+      expect.objectContaining({ clipAssetGuid: "door", clipName: "open", normalisedTime: 0.75, weight: 1 }),
+    ]);
+    expect(evaluateAnimGraph(doc, null, 0.1, { poseData: () => ({ pick: { activeIndex: 2 } }) }).layers).toEqual([]);
   });
 
-  it("disables Exit State on a one-way rule graph and restores it for both ways", () => {
-    const graph = createDefaultTransitionRuleGraph();
-    const oneWay = decorateTransitionRuleGraph(graph, true);
-    expect(oneWay.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled).toBe(
-      true,
-    );
-    expect(oneWay.nodes.find((node) => node.type === ANIM_RULE_ENTER_TYPE)?.data.__disabled).toBeUndefined();
-    const both = decorateTransitionRuleGraph(oneWay, false);
-    expect(both.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled).toBeUndefined();
+  it("follows a state's primary player for its facts and starts it at its Start Position", () => {
+    const graph = poseGraph("3d", [node("blend", "anim.pose.blend"), player("walk", { durationMs: 2000, "default:startPosition": 0.5 }), player("run")], [
+      wire("walk", "blend", "a"),
+      wire("run", "blend", "b"),
+    ]);
+    expect(primaryPosePlayer(graph)?.id).toBe("walk");
+    expect(singlePlayerOf(graph)).toBeNull();
+    const current = evaluateAnimGraph(withStateGraph(graph), null, 0.5, {});
+    expect(current.facts.durationSeconds).toBe(2);
+    expect(current.normalisedTime).toBeCloseTo(0.75);
+    expect(current.players["move#walk"]?.normalised).toBeCloseTo(0.75);
+    expect(current.players["move#run"]?.normalised).toBeCloseTo(0.5);
   });
 
-  it("strips display-only disabled flags when persisting a rule graph", () => {
-    const decorated = decorateTransitionRuleGraph(
-      createDefaultTransitionRuleGraph(),
-      true,
-    );
-    const persisted = persistTransitionRuleGraph(decorated);
-    expect(
-      persisted.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled,
-    ).toBeUndefined();
-    expect(
-      persisted.nodes.find((node) => node.type === ANIM_RULE_ENTER_TYPE)?.data.__disabled,
-    ).toBeUndefined();
-  });
-
-  it("does not take a both-ways reverse from idle when the forward rule is closed", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    const both = setTransitionBidirectional(
-      {
-        ...doc,
-        transitions: [
-          {
-            id: "idle-to-run",
-            fromStateId: "idle",
-            toStateId: "run",
-            blendSeconds: 0,
-            priority: 0,
-            ruleGraph: createDefaultTransitionRuleGraph(),
-          },
-        ],
-      },
-      "idle-to-run",
-      true,
-    );
-    const closed = { transitionRules: { "idle-to-run": { enter: false, exit: true } } };
-    const fromIdle = evaluateAnimGraph(both, null, 0.016, closed);
-    expect(fromIdle.stateId).toBe("idle");
-    const fromRun = evaluateAnimGraph(
-      both,
-      {
-        stateId: "run",
-        normalisedTime: 0.2,
-        blendWeights: { run: 1 },
-        timeMs: 200,
-        facts: {
-          elapsedSeconds: 0.2,
-          durationSeconds: 1,
-          normalisedTime: 0.2,
-          remainingSeconds: 0.8,
-          remainingRatio: 0.8,
-          looping: true,
-          loopCount: 0,
-          justLooped: false,
-          justFinished: false,
-          totalNormalisedTime: 0.2,
-          previousTotalNormalisedTime: 0.18,
-        },
-        layers: [],
-        blendFromStateId: null,
-        blendFromTimeMs: 0,
-        blendElapsedMs: 0,
-        blendSeconds: 0,
-        loopCount: 0,
-      },
-      0.016,
-      closed,
-    );
-    expect(fromRun.stateId).toBe("idle");
-  });
-
-  it("keeps one directed pair when the canvas has a duplicate edge with a generated id", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    const withTransition = {
-      ...doc,
-      transitions: [
-        {
-          id: "idle-to-run",
-          fromStateId: "idle",
-          toStateId: "run",
-          blendSeconds: 0.25,
-          priority: 0,
-          ruleGraph: createDefaultTransitionRuleGraph(),
-        },
-      ],
-    };
-    const serialized = animGraphToSerialized(withTransition);
-    serialized.edges = [
-      ...serialized.edges,
-      {
-        id: "e:idle:right-out:run:left-in",
-        source: "idle",
-        target: "run",
-        sourceHandle: "right-out",
-        targetHandle: "left-in",
-        type: "animTransition",
-      },
-    ];
-    const next = serializedToAnimGraph(serialized, withTransition);
-    const samePair = next.transitions.filter(
-      (row) => row.fromStateId === "idle" && row.toStateId === "run",
-    );
-    expect(samePair).toHaveLength(1);
-    expect(samePair[0]?.id).toBe("idle-to-run");
-    expect(samePair[0]?.blendSeconds).toBe(0.25);
-  });
-
-  it("hides a duplicate same-direction pair from the canvas", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.transitions = [
-      {
-        id: "idle-to-run",
-        fromStateId: "idle",
-        toStateId: "run",
-        blendSeconds: 0.1,
-        priority: 0,
-        ruleGraph: createDefaultTransitionRuleGraph(),
-      },
-      {
-        id: "e:idle:right-out:run:left-in",
-        fromStateId: "idle",
-        toStateId: "run",
-        blendSeconds: 0.1,
-        priority: 0,
-        ruleGraph: createDefaultTransitionRuleGraph(),
-      },
-    ];
-    expect(animGraphToSerialized(doc).edges).toHaveLength(1);
-    expect(animGraphToSerialized(doc).edges[0]?.id).toBe("idle-to-run");
-  });
-
-  it("drops both directions when the visual edge is removed", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    const both = setTransitionBidirectional(
-      {
-        ...doc,
-        transitions: [
-          {
-            id: "idle-to-run",
-            fromStateId: "idle",
-            toStateId: "run",
-            blendSeconds: 0.1,
-            priority: 0,
-            ruleGraph: createDefaultTransitionRuleGraph(),
-          },
-        ],
-      },
-      "idle-to-run",
-      true,
-    );
-    const serialized = animGraphToSerialized(both);
-    serialized.edges = [];
-    expect(serializedToAnimGraph(serialized, both).transitions).toHaveLength(0);
-  });
-
-  it("assigns fallback layout when a document-chunk omits position", () => {
-    const parsed = parseAnimGraphDocument({
-      name: "Loco",
-      entryStateId: "idle",
-      states: [
-        { id: "idle", name: "Idle", clipId: null, speed: 1, loop: true },
-        { id: "run", name: "Run", clipId: null, speed: 1, loop: true },
-      ],
-      transitions: [],
-      clips: [],
-    });
-    expect(parsed?.states[0]!.position).toEqual({ x: 80, y: 80 });
-    expect(parsed?.states[1]!.position).toEqual({
-      x: 80 + ANIM_STATE_LAYOUT_GAP_X,
-      y: 80,
-    });
-  });
-
-  it("round-trips stored positions through parse", () => {
-    const parsed = parseAnimGraphDocument({
-      name: "Loco",
-      entryStateId: "idle",
-      states: [
-        {
-          id: "idle",
-          name: "Idle",
-          clipId: null,
-          speed: 1,
-          loop: true,
-          position: { x: 12, y: 34 },
-        },
-      ],
-      transitions: [],
-      clips: [],
-    });
-    expect(parsed?.states[0]!.position).toEqual({ x: 12, y: 34 });
+  it("shows one 2D frame through Select Frame By Bool and mirrors it with Flip Frame", () => {
+    const doc = machineDoc([{
+      id: "jump",
+      name: "Jump",
+      position: { x: 0, y: 0 },
+      stateGraph: poseGraph("2d", [
+        node("flip", "anim.frame.flip", { "default:flipX": true }),
+        node("pick", "anim.frame.selectByBool", { "default:active": false }),
+        node("up", "anim.frame.spritePlayer", { assetGuid: "up", durationMs: 400, frameCount: 4, "default:startFrame": 2 }),
+        node("down", "anim.frame.spritePlayer", { assetGuid: "down", durationMs: 400 }),
+      ], [wire("pick", "flip", "frame"), wire("up", "pick", "trueFrame"), wire("down", "pick", "falseFrame")]),
+    }]);
+    const current = evaluateAnimGraph(doc, null, 0.1, {});
+    expect(current.layers).toEqual([expect.objectContaining({ clipAssetGuid: "down", clipKind: "sprite", flipX: true, weight: 1 })]);
+    // The hidden input keeps its own time, from its Start Frame.
+    expect(current.players["jump#up"]?.normalised).toBeCloseTo(0.75);
   });
 });
 
 describe("anim graph document", () => {
-  it("creates a document with Animation Object events and empty variables", () => {
-    const doc = createDefaultAnimGraph();
-    expect(doc.variables).toEqual([]);
-    expect(doc.animationObject.nodes.map((node) => node.type)).toEqual([
-      ANIM_EVENT_INITIALIZE_TYPE,
-      ANIM_EVENT_UPDATE_TYPE,
-    ]);
-    expect(
-      doc.animationObject.nodes.every(
-        (node) => node.data.__protected === true,
-      ),
-    ).toBe(true);
+  it("creates a State Machine that enters its Idle state, which plays one player", () => {
+    const doc = createDefaultAnimGraph("Hero", { skeletonGuid: "rig" });
+    expect(doc.skeletonGuid).toBe("rig");
+    expect(doc.animationObject.nodes.map((row) => row.type)).toEqual([ANIM_EVENT_INITIALIZE_TYPE, ANIM_EVENT_UPDATE_TYPE]);
+    expect(doc.stateMachine.entryStateId).toBe("idle");
+    expect(doc.stateMachine.states.map((row) => row.name)).toEqual(["Idle"]);
+    expect(singlePlayerOf(doc.stateMachine.states[0]!.stateGraph)?.type).toBe("anim.pose.sequencePlayer");
+    expect(animGraphDimension(doc)).toBe("3d");
+    expect(validateAnimGraph(doc)).toEqual([]);
+    const twoD = createDefaultAnimGraph("Robot", { dimension: "2d", skeletonGuid: "rig" });
+    expect(twoD.skeletonGuid).toBeNull();
+    expect(singlePlayerOf(twoD.stateMachine.states[0]!.stateGraph)?.type).toBe("anim.frame.spritePlayer");
+    expect(animGraphDimension(twoD)).toBe("2d");
   });
 
-  it("preserves Tag variable types and normalizes serialized TagContainer defaults", () => {
+  it("round-trips through parsing, keeping graphs and the trimmed Skeleton", () => {
+    const doc = createDefaultAnimGraph("Hero", { skeletonGuid: "rig" });
+    const parsed = parseAnimGraphDocument(JSON.parse(JSON.stringify({ ...doc, skeletonGuid: " rig " })))!;
+    expect(parsed).toEqual(doc);
+    expect(animPoseGraphs(parsed).map((entry) => entry.key)).toEqual(["idle"]);
+    expect(parseAnimGraphDocument({ name: "Old", states: [], transitions: [] })).toBeNull();
+  });
+
+  it("gives back a state graph a state lost, of the asset type's dimension or else the one its other states say", () => {
+    const doc = createDefaultAnimGraph("Robot", { dimension: "2d" });
+    doc.stateMachine.states.push({ ...doc.stateMachine.states[0]!, id: "run", name: "Run" });
+    const raw = JSON.parse(JSON.stringify(doc)) as { stateMachine: { states: Array<Record<string, unknown>> } };
+    const players = (dimension?: AnimGraphDimension) =>
+      parseAnimGraphDocument(raw, dimension)!.stateMachine.states.map((row) => singlePlayerOf(row.stateGraph)?.type);
+    raw.stateMachine.states[1]!.stateGraph = undefined;
+    expect(players()).toEqual(["anim.frame.spritePlayer", "anim.frame.spritePlayer"]);
+    // With every state graph lost, only the asset type says the graph is 2D.
+    raw.stateMachine.states[0]!.stateGraph = undefined;
+    expect(players("2d")).toEqual(["anim.frame.spritePlayer", "anim.frame.spritePlayer"]);
+  });
+
+  it("keeps Tag variable types and normalizes serialized TagContainer defaults", () => {
     const parsed = parseAnimGraphDocument({
-      name: "Tagged State",
-      entryStateId: "idle",
-      states: [{ id: "idle", name: "Idle", clipId: null, speed: 1, loop: true }],
-      transitions: [], clips: [],
+      ...createDefaultAnimGraph(),
       variables: [
         { id: "current", name: "Current", typeId: "tag", defaultValue: 300 },
         { id: "tags", name: "Tags", typeId: "struct", typeClassId: "engine:TagContainer", defaultValue: { Tags: [300, 300, 0, -1, "300", 301] } },
@@ -695,635 +411,240 @@ describe("anim graph document", () => {
     });
   });
 
-  it("warns on a duplicate same-direction transition but not on a Both Ways pair", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    const row = (id: string, fromStateId: string, toStateId: string) => ({
-      id,
-      fromStateId,
-      toStateId,
-      blendSeconds: 0.1,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    doc.transitions = [row("idle-to-run", "idle", "run"), row("run-to-idle", "run", "idle")];
-    expect(validateAnimGraph(doc)).toEqual([]);
-    doc.transitions.push(row("idle-to-run-2", "idle", "run"));
-    expect(validateAnimGraph(doc)).toEqual([
-      expect.objectContaining({
-        code: "anim.duplicateTransition",
-        nodeId: "idle",
-        severity: "warning",
-      }),
+  it("exposes variables as Class-style members for Get Variable", () => {
+    expect(animGraphMembersFromVariables([{ id: "v", name: "Speed", typeId: "float", defaultValue: 0 }])).toEqual([
+      { id: "v", kind: "variable", name: "Speed", typeId: "float", defaultValue: 0 },
     ]);
   });
 
-  it("seeds a protected Enter State and Exit State on a new transition rule graph", () => {
-    const rule = createDefaultTransitionRuleGraph();
-    expect(rule.nodes).toHaveLength(2);
-    expect(rule.nodes.map((node) => node.type)).toEqual([
-      ANIM_RULE_ENTER_TYPE,
-      ANIM_RULE_EXIT_TYPE,
-    ]);
-    expect(rule.nodes.every((node) => node.data.__protected === true)).toBe(
-      true,
+  it("seeds protected Enter State and Exit State nodes in a new rule, and disables Exit State on the canvas of a one-way rule", () => {
+    const graph = createDefaultTransitionRuleGraph();
+    expect(graph.nodes.map((row) => [row.type, row.data.__protected])).toEqual([[ANIM_RULE_ENTER_TYPE, true], [ANIM_RULE_EXIT_TYPE, true]]);
+    const oneWay = decorateTransitionRuleGraph(graph, true);
+    expect(oneWay.nodes.find((row) => row.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled).toBe(true);
+    expect(persistTransitionRuleGraph(oneWay).nodes.find((row) => row.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled).toBeUndefined();
+  });
+});
+
+describe("validateAnimGraph", () => {
+  const codes = (doc: AnimGraphDocument, catalog: AnimClipCatalogEntry[] = [], dimension?: AnimGraphDimension) =>
+    validateAnimGraph(doc, catalog, { dimension }).map((row) => [row.code, row.nodeId ?? null, row.location?.kind ?? null]);
+
+  it("reports State Machine problems in the State Machine", () => {
+    const doc = machineDoc(
+      [state("idle"), { ...state("run"), name: " idle " }],
+      [transition("a", "idle", "run"), transition("b", "idle", "run"), transition("c", "idle", "ghost")],
+      "gone",
     );
-  });
-
-  it("exposes Animation Graph variables as Class-style members for Get/Set", () => {
-    expect(
-      animGraphMembersFromVariables([
-        { id: "var-moving", name: "moving", typeId: "bool", defaultValue: false },
-      ]),
-    ).toEqual([
-      {
-        id: "var-moving",
-        kind: "variable",
-        name: "moving",
-        typeId: "bool",
-        defaultValue: false,
-      },
+    doc.stateMachine.transitions[0]!.ruleGraph = { nodes: [], edges: [] };
+    expect(codes(doc)).toEqual([
+      ["anim.missingEntry", "gone", "machine"],
+      ["anim.duplicateStateName", "run", "machine"],
+      ["anim.missingRuleNode", "a", "machine"],
+      ["anim.duplicateTransition", "idle", "machine"],
+      ["anim.badTransition", "c", "machine"],
     ]);
   });
 
-  it("rejects duplicate variable names and missing rule sinks", () => {
-    const doc = createDefaultAnimGraph();
-    doc.variables = [
-      { id: "a", name: "Speed", typeId: "float", defaultValue: 0 },
-      { id: "b", name: "speed", typeId: "float", defaultValue: 1 },
+  it("checks that transition ids are unique and each state graph has its output", () => {
+    const doc = machineDoc([state("idle"), state("run")], [transition("t", "idle", "run"), transition("t", "run", "idle")]);
+    doc.stateMachine.states[0]!.stateGraph = { nodes: [player("p")], edges: [] };
+    expect(codes(doc)).toEqual([
+      ["anim.duplicateTransitionId", "run", "machine"],
+      ["anim.missingOutput", "idle", "machine"],
+    ]);
+  });
+
+  it("allows a 3D graph only Animations on its Skeleton, and checks each Animation against its Model", () => {
+    const catalog: AnimClipCatalogEntry[] = [
+      { guid: "knight-run", type: "Animation", name: "Knight_Run", clipName: "Run", skeletonGuid: "knight-rig", modelGuid: "knight" },
+      { guid: "door-open", type: "Animation", name: "Door_Open", clipName: "open", skeletonGuid: null },
+      { guid: "robot-walk", type: "SpriteAnimation", name: "Robot_Walk", durationMs: 400 },
+      { guid: "knight", type: "Model", name: "Knight", skeletonGuid: "other-rig" },
     ];
-    doc.transitions.push({
-      id: "self",
-      fromStateId: "idle",
-      toStateId: "idle",
-      blendSeconds: 0,
-      priority: 0,
-      ruleGraph: { nodes: [], edges: [] },
+    const playing = (dimension: AnimGraphDimension, assetGuid: string, skeletonGuid: string | null): AnimGraphDocument => ({
+      ...machineDoc([{ ...state("idle"), stateGraph: createStateGraph(dimension, { assetGuid }) }]),
+      skeletonGuid,
     });
-    const codes = validateAnimGraph(doc).map((row) => row.code);
-    expect(codes).toContain("anim.duplicateVariable");
-    expect(codes).toContain("anim.missingRuleNode");
+    expect(codes(playing("3d", "knight-run", "knight-rig"), catalog, "3d")).toEqual([["anim.skeletonMismatch", "player", "state"]]);
+    expect(codes(playing("3d", "door-open", "knight-rig"), catalog, "3d")).toEqual([["anim.clipSkeleton", "player", "state"]]);
+    expect(codes(playing("3d", "door-open", null), catalog, "3d")).toEqual([]);
+    expect(codes(playing("3d", "robot-walk", null), catalog, "3d")).toEqual([["anim.clipKind", "player", "state"]]);
+    expect(codes(playing("2d", "knight-run", null), catalog, "2d")).toEqual([["anim.clipKind", "player", "state"]]);
+    expect(codes(playing("2d", "robot-walk", null), catalog, "2d")).toEqual([]);
   });
 
-  it("flags an Animation whose skeleton does not match its Model", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-walk-anim",
-      clipName: "Walk",
-      durationMs: 1000,
+  it("rejects duplicate variable names", () => {
+    const doc: AnimGraphDocument = {
+      ...createDefaultAnimGraph(),
+      variables: [{ id: "a", name: "Speed", typeId: "float" }, { id: "b", name: "speed", typeId: "float" }],
     };
-    const codes = validateAnimGraph(doc, [
-      {
-        guid: "hero-model",
-        type: "Model",
-        name: "Hero",
-        skeletonGuid: "hero-skel",
-      },
-      {
-        guid: "hero-walk-anim",
-        type: "Animation",
-        name: "Hero_Walk",
-        clipName: "Walk",
-        modelGuid: "hero-model",
-        skeletonGuid: "other-skel",
-      },
-    ]).map((row) => row.code);
-    expect(codes).toContain("anim.skeletonMismatch");
+    expect(codes(doc)).toEqual([["anim.duplicateVariable", "b", null]]);
   });
 });
 
-describe("anim graph evaluator", () => {
-  it("keeps a transition gated until both Enter State and Exit State are true", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const blocked = evaluateAnimGraph(doc, null, 0.016, {
-      transitionRules: { "idle-to-run": { enter: true, exit: false } },
-    });
-    expect(blocked.stateId).toBe("idle");
-    const next = evaluateAnimGraph(doc, blocked, 0.016, {
-      transitionRules: { "idle-to-run": { enter: true, exit: true } },
-    });
-    expect(next.stateId).toBe("run");
-    expect(next.normalisedTime).toBe(0);
+describe("State Machine canvas", () => {
+  const twoStates = (): AnimStateMachine => ({
+    entryStateId: "idle",
+    states: [state("idle"), { ...state("run"), position: { x: 300, y: 80 } }],
+    transitions: [transition("idle-to-run", "idle", "run", { blendSeconds: 0.25 })],
   });
 
-  it("emits Just Finished for one tick when a non-looping clip ends", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states[0]!.loop = false;
-    const ending = evaluateAnimGraph(doc, null, 1, {});
-    expect(ending.normalisedTime).toBe(1);
-    expect(ending.facts.justFinished).toBe(true);
-    expect(ending.facts.justLooped).toBe(false);
-    const held = evaluateAnimGraph(doc, ending, 0.016, {});
-    expect(held.facts.justFinished).toBe(false);
-    expect(held.normalisedTime).toBe(1);
+  it("round-trips positions, the entry state and transition fields, keeping each state's graph", () => {
+    const machine = twoStates();
+    const serialized = hydrateAnimGraphForEditor(stateMachineToSerialized(machine));
+    expect(serialized.nodes.map((row) => [row.type, row.data.title, row.data.entry])).toEqual([["anim.state", "Idle", true], ["anim.state", "Run", false]]);
+    expect(serialized.nodes[0]!.data.__pins).toBeTruthy();
+    serialized.nodes[1]!.position = { x: 420, y: 160 };
+    serialized.edges[0] = { ...serialized.edges[0]!, id: "canvas-edge-1" };
+    const next = serializedToStateMachine(serialized, machine, "3d");
+    expect(next.states[1]).toMatchObject({ position: { x: 420, y: 160 }, stateGraph: machine.states[1]!.stateGraph });
+    expect(next.entryStateId).toBe("idle");
+    // A wire drawn again between the same two states keeps its transition's id.
+    expect(next.transitions).toEqual([expect.objectContaining({ id: "idle-to-run", fromStateId: "idle", toStateId: "run", blendSeconds: 0.25 })]);
   });
 
-  it("emits Just Looped when a looping clip wraps, including multiple wraps in one tick", () => {
-    const doc = createDefaultAnimGraph();
-    const wrapped = evaluateAnimGraph(doc, null, 2.5, {});
-    expect(wrapped.facts.justLooped).toBe(true);
-    expect(wrapped.facts.loopCount).toBe(2);
-    expect(wrapped.normalisedTime).toBeCloseTo(0.5, 5);
-    expect(wrapped.facts.justFinished).toBe(false);
+  it("gives an added state a fresh name and one player of the graph's dimension", () => {
+    const machine = twoStates();
+    const serialized = stateMachineToSerialized(machine);
+    serialized.nodes.push(node("new", "anim.state", { title: "Idle" }));
+    const next = serializedToStateMachine(serialized, machine, "2d");
+    expect(next.states[2]!.name).toBe("Idle 2");
+    expect(singlePlayerOf(next.states[2]!.stateGraph)?.type).toBe("anim.frame.spritePlayer");
   });
 
-  it("crossfades into weighted clip layers using blendSeconds", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0]!.assetGuid = "anim-idle";
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: "run-clip",
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.clips.push({
-      id: "run-clip",
-      kind: "sprite",
-      assetGuid: "sprite-1",
-      clipName: "Run",
-      durationMs: 400,
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.2,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const started = evaluateAnimGraph(doc, null, 0.1, {
-      transitionRules: { "idle-to-run": { enter: true, exit: true } },
-    });
-    expect(started.stateId).toBe("run");
-    expect(started.layers).toHaveLength(2);
-    const idleLayer = started.layers.find((layer) => layer.stateId === "idle");
-    const runLayer = started.layers.find((layer) => layer.stateId === "run");
-    expect(idleLayer?.weight).toBeCloseTo(0.5, 5);
-    expect(runLayer?.weight).toBeCloseTo(0.5, 5);
-    expect(runLayer?.clipAssetGuid).toBe("sprite-1");
-    expect(started.blendWeights.idle).toBeCloseTo(0.5, 5);
-    const finished = evaluateAnimGraph(doc, started, 0.1, {
-      transitionRules: { "idle-to-run": { enter: false, exit: false } },
-    });
-    expect(finished.layers).toHaveLength(1);
-    expect(finished.layers[0]).toMatchObject({ stateId: "run", weight: 1 });
+  it("draws a Both Ways pair as one edge, keeps both rows on round-trip, and names the edge either direction lights", () => {
+    const doc = machineDoc(twoStates().states, twoStates().transitions);
+    const both = setTransitionBidirectional(doc, "idle-to-run", true);
+    const machine = both.stateMachine;
+    expect(machine.transitions).toHaveLength(2);
+    const serialized = stateMachineToSerialized(machine);
+    expect(serialized.edges).toEqual([expect.objectContaining({ id: "idle-to-run", type: "animTransitionBoth" })]);
+    expect(serializedToStateMachine(serialized, machine, "3d").transitions).toHaveLength(2);
+    expect(animTransitionEdgeId(machine.transitions, "run", "idle")).toBe("idle-to-run");
+    expect(setTransitionBidirectional(both, "idle-to-run", false).stateMachine.transitions).toHaveLength(1);
   });
 
-  it("chooses the lowest priority outgoing transition when several pass", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push(
-      {
-        id: "run",
-        name: "Run",
-        clipId: null,
-        speed: 1,
-        loop: true,
-        position: { x: 300, y: 80 },
-      },
-      {
-        id: "jump",
-        name: "Jump",
-        clipId: null,
-        speed: 1,
-        loop: true,
-        position: { x: 520, y: 80 },
-      },
-    );
-    doc.transitions.push(
-      {
-        id: "to-run",
-        fromStateId: "idle",
-        toStateId: "run",
-        blendSeconds: 0,
-        priority: 10,
-        ruleGraph: createDefaultTransitionRuleGraph(),
-      },
-      {
-        id: "to-jump",
-        fromStateId: "idle",
-        toStateId: "jump",
-        blendSeconds: 0,
-        priority: 1,
-        ruleGraph: createDefaultTransitionRuleGraph(),
-      },
-    );
-    const next = evaluateAnimGraph(doc, null, 0.016, {
-      transitionRules: {
-        "to-run": { enter: true, exit: true },
-        "to-jump": { enter: true, exit: true },
-      },
-    });
-    expect(next.stateId).toBe("jump");
+  it("draws a reverse on other sides as its own wire, and only a mirrored reverse on the pair's one wire", () => {
+    const forward = transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" });
+    const own = { ...twoStates(), transitions: [forward, transition("run-to-idle", "run", "idle", { sourceHandle: "top-out", targetHandle: "top-in" })] };
+    expect(stateMachineToSerialized(own).edges.map((edge) => [edge.id, edge.type])).toEqual([
+      ["idle-to-run", "animTransition"],
+      ["run-to-idle", "animTransition"],
+    ]);
+    expect(animTransitionEdgeId(own.transitions, "run", "idle")).toBe("run-to-idle");
+    const mirrored = { ...twoStates(), transitions: [forward, transition("run-to-idle", "run", "idle", { sourceHandle: "left-out", targetHandle: "right-in" })] };
+    expect(stateMachineToSerialized(mirrored).edges.map((edge) => [edge.id, edge.type])).toEqual([["idle-to-run", "animTransitionBoth"]]);
+    expect(animTransitionEdgeId(mirrored.transitions, "run", "idle")).toBe("idle-to-run");
   });
 
-  it("reports remaining time until the current clip loops or ends", () => {
-    const doc = createDefaultAnimGraph();
-    const next = evaluateAnimGraph(doc, null, 0.25, {});
-    expect(next.facts.elapsedSeconds).toBeCloseTo(0.25, 5);
-    expect(next.facts.durationSeconds).toBeCloseTo(1, 5);
-    expect(next.facts.remainingSeconds).toBeCloseTo(0.75, 5);
-    expect(next.facts.remainingRatio).toBeCloseTo(0.75, 5);
-    expect(next.facts.looping).toBe(true);
+  it("gives a mirrored pair's hidden reverse its own wire when it is drawn on other sides, without a duplicate", () => {
+    const forward = transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" });
+    const reverse = transition("run-to-idle", "run", "idle", { sourceHandle: "left-out", targetHandle: "right-in", priority: 2 });
+    const machine = { ...twoStates(), transitions: [forward, reverse] };
+    const canvas = stateMachineToSerialized(machine);
+    canvas.edges.push({ id: "canvas-new", source: "run", target: "idle", sourceHandle: "top-out", targetHandle: "top-in" });
+    const next = serializedToStateMachine(canvas, machine, "3d");
+    expect(next.transitions).toEqual([
+      expect.objectContaining({ id: "idle-to-run", sourceHandle: "right-out", targetHandle: "left-in" }),
+      expect.objectContaining({ id: "run-to-idle", sourceHandle: "top-out", targetHandle: "top-in", priority: 2 }),
+    ]);
+    // Moving the shared wire keeps the hidden reverse on its old sides, now a wire of its own.
+    const moved = stateMachineToSerialized(machine);
+    moved.edges = [{ id: "canvas-moved", source: "idle", target: "run", sourceHandle: "bottom-out", targetHandle: "bottom-in" }];
+    expect(serializedToStateMachine(moved, machine, "3d").transitions).toEqual([
+      expect.objectContaining({ id: "idle-to-run", sourceHandle: "bottom-out", targetHandle: "bottom-in" }),
+      expect.objectContaining({ id: "run-to-idle", sourceHandle: "left-out", targetHandle: "right-in" }),
+    ]);
+    // Deleting a reverse that had its own wire deletes it.
+    const separate = { ...twoStates(), transitions: [forward, { ...reverse, sourceHandle: "top-out", targetHandle: "top-in" }] };
+    const deleted = stateMachineToSerialized(separate);
+    deleted.edges = deleted.edges.filter((edge) => edge.id !== "run-to-idle");
+    expect(serializedToStateMachine(deleted, separate, "3d").transitions.map((row) => row.id)).toEqual(["idle-to-run"]);
   });
 
-  it("asks decideTransition with post-advance facts including Just Finished", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states[0]!.loop = false;
-    doc.states.push({
-      id: "done",
-      name: "Done",
-      clipId: null,
-      speed: 1,
-      loop: false,
-      position: { x: 300, y: 80 },
-    });
-    doc.transitions.push({
-      id: "idle-to-done",
-      fromStateId: "idle",
-      toStateId: "done",
-      blendSeconds: 0,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
-    const seen: Array<{ normalisedTime: number; justFinished: boolean }> = [];
-    const decide = (
-      _transition: (typeof doc.transitions)[number],
-      facts: { normalisedTime: number; justFinished: boolean },
-    ) => {
-      seen.push({
-        normalisedTime: facts.normalisedTime,
-        justFinished: facts.justFinished,
-      });
-      return facts.justFinished
-        ? { enter: true, exit: true }
-        : { enter: false, exit: false };
-    };
-    const blocked = evaluateAnimGraph(doc, null, 0.5, { decideTransition: decide });
-    expect(blocked.stateId).toBe("idle");
-    expect(seen[0]?.normalisedTime).toBeCloseTo(0.5, 5);
-    expect(seen[0]?.justFinished).toBe(false);
-    const finished = evaluateAnimGraph(doc, blocked, 0.5, {
-      decideTransition: decide,
-    });
-    expect(seen[1]?.justFinished).toBe(true);
-    expect(finished.stateId).toBe("done");
-  });
-
-  it("keeps the selected duplicate transition's blend length after the first tick", () => {
-    const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.transitions.push(
-      {
-        id: "slow",
-        fromStateId: "idle",
-        toStateId: "run",
-        blendSeconds: 1,
-        priority: 1,
-        ruleGraph: createDefaultTransitionRuleGraph(),
-      },
-      {
-        id: "fast",
-        fromStateId: "idle",
-        toStateId: "run",
-        blendSeconds: 0.1,
-        priority: 0,
-        ruleGraph: createDefaultTransitionRuleGraph(),
-      },
-    );
-    const inputs = {
-      transitionRules: {
-        slow: { enter: true, exit: true },
-        fast: { enter: true, exit: true },
-      },
-    };
-    const started = evaluateAnimGraph(doc, null, 0.05, inputs);
-    expect(started.blendWeights.run).toBeCloseTo(0.5, 5);
-    const done = evaluateAnimGraph(doc, started, 0.05, inputs);
-    expect(done.layers).toEqual([
-      expect.objectContaining({ stateId: "run", weight: 1 }),
+  it("loads a transition stored without sides on the sides its states face each other, so a pair mirrors", () => {
+    const states = [state("idle"), { ...state("run"), position: { x: 300, y: 80 } }, { ...state("jump"), position: { x: 0, y: 400 } }];
+    const stored = JSON.parse(JSON.stringify(machineDoc(states, [
+      transition("idle-to-run", "idle", "run"),
+      transition("run-to-idle", "run", "idle"),
+      transition("idle-to-jump", "idle", "jump"),
+    ])));
+    const machine = parseAnimGraphDocument(stored)!.stateMachine;
+    expect(machine.transitions.map((row) => [row.id, row.sourceHandle, row.targetHandle])).toEqual([
+      ["idle-to-run", "right-out", "left-in"],
+      ["run-to-idle", "left-out", "right-in"],
+      ["idle-to-jump", "bottom-out", "top-in"],
+    ]);
+    expect(stateMachineToSerialized(machine).edges.map((edge) => [edge.id, edge.type])).toEqual([
+      ["idle-to-run", "animTransitionBoth"],
+      ["idle-to-jump", "animTransition"],
     ]);
   });
-});
 
-describe("anim graph exit time", () => {
-  function exitTimeDoc(options: { loop: boolean; durationMs: number }): AnimGraphDocument {
-    const doc = createDefaultAnimGraph();
-    doc.states[0]!.loop = options.loop;
-    doc.clips[0]!.durationMs = options.durationMs;
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
+  it("opens the transition of a double-clicked wire, and on a shared wire the direction pointing nearer", () => {
+    const states = [state("idle"), { ...state("run"), position: { x: 400, y: 0 } }];
+    const forward = transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" });
+    const reverse = transition("run-to-idle", "run", "idle", { sourceHandle: "left-out", targetHandle: "right-in" });
+    const shared = { entryStateId: "idle", states, transitions: [forward, reverse] };
+    // Near Run, Idle → Run's arrowhead; near Idle, Run → Idle's.
+    expect(transitionAtWire(shared, "idle-to-run", { x: 380, y: 45 })?.id).toBe("idle-to-run");
+    expect(transitionAtWire(shared, "idle-to-run", { x: 220, y: 45 })?.id).toBe("run-to-idle");
+    expect(transitionAtWire(shared, "idle-to-run", null)?.id).toBe("idle-to-run");
+    // A reverse on other sides is its own wire.
+    const own = { ...shared, transitions: [forward, { ...reverse, sourceHandle: "top-out", targetHandle: "top-in" }] };
+    expect(transitionAtWire(own, "idle-to-run", { x: 220, y: 45 })?.id).toBe("idle-to-run");
+    expect(transitionAtWire(own, "missing", null)).toBeUndefined();
+  });
+
+  it("builds a dragged transition from the dragged state's side to the side it is released on", () => {
+    const fromRect = { x: 0, y: 0, width: 200, height: 90 };
+    const toRect = { x: 400, y: 0, width: 200, height: 90 };
+    const drag = { fromNodeId: "idle", toNodeId: "run", fromRect, toRect };
+    // Dragged from the incoming plate, it still leaves the dragged state, on that side.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "left-in", toHandleId: null, point: { x: 500, y: 45 } })).toEqual({
+      source: "idle", target: "run", sourceHandle: "left-out", targetHandle: "left-in",
     });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
+    // Near the middle of the body: the side facing the dragged state.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "bottom-out", toHandleId: null, point: { x: 520, y: 50 } })?.targetHandle).toBe("left-in");
+    // Near an edge of the body: that side.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: null, point: { x: 500, y: 4 } })?.targetHandle).toBe("top-in");
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: null, point: { x: 596, y: 45 } })?.targetHandle).toBe("right-in");
+    // On a handle: that handle's side, whichever plate.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: "bottom-out", point: null })?.targetHandle).toBe("bottom-in");
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: null, point: null, toNodeId: "idle" })).toBeNull();
+  });
+
+  it("flips a one-way transition with its handles, and leaves a Both Ways pair alone", () => {
+    const doc = machineDoc(twoStates().states, [transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" })]);
+    expect(flipTransitionDirection(doc, "idle-to-run").stateMachine.transitions[0]).toMatchObject({
+      fromStateId: "run",
+      toStateId: "idle",
+      sourceHandle: "left-out",
+      targetHandle: "right-in",
     });
-    return doc;
-  }
-
-  /**
-   * 1-based tick that entered Run, or null. The rule mirrors an Exit Time
-   * Reached node ANDed with `open(tick)` into Enter State.
-   */
-  function tickEnteringRun(
-    doc: AnimGraphDocument,
-    dtSeconds: number,
-    ticks: number,
-    exitTime: number,
-    open: (tick: number) => boolean = () => true,
-  ): number | null {
-    let state: AnimEvalState | null = null;
-    for (let tick = 1; tick <= ticks; tick += 1) {
-      state = evaluateAnimGraph(doc, state, dtSeconds, {
-        decideTransition: (_transition, facts) => ({
-          enter: open(tick) && animExitTimeReached(facts, exitTime),
-          exit: true,
-        }),
-      });
-      if (state.stateId === "run") return tick;
-    }
-    return null;
-  }
-
-  it("fires a looping exit time of 1 on the tick that completes the loop", () => {
-    const doc = exitTimeDoc({ loop: true, durationMs: 1000 });
-    expect(tickEnteringRun(doc, 0.1, 12, 1)).toBe(10);
+    const both = setTransitionBidirectional(doc, "idle-to-run", true);
+    expect(flipTransitionDirection(both, "idle-to-run")).toBe(both);
   });
-
-  it("fires a looping exit time the clip skips over when it wraps", () => {
-    // 300 ms at 60 Hz: 0.9444 on tick 17, wraps to 0 on tick 18.
-    const doc = exitTimeDoc({ loop: true, durationMs: 300 });
-    expect(tickEnteringRun(doc, 1 / 60, 30, 0.95)).toBe(18);
-  });
-
-  it("waits for the next loop's crossing when the rule's other input opens late", () => {
-    const doc = exitTimeDoc({ loop: true, durationMs: 1000 });
-    expect(tickEnteringRun(doc, 0.1, 20, 0.5, (tick) => tick >= 7)).toBe(15);
-  });
-
-  it("keeps a reached exit time open on a finished non-looping clip", () => {
-    const doc = exitTimeDoc({ loop: false, durationMs: 1000 });
-    expect(tickEnteringRun(doc, 0.1, 20, 0.5, (tick) => tick >= 15)).toBe(15);
-  });
-
-  it.each([
-    { exitTime: 0.5, from: 2.4, to: 2.6, looping: true, want: true },
-    { exitTime: 0.5, from: 2.6, to: 2.9, looping: true, want: false },
-    { exitTime: 1.5, from: 1.4, to: 1.6, looping: true, want: true },
-    { exitTime: 1.5, from: 2.4, to: 2.6, looping: true, want: false },
-    { exitTime: 0, from: 0, to: 0.1, looping: true, want: true },
-    { exitTime: 0, from: 0.1, to: 0.2, looping: true, want: false },
-    { exitTime: 0.5, from: 1, to: 1, looping: false, want: true },
-  ])(
-    "exit time $exitTime from $from to $to (looping $looping) → $want",
-    ({ exitTime, from, to, looping, want }) => {
-      const facts = {
-        elapsedSeconds: 0,
-        durationSeconds: 1,
-        normalisedTime: looping ? to % 1 : to,
-        remainingSeconds: 0,
-        remainingRatio: 0,
-        looping,
-        loopCount: looping ? Math.floor(to) : 0,
-        justLooped: false,
-        justFinished: false,
-        totalNormalisedTime: to,
-        previousTotalNormalisedTime: from,
-      };
-      expect(animExitTimeReached(facts, exitTime)).toBe(want);
-    },
-  );
 });
 
 describe("resolveAnimGraphClips", () => {
-  const catalog = [
-    {
-      guid: "hero-model",
-      type: "Model",
-      name: "Hero",
-      clipNames: ["Idle", "Walk"],
-      dependencyGuids: ["hero-walk-anim"],
-    },
-    {
-      guid: "hero-walk-anim",
-      type: "Animation",
-      name: "Hero_Walk",
-      clipName: "Walk",
-    },
-    {
-      guid: "hero-sprite",
-      type: "Sprite",
-      name: "HeroSprite",
-    },
-  ];
-
-  it("keeps an Animation guid and fills the glTF clip name from that asset", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-walk-anim",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, catalog);
-    expect(resolved.clips[0]).toMatchObject({
-      assetGuid: "hero-walk-anim",
-      clipName: "Walk",
-    });
-  });
-
-  it("fills Animation clip duration from the catalog", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-walk-anim",
-      clipName: "Walk",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, [
-      ...catalog,
-      {
-        guid: "hero-walk-anim",
-        type: "Animation",
-        name: "Hero_Walk",
-        clipName: "Walk",
-        durationMs: 1800,
-      },
+  it("fills each player's clip name and length and a Sprite Animation's frame count, keeping guids", () => {
+    const doc = machineDoc([
+      { ...state("idle"), stateGraph: createStateGraph("3d", { assetGuid: "walk" }) },
+      { ...state("model"), stateGraph: createStateGraph("3d", { assetGuid: "hero-model" }) },
+      { ...state("robot"), stateGraph: createStateGraph("2d", { assetGuid: "robot" }) },
     ]);
-    expect(resolved.clips[0]).toMatchObject({
-      assetGuid: "hero-walk-anim",
-      clipName: "Walk",
-      durationMs: 1800,
-    });
-  });
-
-  it("keeps a Model guid and a clip name that exists on that Model", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-model",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, catalog);
-    expect(resolved.clips[0]).toMatchObject({
-      assetGuid: "hero-model",
-      clipName: "Idle",
-    });
-  });
-
-  it("does not rewrite Sprite clips", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "sprite",
-      assetGuid: "hero-sprite",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
-    expect(resolveAnimGraphClips(doc, catalog).clips[0]!.assetGuid).toBe(
-      "hero-sprite",
-    );
-  });
-
-  it("returns the same document when the catalog is empty", () => {
-    const doc = createDefaultAnimGraph();
+    const resolved = resolveAnimGraphClips(doc, [
+      { guid: "walk", type: "Animation", name: "Hero_Walk", clipName: "Walk", durationMs: 800 },
+      { guid: "hero-model", type: "Model", name: "Hero" },
+      { guid: "robot", type: "SpriteAnimation", name: "Robot", durationMs: 400, frameCount: 4 },
+    ]);
+    const [idle, model, robot] = resolved.stateMachine.states.map((row) => singlePlayerOf(row.stateGraph)?.data);
+    expect(idle).toMatchObject({ assetGuid: "walk", clipName: "Walk", durationMs: 800 });
+    // A guid naming a Model is not an Animation: it stays unresolved and plays nothing.
+    expect(model?.clipName).toBeUndefined();
+    expect(robot).toMatchObject({ assetGuid: "robot", clipName: "", durationMs: 400, frameCount: 4 });
     expect(resolveAnimGraphClips(doc, [])).toBe(doc);
-  });
-
-  it("keeps an Animation guid when no Model lists it as a dependency", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "orphan-anim",
-      clipName: "Walk",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, [
-      {
-        guid: "orphan-anim",
-        type: "Animation",
-        name: "Orphan",
-        clipName: "Walk",
-      },
-    ]);
-    expect(resolved.clips[0]).toMatchObject({
-      assetGuid: "orphan-anim",
-      clipName: "Walk",
-    });
-  });
-
-  it("keeps a Model clip name the Model lacks, even when it matches the state name", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-model",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, [{ ...catalog[0]!, clipNames: ["Walk"] }]);
-    expect(resolved.clips[0]?.clipName).toBe("Idle");
-  });
-
-  it("fills an empty Model clip name from the first glTF group", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-model",
-      clipName: "",
-      durationMs: 1000,
-    };
-    expect(resolveAnimGraphClips(doc, catalog).clips[0]?.clipName).toBe("Idle");
-  });
-
-  it("fills Sprite Animation clip duration from the catalog", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "sprite",
-      assetGuid: "walk-anim",
-      clipName: "",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, [
-      {
-        guid: "walk-anim",
-        type: "SpriteAnimation",
-        name: "Walk",
-        durationMs: 250,
-      },
-    ]);
-    expect(resolved.clips[0]).toMatchObject({
-      assetGuid: "walk-anim",
-      durationMs: 250,
-    });
-  });
-
-  it("keeps a legacy Sprite clip duration unchanged", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "sprite",
-      assetGuid: "hero-sprite",
-      clipName: "Idle",
-      durationMs: 400,
-    };
-    expect(
-      resolveAnimGraphClips(doc, [
-        { guid: "hero-sprite", type: "Sprite", name: "HeroSprite" },
-      ]).clips[0],
-    ).toMatchObject({
-      assetGuid: "hero-sprite",
-      clipName: "Idle",
-      durationMs: 400,
-    });
   });
 });

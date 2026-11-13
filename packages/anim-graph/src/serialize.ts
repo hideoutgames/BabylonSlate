@@ -1,10 +1,10 @@
 import type { SerializedGraph } from "@haptic/core";
-import type { AnimGraphDocument, AnimTransition } from "./graph";
+import type { AnimGraphDimension, AnimGraphDocument, AnimState, AnimStateMachine, AnimTransition } from "./graph";
 import {
-  createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
   defaultAnimStatePosition,
 } from "./graph";
+import { createStateGraph } from "./pose-graph";
 
 export type AnimStateSide = "top" | "right" | "bottom" | "left";
 
@@ -56,9 +56,6 @@ export function animPaletteNodes(): Array<{
       category: "Animation",
       pins: ANIM_STATE_PINS,
       defaultData: {
-        clipId: null,
-        speed: 1,
-        loop: true,
         entry: false,
       },
     },
@@ -102,6 +99,47 @@ export function normalizeAnimConnection(connection: {
   };
 }
 
+type AnimDragRect = { x: number; y: number; width: number; height: number };
+
+/** The side of `rect` that `point` lies toward, measured against the box's half extents. */
+function sideToward(rect: AnimDragRect, point: { x: number; y: number }): { side: AnimStateSide; reach: number } {
+  const dx = (point.x - (rect.x + rect.width / 2)) / Math.max(rect.width / 2, 1);
+  const dy = (point.y - (rect.y + rect.height / 2)) / Math.max(rect.height / 2, 1);
+  if (Math.abs(dx) >= Math.abs(dy)) return { side: dx >= 0 ? "right" : "left", reach: Math.abs(dx) };
+  return { side: dy >= 0 ? "bottom" : "top", reach: Math.abs(dy) };
+}
+
+const rectCentre = (rect: AnimDragRect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+
+/**
+ * The transition a drag between two states makes: always from the dragged state, leaving by the side it was dragged
+ * from. It enters the other state on the side it was released on: the handle's side, else the side nearest the
+ * release point, else (near the middle, or with no point) the side facing the dragged state.
+ */
+export function animTransitionFromDrag(drag: {
+  fromNodeId: string;
+  fromHandleId: string;
+  toNodeId: string;
+  toHandleId: string | null;
+  point: { x: number; y: number } | null;
+  fromRect: AnimDragRect | null;
+  toRect: AnimDragRect | null;
+}): { source: string; target: string; sourceHandle: string; targetHandle: string } | null {
+  if (drag.fromNodeId === drag.toNodeId) return null;
+  const facing = drag.fromRect && drag.toRect ? sideToward(drag.toRect, rectCentre(drag.fromRect)).side : "left";
+  const released = drag.point && drag.toRect ? sideToward(drag.toRect, drag.point) : null;
+  const handleSide = drag.toHandleId ? ANIM_STATE_HANDLE.exec(drag.toHandleId)?.[1] : undefined;
+  const targetSide = handleSide ?? (released && released.reach >= 0.5 ? released.side : facing);
+  const fromSide = ANIM_STATE_HANDLE.exec(drag.fromHandleId)?.[1]
+    ?? (drag.fromRect && drag.toRect ? sideToward(drag.fromRect, rectCentre(drag.toRect)).side : "right");
+  return {
+    source: drag.fromNodeId,
+    target: drag.toNodeId,
+    sourceHandle: `${fromSide}-out`,
+    targetHandle: `${targetSide}-in`,
+  };
+}
+
 function transitionPairKey(fromStateId: string, toStateId: string): string {
   return `${fromStateId}\0${toStateId}`;
 }
@@ -116,6 +154,26 @@ export function findReverseTransition(
   );
 }
 
+const handleSide = (handle: string | undefined, direction: "in" | "out"): string =>
+  animStateHandle(handle, direction).split("-")[0]!;
+
+/**
+ * The reverse of a transition when it runs between the same two sides (B's side out to A's side in, where A→B leaves
+ * A's side for B's): the pair is drawn as one Both Ways wire. A reverse on other sides is a wire of its own.
+ */
+export function findMirroredReverse(
+  transitions: readonly AnimTransition[],
+  transition: AnimTransition,
+): AnimTransition | undefined {
+  const reverse = findReverseTransition(transitions, transition.fromStateId, transition.toStateId);
+  if (!reverse || reverse.id === transition.id) return undefined;
+  return handleSide(reverse.sourceHandle, "out") === handleSide(transition.targetHandle, "in")
+    && handleSide(reverse.targetHandle, "in") === handleSide(transition.sourceHandle, "out")
+    ? reverse
+    : undefined;
+}
+
+/** The transitions drawn as wires: each one, except the second of a mirrored pair, which shares the first's. */
 function visualTransitions(
   transitions: readonly AnimTransition[],
 ): AnimTransition[] {
@@ -128,36 +186,60 @@ function visualTransitions(
     if (seenPair.has(pair)) continue;
     seenPair.add(pair);
     visual.push(row);
-    const reverse = findReverseTransition(
-      transitions,
-      row.fromStateId,
-      row.toStateId,
-    );
-    if (reverse && reverse.id !== row.id) skip.add(reverse.id);
+    const mirrored = findMirroredReverse(transitions, row);
+    if (mirrored) skip.add(mirrored.id);
   }
   return visual;
 }
 
+/** A state card's half size on the canvas, for the centre a wire point is measured to. */
+const STATE_CARD_HALF = { x: 100, y: 45 };
+
 /**
- * The id of the canvas edge that draws a transition taken from one state to another: a Both Ways
- * pair, like duplicate rows, shares the edge of the first row. The runtime's debug trace names the
- * transition it took by it.
+ * The transition a double-click on a wire opens: the wire's own, or on a mirrored pair's shared wire the direction
+ * whose arrowhead (its target state) is nearer the point.
+ */
+export function transitionAtWire(
+  machine: AnimStateMachine,
+  edgeId: string,
+  point: { x: number; y: number } | null,
+): AnimTransition | undefined {
+  const row = machine.transitions.find((candidate) => candidate.id === edgeId);
+  if (!row) return undefined;
+  const mirrored = findMirroredReverse(machine.transitions, row);
+  if (!mirrored || !point) return row;
+  const distance = (stateId: string) => {
+    const position = machine.states.find((state) => state.id === stateId)?.position;
+    if (!position) return Number.POSITIVE_INFINITY;
+    return Math.hypot(point.x - (position.x + STATE_CARD_HALF.x), point.y - (position.y + STATE_CARD_HALF.y));
+  };
+  return distance(row.fromStateId) < distance(row.toStateId) ? mirrored : row;
+}
+
+/**
+ * The id of the canvas edge that draws a transition taken from one state to another: its own, or for the second of
+ * a mirrored pair, the first's. The runtime's debug trace names the transition it took by it.
  */
 export function animTransitionEdgeId(
   transitions: readonly AnimTransition[],
   fromStateId: string,
   toStateId: string,
 ): string | undefined {
-  return visualTransitions(transitions).find((row) =>
-    (row.fromStateId === fromStateId && row.toStateId === toStateId) ||
-    (row.fromStateId === toStateId && row.toStateId === fromStateId))?.id;
+  const row = transitions.find((candidate) => candidate.fromStateId === fromStateId && candidate.toStateId === toStateId);
+  if (!row) return undefined;
+  if (visualTransitions(transitions).some((visual) => visual.id === row.id)) return row.id;
+  return findMirroredReverse(transitions, row)?.id;
 }
 
 function uniqueTransitionId(doc: AnimGraphDocument): string {
-  const ids = new Set(doc.transitions.map((row) => row.id));
+  const ids = new Set(doc.stateMachine.transitions.map((row) => row.id));
   let index = 1;
   while (ids.has(`transition-${index}`)) index += 1;
   return `transition-${index}`;
+}
+
+function withTransitions(doc: AnimGraphDocument, transitions: AnimTransition[]): AnimGraphDocument {
+  return { ...doc, stateMachine: { ...doc.stateMachine, transitions } };
 }
 
 export function setTransitionBidirectional(
@@ -165,65 +247,59 @@ export function setTransitionBidirectional(
   transitionId: string,
   bothWays: boolean,
 ): AnimGraphDocument {
-  const transition = doc.transitions.find((row) => row.id === transitionId);
+  const machine = doc.stateMachine;
+  const transition = machine.transitions.find((row) => row.id === transitionId);
   if (!transition) return doc;
   const reverse = findReverseTransition(
-    doc.transitions,
+    machine.transitions,
     transition.fromStateId,
     transition.toStateId,
   );
   if (bothWays) {
     if (reverse) return doc;
-    return {
-      ...doc,
-      transitions: [
-        ...doc.transitions,
-        {
-          id: uniqueTransitionId(doc),
-          fromStateId: transition.toStateId,
-          toStateId: transition.fromStateId,
-          blendSeconds: transition.blendSeconds,
-          priority: transition.priority,
-          ruleGraph: createDefaultTransitionRuleGraph(),
-          sourceHandle: "right-out",
-          targetHandle: "left-in",
-        },
-      ],
-    };
+    return withTransitions(doc, [
+      ...machine.transitions,
+      {
+        id: uniqueTransitionId(doc),
+        fromStateId: transition.toStateId,
+        toStateId: transition.fromStateId,
+        blendSeconds: transition.blendSeconds,
+        priority: transition.priority,
+        ruleGraph: createDefaultTransitionRuleGraph(),
+        // The mirrored sides, so the pair shares one wire.
+        sourceHandle: `${handleSide(transition.targetHandle, "in")}-out`,
+        targetHandle: `${handleSide(transition.sourceHandle, "out")}-in`,
+      },
+    ]);
   }
   if (!reverse) return doc;
-  return {
-    ...doc,
-    transitions: doc.transitions.filter((row) => row.id !== reverse.id),
-  };
+  return withTransitions(doc, machine.transitions.filter((row) => row.id !== reverse.id));
 }
 
 export function flipTransitionDirection(
   doc: AnimGraphDocument,
   transitionId: string,
 ): AnimGraphDocument {
-  const transition = doc.transitions.find((row) => row.id === transitionId);
+  const machine = doc.stateMachine;
+  const transition = machine.transitions.find((row) => row.id === transitionId);
   if (!transition) return doc;
   const reverse = findReverseTransition(
-    doc.transitions,
+    machine.transitions,
     transition.fromStateId,
     transition.toStateId,
   );
   if (reverse) return doc;
-  return {
-    ...doc,
-    transitions: doc.transitions.map((row) =>
-      row.id === transitionId
-        ? {
-            ...row,
-            fromStateId: row.toStateId,
-            toStateId: row.fromStateId,
-            sourceHandle: animStateHandle(row.targetHandle, "out"),
-            targetHandle: animStateHandle(row.sourceHandle, "in"),
-          }
-        : row,
-    ),
-  };
+  return withTransitions(doc, machine.transitions.map((row) =>
+    row.id === transitionId
+      ? {
+          ...row,
+          fromStateId: row.toStateId,
+          toStateId: row.fromStateId,
+          sourceHandle: `${handleSide(row.targetHandle, "in")}-out`,
+          targetHandle: `${handleSide(row.sourceHandle, "out")}-in`,
+        }
+      : row,
+  ));
 }
 
 export function patchTransition(
@@ -231,12 +307,9 @@ export function patchTransition(
   transitionId: string,
   patch: Partial<AnimTransition>,
 ): AnimGraphDocument {
-  return {
-    ...doc,
-    transitions: doc.transitions.map((row) =>
-      row.id === transitionId ? { ...row, ...patch } : row,
-    ),
-  };
+  return withTransitions(doc, doc.stateMachine.transitions.map((row) =>
+    row.id === transitionId ? { ...row, ...patch } : row,
+  ));
 }
 
 function mergeTransitions(
@@ -266,8 +339,9 @@ function mergeTransitions(
     const prev =
       byId.get(edge.id) ??
       byPair.get(transitionPairKey(edge.source, edge.target));
+    // A wire drawn again between the same two states keeps its transition (id, rule, settings) on its new sides.
     return {
-      id: edge.id,
+      id: prev?.id ?? edge.id,
       fromStateId: edge.source,
       toStateId: edge.target,
       blendSeconds: prev?.blendSeconds ?? 0.1,
@@ -279,63 +353,64 @@ function mergeTransitions(
   });
   const result = [...merged];
   const ids = new Set(result.map((row) => row.id));
+  const hasPair = (fromStateId: string, toStateId: string) =>
+    result.some((row) => row.fromStateId === fromStateId && row.toStateId === toStateId);
+  // The second of a mirrored pair has no wire of its own: it stays while its partner's wire does, keeping its sides,
+  // unless a wire of its own was drawn for it.
+  const drawn = new Set(visualTransitions(previous).map((row) => row.id));
   for (const prev of previous) {
-    if (ids.has(prev.id)) continue;
-    const reverseOf = result.find(
-      (row) =>
-        row.fromStateId === prev.toStateId && row.toStateId === prev.fromStateId,
-    );
-    if (!reverseOf) continue;
+    if (ids.has(prev.id) || drawn.has(prev.id)) continue;
+    if (hasPair(prev.fromStateId, prev.toStateId) || !hasPair(prev.toStateId, prev.fromStateId)) continue;
     result.push(prev);
     ids.add(prev.id);
   }
   return result;
 }
 
-export function animGraphToSerialized(doc: AnimGraphDocument): SerializedGraph {
+/** A State Machine as its canvas graph: a node per state, an edge per transition pair. */
+export function stateMachineToSerialized(machine: AnimStateMachine): SerializedGraph {
   return {
-    nodes: doc.states.map((state, index) => ({
+    nodes: machine.states.map((state, index) => ({
       id: state.id,
       type: "anim.state",
       position: state.position ?? defaultAnimStatePosition(index),
       data: {
         title: state.name,
-        clipId: state.clipId,
-        speed: state.speed,
-        loop: state.loop,
-        entry: state.id === doc.entryStateId,
+        entry: state.id === machine.entryStateId,
       },
     })),
-    edges: visualTransitions(doc.transitions).map((transition) => {
-      const reverse = findReverseTransition(
-        doc.transitions,
-        transition.fromStateId,
-        transition.toStateId,
-      );
+    edges: visualTransitions(machine.transitions).map((transition) => {
+      const mirrored = findMirroredReverse(machine.transitions, transition);
       return {
         id: transition.id,
         source: transition.fromStateId,
         target: transition.toStateId,
         sourceHandle: animStateHandle(transition.sourceHandle, "out"),
         targetHandle: animStateHandle(transition.targetHandle, "in"),
-        type: reverse ? "animTransitionBoth" : "animTransition",
+        type: mirrored ? "animTransitionBoth" : "animTransition",
       };
     }),
   };
 }
 
-export function serializedToAnimGraph(
+/**
+ * A State Machine canvas back onto the machine: states keep their graphs, a state new to the canvas (added or
+ * pasted) starts with one player of the graph's dimension, and transitions keep their rules.
+ */
+export function serializedToStateMachine(
   graph: SerializedGraph,
-  previous: AnimGraphDocument = createDefaultAnimGraph(),
-): AnimGraphDocument {
-  const existingIds = new Set(previous.states.map((state) => state.id));
-  const names = new Set(graph.nodes.filter((node) => existingIds.has(node.id))
+  previous: AnimStateMachine,
+  dimension: AnimGraphDimension,
+): AnimStateMachine {
+  const byId = new Map(previous.states.map((state) => [state.id, state]));
+  const names = new Set(graph.nodes.filter((node) => byId.has(node.id))
     .map((node) => String(node.data.title ?? node.id).trim().toLowerCase()));
-  const states = graph.nodes.map((node, index) => {
+  const states: AnimState[] = graph.nodes.map((node, index) => {
     let name = typeof node.data.title === "string" ? node.data.title : node.id;
+    const existing = byId.get(node.id);
     // Palette additions and pasted states share a title. Allocate a fresh label
     // while leaving explicitly renamed existing states for validation to explain.
-    if (!existingIds.has(node.id)) {
+    if (!existing) {
       const base = name.trim() || "State";
       name = base;
       let suffix = 2;
@@ -343,11 +418,10 @@ export function serializedToAnimGraph(
       names.add(name.toLowerCase());
     }
     return {
-      id: node.id, name,
-      clipId: typeof node.data.clipId === "string" ? node.data.clipId : null,
-      speed: typeof node.data.speed === "number" ? node.data.speed : 1,
-      loop: node.data.loop !== false,
+      id: node.id,
+      name,
       position: node.position ?? defaultAnimStatePosition(index),
+      stateGraph: existing?.stateGraph ?? createStateGraph(dimension),
     };
   });
   const entry =

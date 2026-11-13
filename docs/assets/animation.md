@@ -10,7 +10,7 @@ Animations are not created from **New Asset**. Importing a GLB or glTF model cre
 
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**.
 
-- **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. If the model has no mesh to show, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
+- **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. A clip from a file with no mesh (an animation-only file) always shows its bones. If the Model's file is missing, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
 - The **Inspector** shows the clip's details. Only **Duration** can be changed.
 
 ## Settings
@@ -22,9 +22,13 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 | Skeleton | The [Skeleton](skeleton.md) the clip plays on. |
 | Duration | How long one pass of the clip takes, in milliseconds. It starts at the clip's length in the file. A shorter Duration plays the clip faster everywhere it is used, a longer one slower; an [Animation Graph](animation-graph.md) state's **Speed** scales it further. **Reset** restores the clip's length. Shown when the clip's length is known. |
 
+## Shared Skeletons
+
+Every Model on a [Skeleton](skeleton.md) plays every Animation on it, whichever file the clip came from. Characters that share a rig and a separate animation file all join one Skeleton when you import them, so their clips need no retargeting.
+
 ## Retarget
 
-To play a clip on a different character, select Animation assets in the **Content Browser**, choose **Retarget…** and pick the target Skeleton. Haptic adds a retargeted copy of each clip to the current folder, with the same Duration. Clips with no matching bones on the target are reported in **Retarget Failed**.
+To play a clip on a character with another Skeleton, select Animation assets in the **Content Browser**, choose **Retarget…** and pick the target Skeleton. Haptic adds a retargeted copy of each clip to the current folder, with the same Duration. Clips with no matching bones on the target are reported in **Retarget Failed**.
 
 ## Use it
 

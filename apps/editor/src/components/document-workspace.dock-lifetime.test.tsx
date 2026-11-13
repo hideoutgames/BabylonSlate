@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
@@ -13,20 +13,15 @@ import type { DockviewApi, IDockviewPanelProps } from "dockview-react";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import { DocumentWorkspace } from "./document-workspace";
-import {
-  parseAnimDocumentLayout,
-  serializeAnimDocumentLayout,
-  type AnimEditorMode,
-} from "../shell/anim-document-layout";
 import { dockviewApiKey, type DockviewSurface } from "../shell/dockview-surface";
 import { captureAdaptiveDockviewLayout } from "../shell/phone-dock-layout";
 import type { DocumentsOverrides } from "../testing/document-context-mock";
 
 const SPRITE = "sprite:assets/Hero.sprite.hasset";
-const ANIM = "anim-graph:assets/Loco.anim.hasset";
+const ANIM = "anim-graph:assets/Loco.anim3d.hasset";
 const DOCUMENTS = [
   { id: SPRITE, ref: { kind: "sprite", path: "assets/Hero.sprite.hasset" }, content: createDefaultSpritePayload() },
-  { id: ANIM, ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" }, content: createDefaultAnimGraph("Loco") },
+  { id: ANIM, ref: { kind: "anim-graph-3d", path: "assets/Loco.anim3d.hasset" }, content: createDefaultAnimGraph("Loco") },
 ];
 
 const harness = vi.hoisted(() => ({
@@ -67,8 +62,6 @@ vi.mock("../shell/panel-registry", () => {
     "anim-graph-details",
     "anim-graph-compiler-results",
     "anim-object-graph",
-    "anim-object-variables",
-    "anim-object-inspector",
   ];
   return {
     panelComponents: Object.fromEntries(components.map((id) => [id, panel])),
@@ -77,24 +70,11 @@ vi.mock("../shell/panel-registry", () => {
 
 /**
  * Stands in for DocumentProvider's dock registry and layout store with the
- * same callback identities: every callback is stable, and captureLayoutForId
- * reads the Animation Graph modes when it runs because an Animation Graph
- * capture records its current mode.
+ * same callback identities: every callback is stable.
  */
 function Editor({ initialTabs, coldTabs = [] }: { initialTabs: string[]; coldTabs?: string[] }) {
   const [tabOrder, setTabs] = useState(initialTabs);
   const [activeDocumentId, setActive] = useState(initialTabs[0]!);
-  const animEditorModesRef = useRef<Record<string, AnimEditorMode>>({});
-  const [animEditorModes, setAnimEditorModes] = useState(
-    animEditorModesRef.current,
-  );
-  const setAnimEditorMode = useCallback(
-    (id: string, mode: AnimEditorMode) => {
-      animEditorModesRef.current = { ...animEditorModesRef.current, [id]: mode };
-      setAnimEditorModes(animEditorModesRef.current);
-    },
-    [],
-  );
   const registerDockviewApi = useCallback(
     (id: string, api: DockviewApi, surface?: DockviewSurface) => {
       harness.apis.set(dockviewApiKey(id, surface), api);
@@ -109,24 +89,8 @@ function Editor({ initialTabs, coldTabs = [] }: { initialTabs: string[]; coldTab
   );
   const captureLayoutForId = useCallback(
     (id: string) => {
-      const capture = (surface?: DockviewSurface) => {
-        const api = harness.apis.get(dockviewApiKey(id, surface));
-        return api ? captureAdaptiveDockviewLayout(api) : null;
-      };
-      if (id !== ANIM) {
-        const layout = capture();
-        if (layout) harness.layouts.set(id, layout);
-        return;
-      }
-      const stored = parseAnimDocumentLayout(harness.layouts.get(id));
-      harness.layouts.set(
-        id,
-        serializeAnimDocumentLayout({
-          animEditorMode: animEditorModesRef.current[id] ?? "stateMachine",
-          stateMachine: capture("stateMachine") ?? stored.stateMachine,
-          animationObject: capture("animationObject") ?? stored.animationObject,
-        }),
-      );
+      const api = harness.apis.get(dockviewApiKey(id));
+      if (api) harness.layouts.set(id, captureAdaptiveDockviewLayout(api));
     },
     [],
   );
@@ -142,8 +106,6 @@ function Editor({ initialTabs, coldTabs = [] }: { initialTabs: string[]; coldTab
     projectDocument: { metadata: { name: "Test" } },
     assetRegistry: null,
     sourceControl: { enabled: false },
-    animEditorMode: animEditorModes[activeDocumentId] ?? "stateMachine",
-    setAnimEditorMode,
     registerDockviewApi,
     unregisterDockviewApi,
     captureLayoutForId,
@@ -190,18 +152,16 @@ describe("document dock lifetime", () => {
     expect(harness.apis.has(dockviewApiKey(SPRITE))).toBe(true);
   });
 
-  it("keeps saving a background document's windows after an Animation Graph switches mode", () => {
+  it("gives an Animation Graph one DockView holding its Animation Object window, and keeps saving a background document's windows", () => {
     render(<Editor initialTabs={[SPRITE, ANIM]} />);
     expect(screen.getByTestId("panel-sprite-details")).toBeTruthy();
 
-    // The Sprite stays mounted in the background while the graph changes mode.
+    // The Sprite stays mounted in the background while the graph is shown.
     act(() => harness.control!.setActive(ANIM));
-    fireEvent.click(screen.getByTestId("anim-editor-mode-animation-object"));
-    expect(
-      screen
-        .getByTestId("anim-dock-surface-animation-object")
-        .getAttribute("data-active"),
-    ).toBe("true");
+    const anim = screen.getByTestId("document-workspace-anim-graph");
+    expect(within(anim).getByTestId("panel-anim-graph-graph")).toBeTruthy();
+    expect(harness.apis.has(dockviewApiKey(ANIM))).toBe(true);
+    expect(saveLayout(ANIM)).toEqual(expect.arrayContaining(["anim-graph-graph", "anim-object-graph"]));
     expect(screen.getByTestId("document-workspace-sprite")).toBeTruthy();
 
     act(() => harness.control!.setActive(SPRITE));

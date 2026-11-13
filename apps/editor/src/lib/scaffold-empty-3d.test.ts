@@ -41,7 +41,7 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
       indexed("Skeleton", "skel-1", {
         kind: "hierarchy",
         modelGuid: "model-1",
-        boneNames: ["root"],
+        bones: [{ name: "root", parent: null }],
       }),
       indexed("Animation", "idle-1", {
         clipName: "idle",

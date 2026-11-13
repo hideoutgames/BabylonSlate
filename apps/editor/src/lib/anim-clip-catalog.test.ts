@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { animClipCatalogFromAssets } from "./anim-clip-catalog";
 
 describe("animClipCatalogFromAssets", () => {
-  it("reads Model clipNames and Animation clipName from payload", () => {
+  it("reads the Animation clipName from payload and lists Models by name only", () => {
     expect(
       animClipCatalogFromAssets([
         {
@@ -11,7 +11,7 @@ describe("animClipCatalogFromAssets", () => {
             type: "Model",
             name: "Hero",
             dependencies: ["hero-walk"],
-            payload: { clipNames: ["Idle", "Walk"] },
+            payload: {},
           },
         },
         {
@@ -29,7 +29,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Model",
         name: "Hero",
         clipName: undefined,
-        clipNames: ["Idle", "Walk"],
         dependencyGuids: ["hero-walk"],
       },
       {
@@ -37,7 +36,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Animation",
         name: "Hero_Walk",
         clipName: "Walk",
-        clipNames: [],
         dependencyGuids: [],
       },
     ]);
@@ -83,7 +81,7 @@ describe("animClipCatalogFromAssets", () => {
     ]);
   });
 
-  it("drops non-string clipNames and ignores a non-object payload", () => {
+  it("ignores a non-object payload", () => {
     expect(
       animClipCatalogFromAssets([
         {
@@ -91,7 +89,7 @@ describe("animClipCatalogFromAssets", () => {
             guid: "model",
             type: "Model",
             name: "Hero",
-            payload: { clipNames: ["Idle", 2, null, "Walk"] },
+            payload: {},
           },
         },
         {
@@ -109,7 +107,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Model",
         name: "Hero",
         clipName: undefined,
-        clipNames: ["Idle", "Walk"],
         dependencyGuids: [],
       },
       {
@@ -117,7 +114,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Animation",
         name: "Clip",
         clipName: undefined,
-        clipNames: [],
         dependencyGuids: [],
       },
     ]);
@@ -141,7 +137,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "SpriteAnimation",
         name: "Walk",
         clipName: undefined,
-        clipNames: [],
         dependencyGuids: [],
         durationMs: 250,
       },

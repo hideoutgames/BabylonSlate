@@ -15,7 +15,18 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { CircleAlertIcon, ClockIcon, Gamepad2Icon, OctagonPauseIcon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
+import { UserFocusIcon } from "@phosphor-icons/react/dist/csr/UserFocus";
+import {
+  CircleAlertIcon,
+  ClockIcon,
+  Gamepad2Icon,
+  OctagonPauseIcon,
+  PlugIcon,
+  PlugZapIcon,
+  RadioTowerIcon,
+} from "lucide-react";
+import ImageGlyph from "react-bootstrap-icons/dist/icons/image";
+import ImageFillGlyph from "react-bootstrap-icons/dist/icons/image-fill";
 import {
   humanizePropertyLabel,
   LabelHint,
@@ -156,6 +167,9 @@ function PinVisual({
   const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
   const shape = byReference ? "reference" : pinVisualShape(type, pin);
   const color = pinCssVar(type);
+  if (type.kind === "pose" || type.kind === "frame") {
+    return <AnimPinGlyph kind={type.kind} color={color} connected={connected} />;
+  }
   const glyph = (
     <PinShapeGlyph
       shape={shape}
@@ -241,6 +255,31 @@ function PinHandle({
     >
       <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} />
     </Handle>
+  );
+}
+
+/**
+ * An Animation Graph's Pose pin (Phosphor User Focus) or Frame pin (Bootstrap Image), drawn larger than other pins and
+ * without a box: the icon's outline glyph while unwired, its fill glyph once wired. Phosphor pads its glyph, so the
+ * Pose pin's box is larger for the figure to read as large as the Frame pin's picture.
+ */
+function AnimPinGlyph({ kind, color, connected }: { kind: "pose" | "frame"; color: string; connected: boolean }) {
+  const size = `calc(var(--graph-pin-glyph, var(--graph-pin-size, 22px)) * ${kind === "pose" ? 1.6 : 1.4})`;
+  const FrameGlyph = connected ? ImageFillGlyph : ImageGlyph;
+  return (
+    <span
+      className="graph-pin-visual relative block"
+      data-pin-shape={kind}
+      data-connected={connected ? "true" : "false"}
+      style={{ width: size, height: size, color }}
+      aria-hidden="true"
+    >
+      {kind === "pose" ? (
+        <UserFocusIcon className="absolute inset-0 size-full" size="100%" weight={connected ? "fill" : "regular"} />
+      ) : (
+        <FrameGlyph className="absolute inset-0 size-full" size="100%" />
+      )}
+    </span>
   );
 }
 
@@ -683,6 +722,27 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
     updateNodeInternals(id);
   }, [handleOrder, id, updateNodeInternals]);
 
+  // An Animation Graph's Output Pose (or Output Frame) is drawn like a state card, its pose input inside it.
+  const nodeType = typeof data.__nodeType === "string" ? data.__nodeType : type;
+  if (nodeType === "anim.pose.output" || nodeType === "anim.frame.output") {
+    const input = pins.find((pin) => pin.direction === "in");
+    return (
+      <div {...nodeMenu.bind}>
+        <div
+          className={cn("anim-state-node anim-pose-output-node", selected && "anim-state-node-selected")}
+          data-testid={`anim-pose-output-${id}`}
+        >
+          {input ? (
+            <div className="anim-pose-output-pin">
+              <PinHandle nodeId={id} pin={input} pending={false} hasError={false} connected />
+            </div>
+          ) : null}
+          <div className="anim-state-node-title">{title}</div>
+        </div>
+        {nodeMenu.overlay}
+      </div>
+    );
+  }
   return (
     <div {...nodeMenu.bind}>
       <BlueprintNodeShell

@@ -6,6 +6,9 @@
  * kinds; this parse only names Catalog dependents.
  */
 
+import type { SkeletonBone, SkeletonRestChannel } from "../skeleton-payload";
+import { decomposeMatrix, multiplyMatrices, trsMatrix, type Matrix4 } from "../skeleton-match";
+
 export const MISSING_GLTF_BIN =
   "glTF import needs the matching .bin buffer. Select the .gltf file together with its .bin sidecar.";
 
@@ -42,7 +45,10 @@ export interface GlbBrowseParse {
   images: GlbBrowseImage[];
   animations: GlbBrowseAnimation[];
   rigKind: GlbRigKind;
-  boneNames: string[];
+  /** The rig's bones with their parents and rest pose; empty when `rigKind` is "none". */
+  bones: SkeletonBone[];
+  /** The file draws something: it has at least one glTF mesh (an animation library has none). */
+  hasMeshes: boolean;
 }
 
 const GLB_MAGIC = 0x46546c67;
@@ -613,13 +619,14 @@ function browseFromGltfJson(
 
   const animations = gltfAnimationClips(json);
 
-  const { rigKind, boneNames } = classifyGltfRig(
+  const { rigKind, bones } = classifyGltfRig(
     nodesJson,
     skinsJson,
     animationsJson,
   );
 
-  return { materials, images: images_out, animations, rigKind, boneNames };
+  const hasMeshes = Array.isArray(json.meshes) && json.meshes.length > 0;
+  return { materials, images: images_out, animations, rigKind, bones, hasMeshes };
 }
 
 /** Clip ranges in source seconds; names agree between import and Babylon loading. */
@@ -640,8 +647,11 @@ export function gltfAnimationClips(json: Record<string, unknown>): GlbBrowseAnim
   });
 }
 
+/** Roots the glTF loader and the FBX converter add for axis conversion; never bones. */
+const LOADER_ROOT_NAMES: ReadonlySet<string> = new Set(["__root__", "__fbx_root__"]);
+
 function isCatalogBoneName(name: string): boolean {
-  return name !== "__root__";
+  return !LOADER_ROOT_NAMES.has(name);
 }
 
 function nodeName(nodes: unknown[], index: number): string {
@@ -683,23 +693,19 @@ function classifyGltfRig(
   nodes: unknown[],
   skins: unknown[],
   animations: unknown[],
-): { rigKind: GlbRigKind; boneNames: string[] } {
+): { rigKind: GlbRigKind; bones: SkeletonBone[] } {
+  const parent = buildParentIndex(nodes);
   if (skins.length > 0) {
-    const boneNames: string[] = [];
-    const seen = new Set<string>();
+    const joints: number[] = [];
     for (const skin of skins) {
-      const joints = Array.isArray((skin as Record<string, unknown>).joints)
+      const list = Array.isArray((skin as Record<string, unknown>).joints)
         ? ((skin as Record<string, unknown>).joints as unknown[])
         : [];
-      for (const joint of joints) {
-        if (typeof joint !== "number") continue;
-        const name = nodeName(nodes, joint);
-        if (!isCatalogBoneName(name) || seen.has(name)) continue;
-        seen.add(name);
-        boneNames.push(name);
+      for (const joint of list) {
+        if (typeof joint === "number" && joint >= 0 && joint < nodes.length) joints.push(joint);
       }
     }
-    return { rigKind: "skin", boneNames };
+    return { rigKind: "skin", bones: rigBones(nodes, joints, parent) };
   }
 
   const targeted = new Set<number>();
@@ -714,18 +720,117 @@ function classifyGltfRig(
       if (typeof target?.node === "number") targeted.add(target.node);
     }
   }
-  if (targeted.size === 0) return { rigKind: "none", boneNames: [] };
+  if (targeted.size === 0) return { rigKind: "none", bones: [] };
 
-  const parent = buildParentIndex(nodes);
+  // A file with animations and no mesh at all (an animation library) is its animated node tree. It records no rest
+  // pose: what its nodes hold in the channels its clips key is a frame of a clip.
+  if (!nodes.some((node) => typeof (node as Record<string, unknown> | undefined)?.mesh === "number")) {
+    const keyed = keyedRestChannels(animations);
+    const bones = rigBones(nodes, hierarchyTreeNodes(nodes.length, targeted, parent), parent, keyed);
+    return { rigKind: "hierarchy", bones };
+  }
   const meshParts = new Set<number>();
   for (const index of targeted) collectMeshParts(nodes, index, meshParts);
   if (!parentedMeshesShareAncestor([...meshParts], parent)) {
-    return { rigKind: "none", boneNames: [] };
+    return { rigKind: "none", bones: [] };
   }
   return {
     rigKind: "hierarchy",
-    boneNames: hierarchyBoneNamesForTree(nodes, meshParts, parent),
+    bones: rigBones(nodes, hierarchyTreeNodes(nodes.length, meshParts, parent), parent),
   };
+}
+
+const KEYED_REST_CHANNEL: Readonly<Record<string, SkeletonRestChannel>> = {
+  translation: "position",
+  rotation: "rotation",
+  scale: "scale",
+};
+
+/** The rest channels each node's clips key, by node index. */
+function keyedRestChannels(animations: unknown[]): Map<number, Set<SkeletonRestChannel>> {
+  const keyed = new Map<number, Set<SkeletonRestChannel>>();
+  for (const animation of animations) {
+    const channels = Array.isArray((animation as Record<string, unknown>).channels)
+      ? ((animation as Record<string, unknown>).channels as unknown[])
+      : [];
+    for (const channel of channels) {
+      const target = (channel as Record<string, unknown>).target as Record<string, unknown> | undefined;
+      const rest = typeof target?.path === "string" ? KEYED_REST_CHANNEL[target.path] : undefined;
+      if (typeof target?.node !== "number" || !rest) continue;
+      const set = keyed.get(target.node) ?? new Set<SkeletonRestChannel>();
+      set.add(rest);
+      keyed.set(target.node, set);
+    }
+  }
+  return keyed;
+}
+
+/** A glTF node's local matrix, from `matrix` or its translation, rotation and scale. */
+function nodeLocalMatrix(node: Record<string, unknown> | undefined): Matrix4 {
+  const matrix = node?.matrix;
+  if (Array.isArray(matrix) && matrix.length === 16 && matrix.every((value) => typeof value === "number")) {
+    return [...(matrix as number[])];
+  }
+  const rest = nodeRestTrs(node);
+  return trsMatrix(rest.position, rest.rotation, rest.scale);
+}
+
+function nodeRestTrs(node: Record<string, unknown> | undefined): Pick<SkeletonBone, "position" | "rotation" | "scale"> {
+  const matrix = node?.matrix;
+  if (Array.isArray(matrix) && matrix.length === 16 && matrix.every((value) => typeof value === "number")) {
+    return decomposeMatrix(matrix as number[]);
+  }
+  const tuple = <T extends number[]>(value: unknown, fallback: T): T =>
+    Array.isArray(value) && value.length === fallback.length && value.every((entry) => typeof entry === "number")
+      ? ([...value] as T)
+      : fallback;
+  return {
+    position: tuple<SkeletonBone["position"]>(node?.translation, [0, 0, 0]),
+    rotation: tuple<SkeletonBone["rotation"]>(node?.rotation, [0, 0, 0, 1]),
+    scale: tuple<SkeletonBone["scale"]>(node?.scale, [1, 1, 1]),
+  };
+}
+
+/**
+ * The rig's bones in the given node order, one per name. A bone's parent is its nearest ancestor that is also a bone,
+ * and its rest pose is relative to that bone; a root bone's takes in every node above it.
+ */
+function rigBones(
+  nodes: unknown[],
+  indices: readonly number[],
+  parent: Array<number | undefined>,
+  posed?: ReadonlyMap<number, ReadonlySet<SkeletonRestChannel>>,
+): SkeletonBone[] {
+  const included = new Map<number, string>();
+  const names = new Set<string>();
+  for (const index of indices) {
+    const name = nodeName(nodes, index);
+    if (included.has(index) || !isCatalogBoneName(name) || names.has(name)) continue;
+    names.add(name);
+    included.set(index, name);
+  }
+  const bones: SkeletonBone[] = [];
+  for (const [index, name] of included) {
+    const node = nodes[index] as Record<string, unknown> | undefined;
+    let above: Matrix4 | null = null;
+    let current = parent[index];
+    const seen = new Set<number>([index]);
+    while (current !== undefined && !included.has(current) && !seen.has(current)) {
+      seen.add(current);
+      const local = nodeLocalMatrix(nodes[current] as Record<string, unknown> | undefined);
+      above = above ? multiplyMatrices(local, above) : local;
+      current = parent[current];
+    }
+    const parentName = current !== undefined && included.has(current) ? included.get(current)! : null;
+    const rest = above ? decomposeMatrix(multiplyMatrices(above, nodeLocalMatrix(node))) : nodeRestTrs(node);
+    const channels = posed?.get(index);
+    // A composed rest (a root under other nodes) is only known when none of it is a pose.
+    const posedChannels = channels && channels.size > 0
+      ? (above ? (["position", "rotation", "scale"] as const) : (["position", "rotation", "scale"] as const).filter((channel) => channels.has(channel)))
+      : [];
+    bones.push({ name, parent: parentName, ...rest, ...(posedChannels.length > 0 ? { posed: [...posedChannels] } : {}) });
+  }
+  return bones;
 }
 
 function nodeChildren(node: Record<string, unknown> | undefined): number[] {
@@ -797,26 +902,20 @@ function parentedMeshesShareAncestor(
   return false;
 }
 
-function hierarchyBoneNamesForTree(
-  nodes: unknown[],
+/** The animated mesh parts and every node above them, in node order. */
+function hierarchyTreeNodes(
+  nodeCount: number,
   meshParts: Iterable<number>,
   parent: Array<number | undefined>,
-): string[] {
+): number[] {
   const include = new Set<number>();
   for (const mesh of meshParts) {
     include.add(mesh);
     for (const ancestor of ancestorChain(mesh, parent)) include.add(ancestor);
   }
-  const names: string[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < nodes.length; i++) {
-    if (!include.has(i)) continue;
-    const name = nodeName(nodes, i);
-    if (!isCatalogBoneName(name) || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
-  }
-  return names;
+  const indices: number[] = [];
+  for (let i = 0; i < nodeCount; i++) if (include.has(i)) indices.push(i);
+  return indices;
 }
 
 function decodeDataUri(

@@ -126,6 +126,8 @@ export function AnimationPreview({
   showBones?: boolean;
   onShowBonesChange?: (value: boolean) => void;
 }) {
+  // A Model with nothing to draw (an animation library) always shows its bones.
+  const [bonesOnly, setBonesOnly] = useState(false);
   if (sourceError) {
     return (
       <div className="flex h-full flex-col p-3" data-testid="animation-preview">
@@ -156,7 +158,8 @@ export function AnimationPreview({
         <Toggle
           size="sm"
           variant="outline"
-          pressed={showBones}
+          pressed={showBones || bonesOnly}
+          disabled={bonesOnly}
           aria-label="Show Bones"
           data-testid="animation-show-bones"
           onPressedChange={(pressed) => onShowBonesChange?.(pressed)}
@@ -172,6 +175,7 @@ export function AnimationPreview({
           skeletonKind={skeletonKind}
           showBones={showBones}
           speedRatio={previewSpeedRatio(payload)}
+          onBonesOnlyChange={setBonesOnly}
           sourceClipBytes={
             payload.sourceAnimationGuid ? sourceClipBytes : null
           }

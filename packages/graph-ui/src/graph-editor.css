@@ -131,6 +131,20 @@
   box-shadow: var(--surface-shadow);
 }
 
+/* An Animation Graph's Output Pose: a state card with its pose input inside, before the title. */
+.anim-pose-output-node {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 160px;
+  padding: 10px 24px 10px 4px;
+  border-color: var(--node-anim-pose);
+}
+
+.anim-pose-output-pin {
+  flex-shrink: 0;
+}
+
 .anim-state-node-selected {
   border-color: var(--graph-state-selected);
   box-shadow: 0 0 0 1px var(--graph-state-selected);

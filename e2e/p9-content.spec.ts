@@ -37,7 +37,7 @@ async function showContentBrowser(page: Page): Promise<void> {
 }
 
 function animStateMachine(page: Page) {
-  return page.getByTestId("anim-dock-surface-state-machine");
+  return page.getByTestId("document-workspace-anim-graph");
 }
 
 async function dispatchPreviewWheel(
@@ -308,20 +308,20 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("sprite-animation-play")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-editor")).toBeVisible();
 
-    await createContentBrowserAsset(page, "AnimationGraph", "Loco");
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
     await page
-      .locator('[data-asset-path="assets/Loco.anim.hasset"]')
+      .locator('[data-asset-path="assets/Loco.anim3d.hasset"]')
       .dblclick();
     await expect(
       page.getByTestId("document-workspace-anim-graph"),
     ).toBeVisible();
-    await expect(page.getByTestId("anim-editor-mode-bar")).toBeVisible();
-    await expect(
-      page.getByTestId("anim-editor-mode-state-machine"),
-    ).toHaveAttribute("aria-pressed", "true");
-    await expect(
-      page.getByTestId("anim-dock-surface-state-machine"),
-    ).toHaveAttribute("data-active", "true");
+    // The Graph shows first; the Animation Object script is a window tabbed beside it.
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    const workspace = page.getByTestId("document-workspace-anim-graph");
+    await workspace.locator(".dv-tab", { hasText: "Animation Object" }).click();
+    await expect(workspace.getByTestId("anim-object-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-editor")).toBeHidden();
+    await workspace.locator(".dv-tab", { hasText: "Graph" }).first().click();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
     await expect(
       animStateMachine(page).getByTestId("anim-graph-parameters"),
@@ -341,8 +341,8 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     await openTestProject(page);
-    await createContentBrowserAsset(page, "AnimationGraph", "Loco");
-    await page.locator('[data-asset-path="assets/Loco.anim.hasset"]').dblclick();
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
     await page.getByTestId("anim-graph-add-state").click();
     const added = page.getByTestId("anim-state-node-state-1");
@@ -387,6 +387,56 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
     await expect(page.locator(".react-flow__edge").first()).toHaveClass(/\bselected\b/);
     await expect(card).toHaveText("Idle To State");
+  });
+
+  test("double-clicking an Animation Graph state opens its state graph, and the breadcrumbs step back out", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await page.getByTestId("anim-state-node-idle").dblclick();
+    const pose = page.getByTestId("anim-pose-graph");
+    await expect(pose).toBeVisible();
+    await expect(page.getByTestId("anim-graph-crumb-state")).toHaveText("Idle");
+    // One Sequence Player wired into the protected Output Pose.
+    await expect(pose.locator('.react-flow__node[data-id="output"] .anim-pose-output-node')).toBeVisible();
+    await expect(pose.locator('.react-flow__node[data-id="player"]')).toBeVisible();
+    await expect(pose.locator(".react-flow__edge")).toHaveCount(1);
+
+    // The State Machine is the root: its crumb steps out, and there is nothing above it.
+    await page.getByTestId("anim-graph-crumb-machine").click();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-crumb-machine")).toHaveText("State Machine");
+    await expect(page.getByTestId("anim-graph-back")).toBeDisabled();
+  });
+
+  test("double-clicking an Animation Graph transition's wire opens its rule", async ({ page }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await page.getByTestId("anim-graph-add-state").click();
+    const added = page.getByTestId("anim-state-node-state-1");
+    await expect(added).toBeVisible();
+    const from = (await page.locator('.react-flow__node[data-id="idle"] .react-flow__handle[data-handleid="right-out"]').boundingBox())!;
+    const to = (await added.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+    await page.mouse.up();
+    const wire = page.locator(".react-flow__edge");
+    await expect(wire).toHaveCount(1);
+    // Double-click a third of the way along the wire.
+    const point = await wire.locator(".react-flow__edge-path").evaluate((path: SVGPathElement) => {
+      const at = path.getPointAtLength(path.getTotalLength() * 0.3);
+      const matrix = path.getScreenCTM()!;
+      return { x: matrix.a * at.x + matrix.c * at.y + matrix.e, y: matrix.b * at.x + matrix.d * at.y + matrix.f };
+    });
+    await page.mouse.dblclick(point.x, point.y);
+    await expect(page.getByTestId("anim-rule-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-rule-title")).toHaveText("Idle To State");
   });
 
   test("Material preview compiles the authored graph and follows the primitive picker", async ({

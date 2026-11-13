@@ -12,6 +12,7 @@ import { validateAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
 import {
   decodeTileGid,
   normalizeAnimationPayload,
+  normalizeModelPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
@@ -144,6 +145,26 @@ describe("FeatureTest starter", () => {
       .filter((payload) => payload.durationMs !== payload.clipDurationMs);
     expect(authored.map(({ clipName, durationMs, clipDurationMs }) => ({ clipName, durationMs, clipDurationMs })))
       .toEqual([{ clipName: "open", durationMs: 1500, clipDurationMs: 1000 }]);
+  });
+
+  it("puts skinned characters with the same rig, and their rig's animation libraries, on one Skeleton", () => {
+    const assets = reopened.registry!.list();
+    const skeletonOfModel = (name: string) =>
+      normalizeModelPayload(assets.find((asset) => asset.header.type === "Model" && asset.header.name === name)?.header.payload).skeletonGuid;
+    const medium = skeletonOfModel("Knight");
+    expect(medium).toBeTruthy();
+    expect(skeletonOfModel("Rogue_Hooded")).toBe(medium);
+    expect(skeletonOfModel("Rig_Medium_MovementBasic")).toBe(medium);
+    const large = skeletonOfModel("Mannequin_Large");
+    expect(large).toBeTruthy();
+    expect(large).not.toBe(medium);
+    const clipsOn = (skeleton: string | null) => assets
+      .filter((asset) => asset.header.type === "Animation")
+      .map((asset) => normalizeAnimationPayload(asset.header.payload))
+      .filter((payload) => payload.skeletonGuid === skeleton)
+      .map((payload) => payload.clipName);
+    expect(clipsOn(medium)).toEqual(expect.arrayContaining(["Idle_A", "Interact", "PickUp", "Walking_A", "Running_A"]));
+    expect(clipsOn(large)).toEqual(expect.arrayContaining(["Walking_A", "Running_A"]));
   });
 
   it("paints a Tilemap with a terrain of every autotile style, current with its Tilesets", async () => {
@@ -329,8 +350,8 @@ describe("FeatureTest starter", () => {
       const graph = normalizeParticleGraphDocument(await reopened.loadDocument("particle-graph", asset.path));
       expect(validateParticleGraphDocument(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
-    for (const asset of ofType("AnimationGraph")) {
-      const graph = (await reopened.loadDocument("anim-graph", asset.path)) as unknown as AnimGraphDocument;
+    for (const asset of ofType("AnimationGraph3D")) {
+      const graph = (await reopened.loadDocument("anim-graph-3d", asset.path)) as unknown as AnimGraphDocument;
       expect(validateAnimGraph(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
   });

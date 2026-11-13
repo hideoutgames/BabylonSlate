@@ -32,7 +32,7 @@ describe("documentIdToRevealForDiagnostic", () => {
 const ASSETS: SessionReportAsset[] = [
   { guid: "hero-guid", path: "assets/Hero.class.hasset", name: "Hero", type: "Class" },
   { guid: "patrol-guid", path: "assets/Patrol.bt.hasset", name: "Patrol", type: "BehaviourTree" },
-  { guid: "locomotion-guid", path: "assets/Locomotion.animgraph.hasset", name: "Locomotion", type: "AnimationGraph" },
+  { guid: "locomotion-guid", path: "assets/Locomotion.animgraph.hasset", name: "Locomotion", type: "AnimationGraph3D" },
   { guid: "arena-guid", path: "assets/Arena.scene.hasset", name: "Arena", type: "Scene" },
   { guid: "hud-guid", path: "assets/Hud.scenelayer.hasset", name: "Hud", type: "SceneLayer" },
   { guid: "rock-guid", path: "assets/Rock.model.hasset", name: "Rock", type: "Model" },
@@ -92,7 +92,7 @@ describe("sessionReportNavigation", () => {
     ["an Execute JavaScript body line", { assetGuid: "assets/Hero.class.hasset", nodeId: "js", bodyLine: 4 }, "graph"],
     ["a Class node in an exported build, reported by guid", { assetGuid: "hero-guid", nodeId: "print" }, "graph"],
     ["a Behaviour Tree node", { assetGuid: "patrol-guid", btNodeId: "task" }, "behaviour-tree"],
-    ["an Animation Graph object", { assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }, "anim-graph"],
+    ["an Animation Graph object", { assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }, "anim-graph-3d"],
     ["a Scene that failed to load", { assetGuid: "arena-guid", code: "scene.loading.failed" }, "scene"],
     ["a Scene Layer with physics off", { assetGuid: "hud-guid", code: "physics.scene_layer_physics_disabled", severity: "warning" }, "scene-layer"],
     ["a Model without a collision mesh", { assetGuid: "rock-guid", code: "physics.complex_collision_unavailable", severity: "warning" }, "model"],
@@ -139,7 +139,6 @@ function fakeHost(overrides: Partial<SessionReportNavigationHost> = {}) {
     },
     isDocumentOpen: (id) => open.has(id),
     setActiveDocument: (id) => { calls.push(`activate ${id}`); },
-    setAnimEditorMode: (id, mode) => { calls.push(`mode ${id} ${mode}`); },
     setSceneMode: (id, mode) => { calls.push(`scene mode ${id} ${mode}`); },
     requestDocumentFocus: (id) => { calls.push(`keyboard ${id}`); },
     log: (line) => { calls.push(`log ${line}`); },
@@ -216,13 +215,13 @@ describe("navigateToSessionReportEntry", () => {
     ]);
   });
 
-  it("shows the Animation Object for an error from its lifecycle graph", async () => {
-    const { host, calls } = fakeHost();
-    await navigateToSessionReportEntry(
-      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }),
-      host,
-    );
-    expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset animationObject");
+  it("opens an Animation Graph and focuses the node of its Animation Object or State Machine, whose panel comes forward", async () => {
+    for (const graphId of ["animation-object", "state-machine:locomotion"]) {
+      const { host, calls } = fakeHost();
+      await navigateToSessionReportEntry(entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId }), host);
+      expect(calls).toContain("activate anim-graph-3d:assets/Locomotion.animgraph.hasset");
+      expect(calls).toContain("focus n in anim-graph-3d:assets/Locomotion.animgraph.hasset");
+    }
   });
 
   it("shows a Scene's script for one of its nodes, and leaves an Actor's Scene in its mode", async () => {
@@ -232,14 +231,5 @@ describe("navigateToSessionReportEntry", () => {
     const actor = fakeHost();
     await navigateToSessionReportEntry(entry({ assetGuid: "arena-guid" }), actor.host);
     expect(actor.calls.some((call) => call.startsWith("scene mode"))).toBe(false);
-  });
-
-  it("shows the State Machine for a state or transition breakpoint", async () => {
-    const { host, calls } = fakeHost();
-    await navigateToSessionReportEntry(
-      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "idle", graphId: "state-machine" }),
-      host,
-    );
-    expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset stateMachine");
   });
 });

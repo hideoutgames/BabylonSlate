@@ -1,6 +1,7 @@
 import type { IndexedAsset, TextureCompressionState as SavedTextureCompressionState } from "@haptic/assets";
 import {
   normalizeAnimationPayload,
+  normalizeModelPayload,
   contentEntryNameError,
   PARTICLE_SYSTEM_MAX_EMITTERS,
   renamedAssetPath,
@@ -233,7 +234,8 @@ export const CREATABLE_ASSET_TYPES = [
   "Prefab",
   "Sprite",
   "SpriteAnimation",
-  "AnimationGraph",
+  "AnimationGraph3D",
+  "AnimationGraph2D",
   "Material",
   "MaterialInstance",
   "MaterialFunction",
@@ -290,12 +292,12 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "2d",
     label: "2D",
-    types: ["Sprite", "Tileset", "Tilemap"],
+    types: ["Sprite", "SpriteAnimation", "AnimationGraph2D", "Tileset", "Tilemap"],
   },
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
+    types: ["AnimationGraph3D", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
   },
   {
     id: "rendering",
@@ -323,7 +325,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Prefab: "Placeable components without logic. Lighter than an Actor class: no graph, events, variables, or tick.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
   SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
-  AnimationGraph: "A state machine that plays Sprite or Animation clips.",
+  AnimationGraph3D: "State machines that play Animations on one Skeleton.",
+  AnimationGraph2D: "State machines that play Sprite Animations.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
   MaterialInstance: "Parameter values for a parent Material. Shares its compiled shader, so edits and variants cost no recompile.",
@@ -364,6 +367,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
 /** New Asset rows whose label differs from the split type name. */
 const CREATABLE_ASSET_TYPE_LABELS: Partial<Record<CreatableAssetType, string>> = {
   ParticleEmitter: "Basic Particle Emitter",
+  AnimationGraph3D: "3D Animation Graph",
+  AnimationGraph2D: "2D Animation Graph",
 };
 
 /** Title Case label for a creatable asset type (`User Interface`). */
@@ -429,9 +434,11 @@ type ContentBrowserContextAction =
   | "create-data-tree"
   | "create-linked-save-game"
   | "create-render-target-texture"
+  | "create-animation-graph"
   | "duplicate"
   | "rename"
   | "retarget"
+  | "assign-skeleton"
   | "move"
   | "copy"
   | "copy-asset-reference"
@@ -477,13 +484,21 @@ function createActionsForTypes(types: readonly string[], canCreateChildClass: bo
   if (single === "Structure") actions.push("create-data-definition");
   if (single === "DataDefinition") actions.push("create-data-tree", "create-linked-save-game");
   if (single === "RenderTarget") actions.push("create-render-target-texture");
+  if (single === "Skeleton" || single === "Model") actions.push("create-animation-graph");
   return actions;
+}
+
+/** A Model with a Skeleton can move onto another Skeleton with the same bones. */
+export function canAssignSkeleton(modelPayload: unknown): boolean {
+  return normalizeModelPayload(modelPayload ?? {}).skeletonGuid !== null;
 }
 
 export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
   canRetarget?: boolean;
+  /** The one selected asset is a Model with a Skeleton. */
+  canAssignSkeleton?: boolean;
   canGenerateThumbnails?: boolean;
   singleAssetType?: string;
   /** Every selected asset's type, when the caller knows them. */
@@ -514,6 +529,9 @@ export function contentBrowserContextActions(options: {
   if (total === 1) actions.push("rename");
   if (options.canRetarget && options.assetCount > 0 && options.folderCount === 0) {
     actions.push("retarget");
+  }
+  if (options.canAssignSkeleton && options.assetCount === 1 && options.folderCount === 0) {
+    actions.push("assign-skeleton");
   }
   actions.push("move", "copy");
   if (options.assetCount === 1 && options.folderCount === 0) {

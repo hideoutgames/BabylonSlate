@@ -205,15 +205,6 @@ export function ModelEditor({
     };
   });
 
-  const clipRows: PropertyRow[] = model.clipNames.map((name, index) => ({
-    id: `clip-${index}`,
-    kind: "text",
-    label: name,
-    value: name,
-    disabled: true,
-    onChange: () => {},
-  }));
-
   const lodRows: PropertyRow[] = [{
     id: "auto-lod",
     kind: "boolean",
@@ -227,9 +218,6 @@ export function ModelEditor({
     <div data-testid="model-editor">
       <PropertyGrid rows={slotRows} />
       <PropertyGrid title="Level Of Detail" rows={lodRows} />
-      {clipRows.length > 0 ? (
-        <PropertyGrid title="Clips" rows={clipRows} />
-      ) : null}
       <AssetPicker
         open={pickIndex !== null}
         onOpenChange={(open) => {

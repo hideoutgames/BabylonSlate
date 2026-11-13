@@ -16,7 +16,6 @@ export const DEFAULT_MODEL_IMPORT_SCALE = 1;
 
 export interface ModelPayload {
   materialSlots: ModelMaterialSlot[];
-  clipNames: string[];
   skeletonGuid: string | null;
   /**
    * Uniform multiplier applied under the actor root at load.
@@ -58,13 +57,6 @@ function slotGuid(value: unknown): string | null {
   return guid.length > 0 ? guid : null;
 }
 
-function stringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (entry): entry is string => typeof entry === "string" && entry.length > 0,
-  );
-}
-
 function nullableGuid(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const guid = value.trim();
@@ -91,7 +83,6 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
   });
   return {
     materialSlots,
-    clipNames: stringList(record.clipNames),
     skeletonGuid: nullableGuid(record.skeletonGuid),
     importScale: normalizeModelImportScale(record.importScale),
     simpleColliders: normalizeModelSimpleColliders(record.simpleColliders),

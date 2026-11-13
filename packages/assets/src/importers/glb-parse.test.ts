@@ -154,7 +154,7 @@ describe("parseGlbForBrowse", () => {
     );
     expect(browse).not.toBeNull();
     expect(browse!.rigKind).toBe("skin");
-    expect(browse!.boneNames).toEqual(["Hips", "Spine"]);
+    expect(browse!.bones.map((bone) => bone.name)).toEqual(["Hips", "Spine"]);
     expect(browse!.animations[0]).toEqual({ name: "Walk", durationMs: 1250 });
   });
 
@@ -198,8 +198,8 @@ describe("parseGlbForBrowse", () => {
       }),
     );
     expect(browse!.rigKind).toBe("hierarchy");
-    expect(browse!.boneNames).toEqual(["character", "root", "torso", "head"]);
-    expect(browse!.boneNames).not.toContain("__root__");
+    expect(browse!.bones.map((bone) => bone.name)).toEqual(["character", "root", "torso", "head"]);
+    expect(browse!.bones.map((bone) => bone.name)).not.toContain("__root__");
     expect(browse!.animations[0]).toEqual({ name: "idle", durationMs: 500 });
   });
 
@@ -226,10 +226,10 @@ describe("parseGlbForBrowse", () => {
       }),
     );
     expect(browse!.rigKind).toBe("none");
-    expect(browse!.boneNames).toEqual([]);
+    expect(browse!.bones.map((bone) => bone.name)).toEqual([]);
   });
 
-  it("limits hierarchy boneNames to the animated parented-mesh tree", () => {
+  it("limits hierarchy bones to the animated parented-mesh tree", () => {
     const browse = parseGltfJsonForBrowse(
       JSON.stringify({
         asset: { version: "2.0" },
@@ -255,7 +255,7 @@ describe("parseGlbForBrowse", () => {
       }),
     );
     expect(browse!.rigKind).toBe("hierarchy");
-    expect(browse!.boneNames).toEqual(["character", "root", "torso", "head"]);
+    expect(browse!.bones.map((bone) => bone.name)).toEqual(["character", "root", "torso", "head"]);
   });
 
   it("does not invent a skeleton for a one-node object clip", () => {
@@ -274,10 +274,10 @@ describe("parseGlbForBrowse", () => {
       }),
     );
     expect(browse!.rigKind).toBe("none");
-    expect(browse!.boneNames).toEqual([]);
+    expect(browse!.bones.map((bone) => bone.name)).toEqual([]);
   });
 
-  it("omits a glTF node named __root__ from catalog boneNames", () => {
+  it("omits a glTF node named __root__ from the bones", () => {
     const browse = parseGltfJsonForBrowse(
       JSON.stringify({
         asset: { version: "2.0" },
@@ -300,7 +300,7 @@ describe("parseGlbForBrowse", () => {
       }),
     );
     expect(browse!.rigKind).toBe("hierarchy");
-    expect(browse!.boneNames).toEqual(["torso", "head"]);
+    expect(browse!.bones.map((bone) => bone.name)).toEqual(["torso", "head"]);
   });
 
   it("does not invent a hierarchy skeleton from one targeted ancestor and a single mesh descendant", () => {
@@ -324,7 +324,7 @@ describe("parseGlbForBrowse", () => {
     );
     // #361: hierarchy needs two or more parented Mesh parts that share an ancestor.
     expect(browse!.rigKind).toBe("none");
-    expect(browse!.boneNames).toEqual([]);
+    expect(browse!.bones.map((bone) => bone.name)).toEqual([]);
   });
 
   it("importModel wires browsable dependents with pixel chunks from GLB", async () => {
@@ -344,7 +344,9 @@ describe("parseGlbForBrowse", () => {
     expect(model.payload.textureCount).toBeUndefined();
     expect(model.payload.materialCount).toBeUndefined();
     expect(model.payload.animationCount).toBeUndefined();
-    expect(model.payload.clipNames).toEqual(["FixtureClip"]);
+    // The clip is its Animation asset; the Model lists no clip names.
+    expect("clipNames" in model.payload).toBe(false);
+    expect(results.find((r) => r.type === "Animation")!.payload).toMatchObject({ clipName: "FixtureClip" });
     const material = results.find((r) => r.type === "Material")!;
     expect(model.payload.materialSlots).toEqual([
       {
@@ -394,7 +396,6 @@ describe("parseGlbForBrowse", () => {
       "Texture",
     ]);
     const model = results.find((r) => r.type === "Model")!;
-    expect(model.payload.clipNames).toEqual([]);
     expect(model.payload.skeletonGuid).toBeNull();
   });
 
@@ -404,7 +405,7 @@ describe("parseGlbForBrowse", () => {
         JSON.stringify({
           asset: { version: "2.0" },
           materials: [{ name: "SkinMat" }],
-          nodes: [{ name: "Hips" }, { name: "Spine" }, { name: "Body", mesh: 0, skin: 0 }],
+          nodes: [{ name: "Hips", children: [1] }, { name: "Spine" }, { name: "Body", mesh: 0, skin: 0 }],
           meshes: [{ primitives: [{ attributes: {} }] }],
           skins: [{ joints: [0, 1] }],
           animations: [
@@ -422,11 +423,9 @@ describe("parseGlbForBrowse", () => {
     const model = results.find((r) => r.type === "Model")!;
     const skeleton = results.find((r) => r.type === "Skeleton")!;
     const animation = results.find((r) => r.type === "Animation")!;
-    expect(skeleton.payload).toMatchObject({
-      modelGuid: model.guid,
-      kind: "skin",
-      boneNames: ["Hips", "Spine"],
-    });
+    expect(skeleton.payload).toMatchObject({ modelGuid: model.guid, kind: "skin" });
+    expect((skeleton.payload.bones as Array<{ name: string; parent: string | null }>)
+      .map(({ name, parent }) => [name, parent])).toEqual([["Hips", null], ["Spine", "Hips"]]);
     expect(model.payload.skeletonGuid).toBe(skeleton.guid);
     expect(animation.payload).toMatchObject({
       clipName: "Walk",
@@ -468,9 +467,125 @@ describe("parseGlbForBrowse", () => {
       { fileName: "mannequin.gltf", existingGuids: new Set() },
     );
     const skeleton = results.find((r) => r.type === "Skeleton")!;
-    expect(skeleton.payload).toMatchObject({
-      kind: "hierarchy",
-      boneNames: ["character", "root", "torso", "head"],
+    expect(skeleton.payload).toMatchObject({ kind: "hierarchy" });
+    expect((skeleton.payload.bones as Array<{ name: string; parent: string | null }>).map(({ name, parent }) => [name, parent]))
+      .toEqual([["character", null], ["root", "character"], ["torso", "root"], ["head", "root"]]);
+  });
+
+  it("imports an animation library with no mesh as a hierarchy Skeleton and its Animations, with no Material", async () => {
+    // An FBX animation file converts to animated nodes only: no mesh, no skin.
+    const results = await importModel(
+      new TextEncoder().encode(
+        JSON.stringify({
+          asset: { version: "2.0" },
+          nodes: [
+            { name: "__fbx_root__", children: [1] },
+            { name: "Root", children: [2, 4] },
+            { name: "Hips", children: [3] },
+            { name: "Spine" },
+            { name: "LeftFootCtrl" },
+          ],
+          animations: [
+            {
+              name: "Root|Idle",
+              channels: [
+                { target: { node: 2, path: "rotation" }, sampler: 0 },
+                { target: { node: 3, path: "rotation" }, sampler: 0 },
+              ],
+              samplers: [{ input: 0 }],
+            },
+          ],
+          accessors: [{ max: [1.25] }],
+        }),
+      ),
+      { fileName: "idle.gltf", existingGuids: new Set() },
+    );
+    expect(results.map((r) => r.type).sort()).toEqual(["Animation", "Model", "Skeleton"]);
+    const skeleton = results.find((r) => r.type === "Skeleton")!;
+    expect(skeleton.payload).toMatchObject({ kind: "hierarchy" });
+    // The clips key Hips and Spine rotation, so those hold a pose, not a rest; Root sits under the converter's root.
+    expect(skeleton.payload.bones).toEqual([
+      { name: "Root", parent: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      { name: "Hips", parent: "Root", position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], posed: ["rotation"] },
+      { name: "Spine", parent: "Hips", position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], posed: ["rotation"] },
+    ]);
+    expect(results.find((r) => r.type === "Animation")!.payload).toMatchObject({
+      clipName: "Root|Idle",
+      durationMs: 1250,
+    });
+    expect(results.find((r) => r.type === "Model")!.payload).toMatchObject({ materialSlots: [] });
+  });
+
+  describe("shared Skeletons", () => {
+    const riggedGltf = (jointNames: string[]) => new TextEncoder().encode(JSON.stringify({
+      asset: { version: "2.0" },
+      nodes: [
+        ...jointNames.map((name, index) => ({
+          name,
+          translation: [0, index === 0 ? 1 : 0.3, 0],
+          ...(index + 1 < jointNames.length ? { children: [index + 1] } : {}),
+        })),
+        { name: "Body", mesh: 0, skin: 0 },
+      ],
+      meshes: [{ primitives: [] }],
+      skins: [{ joints: jointNames.map((_, index) => index) }],
+      animations: [{
+        name: "Walk",
+        channels: [{ target: { node: 0, path: "rotation" }, sampler: 0 }],
+        samplers: [{ input: 0 }],
+      }],
+      accessors: [{ max: [1] }],
+    }));
+    const existing = (bones: string[]) => ({
+      guid: "shared-skeleton",
+      name: "Hero_Skeleton",
+      payload: {
+        modelGuid: "hero-model",
+        kind: "skin" as const,
+        bones: bones.map((name, index) => ({
+          name,
+          parent: index === 0 ? null : bones[index - 1]!,
+          position: [0, index === 0 ? 1 : 0.3, 0] as [number, number, number],
+          rotation: [0, 0, 0, 1] as [number, number, number, number],
+          scale: [1, 1, 1] as [number, number, number],
+        })),
+      },
+    });
+
+    it("puts a Model whose rig matches an existing Skeleton, and its Animations, on that Skeleton", async () => {
+      const results = await importModel(riggedGltf(["Hips", "Spine"]), {
+        fileName: "knight.gltf",
+        existingGuids: new Set(),
+        skeletons: [existing(["Hips", "Spine", "Head"])],
+      });
+      expect(results.filter((r) => r.type === "Skeleton")).toEqual([]);
+      expect(results.find((r) => r.type === "Model")!.payload.skeletonGuid).toBe("shared-skeleton");
+      expect(results.find((r) => r.type === "Animation")!.payload.skeletonGuid).toBe("shared-skeleton");
+    });
+
+    it("adds a larger rig's extra bones to the Skeleton it joins", async () => {
+      const results = await importModel(riggedGltf(["Hips", "Spine", "Head"]), {
+        fileName: "knight.gltf",
+        existingGuids: new Set(),
+        skeletons: [existing(["Hips", "Spine"])],
+      });
+      const update = results.find((r) => r.type === "Skeleton")!;
+      expect(update.attachToGuid).toBe("shared-skeleton");
+      expect((update.payload.bones as Array<{ name: string; parent: string | null }>).map(({ name, parent }) => [name, parent]))
+        .toEqual([["Hips", null], ["Spine", "Hips"], ["Head", "Spine"]]);
+    });
+
+    it("gives a rig with other proportions its own Skeleton", async () => {
+      const larger = existing(["Hips", "Spine"]);
+      larger.payload.bones[1]!.position = [0, 0.75, 0];
+      const results = await importModel(riggedGltf(["Hips", "Spine"]), {
+        fileName: "large.gltf",
+        existingGuids: new Set(),
+        skeletons: [larger],
+      });
+      const skeleton = results.find((r) => r.type === "Skeleton")!;
+      expect(skeleton.attachToGuid).toBeUndefined();
+      expect(results.find((r) => r.type === "Model")!.payload.skeletonGuid).toBe(skeleton.guid);
     });
   });
 

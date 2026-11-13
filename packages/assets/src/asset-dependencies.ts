@@ -19,6 +19,7 @@ import {
   type SerializedGraph,
   CAMERA_SHAKE_ASSET_TYPE,
   cameraShakeCurveGuids,
+  isAnimGraphAssetType,
   normalizeCameraShakePayload,
 } from "@haptic/core";
 import {
@@ -500,9 +501,18 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   } else if (assetType === "Prefab") {
     components(payload.components);
     addMany(areaEmissionTextureGuids(payload), false);
-  } else if (assetType === "AnimationGraph") {
-    for (const clip of rows(payload.clips)) add(clip.assetGuid);
-    for (const transition of rows(payload.transitions)) graph(transition.ruleGraph);
+  } else if (isAnimGraphAssetType(assetType)) {
+    add(payload.skeletonGuid);
+    // Each state's graph: its players' clips, and the data nodes feeding them.
+    const poseGraph = (value: unknown): void => {
+      for (const node of rows(row(value).nodes)) {
+        if (/^anim\.(?:pose|frame)\./.test(String(node.type))) add(row(node.data).assetGuid);
+      }
+      graph(value);
+    };
+    const machine = row(payload.stateMachine);
+    for (const state of rows(machine.states)) poseGraph(state.stateGraph);
+    for (const transition of rows(machine.transitions)) graph(transition.ruleGraph);
     graph(payload.animationObject);
     for (const variable of rows(payload.variables)) memberValue(variable, variable.defaultValue);
   } else if (assetType === "BehaviourTree") {

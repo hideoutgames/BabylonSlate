@@ -32,9 +32,10 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
 import type { ScriptHost } from "./script-host";
+import type { SpriteClipState } from "./sprite-clip-trace";
 import { walkComponentOwners } from "./world-component-index";
 
-type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
+type SpriteClip = SpriteClipState;
 
 // Shallow BT memory copies retain this live activation, while trace JSON omits
 // it. A resumed task writes to its current board and cannot finish a later run.

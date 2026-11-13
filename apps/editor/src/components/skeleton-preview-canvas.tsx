@@ -12,6 +12,7 @@ import {
   previewRigRoot,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
+  type SkeletonPreviewHandle,
 } from "@haptic/render";
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
@@ -20,9 +21,12 @@ import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 export function SkeletonPreviewCanvas({
   sourceBytes,
   kind,
+  selectedBone = null,
 }: {
   sourceBytes: Uint8Array;
   kind: SkeletonKind;
+  /** The bone drawn in the selection colour. */
+  selectedBone?: string | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
@@ -32,7 +36,9 @@ export function SkeletonPreviewCanvas({
   const [bonesAttached, setBonesAttached] = useState(false);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
-  const bonesRef = useRef<{ dispose: () => void } | null>(null);
+  const bonesRef = useRef<SkeletonPreviewHandle | null>(null);
+  const selectedBoneRef = useRef(selectedBone);
+  selectedBoneRef.current = selectedBone;
   useEffect(() => {
     const host = hostRef.current;
     if (host) {
@@ -122,9 +128,15 @@ export function SkeletonPreviewCanvas({
       host.scene,
       kind,
     );
+    bonesRef.current.setSelectedBone(selectedBoneRef.current);
     setBonesAttached(true);
     presenterRef.current?.present({ force: true });
   }, [kind, previewGeneration]);
+
+  useEffect(() => {
+    bonesRef.current?.setSelectedBone(selectedBone);
+    presenterRef.current?.present({ force: true });
+  }, [selectedBone]);
 
   return (
     <canvas
@@ -132,6 +144,7 @@ export function SkeletonPreviewCanvas({
       className="h-full w-full touch-none"
       data-testid="skeleton-preview-canvas"
       data-bones={bonesAttached ? "true" : "false"}
+      data-selected-bone={selectedBone ?? undefined}
     />
   );
 }

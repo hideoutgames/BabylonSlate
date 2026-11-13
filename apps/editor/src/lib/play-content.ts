@@ -412,10 +412,14 @@ export function modelAssetGuidsFromScene(
   ])];
 }
 
-/** Scene Models plus source Models required to Play retargeted Animation rows. */
+/**
+ * Scene Models plus the Models whose files hold the clips they play from elsewhere: retargeted Animations, and other
+ * Models' Animations on the same Skeleton. `modelSkeletons` gives each Model's Skeleton guid.
+ */
 export function modelGuidsForPlayRetarget(
   sceneModelGuids: readonly string[],
   animations: ReadonlyArray<{ guid: string; payload: unknown }>,
+  modelSkeletons: ReadonlyMap<string, string | null> = new Map(),
 ): string[] {
   const guids = new Set(sceneModelGuids.filter((guid) => guid.length > 0));
   const loads = retargetAnimationLoadsFromAnimations(
@@ -423,6 +427,7 @@ export function modelGuidsForPlayRetarget(
       guid: entry.guid,
       payload: normalizeAnimationPayload(entry.payload),
     })),
+    new Map([...guids].map((guid) => [guid, modelSkeletons.get(guid) ?? null])),
   );
   for (const [targetModelGuid, rows] of loads) {
     if (!guids.has(targetModelGuid)) continue;

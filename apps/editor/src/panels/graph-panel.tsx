@@ -12,7 +12,7 @@ import {
   type PaletteNode,
 } from "@haptic/graph-ui";
 import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
-import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene } from "@haptic/core";
+import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import { variableTypeFromPinType, type PinType } from "@haptic/scripting";
 import { nextCopyName } from "@haptic/assets";
 import {
@@ -126,7 +126,7 @@ export function GraphPanel(
   const { documentId } = useDocumentWorkspace();
   const documentActions = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
+  const { activeDocumentId, sceneMode } = useActiveDocumentState();
   const { focusedNodeId } = usePlay();
   const {
     selectedNodeIds,
@@ -207,7 +207,7 @@ export function GraphPanel(
   const classRunTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
   // An Animation Graph's Animation Object graph is compiled like a Class graph, under its own id.
   const animObjectRunTrace = useAnimObjectGraphRunTrace(
-    doc?.ref.kind === "anim-graph" ? doc.ref.path : undefined,
+    isAnimGraphDocumentKind(doc?.ref.kind) ? doc.ref.path : undefined,
     indexed?.header.guid,
   );
   const runTrace = classRunTrace ?? animObjectRunTrace;
@@ -440,8 +440,6 @@ export function GraphPanel(
         documentId,
         activeDocumentId,
         documentKind: doc?.ref.kind ?? "",
-        animEditorMode:
-          doc?.ref.kind === "anim-graph" ? animEditorMode : undefined,
         sceneMode,
       })
     ) {
@@ -524,7 +522,6 @@ export function GraphPanel(
     inputAssets,
     dataAssets,
     typeSchemas,
-    animEditorMode,
     sceneMode,
     focused,
     materialDomains,
@@ -557,7 +554,7 @@ export function GraphPanel(
     ownedTimelineClips,
     timelineAssets,
     animationGraphHost:
-      doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
+      isAnimGraphDocumentKind(doc?.ref.kind) ? ("object" as const) : undefined,
   };
   const paletteInputRef = useRef(paletteInput);
   paletteInputRef.current = paletteInput;

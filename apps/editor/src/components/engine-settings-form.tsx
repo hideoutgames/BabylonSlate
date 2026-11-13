@@ -122,15 +122,9 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "material-instance", keepKey: "material-instance", label: "Material Instance" },
   { kind: "plugin-settings", keepKey: "plugin-settings", label: "Plugin Settings" },
   {
-    kind: "anim-graph",
+    kind: "anim-graph-3d",
     keepKey: "anim-graph",
-    label: "Animation Graph State Machine",
-  },
-  {
-    kind: "anim-graph",
-    keepKey: "animGraphObject",
-    label: "Animation Graph Object",
-    options: { animEditorMode: "animationObject" },
+    label: "Animation Graph",
   },
   {
     kind: "behaviour-tree",
@@ -207,7 +201,7 @@ const FOCUS_KEEP_SECTIONS: Array<{ id: string; title: string; keys: FocusKeepSet
   { id: "curvesTimelines", title: "Curves And Timelines", keys: ["float-curve", "vector-curve", "color-curve", "timeline", "timeline-clip-2d", "timeline-clip-3d"] },
   { id: "twoD", title: "2D", keys: ["sprite", "sprite-animation", "tileset", "tilemap"] },
   { id: "materialsRendering", title: "Materials And Rendering", keys: ["material", "material-function", "material-instance", "water", "render-target", "render-target-texture", "skybox-creator", "texture"] },
-  { id: "animationAi", title: "Animation And AI", keys: ["anim-graph", "animGraphObject", "behaviour-tree", "model", "skeleton", "animation", "camera-shake"] },
+  { id: "animationAi", title: "Animation And AI", keys: ["anim-graph", "behaviour-tree", "model", "skeleton", "animation", "camera-shake"] },
   { id: "audio", title: "Audio", keys: ["audio", "audio-mixer", "audio-channel", "sound-attenuation"] },
   { id: "particles", title: "Particles", keys: ["particle-emitter", "particle-graph", "particle-system"] },
   { id: "diagnostics", title: "Diagnostics", keys: ["trace"] },

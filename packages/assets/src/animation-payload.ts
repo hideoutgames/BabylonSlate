@@ -78,33 +78,65 @@ export function modelClipAnimationGuidsFromAnimations(
 export type RetargetAnimationLoad = {
   animationGuid: string;
   clipName: string;
+  /** The Model whose file holds the clip. */
   sourceModelGuid: string;
+  /**
+   * The clip is another Model's own on the same Skeleton: it binds to this Model's nodes by name, unchanged. Without
+   * it the clip is retargeted onto this Model.
+   */
+  bindByName?: true;
 };
 
-/** Retargeted clip loads keyed by the actor (target) Model guid. */
+/**
+ * The clips each Model plays from other files, keyed by that Model's guid: Animations retargeted onto it, and every
+ * Animation on its Skeleton that another Model's file holds. `modelSkeletons` gives each Model's Skeleton guid.
+ */
 export function retargetAnimationLoadsFromAnimations(
   animations: ReadonlyArray<{ guid: string; payload: AnimationPayload }>,
+  modelSkeletons: ReadonlyMap<string, string | null> = new Map(),
 ): Map<string, RetargetAnimationLoad[]> {
   const byGuid = new Map(animations.map((entry) => [entry.guid, entry] as const));
   const byTarget = new Map<string, RetargetAnimationLoad[]>();
-  for (const animation of animations) {
-    const sourceGuid = animation.payload.sourceAnimationGuid;
-    if (!sourceGuid) continue;
-    const source = byGuid.get(sourceGuid);
-    const sourceModelGuid = source?.payload.modelGuid.trim() ?? "";
-    const targetModelGuid = animation.payload.modelGuid.trim();
-    const clipName = animation.payload.clipName.trim();
-    if (!sourceModelGuid || !targetModelGuid || !clipName) continue;
+  const add = (targetModelGuid: string, row: RetargetAnimationLoad) => {
     let rows = byTarget.get(targetModelGuid);
     if (!rows) {
       rows = [];
       byTarget.set(targetModelGuid, rows);
     }
-    rows.push({
-      animationGuid: animation.guid,
-      clipName,
-      sourceModelGuid,
-    });
+    if (!rows.some((entry) => entry.animationGuid === row.animationGuid)) rows.push(row);
+  };
+  const retargetSource = (animation: { payload: AnimationPayload }) => {
+    const sourceGuid = animation.payload.sourceAnimationGuid;
+    return sourceGuid ? byGuid.get(sourceGuid)?.payload.modelGuid.trim() ?? "" : null;
+  };
+  for (const animation of animations) {
+    const sourceModelGuid = retargetSource(animation);
+    const targetModelGuid = animation.payload.modelGuid.trim();
+    const clipName = animation.payload.clipName.trim();
+    if (sourceModelGuid === null || !sourceModelGuid || !targetModelGuid || !clipName) continue;
+    add(targetModelGuid, { animationGuid: animation.guid, clipName, sourceModelGuid });
+  }
+  const animationsBySkeleton = new Map<string, Array<{ guid: string; payload: AnimationPayload }>>();
+  for (const animation of animations) {
+    const skeletonGuid = animation.payload.skeletonGuid;
+    if (!skeletonGuid) continue;
+    const rows = animationsBySkeleton.get(skeletonGuid) ?? [];
+    rows.push(animation);
+    animationsBySkeleton.set(skeletonGuid, rows);
+  }
+  for (const [modelGuid, skeletonGuid] of modelSkeletons) {
+    if (!skeletonGuid) continue;
+    for (const animation of animationsBySkeleton.get(skeletonGuid) ?? []) {
+      const clipName = animation.payload.clipName.trim();
+      const ownerGuid = animation.payload.modelGuid.trim();
+      if (!clipName || !ownerGuid || ownerGuid === modelGuid) continue;
+      const sourceModelGuid = retargetSource(animation);
+      if (sourceModelGuid === null) {
+        add(modelGuid, { animationGuid: animation.guid, clipName, sourceModelGuid: ownerGuid, bindByName: true });
+      } else if (sourceModelGuid) {
+        add(modelGuid, { animationGuid: animation.guid, clipName, sourceModelGuid });
+      }
+    }
   }
   return byTarget;
 }

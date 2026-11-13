@@ -100,6 +100,8 @@ export function buildNewAssetResult(options: {
   viewportMode?: ViewportMode;
   /** A new 2D or 3D Timeline Clip's required Timeline Asset. */
   timelineAsset?: string;
+  /** A new 3D Animation Graph's Skeleton (Create Animation Graph on a Skeleton or Model). */
+  skeletonGuid?: string | null;
   /** A new Class's starting components (Create Actor), in place of its parent's defaults. */
   classComponents?: import("@haptic/core").SerializedComponent[];
 }): ImportResult {
@@ -231,12 +233,15 @@ export function buildNewAssetResult(options: {
     );
   }
 
-  if (type === "AnimationGraph") {
+  if (type === "AnimationGraph3D" || type === "AnimationGraph2D") {
     return documentAsset(
       type,
       name,
       guid,
-      createDefaultAnimGraph(name) as unknown as Record<string, unknown>,
+      createDefaultAnimGraph(name, {
+        dimension: type === "AnimationGraph3D" ? "3d" : "2d",
+        skeletonGuid: options.skeletonGuid ?? null,
+      }) as unknown as Record<string, unknown>,
     );
   }
 

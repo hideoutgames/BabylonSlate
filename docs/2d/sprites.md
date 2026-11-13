@@ -39,8 +39,8 @@ The **Preview** has **Play** / **Pause**, **Loop**, a scrubber with the current 
 
 ## Play it in the game
 
-1. Create an [Animation Graph](../assets/animation-graph.md) (**New Asset > Animation > Animation Graph**).
-2. Select a state, set **Clip Kind** to **Sprite**, and set **Clip Asset** to your Sprite Animation.
+1. Create a [2D Animation Graph](../assets/animation-graph.md) (**New Asset > Animation > 2D Animation Graph**).
+2. Select a state and set its **Sprite Animation**.
 3. Add an **Animation Graph** component to the actor that has the Sprite component, and set its **Animation Graph**.
 
 Switch states from scripts with [Jump To State](../scripting/class/jump-to-state.md) or by setting graph variables with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md).

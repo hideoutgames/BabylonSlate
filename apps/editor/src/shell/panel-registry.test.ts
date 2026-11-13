@@ -30,7 +30,8 @@ const KINDS = Object.keys({
   "material-function": true,
   "material-instance": true,
   "plugin-settings": true,
-  "anim-graph": true,
+  "anim-graph-3d": true,
+  "anim-graph-2d": true,
   "behaviour-tree": true,
   audio: true,
   "save-game": true,
@@ -64,8 +65,6 @@ const OPTION_VARIANTS: DockWindowOptions[] = [
   {},
   { actorPrefab: false },
   { sourceControl: true },
-  { animEditorMode: "stateMachine" },
-  { animEditorMode: "animationObject" },
   ...SCENE_MODES.map((sceneMode) => ({ sceneMode })),
 ];
 

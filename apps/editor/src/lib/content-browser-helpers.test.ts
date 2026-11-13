@@ -1291,7 +1291,7 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
       "Walk.spriteanim.hasset",
     );
-    expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.hasset");
+    expect(newAssetFileName("AnimationGraph3D", "Loco")).toBe("Loco.anim3d.hasset");
     expect(newAssetFileName("Material", "Rock")).toBe("Rock.material.hasset");
     expect(newAssetFileName("MaterialFunction", "Tint")).toBe(
       "Tint.matfunc.hasset",
@@ -1877,6 +1877,13 @@ describe("content-browser-helpers", () => {
         canRetarget: true,
       }),
     ).toEqual(["duplicate", "retarget", "move", "copy", "delete"]);
+    // One Model with a Skeleton can move onto another Skeleton; a multi-selection cannot.
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Model", canAssignSkeleton: true }),
+    ).toContain("assign-skeleton");
+    expect(
+      contentBrowserContextActions({ assetCount: 2, folderCount: 0, canAssignSkeleton: true }),
+    ).not.toContain("assign-skeleton");
     expect(
       contentBrowserContextActions({
         assetCount: 1,
@@ -2146,7 +2153,6 @@ describe("content-browser-helpers", () => {
     ).toEqual(["em-a", "em-b"]);
     expect(
       assetHeaderDependencies("Model", {
-        clipNames: ["Walk"],
         skeletonGuid: "skel-hero",
         materialSlots: [
           { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
@@ -2159,7 +2165,7 @@ describe("content-browser-helpers", () => {
       assetHeaderDependencies("Skeleton", {
         modelGuid: "model-1",
         kind: "hierarchy",
-        boneNames: ["root"],
+        bones: [{ name: "root", parent: null }],
       }),
     ).toEqual(["model-1"]);
     expect(

@@ -70,7 +70,7 @@ describe("AnimationEditor", () => {
 
 describe("AnimationPreviewPanel", () => {
   it("reports a failed read of the owning Model's source instead of an empty mesh", async () => {
-    documents.open = [{ id: "walk", ref: { path: "assets/Walk.anim.hasset" }, content: { clipName: "Walk", modelGuid: "hero" } }];
+    documents.open = [{ id: "walk", ref: { path: "assets/Walk.anim3d.hasset" }, content: { clipName: "Walk", modelGuid: "hero" } }];
     documents.assets = [{ path: "assets/hero.model.hasset", header: { guid: "hero", name: "Hero", type: "Model", payload: {} } }];
     documents.readAssetChunk.mockRejectedValueOnce(new Error("Asset chunk assets/hero.model.hasset#source could not be read."));
     render(

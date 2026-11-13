@@ -19,7 +19,7 @@ import { applyAnimStateToScene,
   type NamedSeekableGroup,
 } from "./anim-apply";
 import { isGltfModelBytes } from "./model-mesh";
-import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
+import { bindAnimationGroupByName, retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
 import { accountedGeometryBytes } from "./perf-ceilings";
@@ -751,10 +751,10 @@ export function beginSlotModelAnimLoad(
           (group) => group.name === row.clipName,
         );
         if (sourceGroup) {
-          const retargeted = retargetAnimationGroupWithMeshProxy(
-            sourceGroup,
-            prepared.staging,
-          );
+          // Another Model's clip on the same Skeleton binds as it is; a clip from another rig is retargeted.
+          const retargeted = row.bindByName
+            ? bindAnimationGroupByName(sourceGroup, prepared.staging)
+            : retargetAnimationGroupWithMeshProxy(sourceGroup, prepared.staging);
           if (retargeted) {
             prepared.bundle.ownRenderUser(retargeted);
             wrapped.push(wrapGroup(retargeted, row.animationGuid));

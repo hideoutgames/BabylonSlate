@@ -100,9 +100,9 @@ describe("createPlayContentService", () => {
   it("makes the compiled signature stale when an open Animation Graph's compiled graph changes", async () => {
     const graph = createDefaultAnimGraph();
     const { documents, playContent, open } = createPlayContent([
-      { guid: "locomotion", type: "AnimationGraph", name: "Locomotion", path: "Locomotion.hasset", content: graph },
+      { guid: "locomotion", type: "AnimationGraph3D", name: "Locomotion", path: "Locomotion.hasset", content: graph },
     ]);
-    const id = await open({ kind: "anim-graph", path: "Locomotion.hasset", label: "Locomotion" });
+    const id = await open({ kind: "anim-graph-3d", path: "Locomotion.hasset", label: "Locomotion" });
     const compiledSignature = playContent.compileOpenGraphs(undefined);
     expect(playContent.graphSignature(undefined)).toBe(compiledSignature);
 

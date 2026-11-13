@@ -46,6 +46,7 @@ import {
   encodeAreaEmission,
 } from "@haptic/assets";
 import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
+import { parseAnimGraphDocument, singlePlayerOf } from "@haptic/anim-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 import { DocumentService } from "./document-service";
@@ -650,7 +651,7 @@ describe("project documents as .hasset", () => {
     expect(await storage.exists("assets/Mannequin.class.hasset")).toBe(true);
     expect(await storage.exists("assets/main.class.hasset")).toBe(false);
     expect(
-      await storage.exists("assets/Mannequin/Mannequin.anim.hasset"),
+      await storage.exists("assets/Mannequin/Mannequin.anim3d.hasset"),
     ).toBe(true);
     const classHeader = readAssetDocumentHeader(
       await storage.readBinary("assets/Mannequin.class.hasset"),
@@ -660,13 +661,14 @@ describe("project documents as .hasset", () => {
     expect(classHeader.name).toBe("Mannequin");
 
     const graphDoc = await decodeAssetDocument(
-      await storage.readBinary("assets/Mannequin/Mannequin.anim.hasset"),
+      await storage.readBinary("assets/Mannequin/Mannequin.anim3d.hasset"),
     );
-    expect(graphDoc.type).toBe("AnimationGraph");
-    const clips = (
-      graphDoc.payload as { clips?: Array<{ assetGuid?: string }> }
-    ).clips;
-    expect(clips?.[0]?.assetGuid).toBe(idle!.header.guid);
+    expect(graphDoc.type).toBe("AnimationGraph3D");
+    // The entry state plays the Idle Animation through its one player.
+    const graph = parseAnimGraphDocument(graphDoc.payload)!;
+    const machine = graph.stateMachine;
+    const entry = machine.states.find((state) => state.id === machine.entryStateId)!;
+    expect(singlePlayerOf(entry.stateGraph)?.data.assetGuid).toBe(idle!.header.guid);
     expect(animGraph?.properties.graphGuid).toBe(graphDoc.guid);
   });
 
@@ -1421,7 +1423,7 @@ describe("project documents as .hasset", () => {
           dependencies: ["mat-old"],
           parentClass: null,
           payload: {
-            clipNames: ["Walk"],
+            importScale: 3,
             materialSlots: [
               { index: 0, name: "Hero Mat", materialGuid: "mat-old" },
             ],
@@ -1449,7 +1451,7 @@ describe("project documents as .hasset", () => {
 
     const saved = await decodeHasset(await storage.readBinary(path));
     expect(saved.header.type).toBe("Model");
-    expect(saved.header.payload.clipNames).toEqual(["Walk"]);
+    expect(saved.header.payload.importScale).toBe(3);
     expect(saved.header.payload.materialSlots).toEqual([
       { index: 0, name: "Hero Mat", materialGuid: "mat-new" },
     ]);

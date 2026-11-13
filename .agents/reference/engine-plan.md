@@ -212,7 +212,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 | World | Scene (one Scene tab at a time), SceneLayer (2D overlay), Prefab (placeable components without logic) |
 | Scripting | Class, Enum, Structure, ScriptInterface, SaveGame |
 | Data and input | DataDefinition, DataTree, FloatCurve, VectorCurve, ColorCurve, InputAction, InputAxis |
-| 2D and animation | Sprite, SpriteAnimation, Tileset, Tilemap, AnimationGraph |
+| 2D and animation | Sprite, SpriteAnimation, Tileset, Tilemap, AnimationGraph3D, AnimationGraph2D |
 | Rendering | Material (the shader graph; there is no separate Shader type), MaterialFunction, MaterialInstance, RenderTarget, RenderTargetTexture, Water, ParticleEmitter, ParticleGraph, ParticleSystem, SkyboxCreator (editor-only helper) |
 | Audio | AudioMixer, AudioChannel, SoundAttenuation |
 | AI | BehaviourTree, Blackboard |
@@ -385,8 +385,15 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
   - FT_World is GPU-bound.
   - The main and stress scenes are CPU-bound by their draw counts, far past the Medium draw-call warning.
 - Occlusion culling (`quality.geometry.occlusionCulling`) is on at every tier (André's call, 2026-11-03), ahead of an iPad A/B; Breakdown's FT_Occlusion steps measure it. Turn a tier off if the A/B shows it costs more than it saves there.
+- Animation Graph layering (such as upper-body gestures over locomotion): pose nodes inside state graphs.
 - Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
+- Discord roles from subscriptions (not built). The free plan needs no database and no Discord sign-in scopes:
+  - A Cloudflare Worker (free tier) receives RevenueCat webhooks, checks their `Authorization` header and re-reads the customer with `GET /v1/subscribers/{app_user_id}` instead of interpreting event types.
+  - `app_user_id` is the Clerk user id; the Worker reads the Discord user id from that Clerk user's `oauth_discord` external account (Backend API).
+  - The bot adds or removes the plan's role with `PUT` / `DELETE /guilds/{guild}/members/{user}/roles/{role}`; its own role must sit above the plan roles and hold Manage Roles. Worker secrets: RevenueCat secret key, Clerk secret key, bot token, webhook header value.
+  - Rejected: RevenueCat's Discord integration only posts messages; Linked Roles need each member to opt in and still need a server; no-code tools need paid plans or their own checkout.
+  - Gaps: only accounts with Discord linked get roles (desktop and mobile cannot link a second sign-in method yet). A subscriber who joins the server later waits for the next subscription event unless the launcher asks the Worker, with a verified Clerk session, to re-sync the signed-in account at most daily. Enterprise seats outside RevenueCat need their role set by hand.
 
 ## Key risks
 
@@ -410,6 +417,7 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 
 - Gameplay logic lives in Class event graphs; the scene's Game Instance row only displays the project setting; Material is the shader graph editor.
 - Animation Graph variables are restricted to Bool, Int, Float, String, Tag and Tag Container.
+- An Animation Graph is exactly one root State Machine, with no Anim Graph pose layer above it and no State Machine nodes, so Get Current State, Jump To State and the debugger always mean that one machine; layering is never a second State Machine ([anim-graph.md](architecture/anim-graph.md)).
 - Windows and Focus are disabled on the pinned Content Browser; the last remaining dock panel cannot be closed.
 - Toggling 2D/3D dirties the scene: it is an authored, undoable setting.
 - Engine Settings save immediately; Project Settings save with Save All.

@@ -333,7 +333,6 @@ describe("editor Drop", () => {
             "model-guid",
             {
               materialSlots: [],
-              clipNames: [],
               skeletonGuid: null,
               importScale: 1,
               simpleColliders: [
@@ -476,7 +475,6 @@ describe("editor Drop", () => {
           "model-guid",
           {
             materialSlots: [],
-            clipNames: [],
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [

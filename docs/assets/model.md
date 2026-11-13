@@ -13,7 +13,7 @@ Double-tap the asset to open it. The window has **Preview**, **Colliders** and a
 - **Preview** shows the mesh. A menu at the top right sets the shading to **PBR**, **Unlit** or **Wireframe**.
 - **Show Collision** draws the model's colliders. With a collider selected, **Move**, **Rotate** and **Scale** set the gizmo.
 - **Colliders** lists the simple collision shapes. **Add** offers **Box**, **Sphere**, **Capsule**, **Cylinder**, **Cone** and **Generated Collision**, a convex shape built from the mesh. **Delete** removes the selected one. Select a shape to edit its **Name**, **Position**, **Rotation**, **Scale** and its size (**Half Extents**, **Radius**, **Half Height** or **Height**). The link button beside **Scale** keeps the shape's proportions, in the fields and with the Scale gizmo.
-- The **Inspector** has the material slots, **Level Of Detail** and **Clips**.
+- The **Inspector** has the material slots and **Level Of Detail**. The file's animation clips are its [Animation](animation.md) assets, next to the Model in the **Content Browser**.
 
 ## Settings
 
@@ -21,7 +21,6 @@ Double-tap the asset to open it. The window has **Preview**, **Colliders** and a
 | --- | --- |
 | Material slots | One row per material in the file. Pick a Material or Material Instance; an empty slot (**None**) draws the grey checker. |
 | Auto LOD | Under **Level Of Detail**. Generates simpler meshes for distant views when the model loads. On by default. |
-| Clips | The animation clips in the file. Read-only. |
 
 ## Use it
 
