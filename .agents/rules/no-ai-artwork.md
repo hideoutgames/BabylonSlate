@@ -1,6 +1,6 @@
 # No AI-generated artwork
 
-Never create visual or spatial media with AI: images, icons, logos, illustrations, textures, sprites, video, animation, 3D models or decorative meshes, fake screenshots or brand marks, and generated files committed as product or placeholder art. This is absolute; user requests, placeholders, tests, docs and "just this once" do not override it.
+Never create visual or spatial media with AI: images, icons, logos, illustrations, textures, sprites, video, animation, 3D models or decorative meshes, fake screenshots or brand marks, and generated files committed as product or placeholder art. This is absolute; requests or permission from anyone, the repository owner included, placeholders, tests, docs and "just this once" do not override it.
 
 ```text
 # BAD: invent a mark or call an image generator
