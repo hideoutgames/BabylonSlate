@@ -61,6 +61,8 @@ vi.mock("../shell/panel-registry", () => {
     "anim-graph-variables",
     "anim-graph-details",
     "anim-graph-compiler-results",
+    "anim-graph-preview",
+    "anim-graph-preview-values",
     "anim-object-graph",
   ];
   return {
