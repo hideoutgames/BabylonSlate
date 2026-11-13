@@ -10,8 +10,8 @@ Skeletons are not created from **New Asset**. Importing a rigged GLB, glTF or FB
 
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**. Both are read-only.
 
-- **Preview** shows the owning model. If it cannot load the mesh, it shows **No Mesh**; open the [Model](model.md) instead.
-- The **Inspector** lists the skeleton's bones.
+- **Preview** shows the owning model's bones in its rest pose: a tapered bone from each joint to each of its children and a ball at every joint. If it cannot load the mesh, it shows **No Mesh**; open the [Model](model.md) instead.
+- The **Inspector** lists the skeleton's bones. Select one to highlight it, and the bones it leads to, in the **Preview**; select it again to clear the highlight.
 
 ## Settings
 

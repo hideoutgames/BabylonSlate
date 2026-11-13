@@ -37,6 +37,7 @@ import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { SpriteAnimationEditingProvider } from "../context/sprite-animation-editing-context";
+import { SkeletonEditingProvider } from "../context/skeleton-editing-context";
 import { TracePlaybackProvider } from "../context/trace-playback-context";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
 import { sceneFocusActorId } from "../lib/search-navigation";
@@ -714,7 +715,10 @@ export function DocumentWorkspace() {
                 {/* A clip asset's Timeline windows share a playhead and key selection, as a Scene's do. */}
                 {doc.ref.kind === "timeline-clip-2d" || doc.ref.kind === "timeline-clip-3d"
                   ? <SceneToolsProvider>{shell}</SceneToolsProvider>
-                  : shell}
+                  : doc.ref.kind === "skeleton"
+                    // The bone the Inspector selects is the one the Preview highlights.
+                    ? <SkeletonEditingProvider>{shell}</SkeletonEditingProvider>
+                    : shell}
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );
