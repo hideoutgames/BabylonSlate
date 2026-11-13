@@ -56,10 +56,11 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
     setSelectedTransitionIdState(null);
     setFocusedNodeId(nodeId);
   }, [setSelectedIdsState]);
+  // The open rule's transition is the selection, so Back To State Machine returns to it.
   const openTransitionRule = useCallback((id: string) => {
     setOpenTransitionId(id);
-    setSelectedTransitionIdState(id);
-  }, []);
+    setSelectedTransitionId(id);
+  }, [setSelectedTransitionId]);
   const closeTransitionRule = useCallback(() => {
     setOpenTransitionId(null);
   }, []);

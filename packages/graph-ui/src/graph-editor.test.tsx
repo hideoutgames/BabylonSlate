@@ -5676,6 +5676,65 @@ describe("GraphEditor", () => {
         restoreLayout();
       }
     });
+
+    it("selects the host's wire in place of the node selection, and a canvas click still clears it", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onEdgeSelectionChange = vi.fn();
+        const view = (selectedEdgeId?: string) => (
+          <GraphEditor
+            initialGraph={transitionGraph()}
+            edgeTypes={animGraphEdgeTypes}
+            selectedEdgeId={selectedEdgeId}
+            onEdgeSelectionChange={onEdgeSelectionChange}
+          />
+        );
+        const { container, rerender } = render(view());
+        const node = () => container.querySelector('.react-flow__node[data-id="log-a"]')!;
+        const wire = () => container.querySelector('.react-flow__edge[data-id="e:log-a:execOut:log-b:execIn"]');
+        await waitFor(() => expect(wire()).not.toBeNull());
+        fireEvent.click(node());
+        await waitFor(() => expect(node().className).toMatch(/selected/));
+        rerender(view("e:log-a:execOut:log-b:execIn"));
+        await waitFor(() => expect(wire()!.classList.contains("selected")).toBe(true));
+        expect(node().className).not.toMatch(/selected/);
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith(["e:log-a:execOut:log-b:execIn"]);
+        });
+        // The host has not heard of the click yet when the canvas re-renders; its stale choice must not reselect the wire.
+        fireEvent.click(container.querySelector(".react-flow__pane")!);
+        await waitFor(() => expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([]));
+        expect(wire()!.classList.contains("selected")).toBe(false);
+      } finally {
+        restoreLayout();
+      }
+    });
+  });
+
+  it("gives a transition wire a hit band of one width on screen at every zoom", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({ ...edge, type: "animTransitionBoth" }));
+      const { container } = render(
+        <GraphEditor initialGraph={graph} edgeTypes={animGraphEdgeTypes} defaultZoom={0.5} />,
+      );
+      const hit = await waitFor(() => {
+        const found = container.querySelector<SVGPathElement>('[data-testid="anim-transition-hit-e:log-a:execOut:log-b:execIn"]');
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      // The stylesheet divides the band's screen width by this zoom.
+      await waitFor(() => expect(hit.style.getPropertyValue("--anim-transition-zoom")).toBe("0.5"));
+      const edge = hit.closest(".react-flow__edge")!;
+      // Both arrowheads are the wire's own marker, so they follow its selection colour.
+      const path = edge.querySelector(".react-flow__edge-path")!;
+      const marker = edge.querySelector("marker.anim-transition-arrow")!;
+      expect(path.getAttribute("marker-end")).toBe(`url(#${marker.id})`);
+      expect(path.getAttribute("marker-start")).toBe(`url(#${marker.id})`);
+    } finally {
+      restoreLayout();
+    }
   });
 });
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, setTransitionBidirectional, type AnimGraphDocument } from "@haptic/anim-graph";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
@@ -419,18 +419,48 @@ describe("AnimGraphEditor", () => {
   it("opens a nested transition rule graph from Details", async () => {
     renderAnimGraph(locoGraph());
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    // The canvas reports the state it selected a microtask later, as it does between real clicks.
+    await act(async () => {});
     fireEvent.click(screen.getByTestId("anim-graph-open-rule-idle-to-run"));
     expect(screen.getByTestId("anim-rule-graph")).toBeTruthy();
-    expect(screen.getByTestId("anim-rule-breadcrumb").textContent).toBe(
+    expect(screen.getByTestId("anim-rule-title").textContent).toBe(
       "Idle To Run",
     );
     await waitFor(() => {
       expect(screen.getByTestId("graph-editor")).toBeTruthy();
     });
-    fireEvent.click(screen.getByTestId("anim-rule-breadcrumb-state-machine"));
+    fireEvent.click(screen.getByRole("button", { name: "Back To State Machine" }));
     expect(screen.queryByTestId("anim-rule-graph")).toBeNull();
     expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
-    expect(screen.getByTestId("property-idle-to-run-direction")).toBeTruthy();
+    // The rule's transition, not the state it was opened from, is the selection.
+    expect(screen.getByTestId("anim-graph-transition-idle-to-run-toggle").textContent).toBe("Idle To Run");
+    // The canvas highlights the wire of the transition the Inspector shows.
+    expect(screen.getByTestId("graph-editor").getAttribute("data-selected-edge-id")).toBe("idle-to-run");
+  });
+
+  it("highlights a Both Ways pair's one wire after its reverse rule closes", async () => {
+    renderAnimGraph(setTransitionBidirectional(locoGraph(), "idle-to-run", true));
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    await act(async () => {});
+    fireEvent.click(within(screen.getByTestId("anim-graph-transition-idle-to-run")).getByRole("button", { name: "Open Reverse Rule" }));
+    await waitFor(() => expect(screen.getByTestId("anim-rule-title").textContent).toBe("Run To Idle"));
+    fireEvent.click(screen.getByRole("button", { name: "Back To State Machine" }));
+    expect(screen.getByTestId("graph-editor").getAttribute("data-selected-edge-id")).toBe("idle-to-run");
+  });
+
+  it("groups a state's transitions as cards that collapse to their blend time and direction", () => {
+    renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    const card = screen.getByTestId("anim-graph-transition-idle-to-run");
+    expect(card.closest('[data-testid="module-stage-anim-graph-transitions"]')?.textContent).toContain("Transitions");
+    expect(screen.getByTestId("anim-graph-transition-idle-to-run-toggle").textContent).toBe("To Run");
+    expect(screen.queryByTestId("anim-graph-transition-idle-to-run-summary")).toBeNull();
+    fireEvent.click(screen.getByTestId("anim-graph-transition-idle-to-run-toggle"));
+    expect(screen.queryByTestId("property-idle-to-run-blendSeconds")).toBeNull();
+    expect(screen.queryByTestId("anim-graph-open-rule-idle-to-run")).toBeNull();
+    expect(screen.getByTestId("anim-graph-transition-idle-to-run-summary").textContent).toBe("0.25 s · One Way");
+    fireEvent.click(screen.getByTestId("anim-graph-transition-idle-to-run-toggle"));
+    expect(screen.getByTestId("property-idle-to-run-blendSeconds")).toBeTruthy();
   });
 
   it("shows node details in the Details panel while a To State rule is open", async () => {
@@ -450,7 +480,7 @@ describe("AnimGraphEditor", () => {
       );
     });
     expect(screen.queryByTestId("property-name")).toBeNull();
-    fireEvent.click(screen.getByTestId("anim-rule-breadcrumb-state-machine"));
+    fireEvent.click(screen.getByRole("button", { name: "Back To State Machine" }));
     expect(screen.getByTestId("property-idle-to-run-direction")).toBeTruthy();
   });
 

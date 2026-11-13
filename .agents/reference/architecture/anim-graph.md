@@ -63,5 +63,6 @@ Worker-side animation state machine plus per-instance Animation Object graphs th
 - DockView document kind `anim-graph`. The **State Machine | Animation Object** `AnimEditorModeBar` sits outside DockView; each mode has its own DockView surface, Windows list and Focus keep-list, persisted as `layout.json` `{ animEditorMode, stateMachine, animationObject }`. Only the active mode stays mounted.
 - Rule palettes (`animationGraphHost: "rule"`) allow `anim.state.*`, pure nodes and Get Variable only; Object palettes (`"object"`) add `anim.event.*`; Actor palettes hide both and show `anim.actor.*`. Protected nodes: initialize/update events and Enter/Exit sinks.
 - One directed `(from, to)` pair is one visual edge; Both Ways is two rows drawn as one edge. Extra rows warn `anim.duplicateTransition`.
+- A selected state and a selected transition exclude each other; Open Rule selects the rule's transition. The State Machine passes the selected transition to `GraphEditor.selectedEdgeId` as its drawn edge (a reverse row maps to its pair's edge), so the wire stays highlighted when a rule closes.
 - State names must be non-empty and unique (trimmed, case-insensitive). Diagnostics publish only for the active mode.
 - Renaming or retyping a variable rewrites bound Get/Set nodes in `animationObject` and every rule graph.

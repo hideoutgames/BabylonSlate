@@ -30,6 +30,8 @@ import {
 } from "@haptic/anim-graph";
 import {
   AssetPicker,
+  ModuleCard,
+  ModuleStage,
   PanelFrame,
   PinTypePicker,
   PropertyGrid,
@@ -46,7 +48,7 @@ import {
   FieldLabel,
 } from "@haptic/ui/components/field";
 import { Input } from "@haptic/ui/components/input";
-import { ChevronRightIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, Trash2Icon } from "lucide-react";
 import {
   GRAPH_DEFAULT_ZOOM,
   GraphEditor,
@@ -523,6 +525,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     selectedId,
     selectedIds,
     setSelectedIds,
+    selectedTransitionId,
     setSelectedTransitionId,
     focusedNodeId,
     openTransitionId,
@@ -610,6 +613,15 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       })),
     };
   }, [doc, catalog]);
+  // The wire of the transition the Inspector shows: a Both Ways pair is one wire under its first row's id.
+  const selectedEdgeId = useMemo(() => {
+    if (!selectedTransitionId) return undefined;
+    const drawn = new Set(initialGraph.edges.map((edge) => edge.id));
+    if (drawn.has(selectedTransitionId)) return selectedTransitionId;
+    const row = doc.transitions.find((transition) => transition.id === selectedTransitionId);
+    const reverse = row && findReverseTransition(doc.transitions, row.fromStateId, row.toStateId);
+    return reverse && drawn.has(reverse.id) ? reverse.id : undefined;
+  }, [doc.transitions, initialGraph.edges, selectedTransitionId]);
   const ruleMembers = useMemo(
     () => animGraphMembersFromVariables(doc.variables),
     [doc.variables],
@@ -704,32 +716,25 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       <PanelFrame className="flex-1">
         <div className="flex h-full min-h-0 flex-col" data-testid="anim-rule-graph">
           <ToolbarStrip>
-            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-0.5">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                data-testid="anim-rule-breadcrumb-state-machine"
-                onClick={() => {
-                  setSelectedNodeIds([]);
-                  closeTransitionRule();
-                }}
-              >
-                State Machine
-              </Button>
-              <ChevronRightIcon
-                aria-hidden
-                className="size-3.5 shrink-0 text-muted-foreground"
-              />
-              <span
-                aria-current="page"
-                className="truncate px-2 text-sm font-medium"
-                data-testid="anim-rule-breadcrumb"
-              >
-                {transitionLabel(doc, openTransition)}
-              </span>
-            </nav>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="anim-rule-back"
+              onClick={() => {
+                setSelectedNodeIds([]);
+                closeTransitionRule();
+              }}
+            >
+              <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+              Back To State Machine
+            </Button>
+            <span
+              className="min-w-0 truncate px-1 text-sm font-medium"
+              data-testid="anim-rule-title"
+            >
+              {transitionLabel(doc, openTransition)}
+            </span>
           </ToolbarStrip>
           <GraphEditor
             key={openTransition.id}
@@ -780,6 +785,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           }}
           diagnostics={graphDiagnostics}
           selectedNodeId={selectedId ?? undefined}
+          selectedEdgeId={selectedEdgeId}
           focusedNodeId={focusTransition?.fromStateId ?? focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined}
           connectEndMode="zone-add-node"
           connectionMode="loose"
@@ -820,6 +826,8 @@ function transitionPropertyRows(
   titleFromSource: boolean,
 ): {
   title: string;
+  /** What the card shows while collapsed. */
+  summary: string;
   rows: PropertyRow[];
   openRuleId: string;
   reverseRuleId: string | null;
@@ -835,7 +843,8 @@ function transitionPropertyRows(
   return {
     title: titleFromSource
       ? transitionLabel(doc, transition)
-      : `Transition To ${target}`,
+      : `To ${target}`,
+    summary: `${transition.blendSeconds} s · ${reverse ? "Both Ways" : "One Way"}`,
     rows: [
       {
         id: `${transition.id}-blendSeconds`,
@@ -893,6 +902,8 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   } = useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
   const [clipNameOpen, setClipNameOpen] = useState(false);
+  // Transition cards start open; collapsing one is remembered while the document is open.
+  const [collapsedTransitionIds, setCollapsedTransitionIds] = useState<ReadonlySet<string>>(() => new Set());
   if (openTransitionId) {
     return <InspectorPanel {..._props} />;
   }
@@ -1127,65 +1138,84 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           {playbackRows.length > 0 ? (
             <PropertyGrid title="Playback" rows={playbackRows} />
           ) : null}
-          {transitionBlocks.map((block) => (
-            <div
-              key={block.openRuleId}
-              className="flex flex-col"
-              data-testid={`anim-graph-transition-${block.openRuleId}`}
+          {transitionBlocks.length > 0 ? (
+            <ModuleStage
+              id="anim-graph-transitions"
+              title={selected ? "Transitions" : "Transition"}
+              accentRole="flow"
             >
-              <PropertyGrid title={block.title} rows={block.rows} />
-              <div className="flex flex-wrap gap-1 border-b border-border/30 px-2 py-1.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid={`anim-graph-open-rule-${block.openRuleId}`}
-                  onClick={() => openTransitionRule(block.openRuleId)}
+              {transitionBlocks.map((block) => (
+                <ModuleCard
+                  key={block.openRuleId}
+                  id={block.openRuleId}
+                  title={block.title}
+                  summary={block.summary}
+                  open={!collapsedTransitionIds.has(block.openRuleId)}
+                  onOpenChange={(open) =>
+                    setCollapsedTransitionIds((current) => {
+                      const next = new Set(current);
+                      if (open) next.delete(block.openRuleId);
+                      else next.add(block.openRuleId);
+                      return next;
+                    })
+                  }
+                  data-testid={`anim-graph-transition-${block.openRuleId}`}
                 >
-                  Open Rule
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid={`anim-graph-flip-direction-${block.openRuleId}`}
-                  disabled={Boolean(block.reverseRuleId)}
-                  onClick={() => {
-                    const next = flipTransitionDirection(doc, block.openRuleId);
-                    const flipped = next.transitions.find(
-                      (row) => row.id === block.openRuleId,
-                    );
-                    commit(next);
-                    if (flipped) setSelectedId(flipped.fromStateId);
-                  }}
-                >
-                  Flip Direction
-                </Button>
-                {block.reverseRuleId ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    data-testid={`anim-graph-open-rule-${block.reverseRuleId}`}
-                    onClick={() => openTransitionRule(block.reverseRuleId!)}
-                  >
-                    Open Reverse Rule
-                  </Button>
-                ) : null}
-                {breakpointStore && graphGuid
-                  ? [block.openRuleId, block.reverseRuleId].map((id, index) => id ? (
-                      <TransitionBreakpointButton
-                        key={id}
-                        store={breakpointStore}
-                        location={{ assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId: id }}
-                        label={() => stateMachineBreakpointLabel(doc, id, assetName)}
-                        reverse={index === 1}
-                      />
-                    ) : null)
-                  : null}
-              </div>
-            </div>
-          ))}
+                  <PropertyGrid rows={block.rows} />
+                  <div className="flex flex-wrap gap-1 px-2 py-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid={`anim-graph-open-rule-${block.openRuleId}`}
+                      onClick={() => openTransitionRule(block.openRuleId)}
+                    >
+                      Open Rule
+                    </Button>
+                    {block.reverseRuleId ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        data-testid={`anim-graph-open-rule-${block.reverseRuleId}`}
+                        onClick={() => openTransitionRule(block.reverseRuleId!)}
+                      >
+                        Open Reverse Rule
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid={`anim-graph-flip-direction-${block.openRuleId}`}
+                      disabled={Boolean(block.reverseRuleId)}
+                      onClick={() => {
+                        const next = flipTransitionDirection(doc, block.openRuleId);
+                        const flipped = next.transitions.find(
+                          (row) => row.id === block.openRuleId,
+                        );
+                        commit(next);
+                        if (flipped) setSelectedId(flipped.fromStateId);
+                      }}
+                    >
+                      Flip Direction
+                    </Button>
+                    {breakpointStore && graphGuid
+                      ? [block.openRuleId, block.reverseRuleId].map((id, index) => id ? (
+                          <TransitionBreakpointButton
+                            key={id}
+                            store={breakpointStore}
+                            location={{ assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId: id }}
+                            label={() => stateMachineBreakpointLabel(doc, id, assetName)}
+                            reverse={index === 1}
+                          />
+                        ) : null)
+                      : null}
+                  </div>
+                </ModuleCard>
+              ))}
+            </ModuleStage>
+          ) : null}
         </div>
       ) : (
         <p

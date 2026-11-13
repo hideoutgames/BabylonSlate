@@ -12,9 +12,9 @@ Double-tap an Animation Graph to open it. A mode switch at the top of the editor
 
 **State Machine**
 
-- **Graph**: each state is a node. Drag from one state to another to add a transition. Select the blend dot on a wire to edit that transition.
+- **Graph**: each state is a node. Drag from one state to another to add a transition. Select a wire or its blend dot to edit that transition.
 - **Variables**: the graph's variables and its states. **Add Variable** and **Add State** add rows; the entry state shows an **Entry** badge.
-- **Inspector**: settings for the selected state or transition. With several states selected, it shows the **Clip** and **Playback** settings they all have, with **Mixed Values** where they differ; **Clip Asset** appears only when they all play the same **Clip Kind**. An edit changes every selected state, and typing a sum such as `Mixed Values+4` in **Speed** changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Names, the entry state and transitions are edited one state at a time.
+- **Inspector**: settings for the selected state or transition. With several states selected, it shows the **Clip** and **Playback** settings they all have, with **Mixed Values** where they differ; **Clip Asset** appears only when they all play the same **Clip Kind**. An edit changes every selected state, and typing a sum such as `Mixed Values+4` in **Speed** changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Names, the entry state and transitions are edited one state at a time. A state's outgoing transitions are listed under **Transitions**, one card each; collapse a card to see only its blend time and direction.
 - **Compiler Results**: errors and warnings.
 
 **Animation Object**
@@ -41,7 +41,7 @@ A script graph that runs for each Animation Graph component using the graph. It 
 | Blend Time | How long the old clip blends into the new one. |
 | Priority | When several transitions leave a state, the lower number is checked first. |
 | Direction | **One Way** or **Both Ways**. Both Ways adds the reverse transition. |
-| Open Rule | Opens the transition's rule graph. The transition fires when its **Exit State** and **Enter State** nodes are both true. An unconnected one counts as true. |
+| Open Rule | Opens the transition's rule graph. The transition fires when its **Exit State** and **Enter State** nodes are both true. An unconnected one counts as true. **Back To State Machine** returns to the graph with the transition selected. |
 | Flip Direction | Swaps the source and target of a One Way transition. |
 
 Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule graphs read them with Get Variable nodes.
@@ -50,7 +50,7 @@ Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule graphs rea
 
 Start a Simulation with the graph open and pick an actor in **Debug Instance**. In **State Machine** mode the states the graph plays light up, and a transition lights up when it is taken. **Animation Object** mode lights up the nodes that run, like a Class. See [Watch a graph run](../debugging/index.md#watch-a-graph-run).
 
-To stop the game when the graph enters a state, choose **Add Breakpoint** from the state's menu. To stop it when a transition is taken, select the transition or its state and choose **Add Breakpoint** in **Details**; a Both Ways transition also has **Add Reverse Breakpoint**. **Edit Breakpoint…** makes one stop only on a given hit. See [Breakpoints](../debugging/index.md#breakpoints).
+To stop the game when the graph enters a state, choose **Add Breakpoint** from the state's menu. To stop it when a transition is taken, select the transition or its state and choose **Add Breakpoint** in the **Inspector**; a Both Ways transition also has **Add Reverse Breakpoint**. **Edit Breakpoint…** makes one stop only on a given hit. See [Breakpoints](../debugging/index.md#breakpoints).
 
 ## Notes
 

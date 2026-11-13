@@ -311,9 +311,33 @@
 }
 
 
-.anim-graph-canvas .react-flow__arrowhead polyline {
-  stroke: var(--graph-link) !important;
-  fill: var(--graph-link) !important;
+/* Transition arrowheads are the wire's own markers, so they follow its hover and selection colour. */
+.anim-transition-arrow polyline {
+  stroke: var(--graph-link);
+  fill: var(--graph-link);
+}
+
+.react-flow__edge:hover .anim-transition-arrow polyline {
+  stroke: var(--foreground);
+  fill: var(--foreground);
+}
+
+.react-flow__edge.selected .anim-transition-arrow polyline {
+  stroke: var(--graph-state-selected);
+  fill: var(--graph-state-selected);
+}
+
+/*
+ * A hit band of the same width on screen at every zoom: 20px with a mouse, a touch target on touch.
+ * It needs a stroke paint: Chromium hit-tests an unpainted stroke only on some wires (level ones missed clicks on one side).
+ */
+.anim-transition-hit {
+  stroke: transparent;
+  stroke-width: calc(var(--anim-transition-hit, 20px) / var(--anim-transition-zoom, 1));
+}
+
+:where(.touch-ui) .anim-transition-hit {
+  --anim-transition-hit: var(--touch-target, 44px);
 }
 
 .anim-transition-badge {
@@ -429,6 +453,10 @@
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge-path {
   stroke: color-mix(in oklch, var(--selection) var(--run-flash), var(--graph-link)) !important;
   stroke-width: calc(2.5px * var(--graph-pin-scale, 1)) !important;
+}
+
+.anim-graph-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--foreground) !important;
 }
 
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge.selected .react-flow__edge-path {
