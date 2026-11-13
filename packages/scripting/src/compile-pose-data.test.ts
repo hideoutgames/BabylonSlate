@@ -25,7 +25,7 @@ function fixture() {
   ]);
   const node = (id: string, typeId: string, properties: Record<string, unknown> = {}): GraphNode =>
     ({ id, typeId, position: { x: 0, y: 0 }, properties, pins: registry.get(typeId)!.pins(properties) });
-  const graph: LogicGraph = { id: "pose-locomotion/run", kind: "event", nodes: [], edges: [] };
+  const graph: LogicGraph = { id: "pose-run", kind: "event", nodes: [], edges: [] };
   const wire = (from: string, output: string, to: string, input: string) =>
     graph.edges.push({ id: `edge-${graph.edges.length}`, sourceNodeId: from, sourcePinId: output, targetNodeId: to, targetPinId: input });
   return { registry, graph, node, wire };

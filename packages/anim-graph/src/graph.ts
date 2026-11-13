@@ -1,13 +1,10 @@
 import type { GraphClassMember, SerializedGraph } from "@haptic/core";
 import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
-  ANIM_POSE_OUTPUT_NODE_ID,
-  createAnimGraphGraph,
+  ANIM_FRAME_OUTPUT_TYPE,
   createStateGraph,
   isPoseClipNodeType,
   isPoseOutputType,
-  isPoseStateMachineType,
-  poseOutputType,
   type AnimPoseDimension,
 } from "./pose-graph";
 
@@ -44,7 +41,7 @@ export interface AnimGraphVariable {
 }
 
 export interface AnimTransition {
-  /** Unique in the document, across its State Machines: rule scripts are named by it. */
+  /** Unique in the document: rule scripts are named by it. */
   id: string;
   fromStateId: string;
   toStateId: string;
@@ -58,9 +55,8 @@ export interface AnimTransition {
   targetHandle?: string;
 }
 
+/** The graph's root: its states, the one it enters first, and the transitions between them. */
 export interface AnimStateMachine {
-  id: string;
-  name: string;
   entryStateId: string;
   states: AnimState[];
   transitions: AnimTransition[];
@@ -74,23 +70,19 @@ export interface AnimGraphDocument {
    */
   skeletonGuid: string | null;
   variables: AnimGraphVariable[];
-  /** The top-level pose graph: State Machine nodes and pose nodes into its Output Pose. */
-  animGraph: SerializedGraph;
-  /** The State Machines the Anim Graph's State Machine nodes name (`data.machineId`). */
-  stateMachines: AnimStateMachine[];
+  stateMachine: AnimStateMachine;
   animationObject: SerializedGraph;
 }
 
-/** Where a graph sits in a document: the Anim Graph, a State Machine, a state's graph or a transition's rule. */
+/** Where a graph sits in a document: the State Machine, a state's graph or a transition's rule. */
 export type AnimGraphLocation =
-  | { kind: "anim" }
-  | { kind: "machine"; machineId: string }
-  | { kind: "state"; machineId: string; stateId: string }
-  | { kind: "rule"; machineId: string; transitionId: string };
+  | { kind: "machine" }
+  | { kind: "state"; stateId: string }
+  | { kind: "rule"; transitionId: string };
 
-/** The key a pose graph's compiled data module and player clocks are filed under. */
-export function animPoseGraphKey(location: { kind: "anim" } | { kind: "state"; machineId: string; stateId: string }): string {
-  return location.kind === "anim" ? "anim" : `${location.machineId}/${location.stateId}`;
+/** The key a state graph's compiled data module and player clocks are filed under: the state's id. */
+export function animPoseGraphKey(stateId: string): string {
+  return stateId;
 }
 
 export interface AnimTransitionDecision {
@@ -107,11 +99,11 @@ export interface AnimGraphInputs {
     transition: AnimTransition,
     facts: AnimStateFacts,
   ) => AnimTransitionDecision | undefined;
-  /** `machine` took `transition`, a self-transition included: at most one per State Machine per evaluation. */
-  transitionTaken?: (transition: AnimTransition, machine: AnimStateMachine) => void;
+  /** The State Machine took `transition`, a self-transition included: at most one per evaluation. */
+  transitionTaken?: (transition: AnimTransition) => void;
   /**
-   * The wired data inputs of a pose graph this tick (`animPoseGraphKey`), from its compiled module, given the facts
-   * of the state that owns it (null for the Anim Graph). Unlisted inputs use the values stored on their nodes.
+   * The wired data inputs of a state graph this tick (`animPoseGraphKey`), from its compiled module, given the facts
+   * of its state (null when it is entered). Unlisted inputs use the values stored on their nodes.
    */
   poseData?: (graphKey: string, facts: AnimStateFacts | null) => AnimPoseData | undefined;
 }
@@ -136,7 +128,7 @@ export interface AnimStateFacts {
 }
 
 export interface AnimClipLayer {
-  /** The state that plays it, or "" for a player in the Anim Graph itself. */
+  /** The state whose graph plays it. */
   stateId: string;
   clipAssetGuid: string;
   clipName: string;
@@ -148,7 +140,7 @@ export interface AnimClipLayer {
   flipY?: boolean;
 }
 
-/** One State Machine's evaluation: its active state, the state's clock and the blend in progress. */
+/** The State Machine's evaluation: its active state, the state's clock and the blend in progress. */
 export interface AnimMachineEvalState {
   stateId: string;
   normalisedTime: number;
@@ -169,12 +161,8 @@ export interface AnimPlayerClock {
   normalised: number;
 }
 
-/**
- * The whole graph's evaluation. Its top-level state fields are the primary State Machine's (the first one the Anim
- * Graph plays), which Get Current State, Jump To State and the debugger follow.
- */
+/** The whole graph's evaluation: the State Machine's, with its players, selectors and clip layers. */
 export interface AnimEvalState extends AnimMachineEvalState {
-  machines: Record<string, AnimMachineEvalState>;
   /** Player clocks by `graphKey#nodeId`. */
   players: Record<string, AnimPlayerClock>;
   /** Blend Poses By Bool / Int input weights by `graphKey#nodeId`. */
@@ -186,7 +174,7 @@ export interface AnimDiagnostic {
   code: string;
   message: string;
   nodeId?: string;
-  /** The graph the node is in; absent means the primary State Machine. */
+  /** The graph the node is in; absent means the State Machine. */
   location?: AnimGraphLocation;
   severity: "error" | "warning";
 }
@@ -301,32 +289,30 @@ export function createDefaultTransitionRuleGraph(): SerializedGraph {
   };
 }
 
-/** A new graph: Locomotion → Output Pose, whose Idle state plays one (unset) clip. */
+/** A new graph: a State Machine whose Idle state plays one (unset) clip. */
 export function createDefaultAnimGraph(
   name = "Locomotion",
   options: { dimension?: AnimGraphDimension; skeletonGuid?: string | null } = {},
 ): AnimGraphDocument {
   const dimension = options.dimension ?? "3d";
-  const machine: AnimStateMachine = {
-    id: "locomotion",
-    name: "Locomotion",
-    entryStateId: "idle",
-    states: [{ id: "idle", name: "Idle", position: defaultAnimStatePosition(0), stateGraph: createStateGraph(dimension) }],
-    transitions: [],
-  };
   return {
     name,
     skeletonGuid: dimension === "3d" ? options.skeletonGuid ?? null : null,
     variables: [],
-    animGraph: createAnimGraphGraph(dimension, machine.id),
-    stateMachines: [machine],
+    stateMachine: {
+      entryStateId: "idle",
+      states: [{ id: "idle", name: "Idle", position: defaultAnimStatePosition(0), stateGraph: createStateGraph(dimension) }],
+      transitions: [],
+    },
     animationObject: createDefaultAnimationObjectGraph(),
   };
 }
 
-/** A graph's dimension, read from its Anim Graph's output node (3D unless that says frame). */
-export function animGraphDimension(doc: Pick<AnimGraphDocument, "animGraph">): AnimGraphDimension {
-  return doc.animGraph.nodes.some((node) => node.type === poseOutputType("2d")) ? "2d" : "3d";
+/** A graph's dimension, read from its state graphs' outputs (3D unless one says frame). */
+export function animGraphDimension(doc: Pick<AnimGraphDocument, "stateMachine">): AnimGraphDimension {
+  return doc.stateMachine.states.some((state) => state.stateGraph.nodes.some((node) => node.type === ANIM_FRAME_OUTPUT_TYPE))
+    ? "2d"
+    : "3d";
 }
 
 export function decorateTransitionRuleGraph(
@@ -364,69 +350,34 @@ export function persistTransitionRuleGraph(
   return { nodes: stripped.nodes, edges: stripped.edges };
 }
 
-export function findStateMachine(doc: AnimGraphDocument, machineId: string): AnimStateMachine | undefined {
-  return doc.stateMachines.find((machine) => machine.id === machineId);
-}
-
-/** The State Machines the Anim Graph's State Machine nodes name, in node order. */
-export function animGraphMachineIds(doc: Pick<AnimGraphDocument, "animGraph">): string[] {
-  const ids: string[] = [];
-  for (const node of doc.animGraph.nodes) {
-    const id = isPoseStateMachineType(node.type) && typeof node.data.machineId === "string" ? node.data.machineId : "";
-    if (id && !ids.includes(id)) ids.push(id);
-  }
-  return ids;
-}
-
-/**
- * The State Machine Get Current State, Jump To State and the debugger follow: the first one the Anim Graph names,
- * else the first in the document.
- */
-export function primaryStateMachine(doc: AnimGraphDocument): AnimStateMachine | undefined {
-  for (const id of animGraphMachineIds(doc)) {
-    const machine = findStateMachine(doc, id);
-    if (machine) return machine;
-  }
-  return doc.stateMachines[0];
-}
-
-/** Every pose graph in the document with its key and location: the Anim Graph, then each state's graph. */
+/** Every state graph in the document with its key and location. */
 export function animPoseGraphs(doc: AnimGraphDocument): Array<{
   key: string;
   graph: SerializedGraph;
-  location: { kind: "anim" } | { kind: "state"; machineId: string; stateId: string };
+  location: { kind: "state"; stateId: string };
 }> {
-  return [
-    { key: "anim", graph: doc.animGraph, location: { kind: "anim" } },
-    ...doc.stateMachines.flatMap((machine) => machine.states.map((state) => {
-      const location = { kind: "state" as const, machineId: machine.id, stateId: state.id };
-      return { key: animPoseGraphKey(location), graph: state.stateGraph, location };
-    })),
-  ];
+  return doc.stateMachine.states.map((state) => ({
+    key: animPoseGraphKey(state.id),
+    graph: state.stateGraph,
+    location: { kind: "state", stateId: state.id },
+  }));
 }
 
-/** Every transition with its State Machine. */
-export function animTransitions(doc: AnimGraphDocument): Array<{ machine: AnimStateMachine; transition: AnimTransition }> {
-  return doc.stateMachines.flatMap((machine) => machine.transitions.map((transition) => ({ machine, transition })));
-}
-
-/** Replace one State Machine. */
+/** Replace the State Machine. */
 export function patchStateMachine(
   doc: AnimGraphDocument,
-  machineId: string,
   patch: (machine: AnimStateMachine) => AnimStateMachine,
 ): AnimGraphDocument {
-  return { ...doc, stateMachines: doc.stateMachines.map((machine) => (machine.id === machineId ? patch(machine) : machine)) };
+  return { ...doc, stateMachine: patch(doc.stateMachine) };
 }
 
 /** Replace one state's graph. */
 export function patchStateGraph(
   doc: AnimGraphDocument,
-  machineId: string,
   stateId: string,
   graph: SerializedGraph,
 ): AnimGraphDocument {
-  return patchStateMachine(doc, machineId, (machine) => ({
+  return patchStateMachine(doc, (machine) => ({
     ...machine,
     states: machine.states.map((state) => (state.id === stateId ? { ...state, stateGraph: graph } : state)),
   }));
@@ -448,11 +399,9 @@ export interface AnimClipCatalogEntry {
 }
 
 function locationName(doc: AnimGraphDocument, location: AnimGraphLocation): string {
-  if (location.kind === "anim") return "The Anim Graph";
-  const machine = findStateMachine(doc, location.machineId);
-  if (location.kind === "machine") return `State Machine "${machine?.name ?? location.machineId}"`;
-  if (location.kind === "rule") return `A rule in "${machine?.name ?? location.machineId}"`;
-  const state = machine?.states.find((entry) => entry.id === location.stateId);
+  if (location.kind === "machine") return "The State Machine";
+  if (location.kind === "rule") return "A transition rule";
+  const state = doc.stateMachine.states.find((entry) => entry.id === location.stateId);
   return `State "${state?.name ?? location.stateId}"`;
 }
 
@@ -478,37 +427,7 @@ export function validateAnimGraph(
     }
   }
 
-  // The Anim Graph's State Machine nodes and the machines they name.
-  const named = new Map<string, string>();
-  const anim: AnimGraphLocation = { kind: "anim" };
-  for (const node of doc.animGraph.nodes) {
-    if (!isPoseStateMachineType(node.type)) continue;
-    const machineId = typeof node.data.machineId === "string" ? node.data.machineId : "";
-    if (!findStateMachine(doc, machineId)) {
-      diagnostics.push({ code: "anim.missingMachine", message: "This State Machine node names no State Machine", nodeId: node.id, location: anim, severity: "error" });
-    } else if (named.has(machineId)) {
-      diagnostics.push({ code: "anim.machineReused", message: "Another State Machine node already plays this State Machine", nodeId: node.id, location: anim, severity: "error" });
-    } else {
-      named.set(machineId, node.id);
-    }
-  }
-  const machineNames = new Map<string, string>();
-  const transitionIds = new Set<string>();
-  for (const machine of doc.stateMachines) {
-    const machineLocation: AnimGraphLocation = { kind: "machine", machineId: machine.id };
-    if (!named.has(machine.id)) {
-      diagnostics.push({ code: "anim.unusedMachine", message: `State Machine "${machine.name}" is not in the Anim Graph, so it never plays`, location: anim, severity: "warning" });
-    }
-    const machineKey = machine.name.trim().toLowerCase();
-    if (!machineKey) {
-      diagnostics.push({ code: "anim.emptyMachineName", message: "State Machine names cannot be empty", nodeId: named.get(machine.id), location: anim, severity: "error" });
-    } else if (machineNames.has(machineKey)) {
-      diagnostics.push({ code: "anim.duplicateMachineName", message: `State Machine "${machine.name}" duplicates "${machineNames.get(machineKey)}". Choose a unique name.`, nodeId: named.get(machine.id), location: anim, severity: "error" });
-    } else {
-      machineNames.set(machineKey, machine.name);
-    }
-    diagnostics.push(...validateStateMachine(machine, machineLocation, transitionIds));
-  }
+  diagnostics.push(...validateStateMachine(doc.stateMachine));
 
   // Pose graphs: their output, and the clips their players name.
   const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
@@ -518,9 +437,8 @@ export function validateAnimGraph(
       diagnostics.push({
         code: "anim.missingOutput",
         message: `${locationName(doc, location)} needs exactly one ${animGraphDimension(doc) === "2d" ? "Output Frame" : "Output Pose"} node`,
-        ...(location.kind === "state"
-          ? { nodeId: location.stateId, location: { kind: "machine", machineId: location.machineId } as const }
-          : { location }),
+        nodeId: location.stateId,
+        location: { kind: "machine" },
         severity: "error",
       });
     }
@@ -534,17 +452,15 @@ export function validateAnimGraph(
   return diagnostics;
 }
 
-function validateStateMachine(
-  machine: AnimStateMachine,
-  location: AnimGraphLocation,
-  transitionIds: Set<string>,
-): AnimDiagnostic[] {
+function validateStateMachine(machine: AnimStateMachine): AnimDiagnostic[] {
   const diagnostics: AnimDiagnostic[] = [];
+  const location: AnimGraphLocation = { kind: "machine" };
+  const transitionIds = new Set<string>();
   const stateIds = new Set(machine.states.map((state) => state.id));
   if (!stateIds.has(machine.entryStateId)) {
     diagnostics.push({
       code: "anim.missingEntry",
-      message: `Entry state "${machine.entryStateId}" is not in State Machine "${machine.name}"`,
+      message: `Entry state "${machine.entryStateId}" is not in the State Machine`,
       nodeId: machine.entryStateId,
       location,
       severity: "error",
@@ -795,10 +711,17 @@ function parseTransitions(value: unknown, states: readonly AnimState[]): AnimTra
   return transitions;
 }
 
-function parseStateMachine(value: unknown, index: number, dimension: AnimGraphDimension): AnimStateMachine | null {
-  if (!value || typeof value !== "object") return null;
-  const source = value as Record<string, unknown>;
-  const id = typeof source.id === "string" && source.id !== "" ? source.id : `machine-${index}`;
+/** The dimension stored state graphs say: 2D when any ends in Output Frame. */
+function storedDimension(states: unknown): AnimGraphDimension {
+  if (!Array.isArray(states)) return "3d";
+  return states.some((row) => {
+    const graph = row && typeof row === "object" ? (row as Record<string, unknown>).stateGraph : undefined;
+    return isSerializedGraph(graph) && graph.nodes.some((node) => node?.type === ANIM_FRAME_OUTPUT_TYPE);
+  }) ? "2d" : "3d";
+}
+
+function parseStateMachine(value: unknown, dimension: AnimGraphDimension): AnimStateMachine {
+  const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const states: AnimState[] = [];
   if (Array.isArray(source.states)) {
     for (const row of source.states) {
@@ -818,35 +741,29 @@ function parseStateMachine(value: unknown, index: number, dimension: AnimGraphDi
       ? source.entryStateId
       : states[0]?.id ?? "";
   return {
-    id,
-    name: typeof source.name === "string" && source.name.trim() !== "" ? source.name : "State Machine",
     entryStateId,
     states,
     transitions: parseTransitions(source.transitions, states),
   };
 }
 
+/**
+ * A stored Animation Graph, or null when `value` has no State Machine. `dimension` (the asset type's) fills a state
+ * graph a state lost; without it, the stored state graphs say.
+ */
 export function parseAnimGraphDocument(
   value: unknown,
+  dimension?: AnimGraphDimension,
 ): AnimGraphDocument | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
-  if (!Array.isArray(source.stateMachines) || !isSerializedGraph(source.animGraph)) return null;
-  const dimension = animGraphDimension({ animGraph: source.animGraph });
-  const stateMachines = source.stateMachines
-    .map((row, index) => parseStateMachine(row, index, dimension))
-    .filter((machine): machine is AnimStateMachine => machine !== null);
-  const animGraph = copyGraph(source.animGraph);
-  // A graph that lost its output gets one back.
-  if (!animGraph.nodes.some((node) => isPoseOutputType(node.type))) {
-    animGraph.nodes.push({ id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 560, y: 80 }, data: { __protected: true } });
-  }
+  const machine = source.stateMachine;
+  if (!machine || typeof machine !== "object") return null;
   return {
     name: typeof source.name === "string" && source.name !== "" ? source.name : "Locomotion",
     skeletonGuid: typeof source.skeletonGuid === "string" && source.skeletonGuid.trim() !== "" ? source.skeletonGuid.trim() : null,
     variables: parseVariables(source),
-    animGraph,
-    stateMachines,
+    stateMachine: parseStateMachine(machine, dimension ?? storedDimension((machine as Record<string, unknown>).states)),
     animationObject: parseAnimationObject(source.animationObject),
   };
 }
@@ -885,19 +802,12 @@ export function resolveAnimGraphClips(
 ): AnimGraphDocument {
   if (catalog.length === 0) return doc;
   const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
-  const animGraph = resolvePoseGraphClips(doc.animGraph, byGuid);
-  let changed = animGraph !== doc.animGraph;
-  const stateMachines = doc.stateMachines.map((machine) => {
-    let machineChanged = false;
-    const states = machine.states.map((state) => {
-      const stateGraph = resolvePoseGraphClips(state.stateGraph, byGuid);
-      if (stateGraph === state.stateGraph) return state;
-      machineChanged = true;
-      return { ...state, stateGraph };
-    });
-    if (!machineChanged) return machine;
+  let changed = false;
+  const states = doc.stateMachine.states.map((state) => {
+    const stateGraph = resolvePoseGraphClips(state.stateGraph, byGuid);
+    if (stateGraph === state.stateGraph) return state;
     changed = true;
-    return { ...machine, states };
+    return { ...state, stateGraph };
   });
-  return changed ? { ...doc, animGraph, stateMachines } : doc;
+  return changed ? { ...doc, stateMachine: { ...doc.stateMachine, states } } : doc;
 }

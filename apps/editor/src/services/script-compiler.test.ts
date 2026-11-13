@@ -2043,7 +2043,7 @@ describe("compileAnimGraphScripts", () => {
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
     doc.animationObject = tagMatchGraph("anim.event.update");
-    doc.stateMachines[0]!.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "tag-rule", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0,
       ruleGraph: {
         nodes: [
@@ -2076,7 +2076,7 @@ describe("compileAnimGraphScripts", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
-    doc.stateMachines[0]!.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "idle-to-idle",
       fromStateId: "idle",
       toStateId: "idle",
@@ -2119,7 +2119,7 @@ describe("compileAnimGraphScripts", () => {
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
     doc.variables = [{ id: "var-speed", name: "Speed", typeId: "float", defaultValue: 1 }];
-    const idle = doc.stateMachines[0]!.states[0]!;
+    const idle = doc.stateMachine.states[0]!;
     idle.stateGraph = {
       nodes: [
         ...idle.stateGraph.nodes,
@@ -2188,9 +2188,9 @@ describe("compileAnimGraphScripts", () => {
         position: { x: 99, y: 40 },
       })),
     };
-    nudged.stateMachines = nudged.stateMachines.map((machine) => ({
-      ...machine,
-      states: machine.states.map((state) => ({
+    nudged.stateMachine = {
+      ...nudged.stateMachine,
+      states: nudged.stateMachine.states.map((state) => ({
         ...state,
         position: { x: 50, y: 80 },
         stateGraph: {
@@ -2198,7 +2198,7 @@ describe("compileAnimGraphScripts", () => {
           nodes: state.stateGraph.nodes.map((node) => ({ ...node, position: { x: 7, y: 7 } })),
         },
       })),
-    }));
+    };
     compileAnimGraphScripts(
       [{ guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: nudged }],
       { cache },
@@ -2254,13 +2254,13 @@ describe("compileAnimGraphScripts", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
-    doc.stateMachines[0]!.states.push({
+    doc.stateMachine.states.push({
       id: "run",
       name: "Run",
       position: { x: 300, y: 80 },
-      stateGraph: doc.stateMachines[0]!.states[0]!.stateGraph,
+      stateGraph: doc.stateMachine.states[0]!.stateGraph,
     });
-    doc.stateMachines[0]!.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "idle-to-run",
       fromStateId: "idle",
       toStateId: "run",

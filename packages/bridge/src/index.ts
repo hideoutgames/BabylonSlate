@@ -58,8 +58,7 @@ export {
 } from "./channels";
 export {
   ANIM_OBJECT_DEBUG_GRAPH_ID,
-  animStateMachineDebugGraphId,
-  animStateMachineOfDebugGraphId,
+  ANIM_STATE_MACHINE_DEBUG_GRAPH_ID,
   BT_DEBUG_GRAPH_ID,
   sameDebugObserveTarget,
 } from "./debug-target";

@@ -1,9 +1,6 @@
 import type { SerializedGraph } from "@haptic/core";
 import {
-  animGraphMachineIds,
   animPoseGraphKey,
-  findStateMachine,
-  primaryStateMachine,
   type AnimClipLayer,
   type AnimEvalState,
   type AnimGraphDocument,
@@ -26,7 +23,6 @@ import {
   ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
   isPoseOutputType,
   isPosePlayerType,
-  isPoseStateMachineType,
   poseClipData,
   poseGraphIndex,
   poseInputPins,
@@ -73,14 +69,11 @@ function machineIndex(machine: AnimStateMachine): MachineIndex {
 
 /** Per-evaluation scratch: the previous clocks, the ones this tick writes, and each graph's data. */
 interface EvalContext {
-  doc: AnimGraphDocument;
   inputs: AnimGraphInputs;
   previousPlayers: Readonly<Record<string, AnimPlayerClock>>;
   players: Record<string, AnimPlayerClock>;
   previousSelectors: Readonly<Record<string, number[]>>;
   selectors: Record<string, number[]>;
-  previousMachines: Readonly<Record<string, AnimMachineEvalState>>;
-  machines: Record<string, AnimMachineEvalState>;
 }
 
 interface Clock extends AnimPlayerClock {
@@ -251,14 +244,6 @@ function visitPoseGraph(
       );
       return;
     }
-    if (isPoseStateMachineType(node.type)) {
-      const machine = typeof node.data.machineId === "string" ? findStateMachine(ctx.doc, node.data.machineId) : undefined;
-      if (!machine || ctx.machines[machine.id]) return;
-      for (const layer of evaluateMachine(ctx, machine, dtSeconds)) {
-        if (weight <= 0) continue;
-        layers.push({ ...layer, weight: layer.weight * weight, ...(flipX ? { flipX: !layer.flipX } : {}), ...(flipY ? { flipY: !layer.flipY } : {}) });
-      }
-    }
     // Rest Pose and unknown nodes add no clip: the bones keep their rest pose.
   };
   visit(index.output, 1, false, false);
@@ -320,22 +305,23 @@ function stateStart(state: AnimState, data: AnimPoseData | undefined, durationMs
   return player ? playerStart(player, data, durationMs) : ZERO_CLOCK;
 }
 
-/** One State Machine's tick: run its active state's graph and transitions, and blend; returns its layers. */
-function evaluateMachine(ctx: EvalContext, machine: AnimStateMachine, dtSeconds: number): readonly AnimClipLayer[] {
+/** The State Machine's tick: run its active state's graph and transitions, and blend. */
+function evaluateMachine(
+  ctx: EvalContext,
+  machine: AnimStateMachine,
+  previous: AnimMachineEvalState | null,
+  dtSeconds: number,
+): { state: AnimMachineEvalState; layers: AnimClipLayer[] } {
   const { states, outgoing: outgoingByState } = machineIndex(machine);
-  const previous = ctx.previousMachines[machine.id] ?? null;
   const entryStateId = states.has(machine.entryStateId) ? machine.entryStateId : machine.states[0]?.id;
   let stateId = previous?.stateId ?? entryStateId;
   if (stateId === undefined || !states.has(stateId)) stateId = entryStateId;
-  if (stateId === undefined) {
-    ctx.machines[machine.id] = idleMachineState(machine.entryStateId);
-    return NO_LAYERS;
-  }
+  if (stateId === undefined) return { state: idleMachineState(machine.entryStateId), layers: [] };
   const current = states.get(stateId)!;
   // A jump leaves the target with a negative time, which enters it fresh.
   const sameState = previous !== null && previous.stateId === stateId && previous.timeMs >= 0;
   const entered = !sameState;
-  const currentKey = animPoseGraphKey({ kind: "state", machineId: machine.id, stateId });
+  const currentKey = animPoseGraphKey(stateId);
   // Data inputs see the state's facts from before this tick's advance.
   const currentData = ctx.inputs.poseData?.(currentKey, previous && sameState ? previous.facts : null);
   const timing = stateTiming(current, currentData);
@@ -366,9 +352,9 @@ function evaluateMachine(ctx: EvalContext, machine: AnimStateMachine, dtSeconds:
     if (decided && !(decided.enter === true && decided.exit === true)) continue;
     nextId = row.toStateId;
     startedBlend = row.blendSeconds > 0 ? row : null;
-    ctx.inputs.transitionTaken?.(row, machine);
+    ctx.inputs.transitionTaken?.(row);
     const next = states.get(nextId)!;
-    const nextKey = animPoseGraphKey({ kind: "state", machineId: machine.id, stateId: nextId });
+    const nextKey = animPoseGraphKey(nextId);
     const nextData = ctx.inputs.poseData?.(nextKey, null);
     const nextTiming = stateTiming(next, nextData);
     const nextStart = stateStart(next, nextData, nextTiming.durationMs);
@@ -395,7 +381,7 @@ function evaluateMachine(ctx: EvalContext, machine: AnimStateMachine, dtSeconds:
   } else if (blendFromStateId && blendFromStateId !== nextId && states.has(blendFromStateId)) {
     blendElapsedMs += Math.max(0, dtSeconds) * 1000;
     const from = states.get(blendFromStateId)!;
-    const fromKey = animPoseGraphKey({ kind: "state", machineId: machine.id, stateId: blendFromStateId });
+    const fromKey = animPoseGraphKey(blendFromStateId);
     fromLayers = visitPoseGraph(ctx, fromKey, from.stateGraph, ctx.inputs.poseData?.(fromKey, null), dtSeconds, false, blendFromStateId);
   } else {
     blendFromStateId = null;
@@ -426,7 +412,7 @@ function evaluateMachine(ctx: EvalContext, machine: AnimStateMachine, dtSeconds:
   layers.push(...scaleLayers(nextLayers, toWeight));
   blendWeights[nextId] = (blendWeights[nextId] ?? 0) + toWeight;
 
-  ctx.machines[machine.id] = {
+  const state: AnimMachineEvalState = {
     stateId: nextId,
     normalisedTime: nextClock.normalised,
     blendWeights,
@@ -437,7 +423,7 @@ function evaluateMachine(ctx: EvalContext, machine: AnimStateMachine, dtSeconds:
     blendSeconds,
     loopCount: nextClock.loopCount,
   };
-  return layers;
+  return { state, layers };
 }
 
 function idleFacts(): AnimStateFacts {
@@ -471,8 +457,8 @@ function idleMachineState(stateId: string): AnimMachineEvalState {
 }
 
 /**
- * Pure `(graph, previous, dt, inputs) → AnimEvalState`: runs the Anim Graph from its output, each State Machine it
- * reaches with its active state's graph, and returns the weighted clip layers render blends.
+ * Pure `(graph, previous, dt, inputs) → AnimEvalState`: runs the State Machine with its active state's graph and
+ * returns the weighted clip layers render blends.
  */
 export function evaluateAnimGraph(
   doc: AnimGraphDocument,
@@ -481,38 +467,24 @@ export function evaluateAnimGraph(
   inputs: AnimGraphInputs,
 ): AnimEvalState {
   const ctx: EvalContext = {
-    doc,
     inputs,
     previousPlayers: previous?.players ?? {},
     players: {},
     previousSelectors: previous?.selectors ?? {},
     selectors: {},
-    previousMachines: previous?.machines ?? {},
-    machines: {},
   };
-  const layers = visitPoseGraph(ctx, "anim", doc.animGraph, inputs.poseData?.("anim", null), dtSeconds, false, "");
-  const primary = primaryStateMachine(doc);
-  const primaryState = (primary && ctx.machines[primary.id]) ?? idleMachineState(primary?.entryStateId ?? "");
-  return { ...primaryState, machines: ctx.machines, players: ctx.players, selectors: ctx.selectors, layers };
+  const { state, layers } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
+  return { ...state, players: ctx.players, selectors: ctx.selectors, layers };
 }
 
-/** An evaluation that starts `machineId` (the primary State Machine when omitted) over in `stateId`. */
+/** An evaluation that starts the State Machine over in `stateId`. */
 export function animEvalWithJump(
   doc: AnimGraphDocument,
   previous: AnimEvalState | null,
   stateId: string,
-  machineId?: string,
 ): AnimEvalState | null {
-  const machine = machineId ? findStateMachine(doc, machineId) : primaryStateMachine(doc);
-  if (!machine || !machine.states.some((state) => state.id === stateId)) return previous;
-  const machines = { ...(previous?.machines ?? {}) };
-  // Unknown to the next evaluation, so it enters the state fresh with no blend.
-  machines[machine.id] = { ...idleMachineState(stateId), timeMs: -1 };
-  const base = previous ?? { ...idleMachineState(stateId), machines: {}, players: {}, selectors: {}, layers: [] };
-  return { ...base, machines };
-}
-
-/** The State Machines a document's Anim Graph plays, for callers listing them. */
-export function playedStateMachines(doc: AnimGraphDocument): AnimStateMachine[] {
-  return animGraphMachineIds(doc).flatMap((id) => findStateMachine(doc, id) ?? []);
+  if (!doc.stateMachine.states.some((state) => state.id === stateId)) return previous;
+  // A negative time is unknown to the next evaluation, so it enters the state fresh with no blend.
+  const base = previous ?? { ...idleMachineState(stateId), players: {}, selectors: {}, layers: [] };
+  return { ...base, ...idleMachineState(stateId), timeMs: -1 };
 }

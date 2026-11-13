@@ -8,11 +8,12 @@ import {
   ANIM_RULE_EXIT_TYPE,
   animEvalWithJump,
   animExitTimeReached,
+  animGraphDimension,
   animGraphMembersFromVariables,
   animPoseGraphs,
   animTransitionEdgeId,
   animTransitionFromDrag,
-  createAnimGraphGraph,
+  transitionAtWire,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
   createStateGraph,
@@ -24,7 +25,6 @@ import {
   patchTransition,
   persistTransitionRuleGraph,
   primaryPosePlayer,
-  primaryStateMachine,
   resolveAnimGraphClips,
   serializedToStateMachine,
   setTransitionBidirectional,
@@ -59,11 +59,11 @@ function transition(id: string, fromStateId: string, toStateId: string, extra: P
   return { id, fromStateId, toStateId, blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(), ...extra };
 }
 
-/** A document whose Anim Graph plays one State Machine, `locomotion`. */
+/** A document whose State Machine holds `states` and `transitions` and enters `entryStateId`. */
 function machineDoc(states: AnimState[], transitions: AnimTransition[] = [], entryStateId = states[0]?.id ?? ""): AnimGraphDocument {
   return {
     ...createDefaultAnimGraph(),
-    stateMachines: [{ id: "locomotion", name: "Locomotion", entryStateId, states, transitions }],
+    stateMachine: { entryStateId, states, transitions },
   };
 }
 
@@ -108,7 +108,7 @@ const closed: AnimGraphInputs = { decideTransition: () => ({ enter: false, exit:
 const weightsByGuid = (current: AnimEvalState) =>
   Object.fromEntries(current.layers.map((layer) => [layer.clipAssetGuid, Number(layer.weight.toFixed(3))]));
 
-describe("anim graph evaluator: State Machines", () => {
+describe("anim graph evaluator: State Machine", () => {
   it("stays on the looping entry clip and wraps time", () => {
     const next = run(machineDoc([state("idle")]), 0.6, 2, closed);
     expect(next.stateId).toBe("idle");
@@ -289,11 +289,11 @@ describe("anim graph evaluator: pose graphs", () => {
     const computed = evaluateAnimGraph(doc, null, 0.1, {
       poseData: (key) => {
         graphKeys.push(key);
-        return key === "locomotion/move" ? { blend: { alpha: 0.6 } } : undefined;
+        return key === "move" ? { blend: { alpha: 0.6 } } : undefined;
       },
     });
     expect(weightsByGuid(computed)).toEqual({ walk: 0.4, run: 0.6 });
-    expect(graphKeys).toEqual(["anim", "locomotion/move"]);
+    expect(graphKeys).toEqual(["move"]);
   });
 
   it("eases Blend Poses By Bool to the other input over that input's blend time", () => {
@@ -332,24 +332,8 @@ describe("anim graph evaluator: pose graphs", () => {
     const current = evaluateAnimGraph(withStateGraph(graph), null, 0.5, {});
     expect(current.facts.durationSeconds).toBe(2);
     expect(current.normalisedTime).toBeCloseTo(0.75);
-    expect(current.players["locomotion/move#walk"]?.normalised).toBeCloseTo(0.75);
-    expect(current.players["locomotion/move#run"]?.normalised).toBeCloseTo(0.5);
-  });
-
-  it("plays each State Machine node in the Anim Graph, scaled by the nodes above it", () => {
-    const doc = machineDoc([state("idle")]);
-    doc.stateMachines.push({ id: "upper", name: "Upper", entryStateId: "wave", states: [state("wave")], transitions: [] });
-    doc.animGraph = poseGraph("3d", [
-      node("mix", "anim.pose.blend", { "default:alpha": 0.5 }),
-      node("lower", "anim.pose.stateMachine", { machineId: "locomotion" }),
-      node("top", "anim.pose.stateMachine", { machineId: "upper" }),
-    ], [wire("lower", "mix", "a"), wire("top", "mix", "b")]);
-    const current = evaluateAnimGraph(doc, null, 0.1, {});
-    expect(weightsByGuid(current)).toEqual({ "idle-clip": 0.5, "wave-clip": 0.5 });
-    expect(Object.keys(current.machines).sort()).toEqual(["locomotion", "upper"]);
-    expect(current.machines.upper?.stateId).toBe("wave");
-    // The primary State Machine is the first the Anim Graph names.
-    expect(current.stateId).toBe("idle");
+    expect(current.players["move#walk"]?.normalised).toBeCloseTo(0.75);
+    expect(current.players["move#run"]?.normalised).toBeCloseTo(0.5);
   });
 
   it("shows one 2D frame through Select Frame By Bool and mirrors it with Flip Frame", () => {
@@ -364,45 +348,48 @@ describe("anim graph evaluator: pose graphs", () => {
         node("down", "anim.frame.spritePlayer", { assetGuid: "down", durationMs: 400 }),
       ], [wire("pick", "flip", "frame"), wire("up", "pick", "trueFrame"), wire("down", "pick", "falseFrame")]),
     }]);
-    doc.animGraph = createAnimGraphGraph("2d", "locomotion");
     const current = evaluateAnimGraph(doc, null, 0.1, {});
     expect(current.layers).toEqual([expect.objectContaining({ clipAssetGuid: "down", clipKind: "sprite", flipX: true, weight: 1 })]);
     // The hidden input keeps its own time, from its Start Frame.
-    expect(current.players["locomotion/jump#up"]?.normalised).toBeCloseTo(0.75);
+    expect(current.players["jump#up"]?.normalised).toBeCloseTo(0.75);
   });
 });
 
 describe("anim graph document", () => {
-  it("creates an Anim Graph that plays Locomotion, whose Idle state plays one player", () => {
+  it("creates a State Machine that enters its Idle state, which plays one player", () => {
     const doc = createDefaultAnimGraph("Hero", { skeletonGuid: "rig" });
     expect(doc.skeletonGuid).toBe("rig");
     expect(doc.animationObject.nodes.map((row) => row.type)).toEqual([ANIM_EVENT_INITIALIZE_TYPE, ANIM_EVENT_UPDATE_TYPE]);
-    expect(doc.animGraph.nodes.map((row) => row.type).sort()).toEqual(["anim.pose.output", "anim.pose.stateMachine"]);
-    expect(primaryStateMachine(doc)?.states.map((row) => row.name)).toEqual(["Idle"]);
-    expect(singlePlayerOf(doc.stateMachines[0]!.states[0]!.stateGraph)?.type).toBe("anim.pose.sequencePlayer");
+    expect(doc.stateMachine.entryStateId).toBe("idle");
+    expect(doc.stateMachine.states.map((row) => row.name)).toEqual(["Idle"]);
+    expect(singlePlayerOf(doc.stateMachine.states[0]!.stateGraph)?.type).toBe("anim.pose.sequencePlayer");
+    expect(animGraphDimension(doc)).toBe("3d");
     expect(validateAnimGraph(doc)).toEqual([]);
     const twoD = createDefaultAnimGraph("Robot", { dimension: "2d", skeletonGuid: "rig" });
     expect(twoD.skeletonGuid).toBeNull();
-    expect(twoD.animGraph.nodes.map((row) => row.type).sort()).toEqual(["anim.frame.output", "anim.frame.stateMachine"]);
-    expect(singlePlayerOf(twoD.stateMachines[0]!.states[0]!.stateGraph)?.type).toBe("anim.frame.spritePlayer");
+    expect(singlePlayerOf(twoD.stateMachine.states[0]!.stateGraph)?.type).toBe("anim.frame.spritePlayer");
+    expect(animGraphDimension(twoD)).toBe("2d");
   });
 
   it("round-trips through parsing, keeping graphs and the trimmed Skeleton", () => {
     const doc = createDefaultAnimGraph("Hero", { skeletonGuid: "rig" });
     const parsed = parseAnimGraphDocument(JSON.parse(JSON.stringify({ ...doc, skeletonGuid: " rig " })))!;
     expect(parsed).toEqual(doc);
-    expect(animPoseGraphs(parsed).map((entry) => entry.key)).toEqual(["anim", "locomotion/idle"]);
+    expect(animPoseGraphs(parsed).map((entry) => entry.key)).toEqual(["idle"]);
     expect(parseAnimGraphDocument({ name: "Old", states: [], transitions: [] })).toBeNull();
   });
 
-  it("gives back an Anim Graph output and a state graph a document lost", () => {
-    const doc = createDefaultAnimGraph();
-    const raw = JSON.parse(JSON.stringify(doc)) as Record<string, unknown>;
-    raw.animGraph = { nodes: [], edges: [] };
-    (raw.stateMachines as Array<{ states: Array<Record<string, unknown>> }>)[0]!.states[0]!.stateGraph = undefined;
-    const parsed = parseAnimGraphDocument(raw)!;
-    expect(parsed.animGraph.nodes.map((row) => row.type)).toEqual(["anim.pose.output"]);
-    expect(singlePlayerOf(parsed.stateMachines[0]!.states[0]!.stateGraph)).not.toBeNull();
+  it("gives back a state graph a state lost, of the asset type's dimension or else the one its other states say", () => {
+    const doc = createDefaultAnimGraph("Robot", { dimension: "2d" });
+    doc.stateMachine.states.push({ ...doc.stateMachine.states[0]!, id: "run", name: "Run" });
+    const raw = JSON.parse(JSON.stringify(doc)) as { stateMachine: { states: Array<Record<string, unknown>> } };
+    const players = (dimension?: AnimGraphDimension) =>
+      parseAnimGraphDocument(raw, dimension)!.stateMachine.states.map((row) => singlePlayerOf(row.stateGraph)?.type);
+    raw.stateMachine.states[1]!.stateGraph = undefined;
+    expect(players()).toEqual(["anim.frame.spritePlayer", "anim.frame.spritePlayer"]);
+    // With every state graph lost, only the asset type says the graph is 2D.
+    raw.stateMachine.states[0]!.stateGraph = undefined;
+    expect(players("2d")).toEqual(["anim.frame.spritePlayer", "anim.frame.spritePlayer"]);
   });
 
   it("keeps Tag variable types and normalizes serialized TagContainer defaults", () => {
@@ -443,13 +430,13 @@ describe("validateAnimGraph", () => {
   const codes = (doc: AnimGraphDocument, catalog: AnimClipCatalogEntry[] = [], dimension?: AnimGraphDimension) =>
     validateAnimGraph(doc, catalog, { dimension }).map((row) => [row.code, row.nodeId ?? null, row.location?.kind ?? null]);
 
-  it("reports State Machine problems in their State Machine", () => {
+  it("reports State Machine problems in the State Machine", () => {
     const doc = machineDoc(
       [state("idle"), { ...state("run"), name: " idle " }],
       [transition("a", "idle", "run"), transition("b", "idle", "run"), transition("c", "idle", "ghost")],
       "gone",
     );
-    doc.stateMachines[0]!.transitions[0]!.ruleGraph = { nodes: [], edges: [] };
+    doc.stateMachine.transitions[0]!.ruleGraph = { nodes: [], edges: [] };
     expect(codes(doc)).toEqual([
       ["anim.missingEntry", "gone", "machine"],
       ["anim.duplicateStateName", "run", "machine"],
@@ -459,21 +446,11 @@ describe("validateAnimGraph", () => {
     ]);
   });
 
-  it("checks State Machine nodes, State Machine names, transition ids across machines and each pose graph's output", () => {
-    const doc = machineDoc([state("idle")], [transition("t", "idle", "idle")]);
-    doc.stateMachines.push({ id: "spare", name: "Locomotion", entryStateId: "idle", states: [state("idle")], transitions: [transition("t", "idle", "idle")] });
-    doc.animGraph = poseGraph("3d", [
-      node("m", "anim.pose.stateMachine", { machineId: "locomotion" }),
-      node("again", "anim.pose.stateMachine", { machineId: "locomotion" }),
-      node("lost", "anim.pose.stateMachine", { machineId: "nope" }),
-    ]);
-    doc.stateMachines[0]!.states[0]!.stateGraph = { nodes: [player("p")], edges: [] };
+  it("checks that transition ids are unique and each state graph has its output", () => {
+    const doc = machineDoc([state("idle"), state("run")], [transition("t", "idle", "run"), transition("t", "run", "idle")]);
+    doc.stateMachine.states[0]!.stateGraph = { nodes: [player("p")], edges: [] };
     expect(codes(doc)).toEqual([
-      ["anim.machineReused", "again", "anim"],
-      ["anim.missingMachine", "lost", "anim"],
-      ["anim.unusedMachine", null, "anim"],
-      ["anim.duplicateMachineName", null, "anim"],
-      ["anim.duplicateTransitionId", "idle", "machine"],
+      ["anim.duplicateTransitionId", "run", "machine"],
       ["anim.missingOutput", "idle", "machine"],
     ]);
   });
@@ -508,8 +485,6 @@ describe("validateAnimGraph", () => {
 
 describe("State Machine canvas", () => {
   const twoStates = (): AnimStateMachine => ({
-    id: "locomotion",
-    name: "Locomotion",
     entryStateId: "idle",
     states: [state("idle"), { ...state("run"), position: { x: 300, y: 80 } }],
     transitions: [transition("idle-to-run", "idle", "run", { blendSeconds: 0.25 })],
@@ -541,13 +516,13 @@ describe("State Machine canvas", () => {
   it("draws a Both Ways pair as one edge, keeps both rows on round-trip, and names the edge either direction lights", () => {
     const doc = machineDoc(twoStates().states, twoStates().transitions);
     const both = setTransitionBidirectional(doc, "idle-to-run", true);
-    const machine = both.stateMachines[0]!;
+    const machine = both.stateMachine;
     expect(machine.transitions).toHaveLength(2);
     const serialized = stateMachineToSerialized(machine);
     expect(serialized.edges).toEqual([expect.objectContaining({ id: "idle-to-run", type: "animTransitionBoth" })]);
     expect(serializedToStateMachine(serialized, machine, "3d").transitions).toHaveLength(2);
     expect(animTransitionEdgeId(machine.transitions, "run", "idle")).toBe("idle-to-run");
-    expect(setTransitionBidirectional(both, "idle-to-run", false).stateMachines[0]!.transitions).toHaveLength(1);
+    expect(setTransitionBidirectional(both, "idle-to-run", false).stateMachine.transitions).toHaveLength(1);
   });
 
   it("draws a reverse on other sides as its own wire, and only a mirrored reverse on the pair's one wire", () => {
@@ -595,7 +570,7 @@ describe("State Machine canvas", () => {
       transition("run-to-idle", "run", "idle"),
       transition("idle-to-jump", "idle", "jump"),
     ])));
-    const machine = parseAnimGraphDocument(stored)!.stateMachines[0]!;
+    const machine = parseAnimGraphDocument(stored)!.stateMachine;
     expect(machine.transitions.map((row) => [row.id, row.sourceHandle, row.targetHandle])).toEqual([
       ["idle-to-run", "right-out", "left-in"],
       ["run-to-idle", "left-out", "right-in"],
@@ -605,6 +580,21 @@ describe("State Machine canvas", () => {
       ["idle-to-run", "animTransitionBoth"],
       ["idle-to-jump", "animTransition"],
     ]);
+  });
+
+  it("opens the transition of a double-clicked wire, and on a shared wire the direction pointing nearer", () => {
+    const states = [state("idle"), { ...state("run"), position: { x: 400, y: 0 } }];
+    const forward = transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" });
+    const reverse = transition("run-to-idle", "run", "idle", { sourceHandle: "left-out", targetHandle: "right-in" });
+    const shared = { entryStateId: "idle", states, transitions: [forward, reverse] };
+    // Near Run, Idle → Run's arrowhead; near Idle, Run → Idle's.
+    expect(transitionAtWire(shared, "idle-to-run", { x: 380, y: 45 })?.id).toBe("idle-to-run");
+    expect(transitionAtWire(shared, "idle-to-run", { x: 220, y: 45 })?.id).toBe("run-to-idle");
+    expect(transitionAtWire(shared, "idle-to-run", null)?.id).toBe("idle-to-run");
+    // A reverse on other sides is its own wire.
+    const own = { ...shared, transitions: [forward, { ...reverse, sourceHandle: "top-out", targetHandle: "top-in" }] };
+    expect(transitionAtWire(own, "idle-to-run", { x: 220, y: 45 })?.id).toBe("idle-to-run");
+    expect(transitionAtWire(own, "missing", null)).toBeUndefined();
   });
 
   it("builds a dragged transition from the dragged state's side to the side it is released on", () => {
@@ -627,7 +617,7 @@ describe("State Machine canvas", () => {
 
   it("flips a one-way transition with its handles, and leaves a Both Ways pair alone", () => {
     const doc = machineDoc(twoStates().states, [transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" })]);
-    expect(flipTransitionDirection(doc, "idle-to-run").stateMachines[0]!.transitions[0]).toMatchObject({
+    expect(flipTransitionDirection(doc, "idle-to-run").stateMachine.transitions[0]).toMatchObject({
       fromStateId: "run",
       toStateId: "idle",
       sourceHandle: "left-out",
@@ -636,14 +626,6 @@ describe("State Machine canvas", () => {
     const both = setTransitionBidirectional(doc, "idle-to-run", true);
     expect(flipTransitionDirection(both, "idle-to-run")).toBe(both);
   });
-
-  it("edits a transition in whichever State Machine holds it", () => {
-    const doc = machineDoc([state("idle")]);
-    doc.stateMachines.push({ ...twoStates(), id: "upper", name: "Upper" });
-    const next = patchTransition(doc, "idle-to-run", { priority: 3 });
-    expect(next.stateMachines[0]).toBe(doc.stateMachines[0]);
-    expect(next.stateMachines[1]!.transitions[0]!.priority).toBe(3);
-  });
 });
 
 describe("resolveAnimGraphClips", () => {
@@ -651,17 +633,18 @@ describe("resolveAnimGraphClips", () => {
     const doc = machineDoc([
       { ...state("idle"), stateGraph: createStateGraph("3d", { assetGuid: "walk" }) },
       { ...state("model"), stateGraph: createStateGraph("3d", { assetGuid: "hero-model" }) },
+      { ...state("robot"), stateGraph: createStateGraph("2d", { assetGuid: "robot" }) },
     ]);
-    doc.animGraph = poseGraph("3d", [node("frames", "anim.frame.spritePlayer", { assetGuid: "robot" })]);
     const resolved = resolveAnimGraphClips(doc, [
       { guid: "walk", type: "Animation", name: "Hero_Walk", clipName: "Walk", durationMs: 800 },
       { guid: "hero-model", type: "Model", name: "Hero" },
       { guid: "robot", type: "SpriteAnimation", name: "Robot", durationMs: 400, frameCount: 4 },
     ]);
-    expect(singlePlayerOf(resolved.stateMachines[0]!.states[0]!.stateGraph)?.data).toMatchObject({ assetGuid: "walk", clipName: "Walk", durationMs: 800 });
+    const [idle, model, robot] = resolved.stateMachine.states.map((row) => singlePlayerOf(row.stateGraph)?.data);
+    expect(idle).toMatchObject({ assetGuid: "walk", clipName: "Walk", durationMs: 800 });
     // A guid naming a Model is not an Animation: it stays unresolved and plays nothing.
-    expect(singlePlayerOf(resolved.stateMachines[0]!.states[1]!.stateGraph)?.data.clipName).toBeUndefined();
-    expect(resolved.animGraph.nodes[0]!.data).toMatchObject({ assetGuid: "robot", clipName: "", durationMs: 400, frameCount: 4 });
+    expect(model?.clipName).toBeUndefined();
+    expect(robot).toMatchObject({ assetGuid: "robot", clipName: "", durationMs: 400, frameCount: 4 });
     expect(resolveAnimGraphClips(doc, [])).toBe(doc);
   });
 });

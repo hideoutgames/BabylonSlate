@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ANIM_POSE_OUTPUT_NODE_ID,
-  createAnimGraphGraph,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
   type AnimGraphDocument,
 } from "@haptic/anim-graph";
-import { animStateMachineDebugGraphId } from "@haptic/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { ScriptBreakpoints, type BreakpointHit } from "./script-breakpoints";
@@ -40,7 +39,7 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
 describe("AnimGraphRuntime", () => {
   it("stops on a state when the graph starts in it, jumps to it or enters it, and on a transition it takes", () => {
     const document = createDefaultAnimGraph();
-    const machine = document.stateMachines[0]!;
+    const machine = document.stateMachine;
     machine.states.push({ ...machine.states[0]!, id: "run", name: "Run" });
     // A rule that decides nothing passes, so Idle goes to Run on every tick it is in Idle.
     machine.transitions.push({
@@ -48,14 +47,14 @@ describe("AnimGraphRuntime", () => {
     });
     const hits: BreakpointHit[] = [];
     const breakpoints = new ScriptBreakpoints((hit) => hits.push(hit));
-    breakpoints.set(["idle", "go", "run"].map((nodeId) => ({ assetGuid: "graph", graphId: animStateMachineDebugGraphId("locomotion"), nodeId })));
+    breakpoints.set(["idle", "go", "run"].map((nodeId) => ({ assetGuid: "graph", graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId })));
     const { actors, runtime } = setup(document, 1, breakpoints);
     const component = actors[0]!.components[0]!;
     const stops = () => hits.map(({ nodeId, event }) => `${nodeId} ${event}`);
 
     runtime.tick(0.1);
     expect(stops()).toEqual(["idle entered", "go taken", "run entered"]);
-    expect(hits[0]).toMatchObject({ assetGuid: "graph", graphId: animStateMachineDebugGraphId("locomotion"), instance: component, owner: actors[0] });
+    expect(hits[0]).toMatchObject({ assetGuid: "graph", graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, instance: component, owner: actors[0] });
 
     hits.length = 0;
     runtime.tick(0.1);
@@ -84,7 +83,7 @@ describe("AnimGraphRuntime", () => {
   it("starts a component switched to another graph at that graph's entry state without the old graph's jump", () => {
     const withRun = (name: string) => {
       const document = createDefaultAnimGraph(name);
-      const machine = document.stateMachines[0]!;
+      const machine = document.stateMachine;
       machine.states.push({ ...machine.states[0]!, id: "run", name: "Run" });
       return document;
     };
@@ -124,8 +123,7 @@ describe("AnimGraphRuntime", () => {
 
   it("hands the sprite collider the frame a 2D graph shows, mirrored by Flip Frame", () => {
     const document = createDefaultAnimGraph("Robot", { dimension: "2d" });
-    document.animGraph = createAnimGraphGraph("2d", "locomotion");
-    document.stateMachines[0]!.states[0]!.stateGraph = {
+    document.stateMachine.states[0]!.stateGraph = {
       nodes: [
         { id: "flip", type: "anim.frame.flip", position: { x: 0, y: 0 }, data: { "default:flipX": true } },
         { id: "walk", type: "anim.frame.spritePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "walk", durationMs: 400 } },

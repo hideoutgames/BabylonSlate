@@ -1,6 +1,5 @@
 import {
   ANIM_POSE_OUTPUT_NODE_ID,
-  createAnimGraphGraph,
   createDefaultAnimationObjectGraph,
   poseOutputType,
   posePlayerType,
@@ -69,13 +68,12 @@ export function playerState(
   return { id, name, position: { x, y }, stateGraph: poseGraph(dimension, "player", [playerNode(dimension, "player", 60, 80, clip, options)]) };
 }
 
-/** A graph with one State Machine (`machine`) into the Anim Graph's output. */
-export function singleMachineGraph(
+/** An Animation Graph: its State Machine's states and transitions, and its variables. */
+export function stateMachineGraph(
   dimension: AnimGraphDimension,
   options: {
     name: string;
     skeletonGuid: string | null;
-    machineName: string;
     entryStateId: string;
     states: AnimState[];
     transitions: AnimTransition[];
@@ -86,14 +84,11 @@ export function singleMachineGraph(
     name: options.name,
     skeletonGuid: dimension === "3d" ? options.skeletonGuid : null,
     variables: options.variables,
-    animGraph: createAnimGraphGraph(dimension, "machine"),
-    stateMachines: [{
-      id: "machine",
-      name: options.machineName,
+    stateMachine: {
       entryStateId: options.entryStateId,
       states: options.states,
       transitions: options.transitions,
-    }],
+    },
     animationObject: createDefaultAnimationObjectGraph(),
   };
 }

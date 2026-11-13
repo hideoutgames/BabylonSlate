@@ -364,7 +364,7 @@ describe("packedContentFromGame", () => {
 
   it("resolves packed Animation Graph clips from Animation assets and maps clip guids", async () => {
     const graph = createDefaultAnimGraph("Hero");
-    graph.stateMachines[0]!.states[0]!.stateGraph = createStateGraph("3d", { assetGuid: "hero-idle-anim", durationMs: 1000 });
+    graph.stateMachine.states[0]!.stateGraph = createStateGraph("3d", { assetGuid: "hero-idle-anim", durationMs: 1000 });
     const packed = await exportGame({
       platform: "web",
       bundleDebugger: false,
@@ -403,7 +403,7 @@ describe("packedContentFromGame", () => {
     if (!packed.ok) return;
     const content = packedContentFromGame(await loadGameFromFiles(packed.value.files));
     const loaded = parseAnimGraphDocument(content.animGraphs.find((entry) => entry.guid === "anim-1")?.document);
-    expect(singlePlayerOf(loaded!.stateMachines[0]!.states[0]!.stateGraph)?.data).toMatchObject({
+    expect(singlePlayerOf(loaded!.stateMachine.states[0]!.stateGraph)?.data).toMatchObject({
       assetGuid: "hero-idle-anim",
       clipName: "Idle",
       durationMs: 1800,

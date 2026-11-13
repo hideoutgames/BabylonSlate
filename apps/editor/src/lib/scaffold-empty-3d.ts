@@ -248,7 +248,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
     skeletonGuid: skeleton.header.guid,
   });
   // The Idle state plays the Mannequin's idle Animation.
-  const animGraph: AnimGraphDocument = patchStateGraph(defaults, "locomotion", "idle", createStateGraph("3d", {
+  const animGraph: AnimGraphDocument = patchStateGraph(defaults, "idle", createStateGraph("3d", {
     assetGuid: idle.header.guid,
     clipName: idlePayload.clipName,
     ...(idlePayload.durationMs ? { durationMs: idlePayload.durationMs } : {}),

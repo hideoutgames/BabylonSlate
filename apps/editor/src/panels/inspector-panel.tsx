@@ -26,8 +26,6 @@ import {
 } from "@haptic/core";
 import {
   animGraphMembersFromVariables,
-  animTransitions,
-  findStateMachine,
   patchStateGraph,
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
@@ -174,19 +172,16 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const openRuleId = animCanvas === "stateMachine"
     ? animEditing?.openTransitionId ?? null
     : null;
-  const ruleEntry =
+  const ruleTransition =
     openRuleId && parsedAnim
-      ? (animTransitions(parsedAnim).find(({ transition }) => transition.id === openRuleId) ?? null)
+      ? (parsedAnim.stateMachine.transitions.find((transition) => transition.id === openRuleId) ?? null)
       : null;
-  const ruleTransition = ruleEntry?.transition ?? null;
-  // The Anim Graph or a state's graph on show in the State Machine mode (a rule takes precedence).
+  // A state's graph on show on the State Machine canvas (a rule takes precedence).
   const animLocation = animCanvas === "stateMachine" && !ruleTransition ? animEditing?.location ?? null : null;
   const poseState = animLocation?.kind === "state" && parsedAnim
-    ? findStateMachine(parsedAnim, animLocation.machineId)?.states.find((row) => row.id === animLocation.stateId) ?? null
+    ? parsedAnim.stateMachine.states.find((row) => row.id === animLocation.stateId) ?? null
     : null;
-  const poseSource = parsedAnim
-    ? animLocation?.kind === "anim" ? parsedAnim.animGraph : poseState?.stateGraph ?? null
-    : null;
+  const poseSource = poseState?.stateGraph ?? null;
   const graph = useMemo(
     () => poseSource && parsedAnim
       ? { ...poseSource, members: animGraphMembersFromVariables(parsedAnim.variables) }
@@ -195,7 +190,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           ...decorateTransitionRuleGraph(
             ruleTransition.ruleGraph,
             !findReverseTransition(
-              ruleEntry?.machine.transitions ?? [],
+              parsedAnim.stateMachine.transitions,
               ruleTransition.fromStateId,
               ruleTransition.toStateId,
             ),
@@ -203,17 +198,14 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           members: animGraphMembersFromVariables(parsedAnim.variables),
         }
       : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
-    [doc?.content, doc?.ref.kind, parsedAnim, ruleEntry, ruleTransition, poseSource],
+    [doc?.content, doc?.ref.kind, parsedAnim, ruleTransition, poseSource],
   );
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
-    if (poseSource && parsedAnim && animLocation) {
-      const stored = { nodes: next.nodes, edges: next.edges };
+    if (poseState && parsedAnim) {
       void applyAssetDocumentChange(
         documentId,
-        (animLocation.kind === "state"
-          ? patchStateGraph(parsedAnim, animLocation.machineId, animLocation.stateId, stored)
-          : { ...parsedAnim, animGraph: stored }) as unknown as Record<string, unknown>,
+        patchStateGraph(parsedAnim, poseState.id, { nodes: next.nodes, edges: next.edges }) as unknown as Record<string, unknown>,
       );
       return;
     }

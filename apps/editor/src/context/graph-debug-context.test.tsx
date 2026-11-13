@@ -58,7 +58,7 @@ describe("run traces of Behaviour Trees and Animation Graphs", () => {
     () => ({
       store: useGraphDebugStore()!,
       tree: useBehaviourTreeRunTrace(treeGuid),
-      machine: useAnimStateMachineRunTrace(graphGuid, "locomotion"),
+      machine: useAnimStateMachineRunTrace(graphGuid, true),
       object: useAnimObjectGraphRunTrace("assets/Loco.anim3d.hasset", graphGuid),
     }),
     { wrapper: GraphDebugProvider },

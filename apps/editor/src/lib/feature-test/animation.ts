@@ -2,7 +2,6 @@ import {
   ANIM_EXIT_TIME_REACHED_TYPE,
   ANIM_RULE_ENTER_NODE_ID,
   animGraphMembersFromVariables,
-  createDefaultAnimationObjectGraph,
   createDefaultTransitionRuleGraph,
   validateAnimGraph,
   type AnimGraphDocument,
@@ -33,7 +32,7 @@ import {
   type Vec3,
 } from "./context";
 import { classGraph, gChain, gExec, getVar, gNode, gWire, setVar, varMember } from "./graph";
-import { playerNode, playerState, poseGraph, singleMachineGraph, type FeatureTestClip } from "./anim-pose-graphs";
+import { playerNode, playerState, poseGraph, stateMachineGraph, type FeatureTestClip } from "./anim-pose-graphs";
 import { stressPoint } from "./layout";
 
 /**
@@ -307,10 +306,9 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
       gWire("get-cheer", "value", "cheer-or-rest", "active"),
     ]),
   };
-  return singleMachineGraph("3d", {
+  return stateMachineGraph("3d", {
     name: NAMES.locomotionGraph,
     skeletonGuid: requireRef(ctx.assets.mannequin.skeletonGuid, "the Mannequin Skeleton"),
-    machineName: "Locomotion",
     entryStateId: "idle",
     states: [
       playerState("3d", "idle", "Idle", 80, 220, clip(MANNEQUIN_CLIPS.idle)),
@@ -339,7 +337,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
 function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const clips = ctx.assets.doorAnimations;
   // The door is one animated mesh, so its Animations have no Skeleton and neither does the graph.
-  const base = { name: NAMES.doorGraph, skeletonGuid: null, machineName: "Door", variables: [] };
+  const base = { name: NAMES.doorGraph, skeletonGuid: null, variables: [] };
   if (clips.open && clips.close) {
     const open = animationClip(ctx, clips.open);
     // Close picks pose 0 (its clip) through Blend Poses By Int; pose 1 holds the open door with a Sequence Evaluator.
@@ -356,7 +354,7 @@ function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
         gWire("held-open", "pose", "pick", "pose1"),
       ]),
     };
-    return singleMachineGraph("3d", {
+    return stateMachineGraph("3d", {
       ...base,
       entryStateId: "open",
       states: [playerState("3d", "open", "Open", 80, 220, open, { loop: false, playRate: 0.5 }), close],
@@ -368,7 +366,7 @@ function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
     });
   }
   const swing = requireRef(clips["open-and-close"] ?? Object.values(clips)[0], "a cabin-door-rotate Animation");
-  return singleMachineGraph("3d", {
+  return stateMachineGraph("3d", {
     ...base,
     entryStateId: "swing",
     states: [playerState("3d", "swing", "Swing", 80, 220, animationClip(ctx, swing))],
@@ -404,69 +402,42 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
 }
 
 /**
- * Rig_Medium: the Anim Graph blends a Locomotion State Machine (Idle ⇄ Move on Speed) with a Gestures State
- * Machine (Interact → Pick Up → Interact) by Cheer, through Blend Poses By Bool. Locomotion is first, so it is the
- * primary State Machine.
+ * Rig_Medium: Idle ⇄ Move on Speed; Cheer starts the gestures, Interact → Pick Up by exit time, and Pick Up returns
+ * to Idle once it has played.
  */
 function adventurerGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const animations = ctx.assets.kaykit.mediumAnimations;
   const clip = (name: string) => kaykitClip(ctx, animations, name);
-  const cheer = animGraphMembersFromVariables([CHEER])[0]!;
-  return {
+  return stateMachineGraph("3d", {
     name: NAMES.adventurerGraph,
     skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
-    variables: [SPEED, CHEER],
-    animGraph: poseGraph("3d", "gesture-or-move", [
-      gNode("gesture-or-move", "anim.pose.blendByBool", 500, 120, { trueBlendSeconds: 0.3, falseBlendSeconds: 0.3 }),
-      gNode("machine-locomotion", "anim.pose.stateMachine", 60, 220, { machineId: "locomotion" }),
-      gNode("machine-gestures", "anim.pose.stateMachine", 60, 40, { machineId: "gestures" }),
-      getVar("get-cheer", cheer, 60, 400),
-    ], [
-      gWire("machine-gestures", "pose", "gesture-or-move", "truePose"),
-      gWire("machine-locomotion", "pose", "gesture-or-move", "falsePose"),
-      gWire("get-cheer", "value", "gesture-or-move", "active"),
-    ]),
-    stateMachines: [
-      {
-        id: "locomotion",
-        name: "Locomotion",
-        entryStateId: "idle",
-        states: [
-          playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
-          moveState(clip(KAYKIT_CLIPS.walk), clip(KAYKIT_CLIPS.run), 400),
-        ],
-        transitions: [
-          transition("adventurer-idle-to-move", "idle", "move", 0.25, 0, FORWARD, [compare(SPEED, "math.greaterEqual", WALK_SPEED)]),
-          transition("adventurer-move-to-idle", "move", "idle", 0.25, 0, BACKWARD, [compare(SPEED, "math.less", WALK_SPEED)]),
-        ],
-      },
-      {
-        id: "gestures",
-        name: "Gestures",
-        entryStateId: "interact",
-        states: [
-          playerState("3d", "interact", "Interact", 80, 220, clip(KAYKIT_CLIPS.interact), { loop: false }),
-          playerState("3d", "pick-up", "Pick Up", 400, 220, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
-        ],
-        // Non-looping states: Exit Time 1 passes once the clip has finished.
-        transitions: [
-          transition("adventurer-interact-to-pick-up", "interact", "pick-up", 0.2, 0, FORWARD, [exitTime(1)]),
-          transition("adventurer-pick-up-to-interact", "pick-up", "interact", 0.2, 0, BACKWARD, [exitTime(1)]),
-        ],
-      },
+    entryStateId: "idle",
+    states: [
+      playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
+      moveState(clip(KAYKIT_CLIPS.walk), clip(KAYKIT_CLIPS.run), 400),
+      playerState("3d", "interact", "Interact", 80, 480, clip(KAYKIT_CLIPS.interact), { loop: false }),
+      playerState("3d", "pick-up", "Pick Up", 400, 480, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
     ],
-    animationObject: createDefaultAnimationObjectGraph(),
-  };
+    variables: [SPEED, CHEER],
+    // Idle → Move wins over Idle → Interact (lower priority number runs first). Non-looping states: Exit Time 1
+    // passes once the clip has finished.
+    transitions: [
+      transition("adventurer-idle-to-move", "idle", "move", 0.25, 0, FORWARD, [compare(SPEED, "math.greaterEqual", WALK_SPEED)]),
+      transition("adventurer-move-to-idle", "move", "idle", 0.25, 0, BACKWARD, [compare(SPEED, "math.less", WALK_SPEED)]),
+      transition("adventurer-idle-to-interact", "idle", "interact", 0.2, 1, DOWNWARD, [flag(CHEER)]),
+      transition("adventurer-interact-to-pick-up", "interact", "pick-up", 0.2, 0, FORWARD, [exitTime(1)]),
+      transition("adventurer-pick-up-to-idle", "pick-up", "idle", 0.2, 0, UPWARD, [exitTime(1)]),
+    ],
+  });
 }
 
 /** Rig_Large: its library has walking and running only, so one Move state blends them by Speed. */
 function largeMannequinGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const animations = ctx.assets.kaykit.largeAnimations;
   const clip = (name: string) => kaykitClip(ctx, animations, name);
-  return singleMachineGraph("3d", {
+  return stateMachineGraph("3d", {
     name: NAMES.largeGraph,
     skeletonGuid: requireRef(ctx.assets.kaykit.largeSkeleton, "the KayKit Rig_Large Skeleton"),
-    machineName: "Locomotion",
     entryStateId: "move",
     states: [moveState(clip(KAYKIT_CLIPS.walk), clip(KAYKIT_CLIPS.run), 80)],
     transitions: [],

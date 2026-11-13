@@ -14,14 +14,13 @@ function syncGraph(
   return { nodes: next.nodes, edges: next.edges };
 }
 
-/** Rewrite Get/Set nodes on the Animation Object, every transition rule and every pose graph. */
+/** Rewrite Get/Set nodes on the Animation Object, every transition rule and every state graph. */
 export function commitAnimGraphVariables(
   doc: AnimGraphDocument,
   variables: AnimGraphVariable[],
 ): AnimGraphDocument {
   let animationObject = doc.animationObject;
-  let animGraph = doc.animGraph;
-  let stateMachines = doc.stateMachines;
+  let stateMachine = doc.stateMachine;
   for (const variable of variables) {
     const previous = doc.variables.find((row) => row.id === variable.id);
     if (
@@ -34,15 +33,14 @@ export function commitAnimGraphVariables(
     const declared = animGraphMembersFromVariables([variable])[0];
     if (!declared) continue;
     animationObject = syncGraph(animationObject, declared);
-    animGraph = syncGraph(animGraph, declared);
-    stateMachines = stateMachines.map((machine) => ({
-      ...machine,
-      states: machine.states.map((state) => ({ ...state, stateGraph: syncGraph(state.stateGraph, declared) })),
-      transitions: machine.transitions.map((transition) => ({
+    stateMachine = {
+      ...stateMachine,
+      states: stateMachine.states.map((state) => ({ ...state, stateGraph: syncGraph(state.stateGraph, declared) })),
+      transitions: stateMachine.transitions.map((transition) => ({
         ...transition,
         ruleGraph: syncGraph(transition.ruleGraph, declared),
       })),
-    }));
+    };
   }
-  return { ...doc, animationObject, animGraph, stateMachines, variables };
+  return { ...doc, animationObject, stateMachine, variables };
 }

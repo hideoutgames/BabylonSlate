@@ -32,7 +32,6 @@ const out = (type: typeof POSE) => pin("pose", type === FRAME ? "frame" : "pose"
 export const animPoseNodes: NodeDefinition[] = [
   // 3D pose graphs.
   poseNode("anim.pose.output", "Output Pose", "The pose this graph produces.", () => [pin("pose", "pose", "in", POSE)]),
-  poseNode("anim.pose.stateMachine", "State Machine", "The pose of a State Machine's active state, blended through its transitions.", () => [out(POSE)]),
   poseNode("anim.pose.sequencePlayer", "Sequence Player", "Plays an Animation.", () => [
     pin("playRate", "playRate", "in", FLOAT, "data", true, 1),
     pin("startPosition", "startPosition", "in", FLOAT, "data", true, 0),
@@ -62,7 +61,6 @@ export const animPoseNodes: NodeDefinition[] = [
   ]),
   // 2D frame graphs.
   poseNode("anim.frame.output", "Output Frame", "The frame this graph shows.", () => [pin("frame", "frame", "in", FRAME)]),
-  poseNode("anim.frame.stateMachine", "State Machine", "The frame of a State Machine's active state.", () => [out(FRAME)]),
   poseNode("anim.frame.spritePlayer", "Sprite Animation Player", "Plays a Sprite Animation.", () => [
     pin("playRate", "playRate", "in", FLOAT, "data", true, 1),
     pin("startFrame", "startFrame", "in", INT, "data", true, 0),

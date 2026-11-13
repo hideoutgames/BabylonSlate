@@ -174,7 +174,7 @@ describe("Animation Graph debugging", () => {
   ]);
   const locomotion = (): AnimGraphDocument => {
     const document = createDefaultAnimGraph("Locomotion");
-    const machine = document.stateMachines[0]!;
+    const machine = document.stateMachine;
     machine.states.push({ ...machine.states[0]!, id: "run", name: "Run", position: { x: 280, y: 0 } });
     const rule = createDefaultAnimGraph().animationObject;
     // A mirrored pair (Idle's right to Run's left and back), drawn as one wire.
@@ -215,16 +215,16 @@ describe("Animation Graph debugging", () => {
     let mark = commands.length;
     runtime.tick();
     runtime.tick();
-    expect(graphs(mark, "state-machine:locomotion")).toEqual([
-      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["idle"], edges: [], values: [] },
-      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["idle"], edges: [], values: [] },
+    expect(graphs(mark, "state-machine")).toEqual([
+      { assetGuid: "loco", graphId: "state-machine", nodes: ["idle"], edges: [], values: [] },
+      { assetGuid: "loco", graphId: "state-machine", nodes: ["idle"], edges: [], values: [] },
     ]);
 
     runtime.getWorld().findActor("h1")!.components[0]!.setVariable("go", true);
     mark = commands.length;
     runtime.tick();
-    expect(graphs(mark, "state-machine:locomotion")).toEqual([
-      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["run"], edges: ["idle-run"], values: [] },
+    expect(graphs(mark, "state-machine")).toEqual([
+      { assetGuid: "loco", graphId: "state-machine", nodes: ["run"], edges: ["idle-run"], values: [] },
     ]);
   });
 
@@ -238,8 +238,8 @@ describe("Animation Graph debugging", () => {
     const mark = commands.length;
     runtime.tick();
     // Run -> Idle is its own row, drawn on the Idle -> Run edge; it blends, so Run is still sampled.
-    expect(graphs(mark, "state-machine:locomotion")).toEqual([
-      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["idle", "run"], edges: ["idle-run"], values: [] },
+    expect(graphs(mark, "state-machine")).toEqual([
+      { assetGuid: "loco", graphId: "state-machine", nodes: ["idle", "run"], edges: ["idle-run"], values: [] },
     ]);
   });
 

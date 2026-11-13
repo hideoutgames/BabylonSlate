@@ -235,8 +235,8 @@ export interface GraphEditorProps {
   onNavigateRequest?: (request: NavigateRequest) => void;
   /** Double-tap / double-click a node (task class navigation). */
   onNodeDoubleClick?: (nodeId: string) => void;
-  /** Double-click an edge (Animation Graph transition rules). */
-  onEdgeDoubleClick?: (edgeId: string) => void;
+  /** Double-click an edge (Animation Graph transition rules), with where it was double-clicked in flow coordinates. */
+  onEdgeDoubleClick?: (edgeId: string, point: { x: number; y: number }) => void;
   /** Selected canvas edge ids; not part of the serialized graph. */
   onEdgeSelectionChange?: (edgeIds: string[]) => void;
   paletteNodes?: PaletteNode[];
@@ -3311,7 +3311,7 @@ function GraphEditorCanvas({
           onConnectStart={handleConnectStart}
           onConnectEnd={handleConnectEnd}
           onNodeDoubleClick={(_, node) => onNodeDoubleClick?.(node.id)}
-          onEdgeDoubleClick={(_, edge) => onEdgeDoubleClick?.(edge.id)}
+          onEdgeDoubleClick={(event, edge) => onEdgeDoubleClick?.(edge.id, screenToFlowPosition({ x: event.clientX, y: event.clientY }))}
           isValidConnection={readOnly ? () => false : isValidConnection}
           onPaneClick={handlePaneClick}
           onPaneContextMenu={handlePaneContextMenu}

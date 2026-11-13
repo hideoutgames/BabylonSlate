@@ -8,11 +8,10 @@ import {
 } from "react";
 import { useNodeSelection } from "../lib/node-selection";
 
-/** The graph the Animation Graph editor shows: the Anim Graph, a State Machine or a state's graph. */
+/** The graph the Animation Graph editor shows: the State Machine or a state's graph. */
 export type AnimEditorLocation =
-  | { kind: "anim" }
-  | { kind: "machine"; machineId: string }
-  | { kind: "state"; machineId: string; stateId: string };
+  | { kind: "machine" }
+  | { kind: "state"; stateId: string };
 
 /** The Animation Graph canvas last brought forward: the State Machine side (Graph) or the Animation Object script. */
 export type AnimCanvas = "stateMachine" | "animationObject";
@@ -32,7 +31,7 @@ export interface AnimGraphEditingContextValue {
   openTransitionId: string | null;
   openTransitionRule: (id: string) => void;
   closeTransitionRule: () => void;
-  /** Where the editor is; null opens the primary State Machine. */
+  /** Where the editor is; null opens the State Machine. */
   location: AnimEditorLocation | null;
   /** Shows another graph, closing an open rule and clearing the selection. */
   navigate: (location: AnimEditorLocation) => void;

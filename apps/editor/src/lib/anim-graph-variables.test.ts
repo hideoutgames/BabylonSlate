@@ -51,7 +51,7 @@ describe("commitAnimGraphVariables", () => {
         title: "Get Speed",
       },
     });
-    doc.stateMachines[0]!.transitions = [
+    doc.stateMachine.transitions = [
       {
         id: "idle-to-run",
         fromStateId: "idle",
@@ -68,9 +68,8 @@ describe("commitAnimGraphVariables", () => {
       position: { x: 0, y: 0 },
       data: { variableId: "var-speed", variableName: "Speed", typeId: "float", title: "Get Speed" },
     });
-    const idle = doc.stateMachines[0]!.states[0]!;
+    const idle = doc.stateMachine.states[0]!;
     idle.stateGraph = { ...idle.stateGraph, nodes: [...idle.stateGraph.nodes, getSpeed("get-speed-state")] };
-    doc.animGraph = { ...doc.animGraph, nodes: [...doc.animGraph.nodes, getSpeed("get-speed-anim")] };
 
     const next = commitAnimGraphVariables(doc, [
       { id: "var-speed", name: "MoveSpeed", typeId: "int", defaultValue: 0 },
@@ -90,13 +89,13 @@ describe("commitAnimGraphVariables", () => {
       title: "Set MoveSpeed",
     });
     expect(
-      next.stateMachines[0]!.transitions[0]?.ruleGraph.nodes.find((node) => node.id === "get-speed-rule")
+      next.stateMachine.transitions[0]?.ruleGraph.nodes.find((node) => node.id === "get-speed-rule")
         ?.data,
     ).toMatchObject({
       variableName: "MoveSpeed",
       title: "Get MoveSpeed",
     });
-    for (const graph of [next.stateMachines[0]!.states[0]!.stateGraph, next.animGraph]) {
+    for (const graph of [next.stateMachine.states[0]!.stateGraph]) {
       expect(graph.nodes.find((node) => node.id.startsWith("get-speed-"))?.data).toMatchObject({
         variableName: "MoveSpeed",
         typeId: "int",
