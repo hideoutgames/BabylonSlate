@@ -58,7 +58,9 @@ export function attachSkeletonPreview(
   ];
   const joints: PreviewJoint[] = [];
   const skins = new Map<Skeleton, AbstractMesh>();
-  if (kind === "skin") {
+  // A Skeleton shared with skinned Models may preview an animation library: nothing to draw, so its rig is its nodes.
+  const animationLibrary = meshes.every((mesh) => !mesh.skeleton && mesh.getTotalVertices() === 0);
+  if (kind === "skin" && !animationLibrary) {
     for (const mesh of meshes) {
       if (!mesh.skeleton || skins.has(mesh.skeleton)) continue;
       const skeleton = mesh.skeleton;

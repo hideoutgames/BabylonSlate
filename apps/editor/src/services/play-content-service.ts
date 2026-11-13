@@ -847,12 +847,15 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const bytes = new Map<string, Uint8Array>();
     const animationRows = workingAssetSources(assets.filter((asset) =>
       asset.header.type === "Animation" && (!requiredGuids || requiredGuids.has(asset.header.guid))));
+    const modelSkeletons = new Map(assets.filter((asset) => asset.header.type === "Model")
+      .map((asset) => [asset.header.guid, normalizeModelPayload(asset.header.payload ?? {}).skeletonGuid] as const));
     const models = [...new Set(modelGuidsForPlayRetarget(
       [
         ...modelAssetGuidsFromScene(scene),
         ...extraScenes.flatMap((entry) => modelAssetGuidsFromScene(entry)),
       ],
       animationRows,
+      modelSkeletons,
     ))].flatMap((guid) => { const asset = byGuid.get(guid); return asset ? [{ guid, asset }] : []; });
     const sources = await mapBounded(models, COLLECTOR_READS, ({ asset }) => readAssetChunk(asset.path, "source"));
     for (const [index, { guid }] of models.entries()) {

@@ -1877,6 +1877,13 @@ describe("content-browser-helpers", () => {
         canRetarget: true,
       }),
     ).toEqual(["duplicate", "retarget", "move", "copy", "delete"]);
+    // One Model with a Skeleton can move onto another Skeleton; a multi-selection cannot.
+    expect(
+      contentBrowserContextActions({ assetCount: 1, folderCount: 0, singleAssetType: "Model", canAssignSkeleton: true }),
+    ).toContain("assign-skeleton");
+    expect(
+      contentBrowserContextActions({ assetCount: 2, folderCount: 0, canAssignSkeleton: true }),
+    ).not.toContain("assign-skeleton");
     expect(
       contentBrowserContextActions({
         assetCount: 1,
@@ -2158,7 +2165,7 @@ describe("content-browser-helpers", () => {
       assetHeaderDependencies("Skeleton", {
         modelGuid: "model-1",
         kind: "hierarchy",
-        boneNames: ["root"],
+        bones: [{ name: "root", parent: null }],
       }),
     ).toEqual(["model-1"]);
     expect(
