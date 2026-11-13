@@ -15,7 +15,19 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { CircleAlertIcon, ClockIcon, FilmIcon, Gamepad2Icon, OctagonPauseIcon, PersonStandingIcon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  ClockIcon,
+  FilmIcon,
+  Gamepad2Icon,
+  Icon,
+  OctagonPauseIcon,
+  PlugIcon,
+  PlugZapIcon,
+  RadioTowerIcon,
+  UserIcon,
+  type IconNode,
+} from "lucide-react";
 import {
   humanizePropertyLabel,
   LabelHint,
@@ -156,25 +168,8 @@ function PinVisual({
   const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
   const shape = byReference ? "reference" : pinVisualShape(type, pin);
   const color = pinCssVar(type);
-  // An Animation Graph pose (or frame) pin is a plate with a person (or film) icon: filled once wired.
   if (type.kind === "pose" || type.kind === "frame") {
-    const Icon = type.kind === "pose" ? PersonStandingIcon : FilmIcon;
-    return (
-      <span
-        className="graph-pin-visual grid place-items-center rounded-[5px] border-2"
-        data-pin-shape="plate"
-        style={{
-          width: "var(--graph-pin-glyph, var(--graph-pin-size, 22px))",
-          height: "var(--graph-pin-glyph, var(--graph-pin-size, 22px))",
-          borderColor: color,
-          background: connected ? color : "transparent",
-          color: connected ? "var(--card)" : color,
-        }}
-        aria-hidden="true"
-      >
-        <Icon className="size-[72%]" strokeWidth={2.5} />
-      </span>
-    );
+    return <AnimPinGlyph kind={type.kind} color={color} connected={connected} />;
   }
   const glyph = (
     <PinShapeGlyph
@@ -261,6 +256,46 @@ function PinHandle({
     >
       <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} />
     </Handle>
+  );
+}
+
+/** The Film icon's strip lines (Lucide's own geometry), cut out of a wired Frame pin's fill. */
+const FILM_STRIP_LINES: IconNode = [
+  ["path", { d: "M7 3v18", key: "strip-left" }],
+  ["path", { d: "M3 7.5h4", key: "strip-left-top" }],
+  ["path", { d: "M3 12h18", key: "strip-middle" }],
+  ["path", { d: "M3 16.5h4", key: "strip-left-bottom" }],
+  ["path", { d: "M17 3v18", key: "strip-right" }],
+  ["path", { d: "M17 7.5h4", key: "strip-right-top" }],
+  ["path", { d: "M17 16.5h4", key: "strip-right-bottom" }],
+];
+
+/**
+ * An Animation Graph's Pose pin (a person) or Frame pin (a film), drawn larger than other pins and without a box: an
+ * outline while unwired, filled once wired. A wired Frame pin keeps its strip lines, cut out of the fill.
+ */
+function AnimPinGlyph({ kind, color, connected }: { kind: "pose" | "frame"; color: string; connected: boolean }) {
+  const size = "calc(var(--graph-pin-glyph, var(--graph-pin-size, 22px)) * 1.4)";
+  const fill = connected ? "currentColor" : "none";
+  return (
+    <span
+      className="graph-pin-visual relative block"
+      data-pin-shape={kind}
+      data-connected={connected ? "true" : "false"}
+      style={{ width: size, height: size, color }}
+      aria-hidden="true"
+    >
+      {kind === "pose" ? (
+        <UserIcon className="absolute inset-0 size-full" strokeWidth={2.25} fill={fill} />
+      ) : (
+        <>
+          <FilmIcon className="absolute inset-0 size-full" strokeWidth={2.25} fill={fill} />
+          {connected ? (
+            <Icon iconNode={FILM_STRIP_LINES} className="absolute inset-0 size-full" stroke="var(--graph-node)" strokeWidth={1.75} />
+          ) : null}
+        </>
+      )}
+    </span>
   );
 }
 
@@ -700,7 +735,7 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
     updateNodeInternals(id);
   }, [handleOrder, id, updateNodeInternals]);
 
-  // An Animation Graph's Output Pose (or Output Frame) is drawn like a state card, its pose input as a plate.
+  // An Animation Graph's Output Pose (or Output Frame) is drawn like a state card, its pose input inside it.
   const nodeType = typeof data.__nodeType === "string" ? data.__nodeType : type;
   if (nodeType === "anim.pose.output" || nodeType === "anim.frame.output") {
     const input = pins.find((pin) => pin.direction === "in");
