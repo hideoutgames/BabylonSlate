@@ -407,7 +407,7 @@ export function DocumentWorkspace() {
           );
         }
 
-        if (doc.ref.kind === "blend-space") {
+        if (doc.ref.kind === "blend-space" || doc.ref.kind === "sprite-blend-space") {
           if (!shouldMount) return null;
           return (
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
@@ -419,7 +419,7 @@ export function DocumentWorkspace() {
                     testId="document-workspace-blend-space"
                     active={active}
                   >
-                    <RegisteredDockviewShell id={id} documentKind="blend-space" initialLayout={doc.layout} />
+                    <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
                   </DocumentShell>
                 </BlendSpaceEditingProvider>
               </DocumentWorkspaceProvider>

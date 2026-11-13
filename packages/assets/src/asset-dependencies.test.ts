@@ -490,4 +490,12 @@ describe("typed asset dependencies", () => {
     });
     expect(graph.requiredDependencies).toEqual(["loco", "rig"]);
   });
+
+  it("requires every Sprite Animation a Sprite Blend Space places", () => {
+    const metadata = collectAssetDependencyMetadata("SpriteBlendSpace", {
+      axes: [{ name: "Direction", min: -180, max: 180 }],
+      samples: [{ animationGuid: "walk-n", x: 0 }, { animationGuid: "walk-s", x: 180 }],
+    });
+    expect(metadata.requiredDependencies).toEqual(["walk-n", "walk-s"]);
+  });
 });

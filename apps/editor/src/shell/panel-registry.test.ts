@@ -51,6 +51,7 @@ const KINDS = Object.keys({
   skeleton: true,
   animation: true,
   "blend-space": true,
+  "sprite-blend-space": true,
   "skybox-creator": true,
   trace: true,
   texture: true,

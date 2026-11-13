@@ -17,6 +17,7 @@ import {
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
   retargetAnimationLoadsFromAnimations,
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
@@ -32,6 +33,7 @@ import {
   spriteAnimationDurationMs,
   type AnimationPayload,
   type BlendSpacePayload,
+  type SpriteBlendSpacePayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
@@ -72,7 +74,7 @@ const JSON_CONTENT_TYPES = new Set([
   "RenderTarget", "RenderTargetTexture", "Sprite", "SpriteAnimation", "Water",
   "Tilemap", "Tileset", "AnimationGraph3D", "AnimationGraph2D", "BehaviourTree", "Blackboard",
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
-  "SoundAttenuation", "Animation", "BlendSpace", "Audio",
+  "SoundAttenuation", "Animation", "BlendSpace", "SpriteBlendSpace", "Audio",
   "DataDefinition", "DataTree", "Structure", "Enum", "FloatCurve", "VectorCurve", "ColorCurve",
   "GlobalParameterCollection", "TimelineClip2D", "TimelineClip3D", "CameraShake",
 ]);
@@ -206,6 +208,7 @@ function normalizeEntry(entry: GameAssetIndexEntry, parsed: unknown): unknown {
     case "Audio": return normalizeAudioPayload(parsed);
     case "Animation": return normalizeAnimationPayload(parsed);
     case "BlendSpace": return normalizeBlendSpacePayload(parsed);
+    case "SpriteBlendSpace": return normalizeSpriteBlendSpacePayload(parsed);
   }
   return isParticleAssetType(type) ? parsed : null;
 }
@@ -275,6 +278,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   const animationPayloads = new Map<string, AnimationPayload>();
   const animationNames = new Map<string, string>();
   const blendSpaces = new Map<string, { name: string; payload: BlendSpacePayload }>();
+  const spriteBlendSpaces = new Map<string, { name: string; payload: SpriteBlendSpacePayload }>();
 
   for (const entry of game.manifest.assets ?? []) {
     if (!JSON_CONTENT_TYPES.has(entry.type) && !isParticleAssetType(entry.type)) continue;
@@ -315,6 +319,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       animationPayloads.set(entry.guid, value as AnimationPayload);
       if (entry.name?.trim()) animationNames.set(entry.guid, entry.name.trim());
     } else if (entry.type === "BlendSpace") blendSpaces.set(entry.guid, { name, payload: value as BlendSpacePayload });
+    else if (entry.type === "SpriteBlendSpace") spriteBlendSpaces.set(entry.guid, { name, payload: value as SpriteBlendSpacePayload });
   }
 
   const startup = game.manifest.startupSceneGuid;
@@ -373,6 +378,12 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       name,
       ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
       blendSpace: { axes: payload.axes, samples: payload.samples },
+    })),
+    ...[...spriteBlendSpaces.entries()].map(([guid, { name, payload }]) => ({
+      guid,
+      type: "SpriteBlendSpace",
+      name,
+      blendSpace: { axes: payload.axes, samples: payload.samples, hysteresis: payload.hysteresis, keepTime: payload.keepTime },
     })),
   ];
   const resolvedAnimGraphs = animGraphs.map((entry) => ({

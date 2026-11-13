@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { blendSpaceAssetGuids, createDefaultBlendSpacePayload, normalizeBlendSpacePayload } from "./blend-space-payload";
+import {
+  blendSpaceAssetGuids,
+  createDefaultBlendSpacePayload,
+  createDefaultSpriteBlendSpacePayload,
+  normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
+  spriteBlendSpaceAssetGuids,
+} from "./blend-space-payload";
 
 describe("normalizeBlendSpacePayload", () => {
   it("starts a new Blend Space on its Skeleton with one Speed axis and no samples", () => {
@@ -50,5 +57,34 @@ describe("normalizeBlendSpacePayload", () => {
       skeletonGuid: "rig",
       samples: [{ animationGuid: "walk", x: 0 }, { animationGuid: "run", x: 6 }, { animationGuid: "walk", x: 2 }],
     })).toEqual(["rig", "run", "walk"]);
+  });
+});
+
+describe("normalizeSpriteBlendSpacePayload", () => {
+  it("starts a new Sprite Blend Space on a wrapping Direction axis that keeps time", () => {
+    expect(createDefaultSpriteBlendSpacePayload()).toEqual({
+      axes: [{ name: "Direction", min: -180, max: 180, gridDivisions: 8, smoothingSeconds: 0, wrap: true }],
+      samples: [],
+      hysteresis: 0.05,
+      keepTime: true,
+    });
+    expect(normalizeSpriteBlendSpacePayload({})).toEqual(createDefaultSpriteBlendSpacePayload());
+  });
+
+  it("keeps its samples and bounds hysteresis to half a grid", () => {
+    const payload = normalizeSpriteBlendSpacePayload({
+      axes: [{ name: "Speed", min: 0, max: 2, gridDivisions: 2 }],
+      samples: [{ animationGuid: "walk", x: 1 }],
+      hysteresis: 3,
+      keepTime: false,
+    });
+    expect(payload.samples).toEqual([{ animationGuid: "walk", x: 1, y: 0, rateScale: 1 }]);
+    expect(payload.hysteresis).toBe(0.5);
+    expect(payload.keepTime).toBe(false);
+    expect(normalizeSpriteBlendSpacePayload({ hysteresis: -1 }).hysteresis).toBe(0);
+  });
+
+  it("lists every sample's Sprite Animation once as a dependency", () => {
+    expect(spriteBlendSpaceAssetGuids({ samples: [{ animationGuid: "b", x: 0 }, { animationGuid: "a", x: 1 }, { animationGuid: "b", x: 2 }] })).toEqual(["a", "b"]);
   });
 });

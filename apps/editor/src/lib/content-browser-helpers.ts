@@ -237,6 +237,7 @@ export const CREATABLE_ASSET_TYPES = [
   "AnimationGraph3D",
   "AnimationGraph2D",
   "BlendSpace",
+  "SpriteBlendSpace",
   "Material",
   "MaterialInstance",
   "MaterialFunction",
@@ -293,7 +294,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "2d",
     label: "2D",
-    types: ["Sprite", "SpriteAnimation", "AnimationGraph2D", "Tileset", "Tilemap"],
+    types: ["Sprite", "SpriteAnimation", "AnimationGraph2D", "SpriteBlendSpace", "Tileset", "Tilemap"],
   },
   {
     id: "animation",
@@ -329,6 +330,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   AnimationGraph3D: "State machines that play Animations on one Skeleton.",
   AnimationGraph2D: "State machines that play Sprite Animations.",
   BlendSpace: "Animations on one Skeleton placed on one or two axes, such as Speed and Direction, and blended by where the input falls.",
+  SpriteBlendSpace: "Sprite Animations placed on one or two axes, such as Direction; the one nearest the input plays.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
   MaterialInstance: "Parameter values for a parent Material. Shares its compiled shader, so edits and variants cost no recompile.",

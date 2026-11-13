@@ -1,29 +1,25 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   blendSpaceNodeData,
   isPoseClipNodeType,
-  type AnimClipLayer,
   type AnimGraphDocument,
   type AnimGraphVariable,
 } from "@haptic/anim-graph";
-import { parseSpriteAnimationPayload, spriteAnimationDurationMs, spriteAnimationPlayhead } from "@haptic/assets";
 import { PanelFrame, PropertyGrid, ToolbarStrip, type PropertyRow } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { PauseIcon, PlayIcon, RotateCcwIcon, StepForwardIcon } from "lucide-react";
-import { useDocumentActions, useRegistryState } from "../context/document-context";
+import { useDocumentActions } from "../context/document-context";
 import { useAnimGraphPreview } from "../context/anim-graph-preview-context";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { useAnimPreviewModel } from "../lib/use-anim-preview-model";
 import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { useAnimGraphDocument } from "./anim-graph-editor";
 import { AnimPreview3DView, AnimPreviewModelControls } from "./anim-preview-model-controls";
+import { AnimSpriteFrameView } from "./anim-sprite-frame-view";
 import { IconActionButton } from "./icon-action-button";
 import { PlaybackSpeedSelect } from "./playback-controls";
-import { useResolvedSpriteAnimation } from "./sprite-animation-sources";
-import { CHECKERBOARD, FrameImage } from "./sprite-frame-image";
-import { useTexturePreviews } from "./texture-preview-status";
 
 /** Waits this long after an edit before compiling the graph's rules again. */
 const RECOMPILE_DELAY_MS = 300;
@@ -161,56 +157,13 @@ function Preview3D({ api }: { api: IDockviewPanelProps["api"] }) {
   );
 }
 
-/** The heaviest frame layer: frames never blend, so the Preview shows one, as Play does. */
-function heaviestSpriteLayer(layers: readonly AnimClipLayer[]): AnimClipLayer | undefined {
-  return layers
-    .filter((layer) => layer.clipKind === "sprite")
-    .reduce<AnimClipLayer | undefined>((best, layer) => (!best || layer.weight > best.weight ? layer : best), undefined);
-}
-
 function Preview2D({ api }: { api: IDockviewPanelProps["api"] }) {
   const session = useAnimGraphPreview();
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
-  const { assetRegistry } = useRegistryState();
-  const layer = snapshot.state ? heaviestSpriteLayer(snapshot.state.layers) : undefined;
-  const asset = layer ? assetRegistry?.getByGuid(layer.clipAssetGuid) : undefined;
-  const animation = useMemo(
-    () => parseSpriteAnimationPayload(asset?.header.type === "SpriteAnimation" ? asset.header.payload : {}),
-    [asset],
-  );
-  const { resolved, views } = useResolvedSpriteAnimation(animation);
-  const index = layer && animation.frames.length > 0
-    ? spriteAnimationPlayhead(animation, layer.normalisedTime * spriteAnimationDurationMs(animation), false).index
-    : -1;
-  const view = index >= 0 ? views[index] : undefined;
-  const frame = index >= 0 ? resolved.frames[index] : undefined;
-  const textureKey = [...new Set(views.map((entry) => entry.textureGuid).filter(Boolean))].join("|");
-  const textureGuids = useMemo(() => (textureKey ? textureKey.split("|") : []), [textureKey]);
-  const previewFor = useTexturePreviews(textureGuids);
-  const url = previewFor(view?.textureGuid).url;
-  const width = view?.rect?.width ?? frame?.width ?? 1;
-  const height = view?.rect?.height ?? frame?.height ?? 1;
-  const flip: CSSProperties = {
-    aspectRatio: `${width} / ${height}`,
-    transform: `scale(${layer?.flipX ? -1 : 1}, ${layer?.flipY ? -1 : 1})`,
-  };
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PreviewTransport />
-      <div
-        className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4"
-        style={{ backgroundImage: CHECKERBOARD, backgroundSize: "16px 16px" }}
-        data-testid="anim-preview-2d"
-        data-frame-index={String(index)}
-        data-flip-x={layer?.flipX ? "true" : "false"}
-        data-flip-y={layer?.flipY ? "true" : "false"}
-      >
-        {url ? (
-          <div className="relative max-h-full max-w-full" style={{ ...flip, height: "100%" }}>
-            <FrameImage url={url} view={view} />
-          </div>
-        ) : null}
-      </div>
+      <AnimSpriteFrameView state={snapshot.state} data-testid="anim-preview-2d" />
       <PreviewClock api={api} />
     </div>
   );

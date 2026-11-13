@@ -24,6 +24,7 @@ import {
   tilesetAtlasColumns,
   tilesetAtlasRows,
   type SpriteAnimationPayload,
+  type SpriteBlendSpacePayload,
   type SpriteCollision,
   type SpritePayload,
   type TilemapChunk,
@@ -83,6 +84,8 @@ const FEATURE_TEST_TWO_D_NAMES = {
   jumpAnimation: "FT_2DRobotJumpAnim",
   fallAnimation: "FT_2DRobotFallAnim",
   robotGraph: "FT_2DRobotGraph",
+  /** Speed Sprite Blend Space of the robot's Idle and Walk, which its Walk state plays. */
+  robotGait: "FT_2DRobotGait",
   torchAnimation: "FT_2DTorchSheetAnim",
   torchGraph: "FT_2DTorchGraph",
   cameraProbe: "FT_2DCameraProbe",
@@ -377,13 +380,24 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     clipName: "",
     durationMs: spriteAnimationDurationMs(animations[key]),
   });
+  // Idle at Speed 0 and Walk at 1: the Sprite Blend Space plays the nearer alone, keeping its time when it changes.
+  const gait: SpriteBlendSpacePayload = {
+    axes: [{ name: "Speed", min: 0, max: 1, gridDivisions: 2, smoothingSeconds: 0, wrap: false }],
+    samples: [
+      { animationGuid: guids.idle, x: 0, y: 0, rateScale: 1 },
+      { animationGuid: guids.walk, x: 1, y: 0, rateScale: 1 },
+    ],
+    hysteresis: 0.05,
+    keepTime: true,
+  };
+  const gaitGuid = (await ctx.createAsset("SpriteBlendSpace", FOLDER, NAMES.robotGait, { payload: payload(gait) })).guid;
   const at = (index: number) => defaultAnimStatePosition(index);
-  // Walk mirrors through Flip Frame (Flip X off, so the robot still faces right); Jump and Fall pick their frame
-  // with Select Frame By Bool and By Int, whose first input is the one that plays.
+  // Walk plays the gait Sprite Blend Space at Speed 1 and mirrors through Flip Frame (Flip X off, so the robot still
+  // faces right); Jump and Fall pick their frame with Select Frame By Bool and By Int, whose first input plays.
   const walk: AnimState = {
     id: "walk", name: "Walk", position: at(1),
     stateGraph: poseGraph("2d", "flip", [
-      playerNode("2d", "player", 60, 80, clip("walk"), { playRate: 1.25 }),
+      gNode("player", "anim.frame.spriteBlendSpacePlayer", 60, 80, { assetGuid: gaitGuid, "default:x": 1, "default:playRate": 1.25 }),
       gNode("flip", "anim.frame.flip", 500, 80),
     ], [gWire("player", "pose", "flip", "frame")]),
   };

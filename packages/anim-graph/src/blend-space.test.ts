@@ -5,6 +5,7 @@ import {
   blendSpaceTriangles,
   blendSpaceWeights,
   delaunayTriangles,
+  nearestBlendSpaceSample,
   type BlendSpaceLayout,
 } from "./blend-space";
 
@@ -149,5 +150,39 @@ describe("delaunayTriangles", () => {
     const triangles = delaunayTriangles([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }]);
     expect(triangles).toHaveLength(1);
     expect(new Set(triangles.flat())).toEqual(new Set([0, 1, 3]));
+  });
+});
+
+describe("nearestBlendSpaceSample", () => {
+  // Idle at 0, Walk at 1, Run at 2 on a 0–2 Speed axis.
+  const gait: BlendSpaceLayout = { axes: [{ min: 0, max: 2, wrap: false }], samples: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }] };
+
+  it.each([
+    [0.2, 0],
+    [0.6, 1],
+    [1.7, 2],
+    [5, 2],
+  ])("picks the nearest sample at Speed %d", (x, expected) => {
+    expect(nearestBlendSpaceSample(gait, { x, y: 0 }, null, 0)).toBe(expected);
+  });
+
+  it("keeps the playing sample until another is nearer by more than the hysteresis", () => {
+    // At 0.55, Walk is 0.05 grid widths nearer than Idle: within a 0.1 hysteresis Idle keeps playing.
+    expect(nearestBlendSpaceSample(gait, { x: 0.55, y: 0 }, 0, 0.1)).toBe(0);
+    expect(nearestBlendSpaceSample(gait, { x: 0.7, y: 0 }, 0, 0.1)).toBe(1);
+    expect(nearestBlendSpaceSample(gait, { x: 0.55, y: 0 }, null, 0.1)).toBe(1);
+  });
+
+  it("measures the short way round a wrapping axis, as for eight directions", () => {
+    const eight: BlendSpaceLayout = {
+      axes: [{ min: -180, max: 180, wrap: true }],
+      samples: [-180, -135, -90, -45, 0, 45, 90, 135].map((x) => ({ x, y: 0 })),
+    };
+    expect(nearestBlendSpaceSample(eight, { x: 170, y: 0 }, null, 0)).toBe(0);
+    expect(nearestBlendSpaceSample(eight, { x: 100, y: 0 }, null, 0)).toBe(6);
+  });
+
+  it("returns -1 without samples", () => {
+    expect(nearestBlendSpaceSample({ axes: [{ min: 0, max: 1, wrap: false }], samples: [] }, { x: 0, y: 0 }, null, 0)).toBe(-1);
   });
 });

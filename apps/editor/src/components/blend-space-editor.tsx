@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { blendSpaceTriangles, blendSpaceWeights } from "@haptic/anim-graph";
+import { blendSpaceTriangles, blendSpaceWeights, nearestBlendSpaceSample, type AnimGraphDimension } from "@haptic/anim-graph";
 import {
   normalizeAnimationPayload,
   normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
+  SPRITE_BLEND_SPACE_MAX_HYSTERESIS,
   type BlendSpaceAxisPayload,
-  type BlendSpacePayload,
+  type BlendSpaceLayoutPayload,
 } from "@haptic/assets";
 import {
   AssetPicker,
@@ -39,34 +41,63 @@ import { IconActionButton } from "./icon-action-button";
 /** The drag type an Animation row carries onto the Grid. */
 const BLEND_SPACE_ANIMATION_DRAG = "application/x-haptic-blend-space-animation";
 
-/** The open Blend Space, parsed, and a writer that keeps the document's other fields. */
+/**
+ * Either Blend Space kind as its editor reads it: a Blend Space's Skeleton and preview Model, or a Sprite Blend
+ * Space's hysteresis and Keep Time, beside the axes and samples both share.
+ */
+export type BlendSpaceEditorPayload = BlendSpaceLayoutPayload & {
+  skeletonGuid?: string | null;
+  previewModelGuid?: string | null;
+  hysteresis?: number;
+  keepTime?: boolean;
+};
+
+/**
+ * The open Blend Space (3D) or Sprite Blend Space (2D), parsed, and a writer that keeps the document's other fields.
+ */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useBlendSpaceDocument() {
   const { documentId } = useDocumentWorkspace();
   const doc = useOpenDocument(documentId);
   const { applyAssetDocumentChange } = useDocumentActions();
   const content = doc?.content;
-  const payload = useMemo(() => normalizeBlendSpacePayload(asRecord(content)), [content]);
+  const dimension: AnimGraphDimension = doc?.ref.kind === "sprite-blend-space" ? "2d" : "3d";
+  const payload = useMemo<BlendSpaceEditorPayload>(
+    () => (dimension === "2d" ? normalizeSpriteBlendSpacePayload(asRecord(content)) : normalizeBlendSpacePayload(asRecord(content))),
+    [content, dimension],
+  );
   const commit = useCallback(
-    (next: BlendSpacePayload, mergeKey?: string) => {
+    (next: BlendSpaceEditorPayload, mergeKey?: string) => {
       void applyAssetDocumentChange(documentId, { ...asRecord(content), ...next }, mergeKey);
     },
     [applyAssetDocumentChange, content, documentId],
   );
-  return { payload, commit, documentId };
+  return { dimension, payload, commit, documentId };
 }
 
-/** Animations a Blend Space can place: those on its Skeleton (none: those with no Skeleton). */
-function useSkeletonAnimations(skeletonGuid: string | null) {
+/**
+ * What a sample can play: Animations on the Blend Space's Skeleton (none: those with no Skeleton), or for a Sprite
+ * Blend Space every Sprite Animation.
+ */
+function useSampleAssets(dimension: AnimGraphDimension, skeletonGuid: string | null) {
   const { assetRegistry, registryEpoch } = useRegistryState();
   return useMemo(() => {
     void registryEpoch;
     return (assetRegistry?.list() ?? [])
-      .filter((asset) => asset.header.type === "Animation" &&
-        normalizeAnimationPayload(asset.header.payload ?? {}).skeletonGuid === skeletonGuid)
+      .filter((asset) => dimension === "2d"
+        ? asset.header.type === "SpriteAnimation"
+        : asset.header.type === "Animation" &&
+          normalizeAnimationPayload(asset.header.payload ?? {}).skeletonGuid === skeletonGuid)
       .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [assetRegistry, registryEpoch, skeletonGuid]);
+  }, [assetRegistry, dimension, registryEpoch, skeletonGuid]);
+}
+
+/** The asset type a sample plays and its Title Case name. */
+function sampleKind(dimension: AnimGraphDimension) {
+  return dimension === "2d"
+    ? { assetType: "SpriteAnimation", label: "Sprite Animation" }
+    : { assetType: "Animation", label: "Animation" };
 }
 
 function formatAxisValue(value: number): string {
@@ -101,7 +132,7 @@ type GridDrag =
  */
 export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { payload, commit } = useBlendSpaceDocument();
+  const { dimension, payload, commit } = useBlendSpaceDocument();
   const { selectedSample, setSelectedSample, previewPoint, setPreviewPoint } = useBlendSpaceEditing();
   const { assetRegistry } = useRegistryState();
   const { ref, size } = useElementSize<HTMLDivElement>();
@@ -128,8 +159,13 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
     };
   };
   const layout = useMemo(() => blendSpaceLayoutOf(payload), [payload]);
-  const triangles = useMemo(() => blendSpaceTriangles(layout), [layout]);
-  const weights = useMemo(() => blendSpaceWeights(layout, point, triangles), [layout, point, triangles]);
+  // A Sprite Blend Space plays the nearest sample alone, so it has no triangles and one-hot weights.
+  const triangles = useMemo(() => (dimension === "3d" ? blendSpaceTriangles(layout) : []), [dimension, layout]);
+  const weights = useMemo(() => {
+    if (dimension === "3d") return blendSpaceWeights(layout, point, triangles);
+    const nearest = nearestBlendSpaceSample(layout, point, null, 0);
+    return layout.samples.map((_, index) => (index === nearest ? 1 : 0));
+  }, [dimension, layout, point, triangles]);
   const nameOf = (guid: string) => assetRegistry?.getByGuid(guid)?.header.name ?? guid;
   const heaviest = payload.samples
     .map((sample, index) => ({ name: nameOf(sample.animationGuid), weight: weights[index] ?? 0 }))
@@ -292,6 +328,7 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
                 <g
                   key={index}
                   data-testid={`blend-space-sample-${index}`}
+                  data-guid={sample.animationGuid}
                   data-selected={selected ? "true" : "false"}
                   data-x={formatAxisValue(sample.x)}
                   data-y={formatAxisValue(sample.y)}
@@ -316,7 +353,15 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
                     stroke={selected ? "var(--graph-state-selected)" : "var(--background)"}
                     strokeWidth={selected ? 2.5 : 1.5}
                   />
-                  <text x={sx + 10} y={sy - 8} fontSize={10} fill="var(--foreground)" pointerEvents="none">
+                  {/* Near the right edge the name sits left of the diamond, so it stays on the Grid. */}
+                  <text
+                    x={sx > PAD.left + plotWidth * 0.7 ? sx - 10 : sx + 10}
+                    y={sy - 8}
+                    textAnchor={sx > PAD.left + plotWidth * 0.7 ? "end" : "start"}
+                    fontSize={10}
+                    fill="var(--foreground)"
+                    pointerEvents="none"
+                  >
                     {nameOf(sample.animationGuid)}
                   </text>
                 </g>
@@ -354,7 +399,9 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
         </div>
         {payload.samples.length === 0 ? (
           <p className="pointer-events-none absolute inset-x-0 bottom-14 text-center text-xs text-muted-foreground">
-            Drag an Animation here, or add one from Animations.
+            {dimension === "2d"
+              ? "Drag a Sprite Animation here, or add one from Animations."
+              : "Drag an Animation here, or add one from Animations."}
           </p>
         ) : null}
       </div>
@@ -362,21 +409,28 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
   );
 }
 
-/** Animations on the Blend Space's Skeleton: drag one onto the Grid, or add it at the preview point. */
+/**
+ * What samples can play (Animations on the Blend Space's Skeleton, or Sprite Animations): drag one onto the Grid, or
+ * add it at the preview point.
+ */
 export function BlendSpaceAnimationsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { payload, commit } = useBlendSpaceDocument();
+  const { dimension, payload, commit } = useBlendSpaceDocument();
   const { previewPoint, setSelectedSample } = useBlendSpaceEditing();
-  const animations = useSkeletonAnimations(payload.skeletonGuid);
+  const animations = useSampleAssets(dimension, payload.skeletonGuid ?? null);
   const point = blendSpacePreviewPoint(payload, previewPoint);
   return (
     <PanelFrame data-testid="blend-space-animations-panel">
       {animations.length === 0 ? (
         <Empty>
           <EmptyHeader>
-            <EmptyTitle>No Animations</EmptyTitle>
+            <EmptyTitle>{dimension === "2d" ? "No Sprite Animations" : "No Animations"}</EmptyTitle>
             <EmptyDescription>
-              {payload.skeletonGuid ? "No Animation is on this Blend Space's Skeleton." : "Pick the Blend Space's Skeleton in the Inspector."}
+              {dimension === "2d"
+                ? "Create a Sprite Animation to place it here."
+                : payload.skeletonGuid
+                  ? "No Animation is on this Blend Space's Skeleton."
+                  : "Pick the Blend Space's Skeleton in the Inspector."}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -421,8 +475,8 @@ export function BlendSpaceAnimationsPanel(_props: IDockviewPanelProps) {
 function axisRows(
   axis: BlendSpaceAxisPayload,
   index: 0 | 1,
-  payload: BlendSpacePayload,
-  commit: (next: BlendSpacePayload, mergeKey?: string) => void,
+  payload: BlendSpaceEditorPayload,
+  commit: (next: BlendSpaceEditorPayload, mergeKey?: string) => void,
 ): PropertyRow[] {
   const prefix = index === 0 ? "x" : "y";
   const patch = (field: keyof BlendSpaceAxisPayload) => (value: string | number | boolean) =>
@@ -453,13 +507,14 @@ function axisRows(
   ];
 }
 
-/** The Blend Space's Skeleton and axes, and the selected sample. */
+/** A Blend Space's Skeleton (a Sprite Blend Space's hysteresis and Keep Time), its axes and the selected sample. */
 export function BlendSpaceDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { payload, commit } = useBlendSpaceDocument();
+  const { dimension, payload, commit } = useBlendSpaceDocument();
   const { selectedSample, setSelectedSample } = useBlendSpaceEditing();
   const { assetRegistry } = useRegistryState();
-  const animations = useSkeletonAnimations(payload.skeletonGuid);
+  const animations = useSampleAssets(dimension, payload.skeletonGuid ?? null);
+  const kind = sampleKind(dimension);
   const [skeletonPick, setSkeletonPick] = useState(false);
   const [samplePick, setSamplePick] = useState(false);
   const skeletons = (assetRegistry?.list() ?? [])
@@ -474,15 +529,15 @@ export function BlendSpaceDetailsPanel(_props: IDockviewPanelProps) {
         {
           kind: "asset",
           id: "sample-animation",
-          label: "Animation",
+          label: kind.label,
           value: sample.animationGuid,
           placeholder: "None",
-          assetTypes: ["Animation"],
+          assetTypes: [kind.assetType],
           onPick: () => setSamplePick(true),
           onChange: (value) => {
             if (value) commit(patchBlendSpaceSample(payload, selectedSample, { animationGuid: value }));
           },
-          ...assetRowIdentity(sampleAsset ? { name: sampleAsset.header.name, type: "Animation" } : { name: sample.animationGuid, type: "Animation" }),
+          ...assetRowIdentity({ name: sampleAsset?.header.name ?? sample.animationGuid, type: kind.assetType }),
         },
         {
           kind: "number",
@@ -511,7 +566,9 @@ export function BlendSpaceDetailsPanel(_props: IDockviewPanelProps) {
           value: sample.rateScale,
           defaultValue: 1,
           min: 0.01,
-          description: "Plays this sample faster or slower; 1 plays it at its Animation's Duration.",
+          description: dimension === "2d"
+            ? "Plays this sample faster or slower; 1 plays it at its Sprite Animation's length."
+            : "Plays this sample faster or slower; 1 plays it at its Animation's Duration.",
           onChange: (rateScale) => commit(patchBlendSpaceSample(payload, selectedSample, { rateScale: Math.max(0.01, rateScale) }), `blend-space:sample:${selectedSample}:rate`),
         },
       ]
@@ -520,17 +577,39 @@ export function BlendSpaceDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="blend-space-details-panel">
       <div className="flex flex-col gap-2 py-2">
         <PropertyGrid
-          rows={[{
-            kind: "asset",
-            id: "skeleton",
-            label: "Skeleton",
-            value: payload.skeletonGuid,
-            placeholder: "None",
-            assetTypes: ["Skeleton"],
-            onPick: () => setSkeletonPick(true),
-            onChange: (value) => commit({ ...payload, skeletonGuid: value || null }),
-            ...assetRowIdentity(skeleton ? { name: skeleton.header.name, type: "Skeleton" } : undefined),
-          }]}
+          data-testid="blend-space-settings"
+          rows={dimension === "3d"
+            ? [{
+                kind: "asset",
+                id: "skeleton",
+                label: "Skeleton",
+                value: payload.skeletonGuid ?? null,
+                placeholder: "None",
+                assetTypes: ["Skeleton"],
+                onPick: () => setSkeletonPick(true),
+                onChange: (value) => commit({ ...payload, skeletonGuid: value || null }),
+                ...assetRowIdentity(skeleton ? { name: skeleton.header.name, type: "Skeleton" } : undefined),
+              }]
+            : [
+                {
+                  kind: "number",
+                  id: "hysteresis",
+                  label: "Hysteresis",
+                  value: payload.hysteresis ?? 0,
+                  min: 0,
+                  max: SPRITE_BLEND_SPACE_MAX_HYSTERESIS,
+                  description: "How much nearer another sample must be, as a fraction of the axis, before it takes over, so an input on a boundary does not flicker.",
+                  onChange: (hysteresis) => commit({ ...payload, hysteresis: Math.min(SPRITE_BLEND_SPACE_MAX_HYSTERESIS, Math.max(0, hysteresis)) }, "blend-space:hysteresis"),
+                },
+                {
+                  kind: "boolean",
+                  id: "keep-time",
+                  label: "Keep Time",
+                  value: payload.keepTime !== false,
+                  description: "When the sample changes, the next one goes on from the same point of its cycle instead of starting over.",
+                  onChange: (keepTime) => commit({ ...payload, keepTime }),
+                },
+              ]}
         />
         <div className="flex items-center justify-between gap-2 px-3">
           <span className="text-sm">Axes</span>
@@ -601,8 +680,8 @@ export function BlendSpaceDetailsPanel(_props: IDockviewPanelProps) {
         open={samplePick}
         onOpenChange={setSamplePick}
         assets={animations}
-        allowedTypes={["Animation"]}
-        title="Pick Animation"
+        allowedTypes={[kind.assetType]}
+        title={`Pick ${kind.label}`}
         allowNone={false}
         onPick={(guid) => {
           if (guid && selectedSample !== null) commit(patchBlendSpaceSample(payload, selectedSample, { animationGuid: guid }));

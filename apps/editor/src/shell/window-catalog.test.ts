@@ -129,6 +129,9 @@ describe("listDockWindows", () => {
     expect(windows[2]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-grid", direction: "right" } });
     expect(windows[3]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-details", direction: "above" } });
     expect(primaryDockPanel("blend-space")).toBe("blend-space-grid");
+    // A Sprite Blend Space opens in the same windows.
+    expect(listDockWindows("sprite-blend-space").map((entry) => entry.id)).toEqual(windows.map((entry) => entry.id));
+    expect(primaryDockPanel("sprite-blend-space")).toBe("blend-space-grid");
   });
 
   it("omits the Locks window when source control is off", () => {

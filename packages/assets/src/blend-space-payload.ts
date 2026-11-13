@@ -71,8 +71,10 @@ function normalizeAxis(value: unknown, index: 0 | 1): BlendSpaceAxisPayload {
   };
 }
 
-export function normalizeBlendSpacePayload(value: unknown): BlendSpacePayload {
-  const record = asRecord(value);
+/** The axes and samples both Blend Space kinds share. */
+export type BlendSpaceLayoutPayload = Pick<BlendSpacePayload, "axes" | "samples">;
+
+function normalizeLayout(record: Record<string, unknown>): BlendSpaceLayoutPayload {
   const rawAxes = Array.isArray(record.axes) ? record.axes : [];
   const first = normalizeAxis(rawAxes[0], 0);
   const axes: BlendSpacePayload["axes"] = rawAxes.length >= 2 ? [first, normalizeAxis(rawAxes[1], 1)] : [first];
@@ -88,6 +90,12 @@ export function normalizeBlendSpacePayload(value: unknown): BlendSpacePayload {
       rateScale: rateScale > 0 ? rateScale : 1,
     }];
   });
+  return { axes, samples };
+}
+
+export function normalizeBlendSpacePayload(value: unknown): BlendSpacePayload {
+  const record = asRecord(value);
+  const { axes, samples } = normalizeLayout(record);
   const skeletonGuid = trimmed(record.skeletonGuid);
   const previewModelGuid = trimmed(record.previewModelGuid);
   return { skeletonGuid: skeletonGuid || null, previewModelGuid: previewModelGuid || null, axes, samples };
@@ -104,4 +112,43 @@ export function blendSpaceAssetGuids(payload: unknown): string[] {
   if (blendSpace.skeletonGuid) guids.add(blendSpace.skeletonGuid);
   for (const sample of blendSpace.samples) guids.add(sample.animationGuid);
   return [...guids].sort();
+}
+
+/**
+ * Sprite Animations placed on one or two axes. The sample nearest the input plays alone: frames cannot blend.
+ * `hysteresis` keeps the playing sample until another is nearer by that much (in grid widths), so an input on a
+ * boundary does not flicker; `keepTime` carries the cycle's position to the next sample instead of starting it over.
+ */
+export interface SpriteBlendSpacePayload extends BlendSpaceLayoutPayload {
+  hysteresis: number;
+  keepTime: boolean;
+}
+
+export const SPRITE_BLEND_SPACE_DEFAULT_HYSTERESIS = 0.05;
+export const SPRITE_BLEND_SPACE_MAX_HYSTERESIS = 0.5;
+
+/** The first axis of a new Sprite Blend Space: Direction, wrapping, in eight cells. */
+function defaultSpriteBlendSpaceAxis(): BlendSpaceAxisPayload {
+  return { name: "Direction", min: -180, max: 180, gridDivisions: 8, smoothingSeconds: 0, wrap: true };
+}
+
+export function normalizeSpriteBlendSpacePayload(value: unknown): SpriteBlendSpacePayload {
+  const record = asRecord(value);
+  const layout = Array.isArray(record.axes) && record.axes.length > 0
+    ? normalizeLayout(record)
+    : normalizeLayout({ ...record, axes: [defaultSpriteBlendSpaceAxis()] });
+  const hysteresis = Math.min(
+    SPRITE_BLEND_SPACE_MAX_HYSTERESIS,
+    Math.max(0, finite(record.hysteresis, SPRITE_BLEND_SPACE_DEFAULT_HYSTERESIS)),
+  );
+  return { ...layout, hysteresis, keepTime: record.keepTime !== false };
+}
+
+export function createDefaultSpriteBlendSpacePayload(): SpriteBlendSpacePayload {
+  return { axes: [defaultSpriteBlendSpaceAxis()], samples: [], hysteresis: SPRITE_BLEND_SPACE_DEFAULT_HYSTERESIS, keepTime: true };
+}
+
+/** Every sample's Sprite Animation, which a Sprite Blend Space needs loaded with it. */
+export function spriteBlendSpaceAssetGuids(payload: unknown): string[] {
+  return [...new Set(normalizeSpriteBlendSpacePayload(payload).samples.map((sample) => sample.animationGuid))].sort();
 }

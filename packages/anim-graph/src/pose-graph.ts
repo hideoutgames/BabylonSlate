@@ -21,6 +21,7 @@ export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
 export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
 export const ANIM_FRAME_SELECT_BY_INT_TYPE = "anim.frame.selectByInt";
 export const ANIM_FRAME_FLIP_TYPE = "anim.frame.flip";
+export const ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE = "anim.frame.spriteBlendSpacePlayer";
 
 /** The protected output node every pose graph has, under this id. */
 export const ANIM_POSE_OUTPUT_NODE_ID = "output";
@@ -49,14 +50,19 @@ export function isPoseClipNodeType(type: string): boolean {
   return isPosePlayerType(type) || type === ANIM_POSE_SEQUENCE_EVALUATOR_TYPE;
 }
 
+/** Blend Space Players: the 3D one, which blends its samples, and the 2D one, which plays the nearest. */
+export function isBlendSpacePlayerType(type: string): boolean {
+  return type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE || type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE;
+}
+
 /** Nodes that keep their own time, which a state's facts can follow: players and Blend Space Players. */
 export function isPoseTimeSourceType(type: string): boolean {
-  return isPosePlayerType(type) || type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE;
+  return isPosePlayerType(type) || isBlendSpacePlayerType(type);
 }
 
 /** Nodes that name an asset (a clip or a Blend Space), which load with the graph. */
 export function isPoseAssetNodeType(type: string): boolean {
-  return isPoseClipNodeType(type) || type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE;
+  return isPoseClipNodeType(type) || isBlendSpacePlayerType(type);
 }
 
 /** The pose (or frame) inputs of a node type, in order; `count` is a Blend Poses By Int / Select By Int's. */
@@ -196,6 +202,10 @@ export interface BlendSpaceNodeSample {
 export interface BlendSpaceNodeData {
   axes: BlendSpaceNodeAxis[];
   samples: BlendSpaceNodeSample[];
+  /** A Sprite Blend Space's: how much nearer (in grid widths) another sample must be to take over. */
+  hysteresis?: number;
+  /** A Sprite Blend Space's: whether the next sample goes on from the cycle's position (else from its start). */
+  keepTime?: boolean;
 }
 
 function finiteNumber(value: unknown, fallback: number): number {
@@ -227,7 +237,10 @@ export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeDat
       rateScale: rateScale > 0 ? rateScale : 1,
     }];
   });
-  return { axes, samples };
+  const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime"> = {};
+  if (typeof record.hysteresis === "number" && Number.isFinite(record.hysteresis)) sprite.hysteresis = Math.max(0, record.hysteresis);
+  if (typeof record.keepTime === "boolean") sprite.keepTime = record.keepTime;
+  return { axes, samples, ...sprite };
 }
 
 /** A player node's stored data for a clip. */

@@ -9,6 +9,7 @@ import {
   removeBlendSpaceSample,
   setBlendSpaceAxisCount,
   snapToBlendSpaceGrid,
+  spriteBlendSpaceNodeDataOf,
 } from "./blend-space-editing";
 
 const speedAxis = { name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0, wrap: false };
@@ -112,4 +113,24 @@ describe("blendSpaceNodeDataOf", () => {
       ],
     });
   });
+
+describe("spriteBlendSpaceNodeDataOf", () => {
+  it("fills each sample's Sprite Animation length and carries the hysteresis and Keep Time", () => {
+    const frames = (frameDurationMs: number) => ({ payload: { frameDurationMs, frames: [{ textureGuid: "t" }] } });
+    const data = spriteBlendSpaceNodeDataOf(
+      {
+        axes: [{ name: "Speed", min: 0, max: 1, gridDivisions: 2, smoothingSeconds: 0, wrap: false }],
+        samples: [
+          { animationGuid: "idle", x: 0, y: 0, rateScale: 1 },
+          { animationGuid: "gone", x: 1, y: 0, rateScale: 1 },
+        ],
+        hysteresis: 0.1,
+        keepTime: false,
+      },
+      (guid) => (guid === "idle" ? frames(250) : undefined),
+    );
+    expect(data.samples).toEqual([{ animationGuid: "idle", clipName: "", durationMs: 250, x: 0, y: 0, rateScale: 1 }]);
+    expect(data).toMatchObject({ hysteresis: 0.1, keepTime: false });
+  });
+});
 });

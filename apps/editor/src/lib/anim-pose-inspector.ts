@@ -4,6 +4,7 @@ import {
   ANIM_FRAME_SELECT_BY_INT_TYPE,
   ANIM_POSE_BLEND_BY_BOOL_TYPE,
   ANIM_POSE_BLEND_BY_INT_TYPE,
+  ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   isPoseAssetNodeType,
   isPosePlayerType,
@@ -21,6 +22,7 @@ export function animPoseClipPatch(guid: string | null): Record<string, unknown> 
 /** The asset type and row label a pose node's asset row picks. */
 function poseAssetKind(typeId: string): { assetType: string; label: string } {
   if (typeId === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) return { assetType: "BlendSpace", label: "Blend Space" };
+  if (typeId === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE) return { assetType: "SpriteBlendSpace", label: "Sprite Blend Space" };
   return typeId.startsWith("anim.frame.")
     ? { assetType: "SpriteAnimation", label: "Sprite Animation" }
     : { assetType: "Animation", label: "Animation" };

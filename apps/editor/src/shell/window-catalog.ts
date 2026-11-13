@@ -30,6 +30,7 @@ export type DockviewDocumentKind =
   | "anim-graph-3d"
   | "anim-graph-2d"
   | "blend-space"
+  | "sprite-blend-space"
   | "behaviour-tree"
   | "audio"
   | "save-game"
@@ -102,6 +103,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "skeleton",
   "animation",
   "blend-space",
+  "sprite-blend-space",
   "skybox-creator",
   "trace",
   "texture",
@@ -180,6 +182,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   skeleton: "skeleton-preview",
   animation: "animation-preview",
   "blend-space": "blend-space-grid",
+  "sprite-blend-space": "blend-space-grid",
   "skybox-creator": "skybox-creator-preview",
   "extension-asset": "extension-asset-details",
   trace: "trace-timeline",
@@ -1279,7 +1282,8 @@ export function listDockWindows(
   if (kind === "animation") {
     return withOptionalLocks(kind, ANIMATION_WINDOWS, options);
   }
-  if (kind === "blend-space") {
+  // A Sprite Blend Space opens in the same windows, which read its kind.
+  if (kind === "blend-space" || kind === "sprite-blend-space") {
     return withOptionalLocks(kind, BLEND_SPACE_WINDOWS, options);
   }
   if (kind === "audio") return withOptionalLocks(kind, AUDIO_WINDOWS, options);

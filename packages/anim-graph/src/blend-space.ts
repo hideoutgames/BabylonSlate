@@ -264,3 +264,39 @@ export function blendSpaceWeights(
   const points = layout.samples.map((sample) => ({ x: normalised(xAxis, sample.x), y: normalised(yAxis, sample.y) }));
   return weights2d(points, triangles ?? blendSpaceTriangles(layout), { x: normalised(xAxis, x), y: normalised(yAxis, y) });
 }
+
+/** How far apart two points are in grid widths (each axis's range is 1), the short way round a wrapping axis. */
+function gridDistance(layout: BlendSpaceLayout, a: BlendSpacePoint, b: BlendSpacePoint): number {
+  const [xAxis, yAxis] = layout.axes;
+  const dx = blendSpaceAxisDelta(xAxis, a.x, b.x) / Math.max(1e-9, xAxis.max - xAxis.min);
+  const dy = yAxis ? blendSpaceAxisDelta(yAxis, a.y, b.y) / Math.max(1e-9, yAxis.max - yAxis.min) : 0;
+  return Math.hypot(dx, dy);
+}
+
+/**
+ * The sample a Sprite Blend Space plays at `point`: the nearest one, unless `current` is within `hysteresis` grid
+ * widths of being as near, so an input on a boundary keeps playing what it played. -1 with no samples.
+ */
+export function nearestBlendSpaceSample(
+  layout: BlendSpaceLayout,
+  point: BlendSpacePoint,
+  current: number | null,
+  hysteresis: number,
+): number {
+  const [xAxis, yAxis] = layout.axes;
+  const at = { x: blendSpaceAxisValue(xAxis, point.x), y: yAxis ? blendSpaceAxisValue(yAxis, point.y) : 0 };
+  let best = -1;
+  let bestDistance = Infinity;
+  layout.samples.forEach((sample, index) => {
+    const distance = gridDistance(layout, sample, at);
+    if (distance < bestDistance - 1e-12) {
+      best = index;
+      bestDistance = distance;
+    }
+  });
+  if (current !== null && current !== best && layout.samples[current]) {
+    const held = gridDistance(layout, layout.samples[current], at);
+    if (held - bestDistance <= Math.max(0, hysteresis)) return current;
+  }
+  return best;
+}

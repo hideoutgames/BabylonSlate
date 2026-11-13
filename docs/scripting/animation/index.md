@@ -54,6 +54,7 @@ Nodes of a 2D Animation Graph's state graphs. Their **Frame** wires carry the Sp
 | --- | --- |
 | [Output Frame](output-frame.md) | The frame this graph shows. Every state graph ends in one. |
 | [Sprite Animation Player](sprite-animation-player.md) | Plays a Sprite Animation. |
+| [Sprite Blend Space Player](sprite-blend-space-player.md) | Plays the Sprite Animation of a Sprite Blend Space nearest X and Y. |
 | [Select Frame By Bool](select-frame-by-bool.md) | Shows True Frame or False Frame as Active changes. |
 | [Select Frame By Int](select-frame-by-int.md) | Shows the frame Active Index picks. |
 | [Flip Frame](flip-frame.md) | Mirrors a frame, so one clip faces both ways. |
