@@ -395,7 +395,12 @@ function blendsFor(scene: Scene): Map<NamedSeekableGroup, () => void> {
   return blends;
 }
 
-function wrapGroup(
+/**
+ * An AnimationGroup as Play seeks it (`applyAnimStateToScene`): tagged with the Animation asset it plays, started and
+ * paused at weight 0 on its first seek, and crossfaded through `blendToFrame`. Editor previews wrap their groups the
+ * same way so they play an Animation Graph's clip layers as Play does.
+ */
+export function wrapGameplayAnimationGroup(
   group: {
     name: string;
     from: number;
@@ -737,8 +742,8 @@ export function beginSlotModelAnimLoad(
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
         (group) => !nativeGuids.has(group.clipAssetGuid ?? ""),
       );
-      const wrapped: ReturnType<typeof wrapGroup>[] = instance.animationGroups.map((group) =>
-        wrapGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
+      const wrapped: ReturnType<typeof wrapGameplayAnimationGroup>[] = instance.animationGroups.map((group) =>
+        wrapGameplayAnimationGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
       for (const row of retargets) {
         const sourceBytes = binding.modelSources?.get(row.sourceModelGuid);
@@ -757,7 +762,7 @@ export function beginSlotModelAnimLoad(
             : retargetAnimationGroupWithMeshProxy(sourceGroup, prepared.staging);
           if (retargeted) {
             prepared.bundle.ownRenderUser(retargeted);
-            wrapped.push(wrapGroup(retargeted, row.animationGuid));
+            wrapped.push(wrapGameplayAnimationGroup(retargeted, row.animationGuid));
           }
         }
       }

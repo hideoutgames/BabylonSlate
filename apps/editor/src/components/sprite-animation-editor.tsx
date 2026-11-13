@@ -36,7 +36,6 @@ import {
   type SpriteAnimationFrame,
   type SpriteAnimationPayload,
   type SpriteAnimationSource,
-  type TileRect,
 } from "@haptic/assets";
 import {
   useDocumentActions,
@@ -50,6 +49,7 @@ import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
 import { TexturePreviewStatus, useTexturePreviews } from "./texture-preview-status";
 import { useResolvedSpriteAnimation, type SpriteAnimationFrameView } from "./sprite-animation-sources";
+import { CHECKERBOARD, FrameImage } from "./sprite-frame-image";
 import {
   ExternalLinkIcon,
   Grid3x3Icon,
@@ -62,8 +62,6 @@ import {
 } from "lucide-react";
 
 const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
-const CHECKERBOARD =
-  "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)";
 
 function useSpriteAnimationSelection(frameCount: number) {
   const ctx = useOptionalSpriteAnimationEditing();
@@ -150,52 +148,6 @@ function framePixels(view: SpriteAnimationFrameView | undefined, frame: SpriteAn
 }
 
 /** Places the whole Texture so `rect` of it fills the box it sits in. */
-function cropStyle(rect: TileRect, atlas: { width: number; height: number }): CSSProperties {
-  return {
-    left: `${(-rect.x / rect.width) * 100}%`,
-    top: `${(-rect.y / rect.height) * 100}%`,
-    width: `${(atlas.width / rect.width) * 100}%`,
-    height: `${(atlas.height / rect.height) * 100}%`,
-  };
-}
-
-/** The frame's image inside its box: a sheet cell is cropped from the sheet, other frames show the whole Texture. */
-function FrameImage({
-  url,
-  view,
-  className,
-  onError,
-}: {
-  url: string;
-  view: SpriteAnimationFrameView | undefined;
-  className?: string;
-  onError?: () => void;
-}) {
-  if (view?.rect && view.atlas) {
-    return (
-      <div className="absolute inset-0 overflow-hidden">
-        <img
-          src={url}
-          alt=""
-          draggable={false}
-          onError={onError}
-          className={cn("absolute max-w-none [image-rendering:pixelated]", className)}
-          style={cropStyle(view.rect, view.atlas)}
-        />
-      </div>
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt=""
-      draggable={false}
-      onError={onError}
-      className={cn("absolute inset-0 size-full object-contain [image-rendering:pixelated]", className)}
-    />
-  );
-}
-
 function boxStyle(box: { left: number; top: number; width: number; height: number }): CSSProperties {
   return {
     left: `${box.left * 100}%`,

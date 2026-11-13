@@ -69,6 +69,8 @@ export interface AnimGraphDocument {
    * (a rigid node animation such as a door). A 2D graph keeps it null.
    */
   skeletonGuid: string | null;
+  /** 3D only, editor only: the Model the Preview window plays the graph on, one on the graph's Skeleton. */
+  previewModelGuid: string | null;
   variables: AnimGraphVariable[];
   stateMachine: AnimStateMachine;
   animationObject: SerializedGraph;
@@ -298,6 +300,7 @@ export function createDefaultAnimGraph(
   return {
     name,
     skeletonGuid: dimension === "3d" ? options.skeletonGuid ?? null : null,
+    previewModelGuid: null,
     variables: [],
     stateMachine: {
       entryStateId: "idle",
@@ -762,6 +765,7 @@ export function parseAnimGraphDocument(
   return {
     name: typeof source.name === "string" && source.name !== "" ? source.name : "Locomotion",
     skeletonGuid: typeof source.skeletonGuid === "string" && source.skeletonGuid.trim() !== "" ? source.skeletonGuid.trim() : null,
+    previewModelGuid: typeof source.previewModelGuid === "string" && source.previewModelGuid.trim() !== "" ? source.previewModelGuid.trim() : null,
     variables: parseVariables(source),
     stateMachine: parseStateMachine(machine, dimension ?? storedDimension((machine as Record<string, unknown>).states)),
     animationObject: parseAnimationObject(source.animationObject),

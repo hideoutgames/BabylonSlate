@@ -1070,7 +1070,10 @@ const CAMERA_SHAKE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-/** The State Machine canvas (Graph) and the Animation Object script share the centre group as tabs. */
+/**
+ * The State Machine canvas (Graph) and the Animation Object script share the centre group as tabs; the Preview and
+ * its Preview Values stack beside the Graph.
+ */
 const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
   { id: "anim-graph-graph", component: "anim-graph-graph", title: "Graph" },
   {
@@ -1107,6 +1110,26 @@ const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "anim-graph-graph",
       direction: "below",
       initialHeight: 160,
+    },
+  },
+  {
+    id: "anim-graph-preview",
+    component: "anim-graph-preview",
+    title: "Preview",
+    defaultPosition: {
+      referencePanelId: "anim-graph-graph",
+      direction: "right",
+      initialWidth: 320,
+    },
+  },
+  {
+    id: "anim-graph-preview-values",
+    component: "anim-graph-preview-values",
+    title: "Preview Values",
+    defaultPosition: {
+      referencePanelId: "anim-graph-preview",
+      direction: "below",
+      initialHeight: 200,
     },
   },
 ];

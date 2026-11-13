@@ -503,6 +503,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     addMany(areaEmissionTextureGuids(payload), false);
   } else if (isAnimGraphAssetType(assetType)) {
     add(payload.skeletonGuid);
+    // The Preview window's Model is for the editor only, so a game never loads it.
+    add(payload.previewModelGuid, false);
     // Each state's graph: its players' clips, and the data nodes feeding them.
     const poseGraph = (value: unknown): void => {
       for (const node of rows(row(value).nodes)) {
