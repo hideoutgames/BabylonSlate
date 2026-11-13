@@ -265,8 +265,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
   const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), [setRegistryTick]);
   const {
-    animEditorModes,
-    setAnimEditorModes,
     focusedLayoutIds,
     dockWindowTick,
     captureLayoutForId,
@@ -276,7 +274,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     forgetDockLayouts,
     registerDockviewApi,
     unregisterDockviewApi,
-    setAnimEditorMode,
     setSceneMode,
     activateDockPanel,
     toggleDockWindow,
@@ -543,7 +540,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setSceneDocumentLoad,
     cancelSceneDocumentLoad,
     resetDockLayouts,
-    setAnimEditorModes,
     captureAllLayouts,
     setLastCompiledSignature,
     playContent,
@@ -794,7 +790,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       unregisterDockviewApi,
       captureLayoutForId,
-      setAnimEditorMode,
       setSceneMode,
       activateDockPanel,
       toggleDockWindow,
@@ -855,7 +850,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       unregisterDockviewApi,
       captureLayoutForId,
-      setAnimEditorMode,
       setSceneMode,
       activateDockPanel,
       toggleDockWindow,
@@ -892,7 +886,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   } = useDocumentStateSlices({
     documentService,
     editSessionRef,
-    animEditorModes,
     focusedLayoutIds,
   });
   const graphSignatureRevision = documentKindsRevision(

@@ -26,7 +26,7 @@ Worker-side Anim Graph (pose graphs and State Machines) plus per-instance Animat
 | Scene apply (`applyAnimStateToScene`, sprite frames) | [`packages/render/src/anim-apply.ts`](../../../packages/render/src/anim-apply.ts) |
 | Model material slots | [`packages/render/src/model-preview.ts`](../../../packages/render/src/model-preview.ts) |
 | Compile (`compileAnimGraphScripts`, with `instrumentExecutionTrace` for a Simulation) | [`apps/editor/src/services/script-compiler.ts`](../../../apps/editor/src/services/script-compiler.ts) |
-| Editor document, mode bar, provider | [`apps/editor/src/components/document-workspace.tsx`](../../../apps/editor/src/components/document-workspace.tsx), [`apps/editor/src/context/anim-graph-editing-context.tsx`](../../../apps/editor/src/context/anim-graph-editing-context.tsx), [`apps/editor/src/shell/window-catalog.ts`](../../../apps/editor/src/shell/window-catalog.ts) |
+| Editor document, windows, provider | [`apps/editor/src/components/document-workspace.tsx`](../../../apps/editor/src/components/document-workspace.tsx), [`apps/editor/src/context/anim-graph-editing-context.tsx`](../../../apps/editor/src/context/anim-graph-editing-context.tsx), [`apps/editor/src/shell/window-catalog.ts`](../../../apps/editor/src/shell/window-catalog.ts) |
 
 ## Document format
 
@@ -74,7 +74,7 @@ Worker-side Anim Graph (pose graphs and State Machines) plus per-instance Animat
 
 ## Editor rules
 
-- DockView document kinds `anim-graph-3d` and `anim-graph-2d`, with the same windows and focus keep keys (`anim-graph`, `animGraphObject`). The **State Machine | Animation Object** `AnimEditorModeBar` sits outside DockView; each mode has its own DockView surface, Windows list and Focus keep-list, persisted as `layout.json` `{ animEditorMode, stateMachine, animationObject }`. Only the active mode stays mounted.
+- DockView document kinds `anim-graph-3d` and `anim-graph-2d`, with one DockView surface and the same windows (Focus keep key `anim-graph`): **Graph** (Anim Graph, State Machines, state graphs and rules), **Animation Object** (the script, a `GraphPanel`, tabbed beside Graph by default), Variables, Inspector and Compiler Results. The editing context's `canvas` is the canvas last brought forward or pressed in (`useAnimCanvas`); the Inspector follows it, and changing it clears the shared node selection. Each canvas brings its own panel forward for a focused diagnostic. The Graph's validation rows use graph ids under `${documentId}:` and the Animation Object's the document id, so neither replaces the other's.
 - Rule palettes (`animationGraphHost: "rule"`) allow `anim.state.*`, pure nodes and Get Variable only; pose palettes (`"pose"`, with `animPose` dimension and level) allow the dimension's pose or frame nodes, State Machine only at the `anim` level, `anim.state.*` only at the `state` level, pure nodes and Get Variable; Object palettes (`"object"`) add `anim.event.*`; Actor palettes hide all and show `anim.actor.*`. Protected nodes: initialize/update events, Enter/Exit sinks and pose graph outputs.
 - Navigation (`AnimEditorLocation`: `anim`, `machine`, `state`) lives in the editing context; breadcrumbs step out, double-click steps in (a State Machine node to its machine, a state to its graph). The Details panel edits machine and state rows on a machine canvas and is the node Inspector in a pose graph or rule.
 - One directed `(from, to)` pair is one visual edge; Both Ways is two rows drawn as one edge. Extra rows warn `anim.duplicateTransition`.

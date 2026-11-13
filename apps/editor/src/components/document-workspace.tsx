@@ -5,13 +5,12 @@ import { BlackboardEditingProvider } from "../context/blackboard-editing-context
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
-import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene, isAnimGraphDocumentKind, type AnimGraphDocumentKind } from "@haptic/core";
+import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   useDocumentActions,
   useActiveDocumentId,
-  useActiveDocumentState,
   useOpenDocument,
   useOpenDocumentTabs,
   useProjectState,
@@ -58,9 +57,6 @@ import {
 import { EditorReadOnlyContext, walkAncestry } from "@haptic/editor-kit";
 import { useAuthoringLock } from "../lib/use-authoring-lock";
 import { type DockviewDocumentKind } from "../shell/window-catalog";
-import { AnimEditorModeBar } from "./anim-editor-mode-bar";
-import { parseAnimDocumentLayout } from "../shell/anim-document-layout";
-import { cn } from "@haptic/ui/lib/utils";
 import { parseSceneDocumentLayout, type SceneMode } from "../shell/scene-document-layout";
 
 function PendingSceneSearchFocus({ scenePath }: { scenePath: string }) {
@@ -89,7 +85,6 @@ function RegisteredDockviewShell({
   documentKind,
   initialLayout,
   actorPrefab,
-  animEditorMode,
   sceneMode,
   surface,
 }: {
@@ -97,7 +92,6 @@ function RegisteredDockviewShell({
   documentKind: DockviewDocumentKind;
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
-  animEditorMode?: import("../shell/anim-document-layout").AnimEditorMode;
   sceneMode?: SceneMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
@@ -111,8 +105,8 @@ function RegisteredDockviewShell({
     [id, registerDockviewApi, surface],
   );
   // Dockview reports its API only once per mount, so only unmount may release
-  // it. The document actions keep their identity across edits and Animation
-  // Graph mode changes, so this cleanup runs only on unmount.
+  // it. The document actions keep their identity across edits and Scene mode
+  // changes, so this cleanup runs only on unmount.
   useLayoutEffect(() => {
     return () => {
       captureLayoutForId(id);
@@ -126,7 +120,6 @@ function RegisteredDockviewShell({
       initialLayout={initialLayout}
       actorPrefab={actorPrefab}
       sourceControl={sourceControl.enabled}
-      animEditorMode={animEditorMode}
       sceneMode={sceneMode}
       onReady={onReady}
     />
@@ -182,76 +175,6 @@ export function SceneDocumentDocks({ id, kind = "scene", layout }: {
     surface={parsed.sceneMode}
     initialLayout={parsed[parsed.sceneMode]}
   />;
-}
-
-export function AnimDocumentDocks({
-  id,
-  kind,
-  layout,
-}: {
-  id: string;
-  kind: AnimGraphDocumentKind;
-  layout: Record<string, unknown> | null;
-}) {
-  const { setAnimEditorMode } = useDocumentActions();
-  const { animEditorMode, activeDocumentId } = useActiveDocumentState();
-  const parsed = parseAnimDocumentLayout(layout);
-  const mode = activeDocumentId === id ? animEditorMode : parsed.animEditorMode;
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <AnimEditorModeBar
-        mode={mode}
-        onModeChange={(next) => setAnimEditorMode(id, next)}
-      />
-      <div className="relative min-h-0 flex-1">
-        <div
-          className={cn(
-            "absolute inset-0",
-            mode === "stateMachine"
-              ? "ui-dock-surface-active"
-              : "ui-dock-surface-inactive",
-          )}
-          aria-hidden={mode !== "stateMachine"}
-          inert={mode !== "stateMachine" ? true : undefined}
-          data-testid="anim-dock-surface-state-machine"
-          data-active={mode === "stateMachine" ? "true" : "false"}
-        >
-          {mode === "stateMachine" ? (
-          <RegisteredDockviewShell
-            id={id}
-            documentKind={kind}
-            initialLayout={parsed.stateMachine}
-            animEditorMode="stateMachine"
-            surface="stateMachine"
-          />
-          ) : null}
-        </div>
-        <div
-          className={cn(
-            "absolute inset-0",
-            mode === "animationObject"
-              ? "ui-dock-surface-active"
-              : "ui-dock-surface-inactive",
-          )}
-          aria-hidden={mode !== "animationObject"}
-          inert={mode !== "animationObject" ? true : undefined}
-          data-testid="anim-dock-surface-animation-object"
-          data-active={mode === "animationObject" ? "true" : "false"}
-        >
-          {mode === "animationObject" ? (
-          <RegisteredDockviewShell
-            id={id}
-            documentKind={kind}
-            initialLayout={parsed.animationObject}
-            animEditorMode="animationObject"
-            surface="animationObject"
-          />
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /**
@@ -470,7 +393,7 @@ export function DocumentWorkspace() {
                       testId="document-workspace-anim-graph"
                       active={active}
                     >
-                      <AnimDocumentDocks id={id} kind={doc.ref.kind} layout={doc.layout} />
+                      <RegisteredDockviewShell id={id} documentKind={doc.ref.kind} initialLayout={doc.layout} />
                     </DocumentShell>
                   </GraphEditingProvider>
                   </PrefabEditingProvider>

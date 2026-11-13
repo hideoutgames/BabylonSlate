@@ -139,7 +139,6 @@ function fakeHost(overrides: Partial<SessionReportNavigationHost> = {}) {
     },
     isDocumentOpen: (id) => open.has(id),
     setActiveDocument: (id) => { calls.push(`activate ${id}`); },
-    setAnimEditorMode: (id, mode) => { calls.push(`mode ${id} ${mode}`); },
     setSceneMode: (id, mode) => { calls.push(`scene mode ${id} ${mode}`); },
     requestDocumentFocus: (id) => { calls.push(`keyboard ${id}`); },
     log: (line) => { calls.push(`log ${line}`); },
@@ -216,13 +215,13 @@ describe("navigateToSessionReportEntry", () => {
     ]);
   });
 
-  it("shows the Animation Object for an error from its lifecycle graph", async () => {
-    const { host, calls } = fakeHost();
-    await navigateToSessionReportEntry(
-      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }),
-      host,
-    );
-    expect(calls).toContain("mode anim-graph-3d:assets/Locomotion.animgraph.hasset animationObject");
+  it("opens an Animation Graph and focuses the node of its Animation Object or State Machine, whose panel comes forward", async () => {
+    for (const graphId of ["animation-object", "state-machine:locomotion"]) {
+      const { host, calls } = fakeHost();
+      await navigateToSessionReportEntry(entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId }), host);
+      expect(calls).toContain("activate anim-graph-3d:assets/Locomotion.animgraph.hasset");
+      expect(calls).toContain("focus n in anim-graph-3d:assets/Locomotion.animgraph.hasset");
+    }
   });
 
   it("shows a Scene's script for one of its nodes, and leaves an Actor's Scene in its mode", async () => {
@@ -232,14 +231,5 @@ describe("navigateToSessionReportEntry", () => {
     const actor = fakeHost();
     await navigateToSessionReportEntry(entry({ assetGuid: "arena-guid" }), actor.host);
     expect(actor.calls.some((call) => call.startsWith("scene mode"))).toBe(false);
-  });
-
-  it("shows the State Machine for a state or transition breakpoint", async () => {
-    const { host, calls } = fakeHost();
-    await navigateToSessionReportEntry(
-      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "idle", graphId: "state-machine:locomotion" }),
-      host,
-    );
-    expect(calls).toContain("mode anim-graph-3d:assets/Locomotion.animgraph.hasset stateMachine");
   });
 });

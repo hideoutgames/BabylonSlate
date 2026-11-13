@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, createStateGraph, type AnimGraphDocument } from "@haptic/anim-graph";
 import type { SerializedGraph } from "@haptic/core";
@@ -12,7 +12,6 @@ import { PrefabEditingProvider } from "../context/prefab-editing-context";
 const DOC_ID = "anim-graph:assets/Loco.anim3d.hasset";
 const store = vi.hoisted(() => {
   let content: Record<string, unknown> = {};
-  let mode: "stateMachine" | "animationObject" = "animationObject";
   let revision = 0;
   const listeners = new Set<() => void>();
   const publish = () => {
@@ -21,7 +20,6 @@ const store = vi.hoisted(() => {
   };
   return {
     content: () => content,
-    mode: () => mode,
     getSnapshot: () => revision,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -29,11 +27,6 @@ const store = vi.hoisted(() => {
     },
     reset: (next: Record<string, unknown>) => {
       content = next;
-      mode = "animationObject";
-      publish();
-    },
-    setMode: (next: typeof mode) => {
-      mode = next;
       publish();
     },
     applyAssetDocumentChange: vi.fn(async (_id: string, next: Record<string, unknown>) => {
@@ -59,7 +52,6 @@ vi.mock("../context/document-context", async () => {
         content: store.content(),
       }],
       activeDocumentId: DOC_ID,
-      animEditorMode: store.mode(),
       applyAssetDocumentChange: store.applyAssetDocumentChange,
       projectDocument: { settings: {} },
       assetRegistry: { list: () => [], getByPath: () => undefined },
@@ -77,9 +69,11 @@ vi.mock("../context/play-context", () => ({
 }));
 
 function SelectionControls() {
-  const { openTransitionRule, navigate } = useAnimGraphEditing();
+  const { openTransitionRule, navigate, setCanvas } = useAnimGraphEditing();
   const { setSelectedNodeIds } = useGraphEditing();
   return <>
+    <button onClick={() => setCanvas("stateMachine")}>Show Graph</button>
+    <button onClick={() => setCanvas("animationObject")}>Show Animation Object</button>
     <button onClick={() => openTransitionRule("idle-to-run")}>Open Rule</button>
     <button onClick={() => navigate({ kind: "state", machineId: "locomotion", stateId: "idle" })}>Open Idle Graph</button>
     <button onClick={() => setSelectedNodeIds(["add"])}>Select Add</button>
@@ -158,12 +152,12 @@ describe("Animation Object Inspector", () => {
       priority: 0, ruleGraph: { nodes: [addNode("add", 20, true)], edges: [] },
     });
     renderInspector(doc);
-    act(() => store.setMode("stateMachine"));
+    fireEvent.click(screen.getByText("Show Graph"));
     fireEvent.click(screen.getByText("Open Rule"));
     fireEvent.click(screen.getByText("Select Add"));
     expect((screen.getByTestId("property-a") as HTMLInputElement).value).toBe("20");
 
-    act(() => store.setMode("animationObject"));
+    fireEvent.click(screen.getByText("Show Animation Object"));
     fireEvent.click(screen.getByText("Select Add"));
     expect((screen.getByTestId("property-a") as HTMLInputElement).value).toBe("3");
     fireEvent.change(screen.getByTestId("property-a"), { target: { value: "5" } });
@@ -171,7 +165,7 @@ describe("Animation Object Inspector", () => {
     expect(committedDocument().animationObject.nodes.find((node) => node.id === "add")?.data["default:a"]).toBe(5);
     expect(committedDocument().stateMachines[0]!.transitions[0]?.ruleGraph.nodes[0]?.data["default:a"]).toBe(20);
 
-    act(() => store.setMode("stateMachine"));
+    fireEvent.click(screen.getByText("Show Graph"));
     expect((screen.getByTestId("property-a") as HTMLInputElement).value).toBe("20");
     fireEvent.change(screen.getByTestId("property-a"), { target: { value: "25" } });
     expect(committedDocument().stateMachines[0]!.transitions[0]?.ruleGraph.nodes[0]?.data["default:a"]).toBe(25);
@@ -186,7 +180,7 @@ describe("Animation Object Inspector", () => {
       id: "idle-to-run", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(),
     });
     renderInspector(doc);
-    act(() => store.setMode("stateMachine"));
+    fireEvent.click(screen.getByText("Show Graph"));
     fireEvent.click(screen.getByText("Open Idle Graph"));
     fireEvent.click(screen.getByText("Select Add"));
     expect((screen.getByTestId("property-a") as HTMLInputElement).value).toBe("3");

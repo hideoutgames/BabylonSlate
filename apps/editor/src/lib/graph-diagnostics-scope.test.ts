@@ -22,21 +22,12 @@ describe("shouldPublishGraphDiagnostics", () => {
     ).toBe(false);
   });
 
-  it("publishes Animation Object graphs only in Animation Object mode", () => {
+  it("publishes an Animation Graph's Animation Object diagnostics while its document is active", () => {
     expect(
       shouldPublishGraphDiagnostics({
         documentId: "anim-graph:loco",
         activeDocumentId: "anim-graph:loco",
         documentKind: "anim-graph-3d",
-        animEditorMode: "stateMachine",
-      }),
-    ).toBe(false);
-    expect(
-      shouldPublishGraphDiagnostics({
-        documentId: "anim-graph:loco",
-        activeDocumentId: "anim-graph:loco",
-        documentKind: "anim-graph-3d",
-        animEditorMode: "animationObject",
       }),
     ).toBe(true);
   });

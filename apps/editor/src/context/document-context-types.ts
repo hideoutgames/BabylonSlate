@@ -48,7 +48,6 @@ import type { PlayScriptCompileOptions } from "../services/play-content-service"
 import type { PluginImportResult, ProjectService } from "../services/project-service";
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import type { SourceControlService } from "../services/source-control-service";
-import type { AnimEditorMode } from "../shell/anim-document-layout";
 import type { DockviewSurface } from "../shell/dockview-surface";
 import type { SceneMode } from "../shell/scene-document-layout";
 
@@ -356,8 +355,6 @@ export interface DocumentContextValue {
   ) => void;
   unregisterDockviewApi: (id: string, surface?: DockviewSurface) => void;
   captureLayoutForId: (id: string) => void;
-  animEditorMode: AnimEditorMode;
-  setAnimEditorMode: (id: string, mode: AnimEditorMode) => void;
   sceneMode: SceneMode;
   setSceneMode: (id: string, mode: SceneMode) => void;
   activateDockPanel: (panelId: string) => void;
@@ -511,7 +508,6 @@ export type RegistryState = Pick<
 export type ActiveDocumentState = Pick<
   DocumentContextValue,
   | "activeDocumentId"
-  | "animEditorMode"
   | "sceneMode"
   | "isLayoutFocused"
   | "canUndoActiveDocument"

@@ -129,7 +129,7 @@ export function GraphPanel(
   const { documentId } = useDocumentWorkspace();
   const documentActions = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
+  const { activeDocumentId, sceneMode } = useActiveDocumentState();
   const { focusedNodeId, openSessionSource } = usePlay();
   const {
     selectedNodeIds,
@@ -455,8 +455,6 @@ export function GraphPanel(
         documentId,
         activeDocumentId,
         documentKind: doc?.ref.kind ?? "",
-        animEditorMode:
-          isAnimGraphDocumentKind(doc?.ref.kind) ? animEditorMode : undefined,
         sceneMode,
       })
     ) {
@@ -539,7 +537,6 @@ export function GraphPanel(
     inputAssets,
     dataAssets,
     typeSchemas,
-    animEditorMode,
     sceneMode,
     focused,
     materialDomains,

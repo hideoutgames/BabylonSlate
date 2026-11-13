@@ -15,11 +15,11 @@ To make a 3D graph on a rig, right-click its Skeleton or one of its Models and c
 
 ## Editor
 
-Double-tap an Animation Graph to open it. A mode switch at the top of the editor changes between **State Machine** and **Animation Object**.
+Double-tap an Animation Graph to open it. Its **Graph** window shows the Anim Graph and its State Machines; the **Animation Object** window, a tab beside it, shows the graph's script. Both are windows like any other: drag a tab to see them side by side, or reopen a closed one from **Windows**.
 
-**State Machine**
+**Graph**
 
-The graph has three levels. A bar above the canvas shows where you are, such as **Anim Graph › Locomotion › Run**. Tap a name in it to go there, or tap **Back** to step out one level.
+The Graph has three levels. A bar above the canvas shows where you are, such as **Anim Graph › Locomotion › Run**. Tap a name in it to go there, or tap **Back** to step out one level.
 
 - **Anim Graph**: the top level, a pose graph that ends in **Output Pose** (2D: **Output Frame**). Its result is what the [Animation Graph component](../components/animation-graph.md) plays. A new graph has one [State Machine](../scripting/animation/state-machine-pose.md) node wired to the output. Add more State Machine nodes and blend them, for example a locomotion State Machine with an upper-body one. Adding a State Machine node adds a State Machine; deleting the node deletes it. Double-tap a State Machine node to open it.
 - **State Machine**: each state is a node. Drag from one state to another to add a transition. Select a wire or its blend dot to edit that transition. Double-tap a state to open its state graph.
@@ -30,12 +30,12 @@ Pose and frame wires are thick and connect only to pins of their own type. The o
 The panels show:
 
 - **Variables**: the graph's variables and the open State Machine's states. **Add Variable** and **Add State** add rows; the entry state shows an **Entry** badge. Tap a state to select it on its State Machine.
-- **Inspector**: in a State Machine, settings for the selected state or transition, or the State Machine's **Name** and the graph's **Skeleton** (3D) when nothing is selected. With several states selected, it shows the **Clip** and **Playback** settings they all have, with **Mixed Values** where they differ. An edit changes every selected state, and typing a sum such as `Mixed Values+4` in **Speed** changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Names, the entry state and transitions are edited one state at a time. A state's outgoing transitions are listed under **Transitions**, one card each; collapse a card to see only its blend time and direction. In the Anim Graph or a state graph it shows the selected node's settings, such as a player's **Animation** and **Loop**.
+- **Inspector**: follows the canvas you last used. In a State Machine, it shows settings for the selected state or transition, or the State Machine's **Name** and the graph's **Skeleton** (3D) when nothing is selected. With several states selected, it shows the **Clip** and **Playback** settings they all have, with **Mixed Values** where they differ. An edit changes every selected state, and typing a sum such as `Mixed Values+4` in **Speed** changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Names, the entry state and transitions are edited one state at a time. A state's outgoing transitions are listed under **Transitions**, one card each; collapse a card to see only its blend time and direction. In the Anim Graph, a state graph or the **Animation Object**, it shows the selected node's settings, such as a player's **Animation** and **Loop**.
 - **Compiler Results**: errors and warnings.
 
 **Animation Object**
 
-A script graph that runs for each Animation Graph component using the graph. It starts with [Event Initialize Animation](../scripting/animation/event-initialize-animation.md) and [Event Update Animation](../scripting/animation/event-update-animation.md). Use it to set the graph's variables.
+The **Animation Object** window holds a script graph that runs for each Animation Graph component using the graph. It starts with [Event Initialize Animation](../scripting/animation/event-initialize-animation.md) and [Event Update Animation](../scripting/animation/event-update-animation.md). Use it to set the graph's variables.
 
 ## Settings
 
@@ -79,7 +79,7 @@ Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule and pose g
 
 ## Watch the graph run
 
-Start a Simulation with the graph open and pick an actor in **Debug Instance**. On a State Machine's canvas the states it plays light up, and a transition lights up when it is taken; each State Machine shows its own. **Animation Object** mode lights up the nodes that run, like a Class. See [Watch a graph run](../debugging/index.md#watch-a-graph-run).
+Start a Simulation with the graph open and pick an actor in **Debug Instance**. On a State Machine's canvas the states it plays light up, and a transition lights up when it is taken; each State Machine shows its own. The **Animation Object** window lights up the nodes that run, like a Class. See [Watch a graph run](../debugging/index.md#watch-a-graph-run).
 
 To stop the game when the graph enters a state, choose **Add Breakpoint** from the state's menu. To stop it when a transition is taken, select the transition or its state and choose **Add Breakpoint** in the **Inspector**; a Both Ways transition also has **Add Reverse Breakpoint**. **Edit Breakpoint…** makes one stop only on a given hit. See [Breakpoints](../debugging/index.md#breakpoints).
 
