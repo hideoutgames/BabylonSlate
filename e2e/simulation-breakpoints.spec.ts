@@ -75,9 +75,13 @@ test("a breakpoint set from a node's menu stops a Simulation, opens the node and
   await expect(printNode(page)).toContainText("Print");
   await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At main › Event Tick › Print on Hero");
   await expect(page.getByTestId("graph-debug-instance-select")).toContainText("Hero");
-  // The object's path shows from its next tick on (a Step stops at the node again) and stays lit while paused.
-  await page.getByTestId("simulation-step").click();
+  // The frame the object stopped in is lit at once and stays lit while paused; Next Frame stops at the node
+  // again and keeps the stop named.
   await expect.poll(() => heldNodes(page), { timeout: 15_000 }).toEqual(["print", "tick"]);
+  await page.getByTestId("simulation-step").click();
+  await expect.poll(() => tickIndex(page), { timeout: 15_000 }).toBeGreaterThan(stoppedAt);
+  await expect.poll(() => heldNodes(page), { timeout: 15_000 }).toEqual(["print", "tick"]);
+  await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveText("main");
 
   // Switched off while the Simulation runs, it no longer stops it.
   await printNode(page).locator("[data-node-role]").click({ button: "right" });

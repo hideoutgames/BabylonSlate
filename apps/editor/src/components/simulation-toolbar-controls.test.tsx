@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import type { SimulationControls } from "../context/simulation-controls-context";
-import { SimulationToolbarControls } from "./simulation-toolbar-controls";
+import { DebugStepToolbarControls, SimulationToolbarControls } from "./simulation-toolbar-controls";
 
 afterEach(() => {
   cleanup();
@@ -45,31 +45,6 @@ describe("SimulationToolbarControls", () => {
     expect(onStop).toHaveBeenCalledOnce();
   });
 
-  it("offers Step only while paused, and not while a step is still running", () => {
-    renderControls();
-    expect(screen.queryByTestId("simulation-step")).toBeNull();
-    cleanup();
-    const paused = controls({ paused: true });
-    renderControls({ controls: paused });
-    fireEvent.click(screen.getByTestId("simulation-step"));
-    expect(paused.step).toHaveBeenCalledOnce();
-    cleanup();
-    renderControls({ controls: controls({ paused: true, stepPending: true }) });
-    expect((screen.getByTestId("simulation-step") as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("names where a breakpoint stopped while paused there, and opens the node again", () => {
-    const onOpenStop = vi.fn();
-    renderControls({ controls: controls({ paused: true }), stoppedAt: "Hero › Event Tick › Print String on First", onOpenStop });
-    const stop = screen.getByTestId("simulation-breakpoint-stop");
-    expect(stop.getAttribute("aria-label")).toBe("Stopped At Hero › Event Tick › Print String on First");
-    fireEvent.click(stop);
-    expect(onOpenStop).toHaveBeenCalledOnce();
-    cleanup();
-    renderControls({ controls: controls({ paused: false }), stoppedAt: "Hero › Event Tick › Print String on First" });
-    expect(screen.queryByTestId("simulation-breakpoint-stop")).toBeNull();
-  });
-
   it("names what Stop does with Simulation changes", () => {
     renderControls({ controls: controls({ keepChanges: true }) });
     expect(screen.getByTestId("simulation-session-stop").getAttribute("aria-label")).toBe("Stop Simulation and Keep Changes");
@@ -96,5 +71,40 @@ describe("SimulationToolbarControls", () => {
     renderControls({ onReturnToScene });
     fireEvent.click(screen.getByTestId("simulation-return-to-scene"));
     expect(onReturnToScene).toHaveBeenCalledOnce();
+  });
+});
+
+describe("DebugStepToolbarControls", () => {
+  const stop = { className: "A Very Long Hero Class Name", entryName: "Event Tick", nodeTitle: "Print String", objectName: "First" };
+
+  function renderDebug(props: Partial<Parameters<typeof DebugStepToolbarControls>[0]> = {}) {
+    render(
+      <TooltipProvider>
+        <DebugStepToolbarControls controls={controls({ paused: true })} stopping={false} onFocusStep={vi.fn()} {...props} />
+      </TooltipProvider>,
+    );
+  }
+
+  it("names the asset a breakpoint stopped in and opens the node from it", () => {
+    const onOpenStop = vi.fn();
+    renderDebug({ stop, onOpenStop });
+    const button = screen.getByTestId("simulation-breakpoint-stop");
+    expect(button.textContent).toBe("A Very Long Hero Class Name");
+    expect(button.getAttribute("aria-label")).toBe("Stopped At A Very Long Hero Class Name › Event Tick › Print String on First");
+    fireEvent.click(button);
+    expect(onOpenStop).toHaveBeenCalledOnce();
+    cleanup();
+    renderDebug();
+    expect(screen.queryByTestId("simulation-breakpoint-stop")).toBeNull();
+  });
+
+  it("runs one frame from Next Frame, and not while a step is still running", () => {
+    const paused = controls({ paused: true });
+    renderDebug({ controls: paused });
+    fireEvent.click(screen.getByRole("button", { name: "Next Frame" }));
+    expect(paused.step).toHaveBeenCalledOnce();
+    cleanup();
+    renderDebug({ controls: controls({ paused: true, stepPending: true }) });
+    expect((screen.getByRole("button", { name: "Next Frame" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

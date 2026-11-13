@@ -16,7 +16,7 @@ import {
 import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptBreakpoints } from "./script-breakpoints";
-import type { ScriptDebugTrace } from "./script-debug";
+import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
 import type { SpriteClipState } from "./sprite-clip-trace";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
@@ -39,6 +39,8 @@ interface AnimGraphRuntimeHost {
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
   /** The session's node breakpoints, the State Machine's included. */
   breakpoints(): ScriptBreakpoints;
+  /** Where a component the debugger does not follow records, while breakpoints are set, should one stop it. */
+  frameTrace(object: EngineObject): ScriptDebugTrace | null;
   emit(command: CommandMessage): void;
 }
 
@@ -211,12 +213,11 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
    * the transition taken. A Jump To State replaces the previous evaluation, so it is no transition.
    */
   private reportStateMachine(
-    graphGuid: string,
+    recorder: ScriptGraphRecorder | null | undefined,
     document: AnimGraphDocument,
     previous: AnimEvalState | null,
     next: AnimEvalState,
   ): void {
-    const recorder = this.debugSink?.graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
     if (!recorder) return;
     recorder.exec(next.stateId);
     for (const stateId in next.blendWeights) {
@@ -332,7 +333,9 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       );
       this.evalByComponent.set(evalKey, next);
       if (hit) this.reportStateBreakpoints(hit, previous, next, taken);
-      if (component === this.debugComponent) this.reportStateMachine(guid, document, previous, next);
+      // The followed component reports to the debugger; another, while breakpoints are set, for the frame a stop shows.
+      const sink = component === this.debugComponent ? this.debugSink : this.host.frameTrace(component);
+      if (sink) this.reportStateMachine(sink.graph(guid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID), document, previous, next);
       // The frame a 2D graph shows most: its heaviest Sprite Animation layer.
       let sprite: (typeof next.layers)[number] | undefined;
       for (const layer of next.layers) {

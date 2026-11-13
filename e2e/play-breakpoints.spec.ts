@@ -31,6 +31,14 @@ const CLASS_GRAPH = {
 const graphPanel = (page: Page) => page.getByTestId("graph-panel");
 const printNode = (page: Page) => graphPanel(page).locator('.react-flow__node[data-id="print"]');
 const tickIndex = (page: Page) => page.evaluate(() => (globalThis as TestHost).__hapticPlayTest.tickIndex());
+/** The graph nodes whose run highlight is held (paused at full strength). */
+const heldNodes = (page: Page) => page.evaluate(() => document.getAnimations()
+  .filter((animation) => animation.playState === "paused")
+  .map((animation) => (animation.effect as KeyframeEffect | null)?.target)
+  .filter((target): target is Element => target instanceof Element && target.matches("[data-node-role]"))
+  .map((target) => target.closest(".react-flow__node")?.getAttribute("data-id"))
+  .filter((id): id is string => !!id)
+  .sort());
 const editorQuiet = (page: Page) => page.evaluate(() => (globalThis as TestHost).__hapticTest.editorQuiet());
 
 test("a breakpoint stops editor Play behind the editor at the node, and Resume returns to the game", async ({ page }) => {
@@ -65,6 +73,12 @@ test("a breakpoint stops editor Play behind the editor at the node, and Resume r
   await expect(page.getByTestId("play-break-resume")).toBeVisible();
   await expect(page.getByTestId("simulation-breakpoint-stop")).toHaveAttribute("aria-label", "Stopped At main › Event Tick › Print on Hero");
   await expect(page.getByTestId("graph-debug-instance-select")).toContainText("Hero");
+  // Nothing was watched while Play ran, yet the frame it stopped in is lit, and stepping sits beside Resume.
+  await expect.poll(() => heldNodes(page), { timeout: 15_000 }).toEqual(["print", "tick"]);
+  const island = page.getByTestId("debug-step-island");
+  await expect(island.getByTestId("simulation-breakpoint-stop")).toHaveText("main");
+  await expect(island.getByTestId("graph-stepping-bar")).toBeVisible();
+  await expect(island.getByRole("button", { name: "Next Frame" })).toBeVisible();
   // The editor is back and read-only while Play is stopped.
   expect(await editorQuiet(page)).toBe(false);
   await expect(page.locator('[data-testid="document-authoring-lock-banner"]:visible').first())

@@ -169,6 +169,11 @@ export class ScriptBreakpoints {
     this.graphs = graphs;
   }
 
+  /** Whether any graph of the asset (a Class path, a tree's or an Animation Graph's guid) has a breakpoint. */
+  hasAsset(assetGuid: string): boolean {
+    return this.graphs.has(assetGuid);
+  }
+
   /** The breakpoints of one graph, or null when it has none. */
   graph(assetGuid: string, graphId: string): GraphBreakpoints | null {
     return this.graphs.get(assetGuid)?.get(graphId) ?? null;

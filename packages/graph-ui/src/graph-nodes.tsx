@@ -594,8 +594,11 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   return null;
 }
 
-/** A canvas waits before a node or pin tooltip, so moving across nodes does not flash them. */
-const GRAPH_HINT_DELAY_MS = 600;
+/**
+ * A canvas waits a second before a node or pin description, so passing over nodes or working on them does not
+ * open one. The debugger's value tips (`GraphRunOverlay`) open at once.
+ */
+const GRAPH_HINT_DELAY_MS = 1000;
 
 /** A pin name with a `description` explains it as a tooltip (`LabelHint`). */
 function PinHint({ pin, children }: { pin: SerializedPin; children: ReactElement }) {

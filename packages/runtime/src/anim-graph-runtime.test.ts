@@ -30,6 +30,7 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
     scripts: () => ({ invokeAnimEvent, invokeAnimRule: vi.fn(), invokeAnimPose: vi.fn() }),
     setSpriteClip,
     breakpoints: () => breakpoints,
+    frameTrace: () => null,
     emit: () => {},
   });
   runtime.register("graph", document);

@@ -2,7 +2,7 @@
  * Collapse order of the global toolbar's items when it is too narrow: lower tiers move into
  * the More Actions menu first, and items sharing a tier move together. Missing from this
  * list means pinned: Save All, Play and Simulate, the running Simulation's Pause, Stop and
- * Game / Edit input, and the Debug menu never collapse.
+ * Game / Edit input, a paused session's Next Frame, and the Debug menu never collapse.
  *
  * Utilities that are also reachable elsewhere go first, then editing history (read-only
  * during a Simulation), then navigation and modes, and last the actions the open document
@@ -18,7 +18,7 @@ export const TOOLBAR_OVERFLOW_PRIORITY = {
   sceneMode: 70,
   debugInstance: 72,
   breakpointStop: 73,
-  simulationStep: 74,
+  stepping: 74,
   compilationError: 75,
   documentAction: 80,
 } as const;

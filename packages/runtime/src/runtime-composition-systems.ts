@@ -87,6 +87,7 @@ export function createAnimGraphs(rt: RuntimeComposition): AnimGraphRuntime {
     scripts: () => rt.scriptHost,
     setSpriteClip: (actor, clip) => rt.setActorSpriteClip(actor, clip),
     breakpoints: () => rt.breakpoints,
+    frameTrace: (object) => rt.scriptDebug.frameTrace(object),
     emit: (command) => rt.emit(command),
   });
 }
@@ -108,6 +109,7 @@ export function createBehaviourTrees(rt: RuntimeComposition): BehaviourTreeRunti
     actorName: (actor) => debugActorName(actor),
     recordDiagnostic: (diagnostic) => recordDiagnostic(rt, diagnostic),
     breakpoints: () => rt.breakpoints,
+    frameTrace: (object) => rt.scriptDebug.frameTrace(object),
     emit: (command) => rt.emit(command),
   }, nowMs);
 }
@@ -464,6 +466,7 @@ export function createScriptDebug(rt: RuntimeComposition): ScriptDebugObserver {
       rt.behaviourTrees.setDebugTrace(object, sink);
       rt.animGraphs.setDebugTrace(object, sink);
     },
+    breakpoints: () => rt.breakpoints,
   });
 }
 

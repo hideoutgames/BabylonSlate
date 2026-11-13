@@ -277,11 +277,6 @@ export interface GraphEditorProps {
   /** Defaults to `!readOnly`. Behaviour trees pass false during Play. */
   nodesDraggable?: boolean;
   toolbarExtra?: ReactNode;
-  /**
-   * Host controls in an island at the bottom centre of the canvas, shown on a read-only canvas too
-   * (the stepping control while a Simulation is paused).
-   */
-  overlay?: ReactNode;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
@@ -376,6 +371,15 @@ const NOTICE_MS = 4000;
 /** A stable default, so the menu and key handlers do not rebuild every render. */
 const NO_HIDDEN_TOOLBAR_ACTIONS: NonNullable<GraphEditorProps["hiddenToolbarActions"]> = [];
 const REPLACED_WIRE_NOTICE = "Replaced the existing wire. Use a Sequence to run several.";
+/**
+ * A pin to connect and the empty canvas (the pane element itself, which also holds the nodes) handle their own
+ * taps; anything else tapped drops a chosen pin.
+ */
+function handlesOwnTap(target: Element): boolean {
+  return target.classList.contains("react-flow__pane") || target.closest(".react-flow__handle") !== null;
+}
+/** How far a press may move and still be a tap rather than a pan or a drag. */
+const CHOSEN_PIN_TAP_SLOP_PX = 8;
 /** Keys typed into these keep their meaning (text editing, menu navigation). */
 const KEY_EXEMPT_TARGETS =
   'input, textarea, select, [contenteditable="true"], .nokey, [role="menu"], [role="listbox"], [role="combobox"]';
@@ -804,7 +808,6 @@ function GraphEditorCanvas({
   defaultEdgeOptions = { type: "default" },
   nodesDraggable: nodesDraggableProp,
   toolbarExtra,
-  overlay,
   selectedAttachmentId = null,
   onAttachmentSelect,
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
@@ -1779,6 +1782,55 @@ function GraphEditorCanvas({
     setPendingPin(null);
   }, [tapToConnect]);
 
+  const dropChosenPin = useCallback(() => {
+    if (!pendingPinRef.current) return;
+    pendingPinRef.current = null;
+    setPendingPin(null);
+  }, []);
+
+  // Doing anything else drops the chosen pin: a tap on a node, a wire, a control or the toolbar (the empty
+  // canvas is `handlePaneClick`'s), a context menu or Escape. Panning and zooming keep it, so a far pin can
+  // still be reached, as does a tap on another pin, which `onPinTap` handles.
+  useEffect(() => {
+    const root = wrapperRef.current;
+    if (!root) return;
+    let press: { pointerId: number; x: number; y: number } | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      press = event.isPrimary !== false && pendingPinRef.current && target && !handlesOwnTap(target)
+        ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+        : null;
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const start = press;
+      press = null;
+      if (!start || start.pointerId !== event.pointerId) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) <= CHOSEN_PIN_TAP_SLOP_PX) dropChosenPin();
+    };
+    const onPointerCancel = () => { press = null; };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dropChosenPin();
+    };
+    root.addEventListener("pointerdown", onPointerDown, true);
+    root.addEventListener("pointerup", onPointerUp, true);
+    root.addEventListener("pointercancel", onPointerCancel, true);
+    root.addEventListener("contextmenu", dropChosenPin, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      root.removeEventListener("pointerdown", onPointerDown, true);
+      root.removeEventListener("pointerup", onPointerUp, true);
+      root.removeEventListener("pointercancel", onPointerCancel, true);
+      root.removeEventListener("contextmenu", dropChosenPin, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [dropChosenPin]);
+
+  // A chosen pin whose node is gone (deleted, undone) is dropped.
+  useEffect(() => {
+    const chosen = pendingPinRef.current;
+    if (chosen && !nodes.some((node) => node.id === chosen.nodeId)) dropChosenPin();
+  }, [dropChosenPin, nodes]);
+
   const handleConnect = useCallback(
     (connection: Connection) => {
       // A cancelled drag ends without a wire, even when XYFlow later reports
@@ -2749,10 +2801,9 @@ function GraphEditorCanvas({
         skipPaneClickRef.current = false;
         return;
       }
-      const pending = pendingPinRef.current;
-      if (!readOnly && connectEndMode === "add-node" && pending) {
-        pendingPinRef.current = null;
-        setPendingPin(null);
+      // With a pin chosen to connect, a tap on the empty canvas only drops it.
+      if (!readOnly && pendingPinRef.current) {
+        dropChosenPin();
         return;
       }
       clearSelection();
@@ -2769,7 +2820,7 @@ function GraphEditorCanvas({
     },
     [
       clearSelection,
-      connectEndMode,
+      dropChosenPin,
       readOnly,
       screenToFlowPosition,
     ],
@@ -3303,7 +3354,7 @@ function GraphEditorCanvas({
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
-          onNodeDragStart={(_event, node) => { proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
+          onNodeDragStart={(_event, node) => { dropChosenPin(); proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onEdgesChange={handleEdgesChange}
@@ -3380,13 +3431,6 @@ function GraphEditorCanvas({
           />
         </ReactFlow>
         <GraphViewportControls onFitGraph={fitGraph} />
-        {overlay ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center px-14">
-            <div className="pointer-events-auto toolbar-island" data-graph-overlay="" data-testid="graph-overlay">
-              {overlay}
-            </div>
-          </div>
-        ) : null}
         {runTrace ? <GraphRunOverlay root={wrapperRef} trace={runTrace} graph={runGraph} /> : null}
         {notice === null ? null : (
           <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">
