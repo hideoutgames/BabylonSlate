@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { LazyGlslCodePreview } from "../components/lazy-code-editors";
 import {
-  canBreakOnNode,
   canvasNodeTitle,
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
@@ -32,12 +31,11 @@ import { GraphPinDefaultHostContext } from "../context/graph-pin-defaults-provid
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
-import { breakpointMenuItems } from "../lib/breakpoint-menu";
 import { watchablePins, watchPinMenuItems } from "../lib/watch-menu";
 import { useWatchStore } from "../context/watch-store-context";
 import { conditionPins } from "../lib/breakpoint-settings";
 import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
-import { useKeybindChord } from "../context/keybind-context";
+import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
@@ -331,7 +329,6 @@ export function GraphPanel(
   // Pin watches use the same terms.
   const watchStore = useWatchStore();
   const watchAsset = watchStore && doc?.ref.kind === "graph" ? doc.ref.path : undefined;
-  const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
   const graphName = activeFunctionId
     ? graphContent?.members?.find((member) => member.id === activeFunctionId)?.name ?? activeFunctionId
     : "Event Graph";
@@ -345,11 +342,22 @@ export function GraphPanel(
       nodeTitle: node ? canvasNodeTitle(node.data, node.type) : nodeId,
     };
   }, [breakpointAsset, classId, graphName]);
-  const breakpoints = useMemo(
-    () => breakpointStore && breakpointAsset ? breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel) : undefined,
-    [breakpointAsset, breakpointLabel, breakpointStore, runGraphId],
-  );
   const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
+  // Edit Breakpoint… offers the node's condition pins as the graph has them now.
+  const breakpoints = useMemo(() => {
+    if (!breakpointStore || !breakpointAsset) return undefined;
+    const edit = (nodeId: string) => {
+      const { nodes, edges } = latestGraph.current;
+      const data = nodes.find((candidate) => candidate.id === nodeId)?.data;
+      editBreakpoint({
+        location: { assetGuid: breakpointAsset, graphId: runGraphId, nodeId },
+        nodeTitle: breakpointLabel(nodeId).nodeTitle,
+        pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
+          (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
+      });
+    };
+    return breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel, { edit });
+  }, [breakpointAsset, breakpointLabel, breakpointStore, editBreakpoint, runGraphId]);
   // A function graph runs under its name, so renaming a function moves its breakpoints and watches with it.
   const functionRunIds = useMemo(() => new Map(
     Object.keys(graphContent?.functionGraphs ?? {}).map((id) => [id, functionGraphExportName({
@@ -739,6 +747,16 @@ export function GraphPanel(
     graphId: runGraphId,
     node: extensionNodeRef.current,
   }), [doc?.ref.path, runGraphId]));
+  // Rename (F2) renames the one selected custom event, as the node menu's Rename Event does.
+  const renameChord = useKeybindChord("edit.rename");
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const renameTargetId = selectedNodeIds.length === 1 && graphContent && canRenameCustomEvent(graphContent, selectedNodeIds[0]!)
+    ? selectedNodeIds[0]!
+    : null;
+  useKeybindCommand("edit.rename", () => { if (renameTargetId) setRenameEventId(renameTargetId); }, {
+    enabled: renameTargetId !== null,
+    focusWithinRef: canvasRef,
+  });
   const contextMenuItemsForNode = useCallback(
     (nodeId: string) => {
       const withExtensions = (entries: NestedMenuItem[]) => {
@@ -747,7 +765,7 @@ export function GraphPanel(
         return [...entries, ...nodeExtensionItems];
       };
       const items: NestedMenuItem[] = graphContent && canRenameCustomEvent(graphContent, nodeId)
-        ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
+        ? [{ id: "rename-event", label: "Rename Event", shortcut: renameChord, onSelect: () => setRenameEventId(nodeId) }]
         : [];
       const { nodes, edges } = latestGraph.current;
       const node = nodes.find((candidate) => candidate.id === nodeId);
@@ -758,24 +776,10 @@ export function GraphPanel(
           label: { ...breakpointLabel(nodeId), className: classId ?? watchAsset, pinName: pin.name },
         })));
       }
-      if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return withExtensions(items);
-      const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
-      const edit = () => {
-        const { nodes, edges } = latestGraph.current;
-        const data = nodes.find((candidate) => candidate.id === nodeId)?.data;
-        editBreakpoint({
-          location,
-          nodeTitle: breakpointLabel(nodeId).nodeTitle,
-          pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
-            (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
-        });
-      };
-      return withExtensions([
-        ...items,
-        ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord, edit),
-      ]);
+      // The canvas adds the breakpoint items for the whole selection.
+      return withExtensions(items);
     },
-    [breakpointAsset, breakpointLabel, breakpointStore, classId, editBreakpoint, graphContent, nodeExtensionItems, runGraphId, toggleBreakpointChord, watchAsset, watchStore],
+    [breakpointLabel, classId, graphContent, nodeExtensionItems, renameChord, runGraphId, watchAsset, watchStore],
   );
 
   // In a function graph, a wire dropped on the Input or Output node's body adds a pin of its type.
@@ -847,6 +851,7 @@ export function GraphPanel(
         <ClassParticleSystemsContext.Provider value={classParticleSystems}>
         <ClassMaterialsContext.Provider value={classMaterials}>
         <GraphPinDefaultHostContext.Provider value={isEditorGraphHost({ parentClass, parentOf, assetType: indexed?.header.type })}>
+          <div ref={canvasRef} className="h-full min-h-0">
           <GraphEditor
             renderNodeBody={renderNodeBody}
             key={`${documentId}:${activeFunctionId ?? "event"}`}
@@ -900,6 +905,7 @@ export function GraphPanel(
               applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
             }}
           />
+          </div>
         </GraphPinDefaultHostContext.Provider>
         </ClassMaterialsContext.Provider>
         </ClassParticleSystemsContext.Provider>

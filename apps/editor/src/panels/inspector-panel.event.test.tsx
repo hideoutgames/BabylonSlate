@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@haptic/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphPanel } from "./graph-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
+import { KeybindProvider } from "../context/keybind-context";
 
 if (
   typeof window !== "undefined" &&
@@ -131,6 +132,26 @@ describe("Inspector custom event details", () => {
     fireEvent.click(screen.getByTestId("name-prompt-confirm"));
     expect(applyGraphChange.mock.calls[0]?.[1].nodes[0]?.data.name).toBe("On Damage");
     expect(applyGraphChange.mock.calls[0]?.[1].nodes[1]?.data.name).toBe("On Damage");
+  });
+
+  it("renames the selected custom event with the Rename key its menu item shows", async () => {
+    const { container } = render(
+      <KeybindProvider>
+        <GraphEditingProvider>
+          <GraphPanel {...({} as IDockviewPanelProps)} />
+        </GraphEditingProvider>
+      </KeybindProvider>,
+    );
+    fireEvent.contextMenu(screen.getByText("Event On Hit"));
+    expect(screen.getByRole("menuitem", { name: /^Rename Event/ }).getAttribute("aria-keyshortcuts")).toBe("F2");
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape", code: "Escape" });
+    // The key acts on the selection with focus in the graph, as after a click on the node.
+    const node = container.querySelector<HTMLElement>('.react-flow__node[data-id="evt-1"]')!;
+    fireEvent.click(node);
+    await act(async () => {});
+    node.focus();
+    fireEvent.keyDown(node, { key: "F2", code: "F2" });
+    expect((screen.getByLabelText("Event Name") as HTMLInputElement).value).toBe("On Hit");
   });
 
   it("renames the selected custom event and its call from Details", () => {

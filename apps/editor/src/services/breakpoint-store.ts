@@ -135,21 +135,26 @@ export class BreakpointStore extends KeyedListStore<BreakpointEntry> {
       : entry);
   }
 
-  /** The canvas's view of one graph's breakpoints. Memoize it per graph. */
+  /**
+   * The canvas's view of one graph's breakpoints. Memoize it per graph. `edit` opens the host's
+   * Edit Breakpoint dialog for a node; `canBreak` widens or narrows which nodes can have one.
+   */
   graphView(
     assetGuid: string,
     graphId: string,
     labelFor: (nodeId: string) => BreakpointEntry["label"],
-    canBreak?: GraphBreakpoints["canBreak"],
+    { canBreak, edit }: Pick<GraphBreakpoints, "canBreak" | "edit"> = {},
   ): GraphBreakpoints {
     return {
       ...(canBreak ? { canBreak } : {}),
+      ...(edit ? { edit } : {}),
       state: (nodeId): GraphBreakpointState | null => {
         const entry = this.entries.get(keyOf({ assetGuid, graphId, nodeId }));
         return entry ? (entry.enabled ? "enabled" : "disabled") : null;
       },
       subscribe: this.subscribe,
       toggle: (nodeId) => this.toggle({ assetGuid, graphId, nodeId }, labelFor(nodeId)),
+      setEnabled: (nodeId, enabled) => this.setEnabled({ assetGuid, graphId, nodeId }, enabled),
     };
   }
 }
