@@ -329,7 +329,7 @@
 
 /*
  * A hit band of the same width on screen at every zoom: 20px with a mouse, a touch target on touch.
- * It needs a stroke paint: Chromium does not hit-test the stroke of a path whose stroke is none.
+ * It needs a stroke paint: Chromium hit-tests an unpainted stroke only on some wires (level ones missed clicks on one side).
  */
 .anim-transition-hit {
   stroke: transparent;

@@ -357,23 +357,26 @@ test.describe("P9 content systems", () => {
     await page.mouse.up();
     const wire = page.locator(".react-flow__edge").first();
     await expect(wire).toHaveCount(1);
-    await page.getByTestId("graph-editor").locator(".react-flow__pane").click({ position: { x: 20, y: 20 } });
-    await expect(wire).not.toHaveClass(/\bselected\b/);
 
-    // 8px beside the 1.25px wire (50% zoom), a third of the way along: the hit band takes it, not the canvas.
-    const beside = await wire.locator(".react-flow__edge-path").evaluate((path: SVGPathElement) => {
-      const length = path.getTotalLength();
-      const at = path.getPointAtLength(length * 0.3);
-      const ahead = path.getPointAtLength(length * 0.3 + 1);
-      const matrix = path.getScreenCTM()!;
-      const screen = (x: number, y: number) => ({ x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f });
-      const a = screen(at.x, at.y);
-      const b = screen(ahead.x, ahead.y);
-      const norm = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-      return { x: a.x - ((b.y - a.y) / norm) * 8, y: a.y + ((b.x - a.x) / norm) * 8 };
-    });
-    await page.mouse.click(beside.x, beside.y);
-    await expect(wire).toHaveClass(/\bselected\b/);
+    // 8px to either side of the 1.25px wire (50% zoom), a third of the way along: the hit band takes both, not the canvas.
+    for (const offset of [8, -8]) {
+      // Selecting a state clears the wire (two canvas clicks this close together would open Add Node).
+      await page.getByTestId("anim-state-node-idle").click();
+      await expect(wire).not.toHaveClass(/\bselected\b/);
+      const beside = await wire.locator(".react-flow__edge-path").evaluate((path: SVGPathElement, offset) => {
+        const length = path.getTotalLength();
+        const at = path.getPointAtLength(length * 0.3);
+        const ahead = path.getPointAtLength(length * 0.3 + 1);
+        const matrix = path.getScreenCTM()!;
+        const screen = (x: number, y: number) => ({ x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f });
+        const a = screen(at.x, at.y);
+        const b = screen(ahead.x, ahead.y);
+        const norm = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        return { x: a.x - ((b.y - a.y) / norm) * offset, y: a.y + ((b.x - a.x) / norm) * offset };
+      }, offset);
+      await page.mouse.click(beside.x, beside.y);
+      await expect(wire).toHaveClass(/\bselected\b/);
+    }
     const card = animStateMachine(page).locator('[data-testid^="anim-graph-transition-"][data-testid$="-toggle"]');
     await expect(card).toHaveText("Idle To State");
 
