@@ -45,7 +45,6 @@ import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Tex
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
 import type { SceneReadinessScope } from "./scene-readiness-signal";
-import { lightToggleScope } from "./light-free-meshes";
 import { verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
 import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
@@ -998,8 +997,7 @@ export class ForwardSceneFrameGraph {
     if (this.lightEnabledObservers.has(light)) return;
     this.lightEnabledObservers.set(
       light,
-      // A light switching changes only what meshes drawn by a light-reading Material draw with (`lightToggleScope`).
-      light.onEnabledStateChangedObservable.add(() => this.markReadinessDirty("lightEnabled", lightToggleScope(this.scene))),
+      light.onEnabledStateChangedObservable.add(() => this.markReadinessDirty("lightEnabled")),
     );
   }
 

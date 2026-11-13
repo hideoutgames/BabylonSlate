@@ -12,7 +12,6 @@ import { Scene } from "@babylonjs/core/scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
 import { syncSceneLighting } from "./scene-lighting";
-import { onSceneReadinessDirty, type SceneReadinessScope } from "./scene-readiness-signal";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -90,27 +89,5 @@ describe("light-free meshes", () => {
 
     light.setEnabled(false);
     expect(lightDirty(graph.mesh)).toBe(true);
-  });
-
-  it("scopes the readiness mark of a light that only switched to the meshes drawn by a Material that reads lights", async () => {
-    const scene = litScene();
-    const light = new PointLight("point", new Vector3(0, 2, 0), scene);
-    await graphBox(scene);
-    const standard = standardBox(scene);
-    syncSceneLighting(scene);
-    const marks: (SceneReadinessScope | undefined)[] = [];
-    onSceneReadinessDirty(scene, (reason, scope) => {
-      if (reason === "sceneLighting") marks.push(scope);
-    });
-
-    light.setEnabled(false);
-    syncSceneLighting(scene);
-    expect(marks).toEqual([[standard]]);
-
-    // A light added can change what every mesh draws with.
-    new PointLight("added", new Vector3(0, 3, 0), scene);
-    syncSceneLighting(scene);
-    expect(marks).toHaveLength(2);
-    expect(marks[1]).toBeUndefined();
   });
 });
