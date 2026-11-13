@@ -41,7 +41,7 @@ A ZIP can hold up to 10,000 files and folders, and the files Haptic imports from
 | ENV, DDS (prefiltered cube maps) | Environment cube [Texture](../assets/texture.md) for image-based lighting |
 | HDR (equirectangular Radiance panoramas) | Converted on import to an environment cube [Texture](../assets/texture.md) |
 | GLB, glTF | [Model](../assets/model.md), plus its Textures, [Materials](../assets/material.md), [Skeleton](../assets/skeleton.md) and [Animations](../assets/animation.md) |
-| FBX, OBJ (with MTL), STL | Converted on import, then the same as glTF |
+| FBX, OBJ (with MTL), STL | Converted on import, then the same as glTF. An FBX or glTF file with animations and no mesh, such as a separate `idle.fbx`, imports as a Model with no mesh, its [Skeleton](../assets/skeleton.md) and its [Animations](../assets/animation.md). OBJ and STL hold no skeleton or animation. |
 | MP3, WAV, OGG | [Audio](../assets/audio.md) |
 | TTF, OTF, WOFF, WOFF2 | [Font](../assets/font.md) |
 | MSDF atlas (JSON with its PNG) | [Font](../assets/font.md) |

@@ -146,7 +146,6 @@ async function encodePrimitiveModel(entry: EditorPrimitive): Promise<Uint8Array>
   const glb = encodePrimitiveGlb(entry.name, entry.mesh());
   const payload = normalizeModelPayload({
     materialSlots: [{ index: 0, name: "Material", materialGuid: null }],
-    clipNames: [],
     skeletonGuid: null,
     importScale: 1,
     simpleColliders: [primitiveCollider(entry, glb)],

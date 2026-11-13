@@ -43,6 +43,8 @@ export interface GlbBrowseParse {
   animations: GlbBrowseAnimation[];
   rigKind: GlbRigKind;
   boneNames: string[];
+  /** The file draws something: it has at least one glTF mesh (an animation library has none). */
+  hasMeshes: boolean;
 }
 
 const GLB_MAGIC = 0x46546c67;
@@ -619,7 +621,8 @@ function browseFromGltfJson(
     animationsJson,
   );
 
-  return { materials, images: images_out, animations, rigKind, boneNames };
+  const hasMeshes = Array.isArray(json.meshes) && json.meshes.length > 0;
+  return { materials, images: images_out, animations, rigKind, boneNames, hasMeshes };
 }
 
 /** Clip ranges in source seconds; names agree between import and Babylon loading. */
@@ -640,8 +643,11 @@ export function gltfAnimationClips(json: Record<string, unknown>): GlbBrowseAnim
   });
 }
 
+/** Roots the glTF loader and the FBX converter add for axis conversion; never bones. */
+const LOADER_ROOT_NAMES: ReadonlySet<string> = new Set(["__root__", "__fbx_root__"]);
+
 function isCatalogBoneName(name: string): boolean {
-  return name !== "__root__";
+  return !LOADER_ROOT_NAMES.has(name);
 }
 
 function nodeName(nodes: unknown[], index: number): string {
@@ -717,6 +723,10 @@ function classifyGltfRig(
   if (targeted.size === 0) return { rigKind: "none", boneNames: [] };
 
   const parent = buildParentIndex(nodes);
+  // A file with animations and no mesh at all (an animation library) is its animated node tree.
+  if (!nodes.some((node) => typeof (node as Record<string, unknown> | undefined)?.mesh === "number")) {
+    return { rigKind: "hierarchy", boneNames: hierarchyBoneNamesForTree(nodes, targeted, parent) };
+  }
   const meshParts = new Set<number>();
   for (const index of targeted) collectMeshParts(nodes, index, meshParts);
   if (!parentedMeshesShareAncestor([...meshParts], parent)) {

@@ -386,7 +386,7 @@ describe("Play createEngine view", () => {
       const engine = sharedEngine();
       const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
       handles.push(handle);
-      const payload = { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [] };
+      const payload = { materialSlots: [], skeletonGuid: null, importScale: 1, simpleColliders: [] };
       const release = await handle.acquireSceneSources({ assets: {
         modelBytes: new Map([["dense-lod", encodeUvSphereGlb()], ["dense-full", encodeUvSphereGlb()]]),
         modelPayloads: new Map([["dense-lod", { ...payload, autoLod: true }], ["dense-full", { ...payload, autoLod: false }]]),

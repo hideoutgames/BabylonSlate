@@ -1421,7 +1421,7 @@ describe("project documents as .hasset", () => {
           dependencies: ["mat-old"],
           parentClass: null,
           payload: {
-            clipNames: ["Walk"],
+            importScale: 3,
             materialSlots: [
               { index: 0, name: "Hero Mat", materialGuid: "mat-old" },
             ],
@@ -1449,7 +1449,7 @@ describe("project documents as .hasset", () => {
 
     const saved = await decodeHasset(await storage.readBinary(path));
     expect(saved.header.type).toBe("Model");
-    expect(saved.header.payload.clipNames).toEqual(["Walk"]);
+    expect(saved.header.payload.importScale).toBe(3);
     expect(saved.header.payload.materialSlots).toEqual([
       { index: 0, name: "Hero Mat", materialGuid: "mat-new" },
     ]);

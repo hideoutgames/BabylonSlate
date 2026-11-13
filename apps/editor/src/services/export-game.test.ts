@@ -59,7 +59,7 @@ describe("collectAndExportGame", () => {
       ...createDefaultScene(),
       actors: [createActor("hero", "Hero", { components: [mesh] })],
     };
-    const model = { skeletonGuid: "hero-skeleton", materialSlots: [], clipNames: [] };
+    const model = { skeletonGuid: "hero-skeleton", materialSlots: [] };
     const skeleton = { modelGuid: "hero-model", kind: "hierarchy", boneNames: ["Root"] };
     const documents: Array<{ guid: string; type: string; payload: Record<string, unknown> }> = [
       { guid: "scene", type: "Scene", payload: scene },

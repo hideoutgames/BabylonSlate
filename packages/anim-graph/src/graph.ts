@@ -974,7 +974,6 @@ export interface AnimClipCatalogEntry {
   type: string;
   name: string;
   clipName?: string;
-  clipNames?: string[];
   dependencyGuids?: string[];
   /** Sprite Animation or Animation clip duration. */
   durationMs?: number;
@@ -1000,16 +999,8 @@ function resolveOneClip(
     }
     return { ...clip, durationMs: entry.durationMs };
   }
-  if (clip.kind !== "animation") return clip;
-  if (!entry) return clip;
-  if (entry.type === "Model") {
-    // Only an empty name is filled. A name the Model lacks stays as authored
-    // (and plays nothing) rather than silently playing the first group.
-    if (clip.clipName !== "") return clip;
-    const nextName = entry.clipNames?.[0] ?? clip.clipName;
-    return nextName === clip.clipName ? clip : { ...clip, clipName: nextName };
-  }
-  if (entry.type !== "Animation") return clip;
+  // Clips are Animation assets; any other guid resolves to nothing and plays nothing.
+  if (clip.kind !== "animation" || !entry || entry.type !== "Animation") return clip;
   const nextName = entry.clipName || clip.clipName;
   const nextDuration =
     typeof entry.durationMs === "number" &&

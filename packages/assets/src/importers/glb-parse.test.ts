@@ -344,7 +344,9 @@ describe("parseGlbForBrowse", () => {
     expect(model.payload.textureCount).toBeUndefined();
     expect(model.payload.materialCount).toBeUndefined();
     expect(model.payload.animationCount).toBeUndefined();
-    expect(model.payload.clipNames).toEqual(["FixtureClip"]);
+    // The clip is its Animation asset; the Model lists no clip names.
+    expect("clipNames" in model.payload).toBe(false);
+    expect(results.find((r) => r.type === "Animation")!.payload).toMatchObject({ clipName: "FixtureClip" });
     const material = results.find((r) => r.type === "Material")!;
     expect(model.payload.materialSlots).toEqual([
       {
@@ -394,7 +396,6 @@ describe("parseGlbForBrowse", () => {
       "Texture",
     ]);
     const model = results.find((r) => r.type === "Model")!;
-    expect(model.payload.clipNames).toEqual([]);
     expect(model.payload.skeletonGuid).toBeNull();
   });
 
@@ -472,6 +473,46 @@ describe("parseGlbForBrowse", () => {
       kind: "hierarchy",
       boneNames: ["character", "root", "torso", "head"],
     });
+  });
+
+  it("imports an animation library with no mesh as a hierarchy Skeleton and its Animations, with no Material", async () => {
+    // An FBX animation file converts to animated nodes only: no mesh, no skin.
+    const results = await importModel(
+      new TextEncoder().encode(
+        JSON.stringify({
+          asset: { version: "2.0" },
+          nodes: [
+            { name: "__fbx_root__", children: [1] },
+            { name: "Root", children: [2, 4] },
+            { name: "Hips", children: [3] },
+            { name: "Spine" },
+            { name: "LeftFootCtrl" },
+          ],
+          animations: [
+            {
+              name: "Root|Idle",
+              channels: [
+                { target: { node: 2, path: "rotation" }, sampler: 0 },
+                { target: { node: 3, path: "rotation" }, sampler: 0 },
+              ],
+              samplers: [{ input: 0 }],
+            },
+          ],
+          accessors: [{ max: [1.25] }],
+        }),
+      ),
+      { fileName: "idle.gltf", existingGuids: new Set() },
+    );
+    expect(results.map((r) => r.type).sort()).toEqual(["Animation", "Model", "Skeleton"]);
+    expect(results.find((r) => r.type === "Skeleton")!.payload).toMatchObject({
+      kind: "hierarchy",
+      boneNames: ["Root", "Hips", "Spine"],
+    });
+    expect(results.find((r) => r.type === "Animation")!.payload).toMatchObject({
+      clipName: "Root|Idle",
+      durationMs: 1250,
+    });
+    expect(results.find((r) => r.type === "Model")!.payload).toMatchObject({ materialSlots: [] });
   });
 
   it("rejects OBJ instead of writing stub Model assets", async () => {

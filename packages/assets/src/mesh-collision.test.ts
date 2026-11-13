@@ -51,7 +51,6 @@ describe("resolveMeshSimpleColliders", () => {
       { collisionMode: "simple", assetGuid: "model-1" },
       {
         materialSlots: [],
-        clipNames: [],
         skeletonGuid: null,
         importScale: 1,
         simpleColliders: [
@@ -149,7 +148,6 @@ describe("meshCollisionFingerprint", () => {
       { collisionMode: "simple", assetGuid: "model-1" },
       {
         materialSlots: [],
-        clipNames: [],
         skeletonGuid: null,
         importScale: 1,
         simpleColliders: [],
@@ -160,7 +158,6 @@ describe("meshCollisionFingerprint", () => {
       { collisionMode: "simple", assetGuid: "model-1" },
       {
         materialSlots: [],
-        clipNames: [],
         skeletonGuid: null,
         importScale: 1,
         simpleColliders: [
@@ -190,7 +187,6 @@ describe("cookComplexCollisionMeshes", () => {
           "model-1",
           {
             materialSlots: [],
-            clipNames: [],
             skeletonGuid: null,
             importScale: 2,
             simpleColliders: [],

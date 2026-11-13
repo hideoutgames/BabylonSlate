@@ -135,7 +135,8 @@ function importFromBrowse(
 
   const materialGuids: string[] = [];
   const emptyMaterialSlots = new Set<number>();
-  if (browse.materials.length === 0) {
+  // The default Material fills a mesh's missing one; a file with nothing to draw (an animation library) gets none.
+  if (browse.materials.length === 0 && browse.hasMeshes) {
     const textureGuid = imageGuids[0];
     const materialName = uniqueImportName(`${name}_Material`, usedNames);
     const materialGuid = newAssetGuid();
@@ -256,7 +257,6 @@ function importFromBrowse(
     parentClass: null,
     payload: {
       ...normalizeModelPayload({
-        clipNames: animations.map((animation) => animation.name),
         materialSlots: materialGuids.map((guid, index) => ({
           index,
           name: slotNames[index],

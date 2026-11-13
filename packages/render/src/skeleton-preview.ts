@@ -27,7 +27,7 @@ const OCTAHEDRON_INDICES = [
 export function isRigJointNode(node: Node): node is TransformNode {
   return (
     node instanceof TransformNode &&
-    !["__root__", "__importScale", "materialPreviewMesh"].includes(node.name) &&
+    !["__root__", "__fbx_root__", "__importScale", "materialPreviewMesh"].includes(node.name) &&
     !node.name.endsWith("_overlay") &&
     !/Camera|Light/.test(node.getClassName())
   );

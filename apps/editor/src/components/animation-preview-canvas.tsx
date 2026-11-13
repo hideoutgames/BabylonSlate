@@ -30,6 +30,7 @@ export function AnimationPreviewCanvas({
   showBones = false,
   sourceClipBytes = null,
   speedRatio = 1,
+  onBonesOnlyChange,
 }: {
   sourceBytes: Uint8Array;
   /** The Model's slots, drawn with their Materials. */
@@ -40,6 +41,8 @@ export function AnimationPreviewCanvas({
   sourceClipBytes?: Uint8Array | null;
   /** Playback rate of the clip; the Animation's Duration sets it without reloading the preview. */
   speedRatio?: number;
+  /** Reports a Model with nothing to draw (an animation library), whose bones show whatever Show Bones says. */
+  onBonesOnlyChange?: (bonesOnly: boolean) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
@@ -48,6 +51,9 @@ export function AnimationPreviewCanvas({
   const [previewGeneration, setPreviewGeneration] = useState(0);
   /** Read back from the AnimationGroup, so the attributes report what plays. */
   const [clip, setClip] = useState(STOPPED_CLIP);
+  const [bonesOnly, setBonesOnly] = useState(false);
+  const onBonesOnlyChangeRef = useRef(onBonesOnlyChange);
+  onBonesOnlyChangeRef.current = onBonesOnlyChange;
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
@@ -85,8 +91,7 @@ export function AnimationPreviewCanvas({
     let sourceHost: MaterialPreviewScene | null = null;
     let presenter: MaterialPreviewPresenter | null = null;
     let gestures: { dispose: () => void } | null = null;
-    let loaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
-      null;
+    let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
     let sourceLoaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
       null;
     let stopRestoreWatch: (() => void) | null = null;
@@ -157,6 +162,8 @@ export function AnimationPreviewCanvas({
             ? { playing: true, looping: group.loopAnimation }
             : STOPPED_CLIP,
         );
+        setBonesOnly(!loaded.hasMesh);
+        onBonesOnlyChangeRef.current?.(!loaded.hasMesh);
         setPreviewGeneration((value) => value + 1);
         const tick = () => {
           if (cancelled) return;
@@ -207,17 +214,19 @@ export function AnimationPreviewCanvas({
     const host = hostRef.current;
     bonesRef.current?.dispose();
     bonesRef.current = null;
-    if (!host || !showBones || !skeletonKind) {
+    // A Model with no mesh has only its bones to show; its animated nodes are a hierarchy rig.
+    const kind = skeletonKind ?? (bonesOnly ? "hierarchy" : null);
+    if (!host || !(showBones || bonesOnly) || !kind) {
       presenterRef.current?.present({ force: true });
       return;
     }
     bonesRef.current = attachSkeletonPreview(
       previewRigRoot(host),
       host.scene,
-      skeletonKind,
+      kind,
     );
     presenterRef.current?.present({ force: true });
-  }, [previewGeneration, showBones, skeletonKind]);
+  }, [bonesOnly, previewGeneration, showBones, skeletonKind]);
 
   return (
     <canvas
@@ -225,6 +234,7 @@ export function AnimationPreviewCanvas({
       className="h-full w-full touch-none"
       data-testid="animation-preview-canvas"
       data-playing={clip.playing ? "true" : "false"}
+      data-bones-only={bonesOnly ? "true" : undefined}
       data-looping={clip.looping ? "true" : "false"}
     />
   );

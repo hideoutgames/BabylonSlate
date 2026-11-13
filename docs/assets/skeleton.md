@@ -4,7 +4,7 @@ The bones of an imported model. Animations from the same file play on it.
 
 ## Import
 
-Skeletons are not created from **New Asset**. Importing a rigged GLB or glTF model creates one, either from the model's skin or, when the model is built from parented mesh parts, from that hierarchy. See [Importing Assets](../editor/importing.md).
+Skeletons are not created from **New Asset**. Importing a rigged GLB, glTF or FBX model creates one, either from the model's skin or, when the model is built from parented mesh parts, from that hierarchy. A file with animations and no mesh gets one from its animated nodes. See [Importing Assets](../editor/importing.md).
 
 ## Editor
 

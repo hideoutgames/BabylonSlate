@@ -155,7 +155,7 @@ describe("editor primitives drawn through the instance pool", () => {
     const { sync, materials } = pooledEditor((scene) => ({ slot: new StandardMaterial("slot", scene), override: new StandardMaterial("override", scene) }));
     sync.setMeshAssets({
       modelBytes: new Map([["statue", encodeTriangleGlb()]]),
-      modelPayloads: new Map([["statue", { clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+      modelPayloads: new Map([["statue", { skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
         materialSlots: [{ index: 0, name: "Stone", materialGuid: "slot" }] }]]),
     });
     const mesh = createMeshComponent("statue-mesh", "box");

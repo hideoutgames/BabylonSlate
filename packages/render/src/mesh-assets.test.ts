@@ -122,7 +122,6 @@ describe("modelSlotFingerprint", () => {
   it("changes when Model simple colliders change", () => {
     const base = {
       materialSlots: [] as { index: number; name: string; materialGuid: string | null }[],
-      clipNames: [] as string[],
       skeletonGuid: null,
       importScale: 1,
       simpleColliders: [],
@@ -156,7 +155,6 @@ describe("modelSlotFingerprint", () => {
   it("changes when Model Auto LOD changes, so loaded actors re-realize", () => {
     const payload = {
       materialSlots: [] as { index: number; name: string; materialGuid: string | null }[],
-      clipNames: [] as string[],
       skeletonGuid: null,
       importScale: 1,
       simpleColliders: [],
