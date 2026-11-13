@@ -1,5 +1,7 @@
 import {
   createDefaultAnimGraph,
+  createStateGraph,
+  patchStateGraph,
   type AnimGraphDocument,
 } from "@haptic/anim-graph";
 import {
@@ -241,17 +243,16 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   const idlePayload = normalizeAnimationPayload(idle.header.payload);
 
   const graphGuid = newAssetGuid();
-  const animGraph: AnimGraphDocument = createDefaultAnimGraph(MANNEQUIN_CLASS_ID, {
+  const defaults = createDefaultAnimGraph(MANNEQUIN_CLASS_ID, {
     dimension: "3d",
     skeletonGuid: skeleton.header.guid,
   });
-  const idleClip = animGraph.clips[0];
-  if (idleClip) {
-    idleClip.kind = "animation";
-    idleClip.assetGuid = idle.header.guid;
-    idleClip.clipName = idlePayload.clipName;
-    idleClip.durationMs = idlePayload.durationMs ?? idleClip.durationMs;
-  }
+  // The Idle state plays the Mannequin's idle Animation.
+  const animGraph: AnimGraphDocument = patchStateGraph(defaults, "locomotion", "idle", createStateGraph("3d", {
+    assetGuid: idle.header.guid,
+    clipName: idlePayload.clipName,
+    ...(idlePayload.durationMs ? { durationMs: idlePayload.durationMs } : {}),
+  }));
   const graphResult = withDocumentPayload(
     {
       ...buildNewAssetResult({

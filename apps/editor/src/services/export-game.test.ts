@@ -886,7 +886,7 @@ describe("collectAndExportGame", () => {
       ],
     };
     const doc = createDefaultAnimGraph();
-    doc.transitions.push({
+    doc.stateMachines[0]!.transitions.push({
       id: "idle-to-idle",
       fromStateId: "idle",
       toStateId: "idle",

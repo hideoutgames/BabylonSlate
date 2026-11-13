@@ -4,7 +4,7 @@ import {
   type DocumentRef,
   isAnimGraphDocumentKind,
 } from "@haptic/core";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
+import { animStateMachineOfDebugGraphId } from "@haptic/bridge";
 import type { SessionReportEntry } from "@haptic/runtime";
 import type { Diagnostic } from "@haptic/scripting";
 import type { SessionReportAsset } from "../lib/session-report-locations";
@@ -155,7 +155,7 @@ export async function navigateToSessionReportEntry(
   host.setActiveDocument(id);
   if (isAnimGraphDocumentKind(document.kind) && entry.graphId === "animation-object") {
     host.setAnimEditorMode(id, "animationObject");
-  } else if (isAnimGraphDocumentKind(document.kind) && entry.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID) {
+  } else if (isAnimGraphDocumentKind(document.kind) && animStateMachineOfDebugGraphId(entry.graphId) !== null) {
     // A state or transition breakpoint.
     host.setAnimEditorMode(id, "stateMachine");
   } else if ((document.kind === "scene" || document.kind === "scene-layer") && nav.focusedNodeId) {

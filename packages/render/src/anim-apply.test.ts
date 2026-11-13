@@ -266,6 +266,34 @@ describe("seekGameplayAnimation", () => {
     engine.dispose();
   });
 
+  it("mirrors a flipped frame's UVs about its pivot", () => {
+    const sheet: SpriteAnimationPayload = {
+      frameDurationMs: 100,
+      source: "sheet",
+      sheet: { ...createDefaultSpriteAnimationSheet(), textureGuid: "sheet" },
+      frames: [{
+        textureGuid: "sheet",
+        durationMs: 100,
+        pivot: { x: 0.25, y: 0.5 },
+        collision: { x: 0, y: 0, width: 1, height: 1 },
+        width: 100,
+        height: 100,
+        cell: 2,
+        uv: { u0: 0.5, v0: 0.5, u1: 1, v1: 1 },
+      }],
+    };
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = createSpriteQuad(scene, "hero", { pivot: { x: 0.5, y: 0.5 }, width: 100, height: 100 });
+    applySpriteAnimationAssetFrame(mesh, sheet, 0, { flipX: true });
+    expect([...(mesh.getVerticesData(VertexBuffer.UVKind) ?? [])]).toEqual([1, 0.5, 0.5, 0.5, 0.5, 1, 1, 1]);
+    // The pivot sits a quarter in from the right edge instead of the left.
+    const positions = mesh.getVerticesData(VertexBuffer.PositionKind) ?? [];
+    expect([positions[0], positions[3]]).toEqual([-0.75, 0.25]);
+    scene.dispose();
+    engine.dispose();
+  });
+
   it("sizes the sprite quad from Sprite Animation texture pixels", () => {
     const animation: SpriteAnimationPayload = {
       frameDurationMs: 100,

@@ -237,7 +237,7 @@ describe("navigateToSessionReportEntry", () => {
   it("shows the State Machine for a state or transition breakpoint", async () => {
     const { host, calls } = fakeHost();
     await navigateToSessionReportEntry(
-      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "idle", graphId: "state-machine" }),
+      entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "idle", graphId: "state-machine:locomotion" }),
       host,
     );
     expect(calls).toContain("mode anim-graph-3d:assets/Locomotion.animgraph.hasset stateMachine");

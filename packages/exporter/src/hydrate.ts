@@ -360,6 +360,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       type: "SpriteAnimation",
       name: guid,
       durationMs: spriteAnimationDurationMs(payload),
+      frameCount: payload.frames.length,
     })),
   ];
   const resolvedAnimGraphs = animGraphs.map((entry) => ({

@@ -36,8 +36,8 @@ export type SessionPauseCause = {
 export const BREAKPOINT_PAUSE_CODE = "runtime.breakpoint";
 /**
  * A node breakpoint: editor state sent to the session, never stored in the asset. In a Behaviour Tree
- * (`graphId` "behaviour-tree") `nodeId` is a tree node; in a State Machine ("state-machine") it is a state
- * or a transition.
+ * (`graphId` "behaviour-tree") `nodeId` is a tree node; in an Animation Graph's State Machine
+ * (`animStateMachineDebugGraphId`, "state-machine:<machine id>") it is a state or a transition.
  */
 export type BreakpointLocation = { assetGuid: string; graphId: string; nodeId: string };
 /** How a condition compares a value: `isValid` and `isNotValid` test for an object and take no operand. */
@@ -578,7 +578,7 @@ export type DebugInstance = {
  */
 export type DebugGraphTrace = {
   assetGuid: string;
-  /** `event-graph`, a function graph's export name, `animation-object`, `state-machine` or `behaviour-tree`. */
+  /** `event-graph`, a function graph's export name, `animation-object`, `state-machine:<machine id>` or `behaviour-tree`. */
   graphId: string;
   /**
    * Nodes that ran, in first-visit order. A Behaviour Tree reports the nodes its evaluation entered,
@@ -1056,6 +1056,9 @@ export type CommandMessage =
         clipKind: "animation" | "sprite";
         normalisedTime: number;
         weight: number;
+        /** A sprite layer mirrored by Flip Frame. */
+        flipX?: boolean;
+        flipY?: boolean;
       }>;
     }
   /**

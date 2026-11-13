@@ -1,10 +1,10 @@
 import type { SerializedGraph } from "@haptic/core";
-import type { AnimGraphDocument, AnimTransition } from "./graph";
+import type { AnimGraphDimension, AnimGraphDocument, AnimState, AnimStateMachine, AnimTransition } from "./graph";
 import {
-  createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
   defaultAnimStatePosition,
 } from "./graph";
+import { createStateGraph } from "./pose-graph";
 
 export type AnimStateSide = "top" | "right" | "bottom" | "left";
 
@@ -56,9 +56,6 @@ export function animPaletteNodes(): Array<{
       category: "Animation",
       pins: ANIM_STATE_PINS,
       defaultData: {
-        clipId: null,
-        speed: 1,
-        loop: true,
         entry: false,
       },
     },
@@ -154,10 +151,26 @@ export function animTransitionEdgeId(
 }
 
 function uniqueTransitionId(doc: AnimGraphDocument): string {
-  const ids = new Set(doc.transitions.map((row) => row.id));
+  const ids = new Set(doc.stateMachines.flatMap((machine) => machine.transitions.map((row) => row.id)));
   let index = 1;
   while (ids.has(`transition-${index}`)) index += 1;
   return `transition-${index}`;
+}
+
+/** The State Machine holding a transition; transition ids are unique across a document. */
+function machineOfTransition(doc: AnimGraphDocument, transitionId: string): AnimStateMachine | undefined {
+  return doc.stateMachines.find((machine) => machine.transitions.some((row) => row.id === transitionId));
+}
+
+function withTransitions(
+  doc: AnimGraphDocument,
+  machineId: string,
+  transitions: AnimTransition[],
+): AnimGraphDocument {
+  return {
+    ...doc,
+    stateMachines: doc.stateMachines.map((machine) => (machine.id === machineId ? { ...machine, transitions } : machine)),
+  };
 }
 
 export function setTransitionBidirectional(
@@ -165,65 +178,58 @@ export function setTransitionBidirectional(
   transitionId: string,
   bothWays: boolean,
 ): AnimGraphDocument {
-  const transition = doc.transitions.find((row) => row.id === transitionId);
-  if (!transition) return doc;
+  const machine = machineOfTransition(doc, transitionId);
+  const transition = machine?.transitions.find((row) => row.id === transitionId);
+  if (!machine || !transition) return doc;
   const reverse = findReverseTransition(
-    doc.transitions,
+    machine.transitions,
     transition.fromStateId,
     transition.toStateId,
   );
   if (bothWays) {
     if (reverse) return doc;
-    return {
-      ...doc,
-      transitions: [
-        ...doc.transitions,
-        {
-          id: uniqueTransitionId(doc),
-          fromStateId: transition.toStateId,
-          toStateId: transition.fromStateId,
-          blendSeconds: transition.blendSeconds,
-          priority: transition.priority,
-          ruleGraph: createDefaultTransitionRuleGraph(),
-          sourceHandle: "right-out",
-          targetHandle: "left-in",
-        },
-      ],
-    };
+    return withTransitions(doc, machine.id, [
+      ...machine.transitions,
+      {
+        id: uniqueTransitionId(doc),
+        fromStateId: transition.toStateId,
+        toStateId: transition.fromStateId,
+        blendSeconds: transition.blendSeconds,
+        priority: transition.priority,
+        ruleGraph: createDefaultTransitionRuleGraph(),
+        sourceHandle: "right-out",
+        targetHandle: "left-in",
+      },
+    ]);
   }
   if (!reverse) return doc;
-  return {
-    ...doc,
-    transitions: doc.transitions.filter((row) => row.id !== reverse.id),
-  };
+  return withTransitions(doc, machine.id, machine.transitions.filter((row) => row.id !== reverse.id));
 }
 
 export function flipTransitionDirection(
   doc: AnimGraphDocument,
   transitionId: string,
 ): AnimGraphDocument {
-  const transition = doc.transitions.find((row) => row.id === transitionId);
-  if (!transition) return doc;
+  const machine = machineOfTransition(doc, transitionId);
+  const transition = machine?.transitions.find((row) => row.id === transitionId);
+  if (!machine || !transition) return doc;
   const reverse = findReverseTransition(
-    doc.transitions,
+    machine.transitions,
     transition.fromStateId,
     transition.toStateId,
   );
   if (reverse) return doc;
-  return {
-    ...doc,
-    transitions: doc.transitions.map((row) =>
-      row.id === transitionId
-        ? {
-            ...row,
-            fromStateId: row.toStateId,
-            toStateId: row.fromStateId,
-            sourceHandle: animStateHandle(row.targetHandle, "out"),
-            targetHandle: animStateHandle(row.sourceHandle, "in"),
-          }
-        : row,
-    ),
-  };
+  return withTransitions(doc, machine.id, machine.transitions.map((row) =>
+    row.id === transitionId
+      ? {
+          ...row,
+          fromStateId: row.toStateId,
+          toStateId: row.fromStateId,
+          sourceHandle: animStateHandle(row.targetHandle, "out"),
+          targetHandle: animStateHandle(row.sourceHandle, "in"),
+        }
+      : row,
+  ));
 }
 
 export function patchTransition(
@@ -231,12 +237,11 @@ export function patchTransition(
   transitionId: string,
   patch: Partial<AnimTransition>,
 ): AnimGraphDocument {
-  return {
-    ...doc,
-    transitions: doc.transitions.map((row) =>
-      row.id === transitionId ? { ...row, ...patch } : row,
-    ),
-  };
+  const machine = machineOfTransition(doc, transitionId);
+  if (!machine) return doc;
+  return withTransitions(doc, machine.id, machine.transitions.map((row) =>
+    row.id === transitionId ? { ...row, ...patch } : row,
+  ));
 }
 
 function mergeTransitions(
@@ -292,23 +297,21 @@ function mergeTransitions(
   return result;
 }
 
-export function animGraphToSerialized(doc: AnimGraphDocument): SerializedGraph {
+/** A State Machine as its canvas graph: a node per state, an edge per transition pair. */
+export function stateMachineToSerialized(machine: AnimStateMachine): SerializedGraph {
   return {
-    nodes: doc.states.map((state, index) => ({
+    nodes: machine.states.map((state, index) => ({
       id: state.id,
       type: "anim.state",
       position: state.position ?? defaultAnimStatePosition(index),
       data: {
         title: state.name,
-        clipId: state.clipId,
-        speed: state.speed,
-        loop: state.loop,
-        entry: state.id === doc.entryStateId,
+        entry: state.id === machine.entryStateId,
       },
     })),
-    edges: visualTransitions(doc.transitions).map((transition) => {
+    edges: visualTransitions(machine.transitions).map((transition) => {
       const reverse = findReverseTransition(
-        doc.transitions,
+        machine.transitions,
         transition.fromStateId,
         transition.toStateId,
       );
@@ -324,18 +327,24 @@ export function animGraphToSerialized(doc: AnimGraphDocument): SerializedGraph {
   };
 }
 
-export function serializedToAnimGraph(
+/**
+ * A State Machine canvas back onto the machine: states keep their graphs, a state new to the canvas (added or
+ * pasted) starts with one player of the graph's dimension, and transitions keep their rules.
+ */
+export function serializedToStateMachine(
   graph: SerializedGraph,
-  previous: AnimGraphDocument = createDefaultAnimGraph(),
-): AnimGraphDocument {
-  const existingIds = new Set(previous.states.map((state) => state.id));
-  const names = new Set(graph.nodes.filter((node) => existingIds.has(node.id))
+  previous: AnimStateMachine,
+  dimension: AnimGraphDimension,
+): AnimStateMachine {
+  const byId = new Map(previous.states.map((state) => [state.id, state]));
+  const names = new Set(graph.nodes.filter((node) => byId.has(node.id))
     .map((node) => String(node.data.title ?? node.id).trim().toLowerCase()));
-  const states = graph.nodes.map((node, index) => {
+  const states: AnimState[] = graph.nodes.map((node, index) => {
     let name = typeof node.data.title === "string" ? node.data.title : node.id;
+    const existing = byId.get(node.id);
     // Palette additions and pasted states share a title. Allocate a fresh label
     // while leaving explicitly renamed existing states for validation to explain.
-    if (!existingIds.has(node.id)) {
+    if (!existing) {
       const base = name.trim() || "State";
       name = base;
       let suffix = 2;
@@ -343,11 +352,10 @@ export function serializedToAnimGraph(
       names.add(name.toLowerCase());
     }
     return {
-      id: node.id, name,
-      clipId: typeof node.data.clipId === "string" ? node.data.clipId : null,
-      speed: typeof node.data.speed === "number" ? node.data.speed : 1,
-      loop: node.data.loop !== false,
+      id: node.id,
+      name,
       position: node.position ?? defaultAnimStatePosition(index),
+      stateGraph: existing?.stateGraph ?? createStateGraph(dimension),
     };
   });
   const entry =

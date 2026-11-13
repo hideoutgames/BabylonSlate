@@ -1068,7 +1068,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   setActorSpriteClip(actor: Actor, clip: SpriteClipState | null): void {
     this.spriteClips.set(actor, clip);
     this.physics.forActor(actor)?.setActorSpriteClip(actor, clip &&
-      { assetGuid: clip.assetGuid, clipName: clip.clipName, normalisedTime: clip.normalisedTime });
+      { assetGuid: clip.assetGuid, clipName: clip.clipName, normalisedTime: clip.normalisedTime, flipX: clip.flipX, flipY: clip.flipY });
   }
 
   /** The render slot this actor's own commands target (`RenderSlots.actorSlot`). */

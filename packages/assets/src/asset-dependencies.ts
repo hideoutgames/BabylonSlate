@@ -503,8 +503,18 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     addMany(areaEmissionTextureGuids(payload), false);
   } else if (isAnimGraphAssetType(assetType)) {
     add(payload.skeletonGuid);
-    for (const clip of rows(payload.clips)) add(clip.assetGuid);
-    for (const transition of rows(payload.transitions)) graph(transition.ruleGraph);
+    // The Anim Graph and each state's graph: their players' clips, and the data nodes feeding them.
+    const poseGraph = (value: unknown): void => {
+      for (const node of rows(row(value).nodes)) {
+        if (/^anim\.(?:pose|frame)\./.test(String(node.type))) add(row(node.data).assetGuid);
+      }
+      graph(value);
+    };
+    poseGraph(payload.animGraph);
+    for (const machine of rows(payload.stateMachines)) {
+      for (const state of rows(machine.states)) poseGraph(state.stateGraph);
+      for (const transition of rows(machine.transitions)) graph(transition.ruleGraph);
+    }
     graph(payload.animationObject);
     for (const variable of rows(payload.variables)) memberValue(variable, variable.defaultValue);
   } else if (assetType === "BehaviourTree") {

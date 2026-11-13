@@ -12,6 +12,7 @@ import {
   type SaveGameDefinition,
 } from "@haptic/core";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
+import { isPureAnimGraphHost } from "../lib/class-event-catalog";
 import { isLatentFunctionKey, type NodeDefinition, type NodeRegistry } from "@haptic/scripting";
 import {
   ENGINE_CLASS_SCRIPT_APIS,
@@ -609,7 +610,7 @@ export function variableAccessPaletteNodes(
   }
   const injected: PaletteNode[] = [];
   const accessKinds: Array<["get" | "set" | "validatedGet", typeof getDef]> =
-    options?.animationGraphHost === "rule"
+    isPureAnimGraphHost(options?.animationGraphHost)
       ? [["get", getDef]]
       : [
           ["get", getDef],
@@ -621,7 +622,7 @@ export function variableAccessPaletteNodes(
     );
     if (
       validatedDef &&
-      options?.animationGraphHost !== "rule" &&
+      !isPureAnimGraphHost(options?.animationGraphHost) &&
       isObjectInstanceVariableType(variable.typeId, variable.container)
     ) {
       kinds.push(["validatedGet", validatedDef]);

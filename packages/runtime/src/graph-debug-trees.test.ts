@@ -174,9 +174,10 @@ describe("Animation Graph debugging", () => {
   ]);
   const locomotion = (): AnimGraphDocument => {
     const document = createDefaultAnimGraph("Locomotion");
-    document.states.push({ ...document.states[0]!, id: "run", name: "Run" });
+    const machine = document.stateMachines[0]!;
+    machine.states.push({ ...machine.states[0]!, id: "run", name: "Run" });
     const rule = createDefaultAnimGraph().animationObject;
-    document.transitions.push(
+    machine.transitions.push(
       { id: "idle-run", fromStateId: "idle", toStateId: "run", blendSeconds: 0, priority: 0, ruleGraph: rule },
       { id: "run-idle", fromStateId: "run", toStateId: "idle", blendSeconds: 0.2, priority: 0, ruleGraph: rule },
     );
@@ -213,16 +214,16 @@ describe("Animation Graph debugging", () => {
     let mark = commands.length;
     runtime.tick();
     runtime.tick();
-    expect(graphs(mark, "state-machine")).toEqual([
-      { assetGuid: "loco", graphId: "state-machine", nodes: ["idle"], edges: [], values: [] },
-      { assetGuid: "loco", graphId: "state-machine", nodes: ["idle"], edges: [], values: [] },
+    expect(graphs(mark, "state-machine:locomotion")).toEqual([
+      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["idle"], edges: [], values: [] },
+      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["idle"], edges: [], values: [] },
     ]);
 
     runtime.getWorld().findActor("h1")!.components[0]!.setVariable("go", true);
     mark = commands.length;
     runtime.tick();
-    expect(graphs(mark, "state-machine")).toEqual([
-      { assetGuid: "loco", graphId: "state-machine", nodes: ["run"], edges: ["idle-run"], values: [] },
+    expect(graphs(mark, "state-machine:locomotion")).toEqual([
+      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["run"], edges: ["idle-run"], values: [] },
     ]);
   });
 
@@ -236,8 +237,8 @@ describe("Animation Graph debugging", () => {
     const mark = commands.length;
     runtime.tick();
     // Run -> Idle is its own row, drawn on the Idle -> Run edge; it blends, so Run is still sampled.
-    expect(graphs(mark, "state-machine")).toEqual([
-      { assetGuid: "loco", graphId: "state-machine", nodes: ["idle", "run"], edges: ["idle-run"], values: [] },
+    expect(graphs(mark, "state-machine:locomotion")).toEqual([
+      { assetGuid: "loco", graphId: "state-machine:locomotion", nodes: ["idle", "run"], edges: ["idle-run"], values: [] },
     ]);
   });
 

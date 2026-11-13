@@ -1,5 +1,15 @@
 import type { GraphClassMember, SerializedGraph } from "@haptic/core";
 import { normalizeTag, normalizeTagContainer } from "@haptic/core";
+import {
+  ANIM_POSE_OUTPUT_NODE_ID,
+  createAnimGraphGraph,
+  createStateGraph,
+  isPoseClipNodeType,
+  isPoseOutputType,
+  isPoseStateMachineType,
+  poseOutputType,
+  type AnimPoseDimension,
+} from "./pose-graph";
 
 export const ANIM_EVENT_INITIALIZE_TYPE = "anim.event.initialize";
 export const ANIM_EVENT_UPDATE_TYPE = "anim.event.update";
@@ -13,25 +23,16 @@ export const ANIM_EXIT_TIME_REACHED_TYPE = "anim.state.exitTimeReached";
 export type AnimClipKind = "animation" | "sprite";
 export type AnimVariableTypeId = "bool" | "int" | "float" | "string" | "tag" | "struct";
 
-export interface AnimClipRef {
-  id: string;
-  kind: AnimClipKind;
-  /** Animation (glTF clip) or Sprite Animation asset guid. */
-  assetGuid: string;
-  /** glTF AnimationGroup name or sprite clip name. */
-  clipName: string;
-  durationMs: number;
-}
+/** A 3D graph plays Animations on its Skeleton and passes poses; a 2D graph plays Sprite Animations and passes frames. */
+export type AnimGraphDimension = AnimPoseDimension;
 
 export interface AnimState {
   id: string;
   name: string;
-  clipId: string | null;
-  /** Speed multiplier; 1 is authored duration. */
-  speed: number;
-  loop: boolean;
   /** Canvas layout. Parse fills a fallback when a document omits it. */
   position: { x: number; y: number };
+  /** The state's pose (or frame) graph, ending in its protected Output Pose node. */
+  stateGraph: SerializedGraph;
 }
 
 export interface AnimGraphVariable {
@@ -43,6 +44,7 @@ export interface AnimGraphVariable {
 }
 
 export interface AnimTransition {
+  /** Unique in the document, across its State Machines: rule scripts are named by it. */
   id: string;
   fromStateId: string;
   toStateId: string;
@@ -56,8 +58,13 @@ export interface AnimTransition {
   targetHandle?: string;
 }
 
-/** A 3D graph plays Animations on its Skeleton; a 2D graph plays Sprite Animations. The asset type decides it. */
-export type AnimGraphDimension = "3d" | "2d";
+export interface AnimStateMachine {
+  id: string;
+  name: string;
+  entryStateId: string;
+  states: AnimState[];
+  transitions: AnimTransition[];
+}
 
 export interface AnimGraphDocument {
   name: string;
@@ -66,12 +73,24 @@ export interface AnimGraphDocument {
    * (a rigid node animation such as a door). A 2D graph keeps it null.
    */
   skeletonGuid: string | null;
-  entryStateId: string;
-  states: AnimState[];
-  transitions: AnimTransition[];
-  clips: AnimClipRef[];
   variables: AnimGraphVariable[];
+  /** The top-level pose graph: State Machine nodes and pose nodes into its Output Pose. */
+  animGraph: SerializedGraph;
+  /** The State Machines the Anim Graph's State Machine nodes name (`data.machineId`). */
+  stateMachines: AnimStateMachine[];
   animationObject: SerializedGraph;
+}
+
+/** Where a graph sits in a document: the Anim Graph, a State Machine, a state's graph or a transition's rule. */
+export type AnimGraphLocation =
+  | { kind: "anim" }
+  | { kind: "machine"; machineId: string }
+  | { kind: "state"; machineId: string; stateId: string }
+  | { kind: "rule"; machineId: string; transitionId: string };
+
+/** The key a pose graph's compiled data module and player clocks are filed under. */
+export function animPoseGraphKey(location: { kind: "anim" } | { kind: "state"; machineId: string; stateId: string }): string {
+  return location.kind === "anim" ? "anim" : `${location.machineId}/${location.stateId}`;
 }
 
 export interface AnimTransitionDecision {
@@ -79,14 +98,22 @@ export interface AnimTransitionDecision {
   exit: boolean;
 }
 
+/** A pose graph's computed data inputs: node id → pin name → value. */
+export type AnimPoseData = Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+
 export interface AnimGraphInputs {
   transitionRules?: Record<string, AnimTransitionDecision>;
   decideTransition?: (
     transition: AnimTransition,
     facts: AnimStateFacts,
   ) => AnimTransitionDecision | undefined;
-  /** The evaluation took `transition`, a self-transition included: at most one per evaluation. */
-  transitionTaken?: (transition: AnimTransition) => void;
+  /** `machine` took `transition`, a self-transition included: at most one per State Machine per evaluation. */
+  transitionTaken?: (transition: AnimTransition, machine: AnimStateMachine) => void;
+  /**
+   * The wired data inputs of a pose graph this tick (`animPoseGraphKey`), from its compiled module, given the facts
+   * of the state that owns it (null for the Anim Graph). Unlisted inputs use the values stored on their nodes.
+   */
+  poseData?: (graphKey: string, facts: AnimStateFacts | null) => AnimPoseData | undefined;
 }
 
 export interface AnimStateFacts {
@@ -104,38 +131,63 @@ export interface AnimStateFacts {
    * `normalisedTime` for non-looping states.
    */
   totalNormalisedTime: number;
-  /** `totalNormalisedTime` before this tick advanced the clip (0 on entering a state). */
+  /** `totalNormalisedTime` before this tick advanced the clip (the start position on entering a state). */
   previousTotalNormalisedTime: number;
 }
 
 export interface AnimClipLayer {
+  /** The state that plays it, or "" for a player in the Anim Graph itself. */
   stateId: string;
   clipAssetGuid: string;
   clipName: string;
   clipKind: AnimClipKind;
   normalisedTime: number;
   weight: number;
+  /** 2D: Flip Frame mirrors the frame. */
+  flipX?: boolean;
+  flipY?: boolean;
 }
 
-export interface AnimEvalState {
+/** One State Machine's evaluation: its active state, the state's clock and the blend in progress. */
+export interface AnimMachineEvalState {
   stateId: string;
   normalisedTime: number;
   blendWeights: Record<string, number>;
   timeMs: number;
   facts: AnimStateFacts;
-  layers: AnimClipLayer[];
   blendFromStateId: string | null;
-  blendFromTimeMs: number;
   blendElapsedMs: number;
   /** Crossfade length of the transition that started the active blend. */
   blendSeconds: number;
   loopCount: number;
 }
 
+/** A player's own clock. */
+export interface AnimPlayerClock {
+  timeMs: number;
+  loopCount: number;
+  normalised: number;
+}
+
+/**
+ * The whole graph's evaluation. Its top-level state fields are the primary State Machine's (the first one the Anim
+ * Graph plays), which Get Current State, Jump To State and the debugger follow.
+ */
+export interface AnimEvalState extends AnimMachineEvalState {
+  machines: Record<string, AnimMachineEvalState>;
+  /** Player clocks by `graphKey#nodeId`. */
+  players: Record<string, AnimPlayerClock>;
+  /** Blend Poses By Bool / Int input weights by `graphKey#nodeId`. */
+  selectors: Record<string, number[]>;
+  layers: AnimClipLayer[];
+}
+
 export interface AnimDiagnostic {
   code: string;
   message: string;
   nodeId?: string;
+  /** The graph the node is in; absent means the primary State Machine. */
+  location?: AnimGraphLocation;
   severity: "error" | "warning";
 }
 
@@ -148,6 +200,11 @@ export function animRuleScriptClassId(
   transitionId: string,
 ): string {
   return `AnimRule:${guid}:${transitionId}`;
+}
+
+/** A pose graph's compiled data module (`animPoseGraphKey`). */
+export function animPoseScriptClassId(guid: string, graphKey: string): string {
+  return `AnimPose:${guid}:${graphKey}`;
 }
 
 const ANIM_STATE_LAYOUT_ORIGIN = { x: 80, y: 80 };
@@ -244,37 +301,32 @@ export function createDefaultTransitionRuleGraph(): SerializedGraph {
   };
 }
 
+/** A new graph: Locomotion → Output Pose, whose Idle state plays one (unset) clip. */
 export function createDefaultAnimGraph(
   name = "Locomotion",
   options: { dimension?: AnimGraphDimension; skeletonGuid?: string | null } = {},
 ): AnimGraphDocument {
   const dimension = options.dimension ?? "3d";
-  const idle: AnimState = {
-    id: "idle",
-    name: "Idle",
-    clipId: "idle-clip",
-    speed: 1,
-    loop: true,
-    position: defaultAnimStatePosition(0),
+  const machine: AnimStateMachine = {
+    id: "locomotion",
+    name: "Locomotion",
+    entryStateId: "idle",
+    states: [{ id: "idle", name: "Idle", position: defaultAnimStatePosition(0), stateGraph: createStateGraph(dimension) }],
+    transitions: [],
   };
   return {
     name,
     skeletonGuid: dimension === "3d" ? options.skeletonGuid ?? null : null,
-    entryStateId: idle.id,
-    states: [idle],
-    transitions: [],
-    clips: [
-      {
-        id: "idle-clip",
-        kind: dimension === "3d" ? "animation" : "sprite",
-        assetGuid: "",
-        clipName: "Idle",
-        durationMs: 1000,
-      },
-    ],
     variables: [],
+    animGraph: createAnimGraphGraph(dimension, machine.id),
+    stateMachines: [machine],
     animationObject: createDefaultAnimationObjectGraph(),
   };
+}
+
+/** A graph's dimension, read from its Anim Graph's output node (3D unless that says frame). */
+export function animGraphDimension(doc: Pick<AnimGraphDocument, "animGraph">): AnimGraphDimension {
+  return doc.animGraph.nodes.some((node) => node.type === poseOutputType("2d")) ? "2d" : "3d";
 }
 
 export function decorateTransitionRuleGraph(
@@ -312,42 +364,104 @@ export function persistTransitionRuleGraph(
   return { nodes: stripped.nodes, edges: stripped.edges };
 }
 
+export function findStateMachine(doc: AnimGraphDocument, machineId: string): AnimStateMachine | undefined {
+  return doc.stateMachines.find((machine) => machine.id === machineId);
+}
+
+/** The State Machines the Anim Graph's State Machine nodes name, in node order. */
+export function animGraphMachineIds(doc: Pick<AnimGraphDocument, "animGraph">): string[] {
+  const ids: string[] = [];
+  for (const node of doc.animGraph.nodes) {
+    const id = isPoseStateMachineType(node.type) && typeof node.data.machineId === "string" ? node.data.machineId : "";
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * The State Machine Get Current State, Jump To State and the debugger follow: the first one the Anim Graph names,
+ * else the first in the document.
+ */
+export function primaryStateMachine(doc: AnimGraphDocument): AnimStateMachine | undefined {
+  for (const id of animGraphMachineIds(doc)) {
+    const machine = findStateMachine(doc, id);
+    if (machine) return machine;
+  }
+  return doc.stateMachines[0];
+}
+
+/** Every pose graph in the document with its key and location: the Anim Graph, then each state's graph. */
+export function animPoseGraphs(doc: AnimGraphDocument): Array<{
+  key: string;
+  graph: SerializedGraph;
+  location: { kind: "anim" } | { kind: "state"; machineId: string; stateId: string };
+}> {
+  return [
+    { key: "anim", graph: doc.animGraph, location: { kind: "anim" } },
+    ...doc.stateMachines.flatMap((machine) => machine.states.map((state) => {
+      const location = { kind: "state" as const, machineId: machine.id, stateId: state.id };
+      return { key: animPoseGraphKey(location), graph: state.stateGraph, location };
+    })),
+  ];
+}
+
+/** Every transition with its State Machine. */
+export function animTransitions(doc: AnimGraphDocument): Array<{ machine: AnimStateMachine; transition: AnimTransition }> {
+  return doc.stateMachines.flatMap((machine) => machine.transitions.map((transition) => ({ machine, transition })));
+}
+
+/** Replace one State Machine. */
+export function patchStateMachine(
+  doc: AnimGraphDocument,
+  machineId: string,
+  patch: (machine: AnimStateMachine) => AnimStateMachine,
+): AnimGraphDocument {
+  return { ...doc, stateMachines: doc.stateMachines.map((machine) => (machine.id === machineId ? patch(machine) : machine)) };
+}
+
+/** Replace one state's graph. */
+export function patchStateGraph(
+  doc: AnimGraphDocument,
+  machineId: string,
+  stateId: string,
+  graph: SerializedGraph,
+): AnimGraphDocument {
+  return patchStateMachine(doc, machineId, (machine) => ({
+    ...machine,
+    states: machine.states.map((state) => (state.id === stateId ? { ...state, stateGraph: graph } : state)),
+  }));
+}
+
+/** Asset index used to bind animation clips to Play. */
+export interface AnimClipCatalogEntry {
+  guid: string;
+  type: string;
+  name: string;
+  clipName?: string;
+  dependencyGuids?: string[];
+  /** Sprite Animation or Animation clip duration. */
+  durationMs?: number;
+  /** Sprite Animation frame count, for a player's Start Frame. */
+  frameCount?: number;
+  skeletonGuid?: string | null;
+  modelGuid?: string;
+}
+
+function locationName(doc: AnimGraphDocument, location: AnimGraphLocation): string {
+  if (location.kind === "anim") return "The Anim Graph";
+  const machine = findStateMachine(doc, location.machineId);
+  if (location.kind === "machine") return `State Machine "${machine?.name ?? location.machineId}"`;
+  if (location.kind === "rule") return `A rule in "${machine?.name ?? location.machineId}"`;
+  const state = machine?.states.find((entry) => entry.id === location.stateId);
+  return `State "${state?.name ?? location.stateId}"`;
+}
+
 export function validateAnimGraph(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[] = [],
   options: { dimension?: AnimGraphDimension } = {},
 ): AnimDiagnostic[] {
   const diagnostics: AnimDiagnostic[] = [];
-  const stateIds = new Set(doc.states.map((state) => state.id));
-  const clipIds = new Set(doc.clips.map((clip) => clip.id));
-  if (!stateIds.has(doc.entryStateId)) {
-    diagnostics.push({
-      code: "anim.missingEntry",
-      message: `Entry state "${doc.entryStateId}" is not in the graph`,
-      nodeId: doc.entryStateId,
-      severity: "error",
-    });
-  }
-  const stateNames = new Map<string, string>();
-  for (const state of doc.states) {
-    const name = state.name.trim();
-    const key = name.toLowerCase();
-    if (!name) {
-      diagnostics.push({ code: "anim.emptyStateName", message: "State names cannot be empty", nodeId: state.id, severity: "error" });
-    } else if (stateNames.has(key)) {
-      diagnostics.push({ code: "anim.duplicateStateName", message: `State "${state.name}" duplicates "${stateNames.get(key)}". Choose a unique name.`, nodeId: state.id, severity: "error" });
-    } else {
-      stateNames.set(key, name);
-    }
-    if (state.clipId && !clipIds.has(state.clipId)) {
-      diagnostics.push({
-        code: "anim.missingClip",
-        message: `State "${state.name}" references unknown clip "${state.clipId}"`,
-        nodeId: state.id,
-        severity: "error",
-      });
-    }
-  }
   const seenVariables = new Map<string, string>();
   for (const variable of doc.variables) {
     const key = variable.name.trim().toLowerCase();
@@ -363,9 +477,98 @@ export function validateAnimGraph(
       seenVariables.set(key, variable.name);
     }
   }
-  const stateNameById = new Map(doc.states.map((state) => [state.id, state.name]));
+
+  // The Anim Graph's State Machine nodes and the machines they name.
+  const named = new Map<string, string>();
+  const anim: AnimGraphLocation = { kind: "anim" };
+  for (const node of doc.animGraph.nodes) {
+    if (!isPoseStateMachineType(node.type)) continue;
+    const machineId = typeof node.data.machineId === "string" ? node.data.machineId : "";
+    if (!findStateMachine(doc, machineId)) {
+      diagnostics.push({ code: "anim.missingMachine", message: "This State Machine node names no State Machine", nodeId: node.id, location: anim, severity: "error" });
+    } else if (named.has(machineId)) {
+      diagnostics.push({ code: "anim.machineReused", message: "Another State Machine node already plays this State Machine", nodeId: node.id, location: anim, severity: "error" });
+    } else {
+      named.set(machineId, node.id);
+    }
+  }
+  const machineNames = new Map<string, string>();
+  const transitionIds = new Set<string>();
+  for (const machine of doc.stateMachines) {
+    const machineLocation: AnimGraphLocation = { kind: "machine", machineId: machine.id };
+    if (!named.has(machine.id)) {
+      diagnostics.push({ code: "anim.unusedMachine", message: `State Machine "${machine.name}" is not in the Anim Graph, so it never plays`, location: anim, severity: "warning" });
+    }
+    const machineKey = machine.name.trim().toLowerCase();
+    if (!machineKey) {
+      diagnostics.push({ code: "anim.emptyMachineName", message: "State Machine names cannot be empty", nodeId: named.get(machine.id), location: anim, severity: "error" });
+    } else if (machineNames.has(machineKey)) {
+      diagnostics.push({ code: "anim.duplicateMachineName", message: `State Machine "${machine.name}" duplicates "${machineNames.get(machineKey)}". Choose a unique name.`, nodeId: named.get(machine.id), location: anim, severity: "error" });
+    } else {
+      machineNames.set(machineKey, machine.name);
+    }
+    diagnostics.push(...validateStateMachine(machine, machineLocation, transitionIds));
+  }
+
+  // Pose graphs: their output, and the clips their players name.
+  const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
+  for (const { graph, location } of animPoseGraphs(doc)) {
+    const outputs = graph.nodes.filter((node) => isPoseOutputType(node.type));
+    if (outputs.length !== 1) {
+      diagnostics.push({
+        code: "anim.missingOutput",
+        message: `${locationName(doc, location)} needs exactly one ${animGraphDimension(doc) === "2d" ? "Output Frame" : "Output Pose"} node`,
+        ...(location.kind === "state"
+          ? { nodeId: location.stateId, location: { kind: "machine", machineId: location.machineId } as const }
+          : { location }),
+        severity: "error",
+      });
+    }
+    for (const node of graph.nodes) {
+      if (!isPoseClipNodeType(node.type)) continue;
+      const assetGuid = typeof node.data.assetGuid === "string" ? node.data.assetGuid : "";
+      if (!assetGuid) continue;
+      diagnostics.push(...clipDiagnostics(doc, byGuid, node.id, node.type, assetGuid, location, options.dimension));
+    }
+  }
+  return diagnostics;
+}
+
+function validateStateMachine(
+  machine: AnimStateMachine,
+  location: AnimGraphLocation,
+  transitionIds: Set<string>,
+): AnimDiagnostic[] {
+  const diagnostics: AnimDiagnostic[] = [];
+  const stateIds = new Set(machine.states.map((state) => state.id));
+  if (!stateIds.has(machine.entryStateId)) {
+    diagnostics.push({
+      code: "anim.missingEntry",
+      message: `Entry state "${machine.entryStateId}" is not in State Machine "${machine.name}"`,
+      nodeId: machine.entryStateId,
+      location,
+      severity: "error",
+    });
+  }
+  const stateNames = new Map<string, string>();
+  for (const state of machine.states) {
+    const name = state.name.trim();
+    const key = name.toLowerCase();
+    if (!name) {
+      diagnostics.push({ code: "anim.emptyStateName", message: "State names cannot be empty", nodeId: state.id, location, severity: "error" });
+    } else if (stateNames.has(key)) {
+      diagnostics.push({ code: "anim.duplicateStateName", message: `State "${state.name}" duplicates "${stateNames.get(key)}". Choose a unique name.`, nodeId: state.id, location, severity: "error" });
+    } else {
+      stateNames.set(key, name);
+    }
+  }
+  const stateNameById = new Map(machine.states.map((state) => [state.id, state.name]));
   const firstByPair = new Map<string, string>();
-  for (const transition of doc.transitions) {
+  for (const transition of machine.transitions) {
+    if (transitionIds.has(transition.id)) {
+      diagnostics.push({ code: "anim.duplicateTransitionId", message: `Transition id "${transition.id}" is used twice`, nodeId: transition.fromStateId, location, severity: "error" });
+    }
+    transitionIds.add(transition.id);
     const pair = `${transition.fromStateId}\u0000${transition.toStateId}`;
     const first = firstByPair.get(pair);
     if (first === undefined) {
@@ -378,256 +581,69 @@ export function validateAnimGraph(
         code: "anim.duplicateTransition",
         message: `Transition "${transition.id}" duplicates "${first}" from "${from}" to "${to}". The canvas shows one; priority decides which runs.`,
         nodeId: transition.fromStateId,
+        location,
         severity: "warning",
       });
     }
     if (!stateIds.has(transition.fromStateId) || !stateIds.has(transition.toStateId)) {
-      diagnostics.push({
-        code: "anim.badTransition",
-        message: `Transition "${transition.id}" points at a missing state`,
-        nodeId: transition.id,
-        severity: "error",
-      });
+      diagnostics.push({ code: "anim.badTransition", message: `Transition "${transition.id}" points at a missing state`, nodeId: transition.id, location, severity: "error" });
     }
-    const enter = transition.ruleGraph.nodes.filter(
-      (node) => node.type === ANIM_RULE_ENTER_TYPE,
-    );
-    const exit = transition.ruleGraph.nodes.filter(
-      (node) => node.type === ANIM_RULE_EXIT_TYPE,
-    );
+    const enter = transition.ruleGraph.nodes.filter((node) => node.type === ANIM_RULE_ENTER_TYPE);
+    const exit = transition.ruleGraph.nodes.filter((node) => node.type === ANIM_RULE_EXIT_TYPE);
     if (enter.length === 0 || exit.length === 0) {
-      diagnostics.push({
-        code: "anim.missingRuleNode",
-        message: `Transition "${transition.id}" needs Enter State and Exit State nodes`,
-        nodeId: transition.id,
-        severity: "error",
-      });
+      diagnostics.push({ code: "anim.missingRuleNode", message: `Transition "${transition.id}" needs Enter State and Exit State nodes`, nodeId: transition.id, location, severity: "error" });
     }
     if (enter.length > 1 || exit.length > 1) {
-      diagnostics.push({
-        code: "anim.duplicateRuleNode",
-        message: `Transition "${transition.id}" has duplicate Enter State or Exit State nodes`,
-        nodeId: transition.id,
-        severity: "error",
-      });
+      diagnostics.push({ code: "anim.duplicateRuleNode", message: `Transition "${transition.id}" has duplicate Enter State or Exit State nodes`, nodeId: transition.id, location, severity: "error" });
     }
   }
-  const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
-  if (options.dimension) diagnostics.push(...clipDimensionDiagnostics(doc, byGuid, options.dimension));
-  for (const clip of doc.clips) {
-    if (clip.kind !== "animation" || !clip.assetGuid) continue;
-    const entry = byGuid.get(clip.assetGuid);
-    if (!entry || entry.type !== "Animation") continue;
-    const animationSkeleton = entry.skeletonGuid;
-    const model = entry.modelGuid ? byGuid.get(entry.modelGuid) : undefined;
-    if (
-      !animationSkeleton ||
-      !model ||
-      model.type !== "Model" ||
-      !model.skeletonGuid ||
-      model.skeletonGuid === animationSkeleton
-    ) {
-      continue;
-    }
+  return diagnostics;
+}
+
+/**
+ * A 3D graph plays Animations on its own Skeleton (null matches Animations with no Skeleton) and a 2D graph Sprite
+ * Animations; an Animation must also be on its Model's Skeleton.
+ */
+function clipDiagnostics(
+  doc: AnimGraphDocument,
+  byGuid: ReadonlyMap<string, AnimClipCatalogEntry>,
+  nodeId: string,
+  nodeType: string,
+  assetGuid: string,
+  location: AnimGraphLocation,
+  dimension: AnimGraphDimension | undefined,
+): AnimDiagnostic[] {
+  const diagnostics: AnimDiagnostic[] = [];
+  const entry = byGuid.get(assetGuid);
+  const name = entry?.name ?? assetGuid;
+  const sprite = nodeType.startsWith("anim.frame.");
+  if (entry && (sprite ? entry.type !== "SpriteAnimation" : entry.type !== "Animation")) {
+    diagnostics.push({
+      code: "anim.clipKind",
+      message: sprite
+        ? `"${name}" is not a Sprite Animation; a 2D Animation Graph plays Sprite Animations only`
+        : `"${name}" is not an Animation; a 3D Animation Graph plays Animations only`,
+      nodeId,
+      location,
+      severity: "error",
+    });
+    return diagnostics;
+  }
+  if (!entry || entry.type !== "Animation") return diagnostics;
+  if (dimension === "3d" && (entry.skeletonGuid ?? null) !== doc.skeletonGuid) {
+    diagnostics.push({ code: "anim.clipSkeleton", message: `Animation "${name}" is not on the graph's Skeleton`, nodeId, location, severity: "error" });
+  }
+  const model = entry.modelGuid ? byGuid.get(entry.modelGuid) : undefined;
+  if (entry.skeletonGuid && model?.type === "Model" && model.skeletonGuid && model.skeletonGuid !== entry.skeletonGuid) {
     diagnostics.push({
       code: "anim.skeletonMismatch",
       message: `Animation "${entry.name}" skeleton does not match Model "${model.name}"`,
-      nodeId: clip.id,
+      nodeId,
+      location,
       severity: "error",
     });
   }
   return diagnostics;
-}
-
-/**
- * A 2D graph plays only Sprite Animations, and a 3D graph only Animations on its own Skeleton (null matches
- * Animations with no Skeleton).
- */
-function clipDimensionDiagnostics(
-  doc: AnimGraphDocument,
-  byGuid: ReadonlyMap<string, AnimClipCatalogEntry>,
-  dimension: AnimGraphDimension,
-): AnimDiagnostic[] {
-  const diagnostics: AnimDiagnostic[] = [];
-  for (const clip of doc.clips) {
-    if (!clip.assetGuid) continue;
-    const entry = byGuid.get(clip.assetGuid);
-    const name = entry?.name ?? clip.clipName;
-    // Point at the state that plays the clip, which the canvas can show.
-    const nodeId = doc.states.find((state) => state.clipId === clip.id)?.id ?? clip.id;
-    if (dimension === "2d" ? clip.kind !== "sprite" : clip.kind !== "animation") {
-      diagnostics.push({
-        code: "anim.clipKind",
-        message: dimension === "2d"
-          ? `"${name}" is not a Sprite Animation; a 2D Animation Graph plays Sprite Animations only`
-          : `"${name}" is not an Animation; a 3D Animation Graph plays Animations only`,
-        nodeId,
-        severity: "error",
-      });
-      continue;
-    }
-    if (dimension === "3d" && entry?.type === "Animation" && (entry.skeletonGuid ?? null) !== doc.skeletonGuid) {
-      diagnostics.push({
-        code: "anim.clipSkeleton",
-        message: `Animation "${name}" is not on the graph's Skeleton`,
-        nodeId,
-        severity: "error",
-      });
-    }
-  }
-  return diagnostics;
-}
-
-const NO_TRANSITIONS: readonly AnimTransition[] = [];
-
-interface AnimGraphIndex {
-  /** Later duplicate ids win, as with any `new Map(entries)`. */
-  states: Map<string, AnimState>;
-  clips: Map<string, AnimClipRef>;
-  /** Outgoing transitions per source state in priority order, then document order. */
-  outgoing: Map<string, readonly AnimTransition[]>;
-  /** Clip of the first state with each id, which is what `clipForState` returns. */
-  clipByStateId: Map<string, AnimClipRef | undefined>;
-}
-
-/**
- * Derived once per document object. Loaded documents are replaced rather than
- * mutated, so the result stays valid for the document's lifetime. Callers
- * treat the maps as read-only.
- */
-const animGraphIndexes = new WeakMap<AnimGraphDocument, AnimGraphIndex>();
-
-function animGraphIndex(doc: AnimGraphDocument): AnimGraphIndex {
-  let index = animGraphIndexes.get(doc);
-  if (!index) {
-    index = buildAnimGraphIndex(doc);
-    animGraphIndexes.set(doc, index);
-  }
-  return index;
-}
-
-function buildAnimGraphIndex(doc: AnimGraphDocument): AnimGraphIndex {
-  const states = new Map(doc.states.map((state) => [state.id, state]));
-  const clips = new Map(doc.clips.map((clip) => [clip.id, clip]));
-  const firstClips = new Map<string, AnimClipRef>();
-  for (const clip of doc.clips) if (!firstClips.has(clip.id)) firstClips.set(clip.id, clip);
-  const clipByStateId = new Map<string, AnimClipRef | undefined>();
-  for (const state of doc.states) {
-    if (clipByStateId.has(state.id)) continue;
-    clipByStateId.set(state.id, state.clipId ? firstClips.get(state.clipId) : undefined);
-  }
-  const grouped = new Map<string, Array<{ row: AnimTransition; index: number }>>();
-  doc.transitions.forEach((row, index) => {
-    const group = grouped.get(row.fromStateId);
-    if (group) group.push({ row, index });
-    else grouped.set(row.fromStateId, [{ row, index }]);
-  });
-  const outgoing = new Map<string, readonly AnimTransition[]>();
-  for (const [stateId, entries] of grouped) {
-    entries.sort((a, b) => {
-      const priority = a.row.priority - b.row.priority;
-      return priority !== 0 ? priority : a.index - b.index;
-    });
-    outgoing.set(stateId, entries.map((entry) => entry.row));
-  }
-  return { states, clips, outgoing, clipByStateId };
-}
-
-function clipDurationMs(
-  state: AnimState,
-  clips: Map<string, AnimClipRef>,
-): number {
-  const clip = state.clipId ? clips.get(state.clipId) : undefined;
-  return Math.max(1, (clip?.durationMs ?? 1000) / Math.max(0.001, state.speed));
-}
-
-/** Seconds a state's clock advances in a tick: a state at Speed 0 or below holds its pose. */
-function clockStepSeconds(state: AnimState, dtSeconds: number): number {
-  return state.speed > 0 ? dtSeconds : 0;
-}
-
-function advanceClock(
-  previousTimeMs: number,
-  previousLoopCount: number,
-  previousNormalised: number,
-  dtSeconds: number,
-  durationMs: number,
-  loop: boolean,
-): {
-  timeMs: number;
-  normalised: number;
-  loopCount: number;
-  justLooped: boolean;
-  justFinished: boolean;
-} {
-  const dtMs = Number.isFinite(dtSeconds) ? Math.max(0, dtSeconds) * 1000 : 0;
-  let timeMs = previousTimeMs + dtMs;
-  if (loop) {
-    let loopsGained = 0;
-    while (timeMs >= durationMs) {
-      timeMs -= durationMs;
-      loopsGained += 1;
-      if (loopsGained > 100_000) {
-        timeMs = timeMs % durationMs;
-        break;
-      }
-    }
-    const normalised = timeMs / durationMs;
-    return {
-      timeMs,
-      normalised,
-      loopCount: previousLoopCount + loopsGained,
-      justLooped: loopsGained > 0,
-      justFinished: false,
-    };
-  }
-  const rawNorm = timeMs / durationMs;
-  const finished = rawNorm >= 1;
-  const normalised = Math.min(1, rawNorm);
-  return {
-    timeMs: normalised * durationMs,
-    normalised,
-    loopCount: previousLoopCount,
-    justLooped: false,
-    justFinished: finished && previousNormalised < 1,
-  };
-}
-
-function factsFor(
-  state: AnimState,
-  durationMs: number,
-  clock: {
-    timeMs: number;
-    normalised: number;
-    loopCount: number;
-    justLooped: boolean;
-    justFinished: boolean;
-  },
-  previousTotalNormalisedTime: number,
-): AnimStateFacts {
-  const durationSeconds = durationMs / 1000;
-  const remainingRatio = Math.max(0, 1 - clock.normalised);
-  return {
-    elapsedSeconds: clock.timeMs / 1000,
-    durationSeconds,
-    normalisedTime: clock.normalised,
-    remainingSeconds: remainingRatio * durationSeconds,
-    remainingRatio,
-    looping: state.loop,
-    loopCount: clock.loopCount,
-    justLooped: clock.justLooped,
-    justFinished: clock.justFinished,
-    totalNormalisedTime: totalNormalisedTime(state.loop, clock.loopCount, clock.normalised),
-    previousTotalNormalisedTime,
-  };
-}
-
-function totalNormalisedTime(
-  loop: boolean,
-  loopCount: number,
-  normalised: number,
-): number {
-  return loop ? loopCount + normalised : normalised;
 }
 
 /**
@@ -653,210 +669,6 @@ export function animExitTimeReached(
   return Math.floor(to - threshold) > Math.floor(from - threshold);
 }
 
-function layerFor(
-  doc: AnimGraphDocument,
-  stateId: string,
-  normalisedTime: number,
-  weight: number,
-): AnimClipLayer {
-  const clip = clipForState(doc, stateId);
-  return {
-    stateId,
-    clipAssetGuid: clip?.assetGuid ?? "",
-    clipName: clip?.clipName ?? "",
-    clipKind: clip?.kind ?? "animation",
-    normalisedTime,
-    weight,
-  };
-}
-
-/** A transition with no decision passes, like a rule graph with both sinks unwired. */
-function transitionPasses(
-  transition: AnimTransition,
-  facts: AnimStateFacts,
-  inputs: AnimGraphInputs,
-): boolean {
-  const decided = inputs.decideTransition?.(transition, facts);
-  const rule = decided ?? inputs.transitionRules?.[transition.id];
-  return !rule || (rule.enter === true && rule.exit === true);
-}
-
-export function evaluateAnimGraph(
-  doc: AnimGraphDocument,
-  previous: AnimEvalState | null,
-  dtSeconds: number,
-  inputs: AnimGraphInputs,
-): AnimEvalState {
-  const { states, clips, outgoing: outgoingByState } = animGraphIndex(doc);
-  // A missing entry (reported by `validateAnimGraph`) starts on the first state
-  // rather than throwing inside the tick; a graph with no states stays idle.
-  const entryStateId = states.has(doc.entryStateId) ? doc.entryStateId : doc.states[0]?.id;
-  let stateId = previous?.stateId ?? entryStateId;
-  if (stateId === undefined || !states.has(stateId)) stateId = entryStateId;
-  if (stateId === undefined) return idleAnimEvalState(doc.entryStateId);
-  const current = states.get(stateId)!;
-  const duration = clipDurationMs(current, clips);
-  const clock = advanceClock(
-    previous?.timeMs ?? 0,
-    previous?.loopCount ?? 0,
-    previous?.normalisedTime ?? 0,
-    clockStepSeconds(current, dtSeconds),
-    duration,
-    current.loop,
-  );
-
-  const sameState = previous !== null && previous.stateId === stateId;
-  const previousTotal = sameState
-    ? totalNormalisedTime(current.loop, previous.loopCount, previous.normalisedTime)
-    : 0;
-  const currentFacts = factsFor(current, duration, clock, previousTotal);
-
-  const outgoing = outgoingByState.get(stateId) ?? NO_TRANSITIONS;
-
-  let nextId = stateId;
-  let nextTimeMs = clock.timeMs;
-  let nextNormalised = clock.normalised;
-  let nextLoopCount = clock.loopCount;
-  let justLooped = clock.justLooped;
-  let justFinished = clock.justFinished;
-  let blendFromStateId = previous?.blendFromStateId ?? null;
-  let blendFromTimeMs = previous?.blendFromTimeMs ?? 0;
-  let blendElapsedMs = previous?.blendElapsedMs ?? 0;
-  let blendSeconds = previous?.blendSeconds ?? 0;
-  let startedBlend: AnimTransition | null = null;
-
-  for (const row of outgoing) {
-    // A transition to a missing state (`anim.badTransition`) never fires.
-    if (!states.has(row.toStateId)) continue;
-    if (!transitionPasses(row, currentFacts, inputs)) continue;
-    nextId = row.toStateId;
-    nextTimeMs = 0;
-    nextNormalised = 0;
-    nextLoopCount = 0;
-    justLooped = false;
-    justFinished = false;
-    startedBlend = row.blendSeconds > 0 ? row : null;
-    inputs.transitionTaken?.(row);
-    break;
-  }
-
-  if (startedBlend) {
-    blendFromStateId = stateId;
-    blendFromTimeMs = clock.timeMs;
-    blendElapsedMs = Math.max(0, dtSeconds) * 1000;
-    blendSeconds = startedBlend.blendSeconds;
-  } else if (blendFromStateId && nextId === stateId) {
-    blendElapsedMs += Math.max(0, dtSeconds) * 1000;
-  } else if (nextId !== stateId) {
-    blendFromStateId = null;
-    blendFromTimeMs = 0;
-    blendElapsedMs = 0;
-    blendSeconds = 0;
-  }
-
-  const nextState = states.get(nextId)!;
-  const nextDuration = clipDurationMs(nextState, clips);
-  const nextFacts = factsFor(nextState, nextDuration, {
-    timeMs: nextTimeMs,
-    normalised: nextNormalised,
-    loopCount: nextLoopCount,
-    justLooped,
-    justFinished,
-  }, nextId === stateId ? previousTotal : 0);
-
-  const layers: AnimClipLayer[] = [];
-  const blendWeights: Record<string, number> = {};
-  const blendState = blendFromStateId ? states.get(blendFromStateId) : undefined;
-  // Stored at blend start: re-finding the row by (from, to) would pick the
-  // first duplicate rather than the transition priority selected.
-  const blendDurationMs = Math.max(0, blendSeconds) * 1000;
-  let toWeight = 1;
-  if (blendState && blendFromStateId && blendDurationMs > 0 && blendFromStateId !== nextId) {
-    const t = Math.min(1, blendElapsedMs / blendDurationMs);
-    const fromWeight = 1 - t;
-    toWeight = t;
-    const fromDuration = clipDurationMs(blendState, clips);
-    const fromClock = advanceClock(
-      blendFromTimeMs,
-      0,
-      blendFromTimeMs / fromDuration,
-      startedBlend ? 0 : clockStepSeconds(blendState, dtSeconds),
-      fromDuration,
-      blendState.loop,
-    );
-    if (t >= 1) {
-      blendFromStateId = null;
-      blendFromTimeMs = 0;
-      blendElapsedMs = 0;
-      blendSeconds = 0;
-      toWeight = 1;
-    } else {
-      blendFromTimeMs = fromClock.timeMs;
-      layers.push(
-        layerFor(doc, blendFromStateId, fromClock.normalised, fromWeight),
-      );
-      blendWeights[blendFromStateId] = fromWeight;
-    }
-  } else if (!blendState || blendFromStateId === nextId) {
-    blendFromStateId = null;
-    blendFromTimeMs = 0;
-    blendElapsedMs = 0;
-    blendSeconds = 0;
-  }
-
-  layers.push(layerFor(doc, nextId, nextNormalised, toWeight));
-  blendWeights[nextId] = (blendWeights[nextId] ?? 0) + toWeight;
-
-  return {
-    stateId: nextId,
-    normalisedTime: nextNormalised,
-    blendWeights,
-    timeMs: nextTimeMs,
-    facts: nextFacts,
-    layers,
-    blendFromStateId,
-    blendFromTimeMs,
-    blendElapsedMs,
-    blendSeconds,
-    loopCount: nextLoopCount,
-  };
-}
-
-function idleAnimEvalState(stateId: string): AnimEvalState {
-  return {
-    stateId,
-    normalisedTime: 0,
-    blendWeights: {},
-    timeMs: 0,
-    facts: {
-      elapsedSeconds: 0,
-      durationSeconds: 0,
-      normalisedTime: 0,
-      remainingSeconds: 0,
-      remainingRatio: 0,
-      looping: false,
-      loopCount: 0,
-      justLooped: false,
-      justFinished: false,
-      totalNormalisedTime: 0,
-      previousTotalNormalisedTime: 0,
-    },
-    layers: [],
-    blendFromStateId: null,
-    blendFromTimeMs: 0,
-    blendElapsedMs: 0,
-    blendSeconds: 0,
-    loopCount: 0,
-  };
-}
-
-export function clipForState(
-  doc: AnimGraphDocument,
-  stateId: string,
-): AnimClipRef | undefined {
-  return animGraphIndex(doc).clipByStateId.get(stateId);
-}
-
 function asFiniteNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -874,6 +686,13 @@ function isSerializedGraph(value: unknown): value is SerializedGraph {
   if (!value || typeof value !== "object") return false;
   const row = value as Record<string, unknown>;
   return Array.isArray(row.nodes) && Array.isArray(row.edges);
+}
+
+function copyGraph(graph: SerializedGraph): SerializedGraph {
+  return {
+    nodes: graph.nodes.map((node) => ({ ...node, data: { ...node.data } })),
+    edges: graph.edges.map((edge) => ({ ...edge })),
+  };
 }
 
 function parseVariableType(value: unknown, typeClassId?: unknown): AnimVariableTypeId {
@@ -920,164 +739,144 @@ function parseVariables(
 }
 
 function parseRuleGraph(value: unknown): SerializedGraph {
-  if (isSerializedGraph(value) && value.nodes.length > 0) {
-    return {
-      nodes: value.nodes.map((node) => ({ ...node, data: { ...node.data } })),
-      edges: value.edges.map((edge) => ({ ...edge })),
-    };
-  }
-  return createDefaultTransitionRuleGraph();
+  return isSerializedGraph(value) && value.nodes.length > 0 ? copyGraph(value) : createDefaultTransitionRuleGraph();
 }
 
 function parseAnimationObject(value: unknown): SerializedGraph {
-  if (isSerializedGraph(value) && value.nodes.length > 0) {
-    return {
-      nodes: value.nodes.map((node) => ({ ...node, data: { ...node.data } })),
-      edges: value.edges.map((edge) => ({ ...edge })),
-    };
-  }
-  return createDefaultAnimationObjectGraph();
+  return isSerializedGraph(value) && value.nodes.length > 0 ? copyGraph(value) : createDefaultAnimationObjectGraph();
 }
 
-/** Recover an `AnimGraphDocument` from a document-chunk JSON payload. */
+/** A pose graph as stored, or a new one with its output when the document lost it. */
+function parsePoseGraph(value: unknown, fallback: () => SerializedGraph): SerializedGraph {
+  return isSerializedGraph(value) && value.nodes.length > 0 ? copyGraph(value) : fallback();
+}
+
+function parseTransitions(value: unknown): AnimTransition[] {
+  const transitions: AnimTransition[] = [];
+  if (!Array.isArray(value)) return transitions;
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const transition = row as Record<string, unknown>;
+    if (typeof transition.id !== "string") continue;
+    if (typeof transition.fromStateId !== "string") continue;
+    if (typeof transition.toStateId !== "string") continue;
+    transitions.push({
+      id: transition.id,
+      fromStateId: transition.fromStateId,
+      toStateId: transition.toStateId,
+      blendSeconds: asFiniteNumber(transition.blendSeconds, 0.1),
+      priority: asFiniteNumber(transition.priority, 0),
+      ruleGraph: parseRuleGraph(transition.ruleGraph),
+      sourceHandle: typeof transition.sourceHandle === "string" ? transition.sourceHandle : undefined,
+      targetHandle: typeof transition.targetHandle === "string" ? transition.targetHandle : undefined,
+    });
+  }
+  return transitions;
+}
+
+function parseStateMachine(value: unknown, index: number, dimension: AnimGraphDimension): AnimStateMachine | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  const id = typeof source.id === "string" && source.id !== "" ? source.id : `machine-${index}`;
+  const states: AnimState[] = [];
+  if (Array.isArray(source.states)) {
+    for (const row of source.states) {
+      if (!row || typeof row !== "object") continue;
+      const state = row as Record<string, unknown>;
+      if (typeof state.id !== "string" || state.id === "") continue;
+      states.push({
+        id: state.id,
+        name: typeof state.name === "string" && state.name !== "" ? state.name : state.id,
+        position: parsePosition(state.position) ?? defaultAnimStatePosition(states.length),
+        stateGraph: parsePoseGraph(state.stateGraph, () => createStateGraph(dimension)),
+      });
+    }
+  }
+  const entryStateId =
+    typeof source.entryStateId === "string" && states.some((state) => state.id === source.entryStateId)
+      ? source.entryStateId
+      : states[0]?.id ?? "";
+  return {
+    id,
+    name: typeof source.name === "string" && source.name.trim() !== "" ? source.name : "State Machine",
+    entryStateId,
+    states,
+    transitions: parseTransitions(source.transitions),
+  };
+}
+
 export function parseAnimGraphDocument(
   value: unknown,
 ): AnimGraphDocument | null {
   if (!value || typeof value !== "object") return null;
   const source = value as Record<string, unknown>;
-  if (!Array.isArray(source.states)) return null;
-  const states: AnimState[] = [];
-  for (const row of source.states) {
-    if (!row || typeof row !== "object") continue;
-    const state = row as Record<string, unknown>;
-    if (typeof state.id !== "string" || state.id === "") continue;
-    states.push({
-      id: state.id,
-      name: typeof state.name === "string" && state.name !== "" ? state.name : state.id,
-      clipId: typeof state.clipId === "string" ? state.clipId : null,
-      speed: asFiniteNumber(state.speed, 1),
-      loop: state.loop !== false,
-      position: parsePosition(state.position) ?? defaultAnimStatePosition(states.length),
-    });
+  if (!Array.isArray(source.stateMachines) || !isSerializedGraph(source.animGraph)) return null;
+  const dimension = animGraphDimension({ animGraph: source.animGraph });
+  const stateMachines = source.stateMachines
+    .map((row, index) => parseStateMachine(row, index, dimension))
+    .filter((machine): machine is AnimStateMachine => machine !== null);
+  const animGraph = copyGraph(source.animGraph);
+  // A graph that lost its output gets one back.
+  if (!animGraph.nodes.some((node) => isPoseOutputType(node.type))) {
+    animGraph.nodes.push({ id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 560, y: 80 }, data: { __protected: true } });
   }
-  if (states.length === 0) return null;
-  const clips: AnimClipRef[] = [];
-  if (Array.isArray(source.clips)) {
-    for (const row of source.clips) {
-      if (!row || typeof row !== "object") continue;
-      const clip = row as Record<string, unknown>;
-      if (typeof clip.id !== "string" || clip.id === "") continue;
-      clips.push({
-        id: clip.id,
-        kind: clip.kind === "sprite" ? "sprite" : "animation",
-        assetGuid: typeof clip.assetGuid === "string" ? clip.assetGuid : "",
-        clipName: typeof clip.clipName === "string" ? clip.clipName : clip.id,
-        durationMs: Math.max(1, asFiniteNumber(clip.durationMs, 1000)),
-      });
-    }
-  }
-  const transitions: AnimTransition[] = [];
-  if (Array.isArray(source.transitions)) {
-    for (const row of source.transitions) {
-      if (!row || typeof row !== "object") continue;
-      const transition = row as Record<string, unknown>;
-      if (typeof transition.id !== "string") continue;
-      if (typeof transition.fromStateId !== "string") continue;
-      if (typeof transition.toStateId !== "string") continue;
-      transitions.push({
-        id: transition.id,
-        fromStateId: transition.fromStateId,
-        toStateId: transition.toStateId,
-        blendSeconds: asFiniteNumber(transition.blendSeconds, 0.1),
-        priority: asFiniteNumber(transition.priority, 0),
-        ruleGraph: parseRuleGraph(transition.ruleGraph),
-        sourceHandle:
-          typeof transition.sourceHandle === "string"
-            ? transition.sourceHandle
-            : undefined,
-        targetHandle:
-          typeof transition.targetHandle === "string"
-            ? transition.targetHandle
-            : undefined,
-      });
-    }
-  }
-  const variables = parseVariables(source);
-  const entryStateId =
-    typeof source.entryStateId === "string" &&
-    states.some((state) => state.id === source.entryStateId)
-      ? source.entryStateId
-      : states[0]!.id;
   return {
-    name:
-      typeof source.name === "string" && source.name !== ""
-        ? source.name
-        : "Locomotion",
+    name: typeof source.name === "string" && source.name !== "" ? source.name : "Locomotion",
     skeletonGuid: typeof source.skeletonGuid === "string" && source.skeletonGuid.trim() !== "" ? source.skeletonGuid.trim() : null,
-    entryStateId,
-    states,
-    transitions,
-    clips,
-    variables,
+    variables: parseVariables(source),
+    animGraph,
+    stateMachines,
     animationObject: parseAnimationObject(source.animationObject),
   };
 }
 
-/** Asset index used to bind animation clips to Play. */
-export interface AnimClipCatalogEntry {
-  guid: string;
-  type: string;
-  name: string;
-  clipName?: string;
-  dependencyGuids?: string[];
-  /** Sprite Animation or Animation clip duration. */
-  durationMs?: number;
-  skeletonGuid?: string | null;
-  modelGuid?: string;
-}
-
-function resolveOneClip(
-  clip: AnimClipRef,
-  catalog: readonly AnimClipCatalogEntry[],
-): AnimClipRef {
-  const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
-  const entry = byGuid.get(clip.assetGuid);
-  if (clip.kind === "sprite") {
-    if (!entry || entry.type !== "SpriteAnimation") return clip;
-    if (
-      typeof entry.durationMs !== "number" ||
-      !Number.isFinite(entry.durationMs) ||
-      entry.durationMs <= 0 ||
-      entry.durationMs === clip.durationMs
-    ) {
-      return clip;
-    }
-    return { ...clip, durationMs: entry.durationMs };
-  }
-  // Clips are Animation assets; any other guid resolves to nothing and plays nothing.
-  if (clip.kind !== "animation" || !entry || entry.type !== "Animation") return clip;
-  const nextName = entry.clipName || clip.clipName;
-  const nextDuration =
-    typeof entry.durationMs === "number" &&
-    Number.isFinite(entry.durationMs) &&
-    entry.durationMs > 0
+function resolvePoseGraphClips(
+  graph: SerializedGraph,
+  byGuid: ReadonlyMap<string, AnimClipCatalogEntry>,
+): SerializedGraph {
+  let changed = false;
+  const nodes = graph.nodes.map((node) => {
+    if (!isPoseClipNodeType(node.type)) return node;
+    const entry = typeof node.data.assetGuid === "string" ? byGuid.get(node.data.assetGuid) : undefined;
+    if (!entry) return node;
+    const sprite = node.type.startsWith("anim.frame.");
+    // Clips are Animation or Sprite Animation assets; any other guid resolves to nothing and plays nothing.
+    if (sprite ? entry.type !== "SpriteAnimation" : entry.type !== "Animation") return node;
+    const clipName = sprite ? "" : entry.clipName ?? "";
+    const durationMs = typeof entry.durationMs === "number" && Number.isFinite(entry.durationMs) && entry.durationMs > 0
       ? entry.durationMs
-      : clip.durationMs;
-  if (nextName === clip.clipName && nextDuration === clip.durationMs) return clip;
-  return { ...clip, clipName: nextName, durationMs: nextDuration };
+      : undefined;
+    const frameCount = sprite && typeof entry.frameCount === "number" && entry.frameCount > 0 ? entry.frameCount : undefined;
+    if (node.data.clipName === clipName && node.data.durationMs === durationMs && node.data.frameCount === frameCount) return node;
+    changed = true;
+    const data: Record<string, unknown> = { ...node.data, clipName };
+    if (durationMs !== undefined) data.durationMs = durationMs; else delete data.durationMs;
+    if (frameCount !== undefined) data.frameCount = frameCount; else delete data.frameCount;
+    return { ...node, data };
+  });
+  return changed ? { ...graph, nodes } : graph;
 }
 
-/** Fill Animation clip names and durations from catalog assets. Keep Animation guids. */
+/** Fill each player's clip name, length and frame count from the catalog. Keep Animation guids. */
 export function resolveAnimGraphClips(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[],
 ): AnimGraphDocument {
   if (catalog.length === 0) return doc;
-  let changed = false;
-  const clips = doc.clips.map((clip) => {
-    const next = resolveOneClip(clip, catalog);
-    if (next !== clip) changed = true;
-    return next;
+  const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
+  const animGraph = resolvePoseGraphClips(doc.animGraph, byGuid);
+  let changed = animGraph !== doc.animGraph;
+  const stateMachines = doc.stateMachines.map((machine) => {
+    let machineChanged = false;
+    const states = machine.states.map((state) => {
+      const stateGraph = resolvePoseGraphClips(state.stateGraph, byGuid);
+      if (stateGraph === state.stateGraph) return state;
+      machineChanged = true;
+      return { ...state, stateGraph };
+    });
+    if (!machineChanged) return machine;
+    changed = true;
+    return { ...machine, states };
   });
-  return changed ? { ...doc, clips } : doc;
+  return changed ? { ...doc, animGraph, stateMachines } : doc;
 }

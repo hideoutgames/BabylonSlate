@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultSpriteAnimationPayload,
+  flipSpriteAnimationFrame,
   hydrateSpriteAnimations,
   parseSpriteAnimationPayload,
   resolveSpriteAnimation,
@@ -13,6 +14,7 @@ import {
   spriteAnimationSheetCellCount,
   spriteAnimationSheetCellRect,
   spriteAnimationTextureGuids,
+  type SpriteAnimationFrame,
 } from "./sprite-animation-payload";
 import { parseSpritePayload } from "./sprite-payload";
 
@@ -263,5 +265,33 @@ describe("SpriteAnimation payload", () => {
       { textureGuid: "gif-tex", width: 48, height: 24 },
       { spriteGuid: "hero", textureGuid: "hero-tex", width: 64, height: 32 },
     ]);
+  });
+});
+
+describe("flipSpriteAnimationFrame", () => {
+  const frame = {
+    pivot: { x: 0.25, y: 1 },
+    collision: { x: 0.5, y: 0, width: 0.5, height: 0.75 },
+    uv: { u0: 0.5, v0: 0, u1: 0.75, v1: 0.5 },
+  };
+
+  it("mirrors the pivot, collision box and UVs across the frame", () => {
+    expect(flipSpriteAnimationFrame(frame, true, false)).toEqual({
+      pivot: { x: 0.75, y: 1 },
+      collision: { x: 0, y: 0, width: 0.5, height: 0.75 },
+      uv: { u0: 0.75, v0: 0, u1: 0.5, v1: 0.5 },
+    });
+    expect(flipSpriteAnimationFrame(frame, false, true)).toEqual({
+      pivot: { x: 0.25, y: 0 },
+      collision: { x: 0.5, y: 0.25, width: 0.5, height: 0.75 },
+      uv: { u0: 0.5, v0: 0.5, u1: 0.75, v1: 0 },
+    });
+  });
+
+  it("mirrors the whole texture for a frame without UVs, and returns an unflipped frame as it is", () => {
+    const whole = { pivot: frame.pivot, collision: frame.collision };
+    expect(flipSpriteAnimationFrame<Pick<SpriteAnimationFrame, "pivot" | "collision" | "uv">>(whole, true, false).uv)
+      .toEqual({ u0: 1, v0: 0, u1: 0, v1: 1 });
+    expect(flipSpriteAnimationFrame(frame, false, undefined)).toBe(frame);
   });
 });

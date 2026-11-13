@@ -1,7 +1,7 @@
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { CommandMessage } from "@haptic/bridge";
 import type { SpriteAnimationPayload, SpritePayload } from "@haptic/assets";
-import { spriteAnimationFrameAt } from "@haptic/assets";
+import { flipSpriteAnimationFrame, spriteAnimationFrameAt } from "@haptic/assets";
 import { setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
 import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
@@ -43,7 +43,10 @@ export function seekGameplayAnimation(
   group.setWeightForAllAnimatables?.(weight);
 }
 
-/** Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its UVs, other frames the whole texture. */
+/**
+ * Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its
+ * UVs, other frames the whole texture. `flipX` / `flipY` mirror it about its pivot (Flip Frame).
+ */
 export function applySpriteAnimationAssetFrame(
   mesh: Mesh,
   payload: SpriteAnimationPayload,
@@ -51,10 +54,13 @@ export function applySpriteAnimationAssetFrame(
   options?: {
     applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
     pixelsPerUnit?: number;
+    flipX?: boolean;
+    flipY?: boolean;
   },
 ): void {
-  const frame = spriteAnimationFrameAt(payload, normalisedTime);
-  if (!frame) return;
+  const authored = spriteAnimationFrameAt(payload, normalisedTime);
+  if (!authored) return;
+  const frame = flipSpriteAnimationFrame(authored, options?.flipX, options?.flipY);
   options?.applyTexture?.(mesh, frame.textureGuid || null);
   setSpriteQuadUvs(mesh, frame.uv);
   const ppu =
@@ -266,6 +272,8 @@ function applySpriteLayer(
   applySpriteAnimationAssetFrame(mesh, animation, layer.normalisedTime, {
     applyTexture: slot.applyTexture,
     pixelsPerUnit: slot.payload.pixelsPerUnit,
+    flipX: layer.flipX,
+    flipY: layer.flipY,
   });
   return true;
 }

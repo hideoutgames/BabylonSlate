@@ -2,10 +2,8 @@ import {
   ANIM_EXIT_TIME_REACHED_TYPE,
   ANIM_RULE_ENTER_NODE_ID,
   animGraphMembersFromVariables,
-  createDefaultAnimationObjectGraph,
   createDefaultTransitionRuleGraph,
   validateAnimGraph,
-  type AnimClipRef,
   type AnimGraphDocument,
   type AnimGraphVariable,
   type AnimState,
@@ -26,6 +24,7 @@ import {
   type Vec3,
 } from "./context";
 import { classGraph, gChain, gExec, getVar, gNode, gWire, setVar, varMember } from "./graph";
+import { playerNode, playerState, poseGraph, singleMachineGraph, type FeatureTestClip } from "./anim-pose-graphs";
 import { stressPoint } from "./layout";
 
 /**
@@ -191,23 +190,54 @@ async function saveGraph(ctx: FeatureTestContext, doc: AnimGraphDocument): Promi
  * (true), so one-way and Both Ways transitions behave the same.
  */
 function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
-  const clip = (id: string, name: string) =>
-    animationClip(ctx, id, requireRef(ctx.assets.mannequin.animations[name], `the Mannequin "${name}" Animation`));
-  return {
+  const clip = (name: string) =>
+    animationClip(ctx, requireRef(ctx.assets.mannequin.animations[name], `the Mannequin "${name}" Animation`));
+  const speed = animGraphMembersFromVariables([SPEED])[0]!;
+  const cheer = animGraphMembersFromVariables([CHEER])[0]!;
+  // Run blends Walk into Sprint as Speed climbs past Run Speed: Alpha = Speed - (Run Speed - 1), clamped by Blend.
+  const run: AnimState = {
+    id: "run",
+    name: "Run",
+    position: { x: 720, y: 220 },
+    stateGraph: poseGraph("3d", "blend", [
+      playerNode("3d", "walk", 60, 40, clip(MANNEQUIN_CLIPS.walk)),
+      playerNode("3d", "sprint", 60, 220, clip(MANNEQUIN_CLIPS.run)),
+      getVar("get-speed", speed, -260, 400),
+      gNode("speed-over-walk", "math.sub", 60, 400, { "default:b": RUN_SPEED - 1 }),
+      gNode("blend", "anim.pose.blend", 500, 120),
+    ], [
+      gWire("walk", "pose", "blend", "a"),
+      gWire("sprint", "pose", "blend", "b"),
+      gWire("get-speed", "value", "speed-over-walk", "a"),
+      gWire("speed-over-walk", "out", "blend", "alpha"),
+    ]),
+  };
+  // Cheer plays its emote while Cheer is set and settles to the rest pose otherwise.
+  const cheerState: AnimState = {
+    id: "cheer",
+    name: "Cheer",
+    position: { x: 80, y: 480 },
+    stateGraph: poseGraph("3d", "cheer-or-rest", [
+      playerNode("3d", "cheer", 60, 40, clip(MANNEQUIN_CLIPS.cheer), { loop: false }),
+      gNode("rest", "anim.pose.restPose", 60, 220),
+      getVar("get-cheer", cheer, 60, 360),
+      gNode("cheer-or-rest", "anim.pose.blendByBool", 500, 120, { trueBlendSeconds: 0.1, falseBlendSeconds: 0.3 }),
+    ], [
+      gWire("cheer", "pose", "cheer-or-rest", "truePose"),
+      gWire("rest", "pose", "cheer-or-rest", "falsePose"),
+      gWire("get-cheer", "value", "cheer-or-rest", "active"),
+    ]),
+  };
+  return singleMachineGraph("3d", {
     name: NAMES.locomotionGraph,
     skeletonGuid: requireRef(ctx.assets.mannequin.skeletonGuid, "the Mannequin Skeleton"),
+    machineName: "Locomotion",
     entryStateId: "idle",
     states: [
-      animState("idle", "Idle", "clip-idle", true, 80, 220),
-      animState("walk", "Walk", "clip-walk", true, 400, 220),
-      animState("run", "Run", "clip-run", true, 720, 220),
-      animState("cheer", "Cheer", "clip-cheer", false, 80, 480),
-    ],
-    clips: [
-      clip("clip-idle", MANNEQUIN_CLIPS.idle),
-      clip("clip-walk", MANNEQUIN_CLIPS.walk),
-      clip("clip-run", MANNEQUIN_CLIPS.run),
-      clip("clip-cheer", MANNEQUIN_CLIPS.cheer),
+      playerState("3d", "idle", "Idle", 80, 220, clip(MANNEQUIN_CLIPS.idle)),
+      playerState("3d", "walk", "Walk", 400, 220, clip(MANNEQUIN_CLIPS.walk)),
+      run,
+      cheerState,
     ],
     variables: [SPEED, CHEER],
     // Idle → Walk wins over Idle → Cheer (lower priority number runs first).
@@ -219,8 +249,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
       transition("idle-to-cheer", "idle", "cheer", 0.15, 1, DOWNWARD, [flag(CHEER), exitTime(1)]),
       transition("cheer-to-idle", "cheer", "idle", 0.2, 0, UPWARD, [exitTime(1)]),
     ],
-    animationObject: createDefaultAnimationObjectGraph(),
-  };
+  });
 }
 
 /**
@@ -231,48 +260,49 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
 function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const clips = ctx.assets.doorAnimations;
   // The door is one animated mesh, so its Animations have no Skeleton and neither does the graph.
-  const base: Pick<AnimGraphDocument, "name" | "skeletonGuid" | "variables" | "animationObject"> = {
-    name: NAMES.doorGraph,
-    skeletonGuid: null,
-    variables: [],
-    animationObject: createDefaultAnimationObjectGraph(),
-  };
+  const base = { name: NAMES.doorGraph, skeletonGuid: null, machineName: "Door", variables: [] };
   if (clips.open && clips.close) {
-    return {
+    const open = animationClip(ctx, clips.open);
+    // Close picks pose 0 (its clip) through Blend Poses By Int; pose 1 holds the open door with a Sequence Evaluator.
+    const close: AnimState = {
+      id: "close",
+      name: "Close",
+      position: { x: 400, y: 220 },
+      stateGraph: poseGraph("3d", "pick", [
+        playerNode("3d", "close", 60, 40, animationClip(ctx, clips.close), { loop: false, playRate: 0.5 }),
+        { ...gNode("held-open", "anim.pose.sequenceEvaluator", 60, 220, { assetGuid: open.assetGuid, clipName: open.clipName, durationMs: open.durationMs }) },
+        gNode("pick", "anim.pose.blendByInt", 500, 120, { count: 2, blendSeconds: 0.1 }),
+      ], [
+        gWire("close", "pose", "pick", "pose0"),
+        gWire("held-open", "pose", "pick", "pose1"),
+      ]),
+    };
+    return singleMachineGraph("3d", {
       ...base,
       entryStateId: "open",
-      states: [
-        { ...animState("open", "Open", "clip-open", false, 80, 220), speed: 0.5 },
-        { ...animState("close", "Close", "clip-close", false, 400, 220), speed: 0.5 },
-      ],
-      clips: [animationClip(ctx, "clip-open", clips.open), animationClip(ctx, "clip-close", clips.close)],
+      states: [playerState("3d", "open", "Open", 80, 220, open, { loop: false, playRate: 0.5 }), close],
       // Non-looping states: Exit Time 1 passes once the clip has finished.
       transitions: [
         transition("open-to-close", "open", "close", 0.1, 0, FORWARD, [exitTime(1)]),
         transition("close-to-open", "close", "open", 0.1, 0, BACKWARD, [exitTime(1)]),
       ],
-    };
+    });
   }
   const swing = requireRef(clips["open-and-close"] ?? Object.values(clips)[0], "a cabin-door-rotate Animation");
-  return {
+  return singleMachineGraph("3d", {
     ...base,
     entryStateId: "swing",
-    states: [animState("swing", "Swing", "clip-swing", true, 80, 220)],
-    clips: [animationClip(ctx, "clip-swing", swing)],
+    states: [playerState("3d", "swing", "Swing", 80, 220, animationClip(ctx, swing))],
     transitions: [],
-  };
+  });
 }
 
-function animState(id: string, name: string, clipId: string, loop: boolean, x: number, y: number): AnimState {
-  return { id, name, clipId, speed: 1, loop, position: { x, y } };
-}
-
-/** Clip ref with the imported clip name and duration (Play re-resolves both from the catalog). */
-function animationClip(ctx: FeatureTestContext, id: string, guid: string): AnimClipRef {
+/** An Animation's clip name and length as imported (Play re-resolves both from the catalog). */
+function animationClip(ctx: FeatureTestContext, guid: string): FeatureTestClip {
   const asset = ctx.registry.getByGuid(guid);
   if (!asset || asset.header.type !== "Animation") throw new Error(`FeatureTest Animation ${guid} is missing.`);
   const payload = normalizeAnimationPayload(asset.header.payload);
-  return { id, kind: "animation", assetGuid: guid, clipName: payload.clipName, durationMs: payload.durationMs ?? 1000 };
+  return { assetGuid: guid, clipName: payload.clipName, durationMs: payload.durationMs ?? 1000 };
 }
 
 type RuleTerm =

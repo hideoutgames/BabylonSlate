@@ -1,5 +1,6 @@
 import {
   decodeTileGid,
+  flipSpriteAnimationFrame,
   spriteAnimationFrameAt,
   spriteCollisionToBox2d,
   tilemapLayerChains,
@@ -60,6 +61,9 @@ export type SpriteClipPlayback = {
   assetGuid: string;
   clipName: string;
   normalisedTime: number;
+  /** Flip Frame mirrors the frame, and its collider with it. */
+  flipX?: boolean;
+  flipY?: boolean;
 };
 
 /**
@@ -341,8 +345,7 @@ export class SpriteTileColliders {
 function resolveSpriteCollisionFrame(options: {
   sprite: SpritePayload | undefined;
   animation: SpriteAnimationPayload | undefined;
-  playback:
-    { assetGuid: string; clipName: string; normalisedTime: number } | undefined;
+  playback: SpriteClipPlayback | undefined;
 }): {
   collision: { x: number; y: number; width: number; height: number };
   pivot: { x: number; y: number };
@@ -355,9 +358,10 @@ function resolveSpriteCollisionFrame(options: {
       options.playback.normalisedTime,
     );
     if (frame) {
+      const shown = flipSpriteAnimationFrame(frame, options.playback.flipX, options.playback.flipY);
       return {
-        collision: frame.collision,
-        pivot: frame.pivot,
+        collision: shown.collision,
+        pivot: shown.pivot,
         width: frame.width,
         height: frame.height,
       };

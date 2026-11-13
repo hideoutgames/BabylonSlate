@@ -6,7 +6,7 @@ import {
   createMeshComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@haptic/core";
-import { createDefaultAnimGraph } from "@haptic/anim-graph";
+import { createDefaultAnimGraph, createStateGraph, parseAnimGraphDocument, singlePlayerOf } from "@haptic/anim-graph";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -364,13 +364,7 @@ describe("packedContentFromGame", () => {
 
   it("resolves packed Animation Graph clips from Animation assets and maps clip guids", async () => {
     const graph = createDefaultAnimGraph("Hero");
-    graph.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-idle-anim",
-      clipName: "",
-      durationMs: 1000,
-    };
+    graph.stateMachines[0]!.states[0]!.stateGraph = createStateGraph("3d", { assetGuid: "hero-idle-anim", durationMs: 1000 });
     const packed = await exportGame({
       platform: "web",
       bundleDebugger: false,
@@ -408,14 +402,11 @@ describe("packedContentFromGame", () => {
     expect(packed.ok).toBe(true);
     if (!packed.ok) return;
     const content = packedContentFromGame(await loadGameFromFiles(packed.value.files));
-    expect(content.animGraphs.find((entry) => entry.guid === "anim-1")?.document).toMatchObject({
-      clips: [
-        {
-          assetGuid: "hero-idle-anim",
-          clipName: "Idle",
-          durationMs: 1800,
-        },
-      ],
+    const loaded = parseAnimGraphDocument(content.animGraphs.find((entry) => entry.guid === "anim-1")?.document);
+    expect(singlePlayerOf(loaded!.stateMachines[0]!.states[0]!.stateGraph)?.data).toMatchObject({
+      assetGuid: "hero-idle-anim",
+      clipName: "Idle",
+      durationMs: 1800,
     });
     expect(content.modelClipAnimationGuids.get("hero-model")?.get("Idle")).toBe(
       "hero-idle-anim",

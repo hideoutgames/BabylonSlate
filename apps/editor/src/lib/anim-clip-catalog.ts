@@ -57,6 +57,10 @@ export function animClipCatalogFromAssets(
         : undefined;
     const modelGuid =
       asset.header.type === "Animation" ? trimmed(payload.modelGuid) : "";
+    const frameCount =
+      asset.header.type === "SpriteAnimation" && Array.isArray(payload.frames) && payload.frames.length > 0
+        ? payload.frames.length
+        : undefined;
     return {
       guid: asset.header.guid,
       type: asset.header.type,
@@ -65,6 +69,7 @@ export function animClipCatalogFromAssets(
         typeof payload.clipName === "string" ? payload.clipName : undefined,
       dependencyGuids: asset.header.dependencies ?? [],
       ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(frameCount !== undefined ? { frameCount } : {}),
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
     };

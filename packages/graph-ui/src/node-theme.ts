@@ -22,7 +22,11 @@ export type NodeVisualRole =
   | "debug"
   | "bt-root"
   | "bt-composite"
-  | "bt-task";
+  | "bt-task"
+  /** Animation Graph pose nodes: players, blends, State Machines, outputs. */
+  | "anim-pose"
+  /** Animation Graph skeletal controls acting on a pose (IK, Look At, Spring Bones). */
+  | "anim-control";
 
 const ROLE_CLASS: Record<NodeVisualRole, string> = {
   event: "bg-node-event",
@@ -37,6 +41,8 @@ const ROLE_CLASS: Record<NodeVisualRole, string> = {
   "bt-root": "bg-node-bt-root",
   "bt-composite": "bg-node-bt-composite",
   "bt-task": "bg-node-bt-task",
+  "anim-pose": "bg-node-anim-pose",
+  "anim-control": "bg-node-anim-control",
 };
 
 export type PinVisualShape = "diamond" | "reference" | "circle" | "list" | "map" | "square";
@@ -112,6 +118,8 @@ export function nodeVisualRole(input: {
   if (nodeType === "flow.event.callParent") {
     return "call-parent";
   }
+  if (nodeType.startsWith("anim.pose.") || nodeType.startsWith("anim.frame.")) return "anim-pose";
+  if (nodeType.startsWith("anim.control.")) return "anim-control";
   if (
     nodeType === "input.actionEvent" ||
     nodeType === "input.axisEvent" ||
@@ -155,7 +163,7 @@ export function nodeRoleClass(role: NodeVisualRole): string {
  * widths scale with Large Pins (`--graph-wire-*` in graph-editor.css).
  */
 function edgeStrokeWidth(kind: string): string {
-  return kind === "exec" || kind === "particle"
+  return kind === "exec" || kind === "particle" || kind === "pose" || kind === "frame"
     ? "var(--graph-wire-exec, 5px)"
     : "var(--graph-wire-data, 4px)";
 }
