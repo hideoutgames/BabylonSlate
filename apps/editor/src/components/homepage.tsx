@@ -80,6 +80,7 @@ import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { HomepageAccount } from "./homepage-account";
 import { HomepageDiscordBadge } from "./homepage-discord-badge";
+import { HomepageUpdateBadge } from "./homepage-update-badge";
 import { ReleaseNews } from "./release-news";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { HomepageGallery } from "./homepage-gallery";
@@ -223,6 +224,8 @@ export function Homepage({
   const [operation, setOperation] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  /** The signed-in account, null for a guest, undefined until sign-in settles. */
+  const [accountId, setAccountId] = useState<string | null>();
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -362,13 +365,15 @@ export function Homepage({
           </ToggleGroupItem>
         </ToggleGroup>
         <div className="homepage-sidebar-badges">
-          <HomepageDiscordBadge />
+          <HomepageUpdateBadge />
+          <HomepageDiscordBadge accountId={accountId} />
         </div>
         <div className="homepage-sidebar-end">
           <div className="homepage-sidebar-account">
             <HomepageAccount
               disabled={busy}
               onOpenChange={setAccountOpen}
+              onAccountChange={setAccountId}
               onEngineSettings={() => setSettingsOpen(true)}
               onChangelog={() => setChangelogOpen(true)}
             />

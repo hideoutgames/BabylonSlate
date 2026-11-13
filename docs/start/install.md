@@ -31,7 +31,7 @@ Every platform opens the same project format, so you can move a project between 
 
 The mobile apps keep you signed in across restarts and app updates until you sign out or your session expires. Your projects stay on the device.
 
-Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, **Discord Server**, and **Sign In** or **Sign Out**. **Discord Server** opens the Haptic community on Discord; above your name, **Join our Discord** does the same, except on phones.
+Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, **Discord Server**, and **Sign In** or **Sign Out**. **Discord Server** opens the Haptic community on Discord; above your name, **Join our Discord** does the same, except on phones. Once you are signed in, **Join our Discord** goes away after you first use it on that device.
 
 **Manage Account** opens the **Account** window:
 
@@ -51,6 +51,8 @@ Signing in does not sync projects. Projects stay where you saved them.
 ## Updates
 
 The desktop app can download new releases and install them when you quit: on Windows, on Linux when you run the AppImage, and with signed macOS builds. Turn this on or off with **Automatic Updates** in **Engine Settings > About** or in **Manage Account > Application** on the Homepage. It is on by default.
+
+While a new release downloads, **Downloading Update** shows its progress above your name in the Homepage sidebar. When it is ready, **Restart to Update** appears there instead: choose it to install the update and reopen Haptic straight away, or keep working and it installs when you next quit. Hover over it to see the new version.
 
 The first time you open Haptic after an update, it shows the new version's changes in a window titled with the build, such as **Release 1.0.2**; a fresh install opens straight to the Homepage. To read the changes again, choose **Changelog** in the account menu. Release notes are included in the app, so they work offline.
 
