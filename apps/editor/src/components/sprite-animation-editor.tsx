@@ -3,7 +3,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -19,7 +18,6 @@ import {
   type PropertyRow,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
-import { Slider } from "@haptic/ui/components/slider";
 import { Toggle } from "@haptic/ui/components/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { cn } from "@haptic/ui/lib/utils";
@@ -47,6 +45,7 @@ import { useOptionalSpriteAnimationEditing } from "../context/sprite-animation-e
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
+import { PlaybackScrubber } from "./playback-controls";
 import { TexturePreviewStatus, useTexturePreviews } from "./texture-preview-status";
 import { useResolvedSpriteAnimation, type SpriteAnimationFrameView } from "./sprite-animation-sources";
 import { CHECKERBOARD, FrameImage } from "./sprite-frame-image";
@@ -135,11 +134,6 @@ function spriteFrameMergeKey(frameIndex: number, field: string): string {
   return `sprite-animation:frame:${frameIndex}:${field}`;
 }
 
-function sliderNumber(next: number | readonly number[]): number | undefined {
-  const value = Array.isArray(next) ? next[0] : next;
-  return typeof value === "number" ? value : undefined;
-}
-
 /** The frame's pixel size: its region, else its resolved size; null when unknown. */
 function framePixels(view: SpriteAnimationFrameView | undefined, frame: SpriteAnimationFrame | undefined) {
   if (view?.rect) return { width: view.rect.width, height: view.rect.height };
@@ -155,39 +149,6 @@ function boxStyle(box: { left: number; top: number; width: number; height: numbe
     width: `${box.width * 100}%`,
     height: `${box.height * 100}%`,
   };
-}
-
-/** Frame and time beside the scrubber, on one line at a steady width while it plays. */
-function PlaybackPosition({
-  frameIndex,
-  frameCount,
-  timeMs,
-  durationMs,
-}: {
-  frameIndex: number;
-  frameCount: number;
-  timeMs: number;
-  durationMs: number;
-}) {
-  const frameDigits = String(frameCount).length;
-  const timeDigits = String(durationMs).length;
-  return (
-    <span
-      className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
-      data-testid="sprite-animation-position"
-    >
-      Frame{" "}
-      <span className="inline-block text-right text-foreground" style={{ minWidth: `${frameDigits}ch` }}>
-        {frameIndex + 1}
-      </span>
-      /{frameCount}
-      {" · "}
-      <span className="inline-block text-right text-foreground" style={{ minWidth: `${timeDigits}ch` }}>
-        {Math.round(timeMs)}
-      </span>
-      /{durationMs} ms
-    </span>
-  );
 }
 
 /**
@@ -211,46 +172,6 @@ class PlaybackClock {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
-}
-
-/** Scrubber and position readout, which follow the clock on every frame. */
-function PlaybackScrubber({
-  clock,
-  frameIndex,
-  frameCount,
-  durationMs,
-  onSeek,
-}: {
-  clock: PlaybackClock;
-  frameIndex: number;
-  frameCount: number;
-  durationMs: number;
-  onSeek: (timeMs: number) => void;
-}) {
-  const timeMs = useSyncExternalStore(clock.subscribe, clock.get, clock.get);
-  return (
-    <>
-      <Slider
-        className="min-w-0 flex-1"
-        min={0}
-        max={durationMs}
-        step={1}
-        value={timeMs}
-        aria-label="Playback"
-        data-testid="sprite-animation-scrubber"
-        onValueChange={(next) => {
-          const value = sliderNumber(next);
-          if (value !== undefined) onSeek(value);
-        }}
-      />
-      <PlaybackPosition
-        frameIndex={frameIndex}
-        frameCount={frameCount}
-        timeMs={timeMs}
-        durationMs={durationMs}
-      />
-    </>
-  );
 }
 
 type PreviewView = "frame" | "sheet";
@@ -489,11 +410,12 @@ export function SpriteAnimationPreview({
       <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-panel-header px-2 py-2">
         <div className="flex min-w-0 items-center gap-3">
           <PlaybackScrubber
-            clock={clock}
-            frameIndex={selectedFrameIndex}
+            time={clock}
+            frameAt={() => selectedFrameIndex}
             frameCount={frameCount}
             durationMs={durationMs}
             onSeek={seekToTime}
+            testIdPrefix="sprite-animation"
           />
         </div>
         <div

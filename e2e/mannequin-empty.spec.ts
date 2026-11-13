@@ -162,4 +162,47 @@ test.describe("3D Empty Kenney Mannequin", () => {
       .poll(async () => (await previewPixels(animationCanvas)).model)
       .toBeGreaterThan(100);
   });
+
+  test("the Animation preview pauses, steps and scrubs the idle clip, and the pose follows the playhead", async ({ page }) => {
+    await openTestProject(page);
+    await openAssetFromBrowser(page, "assets/Mannequin/mannequin_idle.hasset");
+    const canvas = page.getByTestId("animation-preview-canvas");
+    await expect(canvas).toHaveAttribute("data-playing", "true", { timeout: 30_000 });
+    await expect
+      .poll(async () => (await previewPixels(canvas)).model, { timeout: 30_000 })
+      .toBeGreaterThan(100);
+    const position = page.getByTestId("animation-preview-position");
+    const readout = async () => {
+      const match = /Frame (\d+)\/(\d+) · (\d+)\/(\d+) ms/.exec((await position.textContent()) ?? "");
+      return match ? { frame: Number(match[1]), frames: Number(match[2]), ms: Number(match[3]), duration: Number(match[4]) } : null;
+    };
+    const playing = (await readout())!;
+    expect(playing.frames).toBeGreaterThan(1);
+    await expect.poll(async () => (await readout())!.ms).not.toBe(playing.ms);
+
+    await page.getByTestId("animation-preview-pause").click();
+    await expect(canvas).toHaveAttribute("data-playing", "false");
+    const scrubber = page.getByTestId("animation-preview-scrubber").getByRole("slider");
+    await scrubber.focus();
+    await page.keyboard.press("Home");
+    await expect.poll(async () => (await readout())!.ms).toBe(0);
+    await page.getByTestId("animation-preview-step").click();
+    await expect.poll(async () => (await readout())!.frame).toBe(2);
+    await page.waitForTimeout(300);
+    const start = await canvas.screenshot();
+
+    // Halfway through the clip the Mannequin holds another pose; back at the same frame, the same one.
+    const box = (await page.getByTestId("animation-preview-scrubber").boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect.poll(async () => (await readout())!.ms).toBeGreaterThan(playing.duration / 4);
+    await expect(canvas).toHaveAttribute("data-playing", "false");
+    await page.waitForTimeout(300);
+    expect((await canvas.screenshot()).equals(start)).toBe(false);
+    await scrubber.focus();
+    await page.keyboard.press("Home");
+    await page.getByTestId("animation-preview-step").click();
+    await expect.poll(async () => (await readout())!.frame).toBe(2);
+    await page.waitForTimeout(300);
+    expect((await canvas.screenshot()).equals(start)).toBe(true);
+  });
 });
