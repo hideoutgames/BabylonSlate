@@ -38,7 +38,9 @@ import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
  *      HAPTIC_FLY_SPEED (m/s, default 8, the editor's default fly speed), HAPTIC_FLY_PASSES (default 2),
  *      HAPTIC_FLY_WARMUP_MS (static hold before the first pass, default 5000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_FLY_PATH (JSON array of [x, y, z] eye waypoints, applied to every selected scene),
- *      HAPTIC_FLY_PROFILE=1 (CDP CPU profile of the passes; spike frames list their hottest functions),
+ *      HAPTIC_FLY_PROFILE=1 (CDP CPU profile of the passes; the passes as a whole (frame i -1) and each spike frame
+ *        list their hottest functions), HAPTIC_FLY_PROFILE_DIR (absolute directory that also receives each
+ *        flight's raw `<scene>-<editor|play>.cpuprofile`, for DevTools),
  *      HAPTIC_FLY_PLAY (comma list of the selected scenes to fly again in overlay Play with the free camera,
  *        `freecam`; main-scene Play does not finish loading on software GL),
  *      HAPTIC_PERF_VIEWPORT_CAP (Engine Settings viewport frame cap; default 60),
@@ -59,6 +61,7 @@ const PASSES = number("HAPTIC_FLY_PASSES", 2, 1);
 const WARMUP_MS = number("HAPTIC_FLY_WARMUP_MS", 5_000);
 const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
 const PROFILE = process.env.HAPTIC_FLY_PROFILE === "1";
+const PROFILE_DIR = process.env.HAPTIC_FLY_PROFILE_DIR ?? null;
 const sceneList = (value: string) =>
   value
     .split(",")
@@ -365,10 +368,16 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
   );
   const profile = PROFILE ? ((await cdp.send("Profiler.stop")).profile as unknown as CpuProfile) : null;
   if (PROFILE) await cdp.send("Profiler.disable");
+  if (profile && PROFILE_DIR) {
+    mkdirSync(PROFILE_DIR, { recursive: true });
+    writeFileSync(path.join(PROFILE_DIR, `${scene}-${host}.cpuprofile`), JSON.stringify(profile));
+  }
   const frames = annotate(result);
   const phases = [...new Set(frames.map((frame) => frame.phase))];
   const passFrames = frames.filter((frame) => frame.phase.startsWith("pass"));
   const spikes = spikeFrames(passFrames);
+  // The passes as one window (i -1): what every frame costs, beside what the spike frames add.
+  const passWindow = passFrames.length ? [{ i: -1, begin: passFrames[0]!.begin, end: passFrames.at(-1)!.end }] : [];
   return {
     result,
     frames,
@@ -387,7 +396,7 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
       correlation: correlate(passFrames),
       events: groupLog(result, frames).slice(0, 150),
       profile: profile
-        ? profileHotspots(profile, markerPageMs, spikes.top.map((spike) => frames.find((frame) => frame.i === spike.i)!))
+        ? profileHotspots(profile, markerPageMs, [...passWindow, ...spikes.top.map((spike) => frames.find((frame) => frame.i === spike.i)!)])
         : null,
       instrumented: result.instrumented,
     },
