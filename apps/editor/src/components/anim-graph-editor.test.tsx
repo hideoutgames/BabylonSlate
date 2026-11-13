@@ -32,10 +32,12 @@ if (typeof window !== "undefined") {
   });
 }
 
-const DOC_ID = "anim-graph:assets/Loco.anim.hasset";
+const DOC_ID = "anim-graph:assets/Loco.anim3d.hasset";
 
 const store = vi.hoisted(() => {
   let content: Record<string, unknown> = {};
+  /** The open document's kind: a 3D graph unless a test opens a 2D one. */
+  const view = { kind: "anim-graph-3d" as "anim-graph-3d" | "anim-graph-2d" };
   const listeners = new Set<() => void>();
   return {
     applyAssetDocumentChange: vi.fn(
@@ -54,6 +56,7 @@ const store = vi.hoisted(() => {
       content = next;
       listeners.forEach((listener) => listener());
     },
+    view,
   };
 });
 
@@ -65,7 +68,7 @@ vi.mock("../context/document-context", async () => {
       openDocuments: [
         {
           id: DOC_ID,
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" },
+          ref: { kind: store.view.kind, path: "assets/Loco.anim3d.hasset" },
           content,
         },
       ],
@@ -122,6 +125,19 @@ vi.mock("../context/document-context", async () => {
             path: "assets/Atlas.texture.hasset",
           },
           {
+            header: { guid: "rig", name: "Knight_Skeleton", type: "Skeleton", payload: { kind: "skin", bones: [] } },
+            path: "assets/Knight_Skeleton.hasset",
+          },
+          {
+            header: {
+              guid: "anim-rig",
+              name: "Knight_Run",
+              type: "Animation",
+              payload: { clipName: "Run", skeletonGuid: "rig" },
+            },
+            path: "assets/Knight_Run.hasset",
+          },
+          {
             header: {
               guid: "stats", name: "Stats", type: "DataDefinition",
               payload: { fields: [{ id: "allowed", name: "Allowed", typeId: "bool", defaultValue: true }] },
@@ -137,8 +153,8 @@ vi.mock("../context/document-context", async () => {
           },
         ],
         getByPath: (path: string) =>
-          path === "assets/Loco.anim.hasset"
-            ? { header: { guid: "loco-graph", name: "Loco", type: "AnimationGraph" }, path }
+          path === "assets/Loco.anim3d.hasset"
+            ? { header: { guid: "loco-graph", name: "Loco", type: "AnimationGraph3D" }, path }
             : undefined,
         getByGuid: (guid: string) =>
           guid === "spr-1"
@@ -202,7 +218,11 @@ beforeEach(() => {
 
 const panelProps = {} as IDockviewPanelProps;
 
-function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) {
+function renderAnimGraph(
+  payload: AnimGraphDocument = createDefaultAnimGraph(),
+  kind: "anim-graph-3d" | "anim-graph-2d" = "anim-graph-3d",
+) {
+  store.view.kind = kind;
   store.reset(payload as unknown as Record<string, unknown>);
   return render(
     <ValidationProvider>
@@ -405,8 +425,7 @@ describe("AnimGraphEditor", () => {
     expect(screen.queryByTestId("property-name")).toBeNull();
     expect(screen.queryByTestId("property-entry")).toBeNull();
     expect(screen.queryByTestId("anim-graph-transition-idle-to-run")).toBeNull();
-    expect(screen.queryByTestId("property-clipAsset")).toBeNull();
-    expect(screen.getByTestId("property-clipKind").textContent).toContain("Mixed Values");
+    expect(screen.getByTestId("property-clipAsset").textContent).toContain("Mixed Values");
     const speed = screen.getByTestId<HTMLInputElement>("property-speed");
     expect(speed.value).toBe("Mixed Values");
     store.applyAssetDocumentChange.mockClear();
@@ -657,6 +676,17 @@ describe("AnimGraphEditor", () => {
     );
   });
 
+  it("offers only Animations on the graph's Skeleton, and sets the Skeleton in the Graph rows", async () => {
+    renderAnimGraph(createDefaultAnimGraph("Loco", { dimension: "3d", skeletonGuid: "rig" }));
+    expect(screen.getByTestId("property-skeleton").textContent).toContain("Knight_Skeleton");
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.click(screen.getByTestId("property-clipAsset"));
+    await waitFor(() => expect(screen.getByTestId("search-item-anim-rig")).toBeTruthy());
+    // Hero_Walk has no Skeleton, so only a graph without one offers it.
+    expect(screen.queryByTestId("search-item-anim-1")).toBeNull();
+    expect(screen.queryByTestId("search-item-walk-anim")).toBeNull();
+  });
+
   it("offers no Clip Name for a state whose clip still names a Model", () => {
     // Clips are Animation assets: a Model plus a glTF clip name is no longer a clip.
     const doc = createDefaultAnimGraph();
@@ -674,16 +704,9 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-state-node-clip-idle").textContent).toContain("HeroModel");
   });
 
-  it("picks a Sprite Animation for sprite clip kind", async () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "sprite",
-      assetGuid: "",
-      clipName: "",
-      durationMs: 1000,
-    };
-    renderAnimGraph(doc);
+  it("picks only Sprite Animations in a 2D graph", async () => {
+    const doc = createDefaultAnimGraph("Loco", { dimension: "2d" });
+    renderAnimGraph(doc, "anim-graph-2d");
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-clipAsset"));
     await waitFor(() => {
@@ -691,6 +714,7 @@ describe("AnimGraphEditor", () => {
     });
     expect(screen.queryByTestId("search-item-spr-1")).toBeNull();
     expect(screen.queryByTestId("search-item-model-1")).toBeNull();
+    expect(screen.queryByTestId("search-item-anim-1")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-walk-anim"));
     expect(lastCommit()).toEqual(
       expect.objectContaining({

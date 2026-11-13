@@ -252,7 +252,7 @@ describe("packedContentFromGame", () => {
         },
         {
           guid: "anim-1",
-          type: "AnimationGraph",
+          type: "AnimationGraph3D",
           sceneGuid: "scene-1",
           bytes: encoder.encode(JSON.stringify(createDefaultAnimGraph("Hero"))),
         },
@@ -399,7 +399,7 @@ describe("packedContentFromGame", () => {
         },
         {
           guid: "anim-1",
-          type: "AnimationGraph",
+          type: "AnimationGraph3D",
           sceneGuid: "scene-1",
           bytes: encoder.encode(JSON.stringify(graph)),
         },

@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 export function shouldPublishGraphDiagnostics(options: {
   documentId: string;
   activeDocumentId: string | null | undefined;
@@ -14,7 +15,7 @@ export function shouldPublishGraphDiagnostics(options: {
     return false;
   }
   if (
-    options.documentKind === "anim-graph" &&
+    isAnimGraphDocumentKind(options.documentKind) &&
     options.animEditorMode !== "animationObject"
   ) {
     return false;

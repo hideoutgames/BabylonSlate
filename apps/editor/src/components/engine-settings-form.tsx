@@ -122,12 +122,12 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   { kind: "material-instance", keepKey: "material-instance", label: "Material Instance" },
   { kind: "plugin-settings", keepKey: "plugin-settings", label: "Plugin Settings" },
   {
-    kind: "anim-graph",
+    kind: "anim-graph-3d",
     keepKey: "anim-graph",
     label: "Animation Graph State Machine",
   },
   {
-    kind: "anim-graph",
+    kind: "anim-graph-3d",
     keepKey: "animGraphObject",
     label: "Animation Graph Object",
     options: { animEditorMode: "animationObject" },

@@ -1081,19 +1081,19 @@ describe("DocumentProvider actions and route", () => {
         registry: documents().assetRegistry!,
         rootId: "project",
         folderRelative: "",
-        type: "AnimationGraph",
+        type: "AnimationGraph3D",
         name: "Locomotion",
       }),
     );
     act(() => actions.noteAssetsCreated());
     await act(() =>
       actions.openDocument({
-        kind: "anim-graph",
+        kind: "anim-graph-3d",
         path: animation.path,
         label: "Locomotion",
       }),
     );
-    const animationId = documentId({ kind: "anim-graph", path: animation.path });
+    const animationId = documentId({ kind: "anim-graph-3d", path: animation.path });
     act(() => actions.setAnimEditorMode(animationId, "animationObject"));
     expect(documents().activeDocumentId).toBe(animationId);
     expect(documents().animEditorMode).toBe("animationObject");
@@ -1336,11 +1336,11 @@ describe("DocumentProvider actions and route", () => {
   it("keeps the last tab asked for active when an earlier open finishes later", async () => {
     const actions = await openProject();
     const animation = await act(() => createProjectAsset({
-      registry: documents().assetRegistry!, rootId: "project", folderRelative: "", type: "AnimationGraph", name: "Locomotion",
+      registry: documents().assetRegistry!, rootId: "project", folderRelative: "", type: "AnimationGraph3D", name: "Locomotion",
     }));
     act(() => actions.noteAssetsCreated());
     const classRef = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
-    const animationRef = { kind: "anim-graph" as const, path: animation.path, label: "Locomotion" };
+    const animationRef = { kind: "anim-graph-3d" as const, path: animation.path, label: "Locomotion" };
     let finishRead!: () => void;
     const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
     const realLoad = ProjectService.prototype.loadDocument;

@@ -19,6 +19,7 @@ import {
   type SerializedGraph,
   CAMERA_SHAKE_ASSET_TYPE,
   cameraShakeCurveGuids,
+  isAnimGraphAssetType,
   normalizeCameraShakePayload,
 } from "@haptic/core";
 import {
@@ -500,7 +501,8 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   } else if (assetType === "Prefab") {
     components(payload.components);
     addMany(areaEmissionTextureGuids(payload), false);
-  } else if (assetType === "AnimationGraph") {
+  } else if (isAnimGraphAssetType(assetType)) {
+    add(payload.skeletonGuid);
     for (const clip of rows(payload.clips)) add(clip.assetGuid);
     for (const transition of rows(payload.transitions)) graph(transition.ruleGraph);
     graph(payload.animationObject);

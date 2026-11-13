@@ -924,9 +924,9 @@ describe("collectAndExportGame", () => {
         asset({ guid: "class-1", type: "Class", name: "TagActor", parentClass: "Actor" }),
         asset({
           guid: "graph-1",
-          type: "AnimationGraph",
+          type: "AnimationGraph3D",
           name: "Loco",
-          path: "assets/Loco.anim.hasset",
+          path: "assets/Loco.anim3d.hasset",
         }),
       ],
       plugins: [],

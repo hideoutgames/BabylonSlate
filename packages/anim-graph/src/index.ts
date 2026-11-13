@@ -24,6 +24,7 @@ export {
   type AnimClipCatalogEntry,
   type AnimDiagnostic,
   type AnimEvalState,
+  type AnimGraphDimension,
   type AnimGraphDocument,
   type AnimGraphInputs,
   type AnimGraphVariable,

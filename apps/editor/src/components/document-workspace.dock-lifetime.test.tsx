@@ -23,10 +23,10 @@ import { captureAdaptiveDockviewLayout } from "../shell/phone-dock-layout";
 import type { DocumentsOverrides } from "../testing/document-context-mock";
 
 const SPRITE = "sprite:assets/Hero.sprite.hasset";
-const ANIM = "anim-graph:assets/Loco.anim.hasset";
+const ANIM = "anim-graph:assets/Loco.anim3d.hasset";
 const DOCUMENTS = [
   { id: SPRITE, ref: { kind: "sprite", path: "assets/Hero.sprite.hasset" }, content: createDefaultSpritePayload() },
-  { id: ANIM, ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" }, content: createDefaultAnimGraph("Loco") },
+  { id: ANIM, ref: { kind: "anim-graph-3d", path: "assets/Loco.anim3d.hasset" }, content: createDefaultAnimGraph("Loco") },
 ];
 
 const harness = vi.hoisted(() => ({

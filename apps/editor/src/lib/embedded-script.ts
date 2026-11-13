@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import { sceneAssetClassId, sceneLayerAssetClassId } from "@haptic/object-model";
 
 /**
@@ -43,6 +44,6 @@ export function logicGraphHostClass(
   if (embedded) return { classId: embedded.classId, parentClass: embedded.parentClass };
   return {
     classId: path ? classIdForPath(path) : undefined,
-    parentClass: asset?.header.parentClass ?? (kind === "anim-graph" ? "Object" : null),
+    parentClass: asset?.header.parentClass ?? (isAnimGraphDocumentKind(kind) ? "Object" : null),
   };
 }

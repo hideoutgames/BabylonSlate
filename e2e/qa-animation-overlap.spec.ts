@@ -17,7 +17,7 @@ import { guidForPath } from "./material-graph";
 import { opfsProjectDirectory } from "./opfs-project";
 
 const CLASS_PATH = "assets/Mannequin.class.hasset";
-const ANIM_PATH = "assets/Mannequin/Mannequin.anim.hasset";
+const ANIM_PATH = "assets/Mannequin/Mannequin.anim3d.hasset";
 
 type TestHost = {
   __hapticTest: {

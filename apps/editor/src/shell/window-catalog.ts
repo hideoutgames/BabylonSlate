@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import type { DockWindowDirection } from "@haptic/core";
 import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
@@ -27,7 +28,8 @@ export type DockviewDocumentKind =
   | "material-function"
   | "material-instance"
   | "plugin-settings"
-  | "anim-graph"
+  | "anim-graph-3d"
+  | "anim-graph-2d"
   | "behaviour-tree"
   | "audio"
   | "save-game"
@@ -79,7 +81,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "material-function",
   "material-instance",
   "plugin-settings",
-  "anim-graph",
+  "anim-graph-3d",
+  "anim-graph-2d",
   "behaviour-tree",
   "audio",
   "save-game",
@@ -157,7 +160,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "material-function": "material-function-graph",
   "material-instance": "material-instance-preview",
   "plugin-settings": "plugin-settings-details",
-  "anim-graph": "anim-graph-graph",
+  "anim-graph-3d": "anim-graph-graph",
+  "anim-graph-2d": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
   audio: "audio-preview",
   "save-game": "save-game-fields",
@@ -188,7 +192,7 @@ export function primaryDockPanel(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
 ): string {
-  if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
+  if (isAnimGraphDocumentKind(kind) && options?.animEditorMode === "animationObject") {
     return "anim-object-graph";
   }
   if ((kind === "scene" || kind === "scene-layer") && options?.sceneMode === "script") {
@@ -1301,7 +1305,7 @@ export function listDockWindows(
   if (kind === "camera-shake") {
     return withOptionalLocks(kind, CAMERA_SHAKE_WINDOWS, options);
   }
-  if (kind === "anim-graph") {
+  if (isAnimGraphDocumentKind(kind)) {
     const windows =
       options?.animEditorMode === "animationObject"
         ? ANIM_GRAPH_OBJECT_WINDOWS

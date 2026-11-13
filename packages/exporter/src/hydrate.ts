@@ -1,6 +1,6 @@
 import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry, DataAssetCatalogEntry, GlobalParameterCatalog, TimelineClipAssetCatalogEntry } from "@haptic/core";
 import { CAMERA_SHAKE_ASSET_TYPE, CURVE_ASSET_TYPES, GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE, normalizeCameraShakePayload, curveKindForAssetType, normalizeGlobalParameterCollection, isTimelineClipAssetType, normalizeCurveAssetPayload, timelineClipAssetCatalogEntry } from "@haptic/core";
-import { normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
+import { isAnimGraphAssetType, normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import {
   parseAnimGraphDocument,
@@ -68,7 +68,7 @@ import type { GameAssetIndexEntry } from "./types";
 const decoder = new TextDecoder();
 const JSON_CONTENT_TYPES = new Set([
   "RenderTarget", "RenderTargetTexture", "Sprite", "SpriteAnimation", "Water",
-  "Tilemap", "Tileset", "AnimationGraph", "BehaviourTree", "Blackboard",
+  "Tilemap", "Tileset", "AnimationGraph3D", "AnimationGraph2D", "BehaviourTree", "Blackboard",
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
   "SoundAttenuation", "Animation", "Audio",
   "DataDefinition", "DataTree", "Structure", "Enum", "FloatCurve", "VectorCurve", "ColorCurve",
@@ -191,7 +191,8 @@ function normalizeEntry(entry: GameAssetIndexEntry, parsed: unknown): unknown {
     case "Water": return normalizeWaterDefinition(parsed);
     case "Tilemap": return normalizeTilemapPayload(parsed);
     case "Tileset": return normalizeTilesetPayload(parsed);
-    case "AnimationGraph": return parseAnimGraphDocument(parsed);
+    case "AnimationGraph3D":
+    case "AnimationGraph2D": return parseAnimGraphDocument(parsed);
     case "BehaviourTree": return parseBehaviourTreeDocument(parsed);
     case "Blackboard": return parseBlackboardDocument(parsed);
     case "Material": return normalizeMaterialDocument(parsed, name ?? "Material");
@@ -295,7 +296,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     else if (entry.type === "Water") waterPayloads.set(entry.guid, value as WaterDefinition);
     else if (entry.type === "Tilemap") tilemapPayloads.set(entry.guid, value as TilemapPayload);
     else if (entry.type === "Tileset") tilesetPayloads.set(entry.guid, value as TilesetPayload);
-    else if (entry.type === "AnimationGraph") animGraphs.push({ guid: entry.guid, document: value as AnimGraphDocument });
+    else if (isAnimGraphAssetType(entry.type)) animGraphs.push({ guid: entry.guid, document: value as AnimGraphDocument });
     else if (entry.type === "BehaviourTree") behaviourTrees.push({ guid: entry.guid, document: value });
     else if (entry.type === "Blackboard") blackboards.push({ guid: entry.guid, document: value });
     else if (entry.type === "Material") materialDocuments.set(entry.guid, value as MaterialDocument);

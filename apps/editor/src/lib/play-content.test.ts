@@ -78,12 +78,12 @@ describe("collectAnimGraphCompileDocuments", () => {
       collectAnimGraphCompileDocuments(
         [{ guid: "graph-guid", document: graph }],
         (guid) =>
-          guid === "graph-guid" ? "assets/Loco.anim.hasset" : null,
+          guid === "graph-guid" ? "assets/Loco.anim3d.hasset" : null,
       ),
     ).toEqual([
       {
         guid: "graph-guid",
-        path: "assets/Loco.anim.hasset",
+        path: "assets/Loco.anim3d.hasset",
         document: graph,
       },
     ]);

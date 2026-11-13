@@ -2,6 +2,7 @@ import {
   documentId,
   documentKindForAssetType,
   type DocumentRef,
+  isAnimGraphDocumentKind,
 } from "@haptic/core";
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import type { SessionReportEntry } from "@haptic/runtime";
@@ -152,9 +153,9 @@ export async function navigateToSessionReportEntry(
   if (!host.isDocumentOpen(id)) return fail(`${document.label} was not opened.`);
   // A tab change that raced the open would leave the new tab in the background.
   host.setActiveDocument(id);
-  if (document.kind === "anim-graph" && entry.graphId === "animation-object") {
+  if (isAnimGraphDocumentKind(document.kind) && entry.graphId === "animation-object") {
     host.setAnimEditorMode(id, "animationObject");
-  } else if (document.kind === "anim-graph" && entry.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID) {
+  } else if (isAnimGraphDocumentKind(document.kind) && entry.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID) {
     // A state or transition breakpoint.
     host.setAnimEditorMode(id, "stateMachine");
   } else if ((document.kind === "scene" || document.kind === "scene-layer") && nav.focusedNodeId) {

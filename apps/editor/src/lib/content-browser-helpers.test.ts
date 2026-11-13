@@ -1291,7 +1291,7 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
       "Walk.spriteanim.hasset",
     );
-    expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.hasset");
+    expect(newAssetFileName("AnimationGraph3D", "Loco")).toBe("Loco.anim3d.hasset");
     expect(newAssetFileName("Material", "Rock")).toBe("Rock.material.hasset");
     expect(newAssetFileName("MaterialFunction", "Tint")).toBe(
       "Tint.matfunc.hasset",

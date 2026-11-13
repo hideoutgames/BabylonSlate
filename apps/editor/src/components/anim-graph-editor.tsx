@@ -23,6 +23,7 @@ import {
   type AnimClipCatalogEntry,
   type AnimClipKind,
   type AnimClipRef,
+  type AnimGraphDimension,
   type AnimGraphDocument,
   type AnimState,
   type AnimTransition,
@@ -52,6 +53,7 @@ import {
 } from "@haptic/graph-ui";
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type BreakpointLocation } from "@haptic/bridge";
 import { parseDocumentId } from "@haptic/core";
+import { normalizeAnimationPayload, type IndexedAsset } from "@haptic/assets";
 import type { Diagnostic } from "@haptic/scripting";
 import {
   useActiveDocumentState,
@@ -282,7 +284,9 @@ function useAnimGraphDocument() {
   }, [assetRegistry, registryEpoch, documentPath]);
   const graphGuid = graphHeader?.guid;
   const assetName = graphHeader?.name ?? doc.name;
-  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid, assetName };
+  // A 3D graph plays Animations on its Skeleton; a 2D graph plays Sprite Animations.
+  const dimension: AnimGraphDimension = entry?.ref.kind === "anim-graph-2d" ? "2d" : "3d";
+  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid, assetName, dimension };
 }
 
 /** A state's or transition's breakpoint, named as the State Machine shows it. */
@@ -511,7 +515,7 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, latestDoc, commit, documentId, catalog, graphGuid, assetName } = useAnimGraphDocument();
+  const { doc, latestDoc, commit, documentId, catalog, graphGuid, assetName, dimension } = useAnimGraphDocument();
   // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its transitions.
   const runTrace = useAnimStateMachineRunTrace(graphGuid);
   const {
@@ -654,7 +658,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     if (activeDocumentId !== documentId) return;
     if (animEditorMode !== "stateMachine") return;
-    const animRows: Diagnostic[] = validateAnimGraph(doc, catalog).map((row) => ({
+    const animRows: Diagnostic[] = validateAnimGraph(doc, catalog, { dimension }).map((row) => ({
       severity: row.severity,
       code: row.code,
       message: row.message,
@@ -692,6 +696,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     doc,
     documentId,
     catalog,
+    dimension,
     openTransition,
     ruleGraph,
     ruleMembers,
@@ -879,7 +884,7 @@ function transitionPropertyRows(
 }
 
 export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
-  const { doc, commit, assetRegistry, catalog, graphGuid, assetName } = useAnimGraphDocument();
+  const { doc, commit, assetRegistry, catalog, graphGuid, assetName, dimension } = useAnimGraphDocument();
   const breakpointStore = useBreakpointStore();
   const {
     selectedIds,
@@ -889,6 +894,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     setSelectedId,
   } = useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
+  const [skeletonPick, setSkeletonPick] = useState(false);
   // Transition cards start open; collapsing one is remembered while the document is open.
   const [collapsedTransitionIds, setCollapsedTransitionIds] = useState<ReadonlySet<string>>(() => new Set());
   if (openTransitionId) {
@@ -904,13 +910,39 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   const clip = selected?.clipId
     ? doc.clips.find((row) => row.id === selected.clipId)
     : undefined;
-  const clipKind: AnimClipKind = clip?.kind ?? "animation";
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
+  void clip;
+  const clipKind: AnimClipKind = dimension === "2d" ? "sprite" : "animation";
+  const pickerEntry = (asset: IndexedAsset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
     type: asset.header.type,
     path: asset.path,
-  }));
+  });
+  const registryAssets = assetRegistry?.list() ?? [];
+  // A 3D graph's pickers offer only Animations on its Skeleton; a 2D graph's only Sprite Animations.
+  const clipAssets = registryAssets
+    .filter((asset) => dimension === "2d"
+      ? asset.header.type === "SpriteAnimation"
+      : asset.header.type === "Animation" &&
+        normalizeAnimationPayload(asset.header.payload ?? {}).skeletonGuid === doc.skeletonGuid)
+    .map(pickerEntry);
+  const skeletonAssets = registryAssets.filter((asset) => asset.header.type === "Skeleton").map(pickerEntry);
+  const skeletonAsset = doc.skeletonGuid
+    ? registryAssets.find((asset) => asset.header.guid === doc.skeletonGuid)
+    : undefined;
+  const graphRows: PropertyRow[] = dimension === "3d"
+    ? [{
+        id: "skeleton",
+        kind: "asset",
+        label: "Skeleton",
+        value: doc.skeletonGuid,
+        placeholder: "None",
+        assetTypes: ["Skeleton"],
+        onPick: () => setSkeletonPick(true),
+        onChange: (guid) => commit({ ...doc, skeletonGuid: guid || null }),
+        ...assetRowIdentity(skeletonAsset ? { name: skeletonAsset.header.name, type: "Skeleton" } : undefined),
+      }]
+    : [];
   const outgoing = selected
     ? doc.transitions.filter((row) => row.fromStateId === selected.id)
     : selectedTransition
@@ -931,6 +963,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         : "";
     edit.write(
       upsertStateClip(current, stateId, {
+        kind: clipKind,
         assetGuid: guid,
         clipName: nextName,
         ...(typeof entry?.durationMs === "number"
@@ -944,29 +977,13 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     const stateClip = state.clipId
       ? doc.clips.find((row) => row.id === state.clipId)
       : undefined;
-    const kind: AnimClipKind = stateClip?.kind ?? "animation";
+    const kind = clipKind;
     return {
       clip: [
         {
-          id: "clipKind",
-          kind: "enum",
-          label: "Clip Kind",
-          value: kind,
-          options: [
-            { value: "animation", label: "Animation" },
-            { value: "sprite", label: "Sprite" },
-          ],
-          onChange: (value) =>
-            edit.write(
-              upsertStateClip(edit.read(), state.id, {
-                kind: value === "sprite" ? "sprite" : "animation",
-              }),
-            ),
-        },
-        {
           id: "clipAsset",
           kind: "asset",
-          label: "Clip Asset",
+          label: dimension === "2d" ? "Sprite Animation" : "Animation",
           value: stateClip?.assetGuid || null,
           placeholder: "None",
           // Several states share one Clip Asset only when they pick the same kind of clip.
@@ -1142,17 +1159,33 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           ) : null}
         </div>
       ) : (
-        <p
-          className="px-3 py-2 text-sm text-muted-foreground"
-          data-testid="anim-graph-details-empty"
-        >
-          Select a State or Transition
-        </p>
+        <div data-testid="anim-graph-details">
+          {graphRows.length > 0 ? <PropertyGrid title="Graph" rows={graphRows} /> : null}
+          <p
+            className="px-3 py-2 text-sm text-muted-foreground"
+            data-testid="anim-graph-details-empty"
+          >
+            Select a State or Transition
+          </p>
+        </div>
       )}
+      <AssetPicker
+        open={skeletonPick}
+        onOpenChange={setSkeletonPick}
+        assets={skeletonAssets}
+        allowedTypes={["Skeleton"]}
+        title="Pick Skeleton"
+        allowNone
+        onPick={(guid) => {
+          commit({ ...doc, skeletonGuid: guid || null });
+          setSkeletonPick(false);
+        }}
+        data-testid="anim-graph-skeleton-picker"
+      />
       <AssetPicker
         open={clipPick}
         onOpenChange={setClipPick}
-        assets={assets}
+        assets={clipAssets}
         allowedTypes={clipKind === "sprite" ? ["SpriteAnimation"] : ["Animation"]}
         title={
           clipKind === "sprite" ? "Pick Sprite Animation" : "Pick Animation"

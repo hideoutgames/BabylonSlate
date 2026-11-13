@@ -32,7 +32,7 @@ describe("documentIdToRevealForDiagnostic", () => {
 const ASSETS: SessionReportAsset[] = [
   { guid: "hero-guid", path: "assets/Hero.class.hasset", name: "Hero", type: "Class" },
   { guid: "patrol-guid", path: "assets/Patrol.bt.hasset", name: "Patrol", type: "BehaviourTree" },
-  { guid: "locomotion-guid", path: "assets/Locomotion.animgraph.hasset", name: "Locomotion", type: "AnimationGraph" },
+  { guid: "locomotion-guid", path: "assets/Locomotion.animgraph.hasset", name: "Locomotion", type: "AnimationGraph3D" },
   { guid: "arena-guid", path: "assets/Arena.scene.hasset", name: "Arena", type: "Scene" },
   { guid: "hud-guid", path: "assets/Hud.scenelayer.hasset", name: "Hud", type: "SceneLayer" },
   { guid: "rock-guid", path: "assets/Rock.model.hasset", name: "Rock", type: "Model" },
@@ -92,7 +92,7 @@ describe("sessionReportNavigation", () => {
     ["an Execute JavaScript body line", { assetGuid: "assets/Hero.class.hasset", nodeId: "js", bodyLine: 4 }, "graph"],
     ["a Class node in an exported build, reported by guid", { assetGuid: "hero-guid", nodeId: "print" }, "graph"],
     ["a Behaviour Tree node", { assetGuid: "patrol-guid", btNodeId: "task" }, "behaviour-tree"],
-    ["an Animation Graph object", { assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }, "anim-graph"],
+    ["an Animation Graph object", { assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }, "anim-graph-3d"],
     ["a Scene that failed to load", { assetGuid: "arena-guid", code: "scene.loading.failed" }, "scene"],
     ["a Scene Layer with physics off", { assetGuid: "hud-guid", code: "physics.scene_layer_physics_disabled", severity: "warning" }, "scene-layer"],
     ["a Model without a collision mesh", { assetGuid: "rock-guid", code: "physics.complex_collision_unavailable", severity: "warning" }, "model"],
@@ -222,7 +222,7 @@ describe("navigateToSessionReportEntry", () => {
       entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "n", graphId: "animation-object" }),
       host,
     );
-    expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset animationObject");
+    expect(calls).toContain("mode anim-graph-3d:assets/Locomotion.animgraph.hasset animationObject");
   });
 
   it("shows a Scene's script for one of its nodes, and leaves an Actor's Scene in its mode", async () => {
@@ -240,6 +240,6 @@ describe("navigateToSessionReportEntry", () => {
       entry({ assetGuid: "assets/Locomotion.animgraph.hasset", nodeId: "idle", graphId: "state-machine" }),
       host,
     );
-    expect(calls).toContain("mode anim-graph:assets/Locomotion.animgraph.hasset stateMachine");
+    expect(calls).toContain("mode anim-graph-3d:assets/Locomotion.animgraph.hasset stateMachine");
   });
 });

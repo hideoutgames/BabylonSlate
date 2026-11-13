@@ -27,7 +27,7 @@ describe("shouldPublishGraphDiagnostics", () => {
       shouldPublishGraphDiagnostics({
         documentId: "anim-graph:loco",
         activeDocumentId: "anim-graph:loco",
-        documentKind: "anim-graph",
+        documentKind: "anim-graph-3d",
         animEditorMode: "stateMachine",
       }),
     ).toBe(false);
@@ -35,7 +35,7 @@ describe("shouldPublishGraphDiagnostics", () => {
       shouldPublishGraphDiagnostics({
         documentId: "anim-graph:loco",
         activeDocumentId: "anim-graph:loco",
-        documentKind: "anim-graph",
+        documentKind: "anim-graph-3d",
         animEditorMode: "animationObject",
       }),
     ).toBe(true);

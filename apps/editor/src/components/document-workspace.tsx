@@ -5,7 +5,7 @@ import { BlackboardEditingProvider } from "../context/blackboard-editing-context
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
-import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene } from "@haptic/core";
+import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene, isAnimGraphDocumentKind, type AnimGraphDocumentKind } from "@haptic/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
@@ -186,9 +186,11 @@ export function SceneDocumentDocks({ id, kind = "scene", layout }: {
 
 export function AnimDocumentDocks({
   id,
+  kind,
   layout,
 }: {
   id: string;
+  kind: AnimGraphDocumentKind;
   layout: Record<string, unknown> | null;
 }) {
   const { setAnimEditorMode } = useDocumentActions();
@@ -218,7 +220,7 @@ export function AnimDocumentDocks({
           {mode === "stateMachine" ? (
           <RegisteredDockviewShell
             id={id}
-            documentKind="anim-graph"
+            documentKind={kind}
             initialLayout={parsed.stateMachine}
             animEditorMode="stateMachine"
             surface="stateMachine"
@@ -240,7 +242,7 @@ export function AnimDocumentDocks({
           {mode === "animationObject" ? (
           <RegisteredDockviewShell
             id={id}
-            documentKind="anim-graph"
+            documentKind={kind}
             initialLayout={parsed.animationObject}
             animEditorMode="animationObject"
             surface="animationObject"
@@ -454,7 +456,7 @@ export function DocumentWorkspace() {
           );
         }
 
-        if (doc.ref.kind === "anim-graph") {
+        if (isAnimGraphDocumentKind(doc.ref.kind)) {
           if (!shouldMount) return null;
           return (
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
@@ -468,7 +470,7 @@ export function DocumentWorkspace() {
                       testId="document-workspace-anim-graph"
                       active={active}
                     >
-                      <AnimDocumentDocks id={id} layout={doc.layout} />
+                      <AnimDocumentDocks id={id} kind={doc.ref.kind} layout={doc.layout} />
                     </DocumentShell>
                   </GraphEditingProvider>
                   </PrefabEditingProvider>

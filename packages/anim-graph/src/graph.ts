@@ -56,8 +56,16 @@ export interface AnimTransition {
   targetHandle?: string;
 }
 
+/** A 3D graph plays Animations on its Skeleton; a 2D graph plays Sprite Animations. The asset type decides it. */
+export type AnimGraphDimension = "3d" | "2d";
+
 export interface AnimGraphDocument {
   name: string;
+  /**
+   * 3D only: the Skeleton every Animation the graph plays must be on. Null plays Animations that have no Skeleton
+   * (a rigid node animation such as a door). A 2D graph keeps it null.
+   */
+  skeletonGuid: string | null;
   entryStateId: string;
   states: AnimState[];
   transitions: AnimTransition[];
@@ -236,7 +244,11 @@ export function createDefaultTransitionRuleGraph(): SerializedGraph {
   };
 }
 
-export function createDefaultAnimGraph(name = "Locomotion"): AnimGraphDocument {
+export function createDefaultAnimGraph(
+  name = "Locomotion",
+  options: { dimension?: AnimGraphDimension; skeletonGuid?: string | null } = {},
+): AnimGraphDocument {
+  const dimension = options.dimension ?? "3d";
   const idle: AnimState = {
     id: "idle",
     name: "Idle",
@@ -247,13 +259,14 @@ export function createDefaultAnimGraph(name = "Locomotion"): AnimGraphDocument {
   };
   return {
     name,
+    skeletonGuid: dimension === "3d" ? options.skeletonGuid ?? null : null,
     entryStateId: idle.id,
     states: [idle],
     transitions: [],
     clips: [
       {
         id: "idle-clip",
-        kind: "animation",
+        kind: dimension === "3d" ? "animation" : "sprite",
         assetGuid: "",
         clipName: "Idle",
         durationMs: 1000,
@@ -302,6 +315,7 @@ export function persistTransitionRuleGraph(
 export function validateAnimGraph(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[] = [],
+  options: { dimension?: AnimGraphDimension } = {},
 ): AnimDiagnostic[] {
   const diagnostics: AnimDiagnostic[] = [];
   const stateIds = new Set(doc.states.map((state) => state.id));
@@ -399,6 +413,7 @@ export function validateAnimGraph(
     }
   }
   const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
+  if (options.dimension) diagnostics.push(...clipDimensionDiagnostics(doc, byGuid, options.dimension));
   for (const clip of doc.clips) {
     if (clip.kind !== "animation" || !clip.assetGuid) continue;
     const entry = byGuid.get(clip.assetGuid);
@@ -420,6 +435,45 @@ export function validateAnimGraph(
       nodeId: clip.id,
       severity: "error",
     });
+  }
+  return diagnostics;
+}
+
+/**
+ * A 2D graph plays only Sprite Animations, and a 3D graph only Animations on its own Skeleton (null matches
+ * Animations with no Skeleton).
+ */
+function clipDimensionDiagnostics(
+  doc: AnimGraphDocument,
+  byGuid: ReadonlyMap<string, AnimClipCatalogEntry>,
+  dimension: AnimGraphDimension,
+): AnimDiagnostic[] {
+  const diagnostics: AnimDiagnostic[] = [];
+  for (const clip of doc.clips) {
+    if (!clip.assetGuid) continue;
+    const entry = byGuid.get(clip.assetGuid);
+    const name = entry?.name ?? clip.clipName;
+    // Point at the state that plays the clip, which the canvas can show.
+    const nodeId = doc.states.find((state) => state.clipId === clip.id)?.id ?? clip.id;
+    if (dimension === "2d" ? clip.kind !== "sprite" : clip.kind !== "animation") {
+      diagnostics.push({
+        code: "anim.clipKind",
+        message: dimension === "2d"
+          ? `"${name}" is not a Sprite Animation; a 2D Animation Graph plays Sprite Animations only`
+          : `"${name}" is not an Animation; a 3D Animation Graph plays Animations only`,
+        nodeId,
+        severity: "error",
+      });
+      continue;
+    }
+    if (dimension === "3d" && entry?.type === "Animation" && (entry.skeletonGuid ?? null) !== doc.skeletonGuid) {
+      diagnostics.push({
+        code: "anim.clipSkeleton",
+        message: `Animation "${name}" is not on the graph's Skeleton`,
+        nodeId,
+        severity: "error",
+      });
+    }
   }
   return diagnostics;
 }
@@ -959,6 +1013,7 @@ export function parseAnimGraphDocument(
       typeof source.name === "string" && source.name !== ""
         ? source.name
         : "Locomotion",
+    skeletonGuid: typeof source.skeletonGuid === "string" && source.skeletonGuid.trim() !== "" ? source.skeletonGuid.trim() : null,
     entryStateId,
     states,
     transitions,

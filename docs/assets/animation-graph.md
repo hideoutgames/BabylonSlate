@@ -1,10 +1,17 @@
 # Animation Graph
 
-A state machine that plays Animation or Sprite Animation clips and switches between them.
+A state machine that plays clips and switches between them. There are two types, which never convert into each other:
+
+| Type | Plays |
+| --- | --- |
+| 3D Animation Graph | [Animations](animation.md) on the graph's [Skeleton](skeleton.md). |
+| 2D Animation Graph | [Sprite Animations](sprite-animation.md). |
 
 ## Create
 
-In the **Content Browser**, choose **New Asset > Animation > Animation Graph**.
+In the **Content Browser**, choose **New Asset > Animation > 3D Animation Graph** or **2D Animation Graph**. For a 3D graph, pick its **Skeleton** in the New Asset dialog, or set it later in the graph's **Inspector**.
+
+To make a 3D graph on a rig, right-click its Skeleton or one of its Models and choose **Create Animation Graph**. The graph is named after it and set to its Skeleton.
 
 ## Editor
 
@@ -14,7 +21,7 @@ Double-tap an Animation Graph to open it. A mode switch at the top of the editor
 
 - **Graph**: each state is a node. Drag from one state to another to add a transition. Select a wire or its blend dot to edit that transition.
 - **Variables**: the graph's variables and its states. **Add Variable** and **Add State** add rows; the entry state shows an **Entry** badge.
-- **Inspector**: settings for the selected state or transition. With several states selected, it shows the **Clip** and **Playback** settings they all have, with **Mixed Values** where they differ; **Clip Asset** appears only when they all play the same **Clip Kind**. An edit changes every selected state, and typing a sum such as `Mixed Values+4` in **Speed** changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Names, the entry state and transitions are edited one state at a time. A state's outgoing transitions are listed under **Transitions**, one card each; collapse a card to see only its blend time and direction.
+- **Inspector**: settings for the selected state or transition, or the graph's **Skeleton** (3D) when nothing is selected. With several states selected, it shows the **Clip** and **Playback** settings they all have, with **Mixed Values** where they differ. An edit changes every selected state, and typing a sum such as `Mixed Values+4` in **Speed** changes each from its own value ([multi-selection](../start/editor-tour.md#scene-panels)). Names, the entry state and transitions are edited one state at a time. A state's outgoing transitions are listed under **Transitions**, one card each; collapse a card to see only its blend time and direction.
 - **Compiler Results**: errors and warnings.
 
 **Animation Object**
@@ -29,10 +36,16 @@ A script graph that runs for each Animation Graph component using the graph. It 
 | --- | --- |
 | Name | The state's name. Names must be unique. |
 | Entry State | Turn on to make this the state the graph starts in. |
-| Clip Kind | **Animation** or **Sprite**. |
-| Clip Asset | An [Animation](animation.md) or a [Sprite Animation](sprite-animation.md), matching Clip Kind. |
+| Animation | 3D graphs. The [Animation](animation.md) the state plays. The picker lists only Animations on the graph's Skeleton. |
+| Sprite Animation | 2D graphs. The [Sprite Animation](sprite-animation.md) the state plays. |
 | Speed | Playback speed multiplier. At 0 the state holds its clip's first frame. |
 | Loop | Whether the clip repeats. |
+
+**Graph** (3D)
+
+| Setting | Description |
+| --- | --- |
+| Skeleton | The [Skeleton](skeleton.md) every Animation in the graph must be on. Any Model on it can run the graph. With **None**, the graph plays Animations that have no Skeleton, such as a door's. After a change, **Compiler Results** lists each state whose Animation is on another Skeleton. |
 
 **Transition**
 

@@ -40,7 +40,7 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("sprite")).toBe(true);
     expect(canFocusLayout("audio")).toBe(true);
     expect(canFocusLayout("sprite-animation")).toBe(true);
-    expect(canFocusLayout("anim-graph")).toBe(true);
+    expect(canFocusLayout("anim-graph-3d")).toBe(true);
     expect(canFocusLayout("behaviour-tree")).toBe(true);
     expect(canFocusLayout("model")).toBe(true);
     expect(canFocusLayout("skeleton")).toBe(true);
@@ -61,7 +61,7 @@ describe("canFocusLayout", () => {
 describe("focusKeepPanelIds", () => {
   it("returns the Animation Object keep list when Animation Object mode is active", () => {
     expect(
-      focusKeepPanelIds(defaultEngineSettings(), "anim-graph", {
+      focusKeepPanelIds(defaultEngineSettings(), "anim-graph-3d", {
         animEditorMode: "animationObject",
       }),
     ).toEqual(["anim-object-graph"]);
@@ -79,14 +79,14 @@ describe("focusKeepCandidates", () => {
 
   it("lists Animation Graph docks depending on editor mode", () => {
     expect(
-      focusKeepCandidates("anim-graph").map((panel) => panel.id),
-    ).toEqual(listDockWindows("anim-graph").map((entry) => entry.id));
+      focusKeepCandidates("anim-graph-3d").map((panel) => panel.id),
+    ).toEqual(listDockWindows("anim-graph-3d").map((entry) => entry.id));
     expect(
-      focusKeepCandidates("anim-graph", { animEditorMode: "animationObject" }).map(
+      focusKeepCandidates("anim-graph-3d", { animEditorMode: "animationObject" }).map(
         (panel) => panel.id,
       ),
     ).toEqual(
-      listDockWindows("anim-graph", { animEditorMode: "animationObject" }).map(
+      listDockWindows("anim-graph-3d", { animEditorMode: "animationObject" }).map(
         (entry) => entry.id,
       ),
     );
@@ -111,11 +111,11 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
       "plugin-settings-details",
     ]);
-    expect(resolveFocusKeepPanelIds("anim-graph", [])).toEqual([
+    expect(resolveFocusKeepPanelIds("anim-graph-3d", [])).toEqual([
       "anim-graph-graph",
     ]);
     expect(
-      resolveFocusKeepPanelIds("anim-graph", [], {
+      resolveFocusKeepPanelIds("anim-graph-3d", [], {
         animEditorMode: "animationObject",
       }),
     ).toEqual(["anim-object-graph"]);
