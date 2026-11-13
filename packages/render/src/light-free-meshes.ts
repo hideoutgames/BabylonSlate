@@ -2,6 +2,7 @@ import type { Material } from "@babylonjs/core/Materials/material";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
+import type { SceneReadinessScope } from "./scene-readiness-signal";
 
 /**
  * Babylon's node blocks that read lights: they prepare light and shadow defines from a mesh's `lightSources` or bind a
@@ -53,4 +54,15 @@ export function isLightFreeMesh(mesh: AbstractMesh): boolean {
  */
 export function installLightFreeMeshes(scene: Scene): void {
   scene._lightFreeMesh = isLightFreeMesh;
+}
+
+/**
+ * The readiness scope of a light joining or leaving meshes' light sources and nothing else: the meshes that are not
+ * light-free, whose defines it marks. Their shadow caster checks follow the probe rules of any mesh: requested by the
+ * meshes probed, and a drawn shadow map leaves out a caster whose depth variant is not ready. Undefined (every mesh)
+ * in a Scene without the hook, where Babylon marks every mesh.
+ */
+export function lightToggleScope(scene: Scene): SceneReadinessScope | undefined {
+  const lightFree = scene._lightFreeMesh;
+  return lightFree ? scene.meshes.filter((mesh) => !lightFree(mesh)) : undefined;
 }

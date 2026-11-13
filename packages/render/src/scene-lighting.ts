@@ -6,7 +6,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
-import { installLightFreeMeshes } from "./light-free-meshes";
+import { installLightFreeMeshes, lightToggleScope } from "./light-free-meshes";
 
 type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
 
@@ -54,8 +54,11 @@ function installSceneLighting(scene: Scene): SceneLighting {
     limited: [],
   };
   const watchedLights = new Map<Light, Observer<boolean>>();
+  // A light, material or context change, or the first sync: what every mesh draws with may have changed.
+  let structural = true;
   const invalidate = () => {
     dirty = true;
+    structural = true;
   };
   const watchLight = () => {
     dirty = true;
@@ -83,10 +86,14 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // Babylon defers its new-entity observables. These O(1) checks also catch
     // objects constructed immediately before prewarm or the first render.
     if (!dirty && lightCount === scene.lights.length && materialCount === scene.materials.length && !changed) return;
-    dirty = false;
     // Light membership changed; the cached strict readiness
-    // result no longer describes the effects these materials will build.
-    markSceneReadinessDirty(scene, "sceneLighting");
+    // result no longer describes the effects these materials will build. When lights only switched (the light budget
+    // as the camera moves), only meshes drawn by a Material that reads Babylon lights changed (`lightToggleScope`).
+    const onlySwitched = !structural && lightCount === scene.lights.length && materialCount === scene.materials.length &&
+      sceneLightsEnabled === scene.lightsEnabled && sceneShadowsEnabled === scene.shadowsEnabled;
+    dirty = false;
+    structural = false;
+    markSceneReadinessDirty(scene, "sceneLighting", onlySwitched ? lightToggleScope(scene) : undefined);
     lightCount = scene.lights.length;
     materialCount = scene.materials.length;
     sceneLightsEnabled = scene.lightsEnabled;

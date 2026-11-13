@@ -193,6 +193,7 @@ Rules: compare runs on the same machine, browser project and build only; never a
 | `HAPTIC_FLY_PATH` | per scene | JSON array of `[x, y, z]` eye waypoints |
 | `HAPTIC_FLY_PROFILE` | off | `1` records a CPU profile of the flights and ranks the hottest functions of the passes as a whole (frame `i` -1) and of each spike frame |
 | `HAPTIC_FLY_PROFILE_DIR` | none | Absolute directory that also receives each flight's raw `<scene>-<editor\|play>.cpuprofile` |
+| `HAPTIC_FLY_VERIFY_SCOPED` | off | `1`: Play flights follow each scoped readiness probe with a whole one that must agree (`graph.scopedMismatches`; `graph.scopedChecks` counts the scoped probes) |
 | `HAPTIC_FLY_PLAY` | none | Selected scenes to fly again in overlay Play with the free camera (`freecam`) |
 | `HAPTIC_PERF_SCALING` / `HAPTIC_PERF_VIEWPORT_CAP` | Engine Settings | Hardware scaling level and viewport frame cap |
 | `HAPTIC_PERF_SETTLE_MS`, `HAPTIC_PERF_LABEL`, `HAPTIC_PERF_OUT` | 5000, none, none | Settle after opening, label, extra report path |
