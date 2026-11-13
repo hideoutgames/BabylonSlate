@@ -49,6 +49,7 @@ export {
 } from "./graph";
 export { animEvalWithJump, evaluateAnimGraph } from "./evaluate";
 export * from "./pose-graph";
+export * from "./blend-space";
 export {
   ANIM_STATE_SIDES,
   stateMachineToSerialized,

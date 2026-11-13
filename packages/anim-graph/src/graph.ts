@@ -3,6 +3,7 @@ import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
   ANIM_FRAME_OUTPUT_TYPE,
   createStateGraph,
+  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   isPoseClipNodeType,
   isPoseOutputType,
   type AnimPoseDimension,
@@ -399,6 +400,11 @@ export interface AnimClipCatalogEntry {
   frameCount?: number;
   skeletonGuid?: string | null;
   modelGuid?: string;
+  /** A Blend Space's axes and samples, which a Blend Space Player plays. */
+  blendSpace?: {
+    axes: ReadonlyArray<{ min: number; max: number; wrap: boolean; smoothingSeconds: number }>;
+    samples: ReadonlyArray<{ animationGuid: string; x: number; y: number; rateScale: number }>;
+  };
 }
 
 function locationName(doc: AnimGraphDocument, location: AnimGraphLocation): string {
@@ -446,9 +452,13 @@ export function validateAnimGraph(
       });
     }
     for (const node of graph.nodes) {
-      if (!isPoseClipNodeType(node.type)) continue;
       const assetGuid = typeof node.data.assetGuid === "string" ? node.data.assetGuid : "";
       if (!assetGuid) continue;
+      if (node.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+        diagnostics.push(...blendSpaceDiagnostics(doc, byGuid, node.id, assetGuid, location, options.dimension));
+        continue;
+      }
+      if (!isPoseClipNodeType(node.type)) continue;
       diagnostics.push(...clipDiagnostics(doc, byGuid, node.id, node.type, assetGuid, location, options.dimension));
     }
   }
@@ -517,6 +527,26 @@ function validateStateMachine(machine: AnimStateMachine): AnimDiagnostic[] {
     }
   }
   return diagnostics;
+}
+
+/** A Blend Space Player names a Blend Space on the graph's Skeleton. */
+function blendSpaceDiagnostics(
+  doc: AnimGraphDocument,
+  byGuid: ReadonlyMap<string, AnimClipCatalogEntry>,
+  nodeId: string,
+  assetGuid: string,
+  location: AnimGraphLocation,
+  dimension: AnimGraphDimension | undefined,
+): AnimDiagnostic[] {
+  const entry = byGuid.get(assetGuid);
+  if (!entry) return [];
+  if (entry.type !== "BlendSpace") {
+    return [{ code: "anim.clipKind", message: `"${entry.name}" is not a Blend Space`, nodeId, location, severity: "error" }];
+  }
+  if (dimension === "3d" && (entry.skeletonGuid ?? null) !== doc.skeletonGuid) {
+    return [{ code: "anim.clipSkeleton", message: `Blend Space "${entry.name}" is not on the graph's Skeleton`, nodeId, location, severity: "error" }];
+  }
+  return [];
 }
 
 /**
@@ -778,6 +808,14 @@ function resolvePoseGraphClips(
 ): SerializedGraph {
   let changed = false;
   const nodes = graph.nodes.map((node) => {
+    if (node.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+      const blendSpace = resolvedBlendSpace(node.data.assetGuid, byGuid);
+      if (JSON.stringify(node.data.blendSpace ?? null) === JSON.stringify(blendSpace)) return node;
+      changed = true;
+      const data: Record<string, unknown> = { ...node.data };
+      if (blendSpace) data.blendSpace = blendSpace; else delete data.blendSpace;
+      return { ...node, data };
+    }
     if (!isPoseClipNodeType(node.type)) return node;
     const entry = typeof node.data.assetGuid === "string" ? byGuid.get(node.data.assetGuid) : undefined;
     if (!entry) return node;
@@ -799,7 +837,26 @@ function resolvePoseGraphClips(
   return changed ? { ...graph, nodes } : graph;
 }
 
-/** Fill each player's clip name, length and frame count from the catalog. Keep Animation guids. */
+/** A Blend Space Player's Blend Space with each sample's clip name and length, or null when it names none. */
+function resolvedBlendSpace(assetGuid: unknown, byGuid: ReadonlyMap<string, AnimClipCatalogEntry>) {
+  const entry = typeof assetGuid === "string" ? byGuid.get(assetGuid) : undefined;
+  if (!entry || entry.type !== "BlendSpace" || !entry.blendSpace) return null;
+  return {
+    axes: entry.blendSpace.axes.map((axis) => ({ min: axis.min, max: axis.max, wrap: axis.wrap, smoothingSeconds: axis.smoothingSeconds })),
+    samples: entry.blendSpace.samples.flatMap((sample) => {
+      const clip = byGuid.get(sample.animationGuid);
+      // A sample plays only an Animation; anything else is dropped.
+      if (!clip || clip.type !== "Animation") return [];
+      const durationMs = typeof clip.durationMs === "number" && Number.isFinite(clip.durationMs) && clip.durationMs > 0 ? clip.durationMs : 1000;
+      return [{ animationGuid: sample.animationGuid, clipName: clip.clipName ?? "", durationMs, x: sample.x, y: sample.y, rateScale: sample.rateScale }];
+    }),
+  };
+}
+
+/**
+ * Fill each player's clip name, length and frame count, and each Blend Space Player's Blend Space, from the catalog.
+ * Keep Animation guids.
+ */
 export function resolveAnimGraphClips(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[],
