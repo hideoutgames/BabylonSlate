@@ -15,19 +15,18 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { UserFocusIcon } from "@phosphor-icons/react/dist/csr/UserFocus";
 import {
   CircleAlertIcon,
   ClockIcon,
-  FilmIcon,
   Gamepad2Icon,
-  Icon,
   OctagonPauseIcon,
   PlugIcon,
   PlugZapIcon,
   RadioTowerIcon,
-  UserIcon,
-  type IconNode,
 } from "lucide-react";
+import ImageGlyph from "react-bootstrap-icons/dist/icons/image";
+import ImageFillGlyph from "react-bootstrap-icons/dist/icons/image-fill";
 import {
   humanizePropertyLabel,
   LabelHint,
@@ -259,24 +258,13 @@ function PinHandle({
   );
 }
 
-/** The Film icon's strip lines (Lucide's own geometry), cut out of a wired Frame pin's fill. */
-const FILM_STRIP_LINES: IconNode = [
-  ["path", { d: "M7 3v18", key: "strip-left" }],
-  ["path", { d: "M3 7.5h4", key: "strip-left-top" }],
-  ["path", { d: "M3 12h18", key: "strip-middle" }],
-  ["path", { d: "M3 16.5h4", key: "strip-left-bottom" }],
-  ["path", { d: "M17 3v18", key: "strip-right" }],
-  ["path", { d: "M17 7.5h4", key: "strip-right-top" }],
-  ["path", { d: "M17 16.5h4", key: "strip-right-bottom" }],
-];
-
 /**
- * An Animation Graph's Pose pin (a person) or Frame pin (a film), drawn larger than other pins and without a box: an
- * outline while unwired, filled once wired. A wired Frame pin keeps its strip lines, cut out of the fill.
+ * An Animation Graph's Pose pin (Phosphor User Focus) or Frame pin (Bootstrap Image), drawn larger than other pins and
+ * without a box: the icon's outline glyph while unwired, its fill glyph once wired.
  */
 function AnimPinGlyph({ kind, color, connected }: { kind: "pose" | "frame"; color: string; connected: boolean }) {
-  const size = "calc(var(--graph-pin-glyph, var(--graph-pin-size, 22px)) * 1.4)";
-  const fill = connected ? "currentColor" : "none";
+  const size = "calc(var(--graph-pin-glyph, var(--graph-pin-size, 22px)) * 1.2)";
+  const FrameGlyph = connected ? ImageFillGlyph : ImageGlyph;
   return (
     <span
       className="graph-pin-visual relative block"
@@ -286,14 +274,9 @@ function AnimPinGlyph({ kind, color, connected }: { kind: "pose" | "frame"; colo
       aria-hidden="true"
     >
       {kind === "pose" ? (
-        <UserIcon className="absolute inset-0 size-full" strokeWidth={2.25} fill={fill} />
+        <UserFocusIcon className="absolute inset-0 size-full" size="100%" weight={connected ? "fill" : "regular"} />
       ) : (
-        <>
-          <FilmIcon className="absolute inset-0 size-full" strokeWidth={2.25} fill={fill} />
-          {connected ? (
-            <Icon iconNode={FILM_STRIP_LINES} className="absolute inset-0 size-full" stroke="var(--graph-node)" strokeWidth={1.75} />
-          ) : null}
-        </>
+        <FrameGlyph className="absolute inset-0 size-full" size="100%" />
       )}
     </span>
   );

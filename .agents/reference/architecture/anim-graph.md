@@ -82,3 +82,4 @@ Worker-side Anim Graph (pose graphs and State Machines) plus per-instance Animat
 - State names must be non-empty and unique (trimmed, case-insensitive). Diagnostics publish only for the active mode.
 - Renaming or retyping a variable rewrites bound Get/Set nodes in `animationObject`, every rule graph and every pose graph.
 - Pose and frame pins (`{kind:"pose"}`, `{kind:"frame"}`) connect only to their own kind (`isStructuralPinKind`) and draw heavy wires; pose nodes use the `anim-pose` (mustard) and control nodes the `anim-control` (amber) roles.
+- `AnimPinGlyph` (`packages/graph-ui/src/graph-nodes.tsx`) draws them boxless at 1.2× the pin size: Phosphor `UserFocus` for pose and Bootstrap Icons `image` for frame, each icon's outline glyph unwired and its fill glyph wired, imported from its own module ([no-ai-artwork.md](../../rules/no-ai-artwork.md)).
