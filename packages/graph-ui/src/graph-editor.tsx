@@ -67,7 +67,6 @@ import {
   type SerializedPin,
 } from "./graph-types";
 import type { PinTypeNames } from "./pin-default-preview";
-import { animTransitionEdgeMarkers } from "./anim-transition-markers";
 import { GraphEditorProvider } from "./graph-editor-context";
 import {
   canonicalGraphSignature,
@@ -195,6 +194,8 @@ export interface GraphEditorProps {
   onPinSelect?: (nodeId: string, pinId: string) => void;
   /** Highlight a node without fit-view (host list selection). */
   selectedNodeId?: string;
+  /** Highlight a wire without fit-view (a host Inspector selection); it replaces the node selection. */
+  selectedEdgeId?: string;
   /** Selects and frames this node whenever it changes. */
   focusedNodeId?: string;
   /**
@@ -440,7 +441,6 @@ function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
       sourceHandle: edge.sourceHandle,
       targetHandle: edge.targetHandle,
       ...(edge.type ? { type: edge.type } : {}),
-      ...animTransitionEdgeMarkers(edge.type),
     };
   });
 }
@@ -672,6 +672,31 @@ function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
   return null;
 }
 
+function SelectedEdgeSync({ selectedEdgeId }: { selectedEdgeId?: string }) {
+  const { getEdge, setNodes, setEdges } = useReactFlow();
+  const edgeExists = useStore((state) => !!selectedEdgeId && state.edgeLookup.has(selectedEdgeId));
+
+  // Runs when the host's choice changes or its wire appears, so a canvas click that clears it is not undone.
+  useEffect(() => {
+    if (!selectedEdgeId || !edgeExists) return;
+    if (getEdge(selectedEdgeId)?.selected) return;
+    setEdges((current) =>
+      current.map((entry) =>
+        (entry.id === selectedEdgeId) === (entry.selected === true)
+          ? entry
+          : { ...entry, selected: entry.id === selectedEdgeId },
+      ),
+    );
+    setNodes((current) =>
+      current.some((entry) => entry.selected)
+        ? current.map((entry) => (entry.selected ? { ...entry, selected: false } : entry))
+        : current,
+    );
+  }, [edgeExists, getEdge, selectedEdgeId, setEdges, setNodes]);
+
+  return null;
+}
+
 function FocusedNodeSync({
   focusedNodeId,
   focusRequest,
@@ -721,6 +746,7 @@ function GraphEditorCanvas({
   onSelectionChange,
   onEmptyCanvasClick,
   selectedNodeId,
+  selectedEdgeId,
   focusedNodeId,
   focusRequest,
   diagnostics,
@@ -3049,6 +3075,7 @@ function GraphEditorCanvas({
         data-testid="graph-editor"
         data-connect-end-mode={connectEndMode}
         data-focused-node-id={focusedNodeId || undefined}
+        data-selected-edge-id={selectedEdgeId || undefined}
         data-restore-viewport={sessionViewport ? "true" : undefined}
         data-virtualize={virtualize ? "true" : "false"}
         data-visible-node-count={String(visibleGraph.nodes.length)}
@@ -3225,6 +3252,7 @@ function GraphEditorCanvas({
             bgColor="var(--graph-canvas)"
           />
           <SelectedNodeSync selectedNodeId={selectedNodeId} />
+          <SelectedEdgeSync selectedEdgeId={selectedEdgeId} />
           <FocusedNodeSync
             focusedNodeId={focusedNodeId}
             focusRequest={focusRequest}

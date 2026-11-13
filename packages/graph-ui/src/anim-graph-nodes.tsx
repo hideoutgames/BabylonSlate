@@ -9,7 +9,7 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { useCallback } from "react";
+import { useCallback, useId, type CSSProperties } from "react";
 import { Repeat2Icon } from "lucide-react";
 import { cn } from "@haptic/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
@@ -153,6 +153,11 @@ function insetTowardNode(
   }
 }
 
+/** The canvas zoom, so a wire's hit band can stay the same width on screen. */
+function selectZoom(state: { transform: [number, number, number] }): number {
+  return state.transform[2];
+}
+
 function AnimTransitionEdge({
   id,
   sourceX,
@@ -162,12 +167,13 @@ function AnimTransitionEdge({
   sourcePosition,
   targetPosition,
   style,
-  markerEnd,
-  markerStart,
   selected,
   type,
 }: EdgeProps) {
   const { setEdges, setNodes } = useReactFlow();
+  const zoom = useStore(selectZoom);
+  // The wire draws its own arrowheads, so they take the wire's hover and selection colour.
+  const arrowId = `anim-transition-arrow-${useId().replace(/[^\w-]/g, "")}`;
   const source = insetTowardNode(sourceX, sourceY, sourcePosition, SOURCE_PLATE_OVERHANG);
   const target = insetTowardNode(targetX, targetY, targetPosition, TARGET_PLATE_OVERHANG);
   const { path: edgePath, labelX, labelY, angle } = animTransitionPath({
@@ -181,14 +187,45 @@ function AnimTransitionEdge({
   const bidirectional = type === "animTransitionBoth";
   // The host's state for a Both Ways pair, drawn as one edge, covers either direction.
   const breakpoint = useNodeBreakpoint(id);
+  const arrow = `url(#${arrowId})`;
   return (
     <>
+      <defs>
+        <marker
+          id={arrowId}
+          className="anim-transition-arrow"
+          viewBox="-10 -10 20 20"
+          markerWidth={12.5}
+          markerHeight={12.5}
+          markerUnits="strokeWidth"
+          orient="auto-start-reverse"
+          refX={0}
+          refY={0}
+        >
+          <polyline
+            points="-5,-4 0,0 -5,4 -5,-4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1}
+          />
+        </marker>
+      </defs>
       <BaseEdge
         id={id}
         path={edgePath}
         style={style}
-        markerEnd={markerEnd}
-        markerStart={bidirectional ? markerStart : undefined}
+        markerEnd={arrow}
+        markerStart={bidirectional ? arrow : undefined}
+        interactionWidth={0}
+      />
+      {/* A hit band of the same width on screen at every zoom; React Flow's is fixed in canvas units. */}
+      <path
+        d={edgePath}
+        fill="none"
+        strokeOpacity={0}
+        className="react-flow__edge-interaction anim-transition-hit"
+        style={{ "--anim-transition-zoom": zoom } as CSSProperties}
+        data-testid={`anim-transition-hit-${id}`}
       />
       <EdgeLabelRenderer>
         <button
