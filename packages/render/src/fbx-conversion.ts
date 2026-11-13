@@ -3,6 +3,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { FBXFileLoader } from "@babylonjs/loaders/FBX/fbxFileLoader";
 import { ingestGltfForImport } from "@haptic/assets";
 import { exportConvertedSceneToGlb } from "./convert-obj-to-glb";
+import { rebindSkinsForGltfExport } from "./skin-rebind";
 
 export type ModelImportFile = { name: string; bytes: Uint8Array };
 
@@ -71,6 +72,8 @@ export async function convertFbxToGlb(
       internal._buffer = sidecar.bytes.slice();
       consumedSidecars?.add(sidecar.name);
     }
+    // FBX skins in the mesh's space; glTF in world space. Rebind so the export keeps the mesh on its skeleton.
+    rebindSkinsForGltfExport(scene);
     const glb = await exportConvertedSceneToGlb(scene, "FBX");
     return ingestGltfForImport("import.glb", glb, new Map()).bytes;
   } finally {

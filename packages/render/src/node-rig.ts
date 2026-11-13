@@ -10,7 +10,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { isRigJointNode } from "./skeleton-preview";
 
-export { attachSkeletonPreview } from "./skeleton-preview";
+export { attachSkeletonPreview, type SkeletonPreviewHandle } from "./skeleton-preview";
 
 export function ensureNodeRotationQuaternion(node: TransformNode): void {
   if (!node.rotationQuaternion) {

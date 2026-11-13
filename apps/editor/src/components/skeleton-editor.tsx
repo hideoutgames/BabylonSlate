@@ -25,6 +25,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOptionalSkeletonEditing } from "../context/skeleton-editing-context";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 import { ModelSourceReadError } from "./model-editor";
 import { SkeletonPreviewCanvas } from "./skeleton-preview-canvas";
@@ -39,9 +40,10 @@ export function SkeletonPreviewPanel(_props: IDockviewPanelProps) {
   const source = useModelSourceBytes(
     skeleton.modelGuid ? assetRegistry?.getByGuid(skeleton.modelGuid)?.path : undefined,
   );
+  const selectedBone = useOptionalSkeletonEditing()?.selectedBone ?? null;
   return (
     <PanelFrame data-testid="skeleton-preview-panel">
-      <SkeletonPreview payload={skeleton} sourceBytes={source.bytes} sourceError={source.error} />
+      <SkeletonPreview payload={skeleton} sourceBytes={source.bytes} sourceError={source.error} selectedBone={selectedBone} />
     </PanelFrame>
   );
 }
@@ -61,11 +63,14 @@ function SkeletonPreview({
   payload,
   sourceBytes = null,
   sourceError = null,
+  selectedBone = null,
 }: {
   payload: SkeletonPayload;
   sourceBytes?: Uint8Array | null;
   /** Why the owning Model source could not be read, shown instead of a mesh. */
   sourceError?: string | null;
+  /** The bone drawn highlighted. */
+  selectedBone?: string | null;
 }) {
   if (sourceError) {
     return (
@@ -90,7 +95,7 @@ function SkeletonPreview({
   }
   return (
     <div className="h-full min-h-0" data-testid="skeleton-preview">
-      <SkeletonPreviewCanvas sourceBytes={sourceBytes} kind={payload.kind} />
+      <SkeletonPreviewCanvas sourceBytes={sourceBytes} kind={payload.kind} selectedBone={selectedBone} />
     </div>
   );
 }
@@ -98,6 +103,7 @@ function SkeletonPreview({
 function SkeletonEditor({ payload }: { payload: Record<string, unknown> }) {
   const skeleton = normalizeSkeletonPayload(payload);
   const { assetRegistry } = useRegistryState();
+  const editing = useOptionalSkeletonEditing();
   const assets = assetRegistry?.list() ?? [];
   const model = assets.find((asset) => asset.header.guid === skeleton.modelGuid);
   const rows: PropertyRow[] = [
@@ -136,8 +142,8 @@ function SkeletonEditor({ payload }: { payload: Record<string, unknown> }) {
       <div className="min-h-0 flex-1 p-2">
         <TreeView
           nodes={boneNodes}
-          selectedId={null}
-          onSelect={() => {}}
+          selectedId={editing?.selectedBone ?? null}
+          onSelect={(id) => editing?.setSelectedBone(editing.selectedBone === id ? null : id)}
           emptyLabel="No bones"
           data-testid="skeleton-bone-tree"
         />

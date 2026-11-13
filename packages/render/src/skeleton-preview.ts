@@ -1,6 +1,6 @@
 import type { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
-import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { Axis } from "@babylonjs/core/Maths/math.axis";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -8,20 +8,30 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+import { rigPreviewLayout, writeRigPreview } from "./rig-preview-geometry";
 
-/** The preview's bones and joints: flat colour from both sides. */
+/** The preview's bones and joints: vertex-coloured, shaded in the colours, drawn from both sides. */
 const SKELETON_MATERIAL: UnlitMaterialKey = { textured: false, backFaceCulling: false, fog: true, role: "preview" };
 
 interface PreviewJoint {
+  name: string;
   position: Vector3;
   parent: number;
   readPosition: (position: Vector3) => void;
+  /** A hierarchy rig's mesh part: the world centre of its bounds, which a childless joint's tail points through. */
+  readPartCenter?: (center: Vector3) => void;
 }
 
-// Six vertices form an octahedron: two endpoints and a four-vertex ring.
-const OCTAHEDRON_INDICES = [
-  0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 2, 1, 3, 2, 1, 4, 3, 1, 5, 4, 1, 2, 5,
-];
+/** A childless skinned joint's tail continues its parent bone by this fraction of that bone's length. */
+const LEAF_TAIL_OF_PARENT = 0.5;
+
+/** The rig drawn over (or instead of) a previewed model. */
+export interface SkeletonPreviewHandle {
+  boneCount: number;
+  /** Draws the named joint, and the bones it heads, in the selection colour; null or an unknown name clears it. */
+  setSelectedBone(name: string | null): void;
+  dispose(): void;
+}
 
 /** Rig joints exclude loader/import wrappers, preview helpers, overlays, cameras and lights. */
 export function isRigJointNode(node: Node): node is TransformNode {
@@ -33,68 +43,15 @@ export function isRigJointNode(node: Node): node is TransformNode {
   );
 }
 
-function createGlyphMesh(
-  name: string,
-  count: number,
-  color: Color3,
-  parent: Mesh,
-): Mesh {
-  const mesh = new Mesh(name, parent.getScene());
-  mesh.parent = parent;
-  mesh.isPickable = false;
-  mesh.alwaysSelectAsActiveMesh = true;
-  setUnlitMaterial(mesh, SKELETON_MATERIAL, {
-    texture: null, color: [Math.min(1, color.r), Math.min(1, color.g), Math.min(1, color.b)], alpha: 1, cutoff: 0, blend: false,
-    textureAlpha: false, twoSided: false,
-  });
-  mesh.setVerticesData(
-    VertexBuffer.PositionKind,
-    new Float32Array(count * 18),
-    true,
-  );
-  mesh.setIndices(
-    Array.from({ length: count }, (_, index) =>
-      OCTAHEDRON_INDICES.map((vertex) => vertex + index * 6),
-    ).flat(),
-  );
-  return mesh;
-}
-
-function writeOffsetVertex(
-  positions: Float32Array,
-  offset: number,
-  center: Vector3,
-  direction: Vector3,
-  sign: number,
-): void {
-  positions[offset] = center.x + direction.x * sign;
-  positions[offset + 1] = center.y + direction.y * sign;
-  positions[offset + 2] = center.z + direction.z * sign;
-}
-
-function writeGlyph(
-  positions: Float32Array,
-  offset: number,
-  start: Vector3,
-  end: Vector3,
-  center: Vector3,
-  side: Vector3,
-  up: Vector3,
-): void {
-  start.toArray(positions, offset);
-  end.toArray(positions, offset + 3);
-  writeOffsetVertex(positions, offset + 6, center, side, 1);
-  writeOffsetVertex(positions, offset + 9, center, up, 1);
-  writeOffsetVertex(positions, offset + 12, center, side, -1);
-  writeOffsetVertex(positions, offset + 15, center, up, -1);
-}
-
-/** Shows only the rig, keeping hidden source transforms and animation alive. */
+/**
+ * Shows only the rig, keeping hidden source transforms and animation alive: an octahedral bone from each joint to
+ * each of its children and a ball at every joint, lit from the camera ([rig-preview-geometry.ts](./rig-preview-geometry.ts)).
+ */
 export function attachSkeletonPreview(
   root: TransformNode,
   scene: Scene,
   kind: "skin" | "hierarchy",
-): { boneCount: number; dispose: () => void } {
+): SkeletonPreviewHandle {
   const meshes = [
     ...(root instanceof AbstractMesh ? [root] : []),
     ...root.getChildMeshes(false),
@@ -110,6 +67,7 @@ export function attachSkeletonPreview(
       for (const bone of skeleton.bones) {
         const parent = bone.getParent();
         joints.push({
+          name: bone.name,
           position: Vector3.Zero(),
           parent: parent ? offset + skeleton.bones.indexOf(parent) : -1,
           readPosition: (position) => {
@@ -134,47 +92,53 @@ export function attachSkeletonPreview(
     for (const node of nodes) {
       let parent = node.parent;
       while (parent && !indexByNode.has(parent)) parent = parent.parent;
+      const part = node instanceof AbstractMesh && node.getTotalVertices() > 0 ? node : null;
       joints.push({
+        name: node.name,
         position: Vector3.Zero(),
         parent: parent ? indexByNode.get(parent)! : -1,
         readPosition: (position) => {
           node.computeWorldMatrix(true);
           position.copyFrom(node.getAbsolutePosition());
         },
+        ...(part ? {
+          readPartCenter: (center: Vector3) => {
+            Vector3.TransformCoordinatesToRef(part.getBoundingInfo().boundingBox.center, part.computeWorldMatrix(true), center);
+          },
+        } : {}),
       });
     }
   }
-  if (joints.length === 0) return { boneCount: 0, dispose: () => {} };
+  if (joints.length === 0) return { boneCount: 0, setSelectedBone: () => {}, dispose: () => {} };
 
+  const parents = joints.map((joint) => joint.parent);
+  // A limb's last joint draws a tail so its direction shows: through its mesh part, or on along its parent bone.
+  const layout = rigPreviewLayout(parents, (joint) => Boolean(joints[joint]!.readPartCenter) || parents[joint]! >= 0);
+  const tails = new Float32Array(joints.length * 3).fill(Number.NaN);
+  const partCenter = Vector3.Zero();
+  const positions = new Float32Array(layout.vertexCount * 3);
+  const colors = new Float32Array(layout.vertexCount * 4);
+  const jointPositions = new Float32Array(joints.length * 3);
   const overlay = new Mesh(`${root.name}_skeleton_overlay`, scene);
   overlay.parent = root;
   overlay.isPickable = false;
-  const links = joints.filter((joint) => joint.parent >= 0);
-  const markers = createGlyphMesh(
-    "skeleton-joints",
-    joints.length,
-    Color3.White(),
-    overlay,
-  );
-  const connectors =
-    links.length === 0
-      ? null
-      : createGlyphMesh(
-          "skeleton-bones",
-          links.length,
-          new Color3(0.05, 0.8, 1),
-          overlay,
-        );
-  const markerPositions = new Float32Array(joints.length * 18);
-  const connectorPositions = new Float32Array(links.length * 18);
+  overlay.alwaysSelectAsActiveMesh = true;
+  setUnlitMaterial(overlay, SKELETON_MATERIAL, {
+    texture: null, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: false, textureAlpha: false, twoSided: true,
+  });
+  overlay.setVerticesData(VertexBuffer.PositionKind, positions, true);
+  overlay.setVerticesData(VertexBuffer.ColorKind, colors, true, 4);
+  const indices = layout.vertexCount > 65535 ? new Uint32Array(layout.vertexCount) : new Uint16Array(layout.vertexCount);
+  for (let index = 0; index < indices.length; index++) indices[index] = index;
+  overlay.setIndices(indices);
   const inverseRoot = Matrix.Identity();
-  const axis = Vector3.Zero();
-  const side = Vector3.Zero();
-  const up = Vector3.Zero();
-  const center = Vector3.Zero();
-  const start = Vector3.Zero();
-  const end = Vector3.Zero();
-  let radius = 0;
+  const lightWorld = Vector3.Zero();
+  const lightLocal = Vector3.Zero();
+  const light: [number, number, number] = [0, 1, 0];
+  const indexByName = new Map<string, number>();
+  for (let index = joints.length - 1; index >= 0; index--) indexByName.set(joints[index]!.name, index);
+  let selected = -1;
+  let size = 0;
   const update = () => {
     root.computeWorldMatrix(true).invertToRef(inverseRoot);
     for (const [skeleton, mesh] of skins) {
@@ -185,65 +149,53 @@ export function attachSkeletonPreview(
         if (!bone.getParent()) bone.computeAbsoluteMatrices();
       }
     }
-    for (const joint of joints) {
+    for (let index = 0; index < joints.length; index++) {
+      const joint = joints[index]!;
       joint.readPosition(joint.position);
-      Vector3.TransformCoordinatesToRef(
-        joint.position,
-        inverseRoot,
-        joint.position,
-      );
+      Vector3.TransformCoordinatesToRef(joint.position, inverseRoot, joint.position);
+      joint.position.toArray(jointPositions, index * 3);
     }
-    if (radius === 0) {
+    for (const index of layout.tails) {
+      const joint = joints[index]!;
+      if (joint.readPartCenter) {
+        // The part reaches about twice as far from its pivot as its centre does (an arm hangs from the shoulder).
+        joint.readPartCenter(partCenter);
+        Vector3.TransformCoordinatesToRef(partCenter, inverseRoot, partCenter);
+        tails[index * 3] = joint.position.x + (partCenter.x - joint.position.x) * 2;
+        tails[index * 3 + 1] = joint.position.y + (partCenter.y - joint.position.y) * 2;
+        tails[index * 3 + 2] = joint.position.z + (partCenter.z - joint.position.z) * 2;
+      } else {
+        const parent = joints[joint.parent]!.position;
+        tails[index * 3] = joint.position.x + (joint.position.x - parent.x) * LEAF_TAIL_OF_PARENT;
+        tails[index * 3 + 1] = joint.position.y + (joint.position.y - parent.y) * LEAF_TAIL_OF_PARENT;
+        tails[index * 3 + 2] = joint.position.z + (joint.position.z - parent.z) * LEAF_TAIL_OF_PARENT;
+      }
+    }
+    if (size === 0) {
+      // The rest pose's extent sets the width limits once, so bones keep their size while the rig animates.
       const minimum = joints[0]!.position.clone();
       const maximum = minimum.clone();
       for (const joint of joints) {
         minimum.minimizeInPlace(joint.position);
         maximum.maximizeInPlace(joint.position);
       }
-      radius = Math.max(maximum.subtract(minimum).length() * 0.009, 0.005);
+      size = Math.max(maximum.subtract(minimum).length(), 0.05);
     }
-    side.set(radius, 0, 0);
-    up.set(0, 0, radius);
-    for (let index = 0; index < joints.length; index++) {
-      const position = joints[index]!.position;
-      start.copyFromFloats(position.x, position.y + radius, position.z);
-      end.copyFromFloats(position.x, position.y - radius, position.z);
-      writeGlyph(markerPositions, index * 18, start, end, position, side, up);
+    // A headlight from slightly above the camera, in the overlay's space.
+    const camera = scene.activeCamera;
+    if (camera) {
+      camera.getDirectionToRef(Axis.Z, lightWorld);
+      lightWorld.scaleInPlace(-1).addInPlaceFromFloats(0, 0.35, 0);
+    } else {
+      lightWorld.set(0.3, 0.8, -0.5);
     }
-    for (let index = 0; index < links.length; index++) {
-      const joint = links[index]!;
-      const parent = joints[joint.parent]!.position;
-      joint.position.subtractToRef(parent, axis);
-      const length = axis.length();
-      axis.normalize();
-      Vector3.CrossToRef(
-        axis,
-        Math.abs(axis.y) < 0.9 ? Vector3.UpReadOnly : Vector3.RightReadOnly,
-        side,
-      );
-      side.normalize().scaleInPlace(Math.min(radius * 1.8, length * 0.12));
-      Vector3.CrossToRef(axis, side, up);
-      Vector3.LerpToRef(parent, joint.position, 0.2, center);
-      writeGlyph(
-        connectorPositions,
-        index * 18,
-        parent,
-        joint.position,
-        center,
-        side,
-        up,
-      );
-    }
-    markers.updateVerticesData(
-      VertexBuffer.PositionKind,
-      markerPositions,
-      true,
-    );
-    connectors?.updateVerticesData(
-      VertexBuffer.PositionKind,
-      connectorPositions,
-      true,
-    );
+    Vector3.TransformNormalToRef(lightWorld, inverseRoot, lightLocal);
+    lightLocal.normalize();
+    light[0] = lightLocal.x; light[1] = lightLocal.y; light[2] = lightLocal.z;
+    writeRigPreview({ joints: jointPositions, tails, parents, layout, size, light, selected, positions, colors });
+    overlay.updateVerticesData(VertexBuffer.PositionKind, positions, false, false);
+    overlay.updateVerticesData(VertexBuffer.ColorKind, colors, false, false);
+    overlay.refreshBoundingInfo();
   };
   update();
   const observer = scene.onBeforeRenderObservable.add(update);
@@ -252,6 +204,10 @@ export function attachSkeletonPreview(
   let disposed = false;
   return {
     boneCount: joints.length,
+    setSelectedBone: (name) => {
+      selected = name === null ? -1 : (indexByName.get(name) ?? -1);
+      if (!disposed) update();
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;

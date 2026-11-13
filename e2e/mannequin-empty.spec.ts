@@ -7,7 +7,7 @@ import {
   selectContentBrowserAssetsFolder,
 } from "./open-test-project";
 
-/** Inspect the real RTT preview blit: tan model surfaces versus cyan bones. */
+/** Inspect the real RTT preview blit: tan model surfaces versus slate rig bones. */
 async function previewPixels(surface: Locator) {
   return surface.evaluate(
     async (element: HTMLCanvasElement | HTMLImageElement) => {
@@ -31,9 +31,10 @@ async function previewPixels(surface: Locator) {
       for (let index = 0; index < data.length; index += 4) {
         const [r, g, b] = [data[index]!, data[index + 1]!, data[index + 2]!];
         if (r > 70 && g > 30 && r > g * 1.12 && g > b * 1.1) model++;
-        // Bone connectors are emissive cyan (0.05, 0.8, 1); the preview skybox sky is
-        // a lighter blue with far more red, so require a near-zero red channel.
-        if (r < 60 && g > 150 && b > 200) bones++;
+        // Bones are a shaded steel slate: green over red and blue over green, both clearly, unlike the
+        // Mannequin's neutral dark greys and tan, and darker than the preview sky (its blue stays at 224
+        // and above) and its clouds.
+        if (g >= r + 12 && b >= g + 20 && b < 200) bones++;
       }
       return { model, bones };
     },
@@ -140,6 +141,7 @@ test.describe("3D Empty Kenney Mannequin", () => {
     });
     await showBones.click();
     await expect(showBones).toHaveAttribute("aria-pressed", "true");
+    await expect(animationCanvas).toHaveAttribute("data-bones", "true");
     await expect
       .poll(async () => (await previewPixels(animationCanvas)).bones)
       .toBeGreaterThan(20);
@@ -153,9 +155,9 @@ test.describe("3D Empty Kenney Mannequin", () => {
     });
     await showBones.click();
     await expect(showBones).toHaveAttribute("aria-pressed", "false");
-    await expect
-      .poll(async () => (await previewPixels(animationCanvas)).bones)
-      .toBe(0);
+    // The lit Mannequin's dark parts pick up the sky's blue, so the overlay's removal is read from the canvas, and
+    // the mesh's return from its pixels.
+    await expect(animationCanvas).toHaveAttribute("data-bones", "false");
     await expect
       .poll(async () => (await previewPixels(animationCanvas)).model)
       .toBeGreaterThan(100);
