@@ -5,11 +5,6 @@ import {
 } from "@haptic/assets";
 import { asRecord } from "./as-record";
 
-function stringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
-
 function trimmed(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -44,7 +39,7 @@ type CatalogAsset = {
   };
 };
 
-/** Build a clip catalog from Content Browser headers (Model clipNames, Animation clipName). */
+/** Build a clip catalog from Content Browser headers: Animation and Sprite Animation clips, and the Models and Skeletons an Animation names. */
 export function animClipCatalogFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): AnimClipCatalogEntry[] {
@@ -68,7 +63,6 @@ export function animClipCatalogFromAssets(
       name: asset.header.name,
       clipName:
         typeof payload.clipName === "string" ? payload.clipName : undefined,
-      clipNames: stringList(payload.clipNames),
       dependencyGuids: asset.header.dependencies ?? [],
       ...(durationMs !== undefined ? { durationMs } : {}),
       ...(skeletonGuid ? { skeletonGuid } : {}),

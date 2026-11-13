@@ -38,7 +38,7 @@ describe("atomic runtime collider publication", () => {
       variables: { assetGuid: "model", collisionMode: "simple" },
     }));
     const install = (angle: number) => sync.setModelContent({ models: {
-      model: { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [{
+      model: { materialSlots: [], skeletonGuid: null, importScale: 1, simpleColliders: [{
         id: "box", name: "box", kind: "box", position: [1, 0, 0], rotation: [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)], scale: [1, 1, 1],
         halfExtents: { x: 1, y: 2, z: 0.5 },
       }], autoLod: true },
@@ -112,7 +112,7 @@ describe("atomic runtime collider publication", () => {
       variables: { assetGuid: "model", collisionMode: "simple" },
     }));
     const install = (id: string, x: number) => sync.setModelContent({ models: {
-      model: { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [{
+      model: { materialSlots: [], skeletonGuid: null, importScale: 1, simpleColliders: [{
         id, name: id, kind: "box", position: [x, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
         halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
       }], autoLod: true },

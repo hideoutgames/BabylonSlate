@@ -35,7 +35,6 @@ import {
   PanelFrame,
   PinTypePicker,
   PropertyGrid,
-  SearchDropdown,
   ToolbarStrip,
   assetRowIdentity,
   mergePropertyRows,
@@ -43,10 +42,6 @@ import {
 } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
-import {
-  Field,
-  FieldLabel,
-} from "@haptic/ui/components/field";
 import { Input } from "@haptic/ui/components/input";
 import { ArrowLeftIcon, Trash2Icon } from "lucide-react";
 import {
@@ -227,7 +222,7 @@ function stateClipLabel(
   if (!clip?.assetGuid) return "No Clip";
   const entry = catalog.find((row) => row.guid === clip.assetGuid);
   if (!entry) return "Missing Clip";
-  return entry.type === "Model" && clip.clipName ? clip.clipName : entry.name;
+  return entry.name;
 }
 
 function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): string {
@@ -240,7 +235,7 @@ function transitionLabel(doc: AnimGraphDocument, transition: AnimTransition): st
   return `${from} To ${to}`;
 }
 
-/** Asset types a state clip, its label or its skeleton check can name. */
+/** Asset types a state clip, its label or its skeleton check (an Animation's Model) can name. */
 const CLIP_CATALOG_TYPES: ReadonlySet<string> = new Set([
   "Animation",
   "Model",
@@ -901,7 +896,6 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     setSelectedId,
   } = useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
-  const [clipNameOpen, setClipNameOpen] = useState(false);
   // Transition cards start open; collapsing one is remembered while the document is open.
   const [collapsedTransitionIds, setCollapsedTransitionIds] = useState<ReadonlySet<string>>(() => new Set());
   if (openTransitionId) {
@@ -918,14 +912,6 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     ? doc.clips.find((row) => row.id === selected.clipId)
     : undefined;
   const clipKind: AnimClipKind = clip?.kind ?? "animation";
-  const clipAssetType = catalog.find((entry) => entry.guid === clip?.assetGuid)
-    ?.type;
-  const clipNameOptions = (
-    clipKind === "animation" && clipAssetType === "Model"
-      ? (catalog.find((entry) => entry.guid === clip?.assetGuid)?.clipNames ??
-        [])
-      : []
-  ).map((name) => ({ value: name, label: name }));
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -937,7 +923,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     : selectedTransition
       ? [selectedTransition]
       : [];
-  /** Sets a state's clip asset, keeping a clip name the new asset still has. */
+  /** Sets a state's clip asset; an Animation brings its clip name, a Sprite Animation none. */
   const applyClipAsset = (stateId: string, guid: string) => {
     const current = edit.read();
     const state = current.states.find((row) => row.id === stateId);
@@ -946,15 +932,10 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
       ? current.clips.find((row) => row.id === state.clipId)
       : undefined;
     const entry = catalog.find((row) => row.guid === guid);
-    const names = entry?.clipNames ?? [];
     const nextName =
-      (stateClip?.kind ?? "animation") === "sprite"
-        ? ""
-        : entry?.type === "Animation"
-          ? (entry.clipName ?? "")
-          : names.includes(stateClip?.clipName ?? "")
-            ? stateClip?.clipName
-            : (names[0] ?? "");
+      (stateClip?.kind ?? "animation") === "animation" && entry?.type === "Animation"
+        ? (entry.clipName ?? "")
+        : "";
     edit.write(
       upsertStateClip(current, stateId, {
         assetGuid: guid,
@@ -1085,56 +1066,6 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
             <PropertyGrid title="State" rows={identityRows} />
           ) : null}
           {clipRows.length > 0 ? <PropertyGrid title="Clip" rows={clipRows} /> : null}
-          {selected && clipKind === "animation" && clipAssetType === "Model" ? (
-            <Field
-              data-testid="property-row-clipName"
-              data-disabled={clipNameOptions.length === 0 || undefined}
-              className="gap-0.5 border-b border-border/30 px-2 py-1"
-            >
-              <FieldLabel htmlFor="property-clipName">Clip Name</FieldLabel>
-              {clipNameOptions.length > 0 ? (
-                <SearchDropdown
-                  open={clipNameOpen}
-                  onOpenChange={setClipNameOpen}
-                  title="Clip Name"
-                  items={clipNameOptions.map((option) => ({
-                    id: option.value,
-                    label: option.label,
-                  }))}
-                  onSelect={(id) => {
-                    commit(
-                      upsertStateClip(doc, selected.id, { clipName: id }),
-                    );
-                    setClipNameOpen(false);
-                  }}
-                  data-testid="anim-graph-clip-name-menu"
-                >
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    id="property-clipName"
-                    data-testid="property-clipName"
-                    className="w-full justify-start"
-                  >
-                    {clip?.clipName || "Select Clip"}
-                  </Button>
-                </SearchDropdown>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  id="property-clipName"
-                  data-testid="property-clipName"
-                  disabled
-                  className="w-full justify-start"
-                >
-                  No Clips
-                </Button>
-              )}
-            </Field>
-          ) : null}
           {playbackRows.length > 0 ? (
             <PropertyGrid title="Playback" rows={playbackRows} />
           ) : null}

@@ -1143,7 +1143,6 @@ describe("resolveAnimGraphClips", () => {
       guid: "hero-model",
       type: "Model",
       name: "Hero",
-      clipNames: ["Idle", "Walk"],
       dependencyGuids: ["hero-walk-anim"],
     },
     {
@@ -1201,22 +1200,6 @@ describe("resolveAnimGraphClips", () => {
     });
   });
 
-  it("keeps a Model guid and a clip name that exists on that Model", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-model",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, catalog);
-    expect(resolved.clips[0]).toMatchObject({
-      assetGuid: "hero-model",
-      clipName: "Idle",
-    });
-  });
-
   it("does not rewrite Sprite clips", () => {
     const doc = createDefaultAnimGraph();
     doc.clips[0] = {
@@ -1259,20 +1242,8 @@ describe("resolveAnimGraphClips", () => {
     });
   });
 
-  it("keeps a Model clip name the Model lacks, even when it matches the state name", () => {
-    const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "hero-model",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
-    const resolved = resolveAnimGraphClips(doc, [{ ...catalog[0]!, clipNames: ["Walk"] }]);
-    expect(resolved.clips[0]?.clipName).toBe("Idle");
-  });
-
-  it("fills an empty Model clip name from the first glTF group", () => {
+  it("leaves a clip that names a Model instead of an Animation unresolved", () => {
+    // Clips are Animation assets only: a Model guid gets no clip name filled in and plays nothing.
     const doc = createDefaultAnimGraph();
     doc.clips[0] = {
       id: "idle-clip",
@@ -1281,7 +1252,11 @@ describe("resolveAnimGraphClips", () => {
       clipName: "",
       durationMs: 1000,
     };
-    expect(resolveAnimGraphClips(doc, catalog).clips[0]?.clipName).toBe("Idle");
+    expect(resolveAnimGraphClips(doc, catalog).clips[0]).toMatchObject({
+      assetGuid: "hero-model",
+      clipName: "",
+      durationMs: 1000,
+    });
   });
 
   it("fills Sprite Animation clip duration from the catalog", () => {

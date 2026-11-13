@@ -46,13 +46,17 @@ function unregisterSidecars(keys: string[]): void {
   }
 }
 
-/** Export the meshes a converter loaded into its scratch scene as one GLB. */
+/**
+ * Export what a converter loaded into its scratch scene as one GLB: its meshes, or for a file
+ * that holds only a skeleton and its animations (an FBX animation library), the animated nodes.
+ */
 export async function exportConvertedSceneToGlb(
   scene: Scene,
   format: string,
 ): Promise<Uint8Array> {
-  if (scene.meshes.length === 0) {
-    throw new Error(`${format} conversion produced no meshes.`);
+  const animatedNodes = scene.animationGroups.some((group) => group.targetedAnimations.length > 0);
+  if (scene.meshes.length === 0 && !animatedNodes) {
+    throw new Error(`${format} conversion produced no meshes or animations.`);
   }
   const exported = await GLTF2Export.GLBAsync(scene, "import", {
     shouldExportNode: (node) => {

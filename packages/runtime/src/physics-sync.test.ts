@@ -971,7 +971,6 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
       models: {
         "model-1": {
           materialSlots: [],
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [
@@ -1009,7 +1008,6 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
       models: {
         "model-1": {
           materialSlots: [],
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],

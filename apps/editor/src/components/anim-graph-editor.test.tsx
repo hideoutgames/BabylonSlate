@@ -94,7 +94,7 @@ vi.mock("../context/document-context", async () => {
               guid: "model-1",
               name: "HeroModel",
               type: "Model",
-              payload: { clipNames: ["Idle", "Walk"] },
+              payload: {},
               dependencies: ["anim-1"],
             },
             path: "assets/Hero.model.hasset",
@@ -104,7 +104,7 @@ vi.mock("../context/document-context", async () => {
               guid: "model-empty",
               name: "EmptyModel",
               type: "Model",
-              payload: { clipNames: [] },
+              payload: {},
             },
             path: "assets/Empty.model.hasset",
           },
@@ -158,7 +158,7 @@ vi.mock("../context/document-context", async () => {
                       guid: "model-1",
                       name: "HeroModel",
                       type: "Model",
-                      payload: { clipNames: ["Idle", "Walk"] },
+                      payload: {},
                     },
                   }
                 : guid === "model-empty"
@@ -167,7 +167,7 @@ vi.mock("../context/document-context", async () => {
                         guid: "model-empty",
                         name: "EmptyModel",
                         type: "Model",
-                        payload: { clipNames: [] },
+                        payload: {},
                       },
                     }
                   : guid === "anim-1"
@@ -633,7 +633,7 @@ describe("AnimGraphEditor", () => {
     ).toBe("MoveSpeed");
   });
 
-  it("picks an Animation clip for the selected state and hides Clip Name", async () => {
+  it("picks an Animation clip for the selected state", async () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-clipAsset"));
@@ -655,10 +655,26 @@ describe("AnimGraphEditor", () => {
         ]),
       }),
     );
-    expect(screen.queryByTestId("property-clipName")).toBeNull();
   });
 
-  it("picks a Sprite Animation for sprite clip kind and hides Clip Name", async () => {
+  it("offers no Clip Name for a state whose clip still names a Model", () => {
+    // Clips are Animation assets: a Model plus a glTF clip name is no longer a clip.
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "model-1",
+      clipName: "Idle",
+      durationMs: 1000,
+    };
+    renderAnimGraph(doc);
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    expect(screen.getByTestId("property-clipAsset")).toBeTruthy();
+    expect(screen.queryByTestId("property-clipName")).toBeNull();
+    expect(screen.getByTestId("anim-state-node-clip-idle").textContent).toContain("HeroModel");
+  });
+
+  it("picks a Sprite Animation for sprite clip kind", async () => {
     const doc = createDefaultAnimGraph();
     doc.clips[0] = {
       id: "idle-clip",
@@ -669,7 +685,6 @@ describe("AnimGraphEditor", () => {
     };
     renderAnimGraph(doc);
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
-    expect(screen.queryByTestId("property-clipName")).toBeNull();
     fireEvent.click(screen.getByTestId("property-clipAsset"));
     await waitFor(() => {
       expect(screen.getByTestId("search-item-walk-anim")).toBeTruthy();
@@ -690,7 +705,6 @@ describe("AnimGraphEditor", () => {
         ]),
       }),
     );
-    expect(screen.queryByTestId("property-clipName")).toBeNull();
   });
 });
 

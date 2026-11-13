@@ -317,7 +317,6 @@ describe("packedContentFromGame", () => {
     const packedModel = encodePackedModelAsset(
       {
         importScale: 2,
-        clipNames: [],
         materialSlots: [],
         skeletonGuid: null,
         simpleColliders: [],

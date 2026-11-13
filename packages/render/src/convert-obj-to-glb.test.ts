@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { Animation } from "@babylonjs/core/Animations/animation";
+import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
-import { importModel } from "@haptic/assets";
+import { Quaternion } from "@babylonjs/core/Maths/math.vector";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
+import { importModel, parseGlbForBrowse } from "@haptic/assets";
 import {
   convertObjImportBatch,
   convertObjToGlb,
+  exportConvertedSceneToGlb,
 } from "./convert-obj-to-glb";
 import { isGltfModelBytes } from "./model-mesh";
 
@@ -69,3 +75,44 @@ describe("convertObjToGlb", () => {
   });
 });
 
+
+describe("exportConvertedSceneToGlb", () => {
+  const engines: NullEngine[] = [];
+  afterEach(() => {
+    while (engines.length > 0) engines.pop()?.dispose();
+  });
+
+  function scratchScene(): Scene {
+    const engine = new NullEngine();
+    engines.push(engine);
+    return new Scene(engine);
+  }
+
+  it("exports an animated node tree with no mesh, as an FBX animation file converts", async () => {
+    const scene = scratchScene();
+    const root = new TransformNode("Root", scene);
+    const hips = new TransformNode("Hips", scene);
+    hips.parent = root;
+    const turn = new Animation("turn", "rotationQuaternion", 30, Animation.ANIMATIONTYPE_QUATERNION);
+    turn.setKeys([
+      { frame: 0, value: Quaternion.Identity() },
+      { frame: 30, value: Quaternion.RotationYawPitchRoll(Math.PI / 2, 0, 0) },
+    ]);
+    const idle = new AnimationGroup("Idle", scene);
+    idle.addTargetedAnimation(turn, hips);
+
+    const browse = parseGlbForBrowse(await exportConvertedSceneToGlb(scene, "FBX"));
+    expect(browse!.hasMeshes).toBe(false);
+    expect(browse!.animations.map((clip) => clip.name)).toEqual(["Idle"]);
+    expect(browse!.rigKind).toBe("hierarchy");
+    expect(browse!.boneNames).toEqual(["Root", "Hips"]);
+  });
+
+  it("refuses a scene with neither meshes nor animations", async () => {
+    const scene = scratchScene();
+    new TransformNode("Empty", scene);
+    await expect(exportConvertedSceneToGlb(scene, "FBX")).rejects.toThrow(
+      "FBX conversion produced no meshes or animations.",
+    );
+  });
+});

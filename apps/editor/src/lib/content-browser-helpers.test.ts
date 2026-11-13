@@ -2146,7 +2146,6 @@ describe("content-browser-helpers", () => {
     ).toEqual(["em-a", "em-b"]);
     expect(
       assetHeaderDependencies("Model", {
-        clipNames: ["Walk"],
         skeletonGuid: "skel-hero",
         materialSlots: [
           { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },

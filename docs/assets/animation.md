@@ -10,7 +10,7 @@ Animations are not created from **New Asset**. Importing a GLB or glTF model cre
 
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**.
 
-- **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. If the model has no mesh to show, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
+- **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. A clip from a file with no mesh (an animation-only file) always shows its bones. If the Model's file is missing, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
 - The **Inspector** shows the clip's details. Only **Duration** can be changed.
 
 ## Settings
