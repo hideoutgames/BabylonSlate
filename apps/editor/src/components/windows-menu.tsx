@@ -1,4 +1,3 @@
-import { isAnimGraphDocumentKind } from "@haptic/core";
 import { useEffect, useMemo, useState } from "react";
 import { AppWindowIcon, ChevronDownIcon } from "lucide-react";
 import { NestedMenu, useToolbarOverflowEntry, type NestedMenuItem } from "@haptic/editor-kit";
@@ -28,7 +27,7 @@ export function WindowsMenu() {
     useDocumentActions();
   const { projectName } = useProjectState();
   const openDocuments = useOpenDocumentTabs();
-  const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
+  const { activeDocumentId, sceneMode } = useActiveDocumentState();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const { sourceControl } = useSourceControl();
   // Dock windows opening or closing: `isDockWindowOpen` and the count change.
@@ -63,8 +62,6 @@ export function WindowsMenu() {
       ? listDockWindows(activeKind, {
           actorPrefab,
           sourceControl: sourceControl.enabled,
-          animEditorMode:
-            isAnimGraphDocumentKind(activeKind) ? animEditorMode : undefined,
           sceneMode: hasSceneModes(activeKind) ? sceneMode : undefined,
         })
       : [];
@@ -86,7 +83,6 @@ export function WindowsMenu() {
   }, [
     activeKind,
     actorPrefab,
-    animEditorMode,
     sceneMode,
     sourceControl.enabled,
     isDockWindowOpen,

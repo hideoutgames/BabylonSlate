@@ -1,9 +1,7 @@
-import { isAnimGraphDocumentKind } from "@haptic/core";
 export function shouldPublishGraphDiagnostics(options: {
   documentId: string;
   activeDocumentId: string | null | undefined;
   documentKind: string;
-  animEditorMode?: "stateMachine" | "animationObject";
   /** A Scene or Scene Layer publishes graph diagnostics only in Script mode. */
   sceneMode?: string;
 }): boolean {
@@ -11,12 +9,6 @@ export function shouldPublishGraphDiagnostics(options: {
   if (
     (options.documentKind === "scene" || options.documentKind === "scene-layer") &&
     options.sceneMode !== "script"
-  ) {
-    return false;
-  }
-  if (
-    isAnimGraphDocumentKind(options.documentKind) &&
-    options.animEditorMode !== "animationObject"
   ) {
     return false;
   }

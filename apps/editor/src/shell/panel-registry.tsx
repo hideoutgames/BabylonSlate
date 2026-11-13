@@ -154,7 +154,7 @@ const assetEditorPanelComponents = {
   "anim-graph-graph": lazyPanel(animationAiPanels, (m) => m.AnimGraphGraphPanel),
   "anim-graph-variables": lazyPanel(animationAiPanels, (m) => m.AnimGraphVariablesPanel),
   "anim-graph-details": lazyPanel(animationAiPanels, (m) => m.AnimGraphDetailsPanel),
-  "anim-object-variables": lazyPanel(animationAiPanels, (m) => m.AnimObjectVariablesPanel),
+  "anim-object-graph": lazyPanel(animationAiPanels, (m) => m.AnimObjectGraphPanel),
   "behaviour-tree-graph": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeGraphPanel),
   "behaviour-tree-details": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeDetailsPanel),
   "behaviour-tree-blackboard": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeBlackboardPanel),
@@ -164,8 +164,6 @@ const assetEditorPanelComponents = {
   "trace-log": lazyPanel(dataPanels, (m) => m.TraceLogPanel),
   // The Animation Graph's Animation Object mode reuses the shared Class panels, which load with the Scene's.
   "anim-graph-compiler-results": (props: IDockviewPanelProps) => <CompilerResultsPanel {...props} />,
-  "anim-object-graph": (props: IDockviewPanelProps) => <GraphPanel {...props} />,
-  "anim-object-inspector": (props: IDockviewPanelProps) => <InspectorPanel {...props} />,
 } satisfies Record<string, DockPanel>;
 
 export const panelComponents: Record<string, DockPanel> = {

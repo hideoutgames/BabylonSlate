@@ -11,6 +11,7 @@
   },
   "include": [
     "src",
+    "../../packages/graph-ui/src/react-bootstrap-icons.d.ts",
     ".vitepress/config.ts",
     ".vitepress/theme/index.ts"
   ]

@@ -37,7 +37,7 @@ async function showContentBrowser(page: Page): Promise<void> {
 }
 
 function animStateMachine(page: Page) {
-  return page.getByTestId("anim-dock-surface-state-machine");
+  return page.getByTestId("document-workspace-anim-graph");
 }
 
 async function dispatchPreviewWheel(
@@ -315,13 +315,13 @@ test.describe("P9 content systems", () => {
     await expect(
       page.getByTestId("document-workspace-anim-graph"),
     ).toBeVisible();
-    await expect(page.getByTestId("anim-editor-mode-bar")).toBeVisible();
-    await expect(
-      page.getByTestId("anim-editor-mode-state-machine"),
-    ).toHaveAttribute("aria-pressed", "true");
-    await expect(
-      page.getByTestId("anim-dock-surface-state-machine"),
-    ).toHaveAttribute("data-active", "true");
+    // The Graph shows first; the Animation Object script is a window tabbed beside it.
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    const workspace = page.getByTestId("document-workspace-anim-graph");
+    await workspace.locator(".dv-tab", { hasText: "Animation Object" }).click();
+    await expect(workspace.getByTestId("anim-object-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-editor")).toBeHidden();
+    await workspace.locator(".dv-tab", { hasText: "Graph" }).first().click();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
     await expect(
       animStateMachine(page).getByTestId("anim-graph-parameters"),

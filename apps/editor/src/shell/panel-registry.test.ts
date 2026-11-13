@@ -65,8 +65,6 @@ const OPTION_VARIANTS: DockWindowOptions[] = [
   {},
   { actorPrefab: false },
   { sourceControl: true },
-  { animEditorMode: "stateMachine" },
-  { animEditorMode: "animationObject" },
   ...SCENE_MODES.map((sceneMode) => ({ sceneMode })),
 ];
 

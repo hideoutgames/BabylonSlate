@@ -122,7 +122,7 @@ The execution wire that was taken lights up, and so do the data wires the node r
 
 Hover a data pin on a computer, or tap its name on a touch screen (tap it again, or anywhere else, to close it), to see the last value it held: `3.5`, a piece of text, or the class and id of an object. Numbers show four decimals at most and long text is cut after about 100 characters. A pin that has not run yet shows **No value yet**. A pin that is not wired shows the value typed on the node itself, so it has no tip. Pins inside a chain of [pure nodes](../scripting/index.md#nodes-and-pins), such as a variable getter feeding a **Multiply** that feeds a **Clamp**, show the value of the chain's latest run, so you can follow a value from link to link. A pure node that nothing ran through has no value yet.
 
-The **Animation Object** mode of an Animation Graph works the same way for the object you picked.
+An Animation Graph's **Animation Object** window works the same way for the object you picked.
 
 ### Behaviour Trees
 

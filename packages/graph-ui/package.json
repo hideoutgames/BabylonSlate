@@ -18,9 +18,11 @@
     "@haptic/editor-kit": "workspace:*",
     "@haptic/scripting": "workspace:*",
     "@haptic/ui": "workspace:*",
+    "@phosphor-icons/react": "^2.1.10",
     "@xyflow/react": "^12.11.2",
     "lucide-react": "^0.552.0",
     "react": "^19.0.0",
+    "react-bootstrap-icons": "^1.11.6",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {

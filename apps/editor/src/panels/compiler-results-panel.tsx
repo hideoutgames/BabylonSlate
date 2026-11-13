@@ -123,7 +123,7 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
   const { clearFocusedNode, openSessionSource } = usePlay();
   const { setSceneMode, toggleDockWindow } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
-  const { animEditorMode, sceneMode } = useActiveDocumentState();
+  const { sceneMode } = useActiveDocumentState();
   // Labels and ids for the result headers; content edits elsewhere skip them.
   const openDocuments = useOpenDocumentTabs();
   const workspace = useOptionalDocumentWorkspace();
@@ -247,10 +247,7 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
     revealResultWindow({
       dock,
       resultsGroupId,
-      panelId: primaryDockPanel(kind, {
-        animEditorMode: isAnimGraphDocumentKind(kind) ? animEditorMode : undefined,
-        sceneMode,
-      }),
+      panelId: primaryDockPanel(kind, { sceneMode }),
       open,
       reopen: toggleDockWindow,
     });

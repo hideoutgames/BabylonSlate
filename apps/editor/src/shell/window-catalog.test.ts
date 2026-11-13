@@ -260,13 +260,18 @@ describe("particle graph dock catalog", () => {
 });
 
 describe("animation graph and behaviour tree dock catalogs", () => {
-  it("defaults Animation Graph catalogs to State Machine", () => {
-    expect(listDockWindows("anim-graph-3d").map((entry) => entry.id)).toEqual(
-      listDockWindows("anim-graph-3d", { animEditorMode: "stateMachine" }).map(
-        (entry) => entry.id,
-      ),
-    );
-    expect(primaryDockPanel("anim-graph-3d")).toBe("anim-graph-graph");
+  it("puts the Animation Object canvas in a window tabbed beside the Graph", () => {
+    expect(listDockWindows("anim-graph-3d").map((entry) => entry.id)).toEqual([
+      "anim-graph-graph",
+      "anim-object-graph",
+      "anim-graph-variables",
+      "anim-graph-details",
+      "anim-graph-compiler-results",
+    ]);
+    expect(listDockWindows("anim-graph-3d").find((entry) => entry.id === "anim-object-graph")).toMatchObject({
+      title: "Animation Object",
+      defaultPosition: { referencePanelId: "anim-graph-graph", direction: "within" },
+    });
   });
 
   it("anchors Animation Graph side docks to the graph", () => {

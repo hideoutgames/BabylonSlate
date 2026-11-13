@@ -14,6 +14,9 @@ export type AnimEditorLocation =
   | { kind: "machine"; machineId: string }
   | { kind: "state"; machineId: string; stateId: string };
 
+/** The Animation Graph canvas last brought forward: the State Machine side (Graph) or the Animation Object script. */
+export type AnimCanvas = "stateMachine" | "animationObject";
+
 export interface AnimGraphEditingContextValue {
   /** Every selected state; Details shows the properties they share. */
   selectedIds: readonly string[];
@@ -33,6 +36,9 @@ export interface AnimGraphEditingContextValue {
   location: AnimEditorLocation | null;
   /** Shows another graph, closing an open rule and clearing the selection. */
   navigate: (location: AnimEditorLocation) => void;
+  /** The canvas the Inspector follows. */
+  canvas: AnimCanvas;
+  setCanvas: (canvas: AnimCanvas) => void;
 }
 
 const AnimGraphEditingContext =
@@ -50,6 +56,7 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [openTransitionId, setOpenTransitionId] = useState<string | null>(null);
   const [location, setLocation] = useState<AnimEditorLocation | null>(null);
+  const [canvas, setCanvas] = useState<AnimCanvas>("stateMachine");
   const setSelectedIds = useCallback((ids: readonly string[]) => {
     setSelectedIdsState(ids);
     if (ids.length > 0) setSelectedTransitionIdState(null);
@@ -96,8 +103,11 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
       closeTransitionRule,
       location,
       navigate,
+      canvas,
+      setCanvas,
     }),
     [
+      canvas,
       location,
       navigate,
       closeTransitionRule,

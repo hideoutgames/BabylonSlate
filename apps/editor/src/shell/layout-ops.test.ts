@@ -59,12 +59,8 @@ describe("canFocusLayout", () => {
 });
 
 describe("focusKeepPanelIds", () => {
-  it("returns the Animation Object keep list when Animation Object mode is active", () => {
-    expect(
-      focusKeepPanelIds(defaultEngineSettings(), "anim-graph-3d", {
-        animEditorMode: "animationObject",
-      }),
-    ).toEqual(["anim-object-graph"]);
+  it("keeps an Animation Graph's Graph and Animation Object canvases", () => {
+    expect(focusKeepPanelIds(defaultEngineSettings(), "anim-graph-3d")).toEqual(["anim-graph-graph", "anim-object-graph"]);
   });
 });
 
@@ -77,19 +73,11 @@ describe("focusKeepCandidates", () => {
     );
   });
 
-  it("lists Animation Graph docks depending on editor mode", () => {
+  it("lists every Animation Graph dock, the Animation Object included", () => {
     expect(
       focusKeepCandidates("anim-graph-3d").map((panel) => panel.id),
     ).toEqual(listDockWindows("anim-graph-3d").map((entry) => entry.id));
-    expect(
-      focusKeepCandidates("anim-graph-3d", { animEditorMode: "animationObject" }).map(
-        (panel) => panel.id,
-      ),
-    ).toEqual(
-      listDockWindows("anim-graph-3d", { animEditorMode: "animationObject" }).map(
-        (entry) => entry.id,
-      ),
-    );
+    expect(focusKeepCandidates("anim-graph-3d").map((panel) => panel.id)).toContain("anim-object-graph");
   });
 });
 
@@ -114,11 +102,6 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("anim-graph-3d", [])).toEqual([
       "anim-graph-graph",
     ]);
-    expect(
-      resolveFocusKeepPanelIds("anim-graph-3d", [], {
-        animEditorMode: "animationObject",
-      }),
-    ).toEqual(["anim-object-graph"]);
     expect(resolveFocusKeepPanelIds("behaviour-tree", [])).toEqual([
       "behaviour-tree-graph",
     ]);

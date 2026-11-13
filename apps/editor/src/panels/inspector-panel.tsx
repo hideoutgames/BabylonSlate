@@ -39,7 +39,6 @@ import {
   useDocumentActions,
   useProjectState,
   useRegistryState,
-  useActiveDocumentState,
   useOpenDocument,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -99,7 +98,6 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const { applyAssetDocumentChange, reparentClassDocument } = documentActions;
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { animEditorMode } = useActiveDocumentState();
   // The open world Scene or Scene Layer sets the physics world.
   const worldDocuments = useOpenDocumentsOfKinds(WORLD_KINDS);
   const { focusDiagnostic } = useValidation();
@@ -107,6 +105,8 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
     useGraphEditing();
   const animEditing = useOptionalAnimGraphEditing();
+  // The Animation Graph canvas the Inspector follows: its State Machine side or the Animation Object script.
+  const animCanvas = animEditing?.canvas ?? "stateMachine";
   const {
     selectedId: prefabSelectedId,
     selectedIds: prefabSelectedIds,
@@ -171,7 +171,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         : null,
     [doc?.content, doc?.ref.kind],
   );
-  const openRuleId = animEditorMode === "stateMachine"
+  const openRuleId = animCanvas === "stateMachine"
     ? animEditing?.openTransitionId ?? null
     : null;
   const ruleEntry =
@@ -180,7 +180,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
       : null;
   const ruleTransition = ruleEntry?.transition ?? null;
   // The Anim Graph or a state's graph on show in the State Machine mode (a rule takes precedence).
-  const animLocation = animEditorMode === "stateMachine" && !ruleTransition ? animEditing?.location ?? null : null;
+  const animLocation = animCanvas === "stateMachine" && !ruleTransition ? animEditing?.location ?? null : null;
   const poseState = animLocation?.kind === "state" && parsedAnim
     ? findStateMachine(parsedAnim, animLocation.machineId)?.states.find((row) => row.id === animLocation.stateId) ?? null
     : null;
