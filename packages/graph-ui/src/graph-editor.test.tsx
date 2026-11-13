@@ -2306,7 +2306,7 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("does not open Add Node or break wires on a near pin drag in zone-add-node mode", () => {
+  it("breaks the dragged pin's wires without opening Add Node on a near release in zone-add-node mode", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
       const onChange = vi.fn();
@@ -2324,7 +2324,37 @@ describe("GraphEditor", () => {
         dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
       });
       expect(queryByTestId("node-palette-body")).toBeNull();
-      expect(onChange).not.toHaveBeenCalled();
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("lets the host choose which wires a pin break removes", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const edgeBreaksAtPin = vi.fn(
+        (edge: { source: string; target: string }, nodeId: string) => edge.source === nodeId && edge.target === "log-b",
+      );
+      const { container } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+          edgeBreaksAtPin={edgeBreaksAtPin}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
+      });
+      expect(edgeBreaksAtPin).toHaveBeenCalledWith(expect.objectContaining({ target: "log-c" }), "log-a", "execOut");
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([expect.objectContaining({ source: "log-a", target: "log-c" })]);
     } finally {
       restoreLayout();
     }

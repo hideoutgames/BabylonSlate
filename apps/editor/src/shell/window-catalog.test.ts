@@ -267,6 +267,8 @@ describe("animation graph and behaviour tree dock catalogs", () => {
       "anim-graph-variables",
       "anim-graph-details",
       "anim-graph-compiler-results",
+      "anim-graph-preview",
+      "anim-graph-preview-values",
     ]);
     expect(listDockWindows("anim-graph-3d").find((entry) => entry.id === "anim-object-graph")).toMatchObject({
       title: "Animation Object",
@@ -274,10 +276,24 @@ describe("animation graph and behaviour tree dock catalogs", () => {
     });
   });
 
-  it("anchors Animation Graph side docks to the graph", () => {
-    for (const entry of listDockWindows("anim-graph-3d")) {
-      if (!entry.defaultPosition) continue;
-      expect(entry.defaultPosition.referencePanelId).toBe("anim-graph-graph");
+  it("anchors Animation Graph side docks to the graph, the Preview above the Inspector and Preview Values under Variables, in both graph types", () => {
+    const sideColumns: Record<string, string> = {
+      "anim-graph-preview": "anim-graph-details",
+      "anim-graph-preview-values": "anim-graph-variables",
+    };
+    for (const kind of ["anim-graph-3d", "anim-graph-2d"] as const) {
+      for (const entry of listDockWindows(kind)) {
+        if (!entry.defaultPosition) continue;
+        expect(entry.defaultPosition.referencePanelId).toBe(sideColumns[entry.id] ?? "anim-graph-graph");
+      }
+      expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview")).toMatchObject({
+        title: "Preview",
+        defaultPosition: { direction: "above" },
+      });
+      expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview-values")).toMatchObject({
+        title: "Preview Values",
+        defaultPosition: { direction: "below" },
+      });
     }
   });
 

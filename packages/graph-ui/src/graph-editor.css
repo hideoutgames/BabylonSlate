@@ -131,14 +131,14 @@
   box-shadow: var(--surface-shadow);
 }
 
-/* An Animation Graph's Output Pose: a state card with its pose input inside, before the title. */
+/* An Animation Graph's Output Pose or Output Frame: a state card (grey border; the selection outline when selected) with
+   its input inside, before the title. */
 .anim-pose-output-node {
   flex-direction: row;
   justify-content: flex-start;
   gap: 2px;
   min-width: 160px;
   padding: 10px 24px 10px 4px;
-  border-color: var(--node-anim-pose);
 }
 
 .anim-pose-output-pin {

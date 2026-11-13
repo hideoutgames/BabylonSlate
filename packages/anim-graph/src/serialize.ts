@@ -99,6 +99,21 @@ export function normalizeAnimConnection(connection: {
   };
 }
 
+/**
+ * Whether a canvas transition leaves or enters `stateId` on the side of `handleId` (either plate): what a break from
+ * that side removes.
+ */
+export function animTransitionOnSide(
+  edge: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null },
+  stateId: string,
+  handleId: string,
+): boolean {
+  const side = ANIM_STATE_HANDLE.exec(handleId)?.[1];
+  if (!side) return false;
+  return (edge.source === stateId && animStateHandle(edge.sourceHandle, "out") === `${side}-out`) ||
+    (edge.target === stateId && animStateHandle(edge.targetHandle, "in") === `${side}-in`);
+}
+
 type AnimDragRect = { x: number; y: number; width: number; height: number };
 
 /** The side of `rect` that `point` lies toward, measured against the box's half extents. */

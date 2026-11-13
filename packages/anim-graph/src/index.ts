@@ -58,6 +58,7 @@ export {
   findReverseTransition,
   hydrateAnimGraphForEditor,
   animTransitionFromDrag,
+  animTransitionOnSide,
   normalizeAnimConnection,
   transitionAtWire,
   serializedToStateMachine,

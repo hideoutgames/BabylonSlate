@@ -34,6 +34,7 @@ import { TypeAssetEditingProvider } from "../context/type-asset-editing-context"
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
+import { AnimGraphPreviewProvider } from "../context/anim-graph-preview-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { SpriteAnimationEditingProvider } from "../context/sprite-animation-editing-context";
 import { SkeletonEditingProvider } from "../context/skeleton-editing-context";
@@ -385,6 +386,7 @@ export function DocumentWorkspace() {
             <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
               <DocumentWorkspaceProvider documentId={id}>
                 <AnimGraphEditingProvider>
+                  <AnimGraphPreviewProvider>
                   <PrefabEditingProvider initialSelectedId={null}>
                   <GraphEditingProvider>
                     <DocumentShell
@@ -397,6 +399,7 @@ export function DocumentWorkspace() {
                     </DocumentShell>
                   </GraphEditingProvider>
                   </PrefabEditingProvider>
+                  </AnimGraphPreviewProvider>
                 </AnimGraphEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>

@@ -291,9 +291,15 @@ export interface GraphEditorProps {
    * and keeps the 96px near-pin wire-break. Behaviour trees use `add-node`
    * so a short drag off a handle opens Add Node and never breaks structural
    * edges. Animation Graph State Machine uses `zone-add-node` (far release
-   * opens Add State; near tap/release cancels without breaking transitions).
+   * opens Add State, a release near a state's pin snap-connects, and any
+   * other release breaks the pin's links as the default mode does).
    */
   connectEndMode?: ConnectEndMode;
+  /**
+   * The links a break from a dragged pin removes, when more than the wires on that exact pin (Animation Graph
+   * states: every transition on the dragged side, in or out). Default: the wires on the pin.
+   */
+  edgeBreaksAtPin?: (edge: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }, nodeId: string, pinId: string) => boolean;
   /** Node bodies that take a dragged wire as a new pin (function Input and Output nodes). */
   pinDrop?: GraphPinDrop;
   /** Replace existing edges into the same target handle (tree parent pin). */
@@ -813,6 +819,7 @@ function GraphEditorCanvas({
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
   nodeDragHandle,
   connectEndMode = "default",
+  edgeBreaksAtPin,
   pinDrop,
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
@@ -2068,9 +2075,10 @@ function GraphEditorCanvas({
         return;
       }
       if (action === "break") {
+        const breaks = edgeBreaksAtPin ?? edgeTouchesPin;
         setEdges((current) => {
           const next = current.filter(
-            (edge) => !edgeTouchesPin(edge, fromNode.id, pinId),
+            (edge) => !breaks(edge, fromNode.id, pinId),
           );
           if (next.length === current.length) return current;
           emitChange(graphStateRef.current.nodes, next);
@@ -2083,6 +2091,7 @@ function GraphEditorCanvas({
       addEdge,
       connectDraggedToNode,
       connectEndMode,
+      edgeBreaksAtPin,
       emitChange,
       isValidConnection,
       normalizeConnection,

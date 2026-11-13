@@ -11,6 +11,7 @@ import {
   findReverseTransition,
   hydrateAnimGraphForEditor,
   animTransitionFromDrag,
+  animTransitionOnSide,
   normalizeAnimConnection,
   transitionAtWire,
   parseAnimGraphDocument,
@@ -73,6 +74,7 @@ import { useAnimGraphEditing, type AnimCanvas, type AnimEditorLocation } from ".
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useAnimStateMachineRunTrace } from "../context/graph-debug-context";
+import { useOptionalAnimGraphPreview } from "../context/anim-graph-preview-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
 import { GraphPanel } from "../panels/graph-panel";
 import { InspectorPanel } from "../panels/inspector-panel";
@@ -99,6 +101,7 @@ import { applyDataGraphAssetPicks, collectDataGraphAssets } from "../lib/data-gr
 import { documentBatch } from "../lib/document-batch";
 
 const DATA_TREE_KINDS = ["data-tree"] as const;
+const NO_SUBSCRIBE = () => () => {};
 
 const VARIABLE_TYPES = [
   "bool",
@@ -216,7 +219,9 @@ const CLIP_CATALOG_TYPES: ReadonlySet<string> = new Set([
   "SpriteAnimation",
 ]);
 
-function useAnimGraphDocument() {
+/** The open Animation Graph: its document (clips resolved), catalog, guid and the graph on show. */
+// eslint-disable-next-line react-refresh/only-export-components -- the graph's windows share it
+export function useAnimGraphDocument() {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange, getOpenDocuments } = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
@@ -552,8 +557,15 @@ export function AnimObjectGraphPanel(props: IDockviewPanelProps) {
 export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
   const claimCanvas = useAnimCanvas("stateMachine", props.api);
   const { doc, latestDoc, commit, documentId, catalog, graphGuid, assetName, dimension, location, machine, state } = useAnimGraphDocument();
-  // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its transitions.
-  const runTrace = useAnimStateMachineRunTrace(graphGuid, location.kind === "machine");
+  // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its
+  // transitions; otherwise, while the Preview window runs, the ones the Preview plays.
+  const simulationTrace = useAnimStateMachineRunTrace(graphGuid, location.kind === "machine");
+  const preview = useOptionalAnimGraphPreview();
+  const previewActive = useSyncExternalStore(
+    preview?.subscribe ?? NO_SUBSCRIBE,
+    () => preview?.getSnapshot().active ?? false,
+  );
+  const runTrace = simulationTrace ?? (previewActive && location.kind === "machine" ? preview?.runTrace : undefined);
   const {
     selectedId,
     selectedIds,
@@ -926,6 +938,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             return { ...connection, ...next };
           }}
           connectDraggedToNode={animTransitionFromDrag}
+          edgeBreaksAtPin={animTransitionOnSide}
           onSelectionChange={(nodeIds) => {
             queueMicrotask(() => setSelectedIds(nodeIds));
           }}

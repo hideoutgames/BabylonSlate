@@ -83,6 +83,7 @@ export function stateMachineGraph(
   return {
     name: options.name,
     skeletonGuid: dimension === "3d" ? options.skeletonGuid : null,
+    previewModelGuid: null,
     variables: options.variables,
     stateMachine: {
       entryStateId: options.entryStateId,
