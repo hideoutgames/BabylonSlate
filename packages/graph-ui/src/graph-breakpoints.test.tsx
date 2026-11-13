@@ -94,7 +94,7 @@ describe("graph breakpoints", () => {
     expect(dot(container, "wait")?.dataset.breakpoint).toBe("enabled");
   });
 
-  it("toggle from the node's title-bar dot", () => {
+  it("toggle from the tab beside the node's title bar", () => {
     const { view, set } = hostBreakpoints();
     const { container } = render(<GraphEditor initialGraph={graph} breakpoints={view} />);
     act(() => { fireEvent.click(dot(container, "print")!); });
