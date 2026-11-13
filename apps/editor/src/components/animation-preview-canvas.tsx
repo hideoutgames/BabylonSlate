@@ -91,8 +91,7 @@ export function AnimationPreviewCanvas({
     let sourceHost: MaterialPreviewScene | null = null;
     let presenter: MaterialPreviewPresenter | null = null;
     let gestures: { dispose: () => void } | null = null;
-    let loaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
-      null;
+    let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
     let sourceLoaded: { dispose: () => void; animationGroups: AnimationGroup[] } | null =
       null;
     let stopRestoreWatch: (() => void) | null = null;
