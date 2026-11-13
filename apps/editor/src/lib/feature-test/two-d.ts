@@ -385,7 +385,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     id: "walk", name: "Walk", position: at(1),
     stateGraph: poseGraph("2d", "flip", [
       playerNode("2d", "player", 60, 80, clip("walk"), { playRate: 1.25 }),
-      gNode("flip", "anim.frame.flip", 380, 80),
+      gNode("flip", "anim.frame.flip", 500, 80),
     ], [gWire("player", "pose", "flip", "frame")]),
   };
   const jump: AnimState = {
@@ -393,7 +393,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     stateGraph: poseGraph("2d", "pick", [
       playerNode("2d", "jump", 60, 40, clip("jump"), { loop: false }),
       playerNode("2d", "fall", 60, 220, clip("fall")),
-      gNode("pick", "anim.frame.selectByBool", 380, 120),
+      gNode("pick", "anim.frame.selectByBool", 500, 120),
     ], [gWire("jump", "pose", "pick", "trueFrame"), gWire("fall", "pose", "pick", "falseFrame")]),
   };
   const fall: AnimState = {
@@ -401,7 +401,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     stateGraph: poseGraph("2d", "pick", [
       playerNode("2d", "fall", 60, 40, clip("fall")),
       playerNode("2d", "idle", 60, 220, clip("idle")),
-      gNode("pick", "anim.frame.selectByInt", 380, 120, { count: 2 }),
+      gNode("pick", "anim.frame.selectByInt", 500, 120, { count: 2 }),
     ], [gWire("fall", "pose", "pick", "frame0"), gWire("idle", "pose", "pick", "frame1")]),
   };
 

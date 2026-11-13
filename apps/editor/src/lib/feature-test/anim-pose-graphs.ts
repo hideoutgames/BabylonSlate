@@ -49,7 +49,7 @@ export function poseGraph(
   edges: readonly GraphEdge[] = [],
 ): SerializedGraph {
   const pin = dimension === "3d" ? "pose" : "frame";
-  const right = Math.max(0, ...nodes.map((node) => node.position.x)) + 320;
+  const right = Math.max(0, ...nodes.map((node) => node.position.x)) + 460;
   return {
     nodes: [...nodes, { ...gNode(ANIM_POSE_OUTPUT_NODE_ID, poseOutputType(dimension), right, 80), data: { __protected: true } }],
     edges: [...edges, gWire(root, "pose", ANIM_POSE_OUTPUT_NODE_ID, pin)],

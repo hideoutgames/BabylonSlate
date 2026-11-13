@@ -198,7 +198,7 @@ export function createStateGraph(dimension: AnimPoseDimension, settings: PosePla
   return {
     nodes: [
       { id: "player", type: playerType, position: { x: 60, y: 80 }, data: playerData(settings) },
-      { id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 420, y: 80 }, data: { __protected: true } },
+      { id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 560, y: 80 }, data: { __protected: true } },
     ],
     edges: [{
       id: `player:pose->${ANIM_POSE_OUTPUT_NODE_ID}:${dimension === "3d" ? "pose" : "frame"}`,
@@ -216,7 +216,7 @@ export function createAnimGraphGraph(dimension: AnimPoseDimension, machineId: st
   return {
     nodes: [
       { id: `machine-${machineId}`, type: poseStateMachineType(dimension), position: { x: 60, y: 80 }, data: { machineId } },
-      { id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 420, y: 80 }, data: { __protected: true } },
+      { id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 560, y: 80 }, data: { __protected: true } },
     ],
     edges: [{
       id: `machine-${machineId}:pose->${ANIM_POSE_OUTPUT_NODE_ID}:${inputPin}`,

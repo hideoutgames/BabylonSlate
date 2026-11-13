@@ -204,7 +204,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
       playerNode("3d", "sprint", 60, 220, clip(MANNEQUIN_CLIPS.run)),
       getVar("get-speed", speed, -260, 400),
       gNode("speed-over-walk", "math.sub", 60, 400, { "default:b": RUN_SPEED - 1 }),
-      gNode("blend", "anim.pose.blend", 380, 120),
+      gNode("blend", "anim.pose.blend", 500, 120),
     ], [
       gWire("walk", "pose", "blend", "a"),
       gWire("sprint", "pose", "blend", "b"),
@@ -221,7 +221,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
       playerNode("3d", "cheer", 60, 40, clip(MANNEQUIN_CLIPS.cheer), { loop: false }),
       gNode("rest", "anim.pose.restPose", 60, 220),
       getVar("get-cheer", cheer, 60, 360),
-      gNode("cheer-or-rest", "anim.pose.blendByBool", 380, 120, { trueBlendSeconds: 0.1, falseBlendSeconds: 0.3 }),
+      gNode("cheer-or-rest", "anim.pose.blendByBool", 500, 120, { trueBlendSeconds: 0.1, falseBlendSeconds: 0.3 }),
     ], [
       gWire("cheer", "pose", "cheer-or-rest", "truePose"),
       gWire("rest", "pose", "cheer-or-rest", "falsePose"),
@@ -271,7 +271,7 @@ function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
       stateGraph: poseGraph("3d", "pick", [
         playerNode("3d", "close", 60, 40, animationClip(ctx, clips.close), { loop: false, playRate: 0.5 }),
         { ...gNode("held-open", "anim.pose.sequenceEvaluator", 60, 220, { assetGuid: open.assetGuid, clipName: open.clipName, durationMs: open.durationMs }) },
-        gNode("pick", "anim.pose.blendByInt", 380, 120, { count: 2, blendSeconds: 0.1 }),
+        gNode("pick", "anim.pose.blendByInt", 500, 120, { count: 2, blendSeconds: 0.1 }),
       ], [
         gWire("close", "pose", "pick", "pose0"),
         gWire("held-open", "pose", "pick", "pose1"),

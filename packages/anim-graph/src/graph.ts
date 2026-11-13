@@ -818,7 +818,7 @@ export function parseAnimGraphDocument(
   const animGraph = copyGraph(source.animGraph);
   // A graph that lost its output gets one back.
   if (!animGraph.nodes.some((node) => isPoseOutputType(node.type))) {
-    animGraph.nodes.push({ id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 420, y: 80 }, data: { __protected: true } });
+    animGraph.nodes.push({ id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 560, y: 80 }, data: { __protected: true } });
   }
   return {
     name: typeof source.name === "string" && source.name !== "" ? source.name : "Locomotion",
