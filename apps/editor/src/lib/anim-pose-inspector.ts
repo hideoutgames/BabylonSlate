@@ -4,7 +4,8 @@ import {
   ANIM_FRAME_SELECT_BY_INT_TYPE,
   ANIM_POSE_BLEND_BY_BOOL_TYPE,
   ANIM_POSE_BLEND_BY_INT_TYPE,
-  isPoseClipNodeType,
+  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
+  isPoseAssetNodeType,
   isPosePlayerType,
 } from "@haptic/anim-graph";
 import { ANIM_POSE_MAX_INPUTS, animPoseInputCount } from "@haptic/scripting-nodes";
@@ -12,9 +13,17 @@ import { ANIM_POSE_MAX_INPUTS, animPoseInputCount } from "@haptic/scripting-node
 /** The asset pick a clip node's Animation row opens; the pick writes the node's clip, not a pin default. */
 export const ANIM_POSE_CLIP_PICK = "__animClip";
 
-/** The node data a picked clip writes: its asset, with the name and length the catalog fills in again. */
+/** The node data a picked clip or Blend Space writes: its asset, with what the catalog fills in again cleared. */
 export function animPoseClipPatch(guid: string | null): Record<string, unknown> {
-  return { assetGuid: guid ?? "", clipName: undefined, durationMs: undefined, frameCount: undefined };
+  return { assetGuid: guid ?? "", clipName: undefined, durationMs: undefined, frameCount: undefined, blendSpace: undefined };
+}
+
+/** The asset type and row label a pose node's asset row picks. */
+function poseAssetKind(typeId: string): { assetType: string; label: string } {
+  if (typeId === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) return { assetType: "BlendSpace", label: "Blend Space" };
+  return typeId.startsWith("anim.frame.")
+    ? { assetType: "SpriteAnimation", label: "Sprite Animation" }
+    : { assetType: "Animation", label: "Animation" };
 }
 
 /**
@@ -31,15 +40,14 @@ export function animPoseNodePropertyRows(
   },
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
-  if (isPoseClipNodeType(typeId)) {
-    const sprite = typeId.startsWith("anim.frame.");
-    const assetType = sprite ? "SpriteAnimation" : "Animation";
+  if (isPoseAssetNodeType(typeId)) {
+    const { assetType, label } = poseAssetKind(typeId);
     const assetGuid = typeof data.assetGuid === "string" ? data.assetGuid : "";
     const listed = options.assetEntries.find((entry) => entry.id === assetGuid);
     rows.push({
       kind: "asset",
       id: "animPoseClip",
-      label: sprite ? "Sprite Animation" : "Animation",
+      label,
       value: assetGuid || null,
       placeholder: "None",
       assetTypes: [assetType],

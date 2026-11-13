@@ -215,6 +215,7 @@ function transitionLabel(machine: AnimStateMachine, transition: AnimTransition):
 /** Asset types a state clip, its label or its skeleton check (an Animation's Model) can name. */
 const CLIP_CATALOG_TYPES: ReadonlySet<string> = new Set([
   "Animation",
+  "BlendSpace",
   "Model",
   "SpriteAnimation",
 ]);

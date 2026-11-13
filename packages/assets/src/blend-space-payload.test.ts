@@ -5,6 +5,7 @@ describe("normalizeBlendSpacePayload", () => {
   it("starts a new Blend Space on its Skeleton with one Speed axis and no samples", () => {
     expect(createDefaultBlendSpacePayload("rig")).toEqual({
       skeletonGuid: "rig",
+      previewModelGuid: null,
       axes: [{ name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0, wrap: false }],
       samples: [],
     });

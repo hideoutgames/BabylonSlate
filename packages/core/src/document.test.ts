@@ -123,6 +123,16 @@ describe("P9 document kinds", () => {
     ).toBe("Walk Sprite Animation");
   });
 
+  it("opens a Blend Space as its own document kind, and labels animation suffixes without them", () => {
+    expect(documentKindForAssetType("BlendSpace")).toBe("blend-space");
+    expect(assetTypeForDocumentKind("blend-space")).toBe("BlendSpace");
+    expect(documentKindLabel("blend-space")).toBe("Blend Space");
+    expect(labelFromPath("assets/hero_locomotion.blendspace.hasset")).toBe("Hero Locomotion");
+    expect(labelFromPath("assets/loco.anim3d.hasset")).toBe("Loco");
+    expect(labelFromPath("assets/robot.anim2d.hasset")).toBe("Robot");
+    expect(createDocumentRef("blend-space", "assets/walk_run.blendspace.hasset", { name: "Walk Run" }).label).toBe("Walk Run Blend Space");
+  });
+
   it("parses document ids and labels compound suffixes", () => {
     expect(labelFromPath("assets/player_hud.scenelayer.hasset")).toBe("Player Hud");
     expect(labelFromPath("assets/move_input.inputaction.hasset")).toBe("Move Input");

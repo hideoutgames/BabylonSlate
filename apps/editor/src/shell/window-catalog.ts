@@ -29,6 +29,7 @@ export type DockviewDocumentKind =
   | "plugin-settings"
   | "anim-graph-3d"
   | "anim-graph-2d"
+  | "blend-space"
   | "behaviour-tree"
   | "audio"
   | "save-game"
@@ -100,6 +101,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "model",
   "skeleton",
   "animation",
+  "blend-space",
   "skybox-creator",
   "trace",
   "texture",
@@ -177,6 +179,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   model: "model-preview",
   skeleton: "skeleton-preview",
   animation: "animation-preview",
+  "blend-space": "blend-space-grid",
   "skybox-creator": "skybox-creator-preview",
   "extension-asset": "extension-asset-details",
   trace: "trace-timeline",
@@ -662,6 +665,41 @@ const ANIMATION_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "animation-preview",
       direction: "right",
       initialWidth: 280,
+    },
+  },
+];
+
+/** Blend Space: the Grid in the middle, its Animations on the left, Preview above the Inspector on the right. */
+const BLEND_SPACE_WINDOWS: DockWindowDefinition[] = [
+  { id: "blend-space-grid", component: "blend-space-grid", title: "Grid" },
+  {
+    id: "blend-space-animations",
+    component: "blend-space-animations",
+    title: "Animations",
+    defaultPosition: {
+      referencePanelId: "blend-space-grid",
+      direction: "left",
+      initialWidth: 224,
+    },
+  },
+  {
+    id: "blend-space-details",
+    component: "blend-space-details",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "blend-space-grid",
+      direction: "right",
+      initialWidth: 288,
+    },
+  },
+  {
+    id: "blend-space-preview",
+    component: "blend-space-preview",
+    title: "Preview",
+    defaultPosition: {
+      referencePanelId: "blend-space-details",
+      direction: "above",
+      initialHeight: 260,
     },
   },
 ];
@@ -1240,6 +1278,9 @@ export function listDockWindows(
   }
   if (kind === "animation") {
     return withOptionalLocks(kind, ANIMATION_WINDOWS, options);
+  }
+  if (kind === "blend-space") {
+    return withOptionalLocks(kind, BLEND_SPACE_WINDOWS, options);
   }
   if (kind === "audio") return withOptionalLocks(kind, AUDIO_WINDOWS, options);
   if (kind === "particle-emitter") {

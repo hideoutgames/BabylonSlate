@@ -40,6 +40,7 @@ Nodes of a 3D Animation Graph's state graphs. Their **Pose** wires carry a whole
 | [Output Pose](output-pose.md) | The pose this graph produces. Every state graph ends in one. |
 | [Sequence Player](sequence-player.md) | Plays an Animation. |
 | [Sequence Evaluator](sequence-evaluator.md) | Holds an Animation at a normalized time. |
+| [Blend Space Player](blend-space-player.md) | Plays a Blend Space: the Animations around X and Y, in step. |
 | [Rest Pose](rest-pose.md) | The Skeleton's rest pose. |
 | [Blend](blend.md) | Blends two poses by Alpha: 0 is A, 1 is B. |
 | [Blend Poses By Bool](blend-poses-by-bool.md) | Blends to True Pose or False Pose as Active changes. |

@@ -14,6 +14,7 @@ import {
   SparklesIcon,
   TableIcon,
   WorkflowIcon,
+  ChartScatterIcon,
 } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import {
@@ -91,7 +92,8 @@ export type ContentBrowserCreateItem = {
     | "create-data-tree"
     | "create-linked-save-game"
     | "create-render-target-texture"
-    | "create-animation-graph";
+    | "create-animation-graph"
+    | "create-blend-space";
   label: string;
   icon: ReactNode;
   onSelect: () => void;
@@ -444,6 +446,21 @@ export function contentBrowserCreateMenuItems(deps: ContentBrowserCreateMenuDeps
           : normalizeModelPayload(source.header.payload ?? {}).skeletonGuid;
         const base = source.header.type === "Skeleton" ? source.header.name.replace(/_Skeleton$/, "") : source.header.name;
         return [await createProjectAssetBeside(registry, source, "AnimationGraph3D", base, { skeletonGuid })];
+      }),
+    },
+    {
+      id: "create-blend-space",
+      label: "Create Blend Space",
+      icon: <ChartScatterIcon />,
+      onSelect: () => run(async (registry) => {
+        // A Blend Space on the Skeleton, or on the Model's Skeleton (none for a Model without one).
+        const source = [...targets("Skeleton"), ...targets("Model")][0];
+        if (!source) return [];
+        const skeletonGuid = source.header.type === "Skeleton"
+          ? source.header.guid
+          : normalizeModelPayload(source.header.payload ?? {}).skeletonGuid;
+        const base = source.header.type === "Skeleton" ? source.header.name.replace(/_Skeleton$/, "") : source.header.name;
+        return [await createProjectAssetBeside(registry, source, "BlendSpace", `${base} Locomotion`, { skeletonGuid })];
       }),
     },
   ];

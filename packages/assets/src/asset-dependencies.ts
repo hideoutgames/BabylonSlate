@@ -30,6 +30,7 @@ import {
   normalizeMaterialInstanceDocument,
 } from "@haptic/shader-graph";
 import { animationAssetGuids } from "./animation-payload";
+import { blendSpaceAssetGuids } from "./blend-space-payload";
 import { audioAssetDependencies } from "./audio-payload";
 import { ASSET_DEPENDENCY_METADATA_VERSION } from "./hasset";
 import { dataAssetDependencies, dataGraphAssetDependencies, type DataDefinitionFieldsResolver } from "./data-asset-refs";
@@ -434,6 +435,11 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "Model") addMany(modelAssetGuids(payload));
   else if (assetType === "Skeleton") addMany(skeletonAssetGuids(payload));
   else if (assetType === "Animation") addMany(animationAssetGuids(payload));
+  else if (assetType === "BlendSpace") {
+    addMany(blendSpaceAssetGuids(payload));
+    // The Preview window's Model is for the editor only, so a game never loads it.
+    add(payload.previewModelGuid, false);
+  }
   else if (assetType === "SpriteAnimation") addMany(spriteAnimationDependencyGuids(parseSpriteAnimationPayload(payload)));
   else if (assetType === "Sprite" || assetType === "Tileset") add(payload.textureGuid);
   else if (assetType === "Tilemap") { for (const tileset of rows(payload.tilesets)) add(tileset.guid); }

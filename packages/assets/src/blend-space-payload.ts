@@ -23,6 +23,8 @@ export interface BlendSpaceSamplePayload {
 /** Animations on one Skeleton, placed on one or two axes and blended by where the input falls among them. */
 export interface BlendSpacePayload {
   skeletonGuid: string | null;
+  /** The Model the editor's Preview shows; editor only. Null shows the first Model on the Skeleton. */
+  previewModelGuid: string | null;
   axes: [BlendSpaceAxisPayload] | [BlendSpaceAxisPayload, BlendSpaceAxisPayload];
   samples: BlendSpaceSamplePayload[];
 }
@@ -87,11 +89,12 @@ export function normalizeBlendSpacePayload(value: unknown): BlendSpacePayload {
     }];
   });
   const skeletonGuid = trimmed(record.skeletonGuid);
-  return { skeletonGuid: skeletonGuid || null, axes, samples };
+  const previewModelGuid = trimmed(record.previewModelGuid);
+  return { skeletonGuid: skeletonGuid || null, previewModelGuid: previewModelGuid || null, axes, samples };
 }
 
 export function createDefaultBlendSpacePayload(skeletonGuid: string | null): BlendSpacePayload {
-  return { skeletonGuid, axes: [defaultBlendSpaceAxis(0)], samples: [] };
+  return { skeletonGuid, previewModelGuid: null, axes: [defaultBlendSpaceAxis(0)], samples: [] };
 }
 
 /** The Skeleton and every sample's Animation, which a Blend Space needs loaded with it. */

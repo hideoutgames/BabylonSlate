@@ -53,6 +53,7 @@ const ASSET_FILE_SUFFIXES = [
   ".sprite.hasset",
   ".anim3d.hasset",
   ".anim2d.hasset",
+  ".blendspace.hasset",
   ".material.hasset",
   ".matfunc.hasset",
   ".tileset.hasset",

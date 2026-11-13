@@ -40,6 +40,7 @@ import {
   createDefaultSkyboxCreatorPayload,
   createDefaultSoundAttenuationPayload,
   createDefaultSpriteAnimationPayload,
+  createDefaultBlendSpacePayload,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
@@ -242,6 +243,15 @@ export function buildNewAssetResult(options: {
         dimension: type === "AnimationGraph3D" ? "3d" : "2d",
         skeletonGuid: options.skeletonGuid ?? null,
       }) as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "BlendSpace") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultBlendSpacePayload(options.skeletonGuid ?? null) as unknown as Record<string, unknown>,
     );
   }
 
