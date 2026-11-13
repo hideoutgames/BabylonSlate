@@ -324,7 +324,7 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..5b9b5dc169279876b20f2359ab70007b
                              state._attributeDeclaration += `#else\n`;
                              state._attributeDeclaration += `${state._getShaderType(this.type)} ${this.declarationVariableName} = ${state._getShaderType(this.type)}(0.);\n`;
 diff --git a/Materials/Node/Blocks/transformBlock.pure.js b/Materials/Node/Blocks/transformBlock.pure.js
-index e9b7db89b862fc9abb62e955da36e782c93d8006..785e699fb93290c6338127cc5d13af71529a988f 100644
+index e9b7db89b862fc9abb62e955da36e782c93d8006..30d1552babfa4cb5343edba423dc1c61662ce8db 100644
 --- a/Materials/Node/Blocks/transformBlock.pure.js
 +++ b/Materials/Node/Blocks/transformBlock.pure.js
 @@ -172,9 +172,9 @@ let TransformBlock = (() => {
@@ -528,6 +528,21 @@ index 517e24c3ff098b6717db92924b5c4e21332c1f0a..db039329c78de733894dbe71bcaa2c1f
          }, {
              attributes: origEffect.getAttributesNames(),
              uniformsNames: uniforms,
+diff --git a/Meshes/abstractMesh.pure.js b/Meshes/abstractMesh.pure.js
+index ab05306fb817aad240785800d2c19d8165d78c77..39cb6197a7c41627cd8939cefc2ded8116d2e2c5 100644
+--- a/Meshes/abstractMesh.pure.js
++++ b/Meshes/abstractMesh.pure.js
+@@ -1026,6 +1026,10 @@ let AbstractMesh = (() => {
+              * @internal
+              */
+             _markSubMeshesAsLightDirty(dispose = false) {
++                // Haptic: a mesh whose every material reads no light has no define a light changes (`light-free-meshes.ts`).
++                if (this._scene._lightFreeMesh?.(this)) {
++                    return;
++                }
+                 this._markSubMeshesAsDirty((defines) => defines.markAsLightDirty(dispose));
+             }
+             /** @internal */
 diff --git a/Meshes/mesh.pure.js b/Meshes/mesh.pure.js
 index 4b5dc52902b25c69fa8fad82bc9a8067ee48ad6b..8a8974d1399a12b4621f0af950819a323019fa5d 100644
 --- a/Meshes/mesh.pure.js
@@ -555,7 +570,7 @@ diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
 index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a9810a5d22f9 100644
 --- a/Misc/khronosTextureContainer2.js
 +++ b/Misc/khronosTextureContainer2.js
-@@ -227,6 +227,16 @@ export class KhronosTextureContainer2 {
+@@ -227,6 +227,23 @@ export class KhronosTextureContainer2 {
       * @internal
       */
      async _uploadAsync(data, internalTexture, options) {
@@ -570,6 +585,13 @@ index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a981
 +            }
 +        }
          const decodedData = await this._decodeAsync(data, options);
++        // A texture disposed while its data decoded has no hardware texture left, so binding it binds
++        // nothing and the upload fails (WebGL: texImage2D with no texture bound). Skip it, as the
++        // engine's own load continuation (_prepareWebGLTexture) does.
++        if (!internalTexture._hardwareTexture) {
++            return;
++        }
++
          this._createTexture(decodedData, internalTexture, options);
      }
 diff --git a/Misc/rgbdTextureTools.js b/Misc/rgbdTextureTools.js
@@ -1172,10 +1194,23 @@ index 046984e478022e39c2405a1fa1d86c5326015e25..b516442421c03d91a13171478e349f6f
          for (const camera of cameras) {
              camera.dispose();
 diff --git a/scene.pure.d.ts b/scene.pure.d.ts
-index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..f77d02ea45623317e2f61239902a41751eeeb235 100644
+index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..f55d117c2039dab5494eacedb2426e63159fc5ea 100644
 --- a/scene.pure.d.ts
 +++ b/scene.pure.d.ts
-@@ -2365,8 +2365,9 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
+@@ -173,6 +173,12 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
+     readonly _isScene = true;
+     /** @internal */
+     _blockEntityCollection: boolean;
++    /**
++     * Haptic: whether `mesh` has no material that reads a light, so a light joining or leaving its light sources marks
++     * no define dirty (`light-free-meshes.ts`). Unset, every mesh is marked as upstream.
++     * @internal
++     */
++    _lightFreeMesh?: (mesh: AbstractMesh) => boolean;
+     /**
+      * Executes a synchronous action without allowing it to weaken an existing entity-collection block.
+      * @param blockEntityCollection whether the action requires entity collection to be blocked
+@@ -2365,8 +2371,9 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
       * Render the scene
       * @param updateCameras defines a boolean indicating if cameras must update according to their inputs (true by default)
       * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)
