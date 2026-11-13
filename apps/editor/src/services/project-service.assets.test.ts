@@ -46,6 +46,7 @@ import {
   encodeAreaEmission,
 } from "@haptic/assets";
 import { NAVMESH_CHUNK_ID } from "@haptic/navigation";
+import { parseAnimGraphDocument, primaryStateMachine, singlePlayerOf } from "@haptic/anim-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 import { DocumentService } from "./document-service";
@@ -663,10 +664,11 @@ describe("project documents as .hasset", () => {
       await storage.readBinary("assets/Mannequin/Mannequin.anim3d.hasset"),
     );
     expect(graphDoc.type).toBe("AnimationGraph3D");
-    const clips = (
-      graphDoc.payload as { clips?: Array<{ assetGuid?: string }> }
-    ).clips;
-    expect(clips?.[0]?.assetGuid).toBe(idle!.header.guid);
+    // The entry state plays the Idle Animation through its one player.
+    const graph = parseAnimGraphDocument(graphDoc.payload)!;
+    const machine = primaryStateMachine(graph)!;
+    const entry = machine.states.find((state) => state.id === machine.entryStateId)!;
+    expect(singlePlayerOf(entry.stateGraph)?.data.assetGuid).toBe(idle!.header.guid);
     expect(animGraph?.properties.graphGuid).toBe(graphDoc.guid);
   });
 
