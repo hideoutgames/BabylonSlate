@@ -38,7 +38,7 @@ function ruleNode(
 /** Compiled rule for `graph-1` that holds the transition until the bool variable `moving` is true. */
 function movingRuleScript(transitionId: string): CompiledScript {
   const registry = createDefaultNodeRegistry();
-  const assetGuid = `assets/Hero.anim.hasset#${transitionId}`;
+  const assetGuid = `assets/Hero.anim3d.hasset#${transitionId}`;
   const compiled = compileTransitionRuleGraph(
     {
       id: transitionId,

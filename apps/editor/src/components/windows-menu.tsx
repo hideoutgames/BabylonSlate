@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import { useEffect, useMemo, useState } from "react";
 import { AppWindowIcon, ChevronDownIcon } from "lucide-react";
 import { NestedMenu, useToolbarOverflowEntry, type NestedMenuItem } from "@haptic/editor-kit";
@@ -63,7 +64,7 @@ export function WindowsMenu() {
           actorPrefab,
           sourceControl: sourceControl.enabled,
           animEditorMode:
-            activeKind === "anim-graph" ? animEditorMode : undefined,
+            isAnimGraphDocumentKind(activeKind) ? animEditorMode : undefined,
           sceneMode: hasSceneModes(activeKind) ? sceneMode : undefined,
         })
       : [];

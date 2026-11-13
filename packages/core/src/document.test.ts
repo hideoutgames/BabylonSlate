@@ -70,7 +70,11 @@ describe("P9 document kinds", () => {
   });
 
   it("maps Sprite / AnimationGraph kinds", () => {
-    expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
+    expect(documentKindForAssetType("AnimationGraph3D")).toBe("anim-graph-3d");
+    expect(documentKindForAssetType("AnimationGraph2D")).toBe("anim-graph-2d");
+    expect(documentKindForAssetType("AnimationGraph")).toBeNull();
+    expect(assetTypeForDocumentKind("anim-graph-2d")).toBe("AnimationGraph2D");
+    expect(documentKindLabel("anim-graph-3d")).toBe("3D Animation Graph");
     expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");
     expect(documentKindForAssetType("Blackboard")).toBe("blackboard");
     expect(documentKindForAssetType("SaveGame")).toBe("save-game");

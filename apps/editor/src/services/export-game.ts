@@ -2,7 +2,7 @@ import type { SaveGameConfiguration } from "@haptic/core";
 import { subsystemBaseClassIdOf } from "@haptic/object-model";
 import { dataTypeSchemas } from "@haptic/scripting";
 import type { DataAssetCatalogEntry } from "@haptic/core";
-import { areaEmissionTextureGuids, buildDataTreeIndex, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeEmbeddedScript, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@haptic/core";
+import { areaEmissionTextureGuids, buildDataTreeIndex, isAnimGraphAssetType, classIdForAssetPath, isDataTreeAsset, isInputAssetType, normalizeEmbeddedScript, normalizeInputAssetPayload, renderEffectsAssetGuids } from "@haptic/core";
 import {
   collectExportReachability,
   exportGame,
@@ -399,7 +399,7 @@ export async function collectAndExportGame(
         });
       }
     }
-    if (asset.type === "AnimationGraph") {
+    if (isAnimGraphAssetType(asset.type)) {
       const payload = params.payloadByGuid?.(guid) ?? null;
       if (payload) animDocs.push({ guid, name: asset.name, document: payload });
     }

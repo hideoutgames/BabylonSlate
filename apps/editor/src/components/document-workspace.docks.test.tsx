@@ -42,12 +42,12 @@ describe("mode DockView unmount", () => {
     docs.animEditorMode = "stateMachine";
     docs.activeDocumentId = "anim:hero";
     const { rerender } = render(
-      <AnimDocumentDocks id="anim:hero" layout={null} />,
+      <AnimDocumentDocks id="anim:hero" kind="anim-graph-3d" layout={null} />,
     );
     expect(screen.getByTestId("mock-dock-stateMachine")).toBeTruthy();
     expect(screen.queryByTestId("mock-dock-animationObject")).toBeNull();
     docs.animEditorMode = "animationObject";
-    rerender(<AnimDocumentDocks id="anim:hero" layout={null} />);
+    rerender(<AnimDocumentDocks id="anim:hero" kind="anim-graph-3d" layout={null} />);
     expect(screen.queryByTestId("mock-dock-stateMachine")).toBeNull();
     expect(screen.getByTestId("mock-dock-animationObject")).toBeTruthy();
   });

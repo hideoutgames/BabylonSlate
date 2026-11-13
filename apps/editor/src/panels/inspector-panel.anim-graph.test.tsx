@@ -9,7 +9,7 @@ import { AnimGraphEditingProvider, useAnimGraphEditing } from "../context/anim-g
 import { GraphEditingProvider, useGraphEditing } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 
-const DOC_ID = "anim-graph:assets/Loco.anim.hasset";
+const DOC_ID = "anim-graph:assets/Loco.anim3d.hasset";
 const store = vi.hoisted(() => {
   let content: Record<string, unknown> = {};
   let mode: "stateMachine" | "animationObject" = "animationObject";
@@ -55,7 +55,7 @@ vi.mock("../context/document-context", async () => {
     return {
       openDocuments: [{
         id: DOC_ID,
-        ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" },
+        ref: { kind: "anim-graph-3d", path: "assets/Loco.anim3d.hasset" },
         content: store.content(),
       }],
       activeDocumentId: DOC_ID,

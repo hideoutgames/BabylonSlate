@@ -9,7 +9,8 @@ export const ASSET_DOCUMENT_KINDS = [
   "font",
   "sprite",
   "sprite-animation",
-  "anim-graph",
+  "anim-graph-3d",
+  "anim-graph-2d",
   "behaviour-tree",
   "blackboard",
   "save-game",
@@ -57,6 +58,22 @@ export type AssetDocumentKind = (typeof ASSET_DOCUMENT_KINDS)[number];
 
 export type DocumentKind = "content-browser" | AssetDocumentKind;
 
+/**
+ * 3D and 2D Animation Graph assets: one editor and one document shape. A 3D graph plays Animations on its Skeleton
+ * and passes poses; a 2D graph plays Sprite Animations and passes frames. The two types never convert.
+ */
+export const ANIM_GRAPH_ASSET_TYPES = ["AnimationGraph3D", "AnimationGraph2D"] as const;
+export type AnimGraphAssetType = (typeof ANIM_GRAPH_ASSET_TYPES)[number];
+export type AnimGraphDocumentKind = "anim-graph-3d" | "anim-graph-2d";
+
+export function isAnimGraphAssetType(type: string | null | undefined): type is AnimGraphAssetType {
+  return type === "AnimationGraph3D" || type === "AnimationGraph2D";
+}
+
+export function isAnimGraphDocumentKind(kind: string | null | undefined): kind is AnimGraphDocumentKind {
+  return kind === "anim-graph-3d" || kind === "anim-graph-2d";
+}
+
 export const CONTENT_BROWSER_ID = "content-browser";
 
 export const CONTENT_BROWSER_REF: DocumentRef = {
@@ -102,8 +119,10 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Sprite";
     case "sprite-animation":
       return "SpriteAnimation";
-    case "anim-graph":
-      return "AnimationGraph";
+    case "anim-graph-3d":
+      return "AnimationGraph3D";
+    case "anim-graph-2d":
+      return "AnimationGraph2D";
     case "behaviour-tree":
       return "BehaviourTree";
     case "blackboard":
@@ -218,8 +237,10 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "sprite";
     case "SpriteAnimation":
       return "sprite-animation";
-    case "AnimationGraph":
-      return "anim-graph";
+    case "AnimationGraph3D":
+      return "anim-graph-3d";
+    case "AnimationGraph2D":
+      return "anim-graph-2d";
     case "BehaviourTree":
       return "behaviour-tree";
     case "Blackboard":
@@ -321,8 +342,10 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Sprite";
     case "sprite-animation":
       return "Sprite Animation";
-    case "anim-graph":
-      return "Anim Graph";
+    case "anim-graph-3d":
+      return "3D Animation Graph";
+    case "anim-graph-2d":
+      return "2D Animation Graph";
     case "behaviour-tree":
       return "Behaviour Tree";
     case "blackboard":

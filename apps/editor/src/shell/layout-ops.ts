@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import type { EngineSettings } from "@haptic/vfs";
 import {
   isDockviewDocumentKind,
@@ -46,7 +47,7 @@ export function focusKeepPanelIds(
   if (kind === "scene-layer" && options?.sceneMode === "script") return panels.sceneLayerScript;
   if (kind === "scene" && options?.sceneMode === "timeline") return panels.sceneTimeline;
   if (kind === "scene-layer" && options?.sceneMode === "timeline") return panels.sceneLayerTimeline;
-  if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
+  if (isAnimGraphDocumentKind(kind) && options?.animEditorMode === "animationObject") {
     return panels.animGraphObject;
   }
   const configured: Partial<Record<FocusDocumentKind, readonly string[]>> = panels;

@@ -174,13 +174,13 @@ async function authorDoorOpenDuration(ctx: FeatureTestContext): Promise<void> {
 // Anim Graph documents
 
 async function saveGraph(ctx: FeatureTestContext, doc: AnimGraphDocument): Promise<string> {
-  const errors = validateAnimGraph(doc, animClipCatalogFromAssets(ctx.registry.list())).filter(
+  const errors = validateAnimGraph(doc, animClipCatalogFromAssets(ctx.registry.list()), { dimension: "3d" }).filter(
     (diagnostic) => diagnostic.severity === "error",
   );
   if (errors.length > 0) {
     throw new Error(`FeatureTest Anim Graph "${doc.name}": ${errors.map((error) => error.message).join("; ")}`);
   }
-  return (await ctx.createAsset("AnimationGraph", FOLDER, doc.name, { payload: doc as unknown as Record<string, unknown> }))
+  return (await ctx.createAsset("AnimationGraph3D", FOLDER, doc.name, { payload: doc as unknown as Record<string, unknown> }))
     .guid;
 }
 
@@ -195,6 +195,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
     animationClip(ctx, id, requireRef(ctx.assets.mannequin.animations[name], `the Mannequin "${name}" Animation`));
   return {
     name: NAMES.locomotionGraph,
+    skeletonGuid: requireRef(ctx.assets.mannequin.skeletonGuid, "the Mannequin Skeleton"),
     entryStateId: "idle",
     states: [
       animState("idle", "Idle", "clip-idle", true, 80, 220),
@@ -229,8 +230,10 @@ function locomotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
  */
 function doorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
   const clips = ctx.assets.doorAnimations;
-  const base: Pick<AnimGraphDocument, "name" | "variables" | "animationObject"> = {
+  // The door is one animated mesh, so its Animations have no Skeleton and neither does the graph.
+  const base: Pick<AnimGraphDocument, "name" | "skeletonGuid" | "variables" | "animationObject"> = {
     name: NAMES.doorGraph,
+    skeletonGuid: null,
     variables: [],
     animationObject: createDefaultAnimationObjectGraph(),
   };

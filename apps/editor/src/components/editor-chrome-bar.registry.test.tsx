@@ -265,14 +265,14 @@ describe("chrome graph debugger", () => {
 
   it.each([
     ["behaviour-tree", { kind: "behaviourTree", assetGuid: "asset-guid" }],
-    ["anim-graph", { kind: "animationGraph", assetGuid: "asset-guid" }],
+    ["anim-graph-3d", { kind: "animationGraph", assetGuid: "asset-guid" }],
   ] as const)("aims the debugger at the focused %s asset's components, by the asset's guid", async (kind, target) => {
     await createRegistry();
     simulate();
     state.activeId = "asset";
     state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument("asset", createDocumentRef(kind, "assets/Guard.hasset"))];
     vi.spyOn(state.registry!, "getByPath").mockReturnValue({
-      header: { guid: "asset-guid", type: kind === "anim-graph" ? "AnimationGraph" : "BehaviourTree" },
+      header: { guid: "asset-guid", type: kind === "anim-graph-3d" ? "AnimationGraph3D" : "BehaviourTree" },
     } as unknown as ReturnType<AssetRegistry["getByPath"]>);
     render(<DebugChrome />);
     expect(store!.getSnapshot().target).toEqual(target);

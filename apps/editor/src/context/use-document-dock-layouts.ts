@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import { useCallback, useRef, useState, type RefObject } from "react";
 import type { DockviewApi } from "dockview-react";
 import type { createAppSettingsStore } from "@haptic/vfs";
@@ -70,7 +71,7 @@ function dockOptionsForIndexed(
     sourceControl: sourceControlEnabled,
     sceneMode: hasSceneModes(kind) ? (sceneMode ?? "design") : undefined,
     animEditorMode:
-      kind === "anim-graph" ? (animEditorMode ?? "stateMachine") : undefined,
+      isAnimGraphDocumentKind(kind) ? (animEditorMode ?? "stateMachine") : undefined,
   };
 }
 
@@ -80,7 +81,7 @@ export function animEditorModeForDocument(
   doc: OpenDocument | undefined,
 ): AnimEditorMode {
   if (modes[id]) return modes[id];
-  if (doc?.ref.kind === "anim-graph") {
+  if (isAnimGraphDocumentKind(doc?.ref.kind)) {
     return parseAnimDocumentLayout(doc.layout).animEditorMode;
   }
   return "stateMachine";
@@ -175,7 +176,7 @@ export function useDocumentDockLayouts({
         documentService.setLayout(id, layout);
         return;
       }
-      if (doc?.ref.kind === "anim-graph") {
+      if (isAnimGraphDocumentKind(doc?.ref.kind)) {
         const parsed = parseAnimDocumentLayout(doc.layout);
         const mode = animEditorModeForDocument(id, animEditorModesRef.current, doc);
         const stateApi = dockviewApisRef.current.get(
@@ -381,7 +382,7 @@ export function useDocumentDockLayouts({
     if (sceneMode) {
       return dockviewApisRef.current.get(dockviewApiKey(activeDocumentId, sceneMode));
     }
-    if (doc.ref.kind === "anim-graph") {
+    if (isAnimGraphDocumentKind(doc.ref.kind)) {
       const mode = animEditorModeForDocument(
         activeDocumentId,
         animEditorModesRef.current,
@@ -417,7 +418,7 @@ export function useDocumentDockLayouts({
       setAnimEditorModes((current) =>
         current[id] === mode ? current : { ...current, [id]: mode },
       );
-      if (doc?.ref.kind === "anim-graph") {
+      if (isAnimGraphDocumentKind(doc?.ref.kind)) {
         const parsed = parseAnimDocumentLayout(doc.layout);
         if (parsed.animEditorMode !== mode) {
           documentService.setLayout(
@@ -461,7 +462,7 @@ export function useDocumentDockLayouts({
       indexed,
       parentOf,
       sourceControlRef.current.enabled,
-      doc.ref.kind === "anim-graph"
+      isAnimGraphDocumentKind(doc.ref.kind)
         ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
         : undefined,
       documentSceneMode(doc.ref.kind, doc.layout),
@@ -537,7 +538,7 @@ export function useDocumentDockLayouts({
     const indexed = projectService.registry?.getByPath(doc.ref.path);
     const parentOf = registryClassParentLookup(projectService.registry);
     const animMode =
-      doc.ref.kind === "anim-graph"
+      isAnimGraphDocumentKind(doc.ref.kind)
         ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
         : undefined;
     const dockOptions = dockOptionsForIndexed(

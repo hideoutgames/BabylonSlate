@@ -59,7 +59,7 @@ describe("run traces of Behaviour Trees and Animation Graphs", () => {
       store: useGraphDebugStore()!,
       tree: useBehaviourTreeRunTrace(treeGuid),
       machine: useAnimStateMachineRunTrace(graphGuid),
-      object: useAnimObjectGraphRunTrace("assets/Loco.anim.hasset", graphGuid),
+      object: useAnimObjectGraphRunTrace("assets/Loco.anim3d.hasset", graphGuid),
     }),
     { wrapper: GraphDebugProvider },
   );
@@ -90,7 +90,7 @@ describe("run traces of Behaviour Trees and Animation Graphs", () => {
       target: LOCO, instanceId: "anim-1", tickIndex: 1,
       graphs: [
         { assetGuid: "loco-graph", graphId: "state-machine", nodes: ["run"], edges: ["idle-run"], values: [] },
-        { assetGuid: "assets/Loco.anim.hasset", graphId: "animation-object", nodes: ["update"], edges: [], values: [] },
+        { assetGuid: "assets/Loco.anim3d.hasset", graphId: "animation-object", nodes: ["update"], edges: [], values: [] },
       ],
     });
     expect(machine.mock.calls).toEqual([[{ nodes: ["run"], edges: ["idle-run"] }]]);

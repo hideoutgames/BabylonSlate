@@ -179,7 +179,7 @@ vi.mock("../context/document-context", async () => {
               parentClass: null,
               payload: { clipName: "Walk", durationMs: 200 },
             },
-            path: "assets/walk.anim.hasset",
+            path: "assets/walk.anim3d.hasset",
           },
           {
             header: {
@@ -219,7 +219,7 @@ vi.mock("../context/document-context", async () => {
                       type: "Animation",
                       payload: { clipName: "Walk", durationMs: 200 },
                     },
-                    path: "assets/walk.anim.hasset",
+                    path: "assets/walk.anim3d.hasset",
                   }
                 : guid === "sprite-run"
                   ? {

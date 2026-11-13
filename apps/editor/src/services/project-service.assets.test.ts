@@ -650,7 +650,7 @@ describe("project documents as .hasset", () => {
     expect(await storage.exists("assets/Mannequin.class.hasset")).toBe(true);
     expect(await storage.exists("assets/main.class.hasset")).toBe(false);
     expect(
-      await storage.exists("assets/Mannequin/Mannequin.anim.hasset"),
+      await storage.exists("assets/Mannequin/Mannequin.anim3d.hasset"),
     ).toBe(true);
     const classHeader = readAssetDocumentHeader(
       await storage.readBinary("assets/Mannequin.class.hasset"),
@@ -660,9 +660,9 @@ describe("project documents as .hasset", () => {
     expect(classHeader.name).toBe("Mannequin");
 
     const graphDoc = await decodeAssetDocument(
-      await storage.readBinary("assets/Mannequin/Mannequin.anim.hasset"),
+      await storage.readBinary("assets/Mannequin/Mannequin.anim3d.hasset"),
     );
-    expect(graphDoc.type).toBe("AnimationGraph");
+    expect(graphDoc.type).toBe("AnimationGraph3D");
     const clips = (
       graphDoc.payload as { clips?: Array<{ assetGuid?: string }> }
     ).clips;

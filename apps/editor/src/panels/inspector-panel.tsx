@@ -2,7 +2,7 @@ import { SimulationInspector } from "./simulation-inspector";
 import { ActorDefaultsGrid, GameInstanceDefaultsGrid } from "./actor-defaults-grid";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { normalizeClassMemberCategory } from "@haptic/core";
+import { normalizeClassMemberCategory, isAnimGraphDocumentKind } from "@haptic/core";
 import { useMemo, useState } from "react";
 import {
   ClassPicker,
@@ -163,7 +163,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const graphClassId = logicGraphHostClass(doc?.ref.kind, docPath, indexed, classIdForGraphPath).classId;
   const parsedAnim = useMemo(
     () =>
-      doc?.ref.kind === "anim-graph"
+      isAnimGraphDocumentKind(doc?.ref.kind)
         ? parseAnimGraphDocument(doc.content)
         : null,
     [doc?.content, doc?.ref.kind],

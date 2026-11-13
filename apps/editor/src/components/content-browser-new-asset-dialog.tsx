@@ -73,6 +73,10 @@ export interface ContentBrowserNewAssetDialogProps {
   timelineAssetGuid?: string | null;
   onTimelineAssetGuidChange?: (guid: string | null) => void;
   timelineAssets?: readonly { guid: string; name: string; type: string }[];
+  /** A 3D Animation Graph's Skeleton: its pickers offer only Animations on it. */
+  skeletonGuid?: string | null;
+  onSkeletonGuidChange?: (guid: string | null) => void;
+  skeletonAssets?: readonly { guid: string; name: string; type: string }[];
   /** Project + enabled-plugin Class assets for the Parent Class tree. */
   classAssets?: readonly NewAssetClassAssetRef[];
   /** Why the name is taken: by a file in the folder, or by another Class's id. */
@@ -267,6 +271,9 @@ export function ContentBrowserNewAssetDialog({
   timelineAssetGuid = null,
   onTimelineAssetGuidChange,
   timelineAssets = [],
+  skeletonGuid = null,
+  onSkeletonGuidChange,
+  skeletonAssets = [],
   classAssets = [],
   takenNameError = null,
   destinationFolder,
@@ -282,6 +289,7 @@ export function ContentBrowserNewAssetDialog({
   const [parentSearch, setParentSearch] = useState("");
   const [definitionPickerOpen, setDefinitionPickerOpen] = useState(false);
   const [timelinePickerOpen, setTimelinePickerOpen] = useState(false);
+  const [skeletonPickerOpen, setSkeletonPickerOpen] = useState(false);
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set());
   const detailsRef = useRef<HTMLElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -425,6 +433,17 @@ export function ContentBrowserNewAssetDialog({
                 ) : null}
                 <AssetPicker open={timelinePickerOpen} onOpenChange={setTimelinePickerOpen} assets={[...timelineAssets]} allowedTypes={["Timeline"]} title="Choose Timeline Asset"
                   onPick={(guid) => { if (guid) onTimelineAssetGuidChange?.(guid); setTimelinePickerOpen(false); }} />
+              </Field></FieldGroup>
+            ) : null}
+            {type === "AnimationGraph3D" ? (
+              <FieldGroup><Field><FieldLabel>Skeleton</FieldLabel>
+                <AssetPickerControl value={skeletonGuid}>
+                  <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setSkeletonPickerOpen(true)} data-testid="new-asset-skeleton" disabled={busy}>
+                    {skeletonAssets.find((asset) => asset.guid === skeletonGuid)?.name ?? "None"}
+                  </Button>
+                </AssetPickerControl>
+                <AssetPicker open={skeletonPickerOpen} onOpenChange={setSkeletonPickerOpen} assets={[...skeletonAssets]} allowedTypes={["Skeleton"]} allowNone title="Choose Skeleton"
+                  onPick={(guid) => { onSkeletonGuidChange?.(guid); setSkeletonPickerOpen(false); }} />
               </Field></FieldGroup>
             ) : null}
             {destinationFolder ? (

@@ -119,11 +119,11 @@ function toAnimObjectScript(
   registry: NodeRegistry,
 ): CompiledScript {
   const compiled = compileGraph(graph, {
-    assetGuid: "assets/Loco.anim.hasset",
+    assetGuid: "assets/Loco.anim3d.hasset",
     registry,
   });
   return {
-    assetGuid: "assets/Loco.anim.hasset",
+    assetGuid: "assets/Loco.anim3d.hasset",
     classId: animGraphScriptClassId("graph-1"),
     source: compiled.source,
     anchors: compiled.anchors,
@@ -138,11 +138,11 @@ function toRuleScript(
   transitionId: string,
 ): CompiledScript {
   const compiled = compileTransitionRuleGraph(graph, {
-    assetGuid: `assets/Loco.anim.hasset#${transitionId}`,
+    assetGuid: `assets/Loco.anim3d.hasset#${transitionId}`,
     registry,
   });
   return {
-    assetGuid: `assets/Loco.anim.hasset#${transitionId}`,
+    assetGuid: `assets/Loco.anim3d.hasset#${transitionId}`,
     classId: animRuleScriptClassId("graph-1", transitionId),
     source: compiled.source,
     anchors: compiled.anchors,
@@ -216,7 +216,7 @@ describe("runtime AnimationGraph scripts", () => {
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([{
-      assetGuid: "assets/Loco.anim.hasset",
+      assetGuid: "assets/Loco.anim3d.hasset",
       classId: animGraphScriptClassId("graph-1"),
       parentClassId: "Object",
       anchors: [],

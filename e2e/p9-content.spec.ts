@@ -308,9 +308,9 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("sprite-animation-play")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-editor")).toBeVisible();
 
-    await createContentBrowserAsset(page, "AnimationGraph", "Loco");
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
     await page
-      .locator('[data-asset-path="assets/Loco.anim.hasset"]')
+      .locator('[data-asset-path="assets/Loco.anim3d.hasset"]')
       .dblclick();
     await expect(
       page.getByTestId("document-workspace-anim-graph"),
@@ -341,8 +341,8 @@ test.describe("P9 content systems", () => {
     page,
   }) => {
     await openTestProject(page);
-    await createContentBrowserAsset(page, "AnimationGraph", "Loco");
-    await page.locator('[data-asset-path="assets/Loco.anim.hasset"]').dblclick();
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
     await page.getByTestId("anim-graph-add-state").click();
     const added = page.getByTestId("anim-state-node-state-1");

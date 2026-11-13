@@ -129,7 +129,7 @@ describe("listDockWindows", () => {
       "tileset",
       "tilemap",
       "plugin-settings",
-      "anim-graph",
+      "anim-graph-3d",
       "behaviour-tree",
       "audio-mixer",
       "audio-channel",
@@ -261,23 +261,23 @@ describe("particle graph dock catalog", () => {
 
 describe("animation graph and behaviour tree dock catalogs", () => {
   it("defaults Animation Graph catalogs to State Machine", () => {
-    expect(listDockWindows("anim-graph").map((entry) => entry.id)).toEqual(
-      listDockWindows("anim-graph", { animEditorMode: "stateMachine" }).map(
+    expect(listDockWindows("anim-graph-3d").map((entry) => entry.id)).toEqual(
+      listDockWindows("anim-graph-3d", { animEditorMode: "stateMachine" }).map(
         (entry) => entry.id,
       ),
     );
-    expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
+    expect(primaryDockPanel("anim-graph-3d")).toBe("anim-graph-graph");
   });
 
   it("anchors Animation Graph side docks to the graph", () => {
-    for (const entry of listDockWindows("anim-graph")) {
+    for (const entry of listDockWindows("anim-graph-3d")) {
       if (!entry.defaultPosition) continue;
       expect(entry.defaultPosition.referencePanelId).toBe("anim-graph-graph");
     }
   });
 
   it("focuses the graph as the primary panel", () => {
-    expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
+    expect(primaryDockPanel("anim-graph-3d")).toBe("anim-graph-graph");
     expect(primaryDockPanel("behaviour-tree")).toBe("behaviour-tree-graph");
   });
 });

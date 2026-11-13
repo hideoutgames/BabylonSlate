@@ -799,6 +799,41 @@ describe("anim graph document", () => {
     ]).map((row) => row.code);
     expect(codes).toContain("anim.skeletonMismatch");
   });
+
+  it("allows a 3D graph only Animations on its Skeleton, and a 2D graph only Sprite Animations", () => {
+    const catalog = [
+      { guid: "knight-run", type: "Animation", name: "Knight_Run", clipName: "Run", skeletonGuid: "knight-rig" },
+      { guid: "door-open", type: "Animation", name: "Door_Open", clipName: "open", skeletonGuid: null },
+      { guid: "robot-walk", type: "SpriteAnimation", name: "Robot_Walk", durationMs: 400 },
+    ];
+    const withClip = (doc: ReturnType<typeof createDefaultAnimGraph>, kind: "animation" | "sprite", assetGuid: string) => {
+      doc.clips[0] = { ...doc.clips[0]!, kind, assetGuid };
+      return doc;
+    };
+    const codes = (doc: ReturnType<typeof createDefaultAnimGraph>, dimension: "3d" | "2d") =>
+      validateAnimGraph(doc, catalog, { dimension }).map((row) => [row.code, row.nodeId]);
+
+    const knight = createDefaultAnimGraph("Knight", { skeletonGuid: "knight-rig" });
+    expect(knight.skeletonGuid).toBe("knight-rig");
+    expect(codes(withClip(knight, "animation", "knight-run"), "3d")).toEqual([]);
+    // A clip on another Skeleton, or one with none, is pointed at the state that plays it.
+    expect(codes(withClip(createDefaultAnimGraph("Knight", { skeletonGuid: "knight-rig" }), "animation", "door-open"), "3d"))
+      .toEqual([["anim.clipSkeleton", "idle"]]);
+    expect(codes(withClip(createDefaultAnimGraph("Door"), "animation", "door-open"), "3d")).toEqual([]);
+    expect(codes(withClip(createDefaultAnimGraph("Knight"), "sprite", "robot-walk"), "3d")).toEqual([["anim.clipKind", "idle"]]);
+
+    const robot = createDefaultAnimGraph("Robot", { dimension: "2d", skeletonGuid: "knight-rig" });
+    expect(robot.skeletonGuid).toBeNull();
+    expect(robot.clips[0]!.kind).toBe("sprite");
+    expect(codes(withClip(robot, "sprite", "robot-walk"), "2d")).toEqual([]);
+    expect(codes(withClip(createDefaultAnimGraph("Robot", { dimension: "2d" }), "animation", "knight-run"), "2d"))
+      .toEqual([["anim.clipKind", "idle"]]);
+  });
+
+  it("keeps a graph's Skeleton through parsing and drops a blank one", () => {
+    expect(parseAnimGraphDocument({ ...createDefaultAnimGraph(), skeletonGuid: " rig " })?.skeletonGuid).toBe("rig");
+    expect(parseAnimGraphDocument({ ...createDefaultAnimGraph(), skeletonGuid: "" })?.skeletonGuid).toBeNull();
+  });
 });
 
 describe("anim graph evaluator", () => {

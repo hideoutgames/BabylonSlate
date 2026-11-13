@@ -247,7 +247,8 @@ const PROJECT_ASSET_BINDINGS: Record<
   Water: { classId: "WaterLakeComponent", property: "assetGuid" },
   Sprite: { classId: "SpriteComponent", property: "assetGuid" },
   Tilemap: { classId: "TilemapComponent", property: "assetGuid" },
-  AnimationGraph: { classId: "AnimationGraphComponent", property: "graphGuid" },
+  AnimationGraph3D: { classId: "AnimationGraphComponent", property: "graphGuid" },
+  AnimationGraph2D: { classId: "AnimationGraphComponent", property: "graphGuid" },
   BehaviourTree: { classId: "BehaviourTreeComponent", property: "treeGuid" },
 };
 

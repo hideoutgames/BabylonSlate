@@ -181,7 +181,7 @@ function recordMannequin(ctx: FeatureTestContext): void {
     .filter((asset) => asset.rootId === "project" && asset.path.startsWith(`assets/${MANNEQUIN_ASSET_FOLDER}/`));
   const model = inFolder.find((asset) => asset.header.type === "Model");
   const skeleton = inFolder.find((asset) => asset.header.type === "Skeleton");
-  const graph = inFolder.find((asset) => asset.header.type === "AnimationGraph");
+  const graph = inFolder.find((asset) => asset.header.type === "AnimationGraph3D");
   const classAsset = ctx.registry.getByPath(`assets/${MANNEQUIN_CLASS_FILE}`);
   if (!model || !skeleton || !graph || !classAsset) {
     throw new Error("FeatureTest needs the Basic 3D Mannequin scaffold first.");

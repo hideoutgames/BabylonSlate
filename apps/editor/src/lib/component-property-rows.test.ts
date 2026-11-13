@@ -44,7 +44,7 @@ function rowsFor(
           : guid === "sprite-1"
             ? "Sprite"
             : guid === "graph-1"
-                ? "AnimationGraph"
+                ? "AnimationGraph3D"
                 : guid === "tile-1"
                   ? "Tilemap"
                   : guid === "tree-1"
@@ -608,7 +608,7 @@ describe("componentPropertyRows", () => {
     expect(graphRow).toMatchObject({ kind: "asset", displayLabel: "Locomotion" });
     if (graphRow?.kind === "asset") graphRow.onPick();
     expect(graph.onPickAsset).toHaveBeenCalledWith(
-      expect.objectContaining({ allowedTypes: ["AnimationGraph"] }),
+      expect.objectContaining({ allowedTypes: ["AnimationGraph3D", "AnimationGraph2D"] }),
     );
 
     const tree = rowsFor({

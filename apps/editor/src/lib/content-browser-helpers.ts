@@ -234,7 +234,8 @@ export const CREATABLE_ASSET_TYPES = [
   "Prefab",
   "Sprite",
   "SpriteAnimation",
-  "AnimationGraph",
+  "AnimationGraph3D",
+  "AnimationGraph2D",
   "Material",
   "MaterialInstance",
   "MaterialFunction",
@@ -296,7 +297,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
+    types: ["AnimationGraph3D", "AnimationGraph2D", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
   },
   {
     id: "rendering",
@@ -324,7 +325,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Prefab: "Placeable components without logic. Lighter than an Actor class: no graph, events, variables, or tick.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
   SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
-  AnimationGraph: "A state machine that plays Sprite or Animation clips.",
+  AnimationGraph3D: "State machines that play Animations on one Skeleton.",
+  AnimationGraph2D: "State machines that play Sprite Animations.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
   MaterialInstance: "Parameter values for a parent Material. Shares its compiled shader, so edits and variants cost no recompile.",
@@ -365,6 +367,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
 /** New Asset rows whose label differs from the split type name. */
 const CREATABLE_ASSET_TYPE_LABELS: Partial<Record<CreatableAssetType, string>> = {
   ParticleEmitter: "Basic Particle Emitter",
+  AnimationGraph3D: "3D Animation Graph",
+  AnimationGraph2D: "2D Animation Graph",
 };
 
 /** Title Case label for a creatable asset type (`User Interface`). */
@@ -430,6 +434,7 @@ type ContentBrowserContextAction =
   | "create-data-tree"
   | "create-linked-save-game"
   | "create-render-target-texture"
+  | "create-animation-graph"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -479,6 +484,7 @@ function createActionsForTypes(types: readonly string[], canCreateChildClass: bo
   if (single === "Structure") actions.push("create-data-definition");
   if (single === "DataDefinition") actions.push("create-data-tree", "create-linked-save-game");
   if (single === "RenderTarget") actions.push("create-render-target-texture");
+  if (single === "Skeleton" || single === "Model") actions.push("create-animation-graph");
   return actions;
 }
 

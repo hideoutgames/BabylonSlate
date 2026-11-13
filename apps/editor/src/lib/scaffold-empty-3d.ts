@@ -241,7 +241,10 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   const idlePayload = normalizeAnimationPayload(idle.header.payload);
 
   const graphGuid = newAssetGuid();
-  const animGraph: AnimGraphDocument = createDefaultAnimGraph(MANNEQUIN_CLASS_ID);
+  const animGraph: AnimGraphDocument = createDefaultAnimGraph(MANNEQUIN_CLASS_ID, {
+    dimension: "3d",
+    skeletonGuid: skeleton.header.guid,
+  });
   const idleClip = animGraph.clips[0];
   if (idleClip) {
     idleClip.kind = "animation";
@@ -252,12 +255,12 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   const graphResult = withDocumentPayload(
     {
       ...buildNewAssetResult({
-        type: "AnimationGraph",
+        type: "AnimationGraph3D",
         name: MANNEQUIN_CLASS_ID,
         guid: graphGuid,
         parentClass: null,
       }),
-      dependencies: [idle.header.guid],
+      dependencies: [idle.header.guid, skeleton.header.guid],
     },
     animGraph as unknown as Record<string, unknown>,
   );
@@ -292,7 +295,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
 
   await options.registry.createAsset(
     "project",
-    `${MANNEQUIN_ASSET_FOLDER}/${newAssetFileName("AnimationGraph", MANNEQUIN_CLASS_ID)}`,
+    `${MANNEQUIN_ASSET_FOLDER}/${newAssetFileName("AnimationGraph3D", MANNEQUIN_CLASS_ID)}`,
     graphResult,
   );
   await options.registry.createAsset(

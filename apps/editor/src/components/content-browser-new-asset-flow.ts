@@ -108,6 +108,8 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
   const [newDataDefinition, setNewDataDefinition] = useState<string | null>(null);
   // A new 2D or 3D Timeline Clip's Timeline Asset; null makes one named after the clip.
   const [newTimelineAsset, setNewTimelineAsset] = useState<string | null>(null);
+  // A new 3D Animation Graph's Skeleton; null leaves it unset.
+  const [newSkeleton, setNewSkeleton] = useState<string | null>(null);
   const [newWaterStarter, setNewWaterStarter] = useState(false);
   // An extension asset type chosen in the menu; it replaces `newAssetType` while set.
   const [newExtensionType, setNewExtensionType] = useState<ExtensionAssetTypeDescriptor | null>(null);
@@ -139,6 +141,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     setNewExtensionType(null);
     setNewAssetName("");
     setNewTimelineAsset(allAssets.find((asset) => asset.header.type === "Timeline")?.header.guid ?? null);
+    setNewSkeleton(null);
     setNewAssetFolder(selectedFolderPath);
     setNewAssetOpen(true);
   }, [busy, selectedFolderPath, selectedRootWritable, setNewAssetOpen, setNewAssetType]);
@@ -209,6 +212,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
             : undefined,
         viewportMode: type === "Prefab" ? openSceneViewportMode(getOpenDocuments(), activeDocumentId) : undefined,
         timelineAsset,
+        skeletonGuid: type === "AnimationGraph3D" ? newSkeleton : undefined,
       });
       setNewAssetOpen(false);
       // A Location changed in the dialog shows the folder the asset went to.
@@ -241,6 +245,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     newDataDefinition,
     newDataTypes,
     newTimelineAsset,
+    newSkeleton,
     newWaterStarter,
     newAssetType,
     newExtensionType,
@@ -287,6 +292,9 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     timelineAssetGuid: newTimelineAsset,
     onTimelineAssetGuidChange: setNewTimelineAsset,
     timelineAssets: allAssets.filter((asset) => asset.header.type === "Timeline").map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: "Timeline" })),
+    skeletonGuid: newSkeleton,
+    onSkeletonGuidChange: setNewSkeleton,
+    skeletonAssets: allAssets.filter((asset) => asset.header.type === "Skeleton").map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: "Skeleton" })),
     onParentClassChange: setNewAssetParent,
     classAssets: allAssets.filter((asset) => asset.header.type === "Class"),
     takenNameError: newAssetTakenError,

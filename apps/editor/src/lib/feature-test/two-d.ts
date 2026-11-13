@@ -340,14 +340,14 @@ async function buildTorchGraph(ctx: FeatureTestContext): Promise<string> {
   };
   const animationGuid = (await ctx.createAsset("SpriteAnimation", FOLDER, NAMES.torchAnimation, { payload: payload(animation) })).guid;
   const graph: AnimGraphDocument = {
-    ...createDefaultAnimGraph(NAMES.torchGraph),
+    ...createDefaultAnimGraph(NAMES.torchGraph, { dimension: "2d" }),
     entryStateId: "burn",
     states: [{ id: "burn", name: "Burn", clipId: "clip-burn", speed: 1, loop: true, position: defaultAnimStatePosition(0) }],
     clips: [{ id: "clip-burn", kind: "sprite", assetGuid: animationGuid, clipName: "", durationMs: spriteAnimationDurationMs(animation) }],
     transitions: [],
     variables: [],
   };
-  return (await ctx.createAsset("AnimationGraph", FOLDER, NAMES.torchGraph, { payload: payload(graph) })).guid;
+  return (await ctx.createAsset("AnimationGraph2D", FOLDER, NAMES.torchGraph, { payload: payload(graph) })).guid;
 }
 
 /**
@@ -379,7 +379,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
   });
 
   const graph: AnimGraphDocument = {
-    ...createDefaultAnimGraph(NAMES.robotGraph),
+    ...createDefaultAnimGraph(NAMES.robotGraph, { dimension: "2d" }),
     entryStateId: "idle",
     states: [
       { id: "idle", name: "Idle", clipId: "clip-idle", speed: 1, loop: true, position: defaultAnimStatePosition(0) },
@@ -397,7 +397,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     ],
     variables: [],
   };
-  return (await ctx.createAsset("AnimationGraph", FOLDER, NAMES.robotGraph, { payload: payload(graph) })).guid;
+  return (await ctx.createAsset("AnimationGraph2D", FOLDER, NAMES.robotGraph, { payload: payload(graph) })).guid;
 }
 
 /** Transition whose rule is `Exit Time Reached(exitTime) → Enter State`. */

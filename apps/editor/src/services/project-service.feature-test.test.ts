@@ -329,8 +329,8 @@ describe("FeatureTest starter", () => {
       const graph = normalizeParticleGraphDocument(await reopened.loadDocument("particle-graph", asset.path));
       expect(validateParticleGraphDocument(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
-    for (const asset of ofType("AnimationGraph")) {
-      const graph = (await reopened.loadDocument("anim-graph", asset.path)) as unknown as AnimGraphDocument;
+    for (const asset of ofType("AnimationGraph3D")) {
+      const graph = (await reopened.loadDocument("anim-graph-3d", asset.path)) as unknown as AnimGraphDocument;
       expect(validateAnimGraph(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
   });
