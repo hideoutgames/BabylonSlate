@@ -12,6 +12,7 @@ import {
   safeStorage,
   session,
   shell,
+  webContents,
   type IpcMainInvokeEvent,
 } from "electron";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
@@ -44,7 +45,7 @@ import {
   rendererFile,
   validateIpcArguments,
 } from "./packaged-security";
-import { automaticUpdatesEnabled, createDesktopUpdates, updatesSupported } from "./desktop-updates";
+import { automaticUpdatesEnabled, createDesktopUpdates, updatesSupported, type DesktopUpdateStatus } from "./desktop-updates";
 import { deleteDesktopProject, DesktopLibraries, libraryIpcHandlers, STORAGE_OPERATIONS } from "./desktop-storage-ipc";
 
 const rootDir = join(app.getAppPath(), "host");
@@ -204,6 +205,9 @@ async function registerIpc(): Promise<void> {
   }
 
   handle("memory:stats", (event) => desktopMemoryStats(app.getAppMetrics(), event.sender.getOSProcessId()));
+  // The launcher's update badge: current state, pushed changes and Restart to Update.
+  handle("updates:status", (): DesktopUpdateStatus => updates?.status() ?? { state: "idle" });
+  handle("updates:restart", () => updates?.restart() ?? false);
   // Packaging a game for this computer's OS reuses this app's Electron runtime, laid out as Electron's release.
   handle("game-shell:runtime", async (_event, files, electronVersion) => {
     if (electronVersion !== process.versions.electron) throw new Error("This desktop app's Electron version does not match the game player's.");
@@ -398,7 +402,13 @@ void app.whenReady().then(async () => {
       const manifest = JSON.parse(await readFile(join(rendererRoot, "build-manifest.json"), "utf8"));
       if (updatesSupported(process.platform, manifest, app.getVersion(), process.env)) {
         const { autoUpdater } = await import("electron-updater");
-        updates = createDesktopUpdates(autoUpdater, error => console.warn("Automatic update failed:", error));
+        updates = createDesktopUpdates(
+          autoUpdater,
+          error => console.warn("Automatic update failed:", error),
+          status => {
+            for (const id of editorWindows) webContents.fromId(id)?.send("updates:status", status);
+          },
+        );
         // Missing settings default on; an unreadable file may hold an opt-out.
         updates.setEnabled(await readFile(userDataFile("engine-settings.json"), "utf8").then(
           automaticUpdatesEnabled,

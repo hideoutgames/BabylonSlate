@@ -387,6 +387,12 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
 - Occlusion culling (`quality.geometry.occlusionCulling`) is on at every tier (André's call, 2026-11-03), ahead of an iPad A/B; Breakdown's FT_Occlusion steps measure it. Turn a tier off if the A/B shows it costs more than it saves there.
 - Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
+- Discord roles from subscriptions (not built). The free plan needs no database and no Discord sign-in scopes:
+  - A Cloudflare Worker (free tier) receives RevenueCat webhooks, checks their `Authorization` header and re-reads the customer with `GET /v1/subscribers/{app_user_id}` instead of interpreting event types.
+  - `app_user_id` is the Clerk user id; the Worker reads the Discord user id from that Clerk user's `oauth_discord` external account (Backend API).
+  - The bot adds or removes the plan's role with `PUT` / `DELETE /guilds/{guild}/members/{user}/roles/{role}`; its own role must sit above the plan roles and hold Manage Roles. Worker secrets: RevenueCat secret key, Clerk secret key, bot token, webhook header value.
+  - Rejected: RevenueCat's Discord integration only posts messages; Linked Roles need each member to opt in and still need a server; no-code tools need paid plans or their own checkout.
+  - Gaps: only accounts with Discord linked get roles (desktop and mobile cannot link a second sign-in method yet). A subscriber who joins the server later waits for the next subscription event unless the launcher asks the Worker, with a verified Clerk session, to re-sync the signed-in account at most daily. Enterprise seats outside RevenueCat need their role set by hand.
 
 ## Key risks
 

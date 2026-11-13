@@ -8,6 +8,18 @@ contextBridge.exposeInMainWorld("haptic", {
   memory: {
     stats: () => ipcRenderer.invoke("memory:stats"),
   },
+  // Automatic updates: the main process pushes each status change to the launcher.
+  updates: {
+    status: () => ipcRenderer.invoke("updates:status"),
+    restart: () => ipcRenderer.invoke("updates:restart"),
+    onStatus: (listener: (status: unknown) => void) => {
+      const forward = (_event: unknown, status: unknown) => listener(status);
+      ipcRenderer.on("updates:status", forward);
+      return () => {
+        ipcRenderer.removeListener("updates:status", forward);
+      };
+    },
+  },
   saveGames: {
     read: (key: string) => ipcRenderer.invoke("save-games:read", key),
     write: (key: string, text: string) => ipcRenderer.invoke("save-games:write", key, text),

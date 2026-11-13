@@ -15,10 +15,12 @@ function harness(initial: string | null = null) {
     autoDownload: true, autoInstallOnAppQuit: true, allowPrerelease: true, allowDowngrade: true,
     checkForUpdates: vi.fn<() => Promise<UpdateCheckResult | null>>().mockResolvedValue(result),
     downloadUpdate: vi.fn(async () => ["verified-update.exe"]),
+    quitAndInstall: vi.fn(),
   });
   const errors = vi.fn();
-  const controller = createDesktopUpdates(driver, errors);
-  return { driver, errors, result, cancel, controller, start: () => controller.setEnabled(automaticUpdatesEnabled(initial)) };
+  const statuses = vi.fn();
+  const controller = createDesktopUpdates(driver, errors, statuses);
+  return { driver, errors, statuses, result, cancel, controller, start: () => controller.setEnabled(automaticUpdatesEnabled(initial)) };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -115,5 +117,57 @@ it("cancels a download on opt-out and tolerates offline errors", async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(errors).toHaveBeenCalledWith(expect.objectContaining({ message: "Offline" }));
   expect(() => driver.emit("error", new Error("Network error"))).not.toThrow();
+  controller.setEnabled(false);
+});
+
+it("reports download progress, then an update waiting for Restart to Update", async () => {
+  vi.useFakeTimers();
+  const { driver, statuses, start, controller } = harness();
+  driver.downloadUpdate.mockImplementation(() => new Promise(() => {}));
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(controller.status()).toEqual({ state: "downloading", version: "1.2.4-release", percent: 0 });
+  driver.emit("download-progress", { percent: 41.2 });
+  driver.emit("download-progress", { percent: 41.9 });
+  expect(statuses.mock.calls.map(([status]) => status)).toEqual([
+    { state: "downloading", version: "1.2.4-release", percent: 0 },
+    { state: "downloading", version: "1.2.4-release", percent: 41 },
+  ]);
+  // Nothing to install until electron-updater says the download is complete.
+  expect(controller.restart()).toBe(false);
+  expect(driver.quitAndInstall).not.toHaveBeenCalled();
+  driver.emit("update-downloaded", { version: "1.2.4-release" });
+  expect(statuses).toHaveBeenLastCalledWith({ state: "ready", version: "1.2.4-release" });
+  expect(controller.restart()).toBe(true);
+  expect(driver.quitAndInstall).toHaveBeenCalledExactlyOnceWith(true, true);
+  controller.setEnabled(false);
+});
+
+it("keeps a waiting update through later checks and drops it on opt-out", async () => {
+  vi.useFakeTimers();
+  const { driver, statuses, start, controller } = harness();
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  driver.emit("update-downloaded", { version: "1.2.4-release" });
+  statuses.mockClear();
+  await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+  expect(driver.checkForUpdates).toHaveBeenCalledTimes(2);
+  expect(driver.downloadUpdate).toHaveBeenCalledOnce();
+  expect(statuses).not.toHaveBeenCalled();
+  controller.setEnabled(false);
+  expect(controller.status()).toEqual({ state: "idle" });
+  expect(statuses).toHaveBeenLastCalledWith({ state: "idle" });
+  expect(controller.restart()).toBe(false);
+  expect(driver.quitAndInstall).not.toHaveBeenCalled();
+});
+
+it("returns to idle when a download fails", async () => {
+  vi.useFakeTimers();
+  const { driver, errors, start, controller } = harness();
+  driver.downloadUpdate.mockRejectedValue(new Error("Offline"));
+  start();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(controller.status()).toEqual({ state: "idle" });
+  expect(errors).toHaveBeenCalledWith(expect.objectContaining({ message: "Offline" }));
   controller.setEnabled(false);
 });

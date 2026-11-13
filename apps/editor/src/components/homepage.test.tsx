@@ -132,6 +132,13 @@ describe("Slate project browser", () => {
     expect(within(untracked).queryByTestId("homepage-project-source-control")).toBeNull();
   });
 
+  it("links the sidebar's Discord badge to the server outside the app window", () => {
+    renderHomepage();
+    const badge = screen.getByRole("link", { name: "Join our Discord" });
+    expect(badge.getAttribute("href")).toBe("https://discord.gg/7uPR4JK5q3");
+    expect(badge.getAttribute("target")).toBe("_blank");
+  });
+
   it("opens web folder or ZIP imports explicitly", async () => {
     const onOpenExternal = vi.fn(async () => {});
     renderHomepage({ onOpenExternal });
