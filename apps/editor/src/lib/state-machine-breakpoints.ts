@@ -12,8 +12,9 @@ export function stateMachineBreakpointView(
   graphGuid: string,
   labelFor: (id: string) => BreakpointEntry["label"],
   latestDoc: () => AnimGraphDocument,
+  edit?: (id: string) => void,
 ): GraphBreakpoints {
-  const view = store.graphView(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, labelFor, () => true);
+  const view = store.graphView(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, labelFor, { canBreak: () => true, edit });
   return {
     ...view,
     state: (id): GraphBreakpointState | null => {

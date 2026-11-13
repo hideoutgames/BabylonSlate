@@ -767,6 +767,30 @@ describe("BehaviourTreeEditor", () => {
     expect(root.querySelector("[data-breakpoint]")?.getAttribute("data-breakpoint")).toBe("disabled");
   });
 
+  it("sets breakpoints on every selected tree node from one node's menu", async () => {
+    const breakpoints = new BreakpointStore();
+    store.reset(createDefaultBehaviourTree() as unknown as Record<string, unknown>);
+    const { container } = render(
+      <BreakpointStoreProvider store={breakpoints}>
+        <TreePanels />
+      </BreakpointStoreProvider>,
+    );
+    breakpoints.toggle({ assetGuid: "tree-1", graphId: BT_DEBUG_GRAPH_ID, nodeId: "root" }, { className: "Patrol", graphName: "Behaviour Tree", nodeTitle: "Selector" });
+    fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="root"]')!);
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="task"]')!);
+    fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
+    // The canvas reports its selection a microtask later, as it does between real clicks.
+    await act(async () => {});
+    fireEvent.contextMenu(screen.getByTestId("bt-node-task"));
+    fireEvent.click(screen.getByText("Add Breakpoint"));
+    expect(breakpoints.list().map((entry) => [entry.nodeId, entry.enabled])).toEqual([["root", true], ["task", true]]);
+
+    fireEvent.contextMenu(screen.getByTestId("bt-node-root"));
+    fireEvent.click(screen.getByText("Disable Breakpoint"));
+    expect(breakpoints.list().map((entry) => [entry.nodeId, entry.enabled])).toEqual([["root", false], ["task", false]]);
+  });
+
   it("wraps the selected node from the long-press menu", () => {
     renderTree();
     fireEvent.contextMenu(screen.getByTestId("bt-node-task"));

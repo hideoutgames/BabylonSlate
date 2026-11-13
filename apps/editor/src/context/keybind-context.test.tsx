@@ -377,7 +377,7 @@ describe("KeybindProvider", () => {
     expect(brush).toHaveBeenCalledTimes(1);
   });
 
-  it("hands graph canvases the Copy, Paste, Duplicate, Delete and Toggle Breakpoint chords, customized or not", async () => {
+  it("hands graph canvases every node-menu chord, customized or not", async () => {
     function Chords() {
       return <span data-testid="chords">{JSON.stringify(useContext(GraphKeybindsContext))}</span>;
     }
@@ -387,19 +387,28 @@ describe("KeybindProvider", () => {
       paste: ["Mod+V"],
       duplicate: ["Mod+D"],
       delete: ["Delete", "Backspace"],
+      breakLinks: ["Alt+L"],
       toggleBreakpoint: ["F9"],
+      toggleBreakpointEnabled: ["Mod+F9"],
+      editBreakpoint: ["Shift+F9"],
     });
     defaults.unmount();
 
     const store = new MemoryAppSettingsStore();
-    await store.save({ ...defaultEngineSettings(), keybinds: { "edit.duplicate": ["Alt+Shift+D"], "edit.copy": [] } });
+    await store.save({
+      ...defaultEngineSettings(),
+      keybinds: { "edit.duplicate": ["Alt+Shift+D"], "edit.copy": [], "graph.editBreakpoint": ["Alt+E"] },
+    });
     render(<AppSettingsProvider store={store}><KeybindProvider><Chords /></KeybindProvider></AppSettingsProvider>);
     expect(JSON.parse((await screen.findByText(/Alt\+Shift\+D/)).textContent!)).toEqual({
       copy: [],
       paste: ["Mod+V"],
       duplicate: ["Alt+Shift+D"],
       delete: ["Delete", "Backspace"],
+      breakLinks: ["Alt+L"],
       toggleBreakpoint: ["F9"],
+      toggleBreakpointEnabled: ["Mod+F9"],
+      editBreakpoint: ["Alt+E"],
     });
   });
 });

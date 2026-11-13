@@ -83,8 +83,6 @@ import {
 } from "../services/graph-validation";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { useBreakpointStore } from "../context/breakpoints-context";
-import { useKeybindChord } from "../context/keybind-context";
-import { breakpointMenuItems } from "../lib/breakpoint-menu";
 import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
 import { stateMachineBreakpointView } from "../lib/state-machine-breakpoints";
 import type { BreakpointEntry, BreakpointStore } from "../services/breakpoint-store";
@@ -550,28 +548,24 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   const { setDiagnostics, diagnostics, focusDiagnostic } = useValidation();
   // Breakpoints use the session's terms: the graph's guid and the State Machine's graph id.
   const breakpointStore = useBreakpointStore();
-  const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
   const latestDocRef = useRef(latestDoc);
   latestDocRef.current = latestDoc;
   const breakpointLabel = useCallback(
     (id: string) => stateMachineBreakpointLabel(latestDocRef.current(), id, assetName),
     [assetName],
   );
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
+  // The canvas's node menu and keys act on the selected states' breakpoints; Edit opens the hit count.
   const breakpoints = useMemo(
     () => breakpointStore && graphGuid
-      ? stateMachineBreakpointView(breakpointStore, graphGuid, breakpointLabel, () => latestDocRef.current())
+      ? stateMachineBreakpointView(breakpointStore, graphGuid, breakpointLabel, () => latestDocRef.current(), (nodeId) =>
+        editBreakpoint({
+          location: { assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId },
+          nodeTitle: breakpointLabel(nodeId).nodeTitle,
+          pins: null,
+        }))
       : undefined,
-    [breakpointLabel, breakpointStore, graphGuid],
-  );
-  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
-  const stateMenu = useCallback(
-    (nodeId: string) => {
-      if (!breakpointStore || !graphGuid) return [];
-      const location = { assetGuid: graphGuid, graphId: ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, nodeId };
-      return breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord,
-        () => editBreakpoint({ location, nodeTitle: breakpointLabel(nodeId).nodeTitle, pins: null }));
-    },
-    [breakpointLabel, breakpointStore, editBreakpoint, graphGuid, toggleBreakpointChord],
+    [breakpointLabel, breakpointStore, editBreakpoint, graphGuid],
   );
   // A stop at a transition (from a breakpoint or the Breakpoints window) selects it, so Details show it.
   const focusTransition =
@@ -772,7 +766,6 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           initialGraph={initialGraph}
           runTrace={runTrace}
           breakpoints={breakpoints}
-          contextMenuItemsForNode={stateMenu}
           commitPositionsOnDragEnd
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}

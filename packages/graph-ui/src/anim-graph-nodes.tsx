@@ -15,7 +15,7 @@ import { cn } from "@haptic/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { animTransitionPath } from "./anim-transition-path";
 import { useNodeBreakpoint } from "./graph-breakpoints";
-import { NodeBreakpointDot } from "./graph-nodes";
+import { NodeBreakpointTab } from "./graph-nodes";
 import { useNodeMenu } from "./use-node-menu";
 
 type AnimStateSide = "top" | "right" | "bottom" | "left";
@@ -82,7 +82,7 @@ function AnimStateNode({
       data-node-role="anim-state"
       {...nodeMenu.bind}
     >
-      <NodeBreakpointDot nodeId={id} data={data} className="left-2.5 top-3" />
+      <NodeBreakpointTab nodeId={id} data={data} placement="inset" />
       {ANIM_STATE_SIDES.map((side) => (
         <span key={side} className="contents">
           <Handle

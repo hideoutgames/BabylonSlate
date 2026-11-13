@@ -158,12 +158,19 @@ import {
   type GraphCanvasDropApi,
 } from "./graph-canvas-api";
 import {
+  BREAKPOINT_GRAPH_COMMANDS,
   GraphKeybindsContext,
   graphCommandForEvent,
   type GraphCommand,
   type GraphKeybinds,
 } from "./graph-keybinds";
-import { nodeCanBreak, type GraphBreakpoints } from "./graph-breakpoints";
+import {
+  breakpointMenuItems,
+  nodeCanBreak,
+  toggleBreakpoints,
+  toggleBreakpointsEnabled,
+  type GraphBreakpoints,
+} from "./graph-breakpoints";
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
@@ -2350,6 +2357,50 @@ function GraphEditorCanvas({
     );
   }, [graphViewport.fitViewOptions, setViewport, storeApi]);
 
+  // Breaks the selected wires, or else every wire of the selected nodes. Returns whether any broke.
+  const breakSelectionLinks = useCallback((): boolean => {
+    const selectedEdgeIds = new Set(
+      graphStateRef.current.edges
+        .filter((edge) => edge.selected)
+        .map((edge) => edge.id),
+    );
+    if (selectedEdgeIds.size > 0) {
+      setEdges((current) => {
+        const next = current.filter((edge) => !selectedEdgeIds.has(edge.id));
+        if (next.length === current.length) return current;
+        emitChange(graphStateRef.current.nodes, next);
+        return next;
+      });
+      return true;
+    }
+    const selected = new Set(
+      graphStateRef.current.nodes
+        .filter((node) => node.selected)
+        .map((node) => node.id),
+    );
+    if (edgesTouchingNodes(graphStateRef.current.edges, selected).length === 0) return false;
+    setEdges((current) => {
+      const touching = edgesTouchingNodes(current, selected);
+      if (touching.length === 0) return current;
+      const drop = new Set(touching.map((edge) => edge.id));
+      const next = current.filter((edge) => !drop.has(edge.id));
+      emitChange(graphStateRef.current.nodes, next);
+      return next;
+    });
+    return true;
+  }, [emitChange]);
+
+  /** The selected nodes that can have a breakpoint, which the breakpoint keys and menu items act on. */
+  const selectedBreakableIds = useCallback(
+    (): string[] =>
+      breakpoints
+        ? graphStateRef.current.nodes
+          .filter((node) => node.selected && nodeCanBreak(breakpoints, node.id, node.data))
+          .map((node) => node.id)
+        : [],
+    [breakpoints],
+  );
+
   // The effective chords: the editor's keybinds, except a host that passes
   // `deleteKeyCode` (null turns key deletion off) names its own delete keys.
   const commandBindings = useMemo((): GraphKeybinds => {
@@ -2383,16 +2434,22 @@ function GraphEditorCanvas({
             new Set(currentEdges.filter((edge) => edge.selected).map((edge) => edge.id)),
           );
         }
-        case "toggleBreakpoint": {
-          if (!breakpoints) return false;
-          const targets = graphStateRef.current.nodes.filter((node) =>
-            node.selected && nodeCanBreak(breakpoints, node.id, node.data));
-          for (const node of targets) breakpoints.toggle(node.id);
-          return targets.length > 0;
+        case "breakLinks":
+          return !hiddenToolbar.has("breakLinks") && breakSelectionLinks();
+        case "toggleBreakpoint":
+          return breakpoints ? toggleBreakpoints(breakpoints, selectedBreakableIds()) : false;
+        case "toggleBreakpointEnabled":
+          return breakpoints ? toggleBreakpointsEnabled(breakpoints, selectedBreakableIds()) : false;
+        case "editBreakpoint": {
+          // The settings dialog edits one breakpoint, so the key needs exactly one selected node with one.
+          const set = breakpoints ? selectedBreakableIds().filter((id) => breakpoints.state(id) !== null) : [];
+          if (!breakpoints?.edit || set.length !== 1) return false;
+          breakpoints.edit(set[0]!);
+          return true;
         }
       }
     },
-    [breakpoints, copySelection, duplicateSelection, hiddenToolbar, pasteClipboard, removeGraphElements],
+    [breakSelectionLinks, breakpoints, copySelection, duplicateSelection, hiddenToolbar, pasteClipboard, removeGraphElements, selectedBreakableIds],
   );
   const commandRef = useRef({ readOnly, bindings: commandBindings, run: runGraphCommand });
   useLayoutEffect(() => {
@@ -2418,7 +2475,7 @@ function GraphEditorCanvas({
       if (!engaged || event.defaultPrevented || event.isComposing) return;
       const command = graphCommandForEvent(event, bindings);
       // Breakpoints are not graph data, so a read-only canvas still sets them.
-      if (!command || (locked && command !== "toggleBreakpoint")) return;
+      if (!command || (locked && !BREAKPOINT_GRAPH_COMMANDS.has(command))) return;
       if (event.target instanceof Element) {
         if (event.target.closest(KEY_EXEMPT_TARGETS)) return;
         const dialog = event.target.closest('[role="dialog"], [role="alertdialog"]');
@@ -2437,36 +2494,6 @@ function GraphEditorCanvas({
     };
   }, []);
 
-  const breakSelectionLinks = useCallback(() => {
-    const selectedEdgeIds = new Set(
-      graphStateRef.current.edges
-        .filter((edge) => edge.selected)
-        .map((edge) => edge.id),
-    );
-    if (selectedEdgeIds.size > 0) {
-      setEdges((current) => {
-        const next = current.filter((edge) => !selectedEdgeIds.has(edge.id));
-        if (next.length === current.length) return current;
-        emitChange(graphStateRef.current.nodes, next);
-        return next;
-      });
-      return;
-    }
-    const selected = new Set(
-      graphStateRef.current.nodes
-        .filter((node) => node.selected)
-        .map((node) => node.id),
-    );
-    if (selected.size === 0) return;
-    setEdges((current) => {
-      const touching = edgesTouchingNodes(current, selected);
-      if (touching.length === 0) return current;
-      const drop = new Set(touching.map((edge) => edge.id));
-      const next = current.filter((edge) => !drop.has(edge.id));
-      emitChange(graphStateRef.current.nodes, next);
-      return next;
-    });
-  }, [emitChange]);
 
   const formatSelection = useCallback(() => {
     const selected = graphStateRef.current.nodes
@@ -2512,27 +2539,9 @@ function GraphEditorCanvas({
     });
   }, [emitChange]);
 
-  // The menu of a script-style node. A press on an unselected node replaces the
-  // selection first, like a tap; on a selected node the group stays. Everything
-  // reads the graph ref, because the items are built before the next render.
-  const resolveNodeMenu = useCallback(
-    (nodeId: string): NestedMenuItem[] => {
-      let { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
-      const target = currentNodes.find((node) => node.id === nodeId);
-      if (!target) return [];
-      if (!target.selected) {
-        currentNodes = currentNodes.map((node) =>
-          Boolean(node.selected) === (node.id === nodeId)
-            ? node
-            : { ...node, selected: node.id === nodeId },
-        );
-        currentEdges = withoutEdgeSelection(currentEdges);
-        graphStateRef.current = { nodes: currentNodes, edges: currentEdges };
-        setNodes(currentNodes);
-        setEdges(currentEdges);
-      }
-      const hostItems = contextMenuItemsForNode?.(nodeId) ?? [];
-      if (readOnly) return hostItems;
+  // Copy, Paste, Duplicate, Delete and Break Links for the selection, with their keys.
+  const graphItems = useCallback(
+    (currentNodes: CanvasNode[], currentEdges: Edge[]): NestedMenuItem[] => {
       const selectedIds = new Set(
         currentNodes.filter((node) => node.selected).map((node) => node.id),
       );
@@ -2588,33 +2597,76 @@ function GraphEditorCanvas({
         items.push({
           id: "break-links",
           label: "Break Links",
+          shortcut: commandBindings.breakLinks[0],
           disabled: !hasLinks,
-          onSelect: breakSelectionLinks,
+          onSelect: () => { breakSelectionLinks(); },
         });
       }
-      return hostItems.length > 0 && items.length > 0
-        ? [...hostItems, { type: "separator", id: "host-separator" }, ...items]
-        : [...hostItems, ...items];
+      return items;
     },
     [
       breakSelectionLinks,
       commandBindings,
-      contextMenuItemsForNode,
       copySelection,
       deleteSelection,
       duplicateSelection,
       hiddenToolbar,
       pasteClipboard,
+    ],
+  );
+
+  // The menu of a script-style node. A press on an unselected node replaces the
+  // selection first, like a tap; on a selected node the group stays. Everything
+  // reads the graph ref, because the items are built before the next render.
+  const resolveNodeMenu = useCallback(
+    (nodeId: string): NestedMenuItem[] => {
+      let { nodes: currentNodes, edges: currentEdges } = graphStateRef.current;
+      const target = currentNodes.find((node) => node.id === nodeId);
+      if (!target) return [];
+      if (!target.selected) {
+        currentNodes = currentNodes.map((node) =>
+          Boolean(node.selected) === (node.id === nodeId)
+            ? node
+            : { ...node, selected: node.id === nodeId },
+        );
+        currentEdges = withoutEdgeSelection(currentEdges);
+        graphStateRef.current = { nodes: currentNodes, edges: currentEdges };
+        setNodes(currentNodes);
+        setEdges(currentEdges);
+      }
+      const hostItems = contextMenuItemsForNode?.(nodeId) ?? [];
+      // Breakpoint items act on the selection's nodes that can have one; breakpoints are not graph
+      // data, so a read-only canvas keeps them.
+      const breakpointItems = breakpoints && nodeCanBreak(breakpoints, nodeId, target.data)
+        ? breakpointMenuItems(
+          breakpoints,
+          currentNodes.filter((node) => node.selected && nodeCanBreak(breakpoints, node.id, node.data)).map((node) => node.id),
+          nodeId,
+          commandBindings,
+        )
+        : [];
+      const groups = [hostItems, breakpointItems];
+      if (!readOnly) groups.push(graphItems(currentNodes, currentEdges));
+      return groups
+        .filter((group) => group.length > 0)
+        .flatMap((group, index) => index === 0 ? group : [{ type: "separator" as const, id: `menu-group-${index}` }, ...group]);
+    },
+    [
+      breakpoints,
+      commandBindings,
+      contextMenuItemsForNode,
+      graphItems,
       readOnly,
     ],
   );
   const nodeMenu = useMemo(
     () => ({
-      enabled: !readOnly || Boolean(contextMenuItemsForNode),
+      enabled: !readOnly || Boolean(contextMenuItemsForNode) || Boolean(breakpoints),
       resolve: resolveNodeMenu,
     }),
-    [contextMenuItemsForNode, readOnly, resolveNodeMenu],
+    [breakpoints, contextMenuItemsForNode, readOnly, resolveNodeMenu],
   );
+
 
   const clearSelection = useCallback(() => {
     setNodes((current) =>

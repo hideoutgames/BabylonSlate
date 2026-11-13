@@ -15,7 +15,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { CircleAlertIcon, ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
+import { CircleAlertIcon, ClockIcon, Gamepad2Icon, OctagonPauseIcon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
 import {
   humanizePropertyLabel,
   LabelHint,
@@ -399,7 +399,7 @@ function PinRow({
 
 /**
  * A node's error count: a destructive Badge sitting just above the node's top edge, so it never covers
- * the title, the breakpoint dot or the corner marker (it moves to the left edge when a marker is shown).
+ * the title, the breakpoint tab or the corner marker (it moves to the left edge when a marker is shown).
  * Its 44px button reaches down to the node.
  */
 function NodeErrorBadge({
@@ -449,16 +449,28 @@ function NodeErrorBadge({
   );
 }
 
+/** Where a node shows its breakpoint tab. */
+export type NodeBreakpointPlacement = "titleBar" | "cardTop" | "inset";
+
+const BREAKPOINT_TAB_PLACEMENT: Record<NodeBreakpointPlacement, string> = {
+  // Outside the title bar's left end, as tall as the bar (42px below the shell's 1px border).
+  titleBar:
+    "right-full top-px h-[2.625rem] w-9 rounded-l-md [&_svg]:size-[1.375rem] group-has-[[data-node-title]:hover]/node:opacity-40",
+  // On a card's top edge at its left: siblings sit only 24px apart, so a tab beside the card would overlap one.
+  cardTop: "bottom-full left-3 h-7 w-9 rounded-t-md [&_svg]:size-[1.125rem] group-hover/title:opacity-40",
+  // Inside a node's top-left corner, for nodes whose sides carry handles (states).
+  inset: "graph-breakpoint-tab-inset left-0 top-0 h-7 w-9 rounded-tl-[inherit] rounded-br-md [&_svg]:size-[1.125rem] group-hover/title:opacity-40",
+};
+
 /**
- * A node's breakpoint at the start of its title bar, or on the left edge of a card node's header: a red
- * dot, hollow while disabled. With a mouse the dot toggles it, and a faint dot on title-bar (or card)
- * hover adds one; touch uses the node menu, and the keyboard the canvas's Toggle Breakpoint key.
+ * A node's breakpoint as a red tab with a stop sign, striped while disabled. With a mouse the tab
+ * toggles it, and a faint tab on title-bar (or card) hover adds one; touch uses the node menu, and the
+ * keyboard the canvas's breakpoint keys.
  */
-export function NodeBreakpointDot({ nodeId, data, className }: {
+export function NodeBreakpointTab({ nodeId, data, placement }: {
   nodeId: string;
   data?: Record<string, unknown>;
-  /** Places the dot; the default sits at the start of a title bar. */
-  className?: string;
+  placement: NodeBreakpointPlacement;
 }) {
   const { breakpoints } = useGraphEditorContext();
   const state = useNodeBreakpoint(nodeId);
@@ -472,9 +484,9 @@ export function NodeBreakpointDot({ nodeId, data, className }: {
       title={label}
       data-breakpoint={state ?? undefined}
       className={cn(
-        "nodrag absolute flex size-3 -translate-y-1/2 items-center justify-center pointer-coarse:pointer-events-none",
-        className ?? "left-1 top-1/2",
-        !state && "opacity-0 group-hover/title:opacity-40 pointer-coarse:hidden",
+        "graph-breakpoint-tab nodrag absolute z-10 flex items-center justify-center pointer-coarse:pointer-events-none",
+        BREAKPOINT_TAB_PLACEMENT[placement],
+        !state && "opacity-0 hover:opacity-40 pointer-coarse:hidden",
       )}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
@@ -482,7 +494,7 @@ export function NodeBreakpointDot({ nodeId, data, className }: {
         breakpoints.toggle(nodeId);
       }}
     >
-      <span className={cn("size-2.5 rounded-full border-2 border-destructive", state !== "disabled" && "bg-destructive")} />
+      <OctagonPauseIcon aria-hidden="true" strokeWidth={2.25} />
     </button>
   );
 }
@@ -578,10 +590,10 @@ export function BlueprintNodeShell({
   const headerPins = card ? [] : headerPinsOf(data);
 
   return (
-    <div className={cn("relative", card && "group/title")}>
+    <div className={cn("group/node relative", card && "group/title")}>
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker || headerPins.length > 0} />
-      {/* Outside the card's clipped body, straddling its left border at the header. */}
-      {card ? <NodeBreakpointDot nodeId={nodeId} data={data} className="-left-1.5 top-6 z-10" /> : null}
+      {/* Outside the shell, which clips its body to the rounded corners. */}
+      <NodeBreakpointTab nodeId={nodeId} data={data} placement={card ? "cardTop" : "titleBar"} />
       {marker ? (
         <span
           role="img"
@@ -608,6 +620,7 @@ export function BlueprintNodeShell({
       >
         {card ? null : (
           <div
+            data-node-title=""
             className={cn(
               "group/title relative rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
               marker && "pr-10",
@@ -615,7 +628,6 @@ export function BlueprintNodeShell({
               nodeRoleClass(role),
             )}
           >
-            <NodeBreakpointDot nodeId={nodeId} data={data} />
             {description ? (
               <LabelHint hint={description} underline={false} delay={GRAPH_HINT_DELAY_MS}>
                 <span data-node-title-hint="">{title}</span>
