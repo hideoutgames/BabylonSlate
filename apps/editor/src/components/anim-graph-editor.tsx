@@ -13,6 +13,7 @@ import {
   findStateMachine,
   hydrateAnimGraphForEditor,
   isPoseStateMachineType,
+  animTransitionFromDrag,
   normalizeAnimConnection,
   parseAnimGraphDocument,
   patchPosePlayer,
@@ -960,6 +961,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             if (!next) return null;
             return { ...connection, ...next };
           }}
+          connectDraggedToNode={animTransitionFromDrag}
           onSelectionChange={(nodeIds) => {
             queueMicrotask(() => setSelectedIds(nodeIds));
           }}

@@ -751,15 +751,36 @@ function parsePoseGraph(value: unknown, fallback: () => SerializedGraph): Serial
   return isSerializedGraph(value) && value.nodes.length > 0 ? copyGraph(value) : fallback();
 }
 
-function parseTransitions(value: unknown): AnimTransition[] {
+/** A State Machine card's nominal size, for the sides two states face each other on. */
+const ANIM_STATE_CARD = { width: 200, height: 90 };
+
+/**
+ * The sides a transition stored without them uses: where its two states face each other, so a pair stored both
+ * ways without sides mirrors and shares one wire.
+ */
+export function facingTransitionSides(
+  from: Pick<AnimState, "position"> | undefined,
+  to: Pick<AnimState, "position"> | undefined,
+): { sourceHandle: string; targetHandle: string } {
+  const dx = (to?.position.x ?? 1) - (from?.position.x ?? 0);
+  const dy = (to?.position.y ?? 0) - (from?.position.y ?? 0);
+  if (Math.abs(dx) / ANIM_STATE_CARD.width >= Math.abs(dy) / ANIM_STATE_CARD.height) {
+    return dx >= 0 ? { sourceHandle: "right-out", targetHandle: "left-in" } : { sourceHandle: "left-out", targetHandle: "right-in" };
+  }
+  return dy >= 0 ? { sourceHandle: "bottom-out", targetHandle: "top-in" } : { sourceHandle: "top-out", targetHandle: "bottom-in" };
+}
+
+function parseTransitions(value: unknown, states: readonly AnimState[]): AnimTransition[] {
   const transitions: AnimTransition[] = [];
   if (!Array.isArray(value)) return transitions;
+  const byId = new Map(states.map((state) => [state.id, state]));
   for (const row of value) {
     if (!row || typeof row !== "object") continue;
     const transition = row as Record<string, unknown>;
     if (typeof transition.id !== "string") continue;
     if (typeof transition.fromStateId !== "string") continue;
     if (typeof transition.toStateId !== "string") continue;
+    const facing = facingTransitionSides(byId.get(transition.fromStateId), byId.get(transition.toStateId));
     transitions.push({
       id: transition.id,
       fromStateId: transition.fromStateId,
@@ -767,8 +788,8 @@ function parseTransitions(value: unknown): AnimTransition[] {
       blendSeconds: asFiniteNumber(transition.blendSeconds, 0.1),
       priority: asFiniteNumber(transition.priority, 0),
       ruleGraph: parseRuleGraph(transition.ruleGraph),
-      sourceHandle: typeof transition.sourceHandle === "string" ? transition.sourceHandle : undefined,
-      targetHandle: typeof transition.targetHandle === "string" ? transition.targetHandle : undefined,
+      sourceHandle: typeof transition.sourceHandle === "string" ? transition.sourceHandle : facing.sourceHandle,
+      targetHandle: typeof transition.targetHandle === "string" ? transition.targetHandle : facing.targetHandle,
     });
   }
   return transitions;
@@ -801,7 +822,7 @@ function parseStateMachine(value: unknown, index: number, dimension: AnimGraphDi
     name: typeof source.name === "string" && source.name.trim() !== "" ? source.name : "State Machine",
     entryStateId,
     states,
-    transitions: parseTransitions(source.transitions),
+    transitions: parseTransitions(source.transitions, states),
   };
 }
 
