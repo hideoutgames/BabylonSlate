@@ -1100,7 +1100,7 @@ export function EditorChromeBar({
 
         <ToolbarOverflowTrack className="editor-global-toolbar-center">
           {debugStepControls ? (
-            <div className="editor-play-island" role="group" aria-label="Debugging" data-testid="debug-step-island">
+            <div className="editor-play-island editor-debug-island" role="group" aria-label="Debugging" data-testid="debug-step-island">
               <DebugStepToolbarControls
                 controls={debugStepControls}
                 stopping={sessionState.lifecycle === "stopping"}

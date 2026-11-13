@@ -120,6 +120,11 @@
   box-shadow: inset 0 0 0 1px var(--border);
 }
 
+/* Breakpoint stepping is its own group, set apart from the session's Resume and Stop. */
+.editor-debug-island {
+  margin-inline-end: 0.5rem;
+}
+
 .chrome-play-button {
   background: var(--play);
   color: var(--play-foreground);
