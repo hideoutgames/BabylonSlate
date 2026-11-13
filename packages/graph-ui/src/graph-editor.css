@@ -131,6 +131,19 @@
   box-shadow: var(--surface-shadow);
 }
 
+/* An Animation Graph's Output Pose: a state card whose pose input sits on its left edge. */
+.anim-pose-output-node {
+  min-width: 160px;
+  border-color: var(--node-anim-pose);
+}
+
+.anim-pose-output-pin {
+  position: absolute;
+  left: calc(var(--graph-pin-hit, 44px) / -2);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .anim-state-node-selected {
   border-color: var(--graph-state-selected);
   box-shadow: 0 0 0 1px var(--graph-state-selected);

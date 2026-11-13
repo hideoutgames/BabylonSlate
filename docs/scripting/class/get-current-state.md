@@ -21,5 +21,6 @@ Returns the name and ID of the state an Animation Graph is in.
 
 ## Notes
 
+- It reads the first State Machine the graph's Anim Graph plays.
 - Before the graph's first update it returns the entry state. With an invalid target, the outputs are empty; an empty target also logs an error.
 - Only available in Actor class graphs.

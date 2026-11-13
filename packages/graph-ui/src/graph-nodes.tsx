@@ -15,7 +15,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { CircleAlertIcon, ClockIcon, Gamepad2Icon, OctagonPauseIcon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
+import { CircleAlertIcon, ClockIcon, FilmIcon, Gamepad2Icon, OctagonPauseIcon, PersonStandingIcon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
 import {
   humanizePropertyLabel,
   LabelHint,
@@ -156,6 +156,26 @@ function PinVisual({
   const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
   const shape = byReference ? "reference" : pinVisualShape(type, pin);
   const color = pinCssVar(type);
+  // An Animation Graph pose (or frame) pin is a plate with a person (or film) icon: filled once wired.
+  if (type.kind === "pose" || type.kind === "frame") {
+    const Icon = type.kind === "pose" ? PersonStandingIcon : FilmIcon;
+    return (
+      <span
+        className="graph-pin-visual grid place-items-center rounded-[5px] border-2"
+        data-pin-shape="plate"
+        style={{
+          width: "var(--graph-pin-glyph, var(--graph-pin-size, 22px))",
+          height: "var(--graph-pin-glyph, var(--graph-pin-size, 22px))",
+          borderColor: color,
+          background: connected ? color : "transparent",
+          color: connected ? "var(--card)" : color,
+        }}
+        aria-hidden="true"
+      >
+        <Icon className="size-[72%]" strokeWidth={2.5} />
+      </span>
+    );
+  }
   const glyph = (
     <PinShapeGlyph
       shape={shape}
@@ -680,6 +700,27 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
     updateNodeInternals(id);
   }, [handleOrder, id, updateNodeInternals]);
 
+  // An Animation Graph's Output Pose (or Output Frame) is drawn like a state card, its pose input as a plate.
+  const nodeType = typeof data.__nodeType === "string" ? data.__nodeType : type;
+  if (nodeType === "anim.pose.output" || nodeType === "anim.frame.output") {
+    const input = pins.find((pin) => pin.direction === "in");
+    return (
+      <div {...nodeMenu.bind}>
+        <div
+          className={cn("anim-state-node anim-pose-output-node", selected && "anim-state-node-selected")}
+          data-testid={`anim-pose-output-${id}`}
+        >
+          {input ? (
+            <div className="anim-pose-output-pin">
+              <PinHandle nodeId={id} pin={input} pending={false} hasError={false} connected />
+            </div>
+          ) : null}
+          <div className="anim-state-node-title">{title}</div>
+        </div>
+        {nodeMenu.overlay}
+      </div>
+    );
+  }
   return (
     <div {...nodeMenu.bind}>
       <BlueprintNodeShell

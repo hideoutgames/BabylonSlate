@@ -13,7 +13,10 @@ import {
 } from "@haptic/bridge";
 import {
   animGraphScriptClassId,
+  animPoseGraphs,
+  animPoseScriptClassId,
   animRuleScriptClassId,
+  animTransitions,
   decorateTransitionRuleGraph,
   findReverseTransition,
   parseAnimGraphDocument,
@@ -21,6 +24,7 @@ import {
 } from "@haptic/anim-graph";
 import {
   compileGraph,
+  compilePoseDataGraph,
   compileTransitionRuleGraph,
   collectLatentFunctions,
   enumValueOrFirstMember,
@@ -866,7 +870,11 @@ function animGraphCompileCacheKey(
           `${entry.path}#animation-object`,
           parsed.animationObject,
         ),
-        transitions: parsed.transitions.map((transition) => ({
+        poseGraphs: animPoseGraphs(parsed).map(({ key, graph }) => ({
+          key,
+          graph: serializedGraphCompileSlice(`${entry.path}#pose-${key}`, graph),
+        })),
+        transitions: animTransitions(parsed).map(({ transition }) => ({
           id: transition.id,
           fromStateId: transition.fromStateId,
           toStateId: transition.toStateId,
@@ -916,9 +924,9 @@ function compileAnimGraphDocument(
       parentClassId: "Object",
     });
   }
-  for (const transition of doc.transitions) {
+  for (const { machine, transition } of animTransitions(doc)) {
     const oneWay = !findReverseTransition(
-      doc.transitions,
+      machine.transitions,
       transition.fromStateId,
       transition.toStateId,
     );
@@ -948,6 +956,33 @@ function compileAnimGraphDocument(
         isAsync: point.isAsync,
         ...(point.event ? { event: point.event } : {}),
         title: "Transition Rule",
+      })),
+      parentClassId: "Object",
+    });
+  }
+  // Each pose graph's wired data inputs (Play Rate, Alpha, Active) compile into one module; its pose wires do not,
+  // and a graph with no wired data input needs none.
+  for (const { key, graph } of animPoseGraphs(doc)) {
+    const logic = materializeLogicGraph(graph, `pose-${key}`, "event", options);
+    const compiled = compilePoseDataGraph(logic, {
+      assetGuid: entry.path,
+      className: entry.name?.trim() || classDisplayNameForGraphPath(entry.path),
+      registry: defaultNodeRegistry(),
+      stripDevelopmentOnly: options.stripDevelopmentOnly,
+      tagRegistry: options.tagRegistry,
+    });
+    if (!compiled) continue;
+    scripts.push({
+      assetGuid: entry.path,
+      classId: animPoseScriptClassId(entry.guid, key),
+      source: compiled.source,
+      anchors: compiled.anchors,
+      className: entry.name?.trim() || classDisplayNameForGraphPath(entry.path),
+      entryPoints: compiled.entryPoints.map((point) => ({
+        name: point.name,
+        isAsync: point.isAsync,
+        ...(point.event ? { event: point.event } : {}),
+        title: "Pose Data",
       })),
       parentClassId: "Object",
     });

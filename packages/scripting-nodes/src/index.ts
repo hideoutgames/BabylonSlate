@@ -52,6 +52,7 @@ import { behaviourTreeNodes } from "./behaviour-tree";
 import { navigationNodes } from "./navigation";
 import { illuminationNodes } from "./illumination";
 import { animationNodes } from "./animation";
+import { animPoseNodes } from "./anim-pose";
 import { structNodes } from "./struct";
 import { dataNodes } from "./data";
 import { editorDataNodes } from "./editor-data";
@@ -65,6 +66,7 @@ import { dispatcherNodes } from "./dispatchers";
 import { curveRangeNodes } from "./curves-ranges";
 
 export * from "./flow";
+export * from "./anim-pose";
 export * from "./math";
 export * from "./vector";
 export * from "./string";
@@ -177,6 +179,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...navigationNodes,
     ...illuminationNodes,
     ...animationNodes,
+    ...animPoseNodes,
     ...structNodes,
     ...dataNodes,
     ...editorDataNodes,

@@ -389,6 +389,29 @@ test.describe("P9 content systems", () => {
     await expect(card).toHaveText("Idle To State");
   });
 
+  test("double-clicking an Animation Graph state opens its state graph, and the breadcrumbs step back out", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await page.getByTestId("anim-state-node-idle").dblclick();
+    const pose = page.getByTestId("anim-pose-graph");
+    await expect(pose).toHaveAttribute("data-pose-level", "state");
+    await expect(page.getByTestId("anim-graph-crumb-state")).toHaveText("Idle");
+    // One Sequence Player wired into the protected Output Pose.
+    await expect(pose.locator('.react-flow__node[data-id="output"] .anim-pose-output-node')).toBeVisible();
+    await expect(pose.locator('.react-flow__node[data-id="player"]')).toBeVisible();
+    await expect(pose.locator(".react-flow__edge")).toHaveCount(1);
+
+    await page.getByTestId("anim-graph-crumb-anim").click();
+    await expect(pose).toHaveAttribute("data-pose-level", "anim");
+    await pose.locator('.react-flow__node[data-id="machine-locomotion"]').dblclick();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-crumb-machine")).toHaveText("Locomotion");
+  });
+
   test("Material preview compiles the authored graph and follows the primitive picker", async ({
     page,
   }) => {

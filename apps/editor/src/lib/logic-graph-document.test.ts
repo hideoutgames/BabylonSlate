@@ -529,7 +529,7 @@ describe("commitLogicGraph", () => {
     expect(serializedGraphFromDocument("scene-layer", commit.scene)).toEqual({ nodes: [], edges: [], members: [] });
   });
 
-  it("writes Animation Object graphs without dropping states", () => {
+  it("writes Animation Object graphs without dropping State Machines", () => {
     const doc = createDefaultAnimGraph();
     const next: SerializedGraph = {
       nodes: [
@@ -546,7 +546,8 @@ describe("commitLogicGraph", () => {
     const commit = commitLogicGraph("anim-graph-3d", doc, next);
     expect(commit.kind).toBe("asset-payload");
     if (commit.kind !== "asset-payload") return;
-    expect(commit.payload.states).toEqual(doc.states);
+    expect(commit.payload.stateMachines).toEqual(doc.stateMachines);
+    expect(commit.payload.animGraph).toEqual(doc.animGraph);
     expect(commit.payload.animationObject).toEqual({
       nodes: next.nodes,
       edges: next.edges,

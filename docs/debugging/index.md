@@ -55,7 +55,7 @@ Each node pauses the game only the first time: later errors from the same node a
 
 ### Breakpoints
 
-A breakpoint stops a Simulation or Play when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions, on any node of a [Behaviour Tree](../assets/behaviour-tree.md), and on any state or transition of an [Animation Graph](../assets/animation-graph.md)'s **State Machine**. Set one in any of these ways:
+A breakpoint stops a Simulation or Play when a node runs. You can set one on any node that execution reaches, such as an event, a function's entry or a node in an exec chain, in a Class's event graph or functions, on any node of a [Behaviour Tree](../assets/behaviour-tree.md), and on any state or transition of an [Animation Graph](../assets/animation-graph.md)'s State Machines. Set one in any of these ways:
 
 - Choose **Add Breakpoint** from the node's menu (right-click, or press and hold on touch).
 - Select the node and press <kbd>F9</kbd>.
@@ -134,7 +134,7 @@ The **Blackboard** window lists the current values of the object's Blackboard.
 
 ### Animation Graph State Machines
 
-The **State Machine** lights each state the graph plays in a tick: the active state, and the state a blend is leaving. A transition's wire lights up when the transition is taken. A Both Ways pair is one wire, so it lights for either direction. [Jump To State](../scripting/class/jump-to-state.md) changes the active state without a transition. Transition rule graphs do not show a run.
+Each State Machine's canvas lights each state it plays in a tick: the active state, and the state a blend is leaving, whether or not they play a clip. A transition's wire lights up when the transition is taken. A Both Ways pair is one wire, so it lights for either direction. [Jump To State](../scripting/class/jump-to-state.md) changes the active state without a transition. Transition rule graphs, the Anim Graph and state graphs do not show a run.
 
 ### Watches
 

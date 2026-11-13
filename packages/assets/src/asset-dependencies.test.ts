@@ -21,6 +21,26 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
   });
 
+  it("requires an Animation Graph's Skeleton and the clips its Anim Graph and state graphs play", () => {
+    const player = (id: string, type: string, assetGuid: string) => ({ id, type, position: { x: 0, y: 0 }, data: { assetGuid } });
+    const metadata = collectAssetDependencyMetadata("AnimationGraph3D", {
+      skeletonGuid: "rig",
+      variables: [],
+      animGraph: { nodes: [player("held", "anim.pose.sequenceEvaluator", "door-open")], edges: [] },
+      stateMachines: [{
+        id: "locomotion",
+        states: [
+          { id: "idle", stateGraph: { nodes: [player("player", "anim.pose.sequencePlayer", "idle-clip"), player("unset", "anim.pose.sequencePlayer", "")], edges: [] } },
+          { id: "wave", stateGraph: { nodes: [player("player", "anim.frame.spritePlayer", "wave-frames")], edges: [] } },
+        ],
+        transitions: [],
+      }],
+      animationObject: { nodes: [], edges: [] },
+    });
+    expect(metadata.dependencies).toEqual(["door-open", "idle-clip", "rig", "wave-frames"]);
+    expect(metadata.requiredDependencies).toEqual(["door-open", "idle-clip", "rig", "wave-frames"]);
+  });
+
   it("collects the assets a Scene's or Scene Layer's script references, as a Class graph would", () => {
     const script = { nodes: [], edges: [], members: [
       { kind: "variable", name: "Music", typeId: "asset", typeClassId: "Audio", loading: "hard", defaultValue: "music" },

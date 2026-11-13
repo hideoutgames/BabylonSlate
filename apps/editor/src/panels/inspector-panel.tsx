@@ -26,6 +26,9 @@ import {
 } from "@haptic/core";
 import {
   animGraphMembersFromVariables,
+  animTransitions,
+  findStateMachine,
+  patchStateGraph,
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
   findReverseTransition,
@@ -171,17 +174,28 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const openRuleId = animEditorMode === "stateMachine"
     ? animEditing?.openTransitionId ?? null
     : null;
-  const ruleTransition =
+  const ruleEntry =
     openRuleId && parsedAnim
-      ? (parsedAnim.transitions.find((row) => row.id === openRuleId) ?? null)
+      ? (animTransitions(parsedAnim).find(({ transition }) => transition.id === openRuleId) ?? null)
       : null;
+  const ruleTransition = ruleEntry?.transition ?? null;
+  // The Anim Graph or a state's graph on show in the State Machine mode (a rule takes precedence).
+  const animLocation = animEditorMode === "stateMachine" && !ruleTransition ? animEditing?.location ?? null : null;
+  const poseState = animLocation?.kind === "state" && parsedAnim
+    ? findStateMachine(parsedAnim, animLocation.machineId)?.states.find((row) => row.id === animLocation.stateId) ?? null
+    : null;
+  const poseSource = parsedAnim
+    ? animLocation?.kind === "anim" ? parsedAnim.animGraph : poseState?.stateGraph ?? null
+    : null;
   const graph = useMemo(
-    () => ruleTransition && parsedAnim
+    () => poseSource && parsedAnim
+      ? { ...poseSource, members: animGraphMembersFromVariables(parsedAnim.variables) }
+      : ruleTransition && parsedAnim
       ? {
           ...decorateTransitionRuleGraph(
             ruleTransition.ruleGraph,
             !findReverseTransition(
-              parsedAnim.transitions,
+              ruleEntry?.machine.transitions ?? [],
               ruleTransition.fromStateId,
               ruleTransition.toStateId,
             ),
@@ -189,10 +203,20 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           members: animGraphMembersFromVariables(parsedAnim.variables),
         }
       : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
-    [doc?.content, doc?.ref.kind, parsedAnim, ruleTransition],
+    [doc?.content, doc?.ref.kind, parsedAnim, ruleEntry, ruleTransition, poseSource],
   );
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
+    if (poseSource && parsedAnim && animLocation) {
+      const stored = { nodes: next.nodes, edges: next.edges };
+      void applyAssetDocumentChange(
+        documentId,
+        (animLocation.kind === "state"
+          ? patchStateGraph(parsedAnim, animLocation.machineId, animLocation.stateId, stored)
+          : { ...parsedAnim, animGraph: stored }) as unknown as Record<string, unknown>,
+      );
+      return;
+    }
     if (ruleTransition && parsedAnim) {
       const ruleKey = logicGraphEditMergeKey(graph, next);
       void applyAssetDocumentChange(

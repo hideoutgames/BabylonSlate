@@ -22,4 +22,4 @@ Returns true in the update where the clip passes a given point in time.
 
 - Exit Time is normalised: 0 is the start of the clip and 1 is the end. In a non-looping state it stays true once reached.
 - In a looping state it fires once per loop, on the update that crosses the point; a value above 1 fires once, after that many loops.
-- Only available in transition rule graphs, where it reads the state the transition leaves.
+- Available in transition rule graphs, where it reads the state the transition leaves, and in a state's graph, where it reads that state.

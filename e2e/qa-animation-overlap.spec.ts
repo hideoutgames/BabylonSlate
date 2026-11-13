@@ -4,6 +4,7 @@ import {
   encodeAssetDocument,
 } from "../packages/assets/src/asset-document";
 import type { AnimGraphDocument } from "../packages/anim-graph/src/graph";
+import { createStateGraph, patchPosePlayer, singlePlayerOf } from "../packages/anim-graph/src/pose-graph";
 import {
   createActor,
   identitySerializedTransform,
@@ -147,24 +148,25 @@ test("H16: Space jumps the wired Mannequin graph to a visible Walk pose and retu
   }, directoryName);
   const walk = await decodeAssetDocument(await assetBytes(page, walkPath));
   expect(walk.type).toBe("Animation");
-  animation.states[0]!.speed = 0;
-  animation.states.push({
+  const machine = animation.stateMachines[0]!;
+  const idleState = machine.states[0]!;
+  idleState.stateGraph = patchPosePlayer(idleState.stateGraph, singlePlayerOf(idleState.stateGraph)!.id, { playRate: 0 });
+  machine.states.push({
     id: "walk",
     name: "Walk",
-    clipId: "walk",
-    speed: 1,
-    loop: true,
     position: { x: 300, y: 0 },
+    stateGraph: createStateGraph("3d", {
+      assetGuid: walk.guid,
+      clipName: "walk",
+      durationMs: Number(walk.payload.durationMs),
+    }),
   });
-  animation.clips.push({
-    id: "walk",
-    kind: "animation",
-    assetGuid: walk.guid,
-    clipName: "walk",
-    durationMs: Number(walk.payload.durationMs),
+  const clipGuids = machine.states.flatMap((state) => {
+    const guid = singlePlayerOf(state.stateGraph)?.data.assetGuid;
+    return typeof guid === "string" && guid ? [guid] : [];
   });
   const encoded = await encodeAssetDocument(animationAsset, {
-    dependencies: animation.clips.map((clip) => clip.assetGuid),
+    dependencies: clipGuids,
   });
   await page.evaluate(
     async ({ path, bytes, projectDirectory }) => {

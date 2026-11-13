@@ -2043,7 +2043,7 @@ describe("compileAnimGraphScripts", () => {
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
     doc.animationObject = tagMatchGraph("anim.event.update");
-    doc.transitions.push({
+    doc.stateMachines[0]!.transitions.push({
       id: "tag-rule", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0,
       ruleGraph: {
         nodes: [
@@ -2076,7 +2076,7 @@ describe("compileAnimGraphScripts", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
-    doc.transitions.push({
+    doc.stateMachines[0]!.transitions.push({
       id: "idle-to-idle",
       fromStateId: "idle",
       toStateId: "idle",
@@ -2112,6 +2112,38 @@ describe("compileAnimGraphScripts", () => {
     );
     expect(scripts[1]?.source).toContain("export function evaluate(ctx)");
     expect(scripts[1]?.source).toContain("enter: (true)");
+  });
+
+  it("compiles a pose graph's wired data inputs into its own module, and nothing for a graph without any", async () => {
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const doc = createDefaultAnimGraph();
+    doc.variables = [{ id: "var-speed", name: "Speed", typeId: "float", defaultValue: 1 }];
+    const idle = doc.stateMachines[0]!.states[0]!;
+    idle.stateGraph = {
+      nodes: [
+        ...idle.stateGraph.nodes,
+        {
+          id: "get-speed",
+          type: "variables.get",
+          position: { x: 0, y: 200 },
+          data: { variableId: "var-speed", variableName: "Speed", typeId: "float", implicitSelf: true },
+        },
+      ],
+      edges: [
+        ...idle.stateGraph.edges,
+        { id: "rate", source: "get-speed", sourceHandle: "value", target: "player", targetHandle: "playRate" },
+      ],
+    };
+    const scripts = compileAnimGraphScripts([
+      { guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: doc },
+    ]);
+    expect(scripts.map((entry) => entry.classId)).toEqual([
+      "AnimGraph:graph-1",
+      "AnimPose:graph-1:locomotion/idle",
+    ]);
+    expect(scripts[1]?.source).toContain("export function evaluate(ctx)");
+    expect(scripts[1]?.source).toMatch(/"player": \{ "playRate": /);
   });
 
   it("reuses Animation Graph compiles when the document is unchanged", async () => {
@@ -2156,9 +2188,16 @@ describe("compileAnimGraphScripts", () => {
         position: { x: 99, y: 40 },
       })),
     };
-    nudged.states = nudged.states.map((state) => ({
-      ...state,
-      position: { x: 50, y: 80 },
+    nudged.stateMachines = nudged.stateMachines.map((machine) => ({
+      ...machine,
+      states: machine.states.map((state) => ({
+        ...state,
+        position: { x: 50, y: 80 },
+        stateGraph: {
+          ...state.stateGraph,
+          nodes: state.stateGraph.nodes.map((node) => ({ ...node, position: { x: 7, y: 7 } })),
+        },
+      })),
     }));
     compileAnimGraphScripts(
       [{ guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: nudged }],
@@ -2215,15 +2254,13 @@ describe("compileAnimGraphScripts", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
-    doc.states.push({
+    doc.stateMachines[0]!.states.push({
       id: "run",
       name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
       position: { x: 300, y: 80 },
+      stateGraph: doc.stateMachines[0]!.states[0]!.stateGraph,
     });
-    doc.transitions.push({
+    doc.stateMachines[0]!.transitions.push({
       id: "idle-to-run",
       fromStateId: "idle",
       toStateId: "run",

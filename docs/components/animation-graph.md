@@ -1,6 +1,6 @@
 # Animation Graph
 
-Plays an Animation Graph on an actor: a state machine that drives Model animations and Sprite Animations.
+Plays an Animation Graph on an actor: its State Machines and pose graphs drive Model animations and Sprite Animations.
 
 ## Add it
 

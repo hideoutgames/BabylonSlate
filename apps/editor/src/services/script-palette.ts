@@ -5,6 +5,7 @@
  */
 import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
+import { isPureAnimGraphHost } from "../lib/class-event-catalog";
 import { EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
 import { sceneAssetClassId } from "@haptic/object-model";
 import type { PaletteNode } from "@haptic/graph-ui";
@@ -70,7 +71,7 @@ function structPaletteNodes(
 }
 
 function saveGamePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
-  if (isEditorGraphHost(options ?? {}) || options?.animationGraphHost === "rule") return [];
+  if (isEditorGraphHost(options ?? {}) || isPureAnimGraphHost(options?.animationGraphHost)) return [];
   return (options?.saveGameDefinition?.fields ?? []).flatMap((field) =>
     ["getField", "setField", "migrationGetField", "migrationSetField"].map((operation): PaletteNode => {
       const def = nodeRegistry.get(`saveGame.${operation}`)!;
@@ -292,6 +293,7 @@ export function scriptPaletteInjectorKey(
     classId: options?.classId ?? null,
     assetType: options?.assetType ?? null,
     animationGraphHost: options?.animationGraphHost ?? null,
+    animPose: options?.animPose ?? null,
     activeFunctionId: options?.activeFunctionId ?? null,
     classes: classIds.map((id) => [id, parentOf(id) ?? null]),
     graph: graphPaletteMemberFingerprint(options?.graph),
@@ -341,7 +343,7 @@ function scriptPaletteCatalogNodes(
       if (def.hosts?.length && !classLineageIncludesAny(def.hosts, options)) {
         return false;
       }
-      if (options?.animationGraphHost === "rule" && def.pure !== true) {
+      if (isPureAnimGraphHost(options?.animationGraphHost) && def.pure !== true) {
         return false;
       }
       return isScriptCatalogNodeAllowed(def.id, options);
@@ -437,7 +439,7 @@ function scriptPaletteInjectorNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
-  if (options?.animationGraphHost === "rule") {
+  if (isPureAnimGraphHost(options?.animationGraphHost)) {
     return markOutOfContext(
       [
         ...variableAccessPaletteNodes(nodeRegistry, options),

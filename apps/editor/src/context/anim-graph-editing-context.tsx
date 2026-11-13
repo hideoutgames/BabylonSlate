@@ -8,6 +8,12 @@ import {
 } from "react";
 import { useNodeSelection } from "../lib/node-selection";
 
+/** The graph the Animation Graph editor shows: the Anim Graph, a State Machine or a state's graph. */
+export type AnimEditorLocation =
+  | { kind: "anim" }
+  | { kind: "machine"; machineId: string }
+  | { kind: "state"; machineId: string; stateId: string };
+
 export interface AnimGraphEditingContextValue {
   /** Every selected state; Details shows the properties they share. */
   selectedIds: readonly string[];
@@ -23,6 +29,10 @@ export interface AnimGraphEditingContextValue {
   openTransitionId: string | null;
   openTransitionRule: (id: string) => void;
   closeTransitionRule: () => void;
+  /** Where the editor is; null opens the primary State Machine. */
+  location: AnimEditorLocation | null;
+  /** Shows another graph, closing an open rule and clearing the selection. */
+  navigate: (location: AnimEditorLocation) => void;
 }
 
 const AnimGraphEditingContext =
@@ -39,6 +49,7 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   >(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [openTransitionId, setOpenTransitionId] = useState<string | null>(null);
+  const [location, setLocation] = useState<AnimEditorLocation | null>(null);
   const setSelectedIds = useCallback((ids: readonly string[]) => {
     setSelectedIdsState(ids);
     if (ids.length > 0) setSelectedTransitionIdState(null);
@@ -64,6 +75,12 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   const closeTransitionRule = useCallback(() => {
     setOpenTransitionId(null);
   }, []);
+  const navigate = useCallback((next: AnimEditorLocation) => {
+    setOpenTransitionId(null);
+    setSelectedIdsState([]);
+    setSelectedTransitionIdState(null);
+    setLocation(next);
+  }, [setSelectedIdsState]);
   const value = useMemo<AnimGraphEditingContextValue>(
     () => ({
       selectedIds,
@@ -77,8 +94,12 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
       openTransitionId,
       openTransitionRule,
       closeTransitionRule,
+      location,
+      navigate,
     }),
     [
+      location,
+      navigate,
       closeTransitionRule,
       focusNode,
       focusedNodeId,

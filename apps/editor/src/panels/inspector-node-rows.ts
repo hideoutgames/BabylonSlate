@@ -1,3 +1,4 @@
+import { ANIM_POSE_CLIP_PICK, animPoseClipPatch, animPoseNodePropertyRows } from "../lib/anim-pose-inspector";
 import type { SerializedGraph } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
 import { pinDefaultPropertyKey } from "@haptic/scripting";
@@ -41,6 +42,7 @@ export const GRAPH_NODE_ROW_SECTIONS = [
   { section: "containerConstructor", testId: "inspector-container-constructor" },
   { section: "sequence", testId: "inspector-sequence" },
   { section: "tagCases", testId: "inspector-tag-cases" },
+  { section: "animPose", testId: "inspector-anim-pose" },
 ] as const;
 
 export type GraphNodeRowSection = (typeof GRAPH_NODE_ROW_SECTIONS)[number]["section"];
@@ -126,6 +128,10 @@ export function graphNodeInspectorRows(node: GraphNode, env: GraphNodeRowsEnv) {
     containerConstructor: containerConstructorPropertyRows(node.type, node.data, updateNodeData),
     sequence: sequencePropertyRows(node.type, node.data, updateNodeData),
     tagCases: tagNodePropertyRows(node.type, node.data, updateNodeData, env.tags),
+    animPose: animPoseNodePropertyRows(node.type, node.data, updateNodeData, {
+      assetEntries: mapping.assetEntries,
+      onPickClip: (assetType) => env.onPickAsset({ pinId: ANIM_POSE_CLIP_PICK, assetType, allowedTypes: [assetType] }),
+    }),
   };
 
   return {
@@ -143,6 +149,11 @@ export function graphNodeInspectorRows(node: GraphNode, env: GraphNodeRowsEnv) {
     },
     /** Write an asset picked (or None) for `pinId`'s default. */
     pickAsset: (pinId: string, guid: string | null) => {
+      // A pose node's clip is its own setting, not a pin default.
+      if (pinId === ANIM_POSE_CLIP_PICK) {
+        updateNodeData(animPoseClipPatch(guid));
+        return;
+      }
       const nested = nestedPinDefaultRow(pinId);
       if (nested?.kind === "asset") nested.onChange(guid ?? "");
       else updateNodeData(dataGraphAssetPickPatch(node.type, pinId, guid, dataAssets, node.data, dataPinWired));
