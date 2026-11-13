@@ -79,6 +79,7 @@ import {
 import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { HomepageAccount } from "./homepage-account";
+import { HomepageDiscordBadge } from "./homepage-discord-badge";
 import { ReleaseNews } from "./release-news";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { HomepageGallery } from "./homepage-gallery";
@@ -360,6 +361,9 @@ export function Homepage({
             <span className="homepage-navigation-count">{templateCount}</span>
           </ToggleGroupItem>
         </ToggleGroup>
+        <div className="homepage-sidebar-badges">
+          <HomepageDiscordBadge />
+        </div>
         <div className="homepage-sidebar-end">
           <div className="homepage-sidebar-account">
             <HomepageAccount

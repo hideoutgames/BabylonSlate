@@ -31,7 +31,7 @@ Every platform opens the same project format, so you can move a project between 
 
 The mobile apps keep you signed in across restarts and app updates until you sign out or your session expires. Your projects stay on the device.
 
-Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, and **Sign In** or **Sign Out**.
+Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, **Discord Server**, and **Sign In** or **Sign Out**. **Discord Server** opens the Haptic community on Discord; above your name, **Join our Discord** does the same, except on phones.
 
 **Manage Account** opens the **Account** window:
 
