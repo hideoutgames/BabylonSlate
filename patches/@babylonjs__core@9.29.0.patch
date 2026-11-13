@@ -570,7 +570,7 @@ diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
 index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a9810a5d22f9 100644
 --- a/Misc/khronosTextureContainer2.js
 +++ b/Misc/khronosTextureContainer2.js
-@@ -227,6 +227,16 @@ export class KhronosTextureContainer2 {
+@@ -227,6 +227,23 @@ export class KhronosTextureContainer2 {
       * @internal
       */
      async _uploadAsync(data, internalTexture, options) {
@@ -585,6 +585,13 @@ index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a981
 +            }
 +        }
          const decodedData = await this._decodeAsync(data, options);
++        // A texture disposed while its data decoded has no hardware texture left, so binding it binds
++        // nothing and the upload fails (WebGL: texImage2D with no texture bound). Skip it, as the
++        // engine's own load continuation (_prepareWebGLTexture) does.
++        if (!internalTexture._hardwareTexture) {
++            return;
++        }
++
          this._createTexture(decodedData, internalTexture, options);
      }
 diff --git a/Misc/rgbdTextureTools.js b/Misc/rgbdTextureTools.js
