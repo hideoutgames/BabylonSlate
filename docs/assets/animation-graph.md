@@ -22,7 +22,8 @@ Double-tap an Animation Graph to open it. Its **Graph** window shows the Anim Gr
 The Graph has three levels. A bar above the canvas shows where you are, such as **Anim Graph › Locomotion › Run**. Tap a name in it to go there, or tap **Back** to step out one level.
 
 - **Anim Graph**: the top level, a pose graph that ends in **Output Pose** (2D: **Output Frame**). Its result is what the [Animation Graph component](../components/animation-graph.md) plays. A new graph has one [State Machine](../scripting/animation/state-machine-pose.md) node wired to the output. Add more State Machine nodes and blend them, for example a locomotion State Machine with an upper-body one. Adding a State Machine node adds a State Machine; deleting the node deletes it. Double-tap a State Machine node to open it.
-- **State Machine**: each state is a node. Drag from one state to another to add a transition. Select a wire or its blend dot to edit that transition. Double-tap a state to open its state graph.
+- **State Machine**: each state is a node. Drag from any side of a state onto another state to add a transition from the state you dragged: it leaves by the side you dragged from and enters the side you release on, or the side facing the first state when you release near the middle. Dragging between the same two states again moves that transition to the new sides. Select a wire or its blend dot to edit that transition. Double-tap a state to open its state graph.
+- **Two-way transitions**: a transition back between the same two sides shares the first one's wire, with an arrow at each end. A transition back on other sides is a wire of its own.
 - **State graph**: each state's own pose graph, ending in **Output Pose** or **Output Frame**. A new state has one [Sequence Player](../scripting/animation/sequence-player.md) (2D: [Sprite Animation Player](../scripting/animation/sprite-animation-player.md)) wired to the output. Add nodes such as [Blend](../scripting/animation/blend.md) or [Blend Poses By Bool](../scripting/animation/blend-poses-by-bool.md) to mix clips in one state, or [Flip Frame](../scripting/animation/flip-frame.md) to face a sprite the other way.
 
 Pose and frame wires are thick and connect only to pins of their own type. The other inputs, such as **Play Rate**, **Alpha** and **Active**, take a value on the node or a wire from pure nodes: a Get Variable node, math, or in a state graph the [state nodes](../scripting/animation/index.md#state) such as Get Normalized Time.
@@ -71,7 +72,7 @@ The **Animation Object** window holds a script graph that runs for each Animatio
 | --- | --- |
 | Blend Time | How long the old clip blends into the new one. |
 | Priority | When several transitions leave a state, the lower number is checked first. |
-| Direction | **One Way** or **Both Ways**. Both Ways adds the reverse transition. |
+| Direction | **One Way** or **Both Ways**. Both Ways adds the reverse transition on the same two sides, sharing the wire. |
 | Open Rule | Opens the transition's rule graph. The transition fires when its **Exit State** and **Enter State** nodes are both true. An unconnected one counts as true. **Back To State Machine** returns to the graph with the transition selected. |
 | Flip Direction | Swaps the source and target of a One Way transition. |
 

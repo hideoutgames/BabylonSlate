@@ -1,4 +1,4 @@
-import { findReverseTransition, findStateMachine, type AnimGraphDocument } from "@haptic/anim-graph";
+import { findMirroredReverse, findStateMachine, type AnimGraphDocument } from "@haptic/anim-graph";
 import { animStateMachineDebugGraphId } from "@haptic/bridge";
 import type { GraphBreakpoints, GraphBreakpointState } from "@haptic/graph-ui";
 import type { BreakpointEntry, BreakpointStore } from "../services/breakpoint-store";
@@ -23,7 +23,7 @@ export function stateMachineBreakpointView(
       if (own === "enabled") return own;
       const transitions = findStateMachine(latestDoc(), machineId)?.transitions ?? [];
       const transition = transitions.find((row) => row.id === id);
-      const reverse = transition ? findReverseTransition(transitions, transition.fromStateId, transition.toStateId) : undefined;
+      const reverse = transition ? findMirroredReverse(transitions, transition) : undefined;
       return (reverse ? view.state(reverse.id) : null) ?? own;
     },
   };

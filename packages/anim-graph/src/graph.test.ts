@@ -11,6 +11,7 @@ import {
   animGraphMembersFromVariables,
   animPoseGraphs,
   animTransitionEdgeId,
+  animTransitionFromDrag,
   createAnimGraphGraph,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
@@ -524,7 +525,8 @@ describe("State Machine canvas", () => {
     const next = serializedToStateMachine(serialized, machine, "3d");
     expect(next.states[1]).toMatchObject({ position: { x: 420, y: 160 }, stateGraph: machine.states[1]!.stateGraph });
     expect(next.entryStateId).toBe("idle");
-    expect(next.transitions).toEqual([expect.objectContaining({ id: "canvas-edge-1", fromStateId: "idle", toStateId: "run", blendSeconds: 0.25 })]);
+    // A wire drawn again between the same two states keeps its transition's id.
+    expect(next.transitions).toEqual([expect.objectContaining({ id: "idle-to-run", fromStateId: "idle", toStateId: "run", blendSeconds: 0.25 })]);
   });
 
   it("gives an added state a fresh name and one player of the graph's dimension", () => {
@@ -546,6 +548,81 @@ describe("State Machine canvas", () => {
     expect(serializedToStateMachine(serialized, machine, "3d").transitions).toHaveLength(2);
     expect(animTransitionEdgeId(machine.transitions, "run", "idle")).toBe("idle-to-run");
     expect(setTransitionBidirectional(both, "idle-to-run", false).stateMachines[0]!.transitions).toHaveLength(1);
+  });
+
+  it("draws a reverse on other sides as its own wire, and only a mirrored reverse on the pair's one wire", () => {
+    const forward = transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" });
+    const own = { ...twoStates(), transitions: [forward, transition("run-to-idle", "run", "idle", { sourceHandle: "top-out", targetHandle: "top-in" })] };
+    expect(stateMachineToSerialized(own).edges.map((edge) => [edge.id, edge.type])).toEqual([
+      ["idle-to-run", "animTransition"],
+      ["run-to-idle", "animTransition"],
+    ]);
+    expect(animTransitionEdgeId(own.transitions, "run", "idle")).toBe("run-to-idle");
+    const mirrored = { ...twoStates(), transitions: [forward, transition("run-to-idle", "run", "idle", { sourceHandle: "left-out", targetHandle: "right-in" })] };
+    expect(stateMachineToSerialized(mirrored).edges.map((edge) => [edge.id, edge.type])).toEqual([["idle-to-run", "animTransitionBoth"]]);
+    expect(animTransitionEdgeId(mirrored.transitions, "run", "idle")).toBe("idle-to-run");
+  });
+
+  it("gives a mirrored pair's hidden reverse its own wire when it is drawn on other sides, without a duplicate", () => {
+    const forward = transition("idle-to-run", "idle", "run", { sourceHandle: "right-out", targetHandle: "left-in" });
+    const reverse = transition("run-to-idle", "run", "idle", { sourceHandle: "left-out", targetHandle: "right-in", priority: 2 });
+    const machine = { ...twoStates(), transitions: [forward, reverse] };
+    const canvas = stateMachineToSerialized(machine);
+    canvas.edges.push({ id: "canvas-new", source: "run", target: "idle", sourceHandle: "top-out", targetHandle: "top-in" });
+    const next = serializedToStateMachine(canvas, machine, "3d");
+    expect(next.transitions).toEqual([
+      expect.objectContaining({ id: "idle-to-run", sourceHandle: "right-out", targetHandle: "left-in" }),
+      expect.objectContaining({ id: "run-to-idle", sourceHandle: "top-out", targetHandle: "top-in", priority: 2 }),
+    ]);
+    // Moving the shared wire keeps the hidden reverse on its old sides, now a wire of its own.
+    const moved = stateMachineToSerialized(machine);
+    moved.edges = [{ id: "canvas-moved", source: "idle", target: "run", sourceHandle: "bottom-out", targetHandle: "bottom-in" }];
+    expect(serializedToStateMachine(moved, machine, "3d").transitions).toEqual([
+      expect.objectContaining({ id: "idle-to-run", sourceHandle: "bottom-out", targetHandle: "bottom-in" }),
+      expect.objectContaining({ id: "run-to-idle", sourceHandle: "left-out", targetHandle: "right-in" }),
+    ]);
+    // Deleting a reverse that had its own wire deletes it.
+    const separate = { ...twoStates(), transitions: [forward, { ...reverse, sourceHandle: "top-out", targetHandle: "top-in" }] };
+    const deleted = stateMachineToSerialized(separate);
+    deleted.edges = deleted.edges.filter((edge) => edge.id !== "run-to-idle");
+    expect(serializedToStateMachine(deleted, separate, "3d").transitions.map((row) => row.id)).toEqual(["idle-to-run"]);
+  });
+
+  it("loads a transition stored without sides on the sides its states face each other, so a pair mirrors", () => {
+    const states = [state("idle"), { ...state("run"), position: { x: 300, y: 80 } }, { ...state("jump"), position: { x: 0, y: 400 } }];
+    const stored = JSON.parse(JSON.stringify(machineDoc(states, [
+      transition("idle-to-run", "idle", "run"),
+      transition("run-to-idle", "run", "idle"),
+      transition("idle-to-jump", "idle", "jump"),
+    ])));
+    const machine = parseAnimGraphDocument(stored)!.stateMachines[0]!;
+    expect(machine.transitions.map((row) => [row.id, row.sourceHandle, row.targetHandle])).toEqual([
+      ["idle-to-run", "right-out", "left-in"],
+      ["run-to-idle", "left-out", "right-in"],
+      ["idle-to-jump", "bottom-out", "top-in"],
+    ]);
+    expect(stateMachineToSerialized(machine).edges.map((edge) => [edge.id, edge.type])).toEqual([
+      ["idle-to-run", "animTransitionBoth"],
+      ["idle-to-jump", "animTransition"],
+    ]);
+  });
+
+  it("builds a dragged transition from the dragged state's side to the side it is released on", () => {
+    const fromRect = { x: 0, y: 0, width: 200, height: 90 };
+    const toRect = { x: 400, y: 0, width: 200, height: 90 };
+    const drag = { fromNodeId: "idle", toNodeId: "run", fromRect, toRect };
+    // Dragged from the incoming plate, it still leaves the dragged state, on that side.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "left-in", toHandleId: null, point: { x: 500, y: 45 } })).toEqual({
+      source: "idle", target: "run", sourceHandle: "left-out", targetHandle: "left-in",
+    });
+    // Near the middle of the body: the side facing the dragged state.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "bottom-out", toHandleId: null, point: { x: 520, y: 50 } })?.targetHandle).toBe("left-in");
+    // Near an edge of the body: that side.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: null, point: { x: 500, y: 4 } })?.targetHandle).toBe("top-in");
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: null, point: { x: 596, y: 45 } })?.targetHandle).toBe("right-in");
+    // On a handle: that handle's side, whichever plate.
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: "bottom-out", point: null })?.targetHandle).toBe("bottom-in");
+    expect(animTransitionFromDrag({ ...drag, fromHandleId: "right-out", toHandleId: null, point: null, toNodeId: "idle" })).toBeNull();
   });
 
   it("flips a one-way transition with its handles, and leaves a Both Ways pair alone", () => {

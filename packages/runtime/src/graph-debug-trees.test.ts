@@ -175,11 +175,12 @@ describe("Animation Graph debugging", () => {
   const locomotion = (): AnimGraphDocument => {
     const document = createDefaultAnimGraph("Locomotion");
     const machine = document.stateMachines[0]!;
-    machine.states.push({ ...machine.states[0]!, id: "run", name: "Run" });
+    machine.states.push({ ...machine.states[0]!, id: "run", name: "Run", position: { x: 280, y: 0 } });
     const rule = createDefaultAnimGraph().animationObject;
+    // A mirrored pair (Idle's right to Run's left and back), drawn as one wire.
     machine.transitions.push(
-      { id: "idle-run", fromStateId: "idle", toStateId: "run", blendSeconds: 0, priority: 0, ruleGraph: rule },
-      { id: "run-idle", fromStateId: "run", toStateId: "idle", blendSeconds: 0.2, priority: 0, ruleGraph: rule },
+      { id: "idle-run", fromStateId: "idle", toStateId: "run", blendSeconds: 0, priority: 0, ruleGraph: rule, sourceHandle: "right-out", targetHandle: "left-in" },
+      { id: "run-idle", fromStateId: "run", toStateId: "idle", blendSeconds: 0.2, priority: 0, ruleGraph: rule, sourceHandle: "left-out", targetHandle: "right-in" },
     );
     return document;
   };
@@ -227,7 +228,7 @@ describe("Animation Graph debugging", () => {
     ]);
   });
 
-  it("draws the reverse transition of a Both Ways pair on the one edge the canvas has", async () => {
+  it("draws the reverse transition of a mirrored Both Ways pair on the one edge the canvas has", async () => {
     const { runtime, commands, graphs } = await startHeroes();
     runtime.applyDebugObserve(anim("loco"), "anim-1");
     const hero = runtime.getWorld().findActor("h1")!.components[0]!;

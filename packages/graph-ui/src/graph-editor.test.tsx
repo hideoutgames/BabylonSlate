@@ -8,6 +8,7 @@ import {
   GRAPH_MIN_ZOOM,
   GRAPH_ZOOM_ON_DOUBLE_CLICK,
   GraphEditor,
+  type GraphNodeDrag,
 } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 import { isAssignable, type PinType } from "@haptic/scripting";
@@ -2221,6 +2222,55 @@ describe("GraphEditor", () => {
           (edge) => edge.source === "log-c" && edge.target === "log-a",
         ),
       ).toBe(true);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("lets the host build a wire dragged from an input onto another node's body, from the dragged node", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const connectDraggedToNode = vi.fn((drag: GraphNodeDrag) => ({
+        source: drag.fromNodeId,
+        target: drag.toNodeId,
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      }));
+      const { container } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              { id: "log-a", type: "debug.log", position: { x: 0, y: 0 }, data: { message: "A", __pins: debugLogPins } },
+              { id: "log-b", type: "debug.log", position: { x: 280, y: 0 }, data: { message: "B", __pins: debugLogPins } },
+            ],
+            edges: [],
+          }}
+          connectEndMode="zone-add-node"
+          connectionMode="loose"
+          connectDraggedToNode={connectDraggedToNode}
+          onChange={onChange}
+        />,
+      );
+      const flow = container.querySelector(".react-flow");
+      mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
+      const input = container.querySelector('[data-id="log-a"] [data-handleid="execIn"][data-handlepos="left"]');
+      const body = container.querySelector('.react-flow__node[data-id="log-b"]');
+      expect(input).not.toBeNull();
+      expect(body).not.toBeNull();
+      mockHandleRect(input!, { left: 0, top: 0, width: 44, height: 44 });
+      mockHandleRect(body!, { left: 280, top: 0, width: 200, height: 120 });
+      onChange.mockClear();
+      act(() => {
+        dragHandle(input!, { x: 22, y: 22 }, { x: 380, y: 100 });
+      });
+      expect(connectDraggedToNode).toHaveBeenCalledWith(
+        expect.objectContaining({ fromNodeId: "log-a", fromHandleId: "execIn", toNodeId: "log-b", toHandleId: null }),
+      );
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({ source: "log-a", sourceHandle: "execOut", target: "log-b", targetHandle: "execIn" }),
+      ]);
     } finally {
       restoreLayout();
     }

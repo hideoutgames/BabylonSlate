@@ -99,6 +99,47 @@ export function normalizeAnimConnection(connection: {
   };
 }
 
+type AnimDragRect = { x: number; y: number; width: number; height: number };
+
+/** The side of `rect` that `point` lies toward, measured against the box's half extents. */
+function sideToward(rect: AnimDragRect, point: { x: number; y: number }): { side: AnimStateSide; reach: number } {
+  const dx = (point.x - (rect.x + rect.width / 2)) / Math.max(rect.width / 2, 1);
+  const dy = (point.y - (rect.y + rect.height / 2)) / Math.max(rect.height / 2, 1);
+  if (Math.abs(dx) >= Math.abs(dy)) return { side: dx >= 0 ? "right" : "left", reach: Math.abs(dx) };
+  return { side: dy >= 0 ? "bottom" : "top", reach: Math.abs(dy) };
+}
+
+const rectCentre = (rect: AnimDragRect) => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 });
+
+/**
+ * The transition a drag between two states makes: always from the dragged state, leaving by the side it was dragged
+ * from. It enters the other state on the side it was released on: the handle's side, else the side nearest the
+ * release point, else (near the middle, or with no point) the side facing the dragged state.
+ */
+export function animTransitionFromDrag(drag: {
+  fromNodeId: string;
+  fromHandleId: string;
+  toNodeId: string;
+  toHandleId: string | null;
+  point: { x: number; y: number } | null;
+  fromRect: AnimDragRect | null;
+  toRect: AnimDragRect | null;
+}): { source: string; target: string; sourceHandle: string; targetHandle: string } | null {
+  if (drag.fromNodeId === drag.toNodeId) return null;
+  const facing = drag.fromRect && drag.toRect ? sideToward(drag.toRect, rectCentre(drag.fromRect)).side : "left";
+  const released = drag.point && drag.toRect ? sideToward(drag.toRect, drag.point) : null;
+  const handleSide = drag.toHandleId ? ANIM_STATE_HANDLE.exec(drag.toHandleId)?.[1] : undefined;
+  const targetSide = handleSide ?? (released && released.reach >= 0.5 ? released.side : facing);
+  const fromSide = ANIM_STATE_HANDLE.exec(drag.fromHandleId)?.[1]
+    ?? (drag.fromRect && drag.toRect ? sideToward(drag.fromRect, rectCentre(drag.toRect)).side : "right");
+  return {
+    source: drag.fromNodeId,
+    target: drag.toNodeId,
+    sourceHandle: `${fromSide}-out`,
+    targetHandle: `${targetSide}-in`,
+  };
+}
+
 function transitionPairKey(fromStateId: string, toStateId: string): string {
   return `${fromStateId}\0${toStateId}`;
 }
@@ -113,6 +154,26 @@ export function findReverseTransition(
   );
 }
 
+const handleSide = (handle: string | undefined, direction: "in" | "out"): string =>
+  animStateHandle(handle, direction).split("-")[0]!;
+
+/**
+ * The reverse of a transition when it runs between the same two sides (B's side out to A's side in, where A→B leaves
+ * A's side for B's): the pair is drawn as one Both Ways wire. A reverse on other sides is a wire of its own.
+ */
+export function findMirroredReverse(
+  transitions: readonly AnimTransition[],
+  transition: AnimTransition,
+): AnimTransition | undefined {
+  const reverse = findReverseTransition(transitions, transition.fromStateId, transition.toStateId);
+  if (!reverse || reverse.id === transition.id) return undefined;
+  return handleSide(reverse.sourceHandle, "out") === handleSide(transition.targetHandle, "in")
+    && handleSide(reverse.targetHandle, "in") === handleSide(transition.sourceHandle, "out")
+    ? reverse
+    : undefined;
+}
+
+/** The transitions drawn as wires: each one, except the second of a mirrored pair, which shares the first's. */
 function visualTransitions(
   transitions: readonly AnimTransition[],
 ): AnimTransition[] {
@@ -125,29 +186,25 @@ function visualTransitions(
     if (seenPair.has(pair)) continue;
     seenPair.add(pair);
     visual.push(row);
-    const reverse = findReverseTransition(
-      transitions,
-      row.fromStateId,
-      row.toStateId,
-    );
-    if (reverse && reverse.id !== row.id) skip.add(reverse.id);
+    const mirrored = findMirroredReverse(transitions, row);
+    if (mirrored) skip.add(mirrored.id);
   }
   return visual;
 }
 
 /**
- * The id of the canvas edge that draws a transition taken from one state to another: a Both Ways
- * pair, like duplicate rows, shares the edge of the first row. The runtime's debug trace names the
- * transition it took by it.
+ * The id of the canvas edge that draws a transition taken from one state to another: its own, or for the second of
+ * a mirrored pair, the first's. The runtime's debug trace names the transition it took by it.
  */
 export function animTransitionEdgeId(
   transitions: readonly AnimTransition[],
   fromStateId: string,
   toStateId: string,
 ): string | undefined {
-  return visualTransitions(transitions).find((row) =>
-    (row.fromStateId === fromStateId && row.toStateId === toStateId) ||
-    (row.fromStateId === toStateId && row.toStateId === fromStateId))?.id;
+  const row = transitions.find((candidate) => candidate.fromStateId === fromStateId && candidate.toStateId === toStateId);
+  if (!row) return undefined;
+  if (visualTransitions(transitions).some((visual) => visual.id === row.id)) return row.id;
+  return findMirroredReverse(transitions, row)?.id;
 }
 
 function uniqueTransitionId(doc: AnimGraphDocument): string {
@@ -197,8 +254,9 @@ export function setTransitionBidirectional(
         blendSeconds: transition.blendSeconds,
         priority: transition.priority,
         ruleGraph: createDefaultTransitionRuleGraph(),
-        sourceHandle: "right-out",
-        targetHandle: "left-in",
+        // The mirrored sides, so the pair shares one wire.
+        sourceHandle: `${handleSide(transition.targetHandle, "in")}-out`,
+        targetHandle: `${handleSide(transition.sourceHandle, "out")}-in`,
       },
     ]);
   }
@@ -225,8 +283,8 @@ export function flipTransitionDirection(
           ...row,
           fromStateId: row.toStateId,
           toStateId: row.fromStateId,
-          sourceHandle: animStateHandle(row.targetHandle, "out"),
-          targetHandle: animStateHandle(row.sourceHandle, "in"),
+          sourceHandle: `${handleSide(row.targetHandle, "in")}-out`,
+          targetHandle: `${handleSide(row.sourceHandle, "out")}-in`,
         }
       : row,
   ));
@@ -271,8 +329,9 @@ function mergeTransitions(
     const prev =
       byId.get(edge.id) ??
       byPair.get(transitionPairKey(edge.source, edge.target));
+    // A wire drawn again between the same two states keeps its transition (id, rule, settings) on its new sides.
     return {
-      id: edge.id,
+      id: prev?.id ?? edge.id,
       fromStateId: edge.source,
       toStateId: edge.target,
       blendSeconds: prev?.blendSeconds ?? 0.1,
@@ -284,13 +343,14 @@ function mergeTransitions(
   });
   const result = [...merged];
   const ids = new Set(result.map((row) => row.id));
+  const hasPair = (fromStateId: string, toStateId: string) =>
+    result.some((row) => row.fromStateId === fromStateId && row.toStateId === toStateId);
+  // The second of a mirrored pair has no wire of its own: it stays while its partner's wire does, keeping its sides,
+  // unless a wire of its own was drawn for it.
+  const drawn = new Set(visualTransitions(previous).map((row) => row.id));
   for (const prev of previous) {
-    if (ids.has(prev.id)) continue;
-    const reverseOf = result.find(
-      (row) =>
-        row.fromStateId === prev.toStateId && row.toStateId === prev.fromStateId,
-    );
-    if (!reverseOf) continue;
+    if (ids.has(prev.id) || drawn.has(prev.id)) continue;
+    if (hasPair(prev.fromStateId, prev.toStateId) || !hasPair(prev.toStateId, prev.fromStateId)) continue;
     result.push(prev);
     ids.add(prev.id);
   }
@@ -310,18 +370,14 @@ export function stateMachineToSerialized(machine: AnimStateMachine): SerializedG
       },
     })),
     edges: visualTransitions(machine.transitions).map((transition) => {
-      const reverse = findReverseTransition(
-        machine.transitions,
-        transition.fromStateId,
-        transition.toStateId,
-      );
+      const mirrored = findMirroredReverse(machine.transitions, transition);
       return {
         id: transition.id,
         source: transition.fromStateId,
         target: transition.toStateId,
         sourceHandle: animStateHandle(transition.sourceHandle, "out"),
         targetHandle: animStateHandle(transition.targetHandle, "in"),
-        type: reverse ? "animTransitionBoth" : "animTransition",
+        type: mirrored ? "animTransitionBoth" : "animTransition",
       };
     }),
   };

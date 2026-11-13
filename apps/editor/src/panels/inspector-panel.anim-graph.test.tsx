@@ -178,6 +178,7 @@ describe("Animation Object Inspector", () => {
     idle.stateGraph = { ...idle.stateGraph, nodes: [...idle.stateGraph.nodes, addNode("add", 3, true)] };
     doc.stateMachines[0]!.transitions.push({
       id: "idle-to-run", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0, ruleGraph: createDefaultTransitionRuleGraph(),
+      sourceHandle: "right-out", targetHandle: "left-in",
     });
     renderInspector(doc);
     fireEvent.click(screen.getByText("Show Graph"));
