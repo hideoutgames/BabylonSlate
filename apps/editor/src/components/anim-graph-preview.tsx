@@ -17,13 +17,13 @@ import { Toggle } from "@haptic/ui/components/toggle";
 import { PauseIcon, PlayIcon, RotateCcwIcon, StepForwardIcon } from "lucide-react";
 import { useDocumentActions, useRegistryState } from "../context/document-context";
 import { useAnimGraphPreview } from "../context/anim-graph-preview-context";
-import { ANIM_PREVIEW_SPEEDS } from "../lib/anim-graph-preview-session";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { useAnimGraphDocument } from "./anim-graph-editor";
 import { AnimGraphPreviewCanvas, type AnimPreviewClip } from "./anim-graph-preview-canvas";
 import { IconActionButton } from "./icon-action-button";
+import { PlaybackSpeedSelect } from "./playback-controls";
 import { useResolvedSpriteAnimation } from "./sprite-animation-sources";
 import { CHECKERBOARD, FrameImage } from "./sprite-frame-image";
 import { useTexturePreviews } from "./texture-preview-status";
@@ -42,10 +42,6 @@ function graphAnimationGuids(doc: AnimGraphDocument): string[] {
     }
   }
   return [...guids];
-}
-
-function formatSpeed(speed: number): string {
-  return `${speed}×`;
 }
 
 /**
@@ -123,24 +119,7 @@ function PreviewTransport({ extra }: { extra?: ReactNode }) {
       <IconActionButton label="Restart" variant="ghost" data-testid="anim-preview-restart" onClick={() => session.restart()}>
         <RotateCcwIcon />
       </IconActionButton>
-      <Select
-        value={String(snapshot.speed)}
-        onValueChange={(value) => session.setSpeed(Number(value))}
-        items={ANIM_PREVIEW_SPEEDS.map((speed) => ({ value: String(speed), label: formatSpeed(speed) }))}
-      >
-        <SelectTrigger size="sm" aria-label="Speed" className="w-20" data-testid="anim-preview-speed">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {ANIM_PREVIEW_SPEEDS.map((speed) => (
-              <SelectItem key={speed} value={String(speed)}>
-                {formatSpeed(speed)}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+      <PlaybackSpeedSelect value={snapshot.speed} onChange={(speed) => session.setSpeed(speed)} data-testid="anim-preview-speed" />
       {extra}
       <span className="ml-auto min-w-0 truncate px-1 text-xs text-muted-foreground tabular-nums" data-testid="anim-preview-state">
         {state ? `${stateName} · ${state.facts.elapsedSeconds.toFixed(2)} s` : ""}

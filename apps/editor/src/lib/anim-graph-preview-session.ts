@@ -16,8 +16,6 @@ import { ScriptHost, type ScriptHostServices } from "@haptic/runtime";
 /** What compiled Get Variable nodes read (the runtime's variable store): values by variable name. */
 type VariableStore = { getVariable(name: string): unknown; setVariable(name: string, value: unknown): void };
 
-/** Speeds the Preview offers, as multiples of real time. */
-export const ANIM_PREVIEW_SPEEDS = [0.25, 0.5, 1, 1.5, 2] as const;
 /** One Step: a 60 Hz tick, as the game's fixed step. */
 export const ANIM_PREVIEW_STEP_SECONDS = 1 / 60;
 /** A transition whose rule is not loaded. */

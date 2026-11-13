@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   PanelFrame,
@@ -22,20 +22,26 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@haptic/ui/components/empty";
+import { Button } from "@haptic/ui/components/button";
 import { Toggle } from "@haptic/ui/components/toggle";
+import { PauseIcon, PlayIcon, RepeatIcon, RotateCcwIcon, StepForwardIcon } from "lucide-react";
 import {
   useDocumentActions,
   useOpenDocument,
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { AnimationPreviewCanvas } from "./animation-preview-canvas";
+import { AnimationPreviewCanvas, type AnimationPreviewClip } from "./animation-preview-canvas";
+import { IconActionButton } from "./icon-action-button";
+import { PlaybackScrubber, PlaybackSpeedSelect } from "./playback-controls";
 import { ModelSourceReadError } from "./model-editor";
 import { asRecord } from "../lib/as-record";
+import { AnimationPreviewClock, animationPreviewFrameAt } from "../lib/animation-preview-clock";
+import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
 
-export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function AnimationPreviewPanel(props: IDockviewPanelProps) {
+  const shown = useDockPanelShown(props.api);
   const { documentId } = useDocumentWorkspace();
   const { assetRegistry } = useRegistryState();
   const doc = useOpenDocument(documentId);
@@ -76,6 +82,7 @@ export function AnimationPreviewPanel(_props: IDockviewPanelProps) {
         skeletonKind={skeletonKind}
         showBones={showBones}
         onShowBonesChange={setShowBones}
+        active={shown}
       />
     </PanelFrame>
   );
@@ -98,12 +105,75 @@ export function AnimationDetailsPanel(_props: IDockviewPanelProps) {
   );
 }
 
-/** Preview playback rate that makes one pass of the clip last the authored Duration. */
-function previewSpeedRatio(payload: AnimationPayload): number {
-  const { durationMs, clipDurationMs } = payload;
-  return durationMs !== undefined && clipDurationMs !== undefined
-    ? clipDurationMs / durationMs
-    : 1;
+/** Preview time for a clip whose length is not known yet. */
+const UNKNOWN_DURATION_MS = 1000;
+
+/** One pass of the clip in the preview: the authored Duration, else the clip's length in its file. */
+function previewDurationMs(payload: AnimationPayload, clip: AnimationPreviewClip | null): number {
+  return payload.durationMs ?? payload.clipDurationMs ?? clip?.durationMs ?? UNKNOWN_DURATION_MS;
+}
+
+/** Advances the clock by real time on each frame while the preview is shown and playing. */
+function usePreviewPlayback(clock: AnimationPreviewClock, active: boolean) {
+  const { playing } = useSyncExternalStore(clock.subscribe, clock.getPlayback, clock.getPlayback);
+  useEffect(() => {
+    if (!active || !playing) return;
+    let last = performance.now();
+    let id = 0;
+    const frame = (now: number) => {
+      clock.advance(now - last);
+      last = now;
+      id = window.requestAnimationFrame(frame);
+    };
+    id = window.requestAnimationFrame(frame);
+    return () => window.cancelAnimationFrame(id);
+  }, [active, clock, playing]);
+}
+
+/** Play or Pause, Step, Restart, Loop and Speed for the Animation preview. */
+function AnimationPreviewTransport({
+  clock,
+  frameMs,
+  children,
+}: {
+  clock: AnimationPreviewClock;
+  frameMs: number;
+  children?: ReactNode;
+}) {
+  const playback = useSyncExternalStore(clock.subscribe, clock.getPlayback, clock.getPlayback);
+  return (
+    <ToolbarStrip className="shrink-0 flex-wrap gap-1 py-1" data-testid="animation-preview-toolbar">
+      <Button
+        type="button"
+        size="sm"
+        variant={playback.playing ? "secondary" : "default"}
+        data-testid={playback.playing ? "animation-preview-pause" : "animation-preview-play"}
+        onClick={() => clock.setPlaying(!playback.playing)}
+      >
+        {playback.playing ? <PauseIcon fill="currentColor" /> : <PlayIcon fill="currentColor" />}
+        {playback.playing ? "Pause" : "Play"}
+      </Button>
+      <IconActionButton label="Step" variant="ghost" data-testid="animation-preview-step" onClick={() => clock.step(frameMs)}>
+        <StepForwardIcon />
+      </IconActionButton>
+      <IconActionButton label="Restart" variant="ghost" data-testid="animation-preview-restart" onClick={() => clock.restart()}>
+        <RotateCcwIcon />
+      </IconActionButton>
+      <Toggle
+        size="sm"
+        variant="outline"
+        pressed={playback.loop}
+        aria-label="Loop"
+        data-testid="animation-preview-loop"
+        onPressedChange={(loop) => clock.setLoop(loop)}
+      >
+        <RepeatIcon />
+        Loop
+      </Toggle>
+      <PlaybackSpeedSelect value={playback.speed} onChange={(speed) => clock.setSpeed(speed)} data-testid="animation-preview-speed" />
+      {children}
+    </ToolbarStrip>
+  );
 }
 
 export function AnimationPreview({
@@ -115,6 +185,7 @@ export function AnimationPreview({
   skeletonKind = null,
   showBones = false,
   onShowBonesChange,
+  active = true,
 }: {
   payload: AnimationPayload;
   sourceBytes?: Uint8Array | null;
@@ -125,9 +196,17 @@ export function AnimationPreview({
   skeletonKind?: SkeletonKind | null;
   showBones?: boolean;
   onShowBonesChange?: (value: boolean) => void;
+  /** Whether the preview is on screen; time advances only then. */
+  active?: boolean;
 }) {
   // A Model with nothing to draw (an animation library) always shows its bones.
   const [bonesOnly, setBonesOnly] = useState(false);
+  const [clip, setClip] = useState<AnimationPreviewClip | null>(null);
+  const durationMs = previewDurationMs(payload, clip);
+  const [clock] = useState(() => new AnimationPreviewClock(durationMs));
+  useEffect(() => clock.setDuration(durationMs), [clock, durationMs]);
+  usePreviewPlayback(clock, active);
+  const frameCount = clip?.frames ?? 1;
   if (sourceError) {
     return (
       <div className="flex h-full flex-col p-3" data-testid="animation-preview">
@@ -154,10 +233,11 @@ export function AnimationPreview({
       className="flex h-full min-h-0 flex-col"
       data-testid="animation-preview"
     >
-      <ToolbarStrip data-testid="animation-preview-toolbar">
+      <AnimationPreviewTransport clock={clock} frameMs={durationMs / frameCount}>
         <Toggle
           size="sm"
           variant="outline"
+          className="ml-auto"
           pressed={showBones || bonesOnly}
           disabled={bonesOnly}
           aria-label="Show Bones"
@@ -166,19 +246,30 @@ export function AnimationPreview({
         >
           Show Bones
         </Toggle>
-      </ToolbarStrip>
+      </AnimationPreviewTransport>
       <div className="min-h-0 flex-1">
         <AnimationPreviewCanvas
           sourceBytes={sourceBytes}
           materialSlots={materialSlots}
           clipName={payload.clipName}
+          clock={clock}
           skeletonKind={skeletonKind}
           showBones={showBones}
-          speedRatio={previewSpeedRatio(payload)}
           onBonesOnlyChange={setBonesOnly}
+          onClip={setClip}
           sourceClipBytes={
             payload.sourceAnimationGuid ? sourceClipBytes : null
           }
+        />
+      </div>
+      <div className="flex shrink-0 min-w-0 items-center gap-3 border-t border-border bg-panel-header px-2 py-2">
+        <PlaybackScrubber
+          time={clock}
+          durationMs={durationMs}
+          frameCount={frameCount}
+          frameAt={(timeMs) => animationPreviewFrameAt(timeMs, durationMs, frameCount)}
+          onSeek={(timeMs) => clock.seek(timeMs)}
+          testIdPrefix="animation-preview"
         />
       </div>
     </div>
