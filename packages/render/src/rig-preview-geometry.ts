@@ -5,8 +5,11 @@
  * baked into vertex colours because the preview's surface is unlit. Pure: no Babylon.
  */
 
-/** Light grey-blue bones, near-white joints, amber for the selected joint and the bones it heads. */
-export const RIG_BONE_COLOR: readonly [number, number, number] = [0.78, 0.84, 0.94];
+/**
+ * Steel-slate bones that read against the preview's sky and stay bluer than neutral greys, near-white joints, and
+ * amber for the selected joint and the bones it heads.
+ */
+export const RIG_BONE_COLOR: readonly [number, number, number] = [0.44, 0.56, 0.74];
 export const RIG_JOINT_COLOR: readonly [number, number, number] = [0.93, 0.95, 1];
 export const RIG_SELECTED_COLOR: readonly [number, number, number] = [1, 0.7, 0.22];
 
@@ -45,22 +48,42 @@ export const RIG_JOINT_VERTICES = ICOSAHEDRON_FACES.length * 3;
 export interface RigPreviewLayout {
   /** The child joint of each drawn bone, in draw order; its parent is the bone's head. */
   bones: number[];
+  /** Joints with no child that draw a bone to their own tail point, in draw order. */
+  tails: number[];
   vertexCount: number;
 }
 
-/** One bone per joint that has a parent, then one ball per joint. */
-export function rigPreviewLayout(parents: readonly number[]): RigPreviewLayout {
+/**
+ * One bone per joint that has a parent, one tail bone per childless joint in `withTail` (a limb's end, so its
+ * direction shows), then one ball per joint.
+ */
+export function rigPreviewLayout(
+  parents: readonly number[],
+  withTail: (joint: number) => boolean = () => false,
+): RigPreviewLayout {
   const bones: number[] = [];
+  const hasChild = new Array<boolean>(parents.length).fill(false);
   for (let joint = 0; joint < parents.length; joint++) {
     const parent = parents[joint]!;
-    if (parent >= 0 && parent < parents.length && parent !== joint) bones.push(joint);
+    if (parent >= 0 && parent < parents.length && parent !== joint) {
+      bones.push(joint);
+      hasChild[parent] = true;
+    }
   }
-  return { bones, vertexCount: bones.length * RIG_BONE_VERTICES + parents.length * RIG_JOINT_VERTICES };
+  const tails: number[] = [];
+  for (let joint = 0; joint < parents.length; joint++) if (!hasChild[joint] && withTail(joint)) tails.push(joint);
+  return {
+    bones,
+    tails,
+    vertexCount: (bones.length + tails.length) * RIG_BONE_VERTICES + parents.length * RIG_JOINT_VERTICES,
+  };
 }
 
 export interface RigPreviewFrame {
   /** Joint positions, xyz per joint, in the space the preview mesh draws in. */
   joints: Float32Array;
+  /** Tail points, xyz per joint, read only for the layout's tail joints. */
+  tails?: Float32Array;
   parents: readonly number[];
   layout: RigPreviewLayout;
   /** The rig's size: its rest bounds' diagonal. Sets the width limits so tiny or huge rigs stay readable. */
@@ -77,15 +100,9 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Half-width of the bone from `head` to `tail`, and its length. */
-function boneWidth(frame: RigPreviewFrame, head: number, tail: number): { width: number; length: number } {
-  const { joints, size } = frame;
-  const length = Math.hypot(
-    joints[tail * 3]! - joints[head * 3]!,
-    joints[tail * 3 + 1]! - joints[head * 3 + 1]!,
-    joints[tail * 3 + 2]! - joints[head * 3 + 2]!,
-  );
-  return { width: clamp(length * WIDTH_PER_LENGTH, size * MIN_WIDTH, size * MAX_WIDTH), length };
+/** Half-width of a bone of `length` in a rig of `size`. */
+function boneWidth(length: number, size: number): number {
+  return clamp(length * WIDTH_PER_LENGTH, size * MIN_WIDTH, size * MAX_WIDTH);
 }
 
 class Writer {
@@ -141,44 +158,61 @@ function jointAt(joints: Float32Array, joint: number): number[] {
   return [joints[joint * 3]!, joints[joint * 3 + 1]!, joints[joint * 3 + 2]!];
 }
 
-/** Writes the frame's bones and joint balls into `positions` (xyz) and `colors` (rgba). */
+/** One octahedral bone from `from` to `to`, its ring `RING_AT` along it; a zero-length bone collapses to a point. */
+function writeBone(writer: Writer, from: number[], to: number[], width: number, color: readonly number[]): void {
+  const length = Math.hypot(to[0]! - from[0]!, to[1]! - from[1]!, to[2]! - from[2]!);
+  if (length <= 1e-6) {
+    writer.collapse(RIG_BONE_VERTICES, from);
+    return;
+  }
+  const axis = [(to[0]! - from[0]!) / length, (to[1]! - from[1]!) / length, (to[2]! - from[2]!) / length];
+  // The ring's frame: any direction across the bone, then the one across both.
+  const reference = Math.abs(axis[1]!) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  let sx = axis[1]! * reference[2]! - axis[2]! * reference[1]!;
+  let sy = axis[2]! * reference[0]! - axis[0]! * reference[2]!;
+  let sz = axis[0]! * reference[1]! - axis[1]! * reference[0]!;
+  const sideLength = Math.hypot(sx, sy, sz);
+  sx /= sideLength; sy /= sideLength; sz /= sideLength;
+  const ux = axis[1]! * sz - axis[2]! * sy, uy = axis[2]! * sx - axis[0]! * sz, uz = axis[0]! * sy - axis[1]! * sx;
+  const middle = [from[0]! + axis[0]! * length * RING_AT, from[1]! + axis[1]! * length * RING_AT, from[2]! + axis[2]! * length * RING_AT];
+  const ring = [
+    [middle[0]! + sx * width, middle[1]! + sy * width, middle[2]! + sz * width],
+    [middle[0]! + ux * width, middle[1]! + uy * width, middle[2]! + uz * width],
+    [middle[0]! - sx * width, middle[1]! - sy * width, middle[2]! - sz * width],
+    [middle[0]! - ux * width, middle[1]! - uy * width, middle[2]! - uz * width],
+  ];
+  for (let side = 0; side < 4; side++) {
+    const a = ring[side]!, b = ring[(side + 1) % 4]!;
+    writer.triangle(from, a, b, middle, color);
+    writer.triangle(to, b, a, middle, color);
+  }
+}
+
+function distance(a: number[], b: number[]): number {
+  return Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+}
+
+/** Writes the frame's bones, tail bones and joint balls into `positions` (xyz) and `colors` (rgba). */
 export function writeRigPreview(frame: RigPreviewFrame): void {
-  const { joints, parents, layout, selected } = frame;
+  const { joints, parents, layout, selected, size } = frame;
   const writer = new Writer(frame);
   const jointWidth = new Float32Array(parents.length);
   for (const tail of layout.bones) {
     const head = parents[tail]!;
-    const { width, length } = boneWidth(frame, head, tail);
-    jointWidth[head] = Math.max(jointWidth[head]!, width);
-    jointWidth[tail] = Math.max(jointWidth[tail]!, width);
     const from = jointAt(joints, head);
     const to = jointAt(joints, tail);
-    if (length <= 1e-6) {
-      writer.collapse(RIG_BONE_VERTICES, from);
-      continue;
-    }
-    const axis = [(to[0]! - from[0]!) / length, (to[1]! - from[1]!) / length, (to[2]! - from[2]!) / length];
-    // The ring's frame: any direction across the bone, then the one across both.
-    const reference = Math.abs(axis[1]!) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-    let sx = axis[1]! * reference[2]! - axis[2]! * reference[1]!;
-    let sy = axis[2]! * reference[0]! - axis[0]! * reference[2]!;
-    let sz = axis[0]! * reference[1]! - axis[1]! * reference[0]!;
-    const sideLength = Math.hypot(sx, sy, sz);
-    sx /= sideLength; sy /= sideLength; sz /= sideLength;
-    const ux = axis[1]! * sz - axis[2]! * sy, uy = axis[2]! * sx - axis[0]! * sz, uz = axis[0]! * sy - axis[1]! * sx;
-    const middle = [from[0]! + axis[0]! * length * RING_AT, from[1]! + axis[1]! * length * RING_AT, from[2]! + axis[2]! * length * RING_AT];
-    const ring = [
-      [middle[0]! + sx * width, middle[1]! + sy * width, middle[2]! + sz * width],
-      [middle[0]! + ux * width, middle[1]! + uy * width, middle[2]! + uz * width],
-      [middle[0]! - sx * width, middle[1]! - sy * width, middle[2]! - sz * width],
-      [middle[0]! - ux * width, middle[1]! - uy * width, middle[2]! - uz * width],
-    ];
-    const color = head === selected ? RIG_SELECTED_COLOR : RIG_BONE_COLOR;
-    for (let side = 0; side < 4; side++) {
-      const a = ring[side]!, b = ring[(side + 1) % 4]!;
-      writer.triangle(from, a, b, middle, color);
-      writer.triangle(to, b, a, middle, color);
-    }
+    const width = boneWidth(distance(from, to), size);
+    jointWidth[head] = Math.max(jointWidth[head]!, width);
+    jointWidth[tail] = Math.max(jointWidth[tail]!, width);
+    writeBone(writer, from, to, width, head === selected ? RIG_SELECTED_COLOR : RIG_BONE_COLOR);
+  }
+  for (const joint of layout.tails) {
+    const from = jointAt(joints, joint);
+    const to = frame.tails ? jointAt(frame.tails, joint) : from;
+    const finite = to.every(Number.isFinite);
+    const width = boneWidth(finite ? distance(from, to) : 0, size);
+    jointWidth[joint] = Math.max(jointWidth[joint]!, width);
+    writeBone(writer, from, finite ? to : from, width, joint === selected ? RIG_SELECTED_COLOR : RIG_BONE_COLOR);
   }
   for (let joint = 0; joint < parents.length; joint++) {
     const center = jointAt(joints, joint);

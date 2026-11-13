@@ -18,7 +18,12 @@ interface PreviewJoint {
   position: Vector3;
   parent: number;
   readPosition: (position: Vector3) => void;
+  /** A hierarchy rig's mesh part: the world centre of its bounds, which a childless joint's tail points through. */
+  readPartCenter?: (center: Vector3) => void;
 }
+
+/** A childless skinned joint's tail continues its parent bone by this fraction of that bone's length. */
+const LEAF_TAIL_OF_PARENT = 0.5;
 
 /** The rig drawn over (or instead of) a previewed model. */
 export interface SkeletonPreviewHandle {
@@ -87,6 +92,7 @@ export function attachSkeletonPreview(
     for (const node of nodes) {
       let parent = node.parent;
       while (parent && !indexByNode.has(parent)) parent = parent.parent;
+      const part = node instanceof AbstractMesh && node.getTotalVertices() > 0 ? node : null;
       joints.push({
         name: node.name,
         position: Vector3.Zero(),
@@ -95,13 +101,21 @@ export function attachSkeletonPreview(
           node.computeWorldMatrix(true);
           position.copyFrom(node.getAbsolutePosition());
         },
+        ...(part ? {
+          readPartCenter: (center: Vector3) => {
+            Vector3.TransformCoordinatesToRef(part.getBoundingInfo().boundingBox.center, part.computeWorldMatrix(true), center);
+          },
+        } : {}),
       });
     }
   }
   if (joints.length === 0) return { boneCount: 0, setSelectedBone: () => {}, dispose: () => {} };
 
   const parents = joints.map((joint) => joint.parent);
-  const layout = rigPreviewLayout(parents);
+  // A limb's last joint draws a tail so its direction shows: through its mesh part, or on along its parent bone.
+  const layout = rigPreviewLayout(parents, (joint) => Boolean(joints[joint]!.readPartCenter) || parents[joint]! >= 0);
+  const tails = new Float32Array(joints.length * 3).fill(Number.NaN);
+  const partCenter = Vector3.Zero();
   const positions = new Float32Array(layout.vertexCount * 3);
   const colors = new Float32Array(layout.vertexCount * 4);
   const jointPositions = new Float32Array(joints.length * 3);
@@ -141,6 +155,22 @@ export function attachSkeletonPreview(
       Vector3.TransformCoordinatesToRef(joint.position, inverseRoot, joint.position);
       joint.position.toArray(jointPositions, index * 3);
     }
+    for (const index of layout.tails) {
+      const joint = joints[index]!;
+      if (joint.readPartCenter) {
+        // The part reaches about twice as far from its pivot as its centre does (an arm hangs from the shoulder).
+        joint.readPartCenter(partCenter);
+        Vector3.TransformCoordinatesToRef(partCenter, inverseRoot, partCenter);
+        tails[index * 3] = joint.position.x + (partCenter.x - joint.position.x) * 2;
+        tails[index * 3 + 1] = joint.position.y + (partCenter.y - joint.position.y) * 2;
+        tails[index * 3 + 2] = joint.position.z + (partCenter.z - joint.position.z) * 2;
+      } else {
+        const parent = joints[joint.parent]!.position;
+        tails[index * 3] = joint.position.x + (joint.position.x - parent.x) * LEAF_TAIL_OF_PARENT;
+        tails[index * 3 + 1] = joint.position.y + (joint.position.y - parent.y) * LEAF_TAIL_OF_PARENT;
+        tails[index * 3 + 2] = joint.position.z + (joint.position.z - parent.z) * LEAF_TAIL_OF_PARENT;
+      }
+    }
     if (size === 0) {
       // The rest pose's extent sets the width limits once, so bones keep their size while the rig animates.
       const minimum = joints[0]!.position.clone();
@@ -162,7 +192,7 @@ export function attachSkeletonPreview(
     Vector3.TransformNormalToRef(lightWorld, inverseRoot, lightLocal);
     lightLocal.normalize();
     light[0] = lightLocal.x; light[1] = lightLocal.y; light[2] = lightLocal.z;
-    writeRigPreview({ joints: jointPositions, parents, layout, size, light, selected, positions, colors });
+    writeRigPreview({ joints: jointPositions, tails, parents, layout, size, light, selected, positions, colors });
     overlay.updateVerticesData(VertexBuffer.PositionKind, positions, false, false);
     overlay.updateVerticesData(VertexBuffer.ColorKind, colors, false, false);
     overlay.refreshBoundingInfo();

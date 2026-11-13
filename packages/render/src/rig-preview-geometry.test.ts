@@ -51,7 +51,15 @@ describe("rigPreviewLayout", () => {
     const layout = rigPreviewLayout([-1, 0, 1, 0, 9, 5]);
     // Joint 4's parent is out of range and joint 5 names itself: neither draws a bone.
     expect(layout.bones).toEqual([1, 2, 3]);
+    expect(layout.tails).toEqual([]);
     expect(layout.vertexCount).toBe(3 * RIG_BONE_VERTICES + 6 * RIG_JOINT_VERTICES);
+  });
+
+  it("gives a tail bone only to childless joints that ask for one", () => {
+    // Joints 2 and 3 are childless; joint 0 heads two bones and gets no tail even when asked.
+    const layout = rigPreviewLayout(PARENTS, (joint) => joint !== 3);
+    expect(layout.tails).toEqual([2]);
+    expect(layout.vertexCount).toBe(4 * RIG_BONE_VERTICES + 4 * RIG_JOINT_VERTICES);
   });
 });
 
@@ -102,6 +110,23 @@ describe("writeRigPreview", () => {
     expect(boneHues).toEqual([hueOf(RIG_SELECTED_COLOR), hueOf(RIG_BONE_COLOR), hueOf(RIG_SELECTED_COLOR)]);
     expect(hue(selected.colors, firstJoint)).toEqual(hueOf(RIG_SELECTED_COLOR));
     expect(hue(selected.colors, firstJoint + RIG_JOINT_VERTICES)).toEqual(hueOf(RIG_JOINT_COLOR));
+  });
+
+  it("draws a tail bone from a childless joint to its tail point, and collapses one with no point", () => {
+    const layout = rigPreviewLayout(PARENTS, () => true);
+    const positions = new Float32Array(layout.vertexCount * 3);
+    const colors = new Float32Array(layout.vertexCount * 4);
+    const tails = new Float32Array(PARENTS.length * 3).fill(Number.NaN);
+    tails.set([0, 2, 0], 2 * 3); // The head joint's tail, half a metre above it.
+    writeRigPreview({ joints: JOINTS, tails, parents: PARENTS, layout, size: 4, light: [0, 0, -1], selected: -1, positions, colors });
+    const first = layout.bones.length * RIG_BONE_VERTICES;
+    expect(layout.tails).toEqual([2, 3]);
+    expect(vertex(positions, first)).toEqual([0, 1.5, 0]);
+    expect(vertex(positions, first + 3)).toEqual([0, 2, 0]);
+    // Joint 3 has no tail point: its tail bone draws nothing.
+    for (let index = first + RIG_BONE_VERTICES; index < first + 2 * RIG_BONE_VERTICES; index++) {
+      expect(vertex(positions, index)).toEqual([0.4, -0.1, 0]);
+    }
   });
 
   it("shades faces turned to the light brighter than faces turned away", () => {

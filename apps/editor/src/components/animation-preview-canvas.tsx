@@ -52,6 +52,7 @@ export function AnimationPreviewCanvas({
   /** Read back from the AnimationGroup, so the attributes report what plays. */
   const [clip, setClip] = useState(STOPPED_CLIP);
   const [bonesOnly, setBonesOnly] = useState(false);
+  const [bonesAttached, setBonesAttached] = useState(false);
   const onBonesOnlyChangeRef = useRef(onBonesOnlyChange);
   onBonesOnlyChangeRef.current = onBonesOnlyChange;
   const hostRef = useRef<MaterialPreviewScene | null>(null);
@@ -214,6 +215,7 @@ export function AnimationPreviewCanvas({
     const host = hostRef.current;
     bonesRef.current?.dispose();
     bonesRef.current = null;
+    setBonesAttached(false);
     // A Model with no mesh has only its bones to show; its animated nodes are a hierarchy rig.
     const kind = skeletonKind ?? (bonesOnly ? "hierarchy" : null);
     if (!host || !(showBones || bonesOnly) || !kind) {
@@ -225,6 +227,7 @@ export function AnimationPreviewCanvas({
       host.scene,
       kind,
     );
+    setBonesAttached(true);
     presenterRef.current?.present({ force: true });
   }, [bonesOnly, previewGeneration, showBones, skeletonKind]);
 
@@ -235,6 +238,7 @@ export function AnimationPreviewCanvas({
       data-testid="animation-preview-canvas"
       data-playing={clip.playing ? "true" : "false"}
       data-bones-only={bonesOnly ? "true" : undefined}
+      data-bones={bonesAttached ? "true" : "false"}
       data-looping={clip.looping ? "true" : "false"}
     />
   );
