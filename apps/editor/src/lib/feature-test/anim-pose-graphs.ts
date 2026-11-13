@@ -29,7 +29,7 @@ export function playerNode(
   x: number,
   y: number,
   clip: FeatureTestClip,
-  options: { loop?: boolean; playRate?: number } = {},
+  options: { loop?: boolean; playRate?: number; syncGroup?: string } = {},
 ): GraphNode {
   return gNode(id, posePlayerType(dimension), x, y, {
     assetGuid: clip.assetGuid,
@@ -37,6 +37,7 @@ export function playerNode(
     durationMs: clip.durationMs,
     loop: options.loop !== false,
     "default:playRate": options.playRate ?? 1,
+    ...(options.syncGroup ? { syncGroup: options.syncGroup } : {}),
   });
 }
 
@@ -63,7 +64,7 @@ export function playerState(
   x: number,
   y: number,
   clip: FeatureTestClip,
-  options: { loop?: boolean; playRate?: number } = {},
+  options: { loop?: boolean; playRate?: number; syncGroup?: string } = {},
 ): AnimState {
   return { id, name, position: { x, y }, stateGraph: poseGraph(dimension, "player", [playerNode(dimension, "player", 60, 80, clip, options)]) };
 }

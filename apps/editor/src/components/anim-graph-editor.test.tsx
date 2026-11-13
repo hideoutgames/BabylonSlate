@@ -427,6 +427,15 @@ describe("AnimGraphEditor", () => {
     expect(playerData(lastCommit(), "idle")?.loop).toBe(false);
   });
 
+  it("puts a state's player in a Sync Group, and takes it out again", () => {
+    renderAnimGraph();
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.change(screen.getByTestId("property-syncGroup"), { target: { value: " Locomotion " } });
+    expect(playerData(lastCommit(), "idle")?.syncGroup).toBe("Locomotion");
+    fireEvent.change(screen.getByTestId("property-syncGroup"), { target: { value: "" } });
+    expect(playerData(lastCommit(), "idle")).not.toHaveProperty("syncGroup");
+  });
+
   it("selects a state from the list without zooming the graph to that node", async () => {
     renderAnimGraph(locoGraph());
     await waitFor(() => {

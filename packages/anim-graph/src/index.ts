@@ -43,6 +43,7 @@ export {
   type AnimState,
   type AnimStateFacts,
   type AnimStateMachine,
+  type AnimSyncGroupClock,
   type AnimTransition,
   type AnimTransitionDecision,
   type AnimVariableTypeId,

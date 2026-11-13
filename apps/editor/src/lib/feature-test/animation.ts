@@ -114,6 +114,9 @@ const DOOR_SCALE = 2.5;
 /** The door's Open Animation has an authored Duration this many times its clip length, so it opens slower than it closes. */
 const DOOR_OPEN_DURATION_SCALE = 1.5;
 
+/** The Sync Group the Mannequin's Walk and Run share. */
+const LOCOMOTION_SYNC_GROUP = "Locomotion";
+
 const SPEED: AnimGraphVariable = { id: "ft-anim-var-speed", name: "Speed", typeId: "float", defaultValue: 0 };
 const CHEER: AnimGraphVariable = { id: "ft-anim-var-cheer", name: "Cheer", typeId: "bool", defaultValue: false };
 
@@ -291,15 +294,15 @@ async function saveSpeedBlendSpace(
   return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
 }
 
-/** A state that plays `blendSpaceGuid` by the graph's Speed. */
-function speedBlendSpaceState(id: string, name: string, x: number, y: number, blendSpaceGuid: string): AnimState {
+/** A state that plays `blendSpaceGuid` by the graph's Speed, in `syncGroup` when given. */
+function speedBlendSpaceState(id: string, name: string, x: number, y: number, blendSpaceGuid: string, syncGroup?: string): AnimState {
   const speed = animGraphMembersFromVariables([SPEED])[0]!;
   return {
     id,
     name,
     position: { x, y },
     stateGraph: poseGraph("3d", "locomotion", [
-      gNode("locomotion", "anim.pose.blendSpacePlayer", 60, 80, { assetGuid: blendSpaceGuid }),
+      gNode("locomotion", "anim.pose.blendSpacePlayer", 60, 80, { assetGuid: blendSpaceGuid, ...(syncGroup ? { syncGroup } : {}) }),
       getVar("get-speed", speed, -260, 120),
     ], [gWire("get-speed", "value", "locomotion", "x")]),
   };
@@ -329,8 +332,9 @@ function locomotionGraphDocument(ctx: FeatureTestContext, runBlendSpace: string)
   const clip = (name: string) =>
     animationClip(ctx, requireRef(ctx.assets.mannequin.animations[name], `the Mannequin "${name}" Animation`));
   const cheer = animGraphMembersFromVariables([CHEER])[0]!;
-  // Run plays the Mannequin's Speed Blend Space: Walk into Sprint as Speed climbs past Run Speed.
-  const run = speedBlendSpaceState("run", "Run", 720, 220, runBlendSpace);
+  // Run plays the Mannequin's Speed Blend Space: Walk into Sprint as Speed climbs past Run Speed. Walk and Run share
+  // the Locomotion Sync Group, so Walk → Run picks up the stride where it was.
+  const run = speedBlendSpaceState("run", "Run", 720, 220, runBlendSpace, LOCOMOTION_SYNC_GROUP);
   // Cheer plays its emote while Cheer is set and settles to the rest pose otherwise.
   const cheerState: AnimState = {
     id: "cheer",
@@ -353,7 +357,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext, runBlendSpace: string)
     entryStateId: "idle",
     states: [
       playerState("3d", "idle", "Idle", 80, 220, clip(MANNEQUIN_CLIPS.idle)),
-      playerState("3d", "walk", "Walk", 400, 220, clip(MANNEQUIN_CLIPS.walk)),
+      playerState("3d", "walk", "Walk", 400, 220, clip(MANNEQUIN_CLIPS.walk), { syncGroup: LOCOMOTION_SYNC_GROUP }),
       run,
       cheerState,
     ],

@@ -26,3 +26,4 @@ Plays a [Blend Space](../../assets/blend-space.md): the Animations around X and 
 - The samples nearest X and Y play together, weighted by how close each is. Inputs past an axis's range clamp to it, or wrap round on an axis with **Wrap**; an axis's **Smoothing Time** eases changes in the input.
 - Every sample plays at the same point of its cycle, and one cycle lasts the samples' lengths averaged by their weights, so walking and running feet stay in step as the blend changes.
 - It always loops. As the first player reached from **Output Pose**, it sets the state's time and length, which transition rules read.
+- Set its **Sync Group** in the **Inspector** to keep it in step with other looping players of the same name; see [Sync Groups](../../assets/animation-graph.md#sync-groups).

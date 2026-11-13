@@ -77,6 +77,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { useAnimStateMachineRunTrace } from "../context/graph-debug-context";
 import { useOptionalAnimGraphPreview } from "../context/anim-graph-preview-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
+import { animSyncGroupRow } from "../lib/anim-pose-inspector";
 import { GraphPanel } from "../panels/graph-panel";
 import { InspectorPanel } from "../panels/inspector-panel";
 import { useValidation } from "../context/validation-context";
@@ -1246,6 +1247,11 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           label: "Loop",
           value: player.data.loop !== false,
           onChange: (loop) => patchPlayer(state.id, { loop }),
+        },
+        {
+          ...animSyncGroupRow(player.data.syncGroup, (syncGroup) =>
+            patchPlayer(state.id, { syncGroup: syncGroup ?? "" }, `anim-graph:state:${state.id}:sync`)),
+          id: "syncGroup",
         },
       ],
     };

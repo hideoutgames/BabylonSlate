@@ -171,7 +171,15 @@ export interface AnimEvalState extends AnimMachineEvalState {
   players: Record<string, AnimPlayerClock>;
   /** Blend Poses By Bool / Int input weights by `graphKey#nodeId`. */
   selectors: Record<string, number[]>;
+  /** Each Sync Group's shared cycle position and its leader's cycle length, by group name. */
+  syncGroups?: Record<string, AnimSyncGroupClock>;
   layers: AnimClipLayer[];
+}
+
+/** A Sync Group's shared clock: where its members are in their cycles, and how long its leader's cycle is. */
+export interface AnimSyncGroupClock {
+  phase: number;
+  cycleMs: number;
 }
 
 export interface AnimDiagnostic {

@@ -26,3 +26,4 @@ Plays the Sprite Animation of a [Sprite Blend Space](../../assets/sprite-blend-s
 - The sample nearest X and Y plays alone. Another takes over only once it is nearer by the Sprite Blend Space's **Hysteresis**; with **Keep Time** it goes on from the same point of its cycle.
 - Inputs past an axis's range clamp to it, or wrap round on an axis with **Wrap**; an axis's **Smoothing Time** eases changes in the input.
 - It always loops. As the first player reached from **Output Frame**, it sets the state's time and length, which transition rules read. A [Flip Frame](flip-frame.md) after it mirrors its frames.
+- Set its **Sync Group** in the **Inspector** to keep it in step with other looping players of the same name; see [Sync Groups](../../assets/animation-graph.md#sync-groups).

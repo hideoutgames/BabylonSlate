@@ -67,6 +67,7 @@ The bar ends with the playing state and its time. A 3D graph plays on a floor gr
 | Sprite Animation | 2D graphs. The [Sprite Animation](sprite-animation.md) the state plays. |
 | Speed | Playback speed multiplier. At 0 the state holds its clip's first frame. |
 | Loop | Whether the clip repeats. |
+| Sync Group | Looping players with the same name play at the same point of their cycles. See [Sync Groups](#sync-groups). |
 | Open State Graph | Opens the state's graph. |
 
 **Animation**, **Sprite Animation**, **Speed** and **Loop** edit the state's player while its graph is one player wired to the output. Once you add other nodes, edit the graph's nodes instead; the state's card then shows **State Graph**. A state's time, length and looping, which its transition rules read, follow the player reached from the output through each node's first pose input.
@@ -88,6 +89,10 @@ The bar ends with the playing state and its time. A 3D graph plays on a floor gr
 | Flip Direction | Swaps the source and target of a One Way transition. |
 
 Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule and state graphs read them with Get Variable nodes.
+
+## Sync Groups
+
+Give looping players the same **Sync Group** name, in the state's or the player's **Inspector**, to keep them in step: a Sequence Player, a Sprite Animation Player or a Blend Space Player. Every member plays at the group's point of its cycle, and the most heavily weighted member sets the pace, so a 1 s walk and a 0.5 s run stay in step. A state entered with a blend picks up the group's point instead of starting over, so Walk → Run keeps the stride. Players that do not loop ignore their group.
 
 ## Watch the graph run
 

@@ -359,6 +359,7 @@ describe("FeatureTest starter", () => {
     }
     const clipCatalog = animClipCatalogFromAssets(reopened.registry!.list());
     const blendSpacePlayers = new Set<string>();
+    const syncGroupMembers = new Map<string, number>();
     for (const [type, kind, dimension] of [
       ["AnimationGraph3D", "anim-graph-3d", "3d"],
       ["AnimationGraph2D", "anim-graph-2d", "2d"],
@@ -369,6 +370,8 @@ describe("FeatureTest starter", () => {
         // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
         for (const state of resolveAnimGraphClips(graph, clipCatalog).stateMachine.states) {
           for (const node of state.stateGraph.nodes) {
+            const group = typeof node.data.syncGroup === "string" ? node.data.syncGroup : "";
+            if (group) syncGroupMembers.set(`${asset.path}:${group}`, (syncGroupMembers.get(`${asset.path}:${group}`) ?? 0) + 1);
             if (!isBlendSpacePlayerType(node.type)) continue;
             blendSpacePlayers.add(node.type);
             expect(blendSpaceNodeData(node).samples.length, `${asset.path} ${state.name}`).toBeGreaterThan(1);
@@ -378,6 +381,8 @@ describe("FeatureTest starter", () => {
     }
     // Both the 3D and the 2D Blend Space Player are showcased.
     expect([...blendSpacePlayers].sort()).toEqual(["anim.frame.spriteBlendSpacePlayer", "anim.pose.blendSpacePlayer"]);
+    // A Sync Group is showcased: one graph has at least two players in the same group.
+    expect(Math.max(0, ...syncGroupMembers.values())).toBeGreaterThan(1);
   });
 
   it("authors physics without pairing problems", async () => {

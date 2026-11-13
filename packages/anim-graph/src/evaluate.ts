@@ -11,6 +11,7 @@ import {
   type AnimState,
   type AnimStateFacts,
   type AnimStateMachine,
+  type AnimSyncGroupClock,
   type AnimTransition,
 } from "./graph";
 import {
@@ -40,6 +41,7 @@ import {
   poseInputPins,
   poseInputSource,
   poseNodeDefault,
+  poseSyncGroup,
   primaryPosePlayer,
   type BlendSpaceNodeAxis,
   type BlendSpaceNodeSample,
@@ -92,6 +94,43 @@ interface EvalContext {
   selectors: Record<string, number[]>;
   /** Each Blend Space Player's weights this tick, worked out once for its state clock and its layers. */
   blendSpaces: Map<string, BlendSpaceTick>;
+  dtMs: number;
+  previousSyncGroups: Readonly<Record<string, AnimSyncGroupClock>>;
+  /** This tick's Sync Groups: the shared phase and the heaviest member, which sets next tick's pace. */
+  syncGroups: Map<string, { phase: number; leaderWeight: number; leaderCycleMs: number }>;
+}
+
+/**
+ * A Sync Group member's cycle position this tick: the group's, advanced once from last tick by its leader's cycle.
+ * The heaviest member (the first at a tie, which is the state being blended into) leads next tick. Null for a group
+ * that had no members last tick: its first member keeps its own time and starts the group.
+ */
+function syncGroupPhase(ctx: EvalContext, group: string, cycleMs: number, weight: number): number | null {
+  let entry = ctx.syncGroups.get(group);
+  if (!entry) {
+    const previous = ctx.previousSyncGroups[group];
+    if (!previous) return null;
+    const phase = (((previous.phase + ctx.dtMs / Math.max(1, previous.cycleMs)) % 1) + 1) % 1;
+    entry = { phase, leaderWeight: -1, leaderCycleMs: previous.cycleMs };
+    ctx.syncGroups.set(group, entry);
+  }
+  if (weight > entry.leaderWeight) {
+    entry.leaderWeight = weight;
+    entry.leaderCycleMs = cycleMs;
+  }
+  return entry.phase;
+}
+
+/** A member's clock moved to its Sync Group's phase, or kept (and starting the group) when the group is new. */
+function syncedClock(ctx: EvalContext, node: GraphNode, clock: Clock, cycleMs: number, weight: number): Clock {
+  const group = poseSyncGroup(node);
+  if (!group) return clock;
+  const phase = syncGroupPhase(ctx, group, cycleMs, weight);
+  if (phase === null) {
+    ctx.syncGroups.set(group, { phase: clock.normalised, leaderWeight: weight, leaderCycleMs: cycleMs });
+    return clock;
+  }
+  return { ...clock, normalised: phase, timeMs: phase * (cycleMs > 0 ? cycleMs : 1) };
 }
 
 interface BlendSpaceTick {
@@ -323,7 +362,11 @@ function visitPoseGraph(
       const timing = playerTiming(node, data);
       const previous = fresh ? playerStart(node, data, timing.durationMs) : ctx.previousPlayers[key] ?? playerStart(node, data, timing.durationMs);
       // A Play Rate at or below 0 holds the frame.
-      const clock = advanceClock(previous, timing.playRate > 0 ? dtSeconds * 1000 * timing.playRate : 0, timing.durationMs, timing.loop);
+      const advanced = advanceClock(previous, timing.playRate > 0 ? dtSeconds * 1000 * timing.playRate : 0, timing.durationMs, timing.loop);
+      // A looping player in a Sync Group runs at the group's phase.
+      const clock = timing.loop
+        ? syncedClock(ctx, node, advanced, timing.durationMs / Math.max(0.001, timing.playRate), weight)
+        : advanced;
       ctx.players[key] = { timeMs: clock.timeMs, loopCount: clock.loopCount, normalised: clock.normalised };
       const clip = poseClipData(node);
       if (clip.assetGuid) {
@@ -336,11 +379,17 @@ function visitPoseGraph(
       const playRate = dataValue(data, node, "playRate", 1);
       // Every sample shares one phase; the cycle's length follows the weights, so the phase carries over, not the time.
       const prior = fresh || tick.restart ? ZERO_CLOCK : ctx.previousPlayers[key] ?? ZERO_CLOCK;
-      const clock = advanceClock(
-        { ...prior, timeMs: prior.normalised * tick.cycleMs },
-        playRate > 0 ? dtSeconds * 1000 * playRate : 0,
-        tick.cycleMs,
-        true,
+      const clock = syncedClock(
+        ctx,
+        node,
+        advanceClock(
+          { ...prior, timeMs: prior.normalised * tick.cycleMs },
+          playRate > 0 ? dtSeconds * 1000 * playRate : 0,
+          tick.cycleMs,
+          true,
+        ),
+        tick.cycleMs / Math.max(0.001, playRate),
+        weight,
       );
       ctx.players[key] = { timeMs: clock.timeMs, loopCount: clock.loopCount, normalised: clock.normalised };
       if (node.type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE) {
@@ -474,6 +523,33 @@ function stateTiming(
   return { ...playerTiming(player, data), synced: false, restart: false };
 }
 
+/**
+ * A state clock whose primary player is in a Sync Group follows the group's phase, as its player does; a wrap past
+ * the end counts a loop.
+ */
+function syncedStateClock(
+  ctx: EvalContext,
+  state: AnimState,
+  clock: Clock,
+  start: AnimPlayerClock,
+  timing: { durationMs: number; playRate: number; loop: boolean },
+): Clock {
+  const player = primaryPosePlayer(state.stateGraph);
+  if (!player || !timing.loop) return clock;
+  const group = poseSyncGroup(player);
+  if (!group) return clock;
+  const phase = syncGroupPhase(ctx, group, timing.durationMs / Math.max(0.001, timing.playRate), 1);
+  if (phase === null) return clock;
+  const wrapped = phase + 1e-9 < start.normalised;
+  return {
+    ...clock,
+    normalised: phase,
+    timeMs: phase * timing.durationMs,
+    justLooped: wrapped,
+    loopCount: start.loopCount + (wrapped ? 1 : 0),
+  };
+}
+
 /** Where a state's clock starts on entry: at its primary player's start, else at 0. */
 function stateStart(state: AnimState, data: AnimPoseData | undefined, durationMs: number): AnimPlayerClock {
   const player = primaryPosePlayer(state.stateGraph);
@@ -512,11 +588,12 @@ function evaluateMachine(
   const previousTotal = sameState
     ? totalNormalisedTime(previous.facts.looping, previous.loopCount, previous.normalisedTime)
     : start.normalised;
-  const clock = advanceClock(
+  const clock = syncedStateClock(
+    ctx,
+    current,
+    advanceClock(start, timing.playRate > 0 ? dtSeconds * 1000 * timing.playRate : 0, timing.durationMs, timing.loop),
     start,
-    timing.playRate > 0 ? dtSeconds * 1000 * timing.playRate : 0,
-    timing.durationMs,
-    timing.loop,
+    timing,
   );
   const currentFacts = factsFor(clock, timing.durationMs / Math.max(0.001, timing.playRate), timing.loop, previousTotal);
   const currentLayers = visitPoseGraph(ctx, currentKey, current.stateGraph, currentData, dtSeconds, entered, stateId);
@@ -539,7 +616,9 @@ function evaluateMachine(
     const nextData = ctx.inputs.poseData?.(nextKey, null);
     const nextTiming = stateTiming(ctx, nextId, next, nextData, 0, true);
     const nextStart = stateStart(next, nextData, nextTiming.durationMs);
-    nextClock = { ...nextStart, justLooped: false, justFinished: false };
+    // Entering a state whose player shares a Sync Group picks up the group's phase, so a stride carries on.
+    nextClock = syncedStateClock(ctx, next, { ...nextStart, justLooped: false, justFinished: false }, nextStart, nextTiming);
+    nextClock = { ...nextClock, justLooped: false };
     nextFacts = factsFor(nextClock, nextTiming.durationMs / Math.max(0.001, nextTiming.playRate), nextTiming.loop, nextStart.normalised);
     // A self-transition restarts the state, and its blend crossfades from the frame it left.
     nextLayers = visitPoseGraph(ctx, nextKey, next.stateGraph, nextData, 0, true, nextId);
@@ -654,9 +733,18 @@ export function evaluateAnimGraph(
     previousSelectors: previous?.selectors ?? {},
     selectors: {},
     blendSpaces: new Map(),
+    dtMs: Math.max(0, Number.isFinite(dtSeconds) ? dtSeconds : 0) * 1000,
+    previousSyncGroups: previous?.syncGroups ?? {},
+    syncGroups: new Map(),
   };
   const { state, layers } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
-  return { ...state, players: ctx.players, selectors: ctx.selectors, layers };
+  const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
+  if (ctx.syncGroups.size > 0) {
+    result.syncGroups = Object.fromEntries(
+      [...ctx.syncGroups].map(([group, entry]) => [group, { phase: entry.phase, cycleMs: entry.leaderCycleMs }]),
+    );
+  }
+  return result;
 }
 
 /** An evaluation that starts the State Machine over in `stateId`. */
