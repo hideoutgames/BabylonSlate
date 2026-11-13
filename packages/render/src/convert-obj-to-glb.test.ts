@@ -112,7 +112,7 @@ describe("exportConvertedSceneToGlb", () => {
     const scene = scratchScene();
     new TransformNode("Empty", scene);
     await expect(exportConvertedSceneToGlb(scene, "FBX")).rejects.toThrow(
-      "FBX conversion produced no meshes or animations.",
+      "FBX conversion produced no meshes.",
     );
   });
 });

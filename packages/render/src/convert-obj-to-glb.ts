@@ -56,7 +56,7 @@ export async function exportConvertedSceneToGlb(
 ): Promise<Uint8Array> {
   const animatedNodes = scene.animationGroups.some((group) => group.targetedAnimations.length > 0);
   if (scene.meshes.length === 0 && !animatedNodes) {
-    throw new Error(`${format} conversion produced no meshes or animations.`);
+    throw new Error(`${format} conversion produced no meshes.`);
   }
   const exported = await GLTF2Export.GLBAsync(scene, "import", {
     shouldExportNode: (node) => {
