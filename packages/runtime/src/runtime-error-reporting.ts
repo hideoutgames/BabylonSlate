@@ -81,6 +81,7 @@ export function recordDiagnostic(rt: RuntimeComposition, diagnostic: RuntimeDiag
 export function breakpointHit(rt: RuntimeComposition, { assetGuid, graphId, nodeId, entryNodeId, instance, owner, event }: BreakpointHit): void {
   if (rt.stopped || rt.breakpointReported) return;
   rt.breakpointReported = true;
+  rt.scriptDebug.stoppedOn(instance);
   rt.pause();
   rt.emit({ type: "sessionPaused", paused: true, cause: {
     code: BREAKPOINT_PAUSE_CODE,

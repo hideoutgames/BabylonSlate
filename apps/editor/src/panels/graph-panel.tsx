@@ -74,11 +74,8 @@ import { classIdForGraphPath, functionGraphExportName } from "../services/script
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
 import { refreshTimelineClipNodes, timelineGraphDiagnostics, timelineScriptClassIds, timelineScriptSymbols } from "../lib/timeline-script-catalog";
-import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
-import { useSimulationControls } from "../context/simulation-controls-context";
-import { GraphSteppingBar } from "../components/graph-stepping-bar";
+import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
 import { useExtensionMenuItems } from "../components/use-extension-menu-items";
-import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -130,7 +127,7 @@ export function GraphPanel(
   const documentActions = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
   const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
-  const { focusedNodeId, openSessionSource } = usePlay();
+  const { focusedNodeId } = usePlay();
   const {
     selectedNodeIds,
     setSelectedNodeIds,
@@ -214,18 +211,6 @@ export function GraphPanel(
     indexed?.header.guid,
   );
   const runTrace = classRunTrace ?? animObjectRunTrace;
-  // While a debugged graph is paused, its canvas carries the stepping control.
-  const graphDebug = useGraphDebugStore();
-  const simulationControls = useSimulationControls();
-  const focusStep = useCallback((position: GraphDebugStepPosition) => {
-    void openSessionSource({
-      severity: "info", code: "editor.step", message: "Step",
-      assetGuid: position.assetGuid, graphId: position.graphId, nodeId: position.nodeId,
-    });
-  }, [openSessionSource]);
-  const steppingBar = runTrace && graphDebug && simulationControls?.paused
-    ? <GraphSteppingBar store={graphDebug} controls={simulationControls} onFocus={focusStep} />
-    : undefined;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
@@ -857,7 +842,6 @@ export function GraphPanel(
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
             runTrace={runTrace}
-            overlay={steppingBar}
             breakpoints={breakpoints}
             describeNode={describeClassGraphNode}
             commitPositionsOnDragEnd

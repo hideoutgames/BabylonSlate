@@ -119,6 +119,7 @@ export class ScriptHost {
   /** The instance the editor's graph debugger follows, and where its scripts report. */
   private debugObject: EngineObject | null = null;
   private debugSink: ScriptDebugTrace | null = null;
+  private frameTraces: ((store: unknown) => ScriptDebugTrace | null) | null = null;
   private breakpoints: ScriptBreakpoints | null = null;
   private costMeter: ScriptCostMeter | null = null;
   private invokingOwner: EngineObject | null = null;
@@ -177,6 +178,11 @@ export class ScriptHost {
   setDebugTrace(object: EngineObject | null, sink: ScriptDebugTrace | null): void {
     this.debugObject = object;
     this.debugSink = sink;
+  }
+
+  /** The recorder of runs on objects the debugger does not follow, while breakpoints are set (`BreakpointFrameRecorder`). */
+  setFrameTraces(frames: ((store: unknown) => ScriptDebugTrace | null) | null): void {
+    this.frameTraces = frames;
   }
 
   /** The breakpoints every run checks; null, or an empty set, checks none. */
@@ -836,9 +842,13 @@ export class ScriptHost {
     return row;
   }
 
-  /** The trace `ctx.debugTrace` reads: the debugger's sink for the instance it follows, else null. */
+  /**
+   * The trace `ctx.debugTrace` reads: the debugger's sink for the instance it follows, else, while breakpoints
+   * are set, the stop frame recorder's, else null.
+   */
   private debugTraceFor(store: unknown): ScriptDebugTrace | null {
-    return this.debugObject !== null && store === this.debugObject ? this.debugSink : null;
+    if (this.debugObject !== null && store === this.debugObject) return this.debugSink;
+    return this.frameTraces === null ? null : this.frameTraces(store);
   }
 
   /** Runs `run` with `frame` as the `ctx.callInterface` caller, restoring the previous caller after. */

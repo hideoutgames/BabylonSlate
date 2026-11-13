@@ -21,7 +21,7 @@ export interface SimulationControls {
   inputMode: "game" | "edit";
   inputPending: boolean;
   keepChanges: boolean;
-  /** The breakpoint the session stopped at, until it resumes. */
+  /** The breakpoint the session stopped at, until it resumes or stops elsewhere; Next Frame keeps it. */
   stoppedAt: SessionPauseCause | null;
   togglePause: () => void;
   /** While paused: run one tick and stay paused. */
