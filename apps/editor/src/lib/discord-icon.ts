@@ -6,9 +6,18 @@ const LUCIDE_ONLY_PROPS = new Set(["color", "strokeWidth", "absoluteStrokeWidth"
 
 /**
  * Discord's mark from Simple Icons, filled with its `--platform-discord` token (Discord's blurple) wherever it shows.
- * Lucide props that do not apply to a filled mark are dropped.
+ * Lucide props that do not apply to a filled mark are dropped. Like a Lucide icon it is decorative unless given an
+ * accessible name, so its built-in `<title>` never joins the name of the menu item or button that shows it.
  */
 export const DiscordIcon = forwardRef<SVGSVGElement, LucideProps>(function DiscordIcon({ size, style, ...props }, ref) {
   const svgProps = Object.fromEntries(Object.entries(props).filter(([key]) => !LUCIDE_ONLY_PROPS.has(key)));
-  return createElement(SiDiscord, { ...svgProps, ref, size: size ?? 24, color: "currentColor", style: { ...style, color: "var(--platform-discord)" } });
+  const labelled = Object.keys(svgProps).some((key) => key.startsWith("aria-") || key === "role" || key === "title");
+  return createElement(SiDiscord, {
+    ...(labelled ? {} : { "aria-hidden": "true" }),
+    ...svgProps,
+    ref,
+    size: size ?? 24,
+    color: "currentColor",
+    style: { ...style, color: "var(--platform-discord)" },
+  });
 }) as LucideIcon;
