@@ -2412,6 +2412,36 @@ describe("the lighting CI gate", () => {
       .toEqual({ march: [6, 30, 0.35], frames: [true, true, true], builds: 0, tasks });
   });
 
+  it.each(MODELS)("turning Screen-Space Shadows off links no lit program again, and its draws stop reading them: %s", async (model) => {
+    const world = playWorld(model, actors());
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    const screenShadows = (level: "off" | "high") =>
+      world.handle.setRenderSettings(normalizeRenderProjectSettings({ shadows: { screenShadows: level } }));
+    screenShadows("high");
+    await settle(world);
+    const readers = () => Object.values(compiledEffects(world.engine)).filter((effect) => /^#define HAPTIC_SCREEN_SHADOWS$/m.test(effect.defines));
+    // A program's shaders, without its defines: another variant of a reader's shaders is a lit program linked again.
+    const shaders = (effect: Effect) => effect._key.slice(0, effect._key.indexOf("@"));
+    const variants = (of: readonly Effect[]) => {
+      const names = new Set(of.map(shaders));
+      return Object.values(compiledEffects(world.engine)).filter((effect) => names.has(shaders(effect))).length;
+    };
+    const before = readers();
+    const variantsBefore = variants(before);
+    const uniforms = vi.spyOn(Effect.prototype, "setFloat4");
+    const reads = () => uniforms.mock.calls.filter(([name]) => name === "hapticScreenShadowTerms").map(([, on]) => on);
+    await world.frame();
+    expect(reads()).toContain(1);
+    screenShadows("off");
+    // The graph is built again without the march; the view draws again within a few frames.
+    let rendered = false;
+    for (let index = 0; index < 40 && !rendered; index++) rendered = (await world.frame()).view?.rendered === true;
+    uniforms.mockClear();
+    rendered = (await world.frame()).view?.rendered === true;
+    expect({ rendered, readers: readers(), variants: variants(before), reading: before.length > 0, marching: world.handle.renderTaskNames().includes("Screen shadows"), reads: [...new Set(reads())] })
+      .toEqual({ rendered: true, readers: before, variants: variantsBefore, reading: true, marching: false, reads: [0] });
+  });
+
   /** The world view's Anti-Aliasing, on a device that multisamples at up to 4. */
   function withAntiAliasing(world: PlayWorld, antiAliasing: AntiAliasingMode) {
     Object.assign(world.engine.getCaps(), { maxMSAASamples: 4 });
