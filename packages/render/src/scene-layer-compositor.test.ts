@@ -58,6 +58,20 @@ describe("SceneLayerCompositor", () => {
     expect(scene.autoClear).toBe(true);
   });
 
+  it("lists each layer's own renderer work in draw order, with its mesh count", () => {
+    const { compositor } = world();
+    const create = (layerId: string, zOrder: number) =>
+      compositor.create({ type: "sceneLayerCreate", layerId, assetGuid: `${layerId}-asset`, zOrder, ownerSceneGuid: null, postProcessStack: [] });
+    const menu = create("menu", 5);
+    create("hud", 1);
+    MeshBuilder.CreateBox("button", {}, menu.scene);
+    MeshBuilder.CreateBox("label", {}, menu.scene);
+    const work = compositor.diagnostics();
+    expect(work.map((layer) => [layer.layerId, layer.meshes])).toEqual([["hud", 0], ["menu", 2]]);
+    // The counters a view's own diagnostics hold for its world, for a layer that has drawn nothing yet.
+    expect(work[0]!.work).toMatchObject({ graphBuilds: 0, strictReadinessChecks: 0, failedReadinessProbes: 0, readinessBlockers: [] });
+  });
+
   it.each([false, true])("keeps GPU HUD matrices independent after world rendering (post-process=%s)", (postProcess) => {
     const engine = new NullEngine();
     engines.push(engine);

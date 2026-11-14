@@ -107,6 +107,12 @@ type ForwardSceneFrameGraphOptions = {
    * Not the editor's viewport, whose depth also holds its helper visuals. Never with `auxiliary`.
    */
   seedsFromSceneDepth?: boolean;
+  /**
+   * A view that draws every frame and never tolerates a variant swap (a Scene Layer): its strict probes are limited to
+   * the meshes the marks since its last passing probe named, as a world view's steady probes are (`probeScope`). Every
+   * other mesh is as that probe found it, ready. A mark that names no mesh, and the view's preparation, still ask all.
+   */
+  scopedStrictProbes?: boolean;
 };
 /**
  * Graph renders and camera assignments in progress, per scene. Babylon clears
@@ -354,6 +360,8 @@ export class ForwardSceneFrameGraph {
   /** A world view's occlusion culling; kept across graph rebuilds. */
   private readonly occlusion: ViewOcclusion | undefined;
   private readonly seedsFromSceneDepth: boolean;
+  /** `ForwardSceneFrameGraphOptions.scopedStrictProbes`. */
+  private readonly scopedStrictProbes: boolean;
   /** The candidates a seeded spatial geometry pass's readiness probe asks (`sceneDepthLacks`). */
   private readonly seededProbeList: FrameGraphObjectList = { meshes: [], particleSystems: null };
   private clear: FrameGraphClearTextureTask | undefined;
@@ -441,6 +449,7 @@ export class ForwardSceneFrameGraph {
     this.auxiliary = options.auxiliary;
     this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
     this.seedsFromSceneDepth = options.seedsFromSceneDepth === true && !options.auxiliary;
+    this.scopedStrictProbes = options.scopedStrictProbes === true && !options.auxiliary;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = (reason: SceneReadinessDirtyReason) => () => this.markReadinessDirty(reason);
@@ -1806,11 +1815,13 @@ export class ForwardSceneFrameGraph {
 
   /**
    * The meshes the next probe may be limited to, or undefined for all of them. Only a world view's steady frame is
-   * limited (a probe that tolerates no swap asks every mesh), only when every mark since the last passing probe named
-   * its meshes, and not while a swap is pending: a hidden mesh outside the scope would be revealed by no round.
+   * limited, or any probe of a view that asked for it (`scopedStrictProbes`: a Scene Layer); another probe that
+   * tolerates no swap asks every mesh. Only when every mark since the last passing probe named its meshes, and not
+   * while a swap is pending: a hidden mesh outside the scope would be revealed by no round.
    */
   private probeScope(): ReadonlySet<AbstractMesh> | undefined {
-    return this.unscopedMark || this.variantSwaps || !variantSwapsTolerated() ? undefined : this.scopedMeshes;
+    if (this.unscopedMark || this.variantSwaps) return undefined;
+    return variantSwapsTolerated() || this.scopedStrictProbes ? this.scopedMeshes : undefined;
   }
 
   /** `candidates` narrowed to what a seeded spatial geometry pass draws, so its probe compiles no variant it never draws. */

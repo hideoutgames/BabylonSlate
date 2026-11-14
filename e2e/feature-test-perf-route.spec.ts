@@ -27,7 +27,8 @@ import {
  *      HAPTIC_PERF_COMMANDS (further Play console commands after the quality, separated by `;`),
  *      HAPTIC_PERF_PLAYS (default 1: Plays per scene, each after the editor's view is ready again),
  *      HAPTIC_PERF_REOPEN (default 1: also time reload + reopen), HAPTIC_PERF_LABEL,
- *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report).
+ *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report),
+ *      HAPTIC_PERF_PROFILE=1 (with HAPTIC_PERF_OUT: a CPU profile of each scene's Play windows beside the report).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -52,6 +53,8 @@ const FRAMECAP = process.env.HAPTIC_PERF_FRAMECAP ?? null;
 const COMMANDS = (process.env.HAPTIC_PERF_COMMANDS ?? "").split(";").map((command) => command.trim()).filter(Boolean);
 const REOPEN = process.env.HAPTIC_PERF_REOPEN !== "0";
 const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
+/** A CPU profile of each scene's Play windows, beside `HAPTIC_PERF_OUT` (the measured frames carry its sampling cost). */
+const PROFILE = process.env.HAPTIC_PERF_PROFILE === "1" && !!process.env.HAPTIC_PERF_OUT;
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -277,6 +280,7 @@ async function samplePlay(page: Page, durationMs: number) {
       gpuMs: rendering.gpuMs ?? null,
       settings: rendering.settings ?? null,
       rendererWork: rendering.rendererWork ?? null,
+      layerWork: rendering.layerWork ?? null,
       layerBatches: rendering.layerBatches ?? null,
       shadowRetained: rendering.shadowRetained ?? null,
       shadowPasses: rendering.shadowPasses ?? null,
@@ -291,7 +295,7 @@ async function samplePlay(page: Page, durationMs: number) {
   };
 }
 
-async function measurePlay(page: Page, cdp: CDPSession) {
+async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   const started = Date.now();
   const linksSince = await pageNow(page);
   await clickPlayAndWaitForOverlay(page);
@@ -318,11 +322,21 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   // A quality change holds the last frame until its Material variants have compiled: the windows measure what follows.
   const settingsHoldMs = await waitForViewDrawing(page);
   await page.waitForTimeout(WARMUP_MS);
+  if (PROFILE) {
+    await cdp.send("Profiler.enable");
+    await cdp.send("Profiler.setSamplingInterval", { interval: 500 });
+    await cdp.send("Profiler.start");
+  }
   const windows = [];
   for (let index = 0; index < SAMPLES; index += 1) {
     const since = await pageNow(page);
     const { result, busy } = await busyFraction(cdp, () => samplePlay(page, SAMPLE_MS));
     windows.push({ ...result, mainThreadBusy: busy, longTasks: await longTasksSince(page, since) });
+  }
+  if (PROFILE) {
+    const { profile } = await cdp.send("Profiler.stop");
+    await cdp.send("Profiler.disable");
+    writeFileSync(`${process.env.HAPTIC_PERF_OUT}.${scene}-play.cpuprofile`, JSON.stringify(profile));
   }
   const liveObjects = await page.evaluate(
     () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
@@ -410,7 +424,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
           await page.waitForTimeout(SETTLE_MS);
         }
         step = `Play ${index + 1}`;
-        plays.push(await measurePlay(page, cdp));
+        plays.push(await measurePlay(page, cdp, scene));
       }
       // The next scene opens over the editor's reloaded view.
       step = "the editor's reload after the last Play";

@@ -105,6 +105,12 @@ export type RenderDiagnostics = {
      */
     readinessBlockers: string[];
   };
+  /**
+   * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
+   * for the world, with the layer's mesh count. A layer whose strict checks grow with every frame has something
+   * marking its readiness each frame. Empty where the view composites no layer.
+   */
+  layerWork?: Array<{ layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]> }>;
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;
     pendingPresentations: number;

@@ -1933,6 +1933,7 @@ function initializeEngine(
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+      layerWork: sceneLayerCompositor?.diagnostics() ?? [],
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
         registeredViewEnabled: registeredView?.enabled ?? null,
