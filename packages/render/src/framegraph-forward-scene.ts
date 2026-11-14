@@ -1628,7 +1628,7 @@ export class ForwardSceneFrameGraph {
           }
           deadline = now + READINESS_STALL_MS;
         }
-        await new Promise<void>((resolve) => setTimeout(resolve, 16));
+        await new Promise<void>((resolve) => setTimeout(resolve, this.requestedEffects.size ? 250 : 16));
       }
       if (this.disposed) throw new Error("FrameGraph coordinator is disposed.");
       this.markGraphProbed();

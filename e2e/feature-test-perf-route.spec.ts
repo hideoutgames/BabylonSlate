@@ -115,6 +115,63 @@ async function recordProgramLinks(page: Page): Promise<void> {
   });
 }
 
+/** TEMP DIAG: every program link and delete, with the deleting stack and whether the program had finished linking. */
+async function recordProgramChurn(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type Event = { at: number; kind: "link" | "delete"; name: string; id: number; ageMs?: number; complete?: boolean | null; stack?: string };
+    const events: Event[] = [];
+    (globalThis as unknown as { __ftProgramChurn: Event[] }).__ftProgramChurn = events;
+    const info = new WeakMap<WebGLProgram, { name: string; id: number; at: number }>();
+    let next = 1;
+    const stack = () => (new Error().stack ?? "").split("\n").slice(2, 16).map((line) => line.trim().replace(/https?:\/\/[^/]+\/assets\//, "").replace(/^at /, "")).join(" | ");
+    const context = globalThis.WebGL2RenderingContext;
+    if (!context) return;
+    const link = context.prototype.linkProgram;
+    context.prototype.linkProgram = function (this: WebGL2RenderingContext, program: WebGLProgram) {
+      let name = "?";
+      try {
+        const source = (this.getAttachedShaders(program) ?? []).map((shader) => this.getShaderSource(shader) ?? "").join("\n");
+        name = /#define\s+SHADER_NAME\s+(\S+)/.exec(source)?.[1] ?? "?";
+      } catch { /* lost context */ }
+      const entry = { name, id: next++, at: performance.now() };
+      info.set(program, entry);
+      events.push({ at: entry.at, kind: "link", name, id: entry.id });
+      const result = link.call(this, program);
+      // Time the link itself: poll its completion apart from the engine.
+      try {
+        const gl = this;
+        const extension = gl.getExtension("KHR_parallel_shader_compile");
+        const shaders = gl.getAttachedShaders(program) ?? [];
+        const sources = shaders.map((shader) => gl.getShaderSource(shader) ?? "");
+        const defines = sources.map((source) => (source.match(/^\s*#define\s+\S+.*$/gm) ?? []).map((line) => line.replace(/^\s*#define\s+/, "").trim()));
+        if (extension) {
+          const timer = setInterval(() => {
+            let done = false;
+            try { done = !gl.isProgram(program) || Boolean(gl.getProgramParameter(program, extension.COMPLETION_STATUS_KHR)); } catch { done = true; }
+            if (!done) return;
+            clearInterval(timer);
+            (events as unknown as Array<Record<string, unknown>>).push({ at: performance.now(), kind: "done", name, id: entry.id, ageMs: Math.round(performance.now() - entry.at), lengths: sources.map((source) => source.length), defines, sources });
+          }, 100);
+        }
+      } catch { /* lost context */ }
+      return result;
+    };
+    const remove = context.prototype.deleteProgram;
+    context.prototype.deleteProgram = function (this: WebGL2RenderingContext, program: WebGLProgram | null) {
+      const entry = program ? info.get(program) : undefined;
+      if (program && entry) {
+        let complete: boolean | null = null;
+        try {
+          const extension = this.getExtension("KHR_parallel_shader_compile");
+          if (extension) complete = Boolean(this.getProgramParameter(program, extension.COMPLETION_STATUS_KHR));
+        } catch { /* lost context */ }
+        events.push({ at: performance.now(), kind: "delete", name: entry.name, id: entry.id, ageMs: Math.round(performance.now() - entry.at), complete, stack: stack() });
+      }
+      return remove.call(this, program);
+    };
+  });
+}
+
 /** The programs linked from `since` to `until`, and how many of their sources the page linked before `since`. */
 async function programLinks(page: Page, since: number, loadedAt: number, until: number) {
   return page.evaluate(([from, loaded, to]) => {
@@ -308,6 +365,7 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   const playBootMs = Date.now() - started;
   // The share of the boot spent compiling what Play may spawn, before the first frame.
   const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
+  const holdFrom = await pageNow(page);
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
@@ -317,6 +375,56 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   for (const command of COMMANDS) await runConsoleCommand(page, command);
   // A quality change holds the last frame until its Material variants have compiled: the windows measure what follows.
   const settingsHoldMs = await waitForViewDrawing(page);
+  const churn = await page.evaluate((from) => {
+    type Event = { at: number; kind: string; name: string; id: number; ageMs?: number; complete?: boolean | null; stack?: string };
+    const events = ((globalThis as unknown as { __ftProgramChurn?: Event[] }).__ftProgramChurn ?? []).filter((event) => event.at >= from);
+    const links = events.filter((event) => event.kind === "link");
+    const deletes = events.filter((event) => event.kind === "delete");
+    const byStack = new Map<string, { count: number; incomplete: number; names: Set<string>; ages: number[] }>();
+    for (const event of deletes) {
+      const group = byStack.get(event.stack ?? "") ?? { count: 0, incomplete: 0, names: new Set<string>(), ages: [] };
+      group.count += 1;
+      if (event.complete === false) group.incomplete += 1;
+      group.names.add(event.name.replace(/\d+/g, "#"));
+      group.ages.push(event.ageMs ?? 0);
+      byStack.set(event.stack ?? "", group);
+    }
+    const linkNames = new Map<string, number>();
+    for (const event of links) linkNames.set(event.name, (linkNames.get(event.name) ?? 0) + 1);
+    return {
+      links: links.length,
+      deletes: deletes.length,
+      deletedIncomplete: deletes.filter((event) => event.complete === false).length,
+      slowest: (() => {
+        type Done = { at: number; kind: string; name: string; id: number; ageMs: number; lengths: number[]; defines: string[][] };
+        const all = ((globalThis as unknown as { __ftProgramChurn?: Done[] }).__ftProgramChurn ?? []).filter((event) => event.kind === "done");
+        const slow = all.filter((event) => event.at >= from && /nodeMaterial/.test(event.name)).sort((a, b) => b.ageMs - a.ageMs).slice(0, 3);
+        return slow.map((event) => {
+          const now = new Set(event.defines[1] ?? []);
+          const earlier = all.filter((other) => other.name === event.name && other.id < event.id && other.at < from);
+          return {
+            id: event.id, name: event.name, linkMs: event.ageMs, lengths: event.lengths, sources: (event as unknown as { sources: string[] }).sources,
+            earlier: earlier.map((other) => {
+              const then = new Set(other.defines[1] ?? []);
+              return {
+                id: other.id, linkMs: other.ageMs, lengths: other.lengths,
+                onlyEarlier: [...then].filter((line) => !now.has(line)).slice(0, 40),
+                onlyNow: [...now].filter((line) => !then.has(line)).slice(0, 40),
+              };
+            }),
+          };
+        });
+      })(),
+      relinked: [...linkNames.entries()].filter(([, count]) => count > 1).sort((a, b) => b[1] - a[1]).slice(0, 12),
+      timeline: events.map((event) => `${Math.round(event.at - from)}:${event.kind[0]}${event.id}${event.kind === "delete" ? (event.complete === false ? "!" : "") : ""}`).join(" "),
+      groups: [...byStack.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 6).map(([stack, group]) => ({
+        count: group.count, incomplete: group.incomplete, names: [...group.names].slice(0, 6), medianAgeMs: group.ages.sort((a, b) => a - b)[Math.floor(group.ages.length / 2)], stack,
+      })),
+    };
+  }, holdFrom);
+  if (process.env.HAPTIC_PERF_OUT) (churn.slowest as Array<{ sources: string[] }>).slice(0, 1).forEach((entry) => entry.sources.forEach((source, index) => writeFileSync(`${process.env.HAPTIC_PERF_OUT}.slow-${index === 0 ? "vertex" : "fragment"}.glsl`, source)));
+  for (const entry of churn.slowest as Array<{ sources?: string[] }>) delete entry.sources;
+  console.log(`[feature-test-perf] program churn during the hold (${settingsHoldMs} ms): ${JSON.stringify(churn, null, 1)}`);
   await page.waitForTimeout(WARMUP_MS);
   const windows = [];
   for (let index = 0; index < SAMPLES; index += 1) {
@@ -377,6 +485,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   });
   await recordLongTasks(page);
   await recordProgramLinks(page);
+  await recordProgramChurn(page);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
     if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
