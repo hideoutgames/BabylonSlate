@@ -23,3 +23,4 @@ Plays a Sprite Animation.
 
 - Pick its **Sprite Animation** and **Loop** in the **Inspector**.
 - Each player keeps its own time, even while a select node shows another input.
+- Set its **Sync Group** in the **Inspector** to keep it in step with other looping players of the same name; see [Sync Groups](../../assets/animation-graph.md#sync-groups).

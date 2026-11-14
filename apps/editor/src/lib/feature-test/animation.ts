@@ -76,7 +76,7 @@ const SCENES_FOLDER = "Scenes";
 const ANIMATION_SCENE_CAMERA = { position: [0, 2.2, -7] as Vec3, target: [0, 1, 0] as Vec3 };
 
 /** KayKit clip names (Rig_Medium General and Movement Basic, Rig_Large Movement Basic). */
-const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp" } as const;
+const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A" } as const;
 
 /**
  * Perf knob: the `FT_Stress` crowd is `columns × rows` (64) Locomotor
@@ -113,6 +113,9 @@ const SHOWCASE_SLOTS: ReadonlyArray<readonly [number, number]> = [
 const DOOR_SCALE = 2.5;
 /** The door's Open Animation has an authored Duration this many times its clip length, so it opens slower than it closes. */
 const DOOR_OPEN_DURATION_SCALE = 1.5;
+
+/** The Sync Group the Mannequin's Walk and Run share. */
+const LOCOMOTION_SYNC_GROUP = "Locomotion";
 
 const SPEED: AnimGraphVariable = { id: "ft-anim-var-speed", name: "Speed", typeId: "float", defaultValue: 0 };
 const CHEER: AnimGraphVariable = { id: "ft-anim-var-cheer", name: "Cheer", typeId: "bool", defaultValue: false };
@@ -291,15 +294,15 @@ async function saveSpeedBlendSpace(
   return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
 }
 
-/** A state that plays `blendSpaceGuid` by the graph's Speed. */
-function speedBlendSpaceState(id: string, name: string, x: number, y: number, blendSpaceGuid: string): AnimState {
+/** A state that plays `blendSpaceGuid` by the graph's Speed, in `syncGroup` when given. */
+function speedBlendSpaceState(id: string, name: string, x: number, y: number, blendSpaceGuid: string, syncGroup?: string): AnimState {
   const speed = animGraphMembersFromVariables([SPEED])[0]!;
   return {
     id,
     name,
     position: { x, y },
     stateGraph: poseGraph("3d", "locomotion", [
-      gNode("locomotion", "anim.pose.blendSpacePlayer", 60, 80, { assetGuid: blendSpaceGuid }),
+      gNode("locomotion", "anim.pose.blendSpacePlayer", 60, 80, { assetGuid: blendSpaceGuid, ...(syncGroup ? { syncGroup } : {}) }),
       getVar("get-speed", speed, -260, 120),
     ], [gWire("get-speed", "value", "locomotion", "x")]),
   };
@@ -329,8 +332,9 @@ function locomotionGraphDocument(ctx: FeatureTestContext, runBlendSpace: string)
   const clip = (name: string) =>
     animationClip(ctx, requireRef(ctx.assets.mannequin.animations[name], `the Mannequin "${name}" Animation`));
   const cheer = animGraphMembersFromVariables([CHEER])[0]!;
-  // Run plays the Mannequin's Speed Blend Space: Walk into Sprint as Speed climbs past Run Speed.
-  const run = speedBlendSpaceState("run", "Run", 720, 220, runBlendSpace);
+  // Run plays the Mannequin's Speed Blend Space: Walk into Sprint as Speed climbs past Run Speed. Walk and Run share
+  // the Locomotion Sync Group, so Walk → Run picks up the stride where it was.
+  const run = speedBlendSpaceState("run", "Run", 720, 220, runBlendSpace, LOCOMOTION_SYNC_GROUP);
   // Cheer plays its emote while Cheer is set and settles to the rest pose otherwise.
   const cheerState: AnimState = {
     id: "cheer",
@@ -353,7 +357,7 @@ function locomotionGraphDocument(ctx: FeatureTestContext, runBlendSpace: string)
     entryStateId: "idle",
     states: [
       playerState("3d", "idle", "Idle", 80, 220, clip(MANNEQUIN_CLIPS.idle)),
-      playerState("3d", "walk", "Walk", 400, 220, clip(MANNEQUIN_CLIPS.walk)),
+      playerState("3d", "walk", "Walk", 400, 220, clip(MANNEQUIN_CLIPS.walk), { syncGroup: LOCOMOTION_SYNC_GROUP }),
       run,
       cheerState,
     ],
@@ -443,8 +447,8 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
 }
 
 /**
- * Rig_Medium: Idle ⇄ Move on Speed; Cheer starts the gestures, Interact → Pick Up by exit time, and Pick Up returns
- * to Idle once it has played.
+ * Rig_Medium: Idle ⇄ Move on Speed. The Struck State Alias covers Idle and Move: while Cheer is set either one plays
+ * Hit, then Interact → Pick Up by exit time, and Pick Up returns to Idle once it has played.
  */
 function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string): AnimGraphDocument {
   const animations = ctx.assets.kaykit.mediumAnimations;
@@ -458,14 +462,17 @@ function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string
       speedBlendSpaceState("move", "Move", 400, 220, moveBlendSpace),
       playerState("3d", "interact", "Interact", 80, 480, clip(KAYKIT_CLIPS.interact), { loop: false }),
       playerState("3d", "pick-up", "Pick Up", 400, 480, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
+      playerState("3d", "hit", "Hit", -240, 480, clip(KAYKIT_CLIPS.hit), { loop: false }),
     ],
+    aliases: [{ id: "adventurer-struck", name: "Struck", position: { x: -240, y: 220 }, anyState: false, stateIds: ["idle", "move"] }],
     variables: [SPEED, CHEER],
-    // Idle → Move wins over Idle → Interact (lower priority number runs first). Non-looping states: Exit Time 1
-    // passes once the clip has finished.
+    // Idle → Move wins over Struck → Hit (lower priority number runs first). Non-looping states: Exit Time 1 passes
+    // once the clip has finished.
     transitions: [
       transition("adventurer-idle-to-move", "idle", "move", 0.25, 0, FORWARD, [compare(SPEED, "math.greaterEqual", WALK_SPEED)]),
       transition("adventurer-move-to-idle", "move", "idle", 0.25, 0, BACKWARD, [compare(SPEED, "math.less", WALK_SPEED)]),
-      transition("adventurer-idle-to-interact", "idle", "interact", 0.2, 1, DOWNWARD, [flag(CHEER)]),
+      transition("adventurer-struck-to-hit", "adventurer-struck", "hit", 0.15, 1, DOWNWARD, [flag(CHEER)]),
+      transition("adventurer-hit-to-interact", "hit", "interact", 0.2, 0, FORWARD, [exitTime(1)]),
       transition("adventurer-interact-to-pick-up", "interact", "pick-up", 0.2, 0, FORWARD, [exitTime(1)]),
       transition("adventurer-pick-up-to-idle", "pick-up", "idle", 0.2, 0, UPWARD, [exitTime(1)]),
     ],

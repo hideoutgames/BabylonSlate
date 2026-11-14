@@ -427,6 +427,15 @@ describe("AnimGraphEditor", () => {
     expect(playerData(lastCommit(), "idle")?.loop).toBe(false);
   });
 
+  it("puts a state's player in a Sync Group, and takes it out again", () => {
+    renderAnimGraph();
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.change(screen.getByTestId("property-syncGroup"), { target: { value: " Locomotion " } });
+    expect(playerData(lastCommit(), "idle")?.syncGroup).toBe("Locomotion");
+    fireEvent.change(screen.getByTestId("property-syncGroup"), { target: { value: "" } });
+    expect(playerData(lastCommit(), "idle")).not.toHaveProperty("syncGroup");
+  });
+
   it("selects a state from the list without zooming the graph to that node", async () => {
     renderAnimGraph(locoGraph());
     await waitFor(() => {
@@ -448,6 +457,19 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("property-idle-to-run-priority")).toBeTruthy();
     expect(screen.getByTestId("property-idle-to-run-direction")).toBeTruthy();
     expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
+  });
+
+  it("draws a State Alias on the State Machine and edits the states it leaves from in the Inspector", async () => {
+    const doc = locoGraph();
+    machineOf(doc).aliases = [{ id: "struck", name: "Struck", position: { x: 0, y: 400 }, anyState: false, stateIds: ["idle"] }];
+    const { container } = renderAnimGraph(doc);
+    await waitFor(() => expect(screen.getByTestId("anim-alias-node-struck")).toBeTruthy());
+    expect(screen.getByTestId("anim-alias-node-covers-struck").textContent).toBe("1 State");
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="struck"]')!);
+    await waitFor(() => expect(screen.getByTestId("anim-graph-alias")).toBeTruthy());
+    // Cover Run too.
+    fireEvent.click(within(screen.getByTestId("property-row-aliasState-run")).getByRole("checkbox").parentElement!.querySelector("input")!);
+    expect(machineOf(lastCommit()).aliases).toEqual([{ id: "struck", name: "Struck", position: { x: 0, y: 400 }, anyState: false, stateIds: ["idle", "run"] }]);
   });
 
   it("shows the rows two selected states share and adds typed math to each state's Speed in one change", async () => {

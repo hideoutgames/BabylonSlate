@@ -7,6 +7,7 @@ import {
   ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   isPoseAssetNodeType,
+  isPoseTimeSourceType,
   isPosePlayerType,
 } from "@haptic/anim-graph";
 import { ANIM_POSE_MAX_INPUTS, animPoseInputCount } from "@haptic/scripting-nodes";
@@ -17,6 +18,18 @@ export const ANIM_POSE_CLIP_PICK = "__animClip";
 /** The node data a picked clip or Blend Space writes: its asset, with what the catalog fills in again cleared. */
 export function animPoseClipPatch(guid: string | null): Record<string, unknown> {
   return { assetGuid: guid ?? "", clipName: undefined, durationMs: undefined, frameCount: undefined, blendSpace: undefined };
+}
+
+/** A looping player's Sync Group, by name: players in one group share their cycles' position. Empty for none. */
+export function animSyncGroupRow(value: unknown, onChange: (syncGroup: string | undefined) => void): PropertyRow {
+  return {
+    kind: "text",
+    id: "animPoseSyncGroup",
+    label: "Sync Group",
+    value: typeof value === "string" ? value : "",
+    description: "Looping players with the same Sync Group play at the same point of their cycles, so a walk blending into a run keeps its stride.",
+    onChange: (next) => onChange(next.trim() ? next.trim() : undefined),
+  };
 }
 
 /** The asset type and row label a pose node's asset row picks. */
@@ -61,6 +74,7 @@ export function animPoseNodePropertyRows(
   if (isPosePlayerType(typeId)) {
     rows.push({ kind: "boolean", id: "animPoseLoop", label: "Loop", value: data.loop !== false, onChange: (loop) => onPatch({ loop }) });
   }
+  if (isPoseTimeSourceType(typeId)) rows.push(animSyncGroupRow(data.syncGroup, (syncGroup) => onPatch({ syncGroup })));
   if (typeId === ANIM_POSE_BLEND_BY_BOOL_TYPE) {
     for (const [key, label] of [["trueBlendSeconds", "True Blend Time"], ["falseBlendSeconds", "False Blend Time"]] as const) {
       rows.push({

@@ -145,6 +145,13 @@
   flex-shrink: 0;
 }
 
+/* A State Alias plays nothing: a dashed card that only sends transitions. */
+.anim-alias-node {
+  min-height: 64px;
+  border-style: dashed;
+  background: var(--panel-header, var(--graph-node));
+}
+
 .anim-state-node-selected {
   border-color: var(--graph-state-selected);
   box-shadow: 0 0 0 1px var(--graph-state-selected);
