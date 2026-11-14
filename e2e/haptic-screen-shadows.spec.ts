@@ -73,7 +73,9 @@ for (const backend of ["webgl2", "webgpu"] as const) {
     await testInfo.attach(`haptic-screen-shadows-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
     console.log(JSON.stringify(report));
     expect(errors).toEqual([]);
-    expect(report.reads).toEqual([["off", false], ["high", true], ["high, sun unshadowed", true], ["high again", true], ["cel off", false], ["cel high", false]]);
+    // The surface's program can read them wherever the device draws their pass, at any level: with them off it draws the
+    // same program with the read off (the pixels below), so a tier that turns them on or off links nothing. CEL never reads.
+    expect(report.reads).toEqual([["off", true], ["high", true], ["high, sun unshadowed", true], ["high again", true], ["cel off", false], ["cel high", false]]);
     // Most contact pixels the map misses darken.
     expect(report.missed).toBeGreaterThan(20);
     expect(report.darkened / report.missed).toBeGreaterThan(0.5);
