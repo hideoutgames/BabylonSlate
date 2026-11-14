@@ -758,6 +758,30 @@ it("counts a failed strict readiness check once for each pending reason, until o
   }
 });
 
+it("names what a failed strict readiness check found unready, once a reader asked", async () => {
+  const { scene, camera } = host();
+  const mesh = MeshBuilder.CreateBox("box", {}, scene);
+  const material = new StandardMaterial("stubbed", scene);
+  mesh.material = material;
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.diagnostics().readinessBlockers).toEqual([]);
+    const probe = vi.spyOn(material, "isReadyForSubMesh").mockReturnValue(false);
+    graph.markReadinessDirty("materialParameters");
+    expect(graph.sceneStrictlyReady(camera)).toBe(false);
+    probe.mockRestore();
+    const failed = graph.diagnostics().readinessBlockers;
+    expect(failed[0]).toBe('mesh "box" (Material "stubbed"): it requested no Effect');
+    // The check that passes afterwards leaves the last failure's names for the reader.
+    await vi.waitFor(() => expect(graph.sceneStrictlyReady(camera)).toBe(true));
+    expect(graph.diagnostics().readinessBlockers).toEqual(failed);
+  } finally {
+    graph.dispose();
+  }
+});
+
 it("counts a strict readiness check run only for a pending variant swap as a swap recheck", async () => {
   const { scene, camera } = host();
   const mesh = MeshBuilder.CreateBox("box", {}, scene);

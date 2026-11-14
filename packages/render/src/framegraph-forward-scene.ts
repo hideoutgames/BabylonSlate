@@ -46,6 +46,7 @@ import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelp
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
 import type { SceneReadinessScope } from "./scene-readiness-signal";
 import { verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
+import { collectReadinessBlockers, noteReadinessBlocker } from "./readiness-blockers";
 import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
@@ -309,6 +310,10 @@ export class ForwardSceneFrameGraph {
   private scopedProbes = 0;
   /** Scoped probes a whole probe disagreed with, counted while verifying (`verifyScopedReadinessProbes`). */
   private scopedMismatches = 0;
+  /** What the strict probe running names as unready (`collectReadinessBlockers`), while measuring. */
+  private readonly probeBlockers: string[] = [];
+  /** What the last strict probe that failed named; kept until the next one fails. */
+  private failedBlockers: string[] = [];
 
   diagnostics() {
     this.measureWork = true;
@@ -316,7 +321,7 @@ export class ForwardSceneFrameGraph {
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
-      scopedReadinessMismatches: this.scopedMismatches,
+      scopedReadinessMismatches: this.scopedMismatches, readinessBlockers: [...this.failedBlockers],
     };
   }
   private graph: FrameGraph | undefined;
@@ -967,14 +972,20 @@ export class ForwardSceneFrameGraph {
     if (this.measureWork) this.failedProbes += 1;
   }
 
-  /** Runs a strict readiness check (each counts in `strictChecks`), adding its time once a reader asked (`diagnostics`). */
+  /**
+   * Runs a strict readiness check (each counts in `strictChecks`). Once a reader asked (`diagnostics`), its time is
+   * added and a check that fails leaves what it named as unready (`readinessBlockers`).
+   */
   private timedProbe(probe: () => boolean): boolean {
     if (!this.measureWork) return probe();
     const started = performance.now();
+    let passed = false;
     try {
-      return probe();
+      passed = collectReadinessBlockers(this.probeBlockers, probe);
+      return passed;
     } finally {
       this.work.readinessProbeMs += performance.now() - started;
+      if (!passed) this.failedBlockers = [...this.probeBlockers];
     }
   }
 
@@ -1882,9 +1893,12 @@ export class ForwardSceneFrameGraph {
     if (typeof context?._isReady !== "function")
       throw new Error("Unsupported Babylon frame graph readiness layout: _renderContext._isReady is missing.");
     let ready = context._isReady();
+    if (!ready) noteReadinessBlocker(() => "the frame graph's copy effects");
     for (const task of graph.tasks) {
-      if (ready) ready = task.isReady();
-      else if (compileAheadBudget(engine) > 0) task.isReady();
+      if (ready) {
+        ready = task.isReady();
+        if (!ready) noteReadinessBlocker(() => `task "${task.name}"`);
+      } else if (compileAheadBudget(engine) > 0) task.isReady();
       else break;
     }
     return ready;
