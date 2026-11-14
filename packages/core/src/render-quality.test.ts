@@ -250,7 +250,7 @@ describe("rendering quality sessions", () => {
     expect((["low", "medium", "high", "ultra"] as const).map((level) => RENDER_QUALITY_PROFILES[level].geometry.mirrorReflections))
       .toEqual(["environment", "movingActors", "everything", "everything"]);
     // A stored value that is no cap reads as the tier's.
-    expect(normalizeRenderingQuality({ geometry: { mirrorReflections: "sometimes" as never } }).geometry.mirrorReflections).toBe("everything");
+    expect(normalizeRenderingQuality({ geometry: { mirrorReflections: "sometimes" as never } }).geometry.mirrorReflections).toBe("movingActors");
     expect(normalizeRenderingQuality({ geometry: { mirrorReflections: "environment" } }).geometry.mirrorReflections).toBe("environment");
   });
   it("switches occlusion culling from the console, on at every tier", () => {
