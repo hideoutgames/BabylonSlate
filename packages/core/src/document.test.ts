@@ -131,6 +131,10 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/loco.anim3d.hasset")).toBe("Loco");
     expect(labelFromPath("assets/robot.anim2d.hasset")).toBe("Robot");
     expect(createDocumentRef("blend-space", "assets/walk_run.blendspace.hasset", { name: "Walk Run" }).label).toBe("Walk Run Blend Space");
+    expect(documentKindForAssetType("SpriteBlendSpace")).toBe("sprite-blend-space");
+    expect(assetTypeForDocumentKind("sprite-blend-space")).toBe("SpriteBlendSpace");
+    expect(labelFromPath("assets/soldier_walk.spriteblend.hasset")).toBe("Soldier Walk");
+    expect(documentKindLabel("sprite-blend-space")).toBe("Sprite Blend Space");
   });
 
   it("parses document ids and labels compound suffixes", () => {

@@ -47,6 +47,7 @@ The Preview's Model is saved with the Blend Space and is used only in the editor
 ## Related
 
 - [Blend Space Player](../scripting/animation/blend-space-player.md)
+- [Sprite Blend Space](sprite-blend-space.md), its 2D counterpart
 - [Animation Graph](animation-graph.md)
 - [Animation](animation.md)
 - [Skeleton](skeleton.md)

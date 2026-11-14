@@ -41,6 +41,7 @@ Assets are the building blocks of a project: Scenes, Classes, Materials, sounds,
 | Asset | Description |
 | --- | --- |
 | [Sprite](sprite.md) | A 2D image built from a Texture, with a pivot and optional collision. |
+| [Sprite Blend Space](sprite-blend-space.md) | Sprite Animations placed on one or two axes, such as Direction; the one nearest the input plays. |
 | [Tileset](tileset.md) | Tile definitions and collision for painting Tilemaps. |
 | [Tilemap](tilemap.md) | A painted 2D tile map made of layers, using one or more Tilesets. |
 

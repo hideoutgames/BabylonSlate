@@ -9,8 +9,8 @@ import {
   type SerializedSceneLayer,
 } from "@haptic/core";
 import {
-  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   blendSpaceNodeData,
+  isBlendSpacePlayerType,
   resolveAnimGraphClips,
   validateAnimGraph,
   type AnimGraphDocument,
@@ -358,20 +358,26 @@ describe("FeatureTest starter", () => {
       expect(validateParticleGraphDocument(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
     const clipCatalog = animClipCatalogFromAssets(reopened.registry!.list());
-    let blendSpacePlayers = 0;
-    for (const asset of ofType("AnimationGraph3D")) {
-      const graph = (await reopened.loadDocument("anim-graph-3d", asset.path)) as unknown as AnimGraphDocument;
-      expect(validateAnimGraph(graph, clipCatalog, { dimension: "3d" }).filter((row) => row.severity === "error"), asset.path).toEqual([]);
-      // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
-      for (const state of resolveAnimGraphClips(graph, clipCatalog).stateMachine.states) {
-        for (const node of state.stateGraph.nodes) {
-          if (node.type !== ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) continue;
-          blendSpacePlayers += 1;
-          expect(blendSpaceNodeData(node).samples.length, `${asset.path} ${state.name}`).toBeGreaterThan(1);
+    const blendSpacePlayers = new Set<string>();
+    for (const [type, kind, dimension] of [
+      ["AnimationGraph3D", "anim-graph-3d", "3d"],
+      ["AnimationGraph2D", "anim-graph-2d", "2d"],
+    ] as const) {
+      for (const asset of ofType(type)) {
+        const graph = (await reopened.loadDocument(kind, asset.path)) as unknown as AnimGraphDocument;
+        expect(validateAnimGraph(graph, clipCatalog, { dimension }).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+        // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
+        for (const state of resolveAnimGraphClips(graph, clipCatalog).stateMachine.states) {
+          for (const node of state.stateGraph.nodes) {
+            if (!isBlendSpacePlayerType(node.type)) continue;
+            blendSpacePlayers.add(node.type);
+            expect(blendSpaceNodeData(node).samples.length, `${asset.path} ${state.name}`).toBeGreaterThan(1);
+          }
         }
       }
     }
-    expect(blendSpacePlayers).toBeGreaterThan(0);
+    // Both the 3D and the 2D Blend Space Player are showcased.
+    expect([...blendSpacePlayers].sort()).toEqual(["anim.frame.spriteBlendSpacePlayer", "anim.pose.blendSpacePlayer"]);
   });
 
   it("authors physics without pairing problems", async () => {

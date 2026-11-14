@@ -18,6 +18,7 @@ import {
   blendSpaceAxisValue,
   blendSpaceTriangles,
   blendSpaceWeights,
+  nearestBlendSpaceSample,
   type BlendSpaceLayout,
   type BlendSpaceTriangle,
 } from "./blend-space";
@@ -25,12 +26,13 @@ import {
   ANIM_FRAME_FLIP_TYPE,
   ANIM_FRAME_SELECT_BY_BOOL_TYPE,
   ANIM_FRAME_SELECT_BY_INT_TYPE,
+  ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_BLEND_BY_BOOL_TYPE,
   ANIM_POSE_BLEND_BY_INT_TYPE,
-  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_BLEND_TYPE,
   ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
   blendSpaceNodeData,
+  isBlendSpacePlayerType,
   isPoseOutputType,
   isPosePlayerType,
   poseClipData,
@@ -97,14 +99,26 @@ interface BlendSpaceTick {
   weights: readonly number[];
   /** One cycle of the blend: the samples' lengths (over their rate scales) averaged by weight. */
   cycleMs: number;
+  /** A Sprite Blend Space whose sample changed this tick and does not keep time: its cycle starts over. */
+  restart: boolean;
 }
 
-const EMPTY_BLEND_SPACE: BlendSpaceTick = { samples: [], weights: [], cycleMs: STATE_CLOCK_MS };
+const EMPTY_BLEND_SPACE: BlendSpaceTick = { samples: [], weights: [], cycleMs: STATE_CLOCK_MS, restart: false };
+
+/** A Sprite Blend Space's playing sample, kept beside its eased inputs. */
+const SAMPLE_KEY = "#sample";
 
 /** A resolved Blend Space's layout and triangulation, kept per stored object so triangles are built once. */
 const blendSpaceLayouts = new WeakMap<
   object,
-  { layout: BlendSpaceLayout; axes: BlendSpaceNodeAxis[]; triangles: BlendSpaceTriangle[]; samples: BlendSpaceNodeSample[] } | null
+  {
+    layout: BlendSpaceLayout;
+    axes: BlendSpaceNodeAxis[];
+    triangles: BlendSpaceTriangle[];
+    samples: BlendSpaceNodeSample[];
+    hysteresis: number;
+    keepTime: boolean;
+  } | null
 >();
 
 function blendSpaceLayout(node: GraphNode) {
@@ -117,7 +131,14 @@ function blendSpaceLayout(node: GraphNode) {
     ? (() => {
         const axes: BlendSpaceLayout["axes"] = second ? [first, second] : [first];
         const layout: BlendSpaceLayout = { axes, samples: space.samples };
-        return { layout, axes: space.axes, triangles: blendSpaceTriangles(layout), samples: space.samples };
+        return {
+          layout,
+          axes: space.axes,
+          triangles: blendSpaceTriangles(layout),
+          samples: space.samples,
+          hysteresis: space.hysteresis ?? 0,
+          keepTime: space.keepTime !== false,
+        };
       })()
     : null;
   blendSpaceLayouts.set(raw, entry);
@@ -134,7 +155,8 @@ function smoothAxis(axis: BlendSpaceNodeAxis, previous: number | undefined, targ
 
 /**
  * A Blend Space Player's tick: its X and Y eased by their Smoothing Times, the samples' weights there and the length
- * of one shared cycle. Computed once per tick for each key (a fresh visit apart).
+ * of one shared cycle. A Sprite Blend Space plays only the nearest sample (held by its hysteresis) for that sample's
+ * length. Computed once per tick for each key (a fresh visit apart).
  */
 function blendSpaceTick(
   ctx: EvalContext,
@@ -157,12 +179,27 @@ function blendSpaceTick(
   const input = [dataValue(data, node, "x", 0), dataValue(data, node, "y", 0)];
   const smoothed = axes.map((axis, index) => smoothAxis(axis, previous?.[index], input[index]!, dtSeconds));
   ctx.selectors[key] = smoothed;
-  const weights = blendSpaceWeights(resolved.layout, { x: smoothed[0]!, y: smoothed[1] ?? 0 }, resolved.triangles);
+  const point = { x: smoothed[0]!, y: smoothed[1] ?? 0 };
+  if (node.type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE) {
+    const held = fresh ? undefined : ctx.previousSelectors[key + SAMPLE_KEY]?.[0];
+    const index = nearestBlendSpaceSample(resolved.layout, point, held ?? null, resolved.hysteresis);
+    ctx.selectors[key + SAMPLE_KEY] = [index];
+    const sample = resolved.samples[index];
+    const tick: BlendSpaceTick = {
+      samples: resolved.samples,
+      weights: resolved.samples.map((_, position) => (position === index ? 1 : 0)),
+      cycleMs: sample ? sample.durationMs / sample.rateScale : STATE_CLOCK_MS,
+      restart: held !== undefined && held !== index && !resolved.keepTime,
+    };
+    ctx.blendSpaces.set(cacheKey, tick);
+    return tick;
+  }
+  const weights = blendSpaceWeights(resolved.layout, point, resolved.triangles);
   let cycleMs = 0;
   resolved.samples.forEach((sample, index) => {
     cycleMs += (weights[index] ?? 0) * (sample.durationMs / sample.rateScale);
   });
-  const tick = { samples: resolved.samples, weights, cycleMs: cycleMs > 0 ? cycleMs : STATE_CLOCK_MS };
+  const tick = { samples: resolved.samples, weights, cycleMs: cycleMs > 0 ? cycleMs : STATE_CLOCK_MS, restart: false };
   ctx.blendSpaces.set(cacheKey, tick);
   return tick;
 }
@@ -294,11 +331,11 @@ function visitPoseGraph(
       }
       return;
     }
-    if (node.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+    if (isBlendSpacePlayerType(node.type)) {
       const tick = blendSpaceTick(ctx, key, node, data, dtSeconds, fresh);
       const playRate = dataValue(data, node, "playRate", 1);
       // Every sample shares one phase; the cycle's length follows the weights, so the phase carries over, not the time.
-      const prior = fresh ? ZERO_CLOCK : ctx.previousPlayers[key] ?? ZERO_CLOCK;
+      const prior = fresh || tick.restart ? ZERO_CLOCK : ctx.previousPlayers[key] ?? ZERO_CLOCK;
       const clock = advanceClock(
         { ...prior, timeMs: prior.normalised * tick.cycleMs },
         playRate > 0 ? dtSeconds * 1000 * playRate : 0,
@@ -306,6 +343,12 @@ function visitPoseGraph(
         true,
       );
       ctx.players[key] = { timeMs: clock.timeMs, loopCount: clock.loopCount, normalised: clock.normalised };
+      if (node.type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE) {
+        // Frames cannot blend: the playing sample shows alone, flipped as the graph flips it.
+        const playing = tick.samples[tick.weights.indexOf(1)];
+        if (playing) emit({ clipAssetGuid: playing.animationGuid, clipName: "", clipKind: "sprite", normalisedTime: clock.normalised });
+        return;
+      }
       tick.samples.forEach((sample, position) => {
         const sampleWeight = tick.weights[position] ?? 0;
         if (sampleWeight <= BLEND_SPACE_MIN_WEIGHT || weight <= 0) return;
@@ -421,20 +464,20 @@ function stateTiming(
   data: AnimPoseData | undefined,
   dtSeconds: number,
   fresh: boolean,
-): { durationMs: number; playRate: number; loop: boolean; synced: boolean } {
+): { durationMs: number; playRate: number; loop: boolean; synced: boolean; restart: boolean } {
   const player = primaryPosePlayer(state.stateGraph);
-  if (!player) return { durationMs: STATE_CLOCK_MS, playRate: 1, loop: true, synced: false };
-  if (player.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+  if (!player) return { durationMs: STATE_CLOCK_MS, playRate: 1, loop: true, synced: false, restart: false };
+  if (isBlendSpacePlayerType(player.type)) {
     const tick = blendSpaceTick(ctx, `${animPoseGraphKey(stateId)}#${player.id}`, player, data, dtSeconds, fresh);
-    return { durationMs: tick.cycleMs, playRate: dataValue(data, player, "playRate", 1), loop: true, synced: true };
+    return { durationMs: tick.cycleMs, playRate: dataValue(data, player, "playRate", 1), loop: true, synced: true, restart: tick.restart };
   }
-  return { ...playerTiming(player, data), synced: false };
+  return { ...playerTiming(player, data), synced: false, restart: false };
 }
 
 /** Where a state's clock starts on entry: at its primary player's start, else at 0. */
 function stateStart(state: AnimState, data: AnimPoseData | undefined, durationMs: number): AnimPlayerClock {
   const player = primaryPosePlayer(state.stateGraph);
-  return player && player.type !== ANIM_POSE_BLEND_SPACE_PLAYER_TYPE ? playerStart(player, data, durationMs) : ZERO_CLOCK;
+  return player && !isBlendSpacePlayerType(player.type) ? playerStart(player, data, durationMs) : ZERO_CLOCK;
 }
 
 /** The State Machine's tick: run its active state's graph and transitions, and blend. */
@@ -458,11 +501,13 @@ function evaluateMachine(
   const currentData = ctx.inputs.poseData?.(currentKey, previous && sameState ? previous.facts : null);
   const timing = stateTiming(ctx, stateId, current, currentData, dtSeconds, entered);
   const start = sameState
-    ? {
-        timeMs: timing.synced ? previous.normalisedTime * timing.durationMs : previous.timeMs,
-        loopCount: previous.loopCount,
-        normalised: previous.normalisedTime,
-      }
+    ? timing.restart
+      ? { timeMs: 0, loopCount: previous.loopCount, normalised: 0 }
+      : {
+          timeMs: timing.synced ? previous.normalisedTime * timing.durationMs : previous.timeMs,
+          loopCount: previous.loopCount,
+          normalised: previous.normalisedTime,
+        }
     : stateStart(current, currentData, timing.durationMs);
   const previousTotal = sameState
     ? totalNormalisedTime(previous.facts.looping, previous.loopCount, previous.normalisedTime)

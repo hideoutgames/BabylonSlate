@@ -7,6 +7,7 @@ import { BlendSpaceEditingProvider } from "../context/blend-space-editing-contex
 import { BlendSpaceAnimationsPanel, BlendSpaceDetailsPanel, BlendSpaceGridPanel } from "./blend-space-editor";
 
 const harness = vi.hoisted(() => ({
+  kind: "blend-space" as "blend-space" | "sprite-blend-space",
   content: {} as Record<string, unknown>,
   applyAssetDocumentChange: vi.fn<(id: string, next: Record<string, unknown>, mergeKey?: string) => Promise<boolean>>(async () => true),
 }));
@@ -16,6 +17,8 @@ const assets = [
   { path: "assets/Run.hasset", header: { guid: "run", name: "Hero_Run", type: "Animation", payload: { clipName: "Run", skeletonGuid: "rig" } } },
   { path: "assets/Other.hasset", header: { guid: "other", name: "Large_Walk", type: "Animation", payload: { clipName: "Walk", skeletonGuid: "large" } } },
   { path: "assets/Rig.hasset", header: { guid: "rig", name: "Hero_Skeleton", type: "Skeleton", payload: {} } },
+  { path: "assets/RobotIdle.hasset", header: { guid: "robot-idle", name: "Robot_Idle", type: "SpriteAnimation", payload: {} } },
+  { path: "assets/RobotWalk.hasset", header: { guid: "robot-walk", name: "Robot_Walk", type: "SpriteAnimation", payload: {} } },
 ];
 
 vi.mock("../context/document-context", async () =>
@@ -24,7 +27,7 @@ vi.mock("../context/document-context", async () =>
       list: () => assets,
       getByGuid: (guid: string) => assets.find((asset) => asset.header.guid === guid),
     },
-    openDocuments: [{ id: "bs", ref: { kind: "blend-space", path: "assets/Loco.blendspace.hasset" }, content: harness.content }],
+    openDocuments: [{ id: "bs", ref: { kind: harness.kind, path: "assets/Loco.blendspace.hasset" }, content: harness.content }],
     applyAssetDocumentChange: harness.applyAssetDocumentChange,
   })),
 );
@@ -79,6 +82,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   harness.applyAssetDocumentChange.mockClear();
+  harness.kind = "blend-space";
 });
 
 describe("Blend Space editor", () => {
@@ -139,4 +143,41 @@ describe("Blend Space editor", () => {
     expect(lastWrite().axes.map((axis) => axis.name)).toEqual(["Speed", "Direction"]);
     expect(lastWrite().samples.map((entry) => entry.y)).toEqual([-180, -180]);
   });
+
+describe("Sprite Blend Space editor", () => {
+  const sprite = (extra: Record<string, unknown> = {}) => ({
+    axes: [{ name: "Speed", min: 0, max: 2, gridDivisions: 2, smoothingSeconds: 0, wrap: false }],
+    samples: [
+      { animationGuid: "robot-idle", x: 0, y: 0, rateScale: 1 },
+      { animationGuid: "robot-walk", x: 1, y: 0, rateScale: 1 },
+    ],
+    hysteresis: 0.05,
+    keepTime: true,
+    ...extra,
+  });
+
+  it("offers Sprite Animations, and names the nearest sample alone at the preview point", () => {
+    harness.kind = "sprite-blend-space";
+    harness.content = sprite();
+    renderPanels();
+    expect(screen.getByTestId("blend-space-animation-robot-walk")).toBeTruthy();
+    expect(screen.queryByTestId("blend-space-animation-walk")).toBeNull();
+    // At 0.8 Walk is nearest: it plays alone, with no triangles to blend.
+    pointer(screen.getByTestId("blend-space-grid"), "pointerdown", 48 + (332 * 0.8) / 2, 150, 4);
+    expect(screen.getByTestId("blend-space-weights").textContent).toBe("X 0.80Robot_Walk1.00");
+  });
+
+  it("edits Hysteresis and Keep Time instead of a Skeleton", () => {
+    harness.kind = "sprite-blend-space";
+    harness.content = sprite();
+    renderPanels();
+    const settings = screen.getByTestId("blend-space-settings");
+    expect(within(settings).queryByTestId("property-row-skeleton")).toBeNull();
+    // The row's label wraps the checkbox, so jsdom toggles it through its input.
+    fireEvent.click(within(settings).getByTestId("property-row-keep-time").querySelector("input")!);
+    expect(lastWrite()).toMatchObject({ keepTime: false });
+    fireEvent.change(within(settings).getByTestId("property-hysteresis"), { target: { value: "0.2" } });
+    expect(lastWrite()).toMatchObject({ hysteresis: 0.2, keepTime: true });
+  });
+});
 });

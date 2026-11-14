@@ -30,4 +30,12 @@ describe("headerMetaForSave", () => {
       samples: [{ animationGuid: "walk", x: 2, y: 0, rateScale: 1 }],
     });
   });
+
+  it("keeps a Sprite Blend Space's layout, hysteresis and Keep Time", () => {
+    expect(headerMetaForSave("SpriteBlendSpace", { samples: [{ animationGuid: "walk", x: 0 }], hysteresis: 0.1, keepTime: false })).toMatchObject({
+      samples: [{ animationGuid: "walk", x: 0, y: 0, rateScale: 1 }],
+      hysteresis: 0.1,
+      keepTime: false,
+    });
+  });
 });

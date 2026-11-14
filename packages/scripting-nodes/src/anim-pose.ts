@@ -72,6 +72,12 @@ export const animPoseNodes: NodeDefinition[] = [
     pin("startFrame", "startFrame", "in", INT, "data", true, 0),
     out(FRAME),
   ]),
+  poseNode("anim.frame.spriteBlendSpacePlayer", "Sprite Blend Space Player", "Plays the Sprite Animation of a Sprite Blend Space nearest X and Y.", () => [
+    pin("x", "x", "in", FLOAT, "data", true, 0),
+    pin("y", "y", "in", FLOAT, "data", true, 0),
+    pin("playRate", "playRate", "in", FLOAT, "data", true, 1),
+    out(FRAME),
+  ]),
   poseNode("anim.frame.selectByBool", "Select Frame By Bool", "Shows True Frame or False Frame as Active changes.", () => [
     pin("trueFrame", "trueFrame", "in", FRAME),
     pin("falseFrame", "falseFrame", "in", FRAME),

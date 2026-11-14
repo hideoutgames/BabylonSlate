@@ -1,6 +1,7 @@
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
   normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
 } from "@haptic/assets";
@@ -59,7 +60,11 @@ export function animClipCatalogFromAssets(
       asset.header.type === "Model" || asset.header.type === "Animation" || asset.header.type === "BlendSpace"
         ? nullableGuid(payload.skeletonGuid)
         : undefined;
-    const blendSpace = asset.header.type === "BlendSpace" ? normalizeBlendSpacePayload(payload) : undefined;
+    const blendSpace = asset.header.type === "BlendSpace"
+      ? normalizeBlendSpacePayload(payload)
+      : asset.header.type === "SpriteBlendSpace"
+        ? normalizeSpriteBlendSpacePayload(payload)
+        : undefined;
     const modelGuid =
       asset.header.type === "Animation" ? trimmed(payload.modelGuid) : "";
     const frameCount =
@@ -77,7 +82,15 @@ export function animClipCatalogFromAssets(
       ...(frameCount !== undefined ? { frameCount } : {}),
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
-      ...(blendSpace ? { blendSpace: { axes: blendSpace.axes, samples: blendSpace.samples } } : {}),
+      ...(blendSpace
+        ? {
+            blendSpace: {
+              axes: blendSpace.axes,
+              samples: blendSpace.samples,
+              ...("hysteresis" in blendSpace ? { hysteresis: blendSpace.hysteresis, keepTime: blendSpace.keepTime } : {}),
+            },
+          }
+        : {}),
     };
   });
 }

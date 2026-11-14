@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import type { AnimGraphDimension } from "@haptic/anim-graph";
+import { normalizeSpriteBlendSpacePayload } from "@haptic/assets";
 import { PanelFrame, ToolbarStrip } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { PauseIcon, PlayIcon } from "lucide-react";
 import { useRegistryState } from "../context/document-context";
 import { useBlendSpaceEditing } from "../context/blend-space-editing-context";
-import { blendSpaceNodeDataOf, blendSpacePreviewPoint } from "../lib/blend-space-editing";
+import { blendSpaceNodeDataOf, blendSpacePreviewPoint, spriteBlendSpaceNodeDataOf } from "../lib/blend-space-editing";
 import { BlendSpacePreviewSession } from "../lib/blend-space-preview-session";
 import { useAnimPreviewModel } from "../lib/use-anim-preview-model";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { AnimPreview3DView, AnimPreviewModelControls } from "./anim-preview-model-controls";
-import { useBlendSpaceDocument } from "./blend-space-editor";
+import { AnimSpriteFrameView } from "./anim-sprite-frame-view";
+import { useBlendSpaceDocument, type BlendSpaceEditorPayload } from "./blend-space-editor";
 import { PlaybackSpeedSelect } from "./playback-controls";
 
 /** Play or Pause and Speed, with the cycle's position, which changes every frame. */
@@ -37,26 +40,30 @@ function BlendSpacePreviewTransport({ session, children }: { session: BlendSpace
   );
 }
 
-/**
- * The Blend Space's Preview: a Model on its Skeleton playing the blend at the Grid's preview point, through the
- * game's evaluator, with Play, Pause and Speed. Time runs only while the window shows.
- */
-export function BlendSpacePreviewPanel(props: IDockviewPanelProps) {
-  const { payload, commit } = useBlendSpaceDocument();
+/** The Sprite Blend Space's frame, which changes every frame it plays. */
+function SpriteFrame({ session }: { session: BlendSpacePreviewSession }) {
+  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  return <AnimSpriteFrameView state={snapshot.state} data-testid="blend-space-preview-2d" />;
+}
+
+/** Feeds the session the document's samples and the Grid's preview point, and real time while the window shows. */
+function usePreviewSession(dimension: AnimGraphDimension, payload: BlendSpaceEditorPayload, api: IDockviewPanelProps["api"]) {
   const { previewPoint } = useBlendSpaceEditing();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const shown = useDockPanelShown(props.api);
-  const [session] = useState(() => new BlendSpacePreviewSession());
-  const [showBones, setShowBones] = useState(false);
-  const blendSpace = useMemo(() => {
+  const shown = useDockPanelShown(api);
+  const [session] = useState(() => new BlendSpacePreviewSession(dimension));
+  const nodeData = useMemo(() => {
     void registryEpoch;
-    return blendSpaceNodeDataOf(payload, (guid) => {
+    const lookup = (type: string) => (guid: string) => {
       const asset = assetRegistry?.getByGuid(guid);
-      return asset?.header.type === "Animation" ? { payload: asset.header.payload } : undefined;
-    });
-  }, [assetRegistry, payload, registryEpoch]);
+      return asset?.header.type === type ? { payload: asset.header.payload } : undefined;
+    };
+    return dimension === "2d"
+      ? spriteBlendSpaceNodeDataOf(normalizeSpriteBlendSpacePayload(payload), lookup("SpriteAnimation"))
+      : blendSpaceNodeDataOf(payload, lookup("Animation"));
+  }, [assetRegistry, dimension, payload, registryEpoch]);
   const point = blendSpacePreviewPoint(payload, previewPoint);
-  useEffect(() => session.setBlendSpace(blendSpace), [blendSpace, session]);
+  useEffect(() => session.setBlendSpace(nodeData), [nodeData, session]);
   useEffect(() => session.setPoint({ x: point.x, y: point.y }), [point.x, point.y, session]);
   useEffect(() => {
     if (!shown) return;
@@ -70,33 +77,63 @@ export function BlendSpacePreviewPanel(props: IDockviewPanelProps) {
     id = window.requestAnimationFrame(frame);
     return () => window.cancelAnimationFrame(id);
   }, [session, shown]);
+  return session;
+}
+
+function BlendSpacePreview3D({ api }: { api: IDockviewPanelProps["api"] }) {
+  const { payload, commit } = useBlendSpaceDocument();
+  const session = usePreviewSession("3d", payload, api);
+  const [showBones, setShowBones] = useState(false);
   const animationGuids = useMemo(() => [...new Set(payload.samples.map((sample) => sample.animationGuid))], [payload.samples]);
   const preview = useAnimPreviewModel({
-    skeletonGuid: payload.skeletonGuid,
+    skeletonGuid: payload.skeletonGuid ?? null,
     animationGuids,
-    previewModelGuid: payload.previewModelGuid,
+    previewModelGuid: payload.previewModelGuid ?? null,
   });
   return (
-    <PanelFrame data-testid="blend-space-preview-panel">
-      <div className="flex h-full min-h-0 flex-col">
-        <BlendSpacePreviewTransport session={session}>
-          <AnimPreviewModelControls
-            preview={preview}
-            onModelChange={(previewModelGuid) => commit({ ...payload, previewModelGuid })}
-            showBones={showBones}
-            onShowBonesChange={setShowBones}
-            testIdPrefix="blend-space-preview"
-          />
-        </BlendSpacePreviewTransport>
-        <AnimPreview3DView
+    <div className="flex h-full min-h-0 flex-col">
+      <BlendSpacePreviewTransport session={session}>
+        <AnimPreviewModelControls
           preview={preview}
+          onModelChange={(previewModelGuid) => commit({ ...payload, previewModelGuid })}
           showBones={showBones}
-          getState={session.getState}
-          subscribe={session.subscribe}
-          emptyText={payload.skeletonGuid ? "No Model is on the Blend Space's Skeleton." : "Set the Blend Space's Skeleton to preview it."}
-          data-testid="blend-space-preview-3d"
+          onShowBonesChange={setShowBones}
+          testIdPrefix="blend-space-preview"
         />
-      </div>
+      </BlendSpacePreviewTransport>
+      <AnimPreview3DView
+        preview={preview}
+        showBones={showBones}
+        getState={session.getState}
+        subscribe={session.subscribe}
+        emptyText={payload.skeletonGuid ? "No Model is on the Blend Space's Skeleton." : "Set the Blend Space's Skeleton to preview it."}
+        data-testid="blend-space-preview-3d"
+      />
+    </div>
+  );
+}
+
+function BlendSpacePreview2D({ api }: { api: IDockviewPanelProps["api"] }) {
+  const { payload } = useBlendSpaceDocument();
+  const session = usePreviewSession("2d", payload, api);
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <BlendSpacePreviewTransport session={session} />
+      <SpriteFrame session={session} />
+    </div>
+  );
+}
+
+/**
+ * A Blend Space's Preview: the blend at the Grid's preview point through the game's evaluator, with Play, Pause and
+ * Speed: a Model on the Skeleton (3D), or the nearest sample's frames (Sprite Blend Space). Time runs only while the
+ * window shows.
+ */
+export function BlendSpacePreviewPanel(props: IDockviewPanelProps) {
+  const { dimension } = useBlendSpaceDocument();
+  return (
+    <PanelFrame data-testid="blend-space-preview-panel">
+      {dimension === "2d" ? <BlendSpacePreview2D api={props.api} /> : <BlendSpacePreview3D api={props.api} />}
     </PanelFrame>
   );
 }

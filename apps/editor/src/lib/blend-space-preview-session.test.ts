@@ -42,3 +42,20 @@ describe("BlendSpacePreviewSession", () => {
     expect(session.getState()!.normalisedTime).toBeCloseTo(0.1, 6);
   });
 });
+
+describe("BlendSpacePreviewSession for a Sprite Blend Space", () => {
+  it("plays the nearest Sprite Animation alone at the preview point", () => {
+    const session = new BlendSpacePreviewSession("2d");
+    session.setBlendSpace({
+      axes: [{ min: 0, max: 2, wrap: false, smoothingSeconds: 0 }],
+      samples: [
+        { animationGuid: "idle", clipName: "", durationMs: 500, x: 0, y: 0, rateScale: 1 },
+        { animationGuid: "walk", clipName: "", durationMs: 800, x: 1, y: 0, rateScale: 1 },
+      ],
+      hysteresis: 0,
+      keepTime: true,
+    });
+    session.setPoint({ x: 0.9, y: 0 });
+    expect(session.getState()?.layers).toEqual([expect.objectContaining({ clipAssetGuid: "walk", clipKind: "sprite", weight: 1 })]);
+  });
+});

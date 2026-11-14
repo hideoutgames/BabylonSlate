@@ -214,4 +214,21 @@ describe("animClipCatalogFromAssets", () => {
       },
     });
   });
+
+  it("lists a Sprite Blend Space with its axes, samples, hysteresis and Keep Time", () => {
+    const [entry] = animClipCatalogFromAssets([
+      {
+        header: {
+          guid: "gait",
+          type: "SpriteBlendSpace",
+          name: "Robot Gait",
+          payload: { axes: [{ name: "Speed", min: 0, max: 1 }], samples: [{ animationGuid: "walk", x: 1 }], hysteresis: 0.2, keepTime: false },
+        },
+      },
+    ]);
+    expect(entry).toMatchObject({
+      type: "SpriteBlendSpace",
+      blendSpace: { samples: [{ animationGuid: "walk", x: 1, y: 0, rateScale: 1 }], hysteresis: 0.2, keepTime: false },
+    });
+  });
 });

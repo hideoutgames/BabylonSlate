@@ -353,6 +353,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   AnimationGraph3D: WorkflowIcon,
   AnimationGraph2D: WorkflowIcon,
   BlendSpace: ChartScatterIcon,
+  SpriteBlendSpace: ChartScatterIcon,
   SpriteAnimation: FilmIcon,
   // Tracks over time, so it reads apart from the Film icon of animations and clips.
   Timeline: ChartGanttIcon,
@@ -413,6 +414,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   AnimationGraph3D: "animation",
   AnimationGraph2D: "sprite",
   BlendSpace: "animation",
+  SpriteBlendSpace: "sprite",
   SpriteAnimation: "sprite",
   Timeline: "animation",
   CameraShake: "renderTarget",

@@ -39,6 +39,7 @@ const JSON_TYPES = new Set<string>([
   "AnimationGraph3D",
   "AnimationGraph2D",
   "BlendSpace",
+  "SpriteBlendSpace",
   "BehaviourTree",
   "Blackboard",
   "Material",

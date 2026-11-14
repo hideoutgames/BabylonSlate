@@ -225,6 +225,7 @@ const CLIP_CATALOG_TYPES: ReadonlySet<string> = new Set([
   "Animation",
   "BlendSpace",
   "Model",
+  "SpriteBlendSpace",
   "SpriteAnimation",
 ]);
 

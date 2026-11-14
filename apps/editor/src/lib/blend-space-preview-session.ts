@@ -1,9 +1,11 @@
 import {
+  ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_OUTPUT_NODE_ID,
   createDefaultAnimGraph,
   evaluateAnimGraph,
   type AnimEvalState,
+  type AnimGraphDimension,
   type AnimGraphDocument,
   type BlendSpaceNodeData,
 } from "@haptic/anim-graph";
@@ -18,9 +20,11 @@ export type BlendSpacePreviewSnapshot = {
   speed: number;
 };
 
-/** A one-state graph whose state is the Blend Space Player, as the evaluator plays it in a game. */
-function previewGraph(blendSpace: BlendSpaceNodeData): AnimGraphDocument {
-  const base = createDefaultAnimGraph("Blend Space Preview", { dimension: "3d" });
+/** A one-state graph whose state is the (Sprite) Blend Space Player, as the evaluator plays it in a game. */
+function previewGraph(blendSpace: BlendSpaceNodeData, dimension: AnimGraphDimension): AnimGraphDocument {
+  const base = createDefaultAnimGraph("Blend Space Preview", { dimension });
+  const playerType = dimension === "3d" ? ANIM_POSE_BLEND_SPACE_PLAYER_TYPE : ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE;
+  const outputType = dimension === "3d" ? "anim.pose.output" : "anim.frame.output";
   return {
     ...base,
     stateMachine: {
@@ -32,10 +36,16 @@ function previewGraph(blendSpace: BlendSpaceNodeData): AnimGraphDocument {
         position: { x: 0, y: 0 },
         stateGraph: {
           nodes: [
-            { id: PLAYER_ID, type: ANIM_POSE_BLEND_SPACE_PLAYER_TYPE, position: { x: 0, y: 0 }, data: { assetGuid: "preview", blendSpace } },
-            { id: ANIM_POSE_OUTPUT_NODE_ID, type: "anim.pose.output", position: { x: 300, y: 0 }, data: { __protected: true } },
+            { id: PLAYER_ID, type: playerType, position: { x: 0, y: 0 }, data: { assetGuid: "preview", blendSpace } },
+            { id: ANIM_POSE_OUTPUT_NODE_ID, type: outputType, position: { x: 300, y: 0 }, data: { __protected: true } },
           ],
-          edges: [{ id: "preview-output", source: PLAYER_ID, sourceHandle: "pose", target: ANIM_POSE_OUTPUT_NODE_ID, targetHandle: "pose" }],
+          edges: [{
+            id: "preview-output",
+            source: PLAYER_ID,
+            sourceHandle: "pose",
+            target: ANIM_POSE_OUTPUT_NODE_ID,
+            targetHandle: dimension === "3d" ? "pose" : "frame",
+          }],
         },
       }],
     },
@@ -47,14 +57,21 @@ function previewGraph(blendSpace: BlendSpaceNodeData): AnimGraphDocument {
  * weights, time sync and smoothing look as they will in a game.
  */
 export class BlendSpacePreviewSession {
-  private doc = previewGraph({ axes: [], samples: [] });
+  private doc: AnimGraphDocument;
   private point = { x: 0, y: 0 };
   private snapshot: BlendSpacePreviewSnapshot = { state: null, playing: true, speed: 1 };
   private readonly listeners = new Set<() => void>();
 
+  private readonly dimension: AnimGraphDimension;
+
+  constructor(dimension: AnimGraphDimension = "3d") {
+    this.dimension = dimension;
+    this.doc = previewGraph({ axes: [], samples: [] }, dimension);
+  }
+
   /** A new Blend Space keeps the playing phase. */
   setBlendSpace(blendSpace: BlendSpaceNodeData): void {
-    this.doc = previewGraph(blendSpace);
+    this.doc = previewGraph(blendSpace, this.dimension);
     this.tick(0);
   }
 
