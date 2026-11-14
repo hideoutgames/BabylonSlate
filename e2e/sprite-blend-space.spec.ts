@@ -23,13 +23,23 @@ test.describe("Sprite Blend Space", () => {
     const idleClip = await frames.getAttribute("data-clip");
     expect(idleClip).toBeTruthy();
     expect(idleClip).toBe(idleGuid);
-    // Nearer Walk (Speed 0.8 of 0–1), Walk's frames play instead.
+    await expect(frames.locator("img")).toBeVisible({ timeout: 30_000 });
+    // From here the view never goes blank: each change it commits is checked for a frame image.
+    await frames.evaluate((element) => {
+      const record = window as unknown as { blankFrameCommits: number };
+      record.blankFrameCommits = 0;
+      new MutationObserver(() => {
+        if (!element.querySelector("img")) record.blankFrameCommits += 1;
+      }).observe(element, { childList: true, subtree: true, attributes: true });
+    });
+    // Nearer Walk (Speed 0.8 of 0–1), Walk's frames play instead, with no blank frame between.
     const box = (await grid.boundingBox())!;
     await page.mouse.click(box.x + 48 + (box.width - 68) * 0.8, box.y + box.height / 2);
     await expect(page.getByTestId("blend-space-weights")).toContainText("FT_2DRobotWalkAnim1.00");
     await expect.poll(() => frames.getAttribute("data-clip")).not.toBe(idleClip);
-    // The frame's Texture draws.
-    await expect(frames.locator("img")).toBeVisible({ timeout: 30_000 });
+    await expect(frames).toHaveAttribute("data-frame-loading", "false");
+    await expect(frames.locator("img")).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { blankFrameCommits: number }).blankFrameCommits)).toBe(0);
     await page.screenshot({ path: testInfo.outputPath("sprite-blend-space.png") });
   });
 });

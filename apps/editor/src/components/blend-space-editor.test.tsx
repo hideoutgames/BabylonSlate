@@ -141,7 +141,8 @@ describe("Blend Space editor", () => {
     renderPanels();
     fireEvent.click(screen.getByTestId("blend-space-axes-two"));
     expect(lastWrite().axes.map((axis) => axis.name)).toEqual(["Speed", "Direction"]);
-    expect(lastWrite().samples.map((entry) => entry.y)).toEqual([-180, -180]);
+    // The samples stay on the middle line the one-axis Grid drew them on.
+    expect(lastWrite().samples.map((entry) => entry.y)).toEqual([0, 0]);
   });
 
 describe("Sprite Blend Space editor", () => {

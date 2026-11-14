@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultBlendSpacePayload, type BlendSpacePayload } from "@haptic/assets";
 import {
   addBlendSpaceSample,
+  blendSpaceAxisCentre,
   blendSpaceNodeDataOf,
   blendSpacePreviewPoint,
   moveBlendSpaceSample,
@@ -60,11 +61,12 @@ describe("Blend Space samples", () => {
 });
 
 describe("Blend Space axes", () => {
-  it("adds a Direction axis with samples at its minimum, and drops it back to one axis keeping X", () => {
+  it("adds a Direction axis with samples at its centre, and drops it back to one axis keeping X", () => {
     const one = addBlendSpaceSample(createDefaultBlendSpacePayload("rig"), "walk", { x: 2, y: 0 });
     const two = setBlendSpaceAxisCount(one, 2);
     expect(two.axes[1]).toMatchObject({ name: "Direction", min: -180, max: 180, wrap: true });
-    expect(two.samples[0]).toMatchObject({ x: 2, y: -180 });
+    // The one-axis Grid draws samples on the middle line; they stay there, at 0°.
+    expect(two.samples[0]).toMatchObject({ x: 2, y: 0 });
     const back = setBlendSpaceAxisCount(two, 1);
     expect(back.axes).toHaveLength(1);
     expect(back.samples[0]).toMatchObject({ x: 2, y: 0 });
@@ -80,9 +82,20 @@ describe("Blend Space axes", () => {
   });
 });
 
+describe("blendSpaceAxisCentre", () => {
+  it.each([
+    [{ ...directionAxis }, 0],
+    [{ ...speedAxis }, 3],
+    // Three divisions of 0–6 put grid lines at 2 and 4, not at 3: the centre rounds up to the line at 4.
+    [{ ...speedAxis, gridDivisions: 3 }, 4],
+  ])("puts %o's centre on a grid line at %d", (axis, expected) => {
+    expect(blendSpaceAxisCentre(axis)).toBe(expected);
+  });
+});
+
 describe("blendSpacePreviewPoint", () => {
-  it("starts at the axes' minimums until the point is placed", () => {
-    expect(blendSpacePreviewPoint(twoAxes(), null)).toEqual({ x: 0, y: -180 });
+  it("starts at the first axis's minimum and the second axis's centre until the point is placed", () => {
+    expect(blendSpacePreviewPoint(twoAxes(), null)).toEqual({ x: 0, y: 0 });
     expect(blendSpacePreviewPoint(createDefaultBlendSpacePayload(null), null)).toEqual({ x: 0, y: 0 });
     expect(blendSpacePreviewPoint(twoAxes(), { x: 3, y: 10 })).toEqual({ x: 3, y: 10 });
   });
