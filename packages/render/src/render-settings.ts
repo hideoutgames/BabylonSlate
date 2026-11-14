@@ -271,8 +271,9 @@ function replanSceneEffects(state: SceneRendering): void {
   const samples = multisampleCount(state);
   state.effectsKey = `${sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs)}${samples > 1 ? `:msaa${samples}` : ""}`;
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
-  // The light block's scene-level defines: the render mode and whether Screen-Space Shadows are read.
-  const lightingDefines = `${state.mode}|${state.effectsPlan?.screenShadows != null}`;
+  // The light block's scene-level defines: the render mode and whether Screen-Space Shadows can be read at all (a
+  // world view's Scene on a device that draws their depth pass). Whether a tier has them on is bound, not compiled.
+  const lightingDefines = `${state.mode}|${state.screenShadowsSupported?.() === true}`;
   if (lightingDefines === state.lightingDefines) return;
   state.lightingDefines = lightingDefines;
   for (const listener of state.listeners) listener(state.mode);

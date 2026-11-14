@@ -225,7 +225,7 @@ it("replans screen-space effects when the session quality tier changes and repor
   expect(sceneEffectsQualityLimits(scene)).toEqual(["post processing quality skips ambient occlusion, reflections"]);
 });
 
-it("plans Screen-Space Shadows only for a world view's Scene, and tells listeners when they start and stop", () => {
+it("plans Screen-Space Shadows only for a world view's Scene, and tells listeners once, when its device comes to draw them", () => {
   const scene = fixture();
   const state = sceneRenderingSettings(scene);
   const seen: boolean[] = [];
@@ -255,8 +255,9 @@ it("plans Screen-Space Shadows only for a world view's Scene, and tells listener
   updateSceneRenderingSettings(scene);
   // Low's Anti-Aliasing (FXAA) alone makes the world view's plan.
   expect(state.effectsPlan).toMatchObject({ screenShadows: null, fxaa: true });
-  // On at High, off at Medium, on at Ultra, off at Low: one call each time they start or stop.
-  expect(seen).toEqual([true, false, true, false]);
+  // The light block's defines follow the device's support alone: a tier that turns them on or off (off at Medium, on
+  // at Ultra, off at Low) is no change to them, so the lit programs stay as compiled.
+  expect(seen).toEqual([true]);
 });
 
 it("multisamples a world view's scene pass at the tier's Anti-Aliasing, within the device's limit, and keys the count", () => {

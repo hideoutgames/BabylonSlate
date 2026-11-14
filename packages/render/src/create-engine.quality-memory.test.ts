@@ -219,8 +219,9 @@ describe("Play quality changes", () => {
     releaseKeptEffects(engine);
     await frames(5);
     const medium = compiled();
-    // The Screen-Space Shadows stage and a surface variant Medium does not draw; a hold that never ended keeps both.
-    expect([...before.keys()].filter((key) => !medium.has(key))).toHaveLength(2);
+    // The Screen-Space Shadows stage, which Medium does not draw; a hold that never ended keeps it. The surfaces draw
+    // the variant they drew at High: whether a tier has screen shadows is bound, not compiled.
+    expect([...before.keys()].filter((key) => !medium.has(key))).toHaveLength(1);
   });
 
   it("never holds more textures than the larger of the states before and after a step or its restore", async () => {
