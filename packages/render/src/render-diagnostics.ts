@@ -99,6 +99,11 @@ export type RenderDiagnostics = {
     scopedReadinessProbes: number;
     /** Scoped checks a check of every mesh disagreed with, counted only while that verification is on. */
     scopedReadinessMismatches: number;
+    /**
+     * What the last strict check that failed since the first reading found unready, in the order it met them (at most
+     * `MAX_READINESS_BLOCKERS`): a graph task, a mesh and its Material, a texture, a render target. Empty before one fails.
+     */
+    readinessBlockers: string[];
   };
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;

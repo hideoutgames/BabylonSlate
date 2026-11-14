@@ -29,6 +29,11 @@ import {
  *      HAPTIC_PERF_REOPEN (default 1: also time reload + reopen), HAPTIC_PERF_LABEL,
  *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report).
  *
+ * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
+ * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
+ * (`frameCpu`, `frameDraws`, `drawsPerPass`, `cpuMsPerPass`). `settingsHoldMs` is how long the view took to draw again
+ * after the console commands; `rendering.rendererWork.readinessBlockers` names what a failed readiness check waited for.
+ *
  * Each Play also reports the WebGL programs linked from its click to its close (`programs`), keyed by their
  * shader sources: how many, how many while it loaded, how many distinct sources, and how many of those the
  * page had linked before that Play started (a repeat Play that keeps its programs links almost none of them).
@@ -55,7 +60,10 @@ const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
 type PlayHost = {
   __hapticPlayTest?: {
     tickIndex: () => number | null;
-    rendering: () => Record<string, unknown>;
+    rendering: () => (Record<string, unknown> & {
+      presentation?: { attempted: number; drawn: number; held: number; heldReasons: Record<string, number> };
+    }) | null;
+    scalability: () => { revision: number; status: string; message?: string } | undefined;
     liveObjectCounts: () => Record<string, number>;
     spawnableWarm: () => { materials: number; models: number; ms: number } | null;
   };
@@ -180,26 +188,64 @@ async function measureViewport(page: Page, durationMs: number) {
   };
 }
 
+/** Each pass's median over the readings (`RenderDiagnostics.drawPasses` or `drawPassMs`), passes that stayed at zero left out. */
+function passMedians(readings: unknown[]): Record<string, number> | null {
+  const byPass = new Map<string, number[]>();
+  for (const reading of readings) {
+    if (!reading || typeof reading !== "object") continue;
+    for (const [pass, value] of Object.entries(reading))
+      if (typeof value === "number") byPass.set(pass, [...(byPass.get(pass) ?? []), value]);
+  }
+  if (!byPass.size) return null;
+  const medians: Record<string, number> = {};
+  for (const [pass, values] of byPass) {
+    const median = distribution(values).medianMs ?? 0;
+    if (median > 0) medians[pass] = Math.round(median * 100) / 100;
+  }
+  return medians;
+}
+
 /** requestAnimationFrame cadence and worker ticks during overlay Play. */
 async function samplePlay(page: Page, durationMs: number) {
   const sample = await page.evaluate(async (ms) => {
     const host = globalThis as unknown as PlayHost;
     const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
     const tickStart = host.__hapticPlayTest?.tickIndex() ?? null;
+    // The first reading starts the per-pass timing, so every later one holds a timed frame.
+    const presentedAtStart = host.__hapticPlayTest?.rendering()?.presentation ?? null;
     const first = await frame();
     let previous = first;
+    let read = first;
     const intervals: number[] = [];
+    const readings: Array<Record<string, unknown>> = [];
     for (;;) {
       const now = await frame();
       intervals.push(now - previous);
       previous = now;
+      if (now - read >= 500) {
+        read = now;
+        const rendering = host.__hapticPlayTest?.rendering();
+        if (rendering) readings.push({ drawCalls: rendering.drawCalls, cpuMs: rendering.cpuMs, drawPasses: rendering.drawPasses, drawPassMs: rendering.drawPassMs });
+      }
       if (now - first >= ms) break;
     }
     const tickEnd = host.__hapticPlayTest?.tickIndex() ?? null;
+    const presentedAtEnd = host.__hapticPlayTest?.rendering()?.presentation ?? null;
     return {
       elapsedMs: previous - first,
       intervals,
+      readings,
+      // The view's own frames: animation frames keep their cadence while the view holds or skips its draws.
+      view: presentedAtStart && presentedAtEnd
+        ? {
+            attempted: presentedAtEnd.attempted - presentedAtStart.attempted,
+            drawn: presentedAtEnd.drawn - presentedAtStart.drawn,
+            held: presentedAtEnd.held - presentedAtStart.held,
+            heldReasons: presentedAtEnd.heldReasons,
+          }
+        : null,
       ticks: tickStart !== null && tickEnd !== null ? tickEnd - tickStart : null,
+      scalability: host.__hapticPlayTest?.scalability() ?? null,
       visibility: document.visibilityState,
       rendering: host.__hapticPlayTest?.rendering() ?? null,
     };
@@ -207,18 +253,35 @@ async function samplePlay(page: Page, durationMs: number) {
   const intervals = distribution(sample.intervals);
   const stalls = (thresholdMs: number) => sample.intervals.filter((value) => value > thresholdMs).length;
   const rendering = (sample.rendering ?? {}) as Record<string, unknown>;
+  const draws = distribution(sample.readings.flatMap((reading) => (typeof reading.drawCalls === "number" ? [reading.drawCalls] : [])));
   return {
     elapsedMs: sample.elapsedMs,
     averageFps: intervals.samples && sample.elapsedMs > 0 ? (intervals.samples * 1000) / sample.elapsedMs : null,
+    drawnFps: sample.view && sample.elapsedMs > 0 ? (sample.view.drawn * 1000) / sample.elapsedMs : null,
+    view: sample.view,
+    // The last quality change's acknowledgement: a failed one names what its preparation waited for.
+    scalability: sample.scalability ? { revision: sample.scalability.revision, status: sample.scalability.status, message: sample.scalability.message } : null,
     intervals,
     stallsOver33Ms: stalls(33.4),
     stallsOver100Ms: stalls(100),
     tickHz: sample.ticks !== null && sample.elapsedMs > 0 ? (sample.ticks * 1000) / sample.elapsedMs : null,
     visibility: sample.visibility,
+    // Half-second readings over the window: one frame's value says little where passes draw on alternate frames.
+    frameCpu: distribution(sample.readings.flatMap((reading) => (typeof reading.cpuMs === "number" ? [reading.cpuMs] : []))),
+    frameDraws: { median: draws.medianMs, max: draws.longestMs },
+    drawsPerPass: passMedians(sample.readings.map((reading) => reading.drawPasses)),
+    cpuMsPerPass: passMedians(sample.readings.map((reading) => reading.drawPassMs)),
     rendering: {
       drawCalls: rendering.drawCalls ?? null,
       cpuMs: rendering.cpuMs ?? null,
       gpuMs: rendering.gpuMs ?? null,
+      settings: rendering.settings ?? null,
+      rendererWork: rendering.rendererWork ?? null,
+      layerBatches: rendering.layerBatches ?? null,
+      shadowRetained: rendering.shadowRetained ?? null,
+      shadowPasses: rendering.shadowPasses ?? null,
+      occlusion: rendering.occlusion ?? null,
+      instancePool: rendering.instancePool ?? null,
       width: rendering.width ?? null,
       height: rendering.height ?? null,
       scalingLevel: rendering.scalingLevel ?? null,
@@ -252,6 +315,8 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   }
   if (FRAMECAP) await runConsoleCommand(page, `framecap ${FRAMECAP}`);
   for (const command of COMMANDS) await runConsoleCommand(page, command);
+  // A quality change holds the last frame until its Material variants have compiled: the windows measure what follows.
+  const settingsHoldMs = await waitForViewDrawing(page);
   await page.waitForTimeout(WARMUP_MS);
   const windows = [];
   for (let index = 0; index < SAMPLES; index += 1) {
@@ -266,7 +331,22 @@ async function measurePlay(page: Page, cdp: CDPSession) {
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0, { timeout: 60_000 });
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
-  return { playBootMs, spawnableWarm, programs, windows, liveObjects };
+  return { playBootMs, settingsHoldMs, spawnableWarm, programs, windows, liveObjects };
+}
+
+/** Waits until Play's view draws frames again, and returns how long that took. */
+async function waitForViewDrawing(page: Page): Promise<number> {
+  const started = Date.now();
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const drawn = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.presentation?.drawn ?? 0);
+      const drawing = last >= 0 && drawn - last >= 5;
+      last = drawn;
+      return drawing;
+    }, { timeout: 360_000, intervals: [500] })
+    .toBe(true);
+  return Date.now() - started;
 }
 
 /** After Play closes, the editor's scene view loads again. */
