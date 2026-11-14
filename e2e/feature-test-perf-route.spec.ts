@@ -277,6 +277,7 @@ async function samplePlay(page: Page, durationMs: number) {
       gpuMs: rendering.gpuMs ?? null,
       settings: rendering.settings ?? null,
       rendererWork: rendering.rendererWork ?? null,
+      layerWork: rendering.layerWork ?? null,
       layerBatches: rendering.layerBatches ?? null,
       shadowRetained: rendering.shadowRetained ?? null,
       shadowPasses: rendering.shadowPasses ?? null,
