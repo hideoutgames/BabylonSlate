@@ -49,7 +49,7 @@ Targets are guides, not guarantees. Profile on the devices you ship to.
 - **Texture LOD Bias**, **Texture Anisotropy** and **Texture Budget (MiB)** control texture detail and memory. Unused textures are released above the budget.
 - **Auto LOD** and **LOD Distance Scale** control simplified model levels. See [Models](models.md#automatic-lod).
 - **Occlusion Culling** skips objects hidden behind walls and other solid shapes. It is on at every level. See [Occlusion culling](#occlusion-culling).
-- **Mirror Reflections** caps what every [Mirror](../components/mirror.md#cheaper-reflections) draws live: **Everything** (no cap, the default at every level), **Moving Actors** or **Environment**. A Mirror whose own **Reflects** already draws less keeps its setting. In Play, `quality geometry mirrors everything`, `movingActors` or `environment` switches it for the session.
+- **Mirror Reflections** caps what every [Mirror](../components/mirror.md#cheaper-reflections) draws live: **Everything** (no cap), **Moving Actors** or **Environment**. Low caps them to Environment and Medium to Moving Actors, since a live reflection draws the scene a second time; High and Ultra leave them at Everything. A Mirror whose own **Reflects** already draws less keeps its setting. In Play, `quality geometry mirrors everything`, `movingActors` or `environment` switches it for the session.
 - Water and post-processing groups are covered in [Water](water.md#water-quality) and [Post-Processing](post-processing.md#quality).
 
 ## Occlusion culling

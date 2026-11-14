@@ -1153,11 +1153,12 @@ describe("Profile", () => {
   });
 
   it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
-    // Low has no Screen-Space Shadows, AO, SSR or volumetrics; Medium has Medium's shadows and no Screen-Space Shadows or
+    // Low has no Screen-Space Shadows, AO, SSR or volumetrics and caps Mirrors to Environment; Medium caps them to Moving
+    // Actors and has Medium's shadows and no Screen-Space Shadows or
     // volumetrics; only Ultra has Reflection Shadows.
     const expectedSkips: Record<QualityLevel, string[]> = {
-      low: ["screen shadows off", "reflection shadows off", "AO off", "SSR off", "volumetrics off", "geometry effects off"],
-      medium: ["shadows medium", "screen shadows off", "reflection shadows off", "volumetrics off"],
+      low: ["screen shadows off", "reflection shadows off", "mirrors environment", "AO off", "SSR off", "volumetrics off", "geometry effects off"],
+      medium: ["shadows medium", "screen shadows off", "reflection shadows off", "mirrors moving actors", "volumetrics off"],
       high: ["reflection shadows off"],
       ultra: [],
     };
@@ -1435,12 +1436,13 @@ describe("Profile", () => {
       ["shadows medium", "already shadows medium 2048, shadows.filter high, shadows.screen off, shadows.reflections false", null],
       ["screen shadows off", "already shadows.screen off", null],
       ["reflection shadows off", "already shadows.reflections false", null],
+      ["mirrors moving actors", "already geometry.mirrors movingActors", null],
       ["volumetrics off", "already post.volumetricLighting false", null],
     ]);
     const labels = rows.map((sample) => sample.label);
     expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("AO off") + 2)).toEqual([
       "shadows off", "baseline 3", "shadows medium", "screen shadows off", "reflection shadows off",
-      "mirrors moving actors", "baseline 7", "mirrors environment", "baseline 8", "AO off", "baseline 9",
+      "mirrors moving actors", "mirrors environment", "baseline 8", "AO off", "baseline 9",
     ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
     expect(main!.problems).toEqual(["baseline 16: framesinflight 3 failed: Refused."]);

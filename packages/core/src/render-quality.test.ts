@@ -230,10 +230,11 @@ describe("rendering quality sessions", () => {
     expect(resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch("low")).postprocessing.antiAliasing)
       .toBe("fxaa");
   });
-  it("caps what Mirrors draw live from the console, with no cap at any tier", () => {
+  it("caps what Mirrors draw live from the console, and by tier below High", () => {
+    // A session without a project's settings is at Medium, which caps Mirrors to the actors that move.
     const session = new RenderingQualitySession();
-    expect(session.effective().geometry.mirrorReflections).toBe("everything");
-    expect(qualitySettingsFingerprint(session.effective())["geometry.mirrors"]).toBe("everything");
+    expect(session.effective().geometry.mirrorReflections).toBe("movingActors");
+    expect(qualitySettingsFingerprint(session.effective())["geometry.mirrors"]).toBe("movingActors");
     // Any case, as the other named values are typed.
     expect(session.execute("geometry", "mirrors", "movingactors").success).toBe(true);
     expect(session.effective().geometry).toMatchObject({ mirrorReflections: "movingActors", preset: "custom" });
@@ -244,8 +245,10 @@ describe("rendering quality sessions", () => {
     expect(session.execute("geometry", "mirrors").success).toBe(false);
     expect(session.effective().geometry.mirrorReflections).toBe("environment");
     session.execute("geometry", "reset");
-    expect(session.effective().geometry.mirrorReflections).toBe("everything");
-    for (const level of ["low", "medium", "high", "ultra"] as const) expect(RENDER_QUALITY_PROFILES[level].geometry.mirrorReflections).toBe("everything");
+    expect(session.effective().geometry.mirrorReflections).toBe("movingActors");
+    // The lower tiers cap them: a live reflection redraws the scene, the largest single cost of a frame with a Mirror in view.
+    expect((["low", "medium", "high", "ultra"] as const).map((level) => RENDER_QUALITY_PROFILES[level].geometry.mirrorReflections))
+      .toEqual(["environment", "movingActors", "everything", "everything"]);
     // A stored value that is no cap reads as the tier's.
     expect(normalizeRenderingQuality({ geometry: { mirrorReflections: "sometimes" as never } }).geometry.mirrorReflections).toBe("everything");
     expect(normalizeRenderingQuality({ geometry: { mirrorReflections: "environment" } }).geometry.mirrorReflections).toBe("environment");
