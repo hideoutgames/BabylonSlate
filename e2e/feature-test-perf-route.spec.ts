@@ -199,8 +199,8 @@ function passMedians(readings: unknown[]): Record<string, number> | null {
   if (!byPass.size) return null;
   const medians: Record<string, number> = {};
   for (const [pass, values] of byPass) {
-    const median = distribution(values).medianMs ?? 0;
-    if (median > 0) medians[pass] = Math.round(median * 100) / 100;
+    const median = Math.round((distribution(values).medianMs ?? 0) * 100) / 100;
+    if (median > 0) medians[pass] = median;
   }
   return medians;
 }
