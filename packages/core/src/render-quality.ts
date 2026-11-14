@@ -219,7 +219,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 6 },
     resolution: { scale: 0.85, dynamic: true, minScale: 0.5, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 384 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: true, mirrorReflections: "environment" },
+    geometry: { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: true, mirrorReflections: "everything" },
     // A budget phone draws water as a blended surface reflecting the sky: no scene copy, no mirror pass, the cheapest
     // shading and two small FFT cascades.
     water: {
@@ -233,7 +233,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
     lighting: { localLightMode: "auto", maxLocalLights: 32 },
     resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 768 * MIB },
-    geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: true, mirrorReflections: "movingActors" },
+    geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: true, mirrorReflections: "everything" },
     // The A16 keeps refraction and screen-space object reflections, with no planar re-render of the scene for flat
     // water, a half-resolution scene copy, and Low's mesh, FFT texels and contact cells (an iPad's sustained frame spent
     // about 2 ms on 0.75's mesh and 2 ms on 128's FFT texels), with a third cascade.

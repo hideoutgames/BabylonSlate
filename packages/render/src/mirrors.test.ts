@@ -71,8 +71,6 @@ function host() {
     });
   });
   const scene = new Scene(engine);
-  // A level that leaves each Mirror as authored (High's and Ultra's): the lower ones cap what a Mirror draws live.
-  updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { mirrorReflections: "everything" } }) });
   const camera = new FreeCamera("View", new Vector3(0, 1, 0), scene);
   camera.setTarget(new Vector3(0, 1, 10));
   const frame = () => {

@@ -153,7 +153,7 @@ it("turns Occlusion Culling on at every Geometry tier and makes the tier Custom 
   }
 });
 
-it("caps Mirror Reflections within the Geometry tier, which caps them itself below High", async () => {
+it("caps Mirror Reflections within the Geometry tier, with no cap at any tier", async () => {
   render(<Fields />);
   expect(selected("Mirror Reflections")).toBe("Everything");
   await select("Mirror Reflections", "Moving Actors");
@@ -161,9 +161,9 @@ it("caps Mirror Reflections within the Geometry tier, which caps them itself bel
   expect(selected("Geometry Quality")).toBe("Custom");
   await select("Mirror Reflections", "Environment");
   expect(selected("Mirror Reflections")).toBe("Environment");
-  for (const [tier, cap] of [["Low", "Environment"], ["Medium", "Moving Actors"], ["High", "Everything"], ["Ultra", "Everything"]] as const) {
+  for (const tier of ["Low", "Medium", "High", "Ultra"]) {
     await select("Geometry Quality", tier);
-    expect(selected("Mirror Reflections")).toBe(cap);
+    expect(selected("Mirror Reflections")).toBe("Everything");
   }
 });
 
