@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TriangleAlertIcon } from "lucide-react";
+import { isSyncError } from "@haptic/source-control";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +21,8 @@ type Step =
   | { kind: "blocked"; reason: string }
   | { kind: "finding" }
   | { kind: "confirm"; found: UnusedFiles }
-  | { kind: "removing" }
+  /** `started` once files go: until then it waits for other writers, and Cancel removes nothing. */
+  | { kind: "removing"; started: boolean; cancelling: boolean }
   | { kind: "done"; removed: UnusedFiles }
   | { kind: "failed"; title: string; message: string };
 
@@ -39,7 +41,9 @@ function messageOf(error: unknown): string {
  * blob files nothing needs (`SourceControlSyncService.findUnusedFiles`),
  * confirms with their count and size, then removes them in the project
  * write queue (`removeUnusedFiles`, which checks each again as the project's
- * only writer) and says what it removed.
+ * only writer) and says what it removed. While it waits for other writers
+ * (a Texture encode may take minutes), **Cancel** ends it with nothing
+ * removed; once files go it runs to the end.
  */
 export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void }) {
   const sync = useIntegratedSync();
@@ -56,6 +60,8 @@ export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void })
     return reason ? { kind: "blocked", reason } : { kind: "finding" };
   });
   const finding = step.kind === "finding";
+  /** The removal's cancel, while it runs. */
+  const cancelRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!finding) return;
@@ -80,13 +86,30 @@ export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void })
       setStep({ kind: "blocked", reason });
       return;
     }
-    setStep({ kind: "removing" });
+    const cancel = new AbortController();
+    cancelRef.current = cancel;
+    setStep({ kind: "removing", started: false, cancelling: false });
     try {
-      const removed = await withProjectWrites(() => sync.removeUnusedFiles(found.paths));
+      const removed = await withProjectWrites(() => sync.removeUnusedFiles(found.paths, {
+        signal: cancel.signal,
+        onRemoving: () => setStep((current) => (current.kind === "removing" ? { kind: "removing", started: true, cancelling: false } : current)),
+      }));
       setStep({ kind: "done", removed });
     } catch (error) {
-      setStep({ kind: "failed", title: "Could Not Remove Unused Files", message: messageOf(error) });
+      // Cancelled before any file went: nothing was removed, and nothing to say.
+      if (cancel.signal.aborted && isSyncError(error) && error.kind === "cancelled") onDone();
+      else setStep({ kind: "failed", title: "Could Not Remove Unused Files", message: messageOf(error) });
+    } finally {
+      cancelRef.current = null;
     }
+  };
+
+  // Only while it waits: once files go, it runs to the end (a Cancel that lands then changes nothing).
+  // The step closes once the wait has ended.
+  const cancelRemoving = () => {
+    if (step.kind !== "removing" || step.started) return;
+    cancelRef.current?.abort();
+    setStep({ ...step, cancelling: true });
   };
 
   const closable = (open: boolean) => {
@@ -145,14 +168,25 @@ export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void })
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* No way to close it: it ends when the files are removed. */}
-      <AlertDialog open={step.kind === "removing"}>
+      {/* Cancel while it waits for other writers; once files go, nothing closes it until they are removed. */}
+      <AlertDialog open={step.kind === "removing"} onOpenChange={(open) => { if (!open) cancelRemoving(); }}>
         <AlertDialogContent data-testid="source-control-unused-removing">
           <AlertDialogHeader>
             <AlertDialogTitle>Removing Unused Files</AlertDialogTitle>
-            <AlertDialogDescription>Saves wait until the files are removed.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {step.kind === "removing" && !step.started
+                ? "Waiting for saves, imports and Texture encodes to finish. Nothing is removed yet."
+                : "Saves wait until the files are removed."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <Progress value={null} aria-label="Removing Unused Files" />
+          {step.kind === "removing" && !step.started ? (
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="source-control-unused-removing-cancel" disabled={step.cancelling}>
+                Cancel
+              </AlertDialogCancel>
+            </AlertDialogFooter>
+          ) : null}
         </AlertDialogContent>
       </AlertDialog>
 

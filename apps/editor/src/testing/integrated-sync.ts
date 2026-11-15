@@ -18,8 +18,8 @@ export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
     : path === "assets/Rock.texture.hasset" ? { name: "Rock", type: "Texture", blobPaths: [] }
       : null;
 
-/** `ProjectService.withExclusiveWrites` as tests see it: `storage` is the project folder's. */
-export type TestExclusiveWrites = <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, storage: ProjectStorage) => Promise<T>;
+/** `ProjectService.withExclusiveWrites` as tests see it: `storage` is the project folder's; `signal` ends the wait for other writers. */
+export type TestExclusiveWrites = <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, storage: ProjectStorage, signal: AbortSignal) => Promise<T>;
 
 /**
  * A real `SourceControlSyncService` in Integrated mode over `FakeSync`: a
@@ -59,7 +59,7 @@ export async function integratedSync(options: {
     testMode: true,
     lookup: options.lookup ?? INTEGRATED_LOOKUP,
     locks,
-    exclusiveWrites: (reason, work) => (options.exclusiveWrites ?? ((_reason, own, project) => own(project)))(reason, work, storage),
+    exclusiveWrites: (reason, work, signal) => (options.exclusiveWrites ?? ((_reason, own, project) => own(project)))(reason, work, storage, signal),
     factory: {
       open: async () => port,
       init: async () => port,

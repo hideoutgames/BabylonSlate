@@ -167,6 +167,57 @@ describe("Remove Unused Files", () => {
     expect(await storage.exists(`assets/.blobs/${lost.sha}`)).toBe(true);
   });
 
+  it("removes nothing when cancelled while it waits for other writers, and no cancel stops it once removing began", async () => {
+    const lost = await texture("Lost", 3);
+    let enter!: () => void;
+    let entered = new Promise<void>((resolve) => { enter = resolve; });
+    let proceed!: () => void;
+    const drained = new Promise<void>((resolve) => { proceed = resolve; });
+    const { service, storage } = await integratedSync({
+      files: (await seed()).files,
+      // Admitted writers drain until the wait's signal ends it, as the project service waits.
+      exclusiveWrites: async (_reason, work, storage, signal) => {
+        enter();
+        await new Promise<void>((resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          void drained.then(resolve);
+        });
+        return work(storage);
+      },
+    });
+    await storage.writeBinary(`assets/.blobs/${lost.sha}`, lost.blob);
+    const found = await service.findUnusedFiles();
+    expect(found.paths).toEqual([`assets/.blobs/${lost.sha}`]);
+
+    const cancel = new AbortController();
+    let outcome: unknown = "waiting";
+    service.removeUnusedFiles(found.paths, { signal: cancel.signal }).then((removed) => { outcome = removed; }, (error: unknown) => { outcome = error; });
+    await entered;
+    cancel.abort();
+    await vi.waitFor(() => expect(outcome).toMatchObject({ kind: "cancelled" }));
+    expect(await storage.exists(`assets/.blobs/${lost.sha}`)).toBe(true);
+    // A cancel is no problem to show.
+    expect(service.getSnapshot().problem).toBeNull();
+
+    // Cancelled before its turn: nothing is read or waited for.
+    entered = new Promise<void>((resolve) => { enter = resolve; });
+    await expect(service.removeUnusedFiles(found.paths, { signal: cancel.signal })).rejects.toMatchObject({ kind: "cancelled" });
+
+    proceed();
+    const late = new AbortController();
+    const steps: string[] = [];
+    const removed = await service.removeUnusedFiles(found.paths, {
+      signal: late.signal,
+      onRemoving: () => {
+        steps.push("removing");
+        late.abort();
+      },
+    });
+    expect(steps).toEqual(["removing"]);
+    expect(removed).toEqual({ paths: found.paths, bytes: BLOB_BYTES });
+    expect(await storage.exists(`assets/.blobs/${lost.sha}`)).toBe(false);
+  });
+
   it("keeps a blob a committed version of an asset names while that commit lacks it", async () => {
     // Another Git app committed Fern without its blob: only this file lets that version be compared or reverted.
     const fern = await texture("Fern", 5);

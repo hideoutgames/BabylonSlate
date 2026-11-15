@@ -257,6 +257,68 @@ describe("Changes window", () => {
     expect(queued).toBe(1);
   });
 
+  it("offers Cancel while the removal waits for other writers, which removes nothing, and none once files are being removed", async () => {
+    let drain!: () => void;
+    const drained = new Promise<void>((resolve) => { drain = resolve; });
+    let finish!: () => void;
+    const removing = new Promise<void>((resolve) => { finish = resolve; });
+    const { service, storage } = await integratedSync({
+      files: { "assets/Forest.scene.hasset": null, "assets/Rock.texture.hasset": null },
+      // A long Texture encode is admitted: the removal waits for it until the wait's signal ends.
+      exclusiveWrites: async (_reason, work, storage, signal) => {
+        await new Promise<void>((resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          void drained.then(resolve);
+        });
+        // Each removal waits, so the step can be seen while files go.
+        return work(new Proxy(storage, {
+          get(target, key) {
+            const value = Reflect.get(target, key, target) as unknown;
+            if (typeof value !== "function") return value;
+            if (key !== "remove") return value.bind(target);
+            return async (path: string) => {
+              await removing;
+              return (value as (path: string) => Promise<void>).call(target, path);
+            };
+          },
+        }));
+      },
+    });
+    state.sync = service;
+    const loose = `assets/.blobs/${"c".repeat(64)}`;
+    await storage.writeBinary(loose, new Uint8Array(1024));
+    renderPanel();
+    const remove = async () => {
+      fireEvent.click(screen.getByTestId("changes-more"));
+      await act(async () => {
+        fireEvent.click(await screen.findByTestId("changes-remove-unused"));
+      });
+      await screen.findByTestId("source-control-unused-confirm");
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("source-control-unused-confirm-action"));
+      });
+      return screen.findByTestId("source-control-unused-removing");
+    };
+
+    const waiting = await remove();
+    expect(waiting.textContent).toContain("Waiting");
+    await act(async () => {
+      fireEvent.click(within(waiting).getByRole("button", { name: "Cancel" }));
+    });
+    await waitFor(() => expect(screen.queryByTestId("source-control-unused-removing")).toBeNull());
+    expect(screen.queryByTestId("source-control-unused-failed")).toBeNull();
+    expect(service.getSnapshot().problem).toBeNull();
+    expect(await storage.exists(loose)).toBe(true);
+
+    drain();
+    const step = await remove();
+    await waitFor(() => expect(within(step).queryByRole("button", { name: "Cancel" })).toBeNull());
+    expect(step.textContent).toContain("Saves wait until the files are removed.");
+    finish();
+    expect((await screen.findByTestId("source-control-unused-done")).textContent).toContain("Removed 1 Unused File");
+    expect(await storage.exists(loose)).toBe(false);
+  });
+
   it("offers Add Git LFS Rule where a commit of blobs is refused, and commits once the rule is in", async () => {
     const blob = `assets/.blobs/${"a".repeat(64)}`;
     // Forest's new version stores a chunk in the blob.

@@ -137,17 +137,21 @@ export async function unusedLfsObjects(storage: ProjectStorage, candidates: read
 /**
  * Removes those of `candidates` nothing needs now, judged as
  * `unusedLfsObjects` does from `storage`, through `writer` (the project's
- * only writer, so no asset is written meanwhile). Stops at a cancel.
+ * only writer, so no asset is written meanwhile). `reading` stops it until
+ * `onRemoving` says files start to go; from then only `removing` (a close)
+ * stops it, between files.
  */
 export async function removeUnusedLfsObjects(
   storage: ProjectStorage,
   writer: ProjectStorage,
   candidates: readonly string[],
-  signal: AbortSignal,
+  { reading, removing, onRemoving }: { reading: AbortSignal; removing: AbortSignal; onRemoving?: () => void },
 ): Promise<UnusedFiles> {
-  const unused = await unusedLfsObjects(storage, candidates, signal);
+  const unused = await unusedLfsObjects(storage, candidates, reading);
+  throwIfCancelled(reading);
+  onRemoving?.();
   for (const path of unused.paths) {
-    throwIfCancelled(signal);
+    throwIfCancelled(removing);
     await writer.remove(path);
   }
   return unused;

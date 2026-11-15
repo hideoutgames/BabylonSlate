@@ -1,6 +1,7 @@
 import { isStorageNotFound, PROJECT_FILE, type ProjectFolderHandle, type ProjectStorage, type SourceControlProjectSettings } from "@haptic/core";
 import {
   isSyncError,
+  throwIfCancelled,
   withLfsRule,
   type CommitAuthor,
   type CommitInfo,
@@ -644,22 +645,41 @@ export class SourceControlSyncService {
    * nothing needs still: the repository's answer is read again (only this
    * queue's own operations change it), then, as the project's only writer,
    * the asset headers, so an asset written since the confirmation keeps its
-   * blob. Never a tracked file. Queued; a close cancels it. The status is
-   * read again after. Resolves to what it removed; rejects with what failed.
+   * blob. Never a tracked file. Queued; a close cancels it. `signal` (the
+   * user's **Cancel**) ends it, as a `cancelled` `SyncError` and no problem,
+   * until the first file goes: while it waits for its turn and for the
+   * project's other writers (a Texture encode may take minutes), and while it
+   * reads; `onRemoving` says when files start to go, after which only a close
+   * stops it. The status is read again after. Resolves to what it removed;
+   * rejects with what failed.
    */
-  async removeUnusedFiles(paths: readonly string[]): Promise<UnusedFiles> {
+  async removeUnusedFiles(paths: readonly string[], options: { signal?: AbortSignal; onRemoving?: () => void } = {}): Promise<UnusedFiles> {
+    throwIfCancelled(options.signal);
     const revision = this.revision;
     let removed: UnusedFiles | null = null;
     const ran = await this.run(null, "Could Not Remove Unused Files", async ({ port, input, storage, signal }) => {
+      const waiting = options.signal ? AbortSignal.any([signal, options.signal]) : signal;
+      throwIfCancelled(waiting);
       const { committedBlobNames, removeUnusedLfsObjects } = await import("./source-control-unused-files");
       const confirmed = new Set(paths);
-      const candidates = (await port.removableLfsObjects({ signal, references: committedBlobNames })).filter((path) => confirmed.has(path));
+      const candidates = (await port.removableLfsObjects({ signal: waiting, references: committedBlobNames })).filter((path) => confirmed.has(path));
       const folder = input.folder!.id;
-      removed = await input.exclusiveWrites(
-        REMOVING_UNUSED_REASON,
-        (writer) => removeUnusedLfsObjects(storage, folderBoundStorage(writer, folder), candidates, signal),
-        signal,
-      );
+      let started = false;
+      const onRemoving = () => {
+        started = true;
+        options.onRemoving?.();
+      };
+      try {
+        removed = await input.exclusiveWrites(
+          REMOVING_UNUSED_REASON,
+          (writer) => removeUnusedLfsObjects(storage, folderBoundStorage(writer, folder), candidates, { reading: waiting, removing: signal, onRemoving }),
+          waiting,
+        );
+      } catch (error) {
+        // The wait for other writers ends with the signal's own reason.
+        if (!started) throwIfCancelled(waiting);
+        throw error;
+      }
     }, revision, { rethrow: true });
     if (!ran || !removed) throw new Error("The project closed while removing unused files.");
     await this.refreshStatus();
@@ -859,7 +879,8 @@ export class SourceControlSyncService {
         if (this.snapshot.problem?.title === title) update({ problem: null });
         return true;
       } catch (error) {
-        update({ problem: problemFrom(title, error) });
+        // Cancelled: the user's Cancel, or a close (whose revision no longer updates the snapshot).
+        if (!(isSyncError(error) && error.kind === "cancelled")) update({ problem: problemFrom(title, error) });
         if (options.rethrow && revision === this.revision) throw error;
         return false;
       } finally {
