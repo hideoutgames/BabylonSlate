@@ -401,6 +401,25 @@ export class FakeSync implements SyncPort {
     return stored;
   }
 
+  async removableLfsObjects(options: TransferOptions = {}): Promise<string[]> {
+    throwIfCancelled(options.signal);
+    const committed = this.head ? this.files(this.head) : new Map<string, Uint8Array>();
+    // No index: untracked is what HEAD lacks.
+    const untracked = [...(await this.workingEntries()).keys()].filter((path) => lfsObjectId(path) && !committed.has(path)).sort();
+    if (untracked.length === 0) return [];
+    // What a commit of a local branch holds that no fetched remote branch reaches (a branch never pushed: every commit).
+    const remotes = [...this.fetched.values()];
+    const held = new Set<string>();
+    for (const head of new Set(this.heads.values())) {
+      throwIfCancelled(options.signal);
+      for (const id of (await this.relation(head, remotes)).ahead) {
+        const files = this.files(id);
+        for (const path of untracked) if (files.has(path)) held.add(path);
+      }
+    }
+    return untracked.filter((path) => !held.has(path));
+  }
+
   async log({ limit, skip = 0, path, signal }: LogOptions): Promise<LogPage> {
     throwIfCancelled(signal);
     const commits: CommitInfo[] = [];

@@ -408,6 +408,59 @@ export class GitRepository implements SyncPort {
     return downloaded;
   }
 
+  removableLfsObjects({ signal }: TransferOptions = {}): Promise<string[]> {
+    return this.run(async (op) => {
+      // Untracked: no HEAD entry and no index entry (a staged file has one). An untracked file is never hashed.
+      const rows = (await git.statusMatrix({ ...op.git, filter: (path) => lfsObjectId(path) !== null })) as StatusRow[];
+      const untracked = rows.filter(([, head, workdir, stage]) => head === 0 && workdir === 2 && stage === 0).map(([path]) => path);
+      if (untracked.length === 0) return [];
+      const held = await this.heldByUnpushed(op, untracked, signal);
+      return untracked.filter((path) => !held.has(path)).sort();
+    }, signal);
+  }
+
+  /**
+   * Which of `paths` a commit of a local branch holds that no
+   * remote-tracking branch reaches (a branch never pushed: every commit),
+   * from local refs only. Each such commit's tree is read only along the
+   * folders of `paths`.
+   */
+  private async heldByUnpushed(op: Op, paths: readonly string[], signal?: AbortSignal): Promise<Set<string>> {
+    const wanted = new Map<string, Set<string>>();
+    for (const path of paths) {
+      const folder = parentOf(path);
+      wanted.set(folder, (wanted.get(folder) ?? new Set()).add(path.slice(folder.length + 1)));
+    }
+    const remotes = await this.remoteHeads(op);
+    const read = new Set<string>();
+    const held = new Set<string>();
+    for (const name of await git.listBranches({ ...op.git })) {
+      const head = await this.resolve(op, `refs/heads/${name}`);
+      if (!head) continue;
+      for (const commit of (await this.relation(op, head, remotes, false)).ahead) {
+        throwIfCancelled(signal);
+        if (read.has(commit)) continue;
+        read.add(commit);
+        for (const [folder, names] of wanted) {
+          for (const entry of await this.treeEntries(op, commit, folder)) {
+            if (names.has(entry)) held.add(`${folder}/${entry}`);
+          }
+        }
+      }
+    }
+    return held;
+  }
+
+  /** The names in `folder` of `commit`'s tree; none when it has no such folder. */
+  private async treeEntries(op: Op, commit: string, folder: string): Promise<string[]> {
+    try {
+      return (await git.readTree({ ...op.git, oid: commit, filepath: folder })).tree.map((entry) => entry.path);
+    } catch (error) {
+      if ((error as { code?: unknown }).code === "NotFoundError") return [];
+      throw error;
+    }
+  }
+
   log({ limit, skip = 0, path, deepen = false, signal }: LogOptions): Promise<LogPage> {
     return this.run(async (op) => {
       // isomorphic-git walks from HEAD each time; the pages before are read again (from its object cache) and left out.

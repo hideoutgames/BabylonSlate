@@ -502,6 +502,57 @@ describe.each([
     expect(await port.status()).toEqual({ branch: "main", head: remote, changes: [{ path: blobPath(texture), kind: "added" }] });
   });
 
+  it("offers for removal only untracked blob files that no unpushed commit holds", async () => {
+    const tracked = blobBytes(20, 2048);
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(tracked)]: tracked });
+    const { port, storage } = await fixture.copy();
+    expect(await port.removableLfsObjects()).toEqual([]);
+    const loose = blobBytes(21, 1024);
+    const plugin = blobBytes(22, 1024);
+    await storage.writeBinary(blobPath(loose), loose);
+    await storage.writeBinary(blobPath(plugin, "plugins/Props/assets"), plugin);
+    // Other untracked files are not blobs; a tracked blob file is never offered, even unreferenced.
+    await storage.writeBinary("assets/b.hasset", encode("B"));
+    expect(await port.removableLfsObjects()).toEqual([blobPath(loose), blobPath(plugin, "plugins/Props/assets")].sort());
+    const cancelled = new AbortController();
+    cancelled.abort();
+    expect((await rejection(port.removableLfsObjects({ signal: cancelled.signal }))).kind).toBe("cancelled");
+  });
+
+  it("keeps blob files an unpushed commit of any local branch holds, the checked-out branch's older commits too, until they are pushed", async () => {
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+
+    // Another branch's commit not pushed yet: its object exists only in this working copy.
+    await port.createBranch("feature");
+    const art = blobBytes(23, 3000);
+    await storage.writeBinary(blobPath(art), art);
+    await storage.writeBinary("assets/t.hasset", encode("T"));
+    await port.commit({ paths: [blobPath(art), "assets/t.hasset"], message: "Art", author: AUTHOR });
+    await port.switchBranch("main");
+    expect(await port.status()).toMatchObject({ changes: [{ path: blobPath(art), kind: "added" }] });
+    expect(await port.removableLfsObjects()).toEqual([]);
+
+    // On the checked-out branch: one commit adds a blob, a later one removes it; the file comes back untracked.
+    const old = blobBytes(24, 2500);
+    await storage.writeBinary(blobPath(old), old);
+    await port.commit({ paths: [blobPath(old)], message: "Old", author: AUTHOR });
+    await storage.remove(blobPath(old));
+    await port.commit({ paths: [blobPath(old)], message: "Drop old", author: AUTHOR });
+    await storage.writeBinary(blobPath(old), old);
+    expect((await port.status()).changes).toEqual([blobPath(art), blobPath(old)].sort().map((path) => ({ path, kind: "added" })));
+    expect(await port.removableLfsObjects()).toEqual([]);
+    // The push uploads it from that file.
+    expect(await port.push()).toMatchObject({ uploaded: 1 });
+
+    // Pushed: the server holds a copy to download again, so the working file may go.
+    expect(await port.removableLfsObjects()).toEqual([blobPath(old)]);
+    await port.switchBranch("feature");
+    await port.push();
+    await port.switchBranch("main");
+    expect(await port.removableLfsObjects()).toEqual([blobPath(art), blobPath(old)].sort());
+  });
+
   it("never makes up an LFS object the working copy lost and the server never had", async () => {
     await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A" });
     const { port, storage } = await fixture.copy();

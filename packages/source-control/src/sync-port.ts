@@ -49,6 +49,18 @@ export interface SyncPort {
    * `lfs` / `lfs-object-missing`.
    */
   readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;
+  /**
+   * The working tree's `.blobs` files Git can do without, sorted: untracked
+   * (neither HEAD nor the index holds them) and held by no commit of any
+   * local branch that the remote-tracking branches lack, the checked-out
+   * branch's older ones included (an unpushed commit's objects exist only
+   * here, and a push uploads them from these files; a pushed one's can be
+   * downloaded again). Pushed means a remote-tracking ref as last fetched
+   * reaches it: a push uploads the objects before it moves the remote branch,
+   * and a stale ref only keeps more. From stats and Git objects: no working
+   * file is read and nothing is fetched.
+   */
+  removableLfsObjects(options?: TransferOptions): Promise<string[]>;
   /** The branch's commits, newest first; `deepen` fetches older history once when the page ends at this shallow copy's boundary. */
   log(options: LogOptions): Promise<LogPage>;
   /**
