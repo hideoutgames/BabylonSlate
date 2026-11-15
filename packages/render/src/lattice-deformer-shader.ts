@@ -6,6 +6,11 @@ import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import { checkedShader } from "./checked-shader";
 
 export const LATTICE_UNIFORMS = ["lattice_cellSize", "lattice_min", "lattice_max", "lattice_resolution", "lattice_position", "slateWorldToLattice", "slateLatticeToWorld", "slateLatticeEnabled"];
+/**
+ * How far outside the cage, as a fraction of a cell, a vertex still deforms as one on its face. A thousandth of a
+ * metre-wide cell is a millimetre: above float rounding at the coordinates scenes use, below anything modelled.
+ */
+const LATTICE_FACE_TOLERANCE = "0.001";
 /** Must match the 3D texture sampler of Babylon's stock `LatticePluginMaterial`, whose vertex code this borrows. */
 export const LATTICE_SAMPLER = "latticeData";
 
@@ -38,6 +43,17 @@ export function latticeShaderFunctions(scene: Scene, language: ShaderLanguage): 
   const u = wgsl ? "uniforms." : "";
   const declare = (name: string, type: string, value: string) => wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`;
   const adapter = checkedShader(body, `stock lattice ${language}`);
+  // Fit To Mesh puts the mesh's outermost vertices exactly on the cage's faces, where the stock inside test is
+  // decided by GPU rounding. A vertex a hair outside stays undeformed, and the side it landed on changed with the
+  // camera, so faces tore away from the cage as the view moved. Accept LATTICE_FACE_TOLERANCE of a cell outside,
+  // then clamp onto the cage: such a vertex deforms as one on the face, and its cell keeps two distinct samples per
+  // axis for the normal.
+  for (const axis of ["x", "y", "z"]) {
+    adapter.replace(`positionUpdated.${axis} >= lattice_min.${axis}`, `positionUpdated.${axis} >= lattice_min.${axis} - lattice_cellSize.${axis} * ${LATTICE_FACE_TOLERANCE}`);
+    adapter.replace(`positionUpdated.${axis} <= lattice_max.${axis}`, `positionUpdated.${axis} <= lattice_max.${axis} + lattice_cellSize.${axis} * ${LATTICE_FACE_TOLERANCE}`);
+  }
+  adapter.replace("// Get integer lattice indices", `localPos = clamp(localPos, ${wgsl ? "vec3f" : "vec3"}(0.0), lattice_resolution - ${wgsl ? "vec3f" : "vec3"}(1.0));
+                // Get integer lattice indices`);
   // At the upper face use the last complete cell (weight 1), preserving the
   // stock position while avoiding a zero derivative from duplicate samples.
   for (const axis of ["x", "y", "z"]) {
