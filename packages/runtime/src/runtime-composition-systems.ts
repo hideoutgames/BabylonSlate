@@ -89,6 +89,18 @@ export function createAnimGraphs(rt: RuntimeComposition): AnimGraphRuntime {
     breakpoints: () => rt.breakpoints,
     frameTrace: (object) => rt.scriptDebug.frameTrace(object),
     emit: (command) => rt.emit(command),
+    playEventSound: (actor, assetGuid, volume) =>
+      rt.emit({
+        type: "playSound",
+        assetGuid,
+        volume,
+        frameId: rt.frameId,
+        emitterActorGuid: actor.guid,
+        voiceId: rt.voices.scriptVoiceId(),
+      }),
+    spawnEventParticles: (actor, assetGuid, bone) => {
+      rt.particleEffects.spawn({ systemGuid: assetGuid, attachTo: actor, ...(bone ? { bone } : {}), autoDestroy: true }, actor);
+    },
   });
 }
 

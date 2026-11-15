@@ -1,6 +1,6 @@
 import type { GraphNode } from "./ir";
 import { defaultValueLiteral } from "./types";
-import { jsIdent, TOUCH_EVENT_PHASES } from "./compile-events";
+import { ANIM_NOTIFY_EVENT_TYPE, jsIdent, TOUCH_EVENT_PHASES } from "./compile-events";
 import { execSuccessorEdges } from "./compile-graph-index";
 import {
   emitBody,
@@ -181,6 +181,28 @@ export function emitInputEventEntry(
     emitOutputProbe(s, node, ctx);
     along(s, execSuccessorEdges(s.index, node.id, "then"), visited);
     emitBody(s, `  }`, anchor);
+    return true;
+  }
+
+  // An Animation Event node runs for its own event name: Then for a single event, Begin and End for a window.
+  if (node.typeId === ANIM_NOTIFY_EVENT_TYPE) {
+    const anchor = {
+      column: 1,
+      assetGuid: s.options.assetGuid,
+      graphId: s.graph.id,
+      nodeId: node.id,
+    };
+    const name = typeof node.properties.eventName === "string" ? node.properties.eventName.trim() : "";
+    const window = node.properties.window === true;
+    emitBody(s, `  if (ctx.args?.name === ${JSON.stringify(name)}) {`, anchor);
+    const phases: Array<[string, string]> = window ? [["begin", "begin"], ["end", "end"]] : [["event", "execOut"]];
+    for (const [phase, pinId] of phases) {
+      emitBody(s, `    if (ctx.args.phase === ${JSON.stringify(phase)}) {`, anchor);
+      emitExecProbes(s, node.id);
+      along(s, execSuccessorEdges(s.index, node.id, pinId), new Map(visited));
+      emitBody(s, "    }", anchor);
+    }
+    emitBody(s, "  }", anchor);
     return true;
   }
 
