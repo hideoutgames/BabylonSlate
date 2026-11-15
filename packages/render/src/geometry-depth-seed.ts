@@ -10,7 +10,6 @@ import { EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Matrix } from "@babylonjs/core/Maths/math.vector";
 import "@babylonjs/core/Shaders/postprocess.vertex";
-// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 
 /**
  * A geometry pass whose only attachment is the view depth, seeded from the scene's depth: one full-screen draw writes
@@ -20,7 +19,7 @@ import "@babylonjs/core/Shaders/postprocess.vertex";
  */
 export const GEOMETRY_DEPTH_SEED_SHADER = "hapticGeometryDepthSeed";
 
-function registerGeometryDepthSeedShader(webgpu: boolean): void {
+function registerGeometryDepthSeedShader(): void {
   ShaderStore.ShadersStore[`${GEOMETRY_DEPTH_SEED_SHADER}PixelShader`] = `
 varying vec2 vUV;
 uniform sampler2D sceneDepth;
@@ -38,24 +37,6 @@ void main(void) {
   gl_FragColor = vec4(mix(viewZ, depthRange.z, clear), 0.0, 0.0, 1.0);
   gl_FragDepth = raw;
 }`;
-  if (webgpu)
-    ShaderStore.ShadersStoreWGSL[`${GEOMETRY_DEPTH_SEED_SHADER}PixelShader`] = `
-varying vUV: vec2f;
-var sceneDepthSampler: sampler; var sceneDepth: texture_2d<f32>;
-uniform inverseProjection: mat4x4f;
-uniform depthRange: vec3f;
-uniform reverseDepth: f32;
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let uv = fragmentInputs.vUV;
-  let raw = textureSampleLevel(sceneDepth, sceneDepthSampler, uv, 0.0).r;
-  let clear = select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5);
-  let view = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, raw * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
-  let w = select(1e-8, view.w, abs(view.w) > 1e-8);
-  let viewZ = min(abs(view.z / w), uniforms.depthRange.z);
-  fragmentOutputs.color = vec4f(mix(viewZ, uniforms.depthRange.z, clear), 0.0, 0.0, 1.0);
-  fragmentOutputs.fragDepth = raw;
-}`;
 }
 
 /** The scene depth a geometry pass starts from, and the effect that copies it in. */
@@ -68,14 +49,14 @@ export interface GeometryDepthSeed {
 export function createGeometryDepthSeed(
   engine: AbstractEngine, name: string, depth: FrameGraphTextureHandle, onError: (effect: Effect, errors: string) => void,
 ): GeometryDepthSeed {
-  registerGeometryDepthSeedShader(engine.isWebGPU);
+  registerGeometryDepthSeedShader();
   return {
     depth,
     wrapper: new EffectWrapper({
       name, engine, useShaderStore: true,
       fragmentShader: GEOMETRY_DEPTH_SEED_SHADER,
       uniformNames: ["inverseProjection", "depthRange", "reverseDepth"], samplerNames: ["sceneDepth"],
-      shaderLanguage: engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      shaderLanguage: ShaderLanguage.GLSL,
       onError,
     }),
   };
@@ -97,7 +78,7 @@ export function drawGeometryDepthSeed(context: FrameGraphRenderContext, engine: 
     effect.setFloat2("scale", 1, 1);
     camera.getProjectionMatrix().invertToRef(inverseProjection);
     effect.setMatrix("inverseProjection", inverseProjection);
-    effect.setFloat3("depthRange", engine.isNDCHalfZRange ? 1 : 2, engine.isNDCHalfZRange ? 0 : -1, far);
+    effect.setFloat3("depthRange", 2, -1, far);
     effect.setFloat("reverseDepth", engine.useReverseDepthBuffer ? 1 : 0);
     context.bindTextureHandle(effect, "sceneDepth", seed.depth);
   }, undefined, false, false, true);

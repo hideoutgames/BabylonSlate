@@ -21,12 +21,11 @@ export class FlatNormalBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
-    const wgsl = state.shaderLanguage === 1;
     const face = state._getFreeVariableName("faceNormal");
     const position = `${this.worldPosition.associatedVariableName}.xyz`;
     const model = this.modelNormal.associatedVariableName;
-    state.compilationString += `${state._declareLocalVar(face, NodeMaterialBlockConnectionPointTypes.Vector3)} = cross(${wgsl ? "dpdx" : "dFdx"}(${position}), ${wgsl ? "dpdy" : "dFdy"}(${position}));\n`;
-    // Derivative orientation differs with projection/backend and mirrored transforms.
+    state.compilationString += `${state._declareLocalVar(face, NodeMaterialBlockConnectionPointTypes.Vector3)} = cross(dFdx(${position}), dFdy(${position}));\n`;
+    // Derivative orientation differs with projection and mirrored transforms.
     // Use the authored normal only to select the outward hemisphere, never its slope.
     state.compilationString += `if (dot(${face}, ${model}) < 0.0) { ${face} = -${face}; }\n`;
     state.compilationString += `${state._declareOutput(this.output)} = normalize(${face});\n`;

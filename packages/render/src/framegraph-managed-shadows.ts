@@ -17,14 +17,11 @@ import { shadowDebugOff } from "./shadow-debug";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetProbeReady } from "./readiness-scope";
 import { noteReadinessBlocker } from "./readiness-blockers";
-import { isRevealPending, noteRevealPipelines } from "./reveal-pending";
-import { lookUpPipelines, registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
+import { isRevealPending } from "./reveal-pending";
+import { registerPipelineWarmPasses } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
-import { awaitsFirstDraw, firstDrawsUrgent } from "./shadow-first-draw";
-import { firstDrawPipelinesReady } from "./shadow-map-warm";
-import { casterRedrawDue, renderTrackingCasters } from "./shadow-caster-warm";
+import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
-import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { attachObjectRendererDepthPrePass, type TransparentDepthPrePass } from "./transparent-depth-pre-pass";
 
 type BorrowedMap = {
@@ -59,8 +56,8 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   private readonly depthPrePass: TransparentDepthPrePass;
 
   /**
-   * A world view's main pass: after its real draws it draws the meshes its round asked to warm, so their next
-   * variants' pipelines exist before a real draw needs them (`warmRequestedPipelines`).
+   * A world view's main pass: a cold Effect waits in this pass and its blended depth pre-pass until a steady frame
+   * admits it (`registerPipelineWarmPasses`).
    */
   get warmsPipelines(): boolean {
     return this.releaseWarmPasses !== undefined;
@@ -95,17 +92,6 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
       try { return render.apply(renderer, renderArgs); }
       finally { scene._intermediateRendering = intermediate; }
     };
-    // After the real draws and before the task restores its lights' shadow flags, so warm draws compile the variants
-    // the real ones draw with.
-    renderer.onAfterRenderingManagerRenderObservable.add(() => {
-      if (!this.warmsPipelines) return;
-      warmSafely(scene, () => warmRequestedPipelines(scene, scene.getEngine().currentRenderPassId, this.depthPrePass.renderPassId));
-    });
-  }
-
-  /** Whether `renderPassId` is this pass's blended depth pre-pass, which draws with it every frame. */
-  ownsRenderPass(renderPassId: number): boolean {
-    return renderPassId === this.depthPrePass.renderPassId;
   }
 
   private readonly textureDependencies = new Map<
@@ -166,11 +152,6 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
         // for the reveal.
         if (colour && isRevealPending(mesh)) {
           depthReady(mesh);
-          // WebGPU: with both variants prepared for this pass's draws, a lookup ahead of them can find their pipelines
-          // (a visual rebuilt with what it drew before), so the round reveals it and this frame draws it.
-          if (this.warmsPipelines) warmSafely(scene, () => {
-            if (lookUpPipelines(mesh, engine.currentRenderPassId, this.depthPrePass.renderPassId)) noteRevealPipelines(mesh);
-          });
           return true;
         }
         if (colour && depthReady(mesh)) return true;
@@ -423,9 +404,6 @@ export class ManagedShadowsTask extends FrameGraphTask {
       this.bind();
       if (!this.scene.shadowsEnabled || !this.scene.renderTargetsEnabled)
         return;
-      // WebGPU: the scene view's maps track the casters each has drawn (`shadow-caster-warm.ts`).
-      const tracksCasters = !this.view && pipelinesDeferred(this.scene.getEngine());
-      const warmsFirstDraws = tracksCasters && variantSwapsTolerated() && !firstDrawsUrgent(this.scene);
       for (const entry of this.borrowed) {
         // A view draws only its own maps; the scene view drew the shared ones.
         if (this.view && entry.generator.camera !== this.view) continue;
@@ -462,23 +440,11 @@ export class ManagedShadowsTask extends FrameGraphTask {
           // A map that has not drawn yet first draws with every caster's depth variant ready, before its refresh is
           // consumed: a render-once map drawn without some casters would keep the gap. Until then it samples neutrally.
           if (!withSceneReadinessState(this.scene, () => map.isReadyForRendering())) continue;
-          // On WebGPU, in a world view's steady frame, it also waits until its casters' depth pipelines exist, which
-          // its draw would otherwise create synchronously (`firstDrawPipelinesReady`). Strict frames (loading), a
-          // capture's own sun maps and a frame that publishes a manual capture (`firstDrawsUrgent`), none of which may
-          // publish a neutral map, still create them in the draw.
-          if (warmsFirstDraws && !firstDrawPipelinesReady(this.scene, generator, draw)) continue;
-        } else if (tracksCasters && casterRedrawDue(generator, warmsFirstDraws)) {
-          // A new caster this map left out has its depth pipelines now, or a hidden mesh's reveal waits for the map
-          // to list it: the map draws again. A frame that may not wait (above) draws every caster it left out.
-          map.resetRefreshCounter();
         }
         // `shadowdebug passes off`: a map that has drawn keeps the depth it holds; its refresh stays due.
         if (!firstDraw && shadowDebugOff(this.scene, "passes")) continue;
         if (!map._shouldRender()) continue;
-        // A drawn map in such a frame leaves out the draws of casters new to it whose depth pipelines are missing until
-        // they exist, which those draws would otherwise create synchronously; the same frames as above draw them at once.
-        if (tracksCasters) renderTrackingCasters(generator, warmsFirstDraws && !firstDraw, draw);
-        else draw();
+        draw();
       }
       // Do not sample an allocation replaced during another shadow's callback.
       // It has not participated in this pass and needs fresh preparation.
@@ -538,23 +504,5 @@ export class ManagedShadowsTask extends FrameGraphTask {
     this.borrowed = [];
     this.receivers.length = 0;
     super.dispose();
-  }
-}
-
-/** Scenes whose warm draws failed once already: a failure repeats every frame, and is reported once. */
-const warmFailures = new WeakSet<Scene>();
-
-/**
- * Runs a pass's warm draws, which never end the pass early: Babylon's ObjectRenderer restores nothing when a draw
- * throws, and the task restores its lights' shadow flags after it, so a light holding a standby map would otherwise
- * stay unshadowed for good.
- */
-function warmSafely(scene: Scene, warm: () => void): void {
-  try {
-    warm();
-  } catch (error) {
-    if (warmFailures.has(scene)) return;
-    warmFailures.add(scene);
-    console.warn(`[render] Pipeline warm draws failed: ${String(error)}`);
   }
 }

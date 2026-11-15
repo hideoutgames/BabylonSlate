@@ -13,7 +13,6 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Material } from "@babylonjs/core/Materials/material";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -28,7 +27,7 @@ import type { WaterContactField } from "./water-contact-field";
 import { WATER_FIELD_SHORE_RANGE as SHORE, WATER_FIELD_TERRAIN_ALPHA, type WaterField } from "./water-field";
 import {
   aerialPerspectiveSource, contactRange, edgeFoamHelpers, fresnelSource, horizonHazeSource, horizonLiftSource, marchSource, meshVertexWaves, placeholderField, planarLookupSource, reflectionKeepSource, REMOVAL_HELPER, sceneWaterBindingData,
-  sceneWaterNodeLighting, selectWaterRemovals, shorelineSource, silhouetteFallbackSource, slopeVarianceSource, stripShaderComments, toWgsl, transmittanceSource, waterAbsorption, waterBlendCullSource,
+  sceneWaterNodeLighting, selectWaterRemovals, shorelineSource, silhouetteFallbackSource, slopeVarianceSource, stripShaderComments, transmittanceSource, waterAbsorption, waterBlendCullSource,
   waterEdgeSource,
   sceneWaterBodyLight, WATER_BLEND_ATTRIBUTE_CONDITION, WATER_BLEND_DEFINE, WATER_CLOCK_UNIFORM, WATER_FAR_ROUGHNESS, WATER_GLOSS_FALLOFF, WATER_GPU_WAVES_DEFINE,
   WATER_NODE_BLEND_DEFINE, WATER_REMOVAL_SHAPE_UNIFORMS, WATER_REMOVAL_SLOTS, WATER_REMOVAL_UNIFORMS, type WaterRemovalCandidate,
@@ -131,18 +130,15 @@ const REFRACTION_SHIFT_PX = BUILT_IN_REFRACTION_SHIFT_PX.map((px) => px * WATER_
 const EMPTY_TEXTURE = new ThinTexture(null);
 
 const f = (n: number) => n.toFixed(6);
-const wgslOf = (state: NodeMaterialBuildState) => state.shaderLanguage === ShaderLanguage.WGSL;
-/** Binds GLSL-shaped node code (`U.` uniforms) and translates it for WGSL. */
-function bind(code: string, wgsl: boolean): string {
-  return `${stripShaderComments((wgsl ? toWgsl(code) : code).replace(/\bU\./g, wgsl ? "uniforms." : ""))}\n`;
+/** Binds GLSL-shaped node code: GLSL names the `U.` uniforms without a prefix. */
+function bind(code: string): string {
+  return `${stripShaderComments(code.replace(/\bU\./g, ""))}\n`;
 }
 
 function declareSampler(state: NodeMaterialBuildState, name: string, kind: "2d" | "cube", define: string): void {
   if (state.samplers.includes(name)) return;
   state.samplers.push(name);
-  const declaration = wgslOf(state)
-    ? `var ${name}Sampler: sampler;\nvar ${name}: ${kind === "cube" ? "texture_cube<f32>" : "texture_2d<f32>"};`
-    : `uniform highp ${kind === "cube" ? "samplerCube" : "sampler2D"} ${name};`;
+  const declaration = `uniform highp ${kind === "cube" ? "samplerCube" : "sampler2D"} ${name};`;
   state._samplerDeclaration += `#ifdef ${define}\n${declaration}\n#endif\n`;
 }
 
@@ -151,14 +147,13 @@ function declareSampler(state: NodeMaterialBuildState, name: string, kind: "2d" 
  * depth, CPU clock) and its flow (`vSlateWaterNodeFlow`), written into the vertex program from the fragment build.
  */
 function emitSurfaceVaryings(state: NodeMaterialBuildState): void {
-  const wgsl = wgslOf(state), vertex = state._vertexState;
+  const vertex = state._vertexState;
   declareWaterAttributes(vertex, WATER_SURFACE_DEFINE, [["slateWaterData", 4], ["slateWaterFlow", 3]]);
-  const out = wgsl ? "vertexOutputs." : "", input = wgsl ? "vertexInputs." : "";
   if (vertex._emitVaryingFromString("vSlateWaterNodeData", Types.Vector4, WATER_SURFACE_DEFINE)) {
-    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\n${out}vSlateWaterNodeData = ${input}slateWaterData;\n#endif\n`;
+    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\nvSlateWaterNodeData = slateWaterData;\n#endif\n`;
   }
   if (vertex._emitVaryingFromString("vSlateWaterNodeFlow", Types.Vector3, WATER_SURFACE_DEFINE)) {
-    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\n${out}vSlateWaterNodeFlow = ${input}slateWaterFlow;\n#endif\n`;
+    vertex.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\nvSlateWaterNodeFlow = slateWaterFlow;\n#endif\n`;
   }
   state._emitVaryingFromString("vSlateWaterNodeData", Types.Vector4, WATER_SURFACE_DEFINE);
   state._emitVaryingFromString("vSlateWaterNodeFlow", Types.Vector3, WATER_SURFACE_DEFINE);
@@ -168,13 +163,12 @@ function emitSurfaceVaryings(state: NodeMaterialBuildState): void {
  * Fragment locals every water node starts from: `swnData` and `swnFlow` (neutral off a water mesh: no bank, 1 m deep,
  * still) and `swnPos`, the absolute world position of `position` (a Vector4 expression).
  */
-function surfaceLocals(state: NodeMaterialBuildState, position: string): string {
-  const wgsl = wgslOf(state), input = wgsl ? "fragmentInputs." : "";
+function surfaceLocals(position: string): string {
   return bind(`
 vec4 swnData = vec4(0.0, 10000.0, 1.0, 0.0);
 vec3 swnFlow = vec3(0.0);
-`, wgsl) + `#ifdef ${WATER_SURFACE_DEFINE}\nswnData = ${input}vSlateWaterNodeData;\nswnFlow = ${input}vSlateWaterNodeFlow;\n#endif\n`
-    + bind(`vec3 swnPos = ${position}.xyz + U.${ORIGIN_UNIFORM}.xyz;\n`, wgsl);
+`) + `#ifdef ${WATER_SURFACE_DEFINE}\nswnData = vSlateWaterNodeData;\nswnFlow = vSlateWaterNodeFlow;\n#endif\n`
+    + bind(`vec3 swnPos = ${position}.xyz + U.${ORIGIN_UNIFORM}.xyz;\n`);
 }
 
 /**
@@ -183,14 +177,10 @@ vec3 swnFlow = vec3(0.0);
  * distance to the nearest object at a wave height.
  */
 function emitFieldHelpers(state: NodeMaterialBuildState): void {
-  const wgsl = wgslOf(state);
   for (const name of [...FIELD_UNIFORMS, ORIGIN_UNIFORM, FOAM_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
   declareSampler(state, FIELD_SAMPLER, "2d", WATER_SURFACE_DEFINE);
   declareSampler(state, CONTACT_SAMPLER, "2d", WATER_SURFACE_DEFINE);
-  const taps = wgsl ? `
-fn swnFieldTap(uv: vec2f) -> vec4f { return textureSampleLevel(${FIELD_SAMPLER}, ${FIELD_SAMPLER}Sampler, uv, 0.0); }
-fn swnContactTap(uv: vec2f) -> vec4f { return textureSampleLevel(${CONTACT_SAMPLER}, ${CONTACT_SAMPLER}Sampler, uv, 0.0); }
-` : `
+  const taps = `
 vec4 swnFieldTap(vec2 uv) { return textureLod(${FIELD_SAMPLER}, uv, 0.0); }
 vec4 swnContactTap(vec2 uv) { return textureLod(${CONTACT_SAMPLER}, uv, 0.0); }
 `;
@@ -218,7 +208,7 @@ float swnContactAt(vec2 xz, float height) {
   return mix(1.0, dot(tap, weights) * 2.0 - 1.0, on) * U.slateWaterContactInfo.y;
 }
 `;
-  state._emitFunction("swnFieldAt", `#ifdef ${WATER_SURFACE_DEFINE}\n${taps}${bind(code, wgsl)}#endif\n`, "");
+  state._emitFunction("swnFieldAt", `#ifdef ${WATER_SURFACE_DEFINE}\n${taps}${bind(code)}#endif\n`, "");
 }
 
 /**
@@ -231,45 +221,16 @@ float swnContactAt(vec2 xz, float height) {
  * offset in copy texels and its depth, or no offset and the given depth when none does.
  */
 function emitCopyHelpers(state: NodeMaterialBuildState): void {
-  const wgsl = wgslOf(state), s = WATER_NODE_SCENE_SAMPLER;
+  const s = WATER_NODE_SCENE_SAMPLER;
   state._emitUniformFromString(SCREEN_UNIFORM, Types.Vector4);
   state._emitUniformFromString(LOOK_UNIFORM, Types.Vector4);
   declareSampler(state, s, "2d", WATER_NODE_COPY_DEFINE);
   // Filtering blends the copy's depth (alpha) with its colour: a texel filtered far beyond its own depth took in open sky
   // beside it, whose colour water shows nothing of, so the texel's own colour stands there.
   const skyBlend = f(WATER_SCENE_COPY_SKY_DEPTH * 0.01);
-  const behind = (vec3: string) => [["x", 1, 0], ["y", -1, 0], ["z", 0, 1], ["w", 0, -1]].map(([c, x, y]) =>
-    `  if (swZ.${c} >= swBest) { swBest = swZ.${c}; swB = ${vec3}(${f(x as number)}, ${f(y as number)}, swZ.${c}); }`).join("\n");
-  const code = wgsl ? `
-fn swSceneTexel(uv: vec2f) -> vec4f {
-  let swSize = vec2i(textureDimensions(${s}, 0));
-  return textureLoad(${s}, clamp(vec2i(uv * vec2f(swSize)), vec2i(0), swSize - vec2i(1)), 0);
-}
-fn swSceneColor(uv: vec2f) -> vec3f {
-  let swFiltered = textureSampleLevel(${s}, ${s}Sampler, uv, 0.0);
-  let swOwn = swSceneTexel(uv);
-  return select(swFiltered.rgb, swOwn.rgb, swFiltered.a - swOwn.a > ${skyBlend});
-}
-fn swSceneDepth(uv: vec2f) -> f32 { return swSceneTexel(uv).a; }
-fn swSceneTexelUv() -> vec2f { return 1.0 / vec2f(textureDimensions(${s}, 0)); }
-var<private> swCopyNearZ: vec4f;
-var<private> swCopyNearLoaded: bool;
-fn swCopyNear(uv: vec2f) -> vec4f {
-  if (!swCopyNearLoaded) {
-    let swT = swSceneTexelUv();
-    swCopyNearZ = vec4f(swSceneDepth(uv + vec2f(swT.x, 0.0)), swSceneDepth(uv - vec2f(swT.x, 0.0)), swSceneDepth(uv + vec2f(0.0, swT.y)), swSceneDepth(uv - vec2f(0.0, swT.y)));
-    swCopyNearLoaded = true;
-  }
-  return swCopyNearZ;
-}
-fn swCopyBehind(uv: vec2f, waterZ: f32, z: f32) -> vec3f {
-  let swZ = swCopyNear(uv);
-  var swB = vec3f(0.0, 0.0, z);
-  var swBest = waterZ;
-${behind("vec3f")}
-  return swB;
-}
-` : `
+  const behind = [["x", 1, 0], ["y", -1, 0], ["z", 0, 1], ["w", 0, -1]].map(([c, x, y]) =>
+    `  if (swZ.${c} >= swBest) { swBest = swZ.${c}; swB = vec3(${f(x as number)}, ${f(y as number)}, swZ.${c}); }`).join("\n");
+  const code = `
 vec4 swSceneTexel(vec2 uv) {
   ivec2 swSize = textureSize(${s}, 0);
   return texelFetch(${s}, clamp(ivec2(uv * vec2(swSize)), ivec2(0), swSize - ivec2(1)), 0);
@@ -295,14 +256,12 @@ vec3 swCopyBehind(vec2 uv, float waterZ, float z) {
   vec4 swZ = swCopyNear(uv);
   vec3 swB = vec3(0.0, 0.0, z);
   float swBest = waterZ;
-${behind("vec3")}
+${behind}
   return swB;
 }
 `;
   state._emitFunction("swSceneColor", `#ifdef ${WATER_NODE_COPY_DEFINE}\n${code}#endif\n`, "");
 }
-
-const fragCoord = (state: NodeMaterialBuildState) => wgslOf(state) ? "fragmentInputs.position" : "gl_FragCoord";
 
 /**
  * This pixel's terrain tap (`swnField`) and what meets the water there, as built-in water derives it: the shoreline
@@ -500,7 +459,6 @@ export class WaterFoamBlock extends WaterNodeBlock {
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state);
     emitSurfaceVaryings(state);
     emitFieldHelpers(state);
     state._emitUniformFromString(WATER_CLOCK_UNIFORM, Types.Vector4);
@@ -516,7 +474,7 @@ float swnNoise(vec2 p) {
   t = t * t * (vec2(3.0) - 2.0 * t);
   return mix(mix(swnHash(i), swnHash(i + vec2(1.0, 0.0)), t.x), mix(swnHash(i + vec2(0.0, 1.0)), swnHash(i + vec2(1.0, 1.0)), t.x), t.y);
 }
-${edgeFoamHelpers("swn")}`, wgsl), "");
+${edgeFoamHelpers("swn")}`), "");
     const [foam, , shore, contact] = this._outputs.map((output) => output.associatedVariableName);
     const crestValue = this.value(this.crestFoam, "0.0");
     // Without Water Waves the water counts as calm: as far below the crest threshold as still water with default Crest Foam.
@@ -526,9 +484,9 @@ ${edgeFoamHelpers("swn")}`, wgsl), "");
     if (!this.foam.hasEndpoints && !this.shore.hasEndpoints && !this.contact.hasEndpoints) return this;
     const gpuHeight = this.value(this.waveHeight, "0.0");
     const assign = (output: NodeMaterialConnectionPoint, name: string | undefined, value: string) => output.hasEndpoints ? `${name} = ${value};\n` : "";
-    state.compilationString += `{\n${surfaceLocals(state, this.worldPosition.associatedVariableName)}#ifdef ${WATER_SURFACE_DEFINE}\n#ifndef ${WATER_DEBUG_NO_FOAM_DEFINE}\n`
-      + bind(`float swnHeight = swnData.x;\nfloat swnTime = swnData.w;\nvec2 swnDrift = vec2(0.0);\n`, wgsl)
-      + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${gpuHeight};\nswnTime = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x;\nswnDrift = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.yz;\n#endif\n`
+    state.compilationString += `{\n${surfaceLocals(this.worldPosition.associatedVariableName)}#ifdef ${WATER_SURFACE_DEFINE}\n#ifndef ${WATER_DEBUG_NO_FOAM_DEFINE}\n`
+      + bind(`float swnHeight = swnData.x;\nfloat swnTime = swnData.w;\nvec2 swnDrift = vec2(0.0);\n`)
+      + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${gpuHeight};\nswnTime = ${WATER_CLOCK_UNIFORM}.x;\nswnDrift = ${WATER_CLOCK_UNIFORM}.yz;\n#endif\n`
       + bind(`${edgeSource("swnHeight")}
 vec4 swnTerms = U.${FOAM_UNIFORM};
 vec2 swnFlowed = swnPos.xz - (swnFlow.xz + swnDrift) * swnTime;
@@ -538,7 +496,7 @@ float swnContactAmount = 0.0;
 #if ${WATER_DETAIL_DEFINE} >= 1
 swnContactAmount = swnContactFoamAmount(swnFlowed, swnTime, abs(swnContactAt(swnPos.xz, swnHeight)), max(0.05, swnTerms.y)) * swnTerms.z;
 #endif
-`, wgsl)
+`)
       + assign(this.foam, foam, `clamp(max(${crestValue}, swnEdgeFoamCover(swnFlowed, max(swnShoreAmount, swnContactAmount), ${turbulence}, swnFoot)), 0.0, 1.0)`)
       + assign(this.shore, shore, `swnEdgeFoamCover(swnFlowed, swnShoreAmount, ${turbulence}, swnFoot)`)
       + assign(this.contact, contact, `swnEdgeFoamCover(swnFlowed, swnContactAmount, ${turbulence}, swnFoot)`)
@@ -597,24 +555,23 @@ export class WaterDepthFadeBlock extends WaterNodeBlock {
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state), v3 = wgsl ? "vec3f" : "vec3";
     emitSurfaceVaryings(state);
     emitFieldHelpers(state);
     emitCopyHelpers(state);
     state._emitUniformFromString(ABSORB_UNIFORM, Types.Vector4);
     const [depth, fade, transmittance, edgeFade] = this._outputs.map((output) => output.associatedVariableName);
     state.compilationString += this.declare(state, this.depth, "1.0") + this.declare(state, this.fade, "1.0")
-      + this.declare(state, this.transmittance, `${v3}(0.0)`) + this.declare(state, this.edgeFade, "1.0");
+      + this.declare(state, this.transmittance, "vec3(0.0)") + this.declare(state, this.edgeFade, "1.0");
     const position = this.worldPosition.associatedVariableName, eye = this.cameraPosition.associatedVariableName, view = this.view.associatedVariableName;
-    const distance = this.value(this.distance, `${wgsl ? "uniforms." : ""}${FOAM_UNIFORM}.w`);
-    state.compilationString += `{\n${surfaceLocals(state, position)}#ifdef ${WATER_SURFACE_DEFINE}\n`
-      + bind(`float swnHeight = swnData.x;\n`, wgsl)
+    const distance = this.value(this.distance, `${FOAM_UNIFORM}.w`);
+    state.compilationString += `{\n${surfaceLocals(position)}#ifdef ${WATER_SURFACE_DEFINE}\n`
+      + bind(`float swnHeight = swnData.x;\n`)
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
-      + bind(edgeSource("swnHeight"), wgsl)
-      + bind("float swnOpenSky = 0.0;\n", wgsl)
+      + bind(edgeSource("swnHeight"))
+      + bind("float swnOpenSky = 0.0;\n")
       + `#ifdef ${WATER_NODE_COPY_DEFINE}\n`
       + bind(`
-vec2 swnUv = ${fragCoord(state)}.xy * U.${SCREEN_UNIFORM}.xy;
+vec2 swnUv = gl_FragCoord.xy * U.${SCREEN_UNIFORM}.xy;
 float swnWaterZ = abs((${view} * vec4(${position}.xyz, 1.0)).z);
 float swnSceneZ = swSceneDepth(swnUv);
 vec4 swnNear = swCopyNear(swnUv);
@@ -631,16 +588,16 @@ swnDepth = mix(swnDepth, min(swnDepth, max(swnSceneZ - swnWaterZ, 0.0) * swnDrop
 // blended with the background by the view's multisampled resolve, while its depth is one sample's, the surface's.
 float swnNearSky = max(max(swnNear.x, swnNear.y), max(swnNear.z, swnNear.w));
 swnOpenSky = step(${f(WATER_SCENE_COPY_SKY_DEPTH * 0.9)}, max(swnSceneZ, swnNearSky));
-`, wgsl)
+`)
       + "#endif\n"
       + (this.depth.hasEndpoints ? `${depth} = swnDepth;\n` : "")
       + (this.edgeFade.hasEndpoints ? `${edgeFade} = swEdgeFade * swOpenFade;\n` : "")
       + (this.fade.hasEndpoints ? `${fade} = 1.0 - exp(-swnDepth / max(${distance}, 0.001));\n` : "")
       + (this.transmittance.hasEndpoints ? bind(`
-vec3 swnTN = normalize(${this.value(this.waveNormal, `${v3}(0.0, 1.0, 0.0)`)});
+vec3 swnTN = normalize(${this.value(this.waveNormal, "vec3(0.0, 1.0, 0.0)")});
 float swnTNdotV = clamp(dot(swnTN, normalize(${eye} - ${position}.xyz)), 0.0, 1.0);${transmittanceSource("swnDepth", "swnTNdotV", `max(${distance}, 0.001)`, `U.${ABSORB_UNIFORM}.rgb`, `U.${ABSORB_UNIFORM}.w`, "swnT")}
 ${transmittance} = swnT * (1.0 - swnOpenSky);
-`, wgsl) : "")
+`) : "")
       + "#endif\n}\n";
     return this;
   }
@@ -690,18 +647,17 @@ export class WaterSceneColorBlock extends WaterNodeBlock {
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state), v3 = wgsl ? "vec3f" : "vec3";
     emitCopyHelpers(state);
     state._emitUniformFromString(ORIGIN_UNIFORM, Types.Vector4);
     emitSceneFogFactor(state);
     state._emitUniformFromString(SCENE_FOG_COLOR_UNIFORM, Types.Vector4);
     const [color, available] = this._outputs.map((output) => output.associatedVariableName);
-    state.compilationString += this.declare(state, this.color, `${v3}(0.0)`) + this.declare(state, this.available, "0.0");
+    state.compilationString += this.declare(state, this.color, "vec3(0.0)") + this.declare(state, this.available, "0.0");
     const position = this.worldPosition.associatedVariableName, view = this.view.associatedVariableName;
-    const normal = this.value(this.normal, this.value(this.waveNormal, `${v3}(0.0, 1.0, 0.0)`));
-    const refraction = this.value(this.refraction, `${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.x`);
+    const normal = this.value(this.normal, this.value(this.waveNormal, "vec3(0.0, 1.0, 0.0)"));
+    const refraction = this.value(this.refraction, `${LOOK_UNIFORM}.x`);
     state.compilationString += `#ifdef ${WATER_NODE_COPY_DEFINE}\n{\n` + bind(`
-vec2 swnUv = ${fragCoord(state)}.xy * U.${SCREEN_UNIFORM}.xy;
+vec2 swnUv = gl_FragCoord.xy * U.${SCREEN_UNIFORM}.xy;
 float swnWaterZ = abs((${view} * vec4(${position}.xyz, 1.0)).z);
 float swnZ0 = swSceneDepth(swnUv);
 vec3 swnN = normalize(${normal});
@@ -719,13 +675,13 @@ float swnLeak = max(step(swnZ1, swnWaterZ), step(${f(WATER_SCENE_COPY_SKY_DEPTH 
 swnBent = mix(swnBent, swnUv, swnLeak);
 float swnSceneZ = mix(swnZ1, swnZ0, swnLeak);
 ${silhouetteFallbackSource("swnBent", "swnUv", "swnSceneZ", "swnWaterZ")}
-`, wgsl)
+`)
       + (this.color.hasEndpoints ? `${color} = swSceneColor(swnBent);\n`
         // The copy is already fogged: undo the Material's own fog on it, which the Scene Fog block applies after (its
         // factor and linear fog colour), so the background keeps its fog once, whatever share of the output it takes.
         + `#ifdef FOG\n${bind(`float swnFogKeep = max(sceneFogKeep((${view} * vec4(${position}.xyz, 1.0)).xyz), 0.01);
 ${color} = (${color} - U.${SCENE_FOG_COLOR_UNIFORM}.rgb * (1.0 - swnFogKeep)) / swnFogKeep;
-`, wgsl)}#endif\n` : "")
+`)}#endif\n` : "")
       + (this.available.hasEndpoints ? `${available} = smoothstep(-0.03, 0.03 + swnWaterZ * 0.004, swnSceneZ - swnWaterZ);\n` : "")
       + "}\n#endif\n";
     return this;
@@ -806,39 +762,34 @@ export class WaterReflectionBlock extends WaterNodeBlock {
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state), v3 = wgsl ? "vec3f" : "vec3";
     emitCopyHelpers(state);
     state._emitUniformFromString(MARCH_UNIFORM, Types.Vector4);
     for (const name of [...SKY_UNIFORMS, ...ENV_UNIFORMS, HAZE_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
     emitSceneFogFactor(state);
     state._emitUniformFromString(ENV_MATRIX, Types.Matrix);
     declareSampler(state, WATER_NODE_ENV_SAMPLER, "cube", WATER_NODE_ENV_DEFINE);
-    state._emitFunction("swnEnvTap", `#ifdef ${WATER_NODE_ENV_DEFINE}\n${wgsl
-      ? `fn swnEnvTap(dir: vec3f, lod: f32) -> vec4f { return textureSampleLevel(${WATER_NODE_ENV_SAMPLER}, ${WATER_NODE_ENV_SAMPLER}Sampler, dir, lod); }`
-      : `vec4 swnEnvTap(vec3 dir, float lod) { return textureLod(${WATER_NODE_ENV_SAMPLER}, dir, lod); }`}\n#endif\n`, "");
-    state._emitFunction("swMarch", `#if defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0\n${nodeMarchSource(wgsl)}\n#endif\n`, "");
+    state._emitFunction("swnEnvTap", `#ifdef ${WATER_NODE_ENV_DEFINE}\nvec4 swnEnvTap(vec3 dir, float lod) { return textureLod(${WATER_NODE_ENV_SAMPLER}, dir, lod); }\n#endif\n`, "");
+    state._emitFunction("swMarch", `#if defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0\n${nodeMarchSource()}\n#endif\n`, "");
     // The planar mirror, and the contacts its lookup reads.
     emitSurfaceVaryings(state);
     emitFieldHelpers(state);
     state._emitUniformFromString(PLANAR_UNIFORM, Types.Vector4);
     state._emitUniformFromString(PLANAR_MATRIX, Types.Matrix);
     declareSampler(state, PLANAR_SAMPLER, "2d", WATER_NODE_PLANAR_DEFINE);
-    state._emitFunction("swPlanarTexel", `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n${wgsl
-      ? `fn swPlanarTexel(uv: vec2f) -> vec4f { return textureSampleLevel(${PLANAR_SAMPLER}, ${PLANAR_SAMPLER}Sampler, uv, 0.0); }`
-      : `vec4 swPlanarTexel(vec2 uv) { return textureLod(${PLANAR_SAMPLER}, uv, 0.0); }`}\n#endif\n`, "");
+    state._emitFunction("swPlanarTexel", `#ifdef ${WATER_NODE_PLANAR_DEFINE}\nvec4 swPlanarTexel(vec2 uv) { return textureLod(${PLANAR_SAMPLER}, uv, 0.0); }\n#endif\n`, "");
     state._emitFunctionFromInclude("helperFunctions", "");
     const [color, fresnel, shadingNormal, shadingRoughness] = this._outputs.map((output) => output.associatedVariableName);
-    state.compilationString += this.declare(state, this.color, `${v3}(0.0)`) + this.declare(state, this.fresnel, "0.0")
-      + this.declare(state, this.shadingNormal, `${v3}(0.0, 1.0, 0.0)`) + this.declare(state, this.shadingRoughness, "0.0");
+    state.compilationString += this.declare(state, this.color, "vec3(0.0)") + this.declare(state, this.fresnel, "0.0")
+      + this.declare(state, this.shadingNormal, "vec3(0.0, 1.0, 0.0)") + this.declare(state, this.shadingRoughness, "0.0");
     const position = this.worldPosition.associatedVariableName, eye = this.cameraPosition.associatedVariableName;
-    const normal = this.value(this.normal, this.value(this.waveNormal, `${v3}(0.0, 1.0, 0.0)`));
-    const roughness = this.value(this.roughness, `${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.y`);
+    const normal = this.value(this.normal, this.value(this.waveNormal, "vec3(0.0, 1.0, 0.0)"));
+    const roughness = this.value(this.roughness, `${LOOK_UNIFORM}.y`);
     state.compilationString += "{\n" + bind(`
 vec3 swnV = normalize(${eye} - ${position}.xyz);
 vec3 swnN = normalize(${normal});
 float swnEyeDist = length(${eye} - ${position}.xyz);
 float swnAirKeep = 1.0;
-`, wgsl) + `#ifdef FOG\n${bind(`swnAirKeep = max(sceneFogKeep((${this.view.associatedVariableName} * vec4(${position}.xyz, 1.0)).xyz), 0.0);`, wgsl)}#endif\n` + bind(`
+`) + `#ifdef FOG\n${bind(`swnAirKeep = max(sceneFogKeep((${this.view.associatedVariableName} * vec4(${position}.xyz, 1.0)).xyz), 0.0);`)}#endif\n` + bind(`
 ${aerialPerspectiveSource("swnEyeDist", "swnAirKeep", `U.${LOOK_UNIFORM}.w`, `U.${HAZE_UNIFORM}`)}
 ${horizonHazeSource("(1.0 - clamp(swnV.y, 0.0, 1.0))")}
 swnN = normalize(mix(swnN, vec3(0.0, 1.0, 0.0), swHaze * swHaze));
@@ -866,15 +817,15 @@ swnAura = swnAura * swnAura;
 swnAura = swnAura * swnAura;
 swnSky += U.slateWaterNodeSunColor.rgb * swnSun.w * (U.slateWaterNodeSunColor.rgb * (swnSkyH * U.slateWaterNodeSunShape.z * (0.25 + 0.35 * swnAz * swnAz)) + vec3(swnAura * 0.05));
 swnSky = mix(swnSky, mix(U.slateWaterNodeSky.rgb, U.slateWaterNodeHorizon.rgb, 0.55), smoothstep(0.05, 0.35, sqrt(swnShadeVar)) * 0.5);
-`, wgsl) + `#ifdef ${WATER_NODE_ENV_DEFINE}\n` + bind(`
+`) + `#ifdef ${WATER_NODE_ENV_DEFINE}\n` + bind(`
 vec3 swnDir = (U.${ENV_MATRIX} * vec4(swnR, 0.0)).xyz * U.slateWaterNodeEnvFlip.xyz;
 vec4 swnEnv = swnEnvTap(swnDir, swnShade * U.slateWaterNodeEnv.x + U.slateWaterNodeEnvFlip.w);
 vec3 swnGamma = pow(max(swnEnv.rgb, vec3(0.0)), vec3(2.2));
 vec3 swnLinear = mix(swnEnv.rgb, swnGamma, U.slateWaterNodeEnv.z);
 swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y) * U.slateWaterNodeEnv.w;
-`, wgsl) + `#endif\n${bind("swnSky = swnSky * swnKeep;", wgsl)}`
-      + this.objectReflection(state, position, eye)
-      + (this.color.hasEndpoints ? `${color} = swnSky * ${wgsl ? "uniforms." : ""}${LOOK_UNIFORM}.z;\n` : "")
+`) + `#endif\n${bind("swnSky = swnSky * swnKeep;")}`
+      + this.objectReflection(position, eye)
+      + (this.color.hasEndpoints ? `${color} = swnSky * ${LOOK_UNIFORM}.z;\n` : "")
       + (this.fresnel.hasEndpoints ? `${fresnel} = swnFres;\n` : "")
       + (this.shadingNormal.hasEndpoints ? `${shadingNormal} = swnH;\n` : "")
       + (this.shadingRoughness.hasEndpoints ? `${shadingRoughness} = swnShade;\n` : "")
@@ -886,8 +837,8 @@ swnSky = mix(swnLinear, swnGamma / max(swnEnv.a, 0.0001), U.slateWaterNodeEnv.y)
    * this body's, else the march; sharp hits fade as the water gets rough, where the reflected ray leaves below the
    * horizon, and where it turns faster across the screen than the view does (grazing ripples).
    */
-  private objectReflection(state: NodeMaterialBuildState, position: string, eye: string): string {
-    const wgsl = wgslOf(state), march = `defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0`;
+  private objectReflection(position: string, eye: string): string {
+    const march = `defined(${WATER_NODE_COPY_DEFINE}) && ${WATER_NODE_SSR_DEFINE} > 0`;
     const lookup = planarLookupSource(`${position}.xyz`, eye, "swnObjR", "swnObject", "U.slateWaterContactInfo.y", `U.${PLANAR_UNIFORM}`, `U.${PLANAR_MATRIX}`, "swnObj");
     // Seen from below the ray is not lifted: objects are looked up above the horizon, as built-in water looks them up.
     // The fades that do not need the hit come first: where they leave nothing, the march does not run. Below High Water
@@ -899,19 +850,19 @@ vec3 swnObjR = normalize(vec3(swnR.x, max(swnR.y, 0.02), swnR.z));
 // almost nothing of the water: known before the march, which then does not run.
 float swnObjFade = (1.0 - smoothstep(0.2, 0.45, swnShade)) * smoothstep(-0.01, 0.03, swnRawY)
   * (1.0 - smoothstep(12.0, 48.0, length(fwidth(swnObjR)) / max(length(fwidth(swnV)), 0.00001))) * step(0.001, swnAirKeep);
-`, wgsl)}#if ${WATER_DETAIL_DEFINE} < 2\n${bind(`swnObjFade = swnObjFade * smoothstep(${f(SSR_FRESNEL_FADE[0])}, ${f(SSR_FRESNEL_FADE[1])}, swnFres);\n`, wgsl)}#endif\n`
-      + `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n{\n${surfaceLocals(state, position)}${bind("float swnHeight = swnData.x;\n", wgsl)}`
+`)}#if ${WATER_DETAIL_DEFINE} < 2\n${bind(`swnObjFade = swnObjFade * smoothstep(${f(SSR_FRESNEL_FADE[0])}, ${f(SSR_FRESNEL_FADE[1])}, swnFres);\n`)}#endif\n`
+      + `#ifdef ${WATER_NODE_PLANAR_DEFINE}\n{\n${surfaceLocals(position)}${bind("float swnHeight = swnData.x;\n")}`
       + `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.value(this.waveHeight, "0.0")};\n#endif\n`
-      + bind(`float swnObject = abs(swnContactAt(swnPos.xz, swnHeight));\nif (U.${PLANAR_UNIFORM}.x > 0.5) {${lookup}\n}\n`, wgsl)
-        .replace(/\bSW_TO_LINEAR\(/g, wgsl ? "toLinearSpaceVec3(" : "toLinearSpace(")
+      + bind(`float swnObject = abs(swnContactAt(swnPos.xz, swnHeight));\nif (U.${PLANAR_UNIFORM}.x > 0.5) {${lookup}\n}\n`)
+        .replace(/\bSW_TO_LINEAR\(/g, "toLinearSpace(")
       + `}\n#endif\n#if ${march}\n`
       + bind(`if (U.${PLANAR_UNIFORM}.x < 0.5 && swnObjFade > 0.0) {
   swnObj = swMarch(${position}.xyz, swnObjR, ${this.viewProjection.associatedVariableName}, ${this.view.associatedVariableName}, ${eye});
 }
-`, wgsl) + "#endif\n"
+`) + "#endif\n"
       + bind(`swnObj.a = swnObj.a * swnObjFade;
 swnSky = mix(swnSky, swnObj.rgb, swnObj.a);
-`, wgsl) + "#endif\n";
+`) + "#endif\n";
   }
 }
 RegisterClass("BABYLON.WaterReflectionBlock", WaterReflectionBlock);
@@ -968,21 +919,20 @@ export class WaterColorsBlock extends WaterNodeBlock {
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state), u = wgsl ? "uniforms." : "", v3 = wgsl ? "vec3f" : "vec3";
     for (const name of [...COLOR_UNIFORMS, ...PARTNER_COLOR_UNIFORMS.flat()]) state._emitUniformFromString(name, Types.Vector4);
     // The partners' shares: partner 0's in slateWaterBlend's w, partners 1 and 2's in slateWaterBlendColors.
-    const vertex = state._vertexState, into = wgsl ? "vertexOutputs." : "", input = wgsl ? "vertexInputs." : "";
+    const vertex = state._vertexState;
     declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
     declareWaterAttributes(vertex, WATER_NODE_BLEND_DEFINE, [["slateWaterBlendColors", 2]]);
     if (vertex._emitVaryingFromString(BLEND_SHARES_VARYING, Types.Vector3, WATER_NODE_BLEND_DEFINE)) {
-      vertex.compilationString += `#ifdef ${WATER_NODE_BLEND_DEFINE}\n${into}${BLEND_SHARES_VARYING} = ${v3}(${input}slateWaterBlend.w, ${input}slateWaterBlendColors);\n#endif\n`;
+      vertex.compilationString += `#ifdef ${WATER_NODE_BLEND_DEFINE}\n${BLEND_SHARES_VARYING} = vec3(slateWaterBlend.w, slateWaterBlendColors);\n#endif\n`;
     }
     state._emitVaryingFromString(BLEND_SHARES_VARYING, Types.Vector3, WATER_NODE_BLEND_DEFINE);
-    const shares = `${wgsl ? "fragmentInputs." : ""}${BLEND_SHARES_VARYING}`;
+    const shares = BLEND_SHARES_VARYING;
     const color = (i: number, swizzle: string) => {
-      const own = `${u}${COLOR_UNIFORMS[i]}.${swizzle}`;
+      const own = `${COLOR_UNIFORMS[i]}.${swizzle}`;
       const mixed = `${own} * (1.0 - ${shares}.x - ${shares}.y - ${shares}.z)`
-        + PARTNER_COLOR_UNIFORMS.map((names, k) => ` + ${u}${names[i]}.${swizzle} * ${shares}.${"xyz"[k]}`).join("");
+        + PARTNER_COLOR_UNIFORMS.map((names, k) => ` + ${names[i]}.${swizzle} * ${shares}.${"xyz"[k]}`).join("");
       return { own, mixed };
     };
     const outputs = [...COLOR_UNIFORMS.map((_, i) => [this._outputs[i]!, color(i, "rgb")] as const), [this.opacity, color(0, "w")] as const];
@@ -990,7 +940,7 @@ export class WaterColorsBlock extends WaterNodeBlock {
       if (!output.hasEndpoints) continue;
       state.compilationString += `${state._declareOutput(output)} = ${own};\n#ifdef ${WATER_NODE_BLEND_DEFINE}\n${output.associatedVariableName} = ${mixed};\n#endif\n`;
     }
-    state.compilationString += this.declare(state, this.sceneLight, `${u}${COLOR_UNIFORMS[1]}.w`);
+    state.compilationString += this.declare(state, this.sceneLight, `${COLOR_UNIFORMS[1]}.w`);
     return this;
   }
 }
@@ -1067,43 +1017,42 @@ export class WaterCutBlock extends WaterNodeBlock {
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state), vertex = state._vertexState;
+    const vertex = state._vertexState;
     emitSurfaceVaryings(state);
     emitFieldHelpers(state);
     for (const name of WATER_REMOVAL_SHAPE_UNIFORMS) state._emitUniformFromString(name, Types.Vector4, WATER_SURFACE_DEFINE);
     for (const name of WATER_REMOVAL_UNIFORMS) state._emitUniformFromString(name, Types.Matrix, WATER_SURFACE_DEFINE);
-    state._emitFunction("swRemoval", `#ifdef ${WATER_SURFACE_DEFINE}\n${bind(REMOVAL_HELPER, wgsl)}#endif\n`, "");
+    state._emitFunction("swRemoval", `#ifdef ${WATER_SURFACE_DEFINE}\n${bind(REMOVAL_HELPER)}#endif\n`, "");
     for (const name of WATER_OWNERSHIP_UNIFORMS) state._emitUniformFromString(name, Types.Vector4, WATER_OWNERSHIP_DEFINE);
-    state._emitFunction("swOwnership", `#ifdef ${WATER_OWNERSHIP_DEFINE}\n${bind(ownershipSource(), wgsl)}#endif\n`, "");
+    state._emitFunction("swOwnership", `#ifdef ${WATER_OWNERSHIP_DEFINE}\n${bind(ownershipSource())}#endif\n`, "");
     // The ownership margin, and on the GPU path (only a graph with Water Waves has one) the blend cull, once the vertex
     // program has written its clip position.
     declareWaterAttributes(vertex, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
     const gpu = this.waveHeight.isConnected;
     if (vertex._emitVaryingFromString(CUT_MARGIN_VARYING, Types.Float, WATER_BLEND_DEFINE)) {
-      vertex.compilationString += `#ifdef ${WATER_BLEND_DEFINE}\n${wgsl ? "vertexOutputs." : ""}${CUT_MARGIN_VARYING} = ${wgsl ? "vertexInputs." : ""}slateWaterBlend.z;\n#endif\n`;
-      if (gpu) vertex._injectAtEnd += waterBlendCullSource(wgsl);
+      vertex.compilationString += `#ifdef ${WATER_BLEND_DEFINE}\n${CUT_MARGIN_VARYING} = slateWaterBlend.z;\n#endif\n`;
+      if (gpu) vertex._injectAtEnd += waterBlendCullSource();
     }
     state._emitVaryingFromString(CUT_MARGIN_VARYING, Types.Float, WATER_BLEND_DEFINE);
     const removed = state._getFreeVariableName("swnRemoved");
     const cut = WATER_REMOVAL_UNIFORMS.map((name, i) => `swRemoval(U.${name}, U.${WATER_REMOVAL_SHAPE_UNIFORMS[i]}, swnPos)`).reduce((a, b) => `min(${a}, ${b})`);
     // Only real terrain removes water: cells extended past a landscape's edge (alpha ramp) never do.
-    state.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\n${wgsl ? `var ${removed}: bool` : `bool ${removed}`} = false;\n{\n`
-      + surfaceLocals(state, this.worldPosition.associatedVariableName)
-      + bind("float swnHeight = swnData.x;\nfloat swnKeep = 1.0;\n", wgsl)
+    state.compilationString += `#ifdef ${WATER_SURFACE_DEFINE}\nbool ${removed} = false;\n{\n`
+      + surfaceLocals(this.worldPosition.associatedVariableName)
+      + bind("float swnHeight = swnData.x;\nfloat swnKeep = 1.0;\n")
       + (gpu ? `#ifdef ${WATER_GPU_WAVES_DEFINE}\nswnHeight = ${this.waveHeight.associatedVariableName};\n#endif\n` : "")
       // The seam per pixel where the surface's participants allow (`WATER_OWNERSHIP_DEFINE`), else the per-vertex margin.
       // Each side keeps a pixel past the seam: the bodies' meshes interpolate the same world point a little apart.
       + `#ifdef ${WATER_BLEND_DEFINE}\n#ifdef ${WATER_OWNERSHIP_DEFINE}\n`
-      + bind("float swnOwn = swOwnership(swnPos.xz);\nswnKeep = min(swnData.y, swnOwn + fwidth(swnOwn));\n", wgsl) + "#else\n"
-      + `swnKeep = min(swnData.y, ${wgsl ? "fragmentInputs." : ""}${CUT_MARGIN_VARYING} + 0.015);\n#endif\n#endif\n`
-      + bind(`vec4 swnField = swnFieldAt(swnPos.xz);\nfloat swnCut = ${cut};\n`, wgsl)
+      + bind("float swnOwn = swOwnership(swnPos.xz);\nswnKeep = min(swnData.y, swnOwn + fwidth(swnOwn));\n") + "#else\n"
+      + `swnKeep = min(swnData.y, ${CUT_MARGIN_VARYING} + 0.015);\n#endif\n#endif\n`
+      + bind(`vec4 swnField = swnFieldAt(swnPos.xz);\nfloat swnCut = ${cut};\n`)
       + `${removed} = swnCut < 0.0 || swnKeep < 0.0 || (swnField.w > ${f(WATER_FIELD_TERRAIN_ALPHA)} && swnField.y + swnHeight <= 0.0);\n}\n`
-      + `#ifdef ${WATER_DEPTH_PRE_PASS_DEFINE}\nif (${removed}) { discard; }\nreturn${wgsl ? " fragmentOutputs" : ""};\n#endif\n#endif\n`;
+      + `#ifdef ${WATER_DEPTH_PRE_PASS_DEFINE}\nif (${removed}) { discard; }\nreturn;\n#endif\n#endif\n`;
     state._injectAtEnd += `#if defined(${WATER_SURFACE_DEFINE}) && !defined(${WATER_DEPTH_PRE_PASS_DEFINE})\nif (${removed}) { discard; }\n#endif\n`;
     // After the output's geometry writes: the encoded zero normal and zero reflectivity those effects skip.
-    const v4 = wgsl ? "vec4f" : "vec4";
-    state._injectAtEnd += `#ifdef ${WATER_EFFECTS_GEOMETRY_DEFINE}\n${geometryOutputWrite(wgsl, "PREPASS_WORLD_NORMAL", `${v4}(0.5, 0.5, 0.5, 1.0)`)}`
-      + `${geometryOutputWrite(wgsl, "PREPASS_REFLECTIVITY", `${v4}(0.0, 0.0, 0.0, 1.0)`)}#endif\n`;
+    state._injectAtEnd += `#ifdef ${WATER_EFFECTS_GEOMETRY_DEFINE}\n${geometryOutputWrite("PREPASS_WORLD_NORMAL", "vec4(0.5, 0.5, 0.5, 1.0)")}`
+      + `${geometryOutputWrite("PREPASS_REFLECTIVITY", "vec4(0.0, 0.0, 0.0, 1.0)")}#endif\n`;
     return this;
   }
 }
@@ -1134,37 +1083,29 @@ export class WaterCoverageBlock extends WaterNodeBlock {
   }
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = wgslOf(state), color = this.color.associatedVariableName, alpha = this.alpha.associatedVariableName;
+    const color = this.color.associatedVariableName, alpha = this.alpha.associatedVariableName;
     const rgb = this.rgb.associatedVariableName, a = this.a.associatedVariableName;
     state.compilationString += `${state._declareOutput(this.rgb)} = ${color};\n${state._declareOutput(this.a)} = ${alpha};\n`
       + `#if defined(${WATER_SURFACE_DEFINE}) && !defined(IMAGEPROCESSINGPOSTPROCESS)\n{\n`
       + bind(`float swnBright = max(max(${color}.r, ${color}.g), max(${color}.b, 1.0));
 ${a} = min(${alpha} * swnBright, 1.0);
 ${rgb} = ${color} * (${alpha} / max(${a}, 0.00001));
-`, wgsl) + "}\n#endif\n";
+`) + "}\n#endif\n";
     return this;
   }
 }
 RegisterClass("BABYLON.WaterCoverageBlock", WaterCoverageBlock);
 
-const marchSources = new Map<boolean, string>();
+let nodeMarch: string | undefined;
 /**
  * Built-in water's screen-space march (`marchSource`) with the view, view-projection and eye as parameters: the node's
  * own matrix inputs, which follow the floating origin as the graph's positions do.
  */
-function nodeMarchSource(wgsl: boolean): string {
-  let source = marchSources.get(wgsl);
-  if (!source) {
-    source = stripShaderComments(wgsl
-      ? marchSource(true)
-        .replace("fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {", "fn swMarch(swOrigin: vec3f, swRay: vec3f, swVP: mat4x4f, swV: mat4x4f, swEyeP: vec3f) -> vec4f {")
-        .replace(/scene\.viewProjection/g, "swVP").replace(/scene\.view\b/g, "swV").replace(/scene\.vEyePosition\.xyz/g, "swEyeP")
-      : marchSource(false)
-        .replace("vec4 swMarch(vec3 swOrigin, vec3 swRay) {", "vec4 swMarch(vec3 swOrigin, vec3 swRay, mat4 swVP, mat4 swV, vec3 swEyeP) {")
-        .replace(/\bviewProjection\b/g, "swVP").replace(/\(view \*/g, "(swV *").replace(/\bvEyePosition\.xyz/g, "swEyeP"));
-    marchSources.set(wgsl, source);
-  }
-  return source;
+function nodeMarchSource(): string {
+  nodeMarch ??= stripShaderComments(marchSource()
+    .replace("vec4 swMarch(vec3 swOrigin, vec3 swRay) {", "vec4 swMarch(vec3 swOrigin, vec3 swRay, mat4 swVP, mat4 swV, vec3 swEyeP) {")
+    .replace(/\bviewProjection\b/g, "swVP").replace(/\(view \*/g, "(swV *").replace(/\bvEyePosition\.xyz/g, "swEyeP"));
+  return nodeMarch;
 }
 
 /** Water node blocks that sample the view's scene copy: (refraction-style reads, reflection marches). */

@@ -218,7 +218,7 @@ const READINESS_REASON_WORDS: Record<SceneReadinessDirtyReason, string> = {
   instanceRekey: "instance rekey", renderSettings: "render settings", environmentLighting: "environment lighting",
   reflectionProbes: "reflection probes", materialLibrary: "material library", materialParameters: "material parameters",
   materialInstance: "material instance", meshAssets: "mesh assets", blendChange: "blend change", lattice: "lattice",
-  sceneLighting: "scene lighting", streamAdmission: "stream admission", spawnWarm: "spawn warm-up", other: "other",
+  sceneLighting: "scene lighting", streamAdmission: "stream admission", other: "other",
 };
 
 /** The most readiness probe causes a report line lists. */

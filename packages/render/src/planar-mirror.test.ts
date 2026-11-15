@@ -10,13 +10,13 @@ function seenAt(eye: Vector3, object: Vector3, plane: MirrorPlane): Vector3 {
   return Vector3.Lerp(eye, reflected, from / (from - to));
 }
 
-function mirrored(eye: Vector3, target: Vector3, plane: MirrorPlane, depth: { reverse: boolean; half: boolean }) {
+function mirrored(eye: Vector3, target: Vector3, plane: MirrorPlane, depth: { reverse: boolean }) {
   const view = Matrix.LookAtLH(eye, target, Vector3.Up());
   const near = 0.1, far = 100;
-  const projection = Matrix.PerspectiveFovLH(0.9, 16 / 9, depth.reverse ? far : near, depth.reverse ? near : far, depth.half, 0, depth.reverse);
+  const projection = Matrix.PerspectiveFovLH(0.9, 16 / 9, depth.reverse ? far : near, depth.reverse ? near : far, false, 0, depth.reverse);
   const math = new PlanarMirrorMath();
   const mirrorView = new Matrix(), oblique = new Matrix(), scratch = new Matrix(), viewProjection = new Matrix();
-  const drawn = math.mirror(view, eye, plane, projection, depth.reverse, depth.half, mirrorView, oblique);
+  const drawn = math.mirror(view, eye, plane, projection, depth.reverse, mirrorView, oblique);
   math.relativeViewProjection(Vector3.Zero(), oblique, scratch, viewProjection);
   return { drawn, math, viewProjection, mainViewProjection: view.multiply(projection) };
 }
@@ -24,15 +24,13 @@ function mirrored(eye: Vector3, target: Vector3, plane: MirrorPlane, depth: { re
 const unit = (x: number, y: number, z: number) => new Vector3(x, y, z).normalize();
 
 it.each([
-  { range: "full-range", half: false, reverse: false, near: -1, far: 1 },
-  { range: "half-range (WebGPU)", half: true, reverse: false, near: 0, far: 1 },
-  { range: "reverse full-range", half: false, reverse: true, near: 1, far: -1 },
-  { range: "reverse half-range", half: true, reverse: true, near: 1, far: 0 },
-])("reflects a wall mirror's view so each surface point reads what it reflects, for $range depth", ({ half, reverse, near, far }) => {
+  { range: "full-range", reverse: false, near: -1, far: 1 },
+  { range: "reverse full-range", reverse: true, near: 1, far: -1 },
+])("reflects a wall mirror's view so each surface point reads what it reflects, for $range depth", ({ reverse, near, far }) => {
   // The wall z = 5 with its reflective side toward −Z: n = (0, 0, −1), d = 5.
   const plane = { nx: 0, ny: 0, nz: -1, d: 5 };
   const eye = new Vector3(1, 2, -5);
-  const { drawn, math, viewProjection, mainViewProjection } = mirrored(eye, new Vector3(1, 2, 5), plane, { reverse, half });
+  const { drawn, math, viewProjection, mainViewProjection } = mirrored(eye, new Vector3(1, 2, 5), plane, { reverse });
   expect(drawn).toBe(true);
   // The mirror camera sits at the eye reflected through the wall.
   expect([...math.eye]).toEqual([1, 2, 15]);
@@ -59,7 +57,7 @@ it("mirrors across a tilted plane and keeps the mirror camera rigid", () => {
   const n = unit(0, 0.5, -1);
   const plane = { nx: n.x, ny: n.y, nz: n.z, d: -Vector3.Dot(n, new Vector3(0, 1, 4)) };
   const eye = new Vector3(-1, 1.5, -2);
-  const { drawn, math, viewProjection } = mirrored(eye, new Vector3(0, 1, 4), plane, { reverse: false, half: false });
+  const { drawn, math, viewProjection } = mirrored(eye, new Vector3(0, 1, 4), plane, { reverse: false });
   expect(drawn).toBe(true);
   // The reflected eye is as far behind the plane as the eye is in front of it.
   const reflectedEye = Vector3.FromArray([...math.eye]);
@@ -81,6 +79,6 @@ it("mirrors across a tilted plane and keeps the mirror camera rigid", () => {
 it("refuses to mirror an eye on or behind the plane", () => {
   const plane = { nx: 0, ny: 0, nz: -1, d: 5 };
   for (const eye of [new Vector3(0, 1, 5), new Vector3(0, 1, 8)]) {
-    expect(mirrored(eye, new Vector3(0, 1, 20), plane, { reverse: false, half: false }).drawn).toBe(false);
+    expect(mirrored(eye, new Vector3(0, 1, 20), plane, { reverse: false }).drawn).toBe(false);
   }
 });

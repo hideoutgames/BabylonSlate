@@ -404,7 +404,7 @@ function colorOutputs(name: string, color: NodeMaterialConnectionPoint, blocks: 
 const flipbookAdapter: BlockAdapter = ({ name }) => {
   const total = new MultiplyBlock(`${name}_total`);
   const frame = trigBlock(`${name}_frame`, TrigonometryBlockOperations.Floor);
-  // frame - total * floor(frame / total): the wrapped frame, never negative on either backend.
+  // frame - total * floor(frame / total): the wrapped frame, never negative.
   const laps = new DivideBlock(`${name}_laps`);
   link(frame.output, laps.left);
   link(total.output, laps.right);
@@ -508,9 +508,8 @@ const reflectAdapter: BlockAdapter = (context) => {
 };
 
 /**
- * Modulo with the sign of A on every backend: `sign(a) * mod(|a|, |b|)`. Babylon's block alone is
- * GLSL `mod` (the sign of B) on WebGL2 and WGSL `%` (the sign of A) on WebGPU; the two agree
- * once both operands are positive.
+ * Modulo with the sign of A: `sign(a) * mod(|a|, |b|)`. Babylon's block alone is GLSL `mod`, which
+ * takes the sign of B.
  */
 const moduloAdapter: BlockAdapter = ({ name }) => {
   const absA = trigBlock(`${name}_absA`, TrigonometryBlockOperations.Abs);
@@ -949,7 +948,7 @@ const ADAPTERS: Record<string, BlockAdapter> = {
   },
   "input.screenUv": ({ name, plumbing }) => {
     // A post-process reads the fullscreen pass position the compiler derives; any other material divides the
-    // pixel's coordinate by the screen size. Both run 0 to 1 from the bottom left, on WebGL2 and WebGPU alike.
+    // pixel's coordinate by the screen size. Both run 0 to 1 from the bottom left.
     if (plumbing.screenUv) return { blocks: [], inputs: {}, outputs: { uv: plumbing.screenUv } };
     const pixel = new FragCoordBlock(`${name}_pixel`);
     const size = new ScreenSizeBlock(`${name}_size`);

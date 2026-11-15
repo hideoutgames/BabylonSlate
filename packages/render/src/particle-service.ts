@@ -318,7 +318,7 @@ const WARM_ACTOR = "particle-service:spawnable";
 
 /**
  * Whether every program `system` draws with (its render Effects, a GPU system's update Effect too) has drawn on
- * `engine`; true where draws are not tracked (WebGPU) or the system holds none yet.
+ * `engine`; true where draws are not tracked or the system holds none yet.
  */
 function particleProgramsDrawn(engine: AbstractEngine, system: IParticleSystem): boolean {
   for (const effect of particlePrograms(system)) if (effectDrawnOn(engine, effect) === false) return false;
@@ -1411,7 +1411,7 @@ export class ParticleService {
       if (!this.current(entry, entry.generation) || !entry.desiredPlaying || entry.state !== "playing") break;
       if (record.started || record.pending) continue;
       // A system whose programs no draw on the Engine has used (one Play's load did not know of) starts within the
-      // frame's first-draw budget, so several spawned in one frame do not first-draw together (WebGL2).
+      // frame's first-draw budget, so several spawned in one frame do not first-draw together.
       if (!this.programsDrawn(record.system)) {
         if (this.firstDrawBudget <= 0) {
           this.waitingToStart.add(entry);

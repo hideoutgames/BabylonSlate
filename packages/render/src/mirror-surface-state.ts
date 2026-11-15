@@ -36,9 +36,8 @@ const bindings = new WeakMap<AbstractMesh, MirrorReflectionBinding>();
 const fallbacks = new WeakMap<Scene, RawTexture>();
 
 /**
- * One white texel, which a Mirror Reflection block binds while its surface's reflection has not drawn (a WebGPU bind
- * group needs a texture in every binding; the block then reads none of it). Made with the scene's first Mirror
- * surface, outside any pass, and disposed with the scene.
+ * One white texel, which a Mirror Reflection block binds while its surface's reflection has not drawn (the block then
+ * reads none of it). Made with the scene's first Mirror surface, outside any pass, and disposed with the scene.
  */
 export function mirrorFallbackTexture(scene: Scene): RawTexture {
   let texture = fallbacks.get(scene);

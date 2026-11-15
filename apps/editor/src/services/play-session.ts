@@ -252,7 +252,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     // The editor page loads the mesh decoders' and KTX2 transcoder's wasm in workers: Play keeps them there.
     workerDecoders: true,
     // While the view holds its image for shaders that are still compiling the game waits, as for a blocking load.
-    onPipelineHold: (held) => {
+    onCompileHold: (held) => {
       if (stopped || (!worker && !runtime)) return;
       void setPauseReason("rendering", held).catch((error: unknown) => options.onLog?.(String(error), "error"));
     },

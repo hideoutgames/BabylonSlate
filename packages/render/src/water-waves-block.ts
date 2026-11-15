@@ -6,7 +6,6 @@ import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Material
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Material } from "@babylonjs/core/Materials/material";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
@@ -26,9 +25,7 @@ const WATER_NODE_NORMAL_VARYING = "vSlateWaterRestNormal";
 function declareArraySampler(state: NodeMaterialBuildState, name: string): void {
   if (state.samplers.includes(name)) return;
   state.samplers.push(name);
-  state._samplerDeclaration += `#ifdef ${WATER_GPU_WAVES_DEFINE}\n${state.shaderLanguage === ShaderLanguage.WGSL
-    ? `var ${name}Sampler: sampler;\nvar ${name}: texture_2d_array<f32>;`
-    : `uniform highp sampler2DArray ${name};`}\n#endif\n`;
+  state._samplerDeclaration += `#ifdef ${WATER_GPU_WAVES_DEFINE}\nuniform highp sampler2DArray ${name};\n#endif\n`;
 }
 
 /**
@@ -105,26 +102,25 @@ export class WaterWavesBlock extends NodeMaterialBlock {
   }
   /** The displacement and the vertex's own height, normal and time. */
   private buildVertex(state: NodeMaterialBuildState): void {
-    const wgsl = state.shaderLanguage === ShaderLanguage.WGSL, v3 = wgsl ? "vec3f" : "vec3";
     this.declareVertexInputs(state);
-    const rest = this.worldPosition.associatedVariableName, normal = this.worldNormal.isConnected ? this.worldNormal.associatedVariableName : `${v3}(0.0, 1.0, 0.0)`;
+    const rest = this.worldPosition.associatedVariableName, normal = this.worldNormal.isConnected ? this.worldNormal.associatedVariableName : "vec3(0.0, 1.0, 0.0)";
     const [position, offset, height, outNormal, time] = this._outputs.map((output) => output.associatedVariableName) as [string, string, string, string, string];
     state.compilationString += [
       `${state._declareOutput(this.position)} = ${rest};`,
-      `${state._declareOutput(this.offset)} = ${v3}(0.0);`,
+      `${state._declareOutput(this.offset)} = vec3(0.0);`,
       `${state._declareOutput(this.height)} = 0.0;`,
       `${state._declareOutput(this.normal)} = ${normal};`,
       `${state._declareOutput(this.time)} = 0.0;`,
       `#ifdef ${WATER_GPU_WAVES_DEFINE}`,
       "{",
       // The waves' own `worldPos`: the rest point in, the displaced point out.
-      wgsl ? `var worldPos: vec4f = ${rest};` : `vec4 worldPos = ${rest};`,
-      waterWaveBlockSource(state.shaderLanguage),
+      `vec4 worldPos = ${rest};`,
+      waterWaveBlockSource(),
       `${position} = worldPos;`,
       `${offset} = worldPos.xyz - ${rest}.xyz;`,
       `${height} = swvH;`,
       `${outNormal} = swvNormal;`,
-      `${time} = ${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x;`,
+      `${time} = ${WATER_CLOCK_UNIFORM}.x;`,
       "}",
       "#endif",
       "",
@@ -136,7 +132,7 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     declareWaterAttributes(state, WATER_BLEND_ATTRIBUTE_CONDITION, [["slateWaterBlend", 4]]);
     for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
     declareArraySampler(state, WATER_FFT_SAMPLER);
-    state._emitFunction("swFftTapLod", waterWaveNodeSources(state.shaderLanguage).vertexHelpers, "");
+    state._emitFunction("swFftTapLod", waterWaveNodeSources().vertexHelpers, "");
   }
   /**
    * The fragment's per-pixel normal, height, crest foam and subsurface light. The vertex stage hands over the bank gain and blend shares through
@@ -145,11 +141,11 @@ export class WaterWavesBlock extends NodeMaterialBlock {
    * after the Water Cut block, samples none of it.
    */
   private buildFragment(state: NodeMaterialBuildState): void {
-    const wgsl = state.shaderLanguage === ShaderLanguage.WGSL, v3 = wgsl ? "vec3f" : "vec3", sources = waterWaveNodeSources(state.shaderLanguage);
+    const sources = waterWaveNodeSources();
     const vertex = state._vertexState;
     this.declareVertexInputs(vertex);
     if (vertex._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector2, WATER_GPU_WAVES_DEFINE)) {
-      vertex.compilationString += `${sources.varying(`${wgsl ? "vertexOutputs." : ""}${WATER_NODE_VARYING}`)}\n`;
+      vertex.compilationString += `${sources.varying(WATER_NODE_VARYING)}\n`;
     }
     state._emitVaryingFromString(WATER_NODE_VARYING, Types.Vector2, WATER_GPU_WAVES_DEFINE);
     for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_NODE_SUN_UNIFORM]) state._emitUniformFromString(name, Types.Vector4);
@@ -158,29 +154,28 @@ export class WaterWavesBlock extends NodeMaterialBlock {
     state._emitFunction("swSpecTap", sources.fragmentHelpers, "");
     // Babylon adds no varying for a vertex-and-fragment block's inputs: the vertex stage hands over the rest point and the
     // world normal itself (its inputs are vertex values, in scope at the end of the vertex program).
-    const into = wgsl ? "vertexOutputs." : "", from = wgsl ? "fragmentInputs." : "";
     if (vertex._emitVaryingFromString(WATER_NODE_REST_VARYING, Types.Vector4)) {
-      vertex.compilationString += `${into}${WATER_NODE_REST_VARYING} = ${this.worldPosition.associatedVariableName};\n`;
+      vertex.compilationString += `${WATER_NODE_REST_VARYING} = ${this.worldPosition.associatedVariableName};\n`;
     }
     state._emitVaryingFromString(WATER_NODE_REST_VARYING, Types.Vector4);
-    const rest = `${from}${WATER_NODE_REST_VARYING}`;
-    let worldNormal = `${v3}(0.0, 1.0, 0.0)`;
+    const rest = WATER_NODE_REST_VARYING;
+    let worldNormal = "vec3(0.0, 1.0, 0.0)";
     if (this.worldNormal.isConnected) {
       if (vertex._emitVaryingFromString(WATER_NODE_NORMAL_VARYING, Types.Vector3)) {
-        vertex.compilationString += `${into}${WATER_NODE_NORMAL_VARYING} = ${this.worldNormal.associatedVariableName};\n`;
+        vertex.compilationString += `${WATER_NODE_NORMAL_VARYING} = ${this.worldNormal.associatedVariableName};\n`;
       }
       state._emitVaryingFromString(WATER_NODE_NORMAL_VARYING, Types.Vector3);
-      worldNormal = `${from}${WATER_NODE_NORMAL_VARYING}`;
+      worldNormal = WATER_NODE_NORMAL_VARYING;
     }
     const base = this.worldNormal.isConnected ? `normalize(${worldNormal})` : worldNormal;
     const declare = (output: (typeof this._outputs)[number], value: string) => output.hasEndpoints ? `${state._declareOutput(output)} = ${value};\n` : "";
-    const local = (name: string, type: string, value: string) => wgsl ? `var ${name}: ${type} = ${value};\n` : `${type} ${name} = ${value};\n`;
-    state.compilationString += local("swnNormal", v3, worldNormal)
-      + local("swnHeight", wgsl ? "f32" : "float", "0.0") + local("swnFoam", wgsl ? "f32" : "float", "0.0") + local("swnSubsurface", wgsl ? "f32" : "float", "0.0")
-      + local("swnEdgeTurbulence", wgsl ? "f32" : "float", "0.0")
-      + `#ifndef ${WATER_DEPTH_PRE_PASS_DEFINE}\n#ifndef ${WATER_DEBUG_NO_WAVES_DEFINE}\n${sources.fragment(rest, base, `${from}${WATER_NODE_VARYING}`)}\n#endif\n#endif\n`
+    const local = (name: string, type: string, value: string) => `${type} ${name} = ${value};\n`;
+    state.compilationString += local("swnNormal", "vec3", worldNormal)
+      + local("swnHeight", "float", "0.0") + local("swnFoam", "float", "0.0") + local("swnSubsurface", "float", "0.0")
+      + local("swnEdgeTurbulence", "float", "0.0")
+      + `#ifndef ${WATER_DEPTH_PRE_PASS_DEFINE}\n#ifndef ${WATER_DEBUG_NO_WAVES_DEFINE}\n${sources.fragment(rest, base, WATER_NODE_VARYING)}\n#endif\n#endif\n`
       + declare(this.height, "swnHeight") + declare(this.normal, "swnNormal") + declare(this.crestFoam, "swnFoam") + declare(this.subsurface, "swnSubsurface") + declare(this.edgeTurbulence, "swnEdgeTurbulence")
-      + declare(this.time, `${wgsl ? "uniforms." : ""}${WATER_CLOCK_UNIFORM}.x`);
+      + declare(this.time, `${WATER_CLOCK_UNIFORM}.x`);
   }
 }
 RegisterClass("BABYLON.WaterWavesBlock", WaterWavesBlock);

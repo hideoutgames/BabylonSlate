@@ -235,7 +235,7 @@ describe("player startup and Stop ownership", () => {
     const commands: Array<{ type: string } & Record<string, unknown>> = [];
     const session = startPlayer({ game, canvas, previewDiagnostics: true, onConsoleEvent: (command) => commands.push(command) });
     sessions.push(session);
-    vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!(true);
+    vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!(true);
     expect(TestWorker.instances[0]!.messages.some(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary")).toBe(true);
     session.stop();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -260,7 +260,7 @@ describe("player startup and Stop ownership", () => {
     acknowledge([]);
     await Promise.resolve();
     await vi.waitFor(() => expect(rendering.createEngine).toHaveBeenCalled());
-    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!;
+    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!;
     hold(true);
     expect(boundary().action).toEqual({ kind: "pause", reason: "rendering", paused: true });
     acknowledge(["rendering"]);
@@ -281,7 +281,7 @@ describe("player startup and Stop ownership", () => {
     await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
     expect(rendering.createEngine).toHaveBeenCalled();
     const pauses = () => worker.messages.flatMap(entry => entry.channel === "control" && entry.payload.type === "setPaused" ? [entry.payload] : []);
-    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!;
+    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!;
     hold(true);
     expect(pauses().at(-1)).toEqual({ type: "setPaused", paused: true, reason: "rendering" });
     hold(false);

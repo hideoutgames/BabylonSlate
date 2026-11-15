@@ -50,7 +50,6 @@ export {
   WATER_NODE_SUN_UNIFORM,
   WATER_NODE_VARYING,
   waterWaveNodeSources,
-  toWgsl,
   waterBlendCullSource,
   stripShaderComments,
 } from "./water-shader-source";

@@ -1,5 +1,4 @@
 import type { Camera } from "@babylonjs/core/Cameras/camera";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraphObjectList";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -24,7 +23,6 @@ import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Te
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import "@babylonjs/core/Shaders/postprocess.vertex";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-// The WGSL twins register with the WebGPU Engine's code (webgpu-registrations).
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
 import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
 import {
@@ -240,70 +238,6 @@ void main(void) {
   gl_FragColor = vec4(min(rgb, vec3(${WATER_SCENE_COPY_SKY_DEPTH}.0)), mix(viewZ, ${WATER_SCENE_COPY_SKY_DEPTH}.0, sky));
 }
 `;
-  ShaderStore.ShadersStoreWGSL[`${WATER_SCENE_COPY_SHADER}PixelShader`] = `
-varying vUV: vec2f;
-var sceneColorSampler: sampler;
-var sceneColor: texture_2d<f32>;
-var sceneDepthSampler: sampler;
-var sceneDepth: texture_2d<f32>;
-uniform copyTexel: vec2f;
-uniform inverseProjection: mat4x4f;
-uniform depthRange: vec2f;
-uniform reverseDepth: f32;
-uniform decodeSrgb: f32;
-#include<helperFunctions>
-fn slateNearer(a: f32, b: f32) -> f32 { return select(min(a, b), max(a, b), uniforms.reverseDepth > 0.5); }
-fn slateSky(raw: f32) -> f32 { return select(step(1.0, raw), step(raw, 0.0), uniforms.reverseDepth > 0.5); }
-fn slateSceneColor(uv: vec2f) -> vec3f {
-  let c = textureSampleLevel(sceneColor, sceneColorSampler, uv, 0.0).rgb;
-  return select(c, toLinearSpaceVec3(c), uniforms.decodeSrgb > 0.5);
-}
-fn slateSceneDepth(uv: vec2f) -> f32 { return textureSampleLevel(sceneDepth, sceneDepthSampler, uv, 0.0).r; }
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let uv = fragmentInputs.vUV;
-  let taps = f32(SLATE_COPY_TAPS);
-  var rgb = vec3f(0.0);
-  var surface = vec3f(0.0);
-  var surfaceTaps: f32 = 0.0;
-  var blendsSky: f32 = 0.0;
-  var raw: f32 = select(1.0, 0.0, uniforms.reverseDepth > 0.5);
-  for (var y: i32 = 0; y < SLATE_COPY_TAPS; y++) {
-    for (var x: i32 = 0; x < SLATE_COPY_TAPS; x++) {
-      let tap = uv + ((vec2f(f32(x), f32(y)) + 0.5) / taps - 0.5) * uniforms.copyTexel;
-      let tapColor = slateSceneColor(tap);
-      let tapRaw = slateSceneDepth(tap);
-#ifndef SLATE_COPY_CENTRED_COLOR
-      rgb += tapColor;
-#endif
-      let open = slateSky(tapRaw);
-      surface += tapColor * (1.0 - open);
-      surfaceTaps += 1.0 - open;
-      raw = slateNearer(raw, tapRaw);
-#ifndef SLATE_COPY_CENTRED_COLOR
-      blendsSky = max(blendsSky, open);
-#endif
-    }
-  }
-#ifdef SLATE_COPY_CENTRED_COLOR
-  rgb = slateSceneColor(uv);
-  let sourceTexel = 1.0 / vec2f(textureDimensions(sceneDepth, 0));
-  for (var corner: i32 = 0; corner < 4; corner++) {
-    let offset = vec2f(f32(corner % 2), f32(corner / 2)) - 0.5;
-    blendsSky = max(blendsSky, slateSky(slateSceneDepth(uv + offset * sourceTexel)));
-  }
-#else
-  rgb = rgb / (taps * taps);
-#endif
-  let sky = slateSky(raw);
-  // A surface's texel takes its colour from that surface's taps alone (the GLSL copy's note).
-  if (sky < 0.5 && blendsSky > 0.5) { rgb = surface / surfaceTaps; }
-  let view = uniforms.inverseProjection * vec4f(uv * 2.0 - 1.0, raw * uniforms.depthRange.x + uniforms.depthRange.y, 1.0);
-  let w = select(1e-8, view.w, abs(view.w) > 1e-8);
-  let viewZ = clamp(abs(view.z / w), 0.0, ${WATER_SCENE_COPY_SKY_DEPTH}.0);
-  fragmentOutputs.color = vec4f(min(rgb, vec3f(${WATER_SCENE_COPY_SKY_DEPTH}.0)), mix(viewZ, ${WATER_SCENE_COPY_SKY_DEPTH}.0, sky));
-}
-`;
 }
 
 /** A target the split plans, relative to the view's output size. */
@@ -347,7 +281,7 @@ class WaterSceneCopyTask extends FrameGraphTask {
       uniformNames: ["copyTexel", "inverseProjection", "depthRange", "reverseDepth", "decodeSrgb"],
       samplerNames: ["sceneColor", "sceneDepth"],
       defines: `#define SLATE_COPY_TAPS ${taps}${centred ? "\n#define SLATE_COPY_CENTRED_COLOR" : ""}`,
-      shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      shaderLanguage: ShaderLanguage.GLSL,
     });
   }
 
@@ -364,7 +298,7 @@ class WaterSceneCopyTask extends FrameGraphTask {
     pass.setRenderTarget(this.outputTexture);
     pass.addDependencies([this.sourceColor, this.sourceDepth]);
     pass.setExecuteFunc((context) => {
-      // Depth is unfilterable on WebGPU; colour taps sit on texel centres at integer ratios.
+      // Depth is read unfiltered; colour taps sit on texel centres at integer ratios.
       context.setTextureSamplingMode(this.sourceDepth, Constants.TEXTURE_NEAREST_SAMPLINGMODE);
       const engine = graph.engine;
       const effect = this.wrapper.effect;
@@ -374,7 +308,7 @@ class WaterSceneCopyTask extends FrameGraphTask {
         effect.setFloat2("copyTexel", this.texelX, this.texelY);
         this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
         effect.setMatrix("inverseProjection", this.inverseProjection);
-        effect.setFloat2("depthRange", engine.isNDCHalfZRange ? 1 : 2, engine.isNDCHalfZRange ? 0 : -1);
+        effect.setFloat2("depthRange", 2, -1);
         effect.setFloat("reverseDepth", engine.useReverseDepthBuffer ? 1 : 0);
         // Scene Linear colour is already linear; Legacy Display and CEL are exact sRGB.
         effect.setFloat("decodeSrgb", graph.scene.imageProcessingConfiguration.applyByPostProcess ? 0 : 1);
@@ -522,7 +456,7 @@ export class WaterSceneCopyGraph {
   /** Reserve and plan the copy, or undefined (with a warning) when the shared budget refuses it. */
   static create(options: WaterSceneCopyGraphOptions): WaterSceneCopyGraph | undefined {
     const engine = options.frameGraph.engine;
-    const specs = targetSpecs(options.frameGraph.scene, engine, options.scale, !options.scene);
+    const specs = targetSpecs(options.frameGraph.scene, options.scale, !options.scene);
     const followsBackbuffer = !options.scene && !options.output.texture;
     const lease = beginManagedRenderAllocation(engine, plannedBytes(specs, options.width, options.height));
     if (!lease) {
@@ -791,7 +725,7 @@ export class WaterSceneCopyGraph {
     });
     this.lease.commit(resources);
     this.committed = true;
-    // The build disposed the replaced targets; WebGPU destroys them at the end of its frame.
+    // The build disposed the replaced targets.
     for (const replaced of this.replacedLeases.splice(0))
       this.leaseReleases.push(releaseManagedRenderLeaseAfterDisposal(this.graph.engine, replaced));
   }
@@ -851,24 +785,13 @@ function ownColorType(scene: Scene): number {
   return scene.imageProcessingConfiguration.applyByPostProcess ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
 }
 
-/**
- * The split's targets. On WebGPU the own pair matches the swap chain's colour
- * and the main pass's depth format, so its draws reuse the render pipelines
- * the direct path already created (pipelines are keyed by attachment formats):
- * water coming into view creates none.
- */
-function targetSpecs(scene: Scene, engine: AbstractEngine, scale: number, own: boolean): TargetSpec[] {
+/** The split's targets: the packed copy and, with `own`, the own colour and depth pair. */
+function targetSpecs(scene: Scene, scale: number, own: boolean): TargetSpec[] {
   const specs: TargetSpec[] = [{ name: "Water scene copy", format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_HALF_FLOAT, scale }];
   if (!own) return specs;
-  const colorType = ownColorType(scene);
-  const swapChain = engine.isWebGPU ? (engine as unknown as { _options?: { swapChainFormat?: string } })._options?.swapChainFormat : undefined;
-  const bgra = swapChain === "bgra8unorm" && colorType === Constants.TEXTURETYPE_UNSIGNED_BYTE;
-  const stencilDepth = engine.isWebGPU && engine.isStencilEnable;
   specs.push(
-    { name: "Water scene color", format: bgra ? Constants.TEXTUREFORMAT_BGRA : Constants.TEXTUREFORMAT_RGBA, type: colorType, scale: 1 },
-    stencilDepth
-      ? { name: "Water scene Z", format: Constants.TEXTUREFORMAT_DEPTH24_STENCIL8, type: Constants.TEXTURETYPE_FLOAT, scale: 1 }
-      : { name: "Water scene Z", format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT, scale: 1 },
+    { name: "Water scene color", format: Constants.TEXTUREFORMAT_RGBA, type: ownColorType(scene), scale: 1 },
+    { name: "Water scene Z", format: Constants.TEXTUREFORMAT_DEPTH32_FLOAT, type: Constants.TEXTURETYPE_FLOAT, scale: 1 },
   );
   return specs;
 }

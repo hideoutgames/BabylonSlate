@@ -9,7 +9,7 @@ export const EFFECT_BRIDGE_MS = 120_000;
 /**
  * Most Effects an Engine keeps for its next Play (`keepPlayEffects`), least recently used first out: about two
  * Feature Test scenes' Play programs (a large level links about 100, a light one about 50). An Effect holds its
- * program and, on WebGPU, its pipelines, never a texture or render target, so the bound is a count of programs.
+ * program, never a texture or render target, so the bound is a count of programs.
  */
 const PLAY_EFFECT_KEEP_BUDGET = 256;
 

@@ -51,17 +51,16 @@ export class LatticeDeformerBlock extends NodeMaterialBlock {
     for (const name of LATTICE_UNIFORMS) if (!state.uniforms.includes(name)) state.uniforms.push(name);
     if (!state.samplers.includes(LATTICE_SAMPLER)) {
       state.samplers.push(LATTICE_SAMPLER);
-      state._samplerDeclaration += latticeShaderDeclarations(state.shaderLanguage);
+      state._samplerDeclaration += latticeShaderDeclarations();
     }
-    state._emitFunction("slateLattice", latticeShaderFunctions(scene, state.shaderLanguage), "");
-    const wgsl = state.shaderLanguage === 1, v4 = wgsl ? "vec4f" : "vec4";
+    state._emitFunction("slateLattice", latticeShaderFunctions(scene), "");
     const position = this.position.associatedVariableName, normal = this.normal.associatedVariableName;
     const result = state._getFreeVariableName("slateLatticeResult");
     const outPosition = this.positionOut.associatedVariableName, outNormal = this.normalOut.associatedVariableName;
     state.compilationString += `${state._declareOutput(this.positionOut)} = ${position};\n${state._declareOutput(this.normalOut)} = ${normal};\n`;
     if (this.tangent.isConnected) state.compilationString += `${state._declareOutput(this.tangentOut)} = ${this.tangent.associatedVariableName};\n`;
-    state.compilationString += `#ifdef SLATE_LATTICE\n${wgsl ? `var ${result}: SlateLatticeResult` : `SlateLatticeResult ${result}`} = slateLattice(${position}.xyz);\n${outPosition} = ${v4}(${result}.position,${position}.w);\n${outNormal} = ${v4}(slateLatticeNormal(${result}.jacobian,${normal}.xyz),${normal}.w);\n`;
-    if (this.tangent.isConnected) state.compilationString += `${this.tangentOut.associatedVariableName} = ${v4}(slateLatticeTangent(${result}.jacobian,${this.tangent.associatedVariableName}.xyz,${outNormal}.xyz),${this.tangent.associatedVariableName}.w);\n`;
+    state.compilationString += `#ifdef SLATE_LATTICE\nSlateLatticeResult ${result} = slateLattice(${position}.xyz);\n${outPosition} = vec4(${result}.position,${position}.w);\n${outNormal} = vec4(slateLatticeNormal(${result}.jacobian,${normal}.xyz),${normal}.w);\n`;
+    if (this.tangent.isConnected) state.compilationString += `${this.tangentOut.associatedVariableName} = vec4(slateLatticeTangent(${result}.jacobian,${this.tangent.associatedVariableName}.xyz,${outNormal}.xyz),${this.tangent.associatedVariableName}.w);\n`;
     state.compilationString += "#endif\n";
     return this;
   }

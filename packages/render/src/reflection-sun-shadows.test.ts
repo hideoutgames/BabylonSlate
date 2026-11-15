@@ -47,7 +47,7 @@ function fixture() {
   const oblique = new Matrix(), fit = new Matrix();
   buildViewProjectionMatrix(scene, view, engine.getAspectRatio(view), fit);
   const math = new PlanarMirrorMath();
-  expect(math.mirror(view.getViewMatrix(), view.globalPosition, plane, fit, engine.useReverseDepthBuffer, engine.isNDCHalfZRange,
+  expect(math.mirror(view.getViewMatrix(), view.globalPosition, plane, fit, engine.useReverseDepthBuffer,
     mirror.mirrorView, oblique)).toBe(true);
   mirror.freezeProjectionMatrix(oblique);
   mirror.position.set(math.eye[0]!, math.eye[1]!, math.eye[2]!);

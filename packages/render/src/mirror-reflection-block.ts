@@ -13,7 +13,6 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import type { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 import { environmentCube, environmentPlaceholder } from "./haptic-lighting-block";
 import { existingMirrorFallbackTexture, mirrorReflectionBinding, type MirrorReflectionBinding } from "./mirror-surface-state";
 
@@ -111,7 +110,7 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
     const clear = scene.clearColor;
     effect.setFloat3(this.backdrop, clear.r, clear.g, clear.b);
     if (!cube) {
-      // WebGPU draws only with every declared texture bound.
+      // The declared cube sampler takes the scene's placeholder.
       effect.setTexture(this.environmentSampler, environmentPlaceholder(scene));
       return;
     }
@@ -134,7 +133,6 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = state.shaderLanguage === 1;
     this.sampler = state._getFreeVariableName("slateMirrorSampler");
     this.define = state._getFreeDefineName("SLATE_MIRROR_REFLECTION");
     this.matrix = state._getFreeVariableName("slateMirrorViewProjection");
@@ -166,19 +164,18 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
       state._emitUniformFromString(this.tint, Types.Vector3);
     }
     state._emitFunctionFromInclude("helperFunctions", "Mirror reflection decoding");
-    if (!wgsl) state._emitExtension("shaderTextureLod", "#extension GL_EXT_shader_texture_lod : enable");
-    const uniform = wgsl ? "uniforms." : "";
-    const vec2 = wgsl ? "vec2f" : "vec2", vec3 = wgsl ? "vec3f" : "vec3", vec4 = wgsl ? "vec4f" : "vec4";
-    const toLinear = wgsl ? "toLinearSpaceVec3" : "toLinearSpace", toGamma = wgsl ? "toGammaSpaceVec3" : "toGammaSpace";
+    state._emitExtension("shaderTextureLod", "#extension GL_EXT_shader_texture_lod : enable");
+    const vec2 = "vec2", vec3 = "vec3", vec4 = "vec4";
+    const toLinear = "toLinearSpace", toGamma = "toGammaSpace";
     const clip = state._getFreeVariableName("slateMirrorClip");
     const uv = state._getFreeVariableName("slateMirrorUv");
     const sampled = state._getFreeVariableName("slateMirrorSample");
     const output = this.color.associatedVariableName;
     const position = `${this.worldPosition.associatedVariableName}.xyz`;
-    const parameters = `${uniform}${this.parameters}`;
+    const parameters = this.parameters;
     const offset = this.offset.isConnected ? this.offset.associatedVariableName : `${vec2}(0.0)`;
     let code = `${state._declareOutput(this.color)} = ${vec3}(0.0);\n#ifdef ${this.define}\n`;
-    code += `${state._declareLocalVar(clip, Types.Vector4)} = ${uniform}${this.matrix} * ${vec4}(${position}, 1.0);\n`;
+    code += `${state._declareLocalVar(clip, Types.Vector4)} = ${this.matrix} * ${vec4}(${position}, 1.0);\n`;
     code += `${state._declareLocalVar(uv, Types.Vector2)} = ${vec2}(0.5) + ${vec2}(0.5) * ${clip}.xy / max(${clip}.w, 1e-6) + ${offset};\n`;
     code += `${state._declareLocalVar(sampled, Types.Vector4)} = ${state._generateTextureSample(uv, this.sampler)};\n`;
     code += `#ifdef ${this.environmentDefine}\n`;
@@ -187,18 +184,16 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
     const environment = state._getFreeVariableName("slateMirrorEnvironment");
     const farthest = state._getFreeVariableName("slateMirrorFarthest");
     const radiance = state._getFreeVariableName("slateMirrorRadiance");
-    const form = `${uniform}${this.environmentForm}`, box = `${uniform}${this.environmentBoxPosition}`, half = `(${uniform}${this.environmentBoxSize} * 0.5)`;
-    const lookup = wgsl
-      ? `textureSampleLevel(${this.environmentSampler}, ${this.environmentSampler}Sampler, ${ray}, ${box}.w)`
-      : `textureCubeLodEXT(${this.environmentSampler}, ${ray}, ${box}.w)`;
-    code += `${state._declareLocalVar(ray, Types.Vector3)} = reflect(normalize(${position} - ${uniform}${this.eye}.xyz), ${uniform}${this.normal});\n`;
-    code += `${state._declareLocalVar(environment, Types.Vector3)} = ${toLinear}(${uniform}${this.backdrop});\n`;
-    code += `if (${uniform}${this.eye}.w > 0.5) {\n`;
+    const form = this.environmentForm, box = this.environmentBoxPosition, half = `(${this.environmentBoxSize} * 0.5)`;
+    const lookup = `textureCubeLodEXT(${this.environmentSampler}, ${ray}, ${box}.w)`;
+    code += `${state._declareLocalVar(ray, Types.Vector3)} = reflect(normalize(${position} - ${this.eye}.xyz), ${this.normal});\n`;
+    code += `${state._declareLocalVar(environment, Types.Vector3)} = ${toLinear}(${this.backdrop});\n`;
+    code += `if (${this.eye}.w > 0.5) {\n`;
     // Onto a Reflection Probe's box, as the light block projects its reflections.
     code += `if (${form}.x > 0.5) {\n`;
     code += `${state._declareLocalVar(farthest, Types.Vector3)} = max((${box}.xyz + ${half} - ${position}) / ${ray}, (${box}.xyz - ${half} - ${position}) / ${ray});\n`;
     code += `${ray} = ${position} + ${ray} * min(min(${farthest}.x, ${farthest}.y), ${farthest}.z) - ${box}.xyz;\n}\n`;
-    code += `${ray} = (${uniform}${this.environmentMatrix} * ${vec4}(${ray}, 0.0)).xyz * ${vec3}(1.0, ${form}.y, ${form}.z);\n`;
+    code += `${ray} = (${this.environmentMatrix} * ${vec4}(${ray}, 0.0)).xyz * ${vec3}(1.0, ${form}.y, ${form}.z);\n`;
     code += `${state._declareLocalVar(radiance, Types.Vector4)} = ${lookup};\n`;
     code += `${environment} = ${radiance}.rgb;\n`;
     code += `if (${form}.w > 1.5) { ${environment} = fromRGBD(${radiance}); } else if (${form}.w > 0.5) { ${environment} = ${toLinear}(${environment}); }\n}\n`;
@@ -207,7 +202,7 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
       const open = state._getFreeVariableName("slateMirrorOpen");
       code += `if (${parameters}.y > 0.5) { ${environment} = ${toGamma}(clamp(${environment}, ${vec3}(0.0), ${vec3}(1.0))); }\n`;
       code += `${state._declareLocalVar(open, Types.Float)} = mix(1.0, ${sampled}.a, ${parameters}.x);\n`;
-      code += `${output} = (${sampled}.rgb * ${parameters}.x + ${environment} * ${open}) * ${uniform}${this.tint};\n`;
+      code += `${output} = (${sampled}.rgb * ${parameters}.x + ${environment} * ${open}) * ${this.tint};\n`;
     } else {
       // Linear, as graph colours are: the drawn part is decoded as its own colour, not as its coverage-weighted one.
       const cover = state._getFreeVariableName("slateMirrorCover");
@@ -218,7 +213,7 @@ export class MirrorReflectionBlock extends NodeMaterialBlock {
     }
     code += "#else\n";
     if (this.builtIn) {
-      code += `${output} = ${sampled}.rgb * ${uniform}${this.tint} * ${parameters}.x;\n`;
+      code += `${output} = ${sampled}.rgb * ${this.tint} * ${parameters}.x;\n`;
     } else {
       code += `${output} = ${sampled}.rgb;\n`;
       code += `if (${parameters}.y > 0.5) { ${output} = ${toLinear}(${output}); }\n`;

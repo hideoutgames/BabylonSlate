@@ -25,7 +25,6 @@ type Owner = {
 const owners = new WeakMap<AbstractEngine, Owner>();
 
 export function engineGpuTimingUnavailableReason(engine: AbstractEngine): string | null {
-  if (engine.isWebGPU) return "Babylon 9.29.0 cannot provide valid whole-frame WebGPU timestamps on this path.";
   if (!engine.getCaps().timerQuery) return "The active graphics context does not support GPU timer queries.";
   if (engine.isDisposed) return "The graphics engine has been disposed.";
   return null;

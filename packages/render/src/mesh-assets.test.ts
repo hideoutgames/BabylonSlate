@@ -19,7 +19,6 @@ import {
 } from "./mesh-assets";
 import { acquireMaterialTexture, ResourceCache } from "./resource-cache";
 import { setTestTextureBudget } from "./test-support/resource-cache-budget";
-import { ktx2HeaderBytes } from "./texture-test-fixtures";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { createDefaultSpriteAnimationPayload, createDefaultSpritePayload } from "@haptic/assets";
 import { createSpriteQuad } from "./sprite-quad";
@@ -406,21 +405,6 @@ describe("applyAlbedoTexture", () => {
       expect(mesh.material).toBe(material);
       winner.release();
     } finally { create.mockRestore(); report.mockRestore(); scene.dispose(); cache.dispose(); engine.dispose(); }
-  });
-  it("gives a sprite on an ASTC-capable WebGPU engine its KTX2 off the 4x4 block grid as its diffuse texture", () => {
-    const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();
-    // The engine that used to be refused before upload; ktx2-webgpu-rgba.test.ts covers the RGBA decode.
-    vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
-    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
-    const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
-    try {
-      applyAlbedoTexture(mesh, scene, "odd", {
-        resourceCache: cache, textureBytes: installTextureBytes(new Map([["odd", ktx2HeaderBytes(1, 1)]])),
-      });
-      const texture = unlitBinding(mesh).texture;
-      expect(texture).toBeInstanceOf(Texture);
-      expect((texture as Texture).mimeType).toBe("image/ktx2");
-    } finally { scene.dispose(); cache.dispose(); engine.dispose(); }
   });
   it("reapplies equal installed content without acquiring and clears its exact binding", () => {
     const engine = new NullEngine(); const scene = new Scene(engine); const cache = new ResourceCache();

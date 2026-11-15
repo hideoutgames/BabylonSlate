@@ -436,7 +436,7 @@ function occludable(mesh: AbstractMesh): boolean {
   return (mesh.material?.depthFunction ?? 0) === 0;
 }
 
-/** WebGL2: some colour pass Effect of `mesh` has not drawn yet (its first draw links it); undefined on WebGPU. */
+/** Some colour pass Effect of `mesh` has not drawn yet (its first draw links it). */
 function firstDrawPending(mesh: AbstractMesh, engine: AbstractEngine, renderPassId: number): boolean {
   const source = drawingMesh(mesh);
   for (const subMesh of source.subMeshes ?? []) {

@@ -50,7 +50,6 @@ export function drawsAlphaCoverage(engine: AbstractEngine, material: Material | 
 function install(): void {
   if (installed) return;
   installed = true;
-  // WebGL2's half; the WebGPU Engine's code registers its own as it loads (webgpu-registrations).
   RegisterEnginesExtensionsEngineAlphaToCoverage();
   // Every Material's bind ends here, once per draw: each draw sets the state its own Material needs.
   type AfterBind = (this: Material, mesh?: AbstractMesh, effect?: Effect | null, subMesh?: unknown) => void;
@@ -84,17 +83,15 @@ export function registerAlphaToCoverage(material: Material, accepts?: (mesh: Abs
   coverageMaterials.set(material, accepts ?? null);
 }
 
-/** The coverage clip (GLSL or WGSL): `value` against `cutoff`, writing the coverage alpha last while the uniform says so. */
+/** The coverage clip: `value` against `cutoff`, writing the coverage alpha last while the uniform says so. */
 export function coverageClip(state: NodeMaterialBuildState, value: string, cutoff: string): void {
   state._emitUniformFromString(ALPHA_COVERAGE_UNIFORM, Types.Float);
-  const wgsl = state.shaderLanguage === 1;
-  const u = wgsl ? "uniforms." : "";
   const coverage = state._getFreeVariableName("hapticCoverage");
-  // Derivatives first: WGSL takes them in uniform control flow.
+  // The derivative is taken first, outside the branches.
   state.compilationString += `${state._declareLocalVar(coverage, Types.Float)} = clamp((${value} - ${cutoff}) / max(fwidth(${value}), 0.0001) + 0.5, 0.0, 1.0);\n`
-    + `if (${u}${ALPHA_COVERAGE_UNIFORM} > 0.5) { if (${coverage} <= 0.0) { discard; } } else if (${value} < ${cutoff}) { discard; }\n`;
+    + `if (${ALPHA_COVERAGE_UNIFORM} > 0.5) { if (${coverage} <= 0.0) { discard; } } else if (${value} < ${cutoff}) { discard; }\n`;
   // The geometry pass draws the Material too, into its own attachments (`PREPASS`), single-sample.
-  state._injectAtEnd += `#ifndef PREPASS\nif (${u}${ALPHA_COVERAGE_UNIFORM} > 0.5) { ${wgsl ? "fragmentOutputs.color" : "gl_FragColor"}.a = ${coverage}; }\n#endif\n`;
+  state._injectAtEnd += `#ifndef PREPASS\nif (${ALPHA_COVERAGE_UNIFORM} > 0.5) { gl_FragColor.a = ${coverage}; }\n#endif\n`;
 }
 
 /**

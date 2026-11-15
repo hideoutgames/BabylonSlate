@@ -28,9 +28,8 @@ import {
 import { readEngineDrawCalls } from "./draw-calls";
 import { beginShadowAllocationValidation } from "./shadow-allocation-validation";
 import { beginEngineAllocationCheckpoint } from "./allocation-checkpoint";
-import { awaitsFirstDraw, isWarmShadowRender, setAwaitingFirstDraw } from "./shadow-first-draw";
+import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { isRevealPending } from "./reveal-pending";
-import { listsHiddenCaster } from "./shadow-caster-warm";
 import { type EffectiveShadowBias, type LocalShadowLight, type ShadowEntry as Entry } from "./shadow-entry";
 import { CASCADE_LOG_ANCHOR, CASCADE_UNIFORM_LAMBDA, cascadeSplit } from "./cascade-split";
 
@@ -190,8 +189,6 @@ export function createShadowGenerator(
     indicesBefore = scene.getActiveIndices();
   });
   map?.onAfterUnbindObservable.add(() => {
-    // A warm render draws nothing, but Babylon counts a skipped draw's indices before it reaches the pipeline.
-    if (isWarmShadowRender(generator)) return;
     context.counters.drawCalls += Math.max(
       0,
       readEngineDrawCalls(scene.getEngine()) - drawsBefore,
@@ -231,7 +228,7 @@ export function createShadowGenerator(
     const matrix = projection?.m;
     biasInput.width = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[0]) : 0;
     biasInput.height = automatic && scene.activeCamera && matrix ? Math.abs(2 / matrix[5]) : 0;
-    biasInput.depth = matrix ? Math.abs((scene.getEngine().isNDCHalfZRange ? 1 : 2) / matrix[10]) : 0;
+    biasInput.depth = matrix ? Math.abs(2 / matrix[10]) : 0;
     biasInput.mapWidth = tile;
     biasInput.mapHeight = tile;
     biasInput.filter = generator.usePercentageCloserFiltering ? "pcf"
@@ -274,8 +271,6 @@ export function createShadowGenerator(
   map?.onAfterRenderObservable.add((face) => {
     if (!clearedForDraw) return;
     clearedForDraw = false;
-    // A warm render (`shadow-map-warm.ts`) skips its draws: it is no first draw.
-    if (isWarmShadowRender(generator)) return;
     // A new, moved or resumed map samples neutrally until its last face is drawn.
     if (awaitsFirstDraw(generator) && face === (map.isCube ? 5 : 0)) {
       setAwaitingFirstDraw(generator, false);
@@ -319,10 +314,7 @@ export function createShadowGenerator(
       else context.spatial.queryPlanes(activePlanes, casters);
       // The index never plane-culls deforming casters: one whose bounds follow its pose is culled here, by them. A
       // local map ends at its light's range, so anything that cannot reach it draws nothing.
-      // A mesh a world view does not draw yet casts nothing either; on WebGPU
-      // a steady frame lists it while its reveal waits for this map, only to
-      // create its depth pipelines, every draw of it skipped
-      // (`shadow-caster-warm.ts`).
+      // A mesh a world view does not draw yet casts nothing either.
       const light = generator.getLight();
       const range = !directionalLight && "range" in light && Number.isFinite(light.range) ? light.range as number : undefined;
       const position = range === undefined ? undefined : (light as LocalShadowLight).getAbsolutePosition();
@@ -336,7 +328,7 @@ export function createShadowGenerator(
       const retained = context.retained?.begin(generator, activePlanes) ? context.retained : null;
       for (const mesh of casters) {
         const posed = deformsWithinBounds(mesh);
-        if ((!isRevealPending(mesh) || listsHiddenCaster(generator, mesh)) &&
+        if (!isRevealPending(mesh) &&
           (!position || casterWithinShadowRange(mesh, position, range!)) &&
           (!posed || !boxOutside(mesh.getBoundingInfo().boundingBox, activePlanes)) &&
           (!minTexels || castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels) ||

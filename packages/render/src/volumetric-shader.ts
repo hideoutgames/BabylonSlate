@@ -1,37 +1,32 @@
 import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { MAX_FOG_VOLUMES } from "./fog-volumes";
-import { HAPTIC_SHADOW_ATLAS, hapticShadowGlsl, hapticShadowWgsl } from "./haptic-lighting-shader";
-import { HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL } from "./haptic-lights";
+import { HAPTIC_SHADOW_ATLAS, hapticShadowGlsl } from "./haptic-lighting-shader";
+import { HAPTIC_LIGHTS_GLSL } from "./haptic-lights";
 import { syntax } from "./ambient-occlusion-shader";
 
 /**
- * One bounded single-scattering shader, emitted for both native shader languages. It has `slots` light slots whatever
+ * One bounded single-scattering shader. It has `slots` light slots whatever
  * lights are near: each reads its light's type, shadow kind (`VOLUME_SHADOW_CODE`) and view or cascade count from
  * uniforms, and the march skips the slots past `volumeLightCount`, so only settings change the shader. The slots'
  * shadows are the light block's views of its atlas (`HapticLights`).
  */
 export function volumetricShader(
-  wgsl: boolean,
   slots: number,
   steps: number,
   localVolumes = false,
 ): string {
-  const { v2, v3, v4, f, u, decl, field, texture, sample, uv } = syntax(wgsl);
-  const m4 = wgsl ? "mat4x4f" : "mat4";
+  const { v2, v3, v4, f, u, decl, field, texture, sample, uv } = syntax();
+  const m4 = "mat4";
   const array = (type: string, name: string, count: number) =>
-    wgsl
-      ? `uniform ${name}: array<${type}, ${count}>;`
-      : `uniform ${type} ${name}[${count}];`;
+    `uniform ${type} ${name}[${count}];`;
   const fn = (
     name: string,
     args: [string, string][],
     result: string,
     body: string,
   ) =>
-    wgsl
-      ? `fn ${name}(${args.map(([type, n]) => `${n}: ${type}`).join(",")}) -> ${result} { ${body} }`
-      : `${result} ${name}(${args.map(([type, n]) => `${type} ${n}`).join(",")}) { ${body} }`;
-  let header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
+    `${result} ${name}(${args.map(([type, n]) => `${type} ${n}`).join(",")}) { ${body} }`;
+  let header = `varying vec2 vUV;
 ${texture("depthSampler")}
 ${field(m4, "inverseProjection")}${field(m4, "inverseView")}${field(m4, "volumeView")}
 ${field(v4, "volumeSettings")}${field(v4, "volumeCamera")}${field(v2, "volumeHeight")}
@@ -39,12 +34,11 @@ ${field(v3, "volumeShadowOffset")}${field(f, "volumeLightCount")}
 `;
   let functions = "",
     lighting = "";
-  const integer = wgsl ? "i32" : "int";
+  const integer = "int";
   const loop = (name: string, end: string) =>
-    `for (${wgsl ? `var ${name}: i32` : `int ${name}`} = 0; ${name} < ${end}; ${name}++)`;
-  const localArray = (type: string, name: string) => wgsl
-    ? `var ${name}: array<${type}, ${MAX_FOG_VOLUMES}>;`
-    : `${type} ${name}[${MAX_FOG_VOLUMES}];`;
+    `for (int ${name} = 0; ${name} < ${end}; ${name}++)`;
+  const localArray = (type: string, name: string) =>
+    `${type} ${name}[${MAX_FOG_VOLUMES}];`;
   let localSetup = "", localPick = "", localSample = "";
   if (localVolumes) {
     header += field(integer, "fogVolumeCount") +
@@ -119,14 +113,12 @@ if (boundary <= 1.0) {
 `;
   }
   const code = VOLUME_SHADOW_CODE;
-  header += wgsl
-    ? `${HAPTIC_LIGHTS_WGSL}var ${HAPTIC_SHADOW_ATLAS}Sampler: sampler_comparison; var ${HAPTIC_SHADOW_ATLAS}: texture_depth_2d;\n`
-    : `${HAPTIC_LIGHTS_GLSL}uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
+  header += `${HAPTIC_LIGHTS_GLSL}uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
   // A slot's shadow (\`volumeShadow\`: kind, views, first view): a spot light's view, a point light's faces or the
   // sun's cascades, as the block draws them, at a position of the march (world space; the block's are rebased). On a
   // line of their own: Babylon splits a line's statements, which would end a comment after the uniforms at its first
   // semicolon.
-  functions += "\n" + (wgsl ? hapticShadowWgsl(false) : hapticShadowGlsl(false)) + fn("volumeLightShadow", [[v4, "shadow"], [v3, "p"], [v3, "lightPosition"]], f, `
+  functions += "\n" + hapticShadowGlsl(false) + fn("volumeLightShadow", [[v4, "shadow"], [v3, "p"], [v3, "lightPosition"]], f, `
 ${decl(v3, "P", `p - ${u("volumeShadowOffset")}`)}
 if (shadow.x < ${code.compare - 0.5}) { return 1.0; }
 if (shadow.x < ${code.compare + 0.5}) { return hapticShadow(shadow.z, P, ${v3}(0.0), ${v3}(0.0)); }
@@ -193,7 +185,7 @@ ${decl(f, "transmittance", "1.0")}
 ${decl(v3, "scattering", `${v3}(0.0)`)}
 // Scene-wide fog samples evenly to its span and each Fog Volume over its own chord. Each step takes the nearest next
 // sample of all of them, so in-scattering is gathered front to back through every medium.
-for (${wgsl ? "var step: i32 = 0" : "int step = 0"}; step < ${steps}; step++) {
+for (int step = 0; step < ${steps}; step++) {
   if (transmittance < 0.001) { break; }
   ${decl(f, "rayDistance", "1.0e30")}
   ${decl(f, "segment", "sceneSegment")}
@@ -218,32 +210,26 @@ for (${wgsl ? "var step: i32 = 0" : "int step = 0"}; step < ${steps}; step++) {
   scattering += transmittance * (1.0 - extinction) * illumination * ${u("volumeSettings")}.y;
   transmittance *= extinction;
 }
-${wgsl ? "fragmentOutputs.color" : "gl_FragColor"} = ${v4}(scattering, transmittance);
-${wgsl ? "return fragmentOutputs;" : ""}`;
+gl_FragColor = ${v4}(scattering, transmittance);
+`;
   return (
     header +
     functions +
-    (wgsl
-      ? `@fragment fn main(input: FragmentInputs) -> FragmentOutputs { ${body} }`
-      : `void main() { ${body} }`)
+    `void main() { ${body} }`
   );
 }
 
 /** Four depth-weighted taps preserve edges when upsampling low-resolution fog. */
 export function volumetricCompositeShader(
-  wgsl: boolean,
   linear: boolean,
 ): string {
-  const { v2, v3, v4, f, decl, sample, uv } = syntax(wgsl);
-  const texel = wgsl ? "uniforms.fogTexelSize" : "fogTexelSize";
-  const header = wgsl
-    ? `varying vUV: vec2f; uniform fogTexelSize: vec2f; uniform cameraFar: f32;
-${["textureSampler", "mainSampler", "depthSampler"].map((name) => `var ${name}: texture_2d<f32>; var ${name}Sampler: sampler;`).join("\n")}`
-    : "varying vec2 vUV; uniform vec2 fogTexelSize; uniform float cameraFar; uniform sampler2D textureSampler; uniform sampler2D mainSampler; uniform sampler2D depthSampler;";
+  const { v2, v3, v4, f, decl, sample, uv } = syntax();
+  const texel = "fogTexelSize";
+  const header = "varying vec2 vUV; uniform vec2 fogTexelSize; uniform float cameraFar; uniform sampler2D textureSampler; uniform sampler2D mainSampler; uniform sampler2D depthSampler;";
   const body = `
 ${decl(v4, "base", sample("mainSampler", uv))}
 ${decl(f, "depth", `min(abs(${sample("depthSampler", uv)}.r), 65000.0)`)}
-if (depth < 0.000001) { depth = ${wgsl ? "uniforms.cameraFar" : "cameraFar"}; }
+if (depth < 0.000001) { depth = cameraFar; }
 ${decl(v2, "grid", `${uv} / ${texel} - ${v2}(0.5)`)}
 ${decl(v2, "fraction", "fract(grid)")}
 ${decl(v2, "start", `(floor(grid) + ${v2}(0.5)) * ${texel}`)}
@@ -259,7 +245,7 @@ ${[
     ([x, y]) => `{
   ${decl(v2, "tap", `start + ${v2}(${x}.0, ${y}.0) * ${texel}`)}
   ${decl(f, "tapDepth", `min(abs(${sample("depthSampler", "tap")}.r), 65000.0)`)}
-  if (tapDepth < 0.000001) { tapDepth = ${wgsl ? "uniforms.cameraFar" : "cameraFar"}; }
+  if (tapDepth < 0.000001) { tapDepth = cameraFar; }
   ${decl(f, "weight", `${x ? "fraction.x" : "(1.0-fraction.x)"} * ${y ? "fraction.y" : "(1.0-fraction.y)"} / (1.0 + 100.0 * abs(tapDepth-depth) / max(depth, 0.1))`)}
   fog += ${sample("textureSampler", "tap")} * weight;
   total += weight;
@@ -268,12 +254,10 @@ ${[
   .join("\n")}
 fog /= max(total, 0.000001);
 ${decl(v3, "color", `${linear ? "base.rgb" : `pow(max(base.rgb, ${v3}(0.0)), ${v3}(2.2))`} * fog.a + fog.rgb`)}
-${wgsl ? "fragmentOutputs.color" : "gl_FragColor"} = ${v4}(${linear ? "color" : `pow(max(color, ${v3}(0.0)), ${v3}(1.0/2.2))`}, base.a);
-${wgsl ? "return fragmentOutputs;" : ""}`;
+gl_FragColor = ${v4}(${linear ? "color" : `pow(max(color, ${v3}(0.0)), ${v3}(1.0/2.2))`}, base.a);
+`;
   return (
     header +
-    (wgsl
-      ? `@fragment fn main(input: FragmentInputs) -> FragmentOutputs { ${body} }`
-      : `void main() { ${body} }`)
+    `void main() { ${body} }`
   );
 }

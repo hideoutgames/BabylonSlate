@@ -37,7 +37,7 @@ const limit = (value: number | undefined, maximum: number) =>
     : maximum;
 
 /** Reads an already-produced matrix without asking Babylon to update projection. */
-function orthographicExtents(projection: Matrix | null, halfZ: boolean) {
+function orthographicExtents(projection: Matrix | null) {
   if (!projection) return null;
   const m = projection.m;
   if (m[15] !== 1 || m[3] !== 0 || m[7] !== 0 || m[11] !== 0) return null;
@@ -46,7 +46,7 @@ function orthographicExtents(projection: Matrix | null, halfZ: boolean) {
   const x1 = (1 - m[12]) / m[0];
   const y0 = (-1 - m[13]) / m[5];
   const y1 = (1 - m[13]) / m[5];
-  const z0 = ((halfZ ? 0 : -1) - m[14]) / m[10];
+  const z0 = (-1 - m[14]) / m[10];
   const z1 = (1 - m[14]) / m[10];
   return {
     min: [
@@ -107,7 +107,6 @@ export function captureShadowDiagnostics(
             ? "webgl1"
             : "webgl2",
       adapter: engineAdapterInfo(engine),
-      ndcHalfZRange: engine.isNDCHalfZRange,
       reverseDepthBuffer: engine.useReverseDepthBuffer,
     },
     surfaceMode: state.mode,
@@ -252,7 +251,7 @@ export function captureShadowDiagnostics(
                     generator instanceof CascadedShadowGenerator
                       ? generator.getCascadeProjectionMatrix(layer)
                       : generator.projectionMatrix;
-                  const extents = orthographicExtents(projection, engine.isNDCHalfZRange);
+                  const extents = orthographicExtents(projection);
                   return {
                     layer,
                     scope: map?.isCube ? "last-rendered-cube-face" : "layer",

@@ -322,7 +322,7 @@ function gridIndices(columns: number, rows: number, river: boolean): number[] {
 /**
  * Global Water's triangles. Its dense columns run the grid's whole length, so far from the camera, where rows are
  * hundreds of metres long, a full grid draws cells far longer than wide: slivers a fraction of a pixel wide that crowd
- * the vanishing point, cost a triangle each and leak pixels on the software WebGPU rasterizer. Each grid line keeps only
+ * the vanishing point and cost a triangle each. Each grid line keeps only
  * columns about as far apart as its rows (the shorter row beside it), so far cells stay square; the strip between two
  * lines zips their kept vertices together, so every edge is shared by both its triangles and nothing cracks. Near the
  * camera every column is kept and the triangles are the full grid's. Vertices are unchanged: unused ones are not drawn.

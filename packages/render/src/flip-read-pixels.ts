@@ -1,7 +1,7 @@
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 
 /**
- * Copy Babylon RGBA render targets to Canvas2D / PNG. Both backends use flipped RTT rows.
+ * Copy Babylon RGBA render targets to Canvas2D / PNG. A render target's rows are read bottom-up.
  * An `out` array of exactly `width * height * 4` bytes is filled and returned instead of a new one.
  */
 export function flipReadPixelsRgba(
@@ -43,13 +43,13 @@ export function createRttCanvasBlitter() {
   return {
     /**
      * Read the target into the reused buffer. Use the resolved view, not the
-     * buffer: WebGPU removes its row padding into a shorter prefix view.
+     * buffer, which is longer than the frame.
      */
     read(texture: BaseTexture): Promise<ArrayBufferView> | null {
       const { width, height } = texture.getSize();
       if (!readback || readbackWidth !== width || readbackHeight !== height) {
-        // WebGPU copies rows padded to 256 bytes into the caller's buffer
-        // before repacking them in place; WebGL accepts the larger buffer.
+        // The buffer has room for rows padded to 256 bytes; the frame's
+        // `width * height * 4` bytes are read into its start.
         readback = new Uint8Array(Math.ceil((width * 4) / 256) * 256 * height);
         readbackWidth = width;
         readbackHeight = height;

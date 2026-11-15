@@ -1,35 +1,29 @@
-/** Shared GLSL/WGSL syntax helpers for the ambient occlusion and other spatial passes. */
-export function syntax(wgsl: boolean) {
-  const v2 = wgsl ? "vec2f" : "vec2",
-    v3 = wgsl ? "vec3f" : "vec3",
-    v4 = wgsl ? "vec4f" : "vec4",
-    f = wgsl ? "f32" : "float";
+/** Shared GLSL syntax helpers for the ambient occlusion and other spatial passes. */
+export function syntax() {
+  const v2 = "vec2",
+    v3 = "vec3",
+    v4 = "vec4",
+    f = "float";
   return {
     v2, v3, v4, f,
-    uv: wgsl ? "input.vUV" : "vUV",
-    u: (name: string) => (wgsl ? `uniforms.${name}` : name),
+    uv: "vUV",
+    u: (name: string) => name,
     decl: (type: string, name: string, value: string) =>
-      wgsl ? `var ${name}: ${type} = ${value};` : `${type} ${name} = ${value};`,
+      `${type} ${name} = ${value};`,
     field: (type: string, name: string) =>
-      wgsl ? `uniform ${name}: ${type};` : `uniform ${type} ${name};`,
+      `uniform ${type} ${name};`,
     texture: (name: string) =>
-      wgsl
-        ? `var ${name}: texture_2d<f32>; var ${name}Sampler: sampler;`
-        : `uniform sampler2D ${name};`,
+      `uniform sampler2D ${name};`,
     /** One texel of the texture `name` in uv. */
-    texelUv: (name: string) => (wgsl ? `(1.0 / vec2f(textureDimensions(${name}, 0)))` : `(1.0 / vec2(textureSize(${name}, 0)))`),
+    texelUv: (name: string) => `(1.0 / vec2(textureSize(${name}, 0)))`,
     sample: (name: string, at: string) =>
-      wgsl
-        ? `textureSampleLevel(${name}, ${name}Sampler, ${at}, 0.0)`
-        : `texture2D(${name}, ${at})`,
+      `texture2D(${name}, ${at})`,
     loop: (name: string, start: number, end: number) =>
-      `for (${wgsl ? `var ${name}: i32` : `int ${name}`} = ${start}; ${name} < ${end}; ${name}++)`,
+      `for (int ${name} = ${start}; ${name} < ${end}; ${name}++)`,
     output: (value: string) =>
-      `${wgsl ? "fragmentOutputs.color" : "gl_FragColor"} = ${value}; return${wgsl ? " fragmentOutputs" : ""};`,
+      `gl_FragColor = ${value}; return;`,
     main: (body: string) =>
-      wgsl
-        ? `@fragment fn main(input: FragmentInputs) -> FragmentOutputs { ${body} }`
-        : `void main() { ${body} }`,
+      `void main() { ${body} }`,
   };
 }
 
@@ -48,8 +42,8 @@ export function syntax(wgsl: boolean) {
  * `aoSettings` (radius, strength, max distance, depth bias),
  * `aoCamera` (handedness sign, orthographic flag) and `aoTexelSize`.
  */
-export function ambientOcclusionShader(wgsl: boolean, samples: number): string {
-  const { v2, v3, v4, f, uv, u, decl, field, texture, texelUv, sample, loop, output, main } = syntax(wgsl);
+export function ambientOcclusionShader(samples: number): string {
+  const { v2, v3, v4, f, uv, u, decl, field, texture, texelUv, sample, loop, output, main } = syntax();
   /** Declares `name`, the view-space point a depth texel at `at` shows, from its depth. */
   const point = (name: string, at: string, depth: string) => `
 ${decl(v4, `${name}Unprojected`, `${u("aoInverseProjection")} * ${v4}(${at} * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
@@ -60,10 +54,10 @@ if (${u("aoCamera")}.y > 0.5) { ${name} = ${v3}(${name}Ray.xy, ${depth} * ${u("a
   const neighbour = (name: string, offset: string) => `
 ${decl(f, `${name}Depth`, `abs(${sample("depthSampler", `centreUv + ${offset} * depthTexel`)}.r)`)}
 ${point(`${name}Point`, `(centreUv + ${offset} * depthTexel)`, `${name}Depth`)}`;
-  const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
+  const header = `varying vec2 vUV;
 ${texture("depthSampler")}${texture("normalSampler")}
-${field(wgsl ? "mat4x4f" : "mat4", "aoProjection")}${field(wgsl ? "mat4x4f" : "mat4", "aoInverseProjection")}
-${field(wgsl ? "mat4x4f" : "mat4", "aoView")}
+${field("mat4", "aoProjection")}${field("mat4", "aoInverseProjection")}
+${field("mat4", "aoView")}
 ${field(v4, "aoSettings")}${field(v2, "aoCamera")}${field(v2, "aoTexelSize")}
 `;
   const body = `
@@ -139,9 +133,9 @@ ${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
  * Separable depth-aware blur at occlusion resolution. `aoBlurStep` is one
  * occlusion texel along the blur axis; taps across a depth edge are rejected.
  */
-export function ambientOcclusionBlurShader(wgsl: boolean): string {
-  const { v2, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax(wgsl);
-  const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
+export function ambientOcclusionBlurShader(): string {
+  const { v2, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax();
+  const header = `varying vec2 vUV;
 ${texture("textureSampler")}${texture("depthSampler")}${field(v2, "aoBlurStep")}
 `;
   const body = `
@@ -165,9 +159,9 @@ ${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
  * Full-resolution composition: a depth-weighted four-tap upsample of the
  * blurred occlusion multiplies scene color in linear space.
  */
-export function ambientOcclusionCompositeShader(wgsl: boolean, linear: boolean): string {
-  const { v2, v3, v4, f, uv, u, decl, field, texture, sample, output, main } = syntax(wgsl);
-  const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
+export function ambientOcclusionCompositeShader(linear: boolean): string {
+  const { v2, v3, v4, f, uv, u, decl, field, texture, sample, output, main } = syntax();
+  const header = `varying vec2 vUV;
 ${texture("textureSampler")}${texture("mainSampler")}${texture("depthSampler")}
 ${field(v2, "aoTexelSize")}
 `;

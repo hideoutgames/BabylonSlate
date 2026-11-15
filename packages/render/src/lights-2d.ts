@@ -38,17 +38,11 @@ export type Light2DRecord = {
   error?: string;
 };
 
-/** The block's GLSL and WGSL declarations; their layout matches `sceneLights2D`'s buffer. */
+/** The block's GLSL declaration; its layout matches `sceneLights2D`'s buffer. */
 export const HAPTIC_2D_LIGHTS_GLSL = `layout(std140) uniform Haptic2DLights {
 vec4 haptic2DHeader;
 vec4 haptic2DLights[${LIGHT_2D_MAXIMUM * RECORD_VEC4S}];
 };
-`;
-export const HAPTIC_2D_LIGHTS_WGSL = `struct Haptic2DLightsBlock {
-haptic2DHeader: vec4f,
-haptic2DLights: array<vec4f, ${LIGHT_2D_MAXIMUM * RECORD_VEC4S}>,
-};
-var<uniform> Haptic2DLights : Haptic2DLightsBlock;
 `;
 
 /**
@@ -81,34 +75,6 @@ float edge = texture2D(${HAPTIC_2D_SHADOW_SAMPLER}, vec2(atan(offset.y, offset.x
 falloff *= 1.0 - smoothstep(edge, edge + 0.02, distance2D / place.z);
 }
 total += tint.rgb * falloff;
-}
-return total;
-}
-`;
-export const HAPTIC_2D_LIGHT_FUNCTION_WGSL = `fn haptic2DLight(position: vec2f) -> vec3f {
-var total = Haptic2DLights.haptic2DHeader.yzw;
-let count = i32(Haptic2DLights.haptic2DHeader.x);
-for (var i: i32 = 0; i < ${LIGHT_2D_MAXIMUM}; i = i + 1) {
-if (i >= count) { break; }
-let place = Haptic2DLights.haptic2DLights[i * 4];
-let offset = position - place.xy;
-let distance2D = length(offset);
-if (distance2D >= place.z) { continue; }
-let t = clamp((distance2D - place.w) / max(place.z - place.w, 0.0001), 0.0, 1.0);
-var falloff = (1.0 - t) * (1.0 - t);
-let tint = Haptic2DLights.haptic2DLights[i * 4 + 1];
-if (tint.w > 0.5) {
-let cone = Haptic2DLights.haptic2DLights[i * 4 + 2];
-var along = 1.0;
-if (distance2D > 0.0001) { along = dot(offset / distance2D, cone.xy); }
-falloff = falloff * smoothstep(0.0, 1.0, clamp((along - cone.z) / max(cone.w - cone.z, 0.0001), 0.0, 1.0));
-}
-let shade = Haptic2DLights.haptic2DLights[i * 4 + 3];
-if (shade.y > 0.5) {
-let edge = textureSampleLevel(${HAPTIC_2D_SHADOW_SAMPLER}, ${HAPTIC_2D_SHADOW_SAMPLER}Sampler, vec2f(atan2(offset.y, offset.x) * 0.15915494 + 0.5, shade.x), 0.0).r;
-falloff = falloff * (1.0 - smoothstep(edge, edge + 0.02, distance2D / place.z));
-}
-total = total + tint.rgb * falloff;
 }
 return total;
 }
@@ -186,7 +152,7 @@ function sceneLights2D(scene: Scene): SceneLights2D {
 /** The block, created with its first reader and rewritten before each frame from then on. */
 function lightBuffer(scene: Scene, state: SceneLights2D): UniformBuffer {
   if (state.buffer) return state.buffer;
-  // Not dynamic, as the 3D light block: on WebGPU a write moves the block to another buffer, so draws keep their values.
+  // Not dynamic, as the 3D light block: a static uniform buffer.
   const buffer = new UniformBuffer(scene.getEngine(), undefined, false, "Haptic2DLights");
   buffer.addUniform("haptic2DHeader", 4);
   buffer.addUniform("haptic2DLights", 4, LIGHT_2D_MAXIMUM * RECORD_VEC4S);
@@ -372,8 +338,7 @@ function shadowMap(scene: Scene, state: SceneLights2D): ShadowMap {
   const engine = scene.getEngine();
   const data = new Uint16Array(SHADOW_2D_BINS * SHADOWED_2D_MAXIMUM).fill(ToHalfFloat(1));
   const bytes = data.byteLength;
-  // 8 KiB the 2D-lit programs always bind: made even when the ledger has no room, unrecorded then, since WebGPU draws
-  // only with every declared texture bound.
+  // 8 KiB the 2D-lit programs always bind: made even when the ledger has no room, unrecorded then.
   const lease = beginManagedRenderAllocation(engine, bytes) ?? null;
   const texture = RawTexture.CreateRTexture(data, SHADOW_2D_BINS, SHADOWED_2D_MAXIMUM, scene, false, false,
     Constants.TEXTURE_BILINEAR_SAMPLINGMODE, Constants.TEXTURETYPE_HALF_FLOAT);
@@ -422,7 +387,7 @@ function drawShadows(scene: Scene, state: SceneLights2D, shadowed: readonly Ligh
   if (upload) map.texture.update(map.data);
 }
 
-/** Bind the 2D shadow map for a draw with `effect`; always bound, as WebGPU draws only with every declared texture. */
+/** Bind the 2D shadow map for a draw with `effect`; always bound, as every 2D-lit program declares it. */
 export function bind2DShadows(scene: Scene, effect: Effect): void {
   effect.setTexture(HAPTIC_2D_SHADOW_SAMPLER, shadowMap(scene, sceneLights2D(scene)).texture as BaseTexture);
 }

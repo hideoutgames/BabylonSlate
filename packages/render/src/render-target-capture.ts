@@ -48,10 +48,7 @@ import type { AttachedPostProcessStack } from "./post-process-material";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { registerSceneAuxiliaryViews } from "./scene-auxiliary-views";
 import { enterDrawPass, leaveDrawPass } from "./draw-passes";
-import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
 import { findSceneShadowController, type ViewShadows } from "./shadow-controller";
-import { isFirstDrawHeld, setFirstDrawsUrgent } from "./shadow-first-draw";
-import { leavesOutCasters } from "./shadow-caster-warm";
 
 export { isRenderTargetCaptureCandidate } from "./render-target-capture-state";
 
@@ -155,8 +152,6 @@ type Capture = {
   local: Matrix;
   fallback?: Matrix;
   requested: boolean;
-  /** Its manual Fast request waited a frame for a shared shadow map's held first draw; it waits no more. */
-  waitedForShadows: boolean;
 };
 type CaptureBuffer = { texture: CaptureRenderTarget; lease: ManagedRenderLease };
 /**
@@ -340,7 +335,7 @@ export class RenderTargetCaptures {
     const local = transform ? authoredTransformMatrix(transform) : Matrix.Identity();
     this.captures.set(actorId, {
       camera, settings, includeIds: new Set(settings.actorIds), root, local, fallback,
-      requested: previous?.requested ?? false, waitedForShadows: previous?.waitedForShadows ?? false,
+      requested: previous?.requested ?? false,
     });
     camera.fov = settings.fieldOfView * Math.PI / 180;
     camera.minZ = settings.nearClip;
@@ -407,8 +402,6 @@ export class RenderTargetCaptures {
    */
   render(): void {
     this.pendingViews.length = 0;
-    // A nested call (inside a capture's own draw) keeps its frame's state.
-    if (!drawing.has(this.scene)) setFirstDrawsUrgent(this.scene, false);
     if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
     this.findShown();
@@ -456,19 +449,6 @@ export class RenderTargetCaptures {
         // A capture of chosen actors outlines only them; actor roots can change with any mesh.
         if (settings.captureOnlyActors && this.refreshRoots()) this.refreshOutlineFilters();
         this.pendingViews.push({ actorId, guid, capture, target });
-        // It draws after the frame's shadow maps and publishes what they show: a new map draws for it now, rather
-        // than wait, neutral, for its casters' pipelines, and a drawn map draws again with every caster it left out
-        // for theirs (`firstDrawsUrgent`).
-        if (!settings.captureEveryFrame) setFirstDrawsUrgent(this.scene, true);
-        continue;
-      }
-      // A manual Fast colour capture draws here, before the frame's shadow maps: one that would publish a new map
-      // whose first draw, or a drawn map whose new casters, a steady frame held back for their pipelines waits one
-      // frame, in which those maps draw with every caster.
-      if (!rehearsal && !settings.captureEveryFrame && !target.depth && !target.normals && !capture.waitedForShadows &&
-        this.shadowsHeldBack()) {
-        capture.waitedForShadows = true;
-        setFirstDrawsUrgent(this.scene, true);
         continue;
       }
       const meshes = this.collectCandidates(capture, target);
@@ -497,23 +477,9 @@ export class RenderTargetCaptures {
           this.retireCaptureMaterial(target, material);
         }
       }
-      // WebGPU, only inside a deferring view's frame: a draw whose pipeline is
-      // still compiling is skipped. The capture then neither publishes nor
-      // consumes a manual request, and that view holds its last image until a
-      // complete draw. Any other owner's frame creates pipelines synchronously.
-      const deferral = beginPipelineDeferral(this.scene.getEngine(),
-        (renderPassId) => pass.renderPassIds.includes(renderPassId), { nested: true });
-      let drawn: boolean;
-      let skipped: number;
-      try {
-        // A pass that skipped a draw stores nothing: the output keeps its last complete image. Closing twice is safe.
-        const complete = () => !(deferral?.close() ?? 0);
-        drawn = this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(pass,
-          target.scene ? { texture: destination, linear: target.linear, complete } : null)));
-      } finally {
-        skipped = deferral?.close() ?? 0;
-      }
-      if (!drawn || skipped) continue;
+      const drawn = this.stageDraw(target, guid, actorId, () => this.draw(() => this.drawReady(pass,
+        target.scene ? { texture: destination, linear: target.linear } : null)));
+      if (!drawn) continue;
       if (rehearsal) {
         this.pendingRehearsals.delete(guid);
         this.rehearsed.add(guid);
@@ -746,25 +712,9 @@ export class RenderTargetCaptures {
     const owner = this.ownerOf(mesh);
     return owner !== undefined && capture.includeIds.has(owner);
   }
-  /**
-   * Whether a steady frame held back part of an admitted shadow map for its casters' pipelines (WebGPU): a first draw
-   * (`isFirstDrawHeld`), or casters new to a drawn map (`leavesOutCasters`). A light switched off, or casting none,
-   * draws no map in the frame the capture would wait for.
-   */
-  private shadowsHeldBack(): boolean {
-    const controller = findSceneShadowController(this.scene);
-    if (!controller) return false;
-    for (const light of this.scene.lights) {
-      if (!light.isEnabled() || !light.shadowEnabled) continue;
-      const map = controller.generator(light);
-      if (map && (isFirstDrawHeld(map) || leavesOutCasters(map))) return true;
-    }
-    return false;
-  }
   /** A drawn frame consumes the manual request and publishes the front buffer. */
   private published(capture: Capture, target: Target): void {
     capture.requested = false;
-    capture.waitedForShadows = false;
     const wasPublished = target.published;
     target.published = true;
     if (!wasPublished) this.publishTextures();
@@ -882,9 +832,7 @@ export class RenderTargetCaptures {
       const objects: FrameGraphObjectList = { meshes, particleSystems: particles };
       camera.outputRenderTarget = texture;
       // Planar water mirrors are per scene view; capture water keeps its other reflections.
-      // Drawn inside the scene view's frame; it defers only while that frame
-      // does, which then holds, so a partly drawn capture is never presented.
-      renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects, screenEffects: quality === "fullQuality" }, deferPipelines: true });
+      renderer = new SceneRenderCoordinator(this.scene, { waterPlanarReflections: false, auxiliary: { camera, objects, screenEffects: quality === "fullQuality" } });
       shadows = findSceneShadowController(this.scene)?.attachView(camera, captureSunCascades(definition)) ?? null;
       const target: Target = {
         key, definition, quality, texture, lease, owner, linear: false,
@@ -1002,10 +950,9 @@ export class RenderTargetCaptures {
    *
    * A kept wrapper still prepares its defines on each capture, as no dirty call is sure to reach it: `Material.markDirty`,
    * the define-dirty marks and `NodeMaterial.build` touch only submeshes whose material in the current pass (the main
-   * pass, where they run) is theirs, never a variant's, and on WebGPU only wrappers holding that material's context. A
-   * frozen variant (the editor freezes library Materials) would otherwise answer from its last readiness after a define
-   * input changed in place, such as a lattice cage attaching to or leaving the mesh, and draw the old program.
-   * Unchanged defines cost no new Effect.
+   * pass, where they run) is theirs, never a variant's. A frozen variant (the editor freezes library Materials) would
+   * otherwise answer from its last readiness after a define input changed in place, such as a lattice cage attaching to
+   * or leaving the mesh, and draw the old program. Unchanged defines cost no new Effect.
    */
   private overrideMaterial(target: Target, mesh: AbstractMesh): void {
     const slots = target.normalSlots.get(mesh);
@@ -1114,7 +1061,7 @@ export class RenderTargetCaptures {
    * image display-referred, as each Material wrote it when a capture drew with image processing in its Materials and
    * so compiled every one of them a second time.
    */
-  private drawReady(pass: CaptureRenderTarget, output: { texture: CaptureRenderTarget; linear: boolean; complete(): boolean } | null): boolean {
+  private drawReady(pass: CaptureRenderTarget, output: { texture: CaptureRenderTarget; linear: boolean } | null): boolean {
     let ready = false;
     const conversion = output ? this.conversion ??= new DisplayConversion(this.scene.getEngine()) : null;
     // Readiness initializes the native renderer, so it needs the same
@@ -1128,7 +1075,7 @@ export class RenderTargetCaptures {
       ready = (!conversion || conversion.ready(output!.linear)) && pass.isReadyForRendering();
       if (!ready) return;
       pass.renderPrepared();
-      if (!conversion || !output!.complete()) return;
+      if (!conversion) return;
       const stored = output!.texture.renderTarget!;
       engine.bindFramebuffer(stored);
       conversion.draw(pass);
@@ -1183,7 +1130,7 @@ export class RenderTargetCaptures {
   }
   /**
    * The view's graph borrows the output: free the output and its lease only
-   * after the graph confirms native release (WebGPU destroys at frame end).
+   * after the graph confirms native release.
    * An uncertain release keeps both, quarantined.
    */
   private retireView(target: Target, view: CaptureView): void {
@@ -1227,7 +1174,6 @@ export class RenderTargetCaptures {
     this.releaseAuxiliaryViews();
     this.releasePassLists();
     this.pendingViews.length = 0;
-    setFirstDrawsUrgent(this.scene, false);
     this.scene.onNewMeshAddedObservable.remove(this.addedMesh);
     this.scene.onMeshRemovedObservable.remove(this.removedMesh);
     this.clear();

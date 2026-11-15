@@ -287,11 +287,6 @@ it("multisamples a world view's scene pass at the tier's Anti-Aliasing, within t
   engine.getCaps().maxMSAASamples = 1;
   allowSceneScreenShadows(scene, () => false);
   expect(mode("msaa4").samples).toBe(1);
-  // WebGPU multisamples at 4 only.
-  engine.getCaps().maxMSAASamples = 4;
-  Object.defineProperty(engine, "isWebGPU", { value: true, configurable: true });
-  allowSceneScreenShadows(scene, () => false);
-  expect(mode("msaa2").samples).toBe(4);
 });
 
 it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {

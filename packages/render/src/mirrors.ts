@@ -67,7 +67,6 @@ import { managedRenderTargetResources } from "./render-target-resource-cost";
 import { connectGeometrySurfaceOutput, GeometrySurfaceOutputBlock } from "./geometry-surface-output-block";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
 import type { MaterialPlumbing } from "./material-block-registry";
-import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { sceneViewRenderSize } from "./scene-output-scale";
 import { upscaledRenderSize } from "./scene-effects";
 import { sceneRenderingSettings } from "./render-settings";
@@ -121,7 +120,7 @@ type Surface = MirrorCandidate & {
 
 /** What a Moving Actors reflection is cleared to: no colour, and alpha 1, which a drawn fragment turns to 0. */
 const OPEN = new Color4(0, 0, 0, 1);
-/** Blend factors as both backends' alpha state takes them: the GL values. */
+/** Blend factors as the Engine's alpha state takes them: the GL values. */
 const BLEND_ZERO = 0;
 const BLEND_ONE = 1;
 
@@ -393,7 +392,7 @@ class SceneMirrors {
   private mirrorAndCull(surface: Surface, camera: Camera, target: PlanarMirrorTargetState, listed = false): boolean {
     const engine = this.scene.getEngine();
     if (!this.math.mirror(camera.getViewMatrix(), camera.globalPosition, surface.plane, this.projection,
-      engine.useReverseDepthBuffer, engine.isNDCHalfZRange, target.mirror.mirrorView, target.projection)) return false;
+      engine.useReverseDepthBuffer, target.mirror.mirrorView, target.projection)) return false;
     const eye = this.math.eye;
     const mirror = target.mirror;
     mirror.position.set(eye[0]!, eye[1]!, eye[2]!);
@@ -550,9 +549,8 @@ function builtInMirrorMaterial(scene: Scene): NodeMaterial {
   const existing = builtInMaterials.get(scene);
   if (existing) return existing;
   const material = new NodeMaterial("mirrorSurface", scene, {
-    shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+    shaderLanguage: ShaderLanguage.GLSL,
   });
-  if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   const created: NodeMaterialBlock[] = [];
   const plumbing: MaterialPlumbing = {};
   const outputs = createSurfacePlumbing("mirrorSurface", created, plumbing);

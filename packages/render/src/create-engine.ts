@@ -83,7 +83,6 @@ import { CameraShakeView } from "./camera-shake-view";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
-import { webGpuPipelineCacheMisses } from "./webgpu-on-demand";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
@@ -253,7 +252,7 @@ import {
   SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 import { findSceneShadowController } from "./shadow-controller";
-import { createHeldThreadTimer, firstFrameCompletionMs, type HeldThreadTimer } from "./stall-deadline";
+import { createHeldThreadTimer, SCENE_DRIVER_COMPILE_TIMEOUT_MS, type HeldThreadTimer } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
 
 import { createEditorViewportTools } from "./editor-viewport-tools";
@@ -356,10 +355,10 @@ const INITIAL_SNAPSHOT_CAPACITY = 256;
 /** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
 const FRAME_PHASE_LEASE_FRAMES = 600;
 /**
- * A hold for GPU work (`onPipelineHold`) pauses Play only once the view has held its image this long, so a
+ * A compile hold (`onCompileHold`) pauses Play only once the view has held its image this long, so a
  * brief wait costs no stop; the release is immediate.
  */
-export const PIPELINE_HOLD_PAUSE_DELAY_MS = 250;
+export const COMPILE_HOLD_PAUSE_DELAY_MS = 250;
 /**
  * The project Engine's construction options, for editor views and the app
  * Engine alike. A new object each time: Babylon writes resolved values back
@@ -500,11 +499,11 @@ function initializeEngine(
   if (!presentRtt && !options.previewLighting && options.playMode) allowSceneOcclusionCulling(scene, "setting");
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
-  // The world view draws every frame and presents only rendered ones, so a
-  // draw whose WebGPU pipeline is still compiling holds the last image.
+  // The world view draws every frame and presents only rendered ones, so it
+  // reports a compile hold while its own effects still link.
   // A world view culls by occlusion while its scene does; previews never do.
   const worldRenderer = new SceneRenderCoordinator(scene, {
-    deferPipelines: true, occlusion: !presentRtt && !options.previewLighting,
+    compileHolds: true, occlusion: !presentRtt && !options.previewLighting,
     // A game's view only: the editor viewport's depth also holds its helper visuals.
     seedsFromSceneDepth: options.playMode === true,
   });
@@ -536,8 +535,6 @@ function initializeEngine(
     copied: boolean;
     completionStarted: boolean;
     errorsCleared: boolean;
-    /** WebGPU render pipelines the latest submitted draw created; they build inside its GPU completion. */
-    pipelines: number;
     /** Restarts the loading deadline (progress that is not a compile: a starting-state frame). */
     restart?: () => void;
   };
@@ -595,7 +592,7 @@ function initializeEngine(
   const expirePresentation = (key: string) => {
     const pending = pendingPresentations.get(key);
     if (!pending) return;
-    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}; render pipelines created: ${pending.pipelines}.`), key);
+    cancelPresentation(new Error(`The scene did not present a frame before the loading deadline. Ready: ${pending.ready}; draws: ${pending.attempts}; rendered: ${pending.rendered}; GPU pending: ${Boolean(pending.submission)}; copied: ${pending.copied}.`), key);
   };
   /** Names the GPU memory the Engine held: a mobile browser loses the context under memory pressure. */
   const contextLostError = () => {
@@ -1195,8 +1192,8 @@ function initializeEngine(
       // Engine-wide and kept across Play sessions, so a change that is not undone shows.
       "presentation.framesInFlight": String(frameBackpressure.mode),
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
-      "presentation.preserve": engine.isWebGPU ? "n/a"
-        : String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
+      "presentation.preserve":
+        String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
     };
   };
   // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
@@ -1278,8 +1275,7 @@ function initializeEngine(
       worldRenderer.invalidate();
     appliedWaterRevision = waterRevision;
   };
-  // Apply at the host boundary below, never inside Scene.render. WebGPU
-  // attachment resizing emits beginFrame and can re-enter view admission.
+  // Apply at the host boundary below, never inside Scene.render.
   scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
 
   const sceneLayerCompositor = options.playMode
@@ -1924,9 +1920,7 @@ function initializeEngine(
     return registeredView ? enabled === 1 : enabled === 0;
   };
   const gpuAttribution = (): GpuAttribution => {
-    // Babylon's WebGPU whole-frame counter can contain a synthetic zero when
-    // command-encoder timestamps are absent. Per-pass timing is separate.
-    if (engine.isWebGPU || !engine.getCaps().timerQuery) return "unavailable";
+    if (!engine.getCaps().timerQuery) return "unavailable";
     if (!soleRenderingView()) return "shared-engine";
     return engine.getGPUFrameTimeCounter().count > 0 ? "view" : "unavailable";
   };
@@ -2304,13 +2298,11 @@ function initializeEngine(
         // Staged meshes are shown only for the starting-state frames, which are never presented.
         if (key === "world") releaseStaged();
         pending.copied = false;
-        const pipelinesBefore = webGpuPipelineCacheMisses();
         const submission = submitPresentedFrame(engine, () => {
           pending.attempts += 1;
           const rendered = draw();
           pending.rendered = rendered && presentationReady(pending);
         }, { errorStateKnownClear: pending.errorsCleared });
-        pending.pipelines = webGpuPipelineCacheMisses() - pipelinesBefore;
         pending.submission = submission;
         // Unproven until this attempt's own fence-time read; a cancelled attempt leaves it unread.
         pending.errorsCleared = false;
@@ -2322,12 +2314,10 @@ function initializeEngine(
           // acknowledging before both this owner's fence and copy finish. The
           // fence is polled without blocking, so this budget also spans the
           // driver compiling the draw's programs: the longest compile the
-          // loading budgets already tolerate. WebGPU builds every render
-          // pipeline the draw created in the GPU queue, inside this wait and
-          // with no progress to observe, so each adds an allowance.
+          // loading budgets already tolerate.
           if (!pending.completionStarted) {
             pending.completionStarted = true;
-            pending.timer.restart(firstFrameCompletionMs(pending.pipelines));
+            pending.timer.restart(SCENE_DRIVER_COMPILE_TIMEOUT_MS);
           }
         }
         void submission.completed.then(() => {
@@ -2350,7 +2340,7 @@ function initializeEngine(
         if (!coherentFrame) {
           holdReason = result.reason ?? (result.rendered ? HELD_FRAME_LABELS.unpresentable : HELD_FRAME_LABELS.invalidated);
         }
-        syncPipelineHold(worldRenderer.holdingForPipelines);
+        syncCompileHold(worldRenderer.holdingForCompiles);
         return result.readyForPresentation;
       }, () => {
         // A newly bound output may invalidate admission between scheduling and
@@ -2388,7 +2378,7 @@ function initializeEngine(
         presentationStats.held += 1;
         heldFrames.count(holdReason ?? HELD_FRAME_OTHER);
         if (frameReportFeed.active) scheduler.requestPausedFrame();
-        // A held frame (pipelines or shaders compiling, an unready output) retries at the full cap.
+        // A held frame (shaders compiling, an unready output) retries at the full cap.
         scheduler.noteActivity();
         return;
       }
@@ -2468,10 +2458,10 @@ function initializeEngine(
       // GPU timing only means this view when it owns the Engine's render —
       // siblings would fold their cost into the same counter.
       const sole = soleRenderingView();
-      if (!engine.isWebGPU && sole && presentationSignals && !rendererGpuLease && engine.getCaps().timerQuery) {
+      if (sole && presentationSignals && !rendererGpuLease && engine.getCaps().timerQuery) {
         rendererGpuLease = acquireEngineGpuTiming(engine);
       }
-      const counter = !engine.isWebGPU && presentationSignals && sole && engine.getCaps().timerQuery ? engine.getGPUFrameTimeCounter() : null;
+      const counter = presentationSignals && sole && engine.getCaps().timerQuery ? engine.getGPUFrameTimeCounter() : null;
       lastPressureSample.presentationMs = presentationSignals && previousFramePresented
         ? presentedAt - lastPresentedAt
         : null;
@@ -2534,7 +2524,7 @@ function initializeEngine(
     // latched its failure, which holds every later frame: restart the world's and the layers' preparation.
     worldRenderer.invalidate();
     sceneLayerCompositor?.invalidate();
-    syncPipelineHold(false);
+    syncCompileHold(false);
     // Babylon rebuilds retained textures/material effects before notifying.
     // Releasing the shared cache here destroys those newly restored resources
     // and leaves other live clients holding disposed wrappers.
@@ -2586,16 +2576,16 @@ function initializeEngine(
   let callerPaused = false;
   let sceneStreamingPaused = false;
   let gameTimePaused = false;
-  /** The world view holds its last image for GPU work: WebGPU pipelines, or effects still
-   * compiling on any backend (`SceneRenderCoordinator.holdingForPipelines`). */
-  let pipelineHold = false;
+  /** The world view holds its last image for effects still compiling
+   * (`SceneRenderCoordinator.holdingForCompiles`). */
+  let compileHold = false;
   /** Play pauses its game time, audio and particles while the view holds, as
    * for a blocking load, but keeps drawing: the frame that finds the
-   * pipelines or effects ready ends the hold. Resuming never consumes the held interval. */
-  const heldForPipelines = () => pipelineHold && options.playMode === true;
+   * effects ready ends the hold. Resuming never consumes the held interval. */
+  const heldForCompiles = () => compileHold && options.playMode === true;
   const applyPause = () => {
     const paused = callerPaused || sceneStreamingPaused || gameTimePaused;
-    const held = heldForPipelines();
+    const held = heldForCompiles();
     setSceneGameTimePaused(scene, gameTimePaused || held);
     for (const layer of sceneLayerCompositor?.layers() ?? []) setSceneGameTimePaused(layer.scene, gameTimePaused || held);
     binding.paused = paused;
@@ -2607,17 +2597,17 @@ function initializeEngine(
   };
   /** When the current run of held frames began, until the hold pauses or ends. */
   let holdSince: number | undefined;
-  const syncPipelineHold = (held: boolean) => {
+  const syncCompileHold = (held: boolean) => {
     if (held) {
-      if (pipelineHold) return;
+      if (compileHold) return;
       const now = performance.now();
       holdSince ??= now;
-      if (now - holdSince < PIPELINE_HOLD_PAUSE_DELAY_MS) return;
+      if (now - holdSince < COMPILE_HOLD_PAUSE_DELAY_MS) return;
     } else holdSince = undefined;
-    if (held === pipelineHold) return;
-    pipelineHold = held;
+    if (held === compileHold) return;
+    compileHold = held;
     applyPause();
-    options.onPipelineHold?.(held);
+    options.onCompileHold?.(held);
   };
 
   const engineHandle: EngineHandle = {
@@ -2784,9 +2774,9 @@ function initializeEngine(
       }
       // No frame will ever end a hold the disposed view still has: a host that
       // keeps a `rendering` pause for it must not wait for one.
-      if (pipelineHold) {
-        pipelineHold = false;
-        options.onPipelineHold?.(false);
+      if (compileHold) {
+        compileHold = false;
+        options.onCompileHold?.(false);
       }
       markSessionTrail(`${trailView}: disposed`);
     },
@@ -3020,7 +3010,7 @@ function initializeEngine(
         if (layer) {
           followSceneRenderSettings(layer.scene, scene);
           pinFullRenderQuality(layer.scene);
-          setSceneGameTimePaused(layer.scene, gameTimePaused || heldForPipelines());
+          setSceneGameTimePaused(layer.scene, gameTimePaused || heldForCompiles());
         }
         syncOverlayLayer(command.layerId);
         syncPlayComposition();
@@ -3724,7 +3714,7 @@ function initializeEngine(
         () => { if (pendingPresentations.get(key) === pending) expirePresentation(key); },
         (now) => !pending.completionStarted && compiles.renew(now),
       );
-      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false, pipelines: 0 };
+      const pending: PendingPresentation = { promise, resolve, reject, timer, ready: false, attempts: 0, rendered: false, owner, submission: null, copied: false, completionStarted: false, errorsCleared: false };
       pending.restart = () => {
         if (pending.completionStarted || pendingPresentations.get(key) !== pending) return;
         pending.timer.restart();

@@ -48,7 +48,7 @@ const SUN_SHADOW_VIEWS = 4;
  */
 export const HAPTIC_SHADOW_VIEW_VEC4S = 8;
 
-/** The block's GLSL and WGSL declarations; their layout matches `hapticLightBuffer`. WGSL binds the buffer by the variable's name. */
+/** The block's GLSL declaration; its layout matches `hapticLightBuffer`. */
 export const HAPTIC_LIGHTS_GLSL = `layout(std140) uniform HapticLights {
 vec4 hapticCounts;
 vec4 hapticFillDirection;
@@ -70,26 +70,6 @@ export const HAPTIC_CLUSTERS_GLSL = `layout(std140) uniform HapticClusters {
 vec4 hapticClusterHeader[${CLUSTER_HEADER_FLOATS / 4}];
 uvec4 hapticClusterMasks[${CLUSTER_COUNT / 2}];
 };
-`;
-export const HAPTIC_CLUSTERS_WGSL = `struct HapticClustersBlock {
-hapticClusterHeader: array<vec4f, ${CLUSTER_HEADER_FLOATS / 4}>,
-hapticClusterMasks: array<vec4u, ${CLUSTER_COUNT / 2}>,
-};
-var<uniform> HapticClusters : HapticClustersBlock;
-`;
-export const HAPTIC_LIGHTS_WGSL = `struct HapticLightsBlock {
-hapticCounts: vec4f,
-hapticFillDirection: vec4f,
-hapticFillSky: vec4f,
-hapticFillGround: vec4f,
-hapticDirectional: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.directional * 2}>,
-hapticPoint: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.point * 3}>,
-hapticSpot: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.spot * 4}>,
-hapticRect: array<vec4f, ${HAPTIC_LIGHT_MAXIMUM.rect * 4}>,
-hapticShadowViews: array<vec4f, ${HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S}>,
-hapticSunShadow: array<vec4f, 4>,
-};
-var<uniform> HapticLights : HapticLightsBlock;
 `;
 
 /** A shadowed local light's map this frame and its first shadow view. */
@@ -123,9 +103,7 @@ const rect = new Float32Array(HAPTIC_LIGHT_MAXIMUM.rect * 16);
 function sceneLights(scene: Scene): SceneLights {
   let lights = scenes.get(scene);
   if (!lights) {
-    // Not dynamic: on WebGPU, a write after the frame's last update moves the block to another buffer, so draws keep the
-    // values they were bound with when it changes between them (a view drawing with its own sun map); a dynamic buffer
-    // has one, which every draw of the frame reads at its last values.
+    // Not dynamic: a static uniform buffer, which a view drawing with its own sun map writes again between draws.
     const buffer = new UniformBuffer(scene.getEngine(), undefined, false, "HapticLights");
     buffer.addUniform("hapticCounts", 4);
     buffer.addUniform("hapticFillDirection", 4);
@@ -266,8 +244,8 @@ export function hapticLightBuffer(scene: Scene): UniformBuffer {
 
 /** Bind the block for a draw with `effect`, which reads it. */
 export function bindHapticLights(scene: Scene, effect: Effect): void {
-  // Bound directly, never through bindToEffect: a UniformBuffer rebinds to its recorded Effect on every update, which
-  // on WebGPU writes into whichever draw context is current, possibly a released one, as the block updates between draws.
+  // Bound directly, never through bindToEffect: a UniformBuffer rebinds to its recorded Effect on every update, and
+  // the block updates between draws.
   const buffer = sceneLights(scene).buffer.getBuffer();
   if (buffer) effect.bindUniformBuffer(buffer, "HapticLights");
 }

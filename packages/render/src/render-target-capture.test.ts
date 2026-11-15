@@ -36,20 +36,10 @@ import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
 import { disposeMeshLatticeDeformer, setMeshLatticeDeformer } from "./lattice-deformer";
 import { applyEditorMaterialFreeze } from "./scene-perf";
-import { beginPipelineDeferral } from "./webgpu-pipeline-deferral";
-
-// NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
-vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./webgpu-pipeline-deferral")>();
-  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral) };
-});
-const { beginPipelineDeferral: actualBeginPipelineDeferral } =
-  await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 const engines: NullEngine[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
-  vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
   for (const engine of engines.splice(0)) engine.dispose();
 });
 function host(floatingOrigin = false) {
@@ -210,26 +200,6 @@ it("suspends every-frame captures without releasing them, while manual requests 
   captures.render();
   // The every-frame capture draws again; the manual one waits for its next request.
   expect(draws).toHaveLength(3);
-});
-
-it("stores and publishes nothing, and keeps a manual request, while its draw waits for a compiling pipeline", () => {
-  const { captures, draws, stored } = host();
-  const output = captures.acquireTexture("texture")!.resource;
-  captures.request("capture");
-  // Inside a deferring view's frame, a draw skipped for a pipeline still compiling.
-  vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: () => 1, waiting: () => true, warmed: () => false }));
-  captures.render();
-  expect(draws).toHaveLength(1);
-  // The pass lacks a mesh: its image never reaches the output, which keeps what it held.
-  expect(stored).toHaveLength(0);
-  expect(output.getSize()).not.toEqual({ width: 16, height: 8 });
-  vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
-  captures.render();
-  expect(draws).toHaveLength(2);
-  expect(stored).toHaveLength(1);
-  expect(output.getSize()).toEqual({ width: 16, height: 8 });
-  captures.render();
-  expect(draws).toHaveLength(2);
 });
 
 it("stores a Depth Pass capture as one half-float channel, charged at two bytes a pixel", () => {
@@ -623,8 +593,8 @@ it.each(["WorldNormal", "DepthPass"] as const)("prepares a frozen authored %s va
     return texture;
   });
   vi.spyOn(engine, "updateRawTexture3D").mockImplementation(() => {});
-  // As on WebGPU, each Material owns a context: a dirty call reaches only the draw wrappers holding its own. (WebGL has
-  // none, so the main pass's Material marking itself dirty there also reaches the capture pass's wrappers by chance.)
+  // Each Material owns a context here: a dirty call reaches only the draw wrappers holding its own. (Without contexts,
+  // the main pass's Material marking itself dirty also reaches the capture pass's wrappers by chance.)
   let contexts = 0;
   vi.spyOn(engine, "createMaterialContext").mockImplementation(() => ({ uniqueId: ++contexts, useVertexPulling: false, reset() {} }));
   const library = new MaterialLibrary();

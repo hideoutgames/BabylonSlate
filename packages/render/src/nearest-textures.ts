@@ -9,9 +9,8 @@ import { Constants } from "@babylonjs/core/Engines/constants";
  * own filtering, as they never come through `trackMaterialTexture`.
  *
  * The switch is live and reversible: a loaded texture changes its sampler in place and returns to the mode it loaded
- * with. WebGL reads the sampler from the texture; a WebGPU draw binds it with the texture, so every draw rebinds once
- * after a change, as a frozen Material may skip binding a run of draws (`render-target-capture` does the same). A
- * texture that loads while the switch is on samples nearest from its first draw.
+ * with. Every draw rebinds once after a change, as a frozen Material may skip binding a run of draws. A texture that
+ * loads while the switch is on samples nearest from its first draw.
  */
 interface EngineNearestTextures {
   enabled: boolean;

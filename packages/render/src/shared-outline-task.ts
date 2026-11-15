@@ -79,20 +79,20 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     if (view.scene !== graph.scene || view.isDisposed) throw new Error("Shared outline view does not belong to the live graph Scene.");
     this.view = view;
     this.outputTexture = graph.textureManager.createDanglingHandle();
-    registerSharedOutlineShaders(graph.engine.isWebGPU);
+    registerSharedOutlineShaders();
     this.compose = new EffectWrapper({
       name: `${name} Compose`, engine: graph.engine, useShaderStore: true,
       fragmentShader: SHARED_OUTLINE_COMPOSE_SHADER,
       uniformNames: ["screenSize", "tableSize", "maximumWidth", "maximumWidths", "reverseDepth", "activeGroups", "inverseProjection", "depthRange", "distanceFadeEnabled"],
       samplerNames: ["strictDepth", ...SHARED_OUTLINE_GROUPS.flatMap((group) => [`${group}Mask`, `${group}Style`])],
-      shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      shaderLanguage: ShaderLanguage.GLSL,
       onError: this.compileFailure.for(`${name} Compose`),
     });
     this.seed = new EffectWrapper({
       name: `${name} Depth Seed`, engine: graph.engine, useShaderStore: true,
       fragmentShader: SHARED_OUTLINE_DEPTH_SEED_SHADER,
       uniformNames: [], samplerNames: ["sceneDepth"],
-      shaderLanguage: graph.engine.isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      shaderLanguage: ShaderLanguage.GLSL,
       onError: this.compileFailure.for(`${name} Depth Seed`),
     });
     this.onBeforeTaskExecute.add(() => this.sync(true));
@@ -184,7 +184,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         effect.setFloat("reverseDepth", graph.engine.useReverseDepthBuffer ? 1 : 0);
         this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
         effect.setMatrix("inverseProjection", this.inverseProjection);
-        effect.setFloat2("depthRange", graph.engine.isNDCHalfZRange ? 1 : 2, graph.engine.isNDCHalfZRange ? 0 : -1);
+        effect.setFloat2("depthRange", 2, -1);
         effect.setFloat3("activeGroups", ...SHARED_OUTLINE_GROUPS.map((group) => this.view.groupActive(group) ? 1 : 0) as [number, number, number]);
         for (const record of this.masks) {
           context.bindTextureHandle(effect, `${record.group}Mask`, record.mask);
@@ -268,10 +268,6 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
       if (!groupReady) ready = false;
     }
     return ready;
-  }
-  /** Whether `renderPassId` is one of this task's mask passes, which draw every frame. */
-  ownsRenderPass(renderPassId: number): boolean {
-    return this.masks.some((record) => record.objects.objectRenderer.renderPassIds.includes(renderPassId));
   }
   reconcileResources(): void {
     if (this.committed || !this.lease) return;

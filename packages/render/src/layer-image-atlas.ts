@@ -40,20 +40,11 @@ const PAGE_EDGE = 1024;
 /** The longest side of an image the page takes. */
 const CELL_EDGE = 256;
 const SHADER = "hapticLayerImageAtlas";
-for (const wgsl of [false, true]) {
-  const store = ShaderStore.GetShadersStore(wgsl ? 1 : 0);
-  store[`${SHADER}VertexShader`] = wgsl
-    ? "attribute position: vec2f;\n@vertex\nfn main(input: VertexInputs) -> FragmentInputs {\nvertexOutputs.position = vec4f(vertexInputs.position, 0.0, 1.0);\n}"
-    : "attribute vec2 position;\nvoid main(void) {\ngl_Position = vec4(position, 0.0, 1.0);\n}";
+{
+  const store = ShaderStore.GetShadersStore(0);
+  store[`${SHADER}VertexShader`] = "attribute vec2 position;\nvoid main(void) {\ngl_Position = vec4(position, 0.0, 1.0);\n}";
   // atlasCell: the cell's first texel on the page.
-  store[`${SHADER}PixelShader`] = wgsl
-    ? `var atlasSource: texture_2d<f32>;
-uniform atlasCell: vec4f;
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-fragmentOutputs.color = textureLoad(atlasSource, vec2i(floor(fragmentInputs.position.xy - uniforms.atlasCell.xy)), 0);
-}`
-    : `uniform sampler2D atlasSource;
+  store[`${SHADER}PixelShader`] = `uniform sampler2D atlasSource;
 uniform vec4 atlasCell;
 void main(void) {
 gl_FragColor = texelFetch(atlasSource, ivec2(floor(gl_FragCoord.xy - atlasCell.xy)), 0);
@@ -276,7 +267,7 @@ export class LayerImageAtlas {
     const caps = engine.getCaps();
     this.unavailable = true;
     // The copy reads texels by index, which WebGL1 cannot.
-    if (!engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion! < 2) return false;
+    if ((engine as { webGLVersion?: number }).webGLVersion! < 2) return false;
     const edge = Math.min(PAGE_EDGE, caps.maxTextureSize);
     const options = { width: edge, height: edge, format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_UNSIGNED_BYTE };
     const bytes = renderTargetAllocationBytes(options);
@@ -311,7 +302,7 @@ export class LayerImageAtlas {
     this.shelves = new Shelves(edge, edge);
     this.renderer = new EffectRenderer(engine);
     this.effect = new EffectWrapper({
-      engine, name: SHADER, vertexShader: SHADER, fragmentShader: SHADER, useShaderStore: true, shaderLanguage: engine.isWebGPU ? 1 : 0,
+      engine, name: SHADER, vertexShader: SHADER, fragmentShader: SHADER, useShaderStore: true, shaderLanguage: 0,
       uniformNames: ["atlasCell"], samplerNames: ["atlasSource"],
     });
     return true;

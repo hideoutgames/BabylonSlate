@@ -87,7 +87,7 @@ describe("material node contracts", () => {
       block instanceof TrigonometryBlock && block.input.connectedPoint?.ownerBlock instanceof ArcTan2Block);
     expect(conversions.map((block) => block.operation)).toEqual([T.Degrees, T.Degrees, T.Degrees]);
   });
-  it("compiles Modulo over positive operands and restores the sign of A, as both backends then agree", async () => {
+  it("compiles Modulo over positive operands and restores the sign of A", async () => {
     const doc = createDefaultMaterialDocument();
     node(doc, "a", "input.time");
     node(doc, "mod", "math.mod");
@@ -99,7 +99,7 @@ describe("material node contracts", () => {
       const source = point.connectedPoint?.ownerBlock;
       return source instanceof TrigonometryBlock ? source.operation : undefined;
     };
-    // GLSL `mod` takes the sign of B and WGSL `%` the sign of A; with |A| and |B| they are the same.
+    // GLSL `mod` takes the sign of B, so the block takes |A| and |B| and the sign of A scales its result.
     expect([operation(mod.left), operation(mod.right)]).toEqual([T.Abs, T.Abs]);
     const scaled = mod.output.endpoints.map((point) => point.ownerBlock).find((block): block is MultiplyBlock => block instanceof MultiplyBlock)!;
     expect(operation(scaled.left)).toBe(T.Sign);

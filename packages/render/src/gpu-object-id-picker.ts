@@ -554,8 +554,8 @@ class ScenePicker {
       }
       const texture = pass.render(tap, candidates, ids);
       if (!texture) return undefined;
-      // One texel: WebGL's bottom-up and WebGPU's top-down rows coincide.
-      const pixel = new Uint8Array(engine.isWebGPU ? 256 : 4);
+      // One texel, so the readback's row order does not matter.
+      const pixel = new Uint8Array(4);
       await engine._readTexturePixels(texture, 1, 1, -1, 0, pixel, true, true, 0, 0);
       if (this.disposed) return undefined;
       const id = decodeObjectId(pixel);

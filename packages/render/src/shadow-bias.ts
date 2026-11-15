@@ -68,7 +68,7 @@ function positiveFinite(value: number): boolean {
  * so adaptation adds no normal displacement, except for smooth-normal casters
  * (`casterNormalBias`).
  *
- * Babylon 9.29's GLSL and WGSL shadowMapVertexMetric apply half of native bias
+ * Babylon 9.29's GLSL shadowMapVertexMetric applies half of native bias
  * to normalized hardware depth, including reverse depth. CSM depth clamping
  * writes that metric plus another native bias in shadowMapFragment (1.5 total).
  * Color-depth filters add one native bias. PCSS uses hardware depth for its

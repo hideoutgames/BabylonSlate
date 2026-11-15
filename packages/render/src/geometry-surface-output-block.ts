@@ -49,7 +49,6 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
-    const wgsl = state.shaderLanguage === 1;
     const vec4 = state._getShaderType(Types.Vector4);
     const normal = this.geometryNormal.associatedVariableName;
     const position = this.geometryPosition.associatedVariableName;
@@ -65,8 +64,8 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
     this.casterUniform = state._getFreeVariableName("hapticGeometryCaster");
     state._emitUniformFromString(this.casterUniform, Types.Float);
     state.sharedData.forcedBindableBlocks.push(this);
-    const caster = `${wgsl ? "uniforms." : ""}${this.casterUniform}`;
-    const color = wgsl ? "fragmentOutputsColor" : "gl_FragColor";
+    const caster = this.casterUniform;
+    const color = "gl_FragColor";
     const savedColor = state._getFreeVariableName("geometrySurfaceColor");
     state.compilationString += `#ifdef PREPASS\n${state._declareLocalVar(savedColor, Types.Vector4)} = ${color};\n#endif\n`;
     // FragmentOutputBlock assumes attachment zero is color. Geometry tasks can
@@ -79,7 +78,7 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
       ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}(((${view} * ${position}).z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, 1.0)`],
       ["PREPASS_WORLD_NORMAL", `${vec4}(normalize(${normal}) * 0.5 + 0.5, 1.0)`],
     ]) {
-      state.compilationString += geometryOutputWrite(wgsl, define, value);
+      state.compilationString += geometryOutputWrite(define, value);
     }
     return this;
   }
@@ -87,10 +86,10 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
 RegisterClass("BABYLON.GeometrySurfaceOutputBlock", GeometrySurfaceOutputBlock);
 
 /** Writes `value` to the geometry output `define` names (`PREPASS_WORLD_NORMAL` and so on), where the pass has one. */
-export function geometryOutputWrite(wgsl: boolean, define: string, value: string): string {
+export function geometryOutputWrite(define: string, value: string): string {
   let code = "";
   for (let index = 0; index < 8; index++) {
-    const target = wgsl ? `fragmentOutputs.fragData${index}` : `gl_FragData[${index}]`;
+    const target = `gl_FragData[${index}]`;
     code += `#if defined(PREPASS) && defined(${define}) && ${define}_INDEX == ${index}\n${target} = ${value};\n#endif\n`;
   }
   return code;

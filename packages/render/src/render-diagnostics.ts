@@ -25,11 +25,11 @@ import { deviceTextureLimits } from "./device-profile";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
-  /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere and on WebGPU. */
+  /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere. */
   firstDraws?: FirstDrawStats | null;
   /**
    * The programs the view's Engine holds now, every view's among them: how many, how many it never drew, and the drawn
-   * ones by the pass that first drew each (`programInventory`); null on WebGPU.
+   * ones by the pass that first drew each (`programInventory`); null for an Engine whose draws are not tracked.
    */
   programs?: ProgramInventory | null;
   /**
@@ -69,7 +69,7 @@ export type RenderDiagnostics = {
     attempted: number; drawn: number; copied: number; held: number;
     /**
      * `held` by why the world view held each frame (`held-frames.ts`): its draw's `reason` ("Scene is not ready to
-     * render.", "Render pipelines are compiling.", a FrameGraph reason) or a `HELD_FRAME_LABELS` label; at most
+     * render.", a FrameGraph reason) or a `HELD_FRAME_LABELS` label; at most
      * `MAX_HELD_FRAME_REASONS` keys, later reasons under "other".
      */
     heldReasons: Record<string, number>;
@@ -179,7 +179,7 @@ export type RenderDiagnostics = {
   /**
    * Shadow casters drawn from one shared buffer instead of one Babylon draw each: how many are retained, and since the
    * Scene's first map the draw calls made (`calls`) for the caster draws they stood for (`drawn`). Null where no
-   * caster can be retained (WebGPU).
+   * caster can be retained.
    */
   shadowRetained: RetainedShadowDiagnostics | null;
   readbackMs: number | null;

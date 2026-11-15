@@ -755,8 +755,8 @@ export class AssetRegistry {
    *
    * An encode on the grid for a Texture no atlas uses also drops older KTX2
    * chunks off the grid: the resolver binds a retained chunk whose id it
-   * prefers, or the first one when none matches, and WebGPU would decode it
-   * to RGBA. An atlas keeps them (its own-size encode, should a Particle
+   * prefers, or the first one when none matches, which could be one off the
+   * grid. An atlas keeps them (its own-size encode, should a Particle
    * Usage be switched back). Resolves false when nothing was written (the
    * Texture is gone or in a read-only root, or the job may not write the file
    * on disk now: `encodeJobMayWrite`).

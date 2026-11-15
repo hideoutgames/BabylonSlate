@@ -4,20 +4,17 @@ import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlo
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Vector2, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { VectorMergerBlock } from "@babylonjs/core/Materials/Node/Blocks/vectorMergerBlock";
 import { VertexOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/vertexOutputBlock";
 import { blockAdapterFor } from "./material-block-registry";
 
 describe("Voronoi shader generation", () => {
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("builds both noise outputs without illegal parameter writes in language %s", async (shaderLanguage) => {
+  it("builds both noise outputs", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     try {
       const material = new NodeMaterial("Voronoi", scene);
-      // NullEngine only generates source; it never compiles WGSL.
-      material.shaderLanguage = shaderLanguage;
       const noise = blockAdapterFor("noise.voronoi")!({
         name: "noise",
         operation: {
@@ -53,13 +50,6 @@ describe("Voronoi shader generation", () => {
       });
       const source = material.compiledShaders;
       expect(source).toContain("voronoi(");
-      if (shaderLanguage === ShaderLanguage.WGSL) {
-        // By-value WGSL arguments are immutable; writing one fails WebGPU
-        // pipeline creation, so out arguments must go through pointers.
-        expect(source).not.toMatch(/\b(?:p|seed|offset|density|outValue|cells)\s*=/);
-        expect(source).toMatch(/\(\*outValue\)\s*=/);
-        expect(source).toMatch(/\(\*cells\)\s*=/);
-      }
     } finally {
       scene.dispose();
       engine.dispose();

@@ -64,8 +64,7 @@ import { setUnlitBinding, UNLIT_TEXEL_WHOLE, unlitBinding, unlitTexelGrid, type 
  *   difference is healed and counted (`OverlayBatchWork`).
  *
  * Batch meshes stay out of `scene.meshes` (never culled, picked, probed or counted) and keep their buffers between
- * frames. Each is used at most once per Engine frame (WebGPU queues buffer writes ahead of the frame's draws) and
- * uploads only the buffers whose contents changed.
+ * frames. Each is used at most once per Engine frame and uploads only the buffers whose contents changed.
  */
 
 /** Babylon 9.29 per-mesh render state `Mesh.render` resets for a drawn mesh. */
@@ -416,18 +415,6 @@ const EXTRA_SIZES = [2, 3, 4, 2] as const;
 const TEXT_LAYOUT = 1 << EXTRA_KINDS.length;
 /** Floats of a glyph's own values a batch carries per vertex. */
 const TEXT_FLOATS = DRAW_BATCH_TEXT_KINDS.length * 4;
-/** The vertex buffers WebGPU guarantees a draw. */
-const WEBGPU_VERTEX_BUFFERS = 8;
-
-/**
- * The vertex buffers a batch of `layout` binds: positions, each extra kind, the three world rows, and the tint (with
- * the colour and the texel grid for the unlit Material).
- */
-function vertexBuffers(layout: number, unlit: boolean): number {
-  let extras = 0;
-  for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) if (layout & (1 << kind)) extras += 1;
-  return 1 + extras + DRAW_BATCH_WORLD_KINDS.length + (unlit ? 3 : 1) + (layout & TEXT_LAYOUT ? DRAW_BATCH_TEXT_KINDS.length : 0);
-}
 
 /**
  * The first three rows of `world` as a draw uploads it (`OffsetWorldToRef`, then 32 bits), into `rows`; null for a
@@ -1178,7 +1165,6 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const text = !unlit && isDrawBatchTextMaterial(material) ? textMaterialGlyphBinding(mesh) ?? null : null;
     if (!unlit && !text && isDrawBatchTextMaterial(material)) return "other";
     if (text) layout |= TEXT_LAYOUT;
-    if (vertexBuffers(layout, unlit) > WEBGPU_VERTEX_BUFFERS && mesh.getEngine().isWebGPU) return "other";
     const bake = entry.ownBake;
     if (!bakeInto(bake, mesh, eye)) return "other";
     // A pose that mirrors, or is not affine.
@@ -1388,7 +1374,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   /**
    * A batch mesh for `batch` not yet drawn from in this Engine frame: the one it drew from last, else one that holds no
    * kept batch's fill, else a new one (out of the Scene's lists), so the pool grows to the batches kept. A batch mesh
-   * draws once per Engine frame: WebGPU writes buffers ahead of the frame's draws, so a second write would show in both.
+   * draws once per Engine frame, so each fill of its buffers belongs to one draw.
    */
   private slotFor(batch: Batch, layout: number): Slot {
     const frame = this.scene.getEngine().frameId;

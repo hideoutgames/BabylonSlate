@@ -244,13 +244,13 @@ function initializePlayer(
   /** Set once the view exists: a runtime output change that extends the framebuffer resizes it. */
   let outputChanged: (output: RenderProjectSettings) => void = () => {};
   /** Set once the runtime's pause paths exist (below). */
-  let pipelineHoldChanged: (held: boolean) => void = () => {};
+  let compileHoldChanged: (held: boolean) => void = () => {};
   /** The game asked for device motion, perhaps before input capture was attached. */
   let deviceMotionRequested = false;
   const handle: EngineHandle = createEngine(canvas, {
     sharedEngine: options.sharedEngine,
     playMode: true,
-    onPipelineHold: (held) => pipelineHoldChanged(held),
+    onCompileHold: (held) => compileHoldChanged(held),
     frameCap: manifest.playFrameCap,
     renderSettings: manifest.render,
     spritePayloads: content.spritePayloads,
@@ -1243,8 +1243,8 @@ function initializePlayer(
       }
     });
   }
-  // While the view holds for GPU work the game's time waits, as for a blocking load, but its input does not.
-  pipelineHoldChanged = (held) => {
+  // While the view holds for shaders that are still compiling the game's time waits, as for a blocking load, but its input does not.
+  compileHoldChanged = (held) => {
     if (halted) return;
     if (boundaryClient) {
       void requestBoundary({ kind: "pause", reason: "rendering", paused: held });

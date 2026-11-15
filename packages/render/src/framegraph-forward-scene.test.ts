@@ -1632,7 +1632,7 @@ it("binds whichever light is nearest to a running march's slot without a rebuild
 async function shadowedFogHost() {
   let sun: DirectionalLight | undefined;
   const host = await fogHost({}, undefined, (scene) => {
-    // The sun's atlas map is cascaded, as every WebGL2 and WebGPU Engine supports.
+    // The sun's atlas map is cascaded, as every WebGL2 Engine supports.
     scene.getEngine()._features.supportCSM = true;
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256 }) });
     sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);

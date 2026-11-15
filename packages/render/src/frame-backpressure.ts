@@ -18,7 +18,7 @@ export interface FrameBackpressureStats {
  * The Engine frame loop's GPU backpressure. A browser queues a context's GPU work without bound when the GPU is slower
  * than the frame loop: on a software GPU a page built up seconds of queued frames, so every page task, read-back and
  * context teardown (closing the Preview Build's iframe) waited behind them. A rendered frame submits a marker at the
- * Engine's frame end (a WebGL2 fence or a WebGPU queue marker, `engineFrameMarkers`); a later frame renders only while
+ * Engine's frame end (a WebGL2 fence, `engineFrameMarkers`); a later frame renders only while
  * fewer than `mode` markers are unfinished, so with 2 frame N waits for frame N - 2. Hardware drivers queue two or three
  * frames anyway, so there it rarely skips; it never blocks: markers are polled with a zero timeout, and a skipped frame
  * skips only the render, leaving the previous image presented, while simulation, snapshots and input go on.

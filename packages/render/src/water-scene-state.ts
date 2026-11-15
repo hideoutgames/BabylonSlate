@@ -51,7 +51,7 @@ const fftPlaceholders = new WeakMap<Scene, BaseTexture>();
 /**
  * One zero texel of the FFT band's type for variants that sample the band while it is not ready (their gain is 0 then,
  * so it contributes nothing): a 2D array of one layer, which out-of-range layers clamp to. Allocated as a never-drawn
- * one-layer render target, as the band's own output is (resources start zeroed on WebGL2 and WebGPU).
+ * one-layer render target, as the band's own output is (its storage starts zeroed).
  */
 export function placeholderFft(scene: Scene): BaseTexture {
   let texture = fftPlaceholders.get(scene);

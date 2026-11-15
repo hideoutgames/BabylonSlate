@@ -21,16 +21,14 @@ import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";
 import { markCageShadowWrapper } from "./lattice-deformer-binding";
 import type { MaterialPlumbing } from "./material-block-registry";
 import { createSurfacePlumbing } from "./surface-material-plumbing";
-import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 
 type Generation = { material: NodeMaterial; wrapper: AuthoredShadowDepthWrapper; texture: Texture | null; uv: number; cutoff?: InputBlock };
 
 function createGeneration(source: Material, texture: Texture | null): Generation {
   const scene = source.getScene();
   const material = new NodeMaterial(`${source.name}:latticeShadow`, scene, {
-    shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+    shaderLanguage: ShaderLanguage.GLSL,
   });
-  if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   material.transparencyMode = Material.MATERIAL_OPAQUE;
   material.alphaMode = Constants.ALPHA_DISABLE;
   material.allowShaderHotSwapping = false;

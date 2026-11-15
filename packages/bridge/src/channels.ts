@@ -10,7 +10,7 @@ export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
 export type { MaterialParameterValue } from "@haptic/core";
 
 export type GameSessionMode = "play" | "simulate" | "preview";
-/** `rendering`: the view holds its last image while WebGPU render pipelines it needs compile. */
+/** `rendering`: the view holds its last image while shaders it needs compile. */
 export type SessionPauseReason = "user" | "lifecycle" | "loading" | "rendering";
 /**
  * What a Simulation paused on: the diagnostic that first came from its node (`pauseOnErrors`), or a

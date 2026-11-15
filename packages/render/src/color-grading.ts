@@ -48,8 +48,8 @@ async function decodeStrip(bytes: Uint8Array | Blob) {
 
 /**
  * One Scene's color grading LUT. The requested Texture asset's source pixels
- * become an owned bilinear 3D texture, which Babylon samples natively on both
- * WebGL2 and WebGPU. `onChange` publishes the texture only once it exists (or
+ * become an owned bilinear 3D texture, which Babylon samples natively.
+ * `onChange` publishes the texture only once it exists (or
  * null), so the effect plan never compiles a Display Color stage without it.
  */
 export class ColorGradingSource {

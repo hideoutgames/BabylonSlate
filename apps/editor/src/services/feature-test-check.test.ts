@@ -262,7 +262,7 @@ describe("runFeatureTestCheck", () => {
     let samples = 0;
     const before = { drawn: 40, held: 1, skipped: 3, contextLosses: 1, heldReasons: { "Scene is not ready to render.": 1 } };
     const after = {
-      drawn: 100, held: 3, skipped: 8, contextLosses: 1, heldReasons: { "Scene is not ready to render.": 2, "Render pipelines are compiling.": 1 },
+      drawn: 100, held: 3, skipped: 8, contextLosses: 1, heldReasons: { "Scene is not ready to render.": 2, "FrameGraph is not ready.": 1 },
     };
     const editor = fakeEditor({}, undefined, () => samples < 2 ? before : after);
     const deps: FeatureTestCheckDeps = {
@@ -274,7 +274,7 @@ describe("runFeatureTestCheck", () => {
     expect(report.scenes[0].passed).toBe(false);
     expect(report.scenes[0].problems).toEqual(["The graphics context was lost once during Play."]);
     expect(report.scenes[0].play.presentation).toEqual({
-      frames: { drawn: 60, held: 2, skipped: 5, heldReasons: { "Scene is not ready to render.": 1, "Render pipelines are compiling.": 1 } },
+      frames: { drawn: 60, held: 2, skipped: 5, heldReasons: { "Scene is not ready to render.": 1, "FrameGraph is not ready.": 1 } },
       contextLosses: 1, imageBlack: [0, 0, 0],
     });
   });

@@ -356,7 +356,7 @@ describe("Scene Layer draw batching", () => {
     expect(translations).toEqual([2, 2, 2, 2, -2, -2, -2, -2]);
   });
 
-  it("uses each batch mesh once per Engine frame, as WebGPU writes buffers ahead of the frame's draws", async () => {
+  it("uses each batch mesh once per Engine frame", async () => {
     const { engine, compositor, scene } = host();
     const moving = quad(scene, "moving", -2, 0);
     quad(scene, "still", 2, 0);

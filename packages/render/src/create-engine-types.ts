@@ -162,8 +162,8 @@ export interface EngineHandle {
   samplePresentedImage: () => Promise<PresentedImageSample | null>;
   /**
    * A Check's measurement (`webgl-draw-stub.ts`): turns the Engine's draws, clears and uniform uploads into no-ops
-   * (`true`) or back, so a frame's CPU time without them can be read beside its normal one; whether it did. False on
-   * WebGPU and after a context loss or disposal, which end it.
+   * (`true`) or back, so a frame's CPU time without them can be read beside its normal one; whether it did. False
+   * after a context loss or disposal, which end it.
    */
   stubWebGlDraws: (on: boolean) => boolean;
   /** Explicit next coherent game presentation; rejects concurrent profiling. */
@@ -318,14 +318,13 @@ export interface CreateEngineOptions {
   workerDecoders?: boolean;
   /**
    * The world view started (true) or stopped (false) holding its last image
-   * while WebGPU render pipelines, or on any backend effects the driver still
-   * compiles, are needed, for `PIPELINE_HOLD_PAUSE_DELAY_MS`; the release is
-   * immediate. Play hosts pause the game runtime's time for the hold (pause
+   * while effects the driver still compiles are needed, for
+   * `COMPILE_HOLD_PAUSE_DELAY_MS`; the release is immediate. Play hosts pause the game runtime's time for the hold (pause
    * reason `rendering`, which leaves input alone), as for a blocking load; this
    * Engine already pauses its own game time, audio and particles. Disposing the
    * Engine ends a hold.
    */
-  onPipelineHold?: (held: boolean) => void;
+  onCompileHold?: (held: boolean) => void;
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
   /** Document viewport identity for scoped editor commands. */

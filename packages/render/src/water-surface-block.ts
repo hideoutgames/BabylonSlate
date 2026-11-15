@@ -33,13 +33,12 @@ export function isBlendingWaterSurface(mesh?: AbstractMesh): boolean {
  * graph share them.
  */
 export function declareWaterAttributes(state: NodeMaterialBuildState, define: string, attributes: ReadonlyArray<readonly [name: string, components: 2 | 3 | 4]>): void {
-  const wgsl = state.shaderLanguage === 1;
   const fresh = attributes.filter(([name]) => !state.attributes.includes(name));
   if (!fresh.length) return;
   for (const [name] of fresh) state.attributes.push(name);
   // A define name, or a condition (`defined(A) || defined(B)`) where blocks under different defines read one attribute.
   const guard = define.includes("(") ? `#if ${define}` : `#ifdef ${define}`;
-  state._attributeDeclaration += `${guard}\n${fresh.map(([name, components]) => wgsl ? `attribute ${name}: vec${components}f;` : `attribute vec${components} ${name};`).join("\n")}\n#endif\n`;
+  state._attributeDeclaration += `${guard}\n${fresh.map(([name, components]) => `attribute vec${components} ${name};`).join("\n")}\n#endif\n`;
 }
 
 /**
@@ -73,13 +72,12 @@ export class WaterSurfaceBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state.sharedData.blocksWithDefines.push(this);
-    const wgsl = state.shaderLanguage === 1;
     declareWaterAttributes(state, WATER_SURFACE_DEFINE, [["slateWaterData", 4], ["slateWaterFlow", 3]]);
     for (const [index, output] of this._outputs.entries()) {
       if (!output.hasEndpoints) continue;
-      const zero = index === 4 ? (wgsl ? "vec3f(0.0)" : "vec3(0.0)") : "0.0";
+      const zero = index === 4 ? "vec3(0.0)" : "0.0";
       const source = index === 4 ? "slateWaterFlow" : `slateWaterData.${"xyzw"[index]}`;
-      state.compilationString += `${state._declareOutput(output)} = ${zero};\n#ifdef ${WATER_SURFACE_DEFINE}\n${output.associatedVariableName} = ${wgsl ? "vertexInputs." : ""}${source};\n#endif\n`;
+      state.compilationString += `${state._declareOutput(output)} = ${zero};\n#ifdef ${WATER_SURFACE_DEFINE}\n${output.associatedVariableName} = ${source};\n#endif\n`;
       const gpu = index === 0 ? this.gpuWaveHeight : index === 3 ? this.gpuTime : null;
       if (gpu?.isConnected) state.compilationString += `#ifdef ${WATER_GPU_WAVES_DEFINE}\n${output.associatedVariableName} = ${gpu.associatedVariableName};\n#endif\n`;
     }

@@ -7,7 +7,7 @@
  *
  * SwiftShader links inside the call, so "still compiling" is injected: every Effect created after `hold` reports not
  * ready until `release`, exactly as a parallel-compile driver reports a link in flight. The view is a
- * `SceneRenderCoordinator` with `deferPipelines` on a world Scene, drawing steady frames (`render(false)`), as Play and
+ * `SceneRenderCoordinator` with `compileHolds` on a world Scene, drawing steady frames (`render(false)`), as Play and
  * the editor do.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -81,7 +81,7 @@ async function worldView() {
     box.receiveShadows = true;
     return floor;
   });
-  const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
+  const coordinator = new SceneRenderCoordinator(scene, { compileHolds: true });
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
     return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));

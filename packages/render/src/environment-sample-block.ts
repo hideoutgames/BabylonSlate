@@ -9,7 +9,6 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 
 /** A Scene resource, deliberately separate from the existing 2D texture pins. */
 export class EnvironmentSampleBlock extends NodeMaterialBlock {
@@ -94,7 +93,6 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     this.scene = state.sharedData.nodeMaterial.getScene();
-    const wgsl = state.shaderLanguage === 1;
     this.sampler = state._getFreeVariableName("slateEnvironmentSampler");
     this.available = state._getFreeDefineName("SLATE_ENVIRONMENT");
     this.matrix = state._getFreeVariableName("slateEnvironmentMatrix");
@@ -122,26 +120,22 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
       "helperFunctions",
       "Environment radiance decoding",
     );
-    if (!wgsl)
-      state._emitExtension(
-        "shaderTextureLod",
-        "#extension GL_EXT_shader_texture_lod : enable",
-      );
-    const uniform = wgsl ? "uniforms." : "";
-    const params = uniform + this.parameters;
-    const prefilter = uniform + this.prefilter;
+    state._emitExtension(
+      "shaderTextureLod",
+      "#extension GL_EXT_shader_texture_lod : enable",
+    );
+    const params = this.parameters;
+    const prefilter = this.prefilter;
     const direction = state._getFreeVariableName("slateEnvironmentDirection");
     const sampled = state._getFreeVariableName("slateEnvironmentSample");
     const roughness = state._getFreeVariableName("slateEnvironmentRoughness");
     const lod = state._getFreeVariableName("slateEnvironmentLod");
-    const sample = wgsl
-      ? `textureSampleLevel(${this.sampler},${this.sampler}Sampler,${direction},${lod})`
-      : `textureCubeLodEXT(${this.sampler},${direction},${lod})`;
-    state.compilationString += `${state._declareOutput(this.color)} = ${wgsl ? "vec3f" : "vec3"}(0.0);\n#ifdef ${this.available}\n`;
-    const vec3 = wgsl ? "vec3f" : "vec3";
+    const sample = `textureCubeLodEXT(${this.sampler},${direction},${lod})`;
+    state.compilationString += `${state._declareOutput(this.color)} = vec3(0.0);\n#ifdef ${this.available}\n`;
+    const vec3 = "vec3";
     state.compilationString += `${state._declareLocalVar(direction, NodeMaterialBlockConnectionPointTypes.Vector3)} = clamp(${this.direction.associatedVariableName},${vec3}(-1e8),${vec3}(1e8));\n`;
     state.compilationString += `if (!(dot(${direction},${direction})>1e-12)) { ${direction}=${vec3}(0.0,0.0,1.0); }\n`;
-    state.compilationString += `${direction} = (${uniform}${this.matrix} * ${wgsl ? "vec4f" : "vec4"}(${direction},0.0)).xyz;\n`;
+    state.compilationString += `${direction} = (${this.matrix} * vec4(${direction},0.0)).xyz;\n`;
     state.compilationString += `${direction}.z *= ${params}.w;\n`;
     // Babylon 9.29 PBR prefilter mapping at normal incidence. Raw sampling has
     // no view normal, anisotropy or geometric AA input; texture metadata still applies.
@@ -151,7 +145,7 @@ export class EnvironmentSampleBlock extends NodeMaterialBlock {
     state.compilationString += `${lod}=clamp(${lod}*${prefilter}.y+${prefilter}.z,0.0,${params}.x);\n`;
     state.compilationString += `${state._declareLocalVar(sampled, NodeMaterialBlockConnectionPointTypes.Vector4)} = ${sample};\n`;
     state.compilationString += `${this.color.associatedVariableName} = ${sampled}.rgb;\n`;
-    state.compilationString += `if (${params}.y > 0.5) { ${this.color.associatedVariableName} = fromRGBD(${sampled}); } else if (${params}.z > 0.5) { ${this.color.associatedVariableName} = ${wgsl ? "toLinearSpaceVec3" : "toLinearSpace"}(${sampled}.rgb); }\n#endif\n`;
+    state.compilationString += `if (${params}.y > 0.5) { ${this.color.associatedVariableName} = fromRGBD(${sampled}); } else if (${params}.z > 0.5) { ${this.color.associatedVariableName} = toLinearSpace(${sampled}.rgb); }\n#endif\n`;
     return this;
   }
 }

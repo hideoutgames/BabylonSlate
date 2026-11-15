@@ -1,6 +1,5 @@
 import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
-import type { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -94,10 +93,8 @@ class OverlayVisualStylePlugin extends MaterialPluginBase {
       fragment: this._material.getScene().getEngine().supportsUniformBuffers ? undefined : "uniform vec4 slateOverlayTint;",
     };
   }
-  override getCustomCode(type: string, language?: ShaderLanguage) {
+  override getCustomCode(type: string) {
     if (type !== "fragment") return null;
-    const tint = `${language === 1 ? "uniforms." : ""}slateOverlayTint`;
-    const premultiply = language === 1 ? `color = vec4f(color.rgb * ${tint}.a, color.a);` : `color.rgb *= ${tint}.a;`;
-    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `\n#ifdef SLATE_OVERLAY_STYLE\ncolor *= ${tint};\n#ifdef PREMULTIPLYALPHA\n${premultiply}\n#endif\n#endif\n` };
+    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: "\n#ifdef SLATE_OVERLAY_STYLE\ncolor *= slateOverlayTint;\n#ifdef PREMULTIPLYALPHA\ncolor.rgb *= slateOverlayTint.a;\n#endif\n#endif\n" };
   }
 }

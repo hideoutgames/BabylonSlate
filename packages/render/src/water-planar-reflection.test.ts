@@ -160,13 +160,10 @@ it("reflects the flat Object Reflections body covering most of the view, whateve
 });
 
 it.each([
-  { range: "full-range", half: false, reverse: false, near: -1, far: 1 },
-  { range: "half-range (WebGPU)", half: true, reverse: false, near: 0, far: 1 },
-  { range: "reverse full-range", half: false, reverse: true, near: 1, far: -1 },
-  { range: "reverse half-range", half: true, reverse: true, near: 1, far: 0 },
-])("mirrors the eye across the rest plane with the water plane as the oblique near plane for $range depth", ({ half, reverse, near, far }) => {
+  { range: "full-range", reverse: false, near: -1, far: 1 },
+  { range: "reverse full-range", reverse: true, near: 1, far: -1 },
+])("mirrors the eye across the rest plane with the water plane as the oblique near plane for $range depth", ({ reverse, near, far }) => {
   const { engine, scene, camera, draws, frame } = host();
-  Object.assign(engine, { isNDCHalfZRange: half });
   engine.useReverseDepthBuffer = reverse;
   lake(scene, "lake", 40, new Vector3(0, 0, 0));
   frame();
