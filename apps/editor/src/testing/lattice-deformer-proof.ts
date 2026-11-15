@@ -174,6 +174,21 @@ export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
     setMeshLatticeDeformer(native, config()); transformReference(nativeReference, 0, 1);
     await pair("native-affine-normals", [native], [nativeReference]);
 
+    // Fit To Mesh puts a box's vertices on the cage's faces, where rounding can leave them a hair outside. They
+    // must still deform as on the face: a cage inset by far less than a cell gives the same affine shape.
+    const faceBox = makeBox("Face Vertices"), faceReference = makeBox("Face Vertices Reference");
+    const inset = 0.00002;
+    const faceMin: [number, number, number] = [-0.4 + inset, -0.5 + inset, -0.2 + inset];
+    const faceMax: [number, number, number] = [0.4 - inset, 0.5 - inset, 0.2 - inset];
+    const faceOffsets: number[] = [];
+    for (const z of [faceMin[2], faceMax[2]]) for (const y of [faceMin[1], faceMax[1]]) for (const x of [faceMin[0], faceMax[0]]) {
+      void z;
+      faceOffsets.push(0.5 * x + 0.25 * y, 0, 0.2 * x);
+    }
+    setMeshLatticeDeformer(faceBox, { ...config(), offsets: faceOffsets, boundsMin: faceMin, boundsMax: faceMax });
+    transformReference(faceReference, 0, 1);
+    await pair("face-vertices-just-outside", [faceBox], [faceReference]);
+
     const objectNormalMaterial = new StandardMaterial("Object Space Normal", scene);
     objectNormalMaterial.diffuseColor.copyFrom(material.diffuseColor); objectNormalMaterial.specularColor.copyFrom(material.specularColor);
     objectNormalMaterial.useObjectSpaceNormalMap = true;
