@@ -46,7 +46,7 @@ import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelp
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
 import { noteSceneReadinessChange } from "./scene-readiness-signal";
 import type { SceneReadinessScope } from "./scene-readiness-signal";
-import { verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
+import { lastProbedMesh, verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
 import { collectReadinessBlockers, noteReadinessBlocker } from "./readiness-blockers";
 import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
@@ -179,15 +179,20 @@ const MAX_SCOPED_MISMATCH_CAUSES = 8;
 /** Effects named per described disagreement. */
 const MAX_NAMED_REQUESTS = 3;
 
-/** An Effect as a disagreement names it: its shader name, whether it is ready, and the start of its defines. */
+/**
+ * An Effect as a disagreement names it: the mesh whose check asked for it and its Material, the shader name, whether
+ * it is ready, and the start of its defines.
+ */
 function describeRequestedEffect(effect: unknown): string {
+  const mesh = lastProbedMesh();
+  const asker = mesh ? `${mesh.name} [${mesh.material?.name ?? "no material"}] ` : "";
   const { name, defines, isReady } = effect as { name?: unknown; defines?: unknown; isReady?: () => boolean };
   const shader = typeof name === "string" ? name
     : name && typeof name === "object"
       ? String((name as Record<string, unknown>).fragmentElement ?? (name as Record<string, unknown>).fragment ?? (name as Record<string, unknown>).vertex ?? "?")
       : "?";
   const ready = typeof isReady === "function" ? isReady.call(effect) : false;
-  return `${shader} (${ready ? "ready" : "pending"}; ${typeof defines === "string" ? defines.replace(/#define /g, "").replace(/\s+/g, " ").slice(0, 160) : ""})`;
+  return `${asker}${shader} (${ready ? "ready" : "pending"}; ${typeof defines === "string" ? defines.replace(/#define /g, "").replace(/\s+/g, " ").slice(0, 160) : ""})`;
 }
 
 /**
