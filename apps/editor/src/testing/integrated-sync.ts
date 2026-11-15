@@ -18,7 +18,7 @@ export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
  * working copy in memory storage of a `FakeRemote` seeded with Forest and
  * Rock, so editor tests drive the same service the editor runs.
  */
-export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsRule?: boolean; files?: Record<string, string | Uint8Array> } = {}) {
+export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsRule?: boolean; files?: Record<string, string | Uint8Array>; lookup?: ChangeLookup } = {}) {
   const remote = new FakeRemote();
   remote.commit({
     ...(options.lfsRule === false ? {} : { ".gitattributes": `${GITATTRIBUTES_LFS_RULE}\n` }),
@@ -41,7 +41,7 @@ export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsR
     storage,
     platform: "web",
     testMode: true,
-    lookup: INTEGRATED_LOOKUP,
+    lookup: options.lookup ?? INTEGRATED_LOOKUP,
     locks,
     factory: {
       open: async () => port,

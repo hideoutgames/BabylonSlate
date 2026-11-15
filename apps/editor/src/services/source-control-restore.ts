@@ -1,12 +1,7 @@
 import { readHassetHeader } from "@haptic/assets";
 import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
 import type { SyncPort } from "@haptic/source-control";
-
-/** The blob folder of the content root an asset sits in (`assets/.blobs`, `plugins/<name>/assets/.blobs`), or null outside one. */
-export function assetBlobFolder(path: string): string | null {
-  const root = /^((?:plugins\/[^/]+\/)?assets)\//.exec(path);
-  return root ? `${root[1]}/.blobs` : null;
-}
+import { assetBlobFolder } from "../lib/source-control-changes";
 
 function parentOf(path: string): string {
   return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";

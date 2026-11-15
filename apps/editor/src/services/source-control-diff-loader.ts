@@ -1,6 +1,6 @@
 import type { AssetVersionSource } from "@haptic/assets/asset-diff";
 import { AssetDiffClient } from "@haptic/assets/asset-diff-client";
-import { assetBlobFolder } from "./source-control-restore";
+import { assetBlobFolder } from "../lib/source-control-changes";
 import type { DiffLoader, DiffTarget } from "./source-control-diff";
 import type { SourceControlSyncService } from "./source-control-sync";
 

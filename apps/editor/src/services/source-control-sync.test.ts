@@ -5,6 +5,7 @@ import { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import type { ChangeLookup } from "../lib/source-control-changes";
+import { testAsset } from "../testing/diff-assets";
 import { SourceControlSyncService, STATUS_DEBOUNCE_MS, type SyncConfigureInput, type SyncPortFactory } from "./source-control-sync";
 
 const URL = "https://github.com/team/game.git";
@@ -238,6 +239,29 @@ describe("SourceControlSyncService", () => {
     expect(new TextDecoder().decode(remote.get(head).files.get("assets/Rock.texture.hasset"))).toBe("R");
     expect(service.getSnapshot()).toMatchObject({ ahead: 0, behind: 0, problem: null });
     expect(service.getSnapshot().rows.map((row) => row.name)).toEqual(["Rock"]);
+  });
+
+  it("leaves out a blob no committed asset uses, and takes an unindexed asset's blobs from its own header", async () => {
+    const { service, input, storage, remote } = await setup();
+    await service.configure(input("integrated"));
+    // A reverted edit's blob: nothing references it any more.
+    const leftover = `assets/.blobs/${"e".repeat(64)}`;
+    await storage.writeBinary(leftover, new Uint8Array([9, 9]));
+    // A disabled plugin's asset, which the registry does not index, with its blob.
+    const crate = await testAsset("Texture", "Crate", { chunks: [{ id: "payload", kind: "payload", mime: "application/octet-stream", data: new Uint8Array(70 * 1024).fill(3) }] });
+    const [sha, blobBytes] = [...crate.blobs][0]!;
+    await storage.writeBinary(`plugins/Props/assets/.blobs/${sha}`, blobBytes);
+    await storage.writeBinary("plugins/Props/assets/Crate.texture.hasset", crate.bytes);
+    await storage.writeText("assets/Rock.texture.hasset", "R2");
+    await service.refreshStatus();
+    await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset", "plugins/Props/assets/Crate.texture.hasset"]), message: "Rock and crate", push: true });
+    const files = [...remote.get(remote.branches.get("main")!).files.keys()];
+    expect(files).toEqual(expect.arrayContaining(["assets/Rock.texture.hasset", "plugins/Props/assets/Crate.texture.hasset", `plugins/Props/assets/.blobs/${sha}`]));
+    expect(files).not.toContain(leftover);
+    expect(remote.lfsObjects.has("e".repeat(64))).toBe(false);
+    // It stays in the working copy, in no row.
+    expect(await storage.exists(leftover)).toBe(true);
+    expect(service.getSnapshot().rows).toEqual([]);
   });
 
   it("refuses a push that would send an asset someone else locks, naming the holder", async () => {

@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AssetRegistry, createVfsBlobStore, encodeHasset, projectContentRoot, readHassetHeader } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { commitPaths, conflictChoices, groupChanges, groupConflicts, registryChangeLookup, type ChangeLookup } from "./source-control-changes";
+import { testAsset } from "../testing/diff-assets";
+import { assetBlobFolder, commitPaths, conflictChoices, groupChanges, groupConflicts, registryChangeLookup, withUnindexedAssets, type ChangeLookup } from "./source-control-changes";
 
 const BLOB_A = "a".repeat(64);
 const BLOB_B = "b".repeat(64);
@@ -41,8 +42,6 @@ describe("groupChanges", () => {
       ["Rock Albedo", "Textures", "modified", "Texture", ["assets/Textures/Rock.texture.hasset", blob(BLOB_B)]],
       ["Project Settings", "Project", "modified", "Project", ["project.json"]],
     ]);
-    // A blob no changed asset uses goes with any commit; a deleted one never does.
-    expect(grouped.loose).toEqual([blob(BLOB_LOOSE)]);
   });
 });
 
@@ -61,13 +60,13 @@ describe("commitPaths", () => {
     expect(commitPaths(grouped, new Set(["assets/Textures/Rock.texture.hasset"]), lookup)).toEqual([
       blob(BLOB_B),
       blob(BLOB_SHARED),
-      blob(BLOB_LOOSE),
       "assets/Textures/Rock.texture.hasset",
     ].sort());
   });
 
-  it("commits only the loose blobs when no row is chosen", () => {
-    expect(commitPaths(grouped, new Set(), lookup)).toEqual([blob(BLOB_LOOSE)]);
+  it("never commits a changed blob no chosen asset uses, such as one a reverted edit left", () => {
+    expect(commitPaths(grouped, new Set(), lookup)).toEqual([]);
+    expect(commitPaths(grouped, new Set(["assets/Levels/Forest.scene.hasset"]), lookup)).not.toContain(blob(BLOB_LOOSE));
   });
 });
 
@@ -117,7 +116,6 @@ describe("blobs in more than one content root", () => {
       ["assets/Rock.texture.hasset", `assets/.blobs/${sha}`],
       ["plugins/Props/assets/Rock.texture.hasset", `plugins/Props/assets/.blobs/${sha}`],
     ]);
-    expect(grouped.loose).toEqual([]);
     expect(commitPaths(grouped, new Set(["assets/Rock.texture.hasset"]), lookup)).toEqual([
       `assets/.blobs/${sha}`,
       "assets/Rock.texture.hasset",
@@ -136,6 +134,38 @@ describe("blobs in more than one content root", () => {
       ["assets/Rock.texture.hasset", `assets/.blobs/${sha}`],
       ["plugins/Props/assets/Rock.texture.hasset", `plugins/Props/assets/.blobs/${sha}`],
     ]);
+  });
+});
+
+describe("withUnindexedAssets", () => {
+  it("reads the header of a chosen changed asset the registry does not index, so its blobs go with it", async () => {
+    // A disabled plugin's asset: no content root is mounted for it.
+    const path = "plugins/Props/assets/Crate.texture.hasset";
+    const stored = await testAsset("Texture", "Crate", { chunks: [{ id: "payload", kind: "payload", mime: "application/octet-stream", data: new Uint8Array(70 * 1024).fill(7) }] });
+    const sha = [...stored.blobs.keys()][0]!;
+    const changes = [
+      { path: `plugins/Props/assets/.blobs/${sha}`, kind: "added" as const },
+      { path: blob(BLOB_LOOSE), kind: "added" as const },
+      { path, kind: "added" as const },
+    ];
+    const read = vi.fn(async () => stored.bytes);
+    const known = await withUnindexedAssets(lookup, changes, new Set([path]), read);
+    expect(known(path)).toEqual({ name: "Crate", type: "Texture", blobPaths: [`plugins/Props/assets/.blobs/${sha}`] });
+    expect(commitPaths(groupChanges(changes, known), new Set([path]), known)).toEqual([`plugins/Props/assets/.blobs/${sha}`, path]);
+    // Only chosen assets are read; indexed ones keep the registry's answer.
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(await withUnindexedAssets(lookup, changes, new Set(), read)).toBe(lookup);
+  });
+});
+
+describe("assetBlobFolder", () => {
+  it.each([
+    ["assets/Levels/Forest.scene.hasset", "assets/.blobs"],
+    ["plugins/Props/assets/Crate.texture.hasset", "plugins/Props/assets/.blobs"],
+    ["extensions/Rain/assets/Rain.material.hasset", "extensions/Rain/assets/.blobs"],
+    ["project.json", null],
+  ])("puts %s's blobs in %s", (path, folder) => {
+    expect(assetBlobFolder(path)).toBe(folder);
   });
 });
 

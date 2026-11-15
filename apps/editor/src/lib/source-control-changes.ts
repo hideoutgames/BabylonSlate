@@ -1,5 +1,5 @@
 import { PROJECT_FILE } from "@haptic/core";
-import { contentRootBlobFolder, FOLDER_MARKER_NAME, type AssetRegistry } from "@haptic/assets";
+import { contentRootBlobFolder, FOLDER_MARKER_NAME, readHassetHeader, type AssetRegistry } from "@haptic/assets";
 import { lfsObjectId, type ChangeKind, type FileChange, type PullChoice, type PullChoices, type PullConflict } from "@haptic/source-control";
 
 /** What the Source Control tab knows about an indexed asset: its registry entry, read without opening the file. */
@@ -15,6 +15,16 @@ export interface ChangedAssetInfo {
 }
 
 export type ChangeLookup = (path: string) => ChangedAssetInfo | null;
+
+/**
+ * The blob folder of the content root a path sits in, by its path alone (the
+ * project's `assets/.blobs`, a plugin's or an extension's), or null outside
+ * one: for versions and assets the registry does not index.
+ */
+export function assetBlobFolder(path: string): string | null {
+  const root = /^((?:(?:plugins|extensions)\/[^/]+\/)?assets)\//.exec(path);
+  return root ? `${root[1]}/.blobs` : null;
+}
 
 /** Changed `.hasset` files as the asset registry indexes them: no file is read. */
 export function registryChangeLookup(registry: Pick<AssetRegistry, "getByPath" | "getRoot"> | null | undefined): ChangeLookup {
@@ -45,12 +55,6 @@ export interface ChangeRow {
 
 export interface GroupedChanges {
   rows: readonly ChangeRow[];
-  /**
-   * Added or changed blobs no listed asset references. Blobs are named by
-   * their content and never rewritten, so they go with any commit; a deleted
-   * one is never committed by itself, as an unchanged asset may still use it.
-   */
-  loose: readonly string[];
 }
 
 const ASSET_EXTENSION = /(\.[a-z0-9-]+)?\.hasset$/i;
@@ -81,7 +85,8 @@ function describe(change: FileChange, asset: ChangedAssetInfo | null): Omit<Chan
 /**
  * Status changes as the Changes window lists them: one row per asset, which
  * also commits the changed blobs it references, and one per other file.
- * Blobs are never listed alone. Rows keep status order (by path).
+ * Blobs are never listed alone, and one no changed asset references is in
+ * no row. Rows keep status order (by path).
  */
 export function groupChanges(changes: readonly FileChange[], lookup: ChangeLookup): GroupedChanges {
   /** Changed blob files by path: each root holds its own copy of a blob. */
@@ -105,20 +110,22 @@ export function groupChanges(changes: readonly FileChange[], lookup: ChangeLooku
     }
     return { ...describe(change, asset), paths };
   });
-  const loose = [...blobs].filter(([path, kind]) => !claimed.has(path) && kind !== "deleted").map(([path]) => path);
-  return { rows, loose };
+  return { rows };
 }
 
 /**
- * The paths a commit of the chosen rows writes: their own files, every
- * changed blob a chosen asset references (also one another row lists), and
- * the loose blobs. A `.hasset` is never committed without its blobs, which a
- * teammate would need to load it.
+ * The paths a commit of the chosen rows writes: their own files and every
+ * changed blob a chosen asset references (also one another row lists). A
+ * `.hasset` is never committed without its blobs, which a teammate would
+ * need to load it. A changed blob no chosen asset references stays out (an
+ * edit's that a revert abandoned, an undone import's): nothing would load
+ * it, and pushing it would only store a dead LFS object. A chosen asset the
+ * registry does not index needs `withUnindexedAssets` in `lookup`.
  */
 export function commitPaths(grouped: GroupedChanges, chosen: ReadonlySet<string>, lookup: ChangeLookup): string[] {
   // A row's paths after its own file are the changed blobs it claimed.
   const changedBlobs = new Set(grouped.rows.flatMap((row) => row.paths.slice(1)));
-  const out = new Set<string>(grouped.loose);
+  const out = new Set<string>();
   for (const row of grouped.rows) {
     if (!chosen.has(row.id)) continue;
     for (const path of row.paths) out.add(path);
@@ -128,6 +135,29 @@ export function commitPaths(grouped: GroupedChanges, chosen: ReadonlySet<string>
     }
   }
   return [...out].sort();
+}
+
+/**
+ * `lookup`, extended with each chosen, changed asset the registry does not
+ * index (a disabled plugin's, an Editor Only extension's): its blobs come
+ * from its own header, read from the working copy, so a commit takes them
+ * with it. Only those assets are read; with none, `lookup` itself.
+ */
+export async function withUnindexedAssets(
+  lookup: ChangeLookup,
+  changes: readonly FileChange[],
+  chosen: ReadonlySet<string>,
+  read: (path: string) => Promise<Uint8Array>,
+): Promise<ChangeLookup> {
+  const found = new Map<string, ChangedAssetInfo>();
+  for (const { path, kind } of changes) {
+    if (kind === "deleted" || !chosen.has(path) || !path.endsWith(".hasset") || lookup(path)) continue;
+    const header = readHassetHeader(await read(path));
+    const folder = assetBlobFolder(path);
+    const blobPaths = folder ? header.chunks.flatMap((chunk) => ("blob" in chunk.locator ? [`${folder}/${chunk.locator.blob}`] : [])) : [];
+    found.set(path, { name: header.name, type: header.type, blobPaths });
+  }
+  return found.size === 0 ? lookup : (path) => lookup(path) ?? found.get(path) ?? null;
 }
 
 /** One Pull Conflicts row: an asset with the files of it changed on both sides, or another file. */

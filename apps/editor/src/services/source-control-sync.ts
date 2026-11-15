@@ -18,7 +18,7 @@ import {
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
-import { commitPaths, groupChanges, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
+import { commitPaths, groupChanges, withUnindexedAssets, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { asksAdoption, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
 /** One status after a burst of editor saves. Status is stat based and cheap; this only coalesces the burst. */
@@ -395,9 +395,10 @@ export class SourceControlSyncService {
   async commit({ rowIds, message, push }: { rowIds: ReadonlySet<string>; message: string; push: boolean }): Promise<boolean> {
     const revision = this.revision;
     let committed = false;
-    await this.run("commit", "Could Not Commit", async ({ port, input }) => {
+    await this.run("commit", "Could Not Commit", async ({ port, input, storage }) => {
       const status = await port.status();
-      const paths = commitPaths(groupChanges(status.changes, input.lookup), rowIds, input.lookup);
+      const lookup = await withUnindexedAssets(input.lookup, status.changes, rowIds, (path) => storage.readBinary(path));
+      const paths = commitPaths(groupChanges(status.changes, lookup), rowIds, lookup);
       if (paths.length === 0) throw new Error("Choose the assets to commit.");
       await port.commit({ paths, message, author: await this.author(input) });
       committed = true;
