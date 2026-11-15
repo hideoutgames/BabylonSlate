@@ -20,6 +20,7 @@ import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
+import { journalFollows, openRenderChangeReader, RenderChange, verifiesRenderChangeJournal, type RenderChangeReader } from "./render-change-journal";
 import { shadowMapChanges, type ShadowChangeRegion } from "./shadow-change-journal";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
@@ -28,25 +29,91 @@ class Snapshot {
   private readonly values: unknown[] = [];
   private cursor = 0;
   changed = false;
+  /** The index of the first value that changed, or -1. */
+  first = -1;
   begin(): void {
     this.cursor = 0;
     this.changed = false;
+    this.first = -1;
   }
   value(value: unknown): void {
-    if (!Object.is(this.values[this.cursor], value)) this.changed = true;
+    if (!Object.is(this.values[this.cursor], value) && !this.changed) {
+      this.changed = true;
+      this.first = this.cursor;
+    }
     this.values[this.cursor++] = value;
   }
   end(): void {
-    if (this.values.length !== this.cursor) this.changed = true;
+    if (this.values.length !== this.cursor && !this.changed) {
+      this.changed = true;
+      this.first = Math.min(this.values.length, this.cursor);
+    }
     this.values.length = this.cursor;
   }
+}
+
+/** What each value of a caster's own snapshot is (`ShadowMapRefresh.walkCaster`), to name what a journal walk missed. */
+const CASTER_VALUES = ["transform", "enabled", "isVisible", "visibility", "source", "material", "materialState", "safeMaterial", "safeMesh"];
+
+/**
+ * Every this many frames the full walk follows the journal's: a change the journal missed is found within that many
+ * frames and counted (`ShadowJournalDiagnostics.heals`), never kept for good.
+ */
+const FULL_WALK_INTERVAL = 32;
+
+/** At most this many names of missed kinds are kept (`ShadowJournalDiagnostics.missedKinds`). */
+const MAX_MISSED_KINDS = 8;
+
+/** How the caster walks went, counted since the refresh was made (`ShadowMapRefresh.journalDiagnostics`). */
+export interface ShadowJournalDiagnostics {
+  /** Journal walks: one per caster walk. */
+  walks: number;
+  /** Casters those walks held, summed: what the full scan would have walked. */
+  casters: number;
+  /** Casters those walks walked, summed. */
+  visited: number;
+  /** Source meshes and Materials those walks polled (once each per walk), summed. */
+  polledSources: number;
+  polledMaterials: number;
+  /** Full walks run after a journal walk: every `FULL_WALK_INTERVAL`th one, or each while verifying. */
+  fullWalks: number;
+  /** Casters a periodic full walk found changed after the journal walk: a missed change, healed. */
+  heals: number;
+  /** The same, found while verifying (`verifyRenderChangeJournal`): every frame is checked. */
+  mismatches: number;
+  /** The first distinct kinds of state missed (a caster snapshot value, `flags` or `lodLevel`). */
+  missedKinds: string[];
 }
 
 /** Cascade transform matrices (4 x 16) of a cascaded map's last actual pass. */
 type DrawnFit = { matrices: Float64Array; valid: boolean };
 
 type Caster = {
+  readonly mesh: AbstractMesh;
+  /**
+   * The mesh whose geometry, parts and Material it draws, as its last walk found it: itself, or an instance's source
+   * (which an instance pool can reassign).
+   */
+  source: AbstractMesh;
+  readonly instance: boolean;
+  /**
+   * Whether the change journal hears its visibility, enabled and Material writes (`journalFollows`): one whose class
+   * redefines them is walked every frame.
+   */
+  readonly followed: boolean;
   snapshot: Snapshot;
+  /** What its last walk read of what it shares, and of what a journal walk polls for it each frame. */
+  sourceShared: SourceState | null;
+  materialShared: Shared | null;
+  billboard: number;
+  infinite: boolean;
+  autoLod: boolean;
+  lattice: boolean;
+  /** Visible with automatic levels of detail: the level the camera draws is read every walk (`lodLevels`). */
+  lod: boolean;
+  /** The walk that found it among the casters, and the walk that must walk it. */
+  seen: number;
+  dirty: number;
   geometry: Geometry | null;
   world: Matrix | null;
   worldFlag: number;
@@ -68,10 +135,16 @@ type Caster = {
  * What casters share, read once per walk however many of them share it: a revision that moves with any value the walk
  * follows there (never one another record held), and the walk that last read it.
  */
-type Shared = { snapshot: Snapshot; revision: number; walk: number };
+type Shared = {
+  snapshot: Snapshot; revision: number; walk: number;
+  /** The walk whose poll found it changed (its casters are walked then), and the last walk a caster used it. */
+  changed: number; used: number;
+};
 
 /** A source mesh's part of its casters' state: its own, and each instance's. */
 type SourceState = Shared & {
+  /** The geometry its last read found: a poll that finds another leaves the read to its casters' walks. */
+  geometry: Geometry | null;
   /** Its geometry is static and it has no render hook: a caster's `safeMesh`, what the caster itself decides aside. */
   rigid: boolean;
   levels: boolean;
@@ -158,9 +231,23 @@ export class ShadowMapRefresh {
   private readonly casters = new Map<AbstractMesh, Caster>();
   /** Per source mesh, Material and geometry a caster of the last walk used (`Shared`). */
   private readonly sources = new Map<AbstractMesh, SourceState>();
-  private readonly materials = new WeakMap<Material, Shared>();
+  private readonly materials = new Map<Material, Shared>();
   private readonly geometries = new WeakMap<Geometry, GeometryState>();
   private walk = 0;
+  /** The casters of the walk running, in the order the controller lists them. */
+  private readonly order: Caster[] = [];
+  /** The Scene's change journal, as this refresh reads it (`render-change-journal.ts`). */
+  private reader: RenderChangeReader | null = null;
+  private readerScene: Scene | null = null;
+  /** The Scene's default Material the last walk gave a caster without one; a replacement walks every caster. */
+  private defaultMaterial: Material | null = null;
+  /** Journal walks since the last full walk. */
+  private sinceFull = 0;
+  /** Scratch for a full walk after a journal walk: each automatic-LOD caster's level as the journal walk found it. */
+  private readonly lodCheck = new Map<AbstractMesh, number>();
+  private readonly stats: ShadowJournalDiagnostics = {
+    walks: 0, casters: 0, visited: 0, polledSources: 0, polledMaterials: 0, fullWalks: 0, heals: 0, mismatches: 0, missedKinds: [],
+  };
   private sharedRevision = 0;
   /** Scratch for the cascaded map being applied: transform matrices, then x/y axis scales per cascade. */
   private readonly cascadeMatrices: ArrayLike<number>[] = [];
@@ -207,18 +294,171 @@ export class ShadowMapRefresh {
       if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
     }
-    // A walk drops the sources its casters left; without one, a disposed source is not kept.
-    if (!walks) for (const source of this.sources.keys()) if (source.isDisposed()) this.sources.delete(source);
+    if (walks) return;
+    // A walk drops the sources and Materials its casters left; without one, a disposed source or a Material no caster
+    // holds is not kept.
+    for (const source of this.sources.keys()) if (source.isDisposed()) this.sources.delete(source);
+    // Only walks add Materials, so the first call after one sweeps them.
+    if (!this.reader) return;
+    const held = new Set<Shared>();
+    for (const record of this.casters.values()) if (record.materialShared) held.add(record.materialShared);
+    for (const [material, shared] of this.materials) if (!held.has(shared)) this.materials.delete(material);
+    // Nothing drains the journal until a walk: it stops recording, and the next walk reads every caster.
+    this.reader.dispose();
+    this.reader = this.readerScene = null;
   }
 
+  /** How the caster walks went (`ShadowJournalDiagnostics`); a copy. */
+  journalDiagnostics(): ShadowJournalDiagnostics {
+    return { ...this.stats, missedKinds: [...this.stats.missedKinds] };
+  }
+
+  /**
+   * The frame's caster walk. It walks (`walkCaster`, the one reading of what a caster's shadow depends on) only the
+   * casters something may have changed since their last walk, as the Scene's change journal and a few polls tell:
+   * - its world matrix: every caster is asked for it (`computeWorldMatrix`), because Babylon recomputes a child of a
+   *   moved ancestor only when asked, and its matrix object or `updateFlag` is compared (a frozen matrix an owner
+   *   rewrites in place has no other write point);
+   * - enabled, visibility and Material writes, its own or an ancestor's: the journal (`render-change-journal.ts`);
+   * - billboard mode, infinite distance, an instance's lattice cage and the automatic-LOD masters: read per caster,
+   *   each one field or lookup, none with a write point;
+   * - what it shares: each distinct source mesh and Material in use is polled once (`sourceState`, `materialState`),
+   *   since parts, thin-instance buffers, levels of detail, render observers, buffer updatability and Material depth,
+   *   culling and transparency state have no write point; a change walks every caster using it;
+   * - a new caster, a replaced default Material, or a journal this reader fell behind on: every caster.
+   * Every `FULL_WALK_INTERVAL`th walk, and each while verifying (`verifyRenderChangeJournal`), the full walk follows and
+   * counts what it still found changed (`journalDiagnostics`).
+   */
   syncCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>): void {
-    this.dropRemovedCasters(meshes, true);
+    this.walkCasters(scene, meshes, true);
+    const verifying = verifiesRenderChangeJournal();
+    if (verifying || ++this.sinceFull >= FULL_WALK_INTERVAL) {
+      this.sinceFull = 0;
+      this.stats.fullWalks++;
+      const missed = this.walkCasters(scene, meshes, false);
+      if (verifying) this.stats.mismatches += missed;
+      else this.stats.heals += missed;
+    }
+    this.syncScene(scene);
+  }
+
+  private readerFor(scene: Scene): { reader: RenderChangeReader; fresh: boolean } {
+    if (this.reader && this.readerScene === scene) return { reader: this.reader, fresh: false };
+    this.reader?.dispose();
+    // Not transforms or geometry: asking every caster for its world matrix, and polling each source, already finds them.
+    this.reader = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material | RenderChange.Other);
+    this.readerScene = scene;
+    return { reader: this.reader, fresh: true };
+  }
+
+  private noteMissed(kind: string): void {
+    const kinds = this.stats.missedKinds;
+    if (kinds.length < MAX_MISSED_KINDS && !kinds.includes(kind)) kinds.push(kind);
+  }
+
+  /**
+   * One walk over `meshes`: a journal walk (`journal`) walks the casters something may have changed, a full walk every
+   * caster. A full walk returns how many casters it found changed: after a journal walk of the same frame, each is one
+   * that walk missed.
+   */
+  private walkCasters(scene: Scene, meshes: ReadonlySet<AbstractMesh>, journal: boolean): number {
     const walk = ++this.walk;
+    const stats = this.stats;
+    // The levels as the journal walk left them, to compare.
+    const lodCheck = this.lodCheck;
+    lodCheck.clear();
+    if (!journal) for (const [mesh, level] of this.lodLevels) lodCheck.set(mesh, level);
+    this.lodLevels.clear();
+    let everything = !journal;
+    if (journal) {
+      const { reader, fresh } = this.readerFor(scene);
+      if (fresh) everything = true;
+      // Walks that give a caster the new default note it again.
+      if (this.defaultMaterial && (scene as unknown as { _defaultMaterial: Material | null })._defaultMaterial !== this.defaultMaterial) {
+        this.defaultMaterial = null;
+        everything = true;
+      }
+      if (!everything) {
+        for (const [source, shared] of this.sources) this.pollSource(scene, source, shared, walk);
+        for (const [material, shared] of this.materials) {
+          const revision = shared.revision;
+          this.materialState(material, walk);
+          if (shared.revision !== revision) shared.changed = walk;
+        }
+        stats.polledSources += this.sources.size;
+        stats.polledMaterials += this.materials.size;
+      }
+      stats.walks++;
+      stats.casters += meshes.size;
+      // Asking every caster for its world matrix below notes recomputed ones; the drain after it reads those too.
+      this.collect(meshes, walk, everything);
+      if (!reader.drain((node) => {
+        const record = this.casters.get(node as AbstractMesh);
+        if (record) record.dirty = walk;
+      })) everything = true;
+    } else this.collect(meshes, walk, true);
+    let visited = 0, missed = 0;
+    for (const record of this.order) {
+      const mesh = record.mesh;
+      if (!everything && record.dirty !== walk) {
+        if (record.lod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
+        continue;
+      }
+      visited++;
+      if (journal) {
+        this.walkCaster(scene, record, walk);
+        continue;
+      }
+      const revision = record.revision;
+      const flags = +record.shown | (+record.safe << 1) | (+record.unsafe << 2) | (+record.bounded << 3);
+      const first = this.walkCaster(scene, record, walk);
+      let kind: string | null = null;
+      if (record.revision !== revision) kind = CASTER_VALUES[first] ?? "transform";
+      else if (flags !== (+record.shown | (+record.safe << 1) | (+record.unsafe << 2) | (+record.bounded << 3))) kind = "flags";
+      else if (lodCheck.get(mesh) !== this.lodLevels.get(mesh)) kind = "lodLevel";
+      if (kind) {
+        missed++;
+        this.noteMissed(kind);
+      }
+    }
+    if (journal) stats.visited += visited;
+    // Sources and Materials no caster uses any more.
+    if (this.sources.size > meshes.size || walk % 64 === 0)
+      for (const [source, shared] of this.sources) if (shared.used !== walk) this.sources.delete(source);
+    if (this.materials.size > meshes.size || walk % 64 === 0)
+      for (const [material, shared] of this.materials) if (shared.used !== walk) this.materials.delete(material);
+    return missed;
+  }
+
+  /**
+   * Lists the walk's casters in order (new ones made) and asks each for its world matrix, marking the casters a poll
+   * finds changed (`syncCasters`); drops the casters `meshes` no longer holds.
+   */
+  private collect(meshes: ReadonlySet<AbstractMesh>, walk: number, everything: boolean): void {
+    const order = this.order;
+    order.length = 0;
+    const before = this.casters.size;
+    let kept = 0;
     for (const mesh of meshes) {
       let record = this.casters.get(mesh);
-      if (!record) {
+      if (record) kept++;
+      else {
+        const instance = mesh instanceof InstancedMesh;
         record = {
+          mesh,
+          source: instance ? mesh.sourceMesh : mesh,
+          instance,
+          followed: journalFollows(mesh),
           snapshot: new Snapshot(),
+          sourceShared: null,
+          materialShared: null,
+          billboard: 0,
+          infinite: false,
+          autoLod: false,
+          lattice: false,
+          lod: false,
+          seen: 0,
+          dirty: walk,
           geometry: null,
           world: null,
           worldFlag: -1,
@@ -232,68 +472,136 @@ export class ShadowMapRefresh {
         };
         this.casters.set(mesh, record);
       }
-      // An instance draws its source's geometry, sub-meshes and material at its own world matrix: its shadow content is
-      // its source's, posed and shown by the instance itself.
-      const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
-      const geometry = source instanceof Mesh ? source.geometry : null;
-      if (record.geometry !== geometry) {
-        if (record.geometry) unwatchGeometry(record.geometry);
-        record.geometry = geometry;
-        if (geometry) watchGeometry(geometry);
-      }
-      const material = mesh.material ?? scene.defaultMaterial;
-      // What the caster shares with others is read once per walk: its source's part and its Material's.
-      const shared = this.sourceState(source, geometry, material, walk);
-      const state = record.snapshot;
-      state.begin();
-      // freezeWorldMatrix(matrix), used by bone attachments, can replace/update
-      // a frozen matrix without firing onAfterWorldMatrixUpdateObservable.
+      record.seen = walk;
+      order.push(record);
       const world = mesh.computeWorldMatrix();
-      if (world !== record.world || world.updateFlag !== record.worldFlag) {
-        if (!world.equals(record.worldValue)) record.transformRevision++;
-        record.worldValue.copyFrom(world);
-        record.world = world;
-        record.worldFlag = world.updateFlag;
-      }
-      state.value(record.transformRevision);
-      const enabled = mesh.isEnabled();
-      state.value(enabled);
-      state.value(mesh.isVisible);
-      state.value(mesh.visibility);
-      state.value(shared.revision);
-      state.value(material);
-      state.value(this.materialState(material, walk).revision);
-      // An instance caches as its source does (`canCacheShadowMaterial`), unless a cage deforms the instance itself.
-      const safeMaterial = shared.material !== material
-        ? canCacheShadowMaterial(material, mesh)
-        : shared.safeMaterial && (source === mesh || !hasMeshLatticeDeformer(mesh));
-      state.value(safeMaterial);
-      // Automatic LOD levels are immutable index buffers that mirror this
-      // mesh's material. Only maps that can see this caster track its level.
-      const autoLod = isAutoLodMaster(mesh);
-      // An instance of a mesh with levels of detail draws the level its source selects: it keeps refreshing.
-      const safeMesh =
-        shared.rigid &&
-        !mesh.infiniteDistance &&
-        mesh.billboardMode === Mesh.BILLBOARDMODE_NONE &&
-        (source === mesh ? autoLod || !shared.levels : !shared.levels);
-      state.value(safeMesh);
-      state.end();
-      if (state.changed) {
-        record.revision++;
-        this.casterChanged?.(mesh);
-      }
-      record.shown = enabled && mesh.isVisible;
-      const visible = record.shown && mesh.visibility > 0;
-      record.safe = safeMesh && safeMaterial;
-      record.unsafe = visible && !record.safe;
-      // Babylon's bounds leave thin instances out unless refreshed for them.
-      record.bounded = safeMesh && !shared.thin;
-      if (visible && autoLod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
+      if (record.sourceShared) record.sourceShared.used = walk;
+      if (record.materialShared) record.materialShared.used = walk;
+      if (everything || record.dirty === walk) continue;
+      if (
+        !record.followed ||
+        world !== record.world ||
+        world.updateFlag !== record.worldFlag ||
+        record.sourceShared!.changed === walk ||
+        record.materialShared!.changed === walk ||
+        mesh.billboardMode !== record.billboard ||
+        mesh.infiniteDistance !== record.infinite ||
+        isAutoLodMaster(mesh) !== record.autoLod ||
+        (record.instance &&
+          ((mesh as InstancedMesh).sourceMesh !== record.source || hasMeshLatticeDeformer(mesh) !== record.lattice))
+      )
+        record.dirty = walk;
     }
-    // Sources no caster uses any more.
-    if (this.sources.size > meshes.size || walk % 64 === 0)
-      for (const [source, shared] of this.sources) if (shared.walk !== walk) this.sources.delete(source);
+    if (kept === before) return;
+    // Removed casters leave each map's in-range list, which refreshes that map.
+    for (const [mesh, record] of this.casters) {
+      if (record.seen === walk) continue;
+      if (record.geometry) unwatchGeometry(record.geometry);
+      this.casters.delete(mesh);
+    }
+  }
+
+  /**
+   * Polls a source mesh a caster used (`sourceState`): a change of its read, or of what it derives, walks every caster
+   * drawing it. A source that has another geometry is left to those casters' walks, which watch it first.
+   */
+  private pollSource(scene: Scene, source: AbstractMesh, shared: SourceState, walk: number): void {
+    const geometry = source instanceof Mesh ? source.geometry : null;
+    if (geometry !== shared.geometry) {
+      shared.changed = walk;
+      return;
+    }
+    const { revision, rigid, levels, thin, material, safeMaterial } = shared;
+    this.sourceState(source, geometry, source.material ?? scene.defaultMaterial, walk);
+    if (
+      shared.revision !== revision || shared.rigid !== rigid || shared.levels !== levels || shared.thin !== thin ||
+      shared.material !== material || shared.safeMaterial !== safeMaterial
+    )
+      shared.changed = walk;
+  }
+
+  /**
+   * Reads everything a caster's shadow depends on into its snapshot: a change bumps its revision. Returns the index of
+   * the first value that changed (`CASTER_VALUES`), or -1.
+   */
+  private walkCaster(scene: Scene, record: Caster, walk: number): number {
+    const mesh = record.mesh;
+    // An instance draws its source's geometry, sub-meshes and material at its own world matrix: its shadow content is
+    // its source's, posed and shown by the instance itself.
+    const source = record.instance ? (mesh as InstancedMesh).sourceMesh : mesh;
+    record.source = source;
+    const geometry = source instanceof Mesh ? source.geometry : null;
+    if (record.geometry !== geometry) {
+      if (record.geometry) unwatchGeometry(record.geometry);
+      record.geometry = geometry;
+      if (geometry) watchGeometry(geometry);
+    }
+    const ownMaterial = mesh.material;
+    const material = ownMaterial ?? scene.defaultMaterial;
+    if (!ownMaterial) this.defaultMaterial = material;
+    // What the caster shares with others is read once per walk: its source's part and its Material's.
+    const shared = this.sourceState(source, geometry, material, walk);
+    const materialShared = this.materialState(material, walk);
+    shared.used = materialShared.used = walk;
+    record.sourceShared = shared;
+    record.materialShared = materialShared;
+    const state = record.snapshot;
+    state.begin();
+    // freezeWorldMatrix(matrix), used by bone attachments, can replace/update
+    // a frozen matrix without firing onAfterWorldMatrixUpdateObservable.
+    const world = mesh.computeWorldMatrix();
+    if (world !== record.world || world.updateFlag !== record.worldFlag) {
+      if (!world.equals(record.worldValue)) record.transformRevision++;
+      record.worldValue.copyFrom(world);
+      record.world = world;
+      record.worldFlag = world.updateFlag;
+    }
+    state.value(record.transformRevision);
+    const enabled = mesh.isEnabled();
+    state.value(enabled);
+    state.value(mesh.isVisible);
+    state.value(mesh.visibility);
+    state.value(shared.revision);
+    state.value(material);
+    state.value(materialShared.revision);
+    // An instance caches as its source does (`canCacheShadowMaterial`), unless a cage deforms the instance itself.
+    const lattice = record.instance && hasMeshLatticeDeformer(mesh);
+    const safeMaterial = shared.material !== material
+      ? canCacheShadowMaterial(material, mesh)
+      : shared.safeMaterial && !lattice;
+    state.value(safeMaterial);
+    // Automatic LOD levels are immutable index buffers that mirror this
+    // mesh's material. Only maps that can see this caster track its level.
+    const autoLod = isAutoLodMaster(mesh);
+    // An instance of a mesh with levels of detail draws the level its source selects: it keeps refreshing.
+    const safeMesh =
+      shared.rigid &&
+      !mesh.infiniteDistance &&
+      mesh.billboardMode === Mesh.BILLBOARDMODE_NONE &&
+      (source === mesh ? autoLod || !shared.levels : !shared.levels);
+    state.value(safeMesh);
+    state.end();
+    if (state.changed) {
+      record.revision++;
+      this.casterChanged?.(mesh);
+    }
+    record.shown = enabled && mesh.isVisible;
+    const visible = record.shown && mesh.visibility > 0;
+    record.safe = safeMesh && safeMaterial;
+    record.unsafe = visible && !record.safe;
+    // Babylon's bounds leave thin instances out unless refreshed for them.
+    record.bounded = safeMesh && !shared.thin;
+    record.billboard = mesh.billboardMode;
+    record.infinite = mesh.infiniteDistance;
+    record.autoLod = autoLod;
+    record.lattice = lattice;
+    record.lod = visible && autoLod;
+    if (record.lod) this.lodLevels.set(mesh, peekAutoLodLevel(mesh, scene.activeCamera) ?? 0);
+    return state.first;
+  }
+
+  /** The Scene's own part of every map's state. */
+  private syncScene(scene: Scene): void {
     const state = this.sceneState;
     state.begin();
     // Not the floating origin: a shadow pass offsets the casters and the light's view alike, so the depth it draws is
@@ -324,7 +632,7 @@ export class ShadowMapRefresh {
   /** The depth and culling state of a Material, the same for every caster that draws with it. */
   private materialState(material: Material, walk: number): Shared {
     let shared = this.materials.get(material);
-    if (!shared) this.materials.set(material, (shared = { snapshot: new Snapshot(), revision: 0, walk: 0 }));
+    if (!shared) this.materials.set(material, (shared = { snapshot: new Snapshot(), revision: 0, walk: 0, changed: 0, used: 0 }));
     if (shared.walk === walk) return shared;
     const state = shared.snapshot;
     state.begin();
@@ -374,10 +682,14 @@ export class ShadowMapRefresh {
   private sourceState(source: AbstractMesh, geometry: Geometry | null, material: Material, walk: number): SourceState {
     let shared = this.sources.get(source);
     if (!shared) {
-      shared = { snapshot: new Snapshot(), revision: 0, walk: 0, rigid: false, levels: false, thin: false, material, safeMaterial: false };
+      shared = {
+        snapshot: new Snapshot(), revision: 0, walk: 0, changed: 0, used: 0, geometry,
+        rigid: false, levels: false, thin: false, material, safeMaterial: false,
+      };
       this.sources.set(source, shared);
     }
     if (shared.walk === walk) return shared;
+    shared.geometry = geometry;
     // Null once another owner replaced the shared update hook: updates are no longer counted.
     const geometryWatch = geometry ? geometryRevision(geometry) : null;
     const state = shared.snapshot;
@@ -686,6 +998,9 @@ export class ShadowMapRefresh {
       if (record.geometry) unwatchGeometry(record.geometry);
     this.casters.clear();
     this.sources.clear();
+    this.materials.clear();
     this.lodLevels.clear();
+    this.reader?.dispose();
+    this.reader = this.readerScene = null;
   }
 }

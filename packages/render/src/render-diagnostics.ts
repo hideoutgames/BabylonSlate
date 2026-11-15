@@ -109,6 +109,16 @@ export type RenderDiagnostics = {
      * `MAX_READINESS_BLOCKERS`): a graph task, a mesh and its Material, a texture, a render target. Empty before one fails.
      */
     readinessBlockers: string[];
+    /**
+     * The shadow caster walks of the Scene, counted since its shadows began (`ShadowJournalDiagnostics`): how many
+     * casters the change journal's walks visited of those they held, and what a full walk still found changed after
+     * one (`heals`, every 32nd frame; `mismatches`, every frame while `verifyRenderChangeJournal` is on). Absent
+     * without shadows.
+     */
+    shadowJournal?: {
+      walks: number; casters: number; visited: number; polledSources: number; polledMaterials: number;
+      fullWalks: number; heals: number; mismatches: number; missedKinds: string[];
+    };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
