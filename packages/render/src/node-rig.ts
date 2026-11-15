@@ -13,6 +13,7 @@ import { isRigJointNode } from "./skeleton-preview";
 
 export { attachSkeletonPreview, type SkeletonPreviewHandle } from "./skeleton-preview";
 export { attachSkeletonSocketPreview, type SkeletonSocketPreviewHandle } from "./skeleton-socket-preview";
+export { attachSkeletalControlPreview, type SkeletalControlPreviewHandle } from "./skeletal-control-preview";
 
 export function ensureNodeRotationQuaternion(node: TransformNode): void {
   if (!node.rotationQuaternion) {

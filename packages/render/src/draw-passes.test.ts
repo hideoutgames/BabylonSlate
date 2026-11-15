@@ -1,8 +1,11 @@
 import { Constants } from "@babylonjs/core/Engines/constants";
+import { FrameGraphCullObjectsTask } from "@babylonjs/core/FrameGraph/Tasks/Misc/cullObjectsTask";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Scene } from "@babylonjs/core/scene";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -15,6 +18,7 @@ import {
   withDrawPass,
 } from "./draw-passes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
+import { timeParticleAnimation } from "./particle-animation-pass";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { DisplayConversion } from "./display-conversion";
@@ -135,6 +139,59 @@ describe("DrawPassFrame", () => {
     expect(Object.values(frame.lastMs).reduce((sum, ms) => sum + ms, 0)).toBe(26);
   });
 
+  it("times the cull, readiness, particle and observer passes as the innermost pass, with the rest to `other`", () => {
+    const { engine } = counter();
+    const spend = clock();
+    const frame = new DrawPassFrame(engine);
+    frame.timePasses();
+    beginDrawPassFrame(frame);
+    withDrawPass(engine, "readiness", () => spend(2), false);
+    enterDrawPass(engine, "observers");
+    spend(3);
+    // A Mirror's update inside a before-render observer is the mirror's, not the observers'.
+    withDrawPass(engine, "mirrors", () => spend(5));
+    spend(1);
+    leaveDrawPass(engine);
+    spend(4);
+    withDrawPass(engine, "particles", () => spend(7), false);
+    withDrawPass(engine, "cull", () => spend(11), false);
+    endDrawPassFrame(frame);
+    publishDrawPassFrame(frame);
+    expect(frame.lastMs).toEqual({ ...emptyDrawPasses(), readiness: 2, observers: 4, mirrors: 5, other: 4, particles: 7, cull: 11 });
+    expect(Object.values(frame.lastMs).reduce((sum, ms) => sum + ms, 0)).toBe(33);
+    // They draw nothing unless something does inside them.
+    expect(frame.last).toEqual(emptyDrawPasses());
+  });
+
+  it("brackets each started particle system's animation once as `particles`, and only inside a frame", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const spend = clock();
+    const system = new ParticleSystem("sparks", 8, scene);
+    let animations = 0;
+    system.animate = (() => { animations += 1; spend(6); }) as typeof system.animate;
+    timeParticleAnimation(scene);
+    // A second sweep does not wrap it again: its time would otherwise count in nested pairs, harmlessly, but its call
+    // chain would grow with every frame.
+    const wrapped = system.animate;
+    timeParticleAnimation(scene);
+    expect(system.animate).toBe(wrapped);
+    // Outside a frame it only calls through.
+    system.animate();
+    expect(animations).toBe(1);
+    const frame = new DrawPassFrame(engine);
+    frame.timePasses();
+    beginDrawPassFrame(frame);
+    spend(1);
+    system.animate();
+    system.animate();
+    endDrawPassFrame(frame);
+    publishDrawPassFrame(frame);
+    expect(animations).toBe(3);
+    expect(frame.lastMs).toEqual({ ...emptyDrawPasses(), other: 1, particles: 12 });
+  });
+
   it("times nothing until asked, and from the next frame begun once asked mid-frame", () => {
     const { engine } = counter();
     const spend = clock();
@@ -232,5 +289,56 @@ describe("draw passes of a Forward graph frame", () => {
     expect(render().passes).toEqual({ ...emptyDrawPasses(), shadows: 1, captures: 3, objects: 2 });
     graph.dispose();
     captures.dispose();
+  });
+
+  it("times a frame's cull, readiness, particle animation and before-render observers as their own passes, adding up to the frame", async () => {
+    const { engine, scene, camera } = host();
+    const material = new StandardMaterial("opaque", scene);
+    const box = MeshBuilder.CreateBox("box", {}, scene);
+    box.material = material;
+    new HemisphericLight("sky", new Vector3(0, 1, 0), scene);
+    await material.forceCompilationAsync(box);
+    const system = new ParticleSystem("sparks", 8, scene);
+    system.emitter = Vector3.Zero();
+    // NullEngine compiles no particle effect and draws nothing: stub only its readiness and native draw.
+    vi.spyOn(system, "isReady").mockReturnValue(true);
+    vi.spyOn(system, "render").mockReturnValue(0);
+    const graph = new ForwardSceneFrameGraph(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    // A started system: Babylon animates it, and the test's own animation stands in for its CPU update.
+    vi.spyOn(system, "isStarted").mockReturnValue(true);
+    let now = 5000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const spend = (ms: number) => { now += ms; };
+    system.animate = (() => spend(13)) as typeof system.animate;
+    scene.onBeforeRenderObservable.add(() => spend(3));
+    scene.onBeforeRenderObservable.add(() => withDrawPass(engine, "mirrors", () => spend(5)));
+    // The cull task's own work, as Babylon runs it inside the task (its observers and passes).
+    const execute = (FrameGraphCullObjectsTask.prototype as unknown as { _execute(): void })._execute;
+    vi.spyOn(FrameGraphCullObjectsTask.prototype as unknown as { _execute(): void }, "_execute")
+      .mockImplementation(function (this: FrameGraphCullObjectsTask) { spend(7); execute.call(this); });
+    vi.spyOn(graph as unknown as { syncShadowAdmission(): void }, "syncShadowAdmission").mockImplementation(() => spend(2));
+    const frame = new DrawPassFrame(engine);
+    frame.timePasses();
+    const render = () => {
+      beginEngineDrawCallFrame(engine);
+      beginDrawPassFrame(frame);
+      const started = now;
+      expect(graph.render(camera, false).path).toBe("frameGraph");
+      endDrawPassFrame(frame);
+      publishDrawPassFrame(frame);
+      return { ms: { ...frame.lastMs }, span: now - started };
+    };
+    // The first frame finds the particle system and wraps it; its animation ran after that, inside the same frame.
+    for (let frames = 0; frames < 2; frames += 1) {
+      const { ms, span } = render();
+      expect(ms).toMatchObject({ cull: 7, readiness: 2, particles: 13, observers: 3, mirrors: 5 });
+      // Nothing else spent time, and what each pass holds adds up to the frame's span.
+      expect(ms.other).toBe(0);
+      expect(Object.values(ms).reduce((sum, value) => sum + value, 0)).toBe(span);
+    }
+    // The existing split is untouched: this frame drew the box once and nothing else drew.
+    expect(frame.last).toEqual({ ...emptyDrawPasses(), objects: 1 });
+    graph.dispose();
   });
 });

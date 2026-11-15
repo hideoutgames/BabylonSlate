@@ -59,6 +59,9 @@ Nodes of a 3D Animation Graph's state graphs that change bones of the pose they 
 | Node | Description |
 | --- | --- |
 | [Transform Bone](transform-bone.md) | Changes one bone's translation, rotation and scale: each replaced or added to, in actor, parent or bone space, blended in by Alpha. |
+| [Look At](look-at.md) | Turns one bone so its Aim Axis points at Target, within an angle limit, optionally keeping its Up Axis up, blended in by Alpha. |
+| [Two Bone IK](two-bone-ik.md) | Moves a hand or foot to Effector by turning its parent and grandparent, bending toward Joint Target, blended in by Alpha. |
+| [Spring Bones](spring-bones.md) | Simulates the bones below a Root Bone as springs that trail the pose, such as a tail, hair or a cape, blended in by Alpha. |
 
 ## Frames
 

@@ -9,8 +9,11 @@ import type {
 import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
   type ResolvedClipAdditive,
-  ANIM_CONTROL_TRANSFORM_BONE_TYPE,
+  ANIM_CONTROL_LOOK_AT_TYPE,
+  ANIM_CONTROL_TWO_BONE_IK_TYPE,
+  ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_POSE_APPLY_ADDITIVE_TYPE,
+  isSkeletalControlType,
   ANIM_FRAME_OUTPUT_TYPE,
   ANIM_POSE_SAVE_CACHED_TYPE,
   ANIM_POSE_USE_CACHED_TYPE,
@@ -44,7 +47,7 @@ const ANIM_RULE_EXIT_NODE_ID = "exit-state";
 export const ANIM_EXIT_TIME_REACHED_TYPE = "anim.state.exitTimeReached";
 
 export type AnimClipKind = "animation" | "sprite";
-export type AnimVariableTypeId = "bool" | "int" | "float" | "string" | "tag" | "struct";
+export type AnimVariableTypeId = "bool" | "int" | "float" | "string" | "tag" | "vec3" | "rotator" | "struct";
 
 /** A 3D graph plays Animations on its Skeleton and passes poses; a 2D graph plays Sprite Animations and passes frames. */
 export type AnimGraphDimension = AnimPoseDimension;
@@ -240,8 +243,10 @@ export interface AnimEvalState extends AnimMachineEvalState {
   layers: AnimClipLayer[];
   /** The Layered Blend Per Bone nodes this tick reached, which layers' `masks` index; absent when none. */
   layerBlends?: AnimLayerBlend[];
-  /** Transform Bone changes, in the order render applies them after the layers blend; absent when none. */
+  /** Skeletal control changes, in the order render applies them after the layers blend; absent when none. */
   boneModifiers?: AnimBoneModifier[];
+  /** Each Look At's target as it eases toward the one it is given (its Interpolation Time), by `graphKey#nodeId`. */
+  lookAtTargets?: Record<string, number[]>;
   /** Slot animations playing, by slot name; absent when none. */
   slots?: Record<string, AnimSlotState>;
   /** What happened to slot plays this tick (blend out, completed, interrupted), in order; absent when nothing. */
@@ -307,6 +312,10 @@ export function defaultAnimVariableValue(
       return 0;
     case "string":
       return "";
+    case "vec3":
+      return { x: 0, y: 0, z: 0 };
+    case "rotator":
+      return { pitch: 0, yaw: 0, roll: 0 };
     case "struct":
       return typeClassId === "engine:TagContainer" ? { Tags: [] } : {};
   }
@@ -570,8 +579,9 @@ export function validateAnimGraph(
       diagnostics.push(...clipDiagnostics(doc, byGuid, node.id, node.type, assetGuid, location, options.dimension));
     }
     for (const node of graph.nodes) {
-      if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE && !(typeof node.data.bone === "string" && node.data.bone.trim())) {
-        diagnostics.push({ code: "anim.missingBone", message: "Transform Bone changes no bone until it names one", nodeId: node.id, location, severity: "warning" });
+      if (isSkeletalControlType(node.type) && !(typeof node.data.bone === "string" && node.data.bone.trim())) {
+        const title = SKELETAL_CONTROL_TITLES[node.type] ?? "Transform Bone";
+        diagnostics.push({ code: "anim.missingBone", message: `${title} changes no bone until it names one`, nodeId: node.id, location, severity: "warning" });
       }
     }
   }
@@ -579,6 +589,12 @@ export function validateAnimGraph(
   diagnostics.push(...additiveDiagnostics(doc, byGuid));
   return diagnostics;
 }
+
+const SKELETAL_CONTROL_TITLES: Record<string, string> = {
+  [ANIM_CONTROL_LOOK_AT_TYPE]: "Look At",
+  [ANIM_CONTROL_TWO_BONE_IK_TYPE]: "Two Bone IK",
+  [ANIM_CONTROL_SPRING_BONES_TYPE]: "Spring Bones",
+};
 
 /**
  * Additive Animations play only under an Apply Additive's Additive input, and only additive ones play there. Walks
@@ -910,10 +926,22 @@ function copyGraph(graph: SerializedGraph): SerializedGraph {
 
 function parseVariableType(value: unknown, typeClassId?: unknown): AnimVariableTypeId {
   if (value === "struct" && typeClassId === "engine:TagContainer") return "struct";
-  if (value === "int" || value === "float" || value === "string" || value === "bool" || value === "tag") {
+  if (value === "int" || value === "float" || value === "string" || value === "bool" || value === "tag" || value === "vec3" || value === "rotator") {
     return value;
   }
   return "bool";
+}
+
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/** A Vector or Rotator variable's default as stored, with every component a number. */
+function normalizeStructDefault(typeId: "vec3" | "rotator", value: unknown): Record<string, number> {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return typeId === "vec3"
+    ? { x: finiteOr(row.x, 0), y: finiteOr(row.y, 0), z: finiteOr(row.z, 0) }
+    : { pitch: finiteOr(row.pitch, 0), yaw: finiteOr(row.yaw, 0), roll: finiteOr(row.roll, 0) };
 }
 
 function parseVariables(
@@ -942,6 +970,7 @@ function parseVariables(
         defaultValue:
           typeId === "tag" ? normalizeTag(variable.defaultValue) :
           typeId === "struct" ? normalizeTagContainer(variable.defaultValue) :
+          typeId === "vec3" || typeId === "rotator" ? normalizeStructDefault(typeId, variable.defaultValue) :
           variable.defaultValue !== undefined
             ? variable.defaultValue
             : defaultAnimVariableValue(typeId),

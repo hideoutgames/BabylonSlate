@@ -50,7 +50,7 @@ The **Preview** window plays the graph in the editor, without a Simulation. It r
 | Restart | Returns to the entry state at time 0. Preview Values are kept. |
 | Speed | 0.25× to 2×. |
 | Preview Model | 3D. The Model the Preview shows, from the Models on the graph's Skeleton, or with no Skeleton, the Models its Animations come from. The choice is saved with the graph and is used only in the editor. |
-| Bones | 3D. Shows the Skeleton's bones instead of the mesh. |
+| Bones | 3D. Shows the Skeleton's bones instead of the mesh, with a marker at each [Look At](../scripting/animation/look-at.md) target and [Two Bone IK](../scripting/animation/two-bone-ik.md) Effector (orange) and Joint Target (violet), and each [Spring Bones](../scripting/animation/spring-bones.md) collider (see-through blue). |
 
 The bar ends with the playing state and its time. A 3D graph plays on a floor grid; drag to orbit. A 2D graph shows the current frame on a checkerboard, flipped as the state graph flips it.
 
@@ -100,7 +100,7 @@ An alias's transitions take their turn among each covered state's own transition
 | Open Rule | Opens the transition's rule graph, as double-tapping its wire does. The transition fires when its **Exit State** and **Enter State** nodes are both true. An unconnected one counts as true. **Back To State Machine** returns to the State Machine with the transition selected. |
 | Flip Direction | Swaps the source and target of a One Way transition. |
 
-Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule and state graphs read them with Get Variable nodes.
+Variables can be Bool, Int, Float, String, Vector3, Rotator, Tag or Tag Container. Rule and state graphs read them with Get Variable nodes. A Vector3 suits a point a bone aims at or reaches for, a Rotator a turn for [Transform Bone](../scripting/animation/transform-bone.md).
 
 ## Sync Groups
 
@@ -113,7 +113,18 @@ A 3D state graph can play different clips on different parts of the body, reuse 
 - [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) plays each Blend Pose on the bones of its branches only, such as an attack on the spine and arms over a run on the legs. Pick each branch's bone in the **Inspector**.
 - A pose output connects to one input. To use a pose in more than one place, or in more than one state, save it with [Save Cached Pose](../scripting/animation/save-cached-pose.md) and read it with [Use Cached Pose](../scripting/animation/use-cached-pose.md) nodes. A cached pose plays once a frame however many nodes use it, and keeps its time as the State Machine moves between states that use it.
 - [Apply Additive](../scripting/animation/apply-additive.md) adds an [additive Animation](animation.md#additive-animations), such as a lean or a flinch, on top of any pose.
-- [Transform Bone](../scripting/animation/transform-bone.md) changes one bone after the clips blend, such as turning the head toward a target.
+- [Transform Bone](../scripting/animation/transform-bone.md) changes one bone after the clips blend, such as tilting the head.
+
+## Look At and IK
+
+Skeletal controls aim and place bones after the clips blend, toward points the game gives:
+
+- [Look At](../scripting/animation/look-at.md) turns a bone, such as the head, toward a target, within an angle limit.
+- [Two Bone IK](../scripting/animation/two-bone-ik.md) puts a hand or foot on a point by bending its arm or leg, such as a hand on a door handle.
+
+Give each target a Vector3 variable and set it from a script with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md), such as the location of the actor to look at, in **World Space**. Chain the controls one after another: each takes the pose the one before it made.
+
+[Spring Bones](../scripting/animation/spring-bones.md) make tails, hair, ears and capes trail the pose: the bones below its Root Bone follow the animation through springs, with gravity, wind and colliders, and swing as the actor moves and turns. They are only for looks.
 
 ## Slots
 

@@ -27,6 +27,9 @@ export const ANIM_POSE_SAVE_CACHED_TYPE = "anim.pose.saveCachedPose";
 export const ANIM_POSE_USE_CACHED_TYPE = "anim.pose.useCachedPose";
 /** Skeletal controls change bones of the pose they take; they draw in the amber control colour. */
 export const ANIM_CONTROL_TRANSFORM_BONE_TYPE = "anim.control.transformBone";
+export const ANIM_CONTROL_LOOK_AT_TYPE = "anim.control.lookAt";
+export const ANIM_CONTROL_TWO_BONE_IK_TYPE = "anim.control.twoBoneIk";
+export const ANIM_CONTROL_SPRING_BONES_TYPE = "anim.control.springBones";
 export const ANIM_FRAME_OUTPUT_TYPE = "anim.frame.output";
 export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
 export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
@@ -89,6 +92,9 @@ export function poseInputPins(type: string, count?: unknown): string[] {
     case ANIM_FRAME_SLOT_TYPE:
       return ["source"];
     case ANIM_CONTROL_TRANSFORM_BONE_TYPE:
+    case ANIM_CONTROL_LOOK_AT_TYPE:
+    case ANIM_CONTROL_TWO_BONE_IK_TYPE:
+    case ANIM_CONTROL_SPRING_BONES_TYPE:
       return ["sourcePose"];
     case ANIM_POSE_OUTPUT_TYPE: return ["pose"];
     case ANIM_FRAME_OUTPUT_TYPE: return ["frame"];
@@ -121,6 +127,12 @@ export function layeredBlendFilters(node: SerializedGraphNode): AnimBranchFilter
     const layer = layers[index] as { branches?: unknown } | undefined;
     return normalizeAnimBranchFilters(layer?.branches);
   });
+}
+
+/** Skeletal controls: nodes that change bones of the pose they take, each naming the bone it changes. */
+export function isSkeletalControlType(type: string): boolean {
+  return type === ANIM_CONTROL_TRANSFORM_BONE_TYPE || type === ANIM_CONTROL_LOOK_AT_TYPE ||
+    type === ANIM_CONTROL_TWO_BONE_IK_TYPE || type === ANIM_CONTROL_SPRING_BONES_TYPE;
 }
 
 export function isSlotNodeType(type: string): boolean {

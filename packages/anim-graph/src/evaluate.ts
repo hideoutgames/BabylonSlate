@@ -1,9 +1,13 @@
 import type { SerializedGraph } from "@haptic/core";
 import {
+  animBoneAxisVector,
   animBranchFilterKey,
   parseAnimBoneModifyMode,
   parseAnimBoneSpace,
+  normalizeAnimSpringBoneSettings,
+  parseAnimTargetSpace,
   rotatorToQuat,
+  type AnimSpringBoneSettings,
   type AnimBoneChannel,
   type AnimBoneModifier,
   type AnimLayerBlend,
@@ -44,6 +48,9 @@ import {
   ANIM_POSE_BLEND_TYPE,
   ANIM_POSE_APPLY_ADDITIVE_TYPE,
   ANIM_CONTROL_TRANSFORM_BONE_TYPE,
+  ANIM_CONTROL_LOOK_AT_TYPE,
+  ANIM_CONTROL_TWO_BONE_IK_TYPE,
+  ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_POSE_LAYERED_BLEND_TYPE,
   ANIM_POSE_SAVE_CACHED_TYPE,
   ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
@@ -308,6 +315,8 @@ interface EvalContext {
   /** Each Blend Space Player's weights this tick, worked out once for its state clock and its layers. */
   blendSpaces: Map<string, BlendSpaceTick>;
   dtMs: number;
+  previousLookAtTargets: Readonly<Record<string, number[]>>;
+  lookAtTargets: Record<string, number[]>;
   previousSyncGroups: Readonly<Record<string, AnimSyncGroupClock>>;
   /** This tick's Sync Groups: the shared phase and the heaviest member, which sets next tick's pace. */
   syncGroups: Map<string, { phase: number; leaderWeight: number; leaderCycleMs: number }>;
@@ -598,12 +607,83 @@ function transformBoneModifier(node: GraphNode, data: AnimPoseData | undefined, 
   const scale = channel("scale", () => vectorOf(dataValue<unknown>(data, node, "scale", null), 1));
   if (!translation && !rotation && !scale) return null;
   return {
+    kind: "transform",
     bone,
     alpha: Math.min(1, alpha),
     ...(translation ? { translation } : {}),
     ...(rotation ? { rotation } : {}),
     ...(scale ? { scale } : {}),
   };
+}
+
+function boneOf(node: GraphNode): string {
+  return typeof node.data.bone === "string" ? node.data.bone.trim() : "";
+}
+
+/**
+ * A Look At's target this tick: the one its Target pin gives, or, with an Interpolation Time, last tick's eased toward
+ * it (a fresh visit starts at it). Kept in `ctx.lookAtTargets` for next tick.
+ */
+function easedLookAtTarget(ctx: EvalContext, key: string, node: GraphNode, target: number[], dtSeconds: number, fresh: boolean): number[] {
+  const seconds = finiteOr(node.data.interpSeconds, 0);
+  const previous = fresh ? undefined : ctx.previousLookAtTargets[key];
+  let eased = target;
+  if (seconds > 0 && previous && previous.length === 3) {
+    // Exponential ease: about 95% of the way there after Interpolation Time.
+    const t = 1 - Math.exp((-3 * Math.max(0, dtSeconds)) / seconds);
+    eased = previous.map((value, i) => value + (target[i]! - value) * t);
+  }
+  ctx.lookAtTargets[key] = eased;
+  return eased;
+}
+
+/** A Look At's change at `alpha`: its bone aimed at Target. Null when it names no bone. */
+function lookAtModifier(node: GraphNode, target: number[], alpha: number): AnimBoneModifier | null {
+  const bone = boneOf(node);
+  if (!bone || !(alpha > 0)) return null;
+  const up = node.data.upAxis;
+  return {
+    kind: "lookAt",
+    bone,
+    alpha: Math.min(1, alpha),
+    target,
+    targetSpace: parseAnimTargetSpace(node.data.targetSpace),
+    aimAxis: animBoneAxisVector(node.data.aimAxis, "z"),
+    ...(typeof up === "string" && up !== "none" ? { upAxis: animBoneAxisVector(up, "y") } : {}),
+    limitDegrees: Math.min(180, Math.max(0, finiteOr(node.data.limitDegrees, 180))),
+  };
+}
+
+/** A Two Bone IK's change at `alpha`: its bone reaching Effector. Null when it names no bone. */
+function twoBoneIkModifier(node: GraphNode, data: AnimPoseData | undefined, alpha: number): AnimBoneModifier | null {
+  const bone = boneOf(node);
+  if (!bone || !(alpha > 0)) return null;
+  return {
+    kind: "twoBoneIk",
+    bone,
+    alpha: Math.min(1, alpha),
+    effector: vectorOf(dataValue<unknown>(data, node, "effector", null), 0),
+    effectorSpace: parseAnimTargetSpace(node.data.effectorSpace),
+    ...(node.data.useJointTarget === true ? { jointTarget: vectorOf(dataValue<unknown>(data, node, "jointTarget", null), 0) } : {}),
+    jointTargetSpace: parseAnimTargetSpace(node.data.jointTargetSpace),
+    maxStretch: Math.max(1, finiteOr(node.data.maxStretch, 1)),
+    keepEffectorRotation: node.data.keepEffectorRotation === true,
+  };
+}
+
+/** Each Spring Bones node's settings, kept per node object (graphs are replaced, never mutated). */
+const springSettings = new WeakMap<GraphNode, AnimSpringBoneSettings>();
+
+/** A Spring Bones change at `alpha`, stepped by this tick's `dtSeconds`. Null when it names no Root Bone. */
+function springBonesModifier(node: GraphNode, alpha: number, dtSeconds: number): AnimBoneModifier | null {
+  const bone = boneOf(node);
+  if (!bone || !(alpha > 0)) return null;
+  let settings = springSettings.get(node);
+  if (!settings) {
+    settings = normalizeAnimSpringBoneSettings(node.data);
+    springSettings.set(node, settings);
+  }
+  return { kind: "springBones", bone, alpha: Math.min(1, alpha), dtSeconds: Math.max(0, dtSeconds), settings };
 }
 
 /**
@@ -880,12 +960,21 @@ function visitPoseGraph(
       }
       return;
     }
-    if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE) {
+    if (
+      node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE || node.type === ANIM_CONTROL_LOOK_AT_TYPE ||
+      node.type === ANIM_CONTROL_TWO_BONE_IK_TYPE || node.type === ANIM_CONTROL_SPRING_BONES_TYPE
+    ) {
       // The bone changes after the pose it takes, so a change deeper in the graph applies first.
       visit(poseInputSource(index, node.id, "sourcePose"), weight, flipX, flipY, masks, additive);
       if (additive) return;
-      const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 1)));
-      const modifier = transformBoneModifier(node, data, alpha * weight);
+      const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 1))) * weight;
+      const modifier = node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE
+        ? transformBoneModifier(node, data, alpha)
+        : node.type === ANIM_CONTROL_TWO_BONE_IK_TYPE
+          ? twoBoneIkModifier(node, data, alpha)
+          : node.type === ANIM_CONTROL_SPRING_BONES_TYPE
+            ? springBonesModifier(node, alpha, dtSeconds)
+            : lookAtModifier(node, easedLookAtTarget(ctx, key, node, vectorOf(dataValue<unknown>(data, node, "target", null), 0), dtSeconds, fresh), alpha);
       if (modifier) modifiers.push(masks ? { ...modifier, masks } : modifier);
       return;
     }
@@ -1268,6 +1357,8 @@ export function evaluateAnimGraph(
     selectors: {},
     blendSpaces: new Map(),
     dtMs: Math.max(0, Number.isFinite(dtSeconds) ? dtSeconds : 0) * 1000,
+    previousLookAtTargets: previous?.lookAtTargets ?? {},
+    lookAtTargets: {},
     previousSyncGroups: previous?.syncGroups ?? {},
     syncGroups: new Map(),
   };
@@ -1291,6 +1382,7 @@ export function evaluateAnimGraph(
   if (slotTick.events.length > 0) result.slotEvents = slotTick.events;
   if (ctx.layerBlends.length > 0) result.layerBlends = ctx.layerBlends;
   if (modifiers.length > 0) result.boneModifiers = modifiers;
+  if (Object.keys(ctx.lookAtTargets).length > 0) result.lookAtTargets = ctx.lookAtTargets;
   const playing = new Map<string, number>();
   for (const source of sources) playing.set(source.key, Math.max(playing.get(source.key) ?? 0, source.weight));
   const { fired, open } = fireEvents(resolveCachedPoseEvents(ctx, pending), playing, previous?.openWindows);
