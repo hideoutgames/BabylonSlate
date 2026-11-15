@@ -68,7 +68,8 @@ import {
 } from "./managed-render-resources";
 import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { drawSceneAuxiliaryViews } from "./scene-auxiliary-views";
-import { observeTaskDrawPass, type DrawPass } from "./draw-passes";
+import { enterDrawPass, leaveDrawPass, observeTaskDrawPass, type DrawPass } from "./draw-passes";
+import { timeParticleAnimation } from "./particle-animation-pass";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import {
   ManagedShadowObjectRendererTask,
@@ -245,7 +246,18 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
 
+  /** The whole cull is the `cull` pass: Babylon's frustum cull, the hidden-mesh and occlusion filters, the world list. */
   override _execute(): void {
+    const engine = this.camera.getEngine();
+    enterDrawPass(engine, "cull");
+    try {
+      this.cullFrame();
+    } finally {
+      leaveDrawPass(engine);
+    }
+  }
+
+  private cullFrame(): void {
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
     settlePlayViewCulling(this.camera.getScene());
     const target = this.camera.outputRenderTarget?.renderTarget;
@@ -465,14 +477,24 @@ export class ForwardSceneFrameGraph {
   private graphRender: Scene["customRenderFunction"];
   // Scene.render already updates the selected camera. The pinned graph
   // function would update every scene camera a second time if passed true.
+  // The before-render stage (camera updates, then every onBeforeRenderObservable observer) is the `observers` pass; it
+  // ends where Babylon starts its render targets (`beforeRenderTargets`).
   private readonly pinnedGraphRender = (_update: boolean, ignoreAnimations: boolean) => {
-    this.graphRender!.call(this.scene, false, ignoreAnimations);
+    enterDrawPass(this.scene.getEngine(), "observers");
+    this.observersOpen = true;
+    try {
+      this.graphRender!.call(this.scene, false, ignoreAnimations);
+    } finally {
+      this.closeObservers();
+    }
     this.endDraw();
   };
+  private observersOpen = false;
   private readonly readinessDetach: (() => void)[] = [];
   private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
   private readonly beforeRender: Observer<Scene> | null;
+  private readonly beforeRenderTargets: Observer<Scene> | null;
   private readonly onDispose: Observer<Scene>;
   private readonly scene: Scene;
 
@@ -542,7 +564,19 @@ export class ForwardSceneFrameGraph {
       -1,
       true,
     );
+    // Right after the last before-render observer and before Babylon animates particles: ends the `observers` pass and
+    // brackets the particle systems it finds (an observer may have spawned them).
+    this.beforeRenderTargets = this.auxiliary ? null : scene.onBeforeRenderTargetsRenderObservable.add(() => {
+      this.closeObservers();
+      timeParticleAnimation(scene);
+    }, -1, true);
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
+  }
+
+  private closeObservers(): void {
+    if (!this.observersOpen) return;
+    this.observersOpen = false;
+    leaveDrawPass(this.scene.getEngine());
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions, invalidate: () => void): AttachedPostProcessStack {
@@ -625,7 +659,10 @@ export class ForwardSceneFrameGraph {
   /**
    * Counts each task's draws to its pass (`RenderDiagnostics.drawPasses`): the shadow maps, the geometry pass and Screen
    * Shadows, the outline, the post-process stages (and their output copy), the object passes, the water scene copy's
-   * own tasks; clears, culling and a chainless output copy are `other`.
+   * own tasks; clears and a chainless output copy are `other`. `Forward cull` brackets itself (`cull`, with the occlusion
+   * filter that runs after Babylon's cull, which a task observer would end before), and the readiness work around the
+   * draw, the before-render stage and particle animation are bracketed outside the graph (`readiness`, `observers`,
+   * `particles`).
    */
   private observeDrawPasses(): void {
     const engine = this.scene.getEngine();
@@ -954,6 +991,16 @@ export class ForwardSceneFrameGraph {
    * scene-level probe gates preparation.
    */
   sceneStrictlyReady(camera: Camera): boolean {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    try {
+      return this.probeSceneStrictly(camera);
+    } finally {
+      leaveDrawPass(engine);
+    }
+  }
+
+  private probeSceneStrictly(camera: Camera): boolean {
     if (this.unavailable(camera)) return false;
     this.syncMembership();
     if (this.swapsStillPending()) return false;
@@ -1103,6 +1150,16 @@ export class ForwardSceneFrameGraph {
    * would find. The graph is admitted and its need of a preparation reported, without probing every mesh again.
    */
   readiness(camera: Camera, probe = true): ForwardSceneGraphReadiness {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    try {
+      return this.admitReadiness(camera, probe);
+    } finally {
+      leaveDrawPass(engine);
+    }
+  }
+
+  private admitReadiness(camera: Camera, probe: boolean): ForwardSceneGraphReadiness {
     this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "frameGraph", reason: unavailable, ready: false };
@@ -1129,10 +1186,8 @@ export class ForwardSceneFrameGraph {
     return { path: "frameGraph", ready: true };
   }
 
-  /** Render one scene frame, or skip it with the reason it cannot draw yet.
-   * reuseAdmission is for a caller that invokes readiness() immediately before
-   * with no scene work between; any invalidation or strict probe re-admits. */
-  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: false; reason?: string } {
+  /** What `render` does before it draws (its `readiness` pass): the frame's skip, or undefined once it may draw. */
+  private admitFrame(camera: Camera, reuseAdmission: boolean): (ForwardSceneGraphResult & { rendered?: false; reason?: string }) | undefined {
     const admitted = this.admittedCamera;
     this.admittedCamera = undefined;
     // An auxiliary view steps no animation or particles, so a paused scene can draw it.
@@ -1142,7 +1197,6 @@ export class ForwardSceneFrameGraph {
     if (!reuseAdmission || admitted !== camera || this.admittedRevision !== this.readinessRevision ||
       this.admittedChecks !== this.strictChecks)
       this.syncShadowAdmission(camera);
-    const engine = this.scene.getEngine();
     this.refreshFailure(camera);
     const outputCurrent = this.outputMatches(this.output(camera));
     const reason =
@@ -1159,11 +1213,28 @@ export class ForwardSceneFrameGraph {
     if (!this.auxiliary) this.setActiveCamera(camera);
     if (reason) return { path: "frameGraph", reason, rendered: false };
 
-    const graph = this.graph!;
     this.restaleChangedShadows();
     this.assignCamera(camera);
     this.syncSceneInputs();
     if (!this.probeDirty()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
+    return undefined;
+  }
+
+  /** Render one scene frame, or skip it with the reason it cannot draw yet.
+   * reuseAdmission is for a caller that invokes readiness() immediately before
+   * with no scene work between; any invalidation or strict probe re-admits. */
+  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: false; reason?: string } {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    let skipped: ForwardSceneGraphResult & { rendered?: false; reason?: string } | undefined;
+    try {
+      skipped = this.admitFrame(camera, reuseAdmission);
+    } finally {
+      leaveDrawPass(engine);
+    }
+    if (skipped) return skipped;
+
+    const graph = this.graph!;
     const previousCamera = this.scene.activeCamera;
     const cameras = this.scene.activeCameras;
     const ubo = this.scene.getSceneUniformBuffer();
@@ -1202,7 +1273,7 @@ export class ForwardSceneFrameGraph {
         else renderSceneWithGameTime(this.scene, updateCameras);
       }
       // What Scene.render's after-render observers changed stales the next frame's probe, not this frame.
-      this.syncMembership();
+      this.syncMembershipTimed();
       // A Scene.render that never ran the graph's render function has no draw end: the whole call is the window.
       const drawn = this.drawnRevision ?? this.readinessRevision;
       return { path: "frameGraph", ...(revision === drawn ? {} : { rendered: false }) };
@@ -1229,8 +1300,19 @@ export class ForwardSceneFrameGraph {
    * or during the draw holds the frame.
    */
   private endDraw(): void {
-    this.syncMembership();
+    this.syncMembershipTimed();
     this.drawnRevision = this.readinessRevision;
+  }
+
+  /** `syncMembership` after the draw, as part of the frame's `readiness` pass. */
+  private syncMembershipTimed(): void {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    try {
+      this.syncMembership();
+    } finally {
+      leaveDrawPass(engine);
+    }
   }
 
   /** Releases only this coordinator's tasks and graph, never the scene/Engine. */
@@ -1253,6 +1335,7 @@ export class ForwardSceneFrameGraph {
       light.onEnabledStateChangedObservable.remove(observer);
     this.lightEnabledObservers.clear();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
+    this.scene.onBeforeRenderTargetsRenderObservable.remove(this.beforeRenderTargets);
     this.scene.onDisposeObservable.remove(this.onDispose);
     if (!this.pending) this.releaseGraph();
   }

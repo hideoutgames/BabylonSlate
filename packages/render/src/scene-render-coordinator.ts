@@ -18,6 +18,7 @@ import { retainWaterPlanarReflections } from "./water-planar-reflection";
 import { sceneOutputScale } from "./scene-output-scale";
 import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
 import { admitSteadyFirstDraws } from "./variant-pipeline-warmup";
+import { withDrawPass } from "./draw-passes";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
 } from "./stall-deadline";
@@ -444,7 +445,10 @@ export class SceneRenderCoordinator {
     if (tolerate) {
       this.graph.recheckVariantSwaps();
       // Its cold variants are admitted whether or not a readiness round runs in this frame (`admitSteadyFirstDraws`).
-      if (this.graph.warmsVariants) admitSteadyFirstDraws(this.scene.getEngine());
+      if (this.graph.warmsVariants) {
+        const engine = this.scene.getEngine();
+        withDrawPass(engine, "readiness", () => admitSteadyFirstDraws(engine), false);
+      }
     }
     return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation, tolerate));
   }
