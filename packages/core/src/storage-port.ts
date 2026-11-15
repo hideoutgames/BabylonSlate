@@ -11,6 +11,12 @@ export interface DirEntry {
   isDir: boolean;
   size?: number | null;
   mtime?: number | null;
+  /**
+   * A symbolic link, listed as what it points to (`isDir`, size). Only hosts
+   * whose folders can hold links (desktop) set it; the link shows its
+   * target's files under its own path too.
+   */
+  link?: boolean;
 }
 
 export interface FileStat {

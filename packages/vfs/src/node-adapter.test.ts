@@ -112,9 +112,9 @@ describe("node storage adapter", () => {
     await expect(storage.writeText("dangling.json", "created")).rejects.toThrow(/escapes project root/);
     expect(await readFile(join(outside, "secret.txt"), "utf8")).toBe("secret");
     await expect(stat(join(outside, "missing.json"))).rejects.toThrow();
-    expect((await storage.readdir(".")).map(({ name, isDir }) => [name, isDir]).sort()).toEqual([
-      ["assets", true],
-      ["shared", true],
+    expect((await storage.readdir(".")).map(({ name, isDir, link }) => [name, isDir, link === true]).sort()).toEqual([
+      ["assets", true, false],
+      ["shared", true, true],
     ]);
     await storage.writeText("shared/hero.hasset", "linked");
     expect(await storage.readText("assets/hero.hasset")).toBe("linked");

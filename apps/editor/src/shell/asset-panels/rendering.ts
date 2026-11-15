@@ -1,5 +1,8 @@
-// One lazily loaded panel family (`panel-registry.tsx`): Material, Material Instance, Particle, Water, Render Target, Skybox Creator and Camera Shake windows.
+// One lazily loaded panel family (`panel-registry.tsx`): Material, Material Instance, Particle, Water, Render Target, Skybox Creator and Camera Shake windows,
+// and the Diff window's Material and Particle Graph canvases (`diff-graph-view.tsx`).
 export { MaterialCompilerResultsPanel, MaterialDetailsPanel, MaterialFunctionGraphPanel, MaterialFunctionInterfacePanel, MaterialGraphPanel, MaterialPreviewPanel } from "../../components/material-editor";
+export { MaterialDiffCanvas } from "../../components/material-diff-canvas";
+export { ParticleDiffCanvas } from "../../panels/particle-diff-canvas";
 export { MaterialInstanceDetailsPanel, MaterialInstancePreviewPanel } from "../../components/material-instance-editor";
 export { ParticleEmitterDetailsPanel, ParticleEmitterPreviewPanel } from "../../panels/particle-emitter-panels";
 export { ParticleGraphCanvasPanel, ParticleGraphCompilerResultsPanel, ParticleGraphDetailsPanel, ParticleGraphPreviewPanel } from "../../panels/particle-graph-panels";

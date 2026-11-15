@@ -26,6 +26,7 @@ import {
   type PullResult,
   type PushResult,
   type RemoteState,
+  type RemovableLfsOptions,
   type SwitchResult,
   type SyncPort,
   type SyncStatus,
@@ -406,6 +407,125 @@ export class GitRepository implements SyncPort {
     });
     if (!downloaded) throw new SyncError("lfs", `The server has no LFS object ${object.oid}.`, { code: "lfs-object-missing" });
     return downloaded;
+  }
+
+  removableLfsObjects({ signal, references }: RemovableLfsOptions): Promise<string[]> {
+    return this.run(async (op) => {
+      // Untracked: no HEAD entry and no index entry (a staged file has one). An untracked file is never hashed.
+      const rows = (await git.statusMatrix({ ...op.git, filter: (path) => lfsObjectId(path) !== null })) as StatusRow[];
+      const untracked = rows.filter(([, head, workdir, stage]) => head === 0 && workdir === 2 && stage === 0).map(([path]) => path);
+      if (untracked.length === 0) return [];
+      const held = await this.heldByUnpushed(op, untracked, signal);
+      const loose = untracked.filter((path) => !held.has(path));
+      if (loose.length === 0) return [];
+      const needed = await this.neededByCommittedAssets(op, loose, references, signal);
+      return loose.filter((path) => !needed.has(path)).sort();
+    }, signal);
+  }
+
+  /**
+   * Which of `paths` a committed `.hasset` names (`references`) while its
+   * commit holds no object of that name in their folders (one it holds was
+   * committed, so a push uploaded it, or the unpushed rule keeps it). Every
+   * commit local history holds is walked, from the local and remote-tracking
+   * branches to the shallow boundary; each `.hasset` it changed against its
+   * first parent (every one of a commit whose parent this copy lacks) is read
+   * once per version, and a commit's tree only along the folders of `paths`,
+   * once a version names one of them.
+   */
+  private async neededByCommittedAssets(
+    op: Op,
+    paths: readonly string[],
+    references: RemovableLfsOptions["references"],
+    signal?: AbortSignal,
+  ): Promise<Set<string>> {
+    const byName = new Map<string, string[]>();
+    for (const path of paths) {
+      const name = path.slice(path.lastIndexOf("/") + 1);
+      byName.set(name, [...(byName.get(name) ?? []), path]);
+    }
+    const candidateFolders = [...new Set(paths.map(parentOf))];
+    const shallow = await this.shallowCommits();
+    const queue = [...(await this.remoteHeads(op))];
+    for (const name of await git.listBranches({ ...op.git })) {
+      const head = await this.resolve(op, `refs/heads/${name}`);
+      if (head) queue.push(head);
+    }
+    const seen = new Set<string>();
+    const named = new Map<string, readonly string[]>();
+    const needed = new Set<string>();
+    while (queue.length > 0 && needed.size < paths.length) {
+      throwIfCancelled(signal);
+      const oid = queue.pop()!;
+      if (seen.has(oid)) continue;
+      seen.add(oid);
+      const commit = await this.readCommit(op, oid);
+      if (!commit) continue;
+      const first = commit.parent[0];
+      const parent = first && !shallow.has(oid) && (await this.readCommit(op, first)) ? first : null;
+      if (!shallow.has(oid)) queue.push(...commit.parent);
+      let held: Set<string> | null = null;
+      for (const { path, to } of await this.differing(op, parent, oid)) {
+        if (to === null || !path.endsWith(".hasset")) continue;
+        let names = named.get(to);
+        if (!names) {
+          names = references(path, (await git.readBlob({ ...op.git, oid: to })).blob);
+          named.set(to, names);
+        }
+        for (const name of names) {
+          const candidates = byName.get(name);
+          if (!candidates) continue;
+          if (!held) {
+            held = new Set();
+            for (const folder of candidateFolders) for (const entry of await this.treeEntries(op, oid, folder)) held.add(entry);
+          }
+          if (!held.has(name)) for (const candidate of candidates) needed.add(candidate);
+        }
+      }
+    }
+    return needed;
+  }
+
+  /**
+   * Which of `paths` a commit of a local branch holds that no
+   * remote-tracking branch reaches (a branch never pushed: every commit),
+   * from local refs only. Each such commit's tree is read only along the
+   * folders of `paths`.
+   */
+  private async heldByUnpushed(op: Op, paths: readonly string[], signal?: AbortSignal): Promise<Set<string>> {
+    const wanted = new Map<string, Set<string>>();
+    for (const path of paths) {
+      const folder = parentOf(path);
+      wanted.set(folder, (wanted.get(folder) ?? new Set()).add(path.slice(folder.length + 1)));
+    }
+    const remotes = await this.remoteHeads(op);
+    const read = new Set<string>();
+    const held = new Set<string>();
+    for (const name of await git.listBranches({ ...op.git })) {
+      const head = await this.resolve(op, `refs/heads/${name}`);
+      if (!head) continue;
+      for (const commit of (await this.relation(op, head, remotes, false)).ahead) {
+        throwIfCancelled(signal);
+        if (read.has(commit)) continue;
+        read.add(commit);
+        for (const [folder, names] of wanted) {
+          for (const entry of await this.treeEntries(op, commit, folder)) {
+            if (names.has(entry)) held.add(`${folder}/${entry}`);
+          }
+        }
+      }
+    }
+    return held;
+  }
+
+  /** The names in `folder` of `commit`'s tree; none when it has no such folder. */
+  private async treeEntries(op: Op, commit: string, folder: string): Promise<string[]> {
+    try {
+      return (await git.readTree({ ...op.git, oid: commit, filepath: folder })).tree.map((entry) => entry.path);
+    } catch (error) {
+      if ((error as { code?: unknown }).code === "NotFoundError") return [];
+      throw error;
+    }
   }
 
   log({ limit, skip = 0, path, deepen = false, signal }: LogOptions): Promise<LogPage> {

@@ -20,6 +20,7 @@ import {
   type PullResult,
   type PushResult,
   type RemoteState,
+  type RemovableLfsOptions,
   type SwitchResult,
   type SyncPort,
   type SyncStatus,
@@ -399,6 +400,45 @@ export class FakeSync implements SyncPort {
     const stored = this.remote.lfsObjects.get(oid);
     if (!stored || stored.byteLength !== size) throw new SyncError("lfs", `The server has no LFS object ${oid}.`, { code: "lfs-object-missing" });
     return stored;
+  }
+
+  async removableLfsObjects({ signal, references }: RemovableLfsOptions): Promise<string[]> {
+    throwIfCancelled(signal);
+    const committed = this.head ? this.files(this.head) : new Map<string, Uint8Array>();
+    // No index: untracked is what HEAD lacks.
+    const untracked = [...(await this.workingEntries()).keys()].filter((path) => lfsObjectId(path) && !committed.has(path)).sort();
+    if (untracked.length === 0) return [];
+    // What a commit of a local branch holds that no fetched remote branch reaches (a branch never pushed: every commit).
+    const remotes = [...this.fetched.values()];
+    const held = new Set<string>();
+    for (const head of new Set(this.heads.values())) {
+      throwIfCancelled(signal);
+      for (const id of (await this.relation(head, remotes)).ahead) {
+        const files = this.files(id);
+        for (const path of untracked) if (files.has(path)) held.add(path);
+      }
+    }
+    // What a committed asset names while its commit holds no object of that name in their folders:
+    // every commit this copy reaches, each changed `.hasset` read.
+    const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+    const folders = [...new Set(untracked.map((path) => path.slice(0, path.lastIndexOf("/"))))];
+    const queue = [...this.heads.values(), ...remotes];
+    const seen = new Set<string>();
+    for (let id = queue.pop(); id !== undefined; id = queue.pop()) {
+      throwIfCancelled(signal);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const commit = this.remote.get(id);
+      queue.push(...commit.parents);
+      for (const { path, to } of await this.differing(commit.parents[0] ?? null, id)) {
+        if (to === null || !path.endsWith(".hasset")) continue;
+        for (const name of references(path, commit.files.get(path)!)) {
+          if (folders.some((folder) => commit.files.has(`${folder}/${name}`))) continue;
+          for (const candidate of untracked) if (nameOf(candidate) === name) held.add(candidate);
+        }
+      }
+    }
+    return untracked.filter((path) => !held.has(path));
   }
 
   async log({ limit, skip = 0, path, signal }: LogOptions): Promise<LogPage> {

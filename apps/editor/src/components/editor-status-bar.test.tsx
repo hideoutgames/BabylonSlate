@@ -200,6 +200,7 @@ describe("EditorStatusBar", () => {
         testMode: true,
         lookup: () => null,
         locks: { theirs: async () => [], releaseOwn: async () => {} },
+        exclusiveWrites: (_reason, work) => work(storage),
         factory: {
           open: async () => {
             throw new SyncError("conflict", detached, { code: "detached-head" });

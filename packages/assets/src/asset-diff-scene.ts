@@ -1,5 +1,6 @@
 import { humanizePropertyLabel, type SerializedActor, type SerializedComponent, type SerializedGraph } from "@haptic/core";
-import { diffGraphDocuments, type GraphDiff } from "./asset-diff-graph";
+import type { GraphDiff } from "./asset-diff-graph";
+import { diffGraphDocuments } from "./asset-diff-graph-families";
 import {
   countStatus,
   documentGroups,

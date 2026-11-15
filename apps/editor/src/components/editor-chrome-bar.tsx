@@ -112,6 +112,7 @@ import { SettingsModal } from "./settings-modal";
 import { PackagingDialog } from "./packaging-dialog";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
+import { gitBenchmarkAvailable } from "../lib/git-benchmark-hook";
 import { useAppSettings, useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
 import { ActionFeedbackButton } from "./action-feedback-button";
@@ -140,6 +141,10 @@ import "../shell/editor-chrome.css";
 // Only a Feature Test project in Debug Mode mounts the check, so other projects never load it or its report.
 const FeatureTestCheckDialog = lazy(() =>
   import("./feature-test-check-dialog").then((module) => ({ default: module.FeatureTestCheckDialog })),
+);
+// Mounted on its first open; the runner and the Git core load only when it runs.
+const GitBenchmarkDialog = lazy(() =>
+  import("./git-benchmark-dialog").then((module) => ({ default: module.GitBenchmarkDialog })),
 );
 
 function kindIcon(ref: DocumentRef, resolveVisual: DocumentTypeVisualResolver) {
@@ -409,6 +414,11 @@ export function EditorChromeBar({
   const featureTestProject = useIsFeatureTestProject();
   const debugMode = useDebugMode();
   const featureTestCheck = featureTestProject && debugMode;
+  const gitBenchmark = debugMode && gitBenchmarkAvailable();
+  const [gitBenchmarkOpen, setGitBenchmarkOpen] = useState(false);
+  // Kept mounted after its first open, so a running benchmark and its result survive closing the dialog.
+  const [gitBenchmarkOpened, setGitBenchmarkOpened] = useState(false);
+  if (gitBenchmarkOpen && !gitBenchmarkOpened) setGitBenchmarkOpened(true);
   const phone = usePhoneLayout();
   const touch = useTouchUi();
   // Keeps its lazy class lookup until the registry changes, not per edit.
@@ -585,6 +595,10 @@ export function EditorChromeBar({
         onRunFeatureTestCheck={featureTestCheck ? () => {
           setToolsOpen(false);
           setFeatureTestCheckOpen(true);
+        } : undefined}
+        onRunGitBenchmark={gitBenchmark ? () => {
+          setToolsOpen(false);
+          setGitBenchmarkOpen(true);
         } : undefined}
         listRecentTraces={listRecentTraces}
         recentTraceLimit={appSettings.tracesKept}
@@ -1303,6 +1317,11 @@ export function EditorChromeBar({
       {featureTestCheck ? (
         <Suspense fallback={null}>
           <FeatureTestCheckDialog open={featureTestCheckOpen} onOpenChange={setFeatureTestCheckOpen} />
+        </Suspense>
+      ) : null}
+      {gitBenchmark && gitBenchmarkOpened ? (
+        <Suspense fallback={null}>
+          <GitBenchmarkDialog open={gitBenchmarkOpen} onOpenChange={setGitBenchmarkOpen} />
         </Suspense>
       ) : null}
       {openedSettings.project ? (

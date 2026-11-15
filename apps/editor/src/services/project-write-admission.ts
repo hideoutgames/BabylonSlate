@@ -153,6 +153,59 @@ export function guardProjectStorage(
   });
 }
 
+/**
+ * Runs `work` as the project's only writer: new admissions are refused with
+ * `reason`, admitted owner operations (saves, imports, copies, encodes, each
+ * admitted for its whole span) finish first, then `work` writes through
+ * `storage` (unguarded) until it returns; that handle refuses writes
+ * afterwards. Refused while another lock holds project writes (Simulation),
+ * whose barrier would otherwise count as this one's; `signal` ends the wait.
+ */
+export async function withExclusiveWriter<T>(
+  admission: ProjectWriteAdmission,
+  storage: ProjectStorage,
+  reason: string,
+  work: (storage: ProjectStorage) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (admission.blocked) throw new Error(admission.reason!);
+  signal?.throwIfAborted();
+  const lease = admission.lock(reason);
+  try {
+    let stopWaiting = noop;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      const onAbort = () => reject(signal!.reason);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      stopWaiting = () => signal?.removeEventListener("abort", onAbort);
+    });
+    try {
+      if (!(await Promise.race([lease.ready, aborted]))) throw new Error("The project's writes were released before they drained.");
+    } finally {
+      stopWaiting();
+    }
+    let open = true;
+    const own = new Proxy(storage, {
+      get(target, key) {
+        const value: unknown = Reflect.get(target, key, target);
+        if (typeof value !== "function") return value;
+        if (!STORAGE_WRITES.has(key)) return value.bind(target);
+        return (...args: unknown[]) => open
+          ? Reflect.apply(value, target, args)
+          : Promise.reject(new Error("The exclusive project write scope has closed."));
+      },
+    });
+    try {
+      return await work(own);
+    } finally {
+      open = false;
+    }
+  } finally {
+    lease.release();
+  }
+}
+
+function noop(): void {}
+
 /** Revocable writer capability: late callbacks cannot reuse an earlier save lane. */
 export function withProjectWriter<TWriter extends object, TResult>(
   admission: ProjectWriteAdmission,

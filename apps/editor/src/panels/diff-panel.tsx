@@ -14,6 +14,7 @@ import { useDocumentActions, useIntegratedSyncState } from "../context/document-
 import { refLabel, type DiffTarget } from "../services/source-control-diff";
 import { DiffPlaceholder, StatusBadge, useDiffWindowShown } from "./diff-common";
 import { ASSET_ITEM, hasDiff } from "./diff-status";
+import { graphDiffSection, hasDiffCanvas } from "./diff-graph-canvas-model";
 import { PropertyDiffTable, type DiffLayout as Layout } from "./diff-property-table";
 import { TextureDiffView } from "./diff-texture-view";
 
@@ -45,7 +46,7 @@ function sceneGroups(diff: AssetDiff, view: SceneDiff, selection: string | null)
   return assetGroups(diff);
 }
 
-/** A changed node as properties: its pin values and fields, for graph families the canvas does not draw. */
+/** A changed node as properties: its pin values and fields, for a graph with no canvas (`hasDiffCanvas`). */
 function nodeRows(node: GraphDiff["sections"][number]["nodes"][number]): PropertyDiffRow[] {
   const rows: PropertyDiffRow[] = node.pins.map((pin) => ({ id: `pin:${pin.id}`, label: pin.name, base: pin.base, compare: pin.compare, changed: true }));
   rows.push(...node.fields.map((field) => ({ ...field, id: `field:${field.id}` })));
@@ -55,10 +56,9 @@ function nodeRows(node: GraphDiff["sections"][number]["nodes"][number]): Propert
   return rows;
 }
 
-/** The chosen graph's (or node's) changes as one group per node. */
+/** The chosen graph's (or node's) changes as one group per node, where its graph has no canvas; the asset's when no graph changed. */
 function graphGroups(diff: AssetDiff, graph: GraphDiff, selection: string | null): Shown {
-  const [sectionId, nodeId] = selection?.includes("/") ? selection.split("/", 2) : [selection, null];
-  const section = graph.sections.find((entry) => entry.id === sectionId && entry.status !== "unchanged") ?? graph.sections.find((entry) => entry.status !== "unchanged");
+  const { section, nodeId } = graphDiffSection(graph, selection);
   if (!section) return assetGroups(diff);
   const nodes = section.nodes.filter((node) => !nodeId || node.id === nodeId);
   return {
@@ -123,7 +123,7 @@ function LayoutControls({ layout, onLayout, changedOnly, onChangedOnly }: { layo
  * the canvas, Textures as images), with **Open <Kind>** and **Revert Asset**.
  */
 export function DiffContents({ api }: { api?: DockviewPanelApi } = {}) {
-  useDiffWindowShown(api);
+  const windowShown = useDiffWindowShown(api);
   const state = useSourceControlDiffState();
   const diffService = useSourceControlDiff();
   const snapshot = useIntegratedSyncState();
@@ -136,19 +136,22 @@ export function DiffContents({ api }: { api?: DockviewPanelApi } = {}) {
   const compareLabel = refLabel(target.compare, snapshot);
   const view = diff.view;
 
-  // The canvas draws script graphs (Class and the Scene Script) with the graph editor's own node components.
-  const canvas = state.selection !== ASSET_ITEM && ((view.kind === "graph" && diff.type !== "" && documentKindForAssetType(diff.type) === "graph") || (view.kind === "scene" && state.selection === "script" && view.script));
-  if (canvas) {
-    const graph = view.kind === "graph" ? view : view.script!;
+  // A changed graph draws on its family's canvas (a Class's, a Material's, the Scene Script…), with that family's node components.
+  const graph = state.selection === ASSET_ITEM ? null : view.kind === "graph" ? view : view.kind === "scene" && state.selection === "script" ? view.script : null;
+  const graphSelection = view.kind === "graph" ? state.selection : null;
+  const canvasSection = graph ? graphDiffSection(graph, graphSelection).section : undefined;
+  if (graph && canvasSection && hasDiffCanvas(canvasSection.canvas)) {
     return (
       <PanelFrame data-testid="diff-panel">
         <Suspense fallback={null}>
           <GraphDiffView
             graph={graph}
-            selection={view.kind === "graph" ? state.selection : null}
+            selection={graphSelection}
             onSelect={(id) => diffService.select(id)}
+            assetType={diff.type}
             baseLabel={baseLabel}
             compareLabel={compareLabel}
+            shown={windowShown}
             toolbar={(controls) => <Toolbar target={target} diff={diff}>{controls}</Toolbar>}
           />
         </Suspense>

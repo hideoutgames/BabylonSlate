@@ -15,12 +15,16 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
   setAdoption: null as ((adopted: boolean) => Promise<void>) | null,
+  dirtyDocuments: [] as unknown[],
+  withProjectWrites: null as (<T>(work: () => Promise<T>) => Promise<T>) | null,
 }));
 
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     ...(state.sync ? { sourceControlSync: state.sync } : {}),
     ...(state.setAdoption ? { setSourceControlAdoption: state.setAdoption } : {}),
+    ...(state.withProjectWrites ? { withProjectWrites: state.withProjectWrites } : {}),
+    dirtyDocuments: state.dirtyDocuments,
   })),
 );
 
@@ -29,6 +33,8 @@ afterEach(() => {
   state.sync?.dispose();
   state.sync = null;
   state.setAdoption = null;
+  state.dirtyDocuments = [];
+  state.withProjectWrites = null;
 });
 
 function renderPanel() {
@@ -207,6 +213,125 @@ describe("Changes window", () => {
       fireEvent.click(await screen.findByTestId("changes-new-branch"));
     });
     expect(await screen.findByTestId("source-control-new-branch")).toBeTruthy();
+  });
+
+  it("removes unused files from its menu after a confirmation naming their count and size, refused while documents are unsaved", async () => {
+    // The seed's assets as no files at all: only the loose blob is left to judge.
+    const { service, storage } = await integratedSync({ files: { "assets/Forest.scene.hasset": null, "assets/Rock.texture.hasset": null } });
+    state.sync = service;
+    const loose = `assets/.blobs/${"b".repeat(64)}`;
+    await storage.writeBinary(loose, new Uint8Array(3 * 1024));
+    state.dirtyDocuments = [{ ref: { kind: "scene", path: "assets/Forest.scene.hasset", label: "Forest" } }];
+    let queued = 0;
+    state.withProjectWrites = <T,>(work: () => Promise<T>) => {
+      queued += 1;
+      return work();
+    };
+    renderPanel();
+    const open = async () => {
+      fireEvent.click(screen.getByTestId("changes-more"));
+      await act(async () => {
+        fireEvent.click(await screen.findByTestId("changes-remove-unused"));
+      });
+    };
+
+    await open();
+    const refused = await screen.findByTestId("source-control-unused-blocked");
+    expect(refused.textContent).toContain("Forest");
+    fireEvent.click(within(refused).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByTestId("source-control-unused-blocked")).toBeNull());
+    expect(await storage.exists(loose)).toBe(true);
+
+    state.dirtyDocuments = [];
+    await open();
+    const confirm = await screen.findByTestId("source-control-unused-confirm");
+    expect(confirm.textContent).toContain("Remove 1 Unused File?");
+    expect(confirm.textContent).toContain("3 KB");
+    expect(await storage.exists(loose)).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-unused-confirm-action"));
+    });
+    expect((await screen.findByTestId("source-control-unused-done")).textContent).toContain("Removed 1 Unused File");
+    expect(await storage.exists(loose)).toBe(false);
+    // In the project write queue, so no editor save runs meanwhile.
+    expect(queued).toBe(1);
+  });
+
+  it("says nothing was removed, and why, when a blob folder is a symbolic link", async () => {
+    const { service } = await integratedSync();
+    state.sync = service;
+    vi.spyOn(service, "findUnusedFiles").mockResolvedValue({ paths: [], bytes: 0, linkedBlobFolders: true });
+    renderPanel();
+    fireEvent.click(screen.getByTestId("changes-more"));
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("changes-remove-unused"));
+    });
+    const done = await screen.findByTestId("source-control-unused-done");
+    expect(done.textContent).toContain("Nothing Removed");
+    expect(done.textContent).toContain("symbolic link");
+    expect(done.textContent).not.toContain("No Unused Files");
+  });
+
+  it("offers Cancel while the removal waits for other writers, which removes nothing, and none once files are being removed", async () => {
+    let drain!: () => void;
+    const drained = new Promise<void>((resolve) => { drain = resolve; });
+    let finish!: () => void;
+    const removing = new Promise<void>((resolve) => { finish = resolve; });
+    const { service, storage } = await integratedSync({
+      files: { "assets/Forest.scene.hasset": null, "assets/Rock.texture.hasset": null },
+      // A long Texture encode is admitted: the removal waits for it until the wait's signal ends.
+      exclusiveWrites: async (_reason, work, storage, signal) => {
+        await new Promise<void>((resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          void drained.then(resolve);
+        });
+        // Each removal waits, so the step can be seen while files go.
+        return work(new Proxy(storage, {
+          get(target, key) {
+            const value = Reflect.get(target, key, target) as unknown;
+            if (typeof value !== "function") return value;
+            if (key !== "remove") return value.bind(target);
+            return async (path: string) => {
+              await removing;
+              return (value as (path: string) => Promise<void>).call(target, path);
+            };
+          },
+        }));
+      },
+    });
+    state.sync = service;
+    const loose = `assets/.blobs/${"c".repeat(64)}`;
+    await storage.writeBinary(loose, new Uint8Array(1024));
+    renderPanel();
+    const remove = async () => {
+      fireEvent.click(screen.getByTestId("changes-more"));
+      await act(async () => {
+        fireEvent.click(await screen.findByTestId("changes-remove-unused"));
+      });
+      await screen.findByTestId("source-control-unused-confirm");
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("source-control-unused-confirm-action"));
+      });
+      return screen.findByTestId("source-control-unused-removing");
+    };
+
+    const waiting = await remove();
+    expect(waiting.textContent).toContain("Waiting");
+    await act(async () => {
+      fireEvent.click(within(waiting).getByRole("button", { name: "Cancel" }));
+    });
+    await waitFor(() => expect(screen.queryByTestId("source-control-unused-removing")).toBeNull());
+    expect(screen.queryByTestId("source-control-unused-failed")).toBeNull();
+    expect(service.getSnapshot().problem).toBeNull();
+    expect(await storage.exists(loose)).toBe(true);
+
+    drain();
+    const step = await remove();
+    await waitFor(() => expect(within(step).queryByRole("button", { name: "Cancel" })).toBeNull());
+    expect(step.textContent).toContain("Saves wait until the files are removed.");
+    finish();
+    expect((await screen.findByTestId("source-control-unused-done")).textContent).toContain("Removed 1 Unused File");
+    expect(await storage.exists(loose)).toBe(false);
   });
 
   it("offers Add Git LFS Rule where a commit of blobs is refused, and commits once the rule is in", async () => {
