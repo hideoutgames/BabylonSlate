@@ -25,6 +25,7 @@ function Harness(props: {
   onRowMenu?: (rowId: string) => void;
   onToggle?: (rowId: string) => void;
   onKeyMenu?: (ref: KeyRef) => void;
+  onEmptyMenu?: (x: number, y: number) => void;
   onLength?: (length: number, phase: string) => void;
   fitToken?: number;
 }) {
@@ -58,6 +59,7 @@ function Harness(props: {
         onToggleRow={props.onToggle}
         onRowContextMenu={(id) => props.onRowMenu?.(id)}
         onKeyContextMenu={props.onKeyMenu ? (ref) => props.onKeyMenu!(ref) : undefined}
+        onEmptyContextMenu={props.onEmptyMenu}
         onLengthChange={props.onLength}
         fitToken={props.fitToken}
         header={<span>Filter</span>}
@@ -249,6 +251,56 @@ describe("KeyframeTimeline", () => {
       act(() => dispatchPointerEvent(lanes(), "pointermove", { pointerType: "touch", clientX: x(3), clientY: y(1) }));
       act(() => dispatchPointerEvent(lanes(), "pointerup", { pointerType: "touch", clientX: x(3), clientY: y(1) }));
       expect(onMove).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens the empty-space menu on right-click or a held finger lifted in place, keeping the selection", () => {
+    vi.useFakeTimers();
+    try {
+      const onEmptyMenu = vi.fn();
+      const onKeyMenu = vi.fn();
+      render(<Harness onEmptyMenu={onEmptyMenu} onKeyMenu={onKeyMenu} />);
+      press("pointerdown", x(3), y(2));
+      press("pointerup", x(3), y(2));
+      expect(screen.getByTestId("selected").textContent).toBe("k3");
+
+      // A key is not empty space.
+      fireEvent.contextMenu(lanes(), { clientX: x(1), clientY: y(1) });
+      expect(onEmptyMenu).not.toHaveBeenCalled();
+      expect(onKeyMenu).toHaveBeenCalledTimes(1);
+      fireEvent.contextMenu(lanes(), { clientX: x(0.3), clientY: y(2) });
+      expect(onEmptyMenu).toHaveBeenLastCalledWith(x(0.3), y(2));
+      expect(screen.getByTestId("selected").textContent).toBe("k1");
+
+      const touch = (type: "pointerdown" | "pointermove" | "pointerup", clientX: number, clientY: number) =>
+        act(() => dispatchPointerEvent(lanes(), type, { pointerType: "touch", clientX, clientY }));
+      // Held, then lifted after a 6 px drift: the menu opens where the finger came down, on the lift.
+      touch("pointerdown", x(3.5), y(1));
+      act(() => { vi.advanceTimersByTime(520); });
+      // Some browsers also fire contextmenu mid-hold; the lift opens the menu, once.
+      fireEvent.contextMenu(lanes(), { clientX: x(3.5), clientY: y(1) });
+      touch("pointermove", x(3.5) + 6, y(1));
+      expect(onEmptyMenu).toHaveBeenCalledTimes(1);
+      touch("pointerup", x(3.5) + 6, y(1));
+      expect(onEmptyMenu).toHaveBeenCalledTimes(2);
+      expect(onEmptyMenu).toHaveBeenLastCalledWith(x(3.5), y(1));
+      expect(screen.getByTestId("selected").textContent).toBe("k1");
+
+      // Held, then dragged: a marquee, no menu.
+      touch("pointerdown", x(2.5), 4);
+      act(() => { vi.advanceTimersByTime(520); });
+      touch("pointermove", x(3.5), y(2));
+      touch("pointerup", x(3.5), y(2));
+      expect(screen.getByTestId("selected").textContent).toBe("k3");
+      expect(onEmptyMenu).toHaveBeenCalledTimes(2);
+
+      // A tap still clears the selection.
+      touch("pointerdown", x(3.5), y(1));
+      touch("pointerup", x(3.5), y(1));
+      expect(screen.getByTestId("selected").textContent).toBe("");
+      expect(onEmptyMenu).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }

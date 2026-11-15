@@ -85,6 +85,11 @@ export interface KeyframeTimelineProps {
   /** Right-click or long-press on a key; the key is selected first unless it already is. */
   onKeyContextMenu?: (ref: KeyRef, x: number, y: number) => void;
   /**
+   * Right-click on lane space without a key, or a finger held there and lifted
+   * without dragging. The selection is left alone.
+   */
+  onEmptyContextMenu?: (x: number, y: number) => void;
+  /**
    * Dragging the clip's end on the ruler (where the hatching starts). The
    * length is on a frame when `snap` is on; the caller clamps it.
    */
@@ -174,7 +179,11 @@ type Press =
     /** A finger on an unselected key selects it only on a tap or a drag, so a hold can add it from the menu. */
     pendingSelect: boolean;
   }
-  | { kind: "marquee"; pointerId: number; x: number; y: number; mode: KeySelectMode; active: boolean }
+  | {
+    kind: "marquee"; pointerId: number; x: number; y: number; mode: KeySelectMode; active: boolean;
+    /** A finger's hold started it: where the finger came down, for the menu a lift in place opens. */
+    heldAt?: { x: number; y: number };
+  }
   | { kind: "pan"; pointerId: number; x: number; y: number; scrollTop: number; view: KeyframeTimelineView; holdTimer: number | null; moved: boolean };
 
 /** A drag on the scroll bar, measured from the view, range and thumb it started with. */
@@ -197,10 +206,11 @@ interface ScrollDrag {
  * Mouse: drag the ruler to scrub, or the clip's end on it to change the
  * length; click a key to select it (Shift adds, Ctrl/⌘ toggles) and drag to
  * move the selection (Alt leaves the frame grid); right-click a key for its
- * menu; drag empty lane space to marquee; Ctrl/⌘+wheel zooms and Shift+wheel
- * pans. Touch: tap selects, drag a key to move it, hold a key for its menu,
- * drag empty space to scroll and pan, hold then move to marquee, and pinch to
- * zoom. The lanes fill the window below the last row, so a marquee can start
+ * menu and empty lane space for the empty-space menu; drag empty lane space
+ * to marquee; Ctrl/⌘+wheel zooms and Shift+wheel pans. Touch: tap selects,
+ * drag a key to move it, hold a key for its menu, drag empty space to scroll
+ * and pan, hold empty space then move to marquee or lift in place for the
+ * empty-space menu, and pinch to zoom. The lanes fill the window below the last row, so a marquee can start
  * there. A row below them pans and zooms the time scale: Zoom Out and Zoom In
  * about the playhead, and a scroll bar whose thumb drags to pan and whose
  * ends drag to zoom.
@@ -220,6 +230,7 @@ export function KeyframeTimeline({
   onToggleRow,
   onRowContextMenu,
   onKeyContextMenu,
+  onEmptyContextMenu,
   onLengthChange,
   fitToken,
   header,
@@ -502,10 +513,13 @@ export function KeyframeTimeline({
     }
     const scroller = scrollRef.current!;
     const pan: Press = { kind: "pan", pointerId: event.pointerId, x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop, view, holdTimer: null, moved: false };
-    // Hold, then move: marquee.
+    // Hold, then move: marquee. Hold, then lift in place: the empty-space menu.
     pan.holdTimer = window.setTimeout(() => {
       if (press.current !== pan || pan.moved) return;
-      press.current = { kind: "marquee", pointerId: event.pointerId, x: point.x, y: point.y, mode: "replace", active: false };
+      press.current = {
+        kind: "marquee", pointerId: event.pointerId, x: point.x, y: point.y, mode: "replace", active: false,
+        heldAt: { x: pan.x, y: pan.y },
+      };
     }, holdDelayMs());
     press.current = pan;
   };
@@ -554,7 +568,9 @@ export function KeyframeTimeline({
       return;
     }
     const point = lanePoint(event);
-    if (!held.active && Math.hypot(point.x - held.x, point.y - held.y) <= DRAG_PX) return;
+    // A held finger keeps the hold's tolerance, so a slight drift still lifts into the menu.
+    const slop = held.heldAt ? LONG_PRESS_SLOP_PX : DRAG_PX;
+    if (!held.active && Math.hypot(point.x - held.x, point.y - held.y) <= slop) return;
     held.active = true;
     setMarquee({
       left: Math.min(held.x, point.x), right: Math.max(held.x, point.x),
@@ -591,6 +607,8 @@ export function KeyframeTimeline({
           top: Math.min(held.y, point.y), bottom: Math.max(held.y, point.y),
         };
         onSelectKeys(keysInRect(rows, rowHeight, view, rect), held.mode === "replace" ? "replace" : "add");
+      } else if (held.heldAt && onEmptyContextMenu) {
+        onEmptyContextMenu(held.heldAt.x, held.heldAt.y);
       } else if (held.mode === "replace") {
         onSelectKeys([], "replace");
       }
@@ -649,11 +667,19 @@ export function KeyframeTimeline({
     } else onTimeChange(rulerTime(event), phase);
   };
   const onLaneContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!onKeyContextMenu) return;
     const point = lanePoint(event);
     const row = rows[Math.floor(point.y / rowHeight)];
     const key = keyAt(row, view, point.x, keyReach(coarse));
-    if (!row || !key) return;
+    if (!row || !key) {
+      if (!onEmptyContextMenu) return;
+      event.preventDefault();
+      // A finger on empty space opens the menu on a lift in place; some browsers also fire contextmenu mid-hold.
+      const held = press.current;
+      if (held?.kind === "pan" || (held?.kind === "marquee" && held.heldAt)) return;
+      onEmptyContextMenu(event.clientX, event.clientY);
+      return;
+    }
+    if (!onKeyContextMenu) return;
     event.preventDefault();
     const ref = { rowId: row.id, keyId: key.id };
     if (!selectedKeys.has(keyRefId(ref))) onSelectKeys([ref], "replace");
