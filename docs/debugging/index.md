@@ -29,6 +29,7 @@ The **Debug** menu next to **Play** decides which controls appear. Set it before
 | **Overlays** > **Stats** | On |
 | **Overlays** > **Console**, **Inspector**, **Profiler** | Off |
 | **Recent Traces** | Opens one of the project's kept [traces](profiler.md#trace-recording) again. |
+| **Run Git Benchmark…** | iPad, iPhone and Android, with **Engine Settings > Debugger > Debug Mode** on (on phones, open **More Tools** first). Times cloning, a status check, a commit, a push and Git LFS uploads and downloads on this device against a repository you can push to, then shows the timings with **Copy Results**. It pushes a new `haptic-benchmark-…` branch there as your signed-in account; delete it afterwards. |
 
 **Simulate** needs an open world scene. Whether its changes are kept when you stop is set by **Keep Simulation Changes** in **Engine Settings > Debugger**.
 

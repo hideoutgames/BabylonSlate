@@ -50,7 +50,7 @@ What exists today and what each part must change. Check these against the code b
 
 ## Order
 
-1. The owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships. Run it against a repository with a few thousand assets ([benchmark](architecture/source-control.md#benchmark)); the unchanged status must read no files.
+1. The owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships. Run it from **Debug > Run Git Benchmark…** with Debug Mode on (any build, TestFlight included) against a repository with a few thousand assets, and copy the results from its dialog ([benchmark](architecture/source-control.md#benchmark)); the unchanged status must read no files.
 2. Locks on the checked-out branch and loose blob clean-up ([Locks and blobs](#locks-and-blobs)).
 3. Graph diffs on the canvas for Material, Particle, Behaviour Tree and Animation graphs ([UI](#ui)).
 4. The Base and Compare pickers take their commits from History ([UI](#ui)).
