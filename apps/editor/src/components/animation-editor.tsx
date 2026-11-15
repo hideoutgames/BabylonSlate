@@ -31,6 +31,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { AnimationEventsEditor } from "./animation-events-editor";
 import { AnimationPreviewCanvas, type AnimationPreviewClip } from "./animation-preview-canvas";
 import { IconActionButton } from "./icon-action-button";
 import { PlaybackScrubber, PlaybackSpeedSelect } from "./playback-controls";
@@ -349,6 +350,22 @@ export function AnimationEditor({
   return (
     <div data-testid="animation-editor">
       <PropertyGrid rows={rows} />
+      <AnimationEventsEditor
+        events={animation.events ?? []}
+        timed
+        bones
+        mergeKeyPrefix="animation:event"
+        onChange={
+          onChange
+            ? (events, mergeKey) =>
+                onChange(
+                  { ...payload, ...animation, events: events.map((event) => ({ ...event, timeMs: event.timeMs ?? 0, durationMs: event.durationMs ?? 0 })) },
+                  mergeKey,
+                )
+            : undefined
+        }
+        data-testid="animation-events"
+      />
     </div>
   );
 }

@@ -47,6 +47,7 @@ import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
 import { PlaybackScrubber } from "./playback-controls";
 import { TexturePreviewStatus, useTexturePreviews } from "./texture-preview-status";
+import { AnimationEventsEditor } from "./animation-events-editor";
 import { useResolvedSpriteAnimation, type SpriteAnimationFrameView } from "./sprite-animation-sources";
 import { CHECKERBOARD, FrameImage } from "./sprite-frame-image";
 import {
@@ -850,6 +851,18 @@ export function SpriteAnimationDetails({
           </Button>
         </div>
       ) : null}
+      <AnimationEventsEditor
+        events={animation.frames[selectedFrameIndex]?.events ?? []}
+        timed={false}
+        bones={false}
+        mergeKeyPrefix={`sprite-animation:frame:${selectedFrameIndex}:event`}
+        onChange={(events, mergeKey) => {
+          const frameEvents = events.map(({ id, name, triggerWeight, action }) => ({ id, name, triggerWeight, action }));
+          if (frameEvents.length > 0) patchFrame({ events: frameEvents }, mergeKey ? mergeKey.replace(/^sprite-animation:frame:\d+:/, "") : undefined);
+          else patchFrame({}, undefined, ["events"]);
+        }}
+        data-testid="sprite-animation-frame-events"
+      />
       <AssetPicker
         open={pickerTarget !== null}
         onOpenChange={(open) => {
