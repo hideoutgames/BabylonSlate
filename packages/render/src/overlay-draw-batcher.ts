@@ -62,9 +62,10 @@ import { setUnlitBinding, UNLIT_TEXEL_WHOLE, unlitBinding, unlitTexelGrid, type 
  *   the slots they filled. Every frame still classifies every member and asks Babylon's readiness gate; what grouping
  *   reads (the sorted list, each member's draw values at full precision, its bounds' inputs, the Scene's transform,
  *   the viewport's margins and the eye) is compared by value with what the kept grouping was made from, and any
- *   difference regroups the whole pass. What a batch's fill writes for each member is compared with 32-bit copies of
- *   what it last wrote; a batch refills (whole, as without retention) when one differs or its slot no longer holds its
- *   data. `verifyRetainedOverlayBatches` checks every retained pass against the full path.
+ *   difference regroups the whole pass, which bounds anew only members whose bounds' inputs changed and lets a batch of
+ *   the same members keep its slot. What a batch's fill writes for each member is compared with 32-bit copies of what
+ *   it last wrote; a batch refills (whole, as without retention) when one differs or its slot no longer holds its data.
+ *   `verifyRetainedOverlayBatches` checks every pass against the full path.
  */
 
 /** Babylon 9.29 per-mesh render state `Mesh.render` resets for a drawn mesh. */
@@ -122,8 +123,13 @@ interface Entry {
   batch: number;
   /** Why the draw goes on its own, as classified this frame; null when it may batch. */
   alone: Exclude<OverlayAloneReason, "single" | "unmatched"> | null;
-  /** What grouping read for this draw when the pass's batches were last made or kept (`stampGroup`). */
-  group: Stamp;
+  /** What grouping read for this draw last frame: what `sameDraw` and `drawKey` compare (`stampDraw`), and what `bound` projects (`stampBounds`). */
+  drawStamp: Stamp;
+  boundsStamp: Stamp;
+  /** Whether its bounds are kept this frame: neither its bounds stamp nor the pass's changed since they were made. */
+  boundsKept: boolean;
+  /** Whether this frame redid its bounds or its batch's fill (`OverlayBatchWork.fullMembers`). */
+  redone: boolean;
   /** What the member's own draw binds that a batch carries per vertex: colour with alpha, tint, texel grid (`styleOf`). */
   style: Float32Array;
   /** A glyph's own values a batch carries per vertex (`styleOf`). */
@@ -150,8 +156,7 @@ interface Batch {
   slot: Slot | null;
   /** The fill its members' `written` values come from; -1 when none since its pass was grouped. */
   serial: number;
-  /** The pass (`passSerial`) that last filled it, and the last that gave it a slot. */
-  filledPass: number;
+  /** The last pass (`passSerial`) that gave it a slot. */
   heldPass: number;
 }
 
@@ -207,13 +212,16 @@ class Stamp {
 
 /**
  * How a Scene's batcher drew its passes since it was made: draws of passes that reached grouping (two or more that may
- * batch) that took the kept work (`retainedMembers`: grouping kept, and no refill of their batch, or no batch) or
- * did that work again (`fullMembers`), and, while `verifyRetainedOverlayBatches` is on, the retained passes checked
- * against the full path and those that differed, with the first few differences described.
+ * batch) that kept their bounds and their batch's fill (`retainedMembers`; a draw in no batch keeps its bounds alone) or
+ * redid either (`fullMembers`), and, while `verifyRetainedOverlayBatches` is on, the passes checked against the full
+ * path and those that differed, with the first few differences described.
  */
 export interface OverlayBatchWork {
   retainedMembers: number;
   fullMembers: number;
+  /** Passes whose batches were kept, and passes grouped again (a member's bounds and its batch's fill may still be kept). */
+  retainedPasses: number;
+  regroupedPasses: number;
   verifiedPasses: number;
   mismatches: number;
   mismatchDetails: string[];
@@ -225,7 +233,7 @@ const MAX_MISMATCH_DETAILS = 4;
 let verifies = false;
 
 /**
- * Debugging aid: every pass that takes the retained path is followed by the full path's work, on its own entries,
+ * Debugging aid: every pass that reaches grouping is followed by the full path's work, on its own entries,
  * batches and vertex caches, which must give the same batches in the same order with the same members, each from a
  * slot of its own that holds what the full path would write (`OverlayBatchWork.mismatches`).
  */
@@ -523,13 +531,13 @@ function drawKey(entry: Entry): object {
 function createEntry(subMesh: SubMesh): Entry {
   return {
     subMesh, mesh: null, material: null, binding: null, cell: null, text: null, clip: null, bake: null, extras: EXTRA_KINDS.map(() => null), layout: 0, indices: null,
-    minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1, alone: null, group: new Stamp(), style: new Float32Array(STYLE_FLOATS), glyph: new Float32Array(TEXT_FLOATS),
+    minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1, alone: null, drawStamp: new Stamp(), boundsStamp: new Stamp(), boundsKept: false, redone: true, style: new Float32Array(STYLE_FLOATS), glyph: new Float32Array(TEXT_FLOATS),
     written: new Float32Array(0), writtenLayout: -1, writtenIndices: new Float64Array(0),
   };
 }
 
 function createBatch(): Batch {
-  return { entries: [], minX: 0, minY: 0, maxX: 0, maxY: 0, previousOfKey: -1, slot: null, serial: -1, filledPass: 0, heldPass: 0 };
+  return { entries: [], minX: 0, minY: 0, maxX: 0, maxY: 0, previousOfKey: -1, slot: null, serial: -1, heldPass: 0 };
 }
 
 /** Whether `kept` lists the first `count` of `sorted`, in order. */
@@ -540,12 +548,11 @@ function sameList(kept: readonly SubMesh[], sorted: readonly SubMesh[], count: n
 }
 
 /**
- * Puts what grouping reads for `entry` into its stamp and says whether any of it changed: whether it may batch, what
- * `sameDraw` and `drawKey` compare (at full precision), and what `bound` projects (its own box and world matrix, or
- * whether its bounding box holds and that box).
+ * Puts what grouping compares for `entry` into its draw stamp and says whether any of it changed: whether it may batch,
+ * and what `sameDraw` and `drawKey` compare (at full precision).
  */
-function stampGroup(entry: Entry): boolean {
-  const stamp = entry.group;
+function stampDraw(entry: Entry): boolean {
+  const stamp = entry.drawStamp;
   stamp.begin();
   const mesh = entry.mesh;
   stamp.put(mesh);
@@ -576,7 +583,16 @@ function stampGroup(entry: Entry): boolean {
     }
     stamp.put(drawKey(entry));
   }
-  // What `bound` reads.
+  return stamp.end();
+}
+
+/**
+ * Puts what `bound` projects for `entry` into its bounds stamp and says whether any of it changed: its own box and
+ * world matrix, or whether its bounding box holds and that box.
+ */
+function stampBounds(entry: Entry): boolean {
+  const stamp = entry.boundsStamp;
+  stamp.begin();
   const bake = entry.bake;
   stamp.put(bake !== null);
   if (bake) {
@@ -727,6 +743,13 @@ function writeMembers(into: BatchArrays, members: readonly Entry[]): number {
   return changed;
 }
 
+/** Whether `batch` may draw from `slot` in `frame`: not drawn from yet, and holding its fill or no kept batch's. */
+function slotFree(slot: Slot, batch: Batch, frame: number): boolean {
+  if (slot.usedFrame === frame) return false;
+  const owner = slot.owner;
+  return owner === batch || !owner || owner.slot !== slot || owner.serial !== slot.serial;
+}
+
 /** A batch's vertex and index counts. */
 function batchCounts(members: readonly Entry[]): { vertices: number; indices: number } {
   let vertices = 0, indices = 0;
@@ -758,7 +781,11 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   private transform: Matrix | null = null;
   private marginX = 0;
   private marginY = 0;
-  private readonly work: OverlayBatchWork = { retainedMembers: 0, fullMembers: 0, verifiedPasses: 0, mismatches: 0, mismatchDetails: [] };
+  private readonly work: OverlayBatchWork = {
+    retainedMembers: 0, fullMembers: 0, retainedPasses: 0, regroupedPasses: 0, verifiedPasses: 0, mismatches: 0, mismatchDetails: [],
+  };
+  /** Before a regroup, each batch whose slot holds its fill, by its first member (`regroup`). */
+  private readonly keptFills = new Map<Entry, { members: Entry[]; slot: Slot; serial: number }>();
   /** The verifier's own entries, batches, vertex caches and arrays: it never reads or writes the retained path's. */
   private readonly verifyEntries: Entry[] = [];
   private readonly verifyBatches: Batch[] = [];
@@ -833,25 +860,30 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       }
       this.measurePass();
       // Every stamp is put, so each holds this frame's values.
-      let regroup = !record.grouped;
-      if (this.stampPass(record.pass, eye)) regroup = true;
-      for (let index = 0; index < count; index += 1) if (stampGroup(entries[index]!)) regroup = true;
-      if (regroup) {
-        for (let index = 0; index < record.batchCount; index += 1) record.batches[index]!.entries.length = 0;
-        record.batchCount = this.group(entries, count, record.batches);
-        // No batch's members were written as these batches hold them.
-        for (const batch of record.batches) batch.serial = -1;
-        record.grouped = true;
+      const grouped = record.grouped;
+      let regroup = !grouped;
+      const passChanged = this.stampPass(record.pass, eye);
+      if (passChanged) regroup = true;
+      // A member's bounds are a function of its bounds stamp and the pass's: kept while neither changed since the
+      // kept batches were made (every change of either regroups, and so bounds it anew).
+      const keepBounds = grouped && !passChanged;
+      for (let index = 0; index < count; index += 1) {
+        const entry = entries[index]!;
+        const drawChanged = stampDraw(entry), boundsChanged = stampBounds(entry);
+        entry.boundsKept = keepBounds && !boundsChanged;
+        entry.redone = !entry.boundsKept;
+        if (drawChanged || boundsChanged) regroup = true;
       }
+      if (regroup) this.regroup(record, count, grouped);
       const pass = ++this.passSerial;
-      const refilled = this.drawBatches(record, transparent, drawOne, stats, pass);
-      if (regroup) {
-        this.work.fullMembers += count;
-      } else {
-        this.work.fullMembers += refilled;
-        this.work.retainedMembers += count - refilled;
-        if (verifies) this.verify(record, count, eye, pass);
-      }
+      this.drawBatches(record, transparent, drawOne, stats, pass);
+      let redone = 0;
+      for (let index = 0; index < count; index += 1) if (entries[index]!.redone) redone += 1;
+      this.work.fullMembers += redone;
+      this.work.retainedMembers += count - redone;
+      if (regroup) this.work.regroupedPasses += 1;
+      else this.work.retainedPasses += 1;
+      if (verifies) this.verify(record, count, eye, pass);
     } catch (error) {
       record.grouped = false;
       throw error;
@@ -916,6 +948,39 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     entry.extras.fill(null);
     entry.layout = 0;
     entry.batch = -1;
+  }
+
+  /**
+   * Groups the record's pass anew. When its list is the one the kept batches were made for (`grouped`), a new batch of
+   * exactly a kept batch's members, in order, takes over that batch's slot and fill: what a slot holds is a function of
+   * its members' written values in order alone, which `holdsWritten` still checks before a fill is skipped.
+   */
+  private regroup(record: PassRecord, count: number, grouped: boolean): void {
+    const kept = this.keptFills;
+    const batches = record.batches;
+    if (grouped)
+      for (let index = 0; index < record.batchCount; index += 1) {
+        const batch = batches[index]!, slot = batch.slot;
+        if (slot && batch.serial >= 0 && slot.owner === batch && slot.serial === batch.serial)
+          kept.set(batch.entries[0]!, { members: [...batch.entries], slot, serial: batch.serial });
+      }
+    try {
+      for (let index = 0; index < record.batchCount; index += 1) batches[index]!.entries.length = 0;
+      record.batchCount = this.group(record.entries, count, batches);
+      // No batch's members were written as these batches hold them, but where a kept batch's fill carries over.
+      for (const batch of batches) batch.serial = -1;
+      for (let index = 0; kept.size > 0 && index < record.batchCount; index += 1) {
+        const batch = batches[index]!, members = batch.entries;
+        const fill = kept.get(members[0]!);
+        if (!fill || fill.members.length !== members.length || fill.members.some((entry, at) => entry !== members[at])) continue;
+        batch.slot = fill.slot;
+        batch.serial = fill.serial;
+        fill.slot.owner = batch;
+      }
+      record.grouped = true;
+    } finally {
+      kept.clear();
+    }
   }
 
   /**
@@ -1017,7 +1082,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   private bound(entry: Entry, transform: Matrix, marginX: number, marginY: number): void {
     entry.minX = entry.minY = Number.POSITIVE_INFINITY;
     entry.maxX = entry.maxY = Number.NEGATIVE_INFINITY;
-    // What `stampGroup` stamps.
+    // What `stampBounds` stamps.
     const mesh = entry.subMesh.getMesh();
     let min: readonly number[], max: readonly number[];
     // A batchable draw's own box, posed: tighter than its world box when it is turned.
@@ -1075,7 +1140,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     let used = 0;
     for (let index = 0; index < count; index += 1) {
       const entry = entries[index]!;
-      this.bound(entry, transform, marginX, marginY);
+      if (!entry.boundsKept) this.bound(entry, transform, marginX, marginY);
       let last = used - 1;
       for (; last >= 0; last -= 1) {
         const batch = batches[last]!;
@@ -1110,17 +1175,13 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     return used;
   }
 
-  /** Draws the record's batches; returns how many members a fill wrote. */
-  private drawBatches(record: PassRecord, transparent: boolean, drawOne: (subMesh: SubMesh) => void, stats: OverlayBatchStats, pass: number): number {
-    let filled = 0;
+  private drawBatches(record: PassRecord, transparent: boolean, drawOne: (subMesh: SubMesh) => void, stats: OverlayBatchStats, pass: number): void {
     for (let index = 0; index < record.batchCount; index += 1) {
       const batch = record.batches[index]!;
       const members = batch.entries;
       // A member whose own draw would not draw now (Babylon's readiness gate) leaves its batch's members to their own.
       if (members.length > 1 && members.every(drawsNow)) {
-        const drawn = this.drawBatch(batch, transparent, pass);
-        if (batch.filledPass === pass) filled += members.length;
-        if (drawn) {
+        if (this.drawBatch(batch, transparent, pass)) {
           stats.draws += 1;
           stats.batches += 1;
           stats.batched += members.length;
@@ -1132,7 +1193,6 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       for (const entry of members) if (entry.mesh) stats.alone.unmatched += 1;
       for (const entry of members) drawOne(entry.subMesh);
     }
-    return filled;
   }
 
   /** Draws `batch` as one; false (nothing drawn) when its mesh is not ready with its members' program's batch variant. */
@@ -1162,11 +1222,12 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       // Owned by no batch until the fill is whole.
       slot.owner = null;
       this.fill(slot, members);
-      for (const entry of members) keepWritten(entry);
+      for (const entry of members) {
+        keepWritten(entry);
+        entry.redone = true;
+      }
       slot.owner = batch;
-      slot.serial = batch.serial = ++this.fillSerial;
-      batch.filledPass = pass;
-    }
+      slot.serial = batch.serial = ++this.fillSerial;    }
     const subMesh = mesh.subMeshes[0]!;
     if (!first.material!.isReadyForSubMesh(mesh, subMesh, false)) return false;
     const effect = subMesh.effect;
@@ -1188,26 +1249,21 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   }
 
   /**
-   * A batch mesh for `batch` not yet drawn from in this Engine frame: the one it drew from last, else one no batch holds
-   * a fill in, else any, else a new one (out of the Scene's lists). A batch mesh draws once per Engine frame: WebGPU
-   * writes buffers ahead of the frame's draws, so a second write would show in both.
+   * A batch mesh for `batch` not yet drawn from in this Engine frame: the one it drew from last, else one that holds no
+   * kept batch's fill, else a new one (out of the Scene's lists), so the pool grows to the batches kept. A batch mesh
+   * draws once per Engine frame: WebGPU writes buffers ahead of the frame's draws, so a second write would show in both.
    */
   private slotFor(batch: Batch, layout: number): Slot {
     const frame = this.scene.getEngine().frameId;
     let slot = batch.slot;
-    if (!slot || slot.usedFrame === frame) {
+    if (!slot || !slotFree(slot, batch, frame)) {
       slot = null;
-      let spare: Slot | null = null;
       for (const candidate of this.slots) {
-        if (candidate.usedFrame === frame) continue;
-        const owner = candidate.owner;
-        if (!owner || owner.slot !== candidate || owner.serial !== candidate.serial) {
+        if (slotFree(candidate, batch, frame)) {
           slot = candidate;
           break;
         }
-        spare ??= candidate;
       }
-      slot ??= spare;
     }
     if (!slot) {
       const scene = this.scene;
@@ -1318,7 +1374,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   }
 
   /**
-   * Checks a pass that took the retained path against the full path, worked out on the verifier's own entries,
+   * Checks a pass (kept or grouped again) against the full path, worked out on the verifier's own entries,
    * batches, vertex caches and arrays (`verifyRetainedOverlayBatches`): the same classification, bounds and batches, in
    * the same order, and every batch given a slot this pass holding, in a slot of its own, what a fill would write now.
    */
@@ -1333,6 +1389,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         const entry = (shadow[index] ??= createEntry(record.sorted[index]!));
         entry.subMesh = record.sorted[index]!;
         entry.alone = this.classify(entry, eye, this.verifyBakes);
+        entry.boundsKept = false;
         if (!entry.alone) candidates += 1;
         if (!detail && entry.alone !== kept[index]!.alone) detail = `member ${index}: ${entry.alone ?? "batchable"}, kept ${kept[index]!.alone ?? "batchable"}`;
       }

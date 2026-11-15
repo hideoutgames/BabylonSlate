@@ -8,13 +8,14 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Scene } from "@babylonjs/core/scene";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sceneDrawBatcher } from "./draw-batching";
 import { beginEngineDrawCallFrame } from "./draw-calls";
 import { beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, publishDrawPassFrame, withDrawPass } from "./draw-passes";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import {
-  copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats, sceneImagePages, setSceneDrawBatching, setSceneImagePages,
+  copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats, sceneDrawBatchWork, sceneImagePages, setSceneDrawBatching, setSceneImagePages,
+  verifyRetainedOverlayBatches,
 } from "./overlay-draw-batcher";
 import { managedRenderReservations } from "./managed-render-resources";
 import { OverlayLayoutRenderer } from "./overlay-layout-render";
@@ -822,6 +823,211 @@ describe("Scene Layer draw batching", () => {
     await Promise.resolve();
     expect(managedRenderReservations(engine).reservedBytes).toBe(before);
     await compositor.dispose();
+  });
+
+  describe("keeping its work between frames", () => {
+    beforeEach(() => verifyRetainedOverlayBatches(true));
+    afterEach(() => verifyRetainedOverlayBatches(false));
+
+    /**
+     * A layer of two passes: four blended quads under one layout clip, which share a draw, and two cut-out sprites of
+     * small images on the shared page, which share one once the page holds both.
+     */
+    async function retainedLayer() {
+      const context = host({ webgl2: true });
+      const { engine, compositor, scene } = context;
+      const clip = { x: 0, y: 0, width: 16, height: 4 };
+      const quads = [-6, -3, 0, 3].map((x, index) => {
+        const root = new Mesh(`actor-${index + 1}`, scene);
+        const mesh = quad(scene, `actor-${index + 1}|quad`, x, 0);
+        mesh.parent = root;
+        return mesh;
+      });
+      const layout = new OverlayLayoutRenderer(() => scene);
+      const applyClip = (rect: typeof clip) => layout.apply({
+        type: "sceneLayerLayout", layerId: "hud",
+        entries: quads.map((_mesh, index) => ({ slotId: index + 1, actorId: `actor-${index + 1}`, rect, clip: { ...rect }, scrollAncestors: [] })),
+      });
+      applyClip(clip);
+      const sprites = [0, 1].map((index) => sprite(scene, `sprite${index}`, -2 + index * 4, layerImage(scene, 16)));
+      for (const mesh of sprites) mesh.position.y = 3;
+      await compositor.prepare("hud", () => {});
+      /**
+       * What the batcher did while `run` ran: members that kept their work and those that redid it, passes grouped
+       * again, and mismatches; every pass is checked against the full path.
+       */
+      const work = async (run: () => unknown) => {
+        const before = sceneDrawBatchWork(scene)!;
+        await run();
+        const after = sceneDrawBatchWork(scene)!;
+        expect(after.mismatchDetails).toEqual([]);
+        const passes = after.retainedPasses + after.regroupedPasses - before.retainedPasses - before.regroupedPasses;
+        expect(after.verifiedPasses - before.verifiedPasses).toBe(passes);
+        expect(passes).toBe(2);
+        return {
+          retained: after.retainedMembers - before.retainedMembers, full: after.fullMembers - before.fullMembers,
+          regrouped: after.regroupedPasses - before.regroupedPasses, mismatches: after.mismatches - before.mismatches,
+        };
+      };
+      const frame = () => layerDraws(engine, compositor, 1);
+      return { ...context, quads, sprites, applyClip, work, frame };
+    }
+
+    /** Six members in two passes, none of them redone, neither pass grouped again. */
+    const unchanged = { retained: 6, full: 0, regrouped: 0, mismatches: 0 };
+    const counts = (retained: number, full: number, regrouped: number) => ({ retained, full, regrouped, mismatches: 0 });
+
+    it("keeps everything while nothing changes, and groups the pass whose shared page first holds its images again", async () => {
+      const { work, frame, scene } = await retainedLayer();
+      // The first frame asks the page for the two images and draws them from their own textures, in a draw each.
+      expect(await work(frame)).toEqual(counts(0, 6, 2));
+      // The page holds them now: the sprites' pass (drawn first) groups again (they sample one texture) and shares a
+      // draw, on a new batch mesh, as the quads' batch keeps the one holding its fill. The sprites keep their bounds.
+      expect(await work(() => expect(drawnMeshes(frame).map((mesh) => mesh.name)).toEqual(["drawBatch:1", "drawBatch:0"])))
+        .toEqual(counts(4, 2, 1));
+      expect(sceneImagePages(scene)).toEqual({ images: 2, drawn: 2 });
+      for (let index = 0; index < 3; index += 1) expect(await work(() => expect(frame()).toBe(2))).toEqual(unchanged);
+    });
+
+    it("refills only a batch whose member's style, colour or vertices changed in place", async () => {
+      const { work, frame, quads, sprites } = await retainedLayer();
+      frame();
+      frame();
+      // A style tween: the quads' batch refills.
+      applyOverlayVisualStyle(quads[1]!, { tint: [0.9, 0.1, 0.1, 0.5], opacity: 0.25 });
+      expect(await work(frame)).toEqual(counts(2, 4, 0));
+      expect(await work(frame)).toEqual(unchanged);
+      // A colour written into the sprite's binding object in place: the sprites' batch refills.
+      (unlitBinding(sprites[0]).color as unknown as number[])[0] = 0.5;
+      expect(await work(frame)).toEqual(counts(4, 2, 0));
+      expect(await work(frame)).toEqual(unchanged);
+      // An animation frame rewrites the sprite's UV array in place.
+      setSpriteQuadUvs(sprites[1]!, { u0: 0.5, v0: 0, u1: 0.75, v1: 0.25 });
+      expect(await work(frame)).toEqual(counts(4, 2, 0));
+      expect(await work(frame)).toEqual(unchanged);
+      // A resize rewrites its position array in place: its bounds change, so its pass groups again, and its batch refills.
+      setSpriteQuadSize(sprites[1]!, 1, 0.5, { x: 0, y: 0 });
+      expect(await work(frame)).toEqual(counts(4, 2, 1));
+      expect(await work(frame)).toEqual(unchanged);
+    });
+
+    it("groups a pass again when a member moves, its clip changes, or the layer's camera or render size changes", async () => {
+      const { work, frame, engine, compositor, quads, applyClip } = await retainedLayer();
+      frame();
+      frame();
+      quads[2]!.position.x += 0.5;
+      expect(await work(frame)).toEqual(counts(2, 4, 1));
+      expect(await work(frame)).toEqual(unchanged);
+      // The clip is compared, so the pass groups again; the same members form the batch, which keeps its fill and
+      // draws under the new scissor.
+      applyClip({ x: 0, y: 0, width: 15, height: 4 });
+      expect(await work(frame)).toEqual(counts(6, 0, 1));
+      expect(await work(frame)).toEqual(unchanged);
+      // Moved, zoomed and rolled, the layer's camera projects every member elsewhere: every member is bounded again.
+      for (const camera of [{ x: 1.5, y: -0.75, rotation: 0, zoom: 1 }, { x: 1.5, y: -0.75, rotation: 0, zoom: 1.5 }, { x: 1.5, y: -0.75, rotation: 0.3, zoom: 1.5 }]) {
+        compositor.setCamera("hud", camera);
+        expect(await work(frame)).toEqual(counts(0, 6, 2));
+        expect(await work(frame)).toEqual(unchanged);
+      }
+      // Two pixels are another distance in NDC at another render size.
+      vi.spyOn(engine, "getRenderWidth").mockReturnValue(1000);
+      await compositor.prepare("hud", () => {});
+      expect(await work(frame)).toEqual(counts(0, 6, 2));
+      expect(await work(frame)).toEqual(unchanged);
+    });
+
+    it("groups a pass again when a member is added, removed or reordered, or changes Material or texture", async () => {
+      const { work, frame, scene, compositor, quads, sprites } = await retainedLayer();
+      frame();
+      frame();
+      // Another list: its pass starts over.
+      const added = quad(scene, "added", 6, 0);
+      expect(await work(frame)).toEqual(counts(2, 5, 1));
+      expect(await work(frame)).toEqual({ ...unchanged, retained: 7 });
+      added.dispose();
+      expect(await work(frame)).toEqual(counts(2, 4, 1));
+      expect(await work(frame)).toEqual(unchanged);
+      // Nearer the camera, the first quad draws last.
+      quads[0]!.position.z = -0.5;
+      expect(await work(frame)).toEqual(counts(2, 4, 1));
+      expect(await work(frame)).toEqual(unchanged);
+      // Another texture: the sprites draw on their own while the page does not hold it yet (nothing to redo), then
+      // share a draw again.
+      setUnlitMaterial(sprites[1]!, { textured: true, backFaceCulling: true, fog: true, role: "world" },
+        { texture: layerImage(scene, 8), color: [1, 1, 1], alpha: 1, cutoff: 0.4, blend: false, textureAlpha: true, twoSided: false });
+      expect(await work(() => expect(frame()).toBe(3))).toEqual(counts(6, 0, 1));
+      expect(await work(frame)).toEqual(counts(4, 2, 1));
+      expect(await work(() => expect(frame()).toBe(2))).toEqual(unchanged);
+      // Another binding (and Material), ready after the layer prepares again: the quad draws on its own, the other
+      // three share a new batch.
+      setUnlitMaterial(quads[3]!, { textured: false, backFaceCulling: true, fog: true, role: "world" },
+        { texture: null, color: [1, 1, 1], alpha: 0.5, cutoff: 0, blend: true, textureAlpha: false, twoSided: false });
+      await compositor.prepare("hud", () => {});
+      expect(await work(() => expect(frame()).toBe(3))).toEqual(counts(3, 3, 1));
+      expect(await work(frame)).toEqual(unchanged);
+    });
+
+    it("keeps a batch whose member stops being ready for a frame, drawing its members one by one meanwhile", async () => {
+      const { work, frame, sprites } = await retainedLayer();
+      frame();
+      frame();
+      const material = sprites[0]!.material!;
+      const isReady = material.isReadyForSubMesh.bind(material);
+      const notReady = vi.spyOn(material, "isReadyForSubMesh").mockImplementation((mesh, subMesh, useInstances) => mesh !== sprites[1] && isReady(mesh, subMesh, useInstances));
+      // The quads' draw and the ready sprite's own; the batch still holds its fill.
+      expect(await work(() => expect(frame()).toBe(2))).toEqual(unchanged);
+      notReady.mockRestore();
+      expect(await work(() => expect(frame()).toBe(2))).toEqual(unchanged);
+    });
+
+    it("draws the Feature Test HUD as the full path would while a text fades and widgets turn", async () => {
+      const { engine, compositor, scene } = host({ webgl2: true });
+      const textures = new Map<string, RawTexture>();
+      buildSceneLayerHud(scene, {
+        texture: (guid) => {
+          let found = textures.get(guid);
+          if (!found) textures.set(guid, (found = layerImage(scene, 64)));
+          return found;
+        },
+      });
+      await compositor.prepare("hud", () => {});
+      layerDraws(engine, compositor);
+      // Drawn parts of the texts, and the roots of the turned widgets.
+      const glyphs = scene.meshes.filter((mesh) => mesh.name.includes("|label") && mesh.getTotalVertices() > 0);
+      const turned = scene.meshes.filter((mesh) => mesh.name.endsWith("|background") && mesh.parent instanceof Mesh && mesh.parent.rotation.z !== 0);
+      expect(glyphs.length).toBeGreaterThan(4);
+      expect(turned.length).toBeGreaterThan(0);
+      const before = sceneDrawBatchWork(scene)!;
+      for (let step = 1; step <= 6; step += 1) {
+        // One letter fades, as a reveal does, and a widget turns on even steps.
+        glyphs[step % glyphs.length]!.visibility = 1 - step / 10;
+        if (step % 2 === 0) (turned[0]!.parent as Mesh).rotation.z += 0.05;
+        layerDraws(engine, compositor, 1);
+      }
+      layerDraws(engine, compositor, 2);
+      const after = sceneDrawBatchWork(scene)!;
+      expect(after.mismatchDetails).toEqual([]);
+      expect(after.verifiedPasses - before.verifiedPasses).toBeGreaterThan(0);
+      // The last two frames changed nothing: every member of every pass kept its work then.
+      expect(after.retainedMembers - before.retainedMembers).toBeGreaterThan(2 * 150);
+    });
+
+    it("counts a mismatch when a batch mesh no longer holds what the full path would write", async () => {
+      const { frame, scene } = await retainedLayer();
+      frame();
+      frame();
+      const batches = drawnMeshes(frame).filter((mesh) => mesh.name.startsWith("drawBatch"));
+      expect(batches).toHaveLength(2);
+      // The sprites' batch (the cut-out pass draws first) holds each vertex's world rows in the slot's own array.
+      const worlds = batches[0]!.getVertexBuffer("batchWorld0")!.getData() as Float32Array;
+      // The first member's x: one of the sprites, at -2 or 2.
+      const x = worlds[3]!;
+      expect([-2, 2]).toContain(x);
+      worlds[3] = x + 1;
+      frame();
+      const found = sceneDrawBatchWork(scene)!;
+      expect({ mismatches: found.mismatches, details: found.mismatchDetails }).toEqual({ mismatches: 1, details: [`batch 0: world[3] is ${x + 1}, not ${x}`] });
+    });
   });
 
   it("draws the Feature Test HUD in fewer draws when its icons share a page", async () => {
