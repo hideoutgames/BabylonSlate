@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, rename, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { ProjectStorage } from "@haptic/core";
+import { NodeStorageAdapter } from "@haptic/vfs/node";
 import { testAsset } from "../testing/diff-assets";
 import { integratedSync } from "../testing/integrated-sync";
+import { unusedLfsObjects } from "./source-control-unused-files";
 
 const AUTHOR = { name: "ada", email: "" };
 /** Large enough for a chunk to live in a blob. */
@@ -175,6 +180,42 @@ describe("Remove Unused Files", () => {
     await storage.writeText("plugins/Props/assets/.haptic-move-9d2b4c11", "half a backup");
 
     expect(await service.findUnusedFiles()).toEqual({ paths: [`assets/.blobs/${loose.sha}`], bytes: BLOB_BYTES });
+  });
+
+  it("removes nothing while a symbolic link may show one blob folder's files under another's paths", async () => {
+    // Git lists a blob in a linked folder under both paths; the plugin's header keeps only its own.
+    const dir = await mkdtemp(join(tmpdir(), "haptic-unused-"));
+    onTestFinished(() => rm(dir, { recursive: true, force: true }));
+    const crate = await texture("Crate", 4);
+    const storage = new NodeStorageAdapter(dir);
+    await storage.openDocumentsProject("Game");
+    const project = join(dir, "Game");
+    const signal = new AbortController().signal;
+    await storage.writeBinary(`assets/.blobs/${crate.sha}`, crate.blob);
+    await storage.writeBinary("plugins/Props/assets/Crate.texture.hasset", crate.bytes);
+    const own = `assets/.blobs/${crate.sha}`;
+    const plugin = `plugins/Props/assets/.blobs/${crate.sha}`;
+
+    // Without a link the project's copy is its own file, which nothing in its root uses.
+    expect(await unusedLfsObjects(storage, [own], signal)).toEqual({ paths: [own], bytes: BLOB_BYTES });
+
+    // The plugin's folder is a link to the project's.
+    await symlink(join(project, "assets", ".blobs"), join(project, "plugins", "Props", "assets", ".blobs"));
+    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0 });
+
+    // The project's folder is a link to the plugin's.
+    await rm(join(project, "plugins", "Props", "assets", ".blobs"));
+    await rename(join(project, "assets", ".blobs"), join(project, "plugins", "Props", "assets", ".blobs"));
+    await symlink(join(project, "plugins", "Props", "assets", ".blobs"), join(project, "assets", ".blobs"));
+    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0 });
+
+    // One blob file is a link to another folder's.
+    await rm(join(project, "assets", ".blobs"));
+    await rename(join(project, "plugins", "Props", "assets", ".blobs"), join(project, "assets", ".blobs"));
+    await mkdir(join(project, "plugins", "Props", "assets", ".blobs"));
+    await symlink(join(project, "assets", ".blobs", crate.sha), join(project, "plugins", "Props", "assets", ".blobs", crate.sha));
+    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0 });
+    expect(await storage.readBinary(plugin)).toEqual(crate.blob);
   });
 
   it("keeps every blob of a content root that holds an asset whose header cannot be read", async () => {

@@ -14,27 +14,49 @@ interface Kept {
   wholeFolders: Set<string>;
 }
 
+/** The project's files the scan reads: its assets, and whether a symbolic link may alias a blob folder. */
+interface ProjectFiles {
+  /** Every `.hasset`, and every backup a move or rename keeps beside its file. */
+  assets: string[];
+  /**
+   * A `.blobs` folder is a symbolic link, sits under one or holds one, so one
+   * file may show under two folders' paths (Git lists both), and removing it
+   * through one takes it from the other, whose own assets may need it.
+   */
+  aliased: boolean;
+}
+
 /**
  * Every `.hasset` in the project folder (`.git` and blob folders left out),
  * from directory listings, with the backups a move or rename keeps beside its
  * file (`STORAGE_MOVE_BACKUP_PREFIX`): one whose restore failed holds the
- * only copy of the original asset.
+ * only copy of the original asset. Each blob folder is listed too, for links
+ * (`DirEntry.link`: only desktop folders hold them).
  */
-async function assetFiles(storage: ProjectStorage, signal: AbortSignal): Promise<string[]> {
-  const out: string[] = [];
-  const walk = async (dir: string) => {
+async function projectFiles(storage: ProjectStorage, signal: AbortSignal): Promise<ProjectFiles> {
+  const found: ProjectFiles = { assets: [], aliased: false };
+  const blobFolders: string[] = [];
+  const walk = async (dir: string, linked: boolean) => {
     throwIfCancelled(signal);
     for (const entry of await storage.readdir(dir)) {
       const path = dir ? `${dir}/${entry.name}` : entry.name;
       if (entry.isDir) {
-        if (path !== ".git" && entry.name !== ".blobs") await walk(path);
+        if (path === ".git") continue;
+        if (entry.name !== ".blobs") await walk(path, linked || entry.link === true);
+        else if (linked || entry.link === true) found.aliased = true;
+        else blobFolders.push(path);
       } else if (entry.name.endsWith(".hasset") || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) {
-        out.push(path);
+        found.assets.push(path);
       }
     }
   };
-  await walk("");
-  return out;
+  await walk("", false);
+  for (const folder of blobFolders) {
+    if (found.aliased) break;
+    throwIfCancelled(signal);
+    found.aliased = (await storage.readdir(folder)).some((entry) => entry.link === true);
+  }
+  return found;
 }
 
 /**
@@ -43,11 +65,14 @@ async function assetFiles(storage: ProjectStorage, signal: AbortSignal): Promise
  * only the headers of roots that hold a candidate are read, and only their
  * headers (no chunk). A `.hasset` outside every content root (a plugin's
  * settings) keeps its blobs in each folder. An asset whose header cannot be
- * read (half written, or by another app) keeps its whole folder.
+ * read (half written, or by another app) keeps its whole folder. Null while a
+ * symbolic link may alias a blob folder: every file is kept then.
  */
-async function keptBy(storage: ProjectStorage, folders: ReadonlySet<string>, signal: AbortSignal): Promise<Kept> {
+async function keptBy(storage: ProjectStorage, folders: ReadonlySet<string>, signal: AbortSignal): Promise<Kept | null> {
   const kept: Kept = { paths: new Set(), wholeFolders: new Set() };
-  for (const path of await assetFiles(storage, signal)) {
+  const files = await projectFiles(storage, signal);
+  if (files.aliased) return null;
+  for (const path of files.assets) {
     const folder = assetBlobFolder(path);
     if (folder !== null && !folders.has(folder)) continue;
     const owners = folder === null ? [...folders] : [folder];
@@ -72,12 +97,14 @@ async function keptBy(storage: ProjectStorage, folders: ReadonlySet<string>, sig
  * Of `candidates` (untracked `.blobs` files no unpushed commit holds), those
  * nothing needs: in a content root's own blob folder (any other `.blobs`
  * file is left alone) and referenced by no asset header on disk, with their
- * total size. Reads listings, the needed headers and stats; never a blob.
+ * total size; none while a symbolic link may alias a blob folder. Reads
+ * listings, the needed headers and stats; never a blob.
  */
 export async function unusedLfsObjects(storage: ProjectStorage, candidates: readonly string[], signal: AbortSignal): Promise<UnusedFiles> {
   const inRoots = candidates.filter((path) => assetBlobFolder(path) === parentOf(path));
   if (inRoots.length === 0) return { paths: [], bytes: 0 };
   const kept = await keptBy(storage, new Set(inRoots.map(parentOf)), signal);
+  if (!kept) return { paths: [], bytes: 0 };
   const paths: string[] = [];
   let bytes = 0;
   for (const path of inRoots) {
