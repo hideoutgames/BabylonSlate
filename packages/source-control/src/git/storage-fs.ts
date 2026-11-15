@@ -160,8 +160,9 @@ export class StorageFs {
    * held back until it resolves, then makes them. isomorphic-git writes the
    * shallow list and refs before the pack, so a fetch cancelled or killed in
    * between would leave them naming commits this copy never stored (every
-   * later history walk then fails). A fetch that fails makes none of them;
-   * one that resolved has stored its pack, so they are safe in any order.
+   * later history walk then fails). A fetch that fails makes none of them.
+   * One that resolved has stored its pack, so they are made even if the
+   * signal aborted meanwhile: the shallow list then matches the objects.
    */
   async objectsFirst<T>(fetch: () => Promise<T>): Promise<T> {
     const held = new Map<string, Uint8Array | null>();
@@ -173,7 +174,6 @@ export class StorageFs {
       this.held = null;
     }
     for (const [path, bytes] of held) {
-      throwIfCancelled(this.signal);
       this.listed.delete(path);
       if (bytes === null) {
         await this.storage.remove(path).catch((error: unknown) => {

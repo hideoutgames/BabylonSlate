@@ -592,6 +592,7 @@ export class GitRepository implements SyncPort {
   private async fetchBranch(op: Op, options: { branch?: string; deepen?: number; depth?: number } = {}): Promise<boolean> {
     const branch = options.branch ?? this.current;
     const remoteRef = `refs/heads/${branch}`;
+    const shallowBefore = await this.shallowCommits();
     try {
       await op.fs.objectsFirst(() => git.fetch({
         ...op.git,
@@ -603,7 +604,7 @@ export class GitRepository implements SyncPort {
         tags: false,
         ...(options.deepen ? { depth: options.deepen, relative: true } : options.depth ? { depth: options.depth } : {}),
       }));
-      await this.trimShallow(op);
+      await this.trimShallow(op, shallowBefore);
       return true;
     } catch (error) {
       const missing = (error as { code?: unknown; data?: { what?: unknown } }).code === "NotFoundError" && (error as { data?: { what?: unknown } }).data?.what === remoteRef;
@@ -682,16 +683,23 @@ export class GitRepository implements SyncPort {
   }
 
   /**
-   * Drops from `.git/shallow` the commits whose parents this copy holds.
-   * isomorphic-git means to leave those out, but checks before the fetch's
-   * pack is stored, so a branch fetched one deep from a commit this copy
-   * already has (a teammate's branch off main) would stay a boundary: every
-   * walk would stop at its tip, short of the merge base.
+   * Drops from `.git/shallow` the commits a fetch added there whose parents
+   * this copy held. isomorphic-git means to leave those out, but checks
+   * before the fetch's pack is stored, so a branch fetched one deep from a
+   * commit this copy already has (a teammate's branch off main) would stay a
+   * boundary: every walk would stop at its tip, short of the merge base. A
+   * boundary listed `before` the fetch stays even when its parents are here:
+   * they may be the objects of a deepen that never finished, past which
+   * history is missing.
    */
-  private async trimShallow(op: Op): Promise<void> {
+  private async trimShallow(op: Op, before: ReadonlySet<string>): Promise<void> {
     const shallow = await this.shallowCommits();
     const boundary: string[] = [];
     for (const oid of shallow) {
+      if (before.has(oid)) {
+        boundary.push(oid);
+        continue;
+      }
       const commit = await this.readCommit(op, oid);
       let complete = commit !== null;
       for (const parent of commit?.parent ?? []) complete &&= (await this.readCommit(op, parent)) !== null;

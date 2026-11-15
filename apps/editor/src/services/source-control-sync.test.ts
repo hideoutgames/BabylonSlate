@@ -264,6 +264,15 @@ describe("SourceControlSyncService", () => {
     expect(service.getSnapshot().rows).toEqual([]);
   });
 
+  it("reads the counts the push's look at the remote moved, when the push is refused", async () => {
+    const { service, input, storage, remote } = await setup();
+    await service.configure(input("integrated"));
+    const theirs = remote.commit({ "assets/Forest.scene.hasset": "F-theirs" }, "Their forest");
+    await storage.writeText("assets/Rock.texture.hasset", "R2");
+    await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: true });
+    expect(service.getSnapshot()).toMatchObject({ problem: { title: "Could Not Push", code: "push-rejected" }, remoteHead: theirs, ahead: 1, behind: 1 });
+  });
+
   it("refuses a push that would send an asset someone else locks, naming the holder", async () => {
     const { service, input, storage, locks, spied } = await setup();
     await service.configure(input("integrated"));

@@ -334,6 +334,35 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(server.git(folder(storage), "log", "--format=%s").trim().split("\n")).toEqual(["Three", "Two", "One"]);
   });
 
+  it("keeps the history readable when a deepen is cancelled once its pack is stored, through later fetches", async () => {
+    for (const message of ["One", "Two", "Three", "Four", "Five"]) server.seed({ "assets/a.hasset": message }, message);
+    const controller = new AbortController();
+    let armed = false;
+    // Cancels while the pack's index is written, letting that write through: the fetch itself then succeeds.
+    const storage = new Proxy(await server.storage(), {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (typeof value !== "function") return value;
+        if (property !== "writeBinary" && property !== "writeText") return (value as (...args: unknown[]) => unknown).bind(target);
+        return (path: string, ...rest: unknown[]) => {
+          if (armed && path.endsWith(".idx")) controller.abort();
+          return (value as (...args: unknown[]) => unknown).call(target, path, ...rest);
+        };
+      },
+    });
+    const repository = await clone(storage);
+    armed = true;
+    await repository.log({ limit: 2, skip: 1, deepen: true, signal: controller.signal }).catch(() => undefined);
+    armed = false;
+
+    await repository.fetch();
+    const page = await repository.log({ limit: 5 });
+    expect(page.commits[0]?.message).toBe("Five\n");
+    expect(page.shallow).toBe(true);
+    const older = await repository.log({ limit: 5, deepen: true });
+    expect(older.commits.map((commit) => commit.message.trim())).toEqual(["Five", "Four", "Three", "Two", "One"]);
+  });
+
   it("offers older history only when the branch's own history stops at the shallow boundary", async () => {
     server.seed({ "assets/a.hasset": "1" }, "One");
     server.seed({ "assets/a.hasset": "2" }, "Two");

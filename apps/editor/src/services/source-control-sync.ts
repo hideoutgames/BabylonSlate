@@ -450,7 +450,11 @@ export class SourceControlSyncService {
       await port.push({ signal });
       pushed = outgoing;
     }, revision);
-    if (!pushed) return;
+    if (!pushed) {
+      // Measuring what it sends brought the remote branches up to date, so the counts follow even when it was refused.
+      await this.readLocal(revision);
+      return;
+    }
     const outgoing: readonly string[] = pushed;
     const rows = await this.readLocal(revision);
     // Without the changes it cannot tell which pushed assets changed again, so it releases nothing.
