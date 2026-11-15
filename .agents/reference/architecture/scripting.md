@@ -100,6 +100,7 @@ Sibling nodes behave and read alike, so one node teaches the next. New and chang
 - **Lerp and Slerp never clamp Alpha**, on any type; Ease clamps.
 - **Arrays are values**: a node returns a changed copy. A node that only computes a copy is pure (Append, Sort, Reverse, Slice, Shuffle). A node that takes an index (Get, Set, Insert, Remove At, Swap) leaves the Array unchanged for an index outside it and reports that on a `Success` output.
 - **Latent nodes report failure one way**: `Completed` and `Failed` exec outputs plus an `Error` String, empty on success (`ctx.branch`). No `Success` Bool beside them.
+- **Latent outputs at different times** (`ctx.runOutputIf(expression, pinId)`, [`compile-exec-chain.ts`](../../../packages/scripting/src/compile-exec-chain.ts)): a latent node emits an output pin's chain between its own statements, guarded by `expression` (usually a `yield`), so outputs run in order as the node reaches them (Play Slot Animation: On Blend Out, then On Completed). A node that runs an output this way continues with nothing after it; an output's own latent nodes delay the next output.
 - **Tooltips** are a few words, and only where the title does not already say what the node does: a definition's `description`, or its entry in `NODE_DESCRIPTIONS` ([`node-descriptions.ts`](../../../packages/scripting-nodes/src/node-descriptions.ts)). The node's reference page holds the detail.
 
 ## Event Dispatchers and delegates

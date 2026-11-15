@@ -399,6 +399,8 @@ describe("FeatureTest starter", () => {
       "anim.pose.useCachedPose",
       "anim.control.transformBone",
       "anim.pose.applyAdditive",
+      "anim.pose.slot",
+      "anim.frame.slot",
     ]));
   });
 
@@ -430,8 +432,15 @@ describe("FeatureTest starter", () => {
       "FT_AnimAdventurer heard Move Started",
       // A socket name attaches like a bone name.
       "FT_Animation script attached Socket Prop to Knight's FT_Grip",
+      // Play Slot Animation's On Completed runs once the Throw has played through on the UpperBody slot.
+      "FT_AnimKnight finished Throw on UpperBody",
     ],
-    FT_2D: ["FT_2DRobotGraph heard Step", "FT_2DRobotGraph heard Jump Started"],
+    FT_2D: [
+      "FT_2DRobotGraph heard Step",
+      "FT_2DRobotGraph heard Jump Started",
+      // A 2D graph's Frame Slot plays a Sprite Animation from a script.
+      "FT_2D script played Jump on Robot Mascot's Action slot",
+    ],
   };
   for (const scene of FEATURE_TEST_CHECK_SCENES) {
     it(`plays ${scene.name} without session errors or failed asserts`, async () => {

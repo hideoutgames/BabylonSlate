@@ -136,6 +136,9 @@ describe("ScriptHost Object receivers", () => {
           return {
             getVariable: () => undefined,
             setVariable: () => {},
+            playSlotAnimation: () => 0,
+            stopSlotAnimation: () => {},
+            isSlotActive: () => false,
             getCurrentState: () => {
               queried.push(target);
               return target === second

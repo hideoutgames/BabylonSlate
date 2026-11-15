@@ -54,7 +54,8 @@ import {
 } from "@haptic/core";
 import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import { engineScriptApiFor } from "@haptic/object-model";
-import { classGraph, gChain, gNode, gWire } from "./graph";
+import { classGraph, gChain, gNode, gWire, printString } from "./graph";
+import { OWNED_COMPONENT_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import { animationObjectHearing, playerNode, playerState, poseGraph, stateMachineGraph } from "./anim-pose-graphs";
 import {
   actor,
@@ -221,11 +222,11 @@ const BODY_KINDS: ReadonlyArray<{ title: string; sprite: RobotSpriteKey; shape: 
  */
 export async function buildFeatureTestTwoD(ctx: FeatureTestContext): Promise<void> {
   const sprites = await buildSprites(ctx);
-  const graph = await buildRobotGraph(ctx, sprites);
+  const { graph, slotAnimation } = await buildRobotGraph(ctx, sprites);
   const torchGraph = await buildTorchGraph(ctx);
   const { tilemap, skyIsland } = await buildTilemap(ctx);
   const cameraProbe = (await saveCameraProbe(ctx)).classId;
-  const scene = buildScene(ctx, { sprites, graph, torchGraph, tilemap, skyIsland, cameraProbe });
+  const scene = buildScene(ctx, { sprites, graph, slotAnimation, torchGraph, tilemap, skyIsland, cameraProbe });
   placeThreeDShadedSprite(ctx, sprites);
   await ctx.addSceneDocument({
     kind: "scene",
@@ -360,7 +361,10 @@ async function buildTorchGraph(ctx: FeatureTestContext): Promise<string> {
  * Idle (500 ms) → Walk (walk0–7, contact frames held 110 ms; 700 ms loop at
  * 1.25×) → Jump (one-shot 300 ms) → Fall (300 ms) → Idle, all on exit time.
  */
-async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): Promise<string> {
+/** The robot's Frame Slot, where `FT_2D`'s scene script plays the robot's Jump at Begin Play. */
+const ROBOT_SLOT = "Action";
+
+async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): Promise<{ graph: string; slotAnimation: string }> {
   // Each contact frame of the walk fires Step as it shows (with the one-shot sound when the audio slot is filled).
   const sound = ctx.assets.audio.oneShot;
   const walkCycle = robotAnimation(ctx, sprites, WALK_FRAMES, 80, { walk0: 110, walk4: 110 });
@@ -408,6 +412,14 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
   };
   const gaitGuid = (await ctx.createAsset("SpriteBlendSpace", FOLDER, NAMES.robotGait, { payload: payload(gait) })).guid;
   const at = (index: number) => defaultAnimStatePosition(index);
+  // Idle shows through the Action Frame Slot, where scripts play one-shots instead of the idle frame.
+  const idle: AnimState = {
+    id: "idle", name: "Idle", position: at(0),
+    stateGraph: poseGraph("2d", "slot", [
+      playerNode("2d", "player", 60, 80, clip("idle")),
+      gNode("slot", "anim.frame.slot", 500, 80, { slotName: ROBOT_SLOT }),
+    ], [gWire("player", "pose", "slot", "source")]),
+  };
   // Walk plays the gait Sprite Blend Space at Speed 1 and mirrors through Flip Frame (Flip X off, so the robot still
   // faces right); Jump and Fall pick their frame with Select Frame By Bool and By Int, whose first input plays.
   const walk: AnimState = {
@@ -440,7 +452,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     name: NAMES.robotGraph,
     skeletonGuid: null,
     entryStateId: "idle",
-    states: [playerState("2d", "idle", "Idle", at(0).x, at(0).y, clip("idle")), walk, jump, fall],
+    states: [idle, walk, jump, fall],
     // One-way cycle: the disconnected Exit State sink stays true, so each exit time drives Enter State.
     transitions: [
       exitTimeTransition("idle-to-walk", "idle", "walk", 0, 3),
@@ -451,7 +463,37 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     variables: [],
   });
   graph.animationObject = animationObjectHearing(NAMES.robotGraph, [{ name: "Step" }, { name: "Jump Started" }]);
-  return (await ctx.createAsset("AnimationGraph2D", FOLDER, NAMES.robotGraph, { payload: payload(graph) })).guid;
+  const graphGuid = (await ctx.createAsset("AnimationGraph2D", FOLDER, NAMES.robotGraph, { payload: payload(graph) })).guid;
+  return { graph: graphGuid, slotAnimation: guids.jump };
+}
+
+/** `FT_2D`'s scene script: on Begin Play, Play Slot Animation plays the robot's Jump on the mascot's Action slot. */
+function robotSlotScript(mascot: { id: string; name: string; graphComponentId: string }, animation: string): SerializedGraph {
+  return classGraph({
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("mascot-graph", OWNED_COMPONENT_GET_NODE_ID, 240, 180, ownedGetNodeProperties({
+        actorId: mascot.id,
+        actorName: mascot.name,
+        actorClassId: "Actor",
+        componentId: mascot.graphComponentId,
+        componentName: "Animation Graph",
+        componentClassId: "AnimationGraphComponent",
+      })),
+      gNode("play", "anim.actor.playSlotAnimation", 480, 0, {
+        "default:animation": animation,
+        "default:slotName": ROBOT_SLOT,
+        "default:blendInTime": 0,
+        "default:blendOutTime": 0,
+      }),
+      printString("report", 780, 0, `FT_2D script played Jump on ${mascot.name}'s ${ROBOT_SLOT} slot`),
+    ],
+    edges: [
+      gWire("begin", "execOut", "play", "execIn"),
+      gWire("mascot-graph", "component", "play", "target"),
+      gWire("play", "onCompleted", "report", "execIn"),
+    ],
+  });
 }
 
 /** Transition whose rule is `Exit Time Reached(exitTime) → Enter State`. */
@@ -1005,7 +1047,7 @@ async function saveCameraProbe(ctx: FeatureTestContext) {
  */
 function buildScene(
   ctx: FeatureTestContext,
-  refs: { sprites: SpriteGuids; graph: string; torchGraph: string; tilemap: string; skyIsland: string; cameraProbe: string },
+  refs: { sprites: SpriteGuids; graph: string; slotAnimation: string; torchGraph: string; tilemap: string; skyIsland: string; cameraProbe: string },
 ): SerializedScene {
   const scene = createDefaultScene("2d");
   scene.name = FEATURE_TEST_TWO_D_SCENE_NAME;
@@ -1089,6 +1131,10 @@ function buildScene(
   // Feet on the left cliff top (row 3) and on the plateau (dropped 0.3 units).
   const robotHalfHeight = ROBOT_FRAME_PX.height / PPU / 2;
   // The mascot stays Unlit: full brightness in the 2D-lit scene, as a HUD-like figure.
+  scene.script = robotSlotScript(
+    { id: "ft-2d-anim-mascot", name: "Robot Mascot", graphComponentId: "ft-2d-anim-mascot-graph" },
+    refs.slotAnimation,
+  );
   add("animation", "ft-2d-anim-mascot", "Robot Mascot", [tileCenterX(0), tileBottomY(4) + robotHalfHeight, 0], [
     sprite("ft-2d-anim-mascot-sprite", refs.sprites.robotIdle, "UI", 0, { shadingMode: "unlit" }),
     comp("ft-2d-anim-mascot-graph", "AnimationGraphComponent", { graphGuid: refs.graph }),

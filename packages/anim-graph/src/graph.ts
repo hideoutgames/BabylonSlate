@@ -25,6 +25,7 @@ import {
   isPoseOutputType,
   type AnimPoseDimension,
 } from "./pose-graph";
+import type { AnimSlotEvent, AnimSlotRequest, AnimSlotState } from "./slots";
 import {
   parseAnimStateEvents,
   type AnimClipEvent,
@@ -156,6 +157,8 @@ export interface AnimGraphInputs {
    * of its state (null when it is entered). Unlisted inputs use the values stored on their nodes.
    */
   poseData?: (graphKey: string, facts: AnimStateFacts | null) => AnimPoseData | undefined;
+  /** Play and Stop Slot Animation requests since the last evaluation, in order. */
+  slotRequests?: readonly AnimSlotRequest[];
 }
 
 export interface AnimStateFacts {
@@ -239,6 +242,10 @@ export interface AnimEvalState extends AnimMachineEvalState {
   layerBlends?: AnimLayerBlend[];
   /** Transform Bone changes, in the order render applies them after the layers blend; absent when none. */
   boneModifiers?: AnimBoneModifier[];
+  /** Slot animations playing, by slot name; absent when none. */
+  slots?: Record<string, AnimSlotState>;
+  /** What happened to slot plays this tick (blend out, completed, interrupted), in order; absent when nothing. */
+  slotEvents?: AnimSlotEvent[];
   /** The Animation Events this tick fired, in order; absent when none did. */
   events?: AnimFiredEvent[];
   /** Windows that began and have not ended, by window key; absent when none are open. */

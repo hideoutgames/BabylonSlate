@@ -523,6 +523,15 @@ export interface ScriptContext {
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
   getAnimGraphCurrentState(target: unknown): { id: string; name: string } | null;
   jumpAnimGraphState(target: unknown, state: string): void;
+  /** Play Slot Animation: the play's handle for `waitSlotAnimation`, or 0 when it cannot play. */
+  playSlotAnimation(
+    target: unknown, animation: unknown, slotName: unknown, blendInTime: unknown, blendOutTime: unknown,
+    playRate: unknown, loopCount: unknown, startTime: unknown,
+  ): number;
+  stopSlotAnimation(target: unknown, slotName: unknown, blendOutTime: unknown): void;
+  isSlotActive(target: unknown, slotName: unknown): boolean;
+  /** Waits for a slot play to blend out, or to end (`completed`: true only when it played through). */
+  waitSlotAnimation(handle: number, phase: "blendOut" | "completed"): PromiseLike<boolean> | boolean;
   /** Get Animation Tick Mode: the member name (Always, When Visible, Never); Always for no graph component. */
   getAnimGraphTickMode(target: unknown): string;
   setAnimGraphTickMode(target: unknown, tickMode: unknown): void;
@@ -851,6 +860,7 @@ export type HostContextKey =
   | "getLocalDateNow" | "setGamePaused" | "isGamePaused" | "quitGame" | "getPlatform" | "isTouchDevice" | "isInEditor" | "isDevelopmentBuild"
   | "getViewportSize" | "getLocale" | "copyToClipboard" | "openUrl" | "newGuid" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
   | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "getAnimGraphTickMode"
+  | "playSlotAnimation" | "stopSlotAnimation" | "isSlotActive"
   | "setAnimGraphTickMode" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"

@@ -54,6 +54,18 @@ export type AnimGraphControl = {
   setVariable(name: string, value: unknown): void;
   getCurrentState(): { id: string; name: string } | null;
   jumpToState(state: string): void;
+  /** Play Slot Animation: queues the play for the next evaluation; its handle, or 0 when it cannot play. */
+  playSlotAnimation(request: {
+    animation: string;
+    slot: string;
+    blendInSeconds: number;
+    blendOutSeconds: number;
+    playRate: number;
+    loopCount: number;
+    startSeconds: number;
+  }): number;
+  stopSlotAnimation(slot: string, blendOutSeconds: number): void;
+  isSlotActive(slot: string): boolean;
 };
 
 export type ScriptColor = { x: number; y: number; z: number; w: number };
@@ -180,6 +192,8 @@ export interface ScriptHostServices {
     transform?: unknown,
   ): unknown;
   animGraphControl?(target: unknown): AnimGraphControl | null;
+  /** Play Slot Animation's waits: true once the play blends out, or for `completed` once it has played through. */
+  waitSlotAnimation?(handle: number, phase: "blendOut" | "completed", owner?: EngineObject | null): PromiseLike<boolean> | boolean;
   spawnActor?(classId: string, transform?: unknown, owner?: EngineObject | null): Actor | null;
   /** Create Object: a collectable instance of a plain Object class, or null. */
   createObject?(classId: string): EngineObject | null;

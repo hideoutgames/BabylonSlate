@@ -76,3 +76,5 @@ export {
   type AnimGraphPin,
   type AnimStateSide,
 } from "./serialize";
+
+export * from "./slots";

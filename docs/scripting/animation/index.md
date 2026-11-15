@@ -48,6 +48,7 @@ Nodes of a 3D Animation Graph's state graphs. Their **Pose** wires carry a whole
 | [Blend Poses By Int](blend-poses-by-int.md) | Blends to the pose Active Index picks. |
 | [Apply Additive](apply-additive.md) | Adds an additive Animation's change from its base pose, by Alpha, to the Base pose. |
 | [Layered Blend Per Bone](layered-blend-per-bone.md) | Blends each Blend Pose onto the Base Pose by its Blend Weight, on the bones of its branch filters only. |
+| [Slot](slot.md) | Shows the Animations scripts play on this slot with Play Slot Animation over the Source pose. |
 | [Save Cached Pose](save-cached-pose.md) | Saves a pose under a name, so Use Cached Pose nodes in any state reuse it, evaluated once a frame. |
 | [Use Cached Pose](use-cached-pose.md) | The pose a Save Cached Pose saved under this name. |
 
@@ -71,3 +72,4 @@ Nodes of a 2D Animation Graph's state graphs. Their **Frame** wires carry the Sp
 | [Select Frame By Bool](select-frame-by-bool.md) | Shows True Frame or False Frame as Active changes. |
 | [Select Frame By Int](select-frame-by-int.md) | Shows the frame Active Index picks. |
 | [Flip Frame](flip-frame.md) | Mirrors a frame, so one clip faces both ways. |
+| [Frame Slot](frame-slot.md) | Shows the Sprite Animations scripts play on this slot with Play Slot Animation instead of the Source frame. |

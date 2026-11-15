@@ -125,7 +125,8 @@ export function tracedRead(s: CodegenState, node: GraphNode, p: GraphPin, expres
 /** `bound` names the variables that already hold a node's subject inputs. */
 export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expression: string) => void,
   branch?: (expression: string, truePin: string, falsePin: string) => void,
-  bound?: ReadonlyMap<string, string>): CodegenContext {
+  bound?: ReadonlyMap<string, string>,
+  runOutput?: (expression: string, pinId: string) => void): CodegenContext {
   return {
     graph: s.graph,
     node,
@@ -145,6 +146,7 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
     },
     continueIf(expression) { continuation?.(expression); },
     branch(expression, truePin, falsePin) { branch?.(expression, truePin, falsePin); },
+    ...(runOutput ? { runOutputIf(expression: string, pinId: string) { runOutput(expression, pinId); } } : {}),
     inputType(pinName) {
       const p = pinForCodegen(node, pinName, "in");
       return p ? wiredSourceType(s.index, node, p.id, s.shouldStrip) : undefined;

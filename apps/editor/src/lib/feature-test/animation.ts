@@ -82,7 +82,12 @@ const SCENES_FOLDER = "Scenes";
 const ANIMATION_SCENE_CAMERA = { position: [0, 2.2, -7] as Vec3, target: [0, 1, 0] as Vec3 };
 
 /** KayKit clip names (Rig_Medium General and Movement Basic, Rig_Large Movement Basic). */
-const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A", flinch: "Hit_B" } as const;
+const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A", flinch: "Hit_B", throw: "Throw" } as const;
+
+/** The adventurers' slot: their Classes play Throw on it, the upper body while moving, the whole body at idle. */
+const ADVENTURER_SLOT = "UpperBody";
+/** Seconds the adventurers wait before each Throw. */
+const ADVENTURER_THROW_INTERVAL = 0.3;
 
 /**
  * Perf knob: the `FT_Stress` crowd is `columns × rows` (64) Locomotor
@@ -171,10 +176,13 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   const locomotor = await saveLocomotor(ctx, NAMES.locomotor, mannequin, locomotionGraph);
   const kaykit = ctx.assets.kaykit;
   const adventurerGraph = await saveGraph(ctx, adventurerGraphDocument(ctx, adventurerMove));
+  const throwAttack = {
+    animationGuid: requireRef(kaykit.mediumAnimations[KAYKIT_CLIPS.throw], `the KayKit "${KAYKIT_CLIPS.throw}" Animation`),
+  };
   const largeGraph = await saveGraph(ctx, largeMannequinGraphDocument(ctx));
   const characters = {
-    knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph),
-    rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph),
+    knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph, throwAttack),
+    rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph, throwAttack),
     largeMannequin: await saveLocomotor(
       ctx,
       NAMES.largeMannequin,
@@ -361,19 +369,24 @@ async function authorAdventurerFlinch(ctx: FeatureTestContext): Promise<void> {
 /** How much of the additive flinch the adventurers' Idle adds. */
 const IDLE_FLINCH_ALPHA = 0.35;
 
-/** Idle: Idle_A with the additive Hit_B flinch added over it by Apply Additive, the state's time following Idle_A. */
+/**
+ * Idle: Idle_A with the additive Hit_B flinch added over it by Apply Additive, the state's time following Idle_A, all
+ * through the UpperBody Slot, so the Throw shows on the whole body at idle.
+ */
 function flinchIdleState(idle: FeatureTestClip, flinch: FeatureTestClip): AnimState {
   return {
     id: "idle",
     name: "Idle",
     position: { x: 80, y: 220 },
-    stateGraph: poseGraph("3d", "flinch-over-idle", [
+    stateGraph: poseGraph("3d", "idle-slot", [
       playerNode("3d", "player", 60, 40, idle),
       playerNode("3d", "flinch", 60, 220, flinch),
       gNode("flinch-over-idle", "anim.pose.applyAdditive", 500, 120, { "default:alpha": IDLE_FLINCH_ALPHA }),
+      gNode("idle-slot", "anim.pose.slot", 900, 120, { slotName: ADVENTURER_SLOT }),
     ], [
       gWire("player", "pose", "flinch-over-idle", "base"),
       gWire("flinch", "pose", "flinch-over-idle", "additive"),
+      gWire("flinch-over-idle", "pose", "idle-slot", "source"),
     ]),
   };
 }
@@ -435,7 +448,8 @@ const HEAD_TURN_YAW = 25;
 /**
  * The adventurers' Move state: the Speed Blend Space saved as the Locomotion cached pose, played through Use Cached
  * Pose as a Layered Blend Per Bone's Base Pose, with Interact on the upper body (the spine's branch, ramping in over
- * two bones) and the head turned in its own axes by Transform Bone.
+ * two bones) through the UpperBody Slot, where the Throw their Classes play shows, and the head turned in its own
+ * axes by Transform Bone.
  */
 function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact: FeatureTestClip, bones: { spine: string; head: string }): AnimState {
   const state = speedBlendSpaceState("move", "Move", x, y, blendSpaceGuid);
@@ -447,7 +461,8 @@ function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact
       ...locomotion.map((node) => ({ ...node, position: { x: node.position.x, y: node.position.y + 360 } })),
       gNode("save-locomotion", "anim.pose.saveCachedPose", 500, 440, { name: ADVENTURER_CACHED_POSE }),
       gNode("use-locomotion", "anim.pose.useCachedPose", 60, -120, { name: ADVENTURER_CACHED_POSE }),
-      playerNode("3d", "interact", 60, 40, interact),
+      playerNode("3d", "interact", -200, 40, interact),
+      gNode("upper-body-slot", "anim.pose.slot", 60, 40, { slotName: ADVENTURER_SLOT }),
       gNode("upper-body", "anim.pose.layeredBlendPerBone", 500, 0, {
         count: 1,
         layers: [{ branches: [{ bone: bones.spine, blendDepth: 2 }] }],
@@ -463,7 +478,8 @@ function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact
       ...speedWires,
       gWire("locomotion", "pose", "save-locomotion", "pose"),
       gWire("use-locomotion", "pose", "upper-body", "basePose"),
-      gWire("interact", "pose", "upper-body", "blendPose0"),
+      gWire("interact", "pose", "upper-body-slot", "source"),
+      gWire("upper-body-slot", "pose", "upper-body", "blendPose0"),
       gWire("upper-body", "pose", "look", "sourcePose"),
     ]),
   };
@@ -770,7 +786,13 @@ function ruleGraph(terms: readonly RuleTerm[]): SerializedGraph {
  * Set Anim Graph Variable Speed, then Cheer = Speed < 0.1. The graph component
  * is found by class (Get Component Ref), so instance component ids never matter.
  */
-async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: string, graphGuid: string): Promise<PlacedClass> {
+async function saveLocomotor(
+  ctx: FeatureTestContext,
+  name: string,
+  modelGuid: string,
+  graphGuid: string,
+  slotAttack?: { animationGuid: string },
+): Promise<PlacedClass> {
   const elapsed = varMember("ft-anim-var-elapsed", "Elapsed", "float", 0, { category: "Locomotion" });
   const phase = varMember("ft-anim-var-phase", "Phase", "float", 0, { category: "Locomotion" });
   const cycleRate = varMember("ft-anim-var-cycle-rate", "CycleRate", "float", CYCLE_RATE, { category: "Locomotion" });
@@ -836,6 +858,27 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
       gWire("calm", "out", "set-cheer", "value"),
     ],
   });
+  if (slotAttack) {
+    // After Begin Play, and again after each one ends: Throw on the graph's UpperBody slot.
+    graph.nodes.push(
+      gNode("attack-wait", "timers.delay", 720, -320, { "default:duration": ADVENTURER_THROW_INTERVAL }),
+      gNode("attack-graph", "component.getNamed", 720, -160, { componentClassId: "AnimationGraphComponent", implicitSelf: true }),
+      gNode("attack", "anim.actor.playSlotAnimation", 960, -320, {
+        "default:animation": slotAttack.animationGuid,
+        "default:slotName": ADVENTURER_SLOT,
+        "default:blendInTime": 0.15,
+        "default:blendOutTime": 0.2,
+      }),
+      printString("attack-done", 1240, -320, `${name} finished Throw on ${ADVENTURER_SLOT}`),
+    );
+    graph.edges.push(
+      gExec("set-tick-mode", "attack-wait"),
+      gExec("attack-wait", "attack"),
+      gWire("attack-graph", "out", "attack", "target"),
+      gExec("attack", "attack-done", "onCompleted"),
+      gExec("attack-done", "attack-wait"),
+    );
+  }
   const ref = await ctx.saveClass({ folder: FOLDER, name, parentClass: "Actor", graph });
   return { ref, components };
 }
