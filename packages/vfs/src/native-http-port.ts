@@ -25,6 +25,11 @@ export interface NativeHttpRequest {
   body?: string;
   /** POST only and instead of `body`. The transport sets Content-Type. */
   upload?: NativeHttpImageUpload;
+  /**
+   * Return a 3xx as is instead of following it, so credentials never reach
+   * another host. Desktop never follows redirects; mobile honours this flag.
+   */
+  disableRedirects?: boolean;
 }
 
 export interface NativeHttpResponse {

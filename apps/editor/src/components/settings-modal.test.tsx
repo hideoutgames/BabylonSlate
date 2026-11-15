@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 import { createDefaultPluginSettings, createExtensionSettings, normalizeExtensionContributions, type ExtensionDescriptor, type PluginDescriptor } from "@haptic/assets";
@@ -7,6 +7,14 @@ import { createAppSettingsStore } from "@haptic/vfs";
 import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { ENGINE_CATEGORIES, PROJECT_CATEGORIES } from "../lib/settings-catalog";
 import { ENGINE_SETTING_FIELDS, PROJECT_SETTING_FIELDS } from "../lib/settings-search";
+import { FakeGitHost, MemorySecrets } from "@haptic/source-control/fake-host";
+import { SourceControlAccounts } from "../services/source-control-accounts";
+import { TEST_GITHUB_CREDENTIAL } from "../testing/source-control-hosts";
+
+beforeEach(() => {
+  const host = new FakeGitHost();
+  accounts.current = new SourceControlAccounts(new MemorySecrets(), host.http, { fakeHost: host });
+});
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -27,6 +35,7 @@ const {
   exportProject,
   importPlugin,
   sourceControlEnabled,
+  accounts,
   projectSourceControl,
   projectExportPresets,
   lastProjectRender,
@@ -43,9 +52,6 @@ const {
     }),
     setShowPluginContent: vi.fn(),
     sourceControl: {
-      hasToken: false,
-      saveToken: vi.fn(async () => undefined),
-      clearToken: vi.fn(async () => undefined),
       readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
     },
     host: { platform: "electron", testMode: true },
@@ -53,6 +59,7 @@ const {
     exportProject: vi.fn(),
     importPlugin: vi.fn(),
     sourceControlEnabled: { current: false },
+    accounts: { current: null as import("../services/source-control-accounts").SourceControlAccounts | null },
     projectSourceControl: { current: null as Partial<import("@haptic/core").SourceControlProjectSettings> | null },
     projectExportPresets: { current: null as import("@haptic/core").ExportPreset[] | null },
     lastProjectRender,
@@ -76,6 +83,12 @@ vi.mock("@haptic/vfs", async (importOriginal) => {
   };
 });
 
+// The device's credentials on in-memory secrets, against the fake GitHub and GitLab host.
+vi.mock("../services/source-control-accounts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/source-control-accounts")>();
+  return { ...actual, sourceControlAccounts: async () => accounts.current! };
+});
+
 vi.mock("../context/document-context", async () => {
   const { createEmptyProject: emptyProject } = await import("@haptic/core");
   return (await import("../testing/document-context-mock")).documentContextMock(() => {
@@ -84,7 +97,7 @@ vi.mock("../context/document-context", async () => {
     if (sourceControlEnabled.current) {
       projectDocument.settings.sourceControl = {
         ...projectDocument.settings.sourceControl,
-        enabled: true,
+        mode: "manual",
       };
     }
     if (projectSourceControl.current) {
@@ -200,10 +213,7 @@ afterEach(async () => {
   updateProjectSettings.mockClear();
   updateProjectVersion.mockClear();
   setShowPluginContent.mockClear();
-  sourceControl.saveToken.mockClear();
-  sourceControl.clearToken.mockClear();
-  sourceControl.clearToken.mockImplementation(async () => undefined);
-  sourceControl.hasToken = false;
+  sourceControl.readGitPrefill.mockClear();
   host.platform = "electron";
   host.testMode = true;
   exportGameArtifact.mockReset();
@@ -414,13 +424,14 @@ describe("SettingsModal sub-categories", () => {
   it.each([
     ["project", PROJECT_CATEGORIES.map((category) => category.id), PROJECT_SETTING_FIELDS],
     ["engine", ENGINE_CATEGORIES.map((category) => category.id), ENGINE_SETTING_FIELDS],
-  ] as const)("keeps every %s search result's control inside the sub-category it opens", (scope, categoryIds, fields) => {
+  ] as const)("keeps every %s search result's control inside the sub-category it opens", async (scope, categoryIds, fields) => {
     // CEL Shading renders only in CEL mode.
     lastProjectRender.current = { ...createEmptyProject("Demo").settings.render, mode: "cel" };
     for (const categoryId of categoryIds) {
       const view = render(<SettingsModal open onOpenChange={() => {}} scope={scope} initialCategoryId={categoryId} />);
       for (const field of fields.filter((entry) => entry.categoryId === categoryId && entry.sectionId)) {
-        const section = screen.queryByTestId(`settings-section-${field.sectionId}`);
+        // Some pages (Engine Settings → Source Control) load on first open.
+        const section = await screen.findByTestId(`settings-section-${field.sectionId}`).catch(() => null);
         expect(section, `${categoryId} › ${field.sectionId} for ${field.label}`).not.toBeNull();
         // The section's group is named by its header.
         expect(document.getElementById(section?.getAttribute("aria-labelledby") ?? "")?.textContent).toBe(field.sectionTitle);
@@ -936,75 +947,34 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-show-plugin-content")).toBeTruthy();
   });
 
-  it("hides Source Control on production web", () => {
+  it.each(["project", "engine"] as const)("hides %s Source Control on production web", (scope) => {
     host.platform = "web";
     host.testMode = false;
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    expect(screen.queryByTestId("settings-modal-category-sourceControl")).toBeNull();
+    render(<SettingsModal open onOpenChange={() => {}} scope={scope} />);
+    expect(screen.queryByTestId(`${scope === "engine" ? "engine-settings-modal" : "settings-modal"}-category-sourceControl`)).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search settings"), { target: { value: "source control" } });
+    expect(screen.queryByText("Source Control")).toBeNull();
   });
 
-  it("saves the token through the secret store, not project.json", async () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.change(screen.getByTestId("settings-source-control-token"), {
-      target: { value: "ghp_secret" },
-    });
-    fireEvent.click(screen.getByTestId("settings-source-control-save-token"));
-    expect(sourceControl.saveToken).toHaveBeenCalledWith("ghp_secret");
-    expect(updateProjectSettings).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceControl: expect.objectContaining({ token: "ghp_secret" }),
-      }),
-    );
+  it("lists Engine Settings → Source Control in the Projects group", async () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="engine" />);
+    const category = screen.getByTestId("engine-settings-modal-category-sourceControl");
+    expect(category.closest(".flex-col")?.querySelector("p")?.textContent).toBe("Projects");
+    fireEvent.click(category);
+    expect(await screen.findByText("Self-Managed GitLab")).toBeTruthy();
+    expect(screen.getByText("Other Git Hosts")).toBeTruthy();
   });
 
-  it("shows why a token could not be saved and keeps the draft", async () => {
-    sourceControl.saveToken.mockRejectedValueOnce(new Error("Set a valid repository URL before saving a token."));
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
+  it("offers Off and Manual modes, with no Token or Poll Interval rows", () => {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.change(screen.getByTestId("settings-source-control-token"), {
-      target: { value: "ghp_secret" },
-    });
-    fireEvent.click(screen.getByTestId("settings-source-control-save-token"));
-    expect((await screen.findByTestId("settings-source-control-token-error")).textContent).toBe(
-      "Set a valid repository URL before saving a token.",
-    );
-    expect((screen.getByTestId("settings-source-control-token") as HTMLInputElement).value).toBe("ghp_secret");
-  });
-
-  it("clears the stored token and the draft field", async () => {
-    sourceControl.hasToken = true;
-    sourceControl.clearToken.mockImplementation(async () => {
-      sourceControl.hasToken = false;
-    });
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.change(screen.getByTestId("settings-source-control-token"), {
-      target: { value: "ghp_secret" },
-    });
-    expect(screen.getByTestId("settings-source-control-token-status").textContent).toMatch(
-      /Token Saved/,
-    );
-    expect(screen.queryByTestId("settings-source-control-token-help")).toBeNull();
-    fireEvent.click(screen.getByTestId("settings-source-control-clear-token"));
-    expect(sourceControl.clearToken).toHaveBeenCalled();
-    await waitFor(() => {
-      expect(
-        (screen.getByTestId("settings-source-control-token") as HTMLInputElement)
-          .value,
-      ).toBe("");
-    });
-    // Without a token the row shows how to create one instead.
-    expect(screen.queryByTestId("settings-source-control-token-status")).toBeNull();
-    expect(screen.getByTestId("settings-source-control-token-help")).toBeTruthy();
+    const mode = screen.getByTestId("settings-source-control-mode");
+    expect(within(mode).getAllByRole("button").map((button) => button.textContent)).toEqual(["Off", "Manual"]);
+    expect(screen.getByTestId("settings-source-control-mode-off").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByText("Token")).toBeNull();
+    expect(screen.queryByText(/Poll Interval/)).toBeNull();
+    expect(screen.queryByText("Release Locks After Push")).toBeNull();
+    expect(screen.getByTestId("settings-source-control-auto-lock")).toBeTruthy();
   });
 
   it("fills Source Control from Git without replacing a URL typed during the read", async () => {
@@ -1014,41 +984,41 @@ describe("SettingsModal project authoring", () => {
     );
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    fireEvent.click(screen.getByTestId("settings-source-control-mode-manual"));
     expect(sourceControl.readGitPrefill).toHaveBeenCalledTimes(1);
-    projectSourceControl.current = { enabled: true, repositoryUrl: "https://example.com/typed.git" };
+    projectSourceControl.current = { repositoryUrl: "https://example.com/typed.git" };
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     await act(async () => {
       finishPrefill({ repositoryUrl: "https://example.com/origin.git", branch: "develop" });
     });
     expect(updateProjectSettings).toHaveBeenLastCalledWith({
       sourceControl: expect.objectContaining({
-        enabled: true,
+        mode: "manual",
         repositoryUrl: "https://example.com/typed.git",
         branch: "develop",
       }),
     });
   });
 
-  it("turns Source Control on with the repository and branch read from Git", async () => {
+  it("turns Manual on with the repository and branch read from Git", async () => {
     sourceControl.readGitPrefill.mockResolvedValueOnce({ repositoryUrl: "https://example.com/origin.git", branch: "develop" });
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    fireEvent.click(screen.getByTestId("settings-source-control-mode-manual"));
     await waitFor(() =>
       expect(updateProjectSettings).toHaveBeenCalledWith({
-        sourceControl: expect.objectContaining({ enabled: true, repositoryUrl: "https://example.com/origin.git", branch: "develop" }),
+        sourceControl: expect.objectContaining({ mode: "manual", repositoryUrl: "https://example.com/origin.git", branch: "develop" }),
       }),
     );
     expect(screen.queryByTestId("settings-source-control-url-error")).toBeNull();
   });
 
-  it("refuses to turn Source Control on without a Repository URL until one is entered", async () => {
+  it("refuses to turn Manual on without a repository until one is entered", async () => {
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    fireEvent.click(screen.getByTestId("settings-source-control-mode-manual"));
     const error = await screen.findByTestId("settings-source-control-url-error");
-    expect(error.textContent).toBe("Enter a Repository URL before turning on Source Control.");
+    expect(error.textContent).toBe("Enter a repository URL before turning on Source Control.");
     expect(screen.getByTestId("settings-source-control-url").getAttribute("aria-invalid")).toBe("true");
     expect(updateProjectSettings).not.toHaveBeenCalled();
 
@@ -1058,26 +1028,56 @@ describe("SettingsModal project authoring", () => {
     expect(screen.queryByTestId("settings-source-control-url-error")).toBeNull();
   });
 
-  it("turns Source Control on at once when a Repository URL is already set", () => {
+  it("turns Manual on at once when a repository is already set", () => {
     projectSourceControl.current = { repositoryUrl: "https://example.com/team.git" };
-    sourceControl.readGitPrefill.mockClear();
     render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    fireEvent.click(screen.getByTestId("settings-source-control-mode-manual"));
     expect(updateProjectSettings).toHaveBeenCalledWith({
-      sourceControl: expect.objectContaining({ enabled: true, repositoryUrl: "https://example.com/team.git" }),
+      sourceControl: expect.objectContaining({ mode: "manual", repositoryUrl: "https://example.com/team.git" }),
     });
     expect(sourceControl.readGitPrefill).not.toHaveBeenCalled();
   });
 
-  it("confirms before turning Source Control Enable off", () => {
+  it("confirms before turning Source Control off", () => {
     sourceControlEnabled.current = true;
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    fireEvent.click(screen.getByTestId("settings-source-control-enabled"));
+    fireEvent.click(screen.getByTestId("settings-source-control-mode-off"));
     expect(updateProjectSettings).not.toHaveBeenCalled();
     expect(screen.getByTestId("settings-source-control-disable-confirm")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("settings-source-control-disable-confirm-action"));
+    expect(updateProjectSettings).toHaveBeenCalledWith({ sourceControl: expect.objectContaining({ mode: "off" }) });
+  });
+
+  it("picks the repository and branch from the signed-in GitHub account in Manual mode", async () => {
+    await accounts.current!.save(TEST_GITHUB_CREDENTIAL);
+    projectSourceControl.current = { mode: "manual", repositoryUrl: "https://github.com/haptic-test/game.git", branch: "main" };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    await waitFor(() => expect(screen.getByTestId("settings-source-control-account-state").textContent).toBe("ada (GitHub)"));
+    expect(screen.queryByTestId("settings-source-control-url")).toBeNull();
+    expect(screen.getByTestId("settings-source-control-repository").textContent).toBe("haptic-test/game");
+    // The branch is a picker of the host's branches.
+    await waitFor(() => expect(screen.getByTestId("settings-source-control-branch").getAttribute("role")).toBe("combobox"));
+    fireEvent.click(screen.getByTestId("settings-source-control-repository"));
+    const picker = await screen.findByTestId("settings-source-control-repository-picker");
+    fireEvent.click(await within(picker).findByText("haptic-test/prototype"));
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({
+      sourceControl: expect.objectContaining({ repositoryUrl: "https://github.com/haptic-test/prototype.git", branch: "main" }),
+    });
+  });
+
+  it("shows the URL field and Sign In in Manual mode without a credential for the repository's host", async () => {
+    projectSourceControl.current = { mode: "manual", repositoryUrl: "https://github.com/org/game.git" };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    expect((await screen.findByTestId("settings-source-control-account-state")).textContent).toBe("Not Signed In");
+    expect(screen.getByTestId("settings-source-control-url")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("settings-source-control-sign-in"));
+    expect((await screen.findByTestId("source-control-link-warning")).textContent).toContain("Link GitHub?");
+    fireEvent.click(screen.getByTestId("source-control-link-decline"));
+    await waitFor(() => expect(screen.queryByTestId("source-control-link-warning")).toBeNull());
+    expect(await accounts.current!.list()).toEqual([]);
   });
 });

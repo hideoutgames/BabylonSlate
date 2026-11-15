@@ -39,9 +39,9 @@ export interface ReferenceRepairHost extends Pick<ProjectService, "loadDocument"
   plugins(): readonly PluginDescriptor[];
   storageFor(path: string): ProjectStorage;
   /** The stored payload `loadDocument` starts from, without migration bookkeeping. */
-  readStoredAssetDocument(kind: Exclude<DocumentKind, "content-browser">, path: string): Promise<StoredDocument>;
+  readStoredAssetDocument(kind: Exclude<DocumentKind, "content-browser" | "source-control">, path: string): Promise<StoredDocument>;
   /** What `loadDocument` makes of a stored payload. */
-  documentContent(kind: Exclude<DocumentKind, "content-browser">, path: string, raw: StoredDocument): DocumentContent;
+  documentContent(kind: Exclude<DocumentKind, "content-browser" | "source-control">, path: string, raw: StoredDocument): DocumentContent;
 }
 
 async function planClassReferenceReplacements(
@@ -54,7 +54,7 @@ async function planClassReferenceReplacements(
   if (!registry) throw new Error("The asset registry is unavailable.");
   const assets = registry.list();
   const plans: Array<{
-    kind: Exclude<DocumentKind, "content-browser">;
+    kind: Exclude<DocumentKind, "content-browser" | "source-control">;
     path: string;
     content: DocumentContent;
     parentClass: string | null;

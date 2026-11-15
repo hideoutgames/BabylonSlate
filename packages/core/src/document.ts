@@ -58,7 +58,10 @@ export const ASSET_DOCUMENT_KINDS = [
 
 export type AssetDocumentKind = (typeof ASSET_DOCUMENT_KINDS)[number];
 
-export type DocumentKind = "content-browser" | AssetDocumentKind;
+/** Pinned chrome tabs with no asset behind them: never closed by the user, never saved. */
+export type ChromeDocumentKind = "content-browser" | "source-control";
+
+export type DocumentKind = ChromeDocumentKind | AssetDocumentKind;
 
 /**
  * 3D and 2D Animation Graph assets: one editor and one document shape. A 3D graph plays Animations on its Skeleton
@@ -83,6 +86,24 @@ export const CONTENT_BROWSER_REF: DocumentRef = {
   path: "",
   label: "Content Browser",
 };
+
+/** Shown while the project's source control mode is not Off. */
+export const SOURCE_CONTROL_ID = "source-control";
+
+export const SOURCE_CONTROL_REF: DocumentRef = {
+  kind: "source-control",
+  path: "",
+  label: "Source Control",
+};
+
+export function isChromeDocumentKind(kind: string): kind is ChromeDocumentKind {
+  return kind === "content-browser" || kind === "source-control";
+}
+
+/** Content Browser and Source Control: pinned tabs the user cannot close. */
+export function isChromeDocumentId(id: string): boolean {
+  return id === CONTENT_BROWSER_ID || id === SOURCE_CONTROL_ID;
+}
 
 export interface DocumentRef {
   kind: DocumentKind;
@@ -446,27 +467,21 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
 }
 
 export function documentId(ref: Pick<DocumentRef, "kind" | "path">): string {
-  if (ref.kind === "content-browser") {
-    return CONTENT_BROWSER_ID;
-  }
+  if (isChromeDocumentKind(ref.kind)) return ref.kind;
   return `${ref.kind}:${ref.path}`;
 }
 
 export function parseDocumentId(
   id: string,
 ): { kind: DocumentKind; path: string } | null {
-  if (id === CONTENT_BROWSER_ID) {
-    return { kind: "content-browser", path: "" };
+  if (isChromeDocumentId(id)) {
+    return { kind: id as ChromeDocumentKind, path: "" };
   }
   const colon = id.indexOf(":");
   if (colon <= 0) return null;
   const kind = id.slice(0, colon);
   if (!isAssetDocumentKind(kind)) return null;
   return { kind, path: id.slice(colon + 1) };
-}
-
-export function isContentBrowserId(id: string): boolean {
-  return id === CONTENT_BROWSER_ID;
 }
 
 export type DockWindowDirection = "left" | "right" | "above" | "below" | "within";

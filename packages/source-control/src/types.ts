@@ -1,6 +1,11 @@
 import type { Result } from "@haptic/core";
+import type { CredentialSource } from "./credentials";
+import type { HttpClient } from "./http";
 
 export const LFS_JSON = "application/vnd.git-lfs+json";
+
+/** Locks are checked on a fixed interval while the editor is in the foreground. */
+export const LOCK_POLL_INTERVAL_MS = 60_000;
 
 export interface FileLock {
   id: string;
@@ -10,7 +15,8 @@ export interface FileLock {
   ours: boolean;
 }
 
-export type LockErrorKind = "conflict" | "offline" | "unauthorized" | "http";
+/** `unsupported`: the host has no Git LFS locking API (404 or 501 from the locks endpoints). */
+export type LockErrorKind = "conflict" | "offline" | "unauthorized" | "unsupported" | "http";
 
 export interface LockError {
   kind: LockErrorKind;
@@ -31,38 +37,17 @@ export interface LockProvider {
   unlock(id: string, options?: UnlockOptions): Promise<LockResult<void>>;
 }
 
-export interface LfsRequest {
-  method: "GET" | "POST";
-  url: string;
-  headers: Record<string, string>;
-  body?: string;
-}
-
-export interface LfsResponse {
-  status: number;
-  bodyText: string;
-}
-
-export type LfsFetch = (request: LfsRequest) => Promise<LfsResponse>;
-
-export type TokenGetter = () => Promise<string | null>;
-
 export interface GitLfsLockProviderOptions {
   repositoryUrl: string;
   branch: string;
-  fetch: LfsFetch;
-  getToken: TokenGetter;
+  http: HttpClient;
+  /** Read on every request, so a credential saved, refreshed or removed later applies at once. */
+  credential: CredentialSource;
 }
 
 export interface GitConfigPrefill {
   repositoryUrl: string;
   branch: string;
-}
-
-const SOURCE_CONTROL_SECRET_PREFIX = "source-control:";
-
-export function sourceControlSecretKey(projectGuid: string): string {
-  return `${SOURCE_CONTROL_SECRET_PREFIX}${projectGuid}`;
 }
 
 export function isSourceControlHost(

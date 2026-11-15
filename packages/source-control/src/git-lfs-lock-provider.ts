@@ -1,4 +1,6 @@
 import { err, isOk, ok } from "@haptic/core";
+import { authorizedHttp, credentialAllowsOrigin, type CredentialKind } from "./credentials";
+import { errorMessage, originOf, parseJsonObject, type HttpRequest, type HttpResponse } from "./http";
 import {
   lfsEndpointFromRepoUrl,
   lfsLocksUrl,
@@ -7,13 +9,17 @@ import {
 import type {
   FileLock,
   GitLfsLockProviderOptions,
-  LfsRequest,
-  LfsResponse,
   LockProvider,
   LockResult,
   UnlockOptions,
 } from "./types";
 import { LFS_JSON } from "./types";
+
+/** A host without the Git LFS locking API answers its lock endpoints with one of these. */
+const NO_LOCKING_STATUSES = new Set([404, 501]);
+
+/** GitHub and GitLab always have the locking API, so there a 404 means the token cannot see the repository. */
+const HOSTS_WITH_LOCKING = new Set<CredentialKind>(["github", "gitlab", "gitlab-token"]);
 
 interface RawLock {
   id?: unknown;
@@ -24,9 +30,10 @@ interface RawLock {
 
 export class GitLfsLockProvider implements LockProvider {
   private readonly locksUrl: string;
+  private readonly origin: string;
   private readonly ref: { name: string };
-  private readonly fetchFn: GitLfsLockProviderOptions["fetch"];
-  private readonly getToken: GitLfsLockProviderOptions["getToken"];
+  private readonly http: GitLfsLockProviderOptions["http"];
+  private readonly credential: GitLfsLockProviderOptions["credential"];
 
   constructor(options: GitLfsLockProviderOptions) {
     const base = lfsEndpointFromRepoUrl(options.repositoryUrl);
@@ -34,9 +41,10 @@ export class GitLfsLockProvider implements LockProvider {
       throw new Error(`Invalid source-control repository URL: ${options.repositoryUrl}`);
     }
     this.locksUrl = lfsLocksUrl(base);
+    this.origin = originOf(base)!;
     this.ref = { name: lfsRefName(options.branch || "main") };
-    this.fetchFn = options.fetch;
-    this.getToken = options.getToken;
+    this.http = options.http;
+    this.credential = options.credential;
   }
 
   async create(path: string): Promise<LockResult<FileLock>> {
@@ -46,7 +54,7 @@ export class GitLfsLockProvider implements LockProvider {
       body: { path, ref: this.ref },
     });
     if (!isOk(response)) return response;
-    const { status, json } = response.value;
+    const { status, json, kind } = response.value;
     if (status === 409) {
       const ours = await this.oursLockForPath(path);
       if (ours) return ok(ours);
@@ -65,7 +73,7 @@ export class GitLfsLockProvider implements LockProvider {
       }
       return ok(lock);
     }
-    return this.httpError(status, json);
+    return this.lockingError(status, json, kind);
   }
 
   async verify(): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>> {
@@ -82,8 +90,8 @@ export class GitLfsLockProvider implements LockProvider {
         body,
       });
       if (!isOk(response)) return response;
-      const { status, json } = response.value;
-      if (status !== 200) return this.httpError(status, json);
+      const { status, json, kind } = response.value;
+      if (status !== 200) return this.lockingError(status, json, kind);
       // An unreadable 200 must not read as "no locks": a refresh would clear them.
       if (!json || !appendLocks(ours, json.ours, true) || !appendLocks(theirs, json.theirs, false)) {
         return err({ kind: "http", message: "Invalid lock verify response", status });
@@ -124,19 +132,21 @@ export class GitLfsLockProvider implements LockProvider {
     method: "POST";
     url: string;
     body?: unknown;
-  }): Promise<LockResult<{ status: number; json: Record<string, unknown> | null }>> {
-    const token = await this.getToken();
-    if (!token) {
+  }): Promise<LockResult<{ status: number; json: Record<string, unknown> | null; kind: CredentialKind }>> {
+    let credential;
+    try {
+      credential = await this.credential.current();
+    } catch (error) {
+      return err({ kind: "offline", message: errorMessage(error) });
+    }
+    if (!credential || !credentialAllowsOrigin(credential, this.origin)) {
       return err({
         kind: "unauthorized",
-        message: "No source-control token stored",
+        message: `Sign in to ${new URL(this.origin).host} to use file locking.`,
       });
     }
-    const headers: Record<string, string> = {
-      Accept: LFS_JSON,
-      Authorization: basicAuth(token),
-    };
-    const request: LfsRequest = {
+    const headers: Record<string, string> = { Accept: LFS_JSON };
+    const request: HttpRequest = {
       method: input.method,
       url: input.url,
       headers,
@@ -145,16 +155,14 @@ export class GitLfsLockProvider implements LockProvider {
       headers["Content-Type"] = LFS_JSON;
       request.body = JSON.stringify(input.body);
     }
-    let response: LfsResponse;
+    let response: HttpResponse;
     try {
-      response = await this.fetchFn(request);
+      // A 401 renews the credential (a GitLab sign-in refreshes) and retries once.
+      response = await authorizedHttp(this.credential, this.http, "basic")(request);
     } catch (error) {
-      return err({
-        kind: "offline",
-        message: error instanceof Error ? error.message : String(error),
-      });
+      return err({ kind: "offline", message: errorMessage(error) });
     }
-    const json = parseJson(response.bodyText);
+    const json = parseJsonObject(response.bodyText);
     if (response.status === 401 || response.status === 403) {
       return err({
         kind: "unauthorized",
@@ -162,7 +170,22 @@ export class GitLfsLockProvider implements LockProvider {
         status: response.status,
       });
     }
-    return ok({ status: response.status, json });
+    return ok({ status: response.status, json, kind: credential.kind });
+  }
+
+  /** Create and verify only: an unlock's 404 means the lock is already gone. */
+  private lockingError(
+    status: number,
+    json: Record<string, unknown> | null,
+    kind: CredentialKind,
+  ): LockResult<never> {
+    if (NO_LOCKING_STATUSES.has(status) && HOSTS_WITH_LOCKING.has(kind)) {
+      return err({ kind: "http", message: "Repository Not Found Or No Access", status });
+    }
+    if (NO_LOCKING_STATUSES.has(status)) {
+      return err({ kind: "unsupported", message: "This Host Does Not Support File Locking.", status });
+    }
+    return this.httpError(status, json);
   }
 
   private httpError(
@@ -174,23 +197,6 @@ export class GitLfsLockProvider implements LockProvider {
       message: messageOf(json, `HTTP ${status}`),
       status,
     });
-  }
-}
-
-function basicAuth(token: string): string {
-  return `Basic ${btoa(`x-access-token:${token}`)}`;
-}
-
-/** The response object, or null when the body is empty, invalid JSON, or not an object. */
-function parseJson(text: string): Record<string, unknown> | null {
-  if (!text) return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
   }
 }
 

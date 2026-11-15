@@ -5,25 +5,34 @@ import {
   openContentBrowser,
   openMainScene,
   openTestProject,
-  openWindowsMenu,
 } from "./open-test-project";
 
 const SCENE_PATH = "assets/main.scene.hasset";
 const CLASS_PATH = "assets/Mannequin.class.hasset";
 
-async function enableSourceControl(page: Page): Promise<void> {
+/** Manual mode on a GitHub repository, then device sign-in through test mode's fake GitHub from the banner. */
+async function turnOnManualAndSignIn(page: Page): Promise<void> {
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await expect(page.getByTestId("settings-modal")).toBeVisible();
   await page.getByTestId("settings-modal-category-sourceControl").click();
-  const enable = page.getByTestId("settings-source-control-enabled");
-  await expect(enable).toHaveAttribute("aria-checked", "false");
-  await page
-    .getByTestId("settings-source-control-url")
-    .fill("https://example.com/team/game.git");
-  await enable.click();
-  await expect(enable).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("settings-source-control-mode-off")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("settings-source-control-url").fill("https://github.com/team/game.git");
+  await page.getByTestId("settings-source-control-mode-manual").click();
+  await expect(page.getByTestId("settings-source-control-mode-manual")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("settings-source-control-account-state")).toHaveText("Not Signed In");
   await closeSettings(page);
+
+  // No credential yet: one prompt, and no lock requests.
+  const banner = page.getByTestId("source-control-sign-in-banner");
+  await expect(banner).toContainText("This project uses GitHub file locking.");
+  await banner.getByRole("button", { name: "Sign In" }).click();
+  const warning = page.getByTestId("source-control-link-warning");
+  await expect(warning).toContainText("Link GitHub?");
+  await expect(warning).toContainText("You use this integration at your own risk.");
+  await warning.getByRole("button", { name: "Accept" }).click();
+  await expect(page.getByTestId("source-control-sign-in-dialog")).toHaveCount(0);
+  await expect(banner).toHaveCount(0);
   await expect
     .poll(async () =>
       page.evaluate(() => {
@@ -40,14 +49,11 @@ function visibleLocksPanel(page: Page) {
   return page.getByTestId("locks-panel").filter({ visible: true });
 }
 
-async function ensureLocksPanel(page: Page): Promise<void> {
-  if ((await visibleLocksPanel(page).count()) > 0) {
-    await expect(visibleLocksPanel(page)).toBeVisible();
-    return;
-  }
-  await expect(page.getByTestId("windows-menu")).toBeEnabled();
-  await openWindowsMenu(page);
-  await page.getByTestId("windows-menu-locks").click({ force: true });
+/** Locks lives only in the pinned Source Control tab, at the right end of the tabs. */
+async function openSourceControlTab(page: Page): Promise<void> {
+  const tab = page.getByTestId("document-tab-pinned-end").getByTestId("document-tab");
+  await expect(tab).toHaveAttribute("data-document-kind", "source-control");
+  await tab.getByRole("button", { name: "Source Control" }).click();
   await expect(visibleLocksPanel(page)).toBeVisible();
 }
 
@@ -70,18 +76,27 @@ function dirtyKinds(page: Page): Promise<string[]> {
 }
 
 test.describe("P15 source-control locking", () => {
-  test("enables Fake locks, auto-locks on edit, Edit Anyway, Release All, and mtime reload", async ({
+  test("shows no Source Control tab or prompt while the mode is Off", async ({ page }) => {
+    await openTestProject(page);
+    await expect(page.getByTestId("document-tab-bar")).toBeVisible();
+    await expect(page.getByTestId("document-tab-pinned-end")).toHaveCount(0);
+    await expect(page.getByTestId("source-control-sign-in-banner")).toHaveCount(0);
+    await expect(page.locator('[data-document-kind="source-control"]')).toHaveCount(0);
+  });
+
+  test("signs in from the prompt, auto-locks on edit in the Source Control tab, Edit Anyway, Release All, and mtime reload", async ({
     page,
   }) => {
     test.setTimeout(90_000);
     await openTestProject(page);
-    await enableSourceControl(page);
+    await turnOnManualAndSignIn(page);
 
-    await openMainScene(page);
-    await ensureLocksPanel(page);
+    await openSourceControlTab(page);
     await expect(
       visibleLocksPanel(page).getByTestId("locks-release-all"),
     ).toHaveText("Release All My Locks (0)");
+    await openContentBrowser(page);
+    await openMainScene(page);
 
     const nudged = await page.evaluate(async () => {
       const host = globalThis as {
@@ -96,12 +111,16 @@ test.describe("P15 source-control locking", () => {
     });
     expect(nudged).toBe(true);
 
+    await openSourceControlTab(page);
     await expect(
       visibleLocksPanel(page).getByTestId("locks-release-all"),
     ).toHaveText("Release All My Locks (1)");
     await expect(
       visibleLocksPanel(page).getByTestId(`locks-row-${SCENE_PATH}`),
     ).toHaveAttribute("data-lock-ours", "true");
+    // The fake GitHub branch holds nothing yet, so our lock is not pushed.
+    await expect(visibleLocksPanel(page).getByTestId(`locks-pushed-${SCENE_PATH}`)).toHaveText("Not Pushed");
+    await expect(visibleLocksPanel(page).getByTestId("locks-release-pushed")).toHaveText("Release Pushed Locks (0)");
 
     await openContentBrowser(page);
     await expect(
@@ -138,7 +157,7 @@ test.describe("P15 source-control locking", () => {
       "Locked by Teammate",
     );
 
-    await ensureLocksPanel(page);
+    await openSourceControlTab(page);
     await visibleLocksPanel(page).getByTestId("locks-release-all").click();
     await expect(page.getByTestId("locks-release-all-confirm")).toContainText(
       "Unpushed work becomes editable by others.",

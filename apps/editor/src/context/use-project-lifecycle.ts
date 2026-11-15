@@ -184,7 +184,7 @@ export function useProjectLifecycle({
       await recordRecent(
         projectService.storagePort.getCurrentFolder(),
         document.metadata,
-        document.settings.sourceControl?.enabled === true,
+        (document.settings.sourceControl?.mode ?? "off") !== "off",
       );
       // Records from a session that never saved them wait for Recover or
       // Discard; this session's saves and closes only truncate what it writes.

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { TemplateLibrarySettings } from "./template-library-settings";
 import { EnginePluginsSettings } from "./engine-plugins-settings";
 import { EngineExtensionsSettings } from "./engine-extensions-settings";
@@ -234,7 +235,11 @@ export type EngineSettingsCategoryId =
   | "focus"
   | "keybinds"
   | "graph"
-  | "packaging";
+  | "packaging"
+  | "sourceControl";
+
+// Device sign-in and the credential store load with the page, not with Engine Settings.
+const EngineSourceControlSettings = lazy(() => import("./engine-source-control-settings"));
 
 export function EngineSettingsForm({
   settings,
@@ -846,6 +851,11 @@ export function EngineSettingsForm({
       {categoryId === "templates" ? <TemplateLibrarySettings /> : null}
       {categoryId === "plugins" ? <EnginePluginsSettings /> : null}
       {categoryId === "extensions" ? <EngineExtensionsSettings /> : null}
+      {categoryId === "sourceControl" ? (
+        <Suspense fallback={null}>
+          <EngineSourceControlSettings />
+        </Suspense>
+      ) : null}
     </FieldGroup>
   );
 }

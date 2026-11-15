@@ -34,6 +34,11 @@ vi.mock("./panel-registry", () => {
       "output-log": panel,
       "compiler-results": panel,
       locks: panel,
+      graph: panel,
+      "prefab-viewport": panel,
+      "actor-prefab": panel,
+      "my-class": panel,
+      inspector: panel,
       "function-graph": panel,
     },
   };
@@ -73,6 +78,57 @@ function sceneLayoutSavedAsDetails(): Record<string, unknown> {
   desktop.unmount();
   return saved as unknown as Record<string, unknown>;
 }
+
+describe("saved layouts with windows the catalog no longer lists", () => {
+  /** A desktop Scene layout with a removed window in a group of its own and another tabbed beside the Viewport. */
+  function sceneLayoutWithRemovedWindows(floating: boolean): Record<string, unknown> {
+    device.phone = false;
+    let dock: DockviewApi | undefined;
+    const desktop = render(<DockviewShell documentKind="scene" onReady={(api) => { dock = api; }} />);
+    if (floating) act(() => dock!.addFloatingGroup(dock!.getPanel("scene-details")!));
+    const saved = dock!.toJSON();
+    desktop.unmount();
+    const root = saved.grid.root as { type: "branch"; data: unknown[] };
+    saved.panels.locks = { id: "locks", contentComponent: "locks", title: "Locks" };
+    saved.panels["removed-window"] = { id: "removed-window", contentComponent: "removed-window", title: "Removed" };
+    root.data.push({ type: "leaf", size: 180, data: { id: "locks-group", views: ["locks"], activeView: "locks" } });
+    const visit = (node: { type: string; data: unknown }): void => {
+      if (node.type === "branch") (node.data as Array<typeof node>).forEach(visit);
+      else {
+        const group = node.data as { views: string[]; activeView?: string };
+        if (group.views.includes("viewport")) {
+          group.views.push("removed-window");
+          group.activeView = "removed-window";
+        }
+      }
+    };
+    visit(saved.grid.root as never);
+    saved.activeGroup = "locks-group";
+    if (floating) {
+      const window = saved.floatingGroups![0]!.data!;
+      window.views = ["locks-floating"];
+      window.activeView = "locks-floating";
+      saved.panels["locks-floating"] = { id: "locks-floating", contentComponent: "locks", title: "Locks" };
+      delete saved.panels["scene-details"];
+    }
+    return saved as unknown as Record<string, unknown>;
+  }
+
+  it.each([false, true])("drops them and the groups they leave empty (floating=%s)", (floating) => {
+    const saved = sceneLayoutWithRemovedWindows(floating);
+    let dock: DockviewApi | undefined;
+    render(<DockviewShell documentKind="scene" initialLayout={saved} onReady={(api) => { dock = api; }} />);
+    for (const id of ["locks", "locks-floating", "removed-window"]) expect(dock!.getPanel(id)).toBeUndefined();
+    expect(dock!.groups.every((group) => group.panels.length > 0)).toBe(true);
+    // The Viewport's group shows it again in place of the removed tab.
+    expect(dock!.getPanel("viewport")!.group.activePanel?.id).toBe("viewport");
+    expect(dock!.getPanel("scene-outliner")).toBeDefined();
+    expect(dock!.toJSON().floatingGroups ?? []).toHaveLength(0);
+    expect(Object.keys(dock!.toJSON().panels).sort()).toEqual(
+      Object.keys(saved.panels as object).filter((id) => !["locks", "locks-floating", "removed-window"].includes(id)).sort(),
+    );
+  });
+});
 
 describe("saved layout titles", () => {
   it("restores a saved window under its current title and keeps function graph titles", () => {
@@ -187,46 +243,29 @@ describe("phone window navigation", () => {
     expect(dock!.panels).toHaveLength(6);
   });
 
-  it("closes Locks when source control turns off after the dock is ready", () => {
+  it("returns to the saved floating windows when a phone open also hides the Prefab windows", () => {
     device.phone = false;
     let dock: DockviewApi | undefined;
     const onReady = (api: DockviewApi) => {
       dock = api;
     };
-    const { rerender } = render(
-      <DockviewShell documentKind="scene" sourceControl onReady={onReady} />,
-    );
-    expect(dock!.getPanel("locks")).toBeDefined();
-    rerender(
-      <DockviewShell documentKind="scene" sourceControl={false} onReady={onReady} />,
-    );
-    expect(dock!.getPanel("locks")).toBeUndefined();
-  });
-
-  it("returns to the saved floating windows when a phone open also closes Locks", () => {
-    device.phone = false;
-    let dock: DockviewApi | undefined;
-    const onReady = (api: DockviewApi) => {
-      dock = api;
-    };
-    const desktop = render(
-      <DockviewShell documentKind="scene" sourceControl onReady={onReady} />,
-    );
-    act(() => dock!.addFloatingGroup(dock!.getPanel("scene-details")!));
+    const desktop = render(<DockviewShell documentKind="graph" onReady={onReady} />);
+    expect(dock!.getPanel("prefab-viewport")).toBeDefined();
+    act(() => dock!.addFloatingGroup(dock!.getPanel("inspector")!));
     const saved = dock!.toJSON() as unknown as Record<string, unknown>;
     desktop.unmount();
     device.phone = true;
     const phone = render(
-      <DockviewShell documentKind="scene" initialLayout={saved} onReady={onReady} />,
+      <DockviewShell documentKind="graph" actorPrefab={false} initialLayout={saved} onReady={onReady} />,
     );
-    expect(dock!.getPanel("locks")).toBeUndefined();
+    expect(dock!.getPanel("prefab-viewport")).toBeUndefined();
     expect(captureAdaptiveDockviewLayout(dock!)).toEqual(saved);
     device.phone = false;
     phone.rerender(
-      <DockviewShell documentKind="scene" initialLayout={saved} onReady={onReady} />,
+      <DockviewShell documentKind="graph" actorPrefab={false} initialLayout={saved} onReady={onReady} />,
     );
-    expect(dock!.getPanel("scene-details")!.api.location.type).toBe("floating");
-    expect(dock!.getPanel("locks")).toBeUndefined();
+    expect(dock!.getPanel("inspector")!.api.location.type).toBe("floating");
+    expect(dock!.getPanel("prefab-viewport")).toBeUndefined();
   });
 
   it("restores saved detached panels without opening a phone browser window", () => {

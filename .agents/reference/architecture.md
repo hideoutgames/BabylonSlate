@@ -27,7 +27,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | [shader-graph](../../packages/shader-graph/src/) | Material and Material Function IR, validator, lowering (Babylon-free) |
 | [particle-graph](../../packages/particle-graph/src/) | Particle Graph IR, catalog, validator, compile key (Babylon-free) |
 | [exporter](../../packages/exporter/src/) | Headless game packer: export closure, `game.json` catalog, zip |
-| [source-control](../../packages/source-control/src/) | Git LFS locking client behind `LockProvider`, plus a fake |
+| [source-control](../../packages/source-control/src/) | Git LFS locking client behind `LockProvider`, device credentials, GitHub and GitLab device sign-in and REST clients, the pushed-lock comparator, plus fakes |
 | [ui](../../packages/ui/src/) | shadcn primitives and design tokens |
 | [editor-kit](../../packages/editor-kit/src/) | Reusable editor components and touch hooks: property grid, tree view, pickers, panel frame, context menu, `SelectableText`, `WindowedList` |
 | [graph-ui](../../packages/graph-ui/src/) | React Flow editor shell shared by every node graph |
@@ -65,7 +65,7 @@ render: snapshot apply + command handlers on the Play Scene of the shared Engine
 - **`engineCommandBus`** ([command-bus.ts](../../packages/core/src/command-bus.ts)) carries light, synchronous UI → editor-viewport messages (logs, drop queries). It is not a Play path; Play traffic goes through the bridge.
 - **`ProjectStorage`** ([storage-port.ts](../../packages/core/src/storage-port.ts)) obtained from `createStorage()` is the only file access: binary, range-capable, adapter-agnostic. Panels never call OPFS, Electron or Capacitor directly.
 - **`getHostPlatform()`** ([platform.ts](../../packages/vfs/src/platform.ts)) is the only platform detection; Capacitor imports stay inside `vfs` adapters.
-- Document mutations go through `edit` commands (`applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange`); with source control on, the first mutating apply auto-locks the document.
+- Document mutations go through `edit` commands (`applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange`); while the source control mode is not Off, the first mutating apply auto-locks the document.
 
 ## Bundle, chunk and worker rules
 

@@ -61,12 +61,12 @@ const KINDS = Object.keys({
   "timeline-clip-2d": true,
   "timeline-clip-3d": true,
   "extension-asset": true,
+  "source-control": true,
 } satisfies Record<DockviewDocumentKind, true>) as DockviewDocumentKind[];
 
 const OPTION_VARIANTS: DockWindowOptions[] = [
   {},
   { actorPrefab: false },
-  { sourceControl: true },
   ...SCENE_MODES.map((sceneMode) => ({ sceneMode })),
 ];
 

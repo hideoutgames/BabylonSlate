@@ -35,7 +35,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 - One parent world Scene and one physics world at a time. Streaming adds owned instances beneath it; SceneLayers are a separate overlay stack.
 - No live property editing of authored content while playing (stop, edit, play). Simulate edits runtime objects only; authored documents stay read-only until it stops.
 - No asset marketplace or remote asset fetching.
-- The engine is not a Git client yet: Git LFS locking only. Built-in Git is planned and deferred: [source-control-plan.md](source-control-plan.md).
+- The engine is not a Git client yet: Git LFS locking only (Manual mode). Built-in Git is planned and deferred: [source-control-plan.md](source-control-plan.md).
 - Undo does not cover asset file creation or deletion; those are confirmed instead.
 - No game HUD / UserInterface / widget system (removed; see Asset type catalog).
 
@@ -262,7 +262,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Every asset editor is a per-document DockView layout registered in [window-catalog.ts](../../apps/editor/src/shell/window-catalog.ts) so **Windows** can toggle panels and Focus can collapse to a keep-list ([dockview-editor-tabs.md](../rules/dockview-editor-tabs.md)). The pinned Content Browser is not a DockView document.
 - Phone-sized windows show one dock window at a time without overwriting the saved tablet layout.
 - **Engine Settings** are global to the install, stored outside projects through the `vfs` app-settings port (undo limits, viewport frame cap, budgets, debugger defaults, Focus keep-lists, graph defaults); they persist immediately.
-- **Project Settings** live in `project.json` and save with Save All (startup scene, GameInstance, rendering incl. frame cap and game render size, texture policy, physics, plugins, extensions, source control repo/branch, export presets, compile-on-save, autosave interval). The source-control token lives in the platform secret store, never in the file.
+- **Project Settings** live in `project.json` and save with Save All (startup scene, GameInstance, rendering incl. frame cap and game render size, texture policy, physics, plugins, extensions, source control mode/repo/branch, export presets, compile-on-save, autosave interval). Source control credentials are per device and host in the platform secret store, never in the file.
 - Rule: if a setting should change the exported game, it belongs in Project Settings; if it only changes how the editor feels on this machine, it belongs in Engine Settings. The two are separate modals, never nested.
 - Undo is **per document**, never global. `edit` command objects have `apply`, `invert` and a merge key; no surface mutates a document model directly. Continuous gestures coalesce into one entry; completed edits stay separate. Entry limit (default 50) and byte budget (default 16 MB) both apply.
 - Undo boundary = asset-file boundary: everything inside a document (including adding/removing actors, nodes, components) is undoable; asset/folder/plugin/project create and delete are not, and deletion uses a destructive dialog that names the selection and lists inbound references.
@@ -320,13 +320,14 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 ## Source control
 
-- Optional, per project, off by default; when off there is no polling, token, network or UI difference. Hidden on production web.
-- Implements only the Git LFS locking REST API (`POST /locks`, `/locks/verify`, `/locks/:id/unlock`) behind a `LockProvider` port with a fake. Repo URL and branch are explicit settings, never parsed from `.git`.
+- Per project, `sourceControl.mode` **Off** (default), **Manual** or **Integrated**; Off has no polling, credential reads, network, tab or other UI difference. Hidden on production web. Details: [architecture/source-control.md](architecture/source-control.md).
+- Manual is built: Git LFS locking only, behind a `LockProvider` port with a fake, while another Git app syncs. Integrated (built-in Git) is planned and deferred: [source-control-plan.md](source-control-plan.md).
+- Credentials are per device and host origin, linked in Engine Settings → Source Control: GitHub and gitlab.com by OAuth device sign-in with public clients, tokens for self-managed GitLab and other hosts. No Haptic-run server; a token goes only to its own host; every link shows a use-at-your-own-risk warning.
 - Auto-lock on first edit (the create call is the atomic check). Failure never blocks work; locks are advisory (read-only by default with Edit Anyway). `lockable` is never added to `.gitattributes`.
-- Release is explicit only (Release All My Locks with a warning, or per asset); never on a timer, close or heuristic, because the engine cannot observe a push.
+- Release is explicit only: per lock, Release All My Locks (with a warning), or Release Pushed Locks, which releases only locks whose local file matches the remote branch read through the GitHub or GitLab API. Never on a timer, close or heuristic.
+- Locks live in the pinned Source Control tab, shown only while the mode is not Off.
 - External change is normal: on foreground the registry rescans and offers reloads, warning loudly when a dirty document's file changed.
-- Git status is never shown (the engine never reads git state).
-- Planned and deferred: built-in Git (Integrated mode) on the standard Git and LFS protocols with isomorphic-git, GitHub and GitLab as the fully integrated hosts (device sign-in, no Haptic-run server), other hosts by URL and token, credentials per device and host from Engine Settings, and a reworked lock-only (Manual) mode. Decisions and order: [source-control-plan.md](source-control-plan.md). Until a step is built, the decisions above hold.
+- Git status is never shown in Manual mode (it reads no git state beyond the `.git/config` prefill).
 
 ## 2D
 
@@ -378,6 +379,7 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
 ## Open work
 
 - Built-in Git: the A16 iPad gate in [source-control-plan.md](source-control-plan.md#order) (isomorphic-git through the Capacitor storage adapter, LFS transfer through native HTTP) comes before any Git code.
+- Source control sign-in needs registered apps and a hand check: create the GitHub OAuth App (Device Flow on) and the gitlab.com application, set `VITE_GITHUB_CLIENT_ID` and `VITE_GITLAB_CLIENT_ID` for distribution builds, and check with real sign-in tokens that each host accepts them with the stored username for Git, LFS transfer and LFS locks, and that GitLab's token refresh works against gitlab.com.
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
 - Water performance qualification: confirm the many-body CPU savings on the A16 iPad (Medium) and a budget Android phone (Low).
 - Mid-game compiles still holding the picture or blocking: on WebGPU, a depth variant a drawn shadow map's caster has not drawn (a Material swap whose colour variant is ready, a mesh's first instances: created synchronously in the shadow pass, since leaving the caster out would drop its shadow), a geometry pass's first draws (holding the view: an effect or quality change switched mid-game, a Fog Volume coming within reach), spatial-effect and other post-process passes after a graph build (a quality step), and a drawn Effect needing a pipeline for a state no draw has used; in steady frames a mesh whose geometry variant is new (a spawn, a Material change; a light change only for the surfaces above) shows spatial-effect artefacts for a few frames instead. A spawn whose variant the load's warm-up missed (skinned, morphed or instanced meshes, a Material changed at runtime) appears a few frames late, as one actor once every variant its meshes draw with is ready. The first draw of each new program on iPad WebKit WebGL2 still blocks its thread (about 100 ms each) for anything the load did not draw or warm; spreading first draws across frames bounds how many land in one frame, nothing removes them. A new map waits for its casters' pipelines before its first draw. Still open: a first directional map and, on WebGL2, the first draw itself.

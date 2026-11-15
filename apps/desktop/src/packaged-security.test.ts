@@ -93,6 +93,14 @@ describe("packaged renderer boundary", () => {
     expect(externalOpenUrl("https://apps.apple.com/account/subscriptions")).toBe("https://apps.apple.com/account/subscriptions");
     expect(externalOpenUrl("https://play.google.com/store/account/subscriptions")).toBe("https://play.google.com/store/account/subscriptions");
     expect(externalOpenUrl("mailto:hello@example.com?subject=Hi%20there")).toBe("mailto:hello@example.com?subject=Hi%20there");
+    // Source Control device sign-in opens exactly these two pages.
+    expect(externalOpenUrl("https://github.com/login/device")).toBe("https://github.com/login/device");
+    expect(externalOpenUrl("https://gitlab.com/oauth/device")).toBe("https://gitlab.com/oauth/device");
+    for (const url of [
+      "https://github.com/", "https://github.com/login", "https://github.com/login/device/select_account", "https://github.com/login/device?next=/evil",
+      "https://github.com/evil/repo", "https://gist.github.com/login/device", "https://github.com.evil.example/login/device", "http://github.com/login/device",
+      "https://gitlab.com/oauth/device/extra", "https://gitlab.example.com/oauth/device", "https://gitlab.com/oauth/authorize", "https://user@gitlab.com/oauth/device",
+    ]) expect(externalOpenUrl(url)).toBeNull();
     for (const url of [
       // Preview runs project scripts, so arbitrary sites and lookalikes stay denied.
       "https://example.com/", "https://haptic.no.evil.example/", "https://evil.apps.apple.com/", "https://play.google.com.evil.example/", "https://evilhaptic.no/", "https://user:pass@haptic.no/",

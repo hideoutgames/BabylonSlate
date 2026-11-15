@@ -15,9 +15,12 @@ import {
   documentId,
   documentKindLabel,
   isAssetDocumentKind,
-  isContentBrowserId,
+  isChromeDocumentId,
+  isChromeDocumentKind,
   isSceneWorkspaceKind,
   parseDocumentId,
+  SOURCE_CONTROL_ID,
+  SOURCE_CONTROL_REF,
 } from "@haptic/core";
 import type { ProjectDocument } from "@haptic/core";
 import type { AssetLoadScope } from "@haptic/assets";
@@ -94,6 +97,7 @@ export type DocumentRevisions = Readonly<Record<DocumentKind, number>>;
 
 const DOCUMENT_KINDS: readonly DocumentKind[] = [
   "content-browser",
+  "source-control",
   ...ASSET_DOCUMENT_KINDS,
 ];
 
@@ -267,6 +271,9 @@ export class DocumentService {
     this.revisions = revisions as DocumentRevisions;
   }
 
+  /** Set by source control sync; the tab survives `initializeFromProject` while it is. */
+  private sourceControlTabShown = false;
+
   private state: DocumentRegistryState = {
     openDocuments: new Map(),
     tabOrder: [],
@@ -288,7 +295,7 @@ export class DocumentService {
   getScrollableDocumentsOrdered(): OpenDocument[] {
     return this.getOpenDocumentsOrdered().filter(
       (doc) =>
-        !doc.background && doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
+        !doc.background && !isChromeDocumentKind(doc.ref.kind) && doc.ref.kind !== "scene",
     );
   }
 
@@ -324,28 +331,55 @@ export class DocumentService {
     this.advanceKinds(["content-browser"]);
   }
 
+  /** Content Browser and the Scene lead the tabs; Source Control ends them. */
   private pinStickyTabs(): void {
     const sceneId = [...this.state.openDocuments.values()].find(
       (doc) => doc.ref.kind === "scene",
     )?.id;
     const rest = this.state.tabOrder.filter(
-      (id) => id !== CONTENT_BROWSER_ID && id !== sceneId,
+      (id) => !isChromeDocumentId(id) && id !== sceneId,
     );
     this.state.tabOrder = [
       CONTENT_BROWSER_ID,
       ...(sceneId ? [sceneId] : []),
       ...rest,
+      ...(this.state.openDocuments.has(SOURCE_CONTROL_ID) ? [SOURCE_CONTROL_ID] : []),
     ];
   }
 
   private isPinnedChromeTabId(id: string): boolean {
-    if (isContentBrowserId(id)) return true;
+    if (isChromeDocumentId(id)) return true;
     return this.state.openDocuments.get(id)?.ref.kind === "scene";
+  }
+
+  /**
+   * Shows or hides the pinned Source Control tab, which exists while the
+   * open project's mode is not Off. Returns whether the tabs changed.
+   */
+  setSourceControlTab(shown: boolean): boolean {
+    this.sourceControlTabShown = shown;
+    if (this.state.openDocuments.has(SOURCE_CONTROL_ID) === shown) return false;
+    if (shown) {
+      this.state.openDocuments.set(SOURCE_CONTROL_ID, {
+        id: SOURCE_CONTROL_ID,
+        ref: SOURCE_CONTROL_REF,
+        content: null,
+        layout: null,
+        dirty: false,
+      });
+    } else {
+      this.state.openDocuments.delete(SOURCE_CONTROL_ID);
+      delete this.state.panelPlacements[SOURCE_CONTROL_ID];
+      if (this.state.activeDocumentId === SOURCE_CONTROL_ID) this.state.activeDocumentId = CONTENT_BROWSER_ID;
+    }
+    this.pinStickyTabs();
+    this.advanceKinds(["source-control"]);
+    return true;
   }
 
   async initializeFromProject(
     projectService: ProjectService,
-    _document: ProjectDocument,
+    projectDocument: ProjectDocument,
     layouts: ProjectLayouts,
     sceneLoadOptions?: DocumentLoadOptions,
   ): Promise<void> {
@@ -370,9 +404,14 @@ export class DocumentService {
     this.advanceKinds(closedKinds);
 
     this.ensureContentBrowserTab();
+    // Kept across a reopen of the same project; a project now Off drops it
+    // here rather than flashing it until source control reconfigures.
+    if (this.sourceControlTabShown && projectDocument.settings.sourceControl.mode !== "off") {
+      this.setSourceControlTab(true);
+    }
 
     const savedOrder = layouts.tabOrder.filter(
-      (id) => !isContentBrowserId(id) && id.includes(":"),
+      (id) => !isChromeDocumentId(id) && id.includes(":"),
     );
     const lastSceneId = [...savedOrder]
       .reverse()
@@ -426,15 +465,15 @@ export class DocumentService {
   ): Promise<string> {
     const activate = () => typeof setActive === "function" ? setActive() : setActive;
     options?.signal?.throwIfAborted();
-    if (options?.background && (ref.kind === "content-browser" || isSceneWorkspaceKind(ref.kind))) {
-      throw new Error("Scene workspaces and Content Browser cannot be background documents.");
+    if (options?.background && (isChromeDocumentKind(ref.kind) || isSceneWorkspaceKind(ref.kind))) {
+      throw new Error("Scene workspaces, Content Browser and Source Control cannot be background documents.");
     }
-    if (ref.kind === "content-browser") {
-      this.ensureContentBrowserTab();
-      if (setActive) {
-        this.state.activeDocumentId = CONTENT_BROWSER_ID;
+    if (isChromeDocumentKind(ref.kind)) {
+      if (ref.kind === "content-browser") this.ensureContentBrowserTab();
+      if (setActive && this.state.openDocuments.has(ref.kind)) {
+        this.state.activeDocumentId = ref.kind;
       }
-      return CONTENT_BROWSER_ID;
+      return ref.kind;
     }
 
     const id = documentId(ref);
@@ -547,7 +586,7 @@ export class DocumentService {
   }
 
   closeDocument(id: string): void {
-    if (isContentBrowserId(id)) {
+    if (isChromeDocumentId(id)) {
       return;
     }
     this.assertDocumentCanClose(id);
@@ -577,7 +616,7 @@ export class DocumentService {
     const pathSet = paths instanceof Set ? paths : new Set(paths);
     const ids: string[] = [];
     for (const doc of this.state.openDocuments.values()) {
-      if (doc.ref.kind === "content-browser") continue;
+      if (isChromeDocumentKind(doc.ref.kind)) continue;
       if (pathSet.has(doc.ref.path)) ids.push(doc.id);
     }
     for (const id of ids) this.closeDocument(id);
@@ -649,7 +688,7 @@ export class DocumentService {
   setActiveDocument(id: string): void {
     const doc = this.state.openDocuments.get(id);
     if (doc) {
-      if (doc.ref.kind !== "content-browser" && doc.content === null) {
+      if (!isChromeDocumentKind(doc.ref.kind) && doc.content === null) {
         throw new Error("Open the restored document asynchronously before activating it");
       }
       this.promoteDocument(doc);
@@ -735,7 +774,7 @@ export class DocumentService {
     const doc = this.state.openDocuments.get(id);
     if (
       !doc ||
-      doc.ref.kind === "content-browser" ||
+      isChromeDocumentKind(doc.ref.kind) ||
       isSceneWorkspaceKind(doc.ref.kind) ||
       doc.ref.kind === "graph"
     ) {
@@ -784,7 +823,7 @@ export class DocumentService {
     const changed: DocumentKind[] = [];
     for (const snapshot of saved) {
       const doc = this.state.openDocuments.get(snapshot.id);
-      if (doc && doc.ref.kind !== "content-browser" && doc.ref.path === snapshot.ref.path) {
+      if (doc && !isChromeDocumentKind(doc.ref.kind) && doc.ref.path === snapshot.ref.path) {
         if (doc.ref.kind === "scene" && snapshot.content) this.savedScenes.set(doc, snapshot.content as SerializedScene);
         const savedIdentity = documentContentIdentity(snapshot.content);
         this.savedContent.set(doc, savedIdentity);
@@ -801,7 +840,7 @@ export class DocumentService {
   replaceLoadedContent(id: string, content: DocumentContent): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
-    if (!doc || doc.ref.kind === "content-browser") return;
+    if (!doc || isChromeDocumentKind(doc.ref.kind)) return;
     doc.content = content;
     if (doc.ref.kind === "scene") this.savedScenes.set(doc, content as SerializedScene);
     this.savedContent.set(doc, documentContentIdentity(content));
@@ -813,7 +852,7 @@ export class DocumentService {
   patchLoadedContent(id: string, content: DocumentContent): void {
     this.assertAuthoringWritable();
     const doc = this.state.openDocuments.get(id);
-    if (!doc || doc.ref.kind === "content-browser") return;
+    if (!doc || isChromeDocumentKind(doc.ref.kind)) return;
     doc.content = content;
     if (!doc.dirty) this.savedContent.set(doc, documentContentIdentity(content));
     this.advanceKinds([doc.ref.kind]);
@@ -835,7 +874,7 @@ export class DocumentService {
    */
   applyAssetRename(id: string, name: string): void {
     const doc = this.state.openDocuments.get(id);
-    if (!doc || doc.ref.kind === "content-browser" || isSceneWorkspaceKind(doc.ref.kind)) return;
+    if (!doc || isChromeDocumentKind(doc.ref.kind) || isSceneWorkspaceKind(doc.ref.kind)) return;
     const content = doc.content;
     if (!content || typeof (content as { name?: unknown }).name !== "string") return;
     const renamed = { ...content, name } as DocumentContent;
@@ -871,7 +910,7 @@ export class DocumentService {
 
   getDirtyDocuments(): OpenDocument[] {
     return [...this.state.openDocuments.values()].filter(
-      (doc) => doc.dirty && doc.ref.kind !== "content-browser",
+      (doc) => doc.dirty && !isChromeDocumentKind(doc.ref.kind),
     );
   }
 }

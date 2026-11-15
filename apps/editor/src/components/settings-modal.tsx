@@ -55,7 +55,6 @@ import {
   useDocumentActions,
   useProjectState,
   useRegistryState,
-  useSourceControl,
 } from "../context/document-context";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
@@ -142,7 +141,6 @@ export function SettingsModal({
   const { projectDocument: liveProjectDocument } = useProjectState();
   const { projectGuid, assetRegistry, registryEpoch, extensionService } = useRegistryState();
   const extensionSnapshot = useSyncExternalStore(extensionService.subscribe, extensionService.getSnapshot);
-  const { sourceControl } = useSourceControl();
   const [draft, setDraft] = useState<RenderingDraft | null>(null);
   const draftOwner = useRef<{ guid: string | null; base: RenderingDraft } | null>(null);
   const latest = useRef({ project: liveProjectDocument, projectGuid, draft, applyProjectSettings });
@@ -187,8 +185,6 @@ export function SettingsModal({
   const [search, setSearch] = useState("");
   const settingsBodyRef = useRef<HTMLDivElement>(null);
   const [pendingFocus, setPendingFocus] = useState<{ targetId?: string } | null>(null);
-  const [tokenDraft, setTokenDraft] = useState("");
-  const [tokenError, setTokenError] = useState<string | null>(null);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const [mixerPickerOpen, setMixerPickerOpen] = useState(false);
   const [appIconPickerOpen, setAppIconPickerOpen] = useState(false);
@@ -240,12 +236,14 @@ export function SettingsModal({
     getHostPlatform(),
     isTestModeEnabled(),
   );
+  // Both scopes have a Source Control page; neither shows where source control is unavailable.
   const groups = useMemo(() => {
-    if (scope === "engine") return ENGINE_GROUPS;
+    const available = (ids: string[]) => ids.filter((id) => showSourceControl || id !== "sourceControl");
+    if (scope === "engine") return ENGINE_GROUPS.map((group) => ({ ...group, ids: available(group.ids) }));
     return PROJECT_GROUPS.map((group) => ({
       ...group,
       ids: [
-        ...group.ids.filter((id) => showSourceControl || id !== "sourceControl"),
+        ...available(group.ids),
         ...(group.label === PROJECT_MISCELLANEOUS_GROUP ? extensionCategories.map((category) => category.id) : []),
       ],
     }));
@@ -763,11 +761,6 @@ export function SettingsModal({
           projectGuid={projectGuid}
           latest={latest}
           prefillSourceControlFromGit={prefillSourceControlFromGit}
-          sourceControl={sourceControl}
-          tokenDraft={tokenDraft}
-          setTokenDraft={setTokenDraft}
-          tokenError={tokenError}
-          setTokenError={setTokenError}
           sourceControlUrlMissing={sourceControlUrlMissing}
           setSourceControlUrlMissing={setSourceControlUrlMissing}
           setDisableSourceControlOpen={setDisableSourceControlOpen}

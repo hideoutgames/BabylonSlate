@@ -203,7 +203,7 @@ export function suppliedChunkIds(chunks: readonly EncodableChunk[]): string[] {
   return [DOCUMENT_CHUNK_ID, ...chunks.filter((chunk) => !isCarriedChunk(chunk)).map((chunk) => chunk.id)];
 }
 
-export function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browser">): string {
+export function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browser" | "source-control">): string {
   return isAssetDocumentKind(kind) ? assetTypeForDocumentKind(kind) : "Class";
 }
 

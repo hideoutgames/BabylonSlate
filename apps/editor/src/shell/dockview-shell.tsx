@@ -28,7 +28,6 @@ import {
 import { PhoneWindowSwitcher } from "./phone-window-switcher";
 import {
   listDockWindows,
-  LOCKS_WINDOW_ID,
   type DockWindowDefinition,
 } from "./window-catalog";
 import {
@@ -37,6 +36,7 @@ import {
 } from "./function-graph-panels";
 import { profileComponents } from "../lib/render-profile";
 import { HapticDockTab } from "./dock-tab";
+import { withoutUnknownPanels } from "./restored-dock-layout";
 
 type DockviewLayout = ReturnType<DockviewApi["toJSON"]>;
 
@@ -58,19 +58,15 @@ function profiledDockPanelComponents() {
   ));
 }
 
-/**
- * Catalog windows a document hides: Prefab and Components outside the Actor
- * lineage, Locks without source control.
- */
+/** Catalog windows a document hides: Prefab and Components outside the Actor lineage. */
 function closeHiddenWindows(
   api: DockviewApi,
-  { actorPrefab, sourceControl }: { actorPrefab: boolean; sourceControl: boolean },
+  { actorPrefab }: { actorPrefab: boolean },
 ): void {
   if (!actorPrefab) {
     api.getPanel("prefab-viewport")?.api.close();
     api.getPanel("actor-prefab")?.api.close();
   }
-  if (!sourceControl) api.getPanel(LOCKS_WINDOW_ID)?.api.close();
 }
 
 /**
@@ -111,7 +107,6 @@ export interface DockviewShellProps {
   onReady?: (api: DockviewApi) => void;
   initialLayout?: Record<string, unknown> | null;
   actorPrefab?: boolean;
-  sourceControl?: boolean;
   sceneMode?: SceneMode;
 }
 
@@ -120,7 +115,6 @@ export function DockviewShell({
   onReady,
   initialLayout,
   actorPrefab = true,
-  sourceControl = false,
   sceneMode,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
@@ -140,25 +134,29 @@ export function DockviewShell({
   onReadyRef.current = onReady;
   const initialLayoutRef = useRef(initialLayout);
   initialLayoutRef.current = initialLayout;
-  const hiddenWindowsRef = useRef({ actorPrefab, sourceControl });
-  hiddenWindowsRef.current = { actorPrefab, sourceControl };
+  const hiddenWindowsRef = useRef({ actorPrefab });
+  hiddenWindowsRef.current = { actorPrefab };
   const platformOptions = usePlatformLayoutOptions();
 
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
 
-      // Retitled before the phone keeps it as the layout to return to.
-      const savedLayout = initialLayoutRef.current;
-      const originalLayout = savedLayout
-        ? withCatalogTitles(
-            savedLayout as unknown as DockviewLayout,
-            listDockWindows(documentKind, {
-              actorPrefab,
-              sourceControl,
-              sceneMode,
-            }),
+      // Retitled before the phone keeps it as the layout to return to. A
+      // window the catalog no longer lists (with its emptied group) is dropped.
+      const windows = listDockWindows(documentKind, { actorPrefab, sceneMode });
+      const catalogIds = new Set([
+        ...windows,
+        ...listDockWindows(documentKind, { sceneMode }),
+      ].map((window) => window.id));
+      const savedLayout = initialLayoutRef.current
+        ? withoutUnknownPanels(
+            initialLayoutRef.current as unknown as DockviewLayout,
+            (id) => catalogIds.has(id) || isGraphContentPanelId(id),
           )
+        : null;
+      const originalLayout = savedLayout
+        ? withCatalogTitles(savedLayout, windows)
         : undefined;
       const hostLayout =
         originalLayout && platformOptions.disableFloatingGroups
@@ -170,11 +168,11 @@ export function DockviewShell({
         createDefaultLayoutForKind(
           event.api,
           documentKind,
-          { actorPrefab, sourceControl, sceneMode },
+          { actorPrefab, sceneMode },
           hostRef.current?.clientWidth ?? 0,
         );
       }
-      closeHiddenWindows(event.api, { actorPrefab, sourceControl });
+      closeHiddenWindows(event.api, { actorPrefab });
       // A phone returns to the saved floating and popout groups, not the
       // inlined grid; hidden windows close again after that restore.
       if (platformOptions.singleWindow && hostLayout !== originalLayout) {
@@ -187,7 +185,6 @@ export function DockviewShell({
     [
       documentKind,
       actorPrefab,
-      sourceControl,
       sceneMode,
       platformOptions.disableFloatingGroups,
       platformOptions.singleWindow,
@@ -229,8 +226,8 @@ export function DockviewShell({
   }, [api]);
 
   useLayoutEffect(() => {
-    if (api) closeHiddenWindows(api, { actorPrefab, sourceControl });
-  }, [api, actorPrefab, sourceControl]);
+    if (api) closeHiddenWindows(api, { actorPrefab });
+  }, [api, actorPrefab]);
 
   useLayoutEffect(() => {
     if (!api) return;
@@ -258,7 +255,6 @@ export function DockviewShell({
   const windows = [
     ...listDockWindows(documentKind, {
       actorPrefab,
-      sourceControl,
       sceneMode,
     }),
     ...functionWindows,

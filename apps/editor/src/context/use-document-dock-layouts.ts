@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type RefObject } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { DockviewApi } from "dockview-react";
 import type { createAppSettingsStore } from "@haptic/vfs";
 import { captureAdaptiveDockviewLayout, isPhoneDockLayout } from "../shell/phone-dock-layout";
@@ -38,7 +38,6 @@ import {
 import { moveKeyedEntry } from "../lib/move-keyed-entry";
 import type { DocumentService } from "../services/document-service";
 import type { ProjectService } from "../services/project-service";
-import type { SourceControlService } from "../services/source-control-service";
 
 function asDockWindowApi(api: DockviewApi): DockWindowApi {
   return api as unknown as DockWindowApi;
@@ -50,7 +49,6 @@ function dockOptionsForIndexed(
     | { header: { type: string; parentClass?: string | null } }
     | undefined,
   parentOf: (id: string) => string | null | undefined,
-  sourceControlEnabled = false,
   sceneMode?: SceneMode,
 ): DockWindowOptions {
   return {
@@ -58,7 +56,6 @@ function dockOptionsForIndexed(
       kind !== "graph" ||
       !indexed ||
       classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
-    sourceControl: sourceControlEnabled,
     sceneMode: hasSceneModes(kind) ? (sceneMode ?? "design") : undefined,
   };
 }
@@ -85,7 +82,6 @@ function restorePreFocusSnapshot(
 export interface DocumentDockLayoutDeps {
   documentService: DocumentService;
   projectService: ProjectService;
-  sourceControlRef: RefObject<SourceControlService>;
   settingsStore: ReturnType<typeof createAppSettingsStore>;
   /** Re-derives the document context value. */
   bump: () => void;
@@ -99,7 +95,6 @@ export interface DocumentDockLayoutDeps {
 export function useDocumentDockLayouts({
   documentService,
   projectService,
-  sourceControlRef,
   settingsStore,
   bump,
 }: DocumentDockLayoutDeps) {
@@ -257,7 +252,6 @@ export function useDocumentDockLayouts({
         kind ?? "",
         indexed,
         parentOf,
-        sourceControlRef.current.enabled,
         surface === "design" || surface === "landscape" || surface === "foliage" || surface === "script" || surface === "timeline"
           ? surface : undefined,
       );
@@ -281,7 +275,7 @@ export function useDocumentDockLayouts({
     ]);
     rememberPlacements();
     bumpDockWindows();
-  }, [bumpDockWindows, documentService, projectService, sourceControlRef]);
+  }, [bumpDockWindows, documentService, projectService]);
 
   const unregisterDockviewApi = useCallback(
     (id: string, surface: DockviewSurface = "default") => {
@@ -336,7 +330,6 @@ export function useDocumentDockLayouts({
       doc.ref.kind,
       indexed,
       parentOf,
-      sourceControlRef.current.enabled,
       documentSceneMode(doc.ref.kind, doc.layout),
     );
     const def = findWindowDefinition(doc.ref.kind, panelId, dockOptions);
@@ -357,7 +350,7 @@ export function useDocumentDockLayouts({
       );
     }
     bumpDockWindows();
-  }, [activeDockApi, bumpDockWindows, documentService, projectService, sourceControlRef]);
+  }, [activeDockApi, bumpDockWindows, documentService, projectService]);
 
   const isDockWindowOpen = useCallback((panelId: string) => {
     const api = activeDockApi();
@@ -413,7 +406,6 @@ export function useDocumentDockLayouts({
       doc.ref.kind,
       indexed,
       parentOf,
-      sourceControlRef.current.enabled,
       sceneMode,
     );
 
@@ -432,7 +424,7 @@ export function useDocumentDockLayouts({
       next.add(focusKey);
       return next;
     });
-  }, [activeDockApi, documentService, projectService, settingsStore, sourceControlRef]);
+  }, [activeDockApi, documentService, projectService, settingsStore]);
 
   return {
     focusedLayoutIds,

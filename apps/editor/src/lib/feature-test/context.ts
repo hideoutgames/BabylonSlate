@@ -38,7 +38,7 @@ import {
 } from "./layout";
 
 export type Vec3 = [number, number, number];
-type SavedKind = Exclude<DocumentKind, "content-browser">;
+type SavedKind = Exclude<DocumentKind, "content-browser" | "source-control">;
 
 /** Root of every FeatureTest asset, relative to the project `assets/` folder. */
 export const FEATURE_TEST_ROOT = "FeatureTest";

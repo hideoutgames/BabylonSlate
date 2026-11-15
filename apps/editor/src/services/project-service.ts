@@ -861,7 +861,7 @@ export class ProjectService {
     }
     this.projectGuid = raw.guid;
     this.loadedTextureSettings = document.settings.textures;
-    this.textures.setSourceControlEnabled(document.settings.sourceControl?.enabled === true);
+    this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
 
     // Project manifest schema migration (type Project).
@@ -1179,7 +1179,7 @@ export class ProjectService {
     if (appearance) document.metadata.appearance = appearance;
     this.projectGuid = newGuid();
     this.loadedTextureSettings = document.settings.textures;
-    this.textures.setSourceControlEnabled(document.settings.sourceControl?.enabled === true);
+    this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
     const graph = createDefaultLogicGraphSerialized();
     const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");
@@ -1237,7 +1237,7 @@ export class ProjectService {
   }
 
   async loadDocument(
-    kind: Exclude<DocumentKind, "content-browser">,
+    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
     path: string,
     options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<
@@ -1265,7 +1265,7 @@ export class ProjectService {
    * read (Play preparation's closure), without reading it again.
    */
   documentContentFromStored(
-    kind: Exclude<DocumentKind, "content-browser" | "trace">,
+    kind: Exclude<DocumentKind, "content-browser" | "source-control" | "trace">,
     path: string,
     stored: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
@@ -1278,7 +1278,7 @@ export class ProjectService {
    * `documentContent` to each in its own order.
    */
   private async readStoredAssetDocument(
-    kind: Exclude<DocumentKind, "content-browser">,
+    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
     path: string,
     options: { scope?: AssetLoadScope; signal?: AbortSignal } = {},
   ): Promise<{ type: string; version: number; payload: Record<string, unknown> }> {
@@ -1295,7 +1295,7 @@ export class ProjectService {
    * hold are absent from `chunks`.
    */
   async loadDocumentWithChunks(
-    kind: Exclude<DocumentKind, "content-browser" | "trace">,
+    kind: Exclude<DocumentKind, "content-browser" | "source-control" | "trace">,
     path: string,
     chunks: DocumentChunkSelection,
     options: { signal?: AbortSignal } = {},
@@ -1379,7 +1379,7 @@ export class ProjectService {
   }
 
   private documentContent(
-    kind: Exclude<DocumentKind, "content-browser">,
+    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
     path: string,
     raw: { type: string; version: number; payload: Record<string, unknown> },
   ): Awaited<ReturnType<ProjectService["loadDocument"]>> {
@@ -1478,7 +1478,7 @@ export class ProjectService {
 
   /** Writes a `.hasset` document in its asset's write queue. */
   async saveDocument(
-    kind: Exclude<DocumentKind, "content-browser">,
+    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
     path: string,
     content:
       | SerializedScene
@@ -1515,7 +1515,7 @@ export class ProjectService {
   }
 
   private async saveDocumentUnlocked(
-    kind: Exclude<DocumentKind, "content-browser">,
+    kind: Exclude<DocumentKind, "content-browser" | "source-control">,
     path: string,
     content: SerializedScene | SerializedSceneLayer | SerializedGraph | Record<string, unknown>,
     options?: { parentClass?: string | null; type?: string },

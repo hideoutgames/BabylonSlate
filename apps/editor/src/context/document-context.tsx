@@ -280,7 +280,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     isDockWindowOpen,
     getOpenDockWindowCount,
     toggleLayoutFocus,
-  } = useDocumentDockLayouts({ documentService, projectService, sourceControlRef, settingsStore, bump });
+  } = useDocumentDockLayouts({ documentService, projectService, settingsStore, bump });
   useEffect(() => attachEditGestureBoundaries(() => {
     const id = documentService.getState().activeDocumentId;
     if (id) editSessionRef.current.getStack(id).endGesture();
@@ -322,8 +322,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const { sourceControlState, actions: sourceControlActions } = useSourceControlSync({
     sourceControlRef,
     projectService,
+    documentService,
     settingsStore,
     projectDocument,
+    bump,
     runForegroundRescanRef,
   });
 

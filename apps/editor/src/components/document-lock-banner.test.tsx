@@ -1,16 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import { FakeLockProvider } from "@haptic/source-control";
-import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
+import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import { SourceControlService } from "../services/source-control-service";
 import { DocumentLockBanner } from "./document-lock-banner";
 
-const enabled = {
-  ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
-  enabled: true,
-  repositoryUrl: "https://github.com/org/repo",
-};
+const enabled = MANUAL_SOURCE_CONTROL;
 
 async function serviceWithTheirs(): Promise<SourceControlService> {
   const service = new SourceControlService();
@@ -18,11 +13,10 @@ async function serviceWithTheirs(): Promise<SourceControlService> {
   fake.addTheirs("assets/hero.scene.hasset", "Bob", "2026-08-15T11:50:00Z");
   await service.configure({
     settings: enabled,
-    projectGuid: "proj",
+    projectKey: "proj",
     platform: "electron",
     testMode: true,
-    secretStore: new MemorySecretStore(),
-    nativeHttp: null,
+    hosts: await signedInHosts(),
     fake,
   });
   await service.refresh();

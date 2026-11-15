@@ -104,10 +104,10 @@ async function writeLegacyOddTexture(storage: MemoryStorageAdapter, path: string
   }));
 }
 
-/** Turns source control **Enable** on in project.json, as a shared checkout has it. */
+/** Sets the source control mode to Manual in project.json, as a shared checkout has it. */
 async function enableSourceControlOnDisk(storage: MemoryStorageAdapter): Promise<void> {
   const project = JSON.parse(await storage.readText(PROJECT_FILE)) as { settings: Record<string, unknown> };
-  project.settings.sourceControl = { ...(project.settings.sourceControl as object | undefined), enabled: true };
+  project.settings.sourceControl = { ...(project.settings.sourceControl as object | undefined), mode: "manual" };
   await storage.writeText(PROJECT_FILE, JSON.stringify(project));
 }
 

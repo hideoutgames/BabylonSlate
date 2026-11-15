@@ -42,14 +42,13 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
   ]),
   ...category("sourceControl", [
     ["repository", "Repository", [
-      ["Enable Source Control", "settings-source-control-enabled"],
-      ["Repository URL", "settings-source-control-url"],
+      ["Mode Off Manual", "settings-source-control-mode"],
+      ["Repository", "settings-source-control-url"],
       ["Branch", "settings-source-control-branch"],
-      ["Token", "settings-source-control-token"],
+      ["Account Sign In", "settings-source-control-account"],
     ]],
     ["locking", "Locking", [
       ["Auto-Lock On First Edit", "settings-source-control-auto-lock"],
-      ["Poll Interval", "settings-source-control-poll"],
     ]],
   ]),
   ...category("export", [
@@ -238,6 +237,17 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
 ];
 
 export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
+  ...category("sourceControl", [
+    ["accounts", "Accounts", [["GitHub GitLab Sign In Sign Out"]]],
+    ["selfManagedGitLab", "Self-Managed GitLab", [
+      ["Instance URL", "settings-source-control-gitlab-url"],
+      ["GitLab Token", "settings-source-control-gitlab-token"],
+    ]],
+    ["otherHosts", "Other Git Hosts", [
+      ["Host URL", "settings-source-control-host-url"],
+      ["Host Token", "settings-source-control-host-token"],
+    ]],
+  ]),
   ...category("about", [
     ["build", "Build", [["Version And Build"]]],
     ["updates", "Updates", [["Automatic Updates", "setting-automatic-updates"]]],
