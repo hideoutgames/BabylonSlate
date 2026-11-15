@@ -546,6 +546,7 @@ describe.each([
     expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
     await port.fetch();
     expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+  });
 
   it("names a branch's commit without switching: this copy's, else the remote's after fetching it, and none for a branch neither has", async () => {
     const main = await fixture.teammate({ "project.json": "main settings", "assets/a.hasset": "A" });
