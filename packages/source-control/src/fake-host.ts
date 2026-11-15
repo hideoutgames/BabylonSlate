@@ -48,7 +48,14 @@ export class FakeGitHost {
    * Haptic asked for `read:org`, or an organization that restricts OAuth apps).
    */
   organizationsRefused = false;
+  /** The branches of every repository not in `repositoryBranches`. */
   branches = ["main", "develop"];
+  /**
+   * Branches by repository name. A repository created through the API has
+   * none (it is empty until a push, which this host never sees: tests set
+   * them as a push would).
+   */
+  readonly repositoryBranches = new Map<string, string[]>();
   /** Remote branch content: path → Git blob id, for every repository and branch. */
   readonly remoteBlobs = new Map<string, string>();
   /** Seconds between token polls the device code asks for. */
@@ -112,14 +119,23 @@ export class FakeGitHost {
       const name = `${namespace}/${body.name ?? ""}`;
       if (!body.name || !namespace) return json(422, { message: "Repository creation failed." });
       if (this.repositories.includes(name)) {
-        return json(422, { message: "Repository creation failed.", errors: [{ message: "name already exists on this account" }] });
+        // As each host refuses a taken name.
+        return gitHubCreate
+          ? json(422, { message: "Repository creation failed.", errors: [{ message: "name already exists on this account" }] })
+          : json(400, { message: { name: ["has already been taken"], path: ["has already been taken"] } });
       }
       this.repositories.unshift(name);
+      this.repositoryBranches.set(name, []);
       if (body.private === false || body.visibility === "public") this.publicRepositories.add(name);
       return json(201, gitHubCreate ? github(name) : gitlab(name));
     }
-    if (/^GET https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/branches$/.test(route) || /^GET https:\/\/gitlab\.com\/api\/v4\/projects\/[^/]+\/repository\/branches$/.test(route)) {
-      return firstPage(this.branches.map((name) => ({ name })));
+    const repository = /^GET https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)(\/branches)?$/.exec(route)
+      ?? /^GET https:\/\/gitlab\.com\/api\/v4\/projects\/([^/]+)(\/repository\/branches)?$/.exec(route);
+    if (repository) {
+      const name = decodeURIComponent(repository[1]!);
+      if (repository[2]) return firstPage((this.repositoryBranches.get(name) ?? this.branches).map((branch) => ({ name: branch })));
+      if (!this.repositories.includes(name)) return json(404, { message: "Not Found" });
+      return json(200, route.includes("api.github.com") ? github(name) : gitlab(name));
     }
     const tree = [...this.remoteBlobs].map(([path, id]) => ({ path, type: "blob", sha: id, id }));
     if (/^GET https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/git\/trees\/[^/]+$/.test(route)) return json(200, { tree, truncated: false });

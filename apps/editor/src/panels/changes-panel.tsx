@@ -31,9 +31,10 @@ import { Label } from "@haptic/ui/components/label";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { Textarea } from "@haptic/ui/components/textarea";
 import { cn } from "@haptic/ui/lib/utils";
-import { useIntegratedSync, useIntegratedSyncState, useSourceControl } from "../context/document-context";
+import { useDocumentActions, useIntegratedSync, useIntegratedSyncState, useSourceControl } from "../context/document-context";
+import { AdoptGitFolderDialog } from "../components/source-control-adopt-dialog";
 import { useSourceControlActions } from "../components/source-control-actions";
-import { integratedBlockerLabel } from "../lib/source-control-mode";
+import { integratedBlockerLabel, type IntegratedBlocker } from "../lib/source-control-mode";
 import type { ChangeRow as ChangeRowData } from "../lib/source-control-changes";
 import { agoLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
 import { useTransferBytes } from "../lib/transfer-bytes";
@@ -195,6 +196,29 @@ function CommitBox({
 }
 
 /**
+ * Why Integrated mode does not run in this folder; a desktop working copy
+ * this device has not adopted offers **Use Haptic's Git Here** behind the
+ * one-Git-app warning, which nothing opens by itself.
+ */
+function BlockedChanges({ blocker }: { blocker: IntegratedBlocker }) {
+  const { setSourceControlAdoption } = useDocumentActions();
+  const [asking, setAsking] = useState(false);
+  return (
+    <PanelFrame data-testid="changes-panel">
+      <div className="flex flex-col items-start gap-2 p-2" data-testid="changes-blocked">
+        <p className="text-sm text-muted-foreground">{integratedBlockerLabel(blocker)}</p>
+        {blocker === "not-adopted" ? (
+          <Button variant="outline" size="sm" data-testid="changes-adopt" onClick={() => setAsking(true)}>
+            Use Haptic&apos;s Git Here
+          </Button>
+        ) : null}
+      </div>
+      <AdoptGitFolderDialog open={asking} onOpenChange={setAsking} onAccept={() => setSourceControlAdoption(true)} />
+    </PanelFrame>
+  );
+}
+
+/**
  * The Source Control tab's Changes window (Integrated mode): branch, Pull and
  * Push with their counts, the status line, changed assets with an include
  * checkbox each (windowed, in their own scroll region with the incoming
@@ -223,15 +247,7 @@ export function ChangesPanelContents() {
   }, []);
   const includeAll = useCallback(() => setExcluded(new Set()), []);
 
-  if (snapshot.blocked) {
-    return (
-      <PanelFrame data-testid="changes-panel">
-        <p className="p-2 text-sm text-muted-foreground" data-testid="changes-blocked">
-          {integratedBlockerLabel(snapshot.blocked)}
-        </p>
-      </PanelFrame>
-    );
-  }
+  if (snapshot.blocked) return <BlockedChanges blocker={snapshot.blocked} />;
   if (!snapshot.active) {
     return (
       <PanelFrame data-testid="changes-panel">

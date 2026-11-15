@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService } from "../services/source-control-sync";
-import { integratedSync } from "../testing/integrated-sync";
+import { deviceIntegratedSync, integratedSync } from "../testing/integrated-sync";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
 import { ChangesPanelContents } from "./changes-panel";
 
@@ -12,17 +12,23 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const state = vi.hoisted(() => ({ sync: null as SourceControlSyncService | null }));
+const state = vi.hoisted(() => ({
+  sync: null as SourceControlSyncService | null,
+  setAdoption: null as ((adopted: boolean) => Promise<void>) | null,
+}));
 
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     ...(state.sync ? { sourceControlSync: state.sync } : {}),
+    ...(state.setAdoption ? { setSourceControlAdoption: state.setAdoption } : {}),
   })),
 );
 
 afterEach(() => {
   cleanup();
+  state.sync?.dispose();
   state.sync = null;
+  state.setAdoption = null;
 });
 
 function renderPanel() {
@@ -34,6 +40,38 @@ function renderPanel() {
 }
 
 describe("Changes window", () => {
+  it("asks before running Git in a desktop working copy a stored Integrated mode reached, and opens it once accepted", async () => {
+    const desktop = await deviceIntegratedSync({ adopted: false });
+    state.sync = desktop.service;
+    state.setAdoption = desktop.setAdoption;
+    renderPanel();
+    expect(screen.getByTestId("changes-blocked").textContent).toContain("Haptic Does Not Run Git In This Folder Yet");
+    expect(screen.queryByTestId("changes-commit")).toBeNull();
+
+    // Cancel stores nothing; the blocker stays.
+    fireEvent.click(screen.getByTestId("changes-adopt"));
+    expect((await screen.findByTestId("source-control-adopt-confirm")).textContent).toContain("No other Git app may use it at the same time");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByTestId("source-control-adopt-confirm")).toBeNull());
+    expect(desktop.adoption.adopted).toBe(false);
+    expect(screen.getByTestId("changes-blocked")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("changes-adopt"));
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("source-control-adopt-confirm-action"));
+    });
+    expect(desktop.adoption.adopted).toBe(true);
+    await waitFor(() => expect(screen.getByTestId("changes-branch").textContent).toBe("main"));
+    expect(screen.queryByTestId("changes-blocked")).toBeNull();
+  });
+
+  it("offers nothing to accept where another app owns the folder", async () => {
+    state.sync = (await deviceIntegratedSync({ adopted: false, platform: "ios", tier: "external" })).service;
+    renderPanel();
+    expect(screen.getByTestId("changes-blocked").textContent).toBe("Another Git App Syncs This Folder");
+    expect(screen.queryByTestId("changes-adopt")).toBeNull();
+  });
+
   it("commits only the included assets with the message, then pushes", async () => {
     const { service, storage, remote } = await integratedSync();
     state.sync = service;

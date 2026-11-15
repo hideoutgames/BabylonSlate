@@ -115,9 +115,62 @@ describe("host APIs", () => {
     // A created repository is then listed, as the Clone picker reads it.
     const listed = await api.repositories();
     expect(isOk(listed) && listed.value.map((repository) => repository.name).slice(0, 2)).toEqual(["haptic-studio/racer", "test-user/forest-run"]);
-    // A name that exists already reports the host's reason.
-    const again = await api.createRepository({ owner: { name: "test-user", kind: "user", id: "" }, name: "forest-run", private: true });
-    expect(isErr(again) && again.error).toEqual({ kind: "http", message: "Repository creation failed. name already exists on this account" });
+  });
+
+  describe("a Publish retried under the same name", () => {
+    const owner = { name: "test-user", kind: "user", id: "" } as const;
+
+    it.each([
+      ["GitHub", GITHUB, "https://github.com/test-user/forest-run.git", [
+        "POST https://api.github.com/user/repos",
+        "GET https://api.github.com/repos/test-user/forest-run/branches?per_page=100&page=1",
+        "GET https://api.github.com/repos/test-user/forest-run",
+      ]],
+      ["GitLab", GITLAB, "https://gitlab.com/test-user/forest-run.git", [
+        "POST https://gitlab.com/api/v4/projects",
+        "GET https://gitlab.com/api/v4/projects/test-user%2Fforest-run/repository/branches?per_page=100&page=1",
+        "GET https://gitlab.com/api/v4/projects/test-user%2Fforest-run",
+      ]],
+    ] as const)("on %s takes the empty repository the interrupted attempt created", async (_host, credential, url, requests) => {
+      const host = new FakeGitHost();
+      const api = hostApiFor(credential, host.http)!;
+      await api.createRepository({ owner, name: "forest-run", private: true });
+      // The first attempt stopped before its push: the repository has no branch.
+      host.requests.length = 0;
+      const again = await api.createRepository({ owner, name: "forest-run", private: false });
+      expect(isOk(again) && again.value).toMatchObject({ name: "test-user/forest-run", repositoryUrl: url, defaultBranch: "main", private: true });
+      expect(host.requests.map((request) => `${request.method} ${request.url}`)).toEqual(requests);
+      expect(host.repositories.filter((name) => name === "test-user/forest-run")).toHaveLength(1);
+    });
+
+    it.each([["GitHub", GITHUB], ["GitLab", GITLAB]] as const)("on %s refuses a repository that has branches, pushing nothing to it", async (_host, credential) => {
+      const host = new FakeGitHost();
+      const api = hostApiFor(credential, host.http)!;
+      await api.createRepository({ owner, name: "forest-run", private: true });
+      host.repositoryBranches.set("test-user/forest-run", ["main"]);
+      const taken = await api.createRepository({ owner, name: "forest-run", private: true });
+      expect(isErr(taken) && taken.error).toEqual({
+        kind: "http",
+        message: "test-user/forest-run already exists and is not empty. Choose another repository name.",
+      });
+    });
+
+    it("keeps the host's reason when the name is refused for another reason, and asks nothing more after a refused token", async () => {
+      const host = new FakeGitHost();
+      const missing = await hostApiFor(GITHUB, async (request) => {
+        host.requests.push(request);
+        return request.method === "POST"
+          ? { status: 422, bodyText: JSON.stringify({ message: "Repository creation failed.", errors: [{ message: "name is invalid" }] }) }
+          : { status: 404, bodyText: JSON.stringify({ message: "Not Found" }) };
+      })!.createRepository({ owner, name: "bad name", private: true });
+      expect(isErr(missing) && missing.error).toEqual({ kind: "http", message: "Repository creation failed. name is invalid" });
+
+      host.requests.length = 0;
+      host.refusedTokens.add(GITHUB.token);
+      const refused = await hostApiFor(GITHUB, host.http)!.createRepository({ owner, name: "forest-run", private: true });
+      expect(isErr(refused) && refused.error.kind).toBe("unauthorized");
+      expect(host.requests.map((request) => request.method)).toEqual(["POST"]);
+    });
   });
 
   it("creates a GitLab project in the user's namespace or a group's, by namespace id", async () => {

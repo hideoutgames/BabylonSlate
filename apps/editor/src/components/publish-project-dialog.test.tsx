@@ -81,14 +81,41 @@ describe("Publish Project", () => {
     expect(screen.getByTestId("publish-reason").textContent).toBe("Sign in to GitLab to publish.");
   });
 
-  it("shows the host's reason when the repository cannot be created, and publishes nothing", async () => {
+  it("refuses a name taken by a repository that is not empty, and publishes nothing", async () => {
     host.repositories.unshift("test-user/forest-run");
+    host.repositoryBranches.set("test-user/forest-run", ["main"]);
     render(<PublishProjectDialog open onOpenChange={() => {}} />);
     await waitFor(() => expect(screen.queryByTestId("publish-reason")).toBeNull());
     await act(async () => {
       fireEvent.click(screen.getByTestId("publish-submit"));
     });
-    expect((await screen.findByTestId("publish-error")).textContent).toContain("name already exists on this account");
+    expect((await screen.findByTestId("publish-error")).textContent).toContain("test-user/forest-run already exists and is not empty. Choose another repository name.");
     expect(state.publishProject).not.toHaveBeenCalled();
+  });
+
+  it("publishes again under the same name into the empty repository an interrupted Publish created", async () => {
+    const onOpenChange = vi.fn();
+    // The first attempt created the repository, then stopped before its push.
+    state.publishProject.mockRejectedValueOnce(new Error("The host could not be reached."));
+    const first = render(<PublishProjectDialog open onOpenChange={onOpenChange} />);
+    await waitFor(() => expect(screen.queryByTestId("publish-reason")).toBeNull());
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("publish-submit"));
+    });
+    expect((await screen.findByTestId("publish-error")).textContent).toContain("The host could not be reached.");
+    first.unmount();
+
+    render(<PublishProjectDialog open onOpenChange={onOpenChange} />);
+    await waitFor(() => expect(screen.queryByTestId("publish-reason")).toBeNull());
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("publish-submit"));
+    });
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(screen.queryByTestId("publish-error")).toBeNull();
+    expect(state.publishProject.mock.calls).toEqual([
+      [{ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" }],
+      [{ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" }],
+    ]);
+    expect(host.repositories.filter((name) => name === "test-user/forest-run")).toHaveLength(1);
   });
 });

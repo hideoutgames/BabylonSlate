@@ -58,7 +58,13 @@ export interface HostApi {
    * is the only owner.
    */
   owners(): Promise<HostApiResult<HostOwner[]>>;
-  /** Creates an empty repository (no README, so the first push sets its branch). */
+  /**
+   * Creates an empty repository (no README, so the first push sets its
+   * branch). A name the host refuses because a repository with no branches
+   * has it (one an interrupted Publish created before its push) gives that
+   * repository, so Publish can be retried under the same name; a repository
+   * that has branches is refused, so Publish never pushes into one.
+   */
   createRepository(input: CreateRepositoryInput): Promise<HostApiResult<HostRepository>>;
   branches(repositoryPath: string): Promise<HostApiResult<string[]>>;
   /**
@@ -122,6 +128,37 @@ function objectOf(result: HostApiResult<unknown>): HostApiResult<Json> {
     : err({ kind: "http", message: "Invalid host response" });
 }
 
+/** One repository answer, read with `parse`. */
+function repositoryFrom(result: HostApiResult<unknown>, parse: (entry: Json) => HostRepository | null): HostApiResult<HostRepository> {
+  const body = objectOf(result);
+  if (!isOk(body)) return body;
+  const repository = parse(body.value);
+  return repository ? ok(repository) : err({ kind: "http", message: "Invalid host response" });
+}
+
+/**
+ * `create`, or, when the host refuses it (`http`: GitHub's 422, GitLab's 400
+ * for a taken name) and `path` exists with no branches, that repository. A
+ * refusal for any other reason, or an unreadable listing, keeps the host's
+ * own reason; auth and network failures stand as they are.
+ */
+async function createOrTakeEmpty(
+  path: string,
+  create: () => Promise<HostApiResult<HostRepository>>,
+  branches: () => Promise<HostApiResult<string[]>>,
+  read: () => Promise<HostApiResult<HostRepository>>,
+): Promise<HostApiResult<HostRepository>> {
+  const created = await create();
+  if (isOk(created) || created.error.kind !== "http") return created;
+  const listed = await branches();
+  if (!isOk(listed)) return created;
+  if (listed.value.length > 0) {
+    return err({ kind: "http", message: `${path} already exists and is not empty. Choose another repository name.` });
+  }
+  const existing = await read();
+  return isOk(existing) ? existing : created;
+}
+
 /** Reads `page=1..` until a short page, `done` says enough, or the page cap. */
 async function paged<T>(
   get: (url: string) => Promise<HostApiResult<unknown>>,
@@ -182,6 +219,8 @@ function gitHubRepository(entry: Json): HostRepository | null {
 function gitHubApi(source: CredentialSource, http: HttpClient): HostApi {
   const get = client(source, http, "application/vnd.github+json");
   const repo = (path: string) => `${GITHUB_API_ORIGIN}/repos/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const branches = (path: string) =>
+    paged(get, (page) => `${repo(path)}/branches?per_page=${PAGE_SIZE}&page=${page}`, (entry) => str(entry, "name") || null, MAX_LIST_PAGES);
   return {
     repositories: () => paged(get, (page) => `${GITHUB_API_ORIGIN}/user/repos?per_page=${PAGE_SIZE}&sort=updated&page=${page}`, gitHubRepository, MAX_LIST_PAGES),
     async owners() {
@@ -195,16 +234,19 @@ function gitHubApi(source: CredentialSource, http: HttpClient): HostApi {
       }, MAX_LIST_PAGES);
       return ok([{ name: login, kind: "user", id: "" }, ...(isOk(organizations) ? organizations.value : [])]);
     },
-    async createRepository({ owner, name, private: isPrivate }) {
+    createRepository({ owner, name, private: isPrivate }) {
       const url = owner.kind === "user"
         ? `${GITHUB_API_ORIGIN}/user/repos`
         : `${GITHUB_API_ORIGIN}/orgs/${encodeURIComponent(owner.name)}/repos`;
-      const created = objectOf(await get(url, { name, private: isPrivate, auto_init: false }));
-      if (!isOk(created)) return created;
-      const repository = gitHubRepository(created.value);
-      return repository ? ok(repository) : err({ kind: "http", message: "Invalid host response" });
+      const path = `${owner.name}/${name}`;
+      return createOrTakeEmpty(
+        path,
+        async () => repositoryFrom(await get(url, { name, private: isPrivate, auto_init: false }), gitHubRepository),
+        () => branches(path),
+        async () => repositoryFrom(await get(repo(path)), gitHubRepository),
+      );
     },
-    branches: (path) => paged(get, (page) => `${repo(path)}/branches?per_page=${PAGE_SIZE}&page=${page}`, (entry) => str(entry, "name") || null, MAX_LIST_PAGES),
+    branches,
     // One request: GitHub returns the whole recursive tree (marked truncated past its limit).
     async blobIds(path, branch, paths) {
       const response = await get(`${repo(path)}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
@@ -239,6 +281,8 @@ function gitLabApi(credential: HostCredential, source: CredentialSource, http: H
       updatedAt: str(entry, "last_activity_at"),
     } : null;
   };
+  const branches = (path: string) =>
+    paged(get, (page) => `${project(path)}/repository/branches?per_page=${PAGE_SIZE}&page=${page}`, (entry) => str(entry, "name") || null, MAX_LIST_PAGES);
   return {
     repositories: () => paged(get, (page) => `${base}/projects?membership=true&order_by=last_activity_at&per_page=${PAGE_SIZE}&page=${page}`, repository, MAX_LIST_PAGES),
     async owners() {
@@ -253,18 +297,21 @@ function gitLabApi(credential: HostCredential, source: CredentialSource, http: H
       }, MAX_LIST_PAGES);
       return ok([{ name: username, kind: "user", id: "" }, ...(isOk(groups) ? groups.value : [])]);
     },
-    async createRepository({ owner, name, private: isPrivate }) {
-      const created = objectOf(await get(`${base}/projects`, {
-        name,
-        path: name,
-        visibility: isPrivate ? "private" : "public",
-        ...(owner.kind === "organization" ? { namespace_id: owner.id } : {}),
-      }));
-      if (!isOk(created)) return created;
-      const result = repository(created.value);
-      return result ? ok(result) : err({ kind: "http", message: "Invalid host response" });
+    createRepository({ owner, name, private: isPrivate }) {
+      const path = `${owner.name}/${name}`;
+      return createOrTakeEmpty(
+        path,
+        async () => repositoryFrom(await get(`${base}/projects`, {
+          name,
+          path: name,
+          visibility: isPrivate ? "private" : "public",
+          ...(owner.kind === "organization" ? { namespace_id: owner.id } : {}),
+        }), repository),
+        () => branches(path),
+        async () => repositoryFrom(await get(project(path)), repository),
+      );
     },
-    branches: (path) => paged(get, (page) => `${project(path)}/repository/branches?per_page=${PAGE_SIZE}&page=${page}`, (entry) => str(entry, "name") || null, MAX_LIST_PAGES),
+    branches,
     // GitLab has no single-request recursive tree, so list only the folders
     // that hold wanted paths, each until its wanted paths are found.
     async blobIds(path, branch, paths) {
