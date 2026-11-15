@@ -27,6 +27,8 @@
  * Scene Linear without half-float targets, and Render Target Captures, which show what the scene view drew.
  */
 import { Camera } from "@babylonjs/core/Cameras/camera";
+import { reflectionDrewWhole } from "./reflection-pass-readiness";
+import { sceneReadinessRevision } from "./scene-readiness-signal";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { AnimatedInputBlockTypes } from "@babylonjs/core/Materials/Node/Blocks/Input/animatedInputBlockTypes";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
@@ -204,6 +206,7 @@ class SceneMirrors {
     // The first draw waits for every reflected material; later draws skip any mesh that is not ready, and stay dirty
     // until a draw has drawn every one.
     let complete = false;
+    const revision = sceneReadinessRevision(this.scene);
     if (!surface.ready) complete = surface.ready = target.texture.isReadyForRendering();
     if (!surface.ready) return;
     const engine = this.scene.getEngine();
@@ -223,7 +226,7 @@ class SceneMirrors {
       if (alpha) alpha.alphaBlend = false;
     }
     this.drew = true;
-    surface.dirty = !(complete || target.texture.isReadyForRendering());
+    surface.dirty = !reflectionDrewWhole(target.texture, revision, complete);
   };
 
   constructor(scene: Scene) {
