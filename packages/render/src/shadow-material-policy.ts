@@ -121,38 +121,58 @@ export function canCacheShadowMaterial(
   // An instance draws its source's geometry, deformers and material at its own world matrix, which the refresh
   // scheduler tracks per caster: it caches as its source would (render hooks exist on the source only).
   const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
+  return canCacheShadowMesh(mesh) && canCacheShadowMaterialFor(material, source.hasVertexAlpha);
+}
+
+/**
+ * The mesh's part of `canCacheShadowMaterial`: no lattice cage on it or its source, and a source `Mesh` without
+ * deformers, dynamic thin instances or render hooks, fully visible.
+ */
+export function canCacheShadowMesh(mesh: AbstractMesh): boolean {
+  const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
   if (hasMeshLatticeDeformer(mesh) || (source !== mesh && hasMeshLatticeDeformer(source))) return false;
-  const padding = Number(material.metadata?.boundsPadding ?? 0);
-  if (!Number.isFinite(padding) || padding > 0) return false;
-  if (
+  return !(
     !(source instanceof Mesh) ||
     source.skeleton ||
     source.morphTargetManager ||
     source.bakedVertexAnimationManager ||
     (source.hasThinInstances && !hasStaticThinInstances(source)) ||
     source.onBeforeRenderObservable.hasObservers() ||
-    source.onBeforeBindObservable.hasObservers()
-  )
-    return false;
+    source.onBeforeBindObservable.hasObservers() ||
+    source.visibility !== 1
+  );
+}
+
+/** What `needAlphaBlendingForMesh` reads of a fully visible mesh: its visibility and whether it has vertex alpha. */
+const fullyVisible = [{ visibility: 1, hasVertexAlpha: false }, { visibility: 1, hasVertexAlpha: true }] as unknown as readonly [AbstractMesh, AbstractMesh];
+
+/**
+ * The Material's part of `canCacheShadowMaterial` for a mesh that passes `canCacheShadowMesh` (so fully visible), given
+ * only whether it has vertex alpha: the same for every such mesh. The stock vertex stage is asked first: only Babylon
+ * 9.29's exact PBR, Standard and Node Materials pass it, and their `needAlphaBlendingForMesh` and
+ * `needAlphaTestingForMesh` (Material's own) read nothing else of the mesh.
+ */
+export function canCacheShadowMaterialFor(material: Material, hasVertexAlpha: boolean): boolean {
+  if (!hasStockVertexStage(material)) return false;
+  const padding = Number(material.metadata?.boundsPadding ?? 0);
+  if (!Number.isFinite(padding) || padding > 0) return false;
+  const mesh = fullyVisible[hasVertexAlpha ? 1 : 0];
   if (
     material.alpha !== 1 ||
-    source.visibility !== 1 ||
     // A wrapper only cages use draws this mesh, which has none, as the stock depth program does.
     (material.shadowDepthWrapper && !isCageOnlyShadowWrapper(material.shadowDepthWrapper)) ||
     (material.transparencyMode !== null &&
       material.transparencyMode !== Material.MATERIAL_OPAQUE) ||
-    material.needAlphaBlendingForMesh(source) ||
-    material.needAlphaTestingForMesh(source)
+    material.needAlphaBlendingForMesh(mesh) ||
+    material.needAlphaTestingForMesh(mesh)
   )
     return false;
-  if (
+  return !(
     material.clipPlane ||
     material.clipPlane2 ||
     material.clipPlane3 ||
     material.clipPlane4 ||
     material.clipPlane5 ||
     material.clipPlane6
-  )
-    return false;
-  return hasStockVertexStage(material);
+  );
 }
