@@ -64,7 +64,10 @@ function fixture() {
     refresh.syncCasters(scene, casters);
     const after = refresh.journalDiagnostics();
     const bumped = Object.keys(named).filter((name) => casters.has(named[name]!) && refresh.casterState(named[name]!)?.revision !== was.get(named[name]!));
-    return { visited: after.visited - before.visited, mismatches: after.mismatches - before.mismatches, bumped, missed: after.missedKinds };
+    return {
+      visited: after.visited - before.visited, moved: after.moved - before.moved, mismatches: after.mismatches - before.mismatches,
+      bumped, missed: after.missedKinds,
+    };
   };
   sync();
   return { scene, shared, other, own, grand, parent, child, frozen, pose, source, instance: instance as InstancedMesh, thin: thin as Mesh, casters, refresh, sync };
@@ -75,18 +78,36 @@ describe("the shadow caster walk of the change journal", () => {
 
   it("walks no caster and bumps no revision when nothing changed", () => {
     const { sync } = fixture();
-    expect(sync()).toEqual({ visited: 0, mismatches: 0, bumped: [], missed: [] });
-    expect(sync()).toEqual({ visited: 0, mismatches: 0, bumped: [], missed: [] });
+    expect(sync()).toEqual({ visited: 0, moved: 0, mismatches: 0, bumped: [], missed: [] });
+    expect(sync()).toEqual({ visited: 0, moved: 0, mismatches: 0, bumped: [], missed: [] });
   });
 
   // Each change walks the casters it reaches, bumps their revisions as the full walk then agrees (no mismatch), and
-  // walks no other caster.
+  // walks no other caster. A caster that only moved reads its world matrix alone (`moved`), with the same result.
   it.each([
     ["its own move", (f: ReturnType<typeof fixture>) => { f.own.position.x += 1; }, ["own"]],
     ["a parent transform node's move", (f: ReturnType<typeof fixture>) => { f.parent.position.y += 1; }, ["child"]],
     ["a grandparent's move", (f: ReturnType<typeof fixture>) => { f.grand.rotation.y += 0.5; }, ["child"]],
     ["a new frozen matrix", (f: ReturnType<typeof fixture>) => { f.frozen.freezeWorldMatrix(Matrix.Translation(4, 0, 0)); }, ["frozen"]],
     ["its frozen matrix rewritten in place", (f: ReturnType<typeof fixture>) => { f.pose.setTranslationFromFloats(5, 0, 0); }, ["frozen"]],
+  ] as const)("reads only the world matrix of a caster after %s", (_name, change, expected) => {
+    const f = fixture();
+    change(f);
+    expect(f.sync()).toEqual({ visited: 0, moved: expected.length, mismatches: 0, bumped: expected, missed: [] });
+    expect(f.sync()).toMatchObject({ visited: 0, moved: 0, bumped: [] });
+  });
+
+  it("reads a moved caster in full when something else changed it too, and bumps nothing for a recompute to the same pose", () => {
+    const f = fixture();
+    f.own.position.x += 1;
+    f.own.isVisible = false;
+    expect(f.sync()).toMatchObject({ visited: 1, moved: 0, mismatches: 0, bumped: ["own"] });
+    expect(f.refresh.casterState(f.own)!.shown).toBe(false);
+    f.own.computeWorldMatrix(true);
+    expect(f.sync()).toMatchObject({ visited: 0, moved: 1, mismatches: 0, bumped: [] });
+  });
+
+  it.each([
     ["its own isVisible", (f: ReturnType<typeof fixture>) => { f.own.isVisible = false; }, ["own"]],
     ["its visibility", (f: ReturnType<typeof fixture>) => { f.own.visibility = 0.5; }, ["own"]],
     ["its source's visibility, for an instance", (f: ReturnType<typeof fixture>) => { f.source.visibility = 0.5; }, ["source", "instance"]],
@@ -104,6 +125,7 @@ describe("the shadow caster walk of the change journal", () => {
     ["its source's sub-mesh range, for an instance", (f: ReturnType<typeof fixture>) => { f.source.subMeshes[0]!.indexCount -= 3; }, ["source", "instance"]],
     ["a thin-instance count", (f: ReturnType<typeof fixture>) => { f.thin.thinInstanceCount = 1; }, ["thin"]],
     ["a new thin-instance buffer", (f: ReturnType<typeof fixture>) => { f.thin.thinInstanceSetBuffer("matrix", placements(2, 1), 16, true); }, ["thin"]],
+    ["vertex alpha on its source", (f: ReturnType<typeof fixture>) => { f.own.hasVertexAlpha = true; }, ["own"]],
   ] as const)("follows %s", (_name, change, expected) => {
     const f = fixture();
     change(f);
@@ -112,7 +134,38 @@ describe("the shadow caster walk of the change journal", () => {
     expect(step.mismatches).toBe(0);
     expect(step.missed).toEqual([]);
     expect(step.visited).toBe(expected.length);
-    expect(f.sync()).toMatchObject({ visited: 0, bumped: [] });
+    expect(f.sync()).toMatchObject({ visited: 0, moved: 0, bumped: [] });
+  });
+
+  it("reads which buffers are updatable only after one was replaced or removed, which no geometry update notifies", () => {
+    const f = fixture();
+    verifyRenderChangeJournal(false);
+    const checks = () => f.refresh.journalDiagnostics().bufferChecks;
+    let before = checks();
+    f.sync();
+    expect(checks()).toBe(before);
+    // An updatable extra buffer: its owner may rewrite it in place, so the caster is no longer cached.
+    f.own.setVerticesData(VertexBuffer.ColorKind, new Float32Array(4 * f.own.getTotalVertices()).fill(1), true);
+    before = checks();
+    expect(f.sync()).toMatchObject({ bumped: ["own"] });
+    expect(checks()).toBe(before + 1);
+    expect(f.refresh.casterState(f.own)!.safe).toBe(false);
+    // Removing it notifies nothing: its write point is Geometry.removeVerticesData.
+    f.own.removeVerticesData(VertexBuffer.ColorKind);
+    expect(f.sync()).toMatchObject({ bumped: ["own"] });
+    expect(f.refresh.casterState(f.own)!.safe).toBe(true);
+  });
+
+  it("reads a Material's part of the shadow cache policy once a walk for every source drawing it", () => {
+    const f = fixture();
+    verifyRenderChangeJournal(false);
+    const before = f.refresh.journalDiagnostics();
+    f.sync();
+    const after = f.refresh.journalDiagnostics();
+    // Five sources share one Material, none with vertex alpha.
+    expect(after.polledSources - before.polledSources).toBe(5);
+    expect(after.cacheChecks - before.cacheChecks).toBe(1);
+    expect(after.sourceChanges - before.sourceChanges).toBe(0);
   });
 
   it("follows an instance moved to another source, as an instance pool moves its members", () => {
@@ -133,7 +186,7 @@ describe("the shadow caster walk of the change journal", () => {
     const f = fixture();
     f.own.billboardMode = 7;
     expect(f.sync()).toMatchObject({ visited: 1, bumped: ["own"], mismatches: 0 });
-    expect(f.sync()).toMatchObject({ visited: 1, bumped: [], mismatches: 0 });
+    expect(f.sync()).toMatchObject({ visited: 0, moved: 1, bumped: [], mismatches: 0 });
   });
 
   it("follows visibility inherited through inheritVisibility", () => {

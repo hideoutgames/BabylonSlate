@@ -364,4 +364,29 @@ function install(): void {
     const journal = journalOf(mesh);
     if (journal) noteMesh(journal, mesh, RenderChange.Geometry);
   };
+
+  // Where Babylon 9.29 replaces a geometry's vertex buffers or index buffer, or their updatability: `removeVerticesData`
+  // notifies nothing, so `onGeometryUpdated` alone cannot tell.
+  const layoutPrototype = Geometry.prototype as unknown as Record<string, (this: Geometry, ...args: unknown[]) => unknown>;
+  for (const name of ["setVerticesBuffer", "removeVerticesData", "setIndices", "setIndexBuffer"]) {
+    const original = layoutPrototype[name];
+    if (typeof original !== "function") throw new Error(`Babylon 9.29 Geometry.${name} not found`);
+    layoutPrototype[name] = function (this: Geometry, ...args: unknown[]) {
+      const layout = this as unknown as LayoutGeometry;
+      layout._hapticBufferLayout = (layout._hapticBufferLayout ?? 0) + 1;
+      return original.apply(this, args);
+    };
+  }
+}
+
+type LayoutGeometry = Geometry & { _hapticBufferLayout?: number };
+
+/**
+ * A number that moves whenever `geometry`'s vertex buffers or index buffer are replaced or removed (`setVerticesBuffer`,
+ * `removeVerticesData`, `setIndices`, `setIndexBuffer`): what decides which of its buffers can be rewritten in place.
+ * Counted for every geometry once any reader opened.
+ */
+export function geometryBufferLayout(geometry: Geometry): number {
+  install();
+  return (geometry as LayoutGeometry)._hapticBufferLayout ?? 0;
 }
