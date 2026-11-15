@@ -22,7 +22,7 @@ A touch-first Babylon.js game engine and editor whose baseline is an 11-inch A16
 - Homepage and project browser, per-document undo, touch + gamepad + keyboard/mouse input.
 - 3D and 2D as flagship modes sharing one scene graph and a viewport toggle; tilemaps and a dedicated 2D physics backend.
 - Behaviour trees authored in React Flow over a Recast navmesh shared by 2D and 3D.
-- Git LFS file locking for collaboration (sync stays in an external git client); web-only game export.
+- Git LFS file locking for collaboration, then built-in Git sync ([Source control](#source-control)); web-only game export.
 - Built and maintained by parallel autonomous agents: narrow package boundaries, deterministic tests, goldens, automated review.
 
 Shipped systems beyond the core (do not rebuild): Save Games (typed definitions, separate preview/player storage), `MovementComponent`, Scene streaming (`SceneStreamingActor`), SceneLayers (2D overlay documents), Game/Scene Subsystems, Design / Landscape / Foliage scene modes, Water, Render Targets, lattice `DeformerComponent`, automatic Model LOD, Data Definitions / Data Trees, Tags, Editor Extensions, PBR or native CEL project rendering.
@@ -35,7 +35,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 - One parent world Scene and one physics world at a time. Streaming adds owned instances beneath it; SceneLayers are a separate overlay stack.
 - No live property editing of authored content while playing (stop, edit, play). Simulate edits runtime objects only; authored documents stay read-only until it stops.
 - No asset marketplace or remote asset fetching.
-- The engine is not a git client: Git LFS locking only.
+- The engine is not a Git client yet: Git LFS locking only. Built-in Git is planned and deferred: [source-control-plan.md](source-control-plan.md).
 - Undo does not cover asset file creation or deletion; those are confirmed instead.
 - No game HUD / UserInterface / widget system (removed; see Asset type catalog).
 
@@ -326,6 +326,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Release is explicit only (Release All My Locks with a warning, or per asset); never on a timer, close or heuristic, because the engine cannot observe a push.
 - External change is normal: on foreground the registry rescans and offers reloads, warning loudly when a dirty document's file changed.
 - Git status is never shown (the engine never reads git state).
+- Planned and deferred: built-in Git (Integrated mode) on the standard Git and LFS protocols with isomorphic-git, GitHub and GitLab as the fully integrated hosts (device sign-in, no Haptic-run server), other hosts by URL and token, credentials per device and host from Engine Settings, and a reworked lock-only (Manual) mode. Decisions and order: [source-control-plan.md](source-control-plan.md). Until a step is built, the decisions above hold.
 
 ## 2D
 
@@ -376,6 +377,7 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
 
 ## Open work
 
+- Built-in Git: the A16 iPad gate in [source-control-plan.md](source-control-plan.md#order) (isomorphic-git through the Capacitor storage adapter, LFS transfer through native HTTP) comes before any Git code.
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
 - Water performance qualification: confirm the many-body CPU savings on the A16 iPad (Medium) and a budget Android phone (Low).
 - Mid-game compiles still holding the picture or blocking: on WebGPU, a depth variant a drawn shadow map's caster has not drawn (a Material swap whose colour variant is ready, a mesh's first instances: created synchronously in the shadow pass, since leaving the caster out would drop its shadow), a geometry pass's first draws (holding the view: an effect or quality change switched mid-game, a Fog Volume coming within reach), spatial-effect and other post-process passes after a graph build (a quality step), and a drawn Effect needing a pipeline for a state no draw has used; in steady frames a mesh whose geometry variant is new (a spawn, a Material change; a light change only for the surfaces above) shows spatial-effect artefacts for a few frames instead. A spawn whose variant the load's warm-up missed (skinned, morphed or instanced meshes, a Material changed at runtime) appears a few frames late, as one actor once every variant its meshes draw with is ready. The first draw of each new program on iPad WebKit WebGL2 still blocks its thread (about 100 ms each) for anything the load did not draw or warm; spreading first draws across frames bounds how many land in one frame, nothing removes them. A new map waits for its casters' pipelines before its first draw. Still open: a first directional map and, on WebGL2, the first draw itself.
