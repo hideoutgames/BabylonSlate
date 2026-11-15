@@ -33,9 +33,12 @@ type Run =
   | { kind: "done"; result: GitBenchmarkResult; json: string }
   | { kind: "failed"; message: string };
 
-/** The open project's repository when Integrated or Manual mode names one, and its default branch; else `main`. */
+/**
+ * The open project's repository and default branch when its settings name one, in any mode (Project Settings shows
+ * both even while Off); else an empty URL and `main`.
+ */
 function prefilledForm(sourceControl: SourceControlProjectSettings | undefined): Form {
-  const repository = sourceControl && sourceControl.mode !== "off" && sourceControl.repositoryUrl ? sourceControl : null;
+  const repository = sourceControl?.repositoryUrl ? sourceControl : null;
   return {
     repositoryUrl: repository?.repositoryUrl ?? "",
     branch: repository?.branch || "main",
@@ -163,7 +166,6 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
                 <FieldLabel htmlFor={`${id}-url`}>Repository URL</FieldLabel>
                 <Input
                   id={`${id}-url`}
-                  className="h-7"
                   inputMode="url"
                   autoCapitalize="off"
                   autoCorrect="off"
@@ -182,7 +184,6 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
                 <FieldLabel htmlFor={`${id}-branch`}>Branch</FieldLabel>
                 <Input
                   id={`${id}-branch`}
-                  className="h-7"
                   autoCapitalize="off"
                   autoCorrect="off"
                   spellCheck={false}
@@ -196,7 +197,6 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
                   <FieldLabel htmlFor={`${id}-blobs`}>LFS Objects</FieldLabel>
                   <NumberField
                     id={`${id}-blobs`}
-                    className="h-7"
                     integer
                     min={1}
                     value={form.blobs}
@@ -209,7 +209,6 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
                   <FieldLabel htmlFor={`${id}-blob-mib`}>Object Size</FieldLabel>
                   <NumberField
                     id={`${id}-blob-mib`}
-                    className="h-7"
                     min={1}
                     unit="MiB"
                     value={form.blobMiB}
@@ -224,8 +223,8 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
               <TriangleAlertIcon className="text-(--warning)" />
               <AlertTitle>Pushes A New Branch</AlertTitle>
               <AlertDescription>
-                Run pushes a new haptic-benchmark-… branch with two commits and the LFS objects to this repository, as
-                the account this device is signed in with for its host. Delete the branch there afterwards.
+                Run pushes a new haptic-benchmark-… branch with the LFS objects to this repository as the account
+                signed in for its host. Delete the branch there afterwards.
               </AlertDescription>
             </Alert>
           </>
@@ -255,10 +254,10 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
         <DialogFooter>
           {run.kind === "idle" ? (
             <>
-              <Button type="button" size="sm" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button type="button" size="touch" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button
                 type="button"
-                size="sm"
+                size="touch"
                 data-testid="git-benchmark-run"
                 disabled={!repositoryUrl || !branch}
                 onClick={() => void start()}
@@ -267,20 +266,20 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
               </Button>
             </>
           ) : run.kind === "running" ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+            <Button type="button" size="touch" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
           ) : (
             <>
-              <Button type="button" size="sm" variant="outline" data-testid="git-benchmark-again" onClick={runAgain}>Run Again</Button>
+              <Button type="button" size="touch" variant="outline" data-testid="git-benchmark-again" onClick={runAgain}>Run Again</Button>
               <Button
                 type="button"
-                size="sm"
+                size="touch"
                 variant="secondary"
                 data-testid="git-benchmark-copy"
                 onClick={() => void copy(run.kind === "done" ? run.json : run.message)}
               >
                 {copyLabel(run.kind === "done" ? "Copy Results" : "Copy Error")}
               </Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+              <Button type="button" size="touch" variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
             </>
           )}
         </DialogFooter>

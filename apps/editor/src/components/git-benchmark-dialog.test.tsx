@@ -74,7 +74,7 @@ describe("GitBenchmarkDialog", () => {
   it.each([
     ["an Integrated project's repository and default branch", { mode: "integrated", repositoryUrl: "https://github.com/acme/game.git", branch: "develop" }, "https://github.com/acme/game.git", "develop"],
     ["a Manual project's repository and branch", { mode: "manual", repositoryUrl: "https://gitlab.com/acme/game.git", branch: "trunk" }, "https://gitlab.com/acme/game.git", "trunk"],
-    ["nothing from a project whose source control is Off", { mode: "off", repositoryUrl: "https://github.com/acme/old.git", branch: "develop" }, "", "main"],
+    ["an Off project's repository and branch, which Project Settings still shows", { mode: "off", repositoryUrl: "https://github.com/acme/old.git", branch: "develop" }, "https://github.com/acme/old.git", "develop"],
     ["nothing from a project without a repository", { mode: "manual", repositoryUrl: "", branch: "trunk" }, "", "main"],
   ] as const)("prefills %s", async (_name, sourceControl, url, branch) => {
     harness.project = projectWith(sourceControl);

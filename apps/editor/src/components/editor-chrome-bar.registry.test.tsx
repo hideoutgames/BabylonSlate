@@ -264,16 +264,20 @@ describe("chrome Git Benchmark", () => {
     expect(screen.queryByRole("menuitem", { name: "Run Git Benchmark…" }) !== null).toBe(shown);
   });
 
-  it("opens the Git Benchmark dialog from the Debug menu", async () => {
+  // On phones the Debug menu sits in the More Tools sheet, which must close so the dialog is not left behind it.
+  it.each([false, true])("opens the Git Benchmark dialog from the Debug menu (phone=%s)", async (phone) => {
+    state.phone = phone;
     state.mobile = true;
     receiveActiveAppSettingsUpdate({ debugMode: true });
     render(<Chrome />);
     expect(screen.queryByTestId("git-benchmark-dialog")).toBeNull();
-    fireEvent.click(screen.getByTestId("debug-menu"));
+    if (phone) fireEvent.click(screen.getByRole("button", { name: "More Tools" }));
+    fireEvent.click(await screen.findByTestId("debug-menu"));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Run Git Benchmark…" }));
     const dialog = await screen.findByTestId("git-benchmark-dialog");
     expect(within(dialog).getByText("Git Benchmark")).toBeTruthy();
     expect((within(dialog).getByTestId("git-benchmark-branch") as HTMLInputElement).value).toBe("main");
+    await waitFor(() => expect(screen.queryByTestId("editor-tools-sheet")).toBeNull());
   });
 });
 
