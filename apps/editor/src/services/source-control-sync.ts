@@ -569,6 +569,30 @@ export class SourceControlSyncService {
     return written;
   }
 
+  /**
+   * The working copy's `paths` as their stats give them (size and time, or
+   * absence; never their bytes), with the newest time; null when storage
+   * keeps no times, so an unchanged file cannot be told apart.
+   */
+  async workingStamp(paths: readonly string[]): Promise<{ key: string; newest: number } | null> {
+    const storage = this.storage;
+    if (!storage) throw new Error("The project's repository is not open.");
+    const parts: string[] = [];
+    let newest = 0;
+    for (const path of paths) {
+      try {
+        const stat = await storage.stat(path);
+        if (stat.mtime === null) return null;
+        newest = Math.max(newest, stat.mtime);
+        parts.push(`${path}\t${stat.size}\t${stat.mtime}`);
+      } catch (error) {
+        if (!isStorageNotFound(error)) throw error;
+        parts.push(`${path}\t-`);
+      }
+    }
+    return { key: parts.join("\n"), newest };
+  }
+
   /** The working copy's file (null when it has none), from the project folder only. */
   async readWorking(path: string): Promise<Uint8Array | null> {
     const storage = this.storage;

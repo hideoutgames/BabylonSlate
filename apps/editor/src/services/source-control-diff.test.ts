@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SceneDiff } from "@haptic/assets/asset-diff";
 import { setEditorQuiet } from "../lib/editor-quiet";
-import { manyActors, sceneAsset } from "../testing/diff-assets";
+import { manyActors, sceneActor, sceneAsset } from "../testing/diff-assets";
 import { integratedSync } from "../testing/integrated-sync";
 import { SourceControlDiffService, type DiffState } from "./source-control-diff";
 
@@ -62,6 +62,46 @@ describe("SourceControlDiffService", () => {
     await vi.waitFor(() => expect((diff.getSnapshot().diff?.view as SceneDiff | undefined)?.counts.changed).toBe(2));
     expect(reads).toHaveBeenCalledTimes(1);
     detach();
+  });
+
+  it("loads the working copy again only when the asset's own files change, not after a save of another asset", async () => {
+    // The clock moves past each save, so no stamp is too close to a write to trust.
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 10, 15, 12) });
+    try {
+      const sync = await integratedSync({ files: { [PATH]: (await sceneAsset([sceneActor("a", "A")])).bytes } });
+      const { service, storage } = sync;
+      await storage.writeBinary(PATH, (await sceneAsset([sceneActor("a", "B")])).bytes);
+      await service.refreshStatus();
+      vi.setSystemTime(Date.now() + 10_000);
+      const working = vi.spyOn(service, "readWorking");
+      const loads = () => working.mock.calls.filter(([path]) => path === PATH).length;
+      const diff = new SourceControlDiffService(service);
+      const detach = diff.attach();
+      diff.open({ path: PATH, name: "Forest", type: "Scene" });
+      expect((await settled(diff)).phase).toBe("ready");
+      expect(loads()).toBe(1);
+
+      // Rock's save runs a status: Forest's stats are looked at, its file is not read.
+      const stamps = vi.spyOn(service, "workingStamp");
+      await storage.writeText("assets/Rock.texture.hasset", "R2");
+      await service.refreshStatus();
+      await vi.waitFor(() => expect(stamps).toHaveBeenCalledTimes(1));
+      await stamps.mock.results[0]!.value;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(diff.getSnapshot().phase).toBe("ready");
+      expect(loads()).toBe(1);
+
+      // Forest saved again: its Changes row is the same, its file is not.
+      vi.setSystemTime(Date.now() + 10_000);
+      await storage.writeBinary(PATH, (await sceneAsset([sceneActor("a", "C")])).bytes);
+      await service.refreshStatus();
+      expect(service.getSnapshot().rows.find((row) => row.id === PATH)?.paths).toEqual([PATH]);
+      await vi.waitFor(() => expect(loads()).toBe(2));
+      expect((await settled(diff)).phase).toBe("ready");
+      detach();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("downloads a base blob the working copy no longer has, without writing it", async () => {

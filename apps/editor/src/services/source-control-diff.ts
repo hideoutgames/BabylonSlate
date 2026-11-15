@@ -60,11 +60,26 @@ function sameRef(a: DiffRef, b: DiffRef): boolean {
   return a.kind === b.kind && (a.kind !== "commit" || a.id === (b as { id: string }).id);
 }
 
-/** What a loaded diff depends on: a change in it loads the diff again. */
-function dependency(target: DiffTarget, snapshot: SyncSnapshot): unknown[] {
-  const working = target.base.kind === "working" || target.compare.kind === "working";
-  return [refCommit(target.base, snapshot), refCommit(target.compare, snapshot), working ? snapshot.rows : null];
+/** The commits a loaded diff shows: when one moves (a commit, pull or fetch), it loads again. */
+function commitsShown(target: DiffTarget, snapshot: SyncSnapshot): string {
+  return `${refCommit(target.base, snapshot)}\n${refCommit(target.compare, snapshot)}`;
 }
+
+function showsWorkingCopy(target: DiffTarget): boolean {
+  return target.base.kind === "working" || target.compare.kind === "working";
+}
+
+/** The asset's own working files: the `.hasset` and the changed blobs its Changes row carries. */
+function workingPaths(target: DiffTarget, snapshot: SyncSnapshot): readonly string[] {
+  return snapshot.rows.find((row) => row.id === target.path)?.paths ?? [target.path];
+}
+
+/**
+ * A file written this close before its stats were read may change again
+ * within the same time stamp (coarse file system clocks), so it counts as
+ * changed once more, as Git's racy check does.
+ */
+const RACY_MS = 2000;
 
 /** The diff's heavy part (worker client, reads), loaded with the first diff. */
 export interface DiffLoader {
@@ -78,14 +93,21 @@ export interface DiffLoader {
  * Conflicts and the toolbar's Base and Compare pickers set it; Actors and
  * Diff read it. The worker and the reads load with the first diff; a diff
  * waits while a game covers the editor, and loads again when a version it
- * shows moves (a save, a commit, a fetch). Closing the project closes it.
+ * shows moves: a commit it names (a commit, a pull, a fetch), or, for the
+ * working copy, the asset's own files (a status after a save of another
+ * asset reloads nothing). Closing the project closes it.
  */
 export class SourceControlDiffService {
   private state: DiffState = IDLE;
   private readonly listeners = new Set<() => void>();
   private loader: Promise<DiffLoader> | null = null;
   private running: AbortController | null = null;
-  private loadedFor: unknown[] | null = null;
+  /** The commits the loaded diff shows. */
+  private loadedFor: string | null = null;
+  /** The working files' stats when the loaded diff read them, and when that was. */
+  private stamp: { key: string; at: number } | null = null;
+  /** The status rows last checked, so only a new status checks the files again. */
+  private rowsSeen: SyncSnapshot["rows"] | null = null;
   private unsubscribe: (() => void) | null = null;
   private readonly sync: SourceControlSyncService;
   private readonly createLoader: (sync: SourceControlSyncService) => Promise<DiffLoader>;
@@ -152,6 +174,7 @@ export class SourceControlDiffService {
   close(): void {
     this.cancel();
     this.loadedFor = null;
+    this.stamp = null;
     this.set(IDLE);
     // The worker and its decoded versions go with the diff.
     void this.loader?.then((loader) => loader.dispose(), () => undefined);
@@ -171,9 +194,29 @@ export class SourceControlDiffService {
       this.close();
       return;
     }
-    // A save, commit, pull or fetch that moved a version this diff shows.
-    const now = dependency(target, snapshot);
-    if (this.loadedFor && now.some((value, index) => value !== this.loadedFor![index])) void this.load();
+    if (this.loadedFor === null) return;
+    // A commit, pull or fetch that moved a commit this diff shows.
+    if (commitsShown(target, snapshot) !== this.loadedFor) {
+      void this.load();
+      return;
+    }
+    // A status ran: only a change to the asset's own files loads the working copy again.
+    if (showsWorkingCopy(target) && snapshot.rows !== this.rowsSeen) {
+      this.rowsSeen = snapshot.rows;
+      void this.reloadIfWorkingChanged(target);
+    }
+  }
+
+  private async reloadIfWorkingChanged(target: DiffTarget): Promise<void> {
+    const stamp = this.stamp;
+    let changed = true;
+    try {
+      const now = stamp ? await this.sync.workingStamp(workingPaths(target, this.sync.getSnapshot())) : null;
+      changed = !stamp || !now || now.key !== stamp.key || now.newest >= stamp.at - RACY_MS;
+    } catch {
+      // Unreadable stats: load again, which reports what is wrong.
+    }
+    if (changed && this.state.target === target && this.stamp === stamp) void this.load();
   }
 
   private async load(): Promise<void> {
@@ -183,10 +226,18 @@ export class SourceControlDiffService {
     const controller = new AbortController();
     this.running = controller;
     const snapshot = this.sync.getSnapshot();
-    this.loadedFor = dependency(target, snapshot);
+    this.loadedFor = commitsShown(target, snapshot);
+    this.rowsSeen = snapshot.rows;
+    this.stamp = null;
     this.set({ ...this.state, phase: "loading", error: null });
     try {
       await whenEditorAwake(controller.signal);
+      if (showsWorkingCopy(target)) {
+        // Read before the files, so a save during the load still counts as a change after it.
+        const at = Date.now();
+        const stamp = await this.sync.workingStamp(workingPaths(target, snapshot)).catch(() => null);
+        if (this.running === controller) this.stamp = stamp ? { key: stamp.key, at } : null;
+      }
       this.loader ??= this.createLoader(this.sync);
       const loader = await this.loader;
       controller.signal.throwIfAborted();
