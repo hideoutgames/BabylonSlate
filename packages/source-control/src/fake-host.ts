@@ -36,6 +36,7 @@ export class FakeGitHost {
   /** `error` answers for the next token polls, in order; once empty, the token is granted. */
   tokenReplies: string[] = ["authorization_pending"];
   account = "test-user";
+  accountId = 1001;
   repositories = ["haptic-test/game", "haptic-test/prototype"];
   /** Repositories listed as Public; every other one is Private. */
   readonly publicRepositories = new Set<string>();
@@ -81,8 +82,8 @@ export class FakeGitHost {
     }
     const token = request.headers.Authorization?.replace(/^Bearer /, "") ?? "";
     if (!bearer || this.refusedTokens.has(token)) return json(401, { message: "Bad credentials" });
-    if (route === "GET https://api.github.com/user") return json(200, { login: this.account });
-    if (route === "GET https://gitlab.com/api/v4/user") return json(200, { username: this.account });
+    if (route === "GET https://api.github.com/user") return json(200, { login: this.account, id: this.accountId });
+    if (route === "GET https://gitlab.com/api/v4/user") return json(200, { username: this.account, id: this.accountId });
     const page = Number(url.searchParams.get("page") ?? "1");
     const firstPage = <T>(items: T[]) => json(200, page === 1 ? items : []);
     const github = (name: string) => ({ full_name: name, default_branch: "main", private: !this.publicRepositories.has(name), pushed_at: "2026-11-01T10:00:00Z" });

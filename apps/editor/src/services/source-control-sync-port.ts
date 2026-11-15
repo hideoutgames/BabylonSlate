@@ -1,8 +1,7 @@
 import {
+  commitAuthorFor,
   parseRepositoryUrl,
   repositoryCloneUrl,
-  type CommitAuthor,
-  type HostCredential,
   type HttpClient,
   type SyncPort,
 } from "@haptic/source-control";
@@ -39,14 +38,6 @@ export function monitoredHttp(http: HttpClient, monitor: TransferMonitor): HttpC
     if (monitor.signal()?.aborted) throw new TransferCancelledError();
     return response;
   };
-}
-
-/**
- * Who commits from this device: the host account the credential belongs to.
- * Hosts accept an empty email; Haptic does not guess an address.
- */
-export function commitAuthorFor(credential: HostCredential | null): CommitAuthor {
-  return { name: credential?.account || "Haptic", email: "" };
 }
 
 /** Test mode: one fake remote per repository and one working copy per folder, for the page's lifetime. */

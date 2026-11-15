@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { HttpRequest } from "@haptic/source-control";
-import { commitAuthorFor, monitoredHttp, TransferCancelledError } from "./source-control-sync-port";
+import { monitoredHttp, TransferCancelledError } from "./source-control-sync-port";
 
 describe("monitoredHttp", () => {
   it("counts the bytes each request sends and receives, and refuses requests once cancelled", async () => {
@@ -27,9 +27,3 @@ describe("monitoredHttp", () => {
   });
 });
 
-describe("commitAuthorFor", () => {
-  it("names the host account, with no guessed email", () => {
-    expect(commitAuthorFor({ origin: "https://github.com", username: "x-access-token", token: "t", kind: "github", account: "ada" })).toEqual({ name: "ada", email: "" });
-    expect(commitAuthorFor(null)).toEqual({ name: "Haptic", email: "" });
-  });
-});

@@ -17,6 +17,7 @@ export { isSourceControlHost, LOCK_POLL_INTERVAL_MS } from "./types";
 export type { HttpClient, HttpRequest, HttpResponse } from "./http";
 export {
   authorizedHttp,
+  commitAuthorFor,
   CREDENTIALS_SECRET_KEY,
   credentialAllowsOrigin,
   credentialHasHostApi,

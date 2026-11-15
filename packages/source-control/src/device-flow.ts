@@ -227,5 +227,6 @@ async function signedInCredential(
   const json = parseJsonObject(response.bodyText);
   const account = stringField(json, config.accountField);
   if (response.status !== 200 || !account) return err(failure(json, response.status));
-  return ok({ ...credential, account });
+  const id = json?.id;
+  return ok({ ...credential, account, ...(typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? { accountId: String(id) } : {}) });
 }

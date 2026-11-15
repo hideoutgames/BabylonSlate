@@ -24,7 +24,7 @@ Accounts belong to this device, not to a project: each person signs in once on e
 
 Use a token with push access to the repository. Haptic sends a token only to the host it was saved for, always over HTTPS, and never writes it to the project files or to Git.
 
-Commits you make in Haptic name your account on the repository's host as their author.
+Commits you make in Haptic name your account on the repository's host as their author. With GitHub or GitLab sign-in they use the host's private no-reply email, so the host links them to your account without showing your email address.
 
 ### The link warning
 

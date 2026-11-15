@@ -66,6 +66,7 @@ describe("device sign-in", () => {
       token: "fake-github-token",
       kind: "github",
       account: "ada",
+      accountId: "1001",
     });
     expect(waits).toEqual([5_000, 5_000, 10_000, 10_000]);
     const polls = host.requests.filter((request) => request.url === "https://github.com/login/oauth/access_token");
@@ -87,7 +88,7 @@ describe("device sign-in", () => {
     const code = await requestDeviceCode("gitlab", "client-2", host.http, clock);
     if (!isOk(code)) throw new Error("no code");
     const result = await completeDeviceSignIn(code.value, "client-2", host.http, clock);
-    expect(isOk(result) && result.value).toMatchObject({ origin: "https://gitlab.com", username: "oauth2", kind: "gitlab", account: "test-user" });
+    expect(isOk(result) && result.value).toMatchObject({ origin: "https://gitlab.com", username: "oauth2", kind: "gitlab", account: "test-user", accountId: "1001" });
     expect(host.requests.at(-1)?.url).toBe("https://gitlab.com/api/v4/user");
   });
 
