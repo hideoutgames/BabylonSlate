@@ -930,8 +930,8 @@ describe("SourceControlService lock ref", () => {
         ["verify", "refs/heads/hotfix"],
       ]);
 
-      // No branch checked out (a detached HEAD, an open that failed or has not finished, a blocked
-      // folder): no push can run, and locks keep working on the team's default branch, never an empty ref.
+      // The branch not known (an open that failed or has not finished): checks list the team's default
+      // branch, never an empty ref, while lock changes wait for the branch.
       refs.length = 0;
       service.setCheckedOutBranch("");
       await service.refresh();
@@ -954,6 +954,41 @@ describe("SourceControlService lock ref", () => {
       service.setCheckedOutBranch("feature");
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(refs).toHaveLength(2);
+    } finally { service.dispose(); }
+  });
+
+  it("holds lock changes in Integrated mode until the checked-out branch is known, and locks on it once it is", async () => {
+    // Before the Git client opens, or after it could not: HEAD may be another branch than the default.
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    const changes = () => refs.filter(([endpoint]) => endpoint !== "verify");
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      await service.autoLock("assets/a.hasset");
+      await expect(service.transferLock("assets/a.hasset", "assets/b.hasset")).resolves.toBeUndefined();
+      expect(changes()).toEqual([]);
+
+      // Edits made meanwhile lock once the branch is known.
+      service.setCheckedOutBranch("feature");
+      await vi.waitFor(() => expect(changes()).toEqual([["create", "refs/heads/feature"]]));
+      expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
+
+      // A release while the branch is unknown says why it waits, and sends nothing.
+      service.setCheckedOutBranch("");
+      await service.releasePath("assets/a.hasset");
+      expect(service.operationError).toMatch(/checked-out branch/);
+      await expect(service.transferLock("assets/a.hasset", "assets/c.hasset")).rejects.toThrow(/checked-out branch/);
+      expect(changes()).toEqual([["create", "refs/heads/feature"]]);
+
+      // A folder Haptic does not run Git in (another Git app owns HEAD) locks on the default branch, as Manual mode does.
+      service.setCheckedOutBranch(null);
+      await service.autoLock("assets/d.hasset");
+      expect(changes()).toEqual([["create", "refs/heads/feature"], ["create", "refs/heads/main"]]);
     } finally { service.dispose(); }
   });
 
@@ -1030,6 +1065,8 @@ describe("SourceControlService around an Integrated push", () => {
         isPathDirty: (path) => path === "assets/dirty.hasset",
       });
       await vi.waitFor(() => expect(service.enabled).toBe(true));
+      // The sync's open names the checked-out branch.
+      service.setCheckedOutBranch("main");
       for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/unpushed.hasset"]) await service.autoLock(path);
       await service.releaseOwnLocks(["assets/pushed.hasset", "assets/dirty.hasset"]);
       expect(fake.snapshot().map((lock) => lock.path).sort()).toEqual(["assets/dirty.hasset", "assets/unpushed.hasset"]);

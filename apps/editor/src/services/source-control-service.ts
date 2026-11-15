@@ -22,6 +22,9 @@ export type DocumentLockEditMode = "editable" | "readonly" | "edit-anyway";
 /** Verify requests one refresh sends while local lock changes keep overtaking the reply. */
 const MAX_OVERTAKEN_VERIFY_ATTEMPTS = 3;
 
+/** Why a lock change waits in Integrated mode before the checked-out branch is known. */
+const LOCK_BRANCH_UNKNOWN = "Locks wait until the repository opens: each lock names the checked-out branch.";
+
 /**
  * The device's credentials and native HTTP. The editor loads them only when
  * a project's mode is not Off; tests pass their own.
@@ -128,8 +131,14 @@ export class SourceControlService {
   };
   private hostOk = false;
   private testMode = false;
-  /** The working copy's checked-out branch in Integrated mode (the sync's HEAD); `""` while none is. */
-  private checkedOut = "";
+  /**
+   * The working copy's checked-out branch in Integrated mode (the sync's
+   * HEAD); `""` while it is not known (the Git client has not opened, or could
+   * not); null where Haptic runs no Git client (a blocked folder).
+   */
+  private checkedOut: string | null = "";
+  /** Paths edited while the checked-out branch was not known, auto-locked once it is. */
+  private heldAutoLocks = new Set<string>();
   /** The branch the last lock requests named, so a move checks the locks again. */
   private lastLockBranch: string | null = null;
   private hosts: SourceControlHosts | null = null;
@@ -200,34 +209,59 @@ export class SourceControlService {
   /**
    * The branch lock requests name. Integrated mode: the working copy's
    * checked-out branch, the one a push sends, so a host that scopes locks by
-   * ref checks that branch. Manual mode (another Git app owns the working
-   * copy) and a working copy with no branch checked out (a detached HEAD, an
-   * open that failed or has not finished, a blocked folder) use the project's
-   * default branch: no push can run then, locks stay advisory and keep
-   * working, and an empty ref would name no branch.
+   * ref checks that branch. Manual mode and a folder Haptic runs no Git client
+   * in (blocked: another Git app owns HEAD) use the project's default branch.
+   * While an Integrated copy's branch is not known (`lockBranchKnown`), checks
+   * list the default branch's locks, and lock changes wait.
    */
   get lockBranch(): string {
-    return this.settings.mode === "integrated" && this.checkedOut !== "" ? this.checkedOut : this.settings.branch;
+    return this.settings.mode === "integrated" && this.checkedOut ? this.checkedOut : this.settings.branch;
   }
 
   /**
-   * The working copy's checked-out branch, from the Integrated sync (`""`
-   * while none is). A move checks the locks again, since a host that scopes
-   * them by ref lists another branch's, and lets auto-lock try each path again.
+   * False in Integrated mode until the sync knows the checked-out branch (the
+   * Git client opens in the seconds after the project, or could not): a lock
+   * made or released then would name the default branch while HEAD may be
+   * another. Auto-lock waits for it (`heldAutoLocks`); a Release says why.
    */
-  setCheckedOutBranch(branch: string): void {
+  get lockBranchKnown(): boolean {
+    return this.settings.mode !== "integrated" || this.checkedOut !== "";
+  }
+
+  /**
+   * The working copy's checked-out branch, from the Integrated sync: `""`
+   * while it is not known, null where Haptic runs no Git client (a blocked
+   * folder). A move checks the locks again, since a host that scopes them by
+   * ref lists another branch's, and lets auto-lock try each path again.
+   */
+  setCheckedOutBranch(branch: string | null): void {
     this.checkedOut = branch;
     this.followLockBranch();
   }
 
   private followLockBranch(): void {
     const branch = this.lockBranch;
-    if (branch === this.lastLockBranch) return;
-    const moved = this.lastLockBranch !== null;
-    this.lastLockBranch = branch;
-    if (!moved || !this.provider || !this.active || this.unsupported) return;
-    this.autoLockAttempted.clear();
-    this.requestRefresh();
+    if (branch !== this.lastLockBranch) {
+      const moved = this.lastLockBranch !== null;
+      this.lastLockBranch = branch;
+      if (moved && this.provider && this.active && !this.unsupported) {
+        this.autoLockAttempted.clear();
+        this.requestRefresh();
+      }
+    }
+    if (this.lockBranchKnown && this.heldAutoLocks.size > 0) {
+      const held = [...this.heldAutoLocks];
+      this.heldAutoLocks.clear();
+      for (const path of held) void this.autoLock(path);
+    }
+  }
+
+  /** Lock changes wait while an Integrated copy's branch is not known: says why, and whether to wait. */
+  private waitForLockBranch(): boolean {
+    if (this.lockBranchKnown) return false;
+    this.lastOperationError = LOCK_BRANCH_UNKNOWN;
+    this.emit();
+    return true;
   }
 
   /** Set while the project's host has no credential on this device; nothing is requested until one is saved. */
@@ -453,6 +487,7 @@ export class SourceControlService {
     // too, even when the new provider never refreshes.
     this.reconcileDocumentLockState();
     this.autoLockAttempted.clear();
+    this.heldAutoLocks.clear();
   }
 
   /** A removed credential (Sign Out) stops every request until a new one is saved. */
@@ -583,6 +618,10 @@ export class SourceControlService {
       return;
     }
     if (this.autoLockAttempted.has(path)) return;
+    if (!this.lockBranchKnown) {
+      this.heldAutoLocks.add(path);
+      return;
+    }
     this.autoLockAttempted.add(path);
     const revision = this.providerRevision;
     let result;
@@ -642,6 +681,7 @@ export class SourceControlService {
     if (!provider || !this.active) return;
     const existing = this.locksByPath.get(oldPath);
     if (!existing?.ours) return;
+    if (this.waitForLockBranch()) throw new Error(LOCK_BRANCH_UNKNOWN);
     this.lastOperationError = null;
     // Lock the moved path before releasing the old one: a failed create keeps
     // the user's lock held rather than releasing it remotely.
@@ -690,7 +730,7 @@ export class SourceControlService {
   }
 
   async release(id: string): Promise<void> {
-    if (!this.provider) return;
+    if (!this.provider || this.waitForLockBranch()) return;
     const revision = this.providerRevision;
     this.lastOperationError = null;
     this.emit();
@@ -705,7 +745,7 @@ export class SourceControlService {
   }
 
   async forceUnlock(id: string): Promise<void> {
-    if (!this.provider) return;
+    if (!this.provider || this.waitForLockBranch()) return;
     const revision = this.providerRevision;
     this.lastOperationError = null;
     this.emit();
@@ -799,7 +839,7 @@ export class SourceControlService {
   }
 
   private async releaseEach(locks: FileLock[]): Promise<void> {
-    if (!this.provider) return;
+    if (!this.provider || this.waitForLockBranch()) return;
     const revision = this.providerRevision;
     this.lastOperationError = null;
     this.emit();

@@ -41,13 +41,18 @@ export function syncLocksFor(sourceControl: SourceControlService): SyncLocks {
 
 /**
  * Keeps the lock service's requests on the working copy's checked-out branch
- * (the sync snapshot's, `""` while none is), from now until the returned stop.
+ * (the sync snapshot's: `""` while it is not known, so lock changes wait;
+ * null for a blocked folder, which Haptic runs no Git client in), from now
+ * until the returned stop.
  */
 export function followCheckedOutBranch(
   sync: Pick<SourceControlSyncService, "subscribe" | "getSnapshot">,
   sourceControl: Pick<SourceControlService, "setCheckedOutBranch">,
 ): () => void {
-  const follow = () => sourceControl.setCheckedOutBranch(sync.getSnapshot().branch);
+  const follow = () => {
+    const { blocked, branch } = sync.getSnapshot();
+    sourceControl.setCheckedOutBranch(blocked ? null : branch);
+  };
   follow();
   return sync.subscribe(follow);
 }
