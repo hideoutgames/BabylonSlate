@@ -9,8 +9,8 @@ export const INTEGRATED_REPOSITORY = "https://github.com/team/game.git";
 
 /** Forest (a Scene) and Rock (a Texture), as the registry would describe them. */
 export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
-  path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobs: [] }
-    : path === "assets/Rock.texture.hasset" ? { name: "Rock", type: "Texture", blobs: [] }
+  path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobPaths: [] }
+    : path === "assets/Rock.texture.hasset" ? { name: "Rock", type: "Texture", blobPaths: [] }
       : null;
 
 /**

@@ -11,8 +11,8 @@ const AUTHOR = { name: "ada", email: "" };
 const BLOB = "a".repeat(64);
 const BLOB_PATH = `assets/.blobs/${BLOB}`;
 const lookup: ChangeLookup = (path) =>
-  path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobs: [BLOB] }
-    : path === "assets/Rock.texture.hasset" ? { name: "Rock", type: "Texture", blobs: [] }
+  path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobPaths: [BLOB_PATH] }
+    : path === "assets/Rock.texture.hasset" ? { name: "Rock", type: "Texture", blobPaths: [] }
       : null;
 
 function lock(path: string, ownerName: string, ours: boolean): FileLock {

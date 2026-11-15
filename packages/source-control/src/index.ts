@@ -2,7 +2,8 @@
 // REST APIs, the pushed-lock comparator, the fake host, the Git core (`./git`, which brings
 // isomorphic-git), `./fake-sync` and `./git-benchmark` are subpath exports, so they load
 // only with the screens that use them. `SyncPort`'s types and its small pure helpers (errors,
-// Publish's `.gitattributes` and `.gitignore` text) are here; its implementations are not.
+// Publish's `.gitattributes` and `.gitignore` text, the `.blobs` path rule) are here; its
+// implementations are not.
 export type {
   FileLock,
   GitConfigPrefill,
@@ -40,6 +41,7 @@ export {
   type RepositoryLocation,
 } from "./lfs-endpoint";
 export { parseGitConfigPrefill } from "./git-config";
+export { lfsObjectId } from "./lfs-pointer";
 export type {
   ChangeKind,
   CommitAuthor,

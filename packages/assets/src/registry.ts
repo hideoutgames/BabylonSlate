@@ -5,7 +5,8 @@ import {
   type HassetHeader,
 } from "./hasset";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
-import type { ContentRoot } from "./content-root";
+import { contentRootBlobFolder, type ContentRoot } from "./content-root";
+import { BLOBS_DIR } from "./hproject";
 import type { EncodeJobGuard, EncodeJobResult, EncodeQueue } from "./encode-queue";
 import type { HdrEnvironmentConverter } from "./hdr-environment";
 import {
@@ -884,8 +885,8 @@ export class AssetRegistry {
 
   private blobsOf(root: ContentRoot): BlobStore {
     const storage = this.storageOf(root);
-    const dir = `${root.pathPrefix}/.blobs`;
-    if (storage === this.storage && dir === "assets/.blobs") return this.blobs;
+    const dir = contentRootBlobFolder(root);
+    if (storage === this.storage && dir === BLOBS_DIR) return this.blobs;
     return createVfsBlobStore(storage, dir);
   }
 

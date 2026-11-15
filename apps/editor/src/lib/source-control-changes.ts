@@ -1,24 +1,31 @@
 import { PROJECT_FILE } from "@haptic/core";
-import type { IndexedAsset } from "@haptic/assets";
-import type { ChangeKind, FileChange, PullChoice, PullChoices, PullConflict } from "@haptic/source-control";
+import { contentRootBlobFolder, FOLDER_MARKER_NAME, type AssetRegistry } from "@haptic/assets";
+import { lfsObjectId, type ChangeKind, type FileChange, type PullChoice, type PullChoices, type PullConflict } from "@haptic/source-control";
 
 /** What the Source Control tab knows about an indexed asset: its registry entry, read without opening the file. */
 export interface ChangedAssetInfo {
   name: string;
   type: string;
-  /** SHA-256 names of the blobs its chunks are stored in. */
-  blobs: readonly string[];
+  /**
+   * Paths of the blobs its chunks are stored in, in its own root's blob
+   * folder (`assets/.blobs/<sha256>`, `plugins/<name>/assets/.blobs/<sha256>`):
+   * a blob that two roots hold is two files, each loaded by its own root's assets.
+   */
+  blobPaths: readonly string[];
 }
 
 export type ChangeLookup = (path: string) => ChangedAssetInfo | null;
 
 /** Changed `.hasset` files as the asset registry indexes them: no file is read. */
-export function registryChangeLookup(registry: { getByPath(path: string): IndexedAsset | undefined } | null | undefined): ChangeLookup {
+export function registryChangeLookup(registry: Pick<AssetRegistry, "getByPath" | "getRoot"> | null | undefined): ChangeLookup {
   return (path) => {
     const asset = registry?.getByPath(path);
-    if (!asset) return null;
-    const blobs = asset.header.chunks.flatMap((chunk) => ("blob" in chunk.locator ? [chunk.locator.blob] : []));
-    return { name: asset.header.name, type: asset.header.type, blobs };
+    if (!registry || !asset) return null;
+    const names = asset.header.chunks.flatMap((chunk) => ("blob" in chunk.locator ? [chunk.locator.blob] : []));
+    // Only placeholders lack a mounted root, and they have no chunks.
+    const root = names.length > 0 ? registry.getRoot(asset.rootId) : undefined;
+    const folder = root ? contentRootBlobFolder(root) : null;
+    return { name: asset.header.name, type: asset.header.type, blobPaths: folder ? names.map((name) => `${folder}/${name}`) : [] };
   };
 }
 
@@ -46,13 +53,7 @@ export interface GroupedChanges {
   loose: readonly string[];
 }
 
-const BLOB_PATH = /(?:^|\/)\.blobs\/([0-9a-f]{64})$/;
-const FOLDER_MARKER = ".haptic-folder";
 const ASSET_EXTENSION = /(\.[a-z0-9-]+)?\.hasset$/i;
-
-function blobName(path: string): string | null {
-  return BLOB_PATH.exec(path)?.[1] ?? null;
-}
 
 /** `assets/Levels/Forest.scene.hasset` → `Levels`; a root asset → `Assets`; anything outside assets → `Project`. */
 function folderLabel(path: string): string {
@@ -66,14 +67,13 @@ function fileName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
-function describe(change: FileChange, lookup: ChangeLookup): Omit<ChangeRow, "paths"> {
+function describe(change: FileChange, asset: ChangedAssetInfo | null): Omit<ChangeRow, "paths"> {
   const { path, kind } = change;
   if (path === PROJECT_FILE) return { id: path, name: "Project Settings", folder: "Project", kind, type: "Project" };
-  if (fileName(path) === FOLDER_MARKER) {
-    const folder = path.slice(0, -(FOLDER_MARKER.length + 1));
+  if (fileName(path) === FOLDER_MARKER_NAME) {
+    const folder = path.slice(0, -(FOLDER_MARKER_NAME.length + 1));
     return { id: path, name: fileName(folder), folder: folderLabel(folder), kind, type: "Folder" };
   }
-  const asset = path.endsWith(".hasset") ? lookup(path) : null;
   if (asset) return { id: path, name: asset.name, folder: folderLabel(path), kind, type: asset.type };
   return { id: path, name: fileName(path).replace(ASSET_EXTENSION, ""), folder: folderLabel(path), kind, type: null };
 }
@@ -84,30 +84,28 @@ function describe(change: FileChange, lookup: ChangeLookup): Omit<ChangeRow, "pa
  * Blobs are never listed alone. Rows keep status order (by path).
  */
 export function groupChanges(changes: readonly FileChange[], lookup: ChangeLookup): GroupedChanges {
-  const blobs = new Map<string, FileChange>();
+  /** Changed blob files by path: each root holds its own copy of a blob. */
+  const blobs = new Map<string, ChangeKind>();
   const others: FileChange[] = [];
   for (const change of changes) {
-    const name = blobName(change.path);
-    if (name) blobs.set(name, change);
+    if (lfsObjectId(change.path)) blobs.set(change.path, change.kind);
     else others.push(change);
   }
   const claimed = new Set<string>();
   const rows = others.map((change): ChangeRow => {
-    const row = describe(change, lookup);
-    const own = change.path.endsWith(".hasset") && change.kind !== "deleted" ? lookup(change.path) : null;
+    const asset = change.path.endsWith(".hasset") ? lookup(change.path) : null;
     const paths = [change.path];
-    for (const name of own?.blobs ?? []) {
-      const blob = blobs.get(name);
-      if (!blob || claimed.has(blob.path)) continue;
-      // A blob two changed assets share goes with the first; `commitPaths` adds it to the other's commit too.
-      claimed.add(blob.path);
-      paths.push(blob.path);
+    if (change.kind !== "deleted") {
+      for (const path of asset?.blobPaths ?? []) {
+        if (!blobs.has(path) || claimed.has(path)) continue;
+        // A blob two changed assets share goes with the first; `commitPaths` adds it to the other's commit too.
+        claimed.add(path);
+        paths.push(path);
+      }
     }
-    return { ...row, paths };
+    return { ...describe(change, asset), paths };
   });
-  const loose = [...blobs.values()]
-    .filter((change) => !claimed.has(change.path) && change.kind !== "deleted")
-    .map((change) => change.path);
+  const loose = [...blobs].filter(([path, kind]) => !claimed.has(path) && kind !== "deleted").map(([path]) => path);
   return { rows, loose };
 }
 
@@ -118,21 +116,15 @@ export function groupChanges(changes: readonly FileChange[], lookup: ChangeLooku
  * teammate would need to load it.
  */
 export function commitPaths(grouped: GroupedChanges, chosen: ReadonlySet<string>, lookup: ChangeLookup): string[] {
-  const changedBlobs = new Map<string, string>();
-  for (const row of grouped.rows) {
-    for (const path of row.paths.slice(1)) {
-      const name = blobName(path);
-      if (name) changedBlobs.set(name, path);
-    }
-  }
+  // A row's paths after its own file are the changed blobs it claimed.
+  const changedBlobs = new Set(grouped.rows.flatMap((row) => row.paths.slice(1)));
   const out = new Set<string>(grouped.loose);
   for (const row of grouped.rows) {
     if (!chosen.has(row.id)) continue;
     for (const path of row.paths) out.add(path);
     if (row.kind === "deleted" || !row.id.endsWith(".hasset")) continue;
-    for (const name of lookup(row.id)?.blobs ?? []) {
-      const path = changedBlobs.get(name);
-      if (path) out.add(path);
+    for (const path of lookup(row.id)?.blobPaths ?? []) {
+      if (changedBlobs.has(path)) out.add(path);
     }
   }
   return [...out].sort();

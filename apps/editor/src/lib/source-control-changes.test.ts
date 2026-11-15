@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { commitPaths, conflictChoices, groupChanges, groupConflicts, type ChangeLookup } from "./source-control-changes";
+import { AssetRegistry, createVfsBlobStore, encodeHasset, projectContentRoot, readHassetHeader } from "@haptic/assets";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import { commitPaths, conflictChoices, groupChanges, groupConflicts, registryChangeLookup, type ChangeLookup } from "./source-control-changes";
 
 const BLOB_A = "a".repeat(64);
 const BLOB_B = "b".repeat(64);
@@ -8,10 +10,10 @@ const BLOB_LOOSE = "d".repeat(64);
 const BLOB_GONE = "e".repeat(64);
 const blob = (name: string) => `assets/.blobs/${name}`;
 
-const ASSETS: Record<string, { name: string; type: string; blobs: string[] }> = {
-  "assets/Levels/Forest.scene.hasset": { name: "Forest", type: "Scene", blobs: [BLOB_A, BLOB_SHARED] },
-  "assets/Textures/Rock.texture.hasset": { name: "Rock Albedo", type: "Texture", blobs: [BLOB_B, BLOB_SHARED] },
-  "assets/Hero.class.hasset": { name: "Hero", type: "Class", blobs: [] },
+const ASSETS: Record<string, { name: string; type: string; blobPaths: string[] }> = {
+  "assets/Levels/Forest.scene.hasset": { name: "Forest", type: "Scene", blobPaths: [blob(BLOB_A), blob(BLOB_SHARED)] },
+  "assets/Textures/Rock.texture.hasset": { name: "Rock Albedo", type: "Texture", blobPaths: [blob(BLOB_B), blob(BLOB_SHARED)] },
+  "assets/Hero.class.hasset": { name: "Hero", type: "Class", blobPaths: [] },
 };
 const lookup: ChangeLookup = (path) => ASSETS[path] ?? null;
 
@@ -66,6 +68,74 @@ describe("commitPaths", () => {
 
   it("commits only the loose blobs when no row is chosen", () => {
     expect(commitPaths(grouped, new Set(), lookup)).toEqual([blob(BLOB_LOOSE)]);
+  });
+});
+
+describe("blobs in more than one content root", () => {
+  /** Above the inline limit, so the chunk is stored as a blob of its root. */
+  const PAYLOAD = new Uint8Array(70 * 1024).map((_, index) => index % 251);
+
+  /** A Texture imported into the project, then copied into a plugin before either is committed. */
+  async function textureCopiedIntoPlugin() {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Game");
+    const projectBlobs = createVfsBlobStore(storage, "assets/.blobs");
+    const bytes = await encodeHasset({
+      header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], requiredVariableNames: [],
+        guid: "rock", type: "Texture", name: "Rock", engineVersion: "0.0.0",
+        version: 1, mode: "thin", dependencies: [], parentClass: null, payload: {},
+      },
+      chunks: [{ id: "payload", kind: "payload", mime: "application/octet-stream", data: PAYLOAD }],
+      writeBlob: (sha256, data) => projectBlobs.writeBlob(sha256, data),
+    });
+    await storage.mkdir("assets", true);
+    await storage.writeBinary("assets/Rock.texture.hasset", bytes);
+    const locator = readHassetHeader(bytes).chunks[0]!.locator;
+    if (!("blob" in locator)) throw new Error("The fixture chunk was stored inline");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.mountRoot({ id: "plugin:props", kind: "plugin", pathPrefix: "plugins/Props/assets" });
+    const copy = await registry.duplicateAsset("rock", "plugin:props");
+    expect(copy.path).toBe("plugins/Props/assets/Rock.texture.hasset");
+    // Each root keeps its own blob store, so the same blob is now in two folders.
+    const sha = locator.blob;
+    expect(await storage.exists(`plugins/Props/assets/.blobs/${sha}`)).toBe(true);
+    return { registry, sha };
+  }
+
+  it("gives each asset the blob in its own root's folder, so committing one asset commits the blob it loads", async () => {
+    const { registry, sha } = await textureCopiedIntoPlugin();
+    const lookup = registryChangeLookup(registry);
+    const grouped = groupChanges([
+      { path: `assets/.blobs/${sha}`, kind: "added" },
+      { path: "assets/Rock.texture.hasset", kind: "added" },
+      { path: `plugins/Props/assets/.blobs/${sha}`, kind: "added" },
+      { path: "plugins/Props/assets/Rock.texture.hasset", kind: "added" },
+    ], lookup);
+    expect(grouped.rows.map((row) => row.paths)).toEqual([
+      ["assets/Rock.texture.hasset", `assets/.blobs/${sha}`],
+      ["plugins/Props/assets/Rock.texture.hasset", `plugins/Props/assets/.blobs/${sha}`],
+    ]);
+    expect(grouped.loose).toEqual([]);
+    expect(commitPaths(grouped, new Set(["assets/Rock.texture.hasset"]), lookup)).toEqual([
+      `assets/.blobs/${sha}`,
+      "assets/Rock.texture.hasset",
+    ]);
+  });
+
+  it("asks once per asset in a pull conflict, each with the blob in its own root's folder", async () => {
+    const { registry, sha } = await textureCopiedIntoPlugin();
+    const rows = groupConflicts([
+      { path: `assets/.blobs/${sha}`, mine: "added", theirs: "added" },
+      { path: "assets/Rock.texture.hasset", mine: "added", theirs: "added" },
+      { path: `plugins/Props/assets/.blobs/${sha}`, mine: "added", theirs: "added" },
+      { path: "plugins/Props/assets/Rock.texture.hasset", mine: "added", theirs: "added" },
+    ], registryChangeLookup(registry));
+    expect(rows.map((row) => row.paths)).toEqual([
+      ["assets/Rock.texture.hasset", `assets/.blobs/${sha}`],
+      ["plugins/Props/assets/Rock.texture.hasset", `plugins/Props/assets/.blobs/${sha}`],
+    ]);
   });
 });
 
