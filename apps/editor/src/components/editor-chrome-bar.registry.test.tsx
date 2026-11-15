@@ -19,6 +19,7 @@ import {
 } from "@haptic/core";
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import { KeybindProvider } from "../context/keybind-context";
 import { MaterialRenderControlProvider } from "../context/material-render-control-context";
@@ -44,6 +45,13 @@ const state = vi.hoisted(() => ({
   stopSession: vi.fn(),
   setActiveDocument: vi.fn(),
   closeDocument: vi.fn(),
+  /** iOS or Android; false is what jsdom (the web) answers. */
+  mobile: false,
+}));
+
+vi.mock("@haptic/vfs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@haptic/vfs")>()),
+  isMobilePlatform: () => state.mobile,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -135,6 +143,8 @@ afterEach(() => {
   state.stopSession.mockClear();
   state.setActiveDocument.mockClear();
   state.closeDocument.mockClear();
+  state.mobile = false;
+  receiveActiveAppSettingsUpdate({ debugMode: false });
 });
 
 describe("chrome Source Control tab", () => {
@@ -234,6 +244,36 @@ describe("chrome Play Mode", () => {
     // Choosing a mode keeps the Debug menu open.
     fireEvent.click(screen.getByTestId("play-mode-play"));
     await waitFor(() => expect(screen.getByTestId("play-preview").textContent).toContain("Play"));
+  });
+});
+
+// The benchmark clones into a scratch folder through a second storage instance, which only iOS and Android bind
+// separately from the open project; a release build has no console, so the Debug menu is its way in.
+describe("chrome Git Benchmark", () => {
+  it.each([
+    { debugMode: false, mobile: false, shown: false },
+    { debugMode: false, mobile: true, shown: false },
+    { debugMode: true, mobile: false, shown: false },
+    { debugMode: true, mobile: true, shown: true },
+  ])("offers Run Git Benchmark… with Debug Mode $debugMode on mobile $mobile: $shown", async ({ debugMode, mobile, shown }) => {
+    state.mobile = mobile;
+    receiveActiveAppSettingsUpdate({ debugMode });
+    render(<Chrome />);
+    fireEvent.click(screen.getByTestId("debug-menu"));
+    await screen.findByTestId("play-mode-play");
+    expect(screen.queryByRole("menuitem", { name: "Run Git Benchmark…" }) !== null).toBe(shown);
+  });
+
+  it("opens the Git Benchmark dialog from the Debug menu", async () => {
+    state.mobile = true;
+    receiveActiveAppSettingsUpdate({ debugMode: true });
+    render(<Chrome />);
+    expect(screen.queryByTestId("git-benchmark-dialog")).toBeNull();
+    fireEvent.click(screen.getByTestId("debug-menu"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Run Git Benchmark…" }));
+    const dialog = await screen.findByTestId("git-benchmark-dialog");
+    expect(within(dialog).getByText("Git Benchmark")).toBeTruthy();
+    expect((within(dialog).getByTestId("git-benchmark-branch") as HTMLInputElement).value).toBe("main");
   });
 });
 

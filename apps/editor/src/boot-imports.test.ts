@@ -100,7 +100,8 @@ describe("editor boot imports", () => {
 
   // A project whose source control mode is Off loads none of it: the credential store, device sign-in, the host REST
   // APIs, the pushed-lock check, the Git core (isomorphic-git) and its port factory, Clone, Publish, the Pull flow and
-  // the Source Control tab's windows load on first use, and the Debug Mode Git benchmark only when it is called.
+  // the Source Control tab's windows load on first use, and the Debug Mode Git benchmark's dialog on its first open
+  // and its runner only when it runs.
   it("keep Source Control's accounts, sign-in, host APIs, Git core and windows out of the Homepage and the Editor route", () => {
     const ASSET_DIFF_IMPORT = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["']@haptic\/assets\/asset-diff(?:-client)?["']/m;
     const SOURCE_CONTROL_SUBPATH = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["'](?:@haptic\/source-control\/(?:device-flow|host-api|pushed-locks|token-refresh|fake-host|git|git-benchmark|fake-sync)|isomorphic-git(?:\/[^'"]*)?)["']/m;
@@ -115,6 +116,7 @@ describe("editor boot imports", () => {
       "services/source-control-pushed.ts",
       "lib/use-source-control-credentials.ts",
       "lib/git-benchmark-runner.ts",
+      "components/git-benchmark-dialog.tsx",
       "components/engine-source-control-settings.tsx",
       "components/project-source-control-host-fields.tsx",
       "components/source-control-sign-in-dialog.tsx",
