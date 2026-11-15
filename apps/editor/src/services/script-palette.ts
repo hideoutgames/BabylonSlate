@@ -6,7 +6,8 @@
 import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
 import { isPureAnimGraphHost } from "../lib/class-event-catalog";
-import { EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
+import { ANIM_NOTIFY_EVENT_TYPE, EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
+import { animEventNodeTitle } from "../lib/anim-graph-events";
 import { sceneAssetClassId } from "@haptic/object-model";
 import type { PaletteNode } from "@haptic/graph-ui";
 import { classLineageIncludesAny, isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
@@ -294,6 +295,7 @@ export function scriptPaletteInjectorKey(
     assetType: options?.assetType ?? null,
     animationGraphHost: options?.animationGraphHost ?? null,
     animPose: options?.animPose ?? null,
+    animEvents: options?.animEvents ?? [],
     activeFunctionId: options?.activeFunctionId ?? null,
     classes: classIds.map((id) => [id, parentOf(id) ?? null]),
     graph: graphPaletteMemberFingerprint(options?.graph),
@@ -379,6 +381,18 @@ function scriptPaletteCatalogNodes(
     });
 }
 
+/** The Animation Object's Event <Name> rows, one per Animation Event its graph can fire. */
+function animEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
+  if (options?.animationGraphHost !== "object" || options.activeFunctionId) return [];
+  const def = nodeRegistry.get(ANIM_NOTIFY_EVENT_TYPE);
+  if (!def) return [];
+  return (options.animEvents ?? []).map((event) => {
+    const title = animEventNodeTitle(event.name);
+    const defaultData = { eventName: event.name, window: event.window, title };
+    return { id: `${ANIM_NOTIFY_EVENT_TYPE}:${event.name}`, nodeType: ANIM_NOTIFY_EVENT_TYPE, title, category: def.category, pins: def.pins(defaultData), defaultData };
+  });
+}
+
 function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
   if (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick")) return [];
   return (options?.inputAssets ?? []).flatMap((asset) => {
@@ -452,6 +466,7 @@ function scriptPaletteInjectorNodes(
   }
   return markOutOfContext(
     [
+      ...animEventPaletteNodes(nodeRegistry, options),
       ...inputEventPaletteNodes(nodeRegistry, options),
       ...callCustomEventPaletteNodes(nodeRegistry, options),
       ...dispatcherPaletteNodes(nodeRegistry, options),

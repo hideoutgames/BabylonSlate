@@ -2,6 +2,7 @@ import { sniffSourceImageSize } from "./image-size";
 import {
   animationEventActionGuids,
   normalizeSpriteAnimationFrameEvents,
+  type AnimationClipEvent,
   type SpriteAnimationFrameEventPayload,
 } from "./animation-events";
 import {
@@ -445,4 +446,19 @@ export function hydrateSpriteAnimations(
     next.set(guid, resolveSpriteAnimation(payload, { sprite: (spriteGuid) => sources.sprites.get(spriteGuid), textureSize }));
   }
   return next;
+}
+
+/** A Sprite Animation's named frame events as its players fire them: each at its frame's start. */
+export function spriteAnimationClipEvents(payload: SpriteAnimationPayload): AnimationClipEvent[] {
+  return payload.frames.flatMap((frame, index) =>
+    (frame.events ?? [])
+      .filter((event) => event.name.length > 0)
+      .map((event) => ({
+        name: event.name,
+        timeMs: spriteAnimationFrameStartMs(payload, index),
+        durationMs: 0,
+        triggerWeight: event.triggerWeight,
+        action: event.action,
+      })),
+  );
 }

@@ -119,7 +119,15 @@ export type ScriptPaletteOptions = ClassEventOptions & {
    * Timeline's re-fired events and the clips' own.
    */
   timelineAssets?: readonly TimelineScriptAsset[];
+  /**
+   * An Animation Object's Animation Events: the names on the clips its graph can play and its states' own events.
+   * Each gets an Event <Name> row; a window's has Begin and End.
+   */
+  animEvents?: readonly AnimEventPaletteEntry[];
 };
+
+/** An Animation Event name the Animation Object can run; `window` when it has a begin and an end. */
+export type AnimEventPaletteEntry = { name: string; window: boolean };
 
 /** A clip of the owner, its `TimelineClip:<document>:<clip>` class and the dispatchers its Custom Event Tracks declare. */
 export type PaletteOwnedTimelineClip = {

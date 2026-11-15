@@ -290,6 +290,8 @@ async function saveSpeedBlendSpace(
       { animationGuid: walk, x: RUN_SPEED - 1, y: 0, rateScale: 1 },
       { animationGuid: run, x: RUN_SPEED, y: 0, rateScale: 1 },
     ],
+    // One footstep however Walk and Run blend: only the heavier sample's events fire.
+    eventMode: "highestWeight",
   };
   return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
 }

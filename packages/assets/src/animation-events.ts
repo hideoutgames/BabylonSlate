@@ -116,3 +116,20 @@ export function nextAnimationEventId(events: ReadonlyArray<{ id: string }>): str
   while (used.has(`event-${index}`)) index += 1;
   return `event-${index}`;
 }
+
+/** An event as an Animation Graph player fires it: its name, time and length in ms, Trigger Weight and action. */
+export interface AnimationClipEvent {
+  name: string;
+  timeMs: number;
+  durationMs: number;
+  triggerWeight: number;
+  action: AnimationEventAction | null;
+}
+
+/** An Animation's named events as its players fire them; unnamed events never fire. */
+export function animationClipEvents(events: readonly AnimationEventPayload[] | undefined): AnimationClipEvent[] {
+  return (events ?? [])
+    .filter((event) => event.name.length > 0)
+    .map(({ name, timeMs, durationMs, triggerWeight, action }) => ({ name, timeMs, durationMs, triggerWeight, action }));
+}
+

@@ -356,7 +356,8 @@ function isAnimCatalogNodeAllowed(
   options?: ClassEventOptions,
 ): boolean {
   if (host === "object") {
-    return nodeId.startsWith("anim.event.");
+    // Animation Event nodes come one per event name (`animEventPaletteNodes`), never as a bare node.
+    return nodeId.startsWith("anim.event.") && nodeId !== "anim.event.notify";
   }
   if (host === "rule") {
     return nodeId.startsWith("anim.state.");

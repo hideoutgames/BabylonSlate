@@ -41,6 +41,7 @@ function payload(extra: Partial<BlendSpacePayload> = {}): BlendSpacePayload {
       { animationGuid: "walk", x: 2, y: 0, rateScale: 1 },
       { animationGuid: "run", x: 6, y: 0, rateScale: 1 },
     ],
+    eventMode: "highestWeight",
     ...extra,
   };
 }
