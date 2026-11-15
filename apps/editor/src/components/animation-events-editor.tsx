@@ -55,6 +55,7 @@ export function AnimationEventsEditor({
   timed,
   bones,
   newEventTimeMs = 0,
+  selectedIds,
   onChange,
   mergeKeyPrefix,
   "data-testid": testId,
@@ -64,6 +65,8 @@ export function AnimationEventsEditor({
   bones: boolean;
   /** Where Add Event places a new event (an Animation's). */
   newEventTimeMs?: number;
+  /** Events selected elsewhere (the Timeline): their cards open and are marked. */
+  selectedIds?: ReadonlySet<string>;
   onChange?: (events: EditableAnimationEvent[], mergeKey?: string) => void;
   mergeKeyPrefix: string;
   "data-testid"?: string;
@@ -201,12 +204,16 @@ export function AnimationEventsEditor({
     <ModuleStage id={`${mergeKeyPrefix}-events`} title="Events" accentRole="flow">
       <div data-testid={testId} className="flex flex-col gap-1">
         {events.map((event) => (
-          <ModuleCard
+          <div
             key={event.id}
+            data-selected={selectedIds?.has(event.id) ? "true" : undefined}
+            className="rounded-md data-[selected=true]:ring-1 data-[selected=true]:ring-primary"
+          >
+          <ModuleCard
             id={event.id}
             title={event.name || "Unnamed Event"}
             summary={eventSummary(event)}
-            open={!collapsed.has(event.id)}
+            open={selectedIds?.has(event.id) === true || !collapsed.has(event.id)}
             onOpenChange={(open) =>
               setCollapsed((current) => {
                 const next = new Set(current);
@@ -232,6 +239,7 @@ export function AnimationEventsEditor({
               </Button>
             </div>
           </ModuleCard>
+          </div>
         ))}
         <div className="flex py-1">
           <Button

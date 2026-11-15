@@ -112,6 +112,7 @@ Give looping players the same **Sync Group** name, in the state's or the player'
 
 Each event runs the Animation Object's [Animation Event](../scripting/animation/animation-event.md) node of the same name, and only the graph that fired it runs it. An event's **Action** (Play Sound, Spawn Particle System) runs first, with no script needed.
 
+- The **Preview** flashes each event's name as it fires (a window's with Begin and End), so you can check timing without a Simulation. Event actions are not played in the Preview.
 - A clip fires only while it plays at or above the event's **Trigger Weight**, so a clip fading out of a blend does not repeat a footstep.
 - A [Blend Space](blend-space.md) fires the events of its heaviest sample by default; its **Event Mode** can fire every sample's instead, or none. A [Sprite Blend Space](sprite-blend-space.md) fires the events of the sample playing.
 - In one update, events fire in the order they happened: the state being left (its clips' events, then its Exit Event), then the state entered (its Enter Event, then its clips' events), then its Fully Blended Event.

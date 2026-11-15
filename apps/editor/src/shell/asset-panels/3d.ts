@@ -2,3 +2,4 @@
 export { ModelCollidersPanel, ModelDetailsPanel, ModelPreviewPanel } from "../../components/model-editor";
 export { SkeletonDetailsPanel, SkeletonPreviewPanel } from "../../components/skeleton-editor";
 export { AnimationDetailsPanel, AnimationPreviewPanel } from "../../components/animation-editor";
+export { AnimationTimelinePanel } from "../../components/animation-timeline";

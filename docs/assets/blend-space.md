@@ -38,7 +38,7 @@ Double-tap a Blend Space to open it. Its windows:
 
 The Preview's Model is saved with the Blend Space and is used only in the editor.
 
-**Event Mode** chooses whose [Animation Events](animation-graph.md#animation-events) fire while the Blend Space plays: **Highest Weight** (the default) fires only the heaviest sample's, so a blend of Walk and Run steps once; **All** fires every sample's that plays at or above an event's **Trigger Weight**; **None** fires none.
+**Event Mode** chooses whose [Animation Events](animation-graph.md#animation-events) fire while the Blend Space plays (the **Preview** flashes their names): **Highest Weight** (the default) fires only the heaviest sample's, so a blend of Walk and Run steps once; **All** fires every sample's that plays at or above an event's **Trigger Weight**; **None** fires none.
 
 ## How it blends
 

@@ -658,8 +658,19 @@ const SKELETON_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+/** Animation: the Preview, its event Timeline below it, and the Inspector on the right. */
 const ANIMATION_WINDOWS: DockWindowDefinition[] = [
   { id: "animation-preview", component: "animation-preview", title: "Preview" },
+  {
+    id: "animation-timeline",
+    component: "animation-timeline",
+    title: "Timeline",
+    defaultPosition: {
+      referencePanelId: "animation-preview",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
   {
     id: "animation-details",
     component: "animation-details",
