@@ -13,7 +13,8 @@ import {
 import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
-  captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRetainedOverlayBatches, verifyScopedReadinessProbes,
+  captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
+  verifyScopedReadinessProbes,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1254,6 +1255,8 @@ function PlayOverlayView({
         verifyScopedReadinessProbes: (enabled: boolean) => void;
         /** Checks each Scene Layer pass whose draw batches kept their work against the full path (`layerWork[].batching.mismatches`). */
         verifyRetainedOverlayBatches: (enabled: boolean) => void;
+        /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
+        verifyRenderChangeJournal: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1277,6 +1280,7 @@ function PlayOverlayView({
       spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
       verifyScopedReadinessProbes,
       verifyRetainedOverlayBatches,
+      verifyRenderChangeJournal,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

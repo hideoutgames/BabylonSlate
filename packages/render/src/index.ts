@@ -122,6 +122,7 @@ export * from "./node-rig";
 export type { RenderDiagnostics } from "./render-diagnostics";
 export type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
 export { verifyScopedReadinessProbes } from "./readiness-scope";
+export { verifyRenderChangeJournal } from "./render-change-journal";
 export type { PresentedImageSample } from "./presented-image";
 export { activeRenderFrameCapture } from "./render-frame-report";
 export { parseRenderFrameReport, serializeRenderFrameReport } from "./render-frame-report-file";
