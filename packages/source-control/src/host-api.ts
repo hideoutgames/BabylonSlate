@@ -54,7 +54,8 @@ export interface HostApi {
    * The signed-in user first, then their organizations (GitLab: groups they
    * may create projects in). Only reading the user can fail: when the host
    * refuses the organization listing (GitHub does for an OAuth token without
-   * `read:org` or `user`), the user is the only owner.
+   * `read:org` or `user`, or an organization restricting OAuth apps), the user
+   * is the only owner.
    */
   owners(): Promise<HostApiResult<HostOwner[]>>;
   /** Creates an empty repository (no README, so the first push sets its branch). */

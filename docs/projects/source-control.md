@@ -39,6 +39,8 @@ After you accept, **Sign In To GitHub** (or **Sign In To GitLab**) shows a code.
 3. Enter the code there and approve Haptic.
 4. Come back to Haptic. The dialog closes by itself once the host approves, and the row shows your user name.
 
+GitHub asks you to let Haptic access your repositories and read your organization memberships, which Publish uses to offer your organizations. An organization that restricts OAuth apps must approve Haptic before its repositories and membership are available.
+
 The dialog shows how long the code stays valid. If the code expires or you deny access, choose **Try Again** for a new code. **Cancel** stops waiting.
 
 A GitLab sign-in renews itself in the background. If GitLab no longer accepts it, Haptic signs you out of GitLab on this device and the sign-in banner returns.

@@ -44,7 +44,8 @@ export class FakeGitHost {
   organizations = ["haptic-studio"];
   /**
    * Listing organizations or groups answers 403, as GitHub does for an OAuth
-   * token without the `read:org` or `user` scope (Haptic's sign-in asks for `repo`).
+   * token without the `read:org` or `user` scope (a sign-in from before
+   * Haptic asked for `read:org`, or an organization that restricts OAuth apps).
    */
   organizationsRefused = false;
   branches = ["main", "develop"];
