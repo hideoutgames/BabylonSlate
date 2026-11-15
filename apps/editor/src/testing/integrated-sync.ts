@@ -7,6 +7,11 @@ import { SourceControlSyncService, type SyncConfigureInput, type SyncLocks, type
 
 export const INTEGRATED_REPOSITORY = "https://github.com/team/game.git";
 
+/** A branch's committed `project.json` with these source control settings (Integrated with `INTEGRATED_REPOSITORY` by default). */
+export function projectJsonWith(sourceControl: { mode: string; repositoryUrl: string } = { mode: "integrated", repositoryUrl: INTEGRATED_REPOSITORY }): string {
+  return JSON.stringify({ settings: { sourceControl: { ...sourceControl, branch: "main" } } });
+}
+
 /** Forest (a Scene) and Rock (a Texture), as the registry would describe them. */
 export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
   path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobPaths: [] }

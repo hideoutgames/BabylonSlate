@@ -453,6 +453,11 @@ export class FakeSync implements SyncPort {
     this.current = name;
   }
 
+  async branchCommit(name: string, options: TransferOptions = {}): Promise<string | null> {
+    throwIfCancelled(options.signal);
+    return this.heads.get(name) ?? this.fetchRef(name);
+  }
+
   async switchBranch(name: string, options: TransferOptions = {}): Promise<SwitchResult> {
     throwIfCancelled(options.signal);
     const head = this.head;

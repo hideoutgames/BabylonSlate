@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenDocument } from "../services/document-service";
 import type { SourceControlSyncService } from "../services/source-control-sync";
-import { integratedSync } from "../testing/integrated-sync";
+import { INTEGRATED_REPOSITORY, integratedSync, projectJsonWith } from "../testing/integrated-sync";
 import SourceControlBranchFlow from "./source-control-branch-flow";
 import NewBranchDialog from "./source-control-new-branch-dialog";
 import { SourceControlActionsProvider } from "./source-control-actions";
@@ -74,7 +74,7 @@ function renderFlow(branch: string, onDone = vi.fn()) {
 
 describe("Switch Branch", () => {
   it("saves unsaved documents first, confirms, then switches read-only in the write queue and reloads the files it wrote", async () => {
-    const { service, remote, storage } = await integratedSync();
+    const { service, remote, storage } = await integratedSync({ files: { "project.json": projectJsonWith() } });
     const art = remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
     state.sync = service;
     state.dirty = [dirtyForest];
@@ -109,7 +109,7 @@ describe("Switch Branch", () => {
   });
 
   it("names the assets whose uncommitted changes the switch would overwrite, and changes nothing", async () => {
-    const { service, remote, storage } = await integratedSync();
+    const { service, remote, storage } = await integratedSync({ files: { "project.json": projectJsonWith() } });
     remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
     state.sync = service;
     await storage.writeText("assets/Rock.texture.hasset", "R-mine");
@@ -127,8 +127,25 @@ describe("Switch Branch", () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
+  it("refuses a branch whose Project Settings would stop Integrated mode in this copy, saying why and changing nothing", async () => {
+    const { service, remote, storage } = await integratedSync({ files: { "project.json": projectJsonWith() } });
+    remote.commit({ "assets/Rock.texture.hasset": "R-art", "project.json": projectJsonWith({ mode: "manual", repositoryUrl: INTEGRATED_REPOSITORY }) }, "Art", "art");
+    state.sync = service;
+    const onDone = renderFlow("art");
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("source-control-switch-confirm-action"));
+    });
+    const failed = await screen.findByTestId("source-control-switch-blocked");
+    expect(failed.textContent).toContain("Could Not Switch To art");
+    expect(failed.textContent).toContain("art's Project Settings set Source Control to Manual");
+    expect(state.applyPulledChanges).not.toHaveBeenCalled();
+    expect(await storage.readText("assets/Rock.texture.hasset")).toBe("R");
+    expect(service.getSnapshot().branch).toBe("main");
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
   it("is refused while documents are read-only", async () => {
-    const { service } = await integratedSync();
+    const { service } = await integratedSync({ files: { "project.json": projectJsonWith() } });
     state.sync = service;
     state.lock = { readOnly: true, reason: "Read-only while Play runs", revision: 1 };
     renderFlow("art");

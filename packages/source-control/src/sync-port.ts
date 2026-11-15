@@ -71,6 +71,12 @@ export interface SyncPort {
    */
   createBranch(name: string): Promise<void>;
   /**
+   * The commit `name` points at without checking it out: this copy's branch,
+   * else the remote's, fetched as `switchBranch` fetches it (so `readFile`
+   * can read it); null when neither has it. Nothing in the working tree changes.
+   */
+  branchCommit(name: string, options?: TransferOptions): Promise<string | null>;
+  /**
    * Checks out `name`: a local branch, or the remote's (fetched first, as
    * shallow as a clone). Files that differ between the branches take the
    * other branch's version; uncommitted changes to other files stay, and so

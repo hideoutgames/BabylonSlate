@@ -97,6 +97,34 @@ export function integratedBlockerLabel(blocker: IntegratedBlocker): string {
   return "Source Control Is Not Available Here";
 }
 
+const MODE_NAMES: Record<string, string> = { off: "Off", manual: "Manual" };
+
+/**
+ * Why a switch to `branch` is refused, or null: its committed `project.json`
+ * (`projectJson`, null when it has none) must keep Integrated mode with the
+ * same repository. The switch's reload installs that branch's settings, and
+ * any other mode stops Haptic's Git client in this working copy, which on
+ * iOS and Android may then have no way back.
+ */
+export function branchSettingsRefusal(branch: string, projectJson: Uint8Array | null, repositoryUrl: string): string | null {
+  if (!projectJson) return `${branch} has no Haptic project: project.json is missing.`;
+  let sourceControl: { mode?: unknown; repositoryUrl?: unknown } | undefined;
+  try {
+    sourceControl = (JSON.parse(new TextDecoder().decode(projectJson)) as { settings?: { sourceControl?: { mode?: unknown; repositoryUrl?: unknown } } } | null)?.settings?.sourceControl;
+  } catch {
+    return `${branch}'s project.json cannot be read.`;
+  }
+  const keepOn = "Only a branch in Integrated mode with this repository can be checked out here; change its Project Settings with another Git app first.";
+  if (sourceControl?.mode !== "integrated") {
+    return `${branch}'s Project Settings set Source Control to ${MODE_NAMES[String(sourceControl?.mode)] ?? "Off"}, so switching would stop Haptic's Git in this folder. ${keepOn}`;
+  }
+  const other = typeof sourceControl.repositoryUrl === "string" ? sourceControl.repositoryUrl : "";
+  if (!sameRepository(other, repositoryUrl)) {
+    return `${branch}'s Project Settings use another repository (${other || "none"}), so switching would stop Haptic's Git in this folder. ${keepOn}`;
+  }
+  return null;
+}
+
 /** Whether two repository URLs name the same repository (HTTPS, SSH or scp-style, with or without `.git`). */
 export function sameRepository(a: string, b: string): boolean {
   const left = parseRepositoryUrl(a);

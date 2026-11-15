@@ -495,6 +495,16 @@ export class GitRepository implements SyncPort {
     });
   }
 
+  branchCommit(name: string, options: TransferOptions = {}): Promise<string | null> {
+    return this.run(async (op) => {
+      const local = await this.resolve(op, `refs/heads/${name}`);
+      if (local) return local;
+      // As a switch to it fetches it: its newest commit, older history on demand.
+      if (!(await this.fetchBranch(op, { branch: name, depth: DEFAULT_CLONE_DEPTH }))) return null;
+      return this.resolve(op, `refs/remotes/origin/${name}`);
+    }, options.signal);
+  }
+
   switchBranch(name: string, options: TransferOptions = {}): Promise<SwitchResult> {
     return this.run(async (op) => {
       const head = await this.resolve(op, this.localRef);

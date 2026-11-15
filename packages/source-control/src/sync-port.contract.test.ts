@@ -546,6 +546,21 @@ describe.each([
     expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
     await port.fetch();
     expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+
+  it("names a branch's commit without switching: this copy's, else the remote's after fetching it, and none for a branch neither has", async () => {
+    const main = await fixture.teammate({ "project.json": "main settings", "assets/a.hasset": "A" });
+    const art = await fixture.teammate({ "project.json": "art settings" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    expect(await port.branchCommit("main")).toBe(main);
+    expect(await port.branchCommit("art")).toBe(art);
+    expect(text(await port.readFile("project.json", art))).toBe("art settings");
+    expect(await port.branchCommit("missing")).toBeNull();
+    // Nothing was checked out or written.
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [] });
+    expect(text(await storage.readBinary("project.json"))).toBe("main settings");
+    expect(await port.localBranches()).toEqual(["main"]);
+    // The switch after it checks out that commit.
+    expect(await port.switchBranch("art")).toEqual({ head: art, changedPaths: ["project.json"] });
   });
 
   it("refuses to push over commits it has not pulled", async () => {

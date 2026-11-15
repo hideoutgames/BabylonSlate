@@ -1,4 +1,4 @@
-import { isStorageNotFound, type ProjectFolderHandle, type ProjectStorage, type SourceControlProjectSettings } from "@haptic/core";
+import { isStorageNotFound, PROJECT_FILE, type ProjectFolderHandle, type ProjectStorage, type SourceControlProjectSettings } from "@haptic/core";
 import {
   isSyncError,
   withLfsRule,
@@ -19,7 +19,7 @@ import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
 import { commitPaths, groupChanges, withWorkingHeaders, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
-import { asksAdoption, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
+import { asksAdoption, branchSettingsRefusal, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
 /** One status after a burst of editor saves. Status is stat based and cheap; this only coalesces the burst. */
 export const STATUS_DEBOUNCE_MS = 800;
@@ -552,7 +552,9 @@ export class SourceControlSyncService {
    * Checks out `name` (fetched first when only the remote has it). Files that
    * differ between the branches are rewritten; uncommitted changes to other
    * files stay. Rejects (`uncommitted-changes`, with the paths) when a file it
-   * would replace has uncommitted changes; nothing changes then. The caller
+   * would replace has uncommitted changes, and, before anything is checked
+   * out, when the branch's `project.json` does not keep Integrated mode with
+   * this repository (`branchSettingsRefusal`); nothing changes then. The caller
    * saves or discards unsaved documents first, holds them read-only, runs it
    * in the project write queue and reloads `changedPaths`. The counts come
    * from local refs at once; a fetch follows.
@@ -560,7 +562,12 @@ export class SourceControlSyncService {
   async switchBranch(name: string): Promise<SwitchResult> {
     const revision = this.revision;
     let result: SwitchResult | null = null;
-    await this.run("switch", "Could Not Switch Branch", async ({ port, signal }) => {
+    await this.run("switch", "Could Not Switch Branch", async ({ port, input, signal }) => {
+      // The reload installs the branch's own project.json: one that leaves Integrated mode (or this
+      // repository) would stop the Git client here, with no way back on iOS and Android.
+      const commit = await port.branchCommit(name, { signal });
+      const refusal = commit ? branchSettingsRefusal(name, await port.readFile(PROJECT_FILE, commit), input.settings.repositoryUrl) : null;
+      if (refusal) throw new Error(refusal);
       result = await port.switchBranch(name, { signal });
     }, revision, { rethrow: true });
     if (!result) throw new Error("The project closed while switching branch.");
