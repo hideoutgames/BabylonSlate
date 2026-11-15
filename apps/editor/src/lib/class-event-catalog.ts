@@ -377,7 +377,9 @@ function isAnimCatalogNodeAllowed(
     return nodeId !== `${prefix}output`;
   }
   if (nodeId.startsWith("anim.actor.")) {
-    return ancestryChain(options).includes("Actor");
+    // An Actor's graph, or a Scene's or Scene Layer's script, which reaches its placed actors' graph components.
+    const chain = ancestryChain(options);
+    return chain.includes("Actor") || isEmbeddedScriptChain(chain);
   }
   return false;
 }

@@ -115,6 +115,12 @@ A 3D state graph can play different clips on different parts of the body, reuse 
 - [Apply Additive](../scripting/animation/apply-additive.md) adds an [additive Animation](animation.md#additive-animations), such as a lean or a flinch, on top of any pose.
 - [Transform Bone](../scripting/animation/transform-bone.md) changes one bone after the clips blend, such as turning the head toward a target.
 
+## Slots
+
+Play one-shots such as attacks, hurt flashes or emotes from scripts without adding states for them. Put a [Slot](../scripting/animation/slot.md) node (2D: [Frame Slot](../scripting/animation/frame-slot.md)) in a state graph, over the pose it shows otherwise, and give it a **Slot Name**. A script's [Play Slot Animation](../scripting/class/play-slot-animation.md) plays an Animation there, blending it in and out; [Stop Slot Animation](../scripting/class/stop-slot-animation.md) ends it early and [Is Slot Active](../scripting/class/is-slot-active.md) tells whether it is playing.
+
+A slot's Animation plays for the whole graph, whichever state is active, and every state with a Slot of its name shows it. Under a [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) Blend Pose, it plays on the upper body only.
+
 ## Animation events
 
 [Animations](animation.md#animation-events) and [Sprite Animation frames](sprite-animation.md#animation-events) carry named Animation Events, and states can name their own (**Enter Event**, **Exit Event**, **Fully Blended Event**). The graph fires an event when a clip it plays passes the event's time: once each time the clip passes it, including when a looping clip wraps round. A window fires its begin and its end; its end also fires when the clip stops playing first, so the two always pair.

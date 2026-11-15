@@ -14,6 +14,7 @@ import {
   ANIM_POSE_LAYERED_BLEND_TYPE,
   ANIM_POSE_SAVE_CACHED_TYPE,
   ANIM_POSE_USE_CACHED_TYPE,
+  isSlotNodeType,
   layeredBlendInputCount,
   ANIM_FRAME_SELECT_BY_INT_TYPE,
   ANIM_POSE_BLEND_BY_BOOL_TYPE,
@@ -149,6 +150,16 @@ export function animPoseNodePropertyRows(
       precision: 0,
       sensitivity: 0.1,
       onChange: (value) => onPatch({ count: layeredBlendInputCount(value) }),
+    });
+  }
+  if (isSlotNodeType(typeId)) {
+    rows.push({
+      kind: "text",
+      id: "slotName",
+      label: "Slot Name",
+      value: typeof data.slotName === "string" && data.slotName ? data.slotName : "DefaultSlot",
+      defaultValue: "DefaultSlot",
+      onChange: (slotName) => onPatch({ slotName: slotName.trim() || "DefaultSlot" }),
     });
   }
   if (typeId === ANIM_POSE_SAVE_CACHED_TYPE) {

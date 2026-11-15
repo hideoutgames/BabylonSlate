@@ -42,6 +42,13 @@ describe("Phase 5b pose node rows", () => {
     expect(patches).toEqual([{ count: 16 }]);
   });
 
+  it("names a Slot's slot, DefaultSlot when blank", () => {
+    const { rows, patches } = rowsOf("anim.frame.slot", {});
+    expect(rows).toEqual([expect.objectContaining({ kind: "text", label: "Slot Name", value: "DefaultSlot" })]);
+    if (rows[0]?.kind === "text") rows[0].onChange("  ");
+    expect(patches).toEqual([{ slotName: "DefaultSlot" }]);
+  });
+
   it("names a Save Cached Pose, and picks a Use Cached Pose's from the saved names, keeping a missing one", () => {
     const save = rowsOf("anim.pose.saveCachedPose", { name: "Loco" });
     expect(save.rows).toEqual([expect.objectContaining({ kind: "text", label: "Name", value: "Loco" })]);
