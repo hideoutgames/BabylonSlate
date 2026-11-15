@@ -204,6 +204,8 @@ describe("Project Composer", () => {
     render(<Composer mode="edit" initialHosting="remote" />);
     expect(screen.queryByTestId("create-project-hosting-remote")).toBeNull();
     expect(screen.queryByTestId("create-project-remote")).toBeNull();
+    // Saving an edit never waits for a repository.
+    expect(screen.getByTestId("homepage-rename-confirm").hasAttribute("disabled")).toBe(false);
   });
 
   it("fits the visible viewport during keyboard resizing without losing the draft", async () => {

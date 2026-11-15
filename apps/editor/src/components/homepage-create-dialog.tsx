@@ -248,7 +248,7 @@ export function HomepageCreateDialog({
     }
   };
   const placeholderName = suggestedName || "Untitled";
-  const remote = hosting === "remote";
+  const remote = hosting === "remote" && !editing;
   const remoteNeedsDocuments = remote && remoteNeedsAppStorage(hostPlatform);
   const canSubmit =
     !busy && !imageBusy && !nameIssue && Boolean(name.trim() || suggestedName) && (!remote || remoteReady);
@@ -405,7 +405,7 @@ export function HomepageCreateDialog({
                       </ToggleGroup>
                     </Field>
                   )}
-                  {remote && !editing && onRepositoryChange && (
+                  {remote && onRepositoryChange && (
                     <Suspense fallback={null}>
                       <NewProjectRepositoryFields
                         projectName={name.trim() || placeholderName}

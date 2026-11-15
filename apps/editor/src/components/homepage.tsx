@@ -286,6 +286,8 @@ export function Homepage({
   const [repository, setRepository] = useState<NewRepositoryRequest | null>(null);
   const changeHosting = (next: NewProjectHosting) => {
     setHosting(next);
+    // The Remote fields report again when they mount.
+    setRepository(null);
     // A chosen folder on iOS and Android cannot hold a Remote project.
     if (next === "remote" && remoteNeedsAppStorage(hostPlatform)) setPickFolder(false);
   };
