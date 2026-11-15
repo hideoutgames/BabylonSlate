@@ -66,7 +66,7 @@ describe("AnimGraphRuntime", () => {
     expect(applyRootMotion).toHaveBeenLastCalledWith(actors[0], expect.objectContaining({ x: 0, yaw: 0 }), 0.1);
     expect(applyRootMotion.mock.lastCall?.[1].z).toBeCloseTo(0.2, 9);
     // Render holds the bone in place.
-    const state = emitted.findLast((command) => command.type === "animState");
+    const state = [...emitted].reverse().find((command: CommandMessage) => command.type === "animState");
     expect(state?.type === "animState" ? state.layers?.[0]?.rootMotionBone : undefined).toBe("hips");
   });
 
