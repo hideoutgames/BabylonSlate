@@ -138,6 +138,30 @@ describe("Pull", () => {
     expect(events).toEqual(["lock: Read-only while pulling", "reload assets/Rock.texture.hasset in the write queue", "release"]);
   });
 
+  it("ends and gives the documents back when the reload after the pull fails", async () => {
+    const { service, remote } = await integratedSync();
+    state.sync = service;
+    remote.commit({ "assets/Rock.texture.hasset": "R2" }, "Teammate");
+    let held = false;
+    state.lockAuthoring.mockImplementation(() => {
+      held = true;
+      return () => { held = false; };
+    });
+    state.applyPulledChanges.mockRejectedValue(new Error("The project could not be read."));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const onDone = vi.fn();
+    try {
+      render(<SourceControlPullFlow onDone={onDone} />);
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("source-control-pull-confirm-action"));
+      });
+      await waitFor(() => expect(onDone).toHaveBeenCalled());
+      expect(held).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("refuses to start while Play holds the documents, naming why", async () => {
     const { service, remote, storage } = await integratedSync();
     state.sync = service;
