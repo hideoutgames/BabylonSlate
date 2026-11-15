@@ -124,8 +124,10 @@ export function ProjectSourceControlSettings({
       return;
     }
     if (mode === "integrated") {
-      // An existing working copy: no other Git app may use the folder while Haptic does.
-      setAdoptFor("mode");
+      // An existing working copy: on desktop no other Git app may use the folder while Haptic does.
+      // iOS and Android app storage has no other Git client, so nothing is asked there.
+      if (asksAdoption(folder)) setAdoptFor("mode");
+      else void adoptIntegrated();
       return;
     }
     switchTo(mode);

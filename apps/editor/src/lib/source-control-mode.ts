@@ -52,13 +52,17 @@ export function asksAdoption(folder: SourceControlFolder): boolean {
 /**
  * Project Settings → Source Control's Mode options, in display order. Off and
  * Manual are always offered. Integrated is offered for a project that already
- * uses it, and on desktop for a folder with a readable `.git`, which then
- * switches only after a warning that no other Git app may use the folder at
- * the same time. Elsewhere Integrated projects come from Clone or Publish.
+ * uses it, and for a folder with a readable `.git` Haptic may run Git in: on
+ * desktop any (it switches only after a warning that no other Git app may use
+ * the folder at the same time), and on iOS and Android app storage, where
+ * Haptic is the only Git client, so a working copy whose `project.json` left
+ * Integrated mode (a branch that turns it off) is never stranded. Elsewhere
+ * Integrated projects come from Clone or Publish.
  */
 export function offeredSourceControlModes(stored: SourceControlMode, folder: SourceControlFolder): SourceControlMode[] {
-  const integrated = stored === "integrated" || (folder.platform === "electron" && folder.hasGit);
-  return integrated ? ["off", "integrated", "manual"] : ["off", "manual"];
+  const repository = folder.hasGit && isSourceControlHost(folder.platform, folder.testMode)
+    && (folder.platform === "electron" || (folder.tier !== null && folder.tier !== "external"));
+  return stored === "integrated" || repository ? ["off", "integrated", "manual"] : ["off", "manual"];
 }
 
 /**
