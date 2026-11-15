@@ -187,6 +187,28 @@ describe("Changes window", () => {
     });
   });
 
+  it("picks the branch in place of its label: this copy's and the remote's branches, and New Branch…", async () => {
+    const { service, remote } = await integratedSync();
+    remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
+    state.sync = service;
+    renderPanel();
+    fireEvent.click(screen.getByTestId("changes-branch"));
+    expect((await screen.findByTestId("changes-branch-main")).getAttribute("aria-checked")).toBe("true");
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("changes-remote-art"));
+    });
+    expect((await screen.findByTestId("source-control-switch-confirm")).textContent).toContain("Switch To art?");
+    fireEvent.click(screen.getByTestId("source-control-switch-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("source-control-switch-confirm")).toBeNull());
+    expect(service.getSnapshot().branch).toBe("main");
+
+    fireEvent.click(screen.getByTestId("changes-branch"));
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("changes-new-branch"));
+    });
+    expect(await screen.findByTestId("source-control-new-branch")).toBeTruthy();
+  });
+
   it("offers Add Git LFS Rule where a commit of blobs is refused, and commits once the rule is in", async () => {
     const { service, storage, remote } = await integratedSync({ lfsRule: false });
     state.sync = service;
