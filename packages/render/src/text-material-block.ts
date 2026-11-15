@@ -13,8 +13,10 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { DRAW_BATCH_TEXT_KINDS, drawBatchValue } from "./draw-batch-world-block";
+import { noteRenderChange } from "./render-change-journal";
 
-export type TextMaterialBinding = {
+/** Read-only: a glyph's values change through `bindTextMaterialGlyph`, which tells the render change journal. */
+export type TextMaterialBinding = Readonly<{
   atlas: BaseTexture | null;
   mode: "solid" | "bitmap" | "msdf";
   color: readonly [number, number, number];
@@ -23,11 +25,13 @@ export type TextMaterialBinding = {
   /** Lower-left and size, independent of the atlas packing. */
   atlasRect: readonly [number, number, number, number];
   materialRect: readonly [number, number, number, number];
-};
+}>;
 
 const bindings = new WeakMap<AbstractMesh, TextMaterialBinding>();
 export function bindTextMaterialGlyph(mesh: Mesh, binding: TextMaterialBinding): void {
+  if (bindings.get(mesh) === binding) return;
   bindings.set(mesh, binding);
+  noteRenderChange(mesh);
 }
 /** The glyph binding `bindTextMaterialGlyph` set on `mesh`: what a draw batch of glyphs carries or shares. */
 export function textMaterialGlyphBinding(mesh: Mesh): TextMaterialBinding | undefined {
