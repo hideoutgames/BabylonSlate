@@ -1,12 +1,16 @@
-import type { ProjectFolderHandle, ProjectStorage, SourceControlProjectSettings } from "@haptic/core";
+import { isStorageNotFound, PROJECT_FILE, type ProjectFolderHandle, type ProjectStorage, type SourceControlProjectSettings } from "@haptic/core";
 import {
   isSyncError,
   withLfsRule,
   type CommitAuthor,
   type CommitInfo,
+  type FileChange,
   type FileLock,
+  type LogOptions,
+  type LogPage,
   type PullChoices,
   type PullResult,
+  type SwitchResult,
   type SyncErrorCode,
   type SyncErrorKind,
   type SyncPort,
@@ -14,8 +18,8 @@ import {
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
-import { commitPaths, groupChanges, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
-import { asksAdoption, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
+import { commitPaths, groupChanges, withWorkingHeaders, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
+import { asksAdoption, branchSettingsRefusal, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
 /** One status after a burst of editor saves. Status is stat based and cheap; this only coalesces the burst. */
 export const STATUS_DEBOUNCE_MS = 800;
@@ -31,6 +35,10 @@ export interface SyncPortRequest {
   storage: ProjectStorage;
   folderId: string;
   repositoryUrl: string;
+  /**
+   * The branch a new working copy starts on (Clone, Publish, a test-mode copy
+   * opened for the first time). An existing copy stays on its own branch.
+   */
   branch: string;
   testMode: boolean;
   transfer: TransferMonitor;
@@ -65,7 +73,7 @@ export interface SyncLocks {
   releaseOwn(paths: readonly string[]): Promise<void>;
 }
 
-export type SyncOperationKind = "fetch" | "commit" | "pull" | "push" | "publish";
+export type SyncOperationKind = "fetch" | "commit" | "pull" | "push" | "publish" | "switch";
 
 /** The running operation; its bytes are in `SourceControlSyncService.transfer`, which only transfer labels read. */
 export interface SyncOperation {
@@ -87,7 +95,16 @@ export interface SyncSnapshot {
   readonly active: boolean;
   /** The project's mode is Integrated but this folder cannot run it. */
   readonly blocked: IntegratedBlocker | null;
+  /**
+   * The working copy's checked-out branch (Git's HEAD), not the project's
+   * default branch; `""` while the repository is not open (a detached HEAD
+   * opens nothing), shown as `branchLabel` names it.
+   */
   readonly branch: string;
+  /** The branch's commit (HEAD), null before the first commit. */
+  readonly head: string | null;
+  /** The remote branch's commit as last fetched, null when it has none. */
+  readonly remoteHead: string | null;
   /** Changed assets and files, as the Changes window lists them. */
   readonly rows: readonly ChangeRow[];
   readonly statusReady: boolean;
@@ -118,6 +135,8 @@ const IDLE: SyncSnapshot = {
   active: false,
   blocked: null,
   branch: "",
+  head: null,
+  remoteHead: null,
   rows: [],
   statusReady: false,
   ahead: 0,
@@ -127,6 +146,11 @@ const IDLE: SyncSnapshot = {
   operation: null,
   problem: null,
 };
+
+/** What keeps a client open: the folder and repository (the branch is the working copy's own). */
+function identityOf(folderId: string, repositoryUrl: string, testMode: boolean): string {
+  return [folderId, repositoryUrl, testMode ? "t" : ""].join("\n");
+}
 
 function loadFactory(): Promise<SyncPortFactory> {
   return import("./source-control-sync-port").then((module) => module.syncPortFactory);
@@ -215,9 +239,11 @@ export class SourceControlSyncService {
 
   /**
    * Off and Manual return before loading anything. Integrated opens the
-   * folder's Git client once per folder, repository and branch, then reads
-   * status and fetches; a blocked folder (`integratedBlocker`, with a desktop
-   * working copy's adoption read first) opens nothing.
+   * folder's Git client once per folder and repository, then reads status
+   * and fetches; a blocked folder (`integratedBlocker`, with a desktop
+   * working copy's adoption read first) opens nothing. The checked-out
+   * branch is the working copy's own, so the project's default branch
+   * (`sourceControl.branch`, committed and shared) never reopens it.
    */
   async configure(input: SyncConfigureInput): Promise<void> {
     const { settings, folder } = input;
@@ -225,8 +251,8 @@ export class SourceControlSyncService {
       if (this.identity !== "" || this.input || this.snapshot !== IDLE) this.stop();
       return;
     }
-    const identity = [folder.id, settings.repositoryUrl, settings.branch, input.testMode ? "t" : ""].join("\n");
-    // The same folder, repository and branch keep their client (and a Publish in progress).
+    const identity = identityOf(folder.id, settings.repositoryUrl, input.testMode);
+    // The same folder and repository keep their client (and a Publish in progress).
     if (identity === this.identity) {
       this.input = input;
       return;
@@ -252,15 +278,16 @@ export class SourceControlSyncService {
       port = await (await this.factoryFor(input)).open(this.request(input, storage, revision));
     } catch (error) {
       if (revision !== this.revision) return;
-      // Not opened: Refresh, foreground or the next configure tries again.
+      // Not opened: Refresh, foreground or the next configure tries again. No branch is
+      // checked out here (a detached HEAD opens nothing), so none is shown, not the default.
       this.identity = "";
-      this.set({ ...IDLE, active: true, branch: settings.branch, problem: problemFrom("Could Not Open The Repository", error) });
+      this.set({ ...IDLE, active: true, problem: problemFrom("Could Not Open The Repository", error) });
       return;
     }
     if (revision !== this.revision) return;
     this.port = port;
     this.storage = storage;
-    this.set({ ...IDLE, active: true, branch: settings.branch });
+    this.set({ ...IDLE, active: true, branch: port.branch });
     await this.refresh();
   }
 
@@ -347,7 +374,7 @@ export class SourceControlSyncService {
     this.dropHeldStatus();
     await this.run(null, "Could Not Read Changes", async ({ port, input, update }) => {
       const status = await port.status();
-      update({ branch: status.branch, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true });
+      update({ branch: status.branch, head: status.head, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true });
     });
   }
 
@@ -373,9 +400,10 @@ export class SourceControlSyncService {
   async commit({ rowIds, message, push }: { rowIds: ReadonlySet<string>; message: string; push: boolean }): Promise<boolean> {
     const revision = this.revision;
     let committed = false;
-    await this.run("commit", "Could Not Commit", async ({ port, input }) => {
+    await this.run("commit", "Could Not Commit", async ({ port, input, storage }) => {
       const status = await port.status();
-      const paths = commitPaths(groupChanges(status.changes, input.lookup), rowIds, input.lookup);
+      const lookup = await withWorkingHeaders(input.lookup, status.changes, rowIds, (path) => storage.readBinary(path));
+      const paths = commitPaths(groupChanges(status.changes, lookup), rowIds, lookup);
       if (paths.length === 0) throw new Error("Choose the assets to commit.");
       await port.commit({ paths, message, author: await this.author(input) });
       committed = true;
@@ -421,13 +449,17 @@ export class SourceControlSyncService {
   private async pushFor(revision: number): Promise<void> {
     let pushed: string[] | null = null;
     await this.run("push", "Could Not Push", async ({ port, input, signal }) => {
-      const outgoing = await port.outgoing();
+      const outgoing = await port.outgoing({ signal });
       const holders = await input.locks.theirs(outgoing);
       if (holders.length > 0) throw new LockedByOthersError(holders);
       await port.push({ signal });
       pushed = outgoing;
     }, revision);
-    if (!pushed) return;
+    if (!pushed) {
+      // Measuring what it sends brought the remote branches up to date, so the counts follow even when it was refused.
+      await this.readLocal(revision);
+      return;
+    }
     const outgoing: readonly string[] = pushed;
     const rows = await this.readLocal(revision);
     // Without the changes it cannot tell which pushed assets changed again, so it releases nothing.
@@ -444,8 +476,168 @@ export class SourceControlSyncService {
   private async fetchFor(revision: number): Promise<void> {
     await this.run("fetch", "Could Not Check For Changes", async ({ port, signal, update }) => {
       const remote = await port.fetch({ signal });
-      update({ ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
+      update({ head: remote.local, remoteHead: remote.remote, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
     }, revision);
+  }
+
+  /**
+   * A file as `commit` holds it (null when it has none), for a diff's base.
+   * Not queued: the Git client runs one operation at a time on its own, and a
+   * read changes nothing. Rejects once the project is closed.
+   */
+  async readFileAt(path: string, commit: string): Promise<Uint8Array | null> {
+    return this.openPort().readFile(path, commit);
+  }
+
+  /** The branch's commits that change `path`, newest first, for picking a version to compare. Reads no network. */
+  async commitsOf(path: string, limit: number): Promise<readonly CommitInfo[]> {
+    return (await this.openPort().log({ limit, path })).commits;
+  }
+
+  /** A `.blobs` object a version references: the working copy's file, else downloaded; never written. */
+  async readLfsObject(path: string, size: number, signal?: AbortSignal): Promise<Uint8Array> {
+    return this.openPort().readLfsObject(path, size, signal ? { signal } : {});
+  }
+
+  /**
+   * A page of the branch's commits (of `path` only, when given), newest
+   * first, for History. A plain read is not queued, as `readFileAt`.
+   * `deepen` (Load Older History) downloads older history when this shallow
+   * copy's ends, which writes `.git` and moves the remote-tracking branch: it
+   * runs in the queue (a close waits for it and cancels its download), and
+   * the counts are read again from local refs after it. Rejects with what
+   * failed, or when the project closed.
+   */
+  async history(options: LogOptions): Promise<LogPage> {
+    if (!options.deepen) return this.openPort().log(options);
+    const revision = this.revision;
+    let page: LogPage | null = null;
+    const ran = await this.run(null, "Could Not Load Older History", async ({ port, signal }) => {
+      page = await port.log({ ...options, signal });
+    }, revision, { rethrow: true });
+    if (!ran || !page) throw new Error("The project closed while loading older history.");
+    await this.readLocal(revision);
+    return page;
+  }
+
+  /** The files a commit changed against its parent; null when this shallow copy lacks the parent. */
+  async commitChanges(commit: string): Promise<FileChange[] | null> {
+    return this.openPort().commitChanges(commit);
+  }
+
+  /** This working copy's branches. Reads no network. */
+  async localBranches(): Promise<string[]> {
+    return this.openPort().localBranches();
+  }
+
+  /** The remote's branches, from its Git ref advertisement (one request). */
+  async remoteBranches(signal?: AbortSignal): Promise<string[]> {
+    return this.openPort().remoteBranches(signal ? { signal } : {});
+  }
+
+  /**
+   * Starts `name` at HEAD and checks it out (no file changes); the next push
+   * creates it on the remote. Rejects with why it was refused.
+   */
+  async createBranch(name: string): Promise<void> {
+    const revision = this.revision;
+    const ran = await this.run(null, "Could Not Create The Branch", async ({ port }) => {
+      await port.createBranch(name);
+    }, revision, { rethrow: true });
+    if (!ran) throw new Error("The project closed before the branch was created.");
+    await this.readLocal(revision);
+  }
+
+  /**
+   * Checks out `name` (fetched first when only the remote has it). Files that
+   * differ between the branches are rewritten; uncommitted changes to other
+   * files stay. Rejects (`uncommitted-changes`, with the paths) when a file it
+   * would replace has uncommitted changes, and, before anything is checked
+   * out, when the branch's `project.json` does not keep Integrated mode with
+   * this repository (`branchSettingsRefusal`); nothing changes then. The caller
+   * saves or discards unsaved documents first, holds them read-only, runs it
+   * in the project write queue and reloads `changedPaths`. The counts come
+   * from local refs at once; a fetch follows.
+   */
+  async switchBranch(name: string): Promise<SwitchResult> {
+    const revision = this.revision;
+    let result: SwitchResult | null = null;
+    await this.run("switch", "Could Not Switch Branch", async ({ port, input, signal }) => {
+      // The reload installs the branch's own project.json: one that leaves Integrated mode (or this
+      // repository) would stop the Git client here, with no way back on iOS and Android.
+      const commit = await port.branchCommit(name, { signal });
+      const refusal = commit ? branchSettingsRefusal(name, await port.readFile(PROJECT_FILE, commit), input.settings.repositoryUrl) : null;
+      if (refusal) throw new Error(refusal);
+      result = await port.switchBranch(name, { signal });
+    }, revision, { rethrow: true });
+    if (!result) throw new Error("The project closed while switching branch.");
+    await this.readLocal(revision);
+    // The branch's remote may have moved since this copy last fetched it; the reload does not wait for that.
+    void this.fetchFor(revision);
+    return result;
+  }
+
+  /**
+   * Writes the asset at `path` as `commit` holds it into the working copy,
+   * with the blobs it references (downloaded first when the copy lacks them;
+   * blobs are written before the asset), or removes it when `commit` has none.
+   * Queued with the other operations, so it never meets a pull. The caller
+   * holds the documents read-only and reloads the returned paths
+   * (`applyPulledChanges`). Rejects with what failed; nothing is written then
+   * unless the blobs were.
+   */
+  async revert(path: string, commit: string | null): Promise<string[]> {
+    const revision = this.revision;
+    let written: string[] = [];
+    const ran = await this.run(null, "Could Not Revert", async ({ port, storage, signal }) => {
+      const { restoreVersion } = await import("./source-control-restore");
+      written = await restoreVersion({ port, storage, path, commit, signal });
+    }, revision, { rethrow: true });
+    if (!ran) throw new Error("The project closed while reverting.");
+    await this.refreshStatus();
+    return written;
+  }
+
+  /**
+   * The working copy's `paths` as their stats give them (size and time, or
+   * absence; never their bytes), with the newest time; null when storage
+   * keeps no times, so an unchanged file cannot be told apart.
+   */
+  async workingStamp(paths: readonly string[]): Promise<{ key: string; newest: number } | null> {
+    const storage = this.storage;
+    if (!storage) throw new Error("The project's repository is not open.");
+    const parts: string[] = [];
+    let newest = 0;
+    for (const path of paths) {
+      try {
+        const stat = await storage.stat(path);
+        if (stat.mtime === null) return null;
+        newest = Math.max(newest, stat.mtime);
+        parts.push(`${path}\t${stat.size}\t${stat.mtime}`);
+      } catch (error) {
+        if (!isStorageNotFound(error)) throw error;
+        parts.push(`${path}\t-`);
+      }
+    }
+    return { key: parts.join("\n"), newest };
+  }
+
+  /** The working copy's file (null when it has none), from the project folder only. */
+  async readWorking(path: string): Promise<Uint8Array | null> {
+    const storage = this.storage;
+    if (!storage) throw new Error("The project's repository is not open.");
+    try {
+      return await storage.readBinary(path);
+    } catch (error) {
+      if (isStorageNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  /** The open client; the readers above are async, so this throw reaches their callers as a rejection. */
+  private openPort(): SyncPort {
+    if (!this.port) throw new Error("The project's repository is not open.");
+    return this.port;
   }
 
   /**
@@ -485,7 +677,7 @@ export class SourceControlSyncService {
     const revision = this.revision;
     const live = { ...input, settings: { ...input.settings, mode: "integrated" as const, repositoryUrl, branch } };
     this.input = live;
-    this.identity = [input.folder.id, repositoryUrl, branch, input.testMode ? "t" : ""].join("\n");
+    this.identity = identityOf(input.folder.id, repositoryUrl, input.testMode);
     const storage = folderBoundStorage(input.storage, input.folder.id);
     let port: SyncPort;
     try {
@@ -548,7 +740,7 @@ export class SourceControlSyncService {
       const status = await port.status();
       const remote = await port.remoteState();
       rows = groupChanges(status.changes, input.lookup).rows;
-      update({ branch: status.branch, rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming });
+      update({ branch: status.branch, head: status.head, remoteHead: remote.remote, rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming });
     }, revision);
     return rows;
   }

@@ -1,5 +1,10 @@
 import type { SyncSnapshot } from "../services/source-control-sync";
 
+/** The checked-out branch as the branch menus name it; none while the repository could not open (a detached HEAD). */
+export function branchLabel(branch: string): string {
+  return branch === "" ? "No Branch Checked Out" : branch;
+}
+
 /** `1 Commit`, `3 Commits`. */
 export function commitsLabel(count: number): string {
   return `${count} ${count === 1 ? "Commit" : "Commits"}`;
@@ -54,6 +59,7 @@ export function transferLabel(snapshot: Pick<SyncSnapshot, "operation" | "ahead"
   if (operation.kind === "push") return `Pushing ${commitsLabel(snapshot.ahead)}${bytes}`;
   if (operation.kind === "pull") return `Pulling ${commitsLabel(snapshot.behind)}${bytes}`;
   if (operation.kind === "publish") return `Publishing${bytes}`;
+  if (operation.kind === "switch") return `Switching Branch${bytes}`;
   if (operation.kind === "commit") return "Committing";
   return null;
 }

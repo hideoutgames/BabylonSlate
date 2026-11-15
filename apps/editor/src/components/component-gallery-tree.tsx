@@ -105,6 +105,8 @@ const createGalleryTreeNodes = (): TreeViewNode[] => [
     depth: 3,
     hasChildren: false,
     expanded: false,
+    // A status tint, as Source Control's Actors window marks a changed item.
+    tone: "warning",
     icon: (
       <TypeVisualIcon
         visual={resolveTypeVisual({ classId: "MeshComponent" })}

@@ -860,6 +860,50 @@ describe("DocumentProvider actions and route", () => {
       expect(documents().externalChangePrompt).toBeNull();
     });
 
+    it("never replaces a document with unsaved edits when project.json changed, and leaves the project reload to the prompt", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const stored = openScene(MAIN_SCENE_ID);
+      await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(stored, 4)));
+      const edited = openScene(MAIN_SCENE_ID);
+      // Only project.json changes on disk (another branch's settings, a revert of it).
+      const storage = new OpfsStorageAdapter();
+      await storage.openDocumentsProject("Stable");
+      const other = new ProjectService(storage);
+      const { document, layouts } = await other.loadCurrentProject();
+      await other.saveProject({ ...document, metadata: { ...document.metadata, version: "9.9" } }, layouts);
+      await other.closeProject();
+      const hold = holdForPull(actions);
+      await act(() => actions.applyPulledChanges([PROJECT_FILE], hold));
+      // The unsaved edit and its history stay; the user decides about the reload.
+      expect(openScene(MAIN_SCENE_ID)).toBe(edited);
+      expect(documents().openDocuments.find((doc) => doc.id === MAIN_SCENE_ID)!.dirty).toBe(true);
+      expect(documents().canUndoActiveDocument).toBe(true);
+      expect(documents().projectDocument?.metadata.version).not.toBe("9.9");
+      expect(documents().externalChangePrompt?.kind).toBe("reload-project");
+      expect(actions.getAuthoringLock().readOnly).toBe(false);
+    });
+
+    it("keeps unsaved Project Settings when project.json changed, leaving the project reload to the prompt", async () => {
+      const actions = await openProject();
+      const compileOnSave = documents().projectDocument!.settings.compileOnSave;
+      act(() => actions.updateProjectSettings({ compileOnSave: !compileOnSave }));
+      expect(documents().projectDirty).toBe(true);
+      const storage = new OpfsStorageAdapter();
+      await storage.openDocumentsProject("Stable");
+      const other = new ProjectService(storage);
+      const { document, layouts } = await other.loadCurrentProject();
+      await other.saveProject({ ...document, metadata: { ...document.metadata, version: "9.9" } }, layouts);
+      await other.closeProject();
+      const hold = holdForPull(actions);
+      await act(() => actions.applyPulledChanges([PROJECT_FILE], hold));
+      expect(documents().projectDocument!.settings.compileOnSave).toBe(!compileOnSave);
+      expect(documents().projectDocument!.metadata.version).not.toBe("9.9");
+      expect(documents().projectDirty).toBe(true);
+      expect(documents().externalChangePrompt?.kind).toBe("reload-project");
+      expect(actions.getAuthoringLock().readOnly).toBe(false);
+    });
+
     it("reloads the pulled Scene even when a foreground rescan during the pull already took its new time", async () => {
       const actions = await openProject();
       await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

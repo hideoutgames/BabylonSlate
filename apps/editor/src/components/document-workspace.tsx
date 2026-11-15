@@ -292,13 +292,16 @@ export function DocumentWorkspace() {
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
                 data-testid="document-workspace-source-control"
               >
-                <RegisteredDockviewShell
-                  key={doc.sourceControlIntegrated ? "integrated" : "manual"}
-                  id={id}
-                  documentKind="source-control"
-                  initialLayout={doc.layout}
-                  sourceControlIntegrated={doc.sourceControlIntegrated}
-                />
+                {/* Its windows tell when another tab is in front (the Actors and Diff windows stop following saves). */}
+                <DocumentWorkspaceProvider documentId={id}>
+                  <RegisteredDockviewShell
+                    key={doc.sourceControlIntegrated ? "integrated" : "manual"}
+                    id={id}
+                    documentKind="source-control"
+                    initialLayout={doc.layout}
+                    sourceControlIntegrated={doc.sourceControlIntegrated}
+                  />
+                </DocumentWorkspaceProvider>
               </div>
             </WorkspaceErrorBoundary>
           );

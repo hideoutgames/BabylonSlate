@@ -1,9 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SourceControlSyncService } from "../services/source-control-sync";
-import { integratedSync } from "../testing/integrated-sync";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
+import { SyncError } from "@haptic/source-control";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import type { OpenDocument } from "../services/document-service";
+import { SourceControlSyncService } from "../services/source-control-sync";
+import { INTEGRATED_REPOSITORY, integratedSync } from "../testing/integrated-sync";
 import { EditorStatusBar } from "./editor-status-bar";
-import { SourceControlActionsProvider } from "./source-control-actions";
+import { SourceControlActionsProvider, useSourceControlActions } from "./source-control-actions";
 
 const state = vi.hoisted(() => ({
   recoveryAvailable: false,
@@ -11,12 +15,14 @@ const state = vi.hoisted(() => ({
   autoSaveStatus: null as { state: "saved" | "error"; message?: string } | null,
   sync: null as SourceControlSyncService | null,
   setActiveDocument: vi.fn(),
+  activeDocumentId: null as string | null,
+  openDocuments: [] as OpenDocument[],
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
-  openDocuments: [],
+  openDocuments: state.openDocuments,
   dirtyDocuments: [],
-  activeDocumentId: null,
+  activeDocumentId: state.activeDocumentId,
   projectDirty: state.projectDirty,
   autoSaveStatus: state.autoSaveStatus,
   recoveryAvailable: state.recoveryAvailable,
@@ -34,6 +40,8 @@ afterEach(() => {
   state.autoSaveStatus = null;
   state.sync = null;
   state.setActiveDocument.mockClear();
+  state.activeDocumentId = null;
+  state.openDocuments = [];
 });
 
 function renderIntegrated() {
@@ -143,7 +151,7 @@ describe("EditorStatusBar", () => {
       expect(state.setActiveDocument).toHaveBeenCalledWith("source-control");
     });
 
-    it("opens a menu with Commit…, Pull, Push, Refresh and Open Source Control", async () => {
+    it("opens a menu with Commit…, Pull, Push, Refresh, the branch actions, Open Source Control and Open History", async () => {
       const { service } = await integratedSync();
       state.sync = service;
       renderIntegrated();
@@ -154,8 +162,92 @@ describe("EditorStatusBar", () => {
         "Pull",
         "Push",
         "Refresh",
+        "Switch Branch",
+        "New Branch…",
         "Open Source Control",
+        "Open History",
       ]);
+    });
+
+    it("lists this copy's branches and the remote's under Switch Branch, and switching asks first", async () => {
+      const { service, remote } = await integratedSync();
+      remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
+      state.sync = service;
+      renderIntegrated();
+      fireEvent.click(screen.getByTestId("status-source-control-menu"));
+      fireEvent.click(await screen.findByTestId("status-source-control-switch-branch"));
+      const current = await screen.findByTestId("status-source-control-branch-main");
+      expect(current.getAttribute("aria-checked")).toBe("true");
+      const art = await screen.findByTestId("status-source-control-remote-art");
+      await act(async () => {
+        fireEvent.click(art);
+      });
+      // A switch rewrites files, so it is confirmed first; nothing has changed yet.
+      expect((await screen.findByTestId("source-control-switch-confirm")).textContent).toContain("Switch To art?");
+      expect(service.getSnapshot().branch).toBe("main");
+    });
+
+    it("names no branch, with why, when the repository could not open on a detached HEAD", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const folder = await storage.openDocumentsProject("Game");
+      const detached = "This working copy has no branch checked out. Check out a branch with the Git app that left it, then open the project again.";
+      const service = new SourceControlSyncService();
+      await service.configure({
+        settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, mode: "integrated", repositoryUrl: INTEGRATED_REPOSITORY, branch: "main" },
+        folder,
+        storage,
+        platform: "web",
+        testMode: true,
+        lookup: () => null,
+        locks: { theirs: async () => [], releaseOwn: async () => {} },
+        factory: {
+          open: async () => {
+            throw new SyncError("conflict", detached, { code: "detached-head" });
+          },
+          init: async () => {
+            throw new Error("Not published here.");
+          },
+          author: async () => ({ name: "ada", email: "" }),
+          readAdoption: async () => false,
+          setAdoption: async () => {},
+        },
+      });
+      state.sync = service;
+      renderIntegrated();
+      const menu = screen.getByTestId("status-source-control-menu");
+      expect(menu.textContent).toBe("No Branch Checked Out");
+      expect(menu.getAttribute("aria-label")).toBe("Source Control Menu: No Branch Checked Out");
+      fireEvent.click(menu);
+      // Not the project's default branch marked as checked out, and no branch to start another from.
+      expect(screen.queryByTestId("status-source-control-branch-main")).toBeNull();
+      expect((await screen.findByTestId("status-source-control-new-branch")).getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(screen.getByTestId("status-source-control-switch-branch"));
+      expect((await screen.findByTestId("status-source-control-no-branch")).textContent).toContain(detached);
+      expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+    });
+
+    it("opens History on the asset in the active tab", async () => {
+      const { service } = await integratedSync();
+      state.sync = service;
+      state.activeDocumentId = "scene:assets/Forest.scene.hasset";
+      state.openDocuments = [{ id: "scene:assets/Forest.scene.hasset", ref: { kind: "scene", path: "assets/Forest.scene.hasset", label: "Forest" }, content: {}, layout: null, dirty: false }];
+      let historyPath: string | null = null;
+      function Probe() {
+        historyPath = useSourceControlActions().historyPath;
+        return null;
+      }
+      render(
+        <SourceControlActionsProvider>
+          <EditorStatusBar />
+          <Probe />
+        </SourceControlActionsProvider>,
+      );
+      fireEvent.click(screen.getByTestId("status-source-control-menu"));
+      await act(async () => {
+        fireEvent.click(await screen.findByTestId("status-source-control-history"));
+      });
+      expect(state.setActiveDocument).toHaveBeenCalledWith("source-control");
+      expect(historyPath).toBe("assets/Forest.scene.hasset");
     });
   });
 });

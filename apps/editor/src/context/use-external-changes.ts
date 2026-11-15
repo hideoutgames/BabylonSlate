@@ -246,9 +246,12 @@ export function useExternalChanges({
    * change snapshot, as the foreground rescan does, and reads the project or
    * the clean changed documents. Then, in one synchronous step, it releases
    * the hold and applies them, so nothing runs against a half-reloaded
-   * project. Changed documents with unsaved edits are never replaced: they get
-   * the external-change prompt. If another lock arrived meanwhile nothing is
-   * applied and the snapshot stays, so the next foreground rescan reports it.
+   * project. A document with unsaved edits is never replaced: a changed one
+   * gets the external-change prompt, and a project reload (a changed
+   * `project.json`, many changes) runs only while no document or Project
+   * Settings is unsaved, else it is left to the prompt too. If another lock
+   * arrived meanwhile nothing is applied and the snapshot stays, so the next
+   * foreground rescan reports it.
    */
   const applyPulledChanges = useCallback(async (paths: readonly string[], hold: AuthoringHold) => {
     try {
@@ -277,8 +280,10 @@ export function useExternalChanges({
         nextProjectJsonMtime: nextProject,
         openDocs,
       });
-      // Unsaved edits a pulled change reaches are the user's call.
-      const reloadProject = result.kind === "reload-project" && result.dirtyChangedPaths.length === 0;
+      // A project reload replaces every open document and the project's settings, so it runs only
+      // while nothing is unsaved; otherwise it is the user's call, as are unsaved edits a change reaches.
+      const unsaved = openDocs.some((doc) => doc.dirty) || projectSaveState.current.isDirty(projectDocumentRef.current);
+      const reloadProject = result.kind === "reload-project" && !unsaved;
       const project = reloadProject ? (await projectService.loadCurrentProject()).document : null;
       const reads = await readOpenDocuments(reloadProject ? openDocs.map((doc) => doc.path) : result.cleanChangedPaths);
       if (documentService.getAuthoringLock() !== hold.lock) return;
@@ -291,7 +296,8 @@ export function useExternalChanges({
       // A document that could not be read keeps its old time, so the next rescan offers it again.
       for (const path of reads.failed) if (path in previous.assets) nextAssets[path] = previous.assets[path] ?? null;
       mtimeSnapshotRef.current = { assets: nextAssets, projectJson: nextProject };
-      if (result.dirtyChangedPaths.length > 0) setExternalChangePrompt(result);
+      // The snapshot has moved on, so the next rescan will not report these again: ask now.
+      if (result.dirtyChangedPaths.length > 0 || (result.kind === "reload-project" && !reloadProject)) setExternalChangePrompt(result);
     } finally {
       hold.release();
     }

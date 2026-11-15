@@ -7,6 +7,11 @@ import { SourceControlSyncService, type SyncConfigureInput, type SyncLocks, type
 
 export const INTEGRATED_REPOSITORY = "https://github.com/team/game.git";
 
+/** A branch's committed `project.json` with these source control settings (Integrated with `INTEGRATED_REPOSITORY` by default). */
+export function projectJsonWith(sourceControl: { mode: string; repositoryUrl: string } = { mode: "integrated", repositoryUrl: INTEGRATED_REPOSITORY }): string {
+  return JSON.stringify({ settings: { sourceControl: { ...sourceControl, branch: "main" } } });
+}
+
 /** Forest (a Scene) and Rock (a Texture), as the registry would describe them. */
 export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
   path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobPaths: [] }
@@ -18,12 +23,13 @@ export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
  * working copy in memory storage of a `FakeRemote` seeded with Forest and
  * Rock, so editor tests drive the same service the editor runs.
  */
-export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsRule?: boolean } = {}) {
+export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsRule?: boolean; files?: Record<string, string | Uint8Array>; lookup?: ChangeLookup } = {}) {
   const remote = new FakeRemote();
   remote.commit({
     ...(options.lfsRule === false ? {} : { ".gitattributes": `${GITATTRIBUTES_LFS_RULE}\n` }),
     "assets/Forest.scene.hasset": "F",
     "assets/Rock.texture.hasset": "R",
+    ...options.files,
   }, "Seed");
   const storage = new MemoryStorageAdapter("documents");
   const folder = await storage.openDocumentsProject("Game");
@@ -40,7 +46,7 @@ export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsR
     storage,
     platform: "web",
     testMode: true,
-    lookup: INTEGRATED_LOOKUP,
+    lookup: options.lookup ?? INTEGRATED_LOOKUP,
     locks,
     factory: {
       open: async () => port,

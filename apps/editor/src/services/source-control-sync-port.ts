@@ -53,10 +53,12 @@ export async function testRemote(repositoryUrl: string): Promise<FakeRemote> {
   return remote;
 }
 
-function copyKey(request: Pick<SyncPortRequest, "folderId" | "repositoryUrl" | "branch">): string {
-  return [request.folderId, remoteKey(request.repositoryUrl), request.branch].join("\n");
+/** A folder's working copy keeps its own branch, as its `.git/HEAD` does on a device. */
+function copyKey(request: Pick<SyncPortRequest, "folderId" | "repositoryUrl">): string {
+  return [request.folderId, remoteKey(request.repositoryUrl)].join("\n");
 }
 
+/** The Git core and its options for the folder; a copy that exists opens on the branch its HEAD names. */
 async function deviceRepository(request: SyncPortRequest) {
   const location = parseRepositoryUrl(request.repositoryUrl);
   if (!location) throw new Error(`Invalid repository URL: ${request.repositoryUrl}`);
@@ -69,7 +71,6 @@ async function deviceRepository(request: SyncPortRequest) {
       http: monitoredHttp(accounts.http, request.transfer),
       credential: accounts.credentialSource(location.origin),
       repositoryUrl: request.repositoryUrl,
-      branch: request.branch,
     },
   };
 }
@@ -96,7 +97,7 @@ export const syncPortFactory: SyncPortFactory = {
       return copy;
     }
     const { git, options } = await deviceRepository(request);
-    return git.initRepository({ ...options, replace: request.replace });
+    return git.initRepository({ ...options, branch: request.branch, replace: request.replace });
   },
   async author(repositoryUrl, testMode) {
     const location = parseRepositoryUrl(repositoryUrl);
@@ -129,5 +130,5 @@ export async function cloneIntoFolder(request: SyncPortRequest & TransferOptions
     return copy;
   }
   const { git, options } = await deviceRepository(bound);
-  return git.cloneRepository({ ...options, ...signal });
+  return git.cloneRepository({ ...options, branch: request.branch, ...signal });
 }

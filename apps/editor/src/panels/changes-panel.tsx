@@ -4,11 +4,13 @@ import {
   ArrowDownToLineIcon,
   ArrowUpFromLineIcon,
   CheckIcon,
+  ChevronDownIcon,
   FileIcon,
   FolderIcon,
   GitBranchIcon,
   GitCommitHorizontalIcon,
   LockIcon,
+  PlusIcon,
   RefreshCwIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -26,6 +28,14 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/com
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
 import { Checkbox } from "@haptic/ui/components/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@haptic/ui/components/dropdown-menu";
 import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { Label } from "@haptic/ui/components/label";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
@@ -33,10 +43,11 @@ import { Textarea } from "@haptic/ui/components/textarea";
 import { cn } from "@haptic/ui/lib/utils";
 import { useDocumentActions, useIntegratedSync, useIntegratedSyncState, useSourceControl } from "../context/document-context";
 import { AdoptGitFolderDialog } from "../components/source-control-adopt-dialog";
-import { useSourceControlActions } from "../components/source-control-actions";
+import { useSourceControlActions, useSourceControlDiffState } from "../components/source-control-actions";
+import { BranchMenuItems } from "../components/source-control-branch-menu";
 import { integratedBlockerLabel, type IntegratedBlocker } from "../lib/source-control-mode";
 import type { ChangeRow as ChangeRowData } from "../lib/source-control-changes";
-import { agoLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
+import { agoLabel, branchLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
 import { useTransferBytes } from "../lib/transfer-bytes";
 import type { SyncSnapshot } from "../services/source-control-sync";
 
@@ -65,19 +76,25 @@ const ChangeRow = memo(function ChangeRow({
   included,
   ownLock,
   disabled,
+  selected,
   onToggle,
+  onOpen,
 }: Pick<ChangeRowData, "id" | "name" | "folder" | "kind" | "type"> & {
   included: boolean;
   ownLock: boolean;
   disabled: boolean;
+  /** Its diff is the one open. */
+  selected: boolean;
   onToggle: (id: string, included: boolean) => void;
+  onOpen: (id: string, name: string, type: string | null) => void;
 }) {
   return (
     <div
       role="listitem"
-      className="flex h-full items-center gap-2 px-2 text-sm"
+      className={cn("flex h-full items-center gap-2 px-2 text-sm", selected && "bg-accent")}
       data-testid={`changes-row-${id}`}
       data-change-kind={kind}
+      data-selected={selected || undefined}
     >
       <Checkbox
         aria-label={`Include ${name}`}
@@ -85,9 +102,20 @@ const ChangeRow = memo(function ChangeRow({
         disabled={disabled}
         onCheckedChange={(checked) => onToggle(id, checked === true)}
       />
-      <RowIcon type={type} />
-      <span className="truncate">{name}</span>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{folder}</span>
+      {/* The rest of the row opens its diff. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-full min-w-0 flex-1 justify-start gap-2 px-1 font-normal"
+        aria-label={`Compare ${name}`}
+        aria-pressed={selected}
+        data-testid={`changes-open-${id}`}
+        onClick={() => onOpen(id, name, type)}
+      >
+        <RowIcon type={type} />
+        <span className="truncate">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground">{folder}</span>
+      </Button>
       {ownLock ? <LockIcon className="size-3.5 shrink-0 text-muted-foreground" role="img" aria-label="Locked By You" /> : null}
       <span className={cn("w-3.5 shrink-0 text-center text-xs font-bold", KIND_CLASS[kind])} title={KIND_LABEL[kind]}>
         {KIND_LETTER[kind]}
@@ -106,6 +134,30 @@ function IncomingRow({ commit, now }: { commit: CommitInfo; now: number }) {
         {commit.author.name} · {agoLabel(commit.timestamp * 1000, now)}
       </span>
     </li>
+  );
+}
+
+/** The checked-out branch, as a menu of the branches to switch to and **New Branch…**. */
+function BranchPicker({ branch, busy, committed }: { branch: string; busy: boolean; committed: boolean }) {
+  const { requestNewBranch } = useSourceControlActions();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="min-w-0" aria-label={branch ? `Branch ${branch}` : branchLabel(branch)} data-testid="changes-branch" />}>
+        <GitBranchIcon data-icon="inline-start" />
+        <span className="truncate">{branchLabel(branch)}</span>
+        <ChevronDownIcon data-icon="inline-end" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-48">
+        <BranchMenuItems testId="changes" />
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem disabled={busy || !committed} onClick={requestNewBranch} data-testid="changes-new-branch">
+            <PlusIcon />
+            New Branch…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -235,10 +287,13 @@ export function ChangesPanelContents() {
   const snapshot = useIntegratedSyncState();
   const { sourceControl } = useSourceControl();
   const actions = useSourceControlActions();
+  const diffState = useSourceControlDiffState();
   const touch = useTouchUi();
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
   const now = Date.now();
   const busy = snapshot.operation !== null && snapshot.operation.kind !== "fetch";
+  // The repository did not open (a detached HEAD): nothing to commit to or pull into.
+  const unopened = snapshot.branch === "";
   const rows = snapshot.rows;
   const included = useMemo(() => new Set(rows.filter((row) => !excluded.has(row.id)).map((row) => row.id)), [excluded, rows]);
   const allIncluded = rows.length > 0 && included.size === rows.length;
@@ -252,6 +307,9 @@ export function ChangesPanelContents() {
     });
   }, []);
   const includeAll = useCallback(() => setExcluded(new Set()), []);
+  const { openDiff } = actions;
+  // Base HEAD, compare the working copy: what a commit of the row would record.
+  const open = useCallback((path: string, name: string, type: string | null) => openDiff({ path, name, type }), [openDiff]);
 
   if (snapshot.blocked || !snapshot.active) return <InactiveChanges blocker={snapshot.blocked} />;
 
@@ -263,10 +321,7 @@ export function ChangesPanelContents() {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 flex-col gap-1 p-2">
           <div className="flex items-center gap-1">
-            <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium" data-testid="changes-branch">
-              <GitBranchIcon className="size-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">{snapshot.branch}</span>
-            </span>
+            <BranchPicker branch={snapshot.branch} busy={busy} committed={snapshot.head !== null} />
             <span className="flex-1" />
             <Button
               variant="ghost"
@@ -279,7 +334,7 @@ export function ChangesPanelContents() {
             >
               <RefreshCwIcon />
             </Button>
-            <Button variant="outline" size="sm" data-testid="changes-pull" disabled={busy} onClick={actions.requestPull}>
+            <Button variant="outline" size="sm" data-testid="changes-pull" disabled={busy || unopened} onClick={actions.requestPull}>
               <ArrowDownToLineIcon data-icon="inline-start" />
               Pull
               {snapshot.behind > 0 ? <Badge variant="secondary">{snapshot.behind}</Badge> : null}
@@ -340,7 +395,9 @@ export function ChangesPanelContents() {
                         included={!excluded.has(row.id)}
                         ownLock={sourceControl.lockStateForPath(row.id) === "mine"}
                         disabled={busy}
+                        selected={diffState.target?.path === row.id}
                         onToggle={toggle}
+                        onOpen={open}
                       />
                     );
                   }}
@@ -360,7 +417,7 @@ export function ChangesPanelContents() {
             ) : null}
           </div>
         </ScrollArea>
-        <CommitBox included={included} busy={busy} onCommitted={includeAll} />
+        <CommitBox included={included} busy={busy || unopened} onCommitted={includeAll} />
       </div>
     </PanelFrame>
   );

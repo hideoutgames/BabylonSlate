@@ -25,6 +25,7 @@ import { MaterialRenderControlProvider } from "../context/material-render-contro
 import type { OpenDocument } from "../services/document-service";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { EditorChromeBar } from "./editor-chrome-bar";
+import { SourceControlActionsProvider } from "./source-control-actions";
 
 const state = vi.hoisted(() => ({
   registry: null as AssetRegistry | null,
@@ -82,7 +83,10 @@ function Chrome({ onCloseAllDocuments }: { onCloseAllDocuments?: () => void }) {
   return (
     <MaterialRenderControlProvider>
       <TooltipProvider>
-        <EditorChromeBar onCloseAllDocuments={onCloseAllDocuments} />
+        {/* As in the editor route: Source Control's actions and open diff (the toolbar's version pickers). */}
+        <SourceControlActionsProvider>
+          <EditorChromeBar onCloseAllDocuments={onCloseAllDocuments} />
+        </SourceControlActionsProvider>
       </TooltipProvider>
     </MaterialRenderControlProvider>
   );

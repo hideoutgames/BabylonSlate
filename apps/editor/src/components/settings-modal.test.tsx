@@ -1087,6 +1087,29 @@ describe("SettingsModal project authoring", () => {
     expect(within(screen.getByTestId("settings-source-control-mode")).getAllByRole("button").map((button) => button.textContent)).toEqual(["Off", "Manual"]);
   });
 
+  it("offers Integrated back to an iPad copy in app storage that has .git, which only Haptic syncs, without the one-Git-app warning", async () => {
+    host.platform = "ios";
+    host.testMode = false;
+    sourceControl.folder.current = { tier: "documents", hasGit: true };
+    // A branch whose project.json says Manual left this working copy without Haptic's Git.
+    projectSourceControl.current = { mode: "manual", repositoryUrl: "https://github.com/team/game.git", branch: "main" };
+    sourceControl.readGitPrefill.mockResolvedValueOnce({ repositoryUrl: "https://github.com/team/game.git", branch: "main" });
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    const integrated = await screen.findByTestId("settings-source-control-mode-integrated");
+    expect(within(screen.getByTestId("settings-source-control-mode")).getAllByRole("button").map((button) => button.textContent)).toEqual(["Off", "Integrated", "Manual"]);
+    await act(async () => {
+      fireEvent.click(integrated);
+    });
+    await waitFor(() =>
+      expect(updateProjectSettings).toHaveBeenCalledWith({
+        sourceControl: expect.objectContaining({ mode: "integrated", repositoryUrl: "https://github.com/team/game.git", branch: "main" }),
+      }),
+    );
+    expect(screen.queryByTestId("source-control-adopt-confirm")).toBeNull();
+    expect(sourceControl.setAdoption).not.toHaveBeenCalled();
+  });
+
   it("shows Integrated and Release Locks After Push for an Integrated project, and why a folder cannot run it", async () => {
     host.platform = "ios";
     host.testMode = false;
@@ -1111,6 +1134,8 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-source-control-url").hasAttribute("readonly")).toBe(true);
     expect(screen.getByTestId("settings-source-control-branch").hasAttribute("readonly")).toBe(true);
     expect(screen.getByTestId("settings-source-control-branch").getAttribute("role")).not.toBe("combobox");
+    // The project's branch is the team's default; the checked-out one is the working copy's own.
+    expect(screen.getByLabelText("Default Branch")).toBe(screen.getByTestId("settings-source-control-branch"));
   });
 
   it("fills Source Control from Git without replacing a URL typed during the read", async () => {

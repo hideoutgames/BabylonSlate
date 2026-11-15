@@ -753,8 +753,9 @@ export class ProjectService {
 
   /**
    * Clone: a new folder in app storage named after `name`, filled by `clone`
-   * (the repository's branch), with Integrated mode and the repository and
-   * branch written into its `project.json` (unless it says so already).
+   * (the repository's branch), with Integrated mode and the repository (the
+   * cloned branch as its default) written into its `project.json`, unless it
+   * already names the repository in Integrated mode.
    * A failure or a cancel through `signal`, even one after the files arrived,
    * removes the folder; a branch with no `project.json` is refused. The
    * folder is released: open it as a listed project.
@@ -780,7 +781,8 @@ export class ProjectService {
       }
       const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as { settings?: { sourceControl?: Partial<SourceControlProjectSettings> } };
       const current = raw.settings?.sourceControl;
-      if (!(current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl) && current.branch === options.branch)) {
+      // Its branch is the team's default; the clone's own branch lives in its working copy, so another branch writes nothing.
+      if (!(current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl))) {
         raw.settings = { ...raw.settings, sourceControl: { ...current, mode: "integrated", repositoryUrl: options.repositoryUrl, branch: options.branch } };
         await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
       }

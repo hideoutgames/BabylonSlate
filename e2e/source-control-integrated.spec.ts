@@ -17,7 +17,7 @@ const SCENE_PATH = "assets/main.scene.hasset";
 
 interface SyncHook {
   snapshot: () => { active: boolean; ahead: number; behind: number; rows: { id: string }[]; operation: unknown };
-  teammateCommit: (url: string, changes: Record<string, string | null>, message?: string) => Promise<string>;
+  teammateCommit: (url: string, changes: Record<string, string | null>, message?: string, branch?: string) => Promise<string>;
   remoteText: (url: string, path: string) => Promise<string | null>;
   remoteHeadMessage: (url: string) => Promise<string | null>;
 }
@@ -39,10 +39,10 @@ function remoteHeadMessage(page: Page) {
   return page.evaluate((url) => (globalThis as SyncHost).__hapticSourceControlSync!.remoteHeadMessage(url), REPOSITORY);
 }
 
-function teammateCommit(page: Page, changes: Record<string, string | null>, message: string) {
+function teammateCommit(page: Page, changes: Record<string, string | null>, message: string, branch = "main") {
   return page.evaluate(
-    ([url, files, text]) => (globalThis as SyncHost).__hapticSourceControlSync!.teammateCommit(url, files, text),
-    [REPOSITORY, changes, message] as const,
+    ([url, files, text, on]) => (globalThis as SyncHost).__hapticSourceControlSync!.teammateCommit(url, files, text, on),
+    [REPOSITORY, changes, message, branch] as const,
   );
 }
 
@@ -102,6 +102,23 @@ test.describe("Source Control in Integrated mode", () => {
     await page.getByTestId("status-source-control-changes").click();
     const changes = page.getByTestId("changes-panel").filter({ visible: true });
     await expect(changes.getByTestId(`changes-row-${SCENE_PATH}`)).toBeVisible();
+
+    // The row opens the Scene's diff (HEAD against the working copy, on the diff worker); Revert Asset puts HEAD's version back.
+    await changes.getByTestId(`changes-open-${SCENE_PATH}`).click();
+    await expect(page.getByTestId("diff-actors-panel").filter({ visible: true }).getByTestId("diff-counts")).toHaveText("0 Added0 Removed1 Changed", { timeout: 30_000 });
+    const diff = page.getByTestId("diff-panel").filter({ visible: true });
+    await expect(diff.getByTestId("diff-properties").locator('[data-changed="true"]').first()).toBeVisible();
+    await expect(page.getByTestId("diff-base")).toContainText("main ·");
+    await expect(page.getByTestId("diff-compare")).toContainText("Working Copy");
+    await diff.getByTestId("diff-revert").click();
+    await expect(page.getByTestId("source-control-revert-confirm")).toContainText("It cannot be undone.");
+    await page.getByTestId("source-control-revert-confirm-action").click();
+    // Documents are editable again once the reverted Scene has reloaded.
+    await expect(page.getByTestId("source-control-revert-running")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByTestId("status-source-control-changes")).toHaveText("0 Changes", { timeout: 30_000 });
+    await editAndSaveScene(page);
+    await expect(changes.getByTestId(`changes-row-${SCENE_PATH}`)).toBeVisible({ timeout: 30_000 });
+
     await changes.getByTestId("changes-commit-message").fill("Move the first actor");
     await expect(changes.getByTestId("changes-commit")).toHaveText("Commit 1 Asset");
     await changes.getByTestId("changes-commit").click();
@@ -129,5 +146,29 @@ test.describe("Source Control in Integrated mode", () => {
     // The teammate's file came in; the kept Scene is still this copy's uncommitted change.
     await expect.poll(() => settled(page), { timeout: 30_000 }).toEqual({ active: true, ahead: 0, behind: 0, rows: [SCENE_PATH], busy: false });
     await expect(page.getByTestId("status-source-control-changes")).toHaveText("1 Change");
+
+    // A teammate's branch, listed from the remote: switching writes its files and keeps the Scene's edit, which both branches hold alike.
+    await teammateCommit(page, { "notes/art.txt": "art" }, "Art notes", "art");
+    await page.getByTestId("status-source-control-menu").click();
+    await page.getByTestId("status-source-control-switch-branch").click();
+    await page.getByTestId("status-source-control-remote-art").click();
+    await expect(page.getByTestId("source-control-switch-confirm")).toContainText("Switch To art?");
+    await page.getByTestId("source-control-switch-confirm-action").click();
+    await expect(page.getByTestId("source-control-switch-running")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByTestId("status-source-control-menu")).toContainText("art");
+    // Still only the Scene: the checked-out branch is the working copy's, so the switch changed no project.json.
+    await expect.poll(() => settled(page), { timeout: 30_000 }).toEqual({ active: true, ahead: 0, behind: 0, rows: [SCENE_PATH], busy: false });
+
+    // History of the Scene being edited, then of the whole branch.
+    await page.getByTestId("status-source-control-menu").click();
+    await page.getByTestId("status-source-control-history").click();
+    const history = page.getByTestId("history-panel").filter({ visible: true });
+    await expect(history.getByTestId("history-list")).toContainText("Teammate edit", { timeout: 30_000 });
+    await expect(history.getByTestId("history-list")).not.toContainText("Art notes");
+    await history.getByTestId("history-scope-all").click();
+    await expect(history.getByTestId("history-list")).toContainText("Art notes");
+    await history.getByText("Art notes").click();
+    await expect(history.getByTestId("history-details")).toContainText("Teammate");
+    await expect(history.getByTestId("history-assets")).toContainText("art");
   });
 });

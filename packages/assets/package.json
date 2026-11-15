@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./area-emission-client": "./src/area-emission-client.ts",
+    "./asset-diff": "./src/asset-diff.ts",
+    "./asset-diff-client": "./src/asset-diff-client.ts",
     "./import-worker-client": "./src/import-worker-client.ts"
   },
   "scripts": {
