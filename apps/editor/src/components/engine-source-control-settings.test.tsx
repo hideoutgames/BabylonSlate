@@ -110,7 +110,7 @@ describe("Engine Settings → Source Control", () => {
       expect(screen.queryByTestId("source-control-sign-in-dialog")).toBeNull();
     });
     expect(await state.accounts!.list()).toEqual([
-      { origin: "https://github.com", username: "x-access-token", token: "fake-github-token", kind: "github", account: "ada" },
+      { origin: "https://github.com", username: "x-access-token", token: "fake-github-token", kind: "github", account: "ada", accountId: "1001" },
     ]);
     expect((await screen.findByTestId("settings-source-control-account-github-user")).textContent).toBe("ada");
     fireEvent.click(screen.getByTestId("settings-source-control-sign-out-github"));
