@@ -4,6 +4,7 @@ import type {
   LockProvider,
   LockResult,
   UnlockOptions,
+  VerifyOptions,
 } from "./types";
 
 export interface FakeLockProviderOptions {
@@ -60,7 +61,9 @@ export class FakeLockProvider implements LockProvider {
     return ok(lock);
   }
 
-  async verify(): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>> {
+  /** Every lock, whatever `options.branch`: a host that does not scope locks by ref. */
+  async verify(options?: VerifyOptions): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>> {
+    void options;
     const ours: FileLock[] = [];
     const theirs: FileLock[] = [];
     for (const lock of this.byId.values()) {

@@ -170,13 +170,15 @@ describe("Remove Unused Files", () => {
   it("removes nothing when cancelled while it waits for other writers, and no cancel stops it once removing began", async () => {
     const lost = await texture("Lost", 3);
     let enter!: () => void;
-    let entered = new Promise<void>((resolve) => { enter = resolve; });
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
     let proceed!: () => void;
     const drained = new Promise<void>((resolve) => { proceed = resolve; });
+    let waits = 0;
     const { service, storage } = await integratedSync({
       files: (await seed()).files,
       // Admitted writers drain until the wait's signal ends it, as the project service waits.
       exclusiveWrites: async (_reason, work, storage, signal) => {
+        waits += 1;
         enter();
         await new Promise<void>((resolve, reject) => {
           signal.addEventListener("abort", () => reject(signal.reason), { once: true });
@@ -199,9 +201,9 @@ describe("Remove Unused Files", () => {
     // A cancel is no problem to show.
     expect(service.getSnapshot().problem).toBeNull();
 
-    // Cancelled before its turn: nothing is read or waited for.
-    entered = new Promise<void>((resolve) => { enter = resolve; });
+    // Cancelled before its turn: nothing waits for other writers.
     await expect(service.removeUnusedFiles(found.paths, { signal: cancel.signal })).rejects.toMatchObject({ kind: "cancelled" });
+    expect(waits).toBe(1);
 
     proceed();
     const late = new AbortController();
