@@ -16,33 +16,43 @@ export function sceneActor(id: string, name: string, extra: Record<string, unkno
   };
 }
 
-/**
- * A Scene `.hasset` whose document holds `actors`, and the blobs it stores
- * chunks in (by digest): a document of 64 KiB or more is a blob, as a large
- * Scene's is.
- */
-export async function sceneAsset(actors: unknown[], name = "Forest"): Promise<{ bytes: Uint8Array; blobs: Map<string, Uint8Array> }> {
+type Stored = { bytes: Uint8Array; blobs: Map<string, Uint8Array> };
+
+/** A `.hasset` of `type` with `document` in its document chunk (or none), `payload` in its header and `chunks` beside it. */
+export async function testAsset(type: string, name: string, options: { document?: unknown; payload?: Record<string, unknown>; chunks?: { id: string; kind: string; mime: string; data: Uint8Array }[] }): Promise<Stored> {
   const blobs = new Map<string, Uint8Array>();
-  const document = { name, viewportMode: "3d", settings: {}, actors, folders: [] };
   const bytes = await encodeHasset({
     header: {
       dependencies: [],
       requiredDependencies: [],
+      ...(type === "Class" ? { requiredVariableNames: [] } : {}),
       dependencyMetadataVersion: 1,
       engineVersion: "0.0.0",
       guid: `guid-${name}`,
       mode: "thin",
       name,
-      payload: {},
-      type: "Scene",
-      version: 4,
+      payload: options.payload ?? {},
+      type,
+      version: 1,
     },
-    chunks: [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify(document)) }],
+    chunks: [
+      ...(options.document === undefined ? [] : [{ id: "document", kind: "document", mime: "application/json", data: new TextEncoder().encode(JSON.stringify(options.document)) }]),
+      ...(options.chunks ?? []),
+    ],
     writeBlob: async (sha, data) => {
       blobs.set(sha, data);
     },
   });
   return { bytes, blobs };
+}
+
+/**
+ * A Scene `.hasset` whose document holds `actors`, and the blobs it stores
+ * chunks in (by digest): a document of 64 KiB or more is a blob, as a large
+ * Scene's is.
+ */
+export function sceneAsset(actors: unknown[], name = "Forest"): Promise<Stored> {
+  return testAsset("Scene", name, { document: { name, viewportMode: "3d", settings: {}, actors, folders: [] } });
 }
 
 /** `count` actors: enough for the document to go to a blob. */

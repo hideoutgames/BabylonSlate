@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceControlActionsProvider, useSourceControlDiff } from "../components/source-control-actions";
 import { SourceControlDiffPickers } from "../components/source-control-diff-pickers";
 import type { SourceControlSyncService } from "../services/source-control-sync";
-import { sceneActor, sceneAsset } from "../testing/diff-assets";
+import { sceneActor, sceneAsset, testAsset } from "../testing/diff-assets";
 import { integratedSync } from "../testing/integrated-sync";
 import { ChangesPanelContents } from "./changes-panel";
 import { DiffActorsContents } from "./diff-actors-panel";
@@ -153,6 +153,46 @@ describe("Source Control diff windows", () => {
     fireEvent.click(screen.getByTestId("source-control-revert-cancel"));
     await waitFor(() => expect(screen.queryByTestId("source-control-revert-confirm")).toBeNull());
     expect(await storage.readBinary(PATH)).toEqual(before);
+  });
+
+  it("draws a graph diff on the read-only canvas: nodes tagged by what changed, the old pin value struck through beside the new", async () => {
+    const pin = { id: "speed", name: "Max Walk Speed", kind: "data", direction: "in", type: { kind: "float" } };
+    const node = (id: string, title: string, data: Record<string, unknown> = {}) => ({ id, type: "pinNode", position: { x: 0, y: 0 }, data: { __nodeType: "call.custom", title, __pins: [pin], ...data } });
+    const graph = (speed: number, last: string) => ({ nodes: [node("set", "Set Max Walk Speed", { "default:speed": speed }), node(last, last)], edges: [], members: [] });
+    const path = "assets/Player.class.hasset";
+    const sync = await integratedSync({ files: { [path]: (await testAsset("Class", "Player", { document: graph(600, "Print String") })).bytes } });
+    state.sync = sync.service;
+    await sync.storage.writeBinary(path, (await testAsset("Class", "Player", { document: graph(750, "Play Sound 2D") })).bytes);
+    await sync.service.refreshStatus();
+    renderTab();
+    act(() => diffService!.open({ path, name: "Player", type: "Class" }));
+    const canvas = await screen.findByTestId("diff-graph", {}, { timeout: 5000 });
+    await waitFor(() => expect(canvas.querySelectorAll("[data-diff-status]").length).toBe(3));
+    const statuses = [...canvas.querySelectorAll<HTMLElement>("[data-diff-status]")].map((element) => [element.textContent?.includes("Play Sound 2D") ? "Play Sound 2D" : element.textContent?.includes("Print String") ? "Print String" : "Set Max Walk Speed", element.dataset.diffStatus]);
+    expect(statuses).toEqual([["Set Max Walk Speed", "changed"], ["Play Sound 2D", "added"], ["Print String", "removed"]]);
+    const values = within(canvas).getByTestId("diff-pin-changes");
+    expect(within(values).getByText("600").tagName).toBe("DEL");
+    expect(within(values).getByText("750").tagName).toBe("SPAN");
+    // The Actors window lists the graph and its changed nodes.
+    expect(within(screen.getByTestId("diff-actors-tree")).getByText("Play Sound 2D").dataset.tone).toBe("success");
+
+    fireEvent.click(screen.getByTestId("diff-graph-base"));
+    await waitFor(() => expect(canvas.querySelectorAll("[data-diff-status]").length).toBe(2));
+  });
+
+  it("compares a Texture's facts and counts the Materials that use it, with no preview where none decodes", async () => {
+    const path = "assets/Rock.texture.hasset";
+    const texture = (width: number) => testAsset("Texture", "Rock", { payload: { width, height: width, usage: "albedo" }, chunks: [{ id: "source", kind: "source", mime: "image/png", data: new Uint8Array(64).fill(width % 251) }] });
+    const sync = await integratedSync({ files: { [path]: (await texture(1024)).bytes } });
+    state.sync = sync.service;
+    await sync.storage.writeBinary(path, (await texture(2048)).bytes);
+    await sync.service.refreshStatus();
+    renderTab();
+    act(() => diffService!.open({ path, name: "Rock", type: "Texture" }));
+    expect((await screen.findByTestId("diff-row-size")).textContent).toBe("Size1024 × 10242048 × 2048");
+    expect(screen.getByTestId("diff-row-source").dataset.changed).toBe("true");
+    expect(screen.getByTestId("diff-texture-base-none").textContent).toBe("No Preview");
+    expect(screen.getByTestId("diff-texture-materials").textContent).toBe("Used By 0 Materials");
   });
 
   it("shows why a version cannot be compared", async () => {
