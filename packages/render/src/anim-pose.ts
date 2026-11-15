@@ -22,6 +22,7 @@ import {
   writeNodeTrs,
   type BoneNode,
 } from "./anim-bone-modifiers";
+import { applySpringBones } from "./anim-spring-bones";
 
 /**
  * Haptic's pose evaluator: Play, the editor's previews and exported games pose 3D clips here, never by starting,
@@ -694,8 +695,9 @@ export function applyPose(
   weights: ArrayLike<number>,
   layering?: PoseLayering | null,
 ): void {
-  // A change toward a world-space target follows the actor as it moves, so it poses again every time.
-  if (layering?.modifiers.some(followsWorld)) rig.lastLayering = "";
+  // A change toward a world-space target follows the actor as it moves, and Spring Bones step each pose: both pose
+  // again every time.
+  if (layering?.modifiers.some(posesEveryTime)) rig.lastLayering = "";
   if (samePose(rig, count, clips, frames, weights, layeringSignature(count, layering))) return;
   const { properties, stamps, weights: totals, blended, posed, quaternions, components, clipProperties } = rig;
   // Stamps mark the properties this pose blends; a wrapped counter clears them.
@@ -791,7 +793,8 @@ export function applyPose(
 
 const NO_BLENDS: readonly AnimLayerBlend[] = [];
 
-function followsWorld(change: AnimBoneModifier): boolean {
+function posesEveryTime(change: AnimBoneModifier): boolean {
+  if (change.kind === "springBones") return true;
   if (change.kind === "lookAt") return change.targetSpace === "world";
   if (change.kind === "twoBoneIk") return change.effectorSpace === "world" || (!!change.jointTarget && change.jointTargetSpace === "world");
   return false;
@@ -1095,7 +1098,7 @@ function changeAlpha(node: BoneNode, change: AnimBoneModifier, blends: readonly 
 }
 
 /**
- * Applies skeletal control changes (Transform Bone, Look At, Two Bone IK) in order on the posed nodes. Each starts
+ * Applies skeletal control changes (Transform Bone, Look At, Two Bone IK, Spring Bones) in order on the posed nodes. Each starts
  * from the bones' pose: the blended value where a clip animates a channel, else its rest, so a channel a change set
  * last pose and no clip animates returns to rest first. A bone no change touches any more stays at rest.
  */
@@ -1119,6 +1122,11 @@ function applyBoneModifiers(
   for (const modifier of modifiers) {
     const node = boneNodeOf(rig, modifier.bone);
     if (!node) continue;
+    if (modifier.kind === "springBones") {
+      applySpringBones(rig, node, modifier, generation, (name) => boneNodeOf(rig, name), (bone, base, solved) =>
+        writeBoneChange(rig, bone, base, solved, changeAlpha(bone, modifier, blends), WRITE_ROTATION, generation));
+      continue;
+    }
     if (modifier.kind === "twoBoneIk") {
       const chain = ikChainOf(node);
       if (!chain) continue;

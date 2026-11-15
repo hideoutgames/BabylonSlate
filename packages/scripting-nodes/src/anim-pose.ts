@@ -161,6 +161,17 @@ export const animPoseNodes: NodeDefinition[] = [
     ],
     ["IK", "Inverse Kinematics", "Reach", "Limb IK"],
   ),
+  poseNode(
+    "anim.control.springBones",
+    "Spring Bones",
+    "Simulates the bones below a Root Bone as springs that trail the pose, such as a tail, hair or a cape, blended in by Alpha.",
+    () => [
+      pin("sourcePose", "sourcePose", "in", POSE),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["Kawaii Physics", "Dynamics", "Jiggle", "Tail", "Hair", "Cape"],
+  ),
   // 2D frame graphs.
   poseNode("anim.frame.output", "Output Frame", "The frame this graph shows.", () => [pin("frame", "frame", "in", FRAME)]),
   poseNode("anim.frame.spritePlayer", "Sprite Animation Player", "Plays a Sprite Animation.", () => [

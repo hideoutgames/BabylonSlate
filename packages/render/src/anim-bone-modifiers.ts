@@ -34,7 +34,8 @@ export const TRANSLATION = 0;
 export const ROTATION = 3;
 export const SCALE = 7;
 
-function parentOf(node: unknown): BoneNode | null {
+/** A posed node's parent, when it is a node too. */
+export function parentOf(node: unknown): BoneNode | null {
   const parent = (node as { parent?: unknown } | null)?.parent;
   return parent && typeof parent === "object" && "position" in parent ? (parent as BoneNode) : null;
 }
@@ -107,7 +108,7 @@ const actor = new Matrix();
 const chainMatrix = new Matrix();
 const chain: BoneNode[] = [];
 
-function localMatrixOf(node: BoneNode, out: Matrix): void {
+export function localMatrixOf(node: BoneNode, out: Matrix): void {
   const q = node.rotationQuaternion ?? (node.rotation
     ? Quaternion.RotationYawPitchRoll(node.rotation.y, node.rotation.x, node.rotation.z)
     : Quaternion.Identity());
@@ -278,7 +279,7 @@ const q1 = new Quaternion();
 const q2 = new Quaternion();
 
 /** The actor's root node a bone poses under: its topmost ancestor, whose placement is the actor's. */
-function actorRootOf(node: BoneNode): BoneNode {
+export function actorRootOf(node: BoneNode): BoneNode {
   let root: BoneNode = node;
   for (let parent = parentOf(root); parent; parent = parentOf(parent)) root = parent;
   return root;
@@ -302,7 +303,7 @@ function actorPoint(node: BoneNode, value: readonly number[], space: "actor" | "
 }
 
 /** `matrix` turned by `rotation` about `point`, both in the space `matrix` maps into, into `out`. */
-function turnAbout(matrix: Matrix, rotation: Quaternion, point: Vector3, out: Matrix): void {
+export function turnAbout(matrix: Matrix, rotation: Quaternion, point: Vector3, out: Matrix): void {
   Matrix.TranslationToRef(-point.x, -point.y, -point.z, shift);
   rotation.toRotationMatrix(turn);
   Matrix.TranslationToRef(point.x, point.y, point.z, unshift);
@@ -312,7 +313,7 @@ function turnAbout(matrix: Matrix, rotation: Quaternion, point: Vector3, out: Ma
 }
 
 /** The rotation of `local` (a bone's new local matrix) into `out`'s rotation, keeping `base`'s translation and scale. */
-function storeRotation(local: Matrix, base: Float64Array, out: Float64Array): void {
+export function storeRotation(local: Matrix, base: Float64Array, out: Float64Array): void {
   local.decompose(scale, rotation, position);
   out.set(base.subarray(0, TRS_LENGTH));
   out[ROTATION] = rotation.x;
@@ -321,7 +322,7 @@ function storeRotation(local: Matrix, base: Float64Array, out: Float64Array): vo
   out[ROTATION + 3] = rotation.w;
 }
 
-function composeTrs(values: Float64Array, out: Matrix): Matrix {
+export function composeTrs(values: Float64Array, out: Matrix): Matrix {
   loadTrs(values);
   return Matrix.ComposeToRef(scale, rotation, position, out);
 }

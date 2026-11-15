@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./fbx-import": "./src/convert-fbx-to-glb.ts",
+    "./fbx-conversion": "./src/fbx-conversion.ts",
     "./glb-test-fixtures": "./src/glb-test-fixtures.ts",
     "./framegraph-test-fixtures": "./src/framegraph-test-fixtures.ts",
     "./light-block-engine": "./src/test-support/light-block-engine.ts",

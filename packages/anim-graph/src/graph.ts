@@ -11,6 +11,7 @@ import {
   type ResolvedClipAdditive,
   ANIM_CONTROL_LOOK_AT_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
+  ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_POSE_APPLY_ADDITIVE_TYPE,
   isSkeletalControlType,
   ANIM_FRAME_OUTPUT_TYPE,
@@ -592,6 +593,7 @@ export function validateAnimGraph(
 const SKELETAL_CONTROL_TITLES: Record<string, string> = {
   [ANIM_CONTROL_LOOK_AT_TYPE]: "Look At",
   [ANIM_CONTROL_TWO_BONE_IK_TYPE]: "Two Bone IK",
+  [ANIM_CONTROL_SPRING_BONES_TYPE]: "Spring Bones",
 };
 
 /**

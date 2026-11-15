@@ -78,6 +78,10 @@ const FEATURE_TEST_ANIMATION_NAMES = {
   reacherGraph: "FT_AnimReacher",
   /** The Knight Model on the reacher graph; FT_Animation's scene script sets its targets. */
   reacher: "FT_AnimReacherActor",
+  /** The Velociraptor's graph: Run with Spring Bones on its tail. */
+  velociraptorGraph: "FT_AnimVelociraptor",
+  /** The Velociraptor's Class: runs in a circle round where it is placed. */
+  velociraptor: "FT_AnimVelociraptorActor",
 } as const;
 
 /** The skinned characters' scene. */
@@ -150,7 +154,7 @@ interface AnimationRefs {
   locomotor: PlacedClass;
   doorGraph: string;
   /** The KayKit characters' Classes. */
-  characters: { knight: PlacedClass; rogue: PlacedClass; largeMannequin: PlacedClass; reacher: PlacedClass };
+  characters: { knight: PlacedClass; rogue: PlacedClass; largeMannequin: PlacedClass; reacher: PlacedClass; velociraptor: PlacedClass };
 }
 
 const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
@@ -190,6 +194,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   };
   const largeGraph = await saveGraph(ctx, largeMannequinGraphDocument(ctx));
   const reacherGraph = await saveGraph(ctx, reacherGraphDocument(ctx));
+  const velociraptorGraph = await saveGraph(ctx, velociraptorGraphDocument(ctx));
   const characters = {
     knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph, throwAttack),
     rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph, throwAttack),
@@ -200,6 +205,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
       largeGraph,
     ),
     reacher: await saveModelActor(ctx, NAMES.reacher, requireRef(kaykit.knight, "the KayKit Knight Model"), reacherGraph),
+    velociraptor: await saveVelociraptor(ctx, velociraptorGraph),
   };
   refsByContext.set(ctx, { locomotor, doorGraph, characters });
 }
@@ -302,6 +308,11 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
   ]);
   add(reachTarget);
   scene.script = animationSceneScript({ knight, prop, reacher, marker, reachTarget });
+  // Runs round its place behind the others; its tail's Spring Bones trail the turn.
+  add(actor("ft-animscene-velociraptor", "Velociraptor", tf(VELOCIRAPTOR_RUN.center), instanceComponents("ft-animscene-velociraptor", refs.characters.velociraptor.components), {
+    classId: refs.characters.velociraptor.ref.classId,
+  }));
+  add(caption("ft-animscene-caption-springs", "Spring Bones Caption", [VELOCIRAPTOR_RUN.center[0], 0.05, 1.1], "Spring Bones", font, 0.35));
   add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-2.4, 0.05, -1.6], "Shared Skeleton", font, 0.35));
   add(caption("ft-animscene-caption-large", "Rig_Large Caption", [1.2, 0.05, -1.6], "Rig_Large", font, 0.35));
   add(caption("ft-animscene-caption-ik", "IK Caption", [REACHER.x, 0.05, -1.6], "Look At and IK", font, 0.35));
@@ -824,6 +835,108 @@ function reacherGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
     transitions: [],
     variables: [LOOK_TARGET, REACH_TARGET],
   });
+}
+
+/** Where the Velociraptor runs: round its placed center, at this radius (m) and turn rate (rad/s). */
+const VELOCIRAPTOR_RUN = { center: [0, 0, 3] as Vec3, radius: 1.6, rate: 1.5 };
+
+/**
+ * The Velociraptor (imported from FBX): one Run state, Run looping into Spring Bones on the tail (Tail1 and below):
+ * soft toward the tip, with gravity, a light seeded wind, World Damping low enough that turning swings it, a 50°
+ * limit, a short tip, and a sphere collider on the hips.
+ */
+function velociraptorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  const raptor = ctx.assets.velociraptor;
+  const run = animationClip(ctx, requireRef(raptor.animations.Run, "the Velociraptor Run Animation"));
+  return stateMachineGraph("3d", {
+    name: NAMES.velociraptorGraph,
+    skeletonGuid: requireRef(raptor.skeleton, "the Velociraptor Skeleton"),
+    entryStateId: "run",
+    states: [{
+      id: "run",
+      name: "Run",
+      position: { x: 80, y: 80 },
+      stateGraph: poseGraph("3d", "tail-springs", [
+        playerNode("3d", "run", -200, 0, run),
+        gNode("tail-springs", "anim.control.springBones", 160, 0, {
+          bone: "Tail1",
+          stiffness: 0.08,
+          damping: 0.05,
+          worldDampingLocation: 0.3,
+          worldDampingRotation: 0.2,
+          gravity: [0, -4, 0],
+          windDirection: [1, 0, 0],
+          windStrength: 1.5,
+          windSeed: 7,
+          radius: 0.04,
+          limitDegrees: 50,
+          tipLength: 0.1,
+          stiffnessCurve: [{ t: 0, value: 1 }, { t: 1, value: 0.4 }],
+          colliders: [{ kind: "sphere", bone: "Hips", offset: [0, 0, 0], radius: 0.15 }],
+        }),
+      ], [gWire("run", "pose", "tail-springs", "sourcePose")]),
+    }],
+    transitions: [],
+    variables: [],
+  });
+}
+
+/**
+ * The Velociraptor's Class: Begin Play keeps where it was placed as Origin; Tick runs it round Origin by game time,
+ * facing the way it runs (its Model faces +Z, so its yaw is the angle plus 90°).
+ */
+async function saveVelociraptor(ctx: FeatureTestContext, graphGuid: string): Promise<PlacedClass> {
+  const origin = varMember("ft-anim-var-origin", "Origin", "vec3", { x: 0, y: 0, z: 0 }, { category: "Run" });
+  const components: SerializedComponent[] = [
+    meshComp("prefab-mesh", "box", { assetGuid: requireRef(ctx.assets.velociraptor.model, "the Velociraptor Model") }),
+    comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
+  ];
+  const { radius, rate } = VELOCIRAPTOR_RUN;
+  const graph = classGraph({
+    members: [origin],
+    components,
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, -200),
+      gNode("placed", "transform.getLocation", 0, -80),
+      setVar("set-origin", origin, 240, -200),
+      gNode("tick", "flow.event.tick", 0, 80),
+      gNode("time", "time.getGameTimeSeconds", 0, 240),
+      gNode("angle", "math.mul", 200, 240, { "default:b": rate }),
+      gNode("sine", "math.sin", 400, 200),
+      gNode("cosine", "math.cos", 400, 320),
+      gNode("x", "math.mul", 600, 200, { "default:b": radius }),
+      gNode("z", "math.mul", 600, 320, { "default:b": radius }),
+      gNode("offset", "vector.make3", 800, 240, { "default:y": 0 }),
+      getVar("get-origin", origin, 800, 400),
+      gNode("at", "vector.add3", 1000, 240),
+      gNode("move", "transform.setLocation", 1200, 80),
+      gNode("degrees", "math.mul", 400, 460, { "default:b": 180 / Math.PI }),
+      gNode("heading", "math.add", 600, 460, { "default:b": 90 }),
+      gNode("facing", "struct.makeRotator", 800, 520),
+      gNode("turn", "transform.setRotation", 1440, 80),
+    ],
+    edges: [
+      gExec("begin", "set-origin"),
+      gWire("placed", "out", "set-origin", "value"),
+      ...gChain("tick", "move", "turn"),
+      gWire("time", "seconds", "angle", "a"),
+      gWire("angle", "out", "sine", "in"),
+      gWire("angle", "out", "cosine", "in"),
+      gWire("sine", "out", "x", "a"),
+      gWire("cosine", "out", "z", "a"),
+      gWire("x", "out", "offset", "x"),
+      gWire("z", "out", "offset", "z"),
+      gWire("offset", "out", "at", "a"),
+      gWire("get-origin", "value", "at", "b"),
+      gWire("at", "out", "move", "location"),
+      gWire("angle", "out", "degrees", "a"),
+      gWire("degrees", "out", "heading", "a"),
+      gWire("heading", "out", "facing", "yaw"),
+      gWire("facing", "out", "turn", "rotation"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.velociraptor, parentClass: "Actor", graph });
+  return { ref, components };
 }
 
 /** A Class with a Model and an Animation Graph and no script: a scene script drives its graph. */

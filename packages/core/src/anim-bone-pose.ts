@@ -1,3 +1,5 @@
+import type { AnimSpringBonesChange } from "./anim-spring-bones";
+
 /**
  * Per-bone pose data an Animation Graph evaluation hands render (the `animState` command): the branch filters and
  * weights of each Layered Blend Per Bone it reached, and the bone changes its Transform Bone nodes made. Render
@@ -176,7 +178,7 @@ export interface AnimTwoBoneIkChange {
 }
 
 /** A skeletal control's change to bones after the clips blend, applied in evaluation order. */
-export type AnimBoneModifier = AnimTransformBoneChange | AnimLookAtChange | AnimTwoBoneIkChange;
+export type AnimBoneModifier = AnimTransformBoneChange | AnimLookAtChange | AnimTwoBoneIkChange | AnimSpringBonesChange;
 
 /** Bone-local axes a Look At aims or keeps up, as stored on the node. */
 export const ANIM_BONE_AXES = ["x", "-x", "y", "-y", "z", "-z"] as const;

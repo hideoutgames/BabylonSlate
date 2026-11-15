@@ -5,7 +5,7 @@ import type { AnimEvalState } from "@haptic/anim-graph";
 import type { ModelMaterialSlot, SkeletonKind } from "@haptic/assets";
 import {
   applyAnimStateToScene,
-  attachIkTargetPreview,
+  attachSkeletalControlPreview,
   attachMaterialPreviewGestures,
   attachSkeletonPreview,
   bindAnimationGroupByName,
@@ -19,7 +19,7 @@ import {
   retargetAnimationGroupWithMeshProxy,
   setSceneRenderSettings,
   type EditorGrid,
-  type IkTargetPreviewHandle,
+  type SkeletalControlPreviewHandle,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type PoseClip,
@@ -72,7 +72,7 @@ function animStateCommand(state: AnimEvalState) {
 /**
  * The Animation Graph Preview's 3D view: the preview Model on a floor grid, playing the clip layers of each evaluation
  * the way Play seeks them, drawn on the project's shared Engine. Bones replace the mesh while `showBones` is on, with
- * a marker at each Look At target and Two Bone IK effector and Joint Target.
+ * a marker at each Look At target and Two Bone IK effector and Joint Target, and each Spring Bones collider.
  */
 export function AnimGraphPreviewCanvas({
   modelBytes,
@@ -106,8 +106,9 @@ export function AnimGraphPreviewCanvas({
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
-  const markersRef = useRef<IkTargetPreviewHandle | null>(null);
+  const markersRef = useRef<SkeletalControlPreviewHandle | null>(null);
   const [markerCount, setMarkerCount] = useState(0);
+  const [colliderCount, setColliderCount] = useState(0);
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
   const readRef = useRef(readModelBytes);
@@ -244,7 +245,8 @@ export function AnimGraphPreviewCanvas({
             const markers = markersRef.current;
             if (markers) {
               markers.update(state.boneModifiers ?? []);
-              setMarkerCount(markers.count);
+              setMarkerCount(markers.targetCount);
+              setColliderCount(markers.colliderCount);
             }
             presenter?.present({ force: true });
           } else {
@@ -281,16 +283,18 @@ export function AnimGraphPreviewCanvas({
     markersRef.current = null;
     setBonesAttached(false);
     setMarkerCount(0);
+    setColliderCount(0);
     if (!host || !showBones || !skeletonKind) {
       presenterRef.current?.present({ force: true });
       return;
     }
     const rig = previewRigRoot(host);
     bonesRef.current = attachSkeletonPreview(rig, host.scene, skeletonKind);
-    const markers = attachIkTargetPreview(rig, host.scene);
+    const markers = attachSkeletalControlPreview(rig, host.scene);
     markers.update(stateRef.current.getState()?.boneModifiers ?? []);
     markersRef.current = markers;
-    setMarkerCount(markers.count);
+    setMarkerCount(markers.targetCount);
+    setColliderCount(markers.colliderCount);
     setBonesAttached(true);
     presenterRef.current?.present({ force: true });
   }, [generation, showBones, skeletonKind]);
@@ -302,6 +306,7 @@ export function AnimGraphPreviewCanvas({
       data-testid="anim-preview-canvas"
       data-bones={bonesAttached ? "true" : "false"}
       data-ik-targets={String(markerCount)}
+      data-spring-colliders={String(colliderCount)}
       data-clips={String(boundClips)}
     />
   );

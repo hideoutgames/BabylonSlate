@@ -4,8 +4,10 @@ import {
   animBranchFilterKey,
   parseAnimBoneModifyMode,
   parseAnimBoneSpace,
+  normalizeAnimSpringBoneSettings,
   parseAnimTargetSpace,
   rotatorToQuat,
+  type AnimSpringBoneSettings,
   type AnimBoneChannel,
   type AnimBoneModifier,
   type AnimLayerBlend,
@@ -48,6 +50,7 @@ import {
   ANIM_CONTROL_TRANSFORM_BONE_TYPE,
   ANIM_CONTROL_LOOK_AT_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
+  ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_POSE_LAYERED_BLEND_TYPE,
   ANIM_POSE_SAVE_CACHED_TYPE,
   ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
@@ -668,6 +671,21 @@ function twoBoneIkModifier(node: GraphNode, data: AnimPoseData | undefined, alph
   };
 }
 
+/** Each Spring Bones node's settings, kept per node object (graphs are replaced, never mutated). */
+const springSettings = new WeakMap<GraphNode, AnimSpringBoneSettings>();
+
+/** A Spring Bones change at `alpha`, stepped by this tick's `dtSeconds`. Null when it names no Root Bone. */
+function springBonesModifier(node: GraphNode, alpha: number, dtSeconds: number): AnimBoneModifier | null {
+  const bone = boneOf(node);
+  if (!bone || !(alpha > 0)) return null;
+  let settings = springSettings.get(node);
+  if (!settings) {
+    settings = normalizeAnimSpringBoneSettings(node.data);
+    springSettings.set(node, settings);
+  }
+  return { kind: "springBones", bone, alpha: Math.min(1, alpha), dtSeconds: Math.max(0, dtSeconds), settings };
+}
+
 /**
  * A cached pose's visit this tick: evaluated in the graph its Save Cached Pose is in, once a tick, at the tick's time
  * step, whichever state uses it first. Its players keep their time across the states that use it. An unknown name,
@@ -942,7 +960,10 @@ function visitPoseGraph(
       }
       return;
     }
-    if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE || node.type === ANIM_CONTROL_LOOK_AT_TYPE || node.type === ANIM_CONTROL_TWO_BONE_IK_TYPE) {
+    if (
+      node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE || node.type === ANIM_CONTROL_LOOK_AT_TYPE ||
+      node.type === ANIM_CONTROL_TWO_BONE_IK_TYPE || node.type === ANIM_CONTROL_SPRING_BONES_TYPE
+    ) {
       // The bone changes after the pose it takes, so a change deeper in the graph applies first.
       visit(poseInputSource(index, node.id, "sourcePose"), weight, flipX, flipY, masks, additive);
       if (additive) return;
@@ -951,7 +972,9 @@ function visitPoseGraph(
         ? transformBoneModifier(node, data, alpha)
         : node.type === ANIM_CONTROL_TWO_BONE_IK_TYPE
           ? twoBoneIkModifier(node, data, alpha)
-          : lookAtModifier(node, easedLookAtTarget(ctx, key, node, vectorOf(dataValue<unknown>(data, node, "target", null), 0), dtSeconds, fresh), alpha);
+          : node.type === ANIM_CONTROL_SPRING_BONES_TYPE
+            ? springBonesModifier(node, alpha, dtSeconds)
+            : lookAtModifier(node, easedLookAtTarget(ctx, key, node, vectorOf(dataValue<unknown>(data, node, "target", null), 0), dtSeconds, fresh), alpha);
       if (modifier) modifiers.push(masks ? { ...modifier, masks } : modifier);
       return;
     }
