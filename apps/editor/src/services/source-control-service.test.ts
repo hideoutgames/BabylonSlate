@@ -1068,6 +1068,30 @@ describe("SourceControlService lock ref", () => {
     } finally { service.dispose(); }
   });
 
+  it("holds an edit made before the branch is known even when the default branch lists it as locked, and locks it on the branch", async () => {
+    const host = scopedHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    const HERO = "assets/hero.scene.hasset";
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(host.http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      // An earlier session locked Hero on main; checks list main's locks while the branch is not known.
+      service.setCheckedOutBranch("main");
+      await service.autoLock(HERO);
+      service.setCheckedOutBranch("");
+      await service.refresh();
+      expect(service.lockForPath(HERO)?.ours).toBe(true);
+
+      await service.autoLock(HERO);
+      service.setCheckedOutBranch("feature");
+      await vi.waitFor(() => expect(host.held("feature")).toEqual([HERO]));
+    } finally { service.dispose(); }
+  });
+
   it("lists a lock once after a branch move on a host that does not scope locks by ref", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();

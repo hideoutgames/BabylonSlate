@@ -676,7 +676,13 @@ export class SourceControlService {
     if (!this.active || !this.settings.autoLockOnEdit || !this.provider || this.unsupported) {
       return;
     }
-    const held = this.locksByPath.get(path);
+    // Before the branch is known the list is the default branch's, which may not be HEAD's.
+    if (!this.lockBranchKnown) {
+      this.heldAutoLocks.add(path);
+      return;
+    }
+    // Only a list of the branch locks name now says the lock is held (a move's own check may not have landed).
+    const held = this.listBranch === this.lockBranch ? this.locksByPath.get(path) : undefined;
     if (held?.ours) {
       this.autoLockAttempted.add(path);
       // Every applied edit lands here once the lock is ours; notify only
@@ -688,10 +694,6 @@ export class SourceControlService {
       return;
     }
     if (this.autoLockAttempted.has(path)) return;
-    if (!this.lockBranchKnown) {
-      this.heldAutoLocks.add(path);
-      return;
-    }
     this.autoLockAttempted.add(path);
     const revision = this.providerRevision;
     let result;
