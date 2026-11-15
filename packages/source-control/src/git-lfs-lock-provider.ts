@@ -1,4 +1,4 @@
-import { err, isOk, ok } from "@haptic/core";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, err, isOk, ok } from "@haptic/core";
 import { authorizedHttp, credentialAllowsOrigin, type CredentialKind } from "./credentials";
 import { errorMessage, originOf, parseJsonObject, type HttpRequest, type HttpResponse } from "./http";
 import {
@@ -82,7 +82,7 @@ export class GitLfsLockProvider implements LockProvider {
     const theirs: FileLock[] = [];
     const cursors = new Set<string>();
     // Every page of one listing names the same branch.
-    const ref = refOf(options.branch ?? this.branch());
+    const ref = refOf(options.branch || this.branch());
     let cursor: string | undefined;
     for (;;) {
       const body: Record<string, unknown> = { ref };
@@ -203,9 +203,13 @@ export class GitLfsLockProvider implements LockProvider {
   }
 }
 
-/** The Git LFS locking API's `ref`: the branch the locks belong to. */
+/**
+ * The Git LFS locking API's `ref`: the branch the locks belong to. Never
+ * `refs/heads/` alone: an empty branch (a setting being typed) names the
+ * default one, as an unnamed branch does everywhere else.
+ */
 function refOf(branch: string): { name: string } {
-  return { name: lfsRefName(branch) };
+  return { name: lfsRefName(branch.trim() || DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS.branch) };
 }
 
 function messageOf(json: Record<string, unknown> | null, fallback: string): string {

@@ -228,12 +228,18 @@ describe("GitLfsLockProvider", () => {
     await provider.verify();
     // A push checks the locks of the branch it pushes.
     await provider.verify({ branch: "hotfix" });
+    // Never an empty ref (`refs/heads/`): an empty branch names the provider's, and an empty provider branch the default one.
+    await provider.verify({ branch: "" });
+    branch = "";
+    await provider.create("assets/hero.scene.hasset");
     expect(refs).toEqual([
       { name: "refs/heads/main" },
       { name: "refs/heads/feature" },
       { name: "refs/heads/feature" },
       { name: "refs/heads/feature" },
       { name: "refs/heads/hotfix" },
+      { name: "refs/heads/feature" },
+      { name: "refs/heads/main" },
     ]);
   });
 
