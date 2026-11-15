@@ -172,6 +172,17 @@ export const animPoseNodes: NodeDefinition[] = [
     ],
     ["Kawaii Physics", "Dynamics", "Jiggle", "Tail", "Hair", "Cape"],
   ),
+  poseNode(
+    "anim.control.footPlacement",
+    "Foot Placement",
+    "Plants each foot on the ground beneath it with Two Bone IK, lowering the pelvis so the lower foot reaches, blended in by Alpha.",
+    () => [
+      pin("sourcePose", "sourcePose", "in", POSE),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["Foot IK", "Leg IK", "Ground Alignment", "Feet On Ground"],
+  ),
   // 2D frame graphs.
   poseNode("anim.frame.output", "Output Frame", "The frame this graph shows.", () => [pin("frame", "frame", "in", FRAME)]),
   poseNode("anim.frame.spritePlayer", "Sprite Animation Player", "Plays a Sprite Animation.", () => [

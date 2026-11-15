@@ -9,8 +9,9 @@ import {
   normalizeAnimSpringBoneSettings,
   type AnimSpringCollider,
 } from "@haptic/core";
-import { LabelHint, PropertyGrid, SearchDialog, type PropertyRow } from "@haptic/editor-kit";
+import { PropertyGrid, SearchDialog, type PropertyRow } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
+import { BoneNameList } from "./bone-name-list";
 import { IconActionButton } from "./icon-action-button";
 
 function boneOptions(bones: readonly string[], current: string): Array<{ value: string; label: string }> {
@@ -73,38 +74,23 @@ export function SpringBonesLists({
   bones: readonly string[];
   onPatch: (patch: Record<string, unknown>) => void;
 }) {
-  const [picking, setPicking] = useState<"exclude" | "collider" | null>(null);
+  const [picking, setPicking] = useState(false);
   const settings = normalizeAnimSpringBoneSettings(data);
   const excluded = settings.excludeBones;
   const colliders = settings.colliders;
   const writeColliders = (next: AnimSpringCollider[]) => onPatch({ colliders: next });
-  const pickable = picking === "exclude" ? bones.filter((bone) => !excluded.includes(bone)) : bones;
+
   return (
     <div className="flex flex-col gap-3" data-testid="spring-bones-lists">
-      <div className="flex flex-col gap-1" data-testid="spring-bones-exclude">
-        <LabelHint hint="These bones, and every bone below them, stay posed.">
-          <div className="w-fit text-sm font-medium">Exclude Bones</div>
-        </LabelHint>
-        {excluded.map((bone) => (
-          <div key={bone} className="flex min-w-0 items-center gap-1 px-1">
-            <span className="min-w-0 flex-1 truncate text-sm" title={bone}>{bone}</span>
-            <IconActionButton
-              label={`Remove ${bone}`}
-              variant="ghost"
-              data-testid={`spring-bones-exclude-remove-${bone}`}
-              onClick={() => onPatch({ excludeBones: excluded.filter((entry) => entry !== bone) })}
-            >
-              <Trash2Icon />
-            </IconActionButton>
-          </div>
-        ))}
-        <Button
-          type="button" variant="outline" size="sm" className="ml-1 w-fit" disabled={bones.length === 0}
-          data-testid="spring-bones-exclude-add" onClick={() => setPicking("exclude")}
-        >
-          Add Bone
-        </Button>
-      </div>
+      <BoneNameList
+        title="Exclude Bones"
+        hint="These bones, and every bone below them, stay posed."
+        addLabel="Add Bone"
+        value={excluded}
+        bones={bones}
+        onChange={(excludeBones) => onPatch({ excludeBones })}
+        testId="spring-bones-exclude"
+      />
       <div className="flex flex-col gap-1" data-testid="spring-bones-colliders">
         <div className="text-sm font-medium">Colliders</div>
         {colliders.map((collider, index) => (
@@ -128,25 +114,22 @@ export function SpringBonesLists({
         ))}
         <Button
           type="button" variant="outline" size="sm" className="ml-1 w-fit" disabled={bones.length === 0}
-          data-testid="spring-collider-add" onClick={() => setPicking("collider")}
+          data-testid="spring-collider-add" onClick={() => setPicking(true)}
         >
           Add Collider
         </Button>
       </div>
       {bones.length === 0 ? <div className="text-muted-foreground px-1 text-sm">Set the graph's Skeleton to pick bones.</div> : null}
       <SearchDialog
-        open={picking !== null}
-        onOpenChange={(open) => {
-          if (!open) setPicking(null);
-        }}
-        title={picking === "collider" ? "Add Collider" : "Exclude Bone"}
-        items={pickable.map((bone) => ({ id: bone, label: bone }))}
+        open={picking}
+        onOpenChange={setPicking}
+        title="Add Collider"
+        items={bones.map((bone) => ({ id: bone, label: bone }))}
         onSelect={(bone) => {
-          if (picking === "exclude") onPatch({ excludeBones: [...excluded, bone] });
-          if (picking === "collider") writeColliders([...colliders, defaultAnimSpringCollider(bone)]);
-          setPicking(null);
+          writeColliders([...colliders, defaultAnimSpringCollider(bone)]);
+          setPicking(false);
         }}
-        data-testid="spring-bones-bone-picker"
+        data-testid="spring-collider-picker"
       />
     </div>
   );

@@ -6,12 +6,13 @@ import type {
   GraphClassMember,
   SerializedGraph,
 } from "@haptic/core";
-import { normalizeTag, normalizeTagContainer } from "@haptic/core";
+import { normalizeAnimFootPlacement, normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
   type ResolvedClipAdditive,
   ANIM_CONTROL_LOOK_AT_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
   ANIM_CONTROL_SPRING_BONES_TYPE,
+  ANIM_CONTROL_FOOT_PLACEMENT_TYPE,
   ANIM_POSE_APPLY_ADDITIVE_TYPE,
   isSkeletalControlType,
   ANIM_FRAME_OUTPUT_TYPE,
@@ -586,6 +587,12 @@ export function validateAnimGraph(
       diagnostics.push(...clipDiagnostics(doc, byGuid, node.id, node.type, assetGuid, location, options.dimension));
     }
     for (const node of graph.nodes) {
+      if (node.type === ANIM_CONTROL_FOOT_PLACEMENT_TYPE) {
+        if (normalizeAnimFootPlacement(node.data).feet.length === 0) {
+          diagnostics.push({ code: "anim.missingBone", message: "Foot Placement places no foot until it names one", nodeId: node.id, location, severity: "warning" });
+        }
+        continue;
+      }
       if (isSkeletalControlType(node.type) && !(typeof node.data.bone === "string" && node.data.bone.trim())) {
         const title = SKELETAL_CONTROL_TITLES[node.type] ?? "Transform Bone";
         diagnostics.push({ code: "anim.missingBone", message: `${title} changes no bone until it names one`, nodeId: node.id, location, severity: "warning" });

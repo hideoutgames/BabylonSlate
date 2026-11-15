@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@haptic/core";
 import {
+  ANIM_CONTROL_FOOT_PLACEMENT_TYPE,
   ANIM_CONTROL_LOOK_AT_TYPE,
   ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
@@ -103,6 +104,24 @@ describe("Spring Bones", () => {
   it("reports a Spring Bones with no Root Bone", () => {
     const diagnostics = validateAnimGraph(controlled(ANIM_CONTROL_SPRING_BONES_TYPE, {}), [], { dimension: "3d" });
     expect(diagnostics.find((row) => row.code === "anim.missingBone")?.message).toBe("Spring Bones changes no bone until it names one");
+  });
+});
+
+describe("Foot Placement", () => {
+  it("sends its feet, pelvis and traces, its first foot as its bone", () => {
+    const state = evaluateAnimGraph(controlled(ANIM_CONTROL_FOOT_PLACEMENT_TYPE, {
+      feet: ["foot.l", "foot.r", "foot.l", ""], pelvisBone: "hips", traceDown: 0.8,
+    }), null, 0, {});
+    expect(state.boneModifiers).toEqual([{
+      kind: "footPlacement", bone: "foot.l", alpha: 1, feet: ["foot.l", "foot.r"], pelvisBone: "hips", traceUp: 0.5, traceDown: 0.8, alignToGround: true,
+    }]);
+  });
+
+  it("reports a Foot Placement with no feet, and sends nothing", () => {
+    const doc = controlled(ANIM_CONTROL_FOOT_PLACEMENT_TYPE, {});
+    expect(validateAnimGraph(doc, [], { dimension: "3d" }).find((row) => row.code === "anim.missingBone")?.message)
+      .toBe("Foot Placement places no foot until it names one");
+    expect(evaluateAnimGraph(doc, null, 0, {}).boneModifiers).toBeUndefined();
   });
 });
 

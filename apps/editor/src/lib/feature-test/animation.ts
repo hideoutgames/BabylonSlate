@@ -87,6 +87,10 @@ const FEATURE_TEST_ANIMATION_NAMES = {
   rootMotionGraph: "FT_AnimRootMotion",
   /** Rogue Hooded on the root motion graph; its Tick returns it to its start once it has drifted away. */
   rootMotion: "FT_AnimRootMotionActor",
+  /** Rig_Medium graph: Idle_A with Foot Placement on both feet. */
+  footPlacementGraph: "FT_AnimFootPlacement",
+  /** The Knight Model on the Foot Placement graph, standing with one foot on a step. */
+  footPlacement: "FT_AnimFootPlacementActor",
 } as const;
 
 /** The skinned characters' scene. */
@@ -166,6 +170,7 @@ interface AnimationRefs {
     reacher: PlacedClass;
     velociraptor: PlacedClass;
     rootMotion: PlacedClass;
+    footPlacement: PlacedClass;
   };
 }
 
@@ -209,6 +214,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   const reacherGraph = await saveGraph(ctx, reacherGraphDocument(ctx));
   const velociraptorGraph = await saveGraph(ctx, velociraptorGraphDocument(ctx));
   const rootMotionGraph = await saveGraph(ctx, rootMotionGraphDocument(ctx));
+  const footPlacementGraph = await saveGraph(ctx, footPlacementGraphDocument(ctx));
   const characters = {
     knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph, throwAttack),
     rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph, throwAttack),
@@ -221,6 +227,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
     reacher: await saveModelActor(ctx, NAMES.reacher, requireRef(kaykit.knight, "the KayKit Knight Model"), reacherGraph),
     velociraptor: await saveVelociraptor(ctx, velociraptorGraph),
     rootMotion: await saveRootMotionActor(ctx, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), rootMotionGraph),
+    footPlacement: await saveModelActor(ctx, NAMES.footPlacement, requireRef(kaykit.knight, "the KayKit Knight Model"), footPlacementGraph),
   };
   refsByContext.set(ctx, { locomotor, doorGraph, characters });
 }
@@ -332,6 +339,15 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
   add(actor("ft-animscene-root-motion", "Root Motion Rogue", tf(ROOT_MOTION_START, facing),
     instanceComponents("ft-animscene-root-motion", refs.characters.rootMotion.components), { classId: refs.characters.rootMotion.ref.classId }));
   add(caption("ft-animscene-caption-root-motion", "Root Motion Caption", [ROOT_MOTION_START[0], 0.05, -1.6], "Root Motion", font, 0.35));
+  // Stands with its left foot on a step: Foot Placement lifts that foot onto it.
+  const [stepX, , stepZ] = FOOT_PLACEMENT.at;
+  add(actor("ft-animscene-foot-placement", "Foot Placement Knight", tf(FOOT_PLACEMENT.at, facing),
+    instanceComponents("ft-animscene-foot-placement", refs.characters.footPlacement.components), { classId: refs.characters.footPlacement.ref.classId }));
+  // Box primitives are 1.5 m; the step is 0.5 × 0.6 m and its top is Step Height up, under the Knight's left foot.
+  add(actor("ft-animscene-step", "Step", tf([stepX + 0.32, FOOT_PLACEMENT.stepHeight / 2, stepZ], {
+    scale: [0.4 / 1.5, FOOT_PLACEMENT.stepHeight / 1.5, 0.6 / 1.5],
+  }), [meshComp("ft-animscene-step-mesh", "box", { collision: "simple" })]));
+  add(caption("ft-animscene-caption-feet", "Foot Placement Caption", [stepX, 0.05, 1.1], "Foot Placement", font, 0.35));
   add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-2.4, 0.05, -1.6], "Shared Skeleton", font, 0.35));
   add(caption("ft-animscene-caption-large", "Rig_Large Caption", [1.2, 0.05, -1.6], "Rig_Large", font, 0.35));
   add(caption("ft-animscene-caption-ik", "IK Caption", [REACHER.x, 0.05, -1.6], "Look At and IK", font, 0.35));
@@ -867,6 +883,32 @@ function reacherGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
     }],
     transitions: [],
     variables: [LOOK_TARGET, REACH_TARGET],
+  });
+}
+
+/** Where the Foot Placement Knight stands, and how high the step under its left foot is. */
+const FOOT_PLACEMENT = { at: [5, 0, 2.6] as Vec3, stepHeight: 0.15 };
+
+/**
+ * Rig_Medium: one Stand state, Idle_A into Foot Placement on both feet (foot.l and foot.r, their legs bending), the
+ * hips dropping for a foot over lower ground, each foot turned to its ground.
+ */
+function footPlacementGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  return stateMachineGraph("3d", {
+    name: NAMES.footPlacementGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    entryStateId: "stand",
+    states: [{
+      id: "stand",
+      name: "Stand",
+      position: { x: 80, y: 80 },
+      stateGraph: poseGraph("3d", "feet", [
+        playerNode("3d", "idle", -200, 0, kaykitClip(ctx, ctx.assets.kaykit.mediumAnimations, KAYKIT_CLIPS.idle)),
+        gNode("feet", "anim.control.footPlacement", 160, 0, { feet: ["foot.l", "foot.r"], pelvisBone: "hips", traceUp: 0.5, traceDown: 0.5 }),
+      ], [gWire("idle", "pose", "feet", "sourcePose")]),
+    }],
+    transitions: [],
+    variables: [],
   });
 }
 
