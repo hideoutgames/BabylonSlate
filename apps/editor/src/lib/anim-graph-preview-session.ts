@@ -45,6 +45,8 @@ function fitsVariable(variable: AnimGraphVariable, value: unknown): boolean {
       return typeof value === "number";
     case "string":
       return typeof value === "string";
+    case "vec3":
+    case "rotator":
     case "struct":
       return !!value && typeof value === "object";
   }

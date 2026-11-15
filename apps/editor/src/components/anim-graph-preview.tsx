@@ -216,6 +216,8 @@ function previewValueRow(variable: AnimGraphVariable, value: unknown, onChange: 
     case "string":
       return [{ id: variable.id, kind: "text", label: variable.name, value: typeof value === "string" ? value : "", onChange }];
     case "tag":
+    case "vec3":
+    case "rotator":
     case "struct":
       return variableDefaultPropertyRows(variable.typeId, value, onChange, { typeClassId: variable.typeClassId, pinId: variable.id })
         .map((row) => ({ ...row, label: variable.name }));
