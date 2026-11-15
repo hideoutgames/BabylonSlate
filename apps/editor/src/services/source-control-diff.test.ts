@@ -50,6 +50,7 @@ describe("SourceControlDiffService", () => {
     await save({ 3: "Renamed" });
     const reads = vi.spyOn(service, "readFileAt");
     const diff = new SourceControlDiffService(service);
+    const detach = diff.attach();
     diff.open({ path: PATH, name: "Forest", type: "Scene" });
     const first = await settled(diff);
     expect(first.phase).toBe("ready");
@@ -60,7 +61,7 @@ describe("SourceControlDiffService", () => {
     await save({ 3: "Renamed", 4: "Also" });
     await vi.waitFor(() => expect((diff.getSnapshot().diff?.view as SceneDiff | undefined)?.counts.changed).toBe(2));
     expect(reads).toHaveBeenCalledTimes(1);
-    diff.dispose();
+    detach();
   });
 
   it("downloads a base blob the working copy no longer has, without writing it", async () => {
@@ -68,10 +69,11 @@ describe("SourceControlDiffService", () => {
     await save({ 1: "Moved" });
     await storage.remove(baseBlob);
     const diff = new SourceControlDiffService(service);
+    const detach = diff.attach();
     diff.open({ path: PATH, name: "Forest", type: "Scene" });
     expect((await settled(diff)).phase).toBe("ready");
     expect(await storage.exists(baseBlob)).toBe(false);
-    diff.dispose();
+    detach();
   });
 
   it("waits while a game covers the editor", async () => {
@@ -80,25 +82,27 @@ describe("SourceControlDiffService", () => {
     const reads = vi.spyOn(service, "readFileAt");
     setEditorQuiet(true);
     const diff = new SourceControlDiffService(service);
+    const detach = diff.attach();
     diff.open({ path: PATH, name: "Forest", type: "Scene" });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(diff.getSnapshot().phase).toBe("loading");
     expect(reads).not.toHaveBeenCalled();
     setEditorQuiet(false);
     expect((await settled(diff)).phase).toBe("ready");
-    diff.dispose();
+    detach();
   });
 
   it("shows a version that is not a readable asset as an error, and closes with the project", async () => {
     const { service } = await seeded();
     const diff = new SourceControlDiffService(service);
+    const detach = diff.attach();
     diff.open({ path: "assets/Rock.texture.hasset", name: "Rock", type: "Texture" });
     const state = await settled(diff);
     expect(state).toMatchObject({ phase: "error", diff: null });
     expect(state.error).toMatch(/\.hasset/);
     service.stop();
     expect(diff.getSnapshot()).toMatchObject({ target: null, phase: "idle" });
-    diff.dispose();
+    detach();
   });
 });
 

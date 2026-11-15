@@ -1,4 +1,4 @@
-import { DOCUMENT_CHUNK_ID } from "./asset-document";
+import { DOCUMENT_CHUNK_ID } from "./document-chunk";
 import { diffGraphDocuments, isGraphDocument, type GraphDiff } from "./asset-diff-graph";
 import { diffSceneDocuments, type SceneDiff } from "./asset-diff-scene";
 import {
@@ -79,61 +79,78 @@ export interface AssetDiff {
 const SCENE_TYPES = new Set(["Scene", "SceneLayer"]);
 const RASTER_CHUNK_IDS = ["pixels", "source"];
 
-/** One decoded version: its header, with chunks decoded (and checked) only when asked, once. */
+/**
+ * `work` once per key while it succeeds: a caller that finds it running
+ * shares it, and one that finds it failed (the diff that started it was
+ * cancelled, or its read failed) runs it again with its own reads.
+ */
+async function memo<T>(cache: Map<string, Promise<T>>, key: string, work: () => Promise<T>): Promise<T> {
+  const running = cache.get(key);
+  if (running) {
+    try {
+      return await running;
+    } catch {
+      // Started by another diff; this one reads for itself.
+    }
+  }
+  const started = work();
+  cache.set(key, started);
+  started.catch(() => {
+    if (cache.get(key) === started) cache.delete(key);
+  });
+  return started;
+}
+
+/**
+ * One decoded version: its header, with chunks decoded (and checked) only
+ * when asked, once. A cached version serves many diffs, so every read goes
+ * through the source of the diff asking: never through the one that opened it.
+ */
 export class AssetVersion {
   readonly header: HassetHeader | null;
   readonly byteLength: number;
   private readonly bytes: Uint8Array | null;
-  private readonly source: AssetVersionSource;
   private readonly decoded = new Map<string, Promise<Uint8Array | null>>();
-  private documentValue: Promise<Record<string, unknown> | null> | null = null;
+  private readonly documents = new Map<string, Promise<Record<string, unknown> | null>>();
 
-  private constructor(source: AssetVersionSource, bytes: Uint8Array | null) {
-    this.source = source;
+  private constructor(bytes: Uint8Array | null) {
     this.bytes = bytes;
     this.byteLength = bytes?.byteLength ?? 0;
     this.header = bytes ? readHassetHeader(bytes) : null;
   }
 
   static async open(source: AssetVersionSource): Promise<AssetVersion> {
-    return new AssetVersion(source, await source.read());
+    return new AssetVersion(await source.read());
   }
 
   entry(id: string): ChunkEntry | undefined {
     return this.header?.chunks.find((chunk) => chunk.id === id);
   }
 
-  /** A chunk's bytes, checked against its digest; read and decoded once. */
-  chunk(id: string): Promise<Uint8Array | null> {
-    let pending = this.decoded.get(id);
-    if (!pending) {
-      const entry = this.entry(id);
-      pending = !this.bytes || !entry
-        ? Promise.resolve(null)
-        : decodeHassetChunk(this.bytes, id, (sha) => this.source.readBlob(sha, entry.byteLength));
-      this.decoded.set(id, pending);
-      // A failed read may succeed later (a download): do not keep the failure.
-      pending.catch(() => this.decoded.delete(id));
-    }
-    return pending;
+  /** A chunk's bytes, checked against its digest; read (a blob through `source`) and decoded once. */
+  chunk(id: string, source: AssetVersionSource): Promise<Uint8Array | null> {
+    const entry = this.entry(id);
+    const bytes = this.bytes;
+    if (!bytes || !entry) return Promise.resolve(null);
+    return memo(this.decoded, id, () => decodeHassetChunk(bytes, id, (sha) => source.readBlob(sha, entry.byteLength)));
   }
 
   /** The editor document: the `document` chunk's JSON, or the header payload of a header-only asset. */
-  document(): Promise<Record<string, unknown> | null> {
-    if (!this.documentValue) {
-      this.documentValue = (async () => {
-        if (!this.header) return null;
-        if (!this.entry(DOCUMENT_CHUNK_ID)) return this.header.payload;
-        const bytes = await this.chunk(DOCUMENT_CHUNK_ID);
-        const value: unknown = bytes ? JSON.parse(new TextDecoder().decode(bytes)) : null;
-        return isPlainObject(value) ? value : null;
-      })();
-      this.documentValue.catch(() => {
-        this.documentValue = null;
-      });
-    }
-    return this.documentValue;
+  document(source: AssetVersionSource): Promise<Record<string, unknown> | null> {
+    return memo(this.documents, DOCUMENT_CHUNK_ID, async () => {
+      if (!this.header) return null;
+      if (!this.entry(DOCUMENT_CHUNK_ID)) return this.header.payload;
+      const bytes = await this.chunk(DOCUMENT_CHUNK_ID, source);
+      const value: unknown = bytes ? JSON.parse(new TextDecoder().decode(bytes)) : null;
+      return isPlainObject(value) ? value : null;
+    });
   }
+}
+
+/** A version as one diff reads it: the (possibly cached) decode, with that diff's own reads. */
+interface Side {
+  version: AssetVersion;
+  source: AssetVersionSource;
 }
 
 /** Decoded versions that never change (a commit's), by `path@commit`; the least recently used goes first. */
@@ -149,19 +166,15 @@ export class AssetVersionCache {
     return this.entries.size;
   }
 
-  open(source: AssetVersionSource): Promise<AssetVersion> {
-    if (source.key === null) return AssetVersion.open(source);
-    const known = this.entries.get(source.key);
+  async open(source: AssetVersionSource): Promise<AssetVersion> {
+    const key = source.key;
+    if (key === null) return AssetVersion.open(source);
+    const known = this.entries.get(key);
     if (known) {
-      this.entries.delete(source.key);
-      this.entries.set(source.key, known);
-      return known;
+      this.entries.delete(key);
+      this.entries.set(key, known);
     }
-    const opened = AssetVersion.open(source);
-    this.entries.set(source.key, opened);
-    opened.catch(() => {
-      if (this.entries.get(source.key!) === opened) this.entries.delete(source.key!);
-    });
+    const opened = memo(this.entries, key, () => AssetVersion.open(source));
     while (this.entries.size > this.capacity) this.entries.delete(this.entries.keys().next().value!);
     return opened;
   }
@@ -199,14 +212,14 @@ function headerRows(base: AssetVersion, compare: AssetVersion): PropertyDiffRow[
 }
 
 /** Both versions' documents; one decode when the chunk is the same on both sides. */
-async function documents(base: AssetVersion, compare: AssetVersion): Promise<[Record<string, unknown> | null, Record<string, unknown> | null]> {
-  const before = base.entry(DOCUMENT_CHUNK_ID);
-  const after = compare.entry(DOCUMENT_CHUNK_ID);
+async function documents(base: Side, compare: Side): Promise<[Record<string, unknown> | null, Record<string, unknown> | null]> {
+  const before = base.version.entry(DOCUMENT_CHUNK_ID);
+  const after = compare.version.entry(DOCUMENT_CHUNK_ID);
   if (before && after && before.sha256 === after.sha256) {
-    const shared = await base.document();
+    const shared = await base.version.document(base.source);
     return [shared, shared];
   }
-  return [await base.document(), await compare.document()];
+  return [await base.version.document(base.source), await compare.version.document(compare.source)];
 }
 
 function shortDigest(sha256: string): string {
@@ -234,7 +247,9 @@ function compressionLabel(payload: Record<string, unknown>): string {
 }
 
 /** A Texture's facts side by side, and both rasters for the preview (one decode when the raster did not change). */
-async function textureDiff(base: AssetVersion, compare: AssetVersion): Promise<TextureDiff> {
+async function textureDiff(baseSide: Side, compareSide: Side): Promise<TextureDiff> {
+  const base = baseSide.version;
+  const compare = compareSide.version;
   const before = base.header?.payload;
   const after = compare.header?.payload;
   const size = (payload: Record<string, unknown> | undefined) =>
@@ -252,12 +267,12 @@ async function textureDiff(base: AssetVersion, compare: AssetVersion): Promise<T
     valueRow("compression", "Compression", before ? compressionLabel(before) : undefined, after ? compressionLabel(after) : undefined, String),
     valueRow("downsample", "Downsample", text("downsample")(before), text("downsample")(after), String),
   ];
-  const raster = async (version: AssetVersion, entry: ChunkEntry | undefined): Promise<TextureRaster | null> => {
-    const bytes = entry ? await version.chunk(entry.id) : null;
+  const raster = async (side: Side, entry: ChunkEntry | undefined): Promise<TextureRaster | null> => {
+    const bytes = entry ? await side.version.chunk(entry.id, side.source) : null;
     return bytes && entry ? { bytes, mime: entry.mime } : null;
   };
-  const baseImage = await raster(base, baseRaster);
-  const compareImage = baseRaster && compareRaster && baseRaster.sha256 === compareRaster.sha256 ? baseImage : await raster(compare, compareRaster);
+  const baseImage = await raster(baseSide, baseRaster);
+  const compareImage = baseRaster && compareRaster && baseRaster.sha256 === compareRaster.sha256 ? baseImage : await raster(compareSide, compareRaster);
   return { kind: "texture", rows, base: baseImage, compare: compareImage };
 }
 
@@ -266,7 +281,7 @@ async function propertiesDiff(base: Record<string, unknown> | null, compare: Rec
 }
 
 /** The document's view: Scenes by actor, graphs by node, Textures by raster, anything else by field. */
-async function viewFor(type: string, base: AssetVersion, compare: AssetVersion): Promise<AssetDiffView> {
+async function viewFor(type: string, base: Side, compare: Side): Promise<AssetDiffView> {
   if (type === "Texture") return textureDiff(base, compare);
   const [before, after] = await documents(base, compare);
   if (SCENE_TYPES.has(type)) return diffSceneDocuments(before, after);
@@ -295,7 +310,7 @@ export async function diffAssetVersions(path: string, base: AssetVersionSource, 
     name: shown?.name ?? path.slice(path.lastIndexOf("/") + 1),
     header,
     chunks,
-    view: await viewFor(type, before, after),
+    view: await viewFor(type, { version: before, source: base }, { version: after, source: compare }),
   };
 }
 

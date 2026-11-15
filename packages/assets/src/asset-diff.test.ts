@@ -275,6 +275,19 @@ describe("asset diffs", () => {
     await expect(diff({ ...big, blobs: new Map() }, await asset("Scene", { document: scene([]) }))).rejects.toThrow(/no LFS object/);
   });
 
+  it("reads a cached version's blobs through the diff that needs them, after the diff that opened it failed", async () => {
+    const client = new AssetDiffClient({ createWorker: () => null });
+    const big = await asset("Scene", { document: scene(Array.from({ length: 2000 }, (_, index) => actor(`a${index}`, `A${index}`))) });
+    const compare = await asset("Scene", { document: scene([actor("a", "A")]) });
+    // The first diff reads the base's .hasset, then its blob read fails (a download that could not finish).
+    await expect(client.diff({ path: "p", base: source({ ...big, blobs: new Map() }, "p@1"), compare: source(compare, null) })).rejects.toMatchObject({ code: "lfs-object-missing" });
+    const again = source(big, "p@1");
+    const result = await client.diff({ path: "p", base: again, compare: source(compare, null) });
+    expect((result.view as SceneDiff).counts.removed).toBe(2000);
+    expect(again.blobReads).toHaveLength(1);
+    client.dispose();
+  });
+
   it("runs diffs through the client, carrying a read's error code and stopping a cancelled diff", async () => {
     const client = new AssetDiffClient({ createWorker: () => null });
     const compare = await asset("Scene", { document: scene([actor("a", "A")]) });

@@ -1,12 +1,11 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
-import { BoxIcon, FolderIcon, ListTreeIcon, SquareFunctionIcon, VariableIcon, WorkflowIcon } from "lucide-react";
+import { BoxIcon, FileIcon, FolderIcon, ListTreeIcon, SquareFunctionIcon, VariableIcon, WorkflowIcon } from "lucide-react";
 import type { AssetDiff, DiffStatus, GraphDiff, SceneDiff } from "@haptic/assets/asset-diff";
-import { assetSummaryGroup } from "@haptic/assets/asset-diff";
 import { PanelFrame, SearchInput, TreeView, type TreeViewNode } from "@haptic/editor-kit";
 import { useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
 import { DiffCountBadges, DiffPlaceholder, StatusLetter } from "./diff-common";
-import { hasDiff, STATUS_TONE } from "./diff-status";
+import { ASSET_ITEM, hasDiff, nodeSummary, STATUS_TONE } from "./diff-status";
 
 /** One row of the tree before collapse and search: its parent and whether it changed. */
 interface ItemRow {
@@ -18,10 +17,13 @@ interface ItemRow {
   /** Some row below it changed: shown at full strength though it did not. */
   changedBelow: boolean;
   hasChildren: boolean;
-  icon: "folder" | "actor" | "graph" | "node" | "variable" | "function" | "group";
+  icon: "asset" | "folder" | "actor" | "graph" | "node" | "variable" | "function" | "group";
+  /** A one-line summary after the name: `Max Walk Speed: 600 → 750`, `Float · 1.5`. */
+  preview?: string;
 }
 
 const ICONS = {
+  asset: FileIcon,
   folder: FolderIcon,
   actor: BoxIcon,
   graph: WorkflowIcon,
@@ -44,7 +46,7 @@ function graphRows(view: GraphDiff): ItemRow[] {
     if (section.status === "unchanged") continue;
     rows.push({ id: section.id, label: section.title, depth: 0, parent: null, status: section.status, changedBelow: false, hasChildren: section.nodes.length > 0, icon: "graph" });
     for (const node of section.nodes) {
-      rows.push({ id: `${section.id}/${node.id}`, label: node.title, depth: 1, parent: section.id, status: node.status, changedBelow: false, hasChildren: false, icon: "node" });
+      rows.push({ id: `${section.id}/${node.id}`, label: node.title, depth: 1, parent: section.id, status: node.status, changedBelow: false, hasChildren: false, icon: "node", preview: nodeSummary(node) });
     }
   }
   const members = [
@@ -55,21 +57,23 @@ function graphRows(view: GraphDiff): ItemRow[] {
   for (const [id, title, list, icon] of members) {
     if (list.length === 0) continue;
     rows.push({ id: `group:${id}`, label: title, depth: 0, parent: null, status: "unchanged", changedBelow: true, hasChildren: true, icon: "group" });
-    for (const member of list) rows.push({ id: `member:${member.id}`, label: member.name, depth: 1, parent: `group:${id}`, status: member.status, changedBelow: false, hasChildren: false, icon });
+    for (const member of list) rows.push({ id: `member:${member.id}`, label: member.name, depth: 1, parent: `group:${id}`, status: member.status, changedBelow: false, hasChildren: false, icon, preview: member.summary });
   }
   return rows;
 }
 
-/** The asset's own header and chunks, then its document's groups. */
+/** The groups of an asset's other fields. */
 function groupRows(diff: AssetDiff): ItemRow[] {
-  const groups = diff.view.kind === "properties" ? [assetSummaryGroup(diff), ...diff.view.groups] : [assetSummaryGroup(diff)];
-  return groups.map((group) => ({ id: `group:${group.id}`, label: group.title, depth: 0, parent: null, status: group.status, changedBelow: false, hasChildren: false, icon: "group" }));
+  if (diff.view.kind !== "properties") return [];
+  return diff.view.groups.map((group) => ({ id: `group:${group.id}`, label: group.title, depth: 0, parent: null, status: group.status, changedBelow: false, hasChildren: false, icon: "group" }));
 }
 
+/** The asset itself first (its header, chunks and document-level fields), then the items of its view. */
 function itemRows(diff: AssetDiff): ItemRow[] {
-  if (diff.view.kind === "scene") return sceneRows(diff.view);
-  if (diff.view.kind === "graph") return graphRows(diff.view);
-  return groupRows(diff);
+  const asset: ItemRow = { id: ASSET_ITEM, label: diff.name, depth: 0, parent: null, status: diff.status, changedBelow: false, hasChildren: false, icon: "asset" };
+  if (diff.view.kind === "scene") return [asset, ...sceneRows(diff.view)];
+  if (diff.view.kind === "graph") return [asset, ...graphRows(diff.view)];
+  return [asset, ...groupRows(diff)];
 }
 
 /** Rows to show: matches of `query` with their ancestors, or everything not under a collapsed row. */
@@ -116,6 +120,7 @@ export function DiffActorsContents() {
       expanded: !collapsed.has(row.id) || query.trim() !== "",
       icon: <Icon aria-hidden="true" />,
       trailing: changed ? <StatusLetter status={row.status} /> : undefined,
+      ...(row.preview ? { preview: <span className="truncate text-xs text-muted-foreground">{row.preview}</span> } : {}),
       muted: !changed && !row.changedBelow,
       ...(changed ? { tone: STATUS_TONE[row.status as Exclude<DiffStatus, "unchanged">] } : {}),
       draggable: false,

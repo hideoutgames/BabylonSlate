@@ -86,7 +86,7 @@ export class SourceControlDiffService {
   private loader: Promise<DiffLoader> | null = null;
   private running: AbortController | null = null;
   private loadedFor: unknown[] | null = null;
-  private readonly unsubscribe: () => void;
+  private unsubscribe: (() => void) | null = null;
   private readonly sync: SourceControlSyncService;
   private readonly createLoader: (sync: SourceControlSyncService) => Promise<DiffLoader>;
 
@@ -97,7 +97,22 @@ export class SourceControlDiffService {
   ) {
     this.sync = sync;
     this.createLoader = createLoader;
-    this.unsubscribe = sync.subscribe(() => this.syncChanged());
+  }
+
+  /**
+   * Follows the project's sync (loads again when a shown version moves,
+   * closes when the project does) until the returned function detaches it,
+   * which also closes the diff. The editor attaches it in an effect.
+   */
+  attach(): () => void {
+    this.unsubscribe?.();
+    const unsubscribe = this.sync.subscribe(() => this.syncChanged());
+    this.unsubscribe = unsubscribe;
+    return () => {
+      unsubscribe();
+      if (this.unsubscribe === unsubscribe) this.unsubscribe = null;
+      this.close();
+    };
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
@@ -141,11 +156,6 @@ export class SourceControlDiffService {
     // The worker and its decoded versions go with the diff.
     void this.loader?.then((loader) => loader.dispose(), () => undefined);
     this.loader = null;
-  }
-
-  dispose(): void {
-    this.close();
-    this.unsubscribe();
   }
 
   private cancel(): void {

@@ -187,7 +187,9 @@ export function diffSceneDocuments(baseValue: unknown, compareValue: unknown): S
   for (const entry of entries.values()) {
     const parent = entry.under && entries.has(entry.under) && entry.under !== entry.id ? entry.under : null;
     entry.under = parent;
-    children.set(parent, [...(children.get(parent) ?? []), entry]);
+    const siblings = children.get(parent);
+    if (siblings) siblings.push(entry);
+    else children.set(parent, [entry]);
   }
   const rows: SceneDiffRow[] = [];
   const placed = new Set<string>();

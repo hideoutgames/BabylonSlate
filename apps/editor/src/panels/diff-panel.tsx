@@ -1,7 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { ExternalLinkIcon, Undo2Icon } from "lucide-react";
-import { assetSummaryGroup, type AssetDiff, type PropertyDiffGroup, type SceneDiff } from "@haptic/assets/asset-diff";
+import { assetSummaryGroup, valueRow, type AssetDiff, type GraphDiff, type PropertyDiffGroup, type PropertyDiffRow, type SceneDiff } from "@haptic/assets/asset-diff";
 import { documentKindForAssetType, humanizePropertyLabel } from "@haptic/core";
 import { PanelFrame, SelectableText } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
@@ -13,7 +13,7 @@ import { useSourceControlActions, useSourceControlDiff, useSourceControlDiffStat
 import { useDocumentActions, useIntegratedSyncState } from "../context/document-context";
 import { refLabel, type DiffTarget } from "../services/source-control-diff";
 import { DiffPlaceholder, StatusBadge } from "./diff-common";
-import { hasDiff } from "./diff-status";
+import { ASSET_ITEM, hasDiff } from "./diff-status";
 import { PropertyDiffTable, type DiffLayout as Layout } from "./diff-property-table";
 import { TextureDiffView } from "./diff-texture-view";
 
@@ -24,12 +24,48 @@ function kindLabel(type: string): string {
   return humanizePropertyLabel(type.replace(/([a-z0-9])([A-Z])/g, "$1 $2"));
 }
 
-/** What the Scene view shows for the chosen row: an actor's groups, the Scene's own fields, or why there is nothing. */
-function sceneGroups(diff: AssetDiff, view: SceneDiff, selection: string | null): { title: string; groups: PropertyDiffGroup[] | null; status: AssetDiff["status"] } {
+interface Shown {
+  title: string;
+  groups: PropertyDiffGroup[] | null;
+  status: AssetDiff["status"];
+}
+
+/** The asset itself: its header and chunks, then its document-level fields. */
+function assetGroups(diff: AssetDiff): Shown {
+  const view = diff.view;
+  const fields = view.kind === "scene" ? view.scene : view.kind === "graph" || view.kind === "properties" ? view.groups : [];
+  return { title: diff.name, groups: [assetSummaryGroup(diff), ...fields], status: diff.status };
+}
+
+/** What the Scene view shows for the chosen row: an actor's groups, the asset itself, or why there is nothing. */
+function sceneGroups(diff: AssetDiff, view: SceneDiff, selection: string | null): Shown {
   const row = selection ? view.rows.find((entry) => entry.id === selection) : undefined;
   if (row?.kind === "actor") return { title: row.name, groups: view.actors[row.id] ?? null, status: row.status };
   if (row?.kind === "folder") return { title: row.name, groups: null, status: row.status };
-  return { title: diff.name, groups: [assetSummaryGroup(diff), ...view.scene], status: diff.status };
+  return assetGroups(diff);
+}
+
+/** A changed node as properties: its pin values and fields, for graph families the canvas does not draw. */
+function nodeRows(node: GraphDiff["sections"][number]["nodes"][number]): PropertyDiffRow[] {
+  const rows: PropertyDiffRow[] = node.pins.map((pin) => ({ id: `pin:${pin.id}`, label: pin.name, base: pin.base, compare: pin.compare, changed: true }));
+  rows.push(...node.fields.map((field) => ({ ...field, id: `field:${field.id}` })));
+  if (node.status !== "changed") rows.unshift(valueRow("node", "Node", node.status === "added" ? undefined : node.title, node.status === "removed" ? undefined : node.title, String));
+  if (node.moved) rows.push({ id: "position", label: "Position", base: "Moved", compare: "Moved", changed: true });
+  if (node.connections > 0) rows.push({ id: "wires", label: "Wires", base: null, compare: node.connections === 1 ? "1 Changed" : `${node.connections} Changed`, changed: true });
+  return rows;
+}
+
+/** The chosen graph's (or node's) changes as one group per node. */
+function graphGroups(diff: AssetDiff, graph: GraphDiff, selection: string | null): Shown {
+  const [sectionId, nodeId] = selection?.includes("/") ? selection.split("/", 2) : [selection, null];
+  const section = graph.sections.find((entry) => entry.id === sectionId && entry.status !== "unchanged") ?? graph.sections.find((entry) => entry.status !== "unchanged");
+  if (!section) return assetGroups(diff);
+  const nodes = section.nodes.filter((node) => !nodeId || node.id === nodeId);
+  return {
+    title: nodeId && nodes[0] ? nodes[0].title : section.title,
+    groups: nodes.map((node) => ({ id: `node:${node.id}`, title: node.title, status: node.status, rows: nodeRows(node) })),
+    status: nodeId && nodes[0] ? nodes[0].status : section.status,
+  };
 }
 
 function Toolbar({ children, target, diff }: { children: ReactNode; target: DiffTarget; diff: AssetDiff }) {
@@ -99,7 +135,9 @@ export function DiffContents() {
   const compareLabel = refLabel(target.compare, snapshot);
   const view = diff.view;
 
-  if (view.kind === "graph" || (view.kind === "scene" && state.selection === "script" && view.script)) {
+  // The canvas draws script graphs (Class and the Scene Script) with the graph editor's own node components.
+  const canvas = state.selection !== ASSET_ITEM && ((view.kind === "graph" && diff.type !== "" && documentKindForAssetType(diff.type) === "graph") || (view.kind === "scene" && state.selection === "script" && view.script));
+  if (canvas) {
     const graph = view.kind === "graph" ? view : view.script!;
     return (
       <PanelFrame data-testid="diff-panel">
@@ -117,7 +155,7 @@ export function DiffContents() {
     );
   }
 
-  if (view.kind === "texture") {
+  if (view.kind === "texture" && state.selection !== ASSET_ITEM) {
     return (
       <PanelFrame data-testid="diff-panel">
         <TextureDiffView
@@ -131,9 +169,10 @@ export function DiffContents() {
     );
   }
 
-  const shown = view.kind === "scene"
-    ? sceneGroups(diff, view, state.selection)
-    : { title: diff.name, groups: [assetSummaryGroup(diff), ...view.groups], status: diff.status };
+  const shown = state.selection === ASSET_ITEM ? assetGroups(diff)
+    : view.kind === "scene" ? sceneGroups(diff, view, state.selection)
+      : view.kind === "graph" ? graphGroups(diff, view, state.selection)
+        : assetGroups(diff);
   return (
     <PanelFrame data-testid="diff-panel">
       <div className="flex h-full min-h-0 flex-col">

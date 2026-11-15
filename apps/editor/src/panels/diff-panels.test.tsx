@@ -195,6 +195,28 @@ describe("Source Control diff windows", () => {
     expect(screen.getByTestId("diff-texture-materials").textContent).toBe("Used By 0 Materials");
   });
 
+  it("lists another graph family's node changes as properties, and the asset's own header and chunks from its row", async () => {
+    const node = (value: number) => ({ id: "tint", type: "material.constant", position: { x: 0, y: 0 }, data: { title: "Tint", __pins: [{ id: "value", name: "Value", kind: "data", direction: "in", type: { kind: "float" } }], "default:value": value } });
+    const path = "assets/Water.material.hasset";
+    const material = (value: number) => testAsset("Material", "Water", { document: { nodes: [node(value)], edges: [] } });
+    const sync = await integratedSync({ files: { [path]: (await material(0.25)).bytes } });
+    state.sync = sync.service;
+    await sync.storage.writeBinary(path, (await material(0.5)).bytes);
+    await sync.service.refreshStatus();
+    renderTab();
+    act(() => diffService!.open({ path, name: "Water", type: "Material" }));
+    const value = await screen.findByTestId("diff-row-pin:value");
+    expect(value.textContent).toBe("Value0.250.5");
+    expect(screen.queryByTestId("diff-graph")).toBeNull();
+    // The node's row says what changed in it.
+    expect(screen.getByTestId("tree-row-event/tint").textContent).toContain("Value: 0.25 → 0.5");
+
+    act(() => tap(screen.getByTestId("tree-row-asset")));
+    expect(screen.getByTestId("diff-item-name").textContent).toBe("Water");
+    expect(screen.getByTestId("diff-row-chunk:document").dataset.changed).toBe("true");
+    expect(screen.getByTestId("diff-row-name").dataset.changed).toBeUndefined();
+  });
+
   it("shows why a version cannot be compared", async () => {
     await forest();
     renderTab();

@@ -52,7 +52,7 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
   const [commitRequest, setCommitRequest] = useState(0);
   const [revert, setRevert] = useState<{ key: number; request: RevertRequest } | null>(null);
   const diff = useMemo(() => new SourceControlDiffService(sync), [sync]);
-  useEffect(() => () => diff.dispose(), [diff]);
+  useEffect(() => diff.attach(), [diff]);
   const openSourceControl = useCallback(() => {
     setActiveDocument(SOURCE_CONTROL_ID);
     // Changes is the tab's first window; a layout that closed it opens it again.
