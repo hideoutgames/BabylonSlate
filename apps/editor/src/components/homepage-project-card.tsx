@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import { GitBranchIcon, HardDriveIcon, MoreHorizontalIcon } from "lucide-react";
+import {
+  CheckIcon,
+  GitBranchIcon,
+  HardDriveIcon,
+  MoreHorizontalIcon,
+} from "lucide-react";
 import { ContextMenuOverlay, useContextMenu } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
@@ -44,23 +49,31 @@ export function HomepageProjectCard({
   busy,
   layout = "large",
   deleting,
+  selecting = false,
+  selected = false,
   onOpen,
   onEdit,
   onRemove,
+  onToggleSelected,
 }: {
   project: ListedProject;
   busy: boolean;
   layout?: "large" | "small" | "list";
   deleting: boolean;
+  /** Selection mode: activating the card toggles its selection instead of opening it. */
+  selecting?: boolean;
+  selected?: boolean;
   onOpen: () => void;
   onEdit: () => void;
   onRemove: () => void;
+  /** Selects or deselects the project; outside selection mode it enters the mode with this project selected. */
+  onToggleSelected: () => void;
 }) {
   const name = project.label;
   const activity = describeProjectActivity(project);
   const holding = useRef(false);
   const { menu, closeMenu, bind, openMenuAt } = useContextMenu({
-    enabled: !busy,
+    enabled: !busy && !selecting,
     items: [
       {
         id: "open",
@@ -73,6 +86,12 @@ export function HomepageProjectCard({
         label: "Edit",
         testId: "homepage-project-rename",
         onSelect: onEdit,
+      },
+      {
+        id: "select",
+        label: "Select Project",
+        testId: "homepage-project-select",
+        onSelect: onToggleSelected,
       },
       {
         id: "remove",
@@ -100,6 +119,7 @@ export function HomepageProjectCard({
       data-layout={layout}
       data-color={project.appearance?.color ?? "stone"}
       data-testid={`open-listed-project-${project.name}`}
+      data-selected={selecting ? selected : undefined}
       {...bind}
       onPointerEnter={touch.onPointerEnter}
       onPointerDown={(event) => {
@@ -107,8 +127,8 @@ export function HomepageProjectCard({
       }}
       onKeyDown={(event) => {
         if (
-          event.key === "ContextMenu" ||
-          (event.key === "F10" && event.shiftKey)
+          !selecting &&
+          (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))
         ) {
           event.preventDefault();
           const rect = event.currentTarget.getBoundingClientRect();
@@ -138,32 +158,45 @@ export function HomepageProjectCard({
       <Button
         className="homepage-card-open"
         variant="ghost"
-        aria-label={`Open Project ${name}`}
+        aria-label={selecting ? `Select ${name}` : `Open Project ${name}`}
+        aria-pressed={selecting ? selected : undefined}
         disabled={busy}
         onClick={(event) => {
           // Keyboard/assistive activation must not be swallowed by the hold release guard.
           if (
             touch.shouldActivate(event) &&
             (event.detail === 0 || !holding.current)
-          )
-            onOpen();
+          ) {
+            if (selecting) onToggleSelected();
+            else onOpen();
+          }
         }}
       />
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        className="homepage-project-actions"
-        aria-label={`Project Actions for ${name}`}
-        disabled={busy}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          const rect = event.currentTarget.getBoundingClientRect();
-          openMenuAt(rect.right, rect.bottom);
-        }}
-      >
-        <MoreHorizontalIcon />
-      </Button>
+      {selecting ? (
+        <span
+          className="homepage-project-select"
+          data-selected={selected}
+          aria-hidden="true"
+        >
+          {selected && <CheckIcon />}
+        </span>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="homepage-project-actions"
+          aria-label={`Project Actions for ${name}`}
+          disabled={busy}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            const rect = event.currentTarget.getBoundingClientRect();
+            openMenuAt(rect.right, rect.bottom);
+          }}
+        >
+          <MoreHorizontalIcon />
+        </Button>
+      )}
       <ContextMenuOverlay
         menu={menu}
         onClose={closeMenu}

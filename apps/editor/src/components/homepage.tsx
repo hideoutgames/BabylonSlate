@@ -8,7 +8,9 @@ import {
 } from "react";
 import {
   ArrowUpDownIcon,
+  CheckCheckIcon,
   ChevronDownIcon,
+  CircleCheckIcon,
   FolderOpenIcon,
   Grid2x2Icon,
   Grid3x3Icon,
@@ -16,6 +18,7 @@ import {
   ListIcon,
   LoaderCircleIcon,
   PlusIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import {
@@ -83,6 +86,7 @@ import { HomepageDiscordBadge } from "./homepage-discord-badge";
 import { HomepageUpdateBadge } from "./homepage-update-badge";
 import { ReleaseNews } from "./release-news";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
+import { HomepageDeleteProjectsDialog } from "./homepage-delete-projects-dialog";
 import { HomepageGallery } from "./homepage-gallery";
 import { HomepageProjectCard } from "./homepage-project-card";
 import { HomepageWelcome } from "./homepage-welcome";
@@ -233,6 +237,14 @@ export function Homepage({
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
+  /** Selection mode: cards toggle their selection instead of opening. */
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  /** The selection as listed in the Delete dialog; fixed while it is open. */
+  const [deleteTargets, setDeleteTargets] = useState<ListedProject[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState("");
   // Shown as the Name placeholder; used when the field is left empty.
   const [suggestedName, setSuggestedName] = useState("");
@@ -264,6 +276,45 @@ export function Homepage({
       ),
     [projects, search, sort],
   );
+  const selectedProjects = projects.filter((project) =>
+    selectedIds.has(project.id),
+  );
+  const allVisibleSelected =
+    visibleProjects.length > 0 &&
+    visibleProjects.every((project) => selectedIds.has(project.id));
+  const endSelection = () => {
+    setSelecting(false);
+    setSelectedIds(new Set());
+  };
+  /** Outside selection mode, enters it with this project selected. */
+  const toggleSelected = (id: string) => {
+    if (!selecting) {
+      setSelecting(true);
+      setSelectedIds(new Set([id]));
+      return;
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const project of visibleProjects) {
+        if (allVisibleSelected) next.delete(project.id);
+        else next.add(project.id);
+      }
+      return next;
+    });
+  // An emptied library hides the toolbar, and with it Cancel.
+  useEffect(() => {
+    if (projects.length === 0) {
+      setSelecting(false);
+      setSelectedIds(new Set());
+    }
+  }, [projects.length]);
   const allTemplates = homepageTemplates(templates, { debugMode });
   const templateCount = allTemplates.length;
   /** The empty library offers the built-in starters directly. */
@@ -329,6 +380,7 @@ export function Homepage({
   const changeView = (next: string) => {
     setView(next);
     setSearch("");
+    endSelection();
   };
 
   return (
@@ -391,7 +443,9 @@ export function Homepage({
               </p>
             ) : (
               <p className="homepage-status-summary">
-                {view === "projects"
+                {selecting
+                  ? `${selectedProjects.length} Selected`
+                  : view === "projects"
                   ? `${projects.length} ${projects.length === 1 ? "Project" : "Projects"}`
                   : `${templateCount} ${templateCount === 1 ? "Template" : "Templates"}`}
                 <span aria-hidden="true">·</span>
@@ -602,6 +656,59 @@ export function Homepage({
                         </DropdownMenuGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    {selecting && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={
+                            allVisibleSelected ? "Deselect All" : "Select All"
+                          }
+                          data-testid="homepage-project-select-all"
+                          disabled={busy || visibleProjects.length === 0}
+                          onClick={toggleSelectAll}
+                        >
+                          <CheckCheckIcon data-icon="inline-start" />
+                          <span className="homepage-optional-label">
+                            {allVisibleSelected ? "Deselect All" : "Select All"}
+                          </span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Delete Selected Projects"
+                          data-testid="homepage-project-delete-selected"
+                          disabled={busy || selectedProjects.length === 0}
+                          onClick={() => {
+                            setDeleteTargets(selectedProjects);
+                            setDeleteOpen(true);
+                          }}
+                        >
+                          <Trash2Icon data-icon="inline-start" />
+                          <span className="homepage-optional-label">Delete</span>
+                        </Button>
+                      </>
+                    )}
+                    {/* Last in the row, so Cancel takes Select's place. */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={selecting ? "Cancel Selection" : "Select Projects"}
+                      data-testid="homepage-project-select-mode"
+                      disabled={busy}
+                      onClick={() =>
+                        selecting ? endSelection() : setSelecting(true)
+                      }
+                    >
+                      {selecting ? (
+                        <XIcon data-icon="inline-start" />
+                      ) : (
+                        <CircleCheckIcon data-icon="inline-start" />
+                      )}
+                      <span className="homepage-optional-label">
+                        {selecting ? "Cancel" : "Select"}
+                      </span>
+                    </Button>
                   </div>
                 )}
                 <HomepageGallery
@@ -615,6 +722,9 @@ export function Homepage({
                         layout={layout}
                         busy={busy}
                         deleting={removeDeletesProject(project.tier)}
+                        selecting={selecting}
+                        selected={selectedIds.has(project.id)}
+                        onToggleSelected={() => toggleSelected(project.id)}
                         onOpen={() =>
                           void run(() =>
                             launch(() => onOpenProject(project), project.label),
@@ -750,7 +860,9 @@ export function Homepage({
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {deleting ? "Delete Project?" : "Remove Project?"}
+              {deleting && removeTarget
+                ? `Delete ${removeTarget.label}?`
+                : "Remove Project?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {deleting
@@ -781,6 +893,18 @@ export function Homepage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <HomepageDeleteProjectsDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        projects={deleteTargets}
+        onConfirm={(targets) =>
+          void run(async () => {
+            // One at a time: a failure stops here, and the projects not yet deleted stay selected.
+            for (const project of targets) await onRemoveFromList(project);
+            endSelection();
+          }, targets.length === 1 ? "Deleting Project" : "Deleting Projects")
+        }
+      />
       <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !transition.active && !accountOpen && !settingsOpen && !createOpen && !busy} />
       {settingsOpen && (
         <Suspense fallback={null}>
