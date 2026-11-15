@@ -1,6 +1,6 @@
 import * as git from "isomorphic-git";
 import type { HttpClient as IsoHttpClient, WalkerEntry } from "isomorphic-git";
-import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
+import { isStorageNotFound, PROJECT_CREATION_MARKER, type ProjectStorage } from "@haptic/core";
 import { authorizedHttp, type CredentialSource } from "../credentials";
 import type { HttpClient } from "../http";
 import { parseRepositoryUrl, repositoryCloneUrl } from "../lfs-endpoint";
@@ -37,7 +37,7 @@ export const DEFAULT_CLONE_DEPTH = 1;
 const DEEPEN_STEP = 50;
 const MAX_DEEPENS = 4;
 /** Markers a new project folder may hold before a clone. */
-const CLONE_IGNORES = new Set([".haptic-creating", ".DS_Store", "Thumbs.db", "desktop.ini"]);
+const CLONE_IGNORES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db", "desktop.ini"]);
 
 export interface GitRepositoryOptions {
   /** Bound to the project folder, which is the repository root (`.git` beside `assets/`). */
