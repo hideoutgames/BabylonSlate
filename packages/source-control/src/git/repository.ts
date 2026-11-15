@@ -99,7 +99,7 @@ async function blobOid(entry: WalkerEntry | null | undefined): Promise<string | 
   return entry && (await entry.type()) === "blob" ? ((await entry.oid()) ?? null) : null;
 }
 
-/** A working copy's change at a path that differs between two commits. */
+/** A file that differs between two commits. */
 interface Differing {
   path: string;
   /** Blob ids, null when absent. */
@@ -278,7 +278,7 @@ export class GitRepository implements SyncPort {
       if (!local || local === remote) return [];
       // A branch not pushed yet sends what it added since it left the branches the remote has.
       const base = remote ?? (await this.relation(op, local, await this.remoteHeads(op), false)).base;
-      return (await this.differing(op, local, base)).map((entry) => entry.path);
+      return (await this.differing(op, base, local)).map((entry) => entry.path);
     });
   }
 
