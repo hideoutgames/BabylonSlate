@@ -15,6 +15,7 @@ import {
   STORAGE_ORIGIN,
 } from "../test-support/git-server";
 import { fixedCredential } from "../credentials";
+import { readAdoption, setAdoption } from "./adoption";
 import { cloneRepository, initRepository, type GitRepository } from "./repository";
 
 // isomorphic-git as it is, with its commit reads counted.
@@ -322,5 +323,47 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await fresh.status()).toEqual({ branch: "main", head: null, changes: [{ path: "project.json", kind: "added" }] });
     const { commit } = await fresh.commit({ paths: ["project.json"], message: "Publish project", author: AUTHOR });
     expect(await fresh.push()).toEqual({ head: commit, uploaded: 0 });
+  });
+
+  describe("adoption (Haptic runs Git in this working copy)", () => {
+    it("is recorded in the Git config of every copy Clone and Publish make, as any Git reads it", async () => {
+      server.seed({ "assets/a.hasset": "A" });
+      const cloned = await server.storage();
+      await clone(cloned);
+      const published = await server.storage();
+      await published.writeBinary("project.json", encode("{}"));
+      await initRepository({ storage: published, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main" });
+
+      for (const storage of [cloned, published]) {
+        expect(await readAdoption(storage)).toBe(true);
+        expect(server.git(folder(storage), "config", "--get", "haptic.integrated").trim()).toBe("true");
+      }
+    });
+
+    it("reads a working copy another Git app made as not adopted, and records or clears the answer, keeping the rest of its config", async () => {
+      const storage = await server.storage();
+      const dir = folder(storage);
+      server.git(dir, "init", "--quiet", "--initial-branch=main");
+      server.git(dir, "remote", "add", "origin", REPOSITORY_URL);
+      expect(await readAdoption(storage)).toBe(false);
+
+      await setAdoption(storage, true);
+      expect(await readAdoption(storage)).toBe(true);
+      expect(server.git(dir, "config", "--get", "haptic.integrated").trim()).toBe("true");
+      await setAdoption(storage, false);
+      expect(await readAdoption(storage)).toBe(false);
+      expect(() => server.git(dir, "config", "--get", "haptic.integrated")).toThrow();
+      expect(server.git(dir, "config", "--get", "remote.origin.url").trim()).toBe(REPOSITORY_URL);
+
+      // Git's own spellings of true count, and so does an entry another Git app wrote.
+      server.git(dir, "config", "haptic.integrated", "yes");
+      expect(await readAdoption(storage)).toBe(true);
+      server.git(dir, "config", "haptic.integrated", "false");
+      expect(await readAdoption(storage)).toBe(false);
+    });
+
+    it("reads a folder without .git as not adopted", async () => {
+      expect(await readAdoption(await server.storage())).toBe(false);
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  asksAdoption,
   canPublishProject,
   integratedBlocker,
   offeredSourceControlModes,
@@ -13,16 +14,29 @@ const folder = (platform: string, tier: SourceControlFolder["tier"], hasGit: boo
 
 describe("Integrated mode rules (one Git client per folder)", () => {
   it.each([
-    ["production web", folder("web", "opfs", true), "unavailable"],
-    ["test mode, no .git", folder("web", "opfs", false, true), null],
-    ["iPad app storage with .git", folder("ios", "documents", true), null],
-    ["iPad app storage without .git", folder("ios", "documents", false), "no-repository"],
-    ["iPad folder another app syncs", folder("ios", "external", true), "other-git-client"],
-    ["Android chosen folder", folder("android", "external", true), "other-git-client"],
-    ["desktop chosen folder with .git", folder("electron", "external", true), null],
-    ["desktop Projects folder without .git", folder("electron", "documents", false), "no-repository"],
-  ] as const)("runs the Git client in %s: %s", (_name, where, blocker) => {
-    expect(integratedBlocker(where)).toBe(blocker);
+    ["production web", folder("web", "opfs", true), false, "unavailable"],
+    ["test mode, no .git", folder("web", "opfs", false, true), false, null],
+    ["iPad app storage with .git, which only Haptic syncs", folder("ios", "documents", true), false, null],
+    ["iPad app storage without .git", folder("ios", "documents", false), false, "no-repository"],
+    ["iPad folder another app syncs", folder("ios", "external", true), true, "other-git-client"],
+    ["Android chosen folder", folder("android", "external", true), false, "other-git-client"],
+    ["desktop chosen folder with .git this device adopted", folder("electron", "external", true), true, null],
+    ["desktop chosen folder with .git it never adopted", folder("electron", "external", true), false, "not-adopted"],
+    ["desktop Projects folder with .git it never adopted", folder("electron", "documents", true), false, "not-adopted"],
+    ["desktop Projects folder without .git", folder("electron", "documents", false), false, "no-repository"],
+    ["desktop test mode", folder("electron", "documents", false, true), false, null],
+  ] as const)("runs the Git client in %s: %s", (_name, where, adopted, blocker) => {
+    expect(integratedBlocker({ ...where, adopted })).toBe(blocker);
+  });
+
+  it.each([
+    ["a desktop folder with .git", folder("electron", "external", true), true],
+    ["a desktop folder without .git", folder("electron", "documents", false), false],
+    ["desktop test mode", folder("electron", "documents", true, true), false],
+    ["iPad app storage with .git", folder("ios", "documents", true), false],
+    ["an Android chosen folder", folder("android", "external", true), false],
+  ] as const)("asks before running Git in %s: %s", (_name, where, asks) => {
+    expect(asksAdoption(where)).toBe(asks);
   });
 
   it.each([

@@ -15,7 +15,7 @@ import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
 import { commitPaths, groupChanges, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
-import { integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
+import { asksAdoption, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
 /** One status after a burst of editor saves. Status is stat based and cheap; this only coalesces the burst. */
 export const STATUS_DEBOUNCE_MS = 800;
@@ -47,6 +47,14 @@ export interface SyncPortFactory {
   init(request: SyncPortRequest & { replace: boolean }): Promise<SyncPort>;
   /** Who commits: the repository host's account on this device. */
   author(repositoryUrl: string, testMode: boolean): Promise<CommitAuthor>;
+  /**
+   * Whether this device made Haptic the Git client of the working copy in the
+   * folder `storage` is bound to (`haptic.integrated` in its `.git/config`).
+   * Asked only on desktop (`asksAdoption`); it loads the Git core.
+   */
+  readAdoption(storage: ProjectStorage): Promise<boolean>;
+  /** Records or clears it; nothing in `project.json` changes. */
+  setAdoption(storage: ProjectStorage, adopted: boolean): Promise<void>;
 }
 
 /** Lock checks around a push, from the lock service. */
@@ -208,7 +216,8 @@ export class SourceControlSyncService {
   /**
    * Off and Manual return before loading anything. Integrated opens the
    * folder's Git client once per folder, repository and branch, then reads
-   * status and fetches.
+   * status and fetches; a blocked folder (`integratedBlocker`, with a desktop
+   * working copy's adoption read first) opens nothing.
    */
   async configure(input: SyncConfigureInput): Promise<void> {
     const { settings, folder } = input;
@@ -229,15 +238,18 @@ export class SourceControlSyncService {
     const storage = folderBoundStorage(input.storage, folder.id);
     const hasGit = input.testMode || (await storage.exists(".git/HEAD").catch(() => false));
     if (revision !== this.revision) return;
-    const blocked = integratedBlocker({ platform: input.platform, testMode: input.testMode, tier: folder.tier, hasGit });
-    if (blocked) {
-      this.set({ ...IDLE, blocked });
-      return;
-    }
+    const where = { platform: input.platform, testMode: input.testMode, tier: folder.tier, hasGit };
     let port: SyncPort;
     try {
-      this.factory = input.factory ?? await loadFactory();
-      port = await this.factory.open(this.request(input, storage, revision));
+      // Only a desktop working copy asks first. Its answer is in its Git config, so reading it loads the Git core, as opening it would.
+      const adopted = asksAdoption(where) && (await (await this.factoryFor(input)).readAdoption(storage));
+      if (revision !== this.revision) return;
+      const blocked = integratedBlocker({ ...where, adopted });
+      if (blocked) {
+        this.set({ ...IDLE, blocked });
+        return;
+      }
+      port = await (await this.factoryFor(input)).open(this.request(input, storage, revision));
     } catch (error) {
       if (revision !== this.revision) return;
       // Not opened: Refresh, foreground or the next configure tries again.
@@ -250,6 +262,30 @@ export class SourceControlSyncService {
     this.storage = storage;
     this.set({ ...IDLE, active: true, branch: settings.branch });
     await this.refresh();
+  }
+
+  /**
+   * Records whether this device lets Haptic run Git in the open folder's
+   * working copy: the answer to the one-Git-app warning on desktop, kept in
+   * the working copy's own Git config (`project.json` is untouched). No
+   * operation of the folder's client runs while it is written. In Integrated
+   * mode the folder then decides again: accepting opens the client, Stop
+   * Using closes it and shows the blocker. Rejects when it cannot be written.
+   */
+  async setAdopted(input: SyncConfigureInput, adopted: boolean): Promise<void> {
+    const { folder } = input;
+    if (!folder) return;
+    this.stop();
+    await this.settled();
+    try {
+      await (await this.factoryFor(input)).setAdoption(folderBoundStorage(input.storage, folder.id), adopted);
+    } finally {
+      if (input.settings.mode === "integrated") {
+        // A configure that ran meanwhile read the folder before the write; read it again.
+        this.stop();
+        await this.configure(input);
+      }
+    }
   }
 
   /**
@@ -453,8 +489,7 @@ export class SourceControlSyncService {
     const storage = folderBoundStorage(input.storage, input.folder.id);
     let port: SyncPort;
     try {
-      const factory = input.factory ?? await loadFactory();
-      this.factory = factory;
+      const factory = await this.factoryFor(input);
       // In the queue, so a close waits for the new `.git` to be written.
       port = await this.enqueue(() => factory.init({ ...this.request(live, storage, revision), replace: request.replace }));
     } catch (error) {
@@ -490,6 +525,12 @@ export class SourceControlSyncService {
         },
       },
     };
+  }
+
+  /** The Git client module (loaded on first use), or the one the input names. */
+  private async factoryFor(input: SyncConfigureInput): Promise<SyncPortFactory> {
+    this.factory = input.factory ?? await loadFactory();
+    return this.factory;
   }
 
   private author(input: SyncConfigureInput): Promise<CommitAuthor> {

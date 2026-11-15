@@ -18,16 +18,35 @@ export interface SourceControlFolder {
  * client per folder. `unavailable`: this host has no source control.
  * `no-repository`: the folder has no `.git` (a copy that was not cloned or
  * published here). `other-git-client`: a chosen folder on iOS or Android,
- * which another app (Working Copy) syncs.
+ * which another app (Working Copy) syncs. `not-adopted`: a desktop working
+ * copy whose user has not yet accepted Haptic as its Git client
+ * (`asksAdoption`).
  */
-export type IntegratedBlocker = "unavailable" | "no-repository" | "other-git-client";
+export type IntegratedBlocker = "unavailable" | "no-repository" | "other-git-client" | "not-adopted";
 
-export function integratedBlocker(folder: SourceControlFolder): IntegratedBlocker | null {
+/**
+ * `adopted`: this device made Haptic the working copy's Git client (Clone or
+ * Publish made it here, or its user accepted the one-Git-app warning); read
+ * only where `asksAdoption` holds.
+ */
+export function integratedBlocker(folder: SourceControlFolder & { adopted: boolean }): IntegratedBlocker | null {
   if (!isSourceControlHost(folder.platform, folder.testMode)) return "unavailable";
   if (folder.testMode) return null;
   if (!folder.hasGit) return "no-repository";
   if (folder.tier === "external" && folder.platform !== "electron") return "other-git-client";
+  if (asksAdoption(folder) && !folder.adopted) return "not-adopted";
   return null;
+}
+
+/**
+ * Whether Haptic asks once before running Git in the folder: on desktop any
+ * Git app (GitHub Desktop, the git CLI) may own a working copy, so a stored
+ * Integrated mode waits for this device's answer, kept in the working copy's
+ * own Git config. iOS and Android app storage has no other Git client (their
+ * chosen folders are `other-git-client`), and test mode has no `.git`.
+ */
+export function asksAdoption(folder: SourceControlFolder): boolean {
+  return folder.platform === "electron" && !folder.testMode && folder.hasGit;
 }
 
 /**
@@ -70,6 +89,7 @@ export function publishReplacesRepository(folder: SourceControlFolder): boolean 
 export function integratedBlockerLabel(blocker: IntegratedBlocker): string {
   if (blocker === "no-repository") return "This Folder Has No Git Repository";
   if (blocker === "other-git-client") return "Another Git App Syncs This Folder";
+  if (blocker === "not-adopted") return "Haptic Does Not Run Git In This Folder Yet";
   return "Source Control Is Not Available Here";
 }
 

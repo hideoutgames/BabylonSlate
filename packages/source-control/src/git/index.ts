@@ -10,6 +10,7 @@ export {
   type GitRepositoryOptions,
   type OperationCounters,
 } from "./repository";
+export { ADOPTION_CONFIG, readAdoption, setAdoption } from "./adoption";
 export {
   GITATTRIBUTES_LFS_RULE,
   GITIGNORE_ENTRIES,

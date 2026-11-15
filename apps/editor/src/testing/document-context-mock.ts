@@ -232,6 +232,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     cloneProject: unavailable("cloneProject"),
     publishProject: unavailable("publishProject"),
     summarizeProjectForPublish: unavailable("summarizeProjectForPublish"),
+    setSourceControlAdoption: unavailable("setSourceControlAdoption"),
     externalChangePrompt: null,
     confirmExternalChangeReloadProject: resolved,
     confirmExternalChangeReloadDocs: resolved,

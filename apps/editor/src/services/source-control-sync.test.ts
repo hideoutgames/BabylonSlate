@@ -16,6 +16,14 @@ const lookup: ChangeLookup = (path) =>
     : path === "assets/Rock.texture.hasset" ? { name: "Rock", type: "Texture", blobPaths: [] }
       : null;
 
+/** Test mode never asks before running Git (no `.git`). */
+const NOT_ASKED: Pick<SyncPortFactory, "readAdoption" | "setAdoption"> = {
+  readAdoption: async () => {
+    throw new Error("Test mode reads no adoption.");
+  },
+  setAdoption: async () => {},
+};
+
 function lock(path: string, ownerName: string, ours: boolean): FileLock {
   return { id: `${path}-lock`, path, ownerName, lockedAt: "", ours };
 }
@@ -35,6 +43,8 @@ async function setup(options: { platform?: string; testMode?: boolean; files?: R
     open: vi.fn(async (): Promise<SyncPort> => port),
     init: vi.fn(async (): Promise<SyncPort> => port),
     author: async () => AUTHOR,
+    readAdoption: vi.fn(async () => false),
+    setAdoption: vi.fn(async () => {}),
   };
   const locks = {
     theirs: vi.fn<(paths: readonly string[]) => Promise<FileLock[]>>(async () => []),
@@ -66,6 +76,7 @@ describe("SourceControlSyncService", () => {
     await service.configure(input(mode));
     service.noteSaved();
     expect(factory.open).not.toHaveBeenCalled();
+    expect(factory.readAdoption).not.toHaveBeenCalled();
     expect(service.statusPending).toBe(false);
     expect(service.getSnapshot().active).toBe(false);
     expect(listener).not.toHaveBeenCalled();
@@ -93,6 +104,80 @@ describe("SourceControlSyncService", () => {
     await service.configure(input("integrated"));
     expect(factory.open).not.toHaveBeenCalled();
     expect(service.getSnapshot()).toMatchObject({ active: false, blocked: "no-repository" });
+  });
+
+  describe("asking once per desktop working copy", () => {
+    /** A working copy with `.git` on `platform`; `answer` is what its Git config holds. */
+    async function withGit(platform: string, adopted: boolean) {
+      const context = await setup({ platform, testMode: false });
+      await context.storage.writeText(".git/HEAD", "ref: refs/heads/main\n");
+      const answer = { adopted };
+      vi.mocked(context.factory.readAdoption).mockImplementation(async () => answer.adopted);
+      vi.mocked(context.factory.setAdoption).mockImplementation(async (_storage, value) => {
+        answer.adopted = value;
+      });
+      return { ...context, answer };
+    }
+
+    it("runs no Git client in a desktop folder this device never adopted, until its user accepts", async () => {
+      const { service, factory, input, answer } = await withGit("electron", false);
+      await service.configure(input("integrated"));
+      expect(factory.open).not.toHaveBeenCalled();
+      expect(service.getSnapshot()).toMatchObject({ active: false, blocked: "not-adopted" });
+      // The settings effect configures again: still blocked, and nothing is written without an answer.
+      await service.configure(input("integrated"));
+      expect(factory.setAdoption).not.toHaveBeenCalled();
+
+      await service.setAdopted(input("integrated"), true);
+      expect(answer.adopted).toBe(true);
+      expect(factory.open).toHaveBeenCalledTimes(1);
+      expect(service.getSnapshot()).toMatchObject({ active: true, blocked: null, statusReady: true });
+    });
+
+    it("opens a desktop folder it adopted, and Stop Using closes the client and asks again", async () => {
+      const { service, factory, input, answer, spied } = await withGit("electron", true);
+      await service.configure(input("integrated"));
+      expect(service.getSnapshot()).toMatchObject({ active: true, blocked: null });
+      await service.setAdopted(input("integrated"), false);
+      expect(answer.adopted).toBe(false);
+      expect(service.getSnapshot()).toMatchObject({ active: false, blocked: "not-adopted" });
+      spied.status.mockClear();
+      await service.refreshStatus();
+      expect(spied.status).not.toHaveBeenCalled();
+      expect(factory.open).toHaveBeenCalledTimes(1);
+    });
+
+    it("records the answer of a switch to Integrated before the mode changes, opening nothing until then", async () => {
+      const { service, factory, input, answer } = await withGit("electron", false);
+      await service.configure(input("manual"));
+      await service.setAdopted(input("manual"), true);
+      expect(answer.adopted).toBe(true);
+      expect(factory.open).not.toHaveBeenCalled();
+      await service.configure(input("integrated"));
+      expect(service.getSnapshot()).toMatchObject({ active: true, blocked: null });
+    });
+
+    it("keeps the blocker when the answer cannot be written, and opens again on Refresh after the answer could not be read", async () => {
+      const { service, factory, input } = await withGit("electron", false);
+      await service.configure(input("integrated"));
+      vi.mocked(factory.setAdoption).mockRejectedValueOnce(new Error("The folder is read-only."));
+      await expect(service.setAdopted(input("integrated"), true)).rejects.toThrow("The folder is read-only.");
+      expect(service.getSnapshot()).toMatchObject({ active: false, blocked: "not-adopted" });
+
+      service.stop();
+      vi.mocked(factory.readAdoption).mockRejectedValueOnce(new Error(".git/config could not be read."));
+      await service.configure(input("integrated"));
+      expect(service.getSnapshot()).toMatchObject({ blocked: null, problem: { title: "Could Not Open The Repository" } });
+      await service.refresh();
+      expect(service.getSnapshot()).toMatchObject({ blocked: "not-adopted", problem: null });
+    });
+
+    it("never asks on iOS, where only Haptic runs Git in app storage", async () => {
+      const { service, factory, input } = await withGit("ios", false);
+      await service.configure(input("integrated"));
+      expect(factory.readAdoption).not.toHaveBeenCalled();
+      expect(service.getSnapshot()).toMatchObject({ active: true, blocked: null });
+    });
   });
 
   it("reads status once after a burst of saves, and never schedules anything while idle", async () => {
@@ -225,6 +310,7 @@ describe("SourceControlSyncService", () => {
           await authorHeld;
           return AUTHOR;
         }).mockResolvedValue(AUTHOR),
+        ...NOT_ASKED,
       };
       const locks = {
         theirs: vi.fn<(paths: readonly string[]) => Promise<FileLock[]>>(async () => []),
@@ -394,6 +480,7 @@ describe("SourceControlSyncService", () => {
         open: vi.fn(async (): Promise<SyncPort> => { throw new Error("A published folder opens the client Publish started."); }),
         init: vi.fn(async (): Promise<SyncPort> => FakeSync.init({ storage, remote, branch: "main" })),
         author: async () => AUTHOR,
+        ...NOT_ASKED,
       };
       const input = (mode: SourceControlMode): SyncConfigureInput => ({
         settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, mode, repositoryUrl: URL, branch: "main" },

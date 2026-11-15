@@ -104,6 +104,13 @@ export const syncPortFactory: SyncPortFactory = {
     const accounts = await sourceControlAccounts(testMode);
     return commitAuthorFor(await accounts.credentialSource(location.origin).current());
   },
+  // The working copy's own Git config: no credential or network.
+  async readAdoption(storage) {
+    return (await import("@haptic/source-control/git")).readAdoption(storage);
+  },
+  async setAdoption(storage, adopted) {
+    await (await import("@haptic/source-control/git")).setAdoption(storage, adopted);
+  },
 };
 
 /**

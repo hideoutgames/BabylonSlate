@@ -27,6 +27,7 @@ import {
   type SyncStatus,
   type TransferOptions,
 } from "../sync-port";
+import { ADOPTION_CONFIG } from "./adoption";
 import { installBufferGlobal } from "./buffer-global";
 import { toSyncError } from "./errors";
 import { cancellableHttp, gitHttp, type TransferCounters } from "./git-http";
@@ -102,8 +103,9 @@ export async function openRepository(options: GitRepositoryOptions): Promise<Git
 /**
  * Makes the project folder `storage` is bound to a new working copy with no
  * commits, whose `origin` is `repositoryUrl` (Publish: the first push creates
- * the remote branch). A folder that already has `.git` is refused, unless
- * `replace` (the caller decided the `.git` is an interrupted Publish's) removes it first.
+ * the remote branch), adopted as Haptic's. A folder that already has `.git` is
+ * refused, unless `replace` (the caller decided the `.git` is an interrupted
+ * Publish's) removes it first.
  */
 export async function initRepository(options: GitRepositoryOptions & { replace?: boolean }): Promise<GitRepository> {
   installBufferGlobal();
@@ -114,8 +116,8 @@ export async function initRepository(options: GitRepositoryOptions & { replace?:
 
 /**
  * Clones `repositoryUrl`'s branch into the empty project folder `storage` is
- * bound to. A cancel (download or checkout) rejects with `cancelled`; the
- * caller removes the folder.
+ * bound to, adopted as Haptic's. A cancel (download or checkout) rejects with
+ * `cancelled`; the caller removes the folder.
  */
 export async function cloneRepository(options: GitRepositoryOptions & TransferOptions & { depth?: number }): Promise<GitRepository> {
   installBufferGlobal();
@@ -172,8 +174,7 @@ export class GitRepository implements SyncPort {
       const existing = (await this.storage.readdir("")).filter((entry) => !CLONE_IGNORES.has(entry.name));
       if (existing.length > 0) throw new SyncError("conflict", "A clone needs an empty project folder.", { code: "not-empty" });
       await git.clone({ ...op.git, http: op.http, url: this.url, ref: this.branch, singleBranch: true, depth, noCheckout: true, noTags: true });
-      // Project storage keeps no file modes.
-      await git.setConfig({ ...op.git, path: "core.filemode", value: false });
+      await this.configureNew(op);
       const head = await this.resolve(op, this.localRef);
       if (!head) throw new SyncError("not-found", `The repository has no branch ${this.branch}.`);
       await this.downloadMissing(op, head, null);
@@ -193,9 +194,14 @@ export class GitRepository implements SyncPort {
       }
       await git.init({ ...op.git, defaultBranch: this.branch });
       await git.addRemote({ ...op.git, remote: "origin", url: this.url });
-      // Project storage keeps no file modes.
-      await git.setConfig({ ...op.git, path: "core.filemode", value: false });
+      await this.configureNew(op);
     });
+  }
+
+  /** A working copy Haptic made: project storage keeps no file modes, and the copy is Haptic's (`ADOPTION_CONFIG`). */
+  private async configureNew(op: Op): Promise<void> {
+    await git.setConfig({ ...op.git, path: "core.filemode", value: false });
+    await git.setConfig({ ...op.git, path: ADOPTION_CONFIG, value: true });
   }
 
   status(): Promise<SyncStatus> {

@@ -629,6 +629,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
   }, [projectDocumentRef, projectService, saveProjectNow, setProjectDocument, sourceControlActions, sourceControlSync, syncInputFor]);
 
+  const setSourceControlAdoption = useCallback<DocumentContextValue["setSourceControlAdoption"]>(async (adopted) => {
+    const opened = projectDocumentRef.current;
+    if (!opened) return;
+    await sourceControlSync.setAdopted(syncInputFor(opened.settings.sourceControl), adopted);
+  }, [projectDocumentRef, sourceControlSync, syncInputFor]);
+
   const summarizeProjectForPublish = useCallback(async () => {
     const { summarizeProject } = await import("../services/source-control-publish");
     return summarizeProject(projectService.storagePort);
@@ -838,6 +844,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyPulledChanges,
       publishProject,
       summarizeProjectForPublish,
+      setSourceControlAdoption,
       beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,
@@ -902,6 +909,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applyPulledChanges,
       publishProject,
       summarizeProjectForPublish,
+      setSourceControlAdoption,
       beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,

@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import { TriangleAlertIcon, UploadIcon } from "lucide-react";
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore } from "react";
+import { UploadIcon } from "lucide-react";
 import type { ProjectDocument, SourceControlMode, SourceControlProjectSettings } from "@haptic/core";
 import {
   AlertDialog,
@@ -9,7 +9,6 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogMedia,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
 import { Button } from "@haptic/ui/components/button";
@@ -25,12 +24,14 @@ import { Switch } from "@haptic/ui/components/switch";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { getHostPlatform, isTestModeEnabled } from "@haptic/vfs";
 import {
+  asksAdoption,
   canPublishProject,
-  integratedBlocker,
   integratedBlockerLabel,
   offeredSourceControlModes,
   type SourceControlFolder,
 } from "../lib/source-control-mode";
+import type { SourceControlSyncService } from "../services/source-control-sync";
+import { AdoptGitFolderDialog } from "./source-control-adopt-dialog";
 import { SettingsSection } from "./settings-section";
 import type {
   DocumentActions,
@@ -59,6 +60,9 @@ interface ProjectSourceControlSettingsProps {
   };
   prefillSourceControlFromGit: DocumentActions["prefillSourceControlFromGit"];
   readSourceControlFolder: DocumentActions["readSourceControlFolder"];
+  setSourceControlAdoption: DocumentActions["setSourceControlAdoption"];
+  /** Integrated mode's sync: whether it runs or why the folder blocks it (only those two are read). */
+  sourceControlSync: SourceControlSyncService;
   sourceControlUrlMissing: boolean;
   setSourceControlUrlMissing: (missing: boolean) => void;
   setDisableSourceControlOpen: (open: boolean) => void;
@@ -75,6 +79,8 @@ export function ProjectSourceControlSettings({
   latest,
   prefillSourceControlFromGit,
   readSourceControlFolder,
+  setSourceControlAdoption,
+  sourceControlSync,
   sourceControlUrlMissing,
   setSourceControlUrlMissing,
   setDisableSourceControlOpen,
@@ -86,8 +92,13 @@ export function ProjectSourceControlSettings({
     tier: null,
     hasGit: false,
   }));
-  const [adoptOpen, setAdoptOpen] = useState(false);
+  // The one-Git-app warning: before switching Mode to Integrated, or to run Git in a folder a stored Integrated mode reached.
+  const [adoptFor, setAdoptFor] = useState<"mode" | "folder" | null>(null);
+  const [stopError, setStopError] = useState<string | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
+  // The sync decides whether Integrated mode runs in this folder (it reads the desktop answer); only these two re-render the page.
+  const syncBlocked = useSyncExternalStore(sourceControlSync.subscribe, () => sourceControlSync.getSnapshot().blocked);
+  const syncActive = useSyncExternalStore(sourceControlSync.subscribe, () => sourceControlSync.getSnapshot().active);
   // The folder's tier and `.git` decide which modes are offered; Publish creates `.git`, so it is read again.
   useEffect(() => {
     let alive = true;
@@ -101,7 +112,9 @@ export function ProjectSourceControlSettings({
   const modes = offeredSourceControlModes(settings.mode, folder);
   // Integrated mode's repository and branch are the working copy's: they change only with it (Clone, Publish, branch switch).
   const fixed = settings.mode === "integrated";
-  const blocker = settings.mode === "integrated" ? integratedBlocker(folder) : null;
+  const blocker = settings.mode === "integrated" ? syncBlocked : null;
+  // On desktop this device's answer can be taken back: Haptic stops running Git here, `project.json` stays Integrated.
+  const stopOffered = settings.mode === "integrated" && asksAdoption(folder) && syncActive;
   const change = (patch: Partial<SourceControlProjectSettings>) =>
     updateProjectSettings({ sourceControl: { ...settings, ...patch } });
   const chooseMode = (mode: SourceControlMode) => {
@@ -112,27 +125,39 @@ export function ProjectSourceControlSettings({
     }
     if (mode === "integrated") {
       // An existing working copy: no other Git app may use the folder while Haptic does.
-      setAdoptOpen(true);
+      setAdoptFor("mode");
       return;
     }
     switchTo(mode);
   };
-  /** An existing working copy becomes Integrated with its own `origin` and checked-out branch. */
-  const adoptIntegrated = () => {
+  /**
+   * An existing working copy becomes Integrated with its own `origin` and
+   * checked-out branch; on desktop the answer is recorded first, so the sync
+   * that the new mode starts finds it.
+   */
+  const adoptIntegrated = async () => {
     const requestedProject = projectGuid;
-    void prefillSourceControlFromGit().then((prefill) => {
-      const live = latest.current;
-      if (!live.project || live.projectGuid !== requestedProject) return;
-      const now = live.project.settings.sourceControl;
-      const repositoryUrl = prefill.repositoryUrl || now.repositoryUrl.trim();
-      if (!repositoryUrl) {
-        setSourceControlUrlMissing(true);
-        return;
-      }
-      setSourceControlUrlMissing(false);
-      live.applyProjectSettings({
-        sourceControl: { ...now, mode: "integrated", repositoryUrl, branch: prefill.branch || now.branch },
-      });
+    const prefill = await prefillSourceControlFromGit();
+    const stillOpen = () => latest.current.project !== null && latest.current.projectGuid === requestedProject;
+    if (!stillOpen()) return;
+    const repositoryUrl = prefill.repositoryUrl || latest.current.project!.settings.sourceControl.repositoryUrl.trim();
+    if (!repositoryUrl) {
+      setSourceControlUrlMissing(true);
+      return;
+    }
+    setSourceControlUrlMissing(false);
+    if (asksAdoption(folder)) await setSourceControlAdoption(true);
+    if (!stillOpen()) return;
+    const live = latest.current;
+    const now = live.project!.settings.sourceControl;
+    live.applyProjectSettings({
+      sourceControl: { ...now, mode: "integrated", repositoryUrl, branch: prefill.branch || now.branch },
+    });
+  };
+  const stopUsing = () => {
+    setStopError(null);
+    void setSourceControlAdoption(false).catch((failure: unknown) => {
+      setStopError(failure instanceof Error ? failure.message : String(failure));
     });
   };
   const switchTo = (mode: SourceControlMode) => {
@@ -227,12 +252,45 @@ export function ProjectSourceControlSettings({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-          {blocker && folder.tier !== null ? (
+          {blocker ? (
             <FieldDescription className="col-span-full" data-testid="settings-source-control-blocked">
               {integratedBlockerLabel(blocker)}
             </FieldDescription>
           ) : null}
         </Field>
+        {blocker === "not-adopted" || stopOffered ? (
+          <Field orientation="horizontal" className="settings-field">
+            <FieldLabel htmlFor="settings-source-control-git-app">Git App</FieldLabel>
+            {stopOffered ? (
+              <Button
+                id="settings-source-control-git-app"
+                variant="outline"
+                size="sm"
+                className="justify-self-end"
+                aria-invalid={stopError ? true : undefined}
+                aria-describedby={stopError ? "settings-source-control-git-app-error" : undefined}
+                data-testid="settings-source-control-stop-using"
+                onClick={stopUsing}
+              >
+                Stop Using Haptic&apos;s Git Here
+              </Button>
+            ) : (
+              <Button
+                id="settings-source-control-git-app"
+                variant="outline"
+                size="sm"
+                className="justify-self-end"
+                data-testid="settings-source-control-adopt"
+                onClick={() => setAdoptFor("folder")}
+              >
+                Use Haptic&apos;s Git Here
+              </Button>
+            )}
+            {stopError ? (
+              <FieldError id="settings-source-control-git-app-error">{stopError}</FieldError>
+            ) : null}
+          </Field>
+        ) : null}
         {canPublishProject(settings.mode, folder) ? (
           <Field orientation="horizontal" className="settings-field">
             <FieldLabel htmlFor="settings-source-control-publish">Publish</FieldLabel>
@@ -294,32 +352,13 @@ export function ProjectSourceControlSettings({
           </Field>
         ) : null}
       </SettingsSection>
-      <AlertDialog open={adoptOpen} onOpenChange={setAdoptOpen}>
-        <AlertDialogContent variant="warning" data-testid="settings-source-control-adopt-confirm">
-          <AlertDialogHeader>
-            <AlertDialogMedia>
-              <TriangleAlertIcon aria-hidden="true" />
-            </AlertDialogMedia>
-            <AlertDialogTitle>Use Haptic As This Folder&apos;s Git App?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Haptic will commit, pull and push in this folder. No other Git app may use it at the same time: two
-              apps writing one repository can corrupt it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              data-testid="settings-source-control-adopt-confirm-action"
-              onClick={() => {
-                setAdoptOpen(false);
-                adoptIntegrated();
-              }}
-            >
-              Use Integrated
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AdoptGitFolderDialog
+        open={adoptFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setAdoptFor(null);
+        }}
+        onAccept={() => (adoptFor === "mode" ? adoptIntegrated() : setSourceControlAdoption(true))}
+      />
       {publishOpen ? (
         <Suspense fallback={null}>
           <PublishProjectDialog open onOpenChange={setPublishOpen} />

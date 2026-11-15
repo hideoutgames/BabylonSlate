@@ -379,6 +379,13 @@ export interface DocumentContextValue {
   /** What Publish would push: assets, bytes, and the share stored through Git LFS. */
   summarizeProjectForPublish: () => Promise<PublishSummary>;
   /**
+   * Records on this device whether Haptic may run Git in the open project's
+   * desktop working copy (the one-Git-app warning's answer, kept in its
+   * `.git/config`), then, in Integrated mode, opens or closes the Git client
+   * to match. `project.json` is untouched. Rejects when it cannot be written.
+   */
+  setSourceControlAdoption: (adopted: boolean) => Promise<void>;
+  /**
    * Runs `work` in the project write queue with the debounced save cancelled,
    * so no editor save races a pull writing project files.
    */
