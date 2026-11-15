@@ -24,6 +24,7 @@ import {
 } from "./anim-bone-modifiers";
 import { applySpringBones } from "./anim-spring-bones";
 import { holdRoot, rootLockOf } from "./anim-root-lock";
+import { applyFootPlacement, sceneOfNode } from "./anim-foot-placement";
 
 /**
  * Haptic's pose evaluator: Play, the editor's previews and exported games pose 3D clips here, never by starting,
@@ -809,7 +810,7 @@ export function applyPose(
 const NO_BLENDS: readonly AnimLayerBlend[] = [];
 
 function posesEveryTime(change: AnimBoneModifier): boolean {
-  if (change.kind === "springBones") return true;
+  if (change.kind === "springBones" || change.kind === "footPlacement") return true;
   if (change.kind === "lookAt") return change.targetSpace === "world";
   if (change.kind === "twoBoneIk") return change.effectorSpace === "world" || (!!change.jointTarget && change.jointTargetSpace === "world");
   return false;
@@ -1113,7 +1114,8 @@ function changeAlpha(node: BoneNode, change: AnimBoneModifier, blends: readonly 
 }
 
 /**
- * Applies skeletal control changes (Transform Bone, Look At, Two Bone IK, Spring Bones) in order on the posed nodes. Each starts
+ * Applies skeletal control changes (Transform Bone, Look At, Two Bone IK, Spring Bones, Foot Placement) in order on
+ * the posed nodes. Each starts
  * from the bones' pose: the blended value where a clip animates a channel, else its rest, so a channel a change set
  * last pose and no clip animates returns to rest first. A bone no change touches any more stays at rest.
  */
@@ -1137,6 +1139,14 @@ function applyBoneModifiers(
   for (const modifier of modifiers) {
     const node = boneNodeOf(rig, modifier.bone);
     if (!node) continue;
+    if (modifier.kind === "footPlacement") {
+      const scene = sceneOfNode(node);
+      if (scene) {
+        applyFootPlacement(scene, modifier, (name) => boneNodeOf(rig, name), (bone, base, solved, channels) =>
+          writeBoneChange(rig, bone, base, solved, changeAlpha(bone, modifier, blends), channels, generation));
+      }
+      continue;
+    }
     if (modifier.kind === "springBones") {
       applySpringBones(rig, node, modifier, generation, (name) => boneNodeOf(rig, name), (bone, base, solved) =>
         writeBoneChange(rig, bone, base, solved, changeAlpha(bone, modifier, blends), WRITE_ROTATION, generation));

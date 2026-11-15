@@ -121,6 +121,7 @@ Skeletal controls aim and place bones after the clips blend, toward points the g
 
 - [Look At](../scripting/animation/look-at.md) turns a bone, such as the head, toward a target, within an angle limit.
 - [Two Bone IK](../scripting/animation/two-bone-ik.md) puts a hand or foot on a point by bending its arm or leg, such as a hand on a door handle.
+- [Foot Placement](../scripting/animation/foot-placement.md) plants the feet on uneven ground, such as stairs and slopes, lowering the pelvis for the lower foot.
 
 Give each target a Vector3 variable and set it from a script with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md), such as the location of the actor to look at, in **World Space**. Chain the controls one after another: each takes the pose the one before it made.
 

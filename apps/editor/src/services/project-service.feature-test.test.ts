@@ -408,6 +408,7 @@ describe("FeatureTest starter", () => {
       "anim.control.lookAt",
       "anim.control.twoBoneIk",
       "anim.control.springBones",
+      "anim.control.footPlacement",
       "anim.pose.applyAdditive",
       "anim.pose.slot",
       "anim.frame.slot",

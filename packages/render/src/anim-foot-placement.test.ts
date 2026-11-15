@@ -1,0 +1,116 @@
+import { Animation } from "@babylonjs/core/Animations/animation";
+import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
+import { normalizeAnimFootPlacement, type AnimFootPlacementChange } from "@haptic/core";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { applyPose, bindPoseClip, poseRigFor, type PoseClip, type PoseRig } from "./anim-pose";
+
+let engine: NullEngine;
+let scene: Scene;
+let nodes: Record<string, TransformNode>;
+let rig: { clips: PoseClip[]; rig: PoseRig } | null = null;
+
+/**
+ * actor → hips (1 up) → upperleg.l / upperleg.r (0.2 to each side) → lowerleg (0.45 down, a little forward) → foot
+ * (0.45 down): each ankle 0.1 above the actor's ground, its knee bent forward.
+ */
+beforeEach(() => {
+  engine = new NullEngine();
+  scene = new Scene(engine);
+  const make = (name: string, parent: TransformNode | null, position: [number, number, number]) => {
+    const node = new TransformNode(name, scene);
+    node.parent = parent;
+    node.position.set(...position);
+    node.rotationQuaternion = Quaternion.Identity();
+    return node;
+  };
+  const actor = make("actor-1", null, [0, 0, 0]);
+  const hips = make("hips", actor, [0, 1, 0]);
+  nodes = { actor, hips };
+  for (const [side, x] of [["l", 0.2], ["r", -0.2]] as const) {
+    const upper = make(`upperleg.${side}`, hips, [x, 0, 0]);
+    const lower = make(`lowerleg.${side}`, upper, [0, -0.45, 0.05]);
+    nodes[`foot.${side}`] = make(`foot.${side}`, lower, [0, -0.45, -0.05]);
+  }
+});
+
+afterEach(() => {
+  rig = null;
+  scene.dispose();
+  engine.dispose();
+});
+
+/** A box whose top is at `top`, spanning X from `x0` to `x1`. */
+function ground(name: string, x0: number, x1: number, top: number, tiltDegrees = 0) {
+  const box = CreateBox(name, { width: x1 - x0, height: 1, depth: 4 }, scene);
+  box.position.set((x0 + x1) / 2, top - 0.5, 0);
+  if (tiltDegrees) box.rotationQuaternion = Quaternion.RotationAxis(Vector3.Forward(), (tiltDegrees * Math.PI) / 180);
+  box.computeWorldMatrix(true);
+  return box;
+}
+
+function place(data: Record<string, unknown>): void {
+  if (!rig) {
+    const group = new AnimationGroup("idle", scene);
+    const animation = new Animation("idle-hips", "position", 30, Animation.ANIMATIONTYPE_VECTOR3);
+    animation.setKeys([{ frame: 0, value: new Vector3(0, 1, 0) }, { frame: 10, value: new Vector3(0, 1, 0) }]);
+    group.addTargetedAnimation(animation, nodes.hips!);
+    const clips = [bindPoseClip(group, "idle")];
+    rig = { clips, rig: poseRigFor(clips) };
+  }
+  const change: AnimFootPlacementChange = {
+    kind: "footPlacement", bone: "foot.l", alpha: 1, ...normalizeAnimFootPlacement({ feet: ["foot.l", "foot.r"], pelvisBone: "hips", ...data }),
+  };
+  applyPose(rig.rig, 1, rig.clips, [0], [1], { masks: [], blends: [], modifiers: [change] });
+}
+
+const at = (name: string) => {
+  const node = nodes[name]!;
+  node.computeWorldMatrix(true);
+  return node.getAbsolutePosition();
+};
+
+describe("Foot Placement", () => {
+  it("lifts a foot onto a step and leaves the other on the floor", () => {
+    ground("floor", -1, 0, 0);
+    ground("step", 0, 1, 0.3);
+    place({});
+    expect(at("foot.l").y).toBeCloseTo(0.4, 4);
+    expect(at("foot.r").y).toBeCloseTo(0.1, 4);
+    // Neither foot was lower than the actor's ground: the pelvis stays.
+    expect(at("hips").y).toBeCloseTo(1, 6);
+    expect(at("foot.l").x).toBeCloseTo(0.2, 4);
+  });
+
+  it("drops the pelvis so a foot over lower ground reaches it", () => {
+    ground("floor", -1, 0, -0.2);
+    ground("step", 0, 1, 0);
+    place({});
+    expect(at("hips").y).toBeCloseTo(0.8, 4);
+    expect(at("foot.r").y).toBeCloseTo(-0.1, 4);
+    expect(at("foot.l").y).toBeCloseTo(0.1, 4);
+  });
+
+  it("turns a foot to a slope, and leaves it upright without Align To Ground", () => {
+    ground("slope", -1, 1, 0, 20);
+    place({ traceUp: 1, traceDown: 1 });
+    const up = () => Vector3.TransformNormal(Vector3.Up(), nodes["foot.l"]!.computeWorldMatrix(true)).normalize();
+    const normal = Vector3.TransformNormal(Vector3.Up(), scene.getMeshByName("slope")!.computeWorldMatrix(true)).normalize();
+    expect(Vector3.Dot(up(), normal)).toBeCloseTo(1, 4);
+    place({ traceUp: 1, traceDown: 1, alignToGround: false });
+    expect(up().y).toBeCloseTo(1, 4);
+  });
+
+  it("ignores the actor's own meshes and leaves a foot with no ground below as posed", () => {
+    const own = ground("own", 0, 1, 0.3);
+    own.parent = nodes.actor!;
+    own.computeWorldMatrix(true);
+    place({});
+    expect(at("foot.l").y).toBeCloseTo(0.1, 4);
+    expect(at("hips").y).toBeCloseTo(1, 6);
+  });
+});

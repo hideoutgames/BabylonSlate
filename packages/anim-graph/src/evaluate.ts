@@ -4,6 +4,7 @@ import {
   animBranchFilterKey,
   parseAnimBoneModifyMode,
   parseAnimBoneSpace,
+  normalizeAnimFootPlacement,
   normalizeAnimSpringBoneSettings,
   parseAnimTargetSpace,
   rotatorToQuat,
@@ -51,6 +52,7 @@ import {
   ANIM_CONTROL_LOOK_AT_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
   ANIM_CONTROL_SPRING_BONES_TYPE,
+  ANIM_CONTROL_FOOT_PLACEMENT_TYPE,
   ANIM_POSE_LAYERED_BLEND_TYPE,
   ANIM_POSE_SAVE_CACHED_TYPE,
   ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
@@ -689,6 +691,14 @@ function rootMotionBoneOf(value: unknown): { rootMotionBone?: string } {
   return typeof bone === "string" && bone ? { rootMotionBone: bone } : {};
 }
 
+/** A Foot Placement's change at `alpha`. Null when it names no foot. */
+function footPlacementModifier(node: GraphNode, alpha: number): AnimBoneModifier | null {
+  const settings = normalizeAnimFootPlacement(node.data);
+  const first = settings.feet[0];
+  if (!first || !(alpha > 0)) return null;
+  return { kind: "footPlacement", bone: first, alpha: Math.min(1, alpha), ...settings };
+}
+
 /** Whether layers under `masks` play on a Layered Blend Per Bone's branch only, which root motion leaves out. */
 function maskedToBranch(masks: readonly AnimLayerMaskRef[] | undefined): boolean {
   return !!masks && masks.some((mask) => mask.input >= 0);
@@ -1007,7 +1017,8 @@ function visitPoseGraph(
     }
     if (
       node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE || node.type === ANIM_CONTROL_LOOK_AT_TYPE ||
-      node.type === ANIM_CONTROL_TWO_BONE_IK_TYPE || node.type === ANIM_CONTROL_SPRING_BONES_TYPE
+      node.type === ANIM_CONTROL_TWO_BONE_IK_TYPE || node.type === ANIM_CONTROL_SPRING_BONES_TYPE ||
+      node.type === ANIM_CONTROL_FOOT_PLACEMENT_TYPE
     ) {
       // The bone changes after the pose it takes, so a change deeper in the graph applies first.
       visit(poseInputSource(index, node.id, "sourcePose"), weight, flipX, flipY, masks, additive);
@@ -1019,7 +1030,9 @@ function visitPoseGraph(
           ? twoBoneIkModifier(node, data, alpha)
           : node.type === ANIM_CONTROL_SPRING_BONES_TYPE
             ? springBonesModifier(node, alpha, dtSeconds)
-            : lookAtModifier(node, easedLookAtTarget(ctx, key, node, vectorOf(dataValue<unknown>(data, node, "target", null), 0), dtSeconds, fresh), alpha);
+            : node.type === ANIM_CONTROL_FOOT_PLACEMENT_TYPE
+              ? footPlacementModifier(node, alpha)
+              : lookAtModifier(node, easedLookAtTarget(ctx, key, node, vectorOf(dataValue<unknown>(data, node, "target", null), 0), dtSeconds, fresh), alpha);
       if (modifier) modifiers.push(masks ? { ...modifier, masks } : modifier);
       return;
     }

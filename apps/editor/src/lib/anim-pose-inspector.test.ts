@@ -78,6 +78,15 @@ describe("Phase 5b pose node rows", () => {
     expect(patches).toEqual([{ upAxis: "y" }]);
   });
 
+  it("shows Foot Placement's pelvis, traces and alignment, its Feet being a list of their own", () => {
+    const { rows, patches } = rowsOf("anim.control.footPlacement", { feet: ["foot.l"] }, { bones: ["hips", "foot.l"] });
+    expect(rows.map((row) => row.label)).toEqual(["Pelvis Bone", "Trace Up", "Trace Down", "Align To Ground"]);
+    const pelvis = rows.find((row) => row.id === "pelvisBone");
+    expect(pelvis).toMatchObject({ value: "" });
+    if (pelvis?.kind === "enum") pelvis.onChange("hips");
+    expect(patches).toEqual([{ pelvisBone: "hips" }]);
+  });
+
   it("shows Two Bone IK's Joint Target Space only while it uses a Joint Target", () => {
     const labels = (data: Record<string, unknown>) => rowsOf("anim.control.twoBoneIk", data, { bones: ["hand_r"] }).rows.map((row) => row.label);
     expect(labels({})).toEqual(["End Bone", "Effector Space", "Use Joint Target", "Max Stretch", "Keep Effector Rotation"]);

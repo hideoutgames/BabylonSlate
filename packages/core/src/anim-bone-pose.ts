@@ -177,8 +177,45 @@ export interface AnimTwoBoneIkChange {
   masks?: AnimLayerMaskRef[];
 }
 
+/**
+ * A Foot Placement's change: each foot (the end bone of a two-bone leg) traced against the ground below it, from
+ * `traceUp` above to `traceDown` below, then placed by Two Bone IK at the height of what the trace hit (keeping the
+ * foot's rotation, or turning it to the ground with `alignToGround`); the pelvis drops by the lowest foot's drop so
+ * that leg can reach. `bone` is the first foot.
+ */
+export interface AnimFootPlacementChange {
+  kind: "footPlacement";
+  bone: string;
+  alpha: number;
+  feet: string[];
+  pelvisBone?: string;
+  traceUp: number;
+  traceDown: number;
+  alignToGround: boolean;
+  masks?: AnimLayerMaskRef[];
+}
+
+/** A Foot Placement node's settings as stored on it, cleaned and with defaults filled. */
+export function normalizeAnimFootPlacement(data: Record<string, unknown>): Omit<AnimFootPlacementChange, "kind" | "bone" | "alpha" | "masks"> {
+  const distance = (value: unknown, fallback: number) => (typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : fallback);
+  const feet = Array.isArray(data.feet) ? data.feet.filter((foot): foot is string => typeof foot === "string" && foot.trim() !== "") : [];
+  const pelvis = typeof data.pelvisBone === "string" ? data.pelvisBone.trim() : "";
+  return {
+    feet: [...new Set(feet)],
+    ...(pelvis ? { pelvisBone: pelvis } : {}),
+    traceUp: distance(data.traceUp, 0.5),
+    traceDown: distance(data.traceDown, 0.5),
+    alignToGround: data.alignToGround !== false,
+  };
+}
+
 /** A skeletal control's change to bones after the clips blend, applied in evaluation order. */
-export type AnimBoneModifier = AnimTransformBoneChange | AnimLookAtChange | AnimTwoBoneIkChange | AnimSpringBonesChange;
+export type AnimBoneModifier =
+  | AnimTransformBoneChange
+  | AnimLookAtChange
+  | AnimTwoBoneIkChange
+  | AnimSpringBonesChange
+  | AnimFootPlacementChange;
 
 /** Bone-local axes a Look At aims or keeps up, as stored on the node. */
 export const ANIM_BONE_AXES = ["x", "-x", "y", "-y", "z", "-z"] as const;
