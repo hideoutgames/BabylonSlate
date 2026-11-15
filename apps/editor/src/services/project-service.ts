@@ -334,7 +334,7 @@ export class ProjectService {
     }, options);
     return admitOwnerWrites(this, this.writeAdmission, [
       "retryTextureEncoding", "retryAllFailedTextureEncoding",
-      "prepareAreaEmission", "deleteListedProject", "openProject", "createEmptyProject",
+      "prepareAreaEmission", "reconvertHdrEnvironment", "deleteListedProject", "openProject", "createEmptyProject",
       "createFromTemplate", "openListedProject", "closeProject",
       "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",

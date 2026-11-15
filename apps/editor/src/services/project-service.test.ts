@@ -4,6 +4,8 @@ import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vf
 import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@haptic/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@haptic/vfs";
 import { encodeAssetDocument, encodeHasset, decodeHasset } from "@haptic/assets";
+import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
+import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
@@ -19,6 +21,11 @@ afterEach(() => vi.unstubAllGlobals());
 vi.mock("@haptic/vfs", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@haptic/vfs")>();
   return { ...mod, pickImportFiles: vi.fn(mod.pickImportFiles) };
+});
+
+vi.mock("@haptic/assets/import-worker-client", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@haptic/assets/import-worker-client")>();
+  return { ...mod, convertHdrEnvironmentOffMainThread: vi.fn(mod.convertHdrEnvironmentOffMainThread) };
 });
 
 vi.mock("../lib/kenney-mannequin", async (importOriginal) => {
@@ -185,6 +192,57 @@ describe("ProjectService lifecycle", () => {
     proceed();
     await saving;
     await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    await service.closeProject();
+  });
+
+  it("waits for a Face Size conversion to write its Texture before running as the only writer", async () => {
+    // The conversion writes the cube's blob, then the header naming it: removing unused files in between
+    // could take a blob the conversion found already stored, and the header would name a missing file.
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Sky", { kind: "2d" });
+    const [sky] = await service.registry!.importFile("project", "", "Sky.hdr", buildRadianceHdrFixture({ width: 64, height: 32, color: () => [1, 1, 1] }), { hdrFaceSize: 128 });
+    const guid = sky!.header.guid;
+    const converting = () => {
+      let started!: () => void;
+      let finish!: () => void;
+      const running = new Promise<void>((resolve) => { started = resolve; });
+      const release = new Promise<void>((resolve) => { finish = resolve; });
+      const convert = async () => {
+        started();
+        await release;
+        return buildFloatDdsCubeFixture({ size: 4, halfFloat: true });
+      };
+      return { running, finish, convert };
+    };
+    const steps: string[] = [];
+    const alone = () => service.withExclusiveWrites("Removing unused files", async () => { steps.push("work"); });
+
+    // Texture Details' Face Size, through the project service.
+    const details = converting();
+    vi.mocked(convertHdrEnvironmentOffMainThread).mockImplementationOnce(details.convert);
+    const reconverted = service.reconvertHdrEnvironment(guid, 512);
+    await details.running;
+    const first = alone();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(steps).toEqual([]);
+    details.finish();
+    expect(await reconverted).toBe(true);
+    await first;
+    expect(steps).toEqual(["work"]);
+
+    // The same through the registry editor tools are handed.
+    const tools = converting();
+    const viaRegistry = service.registry!.reconvertHdrEnvironment(guid, 256, tools.convert);
+    await tools.running;
+    const second = alone();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(steps).toEqual(["work"]);
+    tools.finish();
+    expect(await viaRegistry).toBe(true);
+    await second;
+    expect(steps).toEqual(["work", "work"]);
+    expect(service.registry!.getByGuid(guid)!.header.payload).toMatchObject({ hdrFaceSize: 256 });
     await service.closeProject();
   });
 
