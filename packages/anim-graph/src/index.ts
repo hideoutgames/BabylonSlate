@@ -22,6 +22,7 @@ export {
   defaultAnimVariableValue,
   animGraphMembersFromVariables,
   animExitTimeReached,
+  animAliasStates,
   parseAnimGraphDocument,
   resolveAnimGraphClips,
   validateAnimGraph,
@@ -43,6 +44,8 @@ export {
   type AnimState,
   type AnimStateFacts,
   type AnimStateMachine,
+  type AnimStateAlias,
+  type AnimSyncGroupClock,
   type AnimTransition,
   type AnimTransitionDecision,
   type AnimVariableTypeId,
@@ -51,6 +54,7 @@ export { animEvalWithJump, evaluateAnimGraph } from "./evaluate";
 export * from "./pose-graph";
 export * from "./blend-space";
 export {
+  ANIM_ALIAS_NODE_TYPE,
   ANIM_STATE_SIDES,
   stateMachineToSerialized,
   animPaletteNodes,

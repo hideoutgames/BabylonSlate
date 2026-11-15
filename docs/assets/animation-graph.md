@@ -22,6 +22,7 @@ Double-tap an Animation Graph to open it. Its **Graph** window shows the graph's
 The Graph opens on the State Machine. A bar above the canvas shows where you are: **State Machine**, then the state's name while you are in its state graph, such as **State Machine › Run**. Tap **State Machine** in it, or tap **Back**, to step out.
 
 - **State Machine**: each state is a node, and the graph starts in the entry state. Drag from any side of a state onto another state to add a transition from the state you dragged: it leaves by the side you dragged from and enters the side you release on, or the side facing the first state when you release near the middle. Dragging between the same two states again moves that transition to the new sides. Release on empty canvas away from the state to open **Add Node** and add a state there with the transition. Release anywhere else, such as close to the state you dragged from, to remove every transition on that side of it. Select a wire or its blend dot to edit that transition. Double-tap a state to open its state graph, or a wire to open its transition's rule.
+- **State Alias**: add one from **Add Node** on the State Machine. It plays nothing: its transitions leave from every state it covers (**Any State**, or the states ticked under **Leaves From** in the **Inspector**), but never into the state already playing. Use it for a Hit, Death or Fall that can happen from many states. Wires only leave an alias; none can enter one.
 - **Two-way transitions**: a transition back between the same two sides shares the first one's wire, with an arrow at each end. Double-tapping a shared wire opens the rule of the direction whose arrowhead is nearer where you tapped. A transition back on other sides is a wire of its own.
 - **State graph**: each state's own graph, ending in its **Output Pose** (2D: **Output Frame**), which you cannot delete. Its result is what the state plays. A new state has one [Sequence Player](../scripting/animation/sequence-player.md) (2D: [Sprite Animation Player](../scripting/animation/sprite-animation-player.md)) wired to the output. Add nodes such as [Blend](../scripting/animation/blend.md), [Blend Poses By Bool](../scripting/animation/blend-poses-by-bool.md) or a [Blend Space Player](../scripting/animation/blend-space-player.md) to mix clips in one state, [Flip Frame](../scripting/animation/flip-frame.md) to face a sprite the other way, or a [Sprite Blend Space Player](../scripting/animation/sprite-blend-space-player.md) to pick a sprite by direction or speed.
 - **Transition rule**: the graph that decides when a transition fires. **Back To State Machine** returns with the transition selected.
@@ -67,6 +68,7 @@ The bar ends with the playing state and its time. A 3D graph plays on a floor gr
 | Sprite Animation | 2D graphs. The [Sprite Animation](sprite-animation.md) the state plays. |
 | Speed | Playback speed multiplier. At 0 the state holds its clip's first frame. |
 | Loop | Whether the clip repeats. |
+| Sync Group | Looping players with the same name play at the same point of their cycles. See [Sync Groups](#sync-groups). |
 | Open State Graph | Opens the state's graph. |
 
 **Animation**, **Sprite Animation**, **Speed** and **Loop** edit the state's player while its graph is one player wired to the output. Once you add other nodes, edit the graph's nodes instead; the state's card then shows **State Graph**. A state's time, length and looping, which its transition rules read, follow the player reached from the output through each node's first pose input.
@@ -76,6 +78,16 @@ The bar ends with the playing state and its time. A 3D graph plays on a floor gr
 | Setting | Description |
 | --- | --- |
 | Skeleton | The [Skeleton](skeleton.md) every Animation in the graph must be on. Any Model on it can run the graph. With **None**, the graph plays Animations that have no Skeleton, such as a door's. After a change, **Compiler Results** lists each state whose Animation is on another Skeleton. |
+
+**State Alias**
+
+| Setting | Description |
+| --- | --- |
+| Name | The alias's name, unique among the states and aliases. |
+| Any State | Its transitions leave from every state. |
+| Leaves From | With Any State off, the states its transitions leave from. A state you delete leaves the list. |
+
+An alias's transitions take their turn among each covered state's own transitions by **Priority**. An alias that covers no state is reported in **Compiler Results**.
 
 **Transition**
 
@@ -88,6 +100,10 @@ The bar ends with the playing state and its time. A 3D graph plays on a floor gr
 | Flip Direction | Swaps the source and target of a One Way transition. |
 
 Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule and state graphs read them with Get Variable nodes.
+
+## Sync Groups
+
+Give looping players the same **Sync Group** name, in the state's or the player's **Inspector**, to keep them in step: a Sequence Player, a Sprite Animation Player or a Blend Space Player. Every member plays at the group's point of its cycle, and the most heavily weighted member sets the pace, so a 1 s walk and a 0.5 s run stay in step. A state entered with a blend picks up the group's point instead of starting over, so Walk → Run keeps the stride. Players that do not loop ignore their group.
 
 ## Watch the graph run
 

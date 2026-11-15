@@ -1,6 +1,7 @@
 import type { SerializedGraph } from "@haptic/core";
-import type { AnimGraphDimension, AnimGraphDocument, AnimState, AnimStateMachine, AnimTransition } from "./graph";
+import type { AnimGraphDimension, AnimGraphDocument, AnimState, AnimStateAlias, AnimStateMachine, AnimTransition } from "./graph";
 import {
+  animAliasStates,
   createDefaultTransitionRuleGraph,
   defaultAnimStatePosition,
 } from "./graph";
@@ -42,8 +43,11 @@ const ANIM_STATE_PINS: AnimGraphPin[] = ANIM_STATE_SIDES.flatMap(
   ],
 );
 
+/** The State Machine canvas node of a State Alias. */
+export const ANIM_ALIAS_NODE_TYPE = "anim.alias";
+
 export function animPaletteNodes(): Array<{
-  id: "anim.state";
+  id: "anim.state" | typeof ANIM_ALIAS_NODE_TYPE;
   title: string;
   category: string;
   pins: AnimGraphPin[];
@@ -58,6 +62,14 @@ export function animPaletteNodes(): Array<{
       defaultData: {
         entry: false,
       },
+    },
+    {
+      id: ANIM_ALIAS_NODE_TYPE,
+      title: "State Alias",
+      category: "Animation",
+      pins: ANIM_STATE_PINS,
+      // A new alias covers every state, so its transitions work at once.
+      defaultData: { anyState: true, stateCount: 0 },
     },
   ];
 }
@@ -382,18 +394,30 @@ function mergeTransitions(
   return result;
 }
 
-/** A State Machine as its canvas graph: a node per state, an edge per transition pair. */
+/** A State Machine as its canvas graph: a node per state and State Alias, an edge per transition pair. */
 export function stateMachineToSerialized(machine: AnimStateMachine): SerializedGraph {
   return {
-    nodes: machine.states.map((state, index) => ({
-      id: state.id,
-      type: "anim.state",
-      position: state.position ?? defaultAnimStatePosition(index),
-      data: {
-        title: state.name,
-        entry: state.id === machine.entryStateId,
-      },
-    })),
+    nodes: [
+      ...machine.states.map((state, index) => ({
+        id: state.id,
+        type: "anim.state",
+        position: state.position ?? defaultAnimStatePosition(index),
+        data: {
+          title: state.name,
+          entry: state.id === machine.entryStateId,
+        },
+      })),
+      ...(machine.aliases ?? []).map((alias) => ({
+        id: alias.id,
+        type: ANIM_ALIAS_NODE_TYPE,
+        position: alias.position,
+        data: {
+          title: alias.name,
+          anyState: alias.anyState,
+          stateCount: animAliasStates(machine, alias).length,
+        },
+      })),
+    ],
     edges: visualTransitions(machine.transitions).map((transition) => {
       const mirrored = findMirroredReverse(machine.transitions, transition);
       return {
@@ -418,20 +442,25 @@ export function serializedToStateMachine(
   dimension: AnimGraphDimension,
 ): AnimStateMachine {
   const byId = new Map(previous.states.map((state) => [state.id, state]));
-  const names = new Set(graph.nodes.filter((node) => byId.has(node.id))
+  const aliasById = new Map((previous.aliases ?? []).map((alias) => [alias.id, alias]));
+  const names = new Set(graph.nodes.filter((node) => byId.has(node.id) || aliasById.has(node.id))
     .map((node) => String(node.data.title ?? node.id).trim().toLowerCase()));
-  const states: AnimState[] = graph.nodes.map((node, index) => {
+  /** A palette addition or paste gets a free name; an existing node keeps its own for validation to explain. */
+  const freeName = (base: string) => {
+    let name = base;
+    let suffix = 2;
+    while (names.has(name.toLowerCase())) name = `${base} ${suffix++}`;
+    names.add(name.toLowerCase());
+    return name;
+  };
+  const stateNodes = graph.nodes.filter((node) => node.type !== ANIM_ALIAS_NODE_TYPE);
+  const aliasNodes = graph.nodes.filter((node) => node.type === ANIM_ALIAS_NODE_TYPE);
+  const states: AnimState[] = stateNodes.map((node, index) => {
     let name = typeof node.data.title === "string" ? node.data.title : node.id;
     const existing = byId.get(node.id);
     // Palette additions and pasted states share a title. Allocate a fresh label
     // while leaving explicitly renamed existing states for validation to explain.
-    if (!existing) {
-      const base = name.trim() || "State";
-      name = base;
-      let suffix = 2;
-      while (names.has(name.toLowerCase())) name = `${base} ${suffix++}`;
-      names.add(name.toLowerCase());
-    }
+    if (!existing) name = freeName(name.trim() || "State");
     return {
       id: node.id,
       name,
@@ -439,15 +468,30 @@ export function serializedToStateMachine(
       stateGraph: existing?.stateGraph ?? createStateGraph(dimension),
     };
   });
+  const stateIds = new Set(states.map((state) => state.id));
+  const aliases: AnimStateAlias[] = aliasNodes.map((node) => {
+    const existing = aliasById.get(node.id);
+    const title = typeof node.data.title === "string" ? node.data.title : "";
+    return {
+      id: node.id,
+      name: existing ? title || existing.name : freeName(title.trim() || "State Alias"),
+      position: node.position,
+      anyState: existing?.anyState ?? node.data.anyState !== false,
+      // A deleted state leaves the aliases that covered it.
+      stateIds: (existing?.stateIds ?? []).filter((id) => stateIds.has(id)),
+    };
+  });
   const entry =
-    graph.nodes.find((node) => node.data.entry === true)?.id ??
+    stateNodes.find((node) => node.data.entry === true)?.id ??
     states[0]?.id ??
     previous.entryStateId;
   return {
     ...previous,
     entryStateId: entry,
     states,
-    transitions: mergeTransitions(graph.edges, previous.transitions),
+    aliases,
+    // A transition into a State Alias is refused on the canvas; one that arrives anyway (a paste) is dropped.
+    transitions: mergeTransitions(graph.edges, previous.transitions).filter((row) => !aliasNodes.some((node) => node.id === row.toStateId)),
   };
 }
 

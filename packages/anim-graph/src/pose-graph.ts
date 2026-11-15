@@ -243,6 +243,12 @@ export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeDat
   return { axes, samples, ...sprite };
 }
 
+/** The Sync Group a looping player or Blend Space Player shares its time with; empty for none. */
+export function poseSyncGroup(node: SerializedGraphNode): string {
+  const group = node.data.syncGroup;
+  return typeof group === "string" ? group.trim() : "";
+}
+
 /** A player node's stored data for a clip. */
 export interface PosePlayerSettings {
   assetGuid?: string;
@@ -250,6 +256,8 @@ export interface PosePlayerSettings {
   durationMs?: number;
   playRate?: number;
   loop?: boolean;
+  /** Shares its time with the group's other looping players; empty for none. */
+  syncGroup?: string;
 }
 
 function playerData(settings: PosePlayerSettings): Record<string, unknown> {
@@ -259,6 +267,7 @@ function playerData(settings: PosePlayerSettings): Record<string, unknown> {
     ...(settings.durationMs ? { durationMs: settings.durationMs } : {}),
     loop: settings.loop !== false,
     "default:playRate": settings.playRate ?? 1,
+    ...(settings.syncGroup?.trim() ? { syncGroup: settings.syncGroup.trim() } : {}),
   };
 }
 
@@ -296,6 +305,10 @@ export function patchPosePlayer(graph: SerializedGraph, nodeId: string, settings
       if (settings.durationMs !== undefined) data.durationMs = settings.durationMs;
       if (settings.loop !== undefined) data.loop = settings.loop;
       if (settings.playRate !== undefined) data["default:playRate"] = settings.playRate;
+      if (settings.syncGroup !== undefined) {
+        if (settings.syncGroup.trim()) data.syncGroup = settings.syncGroup.trim();
+        else delete data.syncGroup;
+      }
       return { ...node, data };
     }),
   };

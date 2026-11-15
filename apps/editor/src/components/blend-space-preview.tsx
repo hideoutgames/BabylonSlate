@@ -40,10 +40,10 @@ function BlendSpacePreviewTransport({ session, children }: { session: BlendSpace
   );
 }
 
-/** The Sprite Blend Space's frame, which changes every frame it plays. */
-function SpriteFrame({ session }: { session: BlendSpacePreviewSession }) {
+/** The Sprite Blend Space's frame, which changes every frame it plays; every sample's Textures load up front. */
+function SpriteFrame({ session, spriteAnimationGuids }: { session: BlendSpacePreviewSession; spriteAnimationGuids: readonly string[] }) {
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
-  return <AnimSpriteFrameView state={snapshot.state} data-testid="blend-space-preview-2d" />;
+  return <AnimSpriteFrameView state={snapshot.state} spriteAnimationGuids={spriteAnimationGuids} data-testid="blend-space-preview-2d" />;
 }
 
 /** Feeds the session the document's samples and the Grid's preview point, and real time while the window shows. */
@@ -116,10 +116,11 @@ function BlendSpacePreview3D({ api }: { api: IDockviewPanelProps["api"] }) {
 function BlendSpacePreview2D({ api }: { api: IDockviewPanelProps["api"] }) {
   const { payload } = useBlendSpaceDocument();
   const session = usePreviewSession("2d", payload, api);
+  const spriteAnimationGuids = useMemo(() => payload.samples.map((sample) => sample.animationGuid), [payload.samples]);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BlendSpacePreviewTransport session={session} />
-      <SpriteFrame session={session} />
+      <SpriteFrame session={session} spriteAnimationGuids={spriteAnimationGuids} />
     </div>
   );
 }

@@ -24,7 +24,7 @@ export function useSpritePayloads(guids: readonly string[]): ReadonlyMap<string,
   useEffect(() => {
     const list = key ? key.split("|") : [];
     if (list.length === 0 || !loadAssetDocument) {
-      setSaved(new Map());
+      setSaved((current) => (current.size === 0 ? current : new Map()));
       return;
     }
     let cancelled = false;
@@ -78,17 +78,26 @@ export function useResolvedSpriteAnimation(animation: SpriteAnimationPayload): {
   const sprites = useSpritePayloads(spriteGuids);
   return useMemo(() => {
     void registryEpoch;
-    const textureSize = (guid: string) => (guid ? texturePixelSizeFromHeader(assetRegistry?.getByGuid(guid)) : null);
-    const resolved = resolveSpriteAnimation(animation, { sprite: (guid) => sprites.get(guid), textureSize });
-    const sheetAtlas = animation.source === "sheet" ? textureSize(animation.sheet.textureGuid) : null;
-    const views = resolved.frames.map((frame): SpriteAnimationFrameView => {
-      if (animation.source === "sheet") {
-        const rect = sheetAtlas ? spriteAnimationSheetCellRect(animation.sheet, sheetAtlas, frame.cell ?? 1) : null;
-        return { textureGuid: frame.textureGuid, atlas: sheetAtlas, rect };
-      }
-      const atlas = textureSize(frame.textureGuid);
-      return { textureGuid: frame.textureGuid, atlas, rect: atlas ? { x: 0, y: 0, ...atlas } : null };
-    });
-    return { resolved, views, sheetAtlas };
+    return resolveSpriteAnimationViews(animation, sprites, assetRegistry);
   }, [animation, assetRegistry, registryEpoch, sprites]);
+}
+
+/** `useResolvedSpriteAnimation` for Sprites already loaded: the animation as Play shows it, with each frame's region. */
+export function resolveSpriteAnimationViews(
+  animation: SpriteAnimationPayload,
+  sprites: ReadonlyMap<string, SpritePayload>,
+  assetRegistry: { getByGuid(guid: string): Parameters<typeof texturePixelSizeFromHeader>[0] } | null | undefined,
+): { resolved: SpriteAnimationPayload; views: SpriteAnimationFrameView[]; sheetAtlas: { width: number; height: number } | null } {
+  const textureSize = (guid: string) => (guid ? texturePixelSizeFromHeader(assetRegistry?.getByGuid(guid)) : null);
+  const resolved = resolveSpriteAnimation(animation, { sprite: (guid) => sprites.get(guid), textureSize });
+  const sheetAtlas = animation.source === "sheet" ? textureSize(animation.sheet.textureGuid) : null;
+  const views = resolved.frames.map((frame): SpriteAnimationFrameView => {
+    if (animation.source === "sheet") {
+      const rect = sheetAtlas ? spriteAnimationSheetCellRect(animation.sheet, sheetAtlas, frame.cell ?? 1) : null;
+      return { textureGuid: frame.textureGuid, atlas: sheetAtlas, rect };
+    }
+    const atlas = textureSize(frame.textureGuid);
+    return { textureGuid: frame.textureGuid, atlas, rect: atlas ? { x: 0, y: 0, ...atlas } : null };
+  });
+  return { resolved, views, sheetAtlas };
 }

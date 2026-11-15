@@ -73,14 +73,23 @@ export function removeBlendSpaceSample<P extends Layout>(payload: P, index: numb
   return { ...payload, samples: payload.samples.filter((_, i) => i !== index) };
 }
 
-/** One axis drops the second (samples keep their X); two adds the default Direction axis with samples at its minimum. */
+/** The grid line nearest the middle of `axis`: where a one-axis space's samples sit when it gains a second axis. */
+export function blendSpaceAxisCentre(axis: BlendSpaceAxisPayload): number {
+  return snapToBlendSpaceGrid(axis, (axis.min + axis.max) / 2);
+}
+
+/**
+ * One axis drops the second (samples keep their X); two adds the default Direction axis with samples at its centre,
+ * where the one-axis Grid draws them.
+ */
 export function setBlendSpaceAxisCount<P extends Layout>(payload: P, count: 1 | 2): P {
   if (payload.axes.length === count) return payload;
   if (count === 1) {
     return { ...payload, axes: [payload.axes[0]], samples: payload.samples.map((sample) => ({ ...sample, y: 0 })) };
   }
   const yAxis = defaultBlendSpaceAxis(1);
-  return { ...payload, axes: [payload.axes[0], yAxis], samples: payload.samples.map((sample) => ({ ...sample, y: yAxis.min })) };
+  const y = blendSpaceAxisCentre(yAxis);
+  return { ...payload, axes: [payload.axes[0], yAxis], samples: payload.samples.map((sample) => ({ ...sample, y })) };
 }
 
 /** Changes axis `index`; a range that would be empty or reversed is refused. */
@@ -101,10 +110,10 @@ export function patchBlendSpaceAxis<P extends Layout>(
   return { ...payload, axes };
 }
 
-/** Where the Preview plays: the placed point, else the first axis's minimum. */
+/** Where the Preview plays: the placed point, else the first axis's minimum at the second axis's centre. */
 export function blendSpacePreviewPoint(payload: Layout, point: BlendSpacePosition | null): BlendSpacePosition {
   const [xAxis, yAxis] = payload.axes;
-  return point ?? { x: xAxis.min, y: yAxis ? yAxis.min : 0 };
+  return point ?? { x: xAxis.min, y: yAxis ? blendSpaceAxisCentre(yAxis) : 0 };
 }
 
 /**

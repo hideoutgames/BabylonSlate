@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
-  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   blendSpaceNodeData,
+  isBlendSpacePlayerType,
   isPoseClipNodeType,
   type AnimGraphDocument,
   type AnimGraphVariable,
@@ -24,12 +24,15 @@ import { PlaybackSpeedSelect } from "./playback-controls";
 /** Waits this long after an edit before compiling the graph's rules again. */
 const RECOMPILE_DELAY_MS = 300;
 
-/** The Animation assets the graph's state graphs play (players, Sequence Evaluators and Blend Space samples), in first-use order. */
+/**
+ * The Animation (3D) or Sprite Animation (2D) assets the graph's state graphs play (players, Sequence Evaluators and
+ * Blend Space samples), in first-use order.
+ */
 function graphAnimationGuids(doc: AnimGraphDocument): string[] {
   const guids = new Set<string>();
   for (const state of doc.stateMachine.states) {
     for (const node of state.stateGraph.nodes) {
-      if (node.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE) {
+      if (isBlendSpacePlayerType(node.type)) {
         for (const sample of blendSpaceNodeData(node).samples) guids.add(sample.animationGuid);
         continue;
       }
@@ -158,12 +161,14 @@ function Preview3D({ api }: { api: IDockviewPanelProps["api"] }) {
 }
 
 function Preview2D({ api }: { api: IDockviewPanelProps["api"] }) {
+  const { doc } = useAnimGraphDocument();
   const session = useAnimGraphPreview();
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const spriteAnimationGuids = useMemo(() => graphAnimationGuids(doc), [doc]);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PreviewTransport />
-      <AnimSpriteFrameView state={snapshot.state} data-testid="anim-preview-2d" />
+      <AnimSpriteFrameView state={snapshot.state} spriteAnimationGuids={spriteAnimationGuids} data-testid="anim-preview-2d" />
       <PreviewClock api={api} />
     </div>
   );

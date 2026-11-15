@@ -35,6 +35,7 @@ import {
   type AnimGraphDocument,
   type AnimState,
   type AnimStateMachine,
+  type AnimStateAlias,
   type AnimTransition,
   type AnimVariableTypeId,
 } from "@haptic/anim-graph";
@@ -77,6 +78,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { useAnimStateMachineRunTrace } from "../context/graph-debug-context";
 import { useOptionalAnimGraphPreview } from "../context/anim-graph-preview-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
+import { animSyncGroupRow } from "../lib/anim-pose-inspector";
 import { GraphPanel } from "../panels/graph-panel";
 import { InspectorPanel } from "../panels/inspector-panel";
 import { useValidation } from "../context/validation-context";
@@ -213,6 +215,7 @@ function stateClipLabel(
 function transitionLabel(machine: AnimStateMachine, transition: AnimTransition): string {
   const from =
     machine.states.find((state) => state.id === transition.fromStateId)?.name ??
+    machine.aliases?.find((alias) => alias.id === transition.fromStateId)?.name ??
     transition.fromStateId;
   const to =
     machine.states.find((state) => state.id === transition.toStateId)?.name ??
@@ -661,6 +664,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     ? machine.transitions.find((transition) => transition.id === openTransitionId) ?? null
     : null;
   const machineTransitions = machine.transitions;
+  const aliasIds = useMemo(() => new Set((machine.aliases ?? []).map((alias) => alias.id)), [machine.aliases]);
   const initialGraph = useMemo(() => {
     const graph = hydrateAnimGraphForEditor(stateMachineToSerialized(machine));
     const clipLabels = new Map(
@@ -943,11 +947,13 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
           connectionMode="loose"
           uniqueDirectedPairOnConnect
           normalizeConnection={(connection) => {
+            // Nothing enters a State Alias: it only sends transitions.
+            if (aliasIds.has(connection.target)) return null;
             const next = normalizeAnimConnection(connection);
             if (!next) return null;
             return { ...connection, ...next };
           }}
-          connectDraggedToNode={animTransitionFromDrag}
+          connectDraggedToNode={(drag) => (aliasIds.has(drag.toNodeId) ? null : animTransitionFromDrag(drag))}
           edgeBreaksAtPin={animTransitionOnSide}
           onSelectionChange={(nodeIds) => {
             queueMicrotask(() => setSelectedIds(nodeIds));
@@ -1138,6 +1144,41 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   // Several states show the rows they share; their names, entry and transitions stay per state.
   const multi = selectedStates.length > 1;
   const selected = selectedStates[0] ?? null;
+  const selectedAlias = !selected && selectedIds.length === 1
+    ? (machine.aliases ?? []).find((alias) => alias.id === selectedIds[0]) ?? null
+    : null;
+  const patchAlias = (aliasId: string, patch: Partial<AnimStateAlias>) =>
+    commit(patchStateMachine(doc, (current) => ({
+      ...current,
+      aliases: (current.aliases ?? []).map((alias) => (alias.id === aliasId ? { ...alias, ...patch } : alias)),
+    })));
+  const aliasRows: PropertyRow[] = selectedAlias
+    ? [
+        { id: "aliasName", kind: "text", label: "Name", value: selectedAlias.name, onChange: (name) => patchAlias(selectedAlias.id, { name }) },
+        {
+          id: "aliasAnyState",
+          kind: "boolean",
+          label: "Any State",
+          value: selectedAlias.anyState,
+          description: "Its transitions leave from every state, never into the state already playing.",
+          onChange: (anyState) => patchAlias(selectedAlias.id, { anyState }),
+        },
+      ]
+    : [];
+  const aliasStateRows: PropertyRow[] = selectedAlias
+    ? machine.states.map((state) => ({
+        id: `aliasState-${state.id}`,
+        kind: "boolean" as const,
+        label: state.name,
+        value: selectedAlias.anyState || selectedAlias.stateIds.includes(state.id),
+        disabled: selectedAlias.anyState,
+        onChange: (covered: boolean) => patchAlias(selectedAlias.id, {
+          stateIds: covered
+            ? [...new Set([...selectedAlias.stateIds, state.id])]
+            : selectedAlias.stateIds.filter((id) => id !== state.id),
+        }),
+      }))
+    : [];
   const edit = documentBatch(doc, commit);
   const selectedTransition =
     machine.transitions.find((row) => row.id === selectedTransitionId) ?? null;
@@ -1172,8 +1213,8 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         ...assetRowIdentity(skeletonAsset ? { name: skeletonAsset.header.name, type: "Skeleton" } : undefined),
       }]
     : [];
-  const outgoing = selected
-    ? machine.transitions.filter((row) => row.fromStateId === selected.id)
+  const outgoing = selected || selectedAlias
+    ? machine.transitions.filter((row) => row.fromStateId === (selected ?? selectedAlias)!.id)
     : selectedTransition
       ? [selectedTransition]
       : [];
@@ -1247,6 +1288,11 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           value: player.data.loop !== false,
           onChange: (loop) => patchPlayer(state.id, { loop }),
         },
+        {
+          ...animSyncGroupRow(player.data.syncGroup, (syncGroup) =>
+            patchPlayer(state.id, { syncGroup: syncGroup ?? "" }, `anim-graph:state:${state.id}:sync`)),
+          id: "syncGroup",
+        },
       ],
     };
   };
@@ -1282,7 +1328,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     ? mergePropertyRows(stateRows.map((rows) => [...rows.clip, ...rows.playback]), { batch: edit.batch })
     : [];
   const transitionBlocks = multi ? [] : outgoing.map((transition) =>
-    transitionPropertyRows(doc, machine, transition, commit, !selected),
+    transitionPropertyRows(doc, machine, transition, commit, !selected && !selectedAlias),
   );
 
   return (
@@ -1291,10 +1337,16 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         <div data-testid="anim-graph-details">
           <PropertyGrid title={`${selectedStates.length} States`} rows={sharedRows} />
         </div>
-      ) : selected || selectedTransition ? (
+      ) : selected || selectedTransition || selectedAlias ? (
         <div data-testid="anim-graph-details">
           {identityRows.length > 0 ? (
             <PropertyGrid title="State" rows={identityRows} />
+          ) : null}
+          {selectedAlias ? (
+            <>
+              <PropertyGrid title="State Alias" rows={aliasRows} data-testid="anim-graph-alias" />
+              <PropertyGrid title="Leaves From" rows={aliasStateRows} data-testid="anim-graph-alias-states" />
+            </>
           ) : null}
           {clipRows.length > 0 ? <PropertyGrid title="Clip" rows={clipRows} /> : null}
           {playbackRows.length > 0 ? (
@@ -1316,7 +1368,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           {transitionBlocks.length > 0 ? (
             <ModuleStage
               id="anim-graph-transitions"
-              title={selected ? "Transitions" : "Transition"}
+              title={selected || selectedAlias ? "Transitions" : "Transition"}
               accentRole="flow"
             >
               {transitionBlocks.map((block) => (
