@@ -47,7 +47,7 @@ export interface ContentBrowserAssetTileProps {
 }
 
 /** Thumbnails shown whole (letterboxed onto the checkerboard) rather than cropped to the square. */
-const WHOLE_THUMBNAIL_TYPES: ReadonlySet<string> = new Set(["Tileset", "Tilemap"]);
+const WHOLE_THUMBNAIL_TYPES: ReadonlySet<string> = new Set(["Sprite", "Tileset", "Tilemap"]);
 const CHECKERBOARD = {
   backgroundImage: "conic-gradient(var(--muted) 0.25turn, var(--background) 0.25turn 0.5turn, var(--muted) 0.5turn 0.75turn, var(--background) 0.75turn)",
   backgroundSize: "12px 12px",

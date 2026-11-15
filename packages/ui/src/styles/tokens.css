@@ -233,7 +233,8 @@
     --asset-graph: oklch(0.54 0.16 195);
     --asset-render-target: oklch(0.56 0.19 20);
     --asset-sprite: oklch(0.56 0.18 335);
-    --asset-material: oklch(0.64 0.16 145);
+    --asset-material: oklch(0.52 0.15 145);
+    --asset-material-instance: oklch(0.64 0.16 145);
     --asset-model: oklch(0.58 0.16 45);
     --asset-audio: oklch(0.54 0.16 120);
     --asset-font: oklch(0.55 0.16 225);
@@ -363,7 +364,8 @@
     --asset-graph: oklch(0.68 0.16 195);
     --asset-render-target: oklch(0.68 0.17 20);
     --asset-sprite: oklch(0.70 0.16 335);
-    --asset-material: oklch(0.76 0.16 145);
+    --asset-material: oklch(0.64 0.15 145);
+    --asset-material-instance: oklch(0.76 0.16 145);
     --asset-model: oklch(0.72 0.16 45);
     --asset-audio: oklch(0.68 0.16 120);
     --asset-font: oklch(0.70 0.16 225);

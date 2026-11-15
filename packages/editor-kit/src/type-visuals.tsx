@@ -17,12 +17,13 @@ import {
   IconPhoto,
   IconPhotoVideo,
   IconSphere,
-  IconSpherePlus,
+  IconSphere2,
   IconTimelineEvent,
 } from "@tabler/icons-react";
 import {
   ActivityIcon,
   AnchorIcon,
+  AtomIcon,
   ApertureIcon,
   ArrowDownUpIcon,
   BoxIcon,
@@ -103,6 +104,7 @@ export type AssetVisualFamily =
   | "renderTarget"
   | "sprite"
   | "material"
+  | "materialInstance"
   | "model"
   | "audio"
   | "font"
@@ -172,7 +174,7 @@ const APP_WINDOW_GLYPH = tablerGlyph(IconAppWindow);
 const MIXER_GLYPH = tablerGlyph(IconAdjustmentsAlt);
 const PHOTO_GLYPH = tablerGlyph(IconPhoto);
 const SPHERE_GLYPH = tablerGlyph(IconSphere);
-const SPHERE_PLUS_GLYPH = tablerGlyph(IconSpherePlus);
+const SPHERE_2_GLYPH = tablerGlyph(IconSphere2);
 const MODEL_GLYPH = tablerGlyph(IconCube3dSphere);
 const PACKAGE_GLYPH = tablerGlyph(IconPackage);
 const MOVIE_GLYPH = tablerGlyph(IconMovie);
@@ -421,7 +423,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   RenderTarget: CameraIcon,
   RenderTargetTexture: ImageIcon,
   Material: SPHERE_GLYPH,
-  MaterialInstance: SPHERE_PLUS_GLYPH,
+  MaterialInstance: SPHERE_2_GLYPH,
   MaterialFunction: SquareFunctionIcon,
   Model: MODEL_GLYPH,
   Audio: FILE_MUSIC_GLYPH,
@@ -433,7 +435,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   CameraShake: VibrateIcon,
   ParticleEmitter: FlameIcon,
   ParticleGraph: NetworkIcon,
-  ParticleSystem: SparklesIcon,
+  ParticleSystem: AtomIcon,
   Water: WavesIcon,
   SkyboxCreator: CloudSunIcon,
   Trace: TIMELINE_EVENT_GLYPH,
@@ -483,7 +485,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   RenderTarget: "renderTarget",
   RenderTargetTexture: "renderTarget",
   Material: "material",
-  MaterialInstance: "material",
+  MaterialInstance: "materialInstance",
   MaterialFunction: "material",
   Model: "model",
   Audio: "class",
@@ -538,6 +540,7 @@ const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   renderTarget: assetColorVar("renderTarget"),
   sprite: assetColorVar("sprite"),
   material: assetColorVar("material"),
+  materialInstance: assetColorVar("materialInstance"),
   model: assetColorVar("model"),
   audio: assetColorVar("audio"),
   font: assetColorVar("font"),

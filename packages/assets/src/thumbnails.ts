@@ -93,14 +93,15 @@ export function thumbnailMime(bytes: Uint8Array): string {
   return "image/jpeg";
 }
 
+/** Asset types with a Content Browser thumbnail. A Sprite Animation keeps its icon. */
 export function isThumbnailableAssetType(type: string): boolean {
   return type === "Texture" || type === "Model" || type === "Animation" ||
-    type === "Material" || type === "Class" || type === "Tileset" || type === "Tilemap";
+    type === "Material" || type === "Class" || type === "Sprite" || type === "Tileset" || type === "Tilemap";
 }
 
-/** Thumbnails that may be transparent, drawn over a checkerboard: Textures and the 2D tile assets. */
+/** Thumbnails that may be transparent, drawn over a checkerboard: Textures, Sprites and the 2D tile assets. */
 export function isCheckeredThumbnailType(type: string): boolean {
-  return type === "Texture" || type === "Tileset" || type === "Tilemap";
+  return type === "Texture" || type === "Sprite" || type === "Tileset" || type === "Tilemap";
 }
 
 /**

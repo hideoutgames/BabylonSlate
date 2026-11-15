@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
+import { createDefaultSpritePayload } from "../packages/assets/src/sprite-payload";
 import { createDefaultTilesetPayload } from "../packages/assets/src/tileset-payload";
 import { openMinimalTestProject } from "./minimal-project";
 import { openContentBrowser, selectContentBrowserAssetsFolder } from "./open-test-project";
@@ -8,9 +9,11 @@ import { openContentBrowser, selectContentBrowserAssetsFolder } from "./open-tes
 const TEXTURE_GUID = "00000000-0000-4000-8000-000000000030";
 const TILESET_GUID = "00000000-0000-4000-8000-000000000031";
 const TILEMAP_GUID = "00000000-0000-4000-8000-000000000032";
+const SPRITE_GUID = "00000000-0000-4000-8000-000000000033";
 const TEXTURE_PATH = "assets/Sheet.hasset";
 const TILESET_PATH = "assets/Ground.tileset.hasset";
 const TILEMAP_PATH = "assets/Level.tilemap.hasset";
+const SPRITE_PATH = "assets/Flag.sprite.hasset";
 
 // A numeric solid-colour fixture, with no pictorial assets or generated artwork:
 // a 32 × 16 sheet whose left tile is red and right tile blue.
@@ -30,7 +33,7 @@ async function redBluePng(page: Page): Promise<Uint8Array> {
   return new Uint8Array(bytes);
 }
 
-/** The sheet, a Tileset of its two tiles, and a 2 × 1 Tilemap painting blue then red. */
+/** The sheet, a Sprite showing it, a Tileset of its two tiles, and a 2 × 1 Tilemap painting blue then red. */
 async function tileProject(page: Page): Promise<Map<string, Uint8Array>> {
   const files = await minimalProjectFiles();
   const texture = { width: 32, height: 16, usage: "pixelArt", downsample: 1 };
@@ -43,6 +46,10 @@ async function tileProject(page: Page): Promise<Map<string, Uint8Array>> {
       guid: TILESET_GUID, type: "Tileset", name: "Ground", version: 1,
       payload: { ...createDefaultTilesetPayload(), textureGuid: TEXTURE_GUID, atlasWidth: 32, atlasHeight: 16, tileWidth: 16, tileHeight: 16 },
     },
+    { dependencies: [TEXTURE_GUID] },
+  ));
+  files.set(SPRITE_PATH, await encodeAssetDocument(
+    { guid: SPRITE_GUID, type: "Sprite", name: "Flag", version: 1, payload: { ...createDefaultSpritePayload(), textureGuid: TEXTURE_GUID } },
     { dependencies: [TEXTURE_GUID] },
   ));
   const tiles = new Array(16).fill(0);
@@ -84,7 +91,7 @@ async function halves(image: Locator) {
 
 const tile = (page: Page, path: string) => page.locator(`[data-asset-path="${path}"]`);
 
-test("Content Browser draws a Tileset's sheet and a Tilemap's tiles, and a Tileset made from a Texture", async ({ page }) => {
+test("Content Browser draws a Sprite's Texture, a Tileset's sheet and a Tilemap's tiles, and a Tileset made from a Texture", async ({ page }) => {
   test.setTimeout(120_000);
   await openMinimalTestProject(page, await tileProject(page));
   await openContentBrowser(page);
@@ -95,6 +102,7 @@ test("Content Browser draws a Tileset's sheet and a Tilemap's tiles, and a Tiles
 
   await tile(page, TILESET_PATH).click();
   await tile(page, TILEMAP_PATH).click({ modifiers: ["ControlOrMeta"] });
+  await tile(page, SPRITE_PATH).click({ modifiers: ["ControlOrMeta"] });
   await tile(page, TILEMAP_PATH).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Generate Thumbnails", exact: true }).click();
   const tileset = tile(page, TILESET_PATH).locator("img");
@@ -103,6 +111,10 @@ test("Content Browser draws a Tileset's sheet and a Tilemap's tiles, and a Tiles
   await expect(tilemap).toBeVisible({ timeout: 30_000 });
   expect(await halves(tileset)).toEqual({ width: 128, height: 64, left: "red", right: "blue" });
   expect(await halves(tilemap)).toEqual({ width: 128, height: 64, left: "blue", right: "red" });
+  // A Sprite shows its whole Texture.
+  const sprite = tile(page, SPRITE_PATH).locator("img");
+  await expect(sprite).toBeVisible({ timeout: 30_000 });
+  expect(await halves(sprite)).toEqual({ width: 128, height: 64, left: "red", right: "blue" });
 
   await tile(page, TEXTURE_PATH).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Create Tileset", exact: true }).click();

@@ -125,6 +125,7 @@ export type AssetColorFamily =
   | "renderTarget"
   | "sprite"
   | "material"
+  | "materialInstance"
   | "model"
   | "audio"
   | "font"
@@ -141,6 +142,7 @@ export const ASSET_COLOR_VAR: Record<AssetColorFamily, string> = {
   renderTarget: "var(--asset-render-target)",
   sprite: "var(--asset-sprite)",
   material: "var(--asset-material)",
+  materialInstance: "var(--asset-material-instance)",
   model: "var(--asset-model)",
   audio: "var(--asset-audio)",
   font: "var(--asset-font)",
