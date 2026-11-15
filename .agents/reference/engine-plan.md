@@ -326,7 +326,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Release is explicit only (Release All My Locks with a warning, or per asset); never on a timer, close or heuristic, because the engine cannot observe a push.
 - External change is normal: on foreground the registry rescans and offers reloads, warning loudly when a dirty document's file changed.
 - Git status is never shown (the engine never reads git state).
-- Planned and deferred: built-in Git (Integrated mode) on the standard Git and LFS protocols with isomorphic-git, GitHub as the only fully integrated host, other hosts by URL and token, credentials per device and host from Engine Settings, and a reworked lock-only mode. Decisions and order: [source-control-plan.md](source-control-plan.md). Until a step is built, the decisions above hold.
+- Planned and deferred: built-in Git (Integrated mode) on the standard Git and LFS protocols with isomorphic-git, GitHub and GitLab as the fully integrated hosts (device sign-in, no Haptic-run server), other hosts by URL and token, credentials per device and host from Engine Settings, and a reworked lock-only (Manual) mode. Decisions and order: [source-control-plan.md](source-control-plan.md). Until a step is built, the decisions above hold.
 
 ## 2D
 
