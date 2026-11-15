@@ -11,6 +11,7 @@ import {
   type SyncErrorKind,
   type SyncPort,
 } from "@haptic/source-control";
+import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { commitPaths, groupChanges, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
@@ -24,6 +25,7 @@ export interface TransferMonitor {
 }
 
 export interface SyncPortRequest {
+  /** Bound to the project folder: refuses every call once another folder is open. */
   storage: ProjectStorage;
   folderId: string;
   repositoryUrl: string;
@@ -39,8 +41,8 @@ export interface SyncPortRequest {
  */
 export interface SyncPortFactory {
   open(request: SyncPortRequest): Promise<SyncPort>;
-  /** A new working copy with no commits, for Publish. */
-  init(request: SyncPortRequest): Promise<SyncPort>;
+  /** A new working copy with no commits, for Publish; `replace` replaces a `.git` an interrupted Publish left. */
+  init(request: SyncPortRequest & { replace: boolean }): Promise<SyncPort>;
   /** Who commits: the repository host's account on this device. */
   author(repositoryUrl: string, testMode: boolean): Promise<CommitAuthor>;
 }
@@ -121,14 +123,37 @@ function loadFactory(): Promise<SyncPortFactory> {
   return import("./source-control-sync-port").then((module) => module.syncPortFactory);
 }
 
-function problemFrom(title: string, error: unknown, holders: readonly FileLock[] = []): SyncProblem {
+/** A push refused before it started: someone else locks part of what it would send. */
+class LockedByOthersError extends Error {
+  readonly holders: readonly FileLock[];
+
+  constructor(holders: readonly FileLock[]) {
+    super(`Locked by someone else: ${holders.map((lock) => `${lock.path} (${lock.ownerName})`).join(", ")}.`);
+    this.name = "LockedByOthersError";
+    this.holders = holders;
+  }
+}
+
+function problemFrom(title: string, error: unknown): SyncProblem {
   return {
     title,
     message: error instanceof Error ? error.message : String(error),
     kind: isSyncError(error) ? error.kind : null,
     code: isSyncError(error) ? error.code ?? null : null,
-    holders,
+    holders: error instanceof LockedByOthersError ? error.holders : [],
   };
+}
+
+/** What an operation works with: everything belongs to the project it started in. */
+interface Operation {
+  port: SyncPort;
+  input: SyncConfigureInput;
+  /** The project folder's storage; refuses every call once another folder is open. */
+  storage: ProjectStorage;
+  /** Aborts when the project closes or changes mode. */
+  signal: AbortSignal;
+  /** Merges `patch` into the snapshot while the operation's project is still open; a late result changes nothing. */
+  update: (patch: Partial<SyncSnapshot>) => void;
 }
 
 /**
@@ -137,19 +162,26 @@ function problemFrom(title: string, error: unknown, holders: readonly FileLock[]
  * the status bar and the phone's More Tools. Off and Manual load and request
  * nothing. Status is recomputed after editor saves (debounced) and on
  * foreground, the remote is fetched on open, foreground, Refresh and after a
- * push; nothing polls.
+ * push; nothing polls. Each operation belongs to the project it started in:
+ * its port works on that folder only, its results reach the snapshot only
+ * while the project is open, and a close cancels its transfer.
  */
 export class SourceControlSyncService {
   private snapshot: SyncSnapshot = IDLE;
   private readonly listeners = new Set<() => void>();
   private port: SyncPort | null = null;
+  /** The open folder's storage, bound to it. */
+  private storage: ProjectStorage | null = null;
   private identity = "";
+  /** Advances on every stop: operations of an earlier revision change nothing. */
   private revision = 0;
   private input: SyncConfigureInput | null = null;
   private factory: SyncPortFactory | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
   /** Operations run one at a time, so the snapshot always follows the last one. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** The running operation's cancel. */
+  private running: AbortController | null = null;
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -173,18 +205,21 @@ export class SourceControlSyncService {
   async configure(input: SyncConfigureInput): Promise<void> {
     const { settings, folder } = input;
     if (settings.mode !== "integrated" || !folder) {
-      this.input = input;
-      if (this.identity !== "" || this.snapshot !== IDLE) this.stop();
+      if (this.identity !== "" || this.input || this.snapshot !== IDLE) this.stop();
       return;
     }
     const identity = [folder.id, settings.repositoryUrl, settings.branch, input.testMode ? "t" : ""].join("\n");
     // The same folder, repository and branch keep their client (and a Publish in progress).
-    this.input = input;
-    if (identity === this.identity) return;
+    if (identity === this.identity) {
+      this.input = input;
+      return;
+    }
     this.stop();
     const revision = this.revision;
     this.identity = identity;
-    const hasGit = input.testMode || (await input.storage.exists(".git/HEAD").catch(() => false));
+    this.input = input;
+    const storage = folderBoundStorage(input.storage, folder.id);
+    const hasGit = input.testMode || (await storage.exists(".git/HEAD").catch(() => false));
     if (revision !== this.revision) return;
     const blocked = integratedBlocker({ platform: input.platform, testMode: input.testMode, tier: folder.tier, hasGit });
     if (blocked) {
@@ -194,31 +229,45 @@ export class SourceControlSyncService {
     let port: SyncPort;
     try {
       this.factory = input.factory ?? await loadFactory();
-      port = await this.factory.open(this.request(input));
+      port = await this.factory.open(this.request(input, storage, revision));
     } catch (error) {
       if (revision !== this.revision) return;
+      // Not opened: Refresh, foreground or the next configure tries again.
+      this.identity = "";
       this.set({ ...IDLE, active: true, branch: settings.branch, problem: problemFrom("Could Not Open The Repository", error) });
       return;
     }
     if (revision !== this.revision) return;
     this.port = port;
+    this.storage = storage;
     this.set({ ...IDLE, active: true, branch: settings.branch });
     await this.refresh();
   }
 
-  /** Back to nothing: the project closed, or its mode is no longer Integrated. */
+  /**
+   * Back to nothing: the project closed, or its mode is no longer Integrated.
+   * The running operation's transfer is cancelled and nothing still running
+   * reaches the snapshot; await `settled()` before releasing the folder.
+   */
   stop(): void {
     this.revision += 1;
+    this.running?.abort();
+    this.running = null;
     this.clearTimer();
     this.port = null;
+    this.storage = null;
     this.identity = "";
-    this.queue = Promise.resolve();
+    this.input = null;
     this.set(IDLE);
+  }
+
+  /** Resolves once every operation started so far has ended (after `stop()`, soon: transfers are cancelled). */
+  settled(): Promise<void> {
+    return this.queue.then(() => undefined);
   }
 
   dispose(): void {
     this.stop();
-    this.input = null;
   }
 
   /** An editor save changed files: one status once the burst settles. */
@@ -232,26 +281,30 @@ export class SourceControlSyncService {
   }
 
   /** Status from file stats; unchanged files are never read. */
-  refreshStatus(): Promise<void> {
+  async refreshStatus(): Promise<void> {
     this.clearTimer();
-    return this.run(null, async (port) => {
+    await this.run(null, "Could Not Read Changes", async ({ port, input, update }) => {
       const status = await port.status();
-      this.set({ ...this.snapshot, branch: status.branch, rows: this.group(status.changes).rows, statusReady: true });
-    }, "Could Not Read Changes");
+      update({ branch: status.branch, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true });
+    });
   }
 
-  /** Refresh, foreground and opening the project: status, then what the remote has. */
+  /** Refresh, foreground and opening the project: status, then what the remote has. A client that could not open opens again. */
   async refresh(): Promise<void> {
+    if (!this.port && this.identity === "" && this.input?.settings.mode === "integrated") {
+      await this.configure(this.input);
+      return;
+    }
     await this.refreshStatus();
     await this.fetch();
   }
 
   /** Counts the commits on each side and lists the incoming ones. */
-  fetch(): Promise<void> {
-    return this.run("fetch", async (port) => {
-      const remote = await port.fetch();
-      this.set({ ...this.snapshot, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
-    }, "Could Not Check For Changes");
+  async fetch(revision = this.revision): Promise<void> {
+    await this.run("fetch", "Could Not Check For Changes", async ({ port, signal, update }) => {
+      const remote = await port.fetch({ signal });
+      update({ ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
+    }, revision);
   }
 
   /**
@@ -259,137 +312,139 @@ export class SourceControlSyncService {
    * pushes when asked. Returns whether the commit was made.
    */
   async commit({ rowIds, message, push }: { rowIds: ReadonlySet<string>; message: string; push: boolean }): Promise<boolean> {
+    const revision = this.revision;
     let committed = false;
-    await this.run("commit", async (port, input) => {
+    await this.run("commit", "Could Not Commit", async ({ port, input }) => {
       const status = await port.status();
-      const paths = commitPaths(this.group(status.changes), rowIds, input.lookup);
+      const paths = commitPaths(groupChanges(status.changes, input.lookup), rowIds, input.lookup);
       if (paths.length === 0) throw new Error("Choose the assets to commit.");
-      const author = await this.author(input);
-      await port.commit({ paths, message, author });
+      await port.commit({ paths, message, author: await this.author(input) });
       committed = true;
-      const after = await port.status();
-      this.set({ ...this.snapshot, rows: this.group(after.changes).rows, ahead: this.snapshot.ahead + 1, statusReady: true });
-    }, "Could Not Commit");
-    if (committed && push) await this.push();
-    return committed;
+    }, revision);
+    if (!committed) return false;
+    await this.readLocal(revision);
+    // Only while the project that committed is open: never another project's push.
+    if (push) await this.push(revision);
+    return true;
   }
 
   /**
    * Pulls (fetch first). Without a choice for every asset changed on both
    * sides nothing changes and the conflicts come back. The caller saves or
    * discards unsaved documents first, runs it in the project write queue and
-   * reloads `changedPaths` afterwards.
+   * reloads `changedPaths` afterwards. The counts come from what the pull
+   * fetched; nothing asks the remote again.
    */
   async pull(choices?: PullChoices): Promise<PullResult | null> {
+    const revision = this.revision;
     let result: PullResult | null = null;
-    await this.run("pull", async (port, input) => {
-      result = await port.pull({ author: await this.author(input), ...(choices ? { choices } : {}) });
-      if (result.kind === "conflicts") return;
-      const status = await port.status();
-      const remote = await port.fetch();
-      this.set({
-        ...this.snapshot,
-        rows: this.group(status.changes).rows,
-        statusReady: true,
-        ahead: remote.ahead,
-        behind: remote.behind,
-        incoming: remote.incoming,
-        lastFetchAt: Date.now(),
-      });
-    }, "Could Not Pull");
+    await this.run("pull", "Could Not Pull", async ({ port, input, signal, update }) => {
+      result = await port.pull({ author: await this.author(input), signal, ...(choices ? { choices } : {}) });
+      update({ lastFetchAt: Date.now() });
+    }, revision);
+    if (result) await this.readLocal(revision);
     return result;
   }
 
   /**
    * Checks the locks on what the push sends and refuses paths someone else
-   * holds; then uploads the LFS objects and moves the remote branch; then,
-   * with Release Locks After Push, releases this device's locks on pushed
-   * assets that have no further change. Fetches afterwards.
+   * holds; then uploads the LFS objects and moves the remote branch. Each step
+   * after a push that went through has its own problem title, so none of them
+   * reports the push as failed: the counts and changes from local refs, then,
+   * with Release Locks After Push, this device's locks on pushed assets that
+   * have no further change, then a fetch.
    */
-  push(): Promise<void> {
-    return this.run("push", async (port, input) => {
+  async push(revision = this.revision): Promise<void> {
+    let pushed: string[] | null = null;
+    await this.run("push", "Could Not Push", async ({ port, input, signal }) => {
       const outgoing = await port.outgoing();
       const holders = await input.locks.theirs(outgoing);
-      if (holders.length > 0) {
-        const names = holders.map((lock) => `${lock.path} (${lock.ownerName})`).join(", ");
-        this.set({ ...this.snapshot, problem: problemFrom("Could Not Push", new Error(`Locked by someone else: ${names}.`), holders) });
-        return;
-      }
-      await port.push();
-      const status = await port.status();
-      const remote = await port.fetch();
-      const rows = this.group(status.changes).rows;
-      this.set({ ...this.snapshot, rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
-      if (input.settings.releaseLocksAfterPush) {
+      if (holders.length > 0) throw new LockedByOthersError(holders);
+      await port.push({ signal });
+      pushed = outgoing;
+    }, revision);
+    if (!pushed) return;
+    const outgoing: readonly string[] = pushed;
+    const rows = await this.readLocal(revision);
+    // Without the changes it cannot tell which pushed assets changed again, so it releases nothing.
+    if (rows) {
+      await this.run(null, "Could Not Release Locks", async ({ input }) => {
+        if (!input.settings.releaseLocksAfterPush) return;
         const changed = new Set(rows.flatMap((row) => row.paths));
         await input.locks.releaseOwn(outgoing.filter((path) => !changed.has(path)));
-      }
-    }, "Could Not Push");
+      }, revision);
+    }
+    await this.fetch(revision);
   }
 
   /**
    * Adds the `.blobs` rule to `.gitattributes` and commits only that file, so
    * asset blobs can be committed in a repository Haptic did not publish.
    */
-  addLfsRule(): Promise<void> {
-    return this.run("commit", async (port, input) => {
-      const exists = await input.storage.exists(".gitattributes");
-      const text = exists ? await input.storage.readText(".gitattributes") : "";
-      await input.storage.writeText(".gitattributes", withLfsRule(text));
+  async addLfsRule(): Promise<void> {
+    const revision = this.revision;
+    let committed = false;
+    await this.run("commit", "Could Not Add The Git LFS Rule", async ({ port, input, storage }) => {
+      const exists = await storage.exists(".gitattributes");
+      const text = exists ? await storage.readText(".gitattributes") : "";
+      await storage.writeText(".gitattributes", withLfsRule(text));
       await port.commit({ paths: [".gitattributes"], message: "Store asset blobs with Git LFS", author: await this.author(input) });
-      const status = await port.status();
-      this.set({ ...this.snapshot, rows: this.group(status.changes).rows, ahead: this.snapshot.ahead + 1, statusReady: true });
-    }, "Could Not Add The Git LFS Rule");
+      committed = true;
+    }, revision);
+    if (committed) await this.readLocal(revision);
   }
 
   /**
    * Publish: makes the open folder a new working copy of `repositoryUrl` and
    * holds it, so the Integrated mode that `beforeCommit` then saves finds it
    * open; commits every file and pushes. The caller has created the empty
-   * repository and written `.gitattributes` and `.gitignore`.
+   * repository and written `.gitattributes` and `.gitignore`. `replace`
+   * replaces a `.git` an interrupted Publish left (the mode rules decide).
    */
   async publish(request: {
     input: SyncConfigureInput;
     repositoryUrl: string;
     branch: string;
+    replace: boolean;
     beforeCommit: () => Promise<void>;
   }): Promise<void> {
     const { input, repositoryUrl, branch } = request;
     if (!input.folder) throw new Error("Open the project first.");
     this.stop();
     const revision = this.revision;
-    this.input = { ...input, settings: { ...input.settings, mode: "integrated", repositoryUrl, branch } };
+    const live = { ...input, settings: { ...input.settings, mode: "integrated" as const, repositoryUrl, branch } };
+    this.input = live;
     this.identity = [input.folder.id, repositoryUrl, branch, input.testMode ? "t" : ""].join("\n");
+    const storage = folderBoundStorage(input.storage, input.folder.id);
     let port: SyncPort;
     try {
-      this.factory = input.factory ?? await loadFactory();
-      port = await this.factory.init(this.request(this.input));
+      const factory = input.factory ?? await loadFactory();
+      this.factory = factory;
+      // In the queue, so a close waits for the new `.git` to be written.
+      port = await this.enqueue(() => factory.init({ ...this.request(live, storage, revision), replace: request.replace }));
     } catch (error) {
       if (revision === this.revision) this.stop();
       throw error;
     }
     if (revision !== this.revision) throw new Error("The project closed while publishing.");
     this.port = port;
+    this.storage = storage;
     this.set({ ...IDLE, active: true, branch });
     await request.beforeCommit();
-    let failure: unknown = null;
-    await this.run("publish", async (open, live) => {
+    const published = await this.run("publish", "Could Not Publish", async ({ port: open, input: current, signal }) => {
       const status = await open.status();
       if (status.changes.length === 0) throw new Error("There is nothing to publish.");
-      await open.commit({ paths: status.changes.map((change) => change.path), message: "Publish project", author: await this.author(live) });
-      await open.push();
-      const after = await open.status();
-      const remote = await open.fetch();
-      this.set({ ...this.snapshot, rows: this.group(after.changes).rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
-    }, "Could Not Publish", (error) => {
-      failure = error;
-    });
-    if (failure) throw failure;
+      await open.commit({ paths: status.changes.map((change) => change.path), message: "Publish project", author: await this.author(current) });
+      await open.push({ signal });
+    }, revision, { rethrow: true });
+    if (!published) throw new Error("The project closed while publishing.");
+    await this.readLocal(revision);
+    await this.fetch(revision);
   }
 
-  private request(input: SyncConfigureInput): SyncPortRequest {
+  private request(input: SyncConfigureInput, storage: ProjectStorage, revision: number): SyncPortRequest {
     return {
-      storage: input.storage,
+      storage,
       folderId: input.folder!.id,
       repositoryUrl: input.settings.repositoryUrl,
       branch: input.settings.branch,
@@ -397,7 +452,7 @@ export class SourceControlSyncService {
       transfer: {
         bytes: (count) => {
           const operation = this.snapshot.operation;
-          if (operation) this.set({ ...this.snapshot, operation: { ...operation, bytes: operation.bytes + count } });
+          if (operation && revision === this.revision) this.set({ ...this.snapshot, operation: { ...operation, bytes: operation.bytes + count } });
         },
       },
     };
@@ -407,39 +462,64 @@ export class SourceControlSyncService {
     return this.factory!.author(input.settings.repositoryUrl, input.testMode);
   }
 
-  private group(changes: Parameters<typeof groupChanges>[0]) {
-    return groupChanges(changes, this.input?.lookup ?? (() => null));
+  /**
+   * The changes and the counts from local refs, after a commit, pull or push
+   * (no network): its own step, so a failure here never reports the
+   * operation before it as failed. Resolves to the rows, or null when it failed.
+   */
+  private async readLocal(revision: number): Promise<readonly ChangeRow[] | null> {
+    let rows: readonly ChangeRow[] | null = null;
+    await this.run(null, "Could Not Read Changes", async ({ port, input, update }) => {
+      const status = await port.status();
+      const remote = await port.remoteState();
+      rows = groupChanges(status.changes, input.lookup).rows;
+      update({ branch: status.branch, rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming });
+    }, revision);
+    return rows;
+  }
+
+  private enqueue<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(work);
+    this.queue = next.catch(() => undefined);
+    return next;
   }
 
   /**
-   * Runs `work` on the open port after the operations before it. A
-   * superseded revision (the project closed or changed mode) drops its
-   * result. Failures become the snapshot's problem; `onError` sees them too.
+   * Runs `work` after the operations before it, if `revision` is still the
+   * open project's. Its failure becomes the snapshot's problem under `title`;
+   * its success clears a problem with that title. Resolves to whether it ran
+   * and succeeded (`rethrow` rejects with the failure instead).
    */
   private run(
     kind: SyncOperationKind | null,
-    work: (port: SyncPort, input: SyncConfigureInput) => Promise<void>,
     title: string,
-    onError?: (error: unknown) => void,
-  ): Promise<void> {
-    const revision = this.revision;
-    const next = this.queue.then(async () => {
-      const port = this.port;
-      const input = this.input;
-      if (!port || !input || revision !== this.revision) return;
-      if (kind) this.set({ ...this.snapshot, operation: { kind, bytes: 0 }, problem: kind === "fetch" ? this.snapshot.problem : null });
+    work: (operation: Operation) => Promise<void>,
+    revision = this.revision,
+    options: { rethrow?: boolean } = {},
+  ): Promise<boolean> {
+    return this.enqueue(async () => {
+      const { port, input, storage } = this;
+      if (!port || !input || !storage || revision !== this.revision) return false;
+      const controller = new AbortController();
+      this.running = controller;
+      const update = (patch: Partial<SyncSnapshot>) => {
+        if (revision === this.revision) this.set({ ...this.snapshot, ...patch });
+      };
+      // Starting a commit, pull, push or publish replaces the last problem; a fetch keeps it.
+      if (kind) update({ operation: { kind, bytes: 0 }, ...(kind === "fetch" ? {} : { problem: null }) });
       try {
-        await work(port, input);
-        if (revision === this.revision && kind === "fetch" && this.snapshot.problem?.title === title) this.set({ ...this.snapshot, problem: null });
+        await work({ port, input, storage, signal: controller.signal, update });
+        if (this.snapshot.problem?.title === title) update({ problem: null });
+        return true;
       } catch (error) {
-        onError?.(error);
-        if (revision === this.revision) this.set({ ...this.snapshot, problem: problemFrom(title, error) });
+        update({ problem: problemFrom(title, error) });
+        if (options.rethrow && revision === this.revision) throw error;
+        return false;
       } finally {
-        if (kind && revision === this.revision) this.set({ ...this.snapshot, operation: null });
+        if (this.running === controller) this.running = null;
+        if (kind) update({ operation: null });
       }
     });
-    this.queue = next.catch(() => undefined);
-    return next;
   }
 
   private clearTimer(): void {

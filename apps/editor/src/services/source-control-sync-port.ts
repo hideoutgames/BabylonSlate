@@ -95,7 +95,7 @@ export const syncPortFactory: SyncPortFactory = {
       return copy;
     }
     const { git, options } = await deviceRepository(request);
-    return git.initRepository(options);
+    return git.initRepository({ ...options, replace: request.replace });
   },
   async author(repositoryUrl, testMode) {
     const location = parseRepositoryUrl(repositoryUrl);

@@ -14,7 +14,7 @@ import {
   STORAGE_ORIGIN,
 } from "../test-support/git-server";
 import { fixedCredential } from "../credentials";
-import { cloneRepository, type GitRepository } from "./repository";
+import { cloneRepository, initRepository, type GitRepository } from "./repository";
 
 const AUTHOR = { name: "Device", email: "device@example.com" };
 const NOW = Date.UTC(2026, 10, 15, 12, 0, 0);
@@ -287,5 +287,19 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     const storage = await server.storage();
     await storage.writeBinary("project.json", encode("{}"));
     expect((await rejection(clone(storage))).code).toBe("not-empty");
+  });
+
+  it("starts Publish's working copy afresh over the .git an interrupted Publish left, only when asked", async () => {
+    const storage = await server.storage();
+    const options = { storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW };
+    await storage.writeBinary("project.json", encode("{}"));
+    // The interrupted Publish: a working copy and its first commit, never pushed.
+    const interrupted = await initRepository(options);
+    await interrupted.commit({ paths: ["project.json"], message: "Publish project", author: AUTHOR });
+    expect((await rejection(initRepository(options))).code).toBe("repository-exists");
+    const fresh = await initRepository({ ...options, replace: true });
+    expect(await fresh.status()).toEqual({ branch: "main", head: null, changes: [{ path: "project.json", kind: "added" }] });
+    const { commit } = await fresh.commit({ paths: ["project.json"], message: "Publish project", author: AUTHOR });
+    expect(await fresh.push()).toEqual({ head: commit, uploaded: 0 });
   });
 });

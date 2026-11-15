@@ -39,6 +39,7 @@ import { onEncodeQueuePause } from "../services/encode-queue-pause";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { SourceControlSyncService } from "../services/source-control-sync";
 import {
   installMemoryOpfs,
   unmountDocumentProvider,
@@ -1314,6 +1315,32 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.openListedProject(listed));
     const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
     expect(saved.actors[0]!.transform.position).toEqual(edited.actors[0]!.transform.position);
+  });
+
+  it("releases the project folder only once the Git sync has stopped and its running operation has ended", async () => {
+    const actions = await openProject();
+    let releaseSync!: () => void;
+    const held = new Promise<void>((resolve) => { releaseSync = resolve; });
+    const stop = vi.spyOn(SourceControlSyncService.prototype, "stop");
+    const settled = vi.spyOn(SourceControlSyncService.prototype, "settled").mockImplementation(() => held);
+    const close = vi.spyOn(ProjectService.prototype, "closeProject");
+    try {
+      let closing!: Promise<boolean>;
+      act(() => { closing = actions.forceCloseProject(); });
+      await waitFor(() => expect(settled).toHaveBeenCalled());
+      await act(async () => { await Promise.resolve(); });
+      expect(stop.mock.invocationCallOrder[0]).toBeLessThan(settled.mock.invocationCallOrder[0]!);
+      expect(close).not.toHaveBeenCalled();
+      await act(async () => {
+        releaseSync();
+        expect(await closing).toBe(true);
+      });
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      stop.mockRestore();
+      settled.mockRestore();
+      close.mockRestore();
+    }
   });
 
   it("keeps tabs opened since the last save when a clean project closes", async () => {

@@ -100,12 +100,13 @@ export async function openRepository(options: GitRepositoryOptions): Promise<Git
 /**
  * Makes the project folder `storage` is bound to a new working copy with no
  * commits, whose `origin` is `repositoryUrl` (Publish: the first push creates
- * the remote branch). A folder that already has `.git` is refused.
+ * the remote branch). A folder that already has `.git` is refused, unless
+ * `replace` (the caller decided the `.git` is an interrupted Publish's) removes it first.
  */
-export async function initRepository(options: GitRepositoryOptions): Promise<GitRepository> {
+export async function initRepository(options: GitRepositoryOptions & { replace?: boolean }): Promise<GitRepository> {
   installBufferGlobal();
   const repository = new GitRepository(options);
-  await repository.init();
+  await repository.init(options.replace ?? false);
   return repository;
 }
 
@@ -181,9 +182,11 @@ export class GitRepository implements SyncPort {
   }
 
   /** @internal Use `initRepository`. */
-  init(): Promise<void> {
+  init(replace: boolean): Promise<void> {
     return this.run(async (op) => {
-      if (await this.storage.exists(".git/HEAD")) {
+      if (replace) {
+        if (await this.storage.exists(".git")) await this.storage.remove(".git");
+      } else if (await this.storage.exists(".git/HEAD")) {
         throw new SyncError("conflict", "This folder already has a Git repository.", { code: "repository-exists" });
       }
       await git.init({ ...op.git, defaultBranch: this.branch });

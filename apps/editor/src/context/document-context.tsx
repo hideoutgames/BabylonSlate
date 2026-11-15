@@ -28,6 +28,7 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
+  getHostPlatform,
   isTestModeEnabled,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type EngineSettings,
@@ -47,6 +48,7 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { SourceControlSyncService } from "../services/source-control-sync";
+import { publishReplacesRepository } from "../lib/source-control-mode";
 import { documentContentIdentity } from "../lib/document-content-identity";
 import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import {
@@ -543,6 +545,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentTransitions,
     editSessionRef,
     sourceControlRef,
+    sourceControlSync,
     journalBuffer,
     ensureDerived,
     editing,
@@ -600,10 +603,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const { writePublishFiles } = await import("../services/source-control-publish");
     await writePublishFiles(projectService.storagePort);
     const settings = { ...opened.settings.sourceControl, mode: "integrated" as const, repositoryUrl, branch };
+    const { tier, hasGit } = await sourceControlActions.readSourceControlFolder();
     await sourceControlSync.publish({
       input: syncInputFor(settings),
       repositoryUrl,
       branch,
+      // The .git of an interrupted Publish (app storage on a device) is replaced; elsewhere init refuses one.
+      replace: publishReplacesRepository({ platform: getHostPlatform(), testMode: isTestModeEnabled(), tier, hasGit }),
       // The first commit holds Integrated mode; the client is already open, so the mode change keeps it.
       beforeCommit: async () => {
         const live = projectDocumentRef.current ?? opened;
@@ -612,7 +618,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await saveProjectNow(next);
       },
     });
-  }, [projectDocumentRef, projectService, saveProjectNow, setProjectDocument, sourceControlSync, syncInputFor]);
+  }, [projectDocumentRef, projectService, saveProjectNow, setProjectDocument, sourceControlActions, sourceControlSync, syncInputFor]);
 
   const summarizeProjectForPublish = useCallback(async () => {
     const { summarizeProject } = await import("../services/source-control-publish");

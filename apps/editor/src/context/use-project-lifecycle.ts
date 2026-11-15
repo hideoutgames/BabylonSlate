@@ -41,7 +41,7 @@ import type {
   DocumentActions,
   DocumentContextValue,
 } from "./document-context-types";
-import type { TransferMonitor } from "../services/source-control-sync";
+import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
 import { isTestModeEnabled } from "@haptic/vfs";
 
 /**
@@ -55,6 +55,8 @@ export interface ProjectLifecycleDeps {
   documentTransitions: DocumentTransitionGate;
   editSessionRef: RefObject<EditSession>;
   sourceControlRef: RefObject<SourceControlService>;
+  /** Stopped and settled before the folder is released. */
+  sourceControlSync: SourceControlSyncService;
   journalBuffer: JournalBuffer;
   ensureDerived: () => Promise<ProjectStorage>;
   editing: DocumentEditingService;
@@ -112,6 +114,7 @@ export function useProjectLifecycle({
   documentTransitions,
   editSessionRef,
   sourceControlRef,
+  sourceControlSync,
   journalBuffer,
   ensureDerived,
   editing,
@@ -380,6 +383,11 @@ export function useProjectLifecycle({
         await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
       }
       emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
+      // Inside the write queue, so a pull ahead in it finishes first. Every
+      // project open starts from Home after this close, so it also guards a
+      // switch: no Git operation of this project outlives its folder.
+      sourceControlSync.stop();
+      await sourceControlSync.settled();
       await projectService.closeProject();
     });
     sourceControlRef.current.dispose();
@@ -426,6 +434,7 @@ export function useProjectLifecycle({
     setRecoveryAvailable,
     setRoute,
     sourceControlRef,
+    sourceControlSync,
   ]);
 
   const forceCloseProject = useCallback(

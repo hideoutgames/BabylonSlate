@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { canPublishProject, integratedBlocker, offeredSourceControlModes, sameRepository, type SourceControlFolder } from "./source-control-mode";
+import {
+  canPublishProject,
+  integratedBlocker,
+  offeredSourceControlModes,
+  publishReplacesRepository,
+  sameRepository,
+  type SourceControlFolder,
+} from "./source-control-mode";
 
 const folder = (platform: string, tier: SourceControlFolder["tier"], hasGit: boolean, testMode = false): SourceControlFolder =>
   ({ platform, tier, hasGit, testMode });
@@ -32,12 +39,23 @@ describe("Integrated mode rules (one Git client per folder)", () => {
     ["an Off project in iPad app storage", "off", folder("ios", "documents", false), true],
     ["an Off project in a chosen iPad folder", "off", folder("ios", "external", false), false],
     ["an Off project in a chosen desktop folder", "off", folder("electron", "external", false), true],
-    ["a folder that already has .git", "off", folder("electron", "documents", true), false],
+    ["a desktop folder that already has .git (Mode offers Integrated)", "off", folder("electron", "documents", true), false],
+    ["an Off project in iPad app storage with the .git of an interrupted Publish", "off", folder("ios", "documents", true), true],
+    ["an Off project in Android app storage with the .git of an interrupted Publish", "off", folder("android", "documents", true), true],
+    ["a chosen iPad folder with .git", "off", folder("ios", "external", true), false],
     ["a Manual project", "manual", folder("ios", "documents", false), false],
     ["production web", "off", folder("web", "opfs", false), false],
     ["test mode", "off", folder("web", "opfs", false, true), true],
   ] as const)("publishes %s: %s", (_name, stored, where, allowed) => {
     expect(canPublishProject(stored, where)).toBe(allowed);
+  });
+
+  it.each([
+    ["the .git of an interrupted Publish in iPad app storage", folder("ios", "documents", true), true],
+    ["a folder without .git", folder("ios", "documents", false), false],
+    ["a desktop folder's .git, which another Git app may use", folder("electron", "documents", true), false],
+  ] as const)("Publish replaces %s: %s", (_name, where, replaces) => {
+    expect(publishReplacesRepository(where)).toBe(replaces);
   });
 });
 

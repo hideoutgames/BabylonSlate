@@ -44,13 +44,26 @@ export function offeredSourceControlModes(stored: SourceControlMode, folder: Sou
 
 /**
  * Publish turns an Off project into an Integrated one: a host with source
- * control, a folder with no Git repository yet, and one Haptic may be the Git
- * client of (app storage, or any folder on desktop).
+ * control, a folder with no Git repository yet (or one only an interrupted
+ * Publish left, see `publishReplacesRepository`), and one Haptic may be the
+ * Git client of (app storage, or any folder on desktop).
  */
 export function canPublishProject(stored: SourceControlMode, folder: SourceControlFolder): boolean {
-  if (stored !== "off" || folder.tier === null || folder.hasGit) return false;
+  if (stored !== "off" || folder.tier === null) return false;
   if (!isSourceControlHost(folder.platform, folder.testMode)) return false;
+  if (folder.hasGit) return publishReplacesRepository(folder);
   return folder.testMode || folder.tier !== "external" || folder.platform === "electron";
+}
+
+/**
+ * Whether Publish replaces the folder's `.git`. In app storage on iOS and
+ * Android only Haptic runs Git, so a `.git` in a project whose mode is still
+ * Off is what an interrupted Publish left (it saves Integrated mode only after
+ * creating `.git`). On desktop any Git app may have made it: Mode offers
+ * Integrated for it instead, and nothing is deleted.
+ */
+export function publishReplacesRepository(folder: SourceControlFolder): boolean {
+  return folder.hasGit && folder.tier !== null && folder.tier !== "external" && folder.platform !== "electron";
 }
 
 /** The label Project Settings and the Source Control tab show for a blocker. */

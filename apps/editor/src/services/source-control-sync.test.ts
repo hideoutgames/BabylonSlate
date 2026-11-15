@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, type SourceControlMode } from "@haptic/core";
-import { GITATTRIBUTES_LFS_RULE, type FileLock, type SyncPort } from "@haptic/source-control";
+import { GITATTRIBUTES_LFS_RULE, SyncError, type FileLock, type SyncPort } from "@haptic/source-control";
 import { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import type { ChangeLookup } from "../lib/source-control-changes";
@@ -173,6 +173,160 @@ describe("SourceControlSyncService", () => {
     expect(service.getSnapshot()).toMatchObject({ behind: 0, rows: [] });
   });
 
+  describe("a project that closes while an operation runs", () => {
+    /** Projects A and B, each with its own remote, in folders of one storage that is bound to one folder at a time. */
+    async function twoProjects() {
+      const storage = new MemoryStorageAdapter("documents");
+      const remotes = new Map<string, FakeRemote>();
+      const project = async (name: string) => {
+        const url = `https://github.com/team/${name}.git`;
+        const remote = new FakeRemote();
+        remote.commit({ ".gitattributes": `${GITATTRIBUTES_LFS_RULE}\n`, "assets/Rock.texture.hasset": `${name} rock` }, "Seed");
+        remotes.set(url, remote);
+        const folder = await storage.openDocumentsProject(name);
+        await FakeSync.clone({ storage, remote, branch: "main" });
+        return { url, remote, folder };
+      };
+      const a = await project("A");
+      const b = await project("B");
+      let releaseAuthor!: () => void;
+      const authorHeld = new Promise<void>((resolve) => { releaseAuthor = resolve; });
+      const factory: SyncPortFactory = {
+        // As the editor's factory: the port works on the storage the service hands it.
+        open: vi.fn(async (request): Promise<SyncPort> => new FakeSync({ storage: request.storage, remote: remotes.get(request.repositoryUrl)!, branch: "main" })),
+        init: vi.fn(async (): Promise<SyncPort> => { throw new Error("Not published here."); }),
+        // The first author (A's commit) waits for the test.
+        author: vi.fn<SyncPortFactory["author"]>().mockImplementationOnce(async () => {
+          await authorHeld;
+          return AUTHOR;
+        }).mockResolvedValue(AUTHOR),
+      };
+      const locks = {
+        theirs: vi.fn<(paths: readonly string[]) => Promise<FileLock[]>>(async () => []),
+        releaseOwn: vi.fn<(paths: readonly string[]) => Promise<void>>(async () => {}),
+      };
+      const input = (target: { url: string; folder: SyncConfigureInput["folder"] }): SyncConfigureInput => ({
+        settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, mode: "integrated", repositoryUrl: target.url, branch: "main" },
+        folder: target.folder,
+        storage,
+        platform: "web",
+        testMode: true,
+        lookup,
+        locks,
+        factory,
+      });
+      return { storage, a, b, input, locks, factory, releaseAuthor };
+    }
+
+    it("never pushes, reports or releases locks for the next project, nor touches its folder", async () => {
+      const { storage, a, b, input, locks, factory, releaseAuthor } = await twoProjects();
+      const service = new SourceControlSyncService();
+      await storage.openKnownFolder(a.folder!);
+      await service.configure(input(a));
+      await storage.writeText("assets/Rock.texture.hasset", "A rock edited");
+      await service.refreshStatus();
+      const aHead = a.remote.branches.get("main");
+      const committing = service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "A", push: true });
+      await vi.waitFor(() => expect(factory.author).toHaveBeenCalled());
+      // Close A and open B while A's commit runs (without waiting for it to settle).
+      service.stop();
+      await storage.openKnownFolder(b.folder!);
+      const configuring = service.configure(input(b));
+      await vi.waitFor(() => expect(service.getSnapshot().active).toBe(true));
+      await storage.writeText("assets/Forest.scene.hasset", "B forest");
+      const bCommit = service.commit({ rowIds: new Set(["assets/Forest.scene.hasset"]), message: "B", push: false });
+      releaseAuthor();
+      await committing;
+      await configuring;
+      await bCommit;
+      await service.settled();
+      expect(a.remote.branches.get("main")).toBe(aHead);
+      // B's commit stays local: nothing pushed it, and no lock was released for it.
+      expect(b.remote.get(b.remote.branches.get("main")!).message).toBe("Seed");
+      expect(locks.releaseOwn).not.toHaveBeenCalled();
+      expect(await storage.readText("assets/Rock.texture.hasset")).toBe("B rock");
+      expect(service.getSnapshot()).toMatchObject({ ahead: 1, rows: [], problem: null });
+    });
+
+    it("cancels the running transfer on stop, and settles once it has ended", async () => {
+      const { service, input, storage, spied } = await setup();
+      await service.configure(input("integrated"));
+      await storage.writeText("assets/Rock.texture.hasset", "R2");
+      await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: false });
+      let ended = false;
+      spied.push.mockImplementationOnce((options) => new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => {
+          ended = true;
+          reject(new SyncError("cancelled", "Cancelled."));
+        });
+      }));
+      const pushing = service.push();
+      await vi.waitFor(() => expect(spied.push).toHaveBeenCalled());
+      service.stop();
+      await service.settled();
+      expect(ended).toBe(true);
+      await pushing;
+      expect(service.getSnapshot()).toMatchObject({ active: false, problem: null });
+    });
+  });
+
+  describe("after a push or pull", () => {
+    it("keeps a push that succeeded as pushed when the check for changes after it fails", async () => {
+      const { service, input, storage, locks, port } = await setup();
+      await service.configure(input("integrated"));
+      await storage.writeText("assets/Rock.texture.hasset", "R2");
+      await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: false });
+      vi.spyOn(port, "fetch").mockRejectedValue(new SyncError("network", "The host could not be reached."));
+      await service.push();
+      expect(service.getSnapshot()).toMatchObject({ ahead: 0, problem: { title: "Could Not Check For Changes" } });
+      expect(locks.releaseOwn).toHaveBeenCalledWith(["assets/Rock.texture.hasset"]);
+    });
+
+    it("reports a pull that wrote its files as done, without asking the remote again", async () => {
+      const { service, input, storage, remote, port } = await setup();
+      await service.configure(input("integrated"));
+      remote.commit({ "assets/Rock.texture.hasset": "R-theirs" }, "Teammate");
+      const fetch = vi.spyOn(port, "fetch").mockRejectedValue(new SyncError("network", "The host could not be reached."));
+      expect(await service.pull()).toMatchObject({ kind: "fast-forward" });
+      expect(await storage.readText("assets/Rock.texture.hasset")).toBe("R-theirs");
+      expect(fetch).not.toHaveBeenCalled();
+      expect(service.getSnapshot()).toMatchObject({ behind: 0, problem: null });
+    });
+  });
+
+  describe("problems", () => {
+    it("clears Could Not Read Changes once a status succeeds", async () => {
+      const { service, input, spied } = await setup();
+      await service.configure(input("integrated"));
+      spied.status.mockRejectedValueOnce(new Error("The folder could not be listed."));
+      await service.refreshStatus();
+      expect(service.getSnapshot().problem).toMatchObject({ title: "Could Not Read Changes" });
+      await service.refreshStatus();
+      expect(service.getSnapshot().problem).toBeNull();
+    });
+
+    it("keeps a refused push's problem through later checks for changes", async () => {
+      const { service, input, storage, locks } = await setup();
+      await service.configure(input("integrated"));
+      await storage.writeText("assets/Rock.texture.hasset", "R2");
+      locks.theirs.mockResolvedValue([lock("assets/Rock.texture.hasset", "Sam", false)]);
+      await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: true });
+      await service.fetch();
+      await service.refreshStatus();
+      expect(service.getSnapshot().problem).toMatchObject({ title: "Could Not Push", holders: [{ ownerName: "Sam" }] });
+    });
+
+    it("opens the repository again on Refresh after it could not open", async () => {
+      const { service, input, factory } = await setup();
+      vi.mocked(factory.open).mockRejectedValueOnce(new Error("The repository could not be read."));
+      await service.configure(input("integrated"));
+      expect(service.getSnapshot().problem).toMatchObject({ title: "Could Not Open The Repository" });
+      await service.refresh();
+      expect(factory.open).toHaveBeenCalledTimes(2);
+      expect(service.getSnapshot()).toMatchObject({ active: true, problem: null, statusReady: true });
+    });
+  });
+
   describe("Publish", () => {
     async function unpublished() {
       const remote = new FakeRemote();
@@ -206,6 +360,7 @@ describe("SourceControlSyncService", () => {
         input: input("off"),
         repositoryUrl: URL,
         branch: "main",
+        replace: false,
         beforeCommit: async () => {
           // As Publish saves Integrated mode, and the settings effect then configures.
           await storage.writeText("project.json", "{\"mode\":\"integrated\"}");
@@ -224,7 +379,7 @@ describe("SourceControlSyncService", () => {
       const { factory, input } = await unpublished();
       vi.mocked(factory.init).mockRejectedValueOnce(new Error("This folder already has a Git repository."));
       const service = new SourceControlSyncService();
-      await expect(service.publish({ input: input("off"), repositoryUrl: URL, branch: "main", beforeCommit: async () => {} }))
+      await expect(service.publish({ input: input("off"), repositoryUrl: URL, branch: "main", replace: false, beforeCommit: async () => {} }))
         .rejects.toThrow("This folder already has a Git repository.");
       expect(service.getSnapshot()).toMatchObject({ active: false, problem: null });
       // The next configure starts afresh.
