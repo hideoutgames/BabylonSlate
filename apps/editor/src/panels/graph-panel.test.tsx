@@ -41,6 +41,10 @@ if (typeof window.PointerEvent === "undefined") {
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
+// Every test mounts the real DocumentProvider and creates a project (about 2 s on a quiet machine for the
+// first, which also loads the provider's lazy modules); the default 5 s left no room on a loaded CI runner.
+vi.setConfig({ testTimeout: 20_000 });
+
 // Stand-ins shared by real-provider tests: see ../testing/real-document-provider.
 const provider = vi.hoisted(() => () => import("../testing/real-document-provider"));
 vi.mock("../lib/engine-plugins", async (importOriginal) => ({
