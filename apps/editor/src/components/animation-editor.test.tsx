@@ -70,6 +70,42 @@ describe("AnimationEditor", () => {
   });
 });
 
+describe("AnimationEditor events", () => {
+  const walk = { clipName: "Walk", modelGuid: "hero", skeletonGuid: "rig", durationMs: 1000, clipDurationMs: 1000 };
+  const lastPayload = (onChange: ReturnType<typeof vi.fn>) => onChange.mock.calls.at(-1)![0] as { events?: Array<Record<string, unknown>> };
+
+  it("adds an event at the start with the default Trigger Weight and no action", () => {
+    const onChange = vi.fn();
+    render(<AnimationEditor payload={walk} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("animation-events-add"));
+    expect(lastPayload(onChange).events).toEqual([
+      { id: "event-1", name: "Event", timeMs: 0, durationMs: 0, triggerWeight: 0.5, action: null },
+    ]);
+  });
+
+  it("edits an event's name, time and window length, each field one undo step", () => {
+    const onChange = vi.fn();
+    const events = [{ id: "e", name: "Footstep", timeMs: 100, durationMs: 0, triggerWeight: 0.5, action: null }];
+    render(<AnimationEditor payload={{ ...walk, events }} onChange={onChange} />);
+    fireEvent.change(screen.getByTestId("property-e-time"), { target: { value: "250" } });
+    expect(lastPayload(onChange).events![0]).toMatchObject({ timeMs: 250 });
+    expect(onChange.mock.calls.at(-1)![1]).toBe("animation:event:e:time");
+    fireEvent.change(screen.getByTestId("property-e-duration"), { target: { value: "150" } });
+    expect(lastPayload(onChange).events![0]).toMatchObject({ durationMs: 150 });
+  });
+
+  it("chooses Play Sound and shows its Sound and Volume, and removes an event", () => {
+    const onChange = vi.fn();
+    const events = [{ id: "e", name: "Footstep", timeMs: 100, durationMs: 0, triggerWeight: 0.5, action: { kind: "playSound", assetGuid: "step", volume: 0.8 } }];
+    documents.assets = [{ path: "assets/Step.hasset", header: { guid: "step", name: "Step", type: "Audio", payload: {} } }];
+    render(<AnimationEditor payload={{ ...walk, events }} onChange={onChange} />);
+    expect(screen.getByTestId("property-e-sound").textContent).toContain("Step");
+    expect((screen.getByTestId("property-e-volume") as HTMLInputElement).value).toBe("0.8");
+    fireEvent.click(screen.getByTestId("animation-events-remove-e"));
+    expect(lastPayload(onChange).events).toEqual([]);
+  });
+});
+
 describe("AnimationPreviewPanel", () => {
   it("reports a failed read of the owning Model's source instead of an empty mesh", async () => {
     documents.open = [{ id: "walk", ref: { path: "assets/Walk.anim3d.hasset" }, content: { clipName: "Walk", modelGuid: "hero" } }];

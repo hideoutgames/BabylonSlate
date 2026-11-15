@@ -137,6 +137,16 @@ describe("Blend Space editor", () => {
     expect(lastWrite().samples.map((entry) => entry.animationGuid)).toEqual(["walk"]);
   });
 
+  it("sets whose Animation Events fire with Event Mode", () => {
+    harness.content = payload() as unknown as Record<string, unknown>;
+    renderPanels();
+    fireEvent.click(within(screen.getByTestId("blend-space-settings")).getByRole("combobox", { name: "Event Mode" }));
+    const option = screen.getByRole("option", { name: "All" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    expect(lastWrite().eventMode).toBe("all");
+  });
+
   it("adds a second axis from the Inspector", () => {
     harness.content = payload() as unknown as Record<string, unknown>;
     renderPanels();
