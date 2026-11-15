@@ -661,10 +661,14 @@ export class ProjectService {
     return this.loadCurrentProject();
   }
 
+  /**
+   * A new project, opened. `created` is false only when the folder the user
+   * picked already held a project, which is opened as it is.
+   */
   async createEmptyProject(
     name?: string,
     options?: CreateProjectOptions,
-  ): Promise<ProjectLoadResult> {
+  ): Promise<ProjectLoadResult & { created: boolean }> {
     const projectName =
       name && name.trim()
         ? normalizeProjectFolderName(name)
@@ -674,19 +678,20 @@ export class ProjectService {
     if (options?.pickFolder) {
       await this.storage.pickProjectFolder();
       if (await this.storage.exists(PROJECT_FILE)) {
-        return this.loadCurrentProject();
+        return { ...(await this.loadCurrentProject()), created: false };
       }
       await assertEmptyProjectFolder(this.storage);
-      return this.scaffoldNewProject(projectName, options.kind, options);
+      return { ...(await this.scaffoldNewProject(projectName, options.kind, options)), created: true };
     }
     const owned = await openOwnedDocumentsProject(this.storage, projectName);
     if (await this.storage.exists(PROJECT_FILE) && !owned.createdHere) {
       throw new Error("Name already exists.");
     }
     await assertEmptyProjectFolder(this.storage);
-    return scaffoldOwnedProject(this.storage, owned, () =>
+    const result = await scaffoldOwnedProject(this.storage, owned, () =>
       this.scaffoldNewProject(projectName, options?.kind, options),
     );
+    return { ...result, created: true };
   }
 
   async createFromTemplate(options: {

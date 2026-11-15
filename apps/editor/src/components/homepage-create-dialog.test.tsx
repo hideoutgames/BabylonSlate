@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from "react";
+import { useCallback, useState, type ComponentProps } from "react";
 import {
   act,
   cleanup,
@@ -7,10 +7,30 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FakeGitHost } from "@haptic/source-control/fake-host";
+import type { HostPlatform, NewProjectHosting } from "@haptic/vfs";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { ContextMenuOverlay } from "@haptic/editor-kit";
 import * as appearanceHelpers from "./homepage-project-appearance";
+import type { SourceControlAccounts } from "../services/source-control-accounts";
+import type { NewRepositoryRequest } from "../services/source-control-publish";
+import { signedInHosts } from "../testing/source-control-hosts";
+
+const accountsState = vi.hoisted(() => ({ accounts: null as SourceControlAccounts | null }));
+
+// The device's accounts over in-memory secrets; the host is test mode's fake GitHub and GitLab.
+vi.mock("../services/source-control-accounts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/source-control-accounts")>();
+  return { ...actual, sourceControlAccounts: async () => accountsState.accounts! };
+});
+
+let host: FakeGitHost;
+
+beforeEach(async () => {
+  host = new FakeGitHost();
+  accountsState.accounts = await signedInHosts(host.http);
+});
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -25,7 +45,10 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
+
+const ignoreRepository = () => {};
 
 function Composer({
   mode = "create",
@@ -33,14 +56,29 @@ function Composer({
   open = true,
   busy = false,
   onOpenChange = vi.fn(),
+  hostPlatform = "web",
+  initialHosting = null,
+  onRepositoryChange = ignoreRepository,
 }: {
   mode?: "create" | "edit";
   onSubmit?: () => void;
   open?: boolean;
   busy?: boolean;
   onOpenChange?: (open: boolean) => void;
+  hostPlatform?: HostPlatform;
+  /** Null: no source control here, so no Hosting choice. */
+  initialHosting?: NewProjectHosting | null;
+  onRepositoryChange?: (request: NewRepositoryRequest | null) => void;
 }) {
   const [name, setName] = useState(mode === "edit" ? "Moon Garden" : "");
+  const [hosting, setHosting] = useState(initialHosting);
+  const [pickFolder, setPickFolder] = useState(false);
+  const [repository, setRepository] = useState<NewRepositoryRequest | null>(null);
+  // Stable, as the Homepage's state setter is: the fields report each change through it.
+  const reportRepository = useCallback((request: NewRepositoryRequest | null) => {
+    setRepository(request);
+    onRepositoryChange(request);
+  }, [onRepositoryChange]);
   const [appearance, setAppearance] = useState({ icon: "box", color: "coral" });
   const [templateId, setTemplateId] = useState("empty");
   const [size, setSize] = useState({ width: 1920, height: 1080 });
@@ -58,9 +96,17 @@ function Composer({
     templateId,
     onTemplateIdChange: setTemplateId,
     templates: [{ id: "island", name: "Island" }],
-    hostPlatform: "web",
-    pickFolder: false,
-    onPickFolderChange: vi.fn(),
+    hostPlatform,
+    pickFolder,
+    onPickFolderChange: setPickFolder,
+    hosting,
+    onHostingChange: (next: NewProjectHosting) => {
+      setHosting(next);
+      if (next === "remote" && (hostPlatform === "ios" || hostPlatform === "android")) setPickFolder(false);
+    },
+    rememberedOrigin: "",
+    remoteReady: repository !== null,
+    onRepositoryChange: reportRepository,
     width: size.width,
     height: size.height,
     onWidthChange: (width: number) => setSize((current) => ({ ...current, width })),
@@ -78,6 +124,90 @@ function Composer({
 }
 
 describe("Project Composer", () => {
+  it("creates Local or Remote, with a new repository on the signed-in account whose name follows the project's until edited", async () => {
+    const onSubmit = vi.fn();
+    const onRepositoryChange = vi.fn();
+    render(<Composer initialHosting="local" onSubmit={onSubmit} onRepositoryChange={onRepositoryChange} />);
+    expect(screen.getByTestId("create-project-hosting-local").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("create-project-remote")).toBeNull();
+    fireEvent.change(screen.getByTestId("create-project-name"), { target: { value: "Forest Run" } });
+    fireEvent.click(screen.getByTestId("create-project-hosting-remote"));
+    expect((await screen.findByTestId("create-project-remote-host")).textContent).toContain("GitHub · ada");
+    await waitFor(() => expect(screen.getByTestId("create-project-remote-owner").textContent).toContain("test-user"));
+    const repositoryName = screen.getByTestId("create-project-remote-name") as HTMLInputElement;
+    expect(repositoryName.value).toBe("forest-run");
+    await waitFor(() => expect(onRepositoryChange).toHaveBeenLastCalledWith({
+      origin: "https://github.com",
+      owner: { name: "test-user", kind: "user", id: "" },
+      name: "forest-run",
+      private: true,
+    }));
+    fireEvent.click(screen.getByTestId("create-project-remote-public"));
+    fireEvent.change(repositoryName, { target: { value: "forest" } });
+    // Once edited, the repository keeps its name when the project's changes.
+    fireEvent.change(screen.getByTestId("create-project-name"), { target: { value: "Forest Run Two" } });
+    expect(repositoryName.value).toBe("forest");
+    await waitFor(() => expect(onRepositoryChange).toHaveBeenLastCalledWith(expect.objectContaining({ name: "forest", private: false })));
+    fireEvent.change(repositoryName, { target: { value: " " } });
+    await waitFor(() => expect(screen.getByTestId("create-project-remote-reason").textContent).toBe("Enter a repository name."));
+    expect(onRepositoryChange).toHaveBeenLastCalledWith(null);
+    // Enter in the form does not create a Remote project that has no repository.
+    fireEvent.submit(screen.getByTestId("create-project-form"));
+    expect(screen.getByTestId("create-project-submit").hasAttribute("disabled")).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("offers Sign In To GitHub and GitLab, through the link warning, when no account can create a repository", async () => {
+    accountsState.accounts = await signedInHosts(host.http, null);
+    // A build with both hosts' sign-in apps.
+    vi.stubEnv("VITE_GITHUB_CLIENT_ID", "github-client");
+    vi.stubEnv("VITE_GITLAB_CLIENT_ID", "gitlab-client");
+    const onSubmit = vi.fn();
+    render(<Composer initialHosting="remote" onSubmit={onSubmit} />);
+    expect((await screen.findByTestId("create-project-remote-reason")).textContent).toBe("Sign in to a Git host to create the repository.");
+    expect(screen.getByTestId("create-project-remote-sign-in-gitlab").textContent).toBe("Sign In To GitLab");
+    fireEvent.click(screen.getByTestId("create-project-remote-sign-in-github"));
+    expect((await screen.findByTestId("source-control-link-warning")).textContent).toContain("Link GitHub?");
+    fireEvent.click(screen.getByTestId("source-control-link-decline"));
+    await waitFor(() => expect(screen.queryByTestId("source-control-link-warning")).toBeNull());
+    // The New Project form stays, unsubmitted.
+    expect(screen.getByTestId("create-project-dialog")).toBeTruthy();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId("create-project-submit").hasAttribute("disabled")).toBe(true);
+  });
+
+  it.each(["ios", "android"] as const)("keeps a Remote project in App Documents on %s, saying why Choose Folder is off", async (platform) => {
+    render(<Composer hostPlatform={platform} initialHosting="local" />);
+    fireEvent.click(screen.getByText("Options"));
+    fireEvent.click(screen.getByTestId("create-project-choose-location"));
+    expect(screen.getByTestId("create-project-choose-location").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("create-project-hosting-remote"));
+    const chooseFolder = screen.getByTestId("create-project-choose-location");
+    expect(chooseFolder.getAttribute("aria-pressed")).toBe("false");
+    expect(chooseFolder.hasAttribute("disabled") || chooseFolder.getAttribute("aria-disabled") === "true").toBe(true);
+    expect(screen.getByTestId("create-project-location").textContent)
+      .toBe("Remote projects are created in App Documents: Haptic can't run Git in a folder you choose on this device.");
+    await screen.findByTestId("create-project-remote-host");
+  });
+
+  it("lets a desktop Remote project use a folder it chooses, and offers no Hosting where there is no source control or when editing", async () => {
+    const { unmount } = render(<Composer hostPlatform="electron" initialHosting="remote" />);
+    fireEvent.click(screen.getByText("Options"));
+    const chooseFolder = screen.getByTestId("create-project-choose-location");
+    fireEvent.click(chooseFolder);
+    expect(chooseFolder.getAttribute("aria-pressed")).toBe("true");
+    await screen.findByTestId("create-project-remote-host");
+    unmount();
+    const noSourceControl = render(<Composer initialHosting={null} />);
+    expect(screen.queryByTestId("create-project-hosting-local")).toBeNull();
+    noSourceControl.unmount();
+    render(<Composer mode="edit" initialHosting="remote" />);
+    expect(screen.queryByTestId("create-project-hosting-remote")).toBeNull();
+    expect(screen.queryByTestId("create-project-remote")).toBeNull();
+    // Saving an edit never waits for a repository.
+    expect(screen.getByTestId("homepage-rename-confirm").hasAttribute("disabled")).toBe(false);
+  });
+
   it("fits the visible viewport during keyboard resizing without losing the draft", async () => {
     const viewport = Object.assign(new EventTarget(), {
       height: 844,

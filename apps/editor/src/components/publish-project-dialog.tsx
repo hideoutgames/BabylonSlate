@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { CircleAlertIcon, FileArchiveIcon, FolderGit2Icon, UploadIcon, SettingsIcon } from "lucide-react";
-import { isOk } from "@haptic/core";
-import type { HostOwner } from "@haptic/source-control/host-api";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -18,7 +16,7 @@ import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group
 import { useDocumentActions, useProjectState, useSaveState } from "../context/document-context";
 import type { PublishSummary } from "../context/document-context-types";
 import { bytesLabel } from "../lib/source-control-labels";
-import { API_HOSTS, repositoryNameFor, useHostAccount, type ApiHost } from "../lib/source-control-host-accounts";
+import { API_HOSTS, repositoryNameFor, useHostAccount, useHostOwners, type ApiHost } from "../lib/source-control-host-accounts";
 import { HostAccountState } from "./source-control-host-account";
 
 function summaryLine(summary: PublishSummary): string {
@@ -34,13 +32,14 @@ function summaryLine(summary: PublishSummary): string {
  * project to Integrated.
  */
 export default function PublishProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { publishProject, summarizeProjectForPublish } = useDocumentActions();
+  const { publishToNewRepository, summarizeProjectForPublish } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const { dirtyDocuments, projectDirty } = useSaveState();
   const [host, setHost] = useState<ApiHost>("github");
   const origin = API_HOSTS[host].origin;
   const { credential, api } = useHostAccount(origin);
-  const [owners, setOwners] = useState<HostOwner[] | null>(null);
+  const { owners, error: ownersError } = useHostOwners(api);
+  /** The owner chosen by name; until then, the first (the signed-in user). */
   const [owner, setOwner] = useState<string | null>(null);
   const [name, setName] = useState(() => repositoryNameFor(projectDocument?.metadata.name ?? ""));
   const [visibility, setVisibility] = useState<"private" | "public">("private");
@@ -59,26 +58,8 @@ export default function PublishProjectDialog({ open, onOpenChange }: { open: boo
     };
   }, [open, summarizeProjectForPublish]);
 
-  useEffect(() => {
-    setOwners(null);
-    setOwner(null);
-    if (!api) return;
-    let alive = true;
-    void api.owners().then((result) => {
-      if (!alive) return;
-      if (!isOk(result)) {
-        setError(result.error.message);
-        return;
-      }
-      setOwners(result.value);
-      setOwner(result.value[0]?.name ?? null);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [api]);
-
-  const chosen = owners?.find((entry) => entry.name === owner) ?? null;
+  const chosen = owners?.find((entry) => entry.name === owner) ?? owners?.[0] ?? null;
+  const shownError = error ?? ownersError;
   const trimmed = name.trim();
   const unsaved = dirtyDocuments.length > 0 || projectDirty;
   const reason = !credential
@@ -97,10 +78,9 @@ export default function PublishProjectDialog({ open, onOpenChange }: { open: boo
     setBusy(true);
     setError(null);
     try {
-      const created = await api.createRepository({ owner: chosen, name: trimmed, private: visibility === "private" });
-      if (!isOk(created)) throw new Error(created.error.message);
-      await publishProject({ repositoryUrl: created.value.repositoryUrl, branch: created.value.defaultBranch });
-      onOpenChange(false);
+      const outcome = await publishToNewRepository({ origin, owner: chosen, name: trimmed, private: visibility === "private" });
+      if (outcome.status === "published") onOpenChange(false);
+      else setError(outcome.message);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
@@ -143,7 +123,7 @@ export default function PublishProjectDialog({ open, onOpenChange }: { open: boo
           <HostAccountState origin={origin} credential={credential} data-testid="publish-account" />
           <Field orientation="horizontal">
             <FieldLabel htmlFor="publish-owner">Owner</FieldLabel>
-            <Select value={owner} onValueChange={(value) => setOwner(value ? String(value) : null)} disabled={busy || !owners}>
+            <Select value={chosen?.name ?? null} onValueChange={(value) => setOwner(value ? String(value) : null)} disabled={busy || !owners}>
               <SelectTrigger id="publish-owner" className="w-full" data-testid="publish-owner">
                 <SelectValue placeholder={credential ? "Loading…" : "Sign In First"} />
               </SelectTrigger>
@@ -192,10 +172,10 @@ export default function PublishProjectDialog({ open, onOpenChange }: { open: boo
               {summary ? summaryLine(summary) : "Counting assets…"}
             </li>
           </ul>
-          {error ? (
+          {shownError ? (
             <Alert variant="destructive" data-testid="publish-error">
               <AlertTitle>Could Not Publish</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>{shownError}</AlertDescription>
             </Alert>
           ) : null}
         </FieldGroup>

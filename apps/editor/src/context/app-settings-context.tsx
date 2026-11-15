@@ -122,6 +122,11 @@ export function receiveActiveAppSettingsUpdate(
   activeOwner.receiveUpdate(patch);
 }
 
+/** Saves settings from an event handler, through the active provider, without subscribing a component to them. */
+export function updateAppSettings(mutate: (settings: EngineSettings) => void): Promise<void> {
+  return activeOwner.update(mutate);
+}
+
 export function updateActiveViewportPrefs(
   patch: Pick<
     Partial<EngineSettings>,

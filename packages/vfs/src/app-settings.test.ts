@@ -178,6 +178,16 @@ describe("app settings", () => {
     expect(engineSettingsSchema.parse({ hdrImportFaceSize: "128" }).hdrImportFaceSize).toBe(256);
   });
 
+  it("creates Local projects until a Remote one is created, and reads an unknown Hosting choice as Local", () => {
+    expect(defaultEngineSettings().newProjectHosting).toEqual({ hosting: "local", origin: "" });
+    expect(engineSettingsSchema.parse({ newProjectHosting: { hosting: "remote", origin: "https://gitlab.com" } }).newProjectHosting)
+      .toEqual({ hosting: "remote", origin: "https://gitlab.com" });
+    // A later choice (Cloud) this build does not know falls back to Local, keeping the host.
+    expect(engineSettingsSchema.parse({ newProjectHosting: { hosting: "cloud", origin: "https://github.com" } }).newProjectHosting)
+      .toEqual({ hosting: "local", origin: "https://github.com" });
+    expect(engineSettingsSchema.parse({ newProjectHosting: "remote" }).newProjectHosting).toEqual({ hosting: "local", origin: "" });
+  });
+
   it("stacks new 2D actors nowhere by default and reads an unknown host choice as disabled", () => {
     expect(defaultEngineSettings().viewportStackNewActors2D).toBe("disabled");
     expect(engineSettingsSchema.parse({ viewportStackNewActors2D: "both" }).viewportStackNewActors2D).toBe("both");
