@@ -566,11 +566,41 @@ index 4b5dc52902b25c69fa8fad82bc9a8067ee48ad6b..8a8974d1399a12b4621f0af950819a32
          if (!instanceDataStorage.visibleInstances) {
              instanceDataStorage.visibleInstances = {
                  defaultRenderId: renderId,
+diff --git a/Meshes/subMesh.pure.js b/Meshes/subMesh.pure.js
+index ba4dae8e545feb1331a9a9ff8bfd3523e040429f..11b3e464408ee6b1e66f0466f1e996f669614358 100644
+--- a/Meshes/subMesh.pure.js
++++ b/Meshes/subMesh.pure.js
+@@ -39,10 +39,23 @@ export class SubMesh {
+      * @internal
+      */
+     _removeDrawWrapper(passId, disposeWrapper = true, immediate = false) {
++        const drawWrappers = this._drawWrappers;
++        // Haptic: a pass that holds no wrapper here changes nothing. Writing its empty slot grew the array to every
++        // released pass id (ids only count up), and every walk of the array with it (`_markSubMeshesAsDirty`).
++        const drawWrapper = drawWrappers[passId];
++        if (!drawWrapper) {
++            return;
++        }
+         if (disposeWrapper) {
+-            this._drawWrappers[passId]?.dispose(immediate);
++            drawWrapper.dispose(immediate);
++        }
++        drawWrappers[passId] = undefined;
++        // The array ends at the last pass that holds a wrapper.
++        let length = drawWrappers.length;
++        while (length > 0 && !drawWrappers[length - 1]) {
++            length--;
+         }
+-        this._drawWrappers[passId] = undefined;
++        drawWrappers.length = length;
+     }
+     /**
+      * Gets associated (main) effect (possibly the effect override if defined)
 diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
-index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a9810a5d22f9 100644
+index c0900265932b6e5d8a98368cafc75c59b205ff11..9df60d570279e6e4349239b9a191a7896f644e0b 100644
 --- a/Misc/khronosTextureContainer2.js
 +++ b/Misc/khronosTextureContainer2.js
-@@ -227,6 +227,23 @@ export class KhronosTextureContainer2 {
+@@ -227,7 +227,24 @@ export class KhronosTextureContainer2 {
       * @internal
       */
      async _uploadAsync(data, internalTexture, options) {
@@ -594,6 +624,7 @@ index c0900265932b6e5d8a98368cafc75c59b205ff11..c6374e130aee35ca0f34368b67a8a981
 +
          this._createTexture(decodedData, internalTexture, options);
      }
+     /**
 diff --git a/Misc/rgbdTextureTools.js b/Misc/rgbdTextureTools.js
 index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea4341b20a2f 100644
 --- a/Misc/rgbdTextureTools.js
