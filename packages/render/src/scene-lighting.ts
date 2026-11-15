@@ -60,14 +60,21 @@ function installSceneLighting(scene: Scene): SceneLighting {
   const watchLight = () => {
     dirty = true;
   };
+  // The last sync wrote the block of a Scene without lights.
+  let wroteLightless = false;
 
   const sync = (): void => {
     if (scene.isDisposed) return;
+    // A Scene without lights (a Scene Layer) admits and writes nothing new once its empty block is written: a sync,
+    // several per frame, changes nothing until a light or Material joins or a flag below changes.
+    if (wroteLightless && !dirty && !scene.lights.length && materialCount === scene.materials.length &&
+      sceneLightsEnabled === scene.lightsEnabled && sceneShadowsEnabled === scene.shadowsEnabled) return;
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
     admission = syncForwardLightPolicy(scene, Math.max(0, sceneRenderingSettings(scene).localLightBudget), selectHapticLights);
     // HapticLightingBlock reads the admitted lights from one block, rewritten each frame; its Materials hold no light defines.
     writeHapticLights(scene);
+    wroteLightless = !scene.lights.length;
     nextEnabled.clear();
     let enabledChanged = false;
     for (const light of scene.lights) {
