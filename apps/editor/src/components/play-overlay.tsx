@@ -12,7 +12,10 @@ import {
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
-import { captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyScopedReadinessProbes } from "@haptic/render";
+import {
+  captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
+  verifyScopedReadinessProbes,
+} from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
@@ -1250,6 +1253,8 @@ function PlayOverlayView({
         spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
         /** Follows every scoped readiness probe with a probe of every mesh, which must agree (`rendererWork.scopedReadinessMismatches`). */
         verifyScopedReadinessProbes: (enabled: boolean) => void;
+        /** Checks every Scene Layer pass that kept its draw batches' work against the full path (`layerWork[].batching.mismatches`). */
+        verifyRetainedOverlayBatches: (enabled: boolean) => void;
         /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
         verifyRenderChangeJournal: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
@@ -1274,6 +1279,7 @@ function PlayOverlayView({
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
       verifyScopedReadinessProbes,
+      verifyRetainedOverlayBatches,
       verifyRenderChangeJournal,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],

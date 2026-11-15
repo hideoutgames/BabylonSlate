@@ -8,6 +8,7 @@ import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 import { overlayRectContains, type OverlayLayoutEntry, type OverlayLayoutRect } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
+import { noteRenderChange } from "./render-change-journal";
 
 type LayoutCommand = Extract<CommandMessage, { type: "sceneLayerLayout" }>;
 const clips = new WeakMap<Node, OverlayLayoutRect | null>();
@@ -66,6 +67,12 @@ const scratchCorner = new Vector3();
 const scratchProjected = new Vector3();
 /** Meshes drawing through a clip's scissor hooks (`installClip`): one before-bind and one after-render observer. */
 const clipHooked = new WeakSet<AbstractMesh>();
+/** The clip each hooked mesh's last refresh found, to tell the render change journal of a change. */
+const drawnClips = new WeakMap<AbstractMesh, OverlayLayoutRect>();
+
+function sameRect(a: OverlayLayoutRect | undefined, b: OverlayLayoutRect): boolean {
+  return !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
 
 /** Babylon 9.29 WebGPU scissor state: the rect asked for, and how draws reach the render pass. */
 type WebGpuScissorInternals = {
@@ -175,13 +182,26 @@ function setSceneClipOwner(scene: Scene, owner: object, enabled: boolean): void 
     seenMeshCount = scene.meshes.length;
     const resolved = new Map<Node, OverlayLayoutRect | null>();
     const watched = new Map<Node, Node | null>();
+    // What a mesh draws through (`overlayDrawClip`) has no Babylon write point: the render change journal hears of each
+    // mesh that gains or loses its hooks, or whose clip's rectangle changed.
     for (const [mesh, detach] of meshes) {
-      if (!mesh.isDisposed() && watchedInheritedClip(mesh, resolved, watched)) continue;
+      const clip = mesh.isDisposed() ? null : watchedInheritedClip(mesh, resolved, watched);
+      if (clip) {
+        if (!sameRect(drawnClips.get(mesh), clip)) { drawnClips.set(mesh, clip); noteRenderChange(mesh); }
+        continue;
+      }
       detach();
       meshes.delete(mesh);
+      drawnClips.delete(mesh);
+      noteRenderChange(mesh);
     }
     for (const mesh of scene.meshes) {
-      if (mesh instanceof Mesh && !meshes.has(mesh) && watchedInheritedClip(mesh, resolved, watched)) meshes.set(mesh, installClip(mesh));
+      if (!(mesh instanceof Mesh) || meshes.has(mesh)) continue;
+      const clip = watchedInheritedClip(mesh, resolved, watched);
+      if (!clip) continue;
+      meshes.set(mesh, installClip(mesh));
+      drawnClips.set(mesh, clip);
+      noteRenderChange(mesh);
     }
     watchedNodes = [...watched.keys()];
     watchedParents = [...watched.values()];
@@ -201,7 +221,11 @@ function setSceneClipOwner(scene: Scene, owner: object, enabled: boolean): void 
       scene.onDisposeObservable.remove(onDispose);
       scene.onNewMeshAddedObservable.remove(addedMesh);
       scene.onMeshRemovedObservable.remove(removedMesh);
-      for (const detach of meshes.values()) detach();
+      for (const [mesh, detach] of meshes) {
+        detach();
+        drawnClips.delete(mesh);
+        noteRenderChange(mesh);
+      }
       meshes.clear();
       watchedNodes = [];
       watchedParents = [];

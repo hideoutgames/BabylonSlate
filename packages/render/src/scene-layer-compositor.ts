@@ -28,7 +28,7 @@ import {
   type MaterialParameterValue,
 } from "@haptic/core";
 import { installEngineDefaultMaterial } from "./default-material";
-import { setSceneDrawBatching } from "./overlay-draw-batcher";
+import { sceneDrawBatchWork, setSceneDrawBatching, type OverlayBatchWork } from "./overlay-draw-batcher";
 import { isSceneFrameReady } from "./scene-perf";
 import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
@@ -309,11 +309,13 @@ export class SceneLayerCompositor {
 
   /**
    * Each layer's renderer work in draw order (`ForwardSceneFrameGraph.diagnostics`: its graph builds, strict readiness
-   * checks with their reasons and time, and what the last failed one waited for) with its mesh count. Reading starts
-   * the measuring, as a view's own does.
+   * checks with their reasons and time, and what the last failed one waited for) with its mesh count and how its draw
+   * batcher kept its work (`sceneDrawBatchWork`). Reading starts the measuring, as a view's own does.
    */
-  diagnostics(): Array<{ layerId: string; meshes: number; work: ReturnType<SceneRenderCoordinator["diagnostics"]> }> {
-    return this.orderedLayers().map((layer) => ({ layerId: layer.layerId, meshes: layer.scene.meshes.length, work: layer.renderer.diagnostics() }));
+  diagnostics(): Array<{ layerId: string; meshes: number; work: ReturnType<SceneRenderCoordinator["diagnostics"]>; batching: OverlayBatchWork | null }> {
+    return this.orderedLayers().map((layer) => ({
+      layerId: layer.layerId, meshes: layer.scene.meshes.length, work: layer.renderer.diagnostics(), batching: sceneDrawBatchWork(layer.scene),
+    }));
   }
 
   sortedLayers(): SceneLayerView[] {

@@ -26,6 +26,7 @@ import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { createSpriteQuad, setSpriteQuadSize } from "./sprite-quad";
 import { createText3DMesh } from "./text3d-mesh";
 import { setUnlitMaterial, type UnlitBinding } from "./unlit-material";
+import { updateUnlitBinding } from "./unlit-material-blocks";
 
 /** Scene walks for mirror passes, counted through the real culling. */
 const walks = vi.hoisted(() => ({ count: 0 }));
@@ -234,7 +235,7 @@ it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when 
   drawsOver(10);
   expect(drawsOver(20)).toBe(0);
   // Owners edit a binding in place.
-  binding.color = [1, 0, 0];
+  updateUnlitBinding(binding, { color: [1, 0, 0] });
   expect(drawsOver(10)).toBe(1);
   applyOverlayVisualStyle(text, { opacity: 0.5 });
   expect(drawsOver(10)).toBe(1);
@@ -244,7 +245,7 @@ it("keeps the reflection of unlit Text 3D and sprites, and redraws it once when 
   atlas.uOffset = 0.25;
   expect(drawsOver(10)).toBe(1);
   // A texture another pass draws into changes without the binding: every render redraws.
-  binding.texture = new RenderTargetTexture("capture", 4, scene);
+  updateUnlitBinding(binding, { texture: new RenderTargetTexture("capture", 4, scene) });
   expect(drawsOver(10)).toBe(10);
 });
 
