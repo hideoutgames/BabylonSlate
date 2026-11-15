@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AssetRegistry, createVfsBlobStore, encodeHasset, projectContentRoot, readHassetHeader } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { testAsset } from "../testing/diff-assets";
-import { assetBlobFolder, commitPaths, conflictChoices, groupChanges, groupConflicts, registryChangeLookup, withUnindexedAssets, type ChangeLookup } from "./source-control-changes";
+import { assetBlobFolder, commitPaths, conflictChoices, groupChanges, groupConflicts, registryChangeLookup, withWorkingHeaders, type ChangeLookup } from "./source-control-changes";
 
 const BLOB_A = "a".repeat(64);
 const BLOB_B = "b".repeat(64);
@@ -137,7 +137,7 @@ describe("blobs in more than one content root", () => {
   });
 });
 
-describe("withUnindexedAssets", () => {
+describe("withWorkingHeaders", () => {
   it("reads the header of a chosen changed asset the registry does not index, so its blobs go with it", async () => {
     // A disabled plugin's asset: no content root is mounted for it.
     const path = "plugins/Props/assets/Crate.texture.hasset";
@@ -149,12 +149,26 @@ describe("withUnindexedAssets", () => {
       { path, kind: "added" as const },
     ];
     const read = vi.fn(async () => stored.bytes);
-    const known = await withUnindexedAssets(lookup, changes, new Set([path]), read);
+    const known = await withWorkingHeaders(lookup, changes, new Set([path]), read);
     expect(known(path)).toEqual({ name: "Crate", type: "Texture", blobPaths: [`plugins/Props/assets/.blobs/${sha}`] });
     expect(commitPaths(groupChanges(changes, known), new Set([path]), known)).toEqual([`plugins/Props/assets/.blobs/${sha}`, path]);
-    // Only chosen assets are read; indexed ones keep the registry's answer.
+    // Only chosen assets are read.
     expect(read).toHaveBeenCalledTimes(1);
-    expect(await withUnindexedAssets(lookup, changes, new Set(), read)).toBe(lookup);
+    expect(await withWorkingHeaders(lookup, changes, new Set(), read)).toBe(lookup);
+  });
+
+  it("takes an indexed asset's blobs from the file it commits, not from what the registry last indexed", async () => {
+    const path = "assets/Textures/Rock.texture.hasset";
+    // The registry still lists BLOB_B and the shared blob; the file now stores its chunk in another blob.
+    const stored = await testAsset("Texture", "Rock Albedo", { chunks: [{ id: "payload", kind: "payload", mime: "application/octet-stream", data: new Uint8Array(70 * 1024).fill(9) }] });
+    const sha = [...stored.blobs.keys()][0]!;
+    const changes = [
+      { path: blob(sha), kind: "added" as const },
+      { path: blob(BLOB_B), kind: "added" as const },
+      { path, kind: "modified" as const },
+    ];
+    const known = await withWorkingHeaders(lookup, changes, new Set([path]), async () => stored.bytes);
+    expect(commitPaths(groupChanges(changes, known), new Set([path]), known)).toEqual([blob(sha), path].sort());
   });
 });
 

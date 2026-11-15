@@ -132,6 +132,10 @@ describe("editor boot imports", () => {
       "panels/diff-graph-view.tsx",
       "panels/diff-texture-view.tsx",
       "components/source-control-revert-flow.tsx",
+      "components/source-control-branch-flow.tsx",
+      "components/source-control-new-branch-dialog.tsx",
+      "components/source-control-rewrite.tsx",
+      "panels/history-panel.tsx",
       "services/source-control-diff-loader.ts",
       "services/source-control-restore.ts",
     ].includes(file))).toEqual([]);

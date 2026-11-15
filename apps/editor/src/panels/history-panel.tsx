@@ -360,7 +360,8 @@ export function HistoryPanelContents() {
             </div>
             <ScrollArea className="min-h-0 flex-1 border-t border-border bg-card @2xl/history:border-t-0">
               {shown === WORKING ? <WorkingDetails rows={working} /> : null}
-              {commit ? <CommitDetails commit={commit} asset={asset} lookup={lookup} now={now} /> : null}
+              {/* Compare and Revert act on the asset the window names, so only This Asset offers them. */}
+              {commit ? <CommitDetails commit={commit} asset={scope === "asset" ? asset : null} lookup={lookup} now={now} /> : null}
             </ScrollArea>
           </div>
         </div>

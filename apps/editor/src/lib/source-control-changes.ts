@@ -119,8 +119,8 @@ export function groupChanges(changes: readonly FileChange[], lookup: ChangeLooku
  * `.hasset` is never committed without its blobs, which a teammate would
  * need to load it. A changed blob no chosen asset references stays out (an
  * edit's that a revert abandoned, an undone import's): nothing would load
- * it, and pushing it would only store a dead LFS object. A chosen asset the
- * registry does not index needs `withUnindexedAssets` in `lookup`.
+ * it, and pushing it would only store a dead LFS object. `lookup` should
+ * describe the chosen assets by the files committed (`withWorkingHeaders`).
  */
 export function commitPaths(grouped: GroupedChanges, chosen: ReadonlySet<string>, lookup: ChangeLookup): string[] {
   // A row's paths after its own file are the changed blobs it claimed.
@@ -138,12 +138,14 @@ export function commitPaths(grouped: GroupedChanges, chosen: ReadonlySet<string>
 }
 
 /**
- * `lookup`, extended with each chosen, changed asset the registry does not
- * index (a disabled plugin's, an Editor Only extension's): its blobs come
- * from its own header, read from the working copy, so a commit takes them
- * with it. Only those assets are read; with none, `lookup` itself.
+ * `lookup` with each chosen, changed asset described by its own header, read
+ * from the working copy (the commit reads those files anyway): the blobs a
+ * commit takes are the ones the file it commits references, whatever the
+ * registry last indexed, and an asset the registry does not index (a
+ * disabled plugin's, an Editor Only extension's) still goes with its blobs.
+ * Only those assets are read; with none, `lookup` itself.
  */
-export async function withUnindexedAssets(
+export async function withWorkingHeaders(
   lookup: ChangeLookup,
   changes: readonly FileChange[],
   chosen: ReadonlySet<string>,
@@ -151,13 +153,20 @@ export async function withUnindexedAssets(
 ): Promise<ChangeLookup> {
   const found = new Map<string, ChangedAssetInfo>();
   for (const { path, kind } of changes) {
-    if (kind === "deleted" || !chosen.has(path) || !path.endsWith(".hasset") || lookup(path)) continue;
-    const header = readHassetHeader(await read(path));
+    if (kind === "deleted" || !chosen.has(path) || !path.endsWith(".hasset")) continue;
+    const bytes = await read(path);
+    let header: ReturnType<typeof readHassetHeader>;
+    try {
+      header = readHassetHeader(bytes);
+    } catch {
+      // A file that is no readable asset loads no blob; the registry's answer stands.
+      continue;
+    }
     const folder = assetBlobFolder(path);
     const blobPaths = folder ? header.chunks.flatMap((chunk) => ("blob" in chunk.locator ? [`${folder}/${chunk.locator.blob}`] : [])) : [];
     found.set(path, { name: header.name, type: header.type, blobPaths });
   }
-  return found.size === 0 ? lookup : (path) => lookup(path) ?? found.get(path) ?? null;
+  return found.size === 0 ? lookup : (path) => found.get(path) ?? lookup(path);
 }
 
 /** One Pull Conflicts row: an asset with the files of it changed on both sides, or another file. */

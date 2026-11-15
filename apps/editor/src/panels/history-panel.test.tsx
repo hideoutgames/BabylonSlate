@@ -63,6 +63,32 @@ function rowIds(): string[] {
   return within(screen.getByTestId("history-list")).getAllByRole("button").map((row) => row.getAttribute("data-testid")!.replace("history-row-", ""));
 }
 
+describe("History window at the end of a shallow clone", () => {
+  const commit = (id: string, message: string) => ({ id: id.padStart(40, "0"), message, author: { name: "Sam", email: "" }, timestamp: 1_700_000_000, parents: [] });
+
+  it("reads the pages again with older history, since that may drop the clone's commit, and keeps Load Older History while more may come", async () => {
+    const sync = await integratedSync();
+    state.sync = sync.service;
+    const read = vi.spyOn(sync.service, "history")
+      .mockResolvedValueOnce({ commits: [commit("c", "Cloned")], hasMore: true, shallow: true })
+      // Older history showed the clone's commit did not change it; nothing older that did is downloaded yet.
+      .mockResolvedValueOnce({ commits: [commit("b", "Older")], hasMore: true, shallow: true });
+    render(
+      <SourceControlActionsProvider>
+        <HistoryPanelContents />
+      </SourceControlActionsProvider>,
+    );
+    const older = await screen.findByTestId("history-load-older");
+    expect(screen.getByText("Older history is not downloaded yet.")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(older);
+    });
+    expect(read.mock.calls.map(([options]) => options)).toEqual([{ limit: HISTORY_PAGE }, { limit: 1 + HISTORY_PAGE, deepen: true }]);
+    await waitFor(() => expect(rowIds()).toEqual([commit("b", "").id]));
+    expect(screen.getByTestId("history-load-older")).toBeTruthy();
+  });
+});
+
 describe("History window", () => {
   it("lists the asset's commits newest first after its uncommitted changes, and the chosen commit's message, author, id and assets", async () => {
     const { service } = await history();
@@ -90,6 +116,10 @@ describe("History window", () => {
     fireEvent.click(screen.getByTestId("history-scope-all"));
     await waitFor(() => expect(rowIds()).toEqual(["working", rock!.id, forest!.id, seed!.id]));
     expect(screen.getByTestId("history-title").textContent).toBe("All Assets");
+    // Compare and Revert act on one asset, which All Assets does not name.
+    expect(screen.getByTestId("history-details").textContent).toContain("Brighten the forest");
+    expect(screen.queryByTestId("history-compare")).toBeNull();
+    expect(screen.queryByTestId("history-revert")).toBeNull();
   });
 
   it("compares the asset at a commit with the working copy, and reverts it to that version after a confirmation", async () => {
@@ -126,6 +156,7 @@ describe("History window", () => {
     await waitFor(() => expect(screen.queryByTestId("history-load-older")).toBeNull());
     expect(read.mock.calls.map(([options]) => options)).toEqual([{ limit: HISTORY_PAGE }, { limit: HISTORY_PAGE, skip: HISTORY_PAGE, deepen: true }]);
     // Rock 51 to Rock 2 came first; the rest of the 53 now.
+    expect(read).toHaveBeenCalledTimes(2);
     expect((await read.mock.results[1]!.value).commits.map((commit: { message: string }) => commit.message)).toEqual(["Rock 1", "Rock 0", "Seed"]);
   });
 });

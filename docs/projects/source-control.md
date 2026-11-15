@@ -93,7 +93,7 @@ Haptic reads changes after you save (while a game covers the editor, once you ar
 3. Keep **Push After Commit** on to send the commit at once, or turn it off to commit only on this device.
 4. Choose **Commit N Assets**.
 
-Each asset goes with the large data it uses. Large data no asset in the commit uses, such as what an edit you reverted had added, stays on your device and is never committed or pushed.
+A commit takes each asset with the large data it uses. Large data that no asset in the commit uses, such as what an edit you reverted had added, stays on your device and out of the commit.
 
 **Push** sends your commits. Before it does, Haptic checks the locks on what it sends and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in. Haptic then checks the host for new commits; if that check fails (**Could Not Check For Changes**), the push still went through.
 
@@ -144,8 +144,7 @@ Haptic reads the base version from the project's history, so a diff needs no net
 - **This Asset** shows the commits that changed the asset you last compared, or the one you were editing when you chose **Open History**. **All Assets** shows every commit on your branch.
 - **Uncommitted Changes** comes first while there are any; choose it to list them, and an asset to see its diff.
 - Choose a commit to see its full message, author, time and short id (**Copy Commit Id** copies the full one), and the assets it changed: choose one to see what that commit did to it.
-- **Compare With Working Copy** opens the asset's diff from that commit to your working copy.
-- **Revert To This Version** puts the asset back as that commit has it, as [Revert Asset](#revert-an-asset) does.
+- With **This Asset**, **Compare With Working Copy** opens the asset's diff from that commit to your working copy, and **Revert To This Version** puts the asset back as that commit has it, as [Revert Asset](#revert-an-asset) does.
 - **Load Older History** reads more commits. A cloned project starts with only its latest commit, so older history is downloaded from the host the first time you ask for it.
 
 ### Revert an asset
