@@ -174,6 +174,22 @@ describe("History window", () => {
     expect(screen.queryByTestId("history-revert")).toBeNull();
   });
 
+  it("reads its list again when the pickers' reads of other assets pushed it out of the shared lists", async () => {
+    const sync = await integratedSync();
+    state.sync = sync.service;
+    render(
+      <SourceControlActionsProvider>
+        <HistoryPanelContents />
+      </SourceControlActionsProvider>,
+    );
+    await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
+    act(() => {
+      for (let index = 0; index < 8; index += 1) sync.service.commitHistory.load(`assets/Other${index}.hasset`);
+    });
+    await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
+    expect(sync.service.commitHistory.list(null)?.ready).toBe(true);
+  });
+
   it("reads one page of the log, and the next only when asked", async () => {
     const sync = await integratedSync();
     state.sync = sync.service;

@@ -230,9 +230,11 @@ export function HistoryPanelContents() {
   const history = sync.commitHistory;
   const list = useSyncExternalStore(history.subscribe, () => history.list(path));
 
+  // Also once the list is gone: other assets' reads may have pushed it out of the few kept.
+  const missing = list === null;
   useEffect(() => {
-    if (active) history.load(path);
-  }, [active, branch, head, history, path]);
+    if (active && missing) history.load(path);
+  }, [active, branch, head, history, missing, path]);
 
   const pages = list?.ready ? list : null;
   const working = useMemo(() => (path ? snapshot.rows.filter((row) => row.id === path) : snapshot.rows), [path, snapshot.rows]);

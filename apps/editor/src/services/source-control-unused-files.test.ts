@@ -71,6 +71,10 @@ describe("Remove Unused Files", () => {
     await storage.writeBinary("plugins/Props/assets/Crate.texture.hasset", crate.bytes);
     // Rock's blob copied into the plugin's folder: only the plugin's own assets would load it.
     await storage.writeBinary(`plugins/Props/assets/.blobs/${rock.sha}`, rock.blob);
+    // Rock saved again, not committed yet: its new blob is untracked, and the tracked asset uses it.
+    const edited = await texture("Rock", 6);
+    await storage.writeBinary(`assets/.blobs/${edited.sha}`, edited.blob);
+    await storage.writeBinary("assets/Rock.texture.hasset", edited.bytes);
     await service.refreshStatus();
 
     const unused = [`assets/.blobs/${lost.sha}`, `plugins/Props/assets/.blobs/${rock.sha}`].sort();
@@ -79,7 +83,7 @@ describe("Remove Unused Files", () => {
     expect(writes).toEqual(["Read-only while removing unused files"]);
 
     for (const path of unused) expect(await storage.exists(path)).toBe(false);
-    for (const path of [`assets/.blobs/${rock.sha}`, `assets/.blobs/${stale.sha}`, `assets/.blobs/${fern.sha}`, `plugins/Props/assets/.blobs/${crate.sha}`]) {
+    for (const path of [`assets/.blobs/${rock.sha}`, `assets/.blobs/${edited.sha}`, `assets/.blobs/${stale.sha}`, `assets/.blobs/${fern.sha}`, `plugins/Props/assets/.blobs/${crate.sha}`]) {
       expect(await storage.exists(path)).toBe(true);
     }
     expect(await service.findUnusedFiles()).toEqual({ paths: [], bytes: 0 });
