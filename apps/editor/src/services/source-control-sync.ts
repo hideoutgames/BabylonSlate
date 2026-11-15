@@ -12,6 +12,7 @@ import {
   type SyncPort,
 } from "@haptic/source-control";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
+import { TransferBytes } from "../lib/transfer-bytes";
 import { commitPaths, groupChanges, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
@@ -57,10 +58,9 @@ export interface SyncLocks {
 
 export type SyncOperationKind = "fetch" | "commit" | "pull" | "push" | "publish";
 
+/** The running operation; its bytes are in `SourceControlSyncService.transfer`, which only transfer labels read. */
 export interface SyncOperation {
   kind: SyncOperationKind;
-  /** Bytes sent and received so far; transfers carry whole bodies, so there is no total. */
-  bytes: number;
 }
 
 export interface SyncProblem {
@@ -182,6 +182,8 @@ export class SourceControlSyncService {
   private queue: Promise<unknown> = Promise.resolve();
   /** The running operation's cancel. */
   private running: AbortController | null = null;
+  /** Bytes the running operation has sent and received, apart from the snapshot: only transfer labels read it. */
+  readonly transfer = new TransferBytes();
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -258,6 +260,7 @@ export class SourceControlSyncService {
     this.storage = null;
     this.identity = "";
     this.input = null;
+    this.transfer.reset();
     this.set(IDLE);
   }
 
@@ -451,8 +454,7 @@ export class SourceControlSyncService {
       testMode: input.testMode,
       transfer: {
         bytes: (count) => {
-          const operation = this.snapshot.operation;
-          if (operation && revision === this.revision) this.set({ ...this.snapshot, operation: { ...operation, bytes: operation.bytes + count } });
+          if (revision === this.revision && this.snapshot.operation) this.transfer.add(count);
         },
       },
     };
@@ -506,7 +508,10 @@ export class SourceControlSyncService {
         if (revision === this.revision) this.set({ ...this.snapshot, ...patch });
       };
       // Starting a commit, pull, push or publish replaces the last problem; a fetch keeps it.
-      if (kind) update({ operation: { kind, bytes: 0 }, ...(kind === "fetch" ? {} : { problem: null }) });
+      if (kind) {
+        this.transfer.reset();
+        update({ operation: { kind }, ...(kind === "fetch" ? {} : { problem: null }) });
+      }
       try {
         await work({ port, input, storage, signal: controller.signal, update });
         if (this.snapshot.problem?.title === title) update({ problem: null });

@@ -46,11 +46,11 @@ export function bytesLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-/** The running transfer, as the status bar and the Changes window name it. */
-export function transferLabel(snapshot: Pick<SyncSnapshot, "operation" | "ahead" | "behind">): string | null {
+/** The running transfer with its `bytes` so far, as the status bar and the Changes window name it. */
+export function transferLabel(snapshot: Pick<SyncSnapshot, "operation" | "ahead" | "behind">, transferred: number): string | null {
   const operation = snapshot.operation;
   if (!operation) return null;
-  const bytes = operation.bytes > 0 ? ` · ${bytesLabel(operation.bytes)}` : "";
+  const bytes = transferred > 0 ? ` · ${bytesLabel(transferred)}` : "";
   if (operation.kind === "push") return `Pushing ${commitsLabel(snapshot.ahead)}${bytes}`;
   if (operation.kind === "pull") return `Pulling ${commitsLabel(snapshot.behind)}${bytes}`;
   if (operation.kind === "publish") return `Publishing${bytes}`;

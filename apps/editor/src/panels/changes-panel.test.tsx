@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import { integratedSync } from "../testing/integrated-sync";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
@@ -88,6 +89,49 @@ describe("Changes window", () => {
     expect(screen.getByTestId("changes-incoming").textContent).toContain("Tune rock");
     expect(screen.getByTestId("changes-incoming").textContent).not.toContain("Longer body");
     expect(screen.getByTestId("changes-status").textContent).toMatch(/^1 commit to pull\. Checked just now\.$/);
+  });
+
+  describe("with many changes", () => {
+    async function manyChanges(count: number) {
+      const { service, storage } = await integratedSync();
+      state.sync = service;
+      for (let index = 0; index < count; index += 1) await storage.writeText(`notes/note-${index}.txt`, String(index));
+      await service.refreshStatus();
+      return service;
+    }
+
+    it("mounts only the rows its scroll region shows", async () => {
+      // jsdom lays nothing out: give the scroll regions a height of ten rows.
+      const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute("data-slot") === "scroll-area-viewport" ? 280 : 0;
+      });
+      try {
+        await manyChanges(300);
+        renderPanel();
+        expect(screen.getByTestId("changes-count").textContent).toBe("300");
+        const mounted = screen.getAllByTestId(/^changes-row-/).length;
+        expect(mounted).toBeGreaterThanOrEqual(10);
+        expect(mounted).toBeLessThan(30);
+      } finally {
+        height.mockRestore();
+      }
+    });
+
+    it("re-renders no row and asks no lock state while a commit message is typed", async () => {
+      await manyChanges(40);
+      const lockState = vi.spyOn(SourceControlService.prototype, "lockStateForPath");
+      try {
+        renderPanel();
+        lockState.mockClear();
+        for (const text of ["F", "Fi", "Fix", "Fix notes"]) {
+          fireEvent.change(screen.getByTestId("changes-commit-message"), { target: { value: text } });
+        }
+        expect(lockState).not.toHaveBeenCalled();
+        expect(screen.getByTestId("changes-commit").hasAttribute("disabled")).toBe(false);
+      } finally {
+        lockState.mockRestore();
+      }
+    });
   });
 
   it("offers Add Git LFS Rule where a commit of blobs is refused, and commits once the rule is in", async () => {

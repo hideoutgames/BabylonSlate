@@ -1,3 +1,4 @@
+import { Profiler } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cancelledError, SyncError } from "@haptic/source-control";
@@ -79,6 +80,28 @@ describe("Clone Project", () => {
     expect(signal.aborted).toBe(true);
     expect(screen.queryByTestId("clone-progress")).toBeNull();
     expect(screen.queryByTestId("clone-error")).toBeNull();
+  });
+
+  it("shows the bytes received without re-rendering for every request", async () => {
+    let transfer!: TransferMonitor;
+    const onClone = vi.fn((_request: unknown, monitor: TransferMonitor) => {
+      transfer = monitor;
+      return new Promise<void>(() => {});
+    });
+    let commits = 0;
+    render(
+      <Profiler id="clone" onRender={() => { commits += 1; }}>
+        <CloneProjectDialog open onOpenChange={() => {}} existingNames={[]} onClone={onClone} />
+      </Profiler>,
+    );
+    await chooseGame();
+    fireEvent.click(screen.getByTestId("clone-submit"));
+    await waitFor(() => expect(screen.getByTestId("clone-progress")).toBeTruthy());
+    commits = 0;
+    // Each request of an LFS download ends on its own.
+    for (let request = 0; request < 200; request += 1) act(() => transfer.bytes(1024));
+    await waitFor(() => expect(screen.getByTestId("clone-progress").textContent).toContain("200 KB received"));
+    expect(commits).toBeLessThan(10);
   });
 
   it("reports a clone that fails for another reason", async () => {

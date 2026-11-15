@@ -270,6 +270,37 @@ describe("SourceControlSyncService", () => {
     });
   });
 
+  it("re-renders no snapshot reader for transfer bytes, and publishes the byte count at most every interval", async () => {
+    const { service, input, storage, spied, factory } = await setup();
+    await service.configure(input("integrated"));
+    const { transfer } = vi.mocked(factory.open).mock.calls[0]![0];
+    await storage.writeText("assets/Rock.texture.hasset", "R2");
+    await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: false });
+    let finishPush!: () => void;
+    spied.push.mockImplementationOnce(() => new Promise((resolve) => {
+      finishPush = () => resolve({ head: "", uploaded: 0 });
+    }));
+    const pushing = service.push();
+    await vi.waitFor(() => expect(spied.push).toHaveBeenCalled());
+    vi.useFakeTimers();
+    const snapshotReader = vi.fn();
+    service.subscribe(snapshotReader);
+    // An LFS push of 500 objects: a PUT and a verify each.
+    for (let request = 0; request < 1000; request += 1) transfer.bytes(10);
+    expect(snapshotReader).not.toHaveBeenCalled();
+    const byteReader = vi.fn();
+    service.transfer.subscribe(byteReader);
+    expect(service.transfer.getSnapshot()).toBe(0);
+    vi.advanceTimersByTime(99);
+    expect(byteReader).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(byteReader).toHaveBeenCalledTimes(1);
+    expect(service.transfer.getSnapshot()).toBe(10_000);
+    vi.useRealTimers();
+    finishPush();
+    await pushing;
+  });
+
   describe("after a push or pull", () => {
     it("keeps a push that succeeded as pushed when the check for changes after it fails", async () => {
       const { service, input, storage, locks, port } = await setup();

@@ -22,6 +22,7 @@ import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group
 import { cn } from "@haptic/ui/lib/utils";
 import type { CloneProjectRequest } from "../context/document-context-types";
 import { agoLabel, bytesLabel } from "../lib/source-control-labels";
+import { TransferBytes, useTransferBytes } from "../lib/transfer-bytes";
 import type { TransferMonitor } from "../services/source-control-sync";
 import { signInPromptFor } from "../services/source-control-service";
 import { useNativeHomepageAccount } from "./homepage-account-context";
@@ -35,6 +36,17 @@ import {
 import { HostAccountState } from "./source-control-host-account";
 
 type CloneHost = ApiHost | "url";
+
+/** The running clone and the bytes received so far; re-renders on its own as they grow. */
+function CloneProgress({ received }: { received: TransferBytes }) {
+  const bytes = useTransferBytes(received);
+  return (
+    <div role="status" className="flex flex-col gap-1 text-xs text-muted-foreground" data-testid="clone-progress">
+      <span>Cloning{bytes > 0 ? ` · ${bytesLabel(bytes)} received` : "…"}</span>
+      <Progress value={null} aria-label="Cloning" />
+    </div>
+  );
+}
 
 /**
  * Clone Project (project browser): a repository from GitHub or GitLab (the
@@ -66,7 +78,9 @@ export default function CloneProjectDialog({
   const [branch, setBranch] = useState("main");
   const [name, setName] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
-  const [cloning, setCloning] = useState<{ bytes: number } | null>(null);
+  const [cloning, setCloning] = useState(false);
+  // Requests end far more often than the label needs to change: only the progress line reads this.
+  const [received] = useState(() => new TransferBytes());
   const [error, setError] = useState<string | null>(null);
   const cancel = useRef<AbortController | null>(null);
   // Returning from the browser after sign-in, or a long clone, must not unmount the dialog on mobile.
@@ -135,12 +149,11 @@ export default function CloneProjectDialog({
   const clone = async () => {
     const controller = new AbortController();
     cancel.current = controller;
-    setCloning({ bytes: 0 });
+    received.reset();
+    setCloning(true);
     setError(null);
     const release = holdSessionCheck?.();
-    const transfer: TransferMonitor = {
-      bytes: (count) => setCloning((current) => (current ? { bytes: current.bytes + count } : current)),
-    };
+    const transfer: TransferMonitor = { bytes: (count) => received.add(count) };
     try {
       await onClone({ repositoryUrl, branch: branch.trim(), name: trimmedName }, transfer, controller.signal);
     } catch (failure) {
@@ -149,11 +162,11 @@ export default function CloneProjectDialog({
     } finally {
       release?.();
       cancel.current = null;
-      setCloning(null);
+      setCloning(false);
     }
   };
 
-  const busy = cloning !== null;
+  const busy = cloning;
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next); }}>
       <DialogContent className="homepage-theme sm:max-w-lg" data-testid="clone-project-dialog">
@@ -288,12 +301,7 @@ export default function CloneProjectDialog({
               data-testid="clone-name"
             />
           </Field>
-          {cloning ? (
-            <div role="status" className="flex flex-col gap-1 text-xs text-muted-foreground" data-testid="clone-progress">
-              <span>Cloning{cloning.bytes > 0 ? ` · ${bytesLabel(cloning.bytes)} received` : "…"}</span>
-              <Progress value={null} aria-label="Cloning" />
-            </div>
-          ) : null}
+          {cloning ? <CloneProgress received={received} /> : null}
           {error ? (
             <Alert variant="destructive" data-testid="clone-error">
               <AlertTitle>Could Not Clone</AlertTitle>

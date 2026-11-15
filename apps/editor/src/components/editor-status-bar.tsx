@@ -21,10 +21,11 @@ import {
   DropdownMenuTrigger,
 } from "@haptic/ui/components/dropdown-menu";
 import { Progress } from "@haptic/ui/components/progress";
-import { useIntegratedSyncState, useSaveState } from "../context/document-context";
+import { useIntegratedSync, useIntegratedSyncState, useSaveState } from "../context/document-context";
 import { useValidation } from "../context/validation-context";
 import { getBuildLabel } from "../lib/build-identity";
 import { changesLabel, commitsLabel, transferLabel } from "../lib/source-control-labels";
+import { useTransferBytes } from "../lib/transfer-bytes";
 import type { SyncSnapshot } from "../services/source-control-sync";
 import { usePhoneLayout } from "../shell/use-platform-layout";
 import { useSourceControlActions } from "./source-control-actions";
@@ -49,13 +50,23 @@ function saveProblemLabel(
   return null;
 }
 
+/** The running pull, push or publish with its bytes; the only part of the bar that re-renders as they grow. */
+function TransferProgress({ snapshot }: { snapshot: SyncSnapshot }) {
+  const transfer = transferLabel(snapshot, useTransferBytes(useIntegratedSync().transfer));
+  return (
+    <span role="status" className="editor-status-transfer" data-testid="status-source-control-transfer">
+      <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
+      {transfer}
+      <Progress value={null} aria-label={transfer ?? undefined} className="editor-status-progress" />
+    </span>
+  );
+}
+
 /** Integrated mode leads the status bar: the branch menu, the change count, and Pull and Push (or the running transfer). */
 function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
   const actions = useSourceControlActions();
   const count = snapshot.rows.length;
-  const transfer = snapshot.operation && snapshot.operation.kind !== "fetch" && snapshot.operation.kind !== "commit"
-    ? transferLabel(snapshot)
-    : null;
+  const transferring = snapshot.operation !== null && snapshot.operation.kind !== "fetch" && snapshot.operation.kind !== "commit";
   const busy = snapshot.operation !== null && snapshot.operation.kind !== "fetch";
   return (
     <div className="editor-status-source-control" data-testid="status-source-control">
@@ -111,12 +122,8 @@ function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
         {count > 0 ? <span className="editor-status-dot" aria-hidden="true" /> : null}
         {changesLabel(count)}
       </Button>
-      {transfer ? (
-        <span role="status" className="editor-status-transfer" data-testid="status-source-control-transfer">
-          <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
-          {transfer}
-          <Progress value={null} aria-label={transfer} className="editor-status-progress" />
-        </span>
+      {transferring ? (
+        <TransferProgress snapshot={snapshot} />
       ) : (
         <>
           {snapshot.behind > 0 ? (
@@ -133,7 +140,7 @@ function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
           ) : null}
         </>
       )}
-      {snapshot.problem && !transfer ? (
+      {snapshot.problem && !transferring ? (
         // What failed (a refused push names the lock holders in Changes), wherever it was started.
         <Button variant="ghost" size="xs" className="editor-status-button" title={snapshot.problem.message} data-testid="status-source-control-problem" onClick={actions.openSourceControl}>
           <CircleAlertIcon data-icon="inline-start" className="text-destructive" />
