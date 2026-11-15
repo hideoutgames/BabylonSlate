@@ -30,6 +30,9 @@ export function readinessProbeListScope(): ReadonlySet<AbstractMesh> | undefined
 /** Whether scoped probes are followed by a whole one that must agree (`verifyScopedReadinessProbes`). */
 let verifies = false;
 
+/** The mesh a probe last asked, kept only while verifying: a disagreement names the mesh that asked for an Effect. */
+let asked: AbstractMesh | undefined;
+
 /** Runs `probe` asking only `meshes`. */
 export function withReadinessProbeScope<T>(meshes: ReadonlySet<AbstractMesh>, probe: () => T): T {
   const previous = scope;
@@ -46,7 +49,14 @@ export function withReadinessProbeScope<T>(meshes: ReadonlySet<AbstractMesh>, pr
  * source is: a pass that lists only the instances probes the source's batch through them.
  */
 export function outsideReadinessProbeScope(mesh: AbstractMesh): boolean {
-  return scope !== undefined && !scope.has(mesh) && !scope.has(drawingMesh(mesh));
+  const outside = scope !== undefined && !scope.has(mesh) && !scope.has(drawingMesh(mesh));
+  if (verifies && !outside) asked = mesh;
+  return outside;
+}
+
+/** While verifying, the mesh a probe's per-mesh check last asked (`outsideReadinessProbeScope`); undefined otherwise. */
+export function lastProbedMesh(): AbstractMesh | undefined {
+  return verifies ? asked : undefined;
 }
 
 /**
@@ -87,6 +97,7 @@ export function isRenderTargetProbeReady(target: RenderTargetTexture): boolean {
  */
 export function verifyScopedReadinessProbes(enabled: boolean): void {
   verifies = enabled;
+  asked = undefined;
 }
 
 export function verifiesScopedReadinessProbes(): boolean {

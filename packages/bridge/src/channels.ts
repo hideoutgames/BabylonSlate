@@ -1060,6 +1060,8 @@ export type CommandMessage =
         flipX?: boolean;
         flipY?: boolean;
       }>;
+      /** Animation Tick Mode When Visible: render poses the actor only while a camera (or a shadow) can see it. */
+      whenVisible?: boolean;
     }
   /**
    * The followed Behaviour Tree's live state: sent when it changes, and once as the follow starts.

@@ -553,7 +553,7 @@ describe("createPlayMesh", () => {
     binding.modelSources = installModelSources(binding);
     createPlayMesh(scene, 2, "box", "hero-model", binding);
     await binding.slotAnimLoads?.get(2);
-    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+    const group = binding.slotPoseClips?.get(2)?.find((entry) => {
       return entry.name === "Idle" && entry.clipAssetGuid === "hero-model";
     });
     expect(group).toBeDefined();
@@ -631,7 +631,7 @@ describe("createPlayMesh", () => {
     expect(partB?.material).toBe(slot1);
   });
 
-  it("seeks a paused GLB clip so animState moves a targeted node", async () => {
+  it("poses a GLB clip so animState moves a targeted node, never starting its group", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -666,14 +666,14 @@ describe("createPlayMesh", () => {
       clipAssetGuid: "hero-model",
     };
     applyAnimStateToScene(host, command);
-    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.animatables).toHaveLength(0);
     const atStart = poseAt();
     applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
     expect(poseAt()).not.toEqual(atStart);
-    expect(native!.isPlaying).toBe(false);
+    expect(native!.isPlaying).not.toBe(true);
   });
 
-  it("seeks a named clip on a multi-mesh hierarchy GLB", async () => {
+  it("poses a named clip on a multi-mesh hierarchy GLB", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -708,11 +708,11 @@ describe("createPlayMesh", () => {
       clipAssetGuid: "hero-model",
     };
     applyAnimStateToScene(host, command);
-    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.animatables).toHaveLength(0);
     const atStart = poseAt();
     applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
     expect(poseAt()).not.toEqual(atStart);
-    expect(native!.isPlaying).toBe(false);
+    expect(native!.isPlaying).not.toBe(true);
   });
 
   it("adopts a pack GLB with UVs on every visual mesh and slot 0 on all parts", async () => {
@@ -748,7 +748,7 @@ describe("createPlayMesh", () => {
     }
   });
 
-  it("seeks pack-GLB Idle and Walk state jumps on paused groups with live animatables", async () => {
+  it("poses pack-GLB Idle and Walk state jumps without starting their groups", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -793,9 +793,10 @@ describe("createPlayMesh", () => {
     applyAnimStateToScene(host, { ...command, slotId: 3, normalisedTime: 0.75 });
     const otherIdle = otherPose();
     applyAnimStateToScene(host, command);
-    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.animatables).toHaveLength(0);
     const atStart = poseAt();
-    applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
+    // Idle sways and loops: its first, middle and last frames hold the same pose.
+    applyAnimStateToScene(host, { ...command, normalisedTime: 0.25 });
     expect(poseAt()).not.toEqual(atStart);
     applyAnimStateToScene(host, {
       ...command,
@@ -819,7 +820,7 @@ describe("createPlayMesh", () => {
     applyAnimStateToScene(host, command);
     expect(poseAt()).toEqual(atStart);
     expect(otherPose()).toEqual(otherIdle);
-    expect(native!.isPlaying).toBe(false);
+    expect(native!.isPlaying).not.toBe(true);
   });
 
   it("stamps native AnimationGroups with Animation asset guids when mapped", async () => {
@@ -834,7 +835,7 @@ describe("createPlayMesh", () => {
     ]);
     createPlayMesh(scene, 2, "box", "hero-model", binding);
     await binding.slotAnimLoads?.get(2);
-    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+    const group = binding.slotPoseClips?.get(2)?.find((entry) => {
       return entry.name === "Idle" && entry.clipAssetGuid === "hero-idle-anim";
     });
     expect(group).toBeDefined();
@@ -865,7 +866,7 @@ describe("createPlayMesh", () => {
     ]);
     createPlayMesh(scene, 2, "box", "hero-model", binding);
     await binding.slotAnimLoads?.get(2);
-    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+    const group = binding.slotPoseClips?.get(2)?.find((entry) => {
       return entry.name === "Idle" && entry.clipAssetGuid === "retargeted-idle";
     });
     expect(group).toBeDefined();
@@ -908,7 +909,7 @@ describe("createPlayMesh", () => {
     });
     descendant!.computeWorldMatrix(true);
     expect(descendant!.getAbsolutePosition().x).toBeCloseTo(10);
-    const group = binding.slotAnimationGroups?.get(2)?.find(
+    const group = binding.slotPoseClips?.get(2)?.find(
       (entry) => entry.name === "Idle",
     );
     expect(group).toBeDefined();

@@ -7,6 +7,8 @@ import {
   INT,
   STRING,
   BOXED_WILDCARD,
+  ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+  enumRef,
   objectRef,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
@@ -193,6 +195,35 @@ export const animationNodes: NodeDefinition[] = [
       ctx.emit(
         `ctx.jumpAnimGraphState(${ctx.input("target")}, ${ctx.input("state")});`,
       );
+    },
+  },
+  {
+    id: "anim.actor.getTickMode",
+    title: "Get Animation Tick Mode",
+    category: "animation",
+    pure: true,
+    searchAliases: ["visibility based tick", "update when visible", "pause animation"],
+    pins: () => [
+      subject(pin("target", "Target", "in", objectRef("AnimationGraphComponent"))),
+      pin("tickMode", "Tick Mode", "out", enumRef(ENGINE_ANIMATION_TICK_MODE_ENUM_ID)),
+    ],
+    codegen: (ctx) => ({
+      tickMode: `ctx.getAnimGraphTickMode(${ctx.input("target")})`,
+    }),
+  },
+  {
+    id: "anim.actor.setTickMode",
+    title: "Set Animation Tick Mode",
+    category: "animation",
+    searchAliases: ["visibility based tick", "update when visible", "pause animation", "stop animation"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      subject(pin("target", "Target", "in", objectRef("AnimationGraphComponent"))),
+      pin("tickMode", "Tick Mode", "in", enumRef(ENGINE_ANIMATION_TICK_MODE_ENUM_ID), "data", true, "Always"),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.setAnimGraphTickMode(${ctx.input("target")}, ${ctx.input("tickMode")});`);
     },
   },
 ];

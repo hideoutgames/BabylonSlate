@@ -21,6 +21,7 @@ import type {
   AuthoredLightProperties,
 } from "./scene-illumination";
 import type { BoneAttachment } from "./bone-attachment";
+import type { PoseClip } from "./anim-pose";
 import type { MaterialResolveOptions } from "./material-library";
 import { AreaRectLightGroup } from "./area-rect-light";
 import type { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
@@ -83,20 +84,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   meshSorting: Map<number, Pick<AssignMeshCommand, "actorGuid" | "sortingLayer" | "orderInLayer" | "castShadows" | "receiveShadows" | "shadingMode">>;
   /** Second sprite mesh used for two-layer clip crossfades. */
   spriteOverlays?: Map<number, Mesh>;
-  /** Per-slot AnimationGroups keyed after model load (not the global scene list). */
-  slotAnimationGroups?: Map<
-    number,
-    Array<{
-      name: string;
-      from: number;
-      to: number;
-      clipAssetGuid?: string;
-      pause(): void;
-      goToFrame(frame: number): void;
-      setWeightForAllAnimatables?(weight: number): void;
-      dispose?(): void;
-    }>
-  >;
+  /** Per-slot 3D clips, bound from the slot's own model instance once it loads (never another actor's). */
+  slotPoseClips?: Map<number, Array<PoseClip & { dispose?(): void }>>;
   /** Last animState per slot, replayed when groups become available. */
   pendingAnimState?: Map<
     number,
@@ -106,7 +95,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   slotAnimLoads?: Map<number, Promise<void>>;
   /** Cancels in-flight loads when incremented. */
   slotAnimEpoch?: Map<number, number>;
-  /** Called after a slot's AnimationGroups are registered (replay pending seek). */
+  /** Called after a slot's clips are registered (replays its pending animation state). */
   slotAnimReady?: (slotId: number) => void;
   /** Move external render users to a prepared successor before retiring its predecessor. */
   slotVisualReady?: (slotId: number, successor: Mesh) => void;
@@ -272,7 +261,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     meshParts: new Map(),
     meshSorting: new Map(),
     spriteOverlays: new Map(),
-    slotAnimationGroups: new Map(),
+    slotPoseClips: new Map(),
     pendingAnimState: new Map(),
     slotAnimLoads: new Map(),
     slotAnimEpoch: new Map(),

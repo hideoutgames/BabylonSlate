@@ -211,6 +211,7 @@ import { applyAlbedoTexture, installModelSources, installTextureBytes, type Mesh
 import { observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
 import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
+import { AnimVisibilityGate } from "./anim-visibility";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -1093,10 +1094,13 @@ function initializeEngine(
   const warnMissingClip = onceMissingClip((info) =>
     console.warn(`[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`));
   const animHostReportingMissing = sceneAnimHostFromBinding(binding, animHostOptions((info) => {
-    const groups = binding.slotAnimationGroups?.get(info.slotId);
-    if (info.clipKind === "animation" && (!groups || groups.length === 0)) return;
+    const clips = binding.slotPoseClips?.get(info.slotId);
+    if (info.clipKind === "animation" && (!clips || clips.length === 0)) return;
     warnMissingClip(info);
   }));
+  // Animation Tick Mode When Visible: an unseen actor's latest state waits, posed once a camera can see it.
+  const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
+  scene.onBeforeRenderObservable.add(() => animVisibility.flush());
   binding.slotVisualReady = (slotId, successor) => {
     // Move emitter nodes before recursive retirement of the old visual root.
     particleService?.bindSlot(slotId, successor);
@@ -3120,6 +3124,8 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "captureRagdollPose") {
+        // The capture reads the pose: one held while unseen is posed first.
+        animVisibility.flushSlot(command.slotId);
         binding.ragdoll?.capture(command);
         scheduler.invalidate("snapshot");
       }
@@ -3223,7 +3229,7 @@ function initializeEngine(
         appliedSnapshotIdentity = null;
         if (!binding.pendingAnimState) binding.pendingAnimState = new Map();
         binding.pendingAnimState.set(command.slotId, command);
-        applyAnimStateToScene(animHostReportingMissing, command);
+        animVisibility.offer(command);
         scheduler.invalidate("snapshot");
       }
       streamAdmission?.sync();

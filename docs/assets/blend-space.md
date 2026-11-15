@@ -12,7 +12,7 @@ Animations on one [Skeleton](skeleton.md), placed on one or two axes such as Spe
 Double-tap a Blend Space to open it. Its windows:
 
 - **Grid**: the axes, with each sample as a diamond. Drag a sample to move it; it snaps to the grid. Select one and press Delete to remove it. A two-axis space shows the triangles its weights come from. The red cross is the preview point: click or drag on the Grid to move it (on touch, tap where it should go or drag the cross). The corner shows the point and the heaviest samples there.
-- **Animations**: the Animations on the Blend Space's Skeleton. Drag one onto the Grid to add it there, or tap its **+** to add it at the preview point. The count beside an Animation says how often it is placed.
+- **Animations**: the Animations on the Blend Space's Skeleton. Drag one onto the Grid to add it there, with the mouse or a finger, or tap its **+** to add it at the preview point. Double-click or double-tap one to open it. The count beside an Animation says how often it is placed.
 - **Preview**: a Model on the Skeleton playing the blend at the preview point, as a game would, with **Play** or **Pause**, **Speed**, the **Preview Model** list and **Bones**. The bar ends with the cycle's position and length.
 - **Inspector**: the **Skeleton**, the **Event Mode**, the **Axes** (one or two), each axis's settings and the selected sample's. Going from one axis to two adds a Direction axis with the samples on its centre line, where the one-axis Grid drew them.
 
