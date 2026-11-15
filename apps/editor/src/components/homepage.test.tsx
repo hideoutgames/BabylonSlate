@@ -9,6 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import type { ProjectFolderHandle } from "@haptic/core";
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { BUILT_IN_STARTER_KINDS } from "../lib/create-project";
 import type { ListedProject } from "../lib/listed-projects";
@@ -423,15 +424,15 @@ describe("Slate project browser", () => {
   });
 
   it.each([
-    ["web", "opfs", "Delete", "Delete"],
-    ["ios", "documents", "Delete", "Delete"],
-    ["android", "documents", "Delete", "Delete"],
-    ["electron", "documents", "Delete", "Delete"],
-    ["ios", "external", "Remove From List", "Remove"],
-    ["electron", "external", "Remove From List", "Remove"],
+    ["web", "opfs", "Delete", "Delete Game?", "Delete"],
+    ["ios", "documents", "Delete", "Delete Game?", "Delete"],
+    ["android", "documents", "Delete", "Delete Game?", "Delete"],
+    ["electron", "documents", "Delete", "Delete Game?", "Delete"],
+    ["ios", "external", "Remove From List", "Remove Project?", "Remove"],
+    ["electron", "external", "Remove From List", "Remove Project?", "Remove"],
   ] as const)(
     "confirms %s %s project removal before changing storage",
-    async (platform, tier, item, action) => {
+    async (platform, tier, item, title, action) => {
       getHostPlatform.mockReturnValue(platform);
       const onRemoveFromList = vi.fn(async () => {});
       renderHomepage({
@@ -444,6 +445,12 @@ describe("Slate project browser", () => {
       expect(screen.getByTestId("homepage-project-remove").textContent).toBe(item);
       fireEvent.click(screen.getByTestId("homepage-project-remove"));
       expect(
+        within(screen.getByTestId("homepage-remove-dialog")).getByRole(
+          "heading",
+          { name: title },
+        ),
+      ).toBeTruthy();
+      expect(
         screen.getByTestId("homepage-remove-confirm").textContent,
       ).toContain(action);
       expect(onRemoveFromList).not.toHaveBeenCalled();
@@ -451,6 +458,158 @@ describe("Slate project browser", () => {
       await waitFor(() => expect(onRemoveFromList).toHaveBeenCalledOnce());
     },
   );
+
+  it("selects projects from the actions menu instead of opening them, and Cancel ends selection", () => {
+    const onOpenProject = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Orbit", "opfs"), listedProject("Tide", "opfs")],
+      onOpenProject,
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Project Actions for Orbit" }),
+    );
+    fireEvent.click(screen.getByTestId("homepage-project-select"));
+
+    const orbit = screen.getByRole("button", { name: "Select Orbit" });
+    const tide = screen.getByRole("button", { name: "Select Tide" });
+    expect(orbit.getAttribute("aria-pressed")).toBe("true");
+    expect(tide.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("button", { name: /^Project Actions for/ })).toBeNull();
+    fireEvent.click(tide);
+    fireEvent.click(orbit);
+    expect(orbit.getAttribute("aria-pressed")).toBe("false");
+    expect(tide.getAttribute("aria-pressed")).toBe("true");
+    expect(onOpenProject).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Selection" }));
+    expect(screen.queryByRole("button", { name: "Select Tide" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Select Projects" }));
+    expect(
+      screen.getByRole("button", { name: "Select Tide" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
+  it("Select All selects only the projects the search shows", () => {
+    renderHomepage({
+      projects: [
+        listedProject("Orbit", "opfs"),
+        listedProject("Orbit Two", "opfs"),
+        listedProject("Tide", "opfs"),
+      ],
+    });
+    fireEvent.change(screen.getByTestId("homepage-project-search"), {
+      target: { value: "Orbit" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Select Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select All" }));
+    fireEvent.change(screen.getByTestId("homepage-project-search"), {
+      target: { value: "" },
+    });
+    expect(
+      ["Orbit", "Orbit Two", "Tide"].map((name) =>
+        screen
+          .getByRole("button", { name: `Select ${name}` })
+          .getAttribute("aria-pressed"),
+      ),
+    ).toEqual(["true", "true", "false"]);
+  });
+
+  it("deletes only the selected projects it can delete, after the confirmation phrase", async () => {
+    const onRemoveFromList = vi.fn<(handle: ProjectFolderHandle) => Promise<void>>(
+      async () => {},
+    );
+    renderHomepage({
+      projects: [
+        listedProject("Orbit", "opfs"),
+        listedProject("Picked", "external"),
+        listedProject("Tide", "documents"),
+        listedProject("Unselected", "opfs"),
+      ],
+      onRemoveFromList,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Select Projects" }));
+    for (const name of ["Orbit", "Picked", "Tide"])
+      fireEvent.click(screen.getByRole("button", { name: `Select ${name}` }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete Selected Projects" }),
+    );
+
+    const dialog = screen.getByTestId("homepage-delete-projects-dialog");
+    expect(
+      within(dialog).getByRole("heading", { name: "Delete 2 Projects?" }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByTestId("homepage-delete-projects-list"))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Orbit", "Tide"]);
+    expect(
+      within(screen.getByTestId("homepage-delete-projects-kept"))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Picked"]);
+
+    const confirm = screen.getByTestId("homepage-delete-projects-confirm");
+    const phrase = screen.getByTestId("homepage-delete-projects-input");
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(phrase, { target: { value: "delete my project" } });
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(confirm);
+    expect(onRemoveFromList).not.toHaveBeenCalled();
+    fireEvent.change(phrase, { target: { value: " Delete my projects " } });
+    expect(confirm.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(onRemoveFromList).toHaveBeenCalledTimes(2));
+    expect(onRemoveFromList.mock.calls.map(([project]) => project.id)).toEqual([
+      "opfs:Orbit",
+      "documents:Tide",
+    ]);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Select Projects" })).toBeTruthy(),
+    );
+  });
+
+  it("lists chosen-folder projects as kept and offers no Delete when none can be deleted", () => {
+    renderHomepage({ projects: [listedProject("Picked", "external")] });
+    fireEvent.click(screen.getByRole("button", { name: "Select Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Picked" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete Selected Projects" }),
+    );
+    expect(screen.getByTestId("homepage-delete-projects-kept").textContent).toBe(
+      "Picked",
+    );
+    expect(screen.queryByTestId("homepage-delete-projects-input")).toBeNull();
+    expect(screen.queryByTestId("homepage-delete-projects-confirm")).toBeNull();
+  });
+
+  it("stops at a failed delete, shows the error and keeps selecting", async () => {
+    const onRemoveFromList = vi.fn(async (handle: ProjectFolderHandle) => {
+      if (handle.name === "Orbit") throw new Error("Orbit is busy");
+    });
+    renderHomepage({
+      projects: [listedProject("Orbit", "opfs"), listedProject("Tide", "opfs")],
+      onRemoveFromList,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Select Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select All" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete Selected Projects" }),
+    );
+    fireEvent.change(screen.getByTestId("homepage-delete-projects-input"), {
+      target: { value: "delete my projects" },
+    });
+    fireEvent.click(screen.getByTestId("homepage-delete-projects-confirm"));
+
+    expect((await screen.findByTestId("homepage-error")).textContent).toContain(
+      "Orbit is busy",
+    );
+    expect(onRemoveFromList).toHaveBeenCalledOnce();
+    expect(
+      screen.getByRole("button", { name: "Select Tide" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
 
   it("searches projects without changing the stored library", () => {
     renderHomepage({

@@ -520,8 +520,34 @@
 .homepage-template-card {
   cursor: pointer;
 }
-.homepage-template-card[data-selected="true"] {
+.homepage-template-card[data-selected="true"],
+.homepage-project-card[data-selected="true"] {
   border-color: var(--foreground);
+}
+/* Selection mode: a circle on each card, filled when the project is selected.
+ * It does not take pointer input; the card-wide button toggles the selection. */
+.homepage-project-select {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--foreground);
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--card) 60%, transparent);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 45%);
+  color: var(--background);
+  pointer-events: none;
+}
+.homepage-project-select[data-selected="true"] {
+  background: var(--foreground);
+}
+.homepage-project-select svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 3;
 }
 .homepage-project-card[data-touch-pressed="true"],
 .homepage-template-card[data-touch-pressed="true"] {
@@ -611,6 +637,12 @@
 }
 .homepage-project-card[data-layout="list"] .homepage-project-actions {
   top: 50%;
+  transform: translateY(-50%);
+}
+/* Rows show the circle where the actions button was. */
+.homepage-project-card[data-layout="list"] .homepage-project-select {
+  top: 50%;
+  right: 10px;
   transform: translateY(-50%);
 }
 
@@ -2094,7 +2126,8 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
 :where(.touch-ui) .homepage-template-toolbar [data-slot="input"],
 :where(.touch-ui) .homepage-template-sidebar [data-slot="input"],
 :where(.touch-ui) .homepage-composer-form [data-slot="input"],
-:where(.touch-ui) .homepage-account-center [data-slot="input"] {
+:where(.touch-ui) .homepage-account-center [data-slot="input"],
+:where(.touch-ui) .homepage-delete-projects [data-slot="input"] {
   min-height: 32px;
 }
 /* Text size follows the device, not Compact Mode: iOS zooms into focused
@@ -2104,7 +2137,8 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   .homepage-template-toolbar [data-slot="input"],
   .homepage-template-sidebar [data-slot="input"],
   .homepage-composer-form [data-slot="input"],
-  .homepage-account-center [data-slot="input"] {
+  .homepage-account-center [data-slot="input"],
+  .homepage-delete-projects [data-slot="input"] {
     font-size: 16px;
   }
 }

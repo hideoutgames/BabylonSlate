@@ -30,6 +30,7 @@ function card(kind: "project" | "template", scrolling = false) {
           onOpen={activate}
           onEdit={vi.fn()}
           onRemove={vi.fn()}
+          onToggleSelected={vi.fn()}
         />
       ) : (
         <TemplatePickCard

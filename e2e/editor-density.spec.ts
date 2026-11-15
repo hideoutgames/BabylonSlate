@@ -224,7 +224,7 @@ test.describe("Editor density and IA", () => {
     await page.getByTestId("homepage-project-remove").click();
     await expect(page.getByTestId("homepage-remove-dialog")).toBeVisible();
     await expect(page.getByTestId("homepage-remove-dialog")).toContainText(
-      "Delete Project?",
+      "Delete TestProject?",
     );
     await page.getByTestId("homepage-remove-cancel").click();
     await expect(listed).toBeVisible();
