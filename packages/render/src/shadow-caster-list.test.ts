@@ -6,7 +6,86 @@ import { Scene } from "@babylonjs/core/scene";
 import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { ShadowCasterList } from "./shadow-caster-list";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { ShadowCasterList, type CasterChanges } from "./shadow-caster-list";
+
+/** The caster walk's change log as `prepare` reads it: what a test lists, and what the stages counted. */
+function changeLog() {
+  const log: Array<[AbstractMesh, boolean]> = [];
+  const counted = { prepared: 0, prepareScans: 0, misses: 0 };
+  let check: "verify" | "heal" | null = null;
+  const changes: CasterChanges = {
+    changeCursor: () => log.length,
+    forEachChangeSince: (cursor, visit) => {
+      for (let at = cursor; at < log.length; at++) visit(log[at]![0], log[at]![1]);
+      return true;
+    },
+    stageCheck: () => check,
+    noteStageMiss: (_kind, count = 1) => { counted.misses += count; },
+    noteStage: (counter, count = 1) => { counted[counter] += count; },
+  };
+  return { log, counted, changes, checkNext: (mode: "verify" | "heal" | null) => { check = mode; } };
+}
+
+describe("a prepare from the walk's changes", () => {
+  it("reads only the casters added or changed, gives what a full read would, and a check counts a kept box gone stale", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const { log, counted, changes, checkNext } = changeLog();
+      const incremental = new ShadowCasterList();
+      const meshes = ["a", "b", "c", "d"].map((name, index) => {
+        const mesh = MeshBuilder.CreateBox(name, {}, scene);
+        mesh.position.x = index * 5;
+        mesh.computeWorldMatrix(true);
+        incremental.add(mesh);
+        return mesh;
+      });
+      const [a, , c, d] = meshes as unknown as [AbstractMesh, AbstractMesh, AbstractMesh, AbstractMesh];
+      // x <= 7: a and b.
+      const planes = [new Plane(-1, 0, 0, 7)];
+      const query = () => incremental.queryPlanes(planes).map((mesh) => mesh.name).sort();
+      incremental.prepare(undefined, changes);
+      expect(counted).toMatchObject({ prepareScans: 1, prepared: 0 });
+      expect(query()).toEqual(["a", "b"]);
+      incremental.release();
+
+      // A move the walk listed is read; nothing else is.
+      c.position.x = 0;
+      c.computeWorldMatrix(true);
+      log.push([c, false]);
+      incremental.prepare(undefined, changes);
+      expect(counted).toMatchObject({ prepareScans: 1, prepared: 1 });
+      expect(query()).toEqual(["a", "b", "c"]);
+      incremental.release();
+
+      // A removal moves the last caster into the place, with what was read of it; an added caster is read.
+      incremental.remove(a);
+      log.push([a, true]);
+      const e = MeshBuilder.CreateBox("e", {}, scene);
+      incremental.add(e);
+      incremental.prepare(undefined, changes);
+      expect(counted.prepared).toBe(2);
+      expect(query()).toEqual(["b", "c", "e"]);
+      incremental.release();
+
+      // A box changed with no listed change keeps its old reading, which a frame with the full check counts.
+      d.position.x = 0;
+      d.computeWorldMatrix(true);
+      incremental.prepare(undefined, changes);
+      expect(query()).toEqual(["b", "c", "e"]);
+      incremental.release();
+      checkNext("verify");
+      incremental.prepare(undefined, changes);
+      expect(counted.misses).toBe(1);
+      // Healed: the full read's answer is kept.
+      expect(query()).toEqual(["b", "c", "d", "e"]);
+      incremental.dispose();
+    } finally {
+      engine.dispose();
+    }
+  });
+});
 
 describe("shadow caster selection", () => {
   it("retains skinned casters whose bind-pose bounds cannot describe the animated pose", () => {

@@ -116,8 +116,9 @@ export type RenderDiagnostics = {
      * without shadows.
      */
     shadowJournal?: {
-      walks: number; casters: number; visited: number; polledSources: number; polledMaterials: number;
-      fullWalks: number; heals: number; mismatches: number; missedKinds: string[];
+      walks: number; casters: number; visited: number; moved: number; polledSources: number; polledMaterials: number;
+      sourceChanges: number; cacheChecks: number; bufferChecks: number; localVisited: number; localScans: number;
+      cascadeSkips: number; prepared: number; prepareScans: number; fullWalks: number; heals: number; mismatches: number; missedKinds: string[];
     };
   };
   /**
