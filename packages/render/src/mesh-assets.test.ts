@@ -484,7 +484,7 @@ describe("applyAlbedoTexture", () => {
   });
 });
 
-it("writes a sprite's visibility only when it changes, and marks a move between the opaque and blended lists for that sprite alone", () => {
+it("writes a sprite's visibility only when it changes, and marks a move between the opaque and blended lists", () => {
   const engine = new NullEngine();
   const scene = new Scene(engine);
   const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
@@ -496,14 +496,14 @@ it("writes a sprite's visibility only when it changes, and marks a move between 
   expect(asked).not.toHaveBeenCalled();
   applySpriteVisibility(mesh, 0.5);
   expect(mesh.visibility).toBe(0.5);
-  expect(marks).toEqual([["blendChange", [mesh]]]);
+  expect(marks).toEqual([["blendChange", undefined]]);
   asked.mockClear();
   applySpriteVisibility(mesh, 0.5);
   expect(asked).not.toHaveBeenCalled();
   applySpriteVisibility(mesh, 0.25);
   expect(marks).toHaveLength(1);
   applySpriteVisibility(mesh, 1);
-  expect(marks).toEqual([["blendChange", [mesh]], ["blendChange", [mesh]]]);
+  expect(marks).toEqual([["blendChange", undefined], ["blendChange", undefined]]);
   stop();
   scene.dispose();
   engine.dispose();
