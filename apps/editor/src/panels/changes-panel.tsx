@@ -47,7 +47,7 @@ import { useSourceControlActions, useSourceControlDiffState } from "../component
 import { BranchMenuItems } from "../components/source-control-branch-menu";
 import { integratedBlockerLabel, type IntegratedBlocker } from "../lib/source-control-mode";
 import type { ChangeRow as ChangeRowData } from "../lib/source-control-changes";
-import { agoLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
+import { agoLabel, branchLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
 import { useTransferBytes } from "../lib/transfer-bytes";
 import type { SyncSnapshot } from "../services/source-control-sync";
 
@@ -142,9 +142,9 @@ function BranchPicker({ branch, busy, committed }: { branch: string; busy: boole
   const { requestNewBranch } = useSourceControlActions();
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="min-w-0" aria-label={`Branch ${branch}`} data-testid="changes-branch" />}>
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="min-w-0" aria-label={branch ? `Branch ${branch}` : branchLabel(branch)} data-testid="changes-branch" />}>
         <GitBranchIcon data-icon="inline-start" />
-        <span className="truncate">{branch}</span>
+        <span className="truncate">{branchLabel(branch)}</span>
         <ChevronDownIcon data-icon="inline-end" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-48">
@@ -292,6 +292,8 @@ export function ChangesPanelContents() {
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
   const now = Date.now();
   const busy = snapshot.operation !== null && snapshot.operation.kind !== "fetch";
+  // The repository did not open (a detached HEAD): nothing to commit to or pull into.
+  const unopened = snapshot.branch === "";
   const rows = snapshot.rows;
   const included = useMemo(() => new Set(rows.filter((row) => !excluded.has(row.id)).map((row) => row.id)), [excluded, rows]);
   const allIncluded = rows.length > 0 && included.size === rows.length;
@@ -332,7 +334,7 @@ export function ChangesPanelContents() {
             >
               <RefreshCwIcon />
             </Button>
-            <Button variant="outline" size="sm" data-testid="changes-pull" disabled={busy} onClick={actions.requestPull}>
+            <Button variant="outline" size="sm" data-testid="changes-pull" disabled={busy || unopened} onClick={actions.requestPull}>
               <ArrowDownToLineIcon data-icon="inline-start" />
               Pull
               {snapshot.behind > 0 ? <Badge variant="secondary">{snapshot.behind}</Badge> : null}
@@ -415,7 +417,7 @@ export function ChangesPanelContents() {
             ) : null}
           </div>
         </ScrollArea>
-        <CommitBox included={included} busy={busy} onCommitted={includeAll} />
+        <CommitBox included={included} busy={busy || unopened} onCommitted={includeAll} />
       </div>
     </PanelFrame>
   );

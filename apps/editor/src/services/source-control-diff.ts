@@ -50,8 +50,8 @@ export function shortId(commit: string | null): string {
 export function refLabel(ref: DiffRef, snapshot: Pick<SyncSnapshot, "head" | "remoteHead" | "branch">): string {
   switch (ref.kind) {
     case "working": return "Working Copy";
-    case "head": return `${snapshot.branch} · ${shortId(snapshot.head)}`;
-    case "remote": return `origin/${snapshot.branch} · ${shortId(snapshot.remoteHead)}`;
+    case "head": return `${snapshot.branch || "HEAD"} · ${shortId(snapshot.head)}`;
+    case "remote": return `origin/${snapshot.branch || "HEAD"} · ${shortId(snapshot.remoteHead)}`;
     case "commit": return shortId(ref.id);
   }
 }

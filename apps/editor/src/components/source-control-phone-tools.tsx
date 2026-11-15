@@ -12,6 +12,7 @@ import { Button } from "@haptic/ui/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@haptic/ui/components/dropdown-menu";
 import { useIntegratedSync, useIntegratedSyncState } from "../context/document-context";
 import { useTouchUi } from "@haptic/editor-kit";
+import { branchLabel } from "../lib/source-control-labels";
 import { useOpenHistory, useSourceControlActions } from "./source-control-actions";
 import { BranchMenuItems } from "./source-control-branch-menu";
 
@@ -50,6 +51,8 @@ function PhoneTools({ branch, behind, ahead, changes, busy, committed, onAction 
   const sync = useIntegratedSync();
   const touch = useTouchUi();
   const size = touch ? "touch" : "sm";
+  // The repository did not open (a detached HEAD): nothing to commit to or pull into.
+  const unopened = branch === "";
   const run = (action: () => void | Promise<void>) => () => {
     onAction();
     // With no status bar, a failure shows where its reason is: the Changes window.
@@ -59,11 +62,11 @@ function PhoneTools({ branch, behind, ahead, changes, busy, committed, onAction 
   };
   return (
     <>
-      <Button variant="outline" size={size} data-testid="phone-source-control-commit" disabled={busy} onClick={run(actions.requestCommit)}>
+      <Button variant="outline" size={size} data-testid="phone-source-control-commit" disabled={busy || unopened} onClick={run(actions.requestCommit)}>
         <GitCommitHorizontalIcon data-icon="inline-start" />
         Commit… ({changes})
       </Button>
-      <Button variant="outline" size={size} data-testid="phone-source-control-pull" disabled={busy} onClick={run(actions.requestPull)}>
+      <Button variant="outline" size={size} data-testid="phone-source-control-pull" disabled={busy || unopened} onClick={run(actions.requestPull)}>
         <ArrowDownToLineIcon data-icon="inline-start" />
         Pull{behind > 0 ? ` ${behind}` : ""}
       </Button>
@@ -79,7 +82,7 @@ function PhoneTools({ branch, behind, ahead, changes, busy, committed, onAction 
       <DropdownMenu onOpenChange={(open, details) => { if (!open && details.reason === "item-press") onAction(); }}>
         <DropdownMenuTrigger render={<Button variant="outline" size={size} data-testid="phone-source-control-switch-branch" disabled={busy} />}>
           <GitBranchIcon data-icon="inline-start" />
-          Switch Branch ({branch})
+          Switch Branch ({branchLabel(branch)})
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="min-w-48">
           <BranchMenuItems testId="phone-source-control" />

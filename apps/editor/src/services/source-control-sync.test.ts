@@ -614,6 +614,15 @@ describe("SourceControlSyncService", () => {
       expect(factory.open).toHaveBeenCalledTimes(2);
       expect(service.getSnapshot()).toMatchObject({ active: true, problem: null, statusReady: true });
     });
+
+    it("names no checked-out branch while the repository cannot open, as on a detached HEAD", async () => {
+      const { service, input, factory } = await setup();
+      const detached = "This working copy has no branch checked out. Check out a branch with the Git app that left it, then open the project again.";
+      vi.mocked(factory.open).mockRejectedValueOnce(new SyncError("conflict", detached, { code: "detached-head" }));
+      await service.configure(input("integrated"));
+      // Not the project's default branch: nothing is checked out that Haptic could show or start a branch from.
+      expect(service.getSnapshot()).toMatchObject({ active: true, branch: "", head: null, problem: { title: "Could Not Open The Repository", message: detached, code: "detached-head" } });
+    });
   });
 
   describe("Publish", () => {

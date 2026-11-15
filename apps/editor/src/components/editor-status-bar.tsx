@@ -29,7 +29,7 @@ import { Progress } from "@haptic/ui/components/progress";
 import { useIntegratedSync, useIntegratedSyncState, useSaveState } from "../context/document-context";
 import { useValidation } from "../context/validation-context";
 import { getBuildLabel } from "../lib/build-identity";
-import { changesLabel, commitsLabel, transferLabel } from "../lib/source-control-labels";
+import { branchLabel, changesLabel, commitsLabel, transferLabel } from "../lib/source-control-labels";
 import { useTransferBytes } from "../lib/transfer-bytes";
 import type { SyncSnapshot } from "../services/source-control-sync";
 import { usePhoneLayout } from "../shell/use-platform-layout";
@@ -75,6 +75,8 @@ function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
   const count = snapshot.rows.length;
   const transferring = snapshot.operation !== null && snapshot.operation.kind !== "fetch" && snapshot.operation.kind !== "commit";
   const busy = snapshot.operation !== null && snapshot.operation.kind !== "fetch";
+  // The repository did not open (a detached HEAD): nothing to commit to or pull into.
+  const unopened = snapshot.branch === "";
   return (
     <div className="editor-status-source-control" data-testid="status-source-control">
       <DropdownMenu>
@@ -84,23 +86,23 @@ function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
               variant="ghost"
               size="xs"
               className="editor-status-button"
-              aria-label={`Source Control Menu: Branch ${snapshot.branch}`}
+              aria-label={`Source Control Menu: ${unopened ? branchLabel(snapshot.branch) : `Branch ${snapshot.branch}`}`}
               data-testid="status-source-control-menu"
             />
           }
         >
           <GitBranchIcon data-icon="inline-start" />
-          {snapshot.branch}
+          {branchLabel(snapshot.branch)}
           <ChevronDownIcon data-icon="inline-end" />
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" className="min-w-52">
           <DropdownMenuGroup>
-            <DropdownMenuItem data-testid="status-source-control-commit" disabled={busy} onClick={actions.requestCommit}>
+            <DropdownMenuItem data-testid="status-source-control-commit" disabled={busy || unopened} onClick={actions.requestCommit}>
               <GitCommitHorizontalIcon />
               Commit…
               <DropdownMenuShortcut>{changesLabel(count)}</DropdownMenuShortcut>
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="status-source-control-pull" disabled={busy} onClick={actions.requestPull}>
+            <DropdownMenuItem data-testid="status-source-control-pull" disabled={busy || unopened} onClick={actions.requestPull}>
               <ArrowDownToLineIcon />
               Pull
               <DropdownMenuShortcut>{commitsLabel(snapshot.behind)}</DropdownMenuShortcut>

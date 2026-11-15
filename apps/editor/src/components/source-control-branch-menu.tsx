@@ -8,6 +8,7 @@ import {
   DropdownMenuRadioItem,
 } from "@haptic/ui/components/dropdown-menu";
 import { useIntegratedSync, useIntegratedSyncState } from "../context/document-context";
+import { branchLabel } from "../lib/source-control-labels";
 import { useSourceControlActions } from "./source-control-actions";
 
 /**
@@ -15,11 +16,13 @@ import { useSourceControlActions } from "./source-control-actions";
  * the status bar's **Switch Branch**, More Tools): this copy's branches with
  * the checked-out one marked, then the remote's other branches. Both lists
  * are read when the menu opens; the remote's (one request) may fail while
- * this copy's still show. Choosing one runs the Switch Branch flow.
+ * this copy's still show. Choosing one runs the Switch Branch flow. While
+ * the repository could not open (a detached HEAD) no branch is checked out:
+ * **No Branch Checked Out** with the open failure's message.
  */
 export function BranchMenuItems({ testId }: { testId: string }) {
   const sync = useIntegratedSync();
-  const { branch, operation } = useIntegratedSyncState();
+  const { branch, operation, problem } = useIntegratedSyncState();
   const { requestSwitchBranch } = useSourceControlActions();
   const [local, setLocal] = useState<readonly string[] | null>(null);
   const [remote, setRemote] = useState<readonly string[] | "failed" | null>(null);
@@ -46,7 +49,7 @@ export function BranchMenuItems({ testId }: { testId: string }) {
 
   const busy = operation !== null && operation.kind !== "fetch";
   // The checked-out branch is listed before its first commit too, when Git lists no ref for it.
-  const ours = [...new Set([branch, ...(local ?? [])])].sort();
+  const ours = [...new Set([...(branch ? [branch] : []), ...(local ?? [])])].sort();
   const theirs = Array.isArray(remote) ? remote.filter((name) => !ours.includes(name)) : [];
   const choose = (name: string) => {
     if (name !== branch) requestSwitchBranch(name);
@@ -56,6 +59,13 @@ export function BranchMenuItems({ testId }: { testId: string }) {
     <>
       <DropdownMenuGroup>
         <DropdownMenuLabel>Branches</DropdownMenuLabel>
+        {branch === "" ? (
+          // The repository did not open (a detached HEAD): why, as the open failure says it.
+          <DropdownMenuItem disabled className="flex-col items-start gap-0.5" data-testid={`${testId}-no-branch`}>
+            <span>{branchLabel(branch)}</span>
+            {problem ? <span className="text-xs whitespace-normal text-muted-foreground">{problem.message}</span> : null}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuRadioGroup value={branch} onValueChange={(value: string) => choose(value)}>
           {ours.map((name) => (
             <DropdownMenuRadioItem key={name} value={name} closeOnClick disabled={busy && name !== branch} data-testid={`${testId}-branch-${name}`}>

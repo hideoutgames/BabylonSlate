@@ -95,7 +95,11 @@ export interface SyncSnapshot {
   readonly active: boolean;
   /** The project's mode is Integrated but this folder cannot run it. */
   readonly blocked: IntegratedBlocker | null;
-  /** The working copy's checked-out branch (Git's HEAD), not the project's default branch. */
+  /**
+   * The working copy's checked-out branch (Git's HEAD), not the project's
+   * default branch; `""` while the repository is not open (a detached HEAD
+   * opens nothing), shown as `branchLabel` names it.
+   */
   readonly branch: string;
   /** The branch's commit (HEAD), null before the first commit. */
   readonly head: string | null;
@@ -274,9 +278,10 @@ export class SourceControlSyncService {
       port = await (await this.factoryFor(input)).open(this.request(input, storage, revision));
     } catch (error) {
       if (revision !== this.revision) return;
-      // Not opened: Refresh, foreground or the next configure tries again.
+      // Not opened: Refresh, foreground or the next configure tries again. No branch is
+      // checked out here (a detached HEAD opens nothing), so none is shown, not the default.
       this.identity = "";
-      this.set({ ...IDLE, active: true, branch: settings.branch, problem: problemFrom("Could Not Open The Repository", error) });
+      this.set({ ...IDLE, active: true, problem: problemFrom("Could Not Open The Repository", error) });
       return;
     }
     if (revision !== this.revision) return;
@@ -480,7 +485,7 @@ export class SourceControlSyncService {
    * Not queued: the Git client runs one operation at a time on its own, and a
    * read changes nothing. Rejects once the project is closed.
    */
-  readFileAt(path: string, commit: string): Promise<Uint8Array | null> {
+  async readFileAt(path: string, commit: string): Promise<Uint8Array | null> {
     return this.openPort().readFile(path, commit);
   }
 
@@ -490,7 +495,7 @@ export class SourceControlSyncService {
   }
 
   /** A `.blobs` object a version references: the working copy's file, else downloaded; never written. */
-  readLfsObject(path: string, size: number, signal?: AbortSignal): Promise<Uint8Array> {
+  async readLfsObject(path: string, size: number, signal?: AbortSignal): Promise<Uint8Array> {
     return this.openPort().readLfsObject(path, size, signal ? { signal } : {});
   }
 
@@ -516,17 +521,17 @@ export class SourceControlSyncService {
   }
 
   /** The files a commit changed against its parent; null when this shallow copy lacks the parent. */
-  commitChanges(commit: string): Promise<FileChange[] | null> {
+  async commitChanges(commit: string): Promise<FileChange[] | null> {
     return this.openPort().commitChanges(commit);
   }
 
   /** This working copy's branches. Reads no network. */
-  localBranches(): Promise<string[]> {
+  async localBranches(): Promise<string[]> {
     return this.openPort().localBranches();
   }
 
   /** The remote's branches, from its Git ref advertisement (one request). */
-  remoteBranches(signal?: AbortSignal): Promise<string[]> {
+  async remoteBranches(signal?: AbortSignal): Promise<string[]> {
     return this.openPort().remoteBranches(signal ? { signal } : {});
   }
 
@@ -622,6 +627,7 @@ export class SourceControlSyncService {
     }
   }
 
+  /** The open client; the readers above are async, so this throw reaches their callers as a rejection. */
   private openPort(): SyncPort {
     if (!this.port) throw new Error("The project's repository is not open.");
     return this.port;

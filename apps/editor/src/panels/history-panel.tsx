@@ -19,7 +19,7 @@ import { useIntegratedSync, useIntegratedSyncState, useRegistryState } from "../
 import { useSourceControlActions } from "../components/source-control-actions";
 import { IconActionButton } from "../components/icon-action-button";
 import { groupChanges, registryChangeLookup, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
-import { agoLabel } from "../lib/source-control-labels";
+import { agoLabel, branchLabel } from "../lib/source-control-labels";
 import { shortId, WORKING_COPY } from "../services/source-control-diff";
 
 /** Commits read per page: one screen or two, never the whole history. */
@@ -297,7 +297,7 @@ export function HistoryPanelContents() {
         <div className="flex shrink-0 items-center gap-2 border-b border-border p-2">
           {scope === "asset" && asset ? <RowIcon type={asset.type} /> : <HistoryIcon className="size-4 shrink-0" aria-hidden="true" />}
           <span className="truncate text-sm font-semibold" data-testid="history-title">{scope === "asset" && asset ? asset.name : "All Assets"}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">on {branch}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{branch ? `on ${branch}` : branchLabel(branch)}</span>
           <span className="flex-1" />
           <ToggleGroup
             variant="outline"
