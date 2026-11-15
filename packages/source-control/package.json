@@ -21,7 +21,7 @@
   "dependencies": {
     "@haptic/core": "workspace:*",
     "buffer": "6.0.3",
-    "isomorphic-git": "1.44.14"
+    "isomorphic-git": "1.44.9"
   },
   "devDependencies": {
     "@haptic/vfs": "workspace:*",

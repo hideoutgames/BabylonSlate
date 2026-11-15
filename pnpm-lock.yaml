@@ -820,8 +820,8 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
       isomorphic-git:
-        specifier: 1.44.14
-        version: 1.44.14
+        specifier: 1.44.9
+        version: 1.44.9
     devDependencies:
       '@haptic/vfs':
         specifier: workspace:*
@@ -2620,6 +2620,10 @@ packages:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
     engines: {node: ^20.17.0 || >=22.9.0}
 
+  abort-controller@3.0.0:
+    resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
+    engines: {node: '>=6.5'}
+
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
     peerDependencies:
@@ -3237,6 +3241,14 @@ packages:
     resolution: {integrity: sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==}
     engines: {node: '>=0.10.0'}
 
+  event-target-shim@5.0.1:
+    resolution: {integrity: sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==}
+    engines: {node: '>=6'}
+
+  events@3.3.0:
+    resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
+    engines: {node: '>=0.8.x'}
+
   expect-type@1.4.0:
     resolution: {integrity: sha512-KfYbmpRm0VbLjEvVa9yGwCi9GI34xvi7A/HXYWQO65CSD2u3MczUJSuwXKFIxlGsgBQizV9q5J9NHj4VG0n+pA==}
     engines: {node: '>=12.0.0'}
@@ -3568,8 +3580,8 @@ packages:
     resolution: {integrity: sha512-FFUtZMpoZ8RqHS3XeXEmHWLA4thH+ZxCv2lOiPIn1Xc7CxrqhWzNSDzD+/chS/zbYezmiwWLdQC09JdQKmthOw==}
     engines: {node: '>=20'}
 
-  isomorphic-git@1.44.14:
-    resolution: {integrity: sha512-ZSVmLOUvzjnUrPBEpVcVOZ6w4N6NSFte2CEZ4ruTYpEIb19iwykPs7lgmh+y9+3qwmDgQePcOQzsMShcSrW5jA==}
+  isomorphic-git@1.44.9:
+    resolution: {integrity: sha512-9d0iA5pLPJwgm1d3L4XVdFj0frJd9DCX/1xqzDZ8D09eeSui24pluf8r+RJbHyVd2lfRPbyjhdJI+v6ead1RgA==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -4165,6 +4177,10 @@ packages:
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
 
+  process@0.11.10:
+    resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
+    engines: {node: '>= 0.6.0'}
+
   progress@2.0.3:
     resolution: {integrity: sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA==}
     engines: {node: '>=0.4.0'}
@@ -4247,6 +4263,10 @@ packages:
   readable-stream@3.6.2:
     resolution: {integrity: sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA==}
     engines: {node: '>= 6'}
+
+  readable-stream@4.8.0:
+    resolution: {integrity: sha512-2jhTTU3Eilp/2DMT71gbcoqC35eQHasMJH0RHkYxwlxIv3+FR6Y5xAFZIwEGLxKkjZYEFlsiMNIdwUqjK2lLHQ==}
+    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
   regex-recursion@6.0.2:
     resolution: {integrity: sha512-0YCaSCq2VRIebiaUviZNs0cBz1kg5kVS2UKUfNIx8YVs1cN3AV7NTctO5FOKBA+UT2BPJIWZauYHPqJODG50cg==}
@@ -6659,6 +6679,10 @@ snapshots:
 
   abbrev@4.0.0: {}
 
+  abort-controller@3.0.0:
+    dependencies:
+      event-target-shim: 5.0.1
+
   acorn-jsx@5.3.2(acorn@8.18.0):
     dependencies:
       acorn: 8.18.0
@@ -7420,6 +7444,10 @@ snapshots:
 
   esutils@2.0.3: {}
 
+  event-target-shim@5.0.1: {}
+
+  events@3.3.0: {}
+
   expect-type@1.4.0: {}
 
   exponential-backoff@3.1.3: {}
@@ -7762,7 +7790,7 @@ snapshots:
 
   isexe@4.0.0: {}
 
-  isomorphic-git@1.44.14:
+  isomorphic-git@1.44.9:
     dependencies:
       async-lock: 1.5.0
       clean-git-ref: 2.0.1
@@ -7772,6 +7800,7 @@ snapshots:
       minimisted: 2.0.1
       pako: 1.0.11
       pify: 4.0.1
+      readable-stream: 4.8.0
       sha.js: 2.4.12
       simple-get: 4.0.1
 
@@ -8303,6 +8332,8 @@ snapshots:
 
   process-nextick-args@2.0.1: {}
 
+  process@0.11.10: {}
+
   progress@2.0.3: {}
 
   promise-retry@2.0.1:
@@ -8392,6 +8423,14 @@ snapshots:
       inherits: 2.0.4
       string_decoder: 1.3.0
       util-deprecate: 1.0.2
+
+  readable-stream@4.8.0:
+    dependencies:
+      abort-controller: 3.0.0
+      buffer: 6.0.3
+      events: 3.3.0
+      process: 0.11.10
+      string_decoder: 1.3.0
 
   regex-recursion@6.0.2:
     dependencies:
