@@ -855,21 +855,41 @@ export function Homepage({
       <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
         <AlertDialogContent
           className="homepage-theme"
-          variant={deleting ? "destructive" : "default"}
+          variant={deleting ? "destructive" : "warning"}
           data-testid="homepage-remove-dialog"
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {deleting && removeTarget
-                ? `Delete ${removeTarget.label}?`
-                : "Remove Project?"}
+            <AlertDialogTitle className="break-words">
+              {removeTarget
+                ? `${deleting ? "Delete" : "Remove"} ${removeTarget.label}?`
+                : null}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {deleting
                 ? "This permanently deletes the project."
-                : "Project files stay on this device."}
+                : "This only takes the project off this list. Nothing is deleted."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {!deleting && (
+            <ul
+              className="flex flex-col divide-y rounded-md border text-xs text-muted-foreground"
+              aria-label="Remove or Delete"
+              data-testid="homepage-remove-compare"
+            >
+              <li className="flex flex-col gap-0.5 px-2.5 py-1.5">
+                <span className="font-medium text-foreground">
+                  Remove From List
+                </span>
+                The folder and its files stay where they are. To list the
+                project again, choose Open and pick its folder.
+              </li>
+              <li className="flex flex-col gap-0.5 px-2.5 py-1.5">
+                <span className="font-medium text-foreground">Delete</span>
+                Erases a project's files for good. Haptic only deletes projects
+                in its own storage, never a folder you chose.
+              </li>
+            </ul>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="homepage-remove-cancel">
               Cancel
@@ -888,7 +908,7 @@ export function Homepage({
                 setRemoveOpen(false);
               }}
             >
-              {deleting ? "Delete" : "Remove"}
+              {deleting ? "Delete" : "Remove From List"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
