@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Material } from "@babylonjs/core/Materials/material";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
@@ -483,23 +484,26 @@ describe("applyAlbedoTexture", () => {
   });
 });
 
-it("writes a sprite's visibility only when it changes, and marks a move between the opaque and blended lists", () => {
+it("writes a sprite's visibility only when it changes, and marks a move between the opaque and blended lists for that sprite alone", () => {
   const engine = new NullEngine();
   const scene = new Scene(engine);
   const mesh = MeshBuilder.CreatePlane("sprite", {}, scene);
   const material = mesh.material = new StandardMaterial("sprite", scene);
-  const reasons: string[] = [];
-  const stop = onSceneReadinessDirty(scene, (reason) => reasons.push(reason));
+  const marks: [string, readonly AbstractMesh[] | undefined][] = [];
+  const stop = onSceneReadinessDirty(scene, (reason, scope) => marks.push([reason, scope]));
   const asked = vi.spyOn(material, "needAlphaBlendingForMesh");
   applySpriteVisibility(mesh, 1);
   expect(asked).not.toHaveBeenCalled();
   applySpriteVisibility(mesh, 0.5);
   expect(mesh.visibility).toBe(0.5);
-  expect(reasons).toEqual(["blendChange"]);
+  expect(marks).toEqual([["blendChange", [mesh]]]);
   asked.mockClear();
   applySpriteVisibility(mesh, 0.5);
   expect(asked).not.toHaveBeenCalled();
-  expect(reasons).toEqual(["blendChange"]);
+  applySpriteVisibility(mesh, 0.25);
+  expect(marks).toHaveLength(1);
+  applySpriteVisibility(mesh, 1);
+  expect(marks).toEqual([["blendChange", [mesh]], ["blendChange", [mesh]]]);
   stop();
   scene.dispose();
   engine.dispose();
