@@ -21,6 +21,7 @@ export * from "./painter2d";
 export * from "./rich-text";
 export * from "./project";
 export * from "./timeline-clips";
+export * from "./animation-tick-mode";
 export * from "./timeline-evaluate";
 export * from "./timeline-playback";
 export * from "./timeline-assets";

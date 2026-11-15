@@ -1,6 +1,4 @@
-import { isSceneGameTimePaused } from "./scene-game-time";
 import "./gltf-loader";
-import { Animation } from "@babylonjs/core/Animations/animation";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
@@ -14,10 +12,8 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer, parentContainerRoots } from "./model-container";
 import { Scene } from "@babylonjs/core/scene";
 import { installedAssetIdentity, normalizeModelImportScale } from "@haptic/assets";
-import { applyAnimStateToScene,
-  sceneAnimHostFromBinding,
-  type NamedSeekableGroup,
-} from "./anim-apply";
+import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import { bindPoseClip, type PoseClip, type PoseClipSource } from "./anim-pose";
 import { isGltfModelBytes } from "./model-mesh";
 import { bindAnimationGroupByName, retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
@@ -41,7 +37,7 @@ import { nativePreparationForEngine, type NativePreparationPriority } from "./na
 export type ModelAnimLoadBinding = Pick<
   SnapshotSceneBinding,
   | "slotAnimEpoch"
-  | "slotAnimationGroups"
+  | "slotPoseClips"
   | "slotAnimLoads"
   | "pendingAnimState"
   | "slotAnimReady"
@@ -97,7 +93,7 @@ const pendingModelLoads = new WeakMap<AbstractMesh, {
   cancel: () => void;
 }>();
 const slotLoadCancellations = new WeakMap<ModelAnimLoadBinding, Map<number, () => void>>();
-const bundleOwnedGroups = new WeakSet<NamedSeekableGroup>();
+const bundleOwnedClips = new WeakSet<PoseClip>();
 
 function cacheFor(scene: Scene): SceneGlbCache {
   let cache = glbCaches.get(scene);
@@ -197,24 +193,24 @@ function bumpSlotAnimEpoch(
   return next;
 }
 
-function disposeSlotAnimationGroups(
+function disposeSlotPoseClips(
   binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
-  for (const group of binding.slotAnimationGroups?.get(slotId) ?? []) {
-    if (!bundleOwnedGroups.has(group)) group.dispose?.();
+  for (const clip of binding.slotPoseClips?.get(slotId) ?? []) {
+    if (!bundleOwnedClips.has(clip)) clip.dispose?.();
   }
-  binding.slotAnimationGroups?.delete(slotId);
+  binding.slotPoseClips?.delete(slotId);
 }
 
-/** Cancel in-flight GLB animation loads and dispose registered groups. */
+/** Cancel in-flight GLB animation loads and dispose the slot's registered clips. */
 export function invalidateSlotAnimLoad(
   binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
   bumpSlotAnimEpoch(binding, slotId);
   binding.slotAnimLoads?.delete(slotId);
-  disposeSlotAnimationGroups(binding, slotId);
+  disposeSlotPoseClips(binding, slotId);
 }
 
 function replayPendingAnimState(
@@ -364,121 +360,16 @@ export function acquireGlbContainer(
   };
 }
 
-const pendingBlends = new WeakMap<Scene, Map<NamedSeekableGroup, () => void>>();
-
-/** Latest weighted seek per group, applied as the Scene's next animation pass starts. */
-function blendsFor(scene: Scene): Map<NamedSeekableGroup, () => void> {
-  const existing = pendingBlends.get(scene);
-  if (existing) return existing;
-  const blends = new Map<NamedSeekableGroup, () => void>();
-  pendingBlends.set(scene, blends);
-  // Late bindings keep each weight fixed at registration. Registering them
-  // right before animate() lets that pass consume them, so a later command
-  // cannot mix with a stale weighted seek.
-  const observer = scene.onBeforeAnimationsObservable.add(() => {
-    if (!blends.size || !scene.animationsEnabled || isSceneGameTimePaused(scene)) return;
-    // Pinned Babylon 9.29 adapter: Scene._animate skips its first pass,
-    // late bindings included, while pending data exists. This observer also
-    // assumes an animation pass follows the notification. Babylon still
-    // notifies during render-only redraws; the game-time guard above keeps the
-    // last accepted blends queued for the next real animation pass. Direct
-    // ignoreAnimations callers and zero-step deterministic lockstep frames
-    // must likewise avoid consuming this queue.
-    if (!scene._animationTimeLast && scene._pendingData.length > 0) return;
-    for (const apply of blends.values()) apply();
-    blends.clear();
-  });
-  scene.onDisposeObservable.addOnce(() => {
-    scene.onBeforeAnimationsObservable.remove(observer);
-    blends.clear();
-  });
-  return blends;
-}
-
 /**
- * An AnimationGroup as Play seeks it (`applyAnimStateToScene`): tagged with the Animation asset it plays, started and
- * paused at weight 0 on its first seek, and crossfaded through `blendToFrame`. Editor previews wrap their groups the
- * same way so they play an Animation Graph's clip layers as Play does.
+ * An AnimationGroup as Play poses it (`applyAnimStateToScene`): a pose clip tagged with the Animation asset it plays,
+ * its channels' rest values read now. The group is never started; `dispose` disposes it. Editor previews bind their
+ * groups the same way so they pose an Animation Graph's clip layers as Play does.
  */
-export function wrapGameplayAnimationGroup(
-  group: {
-    name: string;
-    from: number;
-    to: number;
-    start?(loop?: boolean): void;
-    play?(loop?: boolean): void;
-    pause(): void;
-    reset(): void;
-    stop(): void;
-    goToFrame(frame: number, useWeight?: boolean): void;
-    setWeightForAllAnimatables?(weight: number): void;
-    getScene(): Scene;
-    dispose(): void;
-  },
+export function bindGameplayAnimationGroup(
+  group: PoseClipSource & { dispose(): void },
   clipAssetGuid: string,
-): NamedSeekableGroup & { dispose(): void; retire(): void } {
-  let initialized = false;
-  const initialize = () => {
-    if (initialized) return;
-    initialized = true;
-    // A lazily started blend must inherit the other clip's rest values, not
-    // capture its currently animated pose as the value to restore on reset.
-    const inheritOriginal = Animation.InheritOriginalValueFromActiveAnimations;
-    Animation.InheritOriginalValueFromActiveAnimations = true;
-    try {
-      if (typeof group.start === "function") group.start(true);
-      else group.play?.(true);
-    } finally {
-      Animation.InheritOriginalValueFromActiveAnimations = inheritOriginal;
-    }
-    group.pause();
-    group.setWeightForAllAnimatables?.(0);
-  };
-  let active = false;
-  // A retired group's AnimationGroup is (being) disposed; a queued weighted
-  // seek must not start it again on the next animation pass.
-  let retired = false;
-  const cancelBlend = () => pendingBlends.get(group.getScene())?.delete(wrapped);
-  const wrapped: NamedSeekableGroup & { dispose(): void; retire(): void } = {
-    name: group.name,
-    from: group.from,
-    to: group.to,
-    clipAssetGuid,
-    pause: () => group.pause(),
-    reset: () => {
-      cancelBlend();
-      if (!active) return;
-      group.reset();
-      group.setWeightForAllAnimatables?.(0);
-      active = false;
-    },
-    goToFrame: (frame) => {
-      cancelBlend();
-      initialize();
-      active = true;
-      group.goToFrame(frame);
-    },
-    blendToFrame: (frame, weight) => {
-      if (retired) return;
-      blendsFor(group.getScene()).set(wrapped, () => {
-        initialize();
-        active = true;
-        group.setWeightForAllAnimatables?.(weight);
-        group.goToFrame(frame, true);
-      });
-    },
-    setWeightForAllAnimatables: (weight) =>
-      group.setWeightForAllAnimatables?.(weight),
-    retire: () => {
-      retired = true;
-      cancelBlend();
-    },
-    dispose: () => {
-      wrapped.retire();
-      group.dispose();
-    },
-  };
-  return wrapped;
+): PoseClip & { dispose(): void } {
+  return bindPoseClip(group, clipAssetGuid, { dispose: () => group.dispose() });
 }
 
 export function adoptLoadedHierarchy(
@@ -608,7 +499,7 @@ type PreparedModelInstance = {
   staging: Mesh;
   wrapper: TransformNode;
   instance: InstantiatedEntries;
-  groups: NamedSeekableGroup[];
+  clips: Array<PoseClip & { dispose?(): void }>;
 };
 
 /** Native clone semantics retained, with wrapper ownership. */
@@ -629,7 +520,7 @@ function prepareModelInstance(
     const instance = bundle.ownRenderUser(container.instantiateModelsToScene(keepSourceName, false, { doNotInstantiate: true }));
     for (const node of instance.rootNodes) node.parent = wrapper;
     for (const child of staging.getChildMeshes()) child.renderingGroupId = placeholder.renderingGroupId;
-    return { bundle, staging, wrapper, instance, groups: [] };
+    return { bundle, staging, wrapper, instance, clips: [] };
   } catch (error) {
     bundle.dispose();
     throw error;
@@ -731,7 +622,7 @@ export function beginSlotModelAnimLoad(
       prepared = prepareModelInstance(placeholder, container, importScale);
       prepared.bundle.releaseWith(() => lease.release());
       const { instance } = prepared;
-      if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
+      if (!binding.slotPoseClips) binding.slotPoseClips = new Map();
       const clipGuids = binding.modelClipAnimationGuids?.get(clipAssetGuid);
       const retargets = binding.retargetAnimationLoads?.get(clipAssetGuid) ?? [];
       const nativeGuids = new Set<string>([clipAssetGuid]);
@@ -739,11 +630,12 @@ export function beginSlotModelAnimLoad(
         for (const guid of clipGuids.values()) nativeGuids.add(guid);
       }
       for (const row of retargets) nativeGuids.add(row.animationGuid);
-      const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
-        (group) => !nativeGuids.has(group.clipAssetGuid ?? ""),
+      const existing = (binding.slotPoseClips.get(slotId) ?? []).filter(
+        (clip) => !nativeGuids.has(clip.clipAssetGuid ?? ""),
       );
-      const wrapped: ReturnType<typeof wrapGameplayAnimationGroup>[] = instance.animationGroups.map((group) =>
-        wrapGameplayAnimationGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
+      // Rest values are read now, before instance pooling or any pose moves the nodes.
+      const wrapped: Array<PoseClip & { dispose(): void }> = instance.animationGroups.map((group) =>
+        bindGameplayAnimationGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
       for (const row of retargets) {
         const sourceBytes = binding.modelSources?.get(row.sourceModelGuid);
@@ -762,7 +654,7 @@ export function beginSlotModelAnimLoad(
             : retargetAnimationGroupWithMeshProxy(sourceGroup, prepared.staging);
           if (retargeted) {
             prepared.bundle.ownRenderUser(retargeted);
-            wrapped.push(wrapGameplayAnimationGroup(retargeted, row.animationGuid));
+            wrapped.push(bindGameplayAnimationGroup(retargeted, row.animationGuid));
           }
         }
       }
@@ -785,9 +677,9 @@ export function beginSlotModelAnimLoad(
       }, cancellation));
       if (!request.isCurrent()) return;
       const previousInstance = meta[MODEL_INSTANCE_KEY];
-      const previousGroups = new Set(previousInstance?.groups ?? []);
-      prepared.groups = wrapped;
-      for (const group of wrapped) bundleOwnedGroups.add(group);
+      const previousClips = new Set(previousInstance?.clips ?? []);
+      prepared.clips = wrapped;
+      for (const clip of wrapped) bundleOwnedClips.add(clip);
       prepared.wrapper.parent = placeholder;
       prepared.staging.dispose(true);
       registerModelOccluder(placeholder, binding.modelPayloads?.get(clipAssetGuid)?.occluder);
@@ -796,17 +688,16 @@ export function beginSlotModelAnimLoad(
         meta.disposeModelOnDespawn = true;
         placeholder.onDisposeObservable.addOnce(() => disposePlaceholderInstance(placeholder));
       }
-      binding.slotAnimationGroups.set(slotId, [...existing.filter((group) => !previousGroups.has(group)), ...wrapped]);
-      // Playback borrows these groups; releasing a visual must also drop its
+      binding.slotPoseClips.set(slotId, [...existing.filter((clip) => !previousClips.has(clip)), ...wrapped]);
+      // Playback borrows these clips; releasing a visual must also drop its
       // lookup references, including editor generations with fresh slot IDs.
       prepared.bundle.releaseWith(() => {
-        // The bundle disposes these AnimationGroups without the wrappers.
-        for (const group of wrapped) group.retire();
-        const current = binding.slotAnimationGroups?.get(slotId);
+        // The bundle disposes these clips' AnimationGroups.
+        const current = binding.slotPoseClips?.get(slotId);
         if (!current) return;
-        const remaining = current.filter((group) => !wrapped.some((own) => own === group));
-        if (remaining.length) binding.slotAnimationGroups!.set(slotId, remaining);
-        else binding.slotAnimationGroups!.delete(slotId);
+        const remaining = current.filter((clip) => !wrapped.some((own) => own === clip));
+        if (remaining.length) binding.slotPoseClips!.set(slotId, remaining);
+        else binding.slotPoseClips!.delete(slotId);
       });
       // An instantiated hierarchy is not ready until all retarget sources and
       // groups are installed. A replacement must own that remaining work.
@@ -865,16 +756,16 @@ export function publishModelHierarchyAnimations(
     const instance = (mesh.metadata as ModelPlaceholderMeta | null)?.[MODEL_INSTANCE_KEY];
     return instance ? [instance] : [];
   });
-  const groups = instances.flatMap((instance) => instance.groups);
-  binding.slotAnimationGroups ??= new Map();
-  binding.slotAnimationGroups.set(slotId, groups);
+  const clips = instances.flatMap((instance) => instance.clips);
+  binding.slotPoseClips ??= new Map();
+  binding.slotPoseClips.set(slotId, clips);
   for (const instance of instances) {
     instance.bundle.releaseWith(() => {
-      const current = binding.slotAnimationGroups?.get(slotId);
+      const current = binding.slotPoseClips?.get(slotId);
       if (!current) return;
-      const remaining = current.filter((group) => !instance.groups.includes(group));
-      if (remaining.length) binding.slotAnimationGroups!.set(slotId, remaining);
-      else binding.slotAnimationGroups!.delete(slotId);
+      const remaining = current.filter((clip) => !instance.clips.includes(clip));
+      if (remaining.length) binding.slotPoseClips!.set(slotId, remaining);
+      else binding.slotPoseClips!.delete(slotId);
     });
   }
   replayPendingAnimState(binding, slotId);

@@ -16,6 +16,8 @@ import {
 } from "@haptic/core";
 export { ENGINE_CURVE_EXTRAPOLATION_ENUM_ID, ENGINE_CURVE_INTERPOLATION_ENUM_ID } from "@haptic/core";
 import { ENGINE_TIMELINE_LOOP_MODE_ENUM_ID, TIMELINE_LOOP_MODE_LABELS, TIMELINE_LOOP_MODES } from "@haptic/core";
+import { ANIMATION_TICK_MODE_LABELS, ANIMATION_TICK_MODES, ENGINE_ANIMATION_TICK_MODE_ENUM_ID } from "@haptic/core";
+export { ENGINE_ANIMATION_TICK_MODE_ENUM_ID } from "@haptic/core";
 import { ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID, PARTICLES_FINISHED_REASONS } from "@haptic/core";
 export { ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID } from "@haptic/core";
 export { ENGINE_TIMELINE_LOOP_MODE_ENUM_ID } from "@haptic/core";
@@ -210,6 +212,11 @@ export const ENGINE_ENUMS: readonly EngineEnum[] = [
     id: ENGINE_TIMELINE_LOOP_MODE_ENUM_ID,
     name: "Timeline Loop Mode",
     members: TIMELINE_LOOP_MODES.map((mode, value) => ({ name: TIMELINE_LOOP_MODE_LABELS[mode], value })),
+  },
+  {
+    id: ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+    name: "Animation Tick Mode",
+    members: ANIMATION_TICK_MODES.map((mode, value) => ({ name: ANIMATION_TICK_MODE_LABELS[mode], value })),
   },
   {
     id: ENGINE_PARTICLES_FINISHED_REASON_ENUM_ID,

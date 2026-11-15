@@ -15,6 +15,7 @@ import {
   type AnimTransition,
 } from "@haptic/anim-graph";
 import { ANIM_NOTIFY_EVENT } from "@haptic/scripting";
+import { ANIMATION_TICK_MODE_PROPERTY, parseAnimationTickMode } from "@haptic/core";
 import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptBreakpoints } from "./script-breakpoints";
@@ -303,6 +304,9 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       this.liveGraphByComponent.set(evalKey, guid);
       this.bindGraph(evalKey, guid);
       if (!runs || slotId === undefined || !this.host.canTick(actor)) continue;
+      const tickMode = parseAnimationTickMode(component.getVariable(ANIMATION_TICK_MODE_PROPERTY));
+      // Never: the graph keeps its state and its actor its pose, and nothing fires, until it runs again.
+      if (tickMode === "never") continue;
       this.seedVariables(component, document);
       const hit = this.stateMachineBreakpoints(guid, component, actor);
       const jumpTo = this.pendingJumpByComponent.get(evalKey);
@@ -397,6 +401,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         justFinished: next.facts.justFinished,
         justLooped: next.facts.justLooped,
         layers: next.layers,
+        // The graph ran all the same; render poses the actor only while it can be seen.
+        ...(tickMode === "whenVisible" ? { whenVisible: true } : {}),
       });
     }
   }
