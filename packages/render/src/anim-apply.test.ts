@@ -441,6 +441,34 @@ describe("applyAnimStateToScene", () => {
     expect(spine.value).toBeCloseTo(20);
   });
 
+  it("adds an additive layer's change from its base clip's frame, falling back to rest when the base is missing", () => {
+    const pose = { value: 0 };
+    const idle = frameClip("Idle", 20, "idle", pose);
+    const lean = frameClip("Lean", 40, "lean", pose);
+    const missing: string[] = [];
+    const layer = (clipName: string, clipAssetGuid: string, normalisedTime: number, extra: Record<string, unknown> = {}) => ({
+      stateId: "s", clipAssetGuid, clipName, clipKind: "animation" as const, normalisedTime, weight: 1, ...extra,
+    });
+    const apply = (baseGuid: string) => applyAnimStateToScene(
+      { getPoseClips: () => [idle, lean], onMissingClip: (info) => missing.push(info.clipAssetGuid ?? "") },
+      {
+        type: "animState", slotId: 1, stateId: "s", normalisedTime: 0, blendWeights: { s: 1 },
+        layers: [
+          layer("Idle", "idle", 0.25),
+          layer("Lean", "lean", 0.5, { additive: true, additiveBase: { clipAssetGuid: baseGuid, clipName: "Idle", normalisedTime: 0.5 } }),
+        ],
+      },
+    );
+    apply("idle");
+    // Idle at frame 5, plus Lean's frame 20 less its base, Idle's frame 10.
+    expect(pose.value).toBeCloseTo(15);
+    expect(missing).toEqual([]);
+    apply("gone");
+    // The base clip is not on the slot: Lean changes from rest (0) and the missing clip is reported.
+    expect(pose.value).toBeCloseTo(25);
+    expect(missing).toEqual(["gone"]);
+  });
+
   it("resolves clips by name and clip asset in a slot with many clips, following clip list changes", () => {
     const seeks: string[] = [];
     const clip = (name: string, clipAssetGuid: string) =>

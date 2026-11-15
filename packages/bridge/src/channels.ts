@@ -1061,6 +1061,10 @@ export type CommandMessage =
         flipY?: boolean;
         /** The Layered Blend Per Bone inputs the layer plays under, outermost first. */
         masks?: import("@haptic/core").AnimLayerMaskRef[];
+        /** Under an Apply Additive's Additive input: the clip adds its change from its base pose to the pose beneath. */
+        additive?: boolean;
+        /** An additive clip's base pose when it is not the rest pose. */
+        additiveBase?: import("@haptic/core").AnimAdditiveBase;
       }>;
       /** The Layered Blend Per Bone nodes the layers' `masks` index. */
       layerBlends?: import("@haptic/core").AnimLayerBlend[];

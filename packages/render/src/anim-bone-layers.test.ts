@@ -6,7 +6,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { animBranchFilterKey, type AnimBoneModifier, type AnimBranchFilter, type AnimLayerMaskRef } from "@haptic/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyPose, bindPoseClip, poseRigFor, type PoseClip, type PoseLayering } from "./anim-pose";
+import { applyPose, bindPoseClip, poseRigFor, type PoseAdditive, type PoseClip, type PoseLayering } from "./anim-pose";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -174,5 +174,65 @@ describe("Transform Bone changes", () => {
     nodes.spine.position.z = 7;
     applyPose(rig, 1, clips, [0], [1], modifier({ bone: "spine", translation: { value: [0, 0, 1], mode: "add", space: "parent" } }));
     expect(nodes.spine.position.z).toBe(7);
+  });
+});
+
+/** A clip moving `target`'s `path` through `keys` (frame → value). */
+function keyedClip(name: string, target: TransformNode, path: "position" | "rotationQuaternion" | "scaling", keys: Array<[number, Vector3 | Quaternion]>): PoseClip {
+  const type = path === "rotationQuaternion" ? Animation.ANIMATIONTYPE_QUATERNION : Animation.ANIMATIONTYPE_VECTOR3;
+  const animation = new Animation(`${name}-${path}`, path, 30, type);
+  animation.setKeys(keys.map(([frame, value]) => ({ frame, value })));
+  const group = new AnimationGroup(name, scene);
+  group.addTargetedAnimation(animation, target);
+  return bindPoseClip(group, name);
+}
+
+const turn = (radians: number) => Quaternion.RotationAxis(Vector3.Up(), radians);
+const additive = (count: number, entries: Array<PoseAdditive | undefined>): PoseLayering => ({
+  masks: Array.from({ length: count }, () => undefined), blends: [], modifiers: [], additive: entries,
+});
+
+describe("additive clips", () => {
+  it("add their change from the rest pose, by weight, on top of the blended pose", () => {
+    const base = keyedClip("walk", nodes.hips, "position", [[0, new Vector3(1, 1, 0)], [10, new Vector3(1, 1, 0)]]);
+    const lean = keyedClip("lean", nodes.hips, "position", [[0, new Vector3(3, 1, 0)], [10, new Vector3(3, 1, 0)]]);
+    const clips = [base, lean];
+    applyPose(poseRigFor(clips), 2, clips, [0, 0], [1, 0.5], additive(2, [undefined, { reference: null, frame: 0 }]));
+    // Rest is (0, 1, 0): half of the lean's +3 in x on the walk's 1.
+    expect(nodes.hips.position.asArray()).toEqual([2.5, 1, 0]);
+  });
+
+  it("change from their own first frame, or from another clip's frame", () => {
+    const base = keyedClip("walk", nodes.hips, "position", [[0, new Vector3(1, 1, 0)], [10, new Vector3(1, 1, 0)]]);
+    const sway = keyedClip("sway", nodes.hips, "position", [[0, new Vector3(2, 1, 0)], [10, new Vector3(5, 1, 0)]]);
+    const clips = [base, sway];
+    const rig = poseRigFor(clips);
+    applyPose(rig, 2, clips, [0, 10], [1, 1], additive(2, [undefined, { reference: sway, frame: 0 }]));
+    expect(nodes.hips.position.x).toBeCloseTo(4, 9);
+    // From the walk's pose instead: 5 − 1 on the walk's 1.
+    applyPose(rig, 2, clips, [0, 10], [1, 1], additive(2, [undefined, { reference: base, frame: 0 }]));
+    expect(nodes.hips.position.x).toBeCloseTo(5, 9);
+  });
+
+  it("turn a rotation by their change, scaled by the weight, before the pose's own rotation", () => {
+    const base = keyedClip("walk", nodes.spine, "rotationQuaternion", [[0, turn(0.5)], [10, turn(0.5)]]);
+    const twist = keyedClip("twist", nodes.spine, "rotationQuaternion", [[0, Quaternion.RotationAxis(Vector3.Right(), 0.8)], [10, Quaternion.RotationAxis(Vector3.Right(), 0.8)]]);
+    const clips = [base, twist];
+    const rig = poseRigFor(clips);
+    applyPose(rig, 2, clips, [0, 0], [1, 1], additive(2, [undefined, { reference: null, frame: 0 }]));
+    const full = Quaternion.RotationAxis(Vector3.Right(), 0.8).multiply(turn(0.5));
+    expect(Math.abs(Quaternion.Dot(nodes.spine.rotationQuaternion!, full))).toBeCloseTo(1, 9);
+    applyPose(rig, 2, clips, [0, 0], [1, 0.5], additive(2, [undefined, { reference: null, frame: 0 }]));
+    const half = Quaternion.RotationAxis(Vector3.Right(), 0.4).multiply(turn(0.5));
+    expect(Math.abs(Quaternion.Dot(nodes.spine.rotationQuaternion!, half))).toBeCloseTo(1, 6);
+  });
+
+  it("multiply scales, and start a property no other clip plays from rest", () => {
+    nodes.arm.scaling.set(2, 2, 2);
+    const grow = keyedClip("grow", nodes.arm, "scaling", [[0, new Vector3(4, 2, 2)], [10, new Vector3(4, 2, 2)]]);
+    const clips = [keyedClip("walk", nodes.hips, "position", [[0, new Vector3(1, 1, 0)]]), grow];
+    applyPose(poseRigFor(clips), 2, clips, [0, 0], [1, 0.5], additive(2, [undefined, { reference: null, frame: 0 }]));
+    // Rest scale 2, the clip doubles x from rest: half of that is ×1.5.
+    expect(nodes.arm.scaling.asArray()).toEqual([3, 2, 2]);
   });
 });
