@@ -10,6 +10,7 @@ export default function HomeRoute() {
     createFromTemplate,
     openProject,
     openListedProject,
+    cloneProject,
     updateListedProject,
     removeListedProject,
     reconnectProject,
@@ -38,6 +39,7 @@ export default function HomeRoute() {
         onCreateFromTemplate={createFromTemplate}
         onOpenExternal={openProject}
         onOpenProject={openListedProject}
+        onCloneProject={cloneProject}
         onUpdateProject={updateListedProject}
         onRemoveFromList={removeListedProject}
         onReconnect={reconnectProject}

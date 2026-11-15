@@ -39,6 +39,7 @@ import { onEncodeQueuePause } from "../services/encode-queue-pause";
 import type { OpenDocument } from "../services/document-service";
 import { ProjectService } from "../services/project-service";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { SourceControlSyncService } from "../services/source-control-sync";
 import {
   installMemoryOpfs,
   unmountDocumentProvider,
@@ -783,6 +784,116 @@ describe("DocumentProvider actions and route", () => {
     }
   });
 
+  it("asks the Git sync for no status when a remount only re-read the files, and still for a new asset", async () => {
+    const actions = await openProject();
+    const registry = documents().assetRegistry;
+    const noteSaved = vi.spyOn(SourceControlSyncService.prototype, "noteSaved");
+    try {
+      // Coming back to the app rescans the project; the foreground refresh reads the status itself.
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } })); });
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } })); });
+      await waitFor(() => expect(documents().assetRegistry).not.toBe(registry));
+      await act(async () => { await Promise.resolve(); });
+      // A pull's reload: the pull read the status after writing.
+      let release!: () => void;
+      act(() => { release = actions.lockAuthoring("Read-only while pulling"); });
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], { lock: actions.getAuthoringLock(), release }));
+      expect(noteSaved).not.toHaveBeenCalled();
+      // The remount after an import follows the editor's own writes.
+      await act(() => actions.refreshAssetRegistry());
+      expect(noteSaved).toHaveBeenCalledTimes(1);
+      await createScene(actions, "Second");
+      expect(noteSaved).toHaveBeenCalledTimes(2);
+    } finally {
+      noteSaved.mockRestore();
+    }
+  });
+
+  describe("after a pull", () => {
+    /** Main as another Git client writes it into the folder: what a pull's checkout does. */
+    async function pullChangesMain(): Promise<SerializedScene> {
+      const storage = new OpfsStorageAdapter();
+      await storage.openDocumentsProject("Stable");
+      const other = new ProjectService(storage);
+      await other.loadCurrentProject();
+      const changed = movedScene((await other.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene, 7);
+      await other.saveDocument("scene", MAIN_SCENE_FILE, changed);
+      await other.closeProject();
+      return changed;
+    }
+
+    /** The pull flow's hold: documents read-only from the pull until its reload. */
+    function holdForPull(actions: DocumentActions) {
+      let release!: () => void;
+      act(() => { release = actions.lockAuthoring("Read-only while pulling"); });
+      return { lock: actions.getAuthoringLock(), release };
+    }
+
+    it("reloads a pulled Scene under the pull's own read-only hold, then releases it", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const pulled = await pullChangesMain();
+      const hold = holdForPull(actions);
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], hold));
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(pulled.actors[0]!.transform.position);
+      expect(documents().openDocuments.find((doc) => doc.id === MAIN_SCENE_ID)!.dirty).toBe(false);
+      expect(actions.getAuthoringLock().readOnly).toBe(false);
+      expect(documents().externalChangePrompt).toBeNull();
+    });
+
+    it("reloads the whole project under the hold when the pull changed project.json, then releases it", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const storage = new OpfsStorageAdapter();
+      await storage.openDocumentsProject("Stable");
+      const other = new ProjectService(storage);
+      const { document, layouts } = await other.loadCurrentProject();
+      const changed = movedScene((await other.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene, 5);
+      await other.saveDocument("scene", MAIN_SCENE_FILE, changed);
+      await other.saveProject({ ...document, metadata: { ...document.metadata, version: "9.9" } }, layouts);
+      await other.closeProject();
+      const hold = holdForPull(actions);
+      await act(() => actions.applyPulledChanges([PROJECT_FILE, MAIN_SCENE_FILE], hold));
+      expect(documents().projectDocument?.metadata.version).toBe("9.9");
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(changed.actors[0]!.transform.position);
+      expect(actions.getAuthoringLock().readOnly).toBe(false);
+      expect(documents().externalChangePrompt).toBeNull();
+    });
+
+    it("reloads the pulled Scene even when a foreground rescan during the pull already took its new time", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const pulled = await pullChangesMain();
+      // Back from another app while the pull's transfer still runs.
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } })); });
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } })); });
+      await waitFor(() => expect(documents().externalChangePrompt?.cleanChangedPaths).toEqual([MAIN_SCENE_FILE]));
+      const hold = holdForPull(actions);
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], hold));
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(pulled.actors[0]!.transform.position);
+    });
+
+    it("leaves a pulled change it could not reload for the next foreground rescan", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const before = firstActorPosition(MAIN_SCENE_ID);
+      await pullChangesMain();
+      const hold = holdForPull(actions);
+      // Another owner takes the documents while the pull runs.
+      let releaseOther!: () => void;
+      act(() => { releaseOther = actions.lockAuthoring("Read-only during Simulation Play"); });
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], hold));
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(before);
+      act(() => {
+        releaseOther();
+        hold.release();
+      });
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } })); });
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } })); });
+      await waitFor(() => expect(documents().externalChangePrompt?.cleanChangedPaths).toEqual([MAIN_SCENE_FILE]));
+    });
+  });
+
   it("awaits a session transition owner before closing a scene and preserves the project when Stop is refused", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
@@ -1314,6 +1425,32 @@ describe("DocumentProvider actions and route", () => {
     await act(() => actions.openListedProject(listed));
     const saved = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
     expect(saved.actors[0]!.transform.position).toEqual(edited.actors[0]!.transform.position);
+  });
+
+  it("releases the project folder only once the Git sync has stopped and its running operation has ended", async () => {
+    const actions = await openProject();
+    let releaseSync!: () => void;
+    const held = new Promise<void>((resolve) => { releaseSync = resolve; });
+    const stop = vi.spyOn(SourceControlSyncService.prototype, "stop");
+    const settled = vi.spyOn(SourceControlSyncService.prototype, "settled").mockImplementation(() => held);
+    const close = vi.spyOn(ProjectService.prototype, "closeProject");
+    try {
+      let closing!: Promise<boolean>;
+      act(() => { closing = actions.forceCloseProject(); });
+      await waitFor(() => expect(settled).toHaveBeenCalled());
+      await act(async () => { await Promise.resolve(); });
+      expect(stop.mock.invocationCallOrder[0]).toBeLessThan(settled.mock.invocationCallOrder[0]!);
+      expect(close).not.toHaveBeenCalled();
+      await act(async () => {
+        releaseSync();
+        expect(await closing).toBe(true);
+      });
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      stop.mockRestore();
+      settled.mockRestore();
+      close.mockRestore();
+    }
   });
 
   it("keeps tabs opened since the last save when a clean project closes", async () => {

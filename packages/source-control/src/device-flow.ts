@@ -31,7 +31,8 @@ export const DEVICE_SIGN_IN_HOSTS: Record<DeviceSignInHost, DeviceHost> = {
     label: "GitHub",
     codeUrl: "https://github.com/login/device/code",
     tokenUrl: "https://github.com/login/oauth/access_token",
-    scope: "repo",
+    // `read:org` lists the organizations Publish can create a repository in.
+    scope: "repo read:org",
     verificationUrl: "https://github.com/login/device",
     userUrl: "https://api.github.com/user",
     userAccept: "application/vnd.github+json",
@@ -227,5 +228,6 @@ async function signedInCredential(
   const json = parseJsonObject(response.bodyText);
   const account = stringField(json, config.accountField);
   if (response.status !== 200 || !account) return err(failure(json, response.status));
-  return ok({ ...credential, account });
+  const id = json?.id;
+  return ok({ ...credential, account, ...(typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? { accountId: String(id) } : {}) });
 }

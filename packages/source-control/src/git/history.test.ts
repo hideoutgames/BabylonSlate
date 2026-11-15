@@ -42,6 +42,14 @@ describe("relate", () => {
     expect(reads).not.toContain("H40");
   });
 
+  it("lists each side newest first, so the newest incoming commits are the first ones", async () => {
+    // The remote merged a branch whose older commit P comes first in M's parents.
+    const { read } = graph(["A", "P: A", "Q: A", "R: Q", "M: P R", "L: A"]);
+    const relation = await relate("L", "M", read, new Set());
+    expect(relation.behind).toEqual(["M", "R", "Q", "P"]);
+    expect(relation.ahead).toEqual(["L"]);
+  });
+
   it("counts every local commit when nothing was pushed yet", async () => {
     const { read } = graph(["A", "B: A", "C: B"]);
     expect(sorted(await relate("C", null, read, new Set()))).toEqual({ ahead: ["A", "B", "C"], behind: [] });

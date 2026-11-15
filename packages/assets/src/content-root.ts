@@ -24,6 +24,16 @@ export function projectContentRoot(id = "project"): ContentRoot {
   return { id, kind: "project", pathPrefix: ASSETS_DIR };
 }
 
+/**
+ * Where a root's blob chunks live (in the root's storage): each root has its
+ * own store, so the project's is `assets/.blobs` and a plugin's
+ * `plugins/<name>/assets/.blobs`, and a copy between roots writes the blob
+ * into the destination's.
+ */
+export function contentRootBlobFolder(root: Pick<ContentRoot, "pathPrefix">): string {
+  return `${root.pathPrefix}/.blobs`;
+}
+
 export function pluginContentRoot(options: {
   id: string;
   pathPrefix: string;

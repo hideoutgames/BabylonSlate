@@ -51,6 +51,8 @@ export interface PreviewBuildHost {
   preparingRef: RefObject<boolean>;
   playRequestInputsRef: RefObject<PlayRequestInputs>;
   saveAll: DocumentActions["saveAll"];
+  /** A read-only lock (a Pull) refuses the start. */
+  getAuthoringLock: DocumentActions["getAuthoringLock"];
   exportGameArtifact: DocumentActions["exportGameArtifact"];
   setPreparing: Dispatch<SetStateAction<boolean>>;
   setPlayOpen: Dispatch<SetStateAction<boolean>>;
@@ -80,6 +82,7 @@ export function usePreviewBuild({
   preparingRef,
   playRequestInputsRef,
   saveAll,
+  getAuthoringLock,
   exportGameArtifact,
   setPreparing,
   setPlayOpen,
@@ -244,6 +247,12 @@ export function usePreviewBuild({
 
   const requestPreviewBuild = useCallback(async (saveConfirmed = false) => {
     if (!sessionOwner.canStart() || preparingRef.current) return;
+    // An editor operation holds the documents (a Pull until its files are reloaded): the content is about to change.
+    const authoring = getAuthoringLock();
+    if (authoring.readOnly) {
+      appendLog(`Preview Build did not start: ${authoring.reason}.`);
+      return;
+    }
     // Read at call time (see playRequestInputsRef); shadows the render values.
     const {
       assetRegistry,
@@ -395,6 +404,7 @@ export function usePreviewBuild({
     loadSaveGameDefinition,
     playRequestInputsRef,
     saveAll,
+    getAuthoringLock,
     exportGameArtifact,
     preparingRef,
     sessionSourceDocumentRef,

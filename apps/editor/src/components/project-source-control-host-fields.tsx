@@ -31,6 +31,8 @@ export interface ProjectSourceControlHostFieldsProps {
   /** The plain Repository URL and Branch fields, shown where no host API applies. */
   renderUrlField: () => React.ReactNode;
   renderBranchField: () => React.ReactNode;
+  /** Integrated mode: the working copy's repository and branch, shown as they are, with no pickers. */
+  fixed?: boolean;
 }
 
 function hostLabel(origin: string): string {
@@ -94,6 +96,7 @@ export default function ProjectSourceControlHostFields({
   onUrlTyped,
   renderUrlField,
   renderBranchField,
+  fixed = false,
 }: ProjectSourceControlHostFieldsProps) {
   const { accounts, credentials } = useSourceControlCredentials();
   const { link, dialogs } = useHostLink();
@@ -102,7 +105,7 @@ export default function ProjectSourceControlHostFields({
   const location = parseRepositoryUrl(settings.repositoryUrl);
   const credential = location ? credentials.find((candidate) => candidate.origin === location.origin) ?? null : null;
   const repositories = useRepositories(accounts, apiCredentials, pickerOpen);
-  const branchCredential = credential && credentialHasHostApi(credential.kind) ? credential : null;
+  const branchCredential = !fixed && credential && credentialHasHostApi(credential.kind) ? credential : null;
   const branches = useBranches(accounts, branchCredential, location?.path ?? null);
   const prompt = location ? signInPromptFor(location.origin) : null;
   const canDeviceSignIn = prompt?.deviceHost ? deviceClientId(prompt.deviceHost, isTestModeEnabled()) !== null : false;
@@ -119,7 +122,7 @@ export default function ProjectSourceControlHostFields({
 
   return (
     <>
-      {apiCredentials.length > 0 ? (
+      {apiCredentials.length > 0 && !fixed ? (
         <Field className="settings-field" data-invalid={urlMissing || undefined}>
           <FieldLabel htmlFor="settings-source-control-repository">Repository</FieldLabel>
           <Button

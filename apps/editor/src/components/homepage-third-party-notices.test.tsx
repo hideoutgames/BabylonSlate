@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
 import { AppSettingsProvider } from "../context/app-settings-context";
@@ -7,13 +7,17 @@ import { ThirdPartyNoticesPage, type ThirdPartyNotices } from "./homepage-third-
 
 afterEach(cleanup);
 
-const notices: ThirdPartyNotices = {
+const notices: ThirdPartyNotices = vi.hoisted(() => ({
   packages: [
     { name: "@babylonjs/havok", version: "1.3.14", license: "MIT", source: "https://example.com/havok", inGames: true, text: 0 },
     { name: "react", version: "19.2.8", license: "MIT", source: "", inGames: false, text: 1 },
   ],
   texts: ["Copyright (c) 2023 Babylon.js", "Copyright (c) Meta Platforms, Inc."],
-};
+}));
+
+// The generated notices file is large; transforming it on a loaded runner outlasted the test timeout.
+// These tests cover the page and its navigation, not the file, which the notices contract checks.
+vi.mock("../lib/third-party-notices.json", () => ({ default: notices }));
 
 describe("Third-Party Notices", () => {
   it("opens from the bottom of Application and returns with Back", async () => {

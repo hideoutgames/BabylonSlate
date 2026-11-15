@@ -1,4 +1,4 @@
-import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
+import { isProjectOpenElsewhere, isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
 import { newGuid, normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
@@ -43,7 +43,7 @@ import {
   type ProjectAppearance,
   type RenderProjectSettings,
 } from "@haptic/core";
-import type { ProjectFolderHandle, ProjectStorage } from "@haptic/core";
+import type { ProjectFolderHandle, ProjectStorage, SourceControlProjectSettings } from "@haptic/core";
 import {
   AssetRegistry,
   createRegistryAssetLoadingService,
@@ -115,6 +115,8 @@ import {
   type CreateProjectOptions,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
+import { throwIfCancelled } from "@haptic/source-control";
+import { sameRepository } from "../lib/source-control-mode";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
 import { syncExtensionNodes } from "./extension-nodes";
 import {
@@ -747,6 +749,46 @@ export class ProjectService {
         return this.loadCurrentProject();
       },
     );
+  }
+
+  /**
+   * Clone: a new folder in app storage named after `name`, filled by `clone`
+   * (the repository's branch), with Integrated mode and the repository and
+   * branch written into its `project.json` (unless it says so already).
+   * A failure or a cancel through `signal`, even one after the files arrived,
+   * removes the folder; a branch with no `project.json` is refused. The
+   * folder is released: open it as a listed project.
+   */
+  async cloneProject(options: {
+    name: string;
+    repositoryUrl: string;
+    branch: string;
+    signal?: AbortSignal;
+    clone: (storage: ProjectStorage, folderId: string) => Promise<void>;
+  }): Promise<ProjectFolderHandle> {
+    const projectName = normalizeProjectFolderName(options.name);
+    if (!projectName) throw new Error("Enter a project name.");
+    const owned = await openOwnedDocumentsProject(this.storage, projectName);
+    if (!owned.createdHere) {
+      await this.storage.releaseFolder();
+      throw new Error("A project with this name already exists.");
+    }
+    await scaffoldOwnedProject(this.storage, owned, async () => {
+      await options.clone(this.storage, owned.handle.id);
+      if (!(await this.storage.exists(PROJECT_FILE))) {
+        throw new Error(`${options.branch} has no Haptic project: project.json is missing.`);
+      }
+      const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as { settings?: { sourceControl?: Partial<SourceControlProjectSettings> } };
+      const current = raw.settings?.sourceControl;
+      if (!(current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl) && current.branch === options.branch)) {
+        raw.settings = { ...raw.settings, sourceControl: { ...current, mode: "integrated", repositoryUrl: options.repositoryUrl, branch: options.branch } };
+        await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+      }
+      // Cancel stays offered to the end: only a throw in here removes the folder.
+      throwIfCancelled(options.signal);
+    });
+    await this.storage.releaseFolder();
+    return owned.handle;
   }
 
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {
@@ -1958,24 +2000,28 @@ export class ProjectService {
     layouts: ProjectLayouts,
   ): Promise<void> {
     this.assertMigrationApproved(PROJECT_FILE);
-    const now = new Date().toISOString();
-    const updated: ProjectDocument = {
+    const guid = this.projectGuid ?? newGuid();
+    const text = (updatedAt: string) => JSON.stringify({
       ...document,
-      metadata: {
-        ...document.metadata,
-        updatedAt: now,
-      },
-    };
-
-    const payload = {
-      ...updated,
-      guid: this.projectGuid ?? newGuid(),
+      metadata: { ...document.metadata, updatedAt },
+      guid,
       kind: "project",
       version: this.migrations.currentVersion("Project"),
-    };
-    this.projectGuid = payload.guid as string;
-
-    await this.storage.writeText(PROJECT_FILE, JSON.stringify(payload, null, 2));
+    }, null, 2);
+    this.projectGuid = guid;
+    // A save that changes nothing leaves project.json as it is, `updatedAt`
+    // included: a committed file that every Save All rewrote would show as a
+    // change and conflict between teammates who both saved.
+    let stored: string | null = null;
+    try {
+      stored = await this.storage.readText(PROJECT_FILE);
+    } catch (error) {
+      if (!isStorageNotFound(error)) throw error;
+    }
+    const storedUpdatedAt = stored === null ? null : storedProjectUpdatedAt(stored);
+    if (stored === null || storedUpdatedAt === null || text(storedUpdatedAt) !== stored) {
+      await this.storage.writeText(PROJECT_FILE, text(new Date().toISOString()));
+    }
     await this.saveLayouts(layouts);
     this.noteMigrated(PROJECT_FILE);
   }
@@ -2061,4 +2107,14 @@ function normalizeProjectDocument(raw: Partial<ProjectDocument>): ProjectDocumen
 
 function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths)].sort();
+}
+
+/** `metadata.updatedAt` of a stored project.json, or null when it is not a manifest with one. */
+function storedProjectUpdatedAt(text: string): string | null {
+  try {
+    const raw = JSON.parse(text) as { metadata?: { updatedAt?: unknown } };
+    return typeof raw.metadata?.updatedAt === "string" ? raw.metadata.updatedAt : null;
+  } catch {
+    return null;
+  }
 }

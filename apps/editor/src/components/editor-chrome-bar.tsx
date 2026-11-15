@@ -89,11 +89,14 @@ import {
   useActiveDocumentState,
   useCompileState,
   useDocumentActions,
+  useIntegratedSyncState,
   useOpenDocumentTabs,
   useProjectState,
   useRegistryState,
   useSaveState,
 } from "../context/document-context";
+import { Badge } from "@haptic/ui/components/badge";
+import { SourceControlPhoneTools } from "./source-control-phone-tools";
 import { usePlay } from "../context/play-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { useGraphDebugStore } from "../context/graph-debug-context";
@@ -221,18 +224,31 @@ function SortableDocumentTab({
   );
 }
 
+/** Integrated mode's uncommitted change count on the pinned Source Control tab; only it re-renders with the sync. */
+function SourceControlTabCount() {
+  const sync = useIntegratedSyncState();
+  if (!sync.active || sync.rows.length === 0) return null;
+  return (
+    <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums" data-testid="source-control-tab-count">
+      {sync.rows.length}
+    </Badge>
+  );
+}
+
 function PinnedDocumentTab({
   doc,
   icon,
   active,
   onSelect,
   onClose,
+  badge,
 }: {
   doc: OpenDocument;
   icon: ReactNode;
   active: boolean;
   onSelect: () => void;
   onClose?: () => void;
+  badge?: ReactNode;
 }) {
   return (
     <div
@@ -258,6 +274,7 @@ function PinnedDocumentTab({
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
         </span>
+        {badge}
       </Button>
       {onClose ? (
         <Button
@@ -954,6 +971,7 @@ export function EditorChromeBar({
                   icon={kindIcon(sourceControlDoc.ref, resolveDocumentVisual)}
                   active={activeDocumentId === SOURCE_CONTROL_ID}
                   onSelect={() => setActiveDocument(SOURCE_CONTROL_ID)}
+                  badge={<SourceControlTabCount />}
                 />
               </div>
             ) : null}
@@ -1265,6 +1283,7 @@ export function EditorChromeBar({
                 <div className="editor-tools-sheet-actions">
                   {debugMenu}
                   {utilityTools}
+                  <SourceControlPhoneTools onAction={() => setToolsOpen(false)} />
                 </div>
               </SheetContent>
             </Sheet>
