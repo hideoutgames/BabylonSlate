@@ -52,6 +52,7 @@ export {
 } from "./graph";
 export { animEvalWithJump, evaluateAnimGraph } from "./evaluate";
 export * from "./pose-graph";
+export * from "./events";
 export * from "./blend-space";
 export {
   ANIM_ALIAS_NODE_TYPE,

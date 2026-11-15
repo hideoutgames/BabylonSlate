@@ -15,7 +15,14 @@ describe("normalizeBlendSpacePayload", () => {
       previewModelGuid: null,
       axes: [{ name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0, wrap: false }],
       samples: [],
+      eventMode: "highestWeight",
     });
+  });
+
+  it("keeps a chosen event mode and reads any other as Highest Weight", () => {
+    expect(normalizeBlendSpacePayload({ eventMode: "all" }).eventMode).toBe("all");
+    expect(normalizeBlendSpacePayload({ eventMode: "none" }).eventMode).toBe("none");
+    expect(normalizeBlendSpacePayload({ eventMode: "loudest" }).eventMode).toBe("highestWeight");
   });
 
   it("keeps a second axis and each sample's position and rate", () => {

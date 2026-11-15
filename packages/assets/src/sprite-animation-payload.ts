@@ -1,5 +1,10 @@
 import { sniffSourceImageSize } from "./image-size";
 import {
+  animationEventActionGuids,
+  normalizeSpriteAnimationFrameEvents,
+  type SpriteAnimationFrameEventPayload,
+} from "./animation-events";
+import {
   DEFAULT_SPRITE_COLLISION,
   DEFAULT_SPRITE_PIVOT,
   parseSpriteCollision,
@@ -52,6 +57,8 @@ export interface SpriteAnimationFrame {
   height?: number;
   /** Set by loaders for a sheet cell: the cell's UVs (GL, v up); absent shows the whole Texture. */
   uv?: TileUv;
+  /** Animation Events that fire as the frame starts; absent when there are none. */
+  events?: SpriteAnimationFrameEventPayload[];
 }
 
 export interface SpriteAnimationPayload {
@@ -133,6 +140,8 @@ function parseSpriteAnimationFrame(
   }
   const uv = parseUv(source.uv);
   if (uv) frame.uv = uv;
+  const events = normalizeSpriteAnimationFrameEvents(source.events);
+  if (events.length > 0) frame.events = events;
   return frame;
 }
 
@@ -399,9 +408,13 @@ export function spriteAnimationSpriteGuids(payload: SpriteAnimationPayload): str
   return guids;
 }
 
-/** Assets a Sprite Animation references: its Textures, then its Sprites. */
+/** Assets a Sprite Animation references: its Textures, its Sprites, then what its frame events act with. */
 export function spriteAnimationDependencyGuids(payload: SpriteAnimationPayload): string[] {
-  return [...spriteAnimationTextureGuids(payload), ...spriteAnimationSpriteGuids(payload)];
+  const guids = [...spriteAnimationTextureGuids(payload), ...spriteAnimationSpriteGuids(payload)];
+  for (const guid of animationEventActionGuids(payload.frames.flatMap((frame) => frame.events ?? []))) {
+    if (!guids.includes(guid)) guids.push(guid);
+  }
+  return guids;
 }
 
 /**
