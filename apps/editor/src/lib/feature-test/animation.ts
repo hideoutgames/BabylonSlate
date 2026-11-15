@@ -11,7 +11,7 @@ import {
   type AnimTransition,
 } from "@haptic/anim-graph";
 import { normalizeAnimationPayload, normalizeSkeletonPayload, type BlendSpacePayload } from "@haptic/assets";
-import { OWNED_ACTOR_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
+import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import {
   createDefaultScene,
   lookAtRotation,
@@ -74,6 +74,10 @@ const FEATURE_TEST_ANIMATION_NAMES = {
   knight: "FT_AnimKnight",
   rogue: "FT_AnimRogue",
   largeMannequin: "FT_AnimLargeMannequinActor",
+  /** Rig_Medium graph: Idle with Look At on the head and Two Bone IK on the right arm, toward Vector variables. */
+  reacherGraph: "FT_AnimReacher",
+  /** The Knight Model on the reacher graph; FT_Animation's scene script sets its targets. */
+  reacher: "FT_AnimReacherActor",
 } as const;
 
 /** The skinned characters' scene. */
@@ -130,6 +134,11 @@ const LOCOMOTION_SYNC_GROUP = "Locomotion";
 
 const SPEED: AnimGraphVariable = { id: "ft-anim-var-speed", name: "Speed", typeId: "float", defaultValue: 0 };
 const CHEER: AnimGraphVariable = { id: "ft-anim-var-cheer", name: "Cheer", typeId: "bool", defaultValue: false };
+/** The adventurers' head turn while they move, a Rotator variable on Transform Bone's Rotation. */
+const HEAD_TURN: AnimGraphVariable = { id: "ft-anim-var-head-turn", name: "HeadTurn", typeId: "rotator", defaultValue: { pitch: 0, yaw: 25, roll: 0 } };
+/** The reacher's world-space targets, which FT_Animation's scene script sets: the Look Marker and the Reach Target. */
+const LOOK_TARGET: AnimGraphVariable = { id: "ft-anim-var-look-target", name: "LookTarget", typeId: "vec3", defaultValue: { x: 0, y: 1.3, z: -1 } };
+const REACH_TARGET: AnimGraphVariable = { id: "ft-anim-var-reach-target", name: "ReachTarget", typeId: "vec3", defaultValue: { x: 0, y: 1, z: -0.4 } };
 
 /** A Class plus the prefab components its scene instances copy. */
 interface PlacedClass {
@@ -141,7 +150,7 @@ interface AnimationRefs {
   locomotor: PlacedClass;
   doorGraph: string;
   /** The KayKit characters' Classes. */
-  characters: { knight: PlacedClass; rogue: PlacedClass; largeMannequin: PlacedClass };
+  characters: { knight: PlacedClass; rogue: PlacedClass; largeMannequin: PlacedClass; reacher: PlacedClass };
 }
 
 const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
@@ -180,6 +189,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
     animationGuid: requireRef(kaykit.mediumAnimations[KAYKIT_CLIPS.throw], `the KayKit "${KAYKIT_CLIPS.throw}" Animation`),
   };
   const largeGraph = await saveGraph(ctx, largeMannequinGraphDocument(ctx));
+  const reacherGraph = await saveGraph(ctx, reacherGraphDocument(ctx));
   const characters = {
     knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph, throwAttack),
     rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph, throwAttack),
@@ -189,6 +199,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
       requireRef(kaykit.mannequinLarge, "the KayKit Mannequin Large Model"),
       largeGraph,
     ),
+    reacher: await saveModelActor(ctx, NAMES.reacher, requireRef(kaykit.knight, "the KayKit Knight Model"), reacherGraph),
   };
   refsByContext.set(ctx, { locomotor, doorGraph, characters });
 }
@@ -268,35 +279,107 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
     add(placedActor);
     return placedActor;
   };
-  const knight = place(refs.characters.knight, "ft-animscene-knight", "Knight", -2.5, 0);
-  place(refs.characters.rogue, "ft-animscene-rogue", "Rogue Hooded", 0, roundTo(CYCLE_SECONDS / 2, 100));
-  place(refs.characters.largeMannequin, "ft-animscene-large", "Mannequin Large", 2.5, roundTo(CYCLE_SECONDS / 4, 100));
+  const knight = place(refs.characters.knight, "ft-animscene-knight", "Knight", -3.6, 0);
+  place(refs.characters.rogue, "ft-animscene-rogue", "Rogue Hooded", -1.2, roundTo(CYCLE_SECONDS / 2, 100));
+  place(refs.characters.largeMannequin, "ft-animscene-large", "Mannequin Large", 1.2, roundTo(CYCLE_SECONDS / 4, 100));
+  const reacher = actor(REACHER.id, "IK Reacher", tf([REACHER.x, 0, 0], facing), instanceComponents(REACHER.id, refs.characters.reacher.components), {
+    classId: refs.characters.reacher.ref.classId,
+  });
+  add(reacher);
   // Held in the Knight's hand: the scene script attaches it to the Rig_Medium Skeleton's FT_Grip socket.
-  const prop = actor("ft-animscene-socket-prop", "Socket Prop", tf([-2.5, 1, 0], { scale: [0.1, 0.1, 0.1] }), [
+  const prop = actor("ft-animscene-socket-prop", "Socket Prop", tf([-3.6, 1, 0], { scale: [0.1, 0.1, 0.1] }), [
     meshComp("ft-animscene-socket-prop-mesh", "box"),
   ]);
   add(prop);
-  scene.script = socketAttachScript(knight, prop);
-  add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-1.25, 0.05, -1.6], "Shared Skeleton", font, 0.35));
-  add(caption("ft-animscene-caption-large", "Rig_Large Caption", [2.5, 0.05, -1.6], "Rig_Large", font, 0.35));
+  // The reacher's head follows the Look Marker, which the scene script sweeps in front of it; its right hand reaches
+  // the Reach Target.
+  const marker = actor("ft-animscene-look-marker", "Look Marker", tf(lookMarkerAt(0), { scale: [0.08, 0.08, 0.08] }), [
+    meshComp("ft-animscene-look-marker-mesh", "sphere"),
+  ]);
+  add(marker);
+  const reachTarget = actor("ft-animscene-reach-target", "Reach Target", tf(REACHER.reach, { scale: [0.06, 0.06, 0.06] }), [
+    meshComp("ft-animscene-reach-target-mesh", "box"),
+  ]);
+  add(reachTarget);
+  scene.script = animationSceneScript({ knight, prop, reacher, marker, reachTarget });
+  add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-2.4, 0.05, -1.6], "Shared Skeleton", font, 0.35));
+  add(caption("ft-animscene-caption-large", "Rig_Large Caption", [1.2, 0.05, -1.6], "Rig_Large", font, 0.35));
+  add(caption("ft-animscene-caption-ik", "IK Caption", [REACHER.x, 0.05, -1.6], "Look At and IK", font, 0.35));
   await ctx.addSceneDocument({ kind: "scene", folder: SCENES_FOLDER, name: ANIMATION_SCENE, content: scene, order: SCENE_SAVE_ORDER.scene });
 }
 
-/** `FT_Animation`'s scene script: on Begin Play, Attach To Bone puts the prop on the character's grip socket. */
-function socketAttachScript(character: SerializedActor, prop: SerializedActor): SerializedGraph {
+/** The IK Reacher: where it stands, facing the camera, and its Reach Target in front of its right hand. */
+const REACHER = { id: "ft-animscene-reacher", x: 3.6, reach: [3.25, 0.95, -0.35] as Vec3 };
+/** The Look Marker sweeps side to side in front of the reacher's head. */
+const LOOK_MARKER = { amplitude: 0.9, rate: 1.1, height: 1.3, depth: -1.1 };
+
+function lookMarkerAt(seconds: number): Vec3 {
+  return [REACHER.x + LOOK_MARKER.amplitude * Math.sin(LOOK_MARKER.rate * seconds), LOOK_MARKER.height, LOOK_MARKER.depth];
+}
+
+/**
+ * `FT_Animation`'s scene script. Begin Play: Attach To Bone puts the prop on the Knight's grip socket, and the reacher's
+ * ReachTarget variable takes the Reach Target's location. Tick: the Look Marker sweeps by game time, and the
+ * reacher's LookTarget variable follows it.
+ */
+function animationSceneScript(actors: {
+  knight: SerializedActor;
+  prop: SerializedActor;
+  reacher: SerializedActor;
+  marker: SerializedActor;
+  reachTarget: SerializedActor;
+}): SerializedGraph {
+  const { knight, prop, reacher, marker, reachTarget } = actors;
   const owned = (entry: SerializedActor) => ownedGetNodeProperties({ actorId: entry.id, actorName: entry.name, actorClassId: entry.classId ?? "Actor" });
+  const graphComponent = reacher.components.find((component) => component.classId === "AnimationGraphComponent");
+  const reacherGraph = ownedGetNodeProperties({
+    actorId: reacher.id,
+    actorName: reacher.name,
+    actorClassId: reacher.classId ?? "Actor",
+    componentId: requireRef(graphComponent?.id, "the IK Reacher's Animation Graph component"),
+    componentName: "Animation Graph",
+    componentClassId: "AnimationGraphComponent",
+  });
   return classGraph({
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
-      gNode("get-character", OWNED_ACTOR_GET_NODE_ID, 0, 180, owned(character)),
+      gNode("get-character", OWNED_ACTOR_GET_NODE_ID, 0, 180, owned(knight)),
       gNode("get-prop", OWNED_ACTOR_GET_NODE_ID, 0, 300, owned(prop)),
       gNode("attach", "actor.attachToBone", 300, 0, { "default:boneName": GRIP_SOCKET }),
-      printString("report", 600, 0, `FT_Animation script attached ${prop.name} to ${character.name}'s ${GRIP_SOCKET}`),
+      printString("report", 600, 0, `FT_Animation script attached ${prop.name} to ${knight.name}'s ${GRIP_SOCKET}`),
+      gNode("reacher-graph", OWNED_COMPONENT_GET_NODE_ID, 600, 420, reacherGraph),
+      gNode("get-reach-target", OWNED_ACTOR_GET_NODE_ID, 600, 300, owned(reachTarget)),
+      gNode("reach-location", "transform.getLocation", 840, 300),
+      gNode("set-reach", "anim.actor.setVariable", 900, 0, { "default:name": REACH_TARGET.name }),
+      printString("reach-report", 1200, 0, `FT_Animation script set ${reacher.name}'s ${REACH_TARGET.name}`),
+      gNode("tick", "flow.event.tick", 0, 640),
+      gNode("time", "time.getGameTimeSeconds", 0, 800),
+      gNode("phase", "math.mul", 240, 800, { "default:b": LOOK_MARKER.rate }),
+      gNode("sine", "math.sin", 480, 800),
+      gNode("swing", "math.mul", 720, 800, { "default:b": LOOK_MARKER.amplitude }),
+      gNode("marker-x", "math.add", 960, 800, { "default:b": REACHER.x }),
+      gNode("marker-at", "vector.make3", 1200, 800, { "default:y": LOOK_MARKER.height, "default:z": LOOK_MARKER.depth }),
+      gNode("get-marker", OWNED_ACTOR_GET_NODE_ID, 1200, 960, owned(marker)),
+      gNode("move-marker", "transform.setLocation", 1440, 640),
+      gNode("set-look", "anim.actor.setVariable", 1740, 640, { "default:name": LOOK_TARGET.name }),
     ],
     edges: [
-      ...gChain("begin", "attach", "report"),
+      ...gChain("begin", "attach", "report", "set-reach", "reach-report"),
       gWire("get-prop", "actor", "attach", "actor"),
       gWire("get-character", "actor", "attach", "target"),
+      gWire("get-reach-target", "actor", "reach-location", "target"),
+      gWire("reacher-graph", "component", "set-reach", "target"),
+      gWire("reach-location", "out", "set-reach", "value"),
+      ...gChain("tick", "move-marker", "set-look"),
+      gWire("time", "seconds", "phase", "a"),
+      gWire("phase", "out", "sine", "in"),
+      gWire("sine", "out", "swing", "a"),
+      gWire("swing", "out", "marker-x", "a"),
+      gWire("marker-x", "out", "marker-at", "x"),
+      gWire("get-marker", "actor", "move-marker", "target"),
+      gWire("marker-at", "out", "move-marker", "location"),
+      gWire("reacher-graph", "component", "set-look", "target"),
+      gWire("marker-at", "out", "set-look", "value"),
     ],
   });
 }
@@ -432,24 +515,26 @@ async function saveSpeedBlendSpace(
   return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
 }
 
-/** The Rig_Medium bones the adventurers' Move state layers on: its spine (the upper body's branch) and its head. */
-function adventurerLayerBones(ctx: FeatureTestContext): { spine: string; head: string } {
+/**
+ * The Rig_Medium bones the adventurers' Move state layers on (its spine, the upper body's branch, and its head), and
+ * the reacher's right wrist, whose arm Two Bone IK turns.
+ */
+function adventurerLayerBones(ctx: FeatureTestContext): { spine: string; head: string; wrist: string } {
   const guid = requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton");
   const names = normalizeSkeletonPayload(ctx.registry.getByGuid(guid)?.header.payload ?? {}).bones.map((bone) => bone.name);
   const find = (exact: string, pattern: RegExp) =>
     requireRef(names.find((name) => name.toLowerCase() === exact) ?? names.find((name) => pattern.test(name)), `the Rig_Medium ${exact} bone`);
-  return { spine: find("spine", /spine|chest/i), head: find("head", /head/i) };
+  return { spine: find("spine", /spine|chest/i), head: find("head", /head/i), wrist: find("wrist.r", /wrist.*r$|hand.*r$/i) };
 }
 
-/** The adventurers' upper-body layer's Blend Weight, and how far Transform Bone turns the head while they move. */
+/** The adventurers' upper-body layer's Blend Weight. */
 const UPPER_BODY_WEIGHT = 0.6;
-const HEAD_TURN_YAW = 25;
 
 /**
  * The adventurers' Move state: the Speed Blend Space saved as the Locomotion cached pose, played through Use Cached
  * Pose as a Layered Blend Per Bone's Base Pose, with Interact on the upper body (the spine's branch, ramping in over
  * two bones) through the UpperBody Slot, where the Throw their Classes play shows, and the head turned in its own
- * axes by Transform Bone.
+ * axes by Transform Bone, by the HeadTurn Rotator variable.
  */
 function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact: FeatureTestClip, bones: { spine: string; head: string }): AnimState {
   const state = speedBlendSpaceState("move", "Move", x, y, blendSpaceGuid);
@@ -472,8 +557,8 @@ function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact
         bone: bones.head,
         rotationMode: "add",
         rotationSpace: "bone",
-        "default:rotation": { pitch: 0, yaw: HEAD_TURN_YAW, roll: 0 },
       }),
+      getVar("get-head-turn", animGraphMembersFromVariables([HEAD_TURN])[0]!, 640, 200),
     ], [
       ...speedWires,
       gWire("locomotion", "pose", "save-locomotion", "pose"),
@@ -481,6 +566,7 @@ function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact
       gWire("interact", "pose", "upper-body-slot", "source"),
       gWire("upper-body-slot", "pose", "upper-body", "blendPose0"),
       gWire("upper-body", "pose", "look", "sourcePose"),
+      gWire("get-head-turn", "value", "look", "rotation"),
     ]),
   };
 }
@@ -662,7 +748,7 @@ function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string
       playerState("3d", "hit", "Hit", -240, 480, clip(KAYKIT_CLIPS.hit), { loop: false }),
     ],
     aliases: [{ id: "adventurer-struck", name: "Struck", position: { x: -240, y: 220 }, anyState: false, stateIds: ["idle", "move"] }],
-    variables: [SPEED, CHEER],
+    variables: [SPEED, CHEER, HEAD_TURN],
     // Idle → Move wins over Struck → Hit (lower priority number runs first). Non-looping states: Exit Time 1 passes
     // once the clip has finished.
     transitions: [
@@ -699,6 +785,57 @@ function largeMannequinGraphDocument(ctx: FeatureTestContext): AnimGraphDocument
 }
 
 /** An Animation's clip name and length as imported (Play re-resolves both from the catalog). */
+/**
+ * Rig_Medium: one Reach state, Idle with Look At turning the head toward LookTarget (eased, within 70°, its Y kept
+ * up) and Two Bone IK putting the right wrist on ReachTarget. Both targets are World Space Vector variables.
+ */
+function reacherGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  const animations = ctx.assets.kaykit.mediumAnimations;
+  const bones = adventurerLayerBones(ctx);
+  const [look, reach] = animGraphMembersFromVariables([LOOK_TARGET, REACH_TARGET]);
+  return stateMachineGraph("3d", {
+    name: NAMES.reacherGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    entryStateId: "reach",
+    states: [{
+      id: "reach",
+      name: "Reach",
+      position: { x: 80, y: 80 },
+      stateGraph: poseGraph("3d", "reach-ik", [
+        playerNode("3d", "idle", -240, 0, kaykitClip(ctx, animations, KAYKIT_CLIPS.idle)),
+        gNode("look-at", "anim.control.lookAt", 120, 0, {
+          bone: bones.head,
+          targetSpace: "world",
+          aimAxis: "z",
+          upAxis: "y",
+          limitDegrees: 70,
+          interpSeconds: 0.15,
+        }),
+        getVar("get-look-target", look!, -120, 200),
+        gNode("reach-ik", "anim.control.twoBoneIk", 480, 0, { bone: bones.wrist, effectorSpace: "world" }),
+        getVar("get-reach-target", reach!, 240, 200),
+      ], [
+        gWire("idle", "pose", "look-at", "sourcePose"),
+        gWire("get-look-target", "value", "look-at", "target"),
+        gWire("look-at", "pose", "reach-ik", "sourcePose"),
+        gWire("get-reach-target", "value", "reach-ik", "effector"),
+      ]),
+    }],
+    transitions: [],
+    variables: [LOOK_TARGET, REACH_TARGET],
+  });
+}
+
+/** A Class with a Model and an Animation Graph and no script: a scene script drives its graph. */
+async function saveModelActor(ctx: FeatureTestContext, name: string, modelGuid: string, graphGuid: string): Promise<PlacedClass> {
+  const components: SerializedComponent[] = [
+    meshComp("prefab-mesh", "box", { assetGuid: modelGuid }),
+    comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
+  ];
+  const ref = await ctx.saveClass({ folder: FOLDER, name, parentClass: "Actor", graph: classGraph({ components }) });
+  return { ref, components };
+}
+
 function animationClip(ctx: FeatureTestContext, guid: string): FeatureTestClip {
   const asset = ctx.registry.getByGuid(guid);
   if (!asset || asset.header.type !== "Animation") throw new Error(`FeatureTest Animation ${guid} is missing.`);

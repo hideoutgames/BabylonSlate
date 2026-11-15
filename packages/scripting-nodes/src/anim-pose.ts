@@ -136,6 +136,31 @@ export const animPoseNodes: NodeDefinition[] = [
     ],
     ["Modify Bone", "Transform (Modify) Bone"],
   ),
+  poseNode(
+    "anim.control.lookAt",
+    "Look At",
+    "Turns one bone so its Aim Axis points at Target, within an angle limit, optionally keeping its Up Axis up, blended in by Alpha.",
+    () => [
+      pin("sourcePose", "sourcePose", "in", POSE),
+      pin("target", "target", "in", VEC3, "data", true, { x: 0, y: 0, z: 0 }),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["Aim", "Head Look", "Look At Target"],
+  ),
+  poseNode(
+    "anim.control.twoBoneIk",
+    "Two Bone IK",
+    "Moves a hand or foot to Effector by turning its parent and grandparent, bending toward Joint Target, blended in by Alpha.",
+    () => [
+      pin("sourcePose", "sourcePose", "in", POSE),
+      pin("effector", "effector", "in", VEC3, "data", true, { x: 0, y: 0, z: 0 }),
+      pin("jointTarget", "jointTarget", "in", VEC3, "data", true, { x: 0, y: 0, z: 0 }),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["IK", "Inverse Kinematics", "Reach", "Limb IK"],
+  ),
   // 2D frame graphs.
   poseNode("anim.frame.output", "Output Frame", "The frame this graph shows.", () => [pin("frame", "frame", "in", FRAME)]),
   poseNode("anim.frame.spritePlayer", "Sprite Animation Player", "Plays a Sprite Animation.", () => [

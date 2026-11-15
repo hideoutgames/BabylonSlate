@@ -122,13 +122,75 @@ export interface AnimBoneChannel {
  * then translation, each in its own space, then blended with the pose by `alpha` (the node's Alpha times its weight
  * in the graph). A channel left out is unchanged.
  */
-export interface AnimBoneModifier {
+export interface AnimTransformBoneChange {
+  kind: "transform";
   bone: string;
   alpha: number;
   translation?: AnimBoneChannel;
   rotation?: AnimBoneChannel;
   scale?: AnimBoneChannel;
   masks?: AnimLayerMaskRef[];
+}
+
+/** Where an IK target is given: relative to the actor, or in the world. */
+export type AnimTargetSpace = "actor" | "world";
+
+export function parseAnimTargetSpace(value: unknown): AnimTargetSpace {
+  return value === "world" ? "world" : "actor";
+}
+
+/**
+ * A Look At's change: turn `bone` so its `aimAxis` (in its own axes) points at `target`, by no more than
+ * `limitDegrees` from where the pose aims it, then, with an `upAxis`, roll it about the aim so that axis leans toward
+ * the actor's up. Blended with the pose by `alpha`.
+ */
+export interface AnimLookAtChange {
+  kind: "lookAt";
+  bone: string;
+  alpha: number;
+  target: number[];
+  targetSpace: AnimTargetSpace;
+  aimAxis: number[];
+  upAxis?: number[];
+  limitDegrees: number;
+  masks?: AnimLayerMaskRef[];
+}
+
+/**
+ * A Two Bone IK's change: `bone` (a hand or foot) reaches `effector` by turning its parent and grandparent, the chain
+ * bending toward `jointTarget` (else the way it bends already). Out of reach, the chain stretches up to `maxStretch`
+ * times its length (1: never). `keepEffectorRotation` keeps the end bone's rotation relative to the actor. Blended
+ * with the pose by `alpha`.
+ */
+export interface AnimTwoBoneIkChange {
+  kind: "twoBoneIk";
+  bone: string;
+  alpha: number;
+  effector: number[];
+  effectorSpace: AnimTargetSpace;
+  jointTarget?: number[];
+  jointTargetSpace: AnimTargetSpace;
+  maxStretch: number;
+  keepEffectorRotation: boolean;
+  masks?: AnimLayerMaskRef[];
+}
+
+/** A skeletal control's change to bones after the clips blend, applied in evaluation order. */
+export type AnimBoneModifier = AnimTransformBoneChange | AnimLookAtChange | AnimTwoBoneIkChange;
+
+/** Bone-local axes a Look At aims or keeps up, as stored on the node. */
+export const ANIM_BONE_AXES = ["x", "-x", "y", "-y", "z", "-z"] as const;
+export type AnimBoneAxis = (typeof ANIM_BONE_AXES)[number];
+export const ANIM_BONE_AXIS_LABELS: Record<AnimBoneAxis, string> = {
+  x: "X", "-x": "-X", y: "Y", "-y": "-Y", z: "Z", "-z": "-Z",
+};
+
+/** An axis id as a unit vector; `fallback` for an unknown one. */
+export function animBoneAxisVector(value: unknown, fallback: AnimBoneAxis): number[] {
+  const axis = ANIM_BONE_AXES.find((entry) => entry === value) ?? fallback;
+  const sign = axis.startsWith("-") ? -1 : 1;
+  const name = axis.replace("-", "");
+  return [name === "x" ? sign : 0, name === "y" ? sign : 0, name === "z" ? sign : 0];
 }
 
 /**
