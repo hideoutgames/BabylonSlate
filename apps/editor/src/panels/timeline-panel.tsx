@@ -607,6 +607,12 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
     ];
   };
 
+  /** Empty lane space: Paste puts the copied keys at the playhead, as the shortcut does. */
+  const emptyMenuItems = (): ContextMenuItem[] => [
+    { id: "paste-keys", label: "Paste", icon: <ClipboardPasteIcon />, shortcut: keybinds.get("edit.paste")?.[0],
+      disabled: !session.readCopiedTimelineKeys(), testId: "timeline-lane-menu-paste", onSelect: pasteKeys },
+  ];
+
   // Row controls and menus run the latest handlers through stable callbacks,
   // so a playhead move rebuilds only the lane rows whose value or key changed
   // and the track list skips the others.
@@ -823,6 +829,7 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
           onToggleRow={onToggleRow}
           onRowContextMenu={onRowContextMenu}
           onKeyContextMenu={(ref, x, y) => openMenuAt(x, y, keyMenuItems(ref))}
+          onEmptyContextMenu={(x, y) => openMenuAt(x, y, emptyMenuItems())}
           onLengthChange={(length, phase) => {
             // One undo step: every move replaces the clip at the drag's start length.
             if (phase === "start") lengthDrag.current = clip.length;

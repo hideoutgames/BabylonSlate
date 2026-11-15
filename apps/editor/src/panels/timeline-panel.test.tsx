@@ -258,6 +258,31 @@ describe("Timeline window", () => {
     expect(lastClip().objects[0]!.tracks[0]!.keys.map((entry) => entry.id)).toEqual(["k0"]);
   });
 
+  it("pastes copied keys at the playhead from the empty-space menu", async () => {
+    harness.scene = sceneWith(animated());
+    const view = renderPanel();
+    // 400 px lanes show the 4 s clip between gutters of 10 and 24 px; the Location row is the second.
+    const lanes = screen.getByTestId("keyframe-timeline-lanes");
+    vi.spyOn(lanes, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 72));
+    const empty = { clientX: 10 + 3 * 91.5, clientY: 36 };
+    fireEvent.contextMenu(lanes, empty);
+    expect((await screen.findByTestId<HTMLButtonElement>("timeline-lane-menu-paste")).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("context-menu-backdrop"));
+
+    fireEvent.contextMenu(lanes, { clientX: 10, clientY: 36 });
+    fireEvent.click(await screen.findByTestId("timeline-key-menu-copy"));
+    fireEvent.click(screen.getByTestId("timeline-go-end"));
+    view.refresh();
+    // Pressed at 3 s; the copy lands on the playhead at 4 s.
+    fireEvent.contextMenu(lanes, empty);
+    const paste = await screen.findByTestId<HTMLButtonElement>("timeline-lane-menu-paste");
+    expect(paste.disabled).toBe(false);
+    fireEvent.click(paste);
+    expect(lastClip().objects[0]!.tracks[0]!.keys.map((entry) => [entry.Time, entry.Value])).toEqual([
+      [0, { x: 0, y: 0, z: 0 }], [2, { x: 4, y: 0, z: 0 }], [4, { x: 0, y: 0, z: 0 }],
+    ]);
+  });
+
   it("selects a row's keys and moves rows from the row menu", () => {
     harness.scene = sceneWith({
       ...animated(),
