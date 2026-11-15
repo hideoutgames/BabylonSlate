@@ -17,7 +17,8 @@ function identityMat(): Mat4 {
   return new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 }
 
-function multiplyMat(a: Mat4, b: Mat4): Mat4 {
+/** Column-major 4×4 product `a × b`, as glTF composes a node under its parent. */
+export function multiplyMat(a: Mat4, b: Mat4): Mat4 {
   const out = new Float64Array(16);
   for (let col = 0; col < 4; col++) {
     for (let row = 0; row < 4; row++) {
@@ -76,7 +77,7 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function nodeMatrix(node: Record<string, unknown>): Mat4 {
+export function nodeMatrix(node: Record<string, unknown>): Mat4 {
   if (Array.isArray(node.matrix) && node.matrix.length >= 16) {
     const m = new Float64Array(16);
     for (let i = 0; i < 16; i++) m[i] = Number(node.matrix[i]) || 0;
@@ -145,7 +146,8 @@ function readComponent(
   }
 }
 
-function accessorValues(
+/** An accessor's values, `components` per element, as stored (integer types are not normalized). */
+export function accessorValues(
   json: Record<string, unknown>,
   bin: Uint8Array,
   accessorIndex: number,

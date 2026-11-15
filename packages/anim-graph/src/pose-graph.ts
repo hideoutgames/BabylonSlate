@@ -1,6 +1,7 @@
 import type { SerializedGraph } from "@haptic/core";
 import { normalizeAnimBranchFilters, type AnimAdditiveBase, type AnimBranchFilter } from "@haptic/core";
 import { parseAnimClipEvents, type AnimClipEvent } from "./events";
+import { parseAnimClipRootMotion, type AnimClipRootMotion } from "./root-motion";
 
 type SerializedGraphNode = SerializedGraph["nodes"][number];
 
@@ -277,6 +278,8 @@ export interface BlendSpaceNodeSample {
   events?: AnimClipEvent[];
   /** Its Animation's additive base, when the Animation is additive (`resolvedClipAdditive`). */
   additive?: ResolvedClipAdditive;
+  /** Its Animation's root motion, when it has any. */
+  rootMotion?: AnimClipRootMotion;
 }
 
 /**
@@ -341,6 +344,7 @@ export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeDat
       rateScale: rateScale > 0 ? rateScale : 1,
       ...((events) => (events.length > 0 ? { events } : {}))(parseAnimClipEvents(sample.events)),
       ...((additive) => (additive ? { additive } : {}))(parseResolvedClipAdditive(sample.additive)),
+      ...((rootMotion) => (rootMotion ? { rootMotion } : {}))(parseAnimClipRootMotion(sample.rootMotion)),
     }];
   });
   const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime" | "eventMode"> = {};

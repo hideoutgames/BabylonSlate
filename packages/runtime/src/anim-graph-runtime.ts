@@ -18,6 +18,7 @@ import {
   type AnimEvalState,
   type AnimFiredEvent,
   type AnimGraphDocument,
+  type AnimRootMotionDelta,
   type AnimTransition,
 } from "@haptic/anim-graph";
 import { ANIM_NOTIFY_EVENT } from "@haptic/scripting";
@@ -56,6 +57,8 @@ interface AnimGraphRuntimeHost {
   playEventSound(actor: Actor, assetGuid: string, volume: number): void;
   /** An Animation Event's Spawn Particle System: on the actor, at `bone` when it names one. */
   spawnEventParticles(actor: Actor, assetGuid: string, bone: string): void;
+  /** Moves the actor by a tick's root motion: travel along its own X and Z (in its units) and a turn about Y. */
+  applyRootMotion(actor: Actor, motion: AnimRootMotionDelta, dtSeconds: number): void;
 }
 
 /** An ended play's handle stays this many ticks for a script still to ask how it ended (On Completed). */
@@ -117,6 +120,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       clipKind: sprite ? "sprite" : "animation",
       durationMs,
       ...(entry.events && entry.events.length > 0 ? { events: [...entry.events] } : {}),
+      ...(!sprite && entry.rootMotion ? { rootMotion: entry.rootMotion } : {}),
     };
   }
 
@@ -504,6 +508,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         },
       );
       this.evalByComponent.set(evalKey, next);
+      if (next.rootMotion) this.host.applyRootMotion(actor, next.rootMotion, dtSeconds);
       // A play's waits resume their scripts here, in the tick it blended out or ended.
       for (const event of next.slotEvents ?? []) this.settleSlotEvent(event);
       if (next.events) this.fireEvents(next.events, objectClassId, actor, dtSeconds, { variableStore: component, animFacts: next.facts });

@@ -40,6 +40,7 @@ export * from "./skeleton-payload";
 export * from "./skeleton-match";
 export * from "./animation-events";
 export * from "./animation-payload";
+export * from "./animation-root-motion";
 export * from "./blend-space-payload";
 export * from "./skybox-creator-payload";
 export * from "./audio-reverb";

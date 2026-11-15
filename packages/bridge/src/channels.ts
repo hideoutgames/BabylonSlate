@@ -1065,10 +1065,12 @@ export type CommandMessage =
         additive?: boolean;
         /** An additive clip's base pose when it is not the rest pose. */
         additiveBase?: import("@haptic/core").AnimAdditiveBase;
+        /** A root motion clip's root bone, which render holds in place across the ground. */
+        rootMotionBone?: string;
       }>;
       /** The Layered Blend Per Bone nodes the layers' `masks` index. */
       layerBlends?: import("@haptic/core").AnimLayerBlend[];
-      /** Transform Bone changes, applied in order after the layers blend. */
+      /** Skeletal control changes, applied in order after the layers blend. */
       boneModifiers?: import("@haptic/core").AnimBoneModifier[];
       /** Animation Tick Mode When Visible: render poses the actor only while a camera (or a shadow) can see it. */
       whenVisible?: boolean;

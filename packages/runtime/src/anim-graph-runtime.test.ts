@@ -22,6 +22,7 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
   const setSpriteClip = vi.fn();
   const playEventSound = vi.fn();
   const spawnEventParticles = vi.fn();
+  const applyRootMotion = vi.fn();
   const emitted: CommandMessage[] = [];
   const runtime = new AnimGraphRuntime({
     world: () => world,
@@ -37,12 +38,38 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
     emit: (command) => emitted.push(command),
     playEventSound,
     spawnEventParticles,
+    applyRootMotion,
   });
   runtime.register("graph", document);
-  return { actors, emitted, gate, invokeAnimEvent, playEventSound, runtime, setSpriteClip, spawnEventParticles };
+  return { actors, applyRootMotion, emitted, gate, invokeAnimEvent, playEventSound, runtime, setSpriteClip, spawnEventParticles };
 }
 
 describe("AnimGraphRuntime", () => {
+  it("moves each actor by its graph's root motion every tick", () => {
+    const document = createDefaultAnimGraph();
+    const idle = document.stateMachine.states[0]!;
+    idle.stateGraph.nodes = idle.stateGraph.nodes.map((node) =>
+      node.id === "player"
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              assetGuid: "walk",
+              durationMs: 1000,
+              rootMotion: { bone: "hips", track: { durationMs: 1000, stepMs: 500, x: [0, 0, 0], z: [0, 1, 2], yaw: [0, 0, 0] } },
+            },
+          }
+        : node);
+    const { actors, applyRootMotion, emitted, runtime } = setup(document);
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    expect(applyRootMotion).toHaveBeenLastCalledWith(actors[0], expect.objectContaining({ x: 0, yaw: 0 }), 0.1);
+    expect(applyRootMotion.mock.lastCall?.[1].z).toBeCloseTo(0.2, 9);
+    // Render holds the bone in place.
+    const state = [...emitted].reverse().find((command: CommandMessage) => command.type === "animState");
+    expect(state?.type === "animState" ? state.layers?.[0]?.rootMotionBone : undefined).toBe("hips");
+  });
+
   it("runs each fired Animation Event in the graph's Animation Object, after its own action", () => {
     const document = createDefaultAnimGraph();
     const idle = document.stateMachine.states[0]!;

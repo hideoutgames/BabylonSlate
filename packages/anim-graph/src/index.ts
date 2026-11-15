@@ -78,3 +78,4 @@ export {
 } from "./serialize";
 
 export * from "./slots";
+export * from "./root-motion";

@@ -12,7 +12,7 @@ Double-tap the asset to open it. The window has **Preview**, a **Timeline** belo
 
 - **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. A clip from a file with no mesh (an animation-only file) always shows its bones. If the Model's file is missing, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
 - **Timeline** shows the clip's [Animation Events](#animation-events) along one pass: single events on the **Events** row, and each window on a row of its own from its begin to its end. Drag the ruler to scrub the Preview. **Add Event** and **Add Window** place a new one at the playhead. Drag a key to move it; drag a window's end key alone to change its Duration. Selected keys open their events in the Inspector.
-- The **Inspector** shows the clip's details and its **Events**. Of the details, only **Duration** and **Additive** can be changed.
+- The **Inspector** shows the clip's details and its **Events**. Of the details, only **Duration**, **Additive** and **Root Motion** can be changed.
 
 **Preview controls**
 
@@ -38,6 +38,8 @@ The bar under the Preview shows the frame and the time in ms, out of the Duratio
 | Additive | Whether the clip is [additive](#additive-animations), and what its change is relative to. **None** by default. |
 | Base Animation | With **Relative To Animation**: the Animation, on the same Skeleton, whose pose the change is from. |
 | Base Time | With **Relative To Animation**: the time into the Base Animation's Duration of that pose, in milliseconds. |
+| Root Motion | Whether the clip moves its actor by [root motion](#root-motion). Off by default. |
+| Root Bone | With **Root Motion**: the bone whose travel moves the actor. Below it, the Inspector shows how far one pass moves and turns it. |
 
 ## Animation events
 
@@ -68,6 +70,18 @@ An additive Animation holds a change, such as a lean, a breath or a flinch, that
 - An additive Animation plays only under an Apply Additive's **Additive** input, and only additive Animations play there; the Animation Graph reports either mistake.
 - Positions and rotations add the change; scales multiply by it.
 - The **Preview** plays the clip as it is in the file.
+
+## Root motion
+
+Some clips move the character across the ground themselves, such as a lunge, a dodge, a fall or a walk authored in place of a moving actor. With **Root Motion** on, an [Animation Graph](animation-graph.md) playing the clip moves its actor by the **Root Bone**'s travel across the ground and its turn about the up axis, and holds the bone in place, so the character does not slide away from its actor.
+
+Turning **Root Motion** on picks the first bone of the Skeleton that travels in the clip, such as the hips; pick another under **Root Bone**. The travel is read from the clip's file when you change either, so change one again after reimporting it.
+
+- The bone's rise and fall stays in the clip: only travel across the ground and the turn move the actor.
+- Each clip's travel counts by its weight, so a blend of a moving and an in-place clip moves the actor part of the way. Clips under a [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) branch, or added with [Apply Additive](../scripting/animation/apply-additive.md), move nothing. [Blend Space](blend-space.md) samples and [Play Slot Animation](../scripting/class/play-slot-animation.md) move it too.
+- An actor with a [Movement](../components/movement.md) component moves through it, so it still collides and falls; any other actor moves at once.
+- The travel scales with the clip's [Model](../graphics/models.md)'s **Scale** and the actor's own scale.
+- The **Preview** plays the clip as it is in the file. An Animation Graph's Preview holds the bone in place and does not move the Model.
 
 ## Shared Skeletons
 

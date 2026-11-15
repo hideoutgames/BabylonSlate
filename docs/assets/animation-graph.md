@@ -153,6 +153,7 @@ To stop the game when the graph enters a state, choose **Add Breakpoint** from t
 
 - Add an [Animation Graph component](../components/animation-graph.md) to an actor to run the graph.
 - Change variables and states from scripts with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md) and [Jump To State](../scripting/class/jump-to-state.md), and read the active state with [Get Current State](../scripting/class/get-current-state.md).
+- An Animation with [Root Motion](animation.md#root-motion) moves the actor while the graph plays it, by its weight in the pose.
 - A 3D graph blends its clips bone by bone, by weight. Where the weights add up to less than full, the rest pose takes the remainder, so blending a clip toward [Rest Pose](../scripting/animation/rest-pose.md) fades it out smoothly. Bones that no playing clip moves stay in their rest pose.
 - A graph has exactly one State Machine, so it cannot run a second set of states, such as upper-body gestures, beside another. Layer clips within a state with [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) instead.
 

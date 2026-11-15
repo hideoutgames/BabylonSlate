@@ -1,7 +1,9 @@
 import type { TilemapPayload, TilesetPayload } from "@haptic/assets";
-import { ScalabilitySession } from "@haptic/core";
+import { multiplyQuats, rotatorToQuat, ScalabilitySession } from "@haptic/core";
+import type { AnimRootMotionDelta } from "@haptic/anim-graph";
 import { World, type Actor, type ClassRegistry, type WorldInputProvider } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
+import { rotateVector } from "./actor-world-transform";
 import { AudioParticleEmitter } from "./audio-particle-emitter";
 import { BehaviourTreeRuntime } from "./behaviour-tree-runtime";
 import { CableWorldSync } from "./cable-sync";
@@ -101,7 +103,26 @@ export function createAnimGraphs(rt: RuntimeComposition): AnimGraphRuntime {
     spawnEventParticles: (actor, assetGuid, bone) => {
       rt.particleEffects.spawn({ systemGuid: assetGuid, attachTo: actor, ...(bone ? { bone } : {}), autoDestroy: true }, actor);
     },
+    applyRootMotion: (actor, motion, dtSeconds) => applyAnimRootMotion(rt, actor, motion, dtSeconds),
   });
+}
+
+/**
+ * Moves an actor by a tick's root motion: its travel turns with the actor and scales with it into the world. A
+ * Movement motor carries it as its horizontal velocity for the next step (so it still collides and falls); any other
+ * actor moves there at once. The turn about Y applies to the actor either way.
+ */
+function applyAnimRootMotion(rt: RuntimeComposition, actor: Actor, motion: AnimRootMotionDelta, dtSeconds: number): void {
+  const transform = actor.transform;
+  const local = { x: motion.x * transform.scale.x, y: 0, z: motion.z * transform.scale.z };
+  const world = rotateVector(transform.rotation, local);
+  const moved = dtSeconds > 0 && rt.movement.applyRootMotion(actor, { x: world.x / dtSeconds, z: world.z / dtSeconds });
+  if (!moved) {
+    transform.position.x += world.x;
+    transform.position.z += world.z;
+  }
+  if (motion.yaw) Object.assign(transform.rotation, multiplyQuats(rotatorToQuat({ pitch: 0, yaw: motion.yaw, roll: 0 }), transform.rotation));
+  if (!moved || motion.yaw) rt.physics.forActor(actor)?.teleportActor(actor, rt.world);
 }
 
 export function createBehaviourTrees(rt: RuntimeComposition): BehaviourTreeRuntime {
