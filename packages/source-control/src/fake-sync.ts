@@ -71,7 +71,8 @@ interface WorkingEntry {
  */
 export class FakeRemote {
   readonly branches = new Map<string, string>();
-  readonly lfsObjects = new Set<string>();
+  /** The LFS store: objects pushed or seeded, by oid. */
+  readonly lfsObjects = new Map<string, Uint8Array>();
   private readonly commits = new Map<string, FakeCommit>();
   private readonly now: () => number;
   private counter = 0;
@@ -85,10 +86,14 @@ export class FakeRemote {
     const head = this.branches.get(branch) ?? null;
     const files = new Map(head ? this.get(head).files : []);
     for (const [path, content] of Object.entries(changes)) {
-      if (content === null) files.delete(path);
-      else files.set(path, encode(content));
+      if (content === null) {
+        files.delete(path);
+        continue;
+      }
+      const bytes = encode(content);
+      files.set(path, bytes);
       const oid = lfsObjectId(path);
-      if (oid && content !== null) this.lfsObjects.add(oid);
+      if (oid) this.lfsObjects.set(oid, bytes);
     }
     const id = this.add({ parents: head ? [head] : [], files, message, author: { name: "Teammate", email: "teammate@example.com" }, timestamp: Math.floor(this.now() / 1000) });
     this.branches.set(branch, id);
@@ -285,10 +290,10 @@ export class FakeSync implements SyncPort {
     }
     let uploaded = 0;
     for (const id of ahead) {
-      for (const path of this.files(id).keys()) {
+      for (const [path, bytes] of this.files(id)) {
         const oid = lfsObjectId(path);
         if (oid && !this.remote.lfsObjects.has(oid)) {
-          this.remote.lfsObjects.add(oid);
+          this.remote.lfsObjects.set(oid, bytes);
           uploaded += 1;
         }
       }
@@ -300,6 +305,22 @@ export class FakeSync implements SyncPort {
 
   async readFile(path: string, commit: string): Promise<Uint8Array | null> {
     return this.files(commit).get(path) ?? null;
+  }
+
+  async readLfsObject(path: string, size: number, options: TransferOptions = {}): Promise<Uint8Array> {
+    throwIfCancelled(options.signal);
+    const oid = lfsObjectId(path);
+    if (!oid) throw new Error(`${path} is not an LFS object.`);
+    try {
+      const local = await this.storage.readBinary(path);
+      if (local.byteLength === size) return local;
+    } catch (error) {
+      if (!isStorageNotFound(error)) throw error;
+    }
+    // Only what the server holds: a commit that was never pushed uploaded nothing.
+    const stored = this.remote.lfsObjects.get(oid);
+    if (!stored || stored.byteLength !== size) throw new SyncError("lfs", `The server has no LFS object ${oid}.`, { code: "lfs-object-missing" });
+    return stored;
   }
 
   async log({ limit, path }: LogOptions): Promise<LogPage> {

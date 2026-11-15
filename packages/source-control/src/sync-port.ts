@@ -35,6 +35,15 @@ export interface SyncPort {
   push(options?: TransferOptions): Promise<PushResult>;
   /** A file's bytes at a commit (an LFS object's own bytes), or null when the commit has no such file. */
   readFile(path: string, commit: string): Promise<Uint8Array | null>;
+  /**
+   * An LFS object's bytes by its `.blobs/<sha256>` path and size, as a
+   * `.hasset` chunk entry names them, so no commit is read: the working
+   * copy's file when it has that size (an object never changes under its
+   * name), otherwise downloaded and checked. Never written: a blob nothing
+   * references would go out with the next commit. One the server lacks is
+   * `lfs` / `lfs-object-missing`.
+   */
+  readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;
   /** The branch's commits, newest first; `deepen` fetches older history once when a shallow clone ends early. */
   log(options: LogOptions): Promise<LogPage>;
 }

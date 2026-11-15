@@ -184,6 +184,30 @@ describe.each([
     expect(await port.push()).toMatchObject({ uploaded: 1 });
   });
 
+  it("reads an LFS object from the working copy, else from the server, and never writes it", async () => {
+    const pushed = blobBytes(5, 3000);
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(pushed)]: pushed });
+    const { port, storage } = await fixture.copy();
+    // Only in this working copy: the server never had it.
+    const local = blobBytes(6, 2500);
+    await storage.writeBinary(blobPath(local), local);
+    expect(await port.readLfsObject(blobPath(local), local.byteLength)).toEqual(local);
+
+    await storage.remove(blobPath(pushed));
+    expect(await port.readLfsObject(blobPath(pushed), pushed.byteLength)).toEqual(pushed);
+    expect(await storage.exists(blobPath(pushed))).toBe(false);
+    expect((await port.status()).changes).toEqual([
+      { path: blobPath(local), kind: "added" },
+      { path: blobPath(pushed), kind: "deleted" },
+    ].sort((a, b) => a.path.localeCompare(b.path)));
+
+    const missing = blobBytes(7, 1000);
+    expect(await rejection(port.readLfsObject(blobPath(missing), missing.byteLength))).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    const cancelled = new AbortController();
+    cancelled.abort();
+    expect((await rejection(port.readLfsObject(blobPath(pushed), pushed.byteLength, { signal: cancelled.signal }))).kind).toBe("cancelled");
+  });
+
   it("counts the commits on each side after a fetch", async () => {
     await fixture.teammate({ "assets/a.hasset": "A" });
     const { port, storage } = await fixture.copy();

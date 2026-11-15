@@ -349,19 +349,32 @@ export class GitRepository implements SyncPort {
       }
       const pointer = lfsObjectId(path) ? parseLfsPointer(blob) : null;
       if (!pointer) return blob;
-      // An LFS object never changes under its name, so the working copy's file is the commit's.
-      try {
-        const local = await this.storage.readBinary(storagePath(path));
-        if (local.byteLength === pointer.size) return local;
-      } catch (error) {
-        if (!isStorageNotFound(error)) throw error;
-      }
-      let downloaded: Uint8Array | null = null;
-      await op.lfs.download([pointer], async (_object, bytes) => {
-        downloaded = bytes;
-      });
-      return downloaded;
+      return this.lfsObject(op, path, pointer);
     });
+  }
+
+  readLfsObject(path: string, size: number, options: TransferOptions = {}): Promise<Uint8Array> {
+    return this.run(async (op) => {
+      const oid = lfsObjectId(path);
+      if (!oid) throw new Error(`${path} is not an LFS object.`);
+      return this.lfsObject(op, path, { oid, size });
+    }, options.signal);
+  }
+
+  /** An object's bytes: the working copy's file when it has the size (an object never changes under its name), else a download, never written. */
+  private async lfsObject(op: Op, path: string, object: LfsObject): Promise<Uint8Array> {
+    try {
+      const local = await this.storage.readBinary(storagePath(path));
+      if (local.byteLength === object.size) return local;
+    } catch (error) {
+      if (!isStorageNotFound(error)) throw error;
+    }
+    let downloaded: Uint8Array | null = null;
+    await op.lfs.download([object], async (_object, bytes) => {
+      downloaded = bytes;
+    });
+    if (!downloaded) throw new SyncError("lfs", `The server has no LFS object ${object.oid}.`, { code: "lfs-object-missing" });
+    return downloaded;
   }
 
   log({ limit, path, deepen = false }: LogOptions): Promise<LogPage> {
