@@ -12,14 +12,18 @@ const WINDOW_KEY_EVENTS = ["keydown", "keyup"] as const;
  * the canvas or it has focus: viewport fly keys listen on the window.
  */
 export function observeViewInput(canvas: HTMLElement, onActivity: () => void): () => void {
+  if (typeof canvas.addEventListener !== "function") return () => {};
   let hovered = false;
   const onInput = () => onActivity();
   const onEnter = () => { hovered = true; onActivity(); };
   const onLeave = () => { hovered = false; };
+  // A canvas outside a document (an offscreen or stub canvas) has no window to hear keys on.
+  const document = canvas.ownerDocument as Document | null | undefined;
   const onWindowKey = () => {
-    if (hovered || canvas.ownerDocument.activeElement === canvas) onActivity();
+    if (hovered || document?.activeElement === canvas) onActivity();
   };
-  const view = canvas.ownerDocument.defaultView;
+  const defaultView = document?.defaultView;
+  const view = typeof defaultView?.addEventListener === "function" ? defaultView : null;
   const options = { capture: true, passive: true } as const;
   for (const type of VIEW_INPUT_EVENTS) canvas.addEventListener(type, onInput, options);
   canvas.addEventListener("pointerenter", onEnter, options);

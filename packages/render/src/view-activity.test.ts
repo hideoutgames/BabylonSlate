@@ -58,6 +58,18 @@ describe("observeViewInput", () => {
     release();
     expect([canvas.count(), window.count()]).toEqual([0, 0]);
   });
+
+  it("observes a canvas outside a document, or whose document has no window, without throwing", () => {
+    for (const ownerDocument of [undefined, null, { activeElement: null, defaultView: {} }]) {
+      const canvas = Object.assign(new FakeTarget(), { ownerDocument });
+      let activity = 0;
+      const release = observeViewInput(canvas as unknown as HTMLElement, () => { activity += 1; });
+      canvas.emit("pointerdown");
+      expect(activity).toBe(1);
+      release();
+      expect(canvas.count()).toBe(0);
+    }
+  });
 });
 
 describe("createCameraMotionProbe", () => {
