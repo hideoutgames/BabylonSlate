@@ -20,7 +20,7 @@ import { hasRevisionTrackedLandscapeGeometry } from "./landscape-mesh";
 import { geometryRevision, unwatchGeometry, watchGeometry } from "./geometry-revision";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isAutoLodMaster, peekAutoLodLevel } from "./model-lod";
-import { journalFollows, openRenderChangeReader, verifiesRenderChangeJournal, type RenderChangeReader } from "./render-change-journal";
+import { journalFollows, openRenderChangeReader, RenderChange, verifiesRenderChangeJournal, type RenderChangeReader } from "./render-change-journal";
 import { shadowMapChanges, type ShadowChangeRegion } from "./shadow-change-journal";
 import { casterWithinShadowRange, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
@@ -90,8 +90,11 @@ type DrawnFit = { matrices: Float64Array; valid: boolean };
 
 type Caster = {
   readonly mesh: AbstractMesh;
-  /** The mesh whose geometry, parts and Material it draws: itself, or an instance's source. */
-  readonly source: AbstractMesh;
+  /**
+   * The mesh whose geometry, parts and Material it draws, as its last walk found it: itself, or an instance's source
+   * (which an instance pool can reassign).
+   */
+  source: AbstractMesh;
   readonly instance: boolean;
   /**
    * Whether the change journal hears its visibility, enabled and Material writes (`journalFollows`): one whose class
@@ -291,8 +294,18 @@ export class ShadowMapRefresh {
       if (record.geometry) unwatchGeometry(record.geometry);
       this.casters.delete(mesh);
     }
-    // A walk drops the sources its casters left; without one, a disposed source is not kept.
-    if (!walks) for (const source of this.sources.keys()) if (source.isDisposed()) this.sources.delete(source);
+    if (walks) return;
+    // A walk drops the sources and Materials its casters left; without one, a disposed source or a Material no caster
+    // holds is not kept.
+    for (const source of this.sources.keys()) if (source.isDisposed()) this.sources.delete(source);
+    // Only walks add Materials, so the first call after one sweeps them.
+    if (!this.reader) return;
+    const held = new Set<Shared>();
+    for (const record of this.casters.values()) if (record.materialShared) held.add(record.materialShared);
+    for (const [material, shared] of this.materials) if (!held.has(shared)) this.materials.delete(material);
+    // Nothing drains the journal until a walk: it stops recording, and the next walk reads every caster.
+    this.reader.dispose();
+    this.reader = this.readerScene = null;
   }
 
   /** How the caster walks went (`ShadowJournalDiagnostics`); a copy. */
@@ -332,7 +345,8 @@ export class ShadowMapRefresh {
   private readerFor(scene: Scene): { reader: RenderChangeReader; fresh: boolean } {
     if (this.reader && this.readerScene === scene) return { reader: this.reader, fresh: false };
     this.reader?.dispose();
-    this.reader = openRenderChangeReader(scene);
+    // Not transforms or geometry: asking every caster for its world matrix, and polling each source, already finds them.
+    this.reader = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material | RenderChange.Other);
     this.readerScene = scene;
     return { reader: this.reader, fresh: true };
   }
@@ -359,8 +373,11 @@ export class ShadowMapRefresh {
     if (journal) {
       const { reader, fresh } = this.readerFor(scene);
       if (fresh) everything = true;
-      if (this.defaultMaterial && (scene as unknown as { _defaultMaterial: Material | null })._defaultMaterial !== this.defaultMaterial)
+      // Walks that give a caster the new default note it again.
+      if (this.defaultMaterial && (scene as unknown as { _defaultMaterial: Material | null })._defaultMaterial !== this.defaultMaterial) {
+        this.defaultMaterial = null;
         everything = true;
+      }
       if (!everything) {
         for (const [source, shared] of this.sources) this.pollSource(scene, source, shared, walk);
         for (const [material, shared] of this.materials) {
@@ -426,8 +443,6 @@ export class ShadowMapRefresh {
       let record = this.casters.get(mesh);
       if (record) kept++;
       else {
-        // An instance draws its source's geometry, sub-meshes and material at its own world matrix: its shadow content
-        // is its source's, posed and shown by the instance itself.
         const instance = mesh instanceof InstancedMesh;
         record = {
           mesh,
@@ -472,7 +487,8 @@ export class ShadowMapRefresh {
         mesh.billboardMode !== record.billboard ||
         mesh.infiniteDistance !== record.infinite ||
         isAutoLodMaster(mesh) !== record.autoLod ||
-        (record.instance && hasMeshLatticeDeformer(mesh) !== record.lattice)
+        (record.instance &&
+          ((mesh as InstancedMesh).sourceMesh !== record.source || hasMeshLatticeDeformer(mesh) !== record.lattice))
       )
         record.dirty = walk;
     }
@@ -510,7 +526,10 @@ export class ShadowMapRefresh {
    */
   private walkCaster(scene: Scene, record: Caster, walk: number): number {
     const mesh = record.mesh;
-    const source = record.source;
+    // An instance draws its source's geometry, sub-meshes and material at its own world matrix: its shadow content is
+    // its source's, posed and shown by the instance itself.
+    const source = record.instance ? (mesh as InstancedMesh).sourceMesh : mesh;
+    record.source = source;
     const geometry = source instanceof Mesh ? source.geometry : null;
     if (record.geometry !== geometry) {
       if (record.geometry) unwatchGeometry(record.geometry);

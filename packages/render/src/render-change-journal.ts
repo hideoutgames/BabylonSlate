@@ -61,12 +61,16 @@ class Journal {
   readonly readers = new Set<Reader>();
   /** The furthest reader cursor: an entry at or after it is unread by every reader. */
   frontier = 0;
+  /** The kinds some reader reads; others are not recorded. */
+  wanted = 0;
 
   get end(): number {
     return this.base + this.nodes.length;
   }
 
-  note(node: Node, kind: number): void {
+  note(node: Node, kinds: number): void {
+    const kind = kinds & this.wanted;
+    if (!kind) return;
     const at = this.last.get(node);
     if (at !== undefined && at >= this.frontier) {
       const index = at - this.base;
@@ -93,9 +97,11 @@ class Journal {
   /** After a reader moved: drops what every reader has read. */
   settle(): void {
     let lowest = Infinity, highest = this.base;
+    this.wanted = 0;
     for (const reader of this.readers) {
       lowest = Math.min(lowest, reader.cursor);
       highest = Math.max(highest, reader.cursor);
+      this.wanted |= reader.kinds;
     }
     this.frontier = highest;
     if (lowest >= this.end) this.clear();
@@ -115,12 +121,14 @@ export interface RenderChangeReader {
 class Reader implements RenderChangeReader {
   cursor: number;
   overflowed = false;
+  readonly kinds: number;
   private readonly scene: JournalScene;
   private readonly journal: Journal;
 
-  constructor(scene: JournalScene, journal: Journal) {
+  constructor(scene: JournalScene, journal: Journal, kinds: number) {
     this.scene = scene;
     this.journal = journal;
+    this.kinds = kinds;
     this.cursor = journal.end;
   }
 
@@ -133,7 +141,10 @@ class Reader implements RenderChangeReader {
       return false;
     }
     // Read the length each time: a visit may note further changes, which this drain then also reads.
-    for (let at = this.cursor - journal.base; at < journal.nodes.length; at++) visit(journal.nodes[at]!, journal.kinds[at]!);
+    for (let at = this.cursor - journal.base; at < journal.nodes.length; at++) {
+      const kinds = journal.kinds[at]! & this.kinds;
+      if (kinds) visit(journal.nodes[at]!, kinds);
+    }
     this.cursor = journal.end;
     journal.settle();
     return true;
@@ -149,11 +160,15 @@ class Reader implements RenderChangeReader {
   }
 }
 
+/** Every kind of change. */
+const ALL_KINDS = RenderChange.Transform | RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material |
+  RenderChange.Geometry | RenderChange.Other;
+
 /**
- * Opens a reader of `scene`'s visual changes. The Scene records changes only while it has a reader: without one each
- * hooked Babylon write costs one field read.
+ * Opens a reader of `scene`'s changes of `kinds` (`RenderChange` bits; all by default). The Scene records a kind only
+ * while some reader reads it: without one each hooked Babylon write costs a field read.
  */
-export function openRenderChangeReader(scene: Scene): RenderChangeReader {
+export function openRenderChangeReader(scene: Scene, kinds: number = ALL_KINDS): RenderChangeReader {
   install();
   const target = scene as JournalScene;
   let journal = target._hapticRenderChanges;
@@ -166,9 +181,10 @@ export function openRenderChangeReader(scene: Scene): RenderChangeReader {
       if (target._hapticRenderChanges === owned) delete target._hapticRenderChanges;
     });
   }
-  const reader = new Reader(target, journal);
+  const reader = new Reader(target, journal, kinds);
   journal.readers.add(reader);
   journal.frontier = journal.end;
+  journal.wanted |= kinds;
   return reader;
 }
 

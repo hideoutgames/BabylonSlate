@@ -115,6 +115,20 @@ describe("the shadow caster walk of the change journal", () => {
     expect(f.sync()).toMatchObject({ visited: 0, bumped: [] });
   });
 
+  it("follows an instance moved to another source, as an instance pool moves its members", () => {
+    const f = fixture();
+    const next = MeshBuilder.CreateBox("next", { height: 2 }, f.scene);
+    next.material = f.shared;
+    // As `instance-pool.ts` moves a member between group sources.
+    f.source.removeInstance(f.instance);
+    (f.instance as unknown as { _sourceMesh: Mesh })._sourceMesh = next;
+    next.addInstance(f.instance);
+    f.instance._syncSubMeshes();
+    expect(f.sync()).toMatchObject({ visited: 1, bumped: ["instance"], mismatches: 0 });
+    next.subMeshes[0]!.indexCount -= 3;
+    expect(f.sync()).toMatchObject({ visited: 1, bumped: ["instance"], mismatches: 0 });
+  });
+
   it("follows a billboard mode, whose world matrix Babylon then recomputes every frame", () => {
     const f = fixture();
     f.own.billboardMode = 7;
