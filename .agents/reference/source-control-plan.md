@@ -40,7 +40,10 @@ Per project (`project.json` `sourceControl.mode`), off by default.
 ## Credentials and settings
 
 - Engine Settings → **Source Control** (per device): **Sign In** / **Sign Out** for GitHub and GitLab with the signed-in user, a self-managed GitLab instance URL with its token, and tokens for other hosts. Engine Settings is reachable from the Homepage and the editor; the Account dialog is not, because account UI unmounts on entering the editor.
-- Sign-in is each host's OAuth device flow with a public client and no client secret: Haptic shows a code, opens the host's device page in the system browser, and polls for the token. Nothing redirects back into the app, so no deep link is needed. GitHub: an OAuth App with Device Flow enabled. GitLab: a non-confidential gitlab.com application (device grant, GitLab 17.1 and later). A self-managed instance would need its own registration, so it takes a token instead.
+- Sign-in is each host's OAuth device flow with a public client and no client secret: Haptic shows a code, opens the host's device page in the system browser, and polls for the token. Nothing redirects back into the app, so no deep link is needed.
+  - GitHub: an OAuth App with Device Flow enabled, asking for the `repo` scope. Rejected: a GitHub App (access limited to chosen repositories, but its expiring user tokens may need a server-held secret to refresh).
+  - GitLab: a non-confidential gitlab.com application (device grant, GitLab 17.1 and later) asking for `api` (repository picker, Publish creates a project) and `write_repository` (Git and LFS), comparable in breadth to GitHub's `repo`. A self-managed instance would need its own registration, so it takes a token instead.
+  - Credentials store the Basic username with the token: `x-access-token` for GitHub, as the lock client sends today; `oauth2` for GitLab sign-in tokens; any non-blank value for GitLab personal tokens.
 - The client IDs are public build variables (`VITE_GITHUB_CLIENT_ID`, `VITE_GITLAB_CLIENT_ID`), set like `VITE_CLERK_PUBLISHABLE_KEY`. Without one, that host's sign-in is hidden and a pasted token still works.
 - `SecretStore` holds one credential per device and host origin, replacing the per-project key (`source-control:<projectGuid>`). Credentials never enter `project.json` or Git.
 - Clerk's GitHub sign-in cannot supply a token, because Clerk holds the provider token server-side and reading it needs the Clerk secret key, so host sign-in is separate from the Haptic account.
@@ -84,7 +87,7 @@ What exists today and what each part must change. Check these against the code b
 
 - **Package:** `packages/source-control` holds the lock client (`GitLfsLockProvider`, Basic `x-access-token:<token>`), `lfsEndpointFromRepoUrl` and `LockPollScheduler`, and imports neither Capacitor nor Electron. The Git client, LFS transfer and the GitHub and GitLab API clients join it on the same terms: storage, HTTP and credentials injected.
 - **Native HTTP:** `NativeHttp` (`packages/vfs/src/native-http-port.ts`) carries GET and POST with text bodies and returns `bodyText`; its only binary path is a single base64 image upload. Git smart HTTP needs binary request and response bodies, and LFS needs PUT and large binary transfers, so the port needs binary bodies and a streaming file transfer in the native plugins and the desktop IPC (`lfs:fetch`).
-- **Credentials:** `sourceControlSecretKey(projectGuid)` (`packages/source-control/src/types.ts`) and `tokenForOrigin` (`apps/editor/src/services/source-control-service.ts`) become per-origin device credentials that also carry the Basic username, which differs by host and token type. Without a token, every lock request today fails `unauthorized` and the Locks window shows Lock Status Unavailable.
+- **Credentials:** `sourceControlSecretKey(projectGuid)` (`packages/source-control/src/types.ts`) and `tokenForOrigin` (`apps/editor/src/services/source-control-service.ts`) become per-origin device credentials that also carry the Basic username ([Credentials and settings](#credentials-and-settings)); `GitLfsLockProvider` stops hard-coding `x-access-token`. Without a token, every lock request today fails `unauthorized` and the Locks window shows Lock Status Unavailable.
 - **Device page:** desktop hands only allowlisted links to the system browser (`externalOpenUrl`, `apps/desktop/src/packaged-security.ts`); it must admit GitHub's and gitlab.com's device pages.
 - **Settings:** `ProjectSettings.sourceControl` (`packages/core/src/project.ts`): `enabled` becomes `mode`, `pollIntervalMs` goes, `releaseLocksAfterPush` joins. The rows live in `apps/editor/src/components/project-source-control-settings.tsx`. Project setting changes follow the [FeatureTest starter rule](../rules/feature-test.md).
 - **Assets:** `packages/assets/src/blob-store.ts` (write-once blobs, `BLOBS_DIR`), `hasset.ts` (container decode for diffs), `mtime-diff.ts` and `apps/editor/src/lib/external-change.ts` (reload after pull).
@@ -94,7 +97,7 @@ What exists today and what each part must change. Check these against the code b
 ## Order
 
 1. Gate on the A16 iPad: isomorphic-git clone, status, commit and push of a project with a few thousand assets through the Capacitor storage adapter, and LFS transfer of large blobs through native HTTP. Status must use stat data, not re-hashing. Choose the streaming transfer path from the results.
-2. Device credentials, GitHub and GitLab sign-in in Engine Settings and the Manual mode rework; update `architecture/source-control.md`.
+2. Device credentials, GitHub and GitLab sign-in in Engine Settings and the Manual mode rework; update `architecture/source-control.md`. First check by hand, with real sign-in tokens from both registered apps, that each host accepts them with the stored username for Git, LFS transfer and LFS locks.
 3. Git core in `packages/source-control`: clone, status, commit, pull (fast-forward and whole-file conflicts), push and LFS transfer, tested against a local Git HTTP server and a fake LFS server.
 4. Integrated mode in the editor: Clone and Publish for GitHub and GitLab, Clone From URL, the Source Control window, lock verify before push and release after it.
 5. Asset diffs: payload and chunk level, then Scene and graph views.
@@ -104,9 +107,6 @@ What exists today and what each part must change. Check these against the code b
 
 | Decision | Recommendation |
 | --- | --- |
-| GitHub app type | An OAuth App with Device Flow: free and serverless, but it asks for the broad `repo` scope. A GitHub App limits access to chosen repositories; take it only if its expiring user tokens refresh without a server-held secret |
-| Tokens on the LFS lock endpoints | Check that device-flow tokens from both hosts work for LFS locks and transfer, and which Basic username each needs, before step 2 |
-| GitLab scopes | The fewest that cover Git over HTTPS, LFS and the project API; check on gitlab.com |
 | Adopting an existing desktop clone as Integrated | Allow on desktop when `.git` is readable, warning that no other Git app may use it at the same time |
 | Web build | Stay out unless a proxy is accepted |
 | Providers in Engine Extensions | No. A non-Git system such as Diversion needs a sync-level provider (status, update, commit, base version, locks, history), built first-party first |
