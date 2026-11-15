@@ -4,7 +4,9 @@ import { gitBlobSha1, lfsObjectId, lfsPointerText } from "./lfs-pointer";
 import { planPull } from "./pull-plan";
 import {
   hasLfsRule,
+  INCOMING_LIMIT,
   SyncError,
+  throwIfCancelled,
   type CommitAuthor,
   type CommitInfo,
   type CommitInput,
@@ -18,6 +20,7 @@ import {
   type RemoteState,
   type SyncPort,
   type SyncStatus,
+  type TransferOptions,
 } from "./sync-port";
 
 type Files = ReadonlyMap<string, Uint8Array>;
@@ -37,11 +40,28 @@ function encode(content: string | Uint8Array): Uint8Array {
   return typeof content === "string" ? new TextEncoder().encode(content) : content;
 }
 
+/** Committed content never changes, so each file's id is hashed once. */
+const committedIds = new WeakMap<Uint8Array, string>();
+
 /** A file's content id as Git sees it: an LFS object's by its name and size. */
 async function contentId(path: string, bytes: Uint8Array | undefined): Promise<string | null> {
   if (!bytes) return null;
+  const known = committedIds.get(bytes);
+  if (known) return known;
   const oid = lfsObjectId(path);
-  return gitBlobSha1(oid ? new TextEncoder().encode(lfsPointerText(oid, bytes.byteLength)) : bytes);
+  const id = await (oid ? lfsId(oid, bytes.byteLength) : gitBlobSha1(bytes));
+  committedIds.set(bytes, id);
+  return id;
+}
+
+function lfsId(oid: string, size: number): Promise<string> {
+  return gitBlobSha1(new TextEncoder().encode(lfsPointerText(oid, size)));
+}
+
+/** A working file as a listing gives it: `.blobs` files are compared by name and size, never read. */
+interface WorkingEntry {
+  size: number | null;
+  mtime: number | null;
 }
 
 /**
@@ -104,6 +124,13 @@ export class FakeSync implements SyncPort {
   private readonly now: () => number;
   private head: string | null;
   private tracking: string | null;
+  /**
+   * Content ids of working files by size and mtime, as Git's index keeps
+   * them, so a status reads only files whose stats changed. An entry is
+   * trusted only for an mtime older than when it was hashed (Git's racy
+   * check), so a same-size rewrite in that millisecond is read again.
+   */
+  private readonly statCache = new Map<string, { size: number; mtime: number; id: string; hashedAt: number }>();
 
   constructor(options: { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }) {
     this.storage = options.storage;
@@ -114,21 +141,37 @@ export class FakeSync implements SyncPort {
     this.tracking = this.head;
   }
 
-  /** A working copy of the remote branch, written into the empty folder `storage` is bound to. */
-  static async clone(options: { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }): Promise<FakeSync> {
+  /**
+   * A working copy of the remote branch, written into the empty folder
+   * `storage` is bound to; a cancel stops the writes and rejects as `cancelled`.
+   */
+  static async clone(options: TransferOptions & { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }): Promise<FakeSync> {
+    throwIfCancelled(options.signal);
     const sync = new FakeSync(options);
     if (!sync.head) throw new SyncError("not-found", `The repository has no branch ${options.branch}.`);
-    for (const [path, bytes] of sync.files(sync.head)) await sync.storage.writeBinary(path, bytes);
+    for (const [path, bytes] of sync.files(sync.head)) {
+      throwIfCancelled(options.signal);
+      await sync.storage.writeBinary(path, bytes);
+    }
+    throwIfCancelled(options.signal);
+    return sync;
+  }
+
+  /** A working copy with no commits in the folder `storage` is bound to, as Publish starts one; the first push creates the branch. */
+  static init(options: { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }): FakeSync {
+    const sync = new FakeSync(options);
+    sync.head = null;
+    sync.tracking = null;
     return sync;
   }
 
   async status(): Promise<SyncStatus> {
-    const working = await this.workingFiles();
+    const working = await this.workingEntries();
     const committed = this.head ? this.files(this.head) : new Map<string, Uint8Array>();
     const changes: FileChange[] = [];
     for (const path of [...new Set([...working.keys(), ...committed.keys()])].sort()) {
       const before = await contentId(path, committed.get(path));
-      const after = await contentId(path, working.get(path));
+      const after = await this.workingId(path, working.get(path));
       if (before === after) continue;
       changes.push({ path, kind: before === null ? "added" : after === null ? "deleted" : "modified" });
     }
@@ -139,11 +182,10 @@ export class FakeSync implements SyncPort {
     const changed = new Set((await this.status()).changes.map((change) => change.path));
     const selected = [...new Set(paths)].filter((path) => changed.has(path));
     if (selected.length === 0) throw new Error("Nothing to commit.");
-    const working = await this.workingFiles();
+    const working = await this.workingEntries();
     const files = new Map(this.head ? this.files(this.head) : []);
     for (const path of selected) {
-      const bytes = working.get(path);
-      if (bytes) files.set(path, bytes);
+      if (working.has(path)) files.set(path, await this.storage.readBinary(path));
       else files.delete(path);
     }
     if (selected.some((path) => lfsObjectId(path) && working.has(path)) && !hasLfsRule(new TextDecoder().decode(files.get(".gitattributes") ?? new Uint8Array()))) {
@@ -153,19 +195,42 @@ export class FakeSync implements SyncPort {
     return { commit: this.head };
   }
 
-  async fetch(): Promise<RemoteState> {
+  async fetch(options: TransferOptions = {}): Promise<RemoteState> {
+    throwIfCancelled(options.signal);
     this.tracking = this.remote.branches.get(this.branch) ?? null;
+    return this.remoteState();
+  }
+
+  async remoteState(): Promise<RemoteState> {
     const relation = this.head ? await this.relation(this.head, this.tracking) : null;
+    const incoming = relation ? relation.behind : this.tracking ? (await this.relation(this.tracking, null)).ahead : [];
     return {
       branch: this.branch,
       local: this.head,
       remote: this.tracking,
       ahead: relation?.ahead.length ?? 0,
-      behind: relation ? relation.behind.length : this.tracking ? (await this.relation(this.tracking, null)).ahead.length : 0,
+      behind: incoming.length,
+      // `relate` lists them newest first.
+      incoming: incoming
+        .slice(0, INCOMING_LIMIT)
+        .map((id) => this.remote.get(id))
+        .map((commit) => ({ id: commit.id, message: commit.message, author: commit.author, timestamp: commit.timestamp, parents: commit.parents })),
     };
   }
 
-  async pull({ author, choices }: PullInput): Promise<PullResult> {
+  async outgoing(): Promise<string[]> {
+    if (!this.head || this.head === this.tracking) return [];
+    const mine = this.files(this.head);
+    const theirs = this.tracking ? this.files(this.tracking) : new Map<string, Uint8Array>();
+    const out: string[] = [];
+    for (const path of new Set([...mine.keys(), ...theirs.keys()])) {
+      if ((await contentId(path, mine.get(path))) !== (await contentId(path, theirs.get(path)))) out.push(path);
+    }
+    return out.sort();
+  }
+
+  async pull({ author, choices, signal }: PullInput): Promise<PullResult> {
+    throwIfCancelled(signal);
     const remote = this.remote.branches.get(this.branch) ?? null;
     this.tracking = remote;
     if (!remote || remote === this.head) return { kind: "up-to-date", head: this.head };
@@ -174,16 +239,18 @@ export class FakeSync implements SyncPort {
     const base = relation?.base ?? null;
     const baseFiles = base ? this.files(base) : new Map<string, Uint8Array>();
     const theirsFiles = this.files(remote);
-    const working = await this.workingFiles();
+    const working = await this.workingEntries();
     const incoming = [];
     for (const path of [...new Set([...baseFiles.keys(), ...theirsFiles.keys()])].sort()) {
       const baseId = await contentId(path, baseFiles.get(path));
       const theirs = await contentId(path, theirsFiles.get(path));
-      if (baseId !== theirs) incoming.push({ path, base: baseId, theirs, mine: await contentId(path, working.get(path)) });
+      if (baseId !== theirs) incoming.push({ path, base: baseId, theirs, mine: await this.workingId(path, working.get(path)) });
     }
     const plan = planPull(incoming, choices);
     if (!plan.ready) return { kind: "conflicts", conflicts: plan.conflicts };
     for (const path of plan.writes) {
+      // As checkout: a cancel stops the writes and leaves the branch where it was.
+      throwIfCancelled(signal);
       const bytes = theirsFiles.get(path);
       if (bytes) await this.storage.writeBinary(path, bytes);
       else if (working.has(path)) await this.storage.remove(path);
@@ -208,7 +275,8 @@ export class FakeSync implements SyncPort {
     return { kind: "merged", head: this.head, changedPaths: plan.writes };
   }
 
-  async push(): Promise<PushResult> {
+  async push(options: TransferOptions = {}): Promise<PushResult> {
+    throwIfCancelled(options.signal);
     if (!this.head) throw new SyncError("not-found", "There is nothing to push yet.");
     const remote = this.remote.branches.get(this.branch) ?? null;
     const { ahead, base } = await this.relation(this.head, remote);
@@ -267,20 +335,33 @@ export class FakeSync implements SyncPort {
     }, new Set());
   }
 
-  /** Every working file Git would see: `.git` and `.gitignore`d names left out. */
-  private async workingFiles(): Promise<Map<string, Uint8Array>> {
+  /** Every working file Git would see (`.git` and `.gitignore`d names left out), from listings alone. */
+  private async workingEntries(): Promise<Map<string, WorkingEntry>> {
     const ignored = await this.ignoreRules();
-    const out = new Map<string, Uint8Array>();
+    const out = new Map<string, WorkingEntry>();
     const walk = async (dir: string) => {
       for (const entry of await this.storage.readdir(dir)) {
         const path = dir ? `${dir}/${entry.name}` : entry.name;
         if (path === ".git" || ignored.some((rule) => rule.test(entry.name) || rule.test(path))) continue;
         if (entry.isDir) await walk(path);
-        else out.set(path, await this.storage.readBinary(path));
+        else out.set(path, { size: entry.size ?? null, mtime: entry.mtime ?? null });
       }
     };
     await walk("");
     return out;
+  }
+
+  /** A working file's content id: a `.blobs` file's from its name and size (as the Git core's clean filter), any other's from its bytes. */
+  private async workingId(path: string, entry: WorkingEntry | undefined): Promise<string | null> {
+    if (!entry) return null;
+    const oid = lfsObjectId(path);
+    if (oid) return lfsId(oid, entry.size ?? (await this.storage.stat(path)).size ?? 0);
+    const cached = this.statCache.get(path);
+    if (cached && cached.size === entry.size && cached.mtime === entry.mtime && cached.mtime < cached.hashedAt) return cached.id;
+    const hashedAt = Date.now();
+    const id = await gitBlobSha1(await this.storage.readBinary(path));
+    if (entry.size !== null && entry.mtime !== null) this.statCache.set(path, { size: entry.size, mtime: entry.mtime, id, hashedAt });
+    return id;
   }
 
   /** `.gitignore` lines as name or path globs (`*` within a segment); enough for the entries Publish writes. */

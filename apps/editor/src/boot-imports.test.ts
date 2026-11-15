@@ -99,12 +99,14 @@ describe("editor boot imports", () => {
   });
 
   // A project whose source control mode is Off loads none of it: the credential store, device sign-in, the host REST
-  // APIs, the pushed-lock check, the Git core (isomorphic-git) and the Source Control tab's windows load on first use,
-  // and the Debug Mode Git benchmark only when it is called.
+  // APIs, the pushed-lock check, the Git core (isomorphic-git) and its port factory, Clone, Publish, the Pull flow and
+  // the Source Control tab's windows load on first use, and the Debug Mode Git benchmark only when it is called.
   it("keep Source Control's accounts, sign-in, host APIs, Git core and windows out of the Homepage and the Editor route", () => {
     const SOURCE_CONTROL_SUBPATH = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["'](?:@haptic\/source-control\/(?:device-flow|host-api|pushed-locks|token-refresh|fake-host|git|git-benchmark|fake-sync)|isomorphic-git(?:\/[^'"]*)?)["']/m;
     const closure = [...new Set(["main.tsx", "routes/home-route.tsx", "routes/editor-route.tsx"].flatMap((entry) => staticClosure(entry)))];
     expect(closure).toContain("services/source-control-service.ts");
+    expect(closure).toContain("services/source-control-sync.ts");
+    expect(closure).toContain("components/source-control-actions.tsx");
     expect(closure).toContain("components/source-control-sign-in-banner.tsx");
     expect(closure).toContain("lib/git-benchmark-hook.ts");
     expect(closure.filter((file) => [
@@ -115,7 +117,15 @@ describe("editor boot imports", () => {
       "components/engine-source-control-settings.tsx",
       "components/project-source-control-host-fields.tsx",
       "components/source-control-sign-in-dialog.tsx",
+      "components/source-control-host-account.tsx",
+      "lib/source-control-host-accounts.ts",
+      "components/source-control-pull-flow.tsx",
+      "components/clone-project-dialog.tsx",
+      "components/publish-project-dialog.tsx",
+      "services/source-control-sync-port.ts",
+      "services/source-control-publish.ts",
       "panels/locks-panel.tsx",
+      "panels/changes-panel.tsx",
     ].includes(file))).toEqual([]);
     expect(closure.filter((file) => SOURCE_CONTROL_SUBPATH.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
   });

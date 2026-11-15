@@ -21,6 +21,7 @@ import {
  *
  * Env: HAPTIC_PERF_SCENES (comma list of main|stress|world|lights|2d, default main,stress),
  *      HAPTIC_PERF_SAMPLE_MS (default 15000), HAPTIC_PERF_SAMPLES (default 2),
+ *      HAPTIC_PERF_EDITOR_SAMPLES (default HAPTIC_PERF_SAMPLES: the editor viewport's windows),
  *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
  *      HAPTIC_PERF_FRAMECAP (Play console `framecap`), HAPTIC_PERF_VIEWPORT_CAP (Engine Settings),
@@ -31,12 +32,14 @@ import {
  *      HAPTIC_PERF_PROFILE=1 (with HAPTIC_PERF_OUT: a CPU profile of each scene's Play windows beside the report),
  *      HAPTIC_PERF_VERIFY_SCOPED=1 (Play follows each scoped readiness probe with a whole one that must agree:
  *      `rendererWork.scopedReadinessMismatches`),
+ *      HAPTIC_PERF_GPU_BUSY=1 (each Play window measures GPU-busy time per frame: `rendering.gpuBusy`),
  *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
  *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
- * (`frameCpu`, `frameDraws`, `drawsPerPass`, `cpuMsPerPass`). `settingsHoldMs` is how long the view took to draw again
+ * (`frameCpu`, `frameDraws`, `drawsPerPass`, `cpuMsPerPass`) and, where the Engine has timer queries, the frame's GPU
+ * time (`frameGpu`). `settingsHoldMs` is how long the view took to draw again
  * after the console commands; `rendering.rendererWork.readinessBlockers` names what a failed readiness check waited for.
  *
  * Each Play also reports the WebGL programs linked from its click to its close (`programs`), keyed by their
@@ -50,6 +53,7 @@ const number = (name: string, fallback: number, min = 0) => {
 };
 const SAMPLE_MS = number("HAPTIC_PERF_SAMPLE_MS", 15_000, 1_000);
 const SAMPLES = number("HAPTIC_PERF_SAMPLES", 2, 1);
+const EDITOR_SAMPLES = number("HAPTIC_PERF_EDITOR_SAMPLES", SAMPLES, 0);
 const WARMUP_MS = number("HAPTIC_PERF_WARMUP_MS", 10_000);
 const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
 const QUALITY = process.env.HAPTIC_PERF_QUALITY ?? null;
@@ -61,6 +65,8 @@ const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
 const PROFILE = process.env.HAPTIC_PERF_PROFILE === "1" && !!process.env.HAPTIC_PERF_OUT;
 /** Each scoped readiness probe in Play is followed by a whole one, which must agree (the measured frames carry its cost). */
 const VERIFY_SCOPED = process.env.HAPTIC_PERF_VERIFY_SCOPED === "1";
+/** Each Play window restarts the GPU-busy measurement (`gpubusy on`), so `rendering.gpuBusy` is that window's own. */
+const GPU_BUSY = process.env.HAPTIC_PERF_GPU_BUSY === "1";
 /** Each shadow caster walk of the change journal in Play is followed by the full walk (the measured frames carry its cost). */
 const VERIFY_JOURNAL = process.env.HAPTIC_PERF_VERIFY_JOURNAL === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
@@ -238,7 +244,7 @@ async function samplePlay(page: Page, durationMs: number) {
       if (now - read >= 500) {
         read = now;
         const rendering = host.__hapticPlayTest?.rendering();
-        if (rendering) readings.push({ drawCalls: rendering.drawCalls, cpuMs: rendering.cpuMs, drawPasses: rendering.drawPasses, drawPassMs: rendering.drawPassMs });
+        if (rendering) readings.push({ drawCalls: rendering.drawCalls, cpuMs: rendering.cpuMs, gpuMs: rendering.gpuMs, drawPasses: rendering.drawPasses, drawPassMs: rendering.drawPassMs });
       }
       if (now - first >= ms) break;
     }
@@ -281,6 +287,8 @@ async function samplePlay(page: Page, durationMs: number) {
     visibility: sample.visibility,
     // Half-second readings over the window: one frame's value says little where passes draw on alternate frames.
     frameCpu: distribution(sample.readings.flatMap((reading) => (typeof reading.cpuMs === "number" ? [reading.cpuMs] : []))),
+    // The Engine's GPU frame time from timer queries (null without them: WebGPU, or a view sharing its Engine's frame).
+    frameGpu: distribution(sample.readings.flatMap((reading) => (typeof reading.gpuMs === "number" ? [reading.gpuMs] : []))),
     frameDraws: { median: draws.medianMs, max: draws.longestMs },
     drawsPerPass: passMedians(sample.readings.map((reading) => reading.drawPasses)),
     cpuMsPerPass: passMedians(sample.readings.map((reading) => reading.drawPassMs)),
@@ -288,6 +296,8 @@ async function samplePlay(page: Page, durationMs: number) {
       drawCalls: rendering.drawCalls ?? null,
       cpuMs: rendering.cpuMs ?? null,
       gpuMs: rendering.gpuMs ?? null,
+      gpuBusy: rendering.gpuBusy ?? null,
+      frameBackpressure: rendering.frameBackpressure ?? null,
       settings: rendering.settings ?? null,
       rendererWork: rendering.rendererWork ?? null,
       layerWork: rendering.layerWork ?? null,
@@ -341,6 +351,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   }
   const windows = [];
   for (let index = 0; index < SAMPLES; index += 1) {
+    if (GPU_BUSY) await runConsoleCommand(page, "gpubusy on");
     const since = await pageNow(page);
     const { result, busy } = await busyFraction(cdp, () => samplePlay(page, SAMPLE_MS));
     windows.push({ ...result, mainThreadBusy: busy, longTasks: await longTasksSince(page, since) });
@@ -423,7 +434,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       const { readyMs: sceneReadyMs, loadRetries } = await openFeatureTestScene(page, scene);
       await page.waitForTimeout(SETTLE_MS);
       const viewport = [];
-      for (let index = 0; index < SAMPLES; index += 1) {
+      for (let index = 0; index < EDITOR_SAMPLES; index += 1) {
         const { result, busy } = await busyFraction(cdp, () => measureViewport(page, SAMPLE_MS));
         viewport.push({ ...result, mainThreadBusy: busy });
       }
@@ -457,7 +468,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     browserVersion: page.context().browser()?.version() ?? null,
     viewportCss: page.viewportSize(),
     adapter,
-    env: { SCENES, SAMPLE_MS, SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS },
+    env: { SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,
     pageErrors,

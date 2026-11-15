@@ -50,6 +50,7 @@ function dockOptionsForIndexed(
     | undefined,
   parentOf: (id: string) => string | null | undefined,
   sceneMode?: SceneMode,
+  sourceControlIntegrated?: boolean,
 ): DockWindowOptions {
   return {
     actorPrefab:
@@ -57,6 +58,7 @@ function dockOptionsForIndexed(
       !indexed ||
       classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
     sceneMode: hasSceneModes(kind) ? (sceneMode ?? "design") : undefined,
+    sourceControlIntegrated: kind === "source-control" ? sourceControlIntegrated === true : undefined,
   };
 }
 
@@ -254,6 +256,7 @@ export function useDocumentDockLayouts({
         parentOf,
         surface === "design" || surface === "landscape" || surface === "foliage" || surface === "script" || surface === "timeline"
           ? surface : undefined,
+        documentService.sourceControlTabIntegrated,
       );
       for (const panel of listDockPanels(dock)) {
         // Function and state graph tabs persist in the DockView snapshot, not
@@ -331,6 +334,7 @@ export function useDocumentDockLayouts({
       indexed,
       parentOf,
       documentSceneMode(doc.ref.kind, doc.layout),
+      documentService.sourceControlTabIntegrated,
     );
     const def = findWindowDefinition(doc.ref.kind, panelId, dockOptions);
     if (!def) return;
@@ -407,6 +411,7 @@ export function useDocumentDockLayouts({
       indexed,
       parentOf,
       sceneMode,
+      documentService.sourceControlTabIntegrated,
     );
 
     preFocusLayoutsRef.current.set(focusKey, {

@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+import {
+  asksAdoption,
+  canPublishProject,
+  integratedBlocker,
+  offeredSourceControlModes,
+  publishReplacesRepository,
+  sameRepository,
+  type SourceControlFolder,
+} from "./source-control-mode";
+
+const folder = (platform: string, tier: SourceControlFolder["tier"], hasGit: boolean, testMode = false): SourceControlFolder =>
+  ({ platform, tier, hasGit, testMode });
+
+describe("Integrated mode rules (one Git client per folder)", () => {
+  it.each([
+    ["production web", folder("web", "opfs", true), false, "unavailable"],
+    ["test mode, no .git", folder("web", "opfs", false, true), false, null],
+    ["iPad app storage with .git, which only Haptic syncs", folder("ios", "documents", true), false, null],
+    ["iPad app storage without .git", folder("ios", "documents", false), false, "no-repository"],
+    ["iPad folder another app syncs", folder("ios", "external", true), true, "other-git-client"],
+    ["Android chosen folder", folder("android", "external", true), false, "other-git-client"],
+    ["desktop chosen folder with .git this device adopted", folder("electron", "external", true), true, null],
+    ["desktop chosen folder with .git it never adopted", folder("electron", "external", true), false, "not-adopted"],
+    ["desktop Projects folder with .git it never adopted", folder("electron", "documents", true), false, "not-adopted"],
+    ["desktop Projects folder without .git", folder("electron", "documents", false), false, "no-repository"],
+    ["desktop test mode", folder("electron", "documents", false, true), false, null],
+  ] as const)("runs the Git client in %s: %s", (_name, where, adopted, blocker) => {
+    expect(integratedBlocker({ ...where, adopted })).toBe(blocker);
+  });
+
+  it.each([
+    ["a desktop folder with .git", folder("electron", "external", true), true],
+    ["a desktop folder without .git", folder("electron", "documents", false), false],
+    ["desktop test mode", folder("electron", "documents", true, true), false],
+    ["iPad app storage with .git", folder("ios", "documents", true), false],
+    ["an Android chosen folder", folder("android", "external", true), false],
+  ] as const)("asks before running Git in %s: %s", (_name, where, asks) => {
+    expect(asksAdoption(where)).toBe(asks);
+  });
+
+  it.each([
+    ["Off on an iPad, even with .git", "off", folder("ios", "external", true), ["off", "manual"]],
+    ["Manual on Android", "manual", folder("android", "documents", true), ["off", "manual"]],
+    ["an Integrated project anywhere", "integrated", folder("ios", "documents", true), ["off", "integrated", "manual"]],
+    ["Manual on desktop with .git", "manual", folder("electron", "external", true), ["off", "integrated", "manual"]],
+    ["Off on desktop without .git", "off", folder("electron", "documents", false), ["off", "manual"]],
+  ] as const)("offers modes for %s", (_name, stored, where, modes) => {
+    expect(offeredSourceControlModes(stored, where)).toEqual(modes);
+  });
+
+  it.each([
+    ["an Off project in iPad app storage", "off", folder("ios", "documents", false), true],
+    ["an Off project in a chosen iPad folder", "off", folder("ios", "external", false), false],
+    ["an Off project in a chosen desktop folder", "off", folder("electron", "external", false), true],
+    ["a desktop folder that already has .git (Mode offers Integrated)", "off", folder("electron", "documents", true), false],
+    ["an Off project in iPad app storage with the .git of an interrupted Publish", "off", folder("ios", "documents", true), true],
+    ["an Off project in Android app storage with the .git of an interrupted Publish", "off", folder("android", "documents", true), true],
+    ["a chosen iPad folder with .git", "off", folder("ios", "external", true), false],
+    ["a Manual project", "manual", folder("ios", "documents", false), false],
+    ["production web", "off", folder("web", "opfs", false), false],
+    ["test mode", "off", folder("web", "opfs", false, true), true],
+  ] as const)("publishes %s: %s", (_name, stored, where, allowed) => {
+    expect(canPublishProject(stored, where)).toBe(allowed);
+  });
+
+  it.each([
+    ["the .git of an interrupted Publish in iPad app storage", folder("ios", "documents", true), true],
+    ["a folder without .git", folder("ios", "documents", false), false],
+    ["a desktop folder's .git, which another Git app may use", folder("electron", "documents", true), false],
+  ] as const)("Publish replaces %s: %s", (_name, where, replaces) => {
+    expect(publishReplacesRepository(where)).toBe(replaces);
+  });
+});
+
+describe("sameRepository", () => {
+  it("compares the HTTPS repository behind HTTPS, SSH and scp-style URLs", () => {
+    expect(sameRepository("git@github.com:team/game.git", "https://github.com/team/game")).toBe(true);
+    expect(sameRepository("https://github.com/team/game.git", "https://github.com/team/other.git")).toBe(false);
+  });
+});

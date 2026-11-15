@@ -28,6 +28,7 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
+  getHostPlatform,
   isTestModeEnabled,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type EngineSettings,
@@ -46,6 +47,8 @@ import { DocumentTransitionGate } from "../services/document-transition-gate";
 import {
   SourceControlService,
 } from "../services/source-control-service";
+import { SourceControlSyncService } from "../services/source-control-sync";
+import { publishReplacesRepository } from "../lib/source-control-mode";
 import { documentContentIdentity } from "../lib/document-content-identity";
 import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import {
@@ -81,6 +84,7 @@ import {
   RegistryStateContext,
   SaveStateContext,
   SourceControlStateContext,
+  SourceControlSyncContext,
   ThumbnailVersionsContext,
 } from "./document-context-hooks";
 import { useDocumentDockLayouts } from "./use-document-dock-layouts";
@@ -120,6 +124,8 @@ export {
   useDocumentDirty,
   useDocumentKindsRevision,
   useEditorShellState,
+  useIntegratedSync,
+  useIntegratedSyncState,
   useOpenDocument,
   useOpenDocumentTabs,
   useProjectState,
@@ -164,6 +170,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setSceneDocumentLoad(null);
   }, []);
   const sourceControlRef = useRef(new SourceControlService());
+  const sourceControlSync = useRef(new SourceControlSyncService()).current;
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
@@ -301,12 +308,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }), [documentService]);
   /** Set once `closeDocumentsForPaths` exists; reload closes tabs whose file is gone. */
   const closeDocumentsForPathsRef = useRef<(paths: Iterable<string>) => void>(() => {});
+  /** The registry epoch a remount that only re-read the files reached; it needs no Integrated status of its own. */
+  const rereadEpochRef = useRef<number | null>(null);
+  const noteRegistryReread = useCallback(() => {
+    rereadEpochRef.current = projectService.registryGeneration + registryTickRef.current;
+  }, [projectService]);
   // Effects after the history-reopen subscription, before source control's.
   const {
     externalChangePrompt,
     captureMtimeSnapshot,
     runForegroundRescanRef,
     resetExternalChanges,
+    applyPulledChanges,
     actions: externalChangeActions,
   } = useExternalChanges({
     projectService,
@@ -317,10 +330,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setProjectDocument,
     bump,
     closeDocumentsForPathsRef,
+    noteRegistryReread,
   });
+  // Asset writes that are not saves (a new asset, an import, a move or delete,
+  // a Texture encode) advance the registry: Integrated status follows them too.
+  // A remount that only re-read the files (the foreground rescan, a pull's
+  // reload) marks the epoch it reached: the foreground refresh or the pull
+  // reads the status itself. Any other advance, later writes included, notes.
+  useEffect(() => {
+    if (registryEpoch !== rereadEpochRef.current) sourceControlSync.noteSaved();
+  }, [registryEpoch, sourceControlSync]);
+  /** Every editor save ends here: the change snapshot is recaptured and Integrated status runs once the burst settles. */
+  const afterEditorSave = useCallback(async () => {
+    await captureMtimeSnapshot();
+    sourceControlSync.noteSaved();
+  }, [captureMtimeSnapshot, sourceControlSync]);
   // Effects after the own-write snapshot update, before the journal flush on hide.
-  const { sourceControlState, actions: sourceControlActions } = useSourceControlSync({
+  const { sourceControlState, syncInputFor, actions: sourceControlActions } = useSourceControlSync({
     sourceControlRef,
+    sourceControlSync,
     projectService,
     documentService,
     settingsStore,
@@ -445,7 +473,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     journalBuffer,
     ensureDerived,
     captureAllLayouts,
-    captureMtimeSnapshot,
+    captureMtimeSnapshot: afterEditorSave,
     playContent,
     setLastCompiledSignature,
     setMigrationPending,
@@ -513,7 +541,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     moveDockLayouts,
     captureAllLayouts,
     collectGraphTypeSchemas,
-    captureMtimeSnapshot,
+    captureMtimeSnapshot: afterEditorSave,
     enqueueProjectWrite,
     cancelDebouncedSave,
     scheduleDebouncedSave,
@@ -526,6 +554,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     documentTransitions,
     editSessionRef,
     sourceControlRef,
+    sourceControlSync,
     journalBuffer,
     ensureDerived,
     editing,
@@ -568,6 +597,48 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bumpRegistry,
     scheduleDebouncedSave,
   });
+
+  const withProjectWrites = useCallback(<T,>(work: () => Promise<T>) => {
+    cancelDebouncedSave();
+    return enqueueProjectWrite(async () => {
+      cancelDebouncedSave();
+      return work();
+    });
+  }, [cancelDebouncedSave, enqueueProjectWrite]);
+
+  const publishProject = useCallback<DocumentContextValue["publishProject"]>(async ({ repositoryUrl, branch }) => {
+    const opened = projectDocumentRef.current;
+    if (!opened) throw new Error("Open a project first.");
+    const { writePublishFiles } = await import("../services/source-control-publish");
+    await writePublishFiles(projectService.storagePort);
+    const settings = { ...opened.settings.sourceControl, mode: "integrated" as const, repositoryUrl, branch };
+    const { tier, hasGit } = await sourceControlActions.readSourceControlFolder();
+    await sourceControlSync.publish({
+      input: syncInputFor(settings),
+      repositoryUrl,
+      branch,
+      // The .git of an interrupted Publish (app storage on a device) is replaced; elsewhere init refuses one.
+      replace: publishReplacesRepository({ platform: getHostPlatform(), testMode: isTestModeEnabled(), tier, hasGit }),
+      // The first commit holds Integrated mode; the client is already open, so the mode change keeps it.
+      beforeCommit: async () => {
+        const live = projectDocumentRef.current ?? opened;
+        const next = { ...live, settings: { ...live.settings, sourceControl: settings } };
+        setProjectDocument(next);
+        await saveProjectNow(next);
+      },
+    });
+  }, [projectDocumentRef, projectService, saveProjectNow, setProjectDocument, sourceControlActions, sourceControlSync, syncInputFor]);
+
+  const setSourceControlAdoption = useCallback<DocumentContextValue["setSourceControlAdoption"]>(async (adopted) => {
+    const opened = projectDocumentRef.current;
+    if (!opened) return;
+    await sourceControlSync.setAdopted(syncInputFor(opened.settings.sourceControl), adopted);
+  }, [projectDocumentRef, sourceControlSync, syncInputFor]);
+
+  const summarizeProjectForPublish = useCallback(async () => {
+    const { summarizeProject } = await import("../services/source-control-publish");
+    return summarizeProject(projectService.storagePort);
+  }, [projectService]);
 
   const updateProjectVersion = useCallback((version: string) => {
     if (documentService.getAuthoringLock().readOnly) return;
@@ -713,6 +784,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         projectService,
         documentService,
         sourceControl: sourceControlRef.current,
+        sourceControlSync,
         journalBuffer,
         ensureDerived,
         bump,
@@ -729,6 +801,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       uninstall?.();
     };
   }, [
+    sourceControlSync,
     cancelDebouncedSave,
     applyGraphChange,
     reparentClassDocument,
@@ -767,6 +840,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ...lifecycleActions,
       ...projectAssetActions,
       lockAuthoring,
+      withProjectWrites,
+      applyPulledChanges,
+      publishProject,
+      summarizeProjectForPublish,
+      setSourceControlAdoption,
       beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,
@@ -827,6 +905,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       lifecycleActions,
       projectAssetActions,
       lockAuthoring,
+      withProjectWrites,
+      applyPulledChanges,
+      publishProject,
+      summarizeProjectForPublish,
+      setSourceControlAdoption,
       beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,
@@ -971,6 +1054,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                     <EditorShellStateContext.Provider value={editorShellState}>
                       <ThumbnailVersionsContext.Provider value={thumbnailVersions}>
                         <SourceControlStateContext.Provider value={sourceControlState}>
+                          <SourceControlSyncContext.Provider value={sourceControlSync}>
                             <DockWindowTickContext.Provider value={dockWindowTick}>
                               {children}
                             </DockWindowTickContext.Provider>
@@ -993,6 +1077,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                               testId="document-open-error"
                               dismissTestId="document-open-error-dismiss"
                             />
+                          </SourceControlSyncContext.Provider>
                         </SourceControlStateContext.Provider>
                       </ThumbnailVersionsContext.Provider>
                     </EditorShellStateContext.Provider>

@@ -44,6 +44,7 @@ import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
+import { noteSceneReadinessChange } from "./scene-readiness-signal";
 import type { SceneReadinessScope } from "./scene-readiness-signal";
 import { verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
 import { collectReadinessBlockers, noteReadinessBlocker } from "./readiness-blockers";
@@ -800,6 +801,9 @@ export class ForwardSceneFrameGraph {
     }
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
+    // Owners outside the graph follow the Scene's count (`sceneReadinessRevision`): what the Scene's own view hears, of
+    // changes a mesh draws with. An auxiliary view hears the same Scene and marks for its own preparations besides.
+    if (!this.auxiliary && (!scope || scope.length > 0)) noteSceneReadinessChange(this.scene);
     // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.
     for (const task of this.graph?.tasks ?? [])
       if (task instanceof ManagedShadowObjectRendererTask || task instanceof LogicalGeometryTask) task.forgetCompilesAhead();

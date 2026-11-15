@@ -35,6 +35,8 @@
  * geometry writes 1, so a shader can keep its sky/environment reflection where no geometry was reflected.
  */
 import { Camera } from "@babylonjs/core/Cameras/camera";
+import { reflectionDrewWhole } from "./reflection-pass-readiness";
+import { sceneReadinessRevision } from "./scene-readiness-signal";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
@@ -234,6 +236,7 @@ class WaterPlanarReflections {
     // The first draw waits for every reflected material; later draws skip any mesh that is not ready, and stay dirty
     // until a draw has drawn every one.
     let complete = false;
+    const revision = sceneReadinessRevision(this.scene);
     if (!target.ready) complete = target.ready = target.texture.isReadyForRendering();
     if (!target.ready) return;
     const engine = this.scene.getEngine();
@@ -244,7 +247,7 @@ class WaterPlanarReflections {
       leaveDrawPass(engine);
     }
     this.drew = true;
-    target.dirty = !(complete || target.texture.isReadyForRendering());
+    target.dirty = !reflectionDrewWhole(target.texture, revision, complete);
   };
   // Scratch, reused every frame.
   private readonly projection = new Matrix();

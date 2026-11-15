@@ -715,6 +715,35 @@ export class SourceControlService {
     }
   }
 
+  /**
+   * Integrated push: the locks someone else holds on `paths`, from a fresh
+   * verify. Empty where there is nothing to check against (no provider yet,
+   * or a host without the locking API), so locking never blocks a push it
+   * cannot judge; a failed verify rejects.
+   */
+  async locksBlockingPush(paths: readonly string[]): Promise<FileLock[]> {
+    const provider = this.provider;
+    if (!this.active || !provider || this.unsupported || paths.length === 0) return [];
+    const revision = this.providerRevision;
+    const result = await provider.verify();
+    if (!isOk(result)) {
+      if (result.error.kind === "unsupported") {
+        if (revision === this.providerRevision) this.markUnsupported();
+        return [];
+      }
+      throw new Error(result.error.message || "Could not check the locks on what this push sends.");
+    }
+    const wanted = new Set(paths);
+    return result.value.theirs.filter((lock) => wanted.has(lock.path));
+  }
+
+  /** Release Locks After Push: this device's locks on `paths`, except documents with unsaved edits. */
+  async releaseOwnLocks(paths: readonly string[]): Promise<void> {
+    const wanted = new Set(paths);
+    const locks = this.locks.filter((lock) => lock.ours && wanted.has(lock.path) && !this.isPathDirty(lock.path));
+    if (locks.length > 0) await this.releaseEach(locks);
+  }
+
   /** Whether the open document at `path` has unsaved edits; Release Pushed Locks leaves its lock. */
   hasUnsavedEdits(path: string): boolean {
     return this.isPathDirty(path);

@@ -5,14 +5,17 @@ export {
   cloneRepository,
   DEFAULT_CLONE_DEPTH,
   GitRepository,
+  initRepository,
   openRepository,
   type GitRepositoryOptions,
   type OperationCounters,
 } from "./repository";
+export { ADOPTION_CONFIG, readAdoption, setAdoption } from "./adoption";
 export {
   GITATTRIBUTES_LFS_RULE,
   GITIGNORE_ENTRIES,
   hasLfsRule,
+  INCOMING_LIMIT,
   isSyncError,
   SyncError,
   withIgnoreEntries,
