@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
-import type { ProjectDocument } from "@haptic/core";
+import type { ProjectDocument, SourceControlProjectSettings } from "@haptic/core";
 import {
   getHostPlatform,
   isTestModeEnabled,
@@ -7,16 +7,20 @@ import {
 } from "@haptic/vfs";
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
+import { registryChangeLookup, type ChangeLookup } from "../lib/source-control-changes";
 import type { DocumentService } from "../services/document-service";
 import type { ProjectService } from "../services/project-service";
 import {
   readGitPrefill,
   type SourceControlService,
 } from "../services/source-control-service";
+import type { SourceControlSyncService, SyncConfigureInput, SyncLocks } from "../services/source-control-sync";
 import type { DocumentActions, SourceControlState } from "./document-context-types";
 
 export interface SourceControlSyncDeps {
   sourceControlRef: RefObject<SourceControlService>;
+  /** Integrated mode's Git sync. */
+  sourceControlSync: SourceControlSyncService;
   projectService: ProjectService;
   documentService: DocumentService;
   settingsStore: ReturnType<typeof createAppSettingsStore>;
@@ -27,14 +31,22 @@ export interface SourceControlSyncDeps {
   runForegroundRescanRef: RefObject<() => Promise<void>>;
 }
 
+/** The registry as it is when a status runs: it remounts after a pull or rescan. */
+function registryLookup(projectService: ProjectService): ChangeLookup {
+  return (path) => registryChangeLookup(projectService.registry)(path);
+}
+
 /**
- * Keeps `SourceControlService` configured for the open project, mirrors
+ * Keeps `SourceControlService` (locks) and, in Integrated mode,
+ * `SourceControlSyncService` (Git) configured for the open project, mirrors
  * whether source control is on into ProjectService, Homepage recents and the
  * pinned Source Control tab, and pauses lock polling while the app is hidden
- * or a game covers the editor.
+ * or a game covers the editor. Coming back to the app recomputes the Git
+ * status and fetches.
  */
 export function useSourceControlSync({
   sourceControlRef,
+  sourceControlSync,
   projectService,
   documentService,
   settingsStore,
@@ -67,11 +79,40 @@ export function useSourceControlSync({
     });
   }, [documentService, projectDocument, projectService, projectService.guid, settings, sourceControlRef]);
 
+  // Integrated mode's Git client: keyed on the settings object, which keeps its
+  // identity until a source control setting changes. Off and Manual load nothing.
+  const syncInputFor = useCallback((next: SourceControlProjectSettings): SyncConfigureInput => {
+    const sourceControl = sourceControlRef.current;
+    const locks: SyncLocks = {
+      theirs: (paths) => sourceControl.locksBlockingPush(paths),
+      releaseOwn: (paths) => sourceControl.releaseOwnLocks(paths),
+    };
+    return {
+      settings: next,
+      folder: projectService.storagePort.getCurrentFolder(),
+      storage: projectService.storagePort,
+      platform: getHostPlatform(),
+      testMode: isTestModeEnabled(),
+      lookup: registryLookup(projectService),
+      locks,
+    };
+  }, [projectService, sourceControlRef]);
+  const projectOpen = projectDocument !== null;
+  useEffect(() => {
+    if (!projectOpen || !settings) {
+      sourceControlSync.dispose();
+      return;
+    }
+    void sourceControlSync.configure(syncInputFor(settings));
+  }, [projectOpen, projectService.guid, settings, sourceControlSync, syncInputFor]);
+  useEffect(() => () => sourceControlSync.dispose(), [sourceControlSync]);
+
   // The pinned tab follows the service, which is active only on a host with source control.
   const tabShown = projectDocument !== null && sourceControlRef.current.active;
+  const integrated = settings?.mode === "integrated";
   useEffect(() => {
-    if (documentService.setSourceControlTab(tabShown)) bump();
-  }, [bump, documentService, tabShown]);
+    if (documentService.setSourceControlTab(tabShown, integrated)) bump();
+  }, [bump, documentService, integrated, tabShown]);
 
   const sourceControlActive = settings ? settings.mode !== "off" : null;
   // Not via the debounced project save: turning source control on must stop
@@ -105,6 +146,8 @@ export function useSourceControlSync({
       if (!rescanPending) return;
       rescanPending = false;
       void runForegroundRescanRef.current();
+      // Integrated: what changed while away, here and on the remote.
+      void sourceControlSync.refresh();
     };
     const detachQuiet = subscribeEditorQuiet(apply);
     const detachLifecycle = attachLifecyclePause((paused) => {
@@ -117,10 +160,16 @@ export function useSourceControlSync({
       detachQuiet();
       detachLifecycle();
     };
-  }, [runForegroundRescanRef, sourceControlRef]);
+  }, [runForegroundRescanRef, sourceControlRef, sourceControlSync]);
 
   const prefillSourceControlFromGit = useCallback(async () => {
     return readGitPrefill(projectService.storagePort);
+  }, [projectService]);
+
+  const readSourceControlFolder = useCallback(async () => {
+    const storage = projectService.storagePort;
+    const tier = storage.getCurrentFolder()?.tier ?? null;
+    return { tier, hasGit: tier !== null && (await storage.exists(".git/HEAD").catch(() => false)) };
   }, [projectService]);
 
   const sourceControlState = useMemo<SourceControlState>(() => {
@@ -129,11 +178,12 @@ export function useSourceControlSync({
   }, [sourceControlTick, sourceControlRef]);
 
   const actions = useMemo(
-    (): Pick<DocumentActions, "prefillSourceControlFromGit"> => ({
+    (): Pick<DocumentActions, "prefillSourceControlFromGit" | "readSourceControlFolder"> => ({
       prefillSourceControlFromGit,
+      readSourceControlFolder,
     }),
-    [prefillSourceControlFromGit],
+    [prefillSourceControlFromGit, readSourceControlFolder],
   );
 
-  return { sourceControlState, actions };
+  return { sourceControlState, syncInputFor, actions };
 }

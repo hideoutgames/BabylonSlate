@@ -8,6 +8,7 @@ import { gitBlobSha1, lfsObjectId, parseLfsPointer } from "../lfs-pointer";
 import { planPull } from "../pull-plan";
 import {
   hasLfsRule,
+  INCOMING_LIMIT,
   SyncError,
   type CommitAuthor,
   type CommitInfo,
@@ -93,6 +94,18 @@ export async function openRepository(options: GitRepositoryOptions): Promise<Git
   return new GitRepository(options);
 }
 
+/**
+ * Makes the project folder `storage` is bound to a new working copy with no
+ * commits, whose `origin` is `repositoryUrl` (Publish: the first push creates
+ * the remote branch). A folder that already has `.git` is refused.
+ */
+export async function initRepository(options: GitRepositoryOptions): Promise<GitRepository> {
+  installBufferGlobal();
+  const repository = new GitRepository(options);
+  await repository.init();
+  return repository;
+}
+
 /** Clones `repositoryUrl`'s branch into the empty project folder `storage` is bound to. */
 export async function cloneRepository(options: GitRepositoryOptions & { depth?: number }): Promise<GitRepository> {
   installBufferGlobal();
@@ -160,6 +173,19 @@ export class GitRepository implements SyncPort {
     });
   }
 
+  /** @internal Use `initRepository`. */
+  init(): Promise<void> {
+    return this.run(async (op) => {
+      if (await this.storage.exists(".git/HEAD")) {
+        throw new SyncError("conflict", "This folder already has a Git repository.", { code: "repository-exists" });
+      }
+      await git.init({ ...op.git, defaultBranch: this.branch });
+      await git.addRemote({ ...op.git, remote: "origin", url: this.url });
+      // Project storage keeps no file modes.
+      await git.setConfig({ ...op.git, path: "core.filemode", value: false });
+    });
+  }
+
   status(): Promise<SyncStatus> {
     return this.run(async (op) => {
       const rows = (await git.statusMatrix({ ...op.git })) as StatusRow[];
@@ -195,11 +221,40 @@ export class GitRepository implements SyncPort {
       const local = await this.resolve(op, this.localRef);
       const remote = await this.resolve(op, this.remoteRef);
       if (!local) {
-        const behind = remote ? (await this.relation(op, remote, null)).ahead.length : 0;
-        return { branch: this.branch, local, remote, ahead: 0, behind };
+        const incoming = remote ? (await this.relation(op, remote, null)).ahead : [];
+        return { branch: this.branch, local, remote, ahead: 0, behind: incoming.length, incoming: await this.commitInfos(op, incoming) };
       }
       const relation = await this.relation(op, local, remote);
-      return { branch: this.branch, local, remote, ahead: relation.ahead.length, behind: relation.behind.length };
+      return {
+        branch: this.branch,
+        local,
+        remote,
+        ahead: relation.ahead.length,
+        behind: relation.behind.length,
+        incoming: await this.commitInfos(op, relation.behind),
+      };
+    });
+  }
+
+  outgoing(): Promise<string[]> {
+    return this.run(async (op) => {
+      const local = await this.resolve(op, this.localRef);
+      const remote = await this.resolve(op, this.remoteRef);
+      if (!local || local === remote) return [];
+      const trees = [git.TREE({ ref: local }), ...(remote ? [git.TREE({ ref: remote })] : [])];
+      const paths = (await git.walk({
+        ...op.git,
+        trees,
+        map: async (path, [mine, theirs]) => {
+          if (path === ".") return undefined;
+          const mineId = mine ? await mine.oid() : null;
+          // The same id on both sides: nothing below it differs.
+          if (mineId === (theirs ? await theirs.oid() : null)) return null;
+          const isBlob = (await blobOid(mine)) !== null || (await blobOid(theirs)) !== null;
+          return isBlob ? path : undefined;
+        },
+      })) as string[];
+      return paths.sort();
     });
   }
 
@@ -385,6 +440,22 @@ export class GitRepository implements SyncPort {
       if (isStorageNotFound(error)) return new Set();
       throw error;
     }
+  }
+
+  /** The newest of `oids` (at most `INCOMING_LIMIT`), newest first, as the log lists commits. */
+  private async commitInfos(op: Op, oids: readonly string[]): Promise<CommitInfo[]> {
+    const commits: CommitInfo[] = [];
+    for (const oid of oids) {
+      const { commit } = await git.readCommit({ ...op.git, oid });
+      commits.push({
+        id: oid,
+        message: commit.message,
+        author: { name: commit.author.name, email: commit.author.email },
+        timestamp: commit.author.timestamp,
+        parents: commit.parent,
+      });
+    }
+    return commits.sort((a, b) => b.timestamp - a.timestamp).slice(0, INCOMING_LIMIT);
   }
 
   private async commitNode(op: Op, oid: string): Promise<CommitNode | null> {

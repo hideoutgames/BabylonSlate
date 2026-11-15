@@ -1,4 +1,4 @@
-import { isChromeDocumentKind } from "@haptic/core";
+import { isChromeDocumentKind, PROJECT_FILE } from "@haptic/core";
 import {
   useCallback,
   useEffect,
@@ -12,6 +12,7 @@ import type { ProjectDocument } from "@haptic/core";
 import {
   applyOwnAssetWrite,
   classifyExternalChanges,
+  MANY_EXTERNAL_CHANGES,
   snapshotIndexedMtimes,
   type ExternalChangeClassification,
 } from "@haptic/assets";
@@ -206,6 +207,26 @@ export function useExternalChanges({
     [documentService, reloadDocumentsFromDisk],
   );
 
+  const applyPulledChanges = useCallback(async (paths: readonly string[]) => {
+    if (!projectDocumentRef.current || paths.length === 0) return;
+    const assets = paths.filter((path) => path.endsWith(".hasset"));
+    // As an external change would be classified: project.json or many assets reload the project.
+    if (paths.includes(PROJECT_FILE) || assets.length >= MANY_EXTERNAL_CHANGES) {
+      await confirmExternalChangeReloadProject();
+      return;
+    }
+    await projectService.remountRegistry();
+    bump();
+    const changed = new Set(assets);
+    const open = documentService
+      .getOpenDocumentsOrdered()
+      .filter((doc) => !isChromeDocumentKind(doc.ref.kind) && changed.has(doc.ref.path))
+      .map((doc) => doc.ref.path);
+    if (open.length > 0) await reloadDocumentsFromDisk(open);
+    // The pull's own writes are not external changes for the next foreground rescan.
+    await captureMtimeSnapshot();
+  }, [bump, captureMtimeSnapshot, confirmExternalChangeReloadProject, documentService, projectDocumentRef, projectService, reloadDocumentsFromDisk]);
+
   const dismissExternalChange = useCallback(() => {
     setExternalChangePrompt(null);
   }, []);
@@ -239,6 +260,7 @@ export function useExternalChanges({
     captureMtimeSnapshot,
     runForegroundRescanRef,
     resetExternalChanges,
+    applyPulledChanges,
     actions,
   };
 }

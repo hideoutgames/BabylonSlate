@@ -67,6 +67,7 @@ const KINDS = Object.keys({
 const OPTION_VARIANTS: DockWindowOptions[] = [
   {},
   { actorPrefab: false },
+  { sourceControlIntegrated: true },
   ...SCENE_MODES.map((sceneMode) => ({ sceneMode })),
 ];
 

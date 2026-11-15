@@ -37,6 +37,10 @@ export class FakeGitHost {
   tokenReplies: string[] = ["authorization_pending"];
   account = "test-user";
   repositories = ["haptic-test/game", "haptic-test/prototype"];
+  /** Repositories listed as Public; every other one is Private. */
+  readonly publicRepositories = new Set<string>();
+  /** The account's organizations (GitHub) or groups (GitLab). */
+  organizations = ["haptic-studio"];
   branches = ["main", "develop"];
   /** Remote branch content: path → Git blob id, for every repository and branch. */
   readonly remoteBlobs = new Map<string, string>();
@@ -81,11 +85,28 @@ export class FakeGitHost {
     if (route === "GET https://gitlab.com/api/v4/user") return json(200, { username: this.account });
     const page = Number(url.searchParams.get("page") ?? "1");
     const firstPage = <T>(items: T[]) => json(200, page === 1 ? items : []);
-    if (route === "GET https://api.github.com/user/repos") {
-      return firstPage(this.repositories.map((name) => ({ full_name: name, default_branch: "main", private: true, pushed_at: "2026-11-01T10:00:00Z" })));
+    const github = (name: string) => ({ full_name: name, default_branch: "main", private: !this.publicRepositories.has(name), pushed_at: "2026-11-01T10:00:00Z" });
+    const gitlab = (name: string) => ({ path_with_namespace: name, default_branch: "main", visibility: this.publicRepositories.has(name) ? "public" : "private", last_activity_at: "2026-11-01T10:00:00Z" });
+    if (route === "GET https://api.github.com/user/repos") return firstPage(this.repositories.map(github));
+    if (route === "GET https://gitlab.com/api/v4/projects") return firstPage(this.repositories.map(gitlab));
+    if (route === "GET https://api.github.com/user/orgs") return firstPage(this.organizations.map((login) => ({ login })));
+    if (route === "GET https://gitlab.com/api/v4/groups") {
+      return firstPage(this.organizations.map((path, index) => ({ full_path: path, id: index + 100 })));
     }
-    if (route === "GET https://gitlab.com/api/v4/projects") {
-      return firstPage(this.repositories.map((name) => ({ path_with_namespace: name, default_branch: "main", visibility: "private", last_activity_at: "2026-11-01T10:00:00Z" })));
+    const gitHubCreate = /^POST https:\/\/api\.github\.com\/(?:user|orgs\/([^/]+))\/repos$/.exec(route);
+    if (gitHubCreate || route === "POST https://gitlab.com/api/v4/projects") {
+      const body = JSON.parse(typeof request.body === "string" ? request.body : "{}") as { name?: string; private?: boolean; visibility?: string; namespace_id?: string };
+      const namespace = gitHubCreate
+        ? (gitHubCreate[1] ? decodeURIComponent(gitHubCreate[1]) : this.account)
+        : body.namespace_id ? this.organizations[Number(body.namespace_id) - 100] : this.account;
+      const name = `${namespace}/${body.name ?? ""}`;
+      if (!body.name || !namespace) return json(422, { message: "Repository creation failed." });
+      if (this.repositories.includes(name)) {
+        return json(422, { message: "Repository creation failed.", errors: [{ message: "name already exists on this account" }] });
+      }
+      this.repositories.unshift(name);
+      if (body.private === false || body.visibility === "public") this.publicRepositories.add(name);
+      return json(201, gitHubCreate ? github(name) : gitlab(name));
     }
     if (/^GET https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/branches$/.test(route) || /^GET https:\/\/gitlab\.com\/api\/v4\/projects\/[^/]+\/repository\/branches$/.test(route)) {
       return firstPage(this.branches.map((name) => ({ name })));

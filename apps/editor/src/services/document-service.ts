@@ -42,6 +42,8 @@ export interface OpenDocument {
   dirty: boolean;
   /** Canonical working document used by another editor, without its own tab. */
   background?: boolean;
+  /** The pinned Source Control document only: it holds Integrated mode's windows (Changes and Locks). */
+  sourceControlIntegrated?: boolean;
 }
 
 export interface SimulationDocumentLease {
@@ -273,6 +275,8 @@ export class DocumentService {
 
   /** Set by source control sync; the tab survives `initializeFromProject` while it is. */
   private sourceControlTabShown = false;
+  /** The pinned Source Control tab holds Integrated mode's windows. */
+  private sourceControlIntegrated = false;
 
   private state: DocumentRegistryState = {
     openDocuments: new Map(),
@@ -352,12 +356,29 @@ export class DocumentService {
     return this.state.openDocuments.get(id)?.ref.kind === "scene";
   }
 
+  /** The pinned Source Control tab shows Integrated mode's windows (Changes and Locks). */
+  get sourceControlTabIntegrated(): boolean {
+    return this.sourceControlIntegrated;
+  }
+
   /**
    * Shows or hides the pinned Source Control tab, which exists while the
-   * open project's mode is not Off. Returns whether the tabs changed.
+   * open project's mode is not Off. `integrated` picks its windows (Changes
+   * and Locks, or Locks alone); a change starts its layout afresh. Returns
+   * whether the tabs changed.
    */
-  setSourceControlTab(shown: boolean): boolean {
+  setSourceControlTab(shown: boolean, integrated = this.sourceControlIntegrated): boolean {
     this.sourceControlTabShown = shown;
+    const existing = this.state.openDocuments.get(SOURCE_CONTROL_ID);
+    if (integrated !== this.sourceControlIntegrated) {
+      this.sourceControlIntegrated = integrated;
+      if (existing && shown) {
+        this.state.openDocuments.set(SOURCE_CONTROL_ID, { ...existing, layout: null, sourceControlIntegrated: integrated });
+        delete this.state.panelPlacements[SOURCE_CONTROL_ID];
+        this.advanceKinds(["source-control"]);
+        return true;
+      }
+    }
     if (this.state.openDocuments.has(SOURCE_CONTROL_ID) === shown) return false;
     if (shown) {
       this.state.openDocuments.set(SOURCE_CONTROL_ID, {
@@ -366,6 +387,7 @@ export class DocumentService {
         content: null,
         layout: null,
         dirty: false,
+        sourceControlIntegrated: integrated,
       });
     } else {
       this.state.openDocuments.delete(SOURCE_CONTROL_ID);
@@ -407,7 +429,7 @@ export class DocumentService {
     // Kept across a reopen of the same project; a project now Off drops it
     // here rather than flashing it until source control reconfigures.
     if (this.sourceControlTabShown && projectDocument.settings.sourceControl.mode !== "off") {
-      this.setSourceControlTab(true);
+      this.setSourceControlTab(true, projectDocument.settings.sourceControl.mode === "integrated");
     }
 
     const savedOrder = layouts.tabOrder.filter(

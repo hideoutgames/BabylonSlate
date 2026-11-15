@@ -10,8 +10,14 @@ export interface SyncPort {
   status(): Promise<SyncStatus>;
   /** Commits exactly `paths` (changed or deleted) on the current branch. */
   commit(input: CommitInput): Promise<CommitResult>;
-  /** Fetches the branch and counts commits on each side. */
+  /** Fetches the branch, counts commits on each side and lists the newest incoming ones. */
   fetch(): Promise<RemoteState>;
+  /**
+   * Paths whose committed content differs between the branch and the remote
+   * branch as last fetched (every committed path when the remote has no
+   * branch yet), sorted: what a push would change. Reads no network.
+   */
+  outgoing(): Promise<string[]>;
   /**
    * Fetches, then integrates the remote branch: fast-forward, or a merge commit
    * when both sides have commits. Paths changed on both sides (the working
@@ -66,7 +72,12 @@ export interface RemoteState {
   ahead: number;
   /** Remote commits not yet pulled. */
   behind: number;
+  /** The newest of those commits, newest first, at most {@link INCOMING_LIMIT}. */
+  incoming: CommitInfo[];
 }
+
+/** Incoming commits a fetch lists; `behind` still counts them all. */
+export const INCOMING_LIMIT = 50;
 
 /** Per conflicting path: keep the working tree's file, or take the remote's. */
 export type PullChoice = "mine" | "theirs";
@@ -138,7 +149,8 @@ export type SyncErrorCode =
   | "missing-lfs-rule"
   | "lfs-object-missing"
   | "lfs-object-corrupt"
-  | "not-empty";
+  | "not-empty"
+  | "repository-exists";
 
 export class SyncError extends Error {
   readonly kind: SyncErrorKind;

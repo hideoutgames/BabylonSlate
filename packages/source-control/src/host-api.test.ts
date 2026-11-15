@@ -94,4 +94,54 @@ describe("host APIs", () => {
     const offline = await hostApiFor(GITLAB, async () => { throw new Error("down"); })!.branches("g/p");
     expect(isErr(offline) && offline.error.kind).toBe("offline");
   });
+
+  it("lists the GitHub user first, then their organizations, and creates an empty repository under either", async () => {
+    const host = new FakeGitHost();
+    const api = hostApiFor(GITHUB, host.http)!;
+    const owners = await api.owners();
+    expect(isOk(owners) && owners.value).toEqual([
+      { name: "test-user", kind: "user", id: "" },
+      { name: "haptic-studio", kind: "organization", id: "" },
+    ]);
+    const mine = await api.createRepository({ owner: { name: "test-user", kind: "user", id: "" }, name: "forest-run", private: true });
+    expect(isOk(mine) && mine.value).toMatchObject({ name: "test-user/forest-run", repositoryUrl: "https://github.com/test-user/forest-run.git", private: true });
+    const team = await api.createRepository({ owner: { name: "haptic-studio", kind: "organization", id: "" }, name: "racer", private: false });
+    expect(isOk(team) && team.value).toMatchObject({ name: "haptic-studio/racer", private: false });
+    const posts = host.requests.filter((request) => request.method === "POST");
+    expect(posts.map((request) => [request.url, JSON.parse(request.body as string)])).toEqual([
+      ["https://api.github.com/user/repos", { name: "forest-run", private: true, auto_init: false }],
+      ["https://api.github.com/orgs/haptic-studio/repos", { name: "racer", private: false, auto_init: false }],
+    ]);
+    // A created repository is then listed, as the Clone picker reads it.
+    const listed = await api.repositories();
+    expect(isOk(listed) && listed.value.map((repository) => repository.name).slice(0, 2)).toEqual(["haptic-studio/racer", "test-user/forest-run"]);
+    // A name that exists already reports the host's reason.
+    const again = await api.createRepository({ owner: { name: "test-user", kind: "user", id: "" }, name: "forest-run", private: true });
+    expect(isErr(again) && again.error).toEqual({ kind: "http", message: "Repository creation failed. name already exists on this account" });
+  });
+
+  it("creates a GitLab project in the user's namespace or a group's, by namespace id", async () => {
+    const host = new FakeGitHost();
+    const api = hostApiFor(GITLAB, host.http)!;
+    const owners = await api.owners();
+    expect(isOk(owners) && owners.value).toEqual([
+      { name: "test-user", kind: "user", id: "" },
+      { name: "haptic-studio", kind: "organization", id: "100" },
+    ]);
+    await api.createRepository({ owner: { name: "test-user", kind: "user", id: "" }, name: "solo", private: true });
+    const group = await api.createRepository({ owner: { name: "haptic-studio", kind: "organization", id: "100" }, name: "team", private: false });
+    expect(isOk(group) && group.value).toMatchObject({ name: "haptic-studio/team", repositoryUrl: "https://gitlab.com/haptic-studio/team.git", private: false });
+    const posts = host.requests.filter((request) => request.method === "POST");
+    expect(posts.map((request) => JSON.parse(request.body as string))).toEqual([
+      { name: "solo", path: "solo", visibility: "private" },
+      { name: "team", path: "team", visibility: "public", namespace_id: "100" },
+    ]);
+    expect(host.requests.find((request) => request.url.includes("/groups"))?.url).toBe("https://gitlab.com/api/v4/groups?min_access_level=30&per_page=100&page=1");
+  });
+
+  it("reads GitLab's field errors", async () => {
+    const api = hostApiFor(GITLAB, async () => ({ status: 400, bodyText: JSON.stringify({ message: { path: ["has already been taken"] } }) }))!;
+    const result = await api.createRepository({ owner: { name: "me", kind: "user", id: "" }, name: "taken", private: true });
+    expect(isErr(result) && result.error).toEqual({ kind: "http", message: "path has already been taken" });
+  });
 });

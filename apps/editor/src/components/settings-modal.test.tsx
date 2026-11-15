@@ -53,6 +53,7 @@ const {
     setShowPluginContent: vi.fn(),
     sourceControl: {
       readGitPrefill: vi.fn(async () => ({ repositoryUrl: "", branch: "" })),
+      folder: { current: { tier: null, hasGit: false } as { tier: import("@haptic/core").StorageTier | null; hasGit: boolean } },
     },
     host: { platform: "electron", testMode: true },
     exportGameArtifact: vi.fn(),
@@ -127,6 +128,7 @@ vi.mock("../context/document-context", async () => {
     updateProjectVersion,
     sourceControl,
     prefillSourceControlFromGit: sourceControl.readGitPrefill,
+    readSourceControlFolder: async () => sourceControl.folder.current,
     assetRegistry: {
       list: () => [
         {
@@ -214,6 +216,7 @@ afterEach(async () => {
   updateProjectVersion.mockClear();
   setShowPluginContent.mockClear();
   sourceControl.readGitPrefill.mockClear();
+  sourceControl.folder.current = { tier: null, hasGit: false };
   host.platform = "electron";
   host.testMode = true;
   exportGameArtifact.mockReset();
@@ -975,6 +978,63 @@ describe("SettingsModal project authoring", () => {
     expect(screen.queryByText(/Poll Interval/)).toBeNull();
     expect(screen.queryByText("Release Locks After Push")).toBeNull();
     expect(screen.getByTestId("settings-source-control-auto-lock")).toBeTruthy();
+  });
+
+  it("offers Integrated on desktop for a folder with .git, only after the one-Git-app warning, taking its origin and branch", async () => {
+    sourceControl.folder.current = { tier: "external", hasGit: true };
+    // A Manual project's settings name another branch: the working copy's own wins.
+    projectSourceControl.current = { mode: "manual", repositoryUrl: "https://github.com/team/old.git", branch: "main" };
+    sourceControl.readGitPrefill.mockResolvedValueOnce({ repositoryUrl: "https://github.com/team/game.git", branch: "develop" });
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    const integrated = await screen.findByTestId("settings-source-control-mode-integrated");
+    expect(within(screen.getByTestId("settings-source-control-mode")).getAllByRole("button").map((button) => button.textContent)).toEqual(["Off", "Integrated", "Manual"]);
+    // A folder that has Git already is never offered Publish.
+    expect(screen.queryByTestId("settings-source-control-publish")).toBeNull();
+    fireEvent.click(integrated);
+    expect((await screen.findByTestId("settings-source-control-adopt-confirm")).textContent).toContain("No other Git app may use it at the same time");
+    expect(updateProjectSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("settings-source-control-adopt-confirm-action"));
+    await waitFor(() =>
+      expect(updateProjectSettings).toHaveBeenCalledWith({
+        sourceControl: expect.objectContaining({ mode: "integrated", repositoryUrl: "https://github.com/team/game.git", branch: "develop" }),
+      }),
+    );
+  });
+
+  it("offers an iPad project only Off and Manual, with Publish for an Off project in app storage", async () => {
+    host.platform = "ios";
+    host.testMode = false;
+    sourceControl.folder.current = { tier: "documents", hasGit: false };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    expect(await screen.findByTestId("settings-source-control-publish")).toBeTruthy();
+    expect(within(screen.getByTestId("settings-source-control-mode")).getAllByRole("button").map((button) => button.textContent)).toEqual(["Off", "Manual"]);
+  });
+
+  it("shows Integrated and Release Locks After Push for an Integrated project, and why a folder cannot run it", async () => {
+    host.platform = "ios";
+    host.testMode = false;
+    sourceControl.folder.current = { tier: "external", hasGit: true };
+    projectSourceControl.current = { mode: "integrated", repositoryUrl: "https://github.com/team/game.git" };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    expect(screen.getByTestId("settings-source-control-mode-integrated").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("settings-source-control-release-after-push")).toBeTruthy();
+    expect((await screen.findByTestId("settings-source-control-blocked")).textContent).toBe("Another Git App Syncs This Folder");
+  });
+
+  it("keeps an Integrated project's repository and branch as the working copy has them, even signed in", async () => {
+    await accounts.current!.save(TEST_GITHUB_CREDENTIAL);
+    projectSourceControl.current = { mode: "integrated", repositoryUrl: "https://github.com/haptic-test/game.git", branch: "main" };
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    await waitFor(() => expect(screen.getByTestId("settings-source-control-account-state").textContent).toBe("ada (GitHub)"));
+    // No repository or branch picker: a different one would leave the working copy behind.
+    expect(screen.queryByTestId("settings-source-control-repository")).toBeNull();
+    expect(screen.getByTestId("settings-source-control-url").hasAttribute("readonly")).toBe(true);
+    expect(screen.getByTestId("settings-source-control-branch").hasAttribute("readonly")).toBe(true);
+    expect(screen.getByTestId("settings-source-control-branch").getAttribute("role")).not.toBe("combobox");
   });
 
   it("fills Source Control from Git without replacing a URL typed during the read", async () => {

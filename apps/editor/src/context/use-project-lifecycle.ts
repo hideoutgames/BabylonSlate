@@ -36,10 +36,13 @@ import type { SourceControlService } from "../services/source-control-service";
 import { loadSelectedTemplateFiles } from "../services/template-service";
 import type {
   AppRoute,
+  CloneProjectRequest,
   CloseProjectResult,
   DocumentActions,
   DocumentContextValue,
 } from "./document-context-types";
+import type { TransferMonitor } from "../services/source-control-sync";
+import { isTestModeEnabled } from "@haptic/vfs";
 
 /**
  * Opening or closing a project resets every subsystem, so this lists what
@@ -285,6 +288,27 @@ export function useProjectLifecycle({
     [attachEnginePlugins, enterEditor, projectService, documentTransitions, templatesRef],
   );
 
+  const cloneProject = useCallback(
+    async (request: CloneProjectRequest, transfer: TransferMonitor) => {
+      // The Git client loads with the first clone, never with the Homepage.
+      const { cloneIntoFolder } = await import("../services/source-control-sync-port");
+      const testMode = isTestModeEnabled();
+      try {
+        return await projectService.cloneProject({
+          name: request.name,
+          repositoryUrl: request.repositoryUrl,
+          branch: request.branch,
+          clone: async (storage, folderId) => {
+            await cloneIntoFolder({ storage, folderId, repositoryUrl: request.repositoryUrl, branch: request.branch, testMode, transfer });
+          },
+        });
+      } finally {
+        await refreshProjectList();
+      }
+    },
+    [projectService, refreshProjectList],
+  );
+
   const openListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
       if (!await documentTransitions.check({ kind: "replace-project" })) return;
@@ -444,6 +468,7 @@ export function useProjectLifecycle({
       | "createEmptyProject"
       | "createFromTemplate"
       | "openListedProject"
+      | "cloneProject"
       | "reconnectProject"
       | "closeProject"
       | "releaseSessionsForProjectClose"
@@ -455,6 +480,7 @@ export function useProjectLifecycle({
       createEmptyProject,
       createFromTemplate,
       openListedProject,
+      cloneProject,
       reconnectProject,
       closeProject,
       releaseSessionsForProjectClose,
@@ -467,6 +493,7 @@ export function useProjectLifecycle({
       createEmptyProject,
       createFromTemplate,
       openListedProject,
+      cloneProject,
       reconnectProject,
       closeProject,
       releaseSessionsForProjectClose,

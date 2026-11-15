@@ -137,6 +137,7 @@ export function SettingsModal({
     updateProjectSettings: applyProjectSettings,
     updateProjectVersion,
     prefillSourceControlFromGit,
+    readSourceControlFolder,
   } = useDocumentActions();
   const { projectDocument: liveProjectDocument } = useProjectState();
   const { projectGuid, assetRegistry, registryEpoch, extensionService } = useRegistryState();
@@ -761,6 +762,7 @@ export function SettingsModal({
           projectGuid={projectGuid}
           latest={latest}
           prefillSourceControlFromGit={prefillSourceControlFromGit}
+          readSourceControlFolder={readSourceControlFolder}
           sourceControlUrlMissing={sourceControlUrlMissing}
           setSourceControlUrlMissing={setSourceControlUrlMissing}
           setDisableSourceControlOpen={setDisableSourceControlOpen}

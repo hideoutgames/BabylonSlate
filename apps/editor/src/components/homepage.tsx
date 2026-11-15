@@ -11,6 +11,7 @@ import {
   CheckCheckIcon,
   ChevronDownIcon,
   CircleCheckIcon,
+  FolderGit2Icon,
   FolderOpenIcon,
   Grid2x2Icon,
   Grid3x3Icon,
@@ -31,8 +32,10 @@ import {
 import { SearchInput } from "@haptic/editor-kit";
 import {
   getHostPlatform,
+  isTestModeEnabled,
   pickImportFiles,
 } from "@haptic/vfs";
+import { isSourceControlHost } from "@haptic/source-control";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import {
   AlertDialog,
@@ -99,6 +102,8 @@ import {
 import { importTemplateArchive } from "../services/template-service";
 import { useDebugMode } from "../context/app-settings-context";
 import { useLauncherTransition } from "./launcher-transition";
+import type { CloneProjectRequest } from "../context/document-context-types";
+import type { TransferMonitor } from "../services/source-control-sync";
 import homepageStyles from "./homepage.css?inline";
 
 const SettingsModal = lazy(() =>
@@ -106,6 +111,8 @@ const SettingsModal = lazy(() =>
     default: module.SettingsModal,
   })),
 );
+// Clone (host APIs, the Git client) loads when it is opened.
+const CloneProjectDialog = lazy(() => import("./clone-project-dialog"));
 
 const PROJECT_LAYOUT_OPTIONS = [
   { value: "large", label: "Large Cards", icon: Grid2x2Icon },
@@ -136,6 +143,8 @@ interface HomepageProps {
   ) => Promise<void>;
   onOpenExternal: (source?: "folder" | "zip") => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
+  /** Clone Project; the clone then opens like a listed project. */
+  onCloneProject?: (request: CloneProjectRequest, transfer: TransferMonitor) => Promise<ProjectFolderHandle>;
   onUpdateProject: (
     handle: ProjectFolderHandle,
     details: UpdateListedProjectOptions,
@@ -157,6 +166,7 @@ export function Homepage({
   onCreateFromTemplate,
   onOpenExternal,
   onOpenProject,
+  onCloneProject,
   onUpdateProject,
   onRemoveFromList,
   onReconnect,
@@ -233,6 +243,7 @@ export function Homepage({
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
   const [chooseTemplate, setChooseTemplate] = useState(true);
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
@@ -258,6 +269,7 @@ export function Homepage({
   const [pixelArt, setPixelArt] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
   const hostPlatform = getHostPlatform();
+  const canClone = onCloneProject !== undefined && isSourceControlHost(hostPlatform, isTestModeEnabled());
   const createName = name.trim() || suggestedName;
   const nameIssue = editTarget
     ? name.trim()
@@ -501,6 +513,19 @@ export function Homepage({
                 <span className="homepage-optional-label">Open</span>
               </Button>
             )}
+            {canClone ? (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Clone Project"
+                data-testid="clone-project"
+                disabled={busy}
+                onClick={() => setCloneOpen(true)}
+              >
+                <FolderGit2Icon data-icon="inline-start" />
+                <span className="homepage-optional-label">Clone</span>
+              </Button>
+            ) : null}
             <Button
               size="sm"
               className="homepage-new"
@@ -925,6 +950,20 @@ export function Homepage({
           }, targets.length === 1 ? "Deleting Project" : "Deleting Projects")
         }
       />
+      {cloneOpen && onCloneProject ? (
+        <Suspense fallback={null}>
+          <CloneProjectDialog
+            open
+            onOpenChange={setCloneOpen}
+            existingNames={projects.map((project) => project.name)}
+            onClone={async (request, transfer) => {
+              const handle = await onCloneProject(request, transfer);
+              setCloneOpen(false);
+              await run(() => launch(() => onOpenProject(handle), request.name));
+            }}
+          />
+        </Suspense>
+      ) : null}
       <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !transition.active && !accountOpen && !settingsOpen && !createOpen && !busy} />
       {settingsOpen && (
         <Suspense fallback={null}>

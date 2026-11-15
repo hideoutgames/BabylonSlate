@@ -5,7 +5,7 @@ import type { ProjectStorage } from "@haptic/core";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeRemote, FakeSync } from "./fake-sync";
-import { cloneRepository } from "./git/repository";
+import { cloneRepository, initRepository } from "./git/repository";
 import {
   GITATTRIBUTES_LFS_RULE,
   isSyncError,
@@ -26,6 +26,8 @@ interface Fixture {
   teammate(changes: Changes, message?: string): Promise<string>;
   /** A new working copy of main, in its own project folder. */
   copy(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
+  /** A new working copy with no commits in an empty project folder, as Publish starts one. */
+  init(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
   dispose(): Promise<void>;
 }
 
@@ -49,6 +51,11 @@ async function gitFixture(): Promise<Fixture> {
       const port = await cloneRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW });
       return { port, storage };
     },
+    async init() {
+      const storage = await server.storage();
+      const port = await initRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW });
+      return { port, storage };
+    },
     dispose: () => server.stop(),
   };
 }
@@ -66,6 +73,12 @@ async function fakeFixture(): Promise<Fixture> {
       const storage = new NodeStorageAdapter(root);
       await storage.openDocumentsProject(`copy-${copies}`);
       return { port: await FakeSync.clone({ storage, remote, branch: "main", now: () => NOW }), storage };
+    },
+    async init() {
+      copies += 1;
+      const storage = new NodeStorageAdapter(root);
+      await storage.openDocumentsProject(`copy-${copies}`);
+      return { port: FakeSync.init({ storage, remote, branch: "main", now: () => NOW }), storage };
     },
     async dispose() {
       rmSync(root, { recursive: true, force: true });
@@ -147,7 +160,49 @@ describe.each([
     const remote = await fixture.teammate({ "assets/b.hasset": "B2" }, "Two");
     await storage.writeBinary("assets/a.hasset", encode("A2"));
     const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
-    expect(await port.fetch()).toEqual({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    const state = await port.fetch();
+    expect(state).toMatchObject({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    // Only the remote's commits, newest first.
+    expect(state.incoming.map((entry) => [entry.id === remote, entry.message.trim(), entry.author.name])).toEqual([
+      [true, "Two", "Teammate"],
+      [false, "One", "Teammate"],
+    ]);
+  });
+
+  it("lists the paths a push would change, against the remote as last fetched", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+    const { port, storage } = await fixture.copy();
+    expect(await port.outgoing()).toEqual([]);
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await storage.remove("assets/b.hasset");
+    await storage.writeBinary("assets/d.hasset", encode("D"));
+    await storage.writeBinary("assets/c.hasset", encode("C2"));
+    await port.commit({ paths: ["assets/a.hasset", "assets/b.hasset", "assets/d.hasset"], message: "Mine", author: AUTHOR });
+    // The uncommitted edit of c is not part of a push.
+    expect(await port.outgoing()).toEqual(["assets/a.hasset", "assets/b.hasset", "assets/d.hasset"]);
+    await port.push();
+    expect(await port.outgoing()).toEqual([]);
+  });
+
+  it("publishes a new working copy: the first push creates the branch another copy clones", async () => {
+    const { port, storage } = await fixture.init();
+    expect(await port.status()).toMatchObject({ head: null, changes: [] });
+    const texture = blobBytes(3, 4096);
+    await storage.writeBinary(".gitattributes", encode(RULE));
+    await storage.writeBinary(".gitignore", encode(withIgnoreEntries("")));
+    await storage.writeBinary("project.json", encode("{}"));
+    await storage.writeBinary(blobPath(texture), texture);
+    await storage.writeBinary("layout.json", encode("{}"));
+    const { changes } = await port.status();
+    expect(changes.map((change) => change.path)).toEqual([".gitattributes", ".gitignore", blobPath(texture), "project.json"]);
+    const { commit } = await port.commit({ paths: changes.map((change) => change.path), message: "Publish", author: AUTHOR });
+    expect(await port.outgoing()).toEqual([".gitattributes", ".gitignore", blobPath(texture), "project.json"]);
+    expect(await port.push()).toEqual({ head: commit, uploaded: 1 });
+    expect(await port.fetch()).toMatchObject({ local: commit, remote: commit, ahead: 0, behind: 0, incoming: [] });
+    const other = await fixture.copy();
+    expect(await other.storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(text(await other.storage.readBinary("project.json"))).toBe("{}");
+    expect(await other.storage.exists("layout.json")).toBe(false);
   });
 
   it("fast-forwards to the remote's files", async () => {

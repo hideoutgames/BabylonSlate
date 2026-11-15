@@ -1,4 +1,5 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { TriangleAlertIcon, UploadIcon } from "lucide-react";
 import type { ProjectDocument, SourceControlMode, SourceControlProjectSettings } from "@haptic/core";
 import {
   AlertDialog,
@@ -8,10 +9,13 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
+import { Button } from "@haptic/ui/components/button";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -19,6 +23,14 @@ import {
 import { Input } from "@haptic/ui/components/input";
 import { Switch } from "@haptic/ui/components/switch";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
+import { getHostPlatform, isTestModeEnabled } from "@haptic/vfs";
+import {
+  canPublishProject,
+  integratedBlocker,
+  integratedBlockerLabel,
+  offeredSourceControlModes,
+  type SourceControlFolder,
+} from "../lib/source-control-mode";
 import { SettingsSection } from "./settings-section";
 import type {
   DocumentActions,
@@ -28,12 +40,10 @@ import type {
 // The account-aware rows (repository and branch pickers, Sign In) load only
 // while the mode is not Off, so an Off project never loads the credential store.
 const ProjectSourceControlHostFields = lazy(() => import("./project-source-control-host-fields"));
+// Publish (host API, Git client) loads when it is opened.
+const PublishProjectDialog = lazy(() => import("./publish-project-dialog"));
 
-/** Integrated joins once Haptic syncs projects itself. */
-const OFFERED_MODES: Array<{ value: SourceControlMode; label: string }> = [
-  { value: "off", label: "Off" },
-  { value: "manual", label: "Manual" },
-];
+const MODE_LABELS: Record<SourceControlMode, string> = { off: "Off", integrated: "Integrated", manual: "Manual" };
 
 interface ProjectSourceControlSettingsProps {
   projectDocument: ProjectDocument;
@@ -48,6 +58,7 @@ interface ProjectSourceControlSettingsProps {
     };
   };
   prefillSourceControlFromGit: DocumentActions["prefillSourceControlFromGit"];
+  readSourceControlFolder: DocumentActions["readSourceControlFolder"];
   sourceControlUrlMissing: boolean;
   setSourceControlUrlMissing: (missing: boolean) => void;
   setDisableSourceControlOpen: (open: boolean) => void;
@@ -63,11 +74,34 @@ export function ProjectSourceControlSettings({
   projectGuid,
   latest,
   prefillSourceControlFromGit,
+  readSourceControlFolder,
   sourceControlUrlMissing,
   setSourceControlUrlMissing,
   setDisableSourceControlOpen,
 }: ProjectSourceControlSettingsProps) {
   const settings = projectDocument.settings.sourceControl;
+  const [folder, setFolder] = useState<SourceControlFolder>(() => ({
+    platform: getHostPlatform(),
+    testMode: isTestModeEnabled(),
+    tier: null,
+    hasGit: false,
+  }));
+  const [adoptOpen, setAdoptOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
+  // The folder's tier and `.git` decide which modes are offered; Publish creates `.git`, so it is read again.
+  useEffect(() => {
+    let alive = true;
+    void readSourceControlFolder().then((read) => {
+      if (alive) setFolder((current) => ({ ...current, ...read }));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [readSourceControlFolder, settings.mode]);
+  const modes = offeredSourceControlModes(settings.mode, folder);
+  // Integrated mode's repository and branch are the working copy's: they change only with it (Clone, Publish, branch switch).
+  const fixed = settings.mode === "integrated";
+  const blocker = settings.mode === "integrated" ? integratedBlocker(folder) : null;
   const change = (patch: Partial<SourceControlProjectSettings>) =>
     updateProjectSettings({ sourceControl: { ...settings, ...patch } });
   const chooseMode = (mode: SourceControlMode) => {
@@ -76,6 +110,32 @@ export function ProjectSourceControlSettings({
       setDisableSourceControlOpen(true);
       return;
     }
+    if (mode === "integrated") {
+      // An existing working copy: no other Git app may use the folder while Haptic does.
+      setAdoptOpen(true);
+      return;
+    }
+    switchTo(mode);
+  };
+  /** An existing working copy becomes Integrated with its own `origin` and checked-out branch. */
+  const adoptIntegrated = () => {
+    const requestedProject = projectGuid;
+    void prefillSourceControlFromGit().then((prefill) => {
+      const live = latest.current;
+      if (!live.project || live.projectGuid !== requestedProject) return;
+      const now = live.project.settings.sourceControl;
+      const repositoryUrl = prefill.repositoryUrl || now.repositoryUrl.trim();
+      if (!repositoryUrl) {
+        setSourceControlUrlMissing(true);
+        return;
+      }
+      setSourceControlUrlMissing(false);
+      live.applyProjectSettings({
+        sourceControl: { ...now, mode: "integrated", repositoryUrl, branch: prefill.branch || now.branch },
+      });
+    });
+  };
+  const switchTo = (mode: SourceControlMode) => {
     if (settings.repositoryUrl.trim()) {
       setSourceControlUrlMissing(false);
       change({ mode });
@@ -112,6 +172,7 @@ export function ProjectSourceControlSettings({
       <Input
         id="settings-source-control-url"
         value={settings.repositoryUrl}
+        readOnly={fixed}
         placeholder="https://"
         aria-invalid={sourceControlUrlMissing || undefined}
         aria-describedby={sourceControlUrlMissing ? "settings-source-control-url-error" : undefined}
@@ -134,6 +195,7 @@ export function ProjectSourceControlSettings({
       <Input
         id="settings-source-control-branch"
         value={settings.branch}
+        readOnly={fixed}
         onChange={(event) => change({ branch: event.target.value })}
         data-testid="settings-source-control-branch"
       />
@@ -159,13 +221,34 @@ export function ProjectSourceControlSettings({
             }}
             data-testid="settings-source-control-mode"
           >
-            {OFFERED_MODES.map((mode) => (
-              <ToggleGroupItem key={mode.value} value={mode.value} data-testid={`settings-source-control-mode-${mode.value}`}>
-                {mode.label}
+            {modes.map((mode) => (
+              <ToggleGroupItem key={mode} value={mode} data-testid={`settings-source-control-mode-${mode}`}>
+                {MODE_LABELS[mode]}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+          {blocker && folder.tier !== null ? (
+            <FieldDescription className="col-span-full" data-testid="settings-source-control-blocked">
+              {integratedBlockerLabel(blocker)}
+            </FieldDescription>
+          ) : null}
         </Field>
+        {canPublishProject(settings.mode, folder) ? (
+          <Field orientation="horizontal" className="settings-field">
+            <FieldLabel htmlFor="settings-source-control-publish">Publish</FieldLabel>
+            <Button
+              id="settings-source-control-publish"
+              variant="outline"
+              size="sm"
+              className="justify-self-end"
+              data-testid="settings-source-control-publish"
+              onClick={() => setPublishOpen(true)}
+            >
+              <UploadIcon data-icon="inline-start" />
+              Publish Project…
+            </Button>
+          </Field>
+        ) : null}
         {settings.mode === "off" ? (
           <>
             {urlField()}
@@ -174,6 +257,7 @@ export function ProjectSourceControlSettings({
         ) : (
           <Suspense fallback={<>{urlField()}{branchField()}</>}>
             <ProjectSourceControlHostFields
+              fixed={fixed}
               settings={settings}
               onChange={change}
               urlMissing={sourceControlUrlMissing}
@@ -210,6 +294,37 @@ export function ProjectSourceControlSettings({
           </Field>
         ) : null}
       </SettingsSection>
+      <AlertDialog open={adoptOpen} onOpenChange={setAdoptOpen}>
+        <AlertDialogContent variant="warning" data-testid="settings-source-control-adopt-confirm">
+          <AlertDialogHeader>
+            <AlertDialogMedia>
+              <TriangleAlertIcon aria-hidden="true" />
+            </AlertDialogMedia>
+            <AlertDialogTitle>Use Haptic As This Folder&apos;s Git App?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Haptic will commit, pull and push in this folder. No other Git app may use it at the same time: two
+              apps writing one repository can corrupt it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="settings-source-control-adopt-confirm-action"
+              onClick={() => {
+                setAdoptOpen(false);
+                adoptIntegrated();
+              }}
+            >
+              Use Integrated
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {publishOpen ? (
+        <Suspense fallback={null}>
+          <PublishProjectDialog open onOpenChange={setPublishOpen} />
+        </Suspense>
+      ) : null}
     </FieldGroup>
   );
 }

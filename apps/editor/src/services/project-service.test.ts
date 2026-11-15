@@ -508,6 +508,77 @@ describe("project round-trip", () => {
     expect(exists).toBe(true);
   });
 
+  it("leaves project.json untouched, updatedAt included, when a save changes nothing", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const { document, layouts } = await service.createEmptyProject("Unchanged", { kind: "2d" });
+    await service.saveProject(document, layouts);
+    const before = await storage.readText(PROJECT_FILE);
+    const writes = vi.spyOn(storage, "writeText");
+    await service.saveProject(document, layouts);
+    expect(writes.mock.calls.map(([path]) => path)).not.toContain(PROJECT_FILE);
+    expect(await storage.readText(PROJECT_FILE)).toBe(before);
+    // A real change is written with a new stamp.
+    await service.saveProject({ ...document, metadata: { ...document.metadata, version: "2.0" } }, layouts);
+    expect(JSON.parse(await storage.readText(PROJECT_FILE)).metadata.version).toBe("2.0");
+  });
+
+  describe("Clone", () => {
+    const REPOSITORY = "https://github.com/team/game.git";
+    const manifest = (sourceControl?: object) => JSON.stringify({
+      ...createEmptyProject("Cloned"),
+      guid: "cloned-guid",
+      kind: "project",
+      ...(sourceControl ? { settings: { ...createEmptyProject("Cloned").settings, sourceControl } } : {}),
+    }, null, 2);
+
+    it("clones into a new folder and switches the project to Integrated with the repository and branch", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      const handle = await service.cloneProject({
+        name: "Cloned Game",
+        repositoryUrl: REPOSITORY,
+        branch: "develop",
+        clone: async (folder) => folder.writeText(PROJECT_FILE, manifest()),
+      });
+      expect(storage.getCurrentFolder()).toBeNull();
+      await storage.openKnownFolder(handle);
+      expect(JSON.parse(await storage.readText(PROJECT_FILE)).settings.sourceControl).toMatchObject({ mode: "integrated", repositoryUrl: REPOSITORY, branch: "develop" });
+      expect(await storage.exists(".haptic-creating")).toBe(false);
+    });
+
+    it("leaves a project.json that already names the repository as it is", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      const text = manifest({ mode: "integrated", repositoryUrl: "git@github.com:team/game.git", branch: "main", autoLockOnEdit: true, releaseLocksAfterPush: true });
+      const handle = await service.cloneProject({ name: "Same", repositoryUrl: REPOSITORY, branch: "main", clone: async (folder) => folder.writeText(PROJECT_FILE, text) });
+      await storage.openKnownFolder(handle);
+      expect(await storage.readText(PROJECT_FILE)).toBe(text);
+    });
+
+    it("refuses a branch without project.json and removes the folder", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      await expect(service.cloneProject({
+        name: "Empty",
+        repositoryUrl: REPOSITORY,
+        branch: "main",
+        clone: async (folder) => folder.writeText("README.md", "Not a game"),
+      })).rejects.toThrow("main has no Haptic project: project.json is missing.");
+      expect((await storage.listProjects()).map((project) => project.name)).not.toContain("Empty");
+    });
+
+    it("refuses a name another project has", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      await service.createEmptyProject("Taken", { kind: "2d" });
+      await service.closeProject();
+      const clone = vi.fn(async () => {});
+      await expect(service.cloneProject({ name: "Taken", repositoryUrl: REPOSITORY, branch: "main", clone })).rejects.toThrow("A project with this name already exists.");
+      expect(clone).not.toHaveBeenCalled();
+    });
+  });
+
   it("creates a project folder without a .hproject suffix", async () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();

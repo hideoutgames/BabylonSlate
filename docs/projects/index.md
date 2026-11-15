@@ -54,4 +54,4 @@ You can also turn a backup into a template: choose **Add Template** in the templ
 - [Where Projects Live](storage.md): default storage on each platform, your own folders and reconnecting.
 - [Plugins](plugins.md): bundles of assets and Classes you can enable per project.
 - [Extensions](extensions.md): code tools for the editor, and game libraries and content for Play and packaged games.
-- [Source Control](source-control.md): Git LFS file locking for teams.
+- [Source Control](source-control.md): clone, commit, pull and push with Git, and Git LFS file locking for teams.

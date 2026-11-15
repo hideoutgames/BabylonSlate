@@ -168,7 +168,9 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     await storage.writeBinary("assets/a.hasset", encode("A2"));
     const { commit } = await repository.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
 
-    expect(await repository.fetch()).toEqual({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    const state = await repository.fetch();
+    expect(state).toMatchObject({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    expect(state.incoming.map((entry) => entry.message.trim())).toEqual(["Two", "One"]);
   });
 
   it("fast-forwards, writing incoming files and downloading only LFS objects that are missing", async () => {

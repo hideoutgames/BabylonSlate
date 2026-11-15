@@ -1,6 +1,7 @@
 import { createContext, useContext, useSyncExternalStore, type Context } from "react";
 import type { DocumentKind } from "@haptic/core";
 import type { OpenDocument } from "../services/document-service";
+import type { SourceControlSyncService, SyncSnapshot } from "../services/source-control-sync";
 import type { DocumentSubscriptions } from "./document-subscriptions";
 import type {
   ActiveDocumentState,
@@ -31,6 +32,8 @@ export const EditorShellStateContext = createContext<EditorShellState | null>(nu
 /** Replaced on every thumbnail write, so only views that show thumbnails read it. */
 export const ThumbnailVersionsContext = createContext<Readonly<Record<string, number>> | null>(null);
 export const SourceControlStateContext = createContext<SourceControlState | null>(null);
+/** The Integrated sync service; one instance for the provider's lifetime. */
+export const SourceControlSyncContext = createContext<SourceControlSyncService | null>(null);
 
 /** Bumps only the Windows menu so dock add/remove does not remount editor chrome. */
 export const DockWindowTickContext = createContext(0);
@@ -118,6 +121,17 @@ export function useThumbnailVersions(): Readonly<Record<string, number>> {
 /** The source control service; a new object whenever its state changes. */
 export function useSourceControl(): SourceControlState {
   return useSlice(SourceControlStateContext, "useSourceControl");
+}
+
+/** Integrated mode's sync service. Read its state with `useIntegratedSyncState()`. */
+export function useIntegratedSync(): SourceControlSyncService {
+  return useSlice(SourceControlSyncContext, "useIntegratedSync");
+}
+
+/** The sync service's snapshot; re-renders only when it changes, never with lock polls or edits. */
+export function useIntegratedSyncState(): SyncSnapshot {
+  const sync = useIntegratedSync();
+  return useSyncExternalStore(sync.subscribe, sync.getSnapshot);
 }
 
 /** The active tab's id. Re-renders only when another tab becomes active. */
