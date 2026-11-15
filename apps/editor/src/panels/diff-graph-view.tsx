@@ -101,7 +101,9 @@ export default function GraphDiffView({ graph, selection, onSelect, baseLabel, c
 }) {
   const [mode, setMode] = useState<Mode>("overlay");
   const changed = graph.sections.filter((section) => section.status !== "unchanged");
-  const [sectionId, nodeId] = selection?.includes("/") ? selection.split("/", 2) as [string, string] : [selection, undefined];
+  // A node (`<graph>/<node>`), a graph, or a function member, whose graph has its id.
+  const chosen = selection?.startsWith("member:") ? selection.slice("member:".length) : selection;
+  const [sectionId, nodeId] = chosen?.includes("/") ? chosen.split("/", 2) as [string, string] : [chosen, undefined];
   const section = changed.find((entry) => entry.id === sectionId) ?? changed[0];
   const document = useMemo(() => (section ? diffCanvasGraph(section, mode) : null), [mode, section]);
   const controls = (

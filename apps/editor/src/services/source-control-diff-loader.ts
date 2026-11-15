@@ -39,7 +39,9 @@ function versionSource(sync: SourceControlSyncService, path: string, commit: str
 export function createDiffLoader(sync: SourceControlSyncService): DiffLoader {
   const client = new AssetDiffClient();
   return {
-    load(target: DiffTarget, commits, signal) {
+    async load(target: DiffTarget, commits, signal) {
+      // Project settings and folder markers are plain files: only assets are decoded and compared.
+      if (!target.path.endsWith(".hasset")) throw new Error(`${target.name} is not an asset, so it has no diff.`);
       return client.diff({
         path: target.path,
         base: versionSource(sync, target.path, commits.base, target.base.kind === "working", signal),

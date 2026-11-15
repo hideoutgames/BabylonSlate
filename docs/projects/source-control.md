@@ -76,12 +76,13 @@ If Publish stops before it finishes (the app closes, or the host can't be reache
 
 ### The Changes window
 
-In Integrated mode the **Source Control** tab opens on **Changes**, with **Locks** beside it. The tab shows how many assets have uncommitted changes.
+In Integrated mode the **Source Control** tab opens on **Changes**, with **Locks** beside it and the **Actors** and **Diff** windows to the right. The tab shows how many assets have uncommitted changes.
 
 - The top row shows the branch, **Refresh**, and **Pull** and **Push** with the number of commits each would bring in or send.
 - The status line says how many commits there are to pull and to push, and when Haptic last checked.
 - **Changes** lists each changed asset with its type, folder and **A** (added), **M** (modified) or **D** (deleted). A lock icon marks assets you have locked. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
 - **Incoming** lists the newest commits waiting to be pulled, with their author and age.
+- Choose an asset (anywhere on its row but the checkbox) to see what changed in it: see [Compare versions](#compare-versions).
 
 Haptic reads changes after you save (while a game covers the editor, once you are back) and when you come back to the app, and checks the host when you open the project, come back to the app, choose **Refresh** and after a push.
 
@@ -103,9 +104,26 @@ If the host has moved on since your last pull, the push is refused: pull first.
 1. If documents have unsaved changes, choose **Save All** or **Discard** first.
 2. Confirm. A pull replaces files and cannot be undone.
 3. **Pulling** covers the editor until the pull is done. Documents are read-only meanwhile, and Play, Simulate and Preview Build wait: the Output Log says why they didn't start.
-4. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing.
+4. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing. **Compare** shows that asset's diff in the Source Control tab, from the branch's version to yours: Pull Conflicts waits in the corner meanwhile, with your choices kept, until you choose **Back To Pull Conflicts**.
 
 Open documents whose files the pull changed reload before you can edit again, as after any change on disk (the whole project reloads when project settings or many assets changed). An asset you kept stays as an uncommitted change, ready to commit and push.
+
+### Compare versions
+
+Choosing a change opens its asset in **Actors** and **Diff**, comparing the last commit (**Base**) with your working copy (**Compare**). While the diff is shown, the toolbar holds the **Base** and **Compare** pickers: choose **Working Copy**, the branch's last commit, the branch on the host as last checked, or one of the recent commits that changed the asset.
+
+- **Actors** lists the asset's items: a Scene's folders and actors, a Class's changed graphs and nodes with its **Variables** and **Functions**, or another asset's groups of properties. Added items are green with **A**, changed ones amber with **M**, removed ones red with **D**; items that didn't change are dimmed. The counts at the top say how many were added, removed and changed, and **Search Actors** finds an item by name. Choose one to see it in **Diff**.
+- **Diff** shows the chosen item in the view for the asset's kind:
+  - Scenes and most assets show **Property**, **Base** and **Working Copy** columns grouped by component, with changed values tinted. **Side By Side** or **Inline** (the old value struck through beside the new) sets the layout; **Changed Only** hides the rest. With no actor chosen, a Scene shows the asset itself and its settings.
+  - Graphs show the graph on its canvas: **Overlay** both versions, or only **Base** or **Working Copy**. Changed nodes are outlined amber, added ones green and removed ones red and dashed, each tagged; a changed pin value shows the old value struck through beside the new.
+  - Textures show both images over a checkerboard, **Side By Side**, as a **Swipe** or as their **Difference**, in **RGB** or **Alpha**, beside their size, file size, source image, usage and compression, and how many Materials use the Texture.
+- **Open Scene**, **Open Class** and the like open the asset for editing.
+
+Haptic reads the base version from the project's history, so a diff needs no network unless a large file the base used is no longer in your copy; it then downloads it from the host without adding it to your changes. While a game covers the editor, the diff waits.
+
+### Revert an asset
+
+**Revert Asset** in **Diff** puts the base version of the asset back in your working copy, with the large files it uses (an asset the base didn't have is removed). If the asset has unsaved edits, choose **Save All** or **Discard** first. Reverting replaces the file and cannot be undone. Documents are read-only while it runs, and the reverted asset reloads as after a pull. **Revert Asset** is unavailable when **Base** is the working copy.
 
 ### Repositories Haptic didn't publish
 
@@ -162,7 +180,7 @@ Haptic checks locks every minute while it is in the foreground.
 
 While a project's mode is not Off, the **Source Control** tab sits at the right end of the document tabs, beside **Open Documents**. It can't be closed. In the phone layout, which has no tabs, a **Source Control** button beside the **Content Browser** button opens it.
 
-In Integrated mode it holds **Changes** and **Locks**; in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age.
+In Integrated mode it holds **Changes**, **Locks**, **Actors** and **Diff** ([Compare versions](#compare-versions)); in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age.
 
 | Control | Description |
 | --- | --- |
