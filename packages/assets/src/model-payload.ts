@@ -1,4 +1,5 @@
 import type { ModelOccluder } from "./occluder-bake";
+import { normalizeSkeletonSockets, type SkeletonSocket } from "./skeleton-payload";
 import { concatBytes, readU32LE, writeU32LE } from "./bytes";
 import {
   normalizeModelSimpleColliders,
@@ -31,6 +32,22 @@ export interface ModelPayload {
   autoLod: boolean;
   /** The occluder baked at import (`occluder-bake.ts`); null for a model with none, a skinned one, or one imported before. */
   occluder?: ModelOccluder | null;
+  /**
+   * Its Skeleton's sockets, copied in by Play and exports as they gather a game's content (`withSkeletonSockets`), so
+   * the renderer resolves a socket name on the Model. A Model asset never authors them; the Skeleton does.
+   */
+  sockets?: SkeletonSocket[];
+}
+
+/** The Model with its Skeleton's sockets (none when the Skeleton has none), as Play and exports ship it. */
+export function withSkeletonSockets(model: ModelPayload, skeletonSockets: readonly SkeletonSocket[] | undefined): ModelPayload {
+  if (!skeletonSockets || skeletonSockets.length === 0) {
+    if (!model.sockets) return model;
+    const { sockets: _dropped, ...rest } = model;
+    void _dropped;
+    return rest;
+  }
+  return { ...model, sockets: skeletonSockets.map((socket) => ({ ...socket })) };
 }
 
 export function normalizeModelImportScale(value: unknown): number {
@@ -88,6 +105,7 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
     simpleColliders: normalizeModelSimpleColliders(record.simpleColliders),
     autoLod: record.autoLod !== false,
     occluder: normalizeModelOccluder(record.occluder),
+    ...(Array.isArray(record.sockets) && record.sockets.length > 0 ? { sockets: normalizeSkeletonSockets(record.sockets) } : {}),
   };
 }
 

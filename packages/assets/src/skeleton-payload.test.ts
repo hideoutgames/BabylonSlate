@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  nextSkeletonSocketName,
   normalizeSkeletonPayload,
   quaternionToEulerDegrees,
+  skeletonAttachPointNames,
   skeletonBoneNames,
   skeletonBoneTree,
 } from "./skeleton-payload";
@@ -26,6 +28,7 @@ describe("normalizeSkeletonPayload", () => {
         { name: "Hips", parent: null, position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
         { name: "Spine", parent: "Hips", position: [0, 0.2, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1], posed: ["rotation"] },
       ],
+      sockets: [],
     });
   });
 
@@ -42,7 +45,34 @@ describe("normalizeSkeletonPayload", () => {
   });
 
   it("defaults an unknown kind to hierarchy and a blank model guid to empty", () => {
-    expect(normalizeSkeletonPayload({ bones: [] })).toEqual({ modelGuid: "", kind: "hierarchy", bones: [] });
+    expect(normalizeSkeletonPayload({ bones: [] })).toEqual({ modelGuid: "", kind: "hierarchy", bones: [], sockets: [] });
+  });
+
+  it("keeps named sockets with their bone and offset, dropping unnamed ones and names a bone or socket already has", () => {
+    const payload = normalizeSkeletonPayload({
+      bones: [{ name: "hand" }],
+      sockets: [
+        { name: " Grip ", bone: "hand", position: [0.1, 0, 0], rotation: [0, 0.7071, 0, 0.7071], scale: [2, 2, 2] },
+        { name: "hand", bone: "hand" },
+        { name: "Grip", bone: "hand" },
+        { name: "", bone: "hand" },
+        { name: "Muzzle", bone: "gone", position: "x" },
+      ],
+    });
+    expect(payload.sockets).toEqual([
+      { name: "Grip", bone: "hand", position: [0.1, 0, 0], rotation: [0, 0.7071, 0, 0.7071], scale: [2, 2, 2] },
+      { name: "Muzzle", bone: "gone", ...REST },
+    ]);
+    expect(skeletonAttachPointNames(payload)).toEqual(["hand", "Grip", "Muzzle"]);
+  });
+
+  it("names a new socket after its bone, unique among bones and sockets", () => {
+    const payload = normalizeSkeletonPayload({
+      bones: [{ name: "hand" }, { name: "hand_Socket2" }],
+      sockets: [{ name: "hand_Socket", bone: "hand" }],
+    });
+    expect(nextSkeletonSocketName(payload, "hand")).toBe("hand_Socket3");
+    expect(nextSkeletonSocketName(payload, "head")).toBe("head_Socket");
   });
 });
 
