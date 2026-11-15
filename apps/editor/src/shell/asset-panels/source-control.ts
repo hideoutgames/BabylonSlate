@@ -2,3 +2,5 @@
 // whose source control mode is Off never loads them.
 export { ChangesPanel } from "../../panels/changes-panel";
 export { LocksPanel } from "../../panels/locks-panel";
+export { DiffActorsPanel } from "../../panels/diff-actors-panel";
+export { DiffPanel } from "../../panels/diff-panel";

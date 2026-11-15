@@ -33,7 +33,7 @@ import { Textarea } from "@haptic/ui/components/textarea";
 import { cn } from "@haptic/ui/lib/utils";
 import { useDocumentActions, useIntegratedSync, useIntegratedSyncState, useSourceControl } from "../context/document-context";
 import { AdoptGitFolderDialog } from "../components/source-control-adopt-dialog";
-import { useSourceControlActions } from "../components/source-control-actions";
+import { useSourceControlActions, useSourceControlDiffState } from "../components/source-control-actions";
 import { integratedBlockerLabel, type IntegratedBlocker } from "../lib/source-control-mode";
 import type { ChangeRow as ChangeRowData } from "../lib/source-control-changes";
 import { agoLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
@@ -65,19 +65,25 @@ const ChangeRow = memo(function ChangeRow({
   included,
   ownLock,
   disabled,
+  selected,
   onToggle,
+  onOpen,
 }: Pick<ChangeRowData, "id" | "name" | "folder" | "kind" | "type"> & {
   included: boolean;
   ownLock: boolean;
   disabled: boolean;
+  /** Its diff is the one open. */
+  selected: boolean;
   onToggle: (id: string, included: boolean) => void;
+  onOpen: (id: string, name: string, type: string | null) => void;
 }) {
   return (
     <div
       role="listitem"
-      className="flex h-full items-center gap-2 px-2 text-sm"
+      className={cn("flex h-full items-center gap-2 px-2 text-sm", selected && "bg-accent")}
       data-testid={`changes-row-${id}`}
       data-change-kind={kind}
+      data-selected={selected || undefined}
     >
       <Checkbox
         aria-label={`Include ${name}`}
@@ -85,9 +91,20 @@ const ChangeRow = memo(function ChangeRow({
         disabled={disabled}
         onCheckedChange={(checked) => onToggle(id, checked === true)}
       />
-      <RowIcon type={type} />
-      <span className="truncate">{name}</span>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{folder}</span>
+      {/* The rest of the row opens its diff. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-full min-w-0 flex-1 justify-start gap-2 px-1 font-normal"
+        aria-label={`Compare ${name}`}
+        aria-pressed={selected}
+        data-testid={`changes-open-${id}`}
+        onClick={() => onOpen(id, name, type)}
+      >
+        <RowIcon type={type} />
+        <span className="truncate">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground">{folder}</span>
+      </Button>
       {ownLock ? <LockIcon className="size-3.5 shrink-0 text-muted-foreground" role="img" aria-label="Locked By You" /> : null}
       <span className={cn("w-3.5 shrink-0 text-center text-xs font-bold", KIND_CLASS[kind])} title={KIND_LABEL[kind]}>
         {KIND_LETTER[kind]}
@@ -235,6 +252,7 @@ export function ChangesPanelContents() {
   const snapshot = useIntegratedSyncState();
   const { sourceControl } = useSourceControl();
   const actions = useSourceControlActions();
+  const diffState = useSourceControlDiffState();
   const touch = useTouchUi();
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
   const now = Date.now();
@@ -252,6 +270,9 @@ export function ChangesPanelContents() {
     });
   }, []);
   const includeAll = useCallback(() => setExcluded(new Set()), []);
+  const { openDiff } = actions;
+  // Base HEAD, compare the working copy: what a commit of the row would record.
+  const open = useCallback((path: string, name: string, type: string | null) => openDiff({ path, name, type }), [openDiff]);
 
   if (snapshot.blocked || !snapshot.active) return <InactiveChanges blocker={snapshot.blocked} />;
 
@@ -340,7 +361,9 @@ export function ChangesPanelContents() {
                         included={!excluded.has(row.id)}
                         ownLock={sourceControl.lockStateForPath(row.id) === "mine"}
                         disabled={busy}
+                        selected={diffState.target?.path === row.id}
                         onToggle={toggle}
+                        onOpen={open}
                       />
                     );
                   }}

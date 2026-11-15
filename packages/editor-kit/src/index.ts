@@ -244,6 +244,7 @@ export {
   isSidewaysDragOut,
   rangeSelectTreeIds,
   type TreeDropPlacement,
+  type TreeRowTone,
   type TreeSelectOptions,
   type TreeViewNode,
   type TreeViewProps,

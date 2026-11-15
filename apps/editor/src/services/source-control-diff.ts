@@ -87,12 +87,16 @@ export class SourceControlDiffService {
   private running: AbortController | null = null;
   private loadedFor: unknown[] | null = null;
   private readonly unsubscribe: () => void;
+  private readonly sync: SourceControlSyncService;
+  private readonly createLoader: (sync: SourceControlSyncService) => Promise<DiffLoader>;
 
   constructor(
-    private readonly sync: SourceControlSyncService,
-    private readonly createLoader: (sync: SourceControlSyncService) => Promise<DiffLoader> = (service) =>
+    sync: SourceControlSyncService,
+    createLoader: (sync: SourceControlSyncService) => Promise<DiffLoader> = (service) =>
       import("./source-control-diff-loader").then((module) => module.createDiffLoader(service)),
   ) {
+    this.sync = sync;
+    this.createLoader = createLoader;
     this.unsubscribe = sync.subscribe(() => this.syncChanged());
   }
 

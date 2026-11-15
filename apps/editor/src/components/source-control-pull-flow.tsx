@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlertIcon, TriangleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, GitCompareIcon, TriangleAlertIcon } from "lucide-react";
 import type { PullChoice, PullConflict, PullResult } from "@haptic/source-control";
 import { resolveTypeVisual, TypeVisualIcon } from "@haptic/editor-kit";
 import {
@@ -36,13 +36,21 @@ import { commitsLabel, transferLabel } from "../lib/source-control-labels";
 import { conflictChoices, groupConflicts, registryChangeLookup, type ConflictRow } from "../lib/source-control-changes";
 import { useTransferBytes } from "../lib/transfer-bytes";
 import type { SyncSnapshot } from "../services/source-control-sync";
+import { REMOTE, WORKING_COPY } from "../services/source-control-diff";
+import type { DiffRequest } from "./source-control-actions";
+import { UnsavedDocumentsDialog } from "./source-control-unsaved-dialog";
 
 type Step =
   | { kind: "blocked"; reason: string }
   | { kind: "unsaved" }
   | { kind: "confirm" }
   | { kind: "pulling" }
-  | { kind: "conflicts"; conflicts: PullConflict[] };
+  | { kind: "conflicts"; conflicts: PullConflict[] }
+  /** Pull Conflicts set aside while the tab shows one asset's diff; the hold and the choices stay. */
+  | { kind: "comparing"; conflicts: PullConflict[]; name: string };
+
+/** While comparing, Pull Conflicts waits in the bottom right corner, above the status bar. */
+const COMPARING_PLACEMENT = { top: "auto", left: "auto", right: "calc(var(--safe-right) + 0.5rem)", bottom: "calc(var(--safe-bottom) + 2.5rem)", translate: "none" } as const;
 
 /** Why documents are read-only while a pull runs; Play and Simulation name it when they refuse to start. */
 const PULLING_REASON = "Read-only while pulling";
@@ -73,7 +81,11 @@ function PullProgress({ snapshot }: { snapshot: SyncSnapshot }) {
  * read-only, so no edit, Play or Simulation meets a half-pulled project, and
  * the modal Pulling step covers the editor.
  */
-export default function SourceControlPullFlow({ onDone }: { onDone: () => void }) {
+export default function SourceControlPullFlow({ onDone, onCompare }: {
+  onDone: () => void;
+  /** Shows a conflicting asset's diff in the Source Control tab (each row's **Compare**). */
+  onCompare?: (request: DiffRequest) => void;
+}) {
   const sync = useIntegratedSync();
   const snapshot = useIntegratedSyncState();
   const { dirtyDocuments, projectDirty } = useSaveState();
@@ -111,7 +123,14 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
   });
   const branch = snapshot.branch;
   const lookup = useMemo(() => registryChangeLookup(assetRegistry), [assetRegistry]);
-  const rows = useMemo(() => (step.kind === "conflicts" ? groupConflicts(step.conflicts, lookup) : []), [lookup, step]);
+  const conflicts = step.kind === "conflicts" || step.kind === "comparing" ? step.conflicts : null;
+  const rows = useMemo(() => (conflicts ? groupConflicts(conflicts, lookup) : []), [conflicts, lookup]);
+  // Base: the incoming version (the remote branch the pull fetched); compare: the working copy.
+  const compare = (row: ConflictRow) => {
+    if (!conflicts || !onCompare) return;
+    onCompare({ path: row.id, name: row.name, type: row.type, base: REMOTE, compare: WORKING_COPY });
+    setStep({ kind: "comparing", conflicts, name: row.name });
+  };
 
   // A save that lands while the prompt is open (Auto-Save) leaves nothing to ask about.
   useEffect(() => {
@@ -186,28 +205,16 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={step.kind === "unsaved"} onOpenChange={(open) => { if (!open && !busy) done.current(); }}>
-        <AlertDialogContent data-testid="source-control-pull-unsaved">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved Documents</AlertDialogTitle>
-            <AlertDialogDescription>Save or discard your changes before pulling.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <ul className="max-h-48 divide-y overflow-y-auto rounded-md border bg-muted/30 text-sm">
-            {[...dirtyDocuments.map((doc) => doc.ref.label), ...(projectDirty ? ["Project Settings"] : [])].map((name) => (
-              <li key={name} className="min-w-0 truncate px-3 py-1.5" title={name}>{name}</li>
-            ))}
-          </ul>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="source-control-pull-unsaved-cancel" disabled={busy}>Cancel</AlertDialogCancel>
-            <Button variant="secondary" data-testid="source-control-pull-discard" disabled={busy} onClick={() => void discardFirst()}>
-              Discard
-            </Button>
-            <AlertDialogAction data-testid="source-control-pull-save" disabled={busy} onClick={() => void saveFirst()}>
-              Save All
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <UnsavedDocumentsDialog
+        open={step.kind === "unsaved"}
+        names={[...dirtyDocuments.map((doc) => doc.ref.label), ...(projectDirty ? ["Project Settings"] : [])]}
+        description="Save or discard your changes before pulling."
+        busy={busy}
+        testId="source-control-pull"
+        onCancel={() => done.current()}
+        onDiscard={() => void discardFirst()}
+        onSave={() => void saveFirst()}
+      />
 
       <AlertDialog open={step.kind === "confirm"} onOpenChange={(open) => { if (!open) done.current(); }}>
         <AlertDialogContent variant="warning" data-testid="source-control-pull-confirm">
@@ -258,6 +265,12 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
                   <span className="truncate">{row.name}</span>
                   <span className="truncate text-xs text-muted-foreground">{row.folder} · {sideLabel(row)}</span>
                 </div>
+                {onCompare ? (
+                  <Button variant="outline" size="sm" disabled={busy} data-testid={`source-control-conflict-compare-${row.id}`} onClick={() => compare(row)}>
+                    <GitCompareIcon data-icon="inline-start" />
+                    Compare
+                  </Button>
+                ) : null}
                 <ToggleGroup
                   variant="outline"
                   size="sm"
@@ -293,6 +306,29 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
             </Button>
             <Button data-testid="source-control-pull-conflicts-apply" disabled={busy || missing !== undefined} onClick={() => void pull(choices)}>
               Apply And Finish Pull
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Non-modal, so the Source Control tab's diff can be read and scrolled beside it. */}
+      <Dialog open={step.kind === "comparing"} modal={false} disablePointerDismissal onOpenChange={(open) => { if (!open && conflicts) setStep({ kind: "conflicts", conflicts }); }}>
+        <DialogContent
+          showOverlay={false}
+          showCloseButton={false}
+          className="sm:max-w-xs"
+          style={COMPARING_PLACEMENT}
+          data-testid="source-control-pull-comparing"
+        >
+          <DialogHeader>
+            <DialogTitle>Pull Conflicts</DialogTitle>
+            <DialogDescription>
+              Comparing {step.kind === "comparing" ? step.name : ""} with {branch}. Documents stay read-only until the pull finishes.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button data-testid="source-control-pull-comparing-back" onClick={() => { if (conflicts) setStep({ kind: "conflicts", conflicts }); }}>
+              Back To Pull Conflicts
             </Button>
           </DialogFooter>
         </DialogContent>

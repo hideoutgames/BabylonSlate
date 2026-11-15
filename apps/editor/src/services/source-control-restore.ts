@@ -39,10 +39,11 @@ export async function restoreVersion({ port, storage, path, commit, signal }: {
   port: SyncPort;
   storage: ProjectStorage;
   path: string;
-  commit: string;
+  /** Null for a version with no commit (no remote branch yet): the asset is absent there. */
+  commit: string | null;
   signal?: AbortSignal;
 }): Promise<string[]> {
-  const bytes = await port.readFile(path, commit);
+  const bytes = commit ? await port.readFile(path, commit) : null;
   if (!bytes) {
     if (await storage.exists(path)) await storage.remove(path);
     return [path];

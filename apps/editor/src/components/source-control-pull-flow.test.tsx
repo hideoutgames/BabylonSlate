@@ -219,6 +219,44 @@ describe("Pull", () => {
     expect(service.getSnapshot().rows.map((row) => row.name)).toEqual(["Forest"]);
   });
 
+  it("compares a conflicting asset's incoming version with the working copy, keeping the pull's choices and hold", async () => {
+    const { service, remote, storage } = await integratedSync();
+    state.sync = service;
+    remote.commit({ "assets/Rock.texture.hasset": "R-theirs", "assets/Forest.scene.hasset": "F-theirs" }, "Teammate");
+    await storage.writeText("assets/Rock.texture.hasset", "R-mine");
+    await storage.writeText("assets/Forest.scene.hasset", "F-mine");
+    const release = vi.fn();
+    state.lockAuthoring.mockImplementation(() => release);
+    const onCompare = vi.fn();
+    const onDone = vi.fn();
+    render(<SourceControlPullFlow onDone={onDone} onCompare={onCompare} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-pull-confirm-action"));
+    });
+    await screen.findByTestId("source-control-pull-conflicts");
+    fireEvent.click(screen.getByTestId("source-control-conflict-mine-assets/Forest.scene.hasset"));
+    fireEvent.click(screen.getByTestId("source-control-conflict-compare-assets/Rock.texture.hasset"));
+    expect(onCompare).toHaveBeenCalledWith({
+      path: "assets/Rock.texture.hasset",
+      name: "Rock",
+      type: "Texture",
+      base: { kind: "remote" },
+      compare: { kind: "working" },
+    });
+    // The incoming version is the remote branch the pull fetched.
+    expect(service.getSnapshot().remoteHead).toBe(remote.branches.get("main"));
+    const comparing = await screen.findByTestId("source-control-pull-comparing");
+    expect(comparing.textContent).toContain("Comparing Rock with main");
+    await waitFor(() => expect(screen.queryByTestId("source-control-pull-conflicts")).toBeNull());
+    expect(release).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("source-control-pull-comparing-back"));
+    await screen.findByTestId("source-control-pull-conflicts");
+    // Forest keeps its choice; Rock still needs one.
+    expect(screen.getByTestId("source-control-pull-conflicts-reason").textContent).toBe("Choose a version for Rock.");
+  });
+
   it("changes nothing when the pull is cancelled at its conflicts", async () => {
     const { service, remote, storage } = await integratedSync();
     state.sync = service;

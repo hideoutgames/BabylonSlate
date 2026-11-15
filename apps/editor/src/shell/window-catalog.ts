@@ -141,10 +141,12 @@ const SOURCE_CONTROL_WINDOWS: DockWindowDefinition[] = [
   { id: "locks", component: "locks", title: "Locks" },
 ];
 
-/** Integrated mode: Changes, tabbed with Locks. */
+/** Integrated mode: Changes, tabbed with Locks; the chosen asset's Actors (its tree of items) and Diff to the right. */
 const INTEGRATED_SOURCE_CONTROL_WINDOWS: DockWindowDefinition[] = [
   { id: "changes", component: "changes", title: "Changes" },
   { id: "locks", component: "locks", title: "Locks", defaultPosition: { referencePanelId: "changes", direction: "within" } },
+  { id: "diff-actors", component: "diff-actors", title: "Actors", defaultPosition: { referencePanelId: "changes", direction: "right", initialWidthRatio: 0.7 } },
+  { id: "diff", component: "diff", title: "Diff", defaultPosition: { referencePanelId: "diff-actors", direction: "right", initialWidthRatio: 0.5 } },
 ];
 
 const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {

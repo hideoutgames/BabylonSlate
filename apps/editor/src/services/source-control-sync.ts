@@ -463,6 +463,11 @@ export class SourceControlSyncService {
     return this.openPort().readFile(path, commit);
   }
 
+  /** The branch's commits that change `path`, newest first, for picking a version to compare. Reads no network. */
+  async commitsOf(path: string, limit: number): Promise<readonly CommitInfo[]> {
+    return (await this.openPort().log({ limit, path })).commits;
+  }
+
   /** A `.blobs` object a version references: the working copy's file, else downloaded; never written. */
   readLfsObject(path: string, size: number, signal?: AbortSignal): Promise<Uint8Array> {
     return this.openPort().readLfsObject(path, size, signal ? { signal } : {});
@@ -477,7 +482,7 @@ export class SourceControlSyncService {
    * (`applyPulledChanges`). Rejects with what failed; nothing is written then
    * unless the blobs were.
    */
-  async revert(path: string, commit: string): Promise<string[]> {
+  async revert(path: string, commit: string | null): Promise<string[]> {
     const revision = this.revision;
     let written: string[] = [];
     const ran = await this.run(null, "Could Not Revert", async ({ port, storage, signal }) => {

@@ -139,7 +139,11 @@ export class AssetVersion {
 /** Decoded versions that never change (a commit's), by `path@commit`; the least recently used goes first. */
 export class AssetVersionCache {
   private readonly entries = new Map<string, Promise<AssetVersion>>();
-  constructor(private readonly capacity = 8) {}
+  private readonly capacity: number;
+
+  constructor(capacity = 8) {
+    this.capacity = capacity;
+  }
 
   get size(): number {
     return this.entries.size;
