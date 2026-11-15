@@ -21,7 +21,7 @@ import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
-import type { CreateProjectOptions } from "../lib/create-project";
+import type { CreateProjectOptions, CreateProjectOutcome } from "../lib/create-project";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -104,13 +104,6 @@ export interface ProjectLifecycleDeps {
   // Tabs.
   cancelExclusiveSceneOpen: () => void;
 }
-
-/**
- * What a New Project did: `created` a project and opened it, `opened` the
- * project a picked folder already held, or nothing (`refused`, by a session
- * that would not close).
- */
-export type CreateProjectOutcome = "created" | "opened" | "refused";
 
 /**
  * Opening, creating, reconnecting and closing a project, and the recovery

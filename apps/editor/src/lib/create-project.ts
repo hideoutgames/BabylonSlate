@@ -1,5 +1,5 @@
 import type { ProjectAppearance } from "@haptic/core";
-import type { NewRepositoryRequest } from "../services/source-control-publish";
+import type { NewRepositoryRequest, PublishOutcome } from "../services/source-control-publish";
 
 // Descriptor + noun + head noun reads as a compound name in any combination,
 // for example "Walnut Apple Sauce" or "Velvet Comet Parade".
@@ -101,3 +101,35 @@ export type CreateProjectOptions = {
   /** Pixel Art Optimized (`pixelArtProjectSettings`). */
   pixelArt?: boolean;
 };
+
+/**
+ * What a New Project did: `created` a project and opened it, `opened` the
+ * project a picked folder already held, or nothing (`refused`, by a session
+ * that would not close).
+ */
+export type CreateProjectOutcome = "created" | "opened" | "refused";
+
+/**
+ * A Remote New Project's last step, once its project is open: publishes it to
+ * the new repository with `publish` (Publish to a new repository, as Project
+ * Settings' Publish does), naming the step first. Only a project this create
+ * made is published. Resolves to why the project stayed Local, for the
+ * editor to show, or null: an Integrated project whose push failed shows that
+ * in the status bar instead. Never rejects, as the project is already open.
+ */
+export async function publishCreatedProject(
+  outcome: CreateProjectOutcome,
+  options: CreateProjectOptions | undefined,
+  publish: (repository: NewRepositoryRequest) => Promise<PublishOutcome>,
+): Promise<string | null> {
+  const repository = options?.repository;
+  if (!repository || outcome === "refused") return null;
+  if (outcome === "opened") return "The folder you chose already had a project, so Haptic opened it and created no repository.";
+  options.onPhase?.("source-control");
+  try {
+    const published = await publish(repository);
+    return published.status === "local" ? published.message : null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}

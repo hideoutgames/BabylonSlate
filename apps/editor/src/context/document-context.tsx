@@ -47,7 +47,7 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { SourceControlSyncService } from "../services/source-control-sync";
-import type { CreateProjectOptions } from "../lib/create-project";
+import { publishCreatedProject, type CreateProjectOptions, type CreateProjectOutcome } from "../lib/create-project";
 import { documentContentIdentity } from "../lib/document-content-identity";
 import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import {
@@ -95,7 +95,7 @@ import { useProjectList } from "./use-project-list";
 import { useProjectSave } from "./use-project-save";
 import { useDocumentTabs } from "./use-document-tabs";
 import { useAssetFileOperations } from "./use-asset-file-operations";
-import { useProjectLifecycle, type CreateProjectOutcome } from "./use-project-lifecycle";
+import { useProjectLifecycle } from "./use-project-lifecycle";
 import { useProjectAssetActions } from "./use-project-asset-actions";
 import { useDocumentStateSlices } from "./use-document-state-slices";
 
@@ -626,27 +626,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
   }, [projectDocumentRef, saveProjectNow, setProjectDocument, sourceControlSync, syncInputFor]);
 
-  /**
-   * A Remote New Project, once it has opened: Publish to a new repository on
-   * the host, as Project Settings' Publish does. A project that stays Local
-   * says why in the editor; an Integrated one whose push failed shows that in
-   * the status bar, as Publish does. It never rejects: the project is open.
-   */
+  /** A Remote New Project, once it has opened: Publish, and the editor's notice when it stays Local. */
   const publishNewProject = useCallback(async (outcome: CreateProjectOutcome, options: CreateProjectOptions | undefined) => {
-    const repository = options?.repository;
-    if (!repository || outcome === "refused") return;
-    if (outcome === "opened") {
-      setPublishNotice({ message: "The folder you chose already had a project, so Haptic opened it and created no repository." });
-      return;
-    }
-    options.onPhase?.("source-control");
-    let message: string | null;
-    try {
-      const published = await publishToNewRepository(repository);
-      message = published.status === "local" ? published.message : null;
-    } catch (error) {
-      message = error instanceof Error ? error.message : String(error);
-    }
+    const message = await publishCreatedProject(outcome, options, publishToNewRepository);
     if (message) setPublishNotice({ message });
   }, [publishToNewRepository]);
 
