@@ -1012,6 +1012,63 @@ describe("Scene Layer draw batching", () => {
       expect(after.retainedMembers - before.retainedMembers).toBeGreaterThan(2 * 150);
     });
 
+    /** The batcher's counts while `run` runs, with no mismatch. */
+    async function counted(scene: Scene, run: () => unknown) {
+      const before = sceneDrawBatchWork(scene)!;
+      await run();
+      const after = sceneDrawBatchWork(scene)!;
+      expect(after.mismatchDetails).toEqual([]);
+      expect(after.verifiedPasses - before.verifiedPasses).toBeGreaterThan(0);
+      return { retained: after.retainedMembers - before.retainedMembers, full: after.fullMembers - before.fullMembers };
+    }
+
+    it("refills a batch of glyphs when one fades or its colour is written in place", async () => {
+      const { engine, compositor, scene } = host();
+      const lowered = lowerMaterialDocument(createDefaultMaterialDocument("text", "text"));
+      if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+      const compiled = compileMaterialPlan(lowered.plan, { scene, name: "authoredText", overlay: true });
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+      expect(await compiled.ready).toEqual([]);
+      const atlas = RawTexture.CreateRGBATexture(new Uint8Array(64 * 64 * 4).fill(255), 64, 64, scene);
+      const glyphs = [-3, 0, 3].map((x, index) => {
+        const mesh = MeshBuilder.CreatePlane(`g${index}`, { size: 1 }, scene);
+        mesh.material = compiled.material;
+        mesh.position.x = x;
+        bindTextMaterialGlyph(mesh, { atlas, mode: "bitmap", color: [1, 1, 1], outlineColor: [0, 0, 0], outline: 0, atlasRect: [0, 0, 0.25, 0.5], materialRect: [x, 0, 1, 2] });
+        return mesh;
+      });
+      await compositor.prepare("hud", () => {});
+      layerDraws(engine, compositor, 2);
+      const frame = () => expect(layerDraws(engine, compositor, 1)).toBe(1);
+      expect(await counted(scene, frame)).toEqual({ retained: 3, full: 0 });
+      // A glyph's visibility goes with its vertices: its batch refills, and stays one draw.
+      glyphs[1]!.visibility = 0.4;
+      expect(await counted(scene, frame)).toEqual({ retained: 0, full: 3 });
+      expect(await counted(scene, frame)).toEqual({ retained: 3, full: 0 });
+      (textMaterialGlyphBinding(glyphs[2]!)!.color as unknown as number[])[1] = 0.25;
+      expect(await counted(scene, frame)).toEqual({ retained: 0, full: 3 });
+      expect(await counted(scene, frame)).toEqual({ retained: 3, full: 0 });
+    });
+
+    it("writes world rows anew when the floating origin's eye moves with the layer camera", async () => {
+      const engine = adaptNullEngineFrameGraph(new NullEngine());
+      engines.push(engine);
+      vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
+      const compositor = new SceneLayerCompositor({ engine });
+      const { scene } = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+      [-3, 0, 3].forEach((x, index) => quad(scene, `q${index}`, x, 0));
+      await compositor.prepare("hud", () => {});
+      const frame = () => engineFrame(engine, () => compositor.render());
+      frame();
+      frame();
+      expect(await counted(scene, frame)).toEqual({ retained: 3, full: 0 });
+      // The eye is the camera's position, subtracted from every member's translation.
+      compositor.setCamera("hud", { x: 2.5, y: 1, rotation: 0, zoom: 1 });
+      expect(await counted(scene, frame)).toEqual({ retained: 0, full: 3 });
+      expect(await counted(scene, frame)).toEqual({ retained: 3, full: 0 });
+      await compositor.dispose();
+    });
+
     it("counts a mismatch when a batch mesh no longer holds what the full path would write", async () => {
       const { frame, scene } = await retainedLayer();
       frame();
