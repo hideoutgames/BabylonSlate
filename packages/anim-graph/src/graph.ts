@@ -1,8 +1,15 @@
-import type { GraphClassMember, SerializedGraph } from "@haptic/core";
+import type { AnimBoneModifier, AnimLayerBlend, AnimLayerMaskRef, GraphClassMember, SerializedGraph } from "@haptic/core";
 import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
+  ANIM_CONTROL_TRANSFORM_BONE_TYPE,
   ANIM_FRAME_OUTPUT_TYPE,
+  ANIM_POSE_SAVE_CACHED_TYPE,
+  ANIM_POSE_USE_CACHED_TYPE,
+  cachedPoseName,
   createStateGraph,
+  poseGraphIndex,
+  poseInputPins,
+  poseInputSource,
   ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   isBlendSpacePlayerType,
   isPoseClipNodeType,
@@ -172,6 +179,8 @@ export interface AnimClipLayer {
   /** 2D: Flip Frame mirrors the frame. */
   flipX?: boolean;
   flipY?: boolean;
+  /** The Layered Blend Per Bone inputs it plays under (`AnimEvalState.layerBlends`), outermost first. */
+  masks?: AnimLayerMaskRef[];
 }
 
 /** The State Machine's evaluation: its active state, the state's clock and the blend in progress. */
@@ -206,6 +215,10 @@ export interface AnimEvalState extends AnimMachineEvalState {
   /** Each Sync Group's shared cycle position and its leader's cycle length, by group name. */
   syncGroups?: Record<string, AnimSyncGroupClock>;
   layers: AnimClipLayer[];
+  /** The Layered Blend Per Bone nodes this tick reached, which layers' `masks` index; absent when none. */
+  layerBlends?: AnimLayerBlend[];
+  /** Transform Bone changes, in the order render applies them after the layers blend; absent when none. */
+  boneModifiers?: AnimBoneModifier[];
   /** The Animation Events this tick fired, in order; absent when none did. */
   events?: AnimFiredEvent[];
   /** Windows that began and have not ended, by window key; absent when none are open. */
@@ -413,6 +426,18 @@ export function animPoseGraphs(doc: AnimGraphDocument): Array<{
   }));
 }
 
+/** The names the graph's Save Cached Pose nodes save under, once each, sorted. */
+export function animCachedPoseNames(machine: AnimStateMachine): string[] {
+  const names = new Set<string>();
+  for (const state of machine.states) {
+    for (const node of state.stateGraph.nodes) {
+      const name = node.type === ANIM_POSE_SAVE_CACHED_TYPE ? cachedPoseName(node) : "";
+      if (name) names.add(name);
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 /** Replace the State Machine. */
 export function patchStateMachine(
   doc: AnimGraphDocument,
@@ -514,6 +539,79 @@ export function validateAnimGraph(
       }
       if (!isPoseClipNodeType(node.type)) continue;
       diagnostics.push(...clipDiagnostics(doc, byGuid, node.id, node.type, assetGuid, location, options.dimension));
+    }
+    for (const node of graph.nodes) {
+      if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE && !(typeof node.data.bone === "string" && node.data.bone.trim())) {
+        diagnostics.push({ code: "anim.missingBone", message: "Transform Bone changes no bone until it names one", nodeId: node.id, location, severity: "warning" });
+      }
+    }
+  }
+  diagnostics.push(...cachedPoseDiagnostics(doc));
+  return diagnostics;
+}
+
+/** The cached poses used on the way into `start` (inclusive), in its graph. */
+function cachedPosesUsedFrom(graph: SerializedGraph, start: SerializedGraph["nodes"][number]): string[] {
+  const index = poseGraphIndex(graph);
+  const used: string[] = [];
+  const seen = new Set<string>();
+  const stack = [start];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
+    if (node.type === ANIM_POSE_USE_CACHED_TYPE) used.push(cachedPoseName(node));
+    for (const pin of poseInputPins(node.type, node.data.count)) {
+      const source = poseInputSource(index, node.id, pin);
+      if (source) stack.push(source);
+    }
+  }
+  return used;
+}
+
+/**
+ * Cached poses: each Save Cached Pose has a name no other has, each Use Cached Pose names one, and no cached pose
+ * uses itself, directly or through another.
+ */
+function cachedPoseDiagnostics(doc: AnimGraphDocument): AnimDiagnostic[] {
+  const diagnostics: AnimDiagnostic[] = [];
+  const saves = new Map<string, { graph: SerializedGraph; node: SerializedGraph["nodes"][number]; location: AnimGraphLocation }>();
+  const uses: Array<{ name: string; nodeId: string; location: AnimGraphLocation }> = [];
+  for (const { graph, location } of animPoseGraphs(doc)) {
+    for (const node of graph.nodes) {
+      const name = cachedPoseName(node);
+      if (node.type === ANIM_POSE_USE_CACHED_TYPE) uses.push({ name, nodeId: node.id, location });
+      if (node.type !== ANIM_POSE_SAVE_CACHED_TYPE) continue;
+      if (!name) {
+        diagnostics.push({ code: "anim.emptyCachedPoseName", message: "Save Cached Pose needs a name", nodeId: node.id, location, severity: "error" });
+      } else if (saves.has(name)) {
+        diagnostics.push({ code: "anim.duplicateCachedPose", message: `Cached pose "${name}" is saved twice. Choose a unique name.`, nodeId: node.id, location, severity: "error" });
+      } else {
+        saves.set(name, { graph, node, location });
+      }
+    }
+  }
+  for (const use of uses) {
+    if (saves.has(use.name)) continue;
+    const message = use.name ? `No Save Cached Pose saves "${use.name}"` : "Use Cached Pose names no cached pose";
+    diagnostics.push({ code: "anim.missingCachedPose", message, nodeId: use.nodeId, location: use.location, severity: "error" });
+  }
+  // Each cached pose's uses, then a walk that reports each cached pose that leads back to itself.
+  const graphOf = new Map([...saves].map(([name, save]) => [name, cachedPosesUsedFrom(save.graph, save.node).filter((used) => saves.has(used))]));
+  for (const [name, save] of saves) {
+    const seen = new Set<string>();
+    const stack = [...(graphOf.get(name) ?? [])];
+    let cycle = false;
+    while (stack.length > 0 && !cycle) {
+      const next = stack.pop()!;
+      if (next === name) cycle = true;
+      else if (!seen.has(next)) {
+        seen.add(next);
+        stack.push(...(graphOf.get(next) ?? []));
+      }
+    }
+    if (cycle) {
+      diagnostics.push({ code: "anim.cachedPoseCycle", message: `Cached pose "${name}" uses itself`, nodeId: save.node.id, location: save.location, severity: "error" });
     }
   }
   return diagnostics;

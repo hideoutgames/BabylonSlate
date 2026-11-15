@@ -1997,6 +1997,14 @@ describe("edgesAfterConnect", () => {
     expect(connected).toHaveLength(2);
   });
 
+  it("moves a pose output's wire to the new input: a pose feeds one input", () => {
+    const poseOut: SerializedPin = { id: "pose", name: "Pose", kind: "data", direction: "out", type: { kind: "pose" } };
+    const poseIn = (id: string): SerializedPin => ({ id, name: id, kind: "data", direction: "in", type: { kind: "pose" } });
+    const posePinFor = (nodeId: string, pinId: string) => (nodeId === "walk" ? poseOut : poseIn(pinId));
+    const wire = (target: string, targetHandle: string) => ({ id: `walk-${target}`, source: "walk", target, sourceHandle: "pose", targetHandle });
+    expect(edgesAfterConnect([wire("blend", "a")], wire("layers", "basePose"), posePinFor)).toEqual([wire("layers", "basePose")]);
+  });
+
   describe("single-link outputs", () => {
     const spineOut: SerializedPin = {
       id: "out",

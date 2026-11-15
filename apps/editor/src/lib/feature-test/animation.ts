@@ -1,5 +1,6 @@
 import {
   ANIM_EXIT_TIME_REACHED_TYPE,
+  ANIM_POSE_OUTPUT_NODE_ID,
   ANIM_RULE_ENTER_NODE_ID,
   animGraphMembersFromVariables,
   createDefaultTransitionRuleGraph,
@@ -386,6 +387,59 @@ async function saveSpeedBlendSpace(
   return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
 }
 
+/** The Rig_Medium bones the adventurers' Move state layers on: its spine (the upper body's branch) and its head. */
+function adventurerLayerBones(ctx: FeatureTestContext): { spine: string; head: string } {
+  const guid = requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton");
+  const names = normalizeSkeletonPayload(ctx.registry.getByGuid(guid)?.header.payload ?? {}).bones.map((bone) => bone.name);
+  const find = (exact: string, pattern: RegExp) =>
+    requireRef(names.find((name) => name.toLowerCase() === exact) ?? names.find((name) => pattern.test(name)), `the Rig_Medium ${exact} bone`);
+  return { spine: find("spine", /spine|chest/i), head: find("head", /head/i) };
+}
+
+/** The adventurers' upper-body layer's Blend Weight, and how far Transform Bone turns the head while they move. */
+const UPPER_BODY_WEIGHT = 0.6;
+const HEAD_TURN_YAW = 25;
+
+/**
+ * The adventurers' Move state: the Speed Blend Space saved as the Locomotion cached pose, played through Use Cached
+ * Pose as a Layered Blend Per Bone's Base Pose, with Interact on the upper body (the spine's branch, ramping in over
+ * two bones) and the head turned in its own axes by Transform Bone.
+ */
+function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact: FeatureTestClip, bones: { spine: string; head: string }): AnimState {
+  const state = speedBlendSpaceState("move", "Move", x, y, blendSpaceGuid);
+  const locomotion = state.stateGraph.nodes.filter((node) => node.id !== ANIM_POSE_OUTPUT_NODE_ID);
+  const speedWires = state.stateGraph.edges.filter((edge) => edge.target !== ANIM_POSE_OUTPUT_NODE_ID);
+  return {
+    ...state,
+    stateGraph: poseGraph("3d", "look", [
+      ...locomotion.map((node) => ({ ...node, position: { x: node.position.x, y: node.position.y + 360 } })),
+      gNode("save-locomotion", "anim.pose.saveCachedPose", 500, 440, { name: ADVENTURER_CACHED_POSE }),
+      gNode("use-locomotion", "anim.pose.useCachedPose", 60, -120, { name: ADVENTURER_CACHED_POSE }),
+      playerNode("3d", "interact", 60, 40, interact),
+      gNode("upper-body", "anim.pose.layeredBlendPerBone", 500, 0, {
+        count: 1,
+        layers: [{ branches: [{ bone: bones.spine, blendDepth: 2 }] }],
+        "default:blendWeight0": UPPER_BODY_WEIGHT,
+      }),
+      gNode("look", "anim.control.transformBone", 900, 0, {
+        bone: bones.head,
+        rotationMode: "add",
+        rotationSpace: "bone",
+        "default:rotation": { pitch: 0, yaw: HEAD_TURN_YAW, roll: 0 },
+      }),
+    ], [
+      ...speedWires,
+      gWire("locomotion", "pose", "save-locomotion", "pose"),
+      gWire("use-locomotion", "pose", "upper-body", "basePose"),
+      gWire("interact", "pose", "upper-body", "blendPose0"),
+      gWire("upper-body", "pose", "look", "sourcePose"),
+    ]),
+  };
+}
+
+/** The adventurers' cached pose: their Speed Blend Space. */
+const ADVENTURER_CACHED_POSE = "Locomotion";
+
 /** A state that plays `blendSpaceGuid` by the graph's Speed, in `syncGroup` when given. */
 function speedBlendSpaceState(id: string, name: string, x: number, y: number, blendSpaceGuid: string, syncGroup?: string): AnimState {
   const speed = animGraphMembersFromVariables([SPEED])[0]!;
@@ -539,8 +593,9 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
 }
 
 /**
- * Rig_Medium: Idle ⇄ Move on Speed. The Struck State Alias covers Idle and Move: while Cheer is set either one plays
- * Hit, then Interact → Pick Up by exit time, and Pick Up returns to Idle once it has played.
+ * Rig_Medium: Idle ⇄ Move on Speed; Move layers Interact on the upper body over the Locomotion cached pose and turns
+ * the head (`layeredMoveState`). The Struck State Alias covers Idle and Move: while Cheer is set either one plays Hit,
+ * then Interact → Pick Up by exit time, and Pick Up returns to Idle once it has played.
  */
 function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string): AnimGraphDocument {
   const animations = ctx.assets.kaykit.mediumAnimations;
@@ -551,8 +606,9 @@ function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string
     entryStateId: "idle",
     states: [
       playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
-      // Move fires Move Started as it starts; its Walk and Run samples fire Footstep and Stride (Highest Weight only).
-      { ...speedBlendSpaceState("move", "Move", 400, 220, moveBlendSpace), events: { enter: "Move Started" } },
+      // Move fires Move Started as it starts; its Walk and Run samples fire Footstep and Stride (Highest Weight only)
+      // through the Locomotion cached pose.
+      { ...layeredMoveState(400, 220, moveBlendSpace, clip(KAYKIT_CLIPS.interact), adventurerLayerBones(ctx)), events: { enter: "Move Started" } },
       playerState("3d", "interact", "Interact", 80, 480, clip(KAYKIT_CLIPS.interact), { loop: false }),
       playerState("3d", "pick-up", "Pick Up", 400, 480, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
       playerState("3d", "hit", "Hit", -240, 480, clip(KAYKIT_CLIPS.hit), { loop: false }),

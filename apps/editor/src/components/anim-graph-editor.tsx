@@ -30,6 +30,7 @@ import {
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
   validateAnimGraph,
+  animCachedPoseNames,
   type AnimClipCatalogEntry,
   type AnimGraphDimension,
   type AnimGraphDocument,
@@ -962,10 +963,11 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
     if (!stateGraph) return null;
     return hydrateSerializedGraphForEditor({ ...stateGraph, members }, defaultNodeRegistry(), { ...typeCatalog.schemas, dataAssets });
   }, [stateGraph, members, typeCatalog.schemas, dataAssets]);
+  const cachedPoses = useMemo(() => animCachedPoseNames(machine), [machine]);
   const posePaletteInput = {
     parentClass: "Object",
     animationGraphHost: "pose" as const,
-    animPose: { dimension },
+    animPose: { dimension, cachedPoses },
     graph: { nodes: [], edges: [], members },
     structures: typeCatalog.types.structures,
     dataDefinitions: typeCatalog.types.dataDefinitions,

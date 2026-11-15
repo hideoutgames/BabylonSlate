@@ -813,6 +813,18 @@ describe("project round-trip", () => {
     expect(await storage.exists(PROJECT_FILE)).toBe(false);
   });
 
+  it("opens, without creating anything, a picked folder that already holds a project", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    const service = new ProjectService(storage);
+    const first = await service.createEmptyProject("Picked", { pickFolder: true, kind: "2d" });
+    expect(first.created).toBe(true);
+    await service.closeProject();
+    // The same folder again: a Remote New Project must not publish what it opened.
+    const again = await service.createEmptyProject("Another", { pickFolder: true, kind: "2d" });
+    expect(again.created).toBe(false);
+    expect(again.document.metadata.name).toBe("Picked");
+  });
+
   it("never scaffolds over a folder that has content but no project.json", async () => {
     const storage = new MemoryStorageAdapter("external");
     await storage.pickProjectFolder();

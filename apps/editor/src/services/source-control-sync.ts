@@ -663,6 +663,8 @@ export class SourceControlSyncService {
    * open; commits every file and pushes. The caller has created the empty
    * repository and written `.gitattributes` and `.gitignore`. `replace`
    * replaces a `.git` an interrupted Publish left (the mode rules decide).
+   * A commit or push that fails rejects, leaving its problem in the snapshot
+   * and the counts read from local refs, so Push offers an unpushed commit.
    */
   async publish(request: {
     input: SyncConfigureInput;
@@ -693,12 +695,19 @@ export class SourceControlSyncService {
     this.storage = storage;
     this.set({ ...IDLE, active: true, branch });
     await request.beforeCommit();
-    const published = await this.run("publish", "Could Not Publish", async ({ port: open, input: current, signal }) => {
-      const status = await open.status();
-      if (status.changes.length === 0) throw new Error("There is nothing to publish.");
-      await open.commit({ paths: status.changes.map((change) => change.path), message: "Publish project", author: await this.author(current) });
-      await open.push({ signal });
-    }, revision, { rethrow: true });
+    let published: boolean;
+    try {
+      published = await this.run("publish", "Could Not Publish", async ({ port: open, input: current, signal }) => {
+        const status = await open.status();
+        if (status.changes.length === 0) throw new Error("There is nothing to publish.");
+        await open.commit({ paths: status.changes.map((change) => change.path), message: "Publish project", author: await this.author(current) });
+        await open.push({ signal });
+      }, revision, { rethrow: true });
+    } catch (error) {
+      // As after a refused push: a commit that did not reach the remote counts as ahead.
+      await this.readLocal(revision);
+      throw error;
+    }
     if (!published) throw new Error("The project closed while publishing.");
     await this.readLocal(revision);
     await this.fetchFor(revision);

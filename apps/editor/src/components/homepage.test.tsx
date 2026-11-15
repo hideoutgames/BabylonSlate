@@ -10,11 +10,14 @@ import {
   within,
 } from "@testing-library/react";
 import type { ProjectFolderHandle } from "@haptic/core";
+import { FakeGitHost } from "@haptic/source-control/fake-host";
+import type { SourceControlAccounts } from "../services/source-control-accounts";
+import { signedInHosts } from "../testing/source-control-hosts";
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { BUILT_IN_STARTER_KINDS } from "../lib/create-project";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
-import { AppSettingsProvider } from "../context/app-settings-context";
+import { AppSettingsProvider, getAppSettingsSnapshot } from "../context/app-settings-context";
 import { EditorThemeProvider } from "../context/theme-context";
 
 const { getHostPlatform, pickImportFiles } = vi.hoisted(() => ({
@@ -31,7 +34,16 @@ vi.mock("./settings-modal", () => ({
   SettingsModal: () => null,
 }));
 
-beforeEach(() => {
+const accountsState = vi.hoisted(() => ({ accounts: null as SourceControlAccounts | null }));
+
+// New Project's Remote reads the device's accounts: signed in to test mode's fake GitHub.
+vi.mock("../services/source-control-accounts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/source-control-accounts")>();
+  return { ...actual, sourceControlAccounts: async () => accountsState.accounts! };
+});
+
+beforeEach(async () => {
+  accountsState.accounts = await signedInHosts(new FakeGitHost().http);
   localStorage.clear();
   vi.stubGlobal("__HAPTIC_BUILD_LABEL__", "0.0.1 Development build");
   vi.stubGlobal("matchMedia", (media: string) => ({
@@ -254,6 +266,47 @@ describe("Slate project browser", () => {
       );
     },
   );
+
+  it("hides Hosting without source control, and starts each New Project from this device's last Hosting choice", async () => {
+    const onCreateEmpty = vi.fn<ComponentProps<typeof Homepage>["onCreateEmpty"]>(async () => {});
+    // Production web has no source control: every project is Local.
+    const web = renderHomepage({ onCreateEmpty });
+    createDialog();
+    expect(screen.queryByTestId("create-project-hosting-remote")).toBeNull();
+    web.unmount();
+
+    getHostPlatform.mockReturnValue("electron");
+    renderHomepage({ onCreateEmpty });
+    createDialog();
+    expect(screen.getByTestId("create-project-hosting-local").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.change(screen.getByTestId("create-project-name"), { target: { value: "Forest Run" } });
+    fireEvent.click(screen.getByTestId("create-project-hosting-remote"));
+    await waitFor(() => expect(screen.getByTestId("create-project-submit").hasAttribute("disabled")).toBe(false));
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    await waitFor(() => expect(onCreateEmpty).toHaveBeenCalledTimes(1));
+    const options = onCreateEmpty.mock.calls[0]![1]!;
+    expect(options.repository).toEqual({
+      origin: "https://github.com",
+      owner: { name: "test-user", kind: "user", id: "" },
+      name: "forest-run",
+      private: true,
+    });
+    // The provider reports Opening project and Initializing source control through it.
+    expect(options.onPhase).toEqual(expect.any(Function));
+    await waitFor(() => expect(screen.queryByTestId("create-project-dialog")).toBeNull());
+    await waitFor(() => expect(getAppSettingsSnapshot().settings.newProjectHosting).toEqual({ hosting: "remote", origin: "https://github.com" }));
+
+    // The next New Project starts at Remote on the same account; a Local create publishes nothing.
+    createDialog();
+    expect(screen.getByTestId("create-project-hosting-remote").getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("create-project-hosting-local"));
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    await waitFor(() => expect(onCreateEmpty).toHaveBeenCalledTimes(2));
+    expect(onCreateEmpty.mock.calls[1]![1]!.repository).toBeUndefined();
+    await waitFor(() => expect(screen.queryByTestId("create-project-dialog")).toBeNull());
+    createDialog();
+    expect(screen.getByTestId("create-project-hosting-local").getAttribute("aria-pressed")).toBe("true");
+  });
 
   it("starts naming a project straight from a welcome tile in an empty library", async () => {
     const onCreateEmpty = vi.fn(async () => {});

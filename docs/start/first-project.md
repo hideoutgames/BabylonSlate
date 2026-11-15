@@ -7,11 +7,14 @@ Create, open, save and close projects from the Homepage, the screen Haptic shows
 1. On the Homepage, choose **New Project**.
 2. In the **New Project** dialog, pick a starter or an installed template.
 3. Enter a **Name**. If you leave it empty, Haptic uses the suggested name shown in the field.
-4. Optionally pick a **Color** and an **Icon** for the project card, or choose **Upload Picture** (PNG, JPEG or WebP). After uploading, switch between the picture and an icon at any time without uploading again.
-5. Optionally open **Options** to change where the project is stored and its resolution.
-6. Choose **Create**. The editor opens with the **Content Browser**.
+4. In the iPad, iPhone, Android and desktop apps, choose **Hosting**: **Local** keeps the project on this device; **Remote** also creates a new repository for it on GitHub or GitLab and syncs it there ([Create a Remote project](../projects/source-control.md#create-a-remote-project)). Haptic remembers your last choice on this device.
+5. Optionally pick a **Color** and an **Icon** for the project card, or choose **Upload Picture** (PNG, JPEG or WebP). After uploading, switch between the picture and an icon at any time without uploading again.
+6. Optionally open **Options** to change where the project is stored and its resolution.
+7. Choose **Create**. The editor opens with the **Content Browser**.
 
 You can also start from a template directly: choose one under **Templates** in the Homepage sidebar to go straight to step 3. When you have no projects yet, the Homepage shows **Start Your First Project** with **Basic 3D**, **Basic 2D** and **Blank**, which do the same.
+
+While Haptic creates and opens the project, the loading screen names the step it is on: **Creating project**, **Opening project**, then **Preparing editor**. A Remote project adds **Initializing source control** while Haptic creates its repository and pushes it. Opening a project shows **Opening project** and **Preparing editor**.
 
 ## Starters
 
@@ -28,7 +31,7 @@ Installed templates appear under **Installed**. To add one, choose **Add Templat
 
 | Option | Description |
 | --- | --- |
-| Location | **App Documents** (iPad, iPhone and Android) or **Projects Folder** (desktop) keeps the project in the app's own storage. **Choose Folder** asks for a folder when you choose Create. On the web, projects are stored in the browser. |
+| Location | **App Documents** (iPad, iPhone and Android) or **Projects Folder** (desktop) keeps the project in the app's own storage. **Choose Folder** asks for a folder when you choose Create. On iPad, iPhone and Android a Remote project is always created in App Documents. On the web, projects are stored in the browser. |
 | Resolution | The game's design size for Play and exported games. Default 1920 × 1080. |
 | Black Bars | Adds bars to keep the design size. Off, the game fills the window without stretching. |
 | Pixel Art Optimized | Off by default. Sets the project up for pixel art: **Pixel-Perfect Mode** with **Nearest Texture Filtering**, **Upscaling** set to **Pixelated**, full resolution without **Dynamic Resolution**, and no anti-aliasing. It also imports the [Ark Pixel](../assets/font.md#ark-pixel) fonts and makes Ark Pixel 12px Proportional the **Default Font**, so text is pixel perfect. **Pixel Art Size** picks a design size of 640 × 360 or 320 × 180. With **Black Bars** off, the view extends to fill the screen instead of showing bars. You can change every one of these settings later. |

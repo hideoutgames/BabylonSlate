@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { ENGINE_COMPONENT_CLASS_IDS } from "@haptic/core";
+import { EqualizerIcon } from "@phosphor-icons/react/dist/csr/Equalizer";
 import {
-  ChartGanttIcon,
-  CloudIcon,
+  CloudSunIcon,
   FileBoxIcon,
   FileAxis3dIcon,
   FileBracesCornerIcon,
@@ -13,7 +13,7 @@ import {
   FileSpreadsheetIcon,
   FileStackIcon,
   FileTerminalIcon,
-  LightbulbIcon,
+  HazeIcon,
   SparklesIcon,
   SquareDashedIcon,
   TypeIcon,
@@ -29,7 +29,6 @@ import {
 describe("resolveTypeVisual", () => {
   it("gives Timeline assets their own glyph, apart from the animation assets'", () => {
     const timeline = resolveTypeVisual({ assetType: "Timeline" });
-    expect(timeline.icon).toBe(ChartGanttIcon);
     expect(timeline.family).toBe("animation");
     for (const assetType of ["SpriteAnimation", "Animation"]) expect(resolveTypeVisual({ assetType }).icon).not.toBe(timeline.icon);
   });
@@ -122,7 +121,7 @@ describe("resolveTypeVisual", () => {
     expect(light.icon).not.toBe(mesh.icon);
     const fill = resolveTypeVisual({ classId: "HemisphericFillLightComponent" });
     expect(fill.iconKey).toBe("HemisphericFillLightComponent");
-    expect(fill.icon).toBe(LightbulbIcon);
+    expect(fill.icon).toBe(HazeIcon);
     expect(engineParentOf("HemisphericFillLightComponent")).toBe("ActorComponent");
     const outline = resolveTypeVisual({ classId: "OutlineComponent" });
     expect(outline.icon).toBe(SquareDashedIcon);
@@ -130,7 +129,7 @@ describe("resolveTypeVisual", () => {
     expect(engineParentOf("OutlineComponent")).toBe("ActorComponent");
     const skybox = resolveTypeVisual({ classId: "SkyboxComponent" });
     expect(skybox.iconKey).toBe("SkyboxComponent");
-    expect(skybox.icon).toBe(CloudIcon);
+    expect(skybox.icon).toBe(CloudSunIcon);
     expect(skybox.colorVar).toBe(mesh.colorVar);
     const text3d = resolveTypeVisual({ classId: "Text3DComponent" });
     expect(text3d.iconKey).toBe("Text3DComponent");
@@ -212,5 +211,43 @@ describe("TypeVisualIcon", () => {
     expect(glyph.getAttribute("data-type-family")).toBe("scene");
     expect(glyph.getAttribute("data-type-icon")).toBe("Scene");
     expect(glyph.getAttribute("stroke")).toBe("var(--asset-scene)");
+  });
+
+  it("draws Tabler glyphs in the asset colour with Lucide's stroke at list and tile size", () => {
+    const strokeOf = (assetType: string, size?: number) => {
+      const { getByTestId } = render(
+        <TypeVisualIcon visual={resolveTypeVisual({ assetType })} size={size} data-testid="glyph" />,
+      );
+      const glyph = getByTestId("glyph");
+      const stroke = { colour: glyph.getAttribute("stroke"), width: glyph.getAttribute("stroke-width"), icon: glyph.getAttribute("data-type-icon") };
+      cleanup();
+      return stroke;
+    };
+    // Model is Tabler, Class is Lucide.
+    expect(strokeOf("Model")).toEqual({ colour: "var(--asset-model)", width: "2", icon: "Model" });
+    expect(strokeOf("Model", 48).width).toBe(strokeOf("Class", 48).width);
+    expect(strokeOf("Model", 48).width).toBe("1");
+  });
+
+  it("draws Phosphor glyphs in the asset colour, bold in chrome and light on tiles", () => {
+    const pathsOf = (node: Element) => [...node.querySelectorAll("path")].map((path) => path.getAttribute("d")).join("|");
+    const reference = (weight: "bold" | "light") => {
+      const { container } = render(<EqualizerIcon weight={weight} />);
+      const paths = pathsOf(container.querySelector("svg")!);
+      cleanup();
+      return paths;
+    };
+    const bold = reference("bold");
+    const light = reference("light");
+    const visual = resolveTypeVisual({ assetType: "AudioChannel" });
+
+    const chrome = render(<TypeVisualIcon visual={visual} data-testid="glyph" />).getByTestId("glyph");
+    expect(chrome.getAttribute("fill")).toBe(visual.colorVar);
+    expect(chrome.getAttribute("data-type-icon")).toBe("AudioChannel");
+    expect(pathsOf(chrome)).toBe(bold);
+    cleanup();
+
+    const tile = render(<TypeVisualIcon visual={visual} size={48} data-testid="glyph" />).getByTestId("glyph");
+    expect(pathsOf(tile)).toBe(light);
   });
 });

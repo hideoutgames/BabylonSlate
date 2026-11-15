@@ -50,6 +50,11 @@ function renderTransition(route = "home") {
   };
 }
 
+/** The project card's status line. */
+function status() {
+  return document.querySelector(".slate-splash-status")?.textContent ?? null;
+}
+
 function advance(milliseconds: number) {
   act(() => vi.advanceTimersByTime(milliseconds));
 }
@@ -173,6 +178,52 @@ describe("Launcher Transition", () => {
     advance(1);
     expect(screen.queryByRole("status")).toBeNull();
     expect(launcher.surface().hasAttribute("inert")).toBe(false);
+  });
+
+  it("names each step of a Remote New Project, whichever of the editor mounting and the Publish comes first", () => {
+    for (const publishFirst of [false, true]) {
+      const launcher = renderTransition();
+      act(() => launcher.controls().ready("home"));
+      advance(2600);
+      act(() => launcher.controls().begin("Forest Run", "creating"));
+      expect(status()).toBe("Creating project");
+      act(() => launcher.controls().setPhase("opening"));
+      expect(status()).toBe("Opening project");
+      launcher.setRoute("editor");
+      if (publishFirst) {
+        act(() => launcher.controls().setPhase("source-control"));
+        act(() => launcher.controls().ready("editor"));
+      } else {
+        act(() => launcher.controls().ready("editor"));
+        expect(status()).toBe("Preparing editor");
+        act(() => launcher.controls().setPhase("source-control"));
+      }
+      // The editor mounting beneath the card never hides the step still running.
+      expect(status()).toBe("Initializing source control");
+      act(() => launcher.controls().settle());
+      expect(status()).toBe("Ready");
+      cleanup();
+    }
+  });
+
+  it("opens a listed project as Opening project, then Preparing editor, and takes no step once it settled", () => {
+    const launcher = renderTransition();
+    // No project open is under way: the boot intro keeps its own status, and nothing starts one.
+    act(() => launcher.controls().setPhase("creating"));
+    expect(document.querySelector(".haptic-intro-status")?.textContent).toBe("Loading application");
+    act(() => launcher.controls().ready("home"));
+    advance(2600);
+    act(() => launcher.controls().setPhase("creating"));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(launcher.surface().hasAttribute("inert")).toBe(false);
+    act(() => launcher.controls().begin("Test Project"));
+    expect(status()).toBe("Opening project");
+    launcher.setRoute("editor");
+    act(() => launcher.controls().ready("editor"));
+    expect(status()).toBe("Preparing editor");
+    act(() => launcher.controls().settle());
+    act(() => launcher.controls().setPhase("source-control"));
+    expect(status()).toBe("Ready");
   });
 
   it("restores the home route when opening a project is cancelled", () => {

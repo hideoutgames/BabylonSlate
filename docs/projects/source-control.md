@@ -10,7 +10,7 @@ Source Control is available in the iPad, iPhone, Android and desktop apps, not o
 | Integrated | Haptic | Clones, commits, pulls and pushes the project, stores large asset data with Git LFS, and locks files. |
 | Manual | Your Git app, such as Working Copy on iPad or a desktop Git client | Locks files only. |
 
-Only one Git app may work in a project folder at a time. Integrated projects come from **Clone** or **Publish**; a folder another Git app syncs stays in Manual mode. On desktop, Haptic asks once before it runs Git in a folder it didn't clone or publish there (see [On desktop: an existing Git folder](#on-desktop-an-existing-git-folder)).
+Only one Git app may work in a project folder at a time. Integrated projects come from **Clone**, from **Publish**, or from a **Remote** New Project; a folder another Git app syncs stays in Manual mode. On desktop, Haptic asks once before it runs Git in a folder it didn't clone or publish there (see [On desktop: an existing Git folder](#on-desktop-an-existing-git-folder)).
 
 ## Link your accounts
 
@@ -55,6 +55,21 @@ On the Homepage, choose **Clone** next to **New Project**.
 
 Haptic clones the branch into its own storage (the Projects folder on desktop, the app's documents on iPad, iPhone and Android) and opens it in Integrated mode. **Cancel** stops a clone and removes what it had copied. The branch must hold a Haptic project.
 
+## Create a Remote project
+
+To start a new project with its own repository, choose **New Project** on the Homepage and set **Hosting** to **Remote** ([Your First Project](../start/first-project.md#create-a-project)). Haptic creates the project, opens it and then publishes it to a new repository, as [Publish](#publish-a-project) does.
+
+| Field | Description |
+| --- | --- |
+| Host | An account on this device that can create repositories: GitHub, GitLab or a self-managed GitLab. A host added under **Other Git Hosts** can't. With no such account, choose **Sign In To GitHub** or **Sign In To GitLab** here; the link warning comes first. |
+| Owner | Your account, or an organization (on GitLab, a group) you can create repositories in. |
+| Repository Name | Follows the project's name until you change it. |
+| Visibility | **Private** or **Public**. |
+
+Haptic remembers **Local** or **Remote** and the host on this device, so the next New Project starts from them. On iPad, iPhone and Android a Remote project is created in App Documents: Haptic can't run Git in a folder you choose there. On desktop, **Choose Folder** works for a Remote project too.
+
+If the repository can't be created (the name is taken by a repository with commits, or the host can't be reached), the project is still created as a Local project and opens. A notice above the documents says why; publish it later from **Project Settings > Source Control**. If the repository is created but the first push fails, the project opens in Integrated mode with the commit waiting: choose **Push** in the status bar's branch menu once the host is back.
+
 ## Publish a project
 
 To put a project that has no repository yet on GitHub or GitLab, open **Project Settings > Source Control** while **Mode** is **Off** and choose **Publish Project…**.
@@ -70,7 +85,7 @@ The dialog sums up what Publish does: the repository it creates, the Git LFS set
 
 On iPad, iPhone and Android, only a project in Haptic's own storage can be published. On desktop, any project folder can.
 
-If Publish stops before it finishes (the app closes, or the host can't be reached), the project stays Off. On iPad, iPhone and Android you can publish it again under the same name: if the first attempt already created the repository and nothing was pushed to it yet, Haptic publishes into it. Haptic never publishes into a repository that already has commits; choose another name for that. On desktop the folder now has Git, so choose **Integrated** under **Mode** and push instead.
+If only the first push fails, the project is already in Integrated mode with the commit waiting: choose **Push** in the status bar's branch menu once the host is back. If Publish stops earlier (the app closes, or the host can't be reached), the project stays Off. On iPad, iPhone and Android you can publish it again under the same name: if the first attempt already created the repository and nothing was pushed to it yet, Haptic publishes into it. Haptic never publishes into a repository that already has commits; choose another name for that. On desktop the folder now has Git, so choose **Integrated** under **Mode** and push instead.
 
 ## Integrated mode
 

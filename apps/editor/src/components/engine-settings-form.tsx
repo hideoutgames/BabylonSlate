@@ -446,6 +446,21 @@ export function EngineSettingsForm({
               }
             />
           </Field>
+          <Field orientation="horizontal" className="settings-field">
+            <LabelHint hint="After a second without input, camera motion or edits, editor viewports draw at half the Viewport Frame Cap; Play is unchanged.">
+              <FieldLabel htmlFor="setting-viewport-idle-half-rate">
+                Half Rate When Idle
+              </FieldLabel>
+            </LabelHint>
+            <Switch
+              id="setting-viewport-idle-half-rate"
+              data-testid="setting-viewport-idle-half-rate"
+              checked={settings.viewportIdleHalfRate}
+              onCheckedChange={(checked) =>
+                void onChange({ viewportIdleHalfRate: checked === true })
+              }
+            />
+          </Field>
           <Field className="settings-field">
             <LabelHint hint="How often the preview of a selected Camera or Render Target Capture redraws.">
               <FieldLabel htmlFor="setting-camera-preview-frame-rate">

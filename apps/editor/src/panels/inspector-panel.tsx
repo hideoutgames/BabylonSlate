@@ -25,6 +25,7 @@ import {
   type SerializedGraph,
 } from "@haptic/core";
 import {
+  animCachedPoseNames,
   animGraphMembersFromVariables,
   patchStateGraph,
   decorateTransitionRuleGraph,
@@ -182,6 +183,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     ? parsedAnim.stateMachine.states.find((row) => row.id === animStateId) ?? null
     : null;
   const poseSource = poseState?.stateGraph ?? null;
+  const animDimension = doc?.ref.kind === "anim-graph-2d" ? "2d" : "3d";
+  const animClipGraph = useMemo(
+    () => poseState && parsedAnim
+      ? { dimension: animDimension, skeletonGuid: parsedAnim.skeletonGuid, cachedPoses: animCachedPoseNames(parsedAnim.stateMachine) } as const
+      : null,
+    [animDimension, parsedAnim, poseState],
+  );
   const graph = useMemo(
     () => poseSource && parsedAnim
       ? { ...poseSource, members: animGraphMembersFromVariables(parsedAnim.variables) }
@@ -643,9 +651,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         commandRowIds={commandRowIds}
         setCommandRowIds={setCommandRowIds}
         delegateSignatures={delegateSignatures}
-        animClipGraph={poseState && parsedAnim
-          ? { dimension: doc?.ref.kind === "anim-graph-2d" ? "2d" : "3d", skeletonGuid: parsedAnim.skeletonGuid }
-          : null}
+        animClipGraph={animClipGraph}
       />
       {renameEventDialog}
     </PanelFrame>

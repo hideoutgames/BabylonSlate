@@ -178,6 +178,16 @@ describe("app settings", () => {
     expect(engineSettingsSchema.parse({ hdrImportFaceSize: "128" }).hdrImportFaceSize).toBe(256);
   });
 
+  it("creates Local projects until a Remote one is created, and reads an unknown Hosting choice as Local", () => {
+    expect(defaultEngineSettings().newProjectHosting).toEqual({ hosting: "local", origin: "" });
+    expect(engineSettingsSchema.parse({ newProjectHosting: { hosting: "remote", origin: "https://gitlab.com" } }).newProjectHosting)
+      .toEqual({ hosting: "remote", origin: "https://gitlab.com" });
+    // A later choice (Cloud) this build does not know falls back to Local, keeping the host.
+    expect(engineSettingsSchema.parse({ newProjectHosting: { hosting: "cloud", origin: "https://github.com" } }).newProjectHosting)
+      .toEqual({ hosting: "local", origin: "https://github.com" });
+    expect(engineSettingsSchema.parse({ newProjectHosting: "remote" }).newProjectHosting).toEqual({ hosting: "local", origin: "" });
+  });
+
   it("stacks new 2D actors nowhere by default and reads an unknown host choice as disabled", () => {
     expect(defaultEngineSettings().viewportStackNewActors2D).toBe("disabled");
     expect(engineSettingsSchema.parse({ viewportStackNewActors2D: "both" }).viewportStackNewActors2D).toBe("both");
@@ -368,13 +378,16 @@ describe("app settings", () => {
     localStorage.clear();
     const store = new WebAppSettingsStore();
     const settings = defaultEngineSettings();
+    expect(settings.viewportIdleHalfRate).toBe(true);
     settings.viewportFrameCap = 30;
+    settings.viewportIdleHalfRate = false;
     settings.graphDefaultZoom = 0.8;
     settings.viewportDropDistance = 25_000.5;
     settings.traceByteBudget = 201_326_592;
     await store.save(settings);
     const reloaded = new WebAppSettingsStore();
     expect((await reloaded.load()).viewportFrameCap).toBe(30);
+    expect((await reloaded.load()).viewportIdleHalfRate).toBe(false);
     expect((await reloaded.load()).graphDefaultZoom).toBe(0.8);
     expect((await reloaded.load()).viewportDropDistance).toBe(25_000.5);
     expect((await reloaded.load()).traceByteBudget).toBe(201_326_592);

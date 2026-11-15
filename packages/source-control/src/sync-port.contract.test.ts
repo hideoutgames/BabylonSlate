@@ -303,6 +303,8 @@ describe.each([
     const { changes } = await port.status();
     expect(changes.map((change) => change.path)).toEqual([".gitattributes", ".gitignore", blobPath(texture), "project.json"]);
     const { commit } = await port.commit({ paths: changes.map((change) => change.path), message: "Publish", author: AUTHOR });
+    // Before the first push (Publish's push failed): the commit counts as ahead from local refs alone, so Push offers it.
+    expect(await port.remoteState()).toMatchObject({ local: commit, remote: null, ahead: 1, behind: 0, incoming: [] });
     expect(await port.outgoing()).toEqual([".gitattributes", ".gitignore", blobPath(texture), "project.json"]);
     expect(await port.push()).toEqual({ head: commit, uploaded: 1 });
     expect(await port.fetch()).toMatchObject({ local: commit, remote: commit, ahead: 0, behind: 0, incoming: [] });

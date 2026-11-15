@@ -51,3 +51,24 @@ describe("Animation Event rows in Add Node", () => {
     expect(rows(undefined)).toEqual([]);
   });
 });
+
+describe("Use Cached Pose and skeletal control rows in Add Node", () => {
+  const rows = (dimension: "3d" | "2d") =>
+    scriptPaletteNodes(defaultNodeRegistry(), {
+      parentClass: "Object",
+      animationGraphHost: "pose",
+      animPose: { dimension, cachedPoses: ["Locomotion"] },
+    });
+
+  it("offers a Use Cached Pose <Name> per saved cached pose, never a bare one, and Transform Bone in 3D only", () => {
+    const offered = rows("3d");
+    expect(offered.filter((node) => node.nodeType === "anim.pose.useCachedPose").map((node) => [node.title, node.defaultData])).toEqual([
+      ["Use Cached Pose Locomotion", { name: "Locomotion", title: "Use Cached Pose Locomotion" }],
+    ]);
+    // Registry rows carry their type as their id; injected rows name it.
+    const types = (list: typeof offered) => list.map((node) => node.nodeType ?? node.id);
+    expect(types(offered)).toEqual(expect.arrayContaining(["anim.control.transformBone", "anim.pose.layeredBlendPerBone", "anim.pose.saveCachedPose"]));
+    expect(types(offered).filter((type) => type === "anim.pose.useCachedPose")).toHaveLength(1);
+    expect(types(rows("2d")).some((type) => type.startsWith("anim.control.") || type.startsWith("anim.pose."))).toBe(false);
+  });
+});

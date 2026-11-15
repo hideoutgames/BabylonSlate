@@ -22,9 +22,23 @@ const HELD_THREAD_MS = 500;
 const HELD_THREAD_YIELD_MAX_MS = 1000;
 
 /**
+ * With Half Rate When Idle on (`setIdleHalfRate`), a view draws at half its frame cap once this long has passed
+ * without activity. Long enough that a pause between two gestures or edits stays at the full cap.
+ */
+export const IDLE_HALF_RATE_DELAY_MS = 1000;
+
+/**
  * Dirty-driven render scheduler with refcounted continuous-render leases.
- * Visible editor viewports always render continuously plus a frame cap; freeze
- * when paused, not visible, obstructed, or resizing.
+ * Visible editor viewports always render continuously plus a frame cap, at half
+ * the cap while idle when Half Rate When Idle is on; freeze when paused, not
+ * visible, obstructed, or resizing.
+ *
+ * Activity, for Half Rate When Idle, is any signal the scheduler receives:
+ * `invalidate`, `noteActivity`, `requestPausedFrame`, a held render lease and its
+ * release, `setPaused`, `setResizing`, `setObstructed`, the view being shown
+ * again, and turning the setting on. A signal raised while a frame draws (between
+ * the `shouldRender` that admitted it and `noteRendered`) is that frame's own
+ * animation, such as editor cables stepping, and is not activity.
  */
 export class RenderScheduler {
   private dirty = false;
@@ -49,6 +63,11 @@ export class RenderScheduler {
   private heldFrames = 0;
   /** Until when frames hold back after a frame held the main thread (`HELD_THREAD_MS`). */
   private heldYieldUntil = 0;
+  /** Half Rate When Idle; only editor viewports turn it on (`viewport-render-gate.ts`). */
+  private idleHalfRate = false;
+  /** Activity since the last gate check, which timestamps it on the caller's clock. */
+  private activityPending = true;
+  private lastActivityAt: number | null = null;
   private renderedFrames = 0;
   private invalidations = 0;
   private lastSecond = nowMs();
@@ -61,18 +80,29 @@ export class RenderScheduler {
     void _reason;
     this.rollStats();
     this.dirty = true;
+    this.activityPending = true;
     this.invalidations += 1;
     this.invalidationsThisSecond += 1;
+  }
+
+  /**
+   * Activity that needs no redraw of its own but must not be met at half rate: input over the view, camera motion,
+   * loading, held frames, captures and readbacks. See `setIdleHalfRate`.
+   */
+  noteActivity(): void {
+    this.activityPending = true;
   }
 
   acquireContinuous(_reason: string): () => void {
     void _reason;
     this.continuous += 1;
+    this.activityPending = true;
     let released = false;
     return () => {
       if (released) return;
       released = true;
       this.continuous = Math.max(0, this.continuous - 1);
+      this.activityPending = true;
     };
   }
 
@@ -80,22 +110,38 @@ export class RenderScheduler {
     this.alwaysRender = value;
   }
 
+  /**
+   * Half Rate When Idle: after `IDLE_HALF_RATE_DELAY_MS` without activity the view draws at half its frame cap, and the
+   * first activity returns it to the full cap at its next full-rate slot. A held render lease never idles.
+   */
+  setIdleHalfRate(value: boolean): void {
+    if (value !== this.idleHalfRate) this.activityPending = true;
+    this.idleHalfRate = value;
+  }
+
   setPaused(value: boolean): void {
     if (value !== this.paused) {
       this.lastRenderAt = null;
       this.nextRenderAt = null;
       this.forgetHeldThread();
+      this.activityPending = true;
     }
     this.paused = value;
   }
 
   setVisible(value: boolean): void {
-    if (value !== this.visible) this.forgetHeldThread();
+    if (value !== this.visible) {
+      this.forgetHeldThread();
+      this.activityPending = true;
+    }
     this.visible = value;
   }
 
   setDocumentVisible(value: boolean): void {
-    if (value !== this.documentVisible) this.forgetHeldThread();
+    if (value !== this.documentVisible) {
+      this.forgetHeldThread();
+      this.activityPending = true;
+    }
     this.documentVisible = value;
   }
 
@@ -103,6 +149,7 @@ export class RenderScheduler {
   requestPausedFrame(): void {
     this.pausedFrameRequested = true;
     this.dirty = true;
+    this.activityPending = true;
   }
 
   /** Whether the view's canvas is on screen, so it may draw into its Engine's frames. */
@@ -127,10 +174,12 @@ export class RenderScheduler {
   }
 
   setObstructed(value: boolean): void {
+    if (value !== this.obstructed) this.activityPending = true;
     this.obstructed = value;
   }
 
   setResizing(value: boolean): void {
+    if (value !== this.resizing) this.activityPending = true;
     this.resizing = value;
   }
 
@@ -156,6 +205,10 @@ export class RenderScheduler {
 
   shouldRender(now: number = nowMs(), loadingOwners = false): boolean {
     this.readHeldThread(now);
+    if (this.activityPending) {
+      this.activityPending = false;
+      this.lastActivityAt = now;
+    }
     if (now < this.heldYieldUntil) return false;
     if (this.paused && !this.pausedFrameRequested) return false;
     if (!this.documentVisible || !this.visible || this.resizing) return false;
@@ -170,7 +223,21 @@ export class RenderScheduler {
       const tolerance = Math.min(1, minDelta * 0.05);
       if (now + tolerance < this.nextRenderAt) return false;
     }
+    // Half rate keeps the full-rate cadence (`nextRenderAt`) and skips the slot after each frame, so the first activity
+    // draws at the next full-rate slot instead of waiting for a half-rate one. A quarter-slot tolerance absorbs callback
+    // jitter and a frame that began after its admission check, while still skipping the in-between callback of a
+    // display faster than the cap.
+    if (this.lastRenderAt !== null && this.isHalfRate(now)) {
+      const minDelta = 1000 / this.frameCap;
+      if (now + minDelta / 4 < this.lastRenderAt + 2 * minDelta) return false;
+    }
     return true;
+  }
+
+  /** Whether the view is drawing at half its frame cap: Half Rate When Idle is on and it has been idle long enough. */
+  isHalfRate(now: number = nowMs()): boolean {
+    if (!this.idleHalfRate || this.continuous > 0 || this.activityPending || this.pausedFrameRequested) return false;
+    return this.lastActivityAt !== null && now - this.lastActivityAt >= IDLE_HALF_RATE_DELAY_MS;
   }
 
   /**
@@ -200,6 +267,9 @@ export class RenderScheduler {
     this.rollStats();
     this.dirty = false;
     this.pausedFrameRequested = false;
+    // Raised by this frame's own drawing, not by the user (see the class comment).
+    this.activityPending = false;
+    if (this.continuous > 0 || this.lastActivityAt === null) this.lastActivityAt = now;
     const minDelta = 1000 / this.frameCap;
     const tolerance = Math.min(1, minDelta * 0.05);
     // Preserve the cadence when a callback is slightly late. After a long
@@ -228,9 +298,11 @@ export class RenderScheduler {
     };
   }
 
-  /** Snapshot the gates that can hold a ready viewport without drawing. */
-  gateState() {
+  /** Snapshot the gates that can hold a ready viewport without drawing. `frameCap` is the configured cap; `halfRate` says whether it is halved now. */
+  gateState(now: number = nowMs()) {
     return {
+      idleHalfRate: this.idleHalfRate,
+      halfRate: this.isHalfRate(now),
       paused: this.paused,
       pausedFrameRequested: this.pausedFrameRequested,
       documentVisible: this.documentVisible,

@@ -263,6 +263,31 @@ describe("attachViewportRenderGate", () => {
     detach();
   });
 
+  it("applies Half Rate When Idle from Engine Settings and follows it being turned off", async () => {
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 200 });
+    Object.defineProperty(canvas, "clientHeight", { value: 120 });
+    document.body.append(canvas);
+
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    receiveActiveAppSettingsUpdate({ viewportFrameCap: 60, viewportIdleHalfRate: true });
+    const detach = attachViewportRenderGate({ canvas, scheduler });
+    await Promise.resolve();
+    expect(scheduler.shouldRender(0)).toBe(true);
+    scheduler.noteRendered(0);
+    expect(scheduler.shouldRender(1500)).toBe(true);
+    scheduler.noteRendered(1500);
+    // Idle for over a second: the next full-rate slot is skipped, the half-rate one drawn.
+    expect(scheduler.gateState(1517)).toMatchObject({ idleHalfRate: true, halfRate: true });
+    expect([scheduler.shouldRender(1517), scheduler.shouldRender(1534)]).toEqual([false, true]);
+
+    receiveActiveAppSettingsUpdate({ viewportFrameCap: 60, viewportIdleHalfRate: false });
+    expect(scheduler.gateState(1517)).toMatchObject({ idleHalfRate: false, halfRate: false });
+    expect(scheduler.shouldRender(1517)).toBe(true);
+    detach();
+  });
+
   it("forwards the post-processing gate when engine settings change", async () => {
     const canvas = document.createElement("canvas");
     Object.defineProperty(canvas, "clientWidth", { value: 200 });
@@ -305,32 +330,35 @@ describe("applyLiveEngineSettings", () => {
     const scaling = { setLevel: vi.fn(), setSettingsLevel: vi.fn() };
     const handle = {
       scaling,
-      scheduler: { setFrameCap: vi.fn() },
+      scheduler: { setFrameCap: vi.fn(), setIdleHalfRate: vi.fn() },
       setPostProcessingEnabled: vi.fn(),
     };
     applyLiveEngineSettings(handle, {
       viewportFrameCap: 30,
+      viewportIdleHalfRate: false,
       renderingOverridesEnabled: true,
       hardwareScalingLevel: 1.5,
       postProcessingEnabled: false,
     });
     expect(handle.scheduler.setFrameCap).toHaveBeenCalledWith(30);
+    expect(handle.scheduler.setIdleHalfRate).toHaveBeenCalledWith(false);
     expect(scaling.setSettingsLevel).toHaveBeenCalledWith(1.5);
     expect(scaling.setLevel).not.toHaveBeenCalled();
     expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
 
-  it("does not apply viewportFrameCap onto a Play scheduler", () => {
+  it("does not apply viewportFrameCap or Half Rate When Idle onto a Play scheduler", () => {
     const scaling = { setLevel: vi.fn(), setSettingsLevel: vi.fn() };
     const handle = {
       scaling,
-      scheduler: { setFrameCap: vi.fn() },
+      scheduler: { setFrameCap: vi.fn(), setIdleHalfRate: vi.fn() },
       setPostProcessingEnabled: vi.fn(),
     };
     applyLiveEngineSettings(
       handle,
       {
         viewportFrameCap: 30,
+        viewportIdleHalfRate: true,
         renderingOverridesEnabled: true,
       hardwareScalingLevel: 1.5,
         postProcessingEnabled: false,
@@ -338,6 +366,7 @@ describe("applyLiveEngineSettings", () => {
       { applyFrameCap: false },
     );
     expect(handle.scheduler.setFrameCap).not.toHaveBeenCalled();
+    expect(handle.scheduler.setIdleHalfRate).not.toHaveBeenCalled();
     expect(scaling.setSettingsLevel).toHaveBeenCalledWith(1.5);
     expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
