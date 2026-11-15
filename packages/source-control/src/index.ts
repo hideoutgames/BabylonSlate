@@ -59,6 +59,7 @@ export type {
   PullResult,
   PushResult,
   RemoteState,
+  RemovableLfsOptions,
   SwitchResult,
   SyncErrorCode,
   SyncErrorKind,

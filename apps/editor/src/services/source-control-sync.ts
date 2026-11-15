@@ -617,9 +617,11 @@ export class SourceControlSyncService {
 
   /**
    * The working copy's `.blobs` files nothing needs, for **Remove Unused
-   * Files**: untracked and held by no unpushed commit of any local branch
-   * (`SyncPort.removableLfsObjects`; an unpushed commit's objects exist only
-   * here), in a content root's own blob folder and referenced by no asset
+   * Files**: untracked, held by no unpushed commit of any local branch and
+   * named by no committed asset whose commit lacks them
+   * (`SyncPort.removableLfsObjects` with `committedBlobNames`; an unpushed
+   * commit's objects exist only here, and so does a blob another Git app
+   * committed an asset without), in a content root's own blob folder and referenced by no asset
    * header on disk in that root, with their size. An open document needs no
    * other: a save writes its document blob from memory and carries every
    * other blob from the header on disk. Queued; reads listings, the headers
@@ -630,8 +632,8 @@ export class SourceControlSyncService {
     const revision = this.revision;
     let found: UnusedFiles | null = null;
     const ran = await this.run(null, "Could Not Find Unused Files", async ({ port, storage, signal }) => {
-      const { unusedLfsObjects } = await import("./source-control-unused-files");
-      found = await unusedLfsObjects(storage, await port.removableLfsObjects({ signal }), signal);
+      const { committedBlobNames, unusedLfsObjects } = await import("./source-control-unused-files");
+      found = await unusedLfsObjects(storage, await port.removableLfsObjects({ signal, references: committedBlobNames }), signal);
     }, revision, { rethrow: true });
     if (!ran || !found) throw new Error("The project closed while finding unused files.");
     return found;
@@ -649,9 +651,9 @@ export class SourceControlSyncService {
     const revision = this.revision;
     let removed: UnusedFiles | null = null;
     const ran = await this.run(null, "Could Not Remove Unused Files", async ({ port, input, storage, signal }) => {
-      const { removeUnusedLfsObjects } = await import("./source-control-unused-files");
+      const { committedBlobNames, removeUnusedLfsObjects } = await import("./source-control-unused-files");
       const confirmed = new Set(paths);
-      const candidates = (await port.removableLfsObjects({ signal })).filter((path) => confirmed.has(path));
+      const candidates = (await port.removableLfsObjects({ signal, references: committedBlobNames })).filter((path) => confirmed.has(path));
       const folder = input.folder!.id;
       removed = await input.exclusiveWrites(
         REMOVING_UNUSED_REASON,

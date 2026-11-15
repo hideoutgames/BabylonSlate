@@ -1,5 +1,5 @@
 import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
-import { readAssetCatalog, STORAGE_MOVE_BACKUP_PREFIX } from "@haptic/assets";
+import { readAssetCatalog, readHassetHeader, STORAGE_MOVE_BACKUP_PREFIX } from "@haptic/assets";
 import { throwIfCancelled } from "@haptic/source-control";
 import { assetBlobFolder } from "../lib/source-control-changes";
 import type { UnusedFiles } from "./source-control-sync";
@@ -12,6 +12,19 @@ function parentOf(path: string): string {
 interface Kept {
   paths: Set<string>;
   wholeFolders: Set<string>;
+}
+
+/**
+ * The blobs a committed `.hasset` names (`SyncPort.removableLfsObjects`
+ * keeps any its commit lacks); none for a file that is no readable asset,
+ * which no version of it loads.
+ */
+export function committedBlobNames(_path: string, bytes: Uint8Array): string[] {
+  try {
+    return readHassetHeader(bytes).chunks.flatMap((chunk) => ("blob" in chunk.locator ? [chunk.locator.blob] : []));
+  } catch {
+    return [];
+  }
 }
 
 /** The project's files the scan reads: its assets, and whether a symbolic link may alias a blob folder. */

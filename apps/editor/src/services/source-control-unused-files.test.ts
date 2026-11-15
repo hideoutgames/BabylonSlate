@@ -167,6 +167,24 @@ describe("Remove Unused Files", () => {
     expect(await storage.exists(`assets/.blobs/${lost.sha}`)).toBe(true);
   });
 
+  it("keeps a blob a committed version of an asset names while that commit lacks it", async () => {
+    // Another Git app committed Fern without its blob: only this file lets that version be compared or reverted.
+    const fern = await texture("Fern", 5);
+    const edited = await texture("Fern", 6);
+    const { service, storage, port } = await integratedSync({ files: (await seed()).files });
+    await storage.writeBinary(`assets/.blobs/${fern.sha}`, fern.blob);
+    await storage.writeBinary("assets/Fern.texture.hasset", fern.bytes);
+    await port.commit({ paths: ["assets/Fern.texture.hasset"], message: "Fern", author: AUTHOR });
+    await port.push();
+    await storage.writeBinary(`assets/.blobs/${edited.sha}`, edited.blob);
+    await storage.writeBinary("assets/Fern.texture.hasset", edited.bytes);
+    await port.commit({ paths: ["assets/Fern.texture.hasset", `assets/.blobs/${edited.sha}`], message: "Fern again", author: AUTHOR });
+    await port.push();
+
+    expect(await service.findUnusedFiles()).toEqual({ paths: [], bytes: 0 });
+    expect(await storage.exists(`assets/.blobs/${fern.sha}`)).toBe(true);
+  });
+
   it("keeps the blobs a rename's backup references, and every blob of a root holding a backup that is no readable asset", async () => {
     // A case-only rename whose restore failed leaves the original only in its backup, beside the asset.
     const lost = await texture("Lost", 3);
