@@ -142,6 +142,8 @@ describe("editor boot imports", () => {
       "panels/history-panel.tsx",
       "services/source-control-diff-loader.ts",
       "services/source-control-restore.ts",
+      "services/source-control-unused-files.ts",
+      "components/source-control-unused-files-flow.tsx",
     ].includes(file))).toEqual([]);
     expect(closure.filter((file) => SOURCE_CONTROL_SUBPATH.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
     // The diff model and its worker client load with the first diff; the open diff's service imports only their types.

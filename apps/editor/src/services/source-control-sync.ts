@@ -18,6 +18,7 @@ import {
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
+import { CommitHistory } from "./source-control-history";
 import { commitPaths, groupChanges, withWorkingHeaders, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { asksAdoption, branchSettingsRefusal, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
@@ -240,6 +241,8 @@ export class SourceControlSyncService {
   private running: AbortController | null = null;
   /** Bytes the running operation has sent and received, apart from the snapshot: only transfer labels read it. */
   readonly transfer = new TransferBytes();
+  /** The commit lists History and the Diff's version pickers share, read a page at a time. */
+  readonly commitHistory: CommitHistory = new CommitHistory(this);
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -506,11 +509,6 @@ export class SourceControlSyncService {
    */
   async readFileAt(path: string, commit: string): Promise<Uint8Array | null> {
     return this.openPort().readFile(path, commit);
-  }
-
-  /** The branch's commits that change `path`, newest first, for picking a version to compare. Reads no network. */
-  async commitsOf(path: string, limit: number): Promise<readonly CommitInfo[]> {
-    return (await this.openPort().log({ limit, path })).commits;
   }
 
   /** A `.blobs` object a version references: the working copy's file, else downloaded; never written. */

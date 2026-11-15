@@ -4,7 +4,8 @@ import type { SourceControlSyncService } from "../services/source-control-sync";
 import type { DiffState } from "../services/source-control-diff";
 import { integratedSync } from "../testing/integrated-sync";
 import { SourceControlActionsProvider, useSourceControlActions, useSourceControlDiffState, type SourceControlActions } from "../components/source-control-actions";
-import { HISTORY_PAGE, HistoryPanelContents } from "./history-panel";
+import { HistoryPanelContents } from "./history-panel";
+import { HISTORY_PAGE } from "../services/source-control-history";
 
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,

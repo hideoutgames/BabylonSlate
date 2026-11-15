@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { ArrowRightIcon, ChevronDownIcon } from "lucide-react";
 import type { CommitInfo } from "@haptic/source-control";
+import { TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, useTouchUi, WindowedList } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import {
   DropdownMenu,
@@ -11,35 +12,38 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@haptic/ui/components/dropdown-menu";
+import { ScrollArea } from "@haptic/ui/components/scroll-area";
 import { useIntegratedSync, useIntegratedSyncState } from "../context/document-context";
 import { HEAD, REMOTE, refLabel, shortId, WORKING_COPY, type DiffRef } from "../services/source-control-diff";
+import { HISTORY_PAGE } from "../services/source-control-history";
 import { useSourceControlDiff, useSourceControlDiffState } from "./source-control-actions";
 
-/** Recent commits offered as versions: enough to reach back a few days of work. */
-const RECENT_COMMITS = 20;
+function commitLabel(commit: CommitInfo): string {
+  return `${shortId(commit.id)} · ${commit.message.split("\n")[0]!.trim()}`;
+}
 
 function RefPicker({ title, value, onChange, path, testId }: { title: string; value: DiffRef; onChange: (ref: DiffRef) => void; path: string; testId: string }) {
   const sync = useIntegratedSync();
   const snapshot = useIntegratedSyncState();
-  const [commits, setCommits] = useState<readonly CommitInfo[] | null>(null);
-  const loadCommits = (open: boolean) => {
-    if (!open) return;
-    // Read when the menu opens: the log is local, but there is no need to read it before.
-    sync.commitsOf(path, RECENT_COMMITS).then(setCommits, () => setCommits([]));
-  };
+  const touch = useTouchUi();
+  // History's list of the asset: read once (when History or a menu first asks), paged by either.
+  const history = sync.commitHistory;
+  const list = useSyncExternalStore(history.subscribe, () => history.list(path));
+  const commits = list?.commits ?? [];
   const item = (ref: DiffRef, label: string, disabled = false) => (
     <DropdownMenuItem key={ref.kind === "commit" ? ref.id : ref.kind} disabled={disabled} onClick={() => onChange(ref)} data-testid={`${testId}-${ref.kind === "commit" ? ref.id : ref.kind}`}>
-      {label}
+      <span className="truncate">{label}</span>
     </DropdownMenuItem>
   );
+  const commitItem = (commit: CommitInfo) => item({ kind: "commit", id: commit.id }, commitLabel(commit));
   return (
-    <DropdownMenu modal={false} onOpenChange={loadCommits}>
+    <DropdownMenu modal={false} onOpenChange={(open) => { if (open) history.load(path); }}>
       <DropdownMenuTrigger render={<Button variant="outline" size="sm" data-testid={testId} />}>
         <span className="text-muted-foreground">{title}</span>
         <span className="max-w-40 truncate">{refLabel(value, snapshot)}</span>
         <ChevronDownIcon data-icon="inline-end" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" className="max-w-96">
         <DropdownMenuGroup>
           {item(WORKING_COPY, "Working Copy")}
           {item(HEAD, `HEAD · ${refLabel(HEAD, snapshot)}`, snapshot.head === null)}
@@ -48,9 +52,24 @@ function RefPicker({ title, value, onChange, path, testId }: { title: string; va
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuLabel>Commits</DropdownMenuLabel>
-          {commits === null ? <DropdownMenuItem disabled>Reading History…</DropdownMenuItem> : null}
-          {commits?.length === 0 ? <DropdownMenuItem disabled>No Commits</DropdownMenuItem> : null}
-          {commits?.map((commit) => item({ kind: "commit", id: commit.id }, `${shortId(commit.id)} · ${commit.message.split("\n")[0]!.trim()}`))}
+          {!list?.ready ? <DropdownMenuItem disabled>Reading History…</DropdownMenuItem> : null}
+          {list?.error ? <DropdownMenuItem disabled>{list.error}</DropdownMenuItem> : null}
+          {list?.ready && !list.error && commits.length === 0 ? <DropdownMenuItem disabled>No Commits</DropdownMenuItem> : null}
+          {/* Past History's first page the rows are windowed in their own scroll region. */}
+          {commits.length > HISTORY_PAGE ? (
+            <ScrollArea className="h-72" data-testid={`${testId}-commits`}>
+              <WindowedList itemCount={commits.length} rowHeight={touch ? TOUCH_ROW_HEIGHT : TREE_ROW_HEIGHT}>
+                {(index) => commitItem(commits[index]!)}
+              </WindowedList>
+            </ScrollArea>
+          ) : (
+            <div data-testid={`${testId}-commits`}>{commits.map(commitItem)}</div>
+          )}
+          {list?.hasMore ? (
+            <DropdownMenuItem closeOnClick={false} disabled={list.loadingOlder} onClick={() => void history.loadOlder(path)} data-testid={`${testId}-load-older`}>
+              Load Older
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -60,7 +79,8 @@ function RefPicker({ title, value, onChange, path, testId }: { title: string; va
 /**
  * The global toolbar's document slot while the Source Control tab shows a
  * diff: the **Base** and **Compare** versions (working copy, HEAD, the
- * remote branch or a commit that changed the asset).
+ * remote branch, or a commit that changed the asset, from the list History
+ * shows for it, with **Load Older**).
  */
 export function SourceControlDiffPickers() {
   const diff = useSourceControlDiff();

@@ -1,8 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { SOURCE_CONTROL_ID } from "@haptic/core";
-import { SourceControlActionsProvider, useSourceControlDiff } from "../components/source-control-actions";
+import { SourceControlActionsProvider, useSourceControlActions, useSourceControlDiff, type SourceControlActions } from "../components/source-control-actions";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SourceControlDiffPickers } from "../components/source-control-diff-pickers";
 import type { SourceControlSyncService } from "../services/source-control-sync";
@@ -11,6 +11,8 @@ import { integratedSync } from "../testing/integrated-sync";
 import { ChangesPanelContents } from "./changes-panel";
 import { DiffActorsContents, DiffActorsPanel } from "./diff-actors-panel";
 import { DiffContents, DiffPanel } from "./diff-panel";
+import { HistoryPanelContents } from "./history-panel";
+import { HISTORY_PAGE } from "../services/source-control-history";
 
 // The Source Control tab's Changes, Actors and Diff windows and the toolbar's version pickers,
 // together over the real sync and diff services on FakeSync, with real Scene files.
@@ -467,6 +469,73 @@ describe("Source Control diff windows", () => {
     view.rerender(tab());
     await screen.findByTestId("diff-item-name");
     expect(reads.mock.calls.filter(([path]) => path === PATH)).toHaveLength(1);
+  });
+
+  it("offers History's commits of the asset in both pickers, read once with History's, and older pages through Load Older", async () => {
+    const ROCK = "assets/Rock.texture.hasset";
+    const sync = await integratedSync();
+    state.sync = sync.service;
+    for (let index = 0; index < HISTORY_PAGE + 10; index += 1) sync.remote.commit({ [ROCK]: `R${index}` }, `Rock ${index}`);
+    await sync.service.pull();
+    const all = (await sync.service.history({ limit: HISTORY_PAGE + 20, path: ROCK })).commits;
+    const byMessage = (message: string) => all.find((commit) => commit.message === message)!.id;
+    const read = vi.spyOn(sync.service, "history");
+    // History reads every asset's list until it is shown Rock's.
+    const rockReads = () => read.mock.calls.map(([options]) => options).filter((options) => options.path === ROCK);
+    let actions: SourceControlActions | null = null;
+    function Actions() {
+      actions = useSourceControlActions();
+      return null;
+    }
+    // jsdom lays nothing out: give scroll regions a height of ten rows, so long lists window.
+    const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.getAttribute("data-slot") === "scroll-area-viewport" ? 280 : 0;
+    });
+    onTestFinished(() => height.mockRestore());
+    render(
+      <SourceControlActionsProvider>
+        <Actions />
+        <CaptureDiff />
+        <SourceControlDiffPickers />
+        <HistoryPanelContents />
+      </SourceControlActionsProvider>,
+    );
+    act(() => actions!.openDiff({ path: ROCK, name: "Rock", type: "Texture" }));
+    await screen.findByTestId("history-load-older");
+
+    // Past the 20 the pickers once listed: the first page History read.
+    fireEvent.click(screen.getByTestId("diff-base"));
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId(`diff-base-${byMessage("Rock 25")}`));
+    });
+    expect(diffService!.getSnapshot().target?.base).toEqual({ kind: "commit", id: byMessage("Rock 25") });
+    fireEvent.click(screen.getByTestId("diff-compare"));
+    expect(await screen.findByTestId(`diff-compare-${byMessage("Rock 30")}`)).toBeTruthy();
+    expect(rockReads()).toEqual([{ limit: HISTORY_PAGE, path: ROCK }]);
+
+    // Load Older reads History's next page, for History too.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("diff-compare-load-older"));
+    });
+    await waitFor(() => expect(screen.queryByTestId("history-load-older")).toBeNull());
+    expect(rockReads()).toEqual([
+      { limit: HISTORY_PAGE, path: ROCK },
+      { limit: HISTORY_PAGE, skip: HISTORY_PAGE, deepen: true, path: ROCK },
+    ]);
+    expect(screen.queryByTestId("diff-compare-load-older")).toBeNull();
+    // A long list is windowed: its end mounts once scrolled to.
+    const commits = screen.getByTestId("diff-compare-commits");
+    const viewport = commits.querySelector<HTMLElement>("[data-slot='scroll-area-viewport']")!;
+    expect(screen.queryByTestId(`diff-compare-${byMessage("Rock 0")}`)).toBeNull();
+    // Scrolled to its end (jsdom keeps no scroll position of its own).
+    Object.defineProperty(viewport, "scrollTop", { configurable: true, value: 61 * 28 - 280 });
+    act(() => {
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId(`diff-compare-${byMessage("Rock 0")}`));
+    });
+    expect(diffService!.getSnapshot().target?.compare).toEqual({ kind: "commit", id: byMessage("Rock 0") });
   });
 
   it("shows why a version cannot be compared", async () => {

@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Columns2Icon, CopyIcon, FileIcon, FolderIcon, HistoryIcon, SettingsIcon, Undo2Icon } from "lucide-react";
 import type { ChangeKind, CommitInfo, FileChange } from "@haptic/source-control";
 import {
@@ -22,8 +22,6 @@ import { groupChanges, isAssetPath, registryChangeLookup, type ChangeLookup, typ
 import { agoLabel, branchLabel } from "../lib/source-control-labels";
 import { shortId, WORKING_COPY } from "../services/source-control-diff";
 
-/** Commits read per page: one screen or two, never the whole history. */
-export const HISTORY_PAGE = 50;
 /** Two lines (the subject, then author and time) at the compact density. */
 const HISTORY_ROW_HEIGHT = 40;
 const WORKING = "working";
@@ -33,16 +31,6 @@ const KIND_LABEL: Record<ChangeKind, string> = { added: "Added", modified: "Modi
 const KIND_CLASS: Record<ChangeKind, string> = { added: "text-(--success)", modified: "text-(--warning)", deleted: "text-destructive" };
 
 type Scope = "asset" | "all";
-
-interface Loaded {
-  /** What the pages were read for: the asset (or none), the branch and its commit. */
-  key: string;
-  commits: readonly CommitInfo[];
-  hasMore: boolean;
-  /** The last page ended at this shallow copy's oldest commit. */
-  shallow: boolean;
-  error: string | null;
-}
 
 function subjectOf(commit: CommitInfo): string {
   return commit.message.split("\n")[0]!.trim();
@@ -219,8 +207,9 @@ function WorkingDetails({ rows }: { rows: readonly ChangeRow[] }) {
  * the History asset (**This Asset**, the asset a diff or **Open History**
  * last showed) or of the branch (**All Assets**), newest first, uncommitted
  * changes first. Pages of `HISTORY_PAGE` commits come from the log (windowed
- * rows); **Load Older History** reads the next page, downloading older
- * history at the end of a shallow clone. The selected commit shows its
+ * rows) through the list the Diff's version pickers share
+ * (`CommitHistory`); **Load Older History** reads the next page, downloading
+ * older history at the end of a shallow clone. The selected commit shows its
  * message, author, time and id, **Compare With Working Copy** and **Revert
  * To This Version** for the History asset, and the assets it changed.
  */
@@ -231,57 +220,27 @@ export function HistoryPanelContents() {
   const { assetRegistry } = useRegistryState();
   const touch = useTouchUi();
   const [scope, setScope] = useState<Scope>("asset");
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const lookup = useMemo(() => registryChangeLookup(assetRegistry), [assetRegistry]);
   // Compare and Revert act on an asset's `.hasset` only: never Project Settings or a folder marker.
   const asset = useMemo(() => (historyPath && isAssetPath(historyPath) ? describe(historyPath, lookup) : null), [historyPath, lookup]);
   const path = scope === "asset" && asset ? historyPath : null;
   const { active, branch, head } = snapshot;
-  // A commit, pull or switch moves the branch or its commit: the pages are read again.
-  const key = [path ?? "", branch, head ?? ""].join("\n");
+  // The list the Diff's version pickers share; a commit, pull or switch moves the branch or its commit, and it is read again.
+  const history = sync.commitHistory;
+  const list = useSyncExternalStore(history.subscribe, () => history.list(path));
 
   useEffect(() => {
-    if (!active) return;
-    let alive = true;
-    sync.history({ limit: HISTORY_PAGE, ...(path ? { path } : {}) }).then((page) => {
-      if (alive) setLoaded({ key, ...page, error: null });
-    }, (error: unknown) => {
-      if (alive) setLoaded({ key, commits: [], hasMore: false, shallow: false, error: error instanceof Error ? error.message : String(error) });
-    });
-    return () => {
-      alive = false;
-    };
-  }, [active, key, path, sync]);
+    if (active) history.load(path);
+  }, [active, branch, head, history, path]);
 
-  const pages = loaded?.key === key ? loaded : null;
+  const pages = list?.ready ? list : null;
   const working = useMemo(() => (path ? snapshot.rows.filter((row) => row.id === path) : snapshot.rows), [path, snapshot.rows]);
   const ids = useMemo(() => [...(working.length > 0 ? [WORKING] : []), ...(pages?.commits.map((commit) => commit.id) ?? [])], [pages, working.length]);
   // The choice stays while its row is listed; otherwise the first row is shown.
   const shown = selected !== null && ids.includes(selected) ? selected : ids[0] ?? null;
   const commit = shown && shown !== WORKING ? pages?.commits.find((entry) => entry.id === shown) ?? null : null;
   const now = Date.now();
-
-  const loadOlder = useCallback(async () => {
-    if (!pages) return;
-    setLoadingOlder(true);
-    try {
-      // After a page that ended at a shallow copy's oldest commit, a deepen may show that commit did not change the asset: read the pages again.
-      const next = pages.shallow
-        ? await sync.history({ limit: pages.commits.length + HISTORY_PAGE, deepen: true, ...(path ? { path } : {}) })
-        : await sync.history({ limit: HISTORY_PAGE, skip: pages.commits.length, deepen: true, ...(path ? { path } : {}) });
-      setLoaded((current) => {
-        if (current?.key !== pages.key) return current;
-        const commits = pages.shallow ? next.commits : [...current.commits, ...next.commits.filter((entry) => !current.commits.some((known) => known.id === entry.id))];
-        return { ...current, commits, hasMore: next.hasMore, shallow: next.shallow, error: null };
-      });
-    } catch (error) {
-      setLoaded((current) => (current?.key === pages.key ? { ...current, error: error instanceof Error ? error.message : String(error) } : current));
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [pages, path, sync]);
 
   if (!active) {
     return (
@@ -353,7 +312,7 @@ export function HistoryPanelContents() {
                   <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                     {pages.shallow ? "Older history is not downloaded yet." : null}
                   </span>
-                  <Button variant="outline" size="sm" disabled={loadingOlder} data-testid="history-load-older" onClick={() => void loadOlder()}>
+                  <Button variant="outline" size="sm" disabled={pages.loadingOlder} data-testid="history-load-older" onClick={() => void history.loadOlder(path)}>
                     Load Older History
                   </Button>
                 </div>
