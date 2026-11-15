@@ -123,6 +123,7 @@ describe("editor boot imports", () => {
       "components/source-control-pull-flow.tsx",
       "components/clone-project-dialog.tsx",
       "components/publish-project-dialog.tsx",
+      "components/new-project-repository-fields.tsx",
       "services/source-control-sync-port.ts",
       "services/source-control-publish.ts",
       "panels/locks-panel.tsx",

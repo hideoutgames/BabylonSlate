@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   CheckIcon,
+  FolderGit2Icon,
+  HardDriveIcon,
   ImagePlusIcon,
   LoaderCircleIcon,
   XIcon,
 } from "lucide-react";
 import { PIXEL_ART_DESIGN_SIZES, type ProjectAppearance } from "@haptic/core";
 import { LabelHint, NumberField } from "@haptic/editor-kit";
-import type { HostPlatform } from "@haptic/vfs";
+import type { HostPlatform, NewProjectHosting } from "@haptic/vfs";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
 import { Checkbox } from "@haptic/ui/components/checkbox";
@@ -45,8 +47,19 @@ import {
   PROJECT_ICON_PRESETS,
   prepareProjectPicture,
 } from "./homepage-project-appearance";
+import { remoteNeedsAppStorage } from "../lib/create-project";
 import { hasTouchInput } from "../lib/touch-input";
+import type { NewRepositoryRequest } from "../services/source-control-publish";
 import { useNativeHomepageAccount } from "./homepage-account-context";
+
+// The device's accounts and the host APIs load when Remote is chosen, never with the Homepage.
+const NewProjectRepositoryFields = lazy(() => import("./new-project-repository-fields"));
+
+/** New Project's Hosting choices, in display order. */
+const HOSTING_OPTIONS: ReadonlyArray<{ value: NewProjectHosting; label: string; icon: typeof HardDriveIcon }> = [
+  { value: "local", label: "Local", icon: HardDriveIcon },
+  { value: "remote", label: "Remote", icon: FolderGit2Icon },
+];
 
 const PIXEL_ART_HINT = "Sharp textures and whole-multiple pixel upscaling at full resolution, without anti-aliasing. Without Black Bars the view extends to fill the screen.";
 
@@ -87,6 +100,11 @@ export function HomepageCreateDialog({
   onBlackBarsChange,
   pixelArt,
   onPixelArtChange,
+  hosting = null,
+  onHostingChange,
+  rememberedOrigin = "",
+  remoteReady = false,
+  onRepositoryChange,
   onSubmit,
 }: {
   open: boolean;
@@ -118,6 +136,14 @@ export function HomepageCreateDialog({
   /** Pixel Art Optimized: project settings for pixel art (`pixelArtProjectSettings`). */
   pixelArt: boolean;
   onPixelArtChange: (value: boolean) => void;
+  /** Local or Remote; null hides the choice (editing, or no source control on this host). */
+  hosting?: NewProjectHosting | null;
+  onHostingChange?: (hosting: NewProjectHosting) => void;
+  /** Remote: the host account the last Remote project used on this device. */
+  rememberedOrigin?: string;
+  /** Remote: the repository to create is complete. */
+  remoteReady?: boolean;
+  onRepositoryChange?: (request: NewRepositoryRequest | null) => void;
   onSubmit: () => void;
 }) {
   const editing = mode === "edit";
@@ -222,8 +248,10 @@ export function HomepageCreateDialog({
     }
   };
   const placeholderName = suggestedName || "Untitled";
+  const remote = hosting === "remote";
+  const remoteNeedsDocuments = remote && remoteNeedsAppStorage(hostPlatform);
   const canSubmit =
-    !busy && !imageBusy && !nameIssue && Boolean(name.trim() || suggestedName);
+    !busy && !imageBusy && !nameIssue && Boolean(name.trim() || suggestedName) && (!remote || remoteReady);
   const submit = () => {
     if (canSubmit) onSubmit();
   };
@@ -352,6 +380,41 @@ export function HomepageCreateDialog({
                       </FieldError>
                     )}
                   </Field>
+                  {hosting !== null && !editing && (
+                    <Field>
+                      <FieldLabel id="create-project-hosting-label">Hosting</FieldLabel>
+                      <ToggleGroup
+                        aria-labelledby="create-project-hosting-label"
+                        value={[hosting]}
+                        disabled={busy}
+                        onValueChange={(values) => {
+                          const next = HOSTING_OPTIONS.find((option) => option.value === values[0]);
+                          if (next) onHostingChange?.(next.value);
+                        }}
+                      >
+                        {HOSTING_OPTIONS.map(({ value, label, icon: Icon }) => (
+                          <ToggleGroupItem
+                            key={value}
+                            value={value}
+                            data-testid={`create-project-hosting-${value}`}
+                          >
+                            <Icon data-icon="inline-start" />
+                            {label}
+                          </ToggleGroupItem>
+                        ))}
+                      </ToggleGroup>
+                    </Field>
+                  )}
+                  {remote && !editing && onRepositoryChange && (
+                    <Suspense fallback={null}>
+                      <NewProjectRepositoryFields
+                        projectName={name.trim() || placeholderName}
+                        preferredOrigin={rememberedOrigin}
+                        disabled={busy}
+                        onRequestChange={onRepositoryChange}
+                      />
+                    </Suspense>
+                  )}
                   <FieldSet
                     disabled={busy}
                     className="homepage-composer-identity"
@@ -538,13 +601,16 @@ export function HomepageCreateDialog({
                               </ToggleGroupItem>
                               <ToggleGroupItem
                                 value="folder"
+                                disabled={remoteNeedsDocuments}
                                 data-testid="create-project-choose-location"
                               >
                                 Choose Folder
                               </ToggleGroupItem>
                             </ToggleGroup>
                             <FieldDescription data-testid="create-project-location">
-                              {nativeLocationStatus(hostPlatform, pickFolder)}
+                              {remoteNeedsDocuments
+                                ? "Remote projects are created in App Documents: Haptic can't run Git in a folder you choose on this device."
+                                : nativeLocationStatus(hostPlatform, pickFolder)}
                             </FieldDescription>
                           </Field>
                         )}

@@ -30,7 +30,11 @@ export interface HostAccount {
 /** This device's credential for `origin`, kept current as accounts are linked, and its host API. */
 export function useHostAccount(origin: string | null): HostAccount {
   const { accounts, credentials } = useSourceControlCredentials();
-  const credential = origin ? credentials.find((candidate) => candidate.origin === origin) ?? null : null;
+  return useAccountApi(accounts, origin ? credentials.find((candidate) => candidate.origin === origin) ?? null : null);
+}
+
+/** The host API for one of this device's credentials, kept while the credential is the same. */
+export function useAccountApi(accounts: SourceControlAccounts | null, credential: HostCredential | null): HostAccount {
   const api = useMemo(
     () => (credential && accounts?.http ? hostApiFor(credential, accounts.http, accounts.credentialSource(credential.origin)) : null),
     [accounts, credential],

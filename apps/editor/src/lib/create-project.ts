@@ -82,9 +82,6 @@ export function isBuiltInStarterKind(id: string): id is BuiltInStarterKind {
  */
 export type LaunchPhase = "creating" | "source-control" | "opening";
 
-/** New Project's Hosting choice: this device only, or a new repository on a Git host. */
-export type NewProjectHosting = "local" | "remote";
-
 export type CreateProjectOptions = {
   /** Remote: once the project opens, publish it to this new repository, as Project Settings' Publish does. */
   repository?: NewRepositoryRequest;
@@ -101,6 +98,15 @@ export type CreateProjectOptions = {
   /** Pixel Art Optimized (`pixelArtProjectSettings`). */
   pixelArt?: boolean;
 };
+
+/**
+ * Whether a Remote New Project must be created in App Documents: on iOS and
+ * Android Haptic's Git cannot run in a chosen folder, which another Git app
+ * syncs (`other-git-client`). Desktop adopts any folder it publishes.
+ */
+export function remoteNeedsAppStorage(hostPlatform: string): boolean {
+  return hostPlatform === "ios" || hostPlatform === "android";
+}
 
 /**
  * What a New Project did: `created` a project and opened it, `opened` the

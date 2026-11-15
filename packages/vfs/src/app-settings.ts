@@ -168,6 +168,10 @@ const customEditorThemeSchema = z.object({
 
 export type CustomEditorTheme = z.infer<typeof customEditorThemeSchema>;
 
+/** New Project's Hosting choices: this device only, or a new repository on a Git host. */
+export const NEW_PROJECT_HOSTINGS = ["local", "remote"] as const;
+export type NewProjectHosting = (typeof NEW_PROJECT_HOSTINGS)[number];
+
 /** Where Stack New 2D Actors applies: no host, 2D Scenes, Scene Layers, or both. */
 export const STACK_NEW_ACTORS_2D_MODES = ["disabled", "scenes", "sceneLayers", "both"] as const;
 export type StackNewActors2D = (typeof STACK_NEW_ACTORS_2D_MODES)[number];
@@ -284,6 +288,18 @@ export const engineSettingsSchema = z.object({
     .catch([])
     .default([])
     .transform((keys) => keys.slice(-MAX_LINKED_SCALE_KEYS)),
+  /**
+   * New Project's last Hosting choice on this device (`local`, or `remote`: a
+   * new repository on a Git host) and the host account Remote used, by its
+   * origin, so the next New Project starts from them.
+   */
+  newProjectHosting: z
+    .object({
+      hosting: z.enum(NEW_PROJECT_HOSTINGS).catch("local").default("local"),
+      origin: z.string().catch("").default(""),
+    })
+    .catch({ hosting: "local", origin: "" })
+    .default({ hosting: "local", origin: "" }),
   /** Project and Engine Settings sub-categories collapsed on this device, as `scope:category:section`; the rest start open. */
   collapsedSettingsSections: z.array(z.string()).catch([]).default([]),
   postProcessingEnabled: z.boolean().default(true),
