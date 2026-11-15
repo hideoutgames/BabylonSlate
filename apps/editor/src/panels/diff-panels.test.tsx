@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SOURCE_CONTROL_ID } from "@haptic/core";
 import { SourceControlActionsProvider, useSourceControlDiff } from "../components/source-control-actions";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
@@ -33,6 +33,12 @@ vi.mock("../context/document-context", async () =>
     activeDocumentId: state.activeDocumentId,
   })),
 );
+
+// The graph families' canvases load with their editors' chunks; importing those once here keeps that cost out of
+// every test's waits.
+beforeAll(async () => {
+  await Promise.all([import("../shell/asset-panels/rendering"), import("../shell/asset-panels/animation-ai")]);
+}, 120_000);
 
 afterEach(() => {
   cleanup();
@@ -85,6 +91,121 @@ function dockApi(visible: boolean) {
     },
   };
   return api;
+}
+
+/** A graph family's asset at two versions, and what its canvas draws: each node's id with its tag (null when plain). */
+interface GraphFamilyCase {
+  label: string;
+  type: string;
+  name: string;
+  path: string;
+  canvas: string;
+  versions: [unknown, unknown];
+  overlay: Array<[string, string | null]>;
+  base: Array<[string, string | null]>;
+  compare: Array<[string, string | null]>;
+  /** One changed node's value as the canvas lists it under the node. */
+  change: { node: string; name: string; base: string; compare: string };
+  /** That the family's own node components drew it. */
+  drawnBy: (graph: HTMLElement) => void;
+}
+
+const pinNode = (id: string, type: string, properties: Record<string, unknown> = {}, x = 0, y = 0) => ({ id, type, position: { x, y }, properties });
+const pinWire = (id: string, from: string, to: string, toPin: string) => ({ id, sourceNodeId: from, sourcePinId: "out", targetNodeId: to, targetPinId: toPin });
+const treeNode = (id: string, kind: string, classId: string, children: string[], properties: Record<string, unknown> = {}) => ({ id, kind, classId, children, decorators: [], services: [], properties });
+const animState = (id: string, name: string, x: number) => ({ id, name, position: { x, y: 0 }, stateGraph: { nodes: [], edges: [] } });
+const animTransition = (id: string, from: string, to: string) => ({ id, fromStateId: from, toStateId: to, blendSeconds: 0.2, priority: 0, ruleGraph: { nodes: [], edges: [] } });
+
+const GRAPH_FAMILIES: GraphFamilyCase[] = [
+  {
+    label: "Material",
+    type: "Material",
+    name: "Water",
+    path: "assets/Water.material.hasset",
+    canvas: "material",
+    versions: [0.5, 0.25].map((roughness, index) => ({
+      name: "Water", domain: "surface", shadingModel: "pbr", blendMode: "opaque", twoSided: false,
+      // The working copy calls a Material Function, which no diff loads: the call draws without pins.
+      nodes: [pinNode("out", "output.surface", { "default:roughness": [roughness] }), ...(index === 0 ? [pinNode("mul", "math.multiply", {}, -300)] : [pinNode("tint", "const.float", { value: [2] }, -300), pinNode("fn", "function.call", { functionGuid: "fresnel" }, -300, 300)])],
+      edges: index === 0 ? [pinWire("e1", "mul", "out", "roughness")] : [pinWire("e2", "tint", "out", "metallic"), pinWire("e3", "fn", "out", "specular")],
+    })) as [unknown, unknown],
+    overlay: [["out", "changed"], ["tint", "added"], ["fn", "added"], ["mul", "removed"]],
+    base: [["out", "changed"], ["mul", "removed"]],
+    compare: [["out", "changed"], ["tint", "added"], ["fn", "added"]],
+    change: { node: "out", name: "Roughness", base: "0.5", compare: "0.25" },
+    drawnBy: (graph) => expect(within(graph).getByText("Material Output")).toBeTruthy(),
+  },
+  {
+    label: "Particle Graph",
+    type: "ParticleGraph",
+    name: "Sparks",
+    path: "assets/Sparks.particlegraph.hasset",
+    canvas: "particle",
+    versions: [30, 60].map((emitRate, index) => ({
+      name: "Sparks", materialGuid: null,
+      settings: { capacity: 256, loop: "infinite", duration: 1, prewarm: 0, blendMode: "additive", billboard: "camera" },
+      parameters: [],
+      nodes: [pinNode("out", "particle.output", { "default:emitRate": [emitRate] }), pinNode("create", "particle.create", {}, -300), ...(index === 0 ? [pinNode("c", "const.float", { value: [3] }, -600)] : [])],
+      edges: [],
+    })) as [unknown, unknown],
+    overlay: [["out", "changed"], ["create", null], ["c", "removed"]],
+    base: [["out", "changed"], ["create", null], ["c", "removed"]],
+    compare: [["out", "changed"], ["create", null]],
+    change: { node: "out", name: "Emit Rate", base: "30", compare: "60" },
+    drawnBy: (graph) => expect(within(graph).getByText("Emitter Output")).toBeTruthy(),
+  },
+  {
+    label: "Behaviour Tree",
+    type: "BehaviourTree",
+    name: "Guard",
+    path: "assets/Guard.behaviourtree.hasset",
+    canvas: "behaviour-tree",
+    versions: ([[1000, "fail"], [2000, "succeed"]] as const).map(([durationMs, child]) => ({
+      name: "Guard", rootId: "root", blackboardGuid: null,
+      nodes: [treeNode("root", "sequence", "bt.composite.sequence", ["wait", child]), treeNode("wait", "task", "bt.task.wait", [], { durationMs }), treeNode(child, "task", `bt.task.${child}`, [])],
+      editorPositions: { root: { x: 0, y: 0 }, wait: { x: -160, y: 200 }, [child]: { x: 160, y: 200 } },
+    })) as [unknown, unknown],
+    overlay: [["root", "changed"], ["wait", "changed"], ["succeed", "added"], ["fail", "removed"]],
+    base: [["root", "changed"], ["wait", "changed"], ["fail", "removed"]],
+    compare: [["root", "changed"], ["wait", "changed"], ["succeed", "added"]],
+    change: { node: "wait", name: "Duration MS", base: "1000", compare: "2000" },
+    drawnBy: (graph) => expect(within(graph).getByTestId("bt-node-wait")).toBeTruthy(),
+  },
+  {
+    label: "Animation Graph",
+    type: "AnimationGraph3D",
+    name: "Locomotion",
+    path: "assets/Locomotion.animgraph.hasset",
+    canvas: "state-machine",
+    versions: [false, true].map((run) => ({
+      name: "Locomotion", variables: [],
+      stateMachine: {
+        entryStateId: "idle",
+        states: [animState("idle", "Idle", 0), animState("walk", run ? "Walking" : "Walk", 240), run ? animState("run", "Run", 480) : animState("jump", "Jump", 480)],
+        transitions: [animTransition("t1", "idle", "walk"), ...(run ? [animTransition("t2", "walk", "run")] : [])],
+        aliases: [],
+      },
+    })) as [unknown, unknown],
+    overlay: [["idle", null], ["walk", "changed"], ["run", "added"], ["jump", "removed"]],
+    base: [["idle", null], ["walk", "changed"], ["jump", "removed"]],
+    compare: [["idle", null], ["walk", "changed"], ["run", "added"]],
+    change: { node: "walk", name: "Name", base: "Walk", compare: "Walking" },
+    drawnBy: (graph) => expect(within(graph).getByTestId("anim-state-node-run")).toBeTruthy(),
+  },
+];
+
+/** Commits the family's first version and writes its second as the working copy. */
+async function openGraphDiff(family: GraphFamilyCase) {
+  const asset = (document: unknown) => testAsset(family.type, family.name, { document });
+  const sync = await integratedSync({ files: { [family.path]: (await asset(family.versions[0])).bytes } });
+  state.sync = sync.service;
+  await sync.storage.writeBinary(family.path, (await asset(family.versions[1])).bytes);
+  await sync.service.refreshStatus();
+}
+
+/** The canvas's nodes in the order drawn, each with its diff tag. */
+function canvasTags(graph: HTMLElement): Array<[string, string | null]> {
+  return [...graph.querySelectorAll<HTMLElement>(".react-flow__node")].map((node) => [node.dataset.id!, node.querySelector<HTMLElement>("[data-diff-status]")?.dataset.diffStatus ?? null]);
 }
 
 let diffService: ReturnType<typeof useSourceControlDiff> | null = null;
@@ -218,26 +339,69 @@ describe("Source Control diff windows", () => {
     expect(screen.getByTestId("diff-texture-materials").textContent).toBe("Used By 0 Materials");
   });
 
-  it("lists another graph family's node changes as properties, and the asset's own header and chunks from its row", async () => {
-    const node = (value: number) => ({ id: "tint", type: "material.constant", position: { x: 0, y: 0 }, data: { title: "Tint", __pins: [{ id: "value", name: "Value", kind: "data", direction: "in", type: { kind: "float" } }], "default:value": value } });
-    const path = "assets/Water.material.hasset";
-    const material = (value: number) => testAsset("Material", "Water", { document: { nodes: [node(value)], edges: [] } });
-    const sync = await integratedSync({ files: { [path]: (await material(0.25)).bytes } });
-    state.sync = sync.service;
-    await sync.storage.writeBinary(path, (await material(0.5)).bytes);
-    await sync.service.refreshStatus();
-    renderTab();
-    act(() => diffService!.open({ path, name: "Water", type: "Material" }));
-    const value = await screen.findByTestId("diff-row-pin:value");
-    expect(value.textContent).toBe("Value0.250.5");
-    expect(screen.queryByTestId("diff-graph")).toBeNull();
-    // The node's row says what changed in it.
-    expect(screen.getByTestId("tree-row-event/tint").textContent).toContain("Value: 0.25 → 0.5");
+  // Each family's graph on its own canvas, loaded with its editor's chunk: its own node components, tagged by what changed.
+  for (const family of GRAPH_FAMILIES) {
+    it(`draws the diff of the ${family.label} on its own canvas, tagged in Overlay, Base and Working Copy`, async () => {
+      await openGraphDiff(family);
+      renderTab();
+      act(() => diffService!.open({ path: family.path, name: family.name, type: family.type }));
+      const graph = await screen.findByTestId("diff-graph", {}, { timeout: 4_000 });
+      expect(graph.dataset.canvas).toBe(family.canvas);
+      await waitFor(() => expect(canvasTags(graph)).toEqual(family.overlay), { timeout: 4_000 });
+      // One editor draws both versions.
+      expect(graph.querySelectorAll(".react-flow")).toHaveLength(1);
+      family.drawnBy(graph);
+      const changed = graph.querySelector<HTMLElement>(`.react-flow__node[data-id="${family.change.node}"]`)!;
+      const changes = within(changed).getByTestId("diff-pin-changes");
+      expect(within(changes).getByText(family.change.name)).toBeTruthy();
+      expect(within(changes).getByText(family.change.base).tagName).toBe("DEL");
+      expect(within(changes).getByText(family.change.compare).tagName).toBe("SPAN");
 
+      fireEvent.click(screen.getByTestId("diff-graph-base"));
+      await waitFor(() => expect(canvasTags(graph)).toEqual(family.base));
+      fireEvent.click(screen.getByTestId("diff-graph-compare"));
+      expect(screen.getByTestId("diff-graph-compare").textContent).toBe("Working Copy");
+      await waitFor(() => expect(canvasTags(graph)).toEqual(family.compare));
+    });
+  }
+
+  it("shows a graph family's asset header and chunks from the asset's row", async () => {
+    const material = GRAPH_FAMILIES[0]!;
+    await openGraphDiff(material);
+    renderTab();
+    act(() => diffService!.open({ path: material.path, name: material.name, type: material.type }));
+    await screen.findByTestId("diff-graph", {}, { timeout: 4_000 });
+    // The node's row says what changed in it.
+    expect(screen.getByTestId("tree-row-graph/out").textContent).toContain("Roughness: 0.5 → 0.25");
     act(() => tap(screen.getByTestId("tree-row-asset")));
     expect(screen.getByTestId("diff-item-name").textContent).toBe("Water");
+    expect(screen.queryByTestId("diff-graph")).toBeNull();
     expect(screen.getByTestId("diff-row-chunk:document").dataset.changed).toBe("true");
-    expect(screen.getByTestId("diff-row-name").dataset.changed).toBeUndefined();
+    // The header's name and the document's.
+    expect(screen.getAllByTestId("diff-row-name").map((row) => row.dataset.changed)).toEqual([undefined, undefined]);
+  });
+
+  it("mounts a graph canvas only while the Diff window is on screen", async () => {
+    const material = GRAPH_FAMILIES[0]!;
+    await openGraphDiff(material);
+    const actors = dockApi(true);
+    const diffWindow = dockApi(false);
+    render(
+      <SourceControlActionsProvider>
+        <CaptureDiff />
+        <DiffActorsPanel {...({ api: actors } as unknown as IDockviewPanelProps)} />
+        <DiffPanel {...({ api: diffWindow } as unknown as IDockviewPanelProps)} />
+      </SourceControlActionsProvider>,
+    );
+    // Loaded for the Actors window; the hidden Diff window draws no canvas.
+    act(() => diffService!.open({ path: material.path, name: material.name, type: material.type }));
+    const graph = await screen.findByTestId("diff-graph", {}, { timeout: 4_000 });
+    expect(within(screen.getByTestId("diff-actors-tree")).getByText("Float").dataset.tone).toBe("success");
+    expect(graph.querySelector(".react-flow")).toBeNull();
+    act(() => diffWindow.show(true));
+    await waitFor(() => expect(canvasTags(graph)).toEqual(material.overlay), { timeout: 4_000 });
+    act(() => diffWindow.show(false));
+    expect(graph.querySelector(".react-flow")).toBeNull();
   });
 
   it("reads nothing while neither window is on screen, and loads what changed once one is shown again", async () => {

@@ -40,6 +40,7 @@ export {
   animGraphNodeTypes,
 } from "./anim-graph-nodes";
 export { TreeNode, treeNodeTypes } from "./tree-node";
+export { treeEdgeOptions } from "./edge-style";
 export {
   GraphEditorProvider,
   useGraphEditorContext,

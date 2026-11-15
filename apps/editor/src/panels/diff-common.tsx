@@ -11,16 +11,18 @@ import type { DiffState } from "../services/source-control-diff";
 import { STATUS_LABEL, STATUS_LETTER } from "./diff-status";
 
 /**
- * The open diff loads while this window is on screen (its dock tab shown and
- * the Source Control tab in front); hidden, a save only marks the diff stale.
- * Without a dock API (tests) the window counts as shown.
+ * Whether this window is on screen (its dock tab shown and the Source
+ * Control tab in front). The open diff loads while it is; hidden, a save only
+ * marks the diff stale and a graph canvas unmounts. Without a dock API
+ * (tests) the window counts as shown.
  */
 // The windows' shared hook lives with their shared parts.
 // eslint-disable-next-line react-refresh/only-export-components
-export function useDiffWindowShown(api: DockviewPanelApi | undefined): void {
+export function useDiffWindowShown(api: DockviewPanelApi | undefined): boolean {
   const diff = useSourceControlDiff();
   const shown = useDockPanelShown(api);
   useEffect(() => (shown ? diff.watch() : undefined), [diff, shown]);
+  return shown;
 }
 
 const STATUS_TEXT: Record<Exclude<DiffStatus, "unchanged">, string> = {

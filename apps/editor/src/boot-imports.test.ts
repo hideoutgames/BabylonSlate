@@ -133,6 +133,7 @@ describe("editor boot imports", () => {
       "panels/diff-actors-panel.tsx",
       "panels/diff-panel.tsx",
       "panels/diff-graph-view.tsx",
+      "panels/diff-graph-canvas.tsx",
       "panels/diff-texture-view.tsx",
       "components/source-control-revert-flow.tsx",
       "components/source-control-branch-flow.tsx",
@@ -146,5 +147,28 @@ describe("editor boot imports", () => {
     // The diff model and its worker client load with the first diff; the open diff's service imports only their types.
     expect(closure).toContain("services/source-control-diff.ts");
     expect(closure.filter((file) => ASSET_DIFF_IMPORT.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
+  });
+
+  // A Material, Particle Graph, Behaviour Tree or Animation Graph diff draws on a canvas its family's chunk exports, so
+  // neither the Source Control windows nor the graph diff view bring a family's editors.
+  it("load each graph family's diff canvas with that family's editors, never with the Diff window", () => {
+    const canvases = [
+      "components/material-diff-canvas.tsx",
+      "panels/particle-diff-canvas.tsx",
+      "components/behaviour-tree-diff-canvas.tsx",
+      "components/anim-graph-diff-canvas.tsx",
+    ];
+    const familyClosure = ["shell/asset-panels/rendering.ts", "shell/asset-panels/animation-ai.ts"].flatMap((entry) => staticClosure(entry));
+    for (const canvas of canvases) expect(familyClosure).toContain(canvas);
+    const diffWindow = [...new Set(["shell/asset-panels/source-control.ts", "panels/diff-graph-view.tsx"].flatMap((entry) => staticClosure(entry)))];
+    expect(diffWindow).toContain("panels/diff-panel.tsx");
+    expect(diffWindow).toContain("panels/diff-graph-canvas.tsx");
+    expect(diffWindow.filter((file) => [
+      ...canvases,
+      "components/material-editor.tsx",
+      "panels/particle-graph-panels.tsx",
+      "components/behaviour-tree-editor.tsx",
+      "components/anim-graph-editor.tsx",
+    ].includes(file))).toEqual([]);
   });
 });

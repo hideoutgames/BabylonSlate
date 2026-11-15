@@ -1,7 +1,7 @@
 import type { DockviewPanelApi, IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { BoxIcon, FileIcon, FolderIcon, ListTreeIcon, SquareFunctionIcon, VariableIcon, WorkflowIcon } from "lucide-react";
-import type { AssetDiff, DiffStatus, GraphDiff, SceneDiff } from "@haptic/assets/asset-diff";
+import type { AssetDiff, DiffStatus, GraphDiff, GraphMemberGroupId, SceneDiff } from "@haptic/assets/asset-diff";
 import { PanelFrame, SearchInput, TreeView, type TreeViewNode } from "@haptic/editor-kit";
 import { useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
 import { DiffCountBadges, DiffPlaceholder, StatusLetter, useDiffWindowShown } from "./diff-common";
@@ -39,7 +39,17 @@ function sceneRows(view: SceneDiff): ItemRow[] {
   return rows;
 }
 
-/** Each graph that changed with its nodes, then Variables, Functions and the other members. */
+/** A member group's icon: functions and events as functions, anything holding a value as a variable. */
+const MEMBER_ICON: Record<GraphMemberGroupId, ItemRow["icon"]> = {
+  variables: "variable",
+  parameters: "variable",
+  inputs: "variable",
+  outputs: "variable",
+  functions: "function",
+  others: "function",
+};
+
+/** Each graph that changed with its nodes, then the members the document declares (Variables, Parameters, Functions…). */
 function graphRows(view: GraphDiff): ItemRow[] {
   const rows: ItemRow[] = [];
   for (const section of view.sections) {
@@ -49,15 +59,9 @@ function graphRows(view: GraphDiff): ItemRow[] {
       rows.push({ id: `${section.id}/${node.id}`, label: node.title, depth: 1, parent: section.id, status: node.status, changedBelow: false, hasChildren: false, icon: "node", preview: nodeSummary(node) });
     }
   }
-  const members = [
-    ["variables", "Variables", view.variables, "variable"],
-    ["functions", "Functions", view.functions, "function"],
-    ["others", "Events And Dispatchers", view.others, "function"],
-  ] as const;
-  for (const [id, title, list, icon] of members) {
-    if (list.length === 0) continue;
-    rows.push({ id: `group:${id}`, label: title, depth: 0, parent: null, status: "unchanged", changedBelow: true, hasChildren: true, icon: "group" });
-    for (const member of list) rows.push({ id: `member:${member.id}`, label: member.name, depth: 1, parent: `group:${id}`, status: member.status, changedBelow: false, hasChildren: false, icon, preview: member.summary });
+  for (const group of view.memberGroups) {
+    rows.push({ id: `group:${group.id}`, label: group.title, depth: 0, parent: null, status: "unchanged", changedBelow: true, hasChildren: true, icon: "group" });
+    for (const member of group.members) rows.push({ id: `member:${member.id}`, label: member.name, depth: 1, parent: `group:${group.id}`, status: member.status, changedBelow: false, hasChildren: false, icon: MEMBER_ICON[group.id], preview: member.summary });
   }
   return rows;
 }
@@ -99,7 +103,8 @@ function visibleRows(rows: readonly ItemRow[], query: string, collapsed: Readonl
  * The Source Control tab's Actors window: the chosen asset's items, each
  * marked and tinted by what changed, unchanged ones muted, with search and
  * the Added, Removed and Changed counts. Scenes list their folders and
- * actors; graphs their changed graphs and nodes, variables and functions;
+ * actors; graphs their changed graphs and nodes, then their members by
+ * group (Variables, Parameters, Inputs, Outputs, Functions);
  * other assets their groups of fields. Choosing one shows it in Diff.
  */
 export function DiffActorsContents({ api }: { api?: DockviewPanelApi } = {}) {
