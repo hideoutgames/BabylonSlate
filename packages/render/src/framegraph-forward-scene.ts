@@ -174,15 +174,36 @@ function compiledEffectCount(engine: object): number {
   return Object.keys((engine as { _compiledEffects?: object })._compiledEffects ?? {}).length;
 }
 
-/** Runs `run` and returns how many times it asked the Engine for an Effect, one it already holds included. */
-function countEffectRequests(engine: object, run: () => void): number {
+/** Scoped-probe disagreements described at most (`rendererWork.scopedReadinessMismatchCauses`). */
+const MAX_SCOPED_MISMATCH_CAUSES = 8;
+/** Effects named per described disagreement. */
+const MAX_NAMED_REQUESTS = 3;
+
+/** An Effect as a disagreement names it: its shader name, whether it is ready, and the start of its defines. */
+function describeRequestedEffect(effect: unknown): string {
+  const { name, defines, isReady } = effect as { name?: unknown; defines?: unknown; isReady?: () => boolean };
+  const shader = typeof name === "string" ? name
+    : name && typeof name === "object"
+      ? String((name as Record<string, unknown>).fragmentElement ?? (name as Record<string, unknown>).fragment ?? (name as Record<string, unknown>).vertex ?? "?")
+      : "?";
+  const ready = typeof isReady === "function" ? isReady.call(effect) : false;
+  return `${shader} (${ready ? "ready" : "pending"}; ${typeof defines === "string" ? defines.replace(/#define /g, "").replace(/\s+/g, " ").slice(0, 160) : ""})`;
+}
+
+/**
+ * Runs `run` and returns how many times it asked the Engine for an Effect, one it already holds included. `named`
+ * receives the first of them as `describeRequestedEffect` gives them.
+ */
+function countEffectRequests(engine: object, run: () => void, named?: string[]): number {
   const target = engine as { createEffect(...args: unknown[]): unknown };
   const own = Object.prototype.hasOwnProperty.call(target, "createEffect");
   const create = target.createEffect;
   let count = 0;
   const counting = function (this: unknown, ...args: unknown[]) {
     count += 1;
-    return create.apply(this, args);
+    const effect = create.apply(this, args);
+    if (named && named.length < MAX_NAMED_REQUESTS) named.push(describeRequestedEffect(effect));
+    return effect;
   };
   target.createEffect = counting;
   try {
@@ -317,6 +338,8 @@ export class ForwardSceneFrameGraph {
   private scopedProbes = 0;
   /** Scoped probes a whole probe disagreed with, counted while verifying (`verifyScopedReadinessProbes`). */
   private scopedMismatches = 0;
+  /** Why the first of them disagreed (`wholeProbeAgrees`); at most `MAX_SCOPED_MISMATCH_CAUSES`. */
+  private readonly scopedMismatchCauses: string[] = [];
   /** What the strict probe running names as unready (`collectReadinessBlockers`), while measuring. */
   private readonly probeBlockers: string[] = [];
   /** What the last strict probe that failed named; kept until the next one fails. */
@@ -328,7 +351,8 @@ export class ForwardSceneFrameGraph {
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
-      scopedReadinessMismatches: this.scopedMismatches, readinessBlockers: [...this.failedBlockers],
+      scopedReadinessMismatches: this.scopedMismatches, scopedReadinessMismatchCauses: [...this.scopedMismatchCauses],
+      readinessBlockers: [...this.failedBlockers],
     };
   }
   private graph: FrameGraph | undefined;
@@ -1806,15 +1830,26 @@ export class ForwardSceneFrameGraph {
    * Verification: a probe of every mesh right after a scoped one that passed must pass too and ask the Engine for no
    * Effect. One it creates is a variant the scoped probe left uncompiled; one it asks for again is a mesh outside the
    * scope whose variant changed. A scoped probe that found a swap pending left a variant unadopted, which every probe
-   * asks for again: then only a new Effect counts.
+   * asks for again: then only a new Effect counts. The first disagreements say which of the three it was, with the
+   * reasons marked for the scoped probe and the Effects the whole probe asked for (`scopedReadinessMismatchCauses`).
    */
   private wholeProbeAgrees(round: () => boolean): boolean {
     const engine = this.scene.getEngine();
     const swapped = this.probeSwapped;
     const effects = compiledEffectCount(engine);
+    const describes = this.scopedMismatchCauses.length < MAX_SCOPED_MISMATCH_CAUSES;
+    const reasons = describes ? [...this.markedReasons].join("+") : "";
+    const scoped = describes ? this.scopedMeshes.size : 0;
+    const named: string[] | undefined = describes ? [] : undefined;
     let passed = false;
-    const requests = countEffectRequests(engine, () => { passed = round(); });
-    return passed && compiledEffectCount(engine) === effects && (swapped || requests === 0);
+    const requests = countEffectRequests(engine, () => { passed = round(); }, named);
+    const compiled = compiledEffectCount(engine) - effects;
+    const agrees = passed && compiled === 0 && (swapped || requests === 0);
+    if (!agrees && named) {
+      const what = !passed ? "the whole probe failed" : compiled ? `the whole probe compiled ${compiled}` : `the whole probe asked for ${requests}`;
+      this.scopedMismatchCauses.push(`${what} after ${reasons || "no reason"} (${scoped} scoped)${named.length ? `: ${named.join("; ")}` : ""}`);
+    }
+    return agrees;
   }
 
   /**

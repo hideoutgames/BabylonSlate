@@ -100,6 +100,11 @@ export type RenderDiagnostics = {
     /** Scoped checks a check of every mesh disagreed with, counted only while that verification is on. */
     scopedReadinessMismatches: number;
     /**
+     * Why the first of them disagreed (at most eight): whether the check of every mesh failed, compiled an Effect or
+     * asked for one, after which marked reasons and how many scoped meshes, and the first Effects it asked for.
+     */
+    scopedReadinessMismatchCauses?: string[];
+    /**
      * What the last strict check that failed since the first reading found unready, in the order it met them (at most
      * `MAX_READINESS_BLOCKERS`): a graph task, a mesh and its Material, a texture, a render target. Empty before one fails.
      */

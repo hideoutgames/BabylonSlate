@@ -181,7 +181,7 @@ It creates FeatureTest through the real Create dialog, waits for background text
 | `HAPTIC_PERF_REOPEN` | 1 | `0` skips the reload-and-reopen timing |
 | `HAPTIC_PERF_LABEL` / `HAPTIC_PERF_OUT` | none | Free-text label; extra report path that survives the next run |
 | `HAPTIC_PERF_PROFILE` | off | `1` with `HAPTIC_PERF_OUT`: a CPU profile of each scene's Play windows, written beside the report as `<HAPTIC_PERF_OUT>.<scene>-play.cpuprofile`; the windows it covers carry its sampling cost |
-| `HAPTIC_PERF_VERIFY_SCOPED` | off | `1`: Play follows each scoped readiness probe with a whole one that must agree (`rendererWork.scopedReadinessMismatches`; the measured frames carry its cost) |
+| `HAPTIC_PERF_VERIFY_SCOPED` | off | `1`: Play follows each scoped readiness probe with a whole one that must agree (`rendererWork.scopedReadinessMismatches`, with why in `scopedReadinessMismatchCauses`; the measured frames carry its cost) |
 
 Rules: compare runs on the same machine, browser project and build only; never assert frame rates. Dynamic resolution is off in FeatureTest projects so the workload stays fixed. Quick smoke: `HAPTIC_PERF_SAMPLES=1 HAPTIC_PERF_SAMPLE_MS=2000 HAPTIC_PERF_WARMUP_MS=2000`. Agents wrap long runs in `pnpm --silent agent:wait local --script test:e2e -- <same arguments>`.
 
