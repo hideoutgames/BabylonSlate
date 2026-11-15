@@ -81,6 +81,13 @@ function workingPaths(target: DiffTarget, snapshot: SyncSnapshot): readonly stri
  */
 const RACY_MS = 2000;
 
+/**
+ * How long the worker and its decoded versions outlive the last window that
+ * showed the diff: a look at another tab keeps them, leaving the Source
+ * Control tab frees them.
+ */
+export const DIFF_IDLE_MS = 60_000;
+
 /** The diff's heavy part (worker client, reads), loaded with the first diff. */
 export interface DiffLoader {
   load(target: DiffTarget, commits: { base: string | null; compare: string | null }, signal: AbortSignal): Promise<AssetDiff>;
@@ -91,11 +98,14 @@ export interface DiffLoader {
  * The Source Control tab's open diff: which asset, which two versions and
  * which item is chosen, with the loaded result. The Changes window, Pull
  * Conflicts and the toolbar's Base and Compare pickers set it; Actors and
- * Diff read it. The worker and the reads load with the first diff; a diff
- * waits while a game covers the editor, and loads again when a version it
- * shows moves: a commit it names (a commit, a pull, a fetch), or, for the
- * working copy, the asset's own files (a status after a save of another
- * asset reloads nothing). Closing the project closes it.
+ * Diff read it, and load it only while one of them is on screen (`watch`).
+ * The worker and the reads load with the first diff; a diff waits while a
+ * game covers the editor, and loads again when a version it shows moves: a
+ * commit it names (a commit, a pull, a fetch), or, for the working copy, the
+ * asset's own files (a status after a save of another asset reloads
+ * nothing). While no window shows it, a move only marks it stale, checked
+ * when one does; `DIFF_IDLE_MS` after the last one went, the worker, its
+ * decoded versions and the loaded result go. Closing the project closes it.
  */
 export class SourceControlDiffService {
   private state: DiffState = IDLE;
@@ -109,6 +119,11 @@ export class SourceControlDiffService {
   /** The status rows last checked, so only a new status checks the files again. */
   private rowsSeen: SyncSnapshot["rows"] | null = null;
   private unsubscribe: (() => void) | null = null;
+  /** Windows on screen that show the diff (Actors, Diff). */
+  private viewers = 0;
+  /** A version it shows may have moved while no window showed it. */
+  private stale = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly sync: SourceControlSyncService;
   private readonly createLoader: (sync: SourceControlSyncService) => Promise<DiffLoader>;
 
@@ -146,6 +161,24 @@ export class SourceControlDiffService {
 
   readonly getSnapshot = (): DiffState => this.state;
 
+  /**
+   * A window that shows the diff is on screen until the returned function is
+   * called: the diff loads (or checks what moved while hidden) when the first
+   * one appears, and frees its worker `DIFF_IDLE_MS` after the last one goes.
+   */
+  watch(): () => void {
+    this.viewers += 1;
+    this.clearIdle();
+    if (this.viewers === 1) this.shown();
+    let watching = true;
+    return () => {
+      if (!watching) return;
+      watching = false;
+      this.viewers -= 1;
+      if (this.viewers === 0) this.idleTimer = setTimeout(() => this.idle(), DIFF_IDLE_MS);
+    };
+  }
+
   /** Shows `path`'s diff, by default HEAD against the working copy. */
   open(target: Omit<DiffTarget, "base" | "compare"> & Partial<Pick<DiffTarget, "base" | "compare">>): void {
     this.set({ ...IDLE, target: { base: HEAD, compare: WORKING_COPY, ...target } });
@@ -166,19 +199,50 @@ export class SourceControlDiffService {
     if (selection !== this.state.selection) this.set({ ...this.state, selection });
   }
 
-  /** Loads the open diff again (after a revert wrote its file). */
-  reload(): void {
-    if (this.state.target) void this.load();
-  }
-
   close(): void {
     this.cancel();
+    this.clearIdle();
     this.loadedFor = null;
     this.stamp = null;
+    this.stale = false;
     this.set(IDLE);
     // The worker and its decoded versions go with the diff.
+    this.disposeLoader();
+  }
+
+  private disposeLoader(): void {
     void this.loader?.then((loader) => loader.dispose(), () => undefined);
     this.loader = null;
+  }
+
+  private clearIdle(): void {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  /** The first window showing the diff appeared: load it, or check what moved while none did. */
+  private shown(): void {
+    const target = this.state.target;
+    if (!target) return;
+    if (this.loadedFor === null) {
+      void this.load();
+      return;
+    }
+    if (!this.stale) return;
+    this.stale = false;
+    this.followSync(target);
+  }
+
+  /** No window has shown the diff for `DIFF_IDLE_MS`: the worker, its decoded versions and the result go; showing it loads it again. */
+  private idle(): void {
+    this.idleTimer = null;
+    if (this.viewers > 0) return;
+    this.cancel();
+    this.disposeLoader();
+    this.loadedFor = null;
+    this.stamp = null;
+    this.stale = false;
+    if (this.state.target) this.set({ ...this.state, phase: "loading", diff: null, error: null });
   }
 
   private cancel(): void {
@@ -195,6 +259,17 @@ export class SourceControlDiffService {
       return;
     }
     if (this.loadedFor === null) return;
+    // Hidden (another tab, an Auto-Save of a large Scene): nothing is read until a window shows it.
+    if (this.viewers === 0) {
+      this.stale = true;
+      return;
+    }
+    this.followSync(target);
+  }
+
+  /** Loads again what moved since the diff loaded: a commit it shows, or the asset's own working files. */
+  private followSync(target: DiffTarget): void {
+    const snapshot = this.sync.getSnapshot();
     // A commit, pull or fetch that moved a commit this diff shows.
     if (commitsShown(target, snapshot) !== this.loadedFor) {
       void this.load();
@@ -223,6 +298,13 @@ export class SourceControlDiffService {
     const target = this.state.target;
     if (!target) return;
     this.cancel();
+    if (this.viewers === 0) {
+      // Nothing shows it: the first window that does loads it.
+      this.loadedFor = null;
+      this.stamp = null;
+      this.set({ ...this.state, phase: "loading", error: null });
+      return;
+    }
     const controller = new AbortController();
     this.running = controller;
     const snapshot = this.sync.getSnapshot();

@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { IDockviewPanelProps } from "dockview-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceControlActionsProvider, useSourceControlDiff } from "../components/source-control-actions";
 import { SourceControlDiffPickers } from "../components/source-control-diff-pickers";
@@ -6,8 +7,8 @@ import type { SourceControlSyncService } from "../services/source-control-sync";
 import { sceneActor, sceneAsset, testAsset } from "../testing/diff-assets";
 import { integratedSync } from "../testing/integrated-sync";
 import { ChangesPanelContents } from "./changes-panel";
-import { DiffActorsContents } from "./diff-actors-panel";
-import { DiffContents } from "./diff-panel";
+import { DiffActorsContents, DiffActorsPanel } from "./diff-actors-panel";
+import { DiffContents, DiffPanel } from "./diff-panel";
 
 // The Source Control tab's Changes, Actors and Diff windows and the toolbar's version pickers,
 // together over the real sync and diff services on FakeSync, with real Scene files.
@@ -62,6 +63,23 @@ function tap(element: Element) {
     Object.defineProperty(event, "isPrimary", { value: true });
     element.dispatchEvent(event);
   }
+}
+
+/** A dock window's API as the diff windows read it: whether it is on screen, and when that changes. */
+function dockApi(visible: boolean) {
+  const listeners = new Set<(event: { isVisible: boolean }) => void>();
+  const api = {
+    isVisible: visible,
+    onDidVisibilityChange(listener: (event: { isVisible: boolean }) => void) {
+      listeners.add(listener);
+      return { dispose: () => listeners.delete(listener) };
+    },
+    show(next: boolean) {
+      api.isVisible = next;
+      for (const listener of listeners) listener({ isVisible: next });
+    },
+  };
+  return api;
 }
 
 let diffService: ReturnType<typeof useSourceControlDiff> | null = null;
@@ -215,6 +233,47 @@ describe("Source Control diff windows", () => {
     expect(screen.getByTestId("diff-item-name").textContent).toBe("Water");
     expect(screen.getByTestId("diff-row-chunk:document").dataset.changed).toBe("true");
     expect(screen.getByTestId("diff-row-name").dataset.changed).toBeUndefined();
+  });
+
+  it("reads nothing while neither window is on screen, and loads what changed once one is shown again", async () => {
+    const { service, storage } = await forest();
+    const reads = vi.spyOn(service, "readWorking");
+    const stamps = vi.spyOn(service, "workingStamp");
+    const loads = () => reads.mock.calls.filter(([path]) => path === PATH).length;
+    const actors = dockApi(false);
+    const diffWindow = dockApi(false);
+    render(
+      <SourceControlActionsProvider>
+        <CaptureDiff />
+        <DiffActorsPanel {...({ api: actors } as unknown as IDockviewPanelProps)} />
+        <DiffPanel {...({ api: diffWindow } as unknown as IDockviewPanelProps)} />
+      </SourceControlActionsProvider>,
+    );
+    // Opened while another tab is in front: nothing is read until a window shows it.
+    act(() => diffService!.open({ path: PATH, name: "Forest", type: "Scene" }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(loads()).toBe(0);
+    act(() => diffWindow.show(true));
+    await screen.findByTestId("diff-item-name");
+    expect(loads()).toBe(1);
+
+    // The tab is left: an Auto-Save of the Scene and its status read nothing for the diff.
+    act(() => diffWindow.show(false));
+    stamps.mockClear();
+    await storage.writeBinary(PATH, (await sceneAsset([light(5), sceneActor("sky", "Sky Atmosphere")])).bytes);
+    await act(() => service.refreshStatus());
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(stamps).not.toHaveBeenCalled();
+    expect(loads()).toBe(1);
+
+    // Back on screen: the save is found and loaded once.
+    act(() => actors.show(true));
+    await waitFor(() => expect(loads()).toBe(2));
+    await waitFor(() => expect(screen.getByTestId("diff-counts").textContent).toBe("0 Added1 Removed1 Changed"));
   });
 
   it("shows why a version cannot be compared", async () => {

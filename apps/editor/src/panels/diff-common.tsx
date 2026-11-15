@@ -1,11 +1,27 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import type { DockviewPanelApi } from "dockview-react";
 import type { DiffCounts, DiffStatus } from "@haptic/assets/asset-diff";
 import { PanelFrame } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
 import { cn } from "@haptic/ui/lib/utils";
+import { useSourceControlDiff } from "../components/source-control-actions";
+import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import type { DiffState } from "../services/source-control-diff";
 import { STATUS_LABEL, STATUS_LETTER } from "./diff-status";
+
+/**
+ * The open diff loads while this window is on screen (its dock tab shown and
+ * the Source Control tab in front); hidden, a save only marks the diff stale.
+ * Without a dock API (tests) the window counts as shown.
+ */
+// The windows' shared hook lives with their shared parts.
+// eslint-disable-next-line react-refresh/only-export-components
+export function useDiffWindowShown(api: DockviewPanelApi | undefined): void {
+  const diff = useSourceControlDiff();
+  const shown = useDockPanelShown(api);
+  useEffect(() => (shown ? diff.watch() : undefined), [diff, shown]);
+}
 
 const STATUS_TEXT: Record<Exclude<DiffStatus, "unchanged">, string> = {
   added: "text-(--success)",

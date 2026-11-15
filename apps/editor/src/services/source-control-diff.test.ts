@@ -3,7 +3,7 @@ import type { SceneDiff } from "@haptic/assets/asset-diff";
 import { setEditorQuiet } from "../lib/editor-quiet";
 import { manyActors, sceneActor, sceneAsset } from "../testing/diff-assets";
 import { integratedSync } from "../testing/integrated-sync";
-import { SourceControlDiffService, type DiffState } from "./source-control-diff";
+import { DIFF_IDLE_MS, SourceControlDiffService, type DiffState } from "./source-control-diff";
 
 // The diff service and the revert over the real sync service and FakeSync, with real `.hasset`
 // files: a Scene large enough that its document is a blob, as a real Scene's is.
@@ -51,6 +51,8 @@ describe("SourceControlDiffService", () => {
     const reads = vi.spyOn(service, "readFileAt");
     const diff = new SourceControlDiffService(service);
     const detach = diff.attach();
+    // The Diff window is on screen.
+    diff.watch();
     diff.open({ path: PATH, name: "Forest", type: "Scene" });
     const first = await settled(diff);
     expect(first.phase).toBe("ready");
@@ -77,6 +79,7 @@ describe("SourceControlDiffService", () => {
       const loads = () => working.mock.calls.filter(([path]) => path === PATH).length;
       const diff = new SourceControlDiffService(service);
       const detach = diff.attach();
+      diff.watch();
       diff.open({ path: PATH, name: "Forest", type: "Scene" });
       expect((await settled(diff)).phase).toBe("ready");
       expect(loads()).toBe(1);
@@ -110,6 +113,8 @@ describe("SourceControlDiffService", () => {
     await storage.remove(baseBlob);
     const diff = new SourceControlDiffService(service);
     const detach = diff.attach();
+    // The Diff window is on screen.
+    diff.watch();
     diff.open({ path: PATH, name: "Forest", type: "Scene" });
     expect((await settled(diff)).phase).toBe("ready");
     expect(await storage.exists(baseBlob)).toBe(false);
@@ -123,6 +128,8 @@ describe("SourceControlDiffService", () => {
     setEditorQuiet(true);
     const diff = new SourceControlDiffService(service);
     const detach = diff.attach();
+    // The Diff window is on screen.
+    diff.watch();
     diff.open({ path: PATH, name: "Forest", type: "Scene" });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(diff.getSnapshot().phase).toBe("loading");
@@ -132,10 +139,50 @@ describe("SourceControlDiffService", () => {
     detach();
   });
 
+  it("ends the worker and its decoded versions a while after the last window showing the diff went, and loads again when one is back", async () => {
+    const { service, save } = await seeded();
+    await save({ 3: "Renamed" });
+    const { createDiffLoader } = await import("./source-control-diff-loader");
+    const disposed = vi.fn();
+    const created = vi.fn();
+    const diff = new SourceControlDiffService(service, async (sync) => {
+      created();
+      const loader = createDiffLoader(sync);
+      return { load: loader.load, dispose: () => { disposed(); loader.dispose(); } };
+    });
+    const detach = diff.attach();
+    const unwatch = diff.watch();
+    diff.open({ path: PATH, name: "Forest", type: "Scene" });
+    expect((await settled(diff)).phase).toBe("ready");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      unwatch();
+      // Back within the while: the same worker serves it.
+      vi.advanceTimersByTime(DIFF_IDLE_MS - 1);
+      const again = diff.watch();
+      await vi.advanceTimersByTimeAsync(DIFF_IDLE_MS);
+      expect(disposed).not.toHaveBeenCalled();
+      again();
+      await vi.advanceTimersByTimeAsync(DIFF_IDLE_MS);
+      expect(disposed).toHaveBeenCalledTimes(1);
+      // The result goes with it; the choice of asset and versions stays.
+      expect(diff.getSnapshot()).toMatchObject({ target: { path: PATH }, diff: null });
+    } finally {
+      vi.useRealTimers();
+    }
+    const shown = diff.watch();
+    expect((await settled(diff)).phase).toBe("ready");
+    expect(created).toHaveBeenCalledTimes(2);
+    shown();
+    detach();
+  });
+
   it("shows a version that is not a readable asset as an error, and closes with the project", async () => {
     const { service } = await seeded();
     const diff = new SourceControlDiffService(service);
     const detach = diff.attach();
+    // The Diff window is on screen.
+    diff.watch();
     diff.open({ path: "assets/Rock.texture.hasset", name: "Rock", type: "Texture" });
     const state = await settled(diff);
     expect(state).toMatchObject({ phase: "error", diff: null });

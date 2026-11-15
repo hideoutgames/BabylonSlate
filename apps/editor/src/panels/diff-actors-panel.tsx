@@ -1,10 +1,10 @@
-import type { IDockviewPanelProps } from "dockview-react";
+import type { DockviewPanelApi, IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import { BoxIcon, FileIcon, FolderIcon, ListTreeIcon, SquareFunctionIcon, VariableIcon, WorkflowIcon } from "lucide-react";
 import type { AssetDiff, DiffStatus, GraphDiff, SceneDiff } from "@haptic/assets/asset-diff";
 import { PanelFrame, SearchInput, TreeView, type TreeViewNode } from "@haptic/editor-kit";
 import { useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
-import { DiffCountBadges, DiffPlaceholder, StatusLetter } from "./diff-common";
+import { DiffCountBadges, DiffPlaceholder, StatusLetter, useDiffWindowShown } from "./diff-common";
 import { ASSET_ITEM, hasDiff, nodeSummary, STATUS_TONE } from "./diff-status";
 
 /** One row of the tree before collapse and search: its parent and whether it changed. */
@@ -102,7 +102,8 @@ function visibleRows(rows: readonly ItemRow[], query: string, collapsed: Readonl
  * actors; graphs their changed graphs and nodes, variables and functions;
  * other assets their groups of fields. Choosing one shows it in Diff.
  */
-export function DiffActorsContents() {
+export function DiffActorsContents({ api }: { api?: DockviewPanelApi } = {}) {
+  useDiffWindowShown(api);
   const diffService = useSourceControlDiff();
   const state = useSourceControlDiffState();
   const [query, setQuery] = useState("");
@@ -164,7 +165,6 @@ export function DiffActorsContents() {
   );
 }
 
-export function DiffActorsPanel(_props: IDockviewPanelProps) {
-  void _props;
-  return <DiffActorsContents />;
+export function DiffActorsPanel({ api }: IDockviewPanelProps) {
+  return <DiffActorsContents api={api} />;
 }

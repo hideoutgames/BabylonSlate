@@ -1,4 +1,4 @@
-import type { IDockviewPanelProps } from "dockview-react";
+import type { DockviewPanelApi, IDockviewPanelProps } from "dockview-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { ExternalLinkIcon, Undo2Icon } from "lucide-react";
 import { assetSummaryGroup, valueRow, type AssetDiff, type GraphDiff, type PropertyDiffGroup, type PropertyDiffRow, type SceneDiff } from "@haptic/assets/asset-diff";
@@ -12,7 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group
 import { useSourceControlActions, useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
 import { useDocumentActions, useIntegratedSyncState } from "../context/document-context";
 import { refLabel, type DiffTarget } from "../services/source-control-diff";
-import { DiffPlaceholder, StatusBadge } from "./diff-common";
+import { DiffPlaceholder, StatusBadge, useDiffWindowShown } from "./diff-common";
 import { ASSET_ITEM, hasDiff } from "./diff-status";
 import { PropertyDiffTable, type DiffLayout as Layout } from "./diff-property-table";
 import { TextureDiffView } from "./diff-texture-view";
@@ -122,7 +122,8 @@ function LayoutControls({ layout, onLayout, changedOnly, onChangedOnly }: { layo
  * the view for its kind (Scenes and other assets as properties, graphs on
  * the canvas, Textures as images), with **Open <Kind>** and **Revert Asset**.
  */
-export function DiffContents() {
+export function DiffContents({ api }: { api?: DockviewPanelApi } = {}) {
+  useDiffWindowShown(api);
   const state = useSourceControlDiffState();
   const diffService = useSourceControlDiff();
   const snapshot = useIntegratedSyncState();
@@ -197,7 +198,6 @@ export function DiffContents() {
   );
 }
 
-export function DiffPanel(_props: IDockviewPanelProps) {
-  void _props;
-  return <DiffContents />;
+export function DiffPanel({ api }: IDockviewPanelProps) {
+  return <DiffContents api={api} />;
 }
