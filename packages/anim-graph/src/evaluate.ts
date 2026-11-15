@@ -811,7 +811,7 @@ function visitPoseGraph(
     }
     if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE) {
       // The bone changes after the pose it takes, so a change deeper in the graph applies first.
-      visit(poseInputSource(index, node.id, "pose"), weight, flipX, flipY, masks);
+      visit(poseInputSource(index, node.id, "sourcePose"), weight, flipX, flipY, masks);
       const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 1)));
       const modifier = transformBoneModifier(node, data, alpha * weight);
       if (modifier) modifiers.push(masks ? { ...modifier, masks } : modifier);

@@ -78,8 +78,9 @@ export function poseInputPins(type: string, count?: unknown): string[] {
     case ANIM_POSE_LAYERED_BLEND_TYPE:
       return ["basePose", ...Array.from({ length: layeredBlendInputCount(count) }, (_, index) => `blendPose${index}`)];
     case ANIM_POSE_SAVE_CACHED_TYPE:
-    case ANIM_CONTROL_TRANSFORM_BONE_TYPE:
       return ["pose"];
+    case ANIM_CONTROL_TRANSFORM_BONE_TYPE:
+      return ["sourcePose"];
     case ANIM_POSE_OUTPUT_TYPE: return ["pose"];
     case ANIM_FRAME_OUTPUT_TYPE: return ["frame"];
     case ANIM_POSE_BLEND_TYPE: return ["a", "b"];

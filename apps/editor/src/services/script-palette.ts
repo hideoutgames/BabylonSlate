@@ -423,7 +423,7 @@ function animEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPalet
 }
 
 /** A state graph's Use Cached Pose <Name> rows, one per cached pose its Animation Graph saves. */
-function useCachedPosePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
+function cachedPoseUsePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
   if (options?.animationGraphHost !== "pose" || options.animPose?.dimension !== "3d") return [];
   const def = nodeRegistry.get(ANIM_POSE_USE_CACHED_TYPE);
   if (!def) return [];
@@ -497,7 +497,7 @@ function scriptPaletteInjectorNodes(
   if (isPureAnimGraphHost(options?.animationGraphHost)) {
     return markOutOfContext(
       [
-        ...useCachedPosePaletteNodes(nodeRegistry, options),
+        ...cachedPoseUsePaletteNodes(nodeRegistry, options),
         ...variableAccessPaletteNodes(nodeRegistry, options),
         ...structPaletteNodes(nodeRegistry, options),
         ...dataPaletteNodes(nodeRegistry, options),

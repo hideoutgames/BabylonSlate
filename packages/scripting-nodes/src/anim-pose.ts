@@ -108,7 +108,7 @@ export const animPoseNodes: NodeDefinition[] = [
     "Transform Bone",
     "Changes one bone's translation, rotation and scale: each replaced or added to, in actor, parent or bone space, blended in by Alpha.",
     () => [
-      pin("pose", "pose", "in", POSE),
+      pin("sourcePose", "sourcePose", "in", POSE),
       pin("translation", "translation", "in", VEC3, "data", true, { x: 0, y: 0, z: 0 }),
       pin("rotation", "rotation", "in", ROTATOR, "data", true, { pitch: 0, yaw: 0, roll: 0 }),
       pin("scale", "scale", "in", VEC3, "data", true, { x: 1, y: 1, z: 1 }),

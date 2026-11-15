@@ -371,7 +371,7 @@ function isAnimCatalogNodeAllowed(
     if (nodeId.startsWith("anim.control.")) return pose.dimension === "3d";
     const prefix = pose.dimension === "3d" ? "anim.pose." : "anim.frame.";
     if (!nodeId.startsWith(prefix)) return false;
-    // Use Cached Pose comes one per saved name (`useCachedPosePaletteNodes`), never as a bare node.
+    // Use Cached Pose comes one per saved name (`cachedPoseUsePaletteNodes`), never as a bare node.
     if (nodeId === "anim.pose.useCachedPose") return false;
     // Each state graph has its one protected output.
     return nodeId !== `${prefix}output`;

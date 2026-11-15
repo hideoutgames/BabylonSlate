@@ -359,6 +359,7 @@ describe("FeatureTest starter", () => {
     }
     const clipCatalog = animClipCatalogFromAssets(reopened.registry!.list());
     const blendSpacePlayers = new Set<string>();
+    const poseNodeTypes = new Set<string>();
     const syncGroupMembers = new Map<string, number>();
     let aliasTransitions = 0;
     for (const [type, kind, dimension] of [
@@ -373,6 +374,7 @@ describe("FeatureTest starter", () => {
         // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
         for (const state of resolveAnimGraphClips(graph, clipCatalog).stateMachine.states) {
           for (const node of state.stateGraph.nodes) {
+            poseNodeTypes.add(node.type);
             const group = typeof node.data.syncGroup === "string" ? node.data.syncGroup : "";
             if (group) syncGroupMembers.set(`${asset.path}:${group}`, (syncGroupMembers.get(`${asset.path}:${group}`) ?? 0) + 1);
             if (!isBlendSpacePlayerType(node.type)) continue;
@@ -388,6 +390,13 @@ describe("FeatureTest starter", () => {
     expect(Math.max(0, ...syncGroupMembers.values())).toBeGreaterThan(1);
     // A State Alias with a transition is showcased.
     expect(aliasTransitions).toBeGreaterThan(0);
+    // Per-bone layering, cached poses and a skeletal control are showcased.
+    expect([...poseNodeTypes]).toEqual(expect.arrayContaining([
+      "anim.pose.layeredBlendPerBone",
+      "anim.pose.saveCachedPose",
+      "anim.pose.useCachedPose",
+      "anim.control.transformBone",
+    ]));
   });
 
   it("authors physics without pairing problems", async () => {

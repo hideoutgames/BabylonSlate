@@ -34,7 +34,7 @@ Nodes that only exist in Animation Graphs: in the Animation Object's event graph
 
 ## Poses
 
-Nodes of a 3D Animation Graph's state graphs. Their **Pose** wires carry a whole Skeleton pose and connect only to other Pose pins.
+Nodes of a 3D Animation Graph's state graphs. Their **Pose** wires carry a whole Skeleton pose and connect only to other Pose pins. A pose output connects to one input; use [Save Cached Pose](save-cached-pose.md) to use a pose in more than one place.
 
 | Node | Description |
 | --- | --- |
@@ -46,6 +46,17 @@ Nodes of a 3D Animation Graph's state graphs. Their **Pose** wires carry a whole
 | [Blend](blend.md) | Blends two poses by Alpha: 0 is A, 1 is B. |
 | [Blend Poses By Bool](blend-poses-by-bool.md) | Blends to True Pose or False Pose as Active changes. |
 | [Blend Poses By Int](blend-poses-by-int.md) | Blends to the pose Active Index picks. |
+| [Layered Blend Per Bone](layered-blend-per-bone.md) | Blends each Blend Pose onto the Base Pose by its Blend Weight, on the bones of its branch filters only. |
+| [Save Cached Pose](save-cached-pose.md) | Saves a pose under a name, so Use Cached Pose nodes in any state reuse it, evaluated once a frame. |
+| [Use Cached Pose](use-cached-pose.md) | The pose a Save Cached Pose saved under this name. |
+
+## Skeletal Controls
+
+Nodes of a 3D Animation Graph's state graphs that change bones of the pose they take.
+
+| Node | Description |
+| --- | --- |
+| [Transform Bone](transform-bone.md) | Changes one bone's translation, rotation and scale: each replaced or added to, in actor, parent or bone space, blended in by Alpha. |
 
 ## Frames
 

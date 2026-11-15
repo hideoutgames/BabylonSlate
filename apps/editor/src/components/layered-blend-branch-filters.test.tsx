@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { LayeredBlendBranchFilters, layeredBlendBranchLists } from "./layered-blend-branch-filters";
+import { LayeredBlendBranchFilters } from "./layered-blend-branch-filters";
+import { layeredBlendBranchLists } from "../lib/layered-blend-branches";
 
 afterEach(cleanup);
 

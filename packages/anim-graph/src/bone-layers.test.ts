@@ -165,7 +165,7 @@ describe("Cached poses", () => {
 describe("Transform Bone", () => {
   const transform = (data: Record<string, unknown>) => graphOf(
     [player("idle"), node("bone", ANIM_CONTROL_TRANSFORM_BONE_TYPE, { bone: "head", ...data })],
-    [wire("idle", "bone", "pose"), wire("bone", ANIM_POSE_OUTPUT_NODE_ID, "pose")],
+    [wire("idle", "bone", "sourcePose"), wire("bone", ANIM_POSE_OUTPUT_NODE_ID, "pose")],
   );
 
   it("sends its changed channels: Rotation as a quaternion, each with its mode and space", () => {
@@ -196,7 +196,7 @@ describe("Transform Bone", () => {
   it("reads wired values, defaults Scale to 1, and scales Alpha with its weight in the graph", () => {
     const graph = graphOf(
       [player("idle"), player("other"), node("bone", ANIM_CONTROL_TRANSFORM_BONE_TYPE, { bone: "head", scaleMode: "add", translationMode: "add" }), node("blend", "anim.pose.blend", { "default:alpha": 0.25 })],
-      [wire("idle", "bone", "pose"), wire("bone", "blend", "a"), wire("other", "blend", "b"), wire("blend", ANIM_POSE_OUTPUT_NODE_ID, "pose")],
+      [wire("idle", "bone", "sourcePose"), wire("bone", "blend", "a"), wire("other", "blend", "b"), wire("blend", ANIM_POSE_OUTPUT_NODE_ID, "pose")],
     );
     const state = evaluateAnimGraph(oneState(graph), null, 0, { poseData: () => ({ bone: { translation: { x: 0, y: 0.5, z: 0 } } }) });
     expect(state.boneModifiers).toEqual([expect.objectContaining({
@@ -215,8 +215,8 @@ describe("Transform Bone", () => {
         node("layers", ANIM_POSE_LAYERED_BLEND_TYPE, { layers: [{ branches: [{ bone: "spine_01", blendDepth: 0 }] }] }),
       ],
       [
-        wire("walk", "layers", "basePose"), wire("attack", "inner", "pose"), wire("inner", "layers", "blendPose0"),
-        wire("layers", "outer", "pose"), wire("outer", ANIM_POSE_OUTPUT_NODE_ID, "pose"),
+        wire("walk", "layers", "basePose"), wire("attack", "inner", "sourcePose"), wire("inner", "layers", "blendPose0"),
+        wire("layers", "outer", "sourcePose"), wire("outer", ANIM_POSE_OUTPUT_NODE_ID, "pose"),
       ],
     );
     const state = evaluateAnimGraph(oneState(graph), null, 0, {});
@@ -266,7 +266,7 @@ describe("cached pose and Transform Bone validation", () => {
   });
 
   it("warns on a Transform Bone with no bone", () => {
-    const graph = graphOf([player("idle"), node("bone", ANIM_CONTROL_TRANSFORM_BONE_TYPE)], [wire("idle", "bone", "pose"), wire("bone", ANIM_POSE_OUTPUT_NODE_ID, "pose")]);
+    const graph = graphOf([player("idle"), node("bone", ANIM_CONTROL_TRANSFORM_BONE_TYPE)], [wire("idle", "bone", "sourcePose"), wire("bone", ANIM_POSE_OUTPUT_NODE_ID, "pose")]);
     expect(validateAnimGraph(oneState(graph))).toEqual([expect.objectContaining({ code: "anim.missingBone", nodeId: "bone", severity: "warning" })]);
   });
 });
