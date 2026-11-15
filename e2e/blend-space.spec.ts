@@ -52,6 +52,18 @@ test.describe("Blend Space", () => {
     await expect.poll(() => cycle.textContent()).not.toBe(first);
     await page.getByTestId("blend-space-preview-pause").click();
     await expect(page.getByTestId("blend-space-preview-play")).toBeVisible();
+
+    // A mouse drags an Animation from the list onto the Grid, as a finger does on a tablet: it lands where dropped.
+    const sprint = animations.getByRole("listitem").filter({ hasText: /^mannequin_sprint/ });
+    await sprint.hover();
+    await page.mouse.down();
+    await page.mouse.move(atSpeed(4), box.y + box.height / 2, { steps: 12 });
+    await page.mouse.up();
+    await expect(page.getByTestId("blend-space-sample-2")).toHaveAttribute("data-x", "4");
+    await expect(page.getByTestId("blend-space-sample-2")).toHaveAttribute("data-selected", "true");
+    // Double-clicking an Animation in the list opens it.
+    await idle.locator("span").first().dblclick();
+    await expect(page.getByTestId("document-workspace-animation")).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath("blend-space-editor.png") });
   });
 });

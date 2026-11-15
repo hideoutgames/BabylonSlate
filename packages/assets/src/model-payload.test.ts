@@ -4,6 +4,7 @@ import {
   encodePackedModelAsset,
   normalizeModelPayload,
   peekPackedModelPayload,
+  withSkeletonSockets,
 } from "./model-payload";
 
 describe("normalizeModelPayload", () => {
@@ -151,5 +152,20 @@ describe("packed Model envelope", () => {
   it("does not read raw GLB as a packed Model", () => {
     expect(peekPackedModelPayload(glb)).toBeNull();
     expect(decodePackedModelAsset(glb)).toBeNull();
+  });
+});
+
+describe("withSkeletonSockets", () => {
+  const grip = { name: "Grip", bone: "hand", position: [0, 0.1, 0] as [number, number, number], rotation: [0, 0, 0, 1] as [number, number, number, number], scale: [1, 1, 1] as [number, number, number] };
+
+  it("ships the Skeleton's sockets with the Model, and none when the Skeleton has none", () => {
+    const model = normalizeModelPayload({ skeletonGuid: "rig" });
+    const shipped = withSkeletonSockets(model, [grip]);
+    expect(shipped.sockets).toEqual([grip]);
+    expect(shipped.sockets![0]).not.toBe(grip);
+    expect(withSkeletonSockets(shipped, [])).not.toHaveProperty("sockets");
+    expect(withSkeletonSockets(model, undefined)).toBe(model);
+    // The packed Model reads them back.
+    expect(normalizeModelPayload(JSON.parse(JSON.stringify(shipped))).sockets).toEqual([grip]);
   });
 });

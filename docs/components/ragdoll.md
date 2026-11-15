@@ -25,7 +25,7 @@ Select an actor with a [Mesh](mesh.md) that uses a Model with a skeleton, then c
 
 ## Bone Names
 
-For a partial ragdoll, add the exact names of bones that form one connected chain or subtree, including the parents that connect them. The other bones keep their captured pose. A ragdoll uses up to 128 bones.
+For a partial ragdoll, add the exact names of bones that form one connected chain or subtree, including the parents that connect them. When the actor's Model is on a Skeleton, **Add Bone** picks them from its bones. The other bones keep their captured pose. A ragdoll uses up to 128 bones.
 
 ## Notes
 

@@ -95,6 +95,7 @@ export * from "./scene-layer-pointer";
 export * from "./overlay-touch-target";
 export * from "./overlay-layout-render";
 export * from "./anim-apply";
+export * from "./anim-pose";
 export * from "./collider-visual";
 export * from "./editor-debug-overlay";
 export * from "./editor-billboard";

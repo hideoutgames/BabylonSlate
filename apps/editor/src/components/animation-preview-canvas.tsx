@@ -3,13 +3,16 @@ import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { ModelMaterialSlot, SkeletonKind } from "@haptic/assets";
 import {
+  applyPoseClip,
   attachMaterialPreviewGestures,
   attachSkeletonPreview,
+  bindPoseClip,
   createMaterialPreviewPresenter,
   createModelPreviewScene,
   installPreviewEnvironment,
   setSceneRenderSettings,
   loadModelPreviewSource,
+  poseRigFor,
   previewRigRoot,
   retargetAnimationGroupWithMeshProxy,
   type MaterialPreviewPresenter,
@@ -31,8 +34,8 @@ function previewClipOf(group: AnimationGroup): AnimationPreviewClip {
 }
 
 /**
- * The Animation preview's 3D view: the clip on its Model, held paused and seeked to the clock's playhead on each
- * frame, so playing, pausing, stepping and scrubbing all go through the clock.
+ * The Animation preview's 3D view: the clip on its Model, posed at the clock's playhead on each frame by the pose
+ * evaluator Play uses, so playing, pausing, stepping and scrubbing all go through the clock.
  */
 export function AnimationPreviewCanvas({
   sourceBytes,
@@ -76,7 +79,6 @@ export function AnimationPreviewCanvas({
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
-  const playingRef = useRef<AnimationGroup | null>(null);
   const { release: releaseMaterials } = useModelSlotMaterials({
     hostRef,
     engine,
@@ -148,10 +150,9 @@ export function AnimationPreviewCanvas({
         } else {
           group = loaded.animationGroups.find((entry) => entry.name === clipName) ?? null;
         }
-        // Started and paused with live animatables, so seeking poses it; Babylon never advances it itself.
-        group?.play(true);
-        group?.pause();
-        playingRef.current = group;
+        // Bound before anything poses the Model, so the clip's channels rest at its bind pose.
+        const clip = group ? bindPoseClip(group, undefined) : null;
+        const rig = clip ? poseRigFor([clip]) : null;
         presenter = createMaterialPreviewPresenter(host, canvas, {
           maxFps: 30,
           staticContent: true,
@@ -177,9 +178,9 @@ export function AnimationPreviewCanvas({
         const tick = () => {
           if (cancelled) return;
           const at = clockRef.current.normalised();
-          if (group && at !== applied) {
+          if (clip && rig && at !== applied) {
             applied = at;
-            group.goToFrame(group.from + at * (group.to - group.from));
+            applyPoseClip(rig, clip, clip.from + at * (clip.to - clip.from));
             presenter?.present({ force: true });
           } else {
             presenter?.present();
@@ -189,7 +190,6 @@ export function AnimationPreviewCanvas({
         raf.id = window.requestAnimationFrame(tick);
       } catch (error) {
         console.warn("[render] Animation preview failed", error);
-        playingRef.current?.stop();
         stopRestoreWatch?.();
         stopRestoreWatch = null;
         presenter?.dispose();
@@ -208,8 +208,6 @@ export function AnimationPreviewCanvas({
       cancelled = true;
       window.cancelAnimationFrame(raf.id);
       overlay.dispose();
-      playingRef.current?.stop();
-      playingRef.current = null;
       setClipLoaded(false);
       bonesRef.current?.dispose();
       bonesRef.current = null;

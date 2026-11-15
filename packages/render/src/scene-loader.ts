@@ -678,7 +678,7 @@ export function applySceneToBabylonScene(
   const meshes = new Map<string, Mesh>();
   const loadBinding = {
     slotAnimEpoch: new Map<number, number>(),
-    slotAnimationGroups: new Map(),
+    slotPoseClips: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
     modelBytes: meshAssets.modelBytes,
     modelSources: meshAssets.modelSources,

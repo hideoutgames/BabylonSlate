@@ -134,6 +134,44 @@ describe("Skeleton editor", () => {
     expect(picker.textContent).toContain("Rogue");
     expect(picker.textContent).not.toContain("Crate");
     act(() => { screen.getByText("Rogue").click(); });
-    expect(documents.applyAssetDocumentChange).toHaveBeenCalledWith("rig", expect.objectContaining({ modelGuid: "rogue" }));
+    expect(documents.applyAssetDocumentChange).toHaveBeenCalledWith("rig", expect.objectContaining({ modelGuid: "rogue" }), undefined);
+  });
+
+  it("adds a socket to the selected bone, lists it under the bone and edits, renames and removes it", async () => {
+    const withSocket = { ...HERO_SKELETON, sockets: [{ name: "Grip", bone: "spine", position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }] };
+    documents.open = [{ id: "rig", ref: { path: "assets/Hero_Skeleton.hasset" }, content: withSocket }];
+    documents.assets = [skeletonAsset, model("hero", "Hero", "rig-guid")];
+    documents.readAssetChunk.mockResolvedValue(buildMinimalGlbFixture());
+    render(
+      <DocumentWorkspaceProvider documentId="rig">
+        <SkeletonEditingProvider>
+          <SkeletonDetailsPanel {...panelProps} />
+          <SkeletonPreviewPanel {...panelProps} />
+        </SkeletonEditingProvider>
+      </DocumentWorkspaceProvider>,
+    );
+    const rows = () => screen.getAllByTestId(/^tree-row-/).map((row) => row.getAttribute("data-testid")!.slice("tree-row-".length));
+    expect(rows()).toEqual(["hips", "spine", "socket:Grip", "head", "leg"]);
+    const canvas = await screen.findByTestId("skeleton-preview-canvas");
+    expect(canvas.getAttribute("data-sockets")).toBe("1");
+
+    // A bone offers Add Socket: a new socket on it, named after it, at the bone.
+    tapRow("head");
+    act(() => { screen.getByTestId("skeleton-add-socket").click(); });
+    const added = documents.applyAssetDocumentChange.mock.calls.at(-1)![1] as typeof withSocket;
+    expect(added.sockets.at(-1)).toEqual({ name: "head_Socket", bone: "head", position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] });
+
+    // Selecting the socket shows its rows; the Preview gets it as the gizmo's target.
+    tapRow("socket:Grip");
+    expect(canvas.getAttribute("data-selected-socket")).toBe("Grip");
+    const details = screen.getByTestId("skeleton-socket-details");
+    expect(details.textContent).toContain("Bone");
+    expect(details.textContent).toContain("Position");
+    expect(screen.queryByTestId("skeleton-bone-details")).toBeNull();
+
+    act(() => { screen.getByTestId("skeleton-remove-socket").click(); });
+    const removed = documents.applyAssetDocumentChange.mock.calls.at(-1)![1] as typeof withSocket;
+    expect(removed.sockets).toEqual([]);
+    expect(canvas.getAttribute("data-selected-socket")).toBeNull();
   });
 });

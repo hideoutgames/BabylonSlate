@@ -1097,11 +1097,15 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
     expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 2, scopedReadinessMismatches: 1 });
+    // The disagreement says what the probe of every mesh did, after which mark, and names the Effect it asked for.
+    expect(graph.diagnostics().scopedReadinessMismatchCauses).toHaveLength(1);
+    expect(graph.diagnostics().scopedReadinessMismatchCauses[0]).toMatch(/^the whole probe asked for \d+ after particleBind \(0 scoped\): .+ \[.+\] \S+ \(ready; /);
     // The kept mesh is not ready, and only the probe of every mesh sees it.
     vi.spyOn(keptMaterial, "isReadyForSubMesh").mockReturnValue(false);
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
     expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 3, scopedReadinessMismatches: 2 });
+    expect(graph.diagnostics().scopedReadinessMismatchCauses[1]).toMatch(/^the whole probe failed after particleBind \(0 scoped\)/);
   } finally {
     verifyScopedReadinessProbes(false);
     graph.dispose();

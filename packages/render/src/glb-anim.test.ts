@@ -1,6 +1,4 @@
-import { renderSceneWithGameTime, setSceneGameTimePaused } from "./scene-game-time";
 import { installAssetBytes } from "@haptic/assets";
-import { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -8,11 +6,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@haptic/assets";
-import {
-  applyAnimStateToScene,
-  sceneAnimHostFromBinding,
-  type NamedSeekableGroup,
-} from "./anim-apply";
+import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import { applyPoseClip, poseRigFor } from "./anim-pose";
 import { markInstanceSource } from "./instance-source";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./test-support/test-engine";
@@ -130,28 +125,6 @@ describe("animationRetargetMatchingClips", () => {
 });
 
 describe("beginSlotModelAnimLoad", () => {
-  it("restores the authored values after lazily starting an overlapping clip", async () => {
-    const handle = createTestEngine();
-    new FreeCamera("camera", new Vector3(0, 0, -5), handle.scene);
-    const binding = createSnapshotSceneBinding();
-    const root = createModelActorRoot(handle.scene, "actor");
-    const split = splitGlbJsonBin(encodeParentedAnimatedTriangleGlb("First"))!;
-    const animations = split.json.animations as Record<string, unknown>[];
-    animations.push({ ...animations[0], name: "Second" });
-    try {
-      await beginSlotModelAnimLoad(handle.scene, binding, 1, "model", installAssetBytes(encodeGlbJsonBin(split.json, split.bin)), root);
-      const [first, second] = binding.slotAnimationGroups!.get(1)! as NamedSeekableGroup[];
-      first!.goToFrame(30);
-      first!.setWeightForAllAnimatables?.(1);
-      handle.scene.render();
-      const part = visualMeshes(root)[0]!;
-      expect(part.position.y).toBeCloseTo(0.5);
-      second!.goToFrame(45);
-      second!.reset?.();
-      expect(part.position.y).toBeCloseTo(0);
-    } finally { handle.scene.dispose(); handle.engine.dispose(); }
-  });
-
   it("coalesces concurrent actor loads and leaves static instances free of animation work", async () => {
     const handle = createTestEngine();
     const binding = createSnapshotSceneBinding();
@@ -164,9 +137,10 @@ describe("beginSlotModelAnimLoad", () => {
       ]);
       expect(visualMeshes(root)).toHaveLength(1);
       expect(handle.scene.animatables).toHaveLength(0);
-      const clip = binding.slotAnimationGroups!.get(1)![0]!;
-      clip.goToFrame((clip.from + clip.to) / 2);
-      expect(handle.scene.animatables.length).toBeGreaterThan(0);
+      // Posing never starts the clip's AnimationGroup.
+      const clips = binding.slotPoseClips!.get(1)!;
+      applyPoseClip(poseRigFor(clips), clips[0]!, (clips[0]!.from + clips[0]!.to) / 2);
+      expect(handle.scene.animatables).toHaveLength(0);
       root.dispose();
       expect(handle.scene.animatables).toHaveLength(0);
       expect(handle.scene.animationGroups).toHaveLength(0);
@@ -228,62 +202,28 @@ describe("beginSlotModelAnimLoad", () => {
   it.each<[string, Layer[][], number, number]>([
     ["mixes crossfade layers by weight", [[["First", 1, 0.5], ["Second", 0.5, 0.5]]], 0.75, 0.25],
     ["keeps the outgoing pose when the incoming layer has no weight", [[["First", 1, 1], ["Second", 0.5, 0]]], 1, 0],
-    ["seeks a clip shared by two layers once at the current state's time", [[["First", 0.25, 0.5], ["First", 0.75, 0.5]]], 0.75, 0],
-    ["renders only the latest crossfade of a slot", [
+    ["plays a clip shared by two layers once at the current state's time", [[["First", 0.25, 0.5], ["First", 0.75, 0.5]]], 0.75, 0],
+    ["poses only the latest crossfade of a slot", [
       [["First", 1, 0.2], ["Second", 0.5, 0.8]],
       [["First", 1, 0.5], ["Second", 0.5, 0.5]],
     ], 0.75, 0.25],
-    ["drops a crossfade replaced by a single clip before the render", [
+    ["rests what a crossfade's successor does not play", [
       [["First", 1, 0.5], ["Second", 0.5, 0.5]],
       [["First", 1, 1]],
     ], 1, 0],
+    ["rests what the next clip does not play", [[["Second", 0.5, 1]], [["First", 1, 1]]], 1, 0],
+    ["fills a lone layer's missing weight from the rest pose", [[["First", 1, 0.5]]], 0.5, 0],
   ])("%s", async (_name, commands, partY, rootY) => {
     const model = await loadCrossfadeModel();
     for (const layers of commands) model.apply(layers);
-    model.scene.render();
+    // The pose is written as the command lands, before any render, and Babylon never animates the groups.
     const [part, root] = model.pose();
     expect(part).toBeCloseTo(partY);
     expect(root).toBeCloseTo(rootY);
-  });
-
-  it("drops a crossfade replaced after a render skipped its animation pass", async () => {
-    const model = await loadCrossfadeModel();
-    const loading = {};
-    // Babylon skips a Scene's first animation pass while data is pending.
-    model.scene.addPendingData(loading);
-    model.apply([["First", 1, 0.5], ["Second", 0.5, 0.5]]);
+    expect(model.scene.animatables).toHaveLength(0);
     model.scene.render();
-    model.scene.removePendingData(loading);
-    model.apply([["First", 1, 1]]);
-    model.scene.render();
-    const [part, root] = model.pose();
-    expect(part).toBeCloseTo(1);
-    expect(root).toBeCloseTo(0);
-  });
-
-  it("drops a queued crossfade when its model instance is disposed", async () => {
-    const model = await loadCrossfadeModel();
-    model.apply([["First", 1, 0.5], ["Second", 0.5, 0.5]]);
-    model.root.dispose();
-    const seek = vi.spyOn(AnimationGroup.prototype, "goToFrame");
-    try {
-      model.scene.render();
-      expect(seek).not.toHaveBeenCalled();
-    } finally { seek.mockRestore(); }
-  });
-
-  it("retains a queued weighted pose while a paused scene redraws", async () => {
-    const model = await loadCrossfadeModel();
-    model.scene.render();
-    const before = model.pose();
-    setSceneGameTimePaused(model.scene, true);
-    model.apply([["First", 1, 0.5], ["Second", 0.5, 0.5]]);
-    renderSceneWithGameTime(model.scene);
-    expect(model.pose()).toEqual(before);
-    setSceneGameTimePaused(model.scene, false);
-    model.scene.render();
-    expect(model.pose()[0]).toBeCloseTo(0.75);
-    expect(model.pose()[1]).toBeCloseTo(0.25);
+    expect(model.pose()[0]).toBeCloseTo(partY);
+    expect(model.pose()[1]).toBeCloseTo(rootY);
   });
 
   it("accounts a mesh shared by two glTF nodes once", async () => {

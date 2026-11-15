@@ -440,7 +440,7 @@ export function createPlayMesh(
       // Parts own independent native instances and preparation epochs. Only the
       // winning whole hierarchy publishes their animation lookup into the slot.
       const owner = preparation ? {
-        ...binding, slotAnimEpoch: new Map(), slotAnimLoads: new Map(), slotAnimationGroups: new Map(),
+        ...binding, slotAnimEpoch: new Map(), slotAnimLoads: new Map(), slotPoseClips: new Map(),
         pendingAnimState: undefined, slotAnimReady: undefined,
       } : binding;
       await beginSlotModelAnimLoad(

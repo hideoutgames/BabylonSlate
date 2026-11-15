@@ -9,7 +9,8 @@ import {
   type AnimState,
   type AnimTransition,
 } from "@haptic/anim-graph";
-import { normalizeAnimationPayload, type BlendSpacePayload } from "@haptic/assets";
+import { normalizeAnimationPayload, normalizeSkeletonPayload, type BlendSpacePayload } from "@haptic/assets";
+import { OWNED_ACTOR_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import {
   createDefaultScene,
   lookAtRotation,
@@ -17,6 +18,10 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
+  ANIMATION_TICK_MODE_LABELS,
+  ANIMATION_TICK_MODE_PROPERTY,
+  ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+  type AnimationTickMode,
 } from "@haptic/core";
 import { animClipCatalogFromAssets } from "../anim-clip-catalog";
 import {
@@ -31,7 +36,7 @@ import {
   type FeatureTestContext,
   type Vec3,
 } from "./context";
-import { classGraph, gChain, gExec, getVar, gNode, gWire, setVar, varMember } from "./graph";
+import { classGraph, gChain, gExec, getVar, gNode, gWire, printString, setVar, varMember } from "./graph";
 import { animationObjectHearing, playerNode, playerState, poseGraph, stateMachineGraph, type FeatureTestClip } from "./anim-pose-graphs";
 import { stressPoint } from "./layout";
 
@@ -143,6 +148,7 @@ const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
 export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promise<void> {
   await authorDoorOpenDuration(ctx);
   await authorAdventurerFootsteps(ctx);
+  await authorAdventurerGripSocket(ctx);
   const mannequinRun = await saveSpeedBlendSpace(
     ctx,
     NAMES.mannequinBlendSpace,
@@ -198,7 +204,7 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
   const doorModel = requireRef(ctx.assets.models["cabin-door-rotate"], "the cabin-door-rotate Model");
   add(actor("ft-anim-door", "Swinging Door", tf(zone.at(7, 0, 0), { scale: [DOOR_SCALE, DOOR_SCALE, DOOR_SCALE] }), [
     meshComp("ft-anim-door-mesh", "box", { assetGuid: doorModel }),
-    comp("ft-anim-door-graph", "AnimationGraphComponent", { graphGuid: refs.doorGraph }),
+    comp("ft-anim-door-graph", "AnimationGraphComponent", { graphGuid: refs.doorGraph, [ANIMATION_TICK_MODE_PROPERTY]: "whenVisible" }),
   ]));
 
   const font = ctx.assets.fonts.facetype || null;
@@ -214,7 +220,8 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
       const phase = roundTo(((index % 16) * CYCLE_SECONDS) / 16, 100);
       const id = `ft-anim-stress-${index + 1}`;
       const position = stressPoint("animation", [x, 0, z]);
-      ctx.addActor(locomotorActor(refs.locomotor, id, `Crowd Mannequin ${index + 1}`, position, phase), {
+      // The crowd poses only what the camera sees.
+      ctx.addActor(locomotorActor(refs.locomotor, id, `Crowd Mannequin ${index + 1}`, position, phase, "whenVisible"), {
         scene: ctx.stressScene,
       });
     }
@@ -243,17 +250,45 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
   ]));
   // Facing the camera: a half turn about Y.
   const facing = { rotationDeg: [0, 180, 0] as Vec3 };
-  const place = (placed: PlacedClass, id: string, name: string, x: number, phase: number) =>
-    add(actor(id, name, tf([x, 0, 0], facing), instanceComponents(id, placed.components), {
+  const place = (placed: PlacedClass, id: string, name: string, x: number, phase: number) => {
+    const placedActor = actor(id, name, tf([x, 0, 0], facing), instanceComponents(id, placed.components), {
       classId: placed.ref.classId,
       properties: { Phase: phase },
-    }));
-  place(refs.characters.knight, "ft-animscene-knight", "Knight", -2.5, 0);
+    });
+    add(placedActor);
+    return placedActor;
+  };
+  const knight = place(refs.characters.knight, "ft-animscene-knight", "Knight", -2.5, 0);
   place(refs.characters.rogue, "ft-animscene-rogue", "Rogue Hooded", 0, roundTo(CYCLE_SECONDS / 2, 100));
   place(refs.characters.largeMannequin, "ft-animscene-large", "Mannequin Large", 2.5, roundTo(CYCLE_SECONDS / 4, 100));
+  // Held in the Knight's hand: the scene script attaches it to the Rig_Medium Skeleton's FT_Grip socket.
+  const prop = actor("ft-animscene-socket-prop", "Socket Prop", tf([-2.5, 1, 0], { scale: [0.1, 0.1, 0.1] }), [
+    meshComp("ft-animscene-socket-prop-mesh", "box"),
+  ]);
+  add(prop);
+  scene.script = socketAttachScript(knight, prop);
   add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-1.25, 0.05, -1.6], "Shared Skeleton", font, 0.35));
   add(caption("ft-animscene-caption-large", "Rig_Large Caption", [2.5, 0.05, -1.6], "Rig_Large", font, 0.35));
   await ctx.addSceneDocument({ kind: "scene", folder: SCENES_FOLDER, name: ANIMATION_SCENE, content: scene, order: SCENE_SAVE_ORDER.scene });
+}
+
+/** `FT_Animation`'s scene script: on Begin Play, Attach To Bone puts the prop on the character's grip socket. */
+function socketAttachScript(character: SerializedActor, prop: SerializedActor): SerializedGraph {
+  const owned = (entry: SerializedActor) => ownedGetNodeProperties({ actorId: entry.id, actorName: entry.name, actorClassId: entry.classId ?? "Actor" });
+  return classGraph({
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("get-character", OWNED_ACTOR_GET_NODE_ID, 0, 180, owned(character)),
+      gNode("get-prop", OWNED_ACTOR_GET_NODE_ID, 0, 300, owned(prop)),
+      gNode("attach", "actor.attachToBone", 300, 0, { "default:boneName": GRIP_SOCKET }),
+      printString("report", 600, 0, `FT_Animation script attached ${prop.name} to ${character.name}'s ${GRIP_SOCKET}`),
+    ],
+    edges: [
+      ...gChain("begin", "attach", "report"),
+      gWire("get-prop", "actor", "attach", "actor"),
+      gWire("get-character", "actor", "attach", "target"),
+    ],
+  });
 }
 
 /**
@@ -286,6 +321,28 @@ async function authorAdventurerFootsteps(ctx: FeatureTestContext): Promise<void>
       ],
     });
   }
+}
+
+/** The KayKit Rig_Medium Skeleton's socket the `FT_Animation` Socket Prop attaches to. */
+const GRIP_SOCKET = "FT_Grip";
+
+/**
+ * A socket on the Rig_Medium Skeleton's right hand (its hand slot when the rig has one): every adventurer has it, and
+ * the `FT_Animation` scene script attaches the Socket Prop to the Knight's.
+ */
+async function authorAdventurerGripSocket(ctx: FeatureTestContext): Promise<void> {
+  const guid = ctx.assets.kaykit.mediumSkeleton;
+  const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+  if (!asset) return;
+  const skeleton = normalizeSkeletonPayload(asset.header.payload);
+  const names = skeleton.bones.map((bone) => bone.name);
+  const bone = names.find((name) => name.toLowerCase() === "handslot.r") ??
+    names.find((name) => /hand.*\.r$/i.test(name)) ?? names.find((name) => /hand/i.test(name)) ?? names[0];
+  if (!bone) return;
+  await ctx.host.saveDocument("skeleton", asset.path, {
+    ...skeleton,
+    sockets: [{ name: GRIP_SOCKET, bone, position: [0, 0.1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }],
+  });
 }
 
 /** Save the door's Open Animation with a Duration longer than its clip, as the Inspector's Duration field does. */
@@ -629,14 +686,26 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
   const elapsed = varMember("ft-anim-var-elapsed", "Elapsed", "float", 0, { category: "Locomotion" });
   const phase = varMember("ft-anim-var-phase", "Phase", "float", 0, { category: "Locomotion" });
   const cycleRate = varMember("ft-anim-var-cycle-rate", "CycleRate", "float", CYCLE_RATE, { category: "Locomotion" });
+  // Begin Play hands it to the graph component: the FT_Stress crowd sets When Visible.
+  const tickMode = varMember("ft-anim-var-tick-mode", "TickMode", "enum", ANIMATION_TICK_MODE_LABELS.always, {
+    typeClassId: ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+    category: "Locomotion",
+  });
   const components: SerializedComponent[] = [
     meshComp("prefab-mesh", "box", { assetGuid: modelGuid }),
     comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
   ];
   const graph = classGraph({
-    members: [elapsed, phase, cycleRate],
+    members: [elapsed, phase, cycleRate, tickMode],
     components,
     nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, -320),
+      getVar("get-tick-mode", tickMode, 0, -160),
+      gNode("tick-mode-graph", "component.getNamed", 240, -160, {
+        componentClassId: "AnimationGraphComponent",
+        implicitSelf: true,
+      }),
+      gNode("set-tick-mode", "anim.actor.setTickMode", 480, -320),
       gNode("tick", "flow.event.tick", 0, 0),
       getVar("get-elapsed", elapsed, 0, 160),
       gNode("advance", "math.add", 240, 120),
@@ -657,6 +726,9 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
       gNode("set-cheer", "anim.actor.setVariable", 2140, 0, { "default:name": CHEER.name }),
     ],
     edges: [
+      gExec("begin", "set-tick-mode"),
+      gWire("tick-mode-graph", "out", "set-tick-mode", "target"),
+      gWire("get-tick-mode", "value", "set-tick-mode", "tickMode"),
       gExec("tick", "set-elapsed"),
       ...gChain("set-elapsed", "set-speed", "set-cheer"),
       gWire("get-elapsed", "value", "advance", "a"),
@@ -683,11 +755,18 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
 // ---------------------------------------------------------------------------
 // Actors
 
-/** Locomotor instance with a per-instance Phase (seconds) override. */
-function locomotorActor(placed: PlacedClass, id: string, name: string, position: Vec3, phase: number): SerializedActor {
+/** Locomotor instance with a per-instance Phase (seconds) override, and its Tick Mode when not Always. */
+function locomotorActor(
+  placed: PlacedClass,
+  id: string,
+  name: string,
+  position: Vec3,
+  phase: number,
+  tickMode?: AnimationTickMode,
+): SerializedActor {
   return actor(id, name, tf(position), instanceComponents(id, placed.components), {
     classId: placed.ref.classId,
-    properties: { Phase: phase },
+    properties: { Phase: phase, ...(tickMode ? { TickMode: ANIMATION_TICK_MODE_LABELS[tickMode] } : {}) },
   });
 }
 

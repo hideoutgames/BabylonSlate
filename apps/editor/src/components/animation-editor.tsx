@@ -33,6 +33,7 @@ import {
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalAnimationEditing } from "../context/animation-editing-context";
 import { AnimationEventsEditor } from "./animation-events-editor";
+
 import { AnimEventFlashes } from "./anim-event-flashes";
 import { useClockEventFlashes } from "../lib/anim-event-flashes";
 import { AnimationPreviewCanvas, type AnimationPreviewClip } from "./animation-preview-canvas";
@@ -43,6 +44,12 @@ import { asRecord } from "../lib/as-record";
 import { AnimationPreviewClock, animationPreviewFrameAt } from "../lib/animation-preview-clock";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
+
+/** A Skeleton asset's bone and socket names, for the Spawn Particle System Bone row. */
+function skeletonAttachPointLists(payload: unknown): { bones: string[]; sockets: string[] } {
+  const skeleton = normalizeSkeletonPayload(payload ?? {});
+  return { bones: skeleton.bones.map((bone) => bone.name), sockets: skeleton.sockets.map((socket) => socket.name) };
+}
 
 export function AnimationPreviewPanel(props: IDockviewPanelProps) {
   const shown = useDockPanelShown(props.api);
@@ -365,6 +372,7 @@ export function AnimationEditor({
         events={animation.events ?? []}
         timed
         bones
+        attachPoints={skeleton ? skeletonAttachPointLists(skeleton.header.payload) : undefined}
         newEventTimeMs={editing?.clock.get() ?? 0}
         selectedIds={editing?.selectedEventIds}
         mergeKeyPrefix="animation:event"

@@ -6,7 +6,7 @@ import {
 import {
   isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
-  normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload,
+  normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload, normalizeSkeletonPayload, withSkeletonSockets,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
 } from "@haptic/assets";
@@ -513,6 +513,11 @@ async function acquirePlayAssetSourcesAttempt(
       const reverb = value.chunks.get("audioReverb");
       if (reverb) game.audioReverbBytes.set(guid, reverb);
       options.onProgress?.({ completed: ++completed, total: required.size });
+    }
+    // Each Model carries its Skeleton's sockets, which the renderer resolves attachments to.
+    for (const [guid, model] of game.modelPayloads) {
+      const skeleton = model.skeletonGuid ? game.decodedPayloads?.get(model.skeletonGuid) : undefined;
+      if (skeleton) game.modelPayloads.set(guid, withSkeletonSockets(model, normalizeSkeletonPayload(skeleton).sockets));
     }
     const root = roots[0] ?? required.values().next().value;
     const compileInputs = revisions.filter(([guid]) => COMPILE_INPUT_TYPES.has(host.registry.getByGuid(guid)!.header.type))

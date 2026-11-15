@@ -198,7 +198,7 @@ export function PrefabComponentDetails({
   onUpdate: ComponentPropertyUpdate;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
-  const { actorClassId, viewportMode, parentOf, pickerAssets } = shared;
+  const { actorClassId, viewportMode, parentOf, pickerAssets, components } = shared;
   const linkedScale = useLinkedScale();
   const { context, materialDomains } = usePrefabRowContext(shared);
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
@@ -258,6 +258,7 @@ export function PrefabComponentDetails({
         {component.classId === "RagdollComponent" ? (
           <RagdollBoneNamesEditor
             boneNames={component.properties.boneNames as string[] | undefined}
+            components={components}
             onChange={(boneNames) => onUpdate("boneNames", boneNames)}
             data-testid={`ragdoll-bone-names-${component.id}`}
           />

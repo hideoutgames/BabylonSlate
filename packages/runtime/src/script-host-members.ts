@@ -45,6 +45,9 @@ import {
   type MaterialParameterValue,
   type RandomStream,
   type SaveGameValue,
+  ANIMATION_TICK_MODE_LABELS,
+  ANIMATION_TICK_MODE_PROPERTY,
+  parseAnimationTickMode,
 } from "@haptic/core";
 import { Actor, type ActorComponent, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
@@ -584,6 +587,11 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       services.animGraphControl?.(target)?.getCurrentState() ?? null,
     jumpAnimGraphState: (target, state) => {
       services.animGraphControl?.(target)?.jumpToState(String(state ?? ""));
+    },
+    getAnimGraphTickMode: (target) =>
+      ANIMATION_TICK_MODE_LABELS[parseAnimationTickMode(animationGraphComponentOf(target)?.getVariable(ANIMATION_TICK_MODE_PROPERTY))],
+    setAnimGraphTickMode: (target, tickMode) => {
+      animationGraphComponentOf(target)?.setVariable(ANIMATION_TICK_MODE_PROPERTY, parseAnimationTickMode(tickMode));
     },
     setChannelVolume: (channelGuid, volume) => {
       services.setChannelVolume?.(

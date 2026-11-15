@@ -21,7 +21,21 @@ A rig with the same bone names but other proportions, such as a larger version o
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**.
 
 - **Preview** shows the Preview Model's bones in their rest pose: a tapered bone from each joint to each of its children and a ball at every joint. If it cannot load the mesh, it shows **No Mesh**.
-- The **Inspector** shows the settings below, then the bones as a tree. Select a bone to highlight it, and the bones it leads to, in the **Preview**, and to show its parent and rest pose under the tree; select it again to clear the highlight. A rest value that only an animation file has supplied shows **Unknown**.
+- The **Inspector** shows the settings below, then the bones as a tree, each bone's sockets under it. Select a bone to highlight it, and the bones it leads to, in the **Preview**, and to show its parent and rest pose under the tree; select it again to clear the highlight. A rest value that only an animation file has supplied shows **Unknown**.
+
+## Sockets
+
+A socket is a named point that follows a bone, such as where a character holds a weapon. Anything that attaches to a bone by name also takes a socket's name: [Attach To Bone](../scripting/class/attach-to-bone.md), [Spawn Particles Attached](../scripting/class/spawn-particles-attached.md) and an [Animation Event's](animation.md#animation-events) **Spawn Particle System**. Every Model on the Skeleton has its sockets.
+
+- To add one, select a bone and choose **Add Socket**. It is named after the bone and sits at the bone.
+- Select a socket, in the tree or by tapping its marker in the **Preview**, to edit it under the tree, or drag its gizmo in the **Preview** to move it.
+- Double-click or double-tap a socket in the tree to rename it.
+
+| Setting | Description |
+| --- | --- |
+| Name | Unique among the Skeleton's bones and sockets. |
+| Bone | The bone it follows. A socket whose bone the Skeleton no longer has is marked and attaches to nothing. |
+| Position, Rotation, Scale | Its offset from the bone, in the bone's own space. |
 
 ## Settings
 

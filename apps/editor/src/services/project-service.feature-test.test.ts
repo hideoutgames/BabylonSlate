@@ -416,6 +416,8 @@ describe("FeatureTest starter", () => {
       "FT_AnimAdventurer heard Stride Begin",
       "FT_AnimAdventurer heard Stride End",
       "FT_AnimAdventurer heard Move Started",
+      // A socket name attaches like a bone name.
+      "FT_Animation script attached Socket Prop to Knight's FT_Grip",
     ],
     FT_2D: ["FT_2DRobotGraph heard Step", "FT_2DRobotGraph heard Jump Started"],
   };

@@ -5,43 +5,7 @@ import { flipSpriteAnimationFrame, spriteAnimationFrameAt } from "@haptic/assets
 import { setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
 import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
-
-/**
- * Gameplay animation clock lives in the worker. Render only seeks; it never
- * lets Babylon auto-advance a gameplay-relevant clip (engineplan §2.3).
- */
-interface SeekableAnimationGroup {
-  from?: number;
-  pause(): void;
-  reset?(): void;
-  goToFrame(frame: number): void;
-  setWeightForAllAnimatables?(weight: number): void;
-  /** Weighted seek blended by the next render's animation pass; a later seek or reset replaces it. */
-  blendToFrame?(frame: number, weight: number): void;
-}
-
-function gameplayFrame(
-  group: SeekableAnimationGroup,
-  normalisedTime: number,
-  durationFrames: number,
-): number {
-  const span = Math.max(0, durationFrames);
-  const t = Number.isFinite(normalisedTime)
-    ? Math.min(1, Math.max(0, normalisedTime))
-    : 0;
-  return (group.from ?? 0) + t * span;
-}
-
-export function seekGameplayAnimation(
-  group: SeekableAnimationGroup,
-  normalisedTime: number,
-  durationFrames: number,
-  weight = 1,
-): void {
-  group.pause();
-  group.goToFrame(gameplayFrame(group, normalisedTime, durationFrames));
-  group.setWeightForAllAnimatables?.(weight);
-}
+import { applyPose, poseRigFor, type PoseClip } from "./anim-pose";
 
 /**
  * Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its
@@ -100,13 +64,6 @@ export function resolvePlaySpriteSlot(
   };
 }
 
-export type NamedSeekableGroup = SeekableAnimationGroup & {
-  name: string;
-  from: number;
-  to: number;
-  clipAssetGuid?: string;
-};
-
 export interface MissingAnimClip {
   slotId: number;
   clipName: string;
@@ -127,8 +84,8 @@ export function onceMissingClip(report: (info: MissingAnimClip) => void): (info:
 
 interface SceneAnimHost {
   isPhysicsDriven?(slotId: number): boolean;
-  /** The slot's own groups; clips resolve only from these, never another actor's. */
-  getAnimationGroups(slotId: number): readonly NamedSeekableGroup[];
+  /** The slot's own clips; layers resolve only from these, never another actor's. */
+  getPoseClips(slotId: number): readonly PoseClip[];
   getSpriteSlot?(slotId: number): SpriteAnimSlot | undefined;
   onMissingClip?(info: MissingAnimClip): void;
 }
@@ -150,8 +107,8 @@ function animStateLayers(command: AnimStateCommand): AnimClipLayer[] {
   ];
 }
 
-function groupMatchesClip(
-  entry: Pick<NamedSeekableGroup, "name" | "clipAssetGuid">,
+function clipMatches(
+  entry: Pick<PoseClip, "name" | "clipAssetGuid">,
   clipName: string,
   clipAssetGuid?: string,
 ): boolean {
@@ -160,70 +117,70 @@ function groupMatchesClip(
   return entry.clipAssetGuid === clipAssetGuid;
 }
 
-const NO_GROUPS: readonly NamedSeekableGroup[] = [];
+const NO_CLIPS: readonly PoseClip[] = [];
 
 /** Below this a scan beats a map lookup, and short lists skip the index entirely. */
-const INDEXED_CLIP_GROUPS = 6;
+const INDEXED_CLIPS = 6;
 /**
- * Groups by name, in list order, each with its position. A slot's group list is
- * replaced whole when a model's clips load or unload and a wrapped group's name
+ * Clips by name, in list order, each with its position. A slot's clip list is
+ * replaced whole when a model's clips load or unload and a bound clip's name
  * and clip guid are fixed, so the list's identity and length key its index. An
  * in-place replacement of the same length is caught too: a hit must still sit
  * at its recorded position, and a miss is confirmed against a snapshot of the
  * list, either of which rebuilds the index. The one edit left unseen is an
- * in-place replacement that makes an earlier group than the hit match as well.
+ * in-place replacement that makes an earlier clip than the hit match as well.
  */
-interface ClipGroupEntry {
-  group: NamedSeekableGroup;
+interface ClipEntry {
+  clip: PoseClip;
   position: number;
 }
-interface ClipGroupIndex {
-  members: readonly NamedSeekableGroup[];
-  byName: Map<string, ClipGroupEntry[]>;
-  /** By name and clip guid (`clipKey`), so a lookup naming both finds its group without scanning same-name groups. */
-  byClip: Map<string, ClipGroupEntry[]>;
+interface ClipIndex {
+  members: readonly PoseClip[];
+  byName: Map<string, ClipEntry[]>;
+  /** By name and clip guid (`clipKey`), so a lookup naming both finds its clip without scanning same-name clips. */
+  byClip: Map<string, ClipEntry[]>;
 }
 
-/** A group's name and clip guid as one key; NUL separates them, as neither holds it. */
+/** A clip's name and clip guid as one key; NUL separates them, as neither holds it. */
 function clipKey(name: string, clipAssetGuid: string | undefined): string {
   return `${name}\u0000${clipAssetGuid ?? ""}`;
 }
-const clipGroupIndexes = new WeakMap<readonly NamedSeekableGroup[], ClipGroupIndex>();
+const clipIndexes = new WeakMap<readonly PoseClip[], ClipIndex>();
 
-function buildClipGroupIndex(groups: readonly NamedSeekableGroup[]): ClipGroupIndex {
-  const byName = new Map<string, ClipGroupEntry[]>();
-  const byClip = new Map<string, ClipGroupEntry[]>();
-  const add = (map: Map<string, ClipGroupEntry[]>, key: string, entry: ClipGroupEntry) => {
+function buildClipIndex(clips: readonly PoseClip[]): ClipIndex {
+  const byName = new Map<string, ClipEntry[]>();
+  const byClip = new Map<string, ClipEntry[]>();
+  const add = (map: Map<string, ClipEntry[]>, key: string, entry: ClipEntry) => {
     const list = map.get(key);
     if (list) list.push(entry);
     else map.set(key, [entry]);
   };
-  for (let i = 0; i < groups.length; i++) {
-    const group = groups[i]!;
-    const entry = { group, position: i };
-    add(byName, group.name, entry);
-    add(byClip, clipKey(group.name, group.clipAssetGuid), entry);
+  for (let i = 0; i < clips.length; i++) {
+    const clip = clips[i]!;
+    const entry = { clip, position: i };
+    add(byName, clip.name, entry);
+    add(byClip, clipKey(clip.name, clip.clipAssetGuid), entry);
   }
-  const index = { members: groups.slice(), byName, byClip };
-  clipGroupIndexes.set(groups, index);
+  const index = { members: clips.slice(), byName, byClip };
+  clipIndexes.set(clips, index);
   return index;
 }
 
-function indexedFrom(index: ClipGroupIndex, groups: readonly NamedSeekableGroup[]): boolean {
-  if (index.members.length !== groups.length) return false;
-  for (let i = 0; i < groups.length; i++) if (index.members[i] !== groups[i]) return false;
+function indexedFrom(index: ClipIndex, clips: readonly PoseClip[]): boolean {
+  if (index.members.length !== clips.length) return false;
+  for (let i = 0; i < clips.length; i++) if (index.members[i] !== clips[i]) return false;
   return true;
 }
 
-function findIndexedClipGroup(
-  groups: readonly NamedSeekableGroup[],
+function findIndexedClip(
+  clips: readonly PoseClip[],
   clipName: string,
   clipAssetGuid?: string,
-): NamedSeekableGroup | undefined {
-  let index = clipGroupIndexes.get(groups);
+): PoseClip | undefined {
+  let index = clipIndexes.get(clips);
   let fresh = false;
-  if (!index || index.members.length !== groups.length) {
-    index = buildClipGroupIndex(groups);
+  if (!index || index.members.length !== clips.length) {
+    index = buildClipIndex(clips);
     fresh = true;
   }
   for (;;) {
@@ -233,28 +190,28 @@ function findIndexedClipGroup(
     if (named) {
       for (let i = 0; i < named.length; i++) {
         const entry = named[i]!;
-        if (!groupMatchesClip(entry.group, clipName, clipAssetGuid)) continue;
-        if (groups[entry.position] === entry.group) return entry.group;
+        if (!clipMatches(entry.clip, clipName, clipAssetGuid)) continue;
+        if (clips[entry.position] === entry.clip) return entry.clip;
         moved = true;
         break;
       }
     }
     // A hit that left its position, or a miss in a list edited in place, rebuilds once.
-    if (fresh || (!moved && indexedFrom(index, groups))) return undefined;
-    index = buildClipGroupIndex(groups);
+    if (fresh || (!moved && indexedFrom(index, clips))) return undefined;
+    index = buildClipIndex(clips);
     fresh = true;
   }
 }
 
-/** The first group, in list order, with the clip's name (and guid when one is given). */
-function findClipGroup(
-  groups: readonly NamedSeekableGroup[],
+/** The first clip, in list order, with the clip's name (and guid when one is given). */
+function findClip(
+  clips: readonly PoseClip[],
   clipName: string,
   clipAssetGuid?: string,
-): NamedSeekableGroup | undefined {
-  if (groups.length >= INDEXED_CLIP_GROUPS) return findIndexedClipGroup(groups, clipName, clipAssetGuid);
-  for (let i = 0; i < groups.length; i++) {
-    if (groupMatchesClip(groups[i]!, clipName, clipAssetGuid)) return groups[i];
+): PoseClip | undefined {
+  if (clips.length >= INDEXED_CLIPS) return findIndexedClip(clips, clipName, clipAssetGuid);
+  for (let i = 0; i < clips.length; i++) {
+    if (clipMatches(clips[i]!, clipName, clipAssetGuid)) return clips[i];
   }
   return undefined;
 }
@@ -303,26 +260,25 @@ function applySpriteLayers(
   }
 }
 
-// Per-call scratch (animState runs per animated actor per tick): animation
-// layers with their resolved groups, then one seek per distinct group.
-// Entries are cleared after each call so no group outlives its Scene here.
-// Not re-entrant; host callbacks only look up, reset, seek or warn.
-const resolvedLayers: (AnimClipLayer | undefined)[] = [];
-const resolvedGroups: (NamedSeekableGroup | undefined)[] = [];
-const seekLayers: (AnimClipLayer | undefined)[] = [];
-const seekGroups: (NamedSeekableGroup | undefined)[] = [];
-const seekWeights: number[] = [];
+// Per-call scratch (animState runs per animated actor per tick): the clip
+// layers, then each distinct clip once with its frame and summed weight.
+// Entries are cleared after each call so no clip outlives its Scene here.
+// Not re-entrant; host callbacks only look up or warn.
+const poseClips: (PoseClip | undefined)[] = [];
+const poseLayers: (AnimClipLayer | undefined)[] = [];
+const poseFrames: number[] = [];
+const poseWeights: number[] = [];
 
-function indexOfGroup(
-  groups: readonly (NamedSeekableGroup | undefined)[],
-  count: number,
-  group: NamedSeekableGroup,
-): number {
-  for (let i = 0; i < count; i++) if (groups[i] === group) return i;
-  return -1;
+/** The clip's frame at a layer's normalised time (clamped to the clip). */
+function clipFrame(clip: PoseClip, normalisedTime: number): number {
+  const t = Number.isFinite(normalisedTime) ? Math.min(1, Math.max(0, normalisedTime)) : 0;
+  return clip.from + t * Math.max(0, clip.to - clip.from);
 }
 
-/** Seek weighted AnimationGroups, or bake sprite clip UVs (two-layer blend). */
+/**
+ * Poses a slot from its animation state: 3D clip layers blend by weight through the slot's pose rig (`applyPose`),
+ * and sprite layers bake their frame onto the quad (two layers crossfade through its overlay).
+ */
 export function applyAnimStateToScene(
   scene: SceneAnimHost,
   command: AnimStateCommand,
@@ -331,9 +287,8 @@ export function applyAnimStateToScene(
   const layers = animStateLayers(command);
   let spritePrimary: AnimClipLayer | undefined;
   let spriteSecondary: AnimClipLayer | undefined;
-  let resolvedCount = 0;
-  let seekCount = 0;
-  const slotGroups = scene.getAnimationGroups(command.slotId);
+  let count = 0;
+  const slotClips = scene.getPoseClips(command.slotId);
   try {
     for (let i = 0; i < layers.length; i++) {
       const layer = layers[i]!;
@@ -342,24 +297,12 @@ export function applyAnimStateToScene(
         else spriteSecondary ??= layer;
         continue;
       }
-      // A state with no clip names none: it plays nothing, so its slot's groups rest and nothing is missing.
+      // A state with no clip names none: it plays nothing, so its slot rests and nothing is missing.
       if (!layer.clipName && !layer.clipAssetGuid) continue;
-      resolvedLayers[resolvedCount] = layer;
       // A slot without its own clip (still loading, or not on its Model) must
-      // not seek another actor's group of the same name.
-      resolvedGroups[resolvedCount] = findClipGroup(slotGroups, layer.clipName, layer.clipAssetGuid);
-      resolvedCount++;
-    }
-    for (let i = 0; i < slotGroups.length; i++) {
-      const group = slotGroups[i]!;
-      // Restore channels absent from the incoming clip before its pose is applied.
-      if (indexOfGroup(resolvedGroups, resolvedCount, group) < 0) group.reset?.();
-    }
-    // Layers sharing a clip seek it once, at the current state's time.
-    for (let i = 0; i < resolvedCount; i++) {
-      const layer = resolvedLayers[i]!;
-      const group = resolvedGroups[i];
-      if (!group) {
+      // not play another actor's clip of the same name.
+      const clip = findClip(slotClips, layer.clipName, layer.clipAssetGuid);
+      if (!clip) {
         scene.onMissingClip?.({
           slotId: command.slotId,
           clipName: layer.clipName,
@@ -368,36 +311,33 @@ export function applyAnimStateToScene(
         });
         continue;
       }
-      const seek = indexOfGroup(seekGroups, seekCount, group);
-      if (seek < 0) {
-        seekGroups[seekCount] = group;
-        seekLayers[seekCount] = layer;
-        seekWeights[seekCount] = layer.weight;
-        seekCount++;
+      // Layers sharing a clip play it once, at the current state's time, with their weights summed.
+      let at = -1;
+      for (let j = 0; j < count; j++) {
+        if (poseClips[j] === clip) {
+          at = j;
+          break;
+        }
+      }
+      if (at < 0) {
+        poseClips[count] = clip;
+        poseLayers[count] = layer;
+        poseWeights[count] = layer.weight;
+        count++;
         continue;
       }
-      seekWeights[seek] += layer.weight;
-      if (seekLayers[seek]!.stateId !== command.stateId) seekLayers[seek] = layer;
+      poseWeights[at] += layer.weight;
+      if (poseLayers[at]!.stateId !== command.stateId) poseLayers[at] = layer;
     }
-    // A lone clip keeps the immediate pose write; a crossfade needs Babylon's
-    // weighted blend, which only its render-time animation pass computes.
-    let blend = seekCount > 1;
-    for (let i = 0; blend && i < seekCount; i++) blend = Boolean(seekGroups[i]!.blendToFrame);
-    for (let i = 0; i < seekCount; i++) {
-      const group = seekGroups[i]!;
-      const layer = seekLayers[i]!;
-      const span = group.to - group.from;
-      if (blend) group.blendToFrame?.(gameplayFrame(group, layer.normalisedTime, span), seekWeights[i]!);
-      else seekGameplayAnimation(group, layer.normalisedTime, span, seekWeights[i]!);
+    // What no layer plays rests.
+    if (slotClips.length > 0) {
+      for (let i = 0; i < count; i++) poseFrames[i] = clipFrame(poseClips[i]!, poseLayers[i]!.normalisedTime);
+      applyPose(poseRigFor(slotClips), count, poseClips, poseFrames, poseWeights);
     }
   } finally {
-    for (let i = 0; i < resolvedCount; i++) {
-      resolvedLayers[i] = undefined;
-      resolvedGroups[i] = undefined;
-    }
-    for (let i = 0; i < seekCount; i++) {
-      seekLayers[i] = undefined;
-      seekGroups[i] = undefined;
+    for (let i = 0; i < count; i++) {
+      poseClips[i] = undefined;
+      poseLayers[i] = undefined;
     }
   }
   if (spritePrimary) {
@@ -416,7 +356,7 @@ export function sceneAnimHostFromBinding(
 ): SceneAnimHost {
   return {
     isPhysicsDriven: (slotId) => binding.ragdoll?.isDriven(slotId) ?? false,
-    getAnimationGroups: (slotId) => binding.slotAnimationGroups?.get(slotId) ?? NO_GROUPS,
+    getPoseClips: (slotId) => binding.slotPoseClips?.get(slotId) ?? NO_CLIPS,
     getSpriteSlot: (slotId) => {
       const slot = resolvePlaySpriteSlot(
         binding,

@@ -10,6 +10,7 @@ import { createTestEngine } from "./test-support/test-engine";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { RagdollPoseController, type RagdollCaptureResult } from "./ragdoll-pose";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
+import { bindGameplayAnimationGroup } from "./glb-anim";
 
 const handles: ReturnType<typeof createTestEngine>[] = [];
 afterEach(() => { for (const { scene, engine } of handles.splice(0)) { scene.dispose(); engine.dispose(); } });
@@ -201,7 +202,7 @@ describe("skeletal ragdoll pose handoff", () => {
     expect(controller.isDriven(1)).toBe(false);
   });
 
-  it("holds physics poses while animation commands arrive and resumes seeking after disable", () => {
+  it("holds physics poses while animation commands arrive and resumes posing after disable", () => {
     const { scene, root, binding, controller, capture } = fixture();
     const bone = new TransformNode("Root", scene);
     bone.parent = root;
@@ -209,9 +210,7 @@ describe("skeletal ragdoll pose handoff", () => {
     animation.setKeys([{ frame: 0, value: Vector3.Zero() }, { frame: 30, value: new Vector3(10, 0, 0) }]);
     const group = new AnimationGroup("Walk", scene);
     group.addTargetedAnimation(animation, bone);
-    group.start(true);
-    group.pause();
-    binding.slotAnimationGroups = new Map([[1, [group]]]);
+    binding.slotPoseClips = new Map([[1, [bindGameplayAnimationGroup(group, "")]]]);
     const host = sceneAnimHostFromBinding(binding);
     const command = { type: "animState" as const, slotId: 1, stateId: "walk", clipName: "Walk", normalisedTime: 0.5, blendWeights: { walk: 1 } };
     applyAnimStateToScene(host, command);
@@ -319,9 +318,7 @@ describe("skeletal ragdoll pose handoff", () => {
     animation.setKeys([{ frame: 0, value: Vector3.Zero() }, { frame: 30, value: new Vector3(10, 0, 0) }]);
     const group = new AnimationGroup("Walk", scene);
     group.addTargetedAnimation(animation, hip);
-    group.start(true);
-    group.pause();
-    binding.slotAnimationGroups = new Map([[1, [group]]]);
+    binding.slotPoseClips = new Map([[1, [bindGameplayAnimationGroup(group, "")]]]);
     applyAnimStateToScene(sceneAnimHostFromBinding(binding), {
       type: "animState", slotId: 1, stateId: "walk", clipName: "Walk", normalisedTime: 0.5, blendWeights: { walk: 1 },
     });

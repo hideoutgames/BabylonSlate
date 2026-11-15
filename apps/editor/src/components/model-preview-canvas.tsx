@@ -154,8 +154,11 @@ export function ModelPreviewCanvas({
           settleWhen: () => !gizmoHostRef.current?.attachedMesh(),
           suspended: overlay.isOpen,
         });
+        const previewHost = host;
         const gizmos = createGizmoHost(host.scene, {
           tool: "translate",
+          // The preview draws through its renderer's graph: handles join it as an editor overlay.
+          registerOverlay: (draw) => previewHost.renderer.attachEditorOverlay(draw),
           onDrag: () => presenter?.present({ force: true }),
           onDragEnd: () => {
             const attached = gizmos.attachedMesh();

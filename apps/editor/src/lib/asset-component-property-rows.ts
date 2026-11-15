@@ -1,4 +1,13 @@
-import { PARTICLE_RETRIGGER_LABELS, PARTICLE_RETRIGGER_MODES, parseParticleRetrigger, type SerializedComponent } from "@haptic/core";
+import {
+  ANIMATION_TICK_MODE_LABELS,
+  ANIMATION_TICK_MODE_PROPERTY,
+  ANIMATION_TICK_MODES,
+  PARTICLE_RETRIGGER_LABELS,
+  PARTICLE_RETRIGGER_MODES,
+  parseAnimationTickMode,
+  parseParticleRetrigger,
+  type SerializedComponent,
+} from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
 import { normalizeModelPayload } from "@haptic/assets";
 import {
@@ -110,7 +119,17 @@ export function animationGraphPropertyRows(
   const status = animationGraphSkeletonStatus(actorId, componentPropertyGuid(component, "graphGuid"), context);
   return [
     status ? { ...graphRow, status } : graphRow,
-    ...genericRows(actorId, component, update, new Set(["graphGuid"])),
+    {
+      kind: "enum",
+      id: rowId(actorId, component.id, ANIMATION_TICK_MODE_PROPERTY),
+      label: "Tick Mode",
+      value: parseAnimationTickMode(component.properties[ANIMATION_TICK_MODE_PROPERTY]),
+      options: ANIMATION_TICK_MODES.map((mode) => ({ value: mode, label: ANIMATION_TICK_MODE_LABELS[mode] })),
+      defaultValue: "always",
+      description: "When Visible keeps the graph running but poses the actor only while a camera can see it; Never stops the graph.",
+      onChange: (next) => update(ANIMATION_TICK_MODE_PROPERTY, next),
+    },
+    ...genericRows(actorId, component, update, new Set(["graphGuid", ANIMATION_TICK_MODE_PROPERTY])),
   ];
 }
 

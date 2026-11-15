@@ -195,6 +195,8 @@ export type PropertyRow =
       value: string;
       defaultValue?: string;
       options: Array<{ value: string; label: string; disabled?: boolean }>;
+      /** Show option labels exactly as given (names such as bones), not humanized. */
+      verbatim?: boolean;
       onChange: (value: string) => void;
     })
   | (PropertyRowBase & {
@@ -489,6 +491,10 @@ function TextRowControl({ row }: { row: Extract<PropertyRow, { kind: "text" }> }
 
 type Vector3Row = Extract<PropertyRow, { kind: "vector3" }>;
 
+function enumLabel(row: Extract<PropertyRow, { kind: "enum" }>, label: string): string {
+  return row.verbatim ? label : humanizePropertyLabel(label);
+}
+
 function Vector3RowControl({ row, name, linkable }: { row: Vector3Row; name: string; linkable: boolean }) {
   const axes = row.axes ?? ["X", "Y", "Z"];
   const items = row.itemValues && row.onItemValuesChange ? row.itemValues : undefined;
@@ -702,7 +708,8 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
               {(value: unknown) =>
                 row.mixed
                   ? MIXED_VALUES_LABEL
-                  : humanizePropertyLabel(
+                  : enumLabel(
+                    row,
                     row.options.find((option) => option.value === value)?.label ??
                       String(value ?? ""),
                   )
@@ -716,7 +723,7 @@ function RowControl({ row, name, linkable = false }: { row: PropertyRow; name: s
                 value={option.value}
                 disabled={option.disabled}
               >
-                {humanizePropertyLabel(option.label)}
+                {enumLabel(row, option.label)}
               </SelectItem>
             ))}
           </SelectContent>
