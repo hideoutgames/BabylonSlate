@@ -67,6 +67,23 @@ export function holidayModelPath(stem: FeatureTestHolidayModel): string {
   return `${HOLIDAY_PACK_DIR}/${stem}.glb`;
 }
 
+/**
+ * KayKit skinned characters and rig animation libraries (CC0, `License.txt` and `Source.txt` beside them): Knight and
+ * Rogue Hooded share the Rig_Medium rig and its libraries; Mannequin Large is on Rig_Large. Textures are embedded.
+ */
+const KAYKIT_ADVENTURERS_DIR = "engine-content/kaykit-assets/Adventurers";
+const KAYKIT_ANIMATIONS_DIR = "engine-content/kaykit-assets/Character Animations";
+export const KAYKIT_FILES = {
+  knight: `${KAYKIT_ADVENTURERS_DIR}/Knight.glb`,
+  rogueHooded: `${KAYKIT_ADVENTURERS_DIR}/Rogue_Hooded.glb`,
+  rigMediumGeneral: `${KAYKIT_ADVENTURERS_DIR}/Rig_Medium_General.glb`,
+  rigMediumMovement: `${KAYKIT_ADVENTURERS_DIR}/Rig_Medium_MovementBasic.glb`,
+  mannequinLarge: `${KAYKIT_ANIMATIONS_DIR}/Mannequin_Large.glb`,
+  rigLargeMovement: `${KAYKIT_ANIMATIONS_DIR}/Rig_Large_MovementBasic.glb`,
+} as const;
+
+export type KayKitFile = keyof typeof KAYKIT_FILES;
+
 /** Required repository files that the editor build must publish. */
 export const FEATURE_TEST_ENGINE_CONTENT: readonly string[] = [
   ...FEATURE_TEST_HOLIDAY_MODELS.map(holidayModelPath),
@@ -78,6 +95,7 @@ export const FEATURE_TEST_ENGINE_CONTENT: readonly string[] = [
   ...ARK_PIXEL_FONTS.map((font) => font.path),
   ARK_PIXEL_LICENSE_PATH,
   SKYBOX_NET_PATH,
+  ...Object.values(KAYKIT_FILES),
 ];
 
 /**

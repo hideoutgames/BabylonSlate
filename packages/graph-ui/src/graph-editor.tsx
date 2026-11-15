@@ -184,6 +184,27 @@ export {
 } from "./graph-viewport";
 export { selectVisibleGraphElements } from "./graph-virtualize";
 
+/** A node's box in flow coordinates. */
+export interface GraphNodeRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A wire dragged from one node's handle and released on another node (`GraphEditorProps.connectDraggedToNode`). */
+export interface GraphNodeDrag {
+  fromNodeId: string;
+  fromHandleId: string;
+  toNodeId: string;
+  /** The handle it was released on, or null for the node's body. */
+  toHandleId: string | null;
+  /** Where it was released, in flow coordinates. */
+  point: { x: number; y: number } | null;
+  fromRect: GraphNodeRect | null;
+  toRect: GraphNodeRect | null;
+}
+
 export interface GraphEditorProps {
   renderNodeBody?: (nodeId: string, data: Record<string, unknown>) => React.ReactNode;
   initialGraph: GraphDocument;
@@ -214,8 +235,8 @@ export interface GraphEditorProps {
   onNavigateRequest?: (request: NavigateRequest) => void;
   /** Double-tap / double-click a node (task class navigation). */
   onNodeDoubleClick?: (nodeId: string) => void;
-  /** Double-click an edge (Animation Graph transition rules). */
-  onEdgeDoubleClick?: (edgeId: string) => void;
+  /** Double-click an edge (Animation Graph transition rules), with where it was double-clicked in flow coordinates. */
+  onEdgeDoubleClick?: (edgeId: string, point: { x: number; y: number }) => void;
   /** Selected canvas edge ids; not part of the serialized graph. */
   onEdgeSelectionChange?: (edgeIds: string[]) => void;
   paletteNodes?: PaletteNode[];
@@ -256,11 +277,6 @@ export interface GraphEditorProps {
   /** Defaults to `!readOnly`. Behaviour trees pass false during Play. */
   nodesDraggable?: boolean;
   toolbarExtra?: ReactNode;
-  /**
-   * Host controls in an island at the bottom centre of the canvas, shown on a read-only canvas too
-   * (the stepping control while a Simulation is paused).
-   */
-  overlay?: ReactNode;
   selectedAttachmentId?: string | null;
   onAttachmentSelect?: (id: string | null) => void;
   hiddenToolbarActions?: Array<"copy" | "paste" | "delete" | "breakLinks" | "format">;
@@ -275,9 +291,15 @@ export interface GraphEditorProps {
    * and keeps the 96px near-pin wire-break. Behaviour trees use `add-node`
    * so a short drag off a handle opens Add Node and never breaks structural
    * edges. Animation Graph State Machine uses `zone-add-node` (far release
-   * opens Add State; near tap/release cancels without breaking transitions).
+   * opens Add State, a release near a state's pin snap-connects, and any
+   * other release breaks the pin's links as the default mode does).
    */
   connectEndMode?: ConnectEndMode;
+  /**
+   * The links a break from a dragged pin removes, when more than the wires on that exact pin (Animation Graph
+   * states: every transition on the dragged side, in or out). Default: the wires on the pin.
+   */
+  edgeBreaksAtPin?: (edge: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }, nodeId: string, pinId: string) => boolean;
   /** Node bodies that take a dragged wire as a new pin (function Input and Output nodes). */
   pinDrop?: GraphPinDrop;
   /** Replace existing edges into the same target handle (tree parent pin). */
@@ -298,6 +320,11 @@ export interface GraphEditorProps {
   }) => boolean;
   /** Rewrite handle ids before validation / connect (Animation Graph sides). */
   normalizeConnection?: (connection: Connection) => Connection | null;
+  /**
+   * The host builds the wire a drag makes onto another node, released on one of its handles or its body, instead of
+   * orienting it by pin direction (Animation Graph states: the dragged state is always the source). Null makes none.
+   */
+  connectDraggedToNode?: (drag: GraphNodeDrag) => Connection | null;
   /** React Flow connection mode. Animation Graph uses Loose for side handles. */
   connectionMode?: "strict" | "loose";
   /**
@@ -357,6 +384,15 @@ const NOTICE_MS = 4000;
 /** A stable default, so the menu and key handlers do not rebuild every render. */
 const NO_HIDDEN_TOOLBAR_ACTIONS: NonNullable<GraphEditorProps["hiddenToolbarActions"]> = [];
 const REPLACED_WIRE_NOTICE = "Replaced the existing wire. Use a Sequence to run several.";
+/**
+ * A pin to connect and the empty canvas (the pane element itself, which also holds the nodes) handle their own
+ * taps; anything else tapped drops a chosen pin.
+ */
+function handlesOwnTap(target: Element): boolean {
+  return target.classList.contains("react-flow__pane") || target.closest(".react-flow__handle") !== null;
+}
+/** How far a press may move and still be a tap rather than a pan or a drag. */
+const CHOSEN_PIN_TAP_SLOP_PX = 8;
 /** Keys typed into these keep their meaning (text editing, menu navigation). */
 const KEY_EXEMPT_TARGETS =
   'input, textarea, select, [contenteditable="true"], .nokey, [role="menu"], [role="listbox"], [role="combobox"]';
@@ -785,18 +821,19 @@ function GraphEditorCanvas({
   defaultEdgeOptions = { type: "default" },
   nodesDraggable: nodesDraggableProp,
   toolbarExtra,
-  overlay,
   selectedAttachmentId = null,
   onAttachmentSelect,
   hiddenToolbarActions = NO_HIDDEN_TOOLBAR_ACTIONS,
   nodeDragHandle,
   connectEndMode = "default",
+  edgeBreaksAtPin,
   pinDrop,
   replaceIncomingOnConnect = false,
   uniqueDirectedPairOnConnect = false,
   singleExecOutputOnConnect = false,
   canConnect,
   normalizeConnection,
+  connectDraggedToNode,
   connectionMode,
   deleteKeyCode,
   nodesFocusable = true,
@@ -1765,11 +1802,61 @@ function GraphEditorCanvas({
     setPendingPin(null);
   }, [tapToConnect]);
 
+  const dropChosenPin = useCallback(() => {
+    if (!pendingPinRef.current) return;
+    pendingPinRef.current = null;
+    setPendingPin(null);
+  }, []);
+
+  // Doing anything else drops the chosen pin: a tap on a node, a wire, a control or the toolbar (the empty
+  // canvas is `handlePaneClick`'s), a context menu or Escape. Panning and zooming keep it, so a far pin can
+  // still be reached, as does a tap on another pin, which `onPinTap` handles.
+  useEffect(() => {
+    const root = wrapperRef.current;
+    if (!root) return;
+    let press: { pointerId: number; x: number; y: number } | null = null;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      press = event.isPrimary !== false && pendingPinRef.current && target && !handlesOwnTap(target)
+        ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+        : null;
+    };
+    const onPointerUp = (event: PointerEvent) => {
+      const start = press;
+      press = null;
+      if (!start || start.pointerId !== event.pointerId) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) <= CHOSEN_PIN_TAP_SLOP_PX) dropChosenPin();
+    };
+    const onPointerCancel = () => { press = null; };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") dropChosenPin();
+    };
+    root.addEventListener("pointerdown", onPointerDown, true);
+    root.addEventListener("pointerup", onPointerUp, true);
+    root.addEventListener("pointercancel", onPointerCancel, true);
+    root.addEventListener("contextmenu", dropChosenPin, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      root.removeEventListener("pointerdown", onPointerDown, true);
+      root.removeEventListener("pointerup", onPointerUp, true);
+      root.removeEventListener("pointercancel", onPointerCancel, true);
+      root.removeEventListener("contextmenu", dropChosenPin, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [dropChosenPin]);
+
+  // A chosen pin whose node is gone (deleted, undone) is dropped.
+  useEffect(() => {
+    const chosen = pendingPinRef.current;
+    if (chosen && !nodes.some((node) => node.id === chosen.nodeId)) dropChosenPin();
+  }, [dropChosenPin, nodes]);
+
   const handleConnect = useCallback(
     (connection: Connection) => {
       // A cancelled drag ends without a wire, even when XYFlow later reports
-      // the handle it last hovered.
-      if (readOnly || connectDragRef.current?.connectEndHandled) return;
+      // the handle it last hovered. A host that builds dragged wires itself
+      // does so at the connect end, which knows the dragged handle.
+      if (readOnly || connectDragRef.current?.connectEndHandled || connectDraggedToNode) return;
       const next = orientThenNormalize(
         connection,
         graphStateRef.current.nodes,
@@ -1795,7 +1882,7 @@ function GraphEditorCanvas({
       setPendingPin(null);
       pendingPinRef.current = null;
     },
-    [addEdge, normalizeConnection, readOnly],
+    [addEdge, connectDraggedToNode, normalizeConnection, readOnly],
   );
 
   const handleConnectStart = useCallback(
@@ -1872,8 +1959,44 @@ function GraphEditorCanvas({
         );
         return true;
       };
+      const root = wrapperRef.current ?? document;
+      // The host builds the wire onto another node: from the dragged handle, onto the handle or body released on.
+      const commitDraggedToNode = (toNodeId: string, toHandleId: string | null) => {
+        if (!connectDraggedToNode || toNodeId === fromNode.id) return false;
+        const lookup = storeApi.getState().nodeLookup;
+        const rectOf = (nodeId: string): GraphNodeRect | null => {
+          const internal = lookup.get(nodeId);
+          const width = internal?.measured.width;
+          const height = internal?.measured.height;
+          if (!internal || width === undefined || height === undefined) return null;
+          return { ...internal.internals.positionAbsolute, width, height };
+        };
+        const released = clientPoint(event);
+        const next = connectDraggedToNode({
+          fromNodeId: fromNode.id,
+          fromHandleId: pinId,
+          toNodeId,
+          toHandleId,
+          point: released ? screenToFlowPosition(released) : null,
+          fromRect: rectOf(fromNode.id),
+          toRect: rectOf(toNodeId),
+        });
+        if (!next?.sourceHandle || !next.targetHandle || !isValidConnection(next)) return true;
+        addEdge(next.source, next.sourceHandle, next.target, next.targetHandle);
+        return true;
+      };
+      if (connectDraggedToNode && !connectCommitted) {
+        const released = clientPoint(event);
+        const toHandleNodeId = state.toHandle?.id ? state.toHandle.nodeId : null;
+        const toNodeId = toHandleNodeId ?? (released ? graphNodeIdAtClientPoint(released, root) : null);
+        if (toNodeId && toNodeId !== fromNode.id) {
+          commitDraggedToNode(toNodeId, toHandleNodeId === toNodeId ? state.toHandle?.id ?? null : null);
+          finishGesture();
+          return;
+        }
+      }
       const toNodeId = state.toNode?.id ?? state.toHandle?.nodeId;
-      if (state.toHandle?.id && toNodeId && !connectCommitted) {
+      if (state.toHandle?.id && toNodeId && !connectCommitted && !connectDraggedToNode) {
         commitConnection(
           fromNode.id,
           pinId,
@@ -1895,7 +2018,6 @@ function GraphEditorCanvas({
         finishGesture();
         return;
       }
-      const root = wrapperRef.current ?? document;
       // Released over the body of a node that takes the wire as a new pin.
       const pinDropNodeId =
         pinDrop && !state.toHandle ? graphNodeIdAtClientPoint(point, root) : null;
@@ -1942,6 +2064,10 @@ function GraphEditorCanvas({
       };
       const action = connectEndAction(decision, connectEndMode);
       if (action === "connect" && snap) {
+        if (commitDraggedToNode(snap.nodeId, snap.pinId)) {
+          finishGesture();
+          return;
+        }
         const sourceIsDragged = pin.direction === "out";
         commitConnection(
           sourceIsDragged ? fromNode.id : snap.nodeId,
@@ -1962,9 +2088,10 @@ function GraphEditorCanvas({
         return;
       }
       if (action === "break") {
+        const breaks = edgeBreaksAtPin ?? edgeTouchesPin;
         setEdges((current) => {
           const next = current.filter(
-            (edge) => !edgeTouchesPin(edge, fromNode.id, pinId),
+            (edge) => !breaks(edge, fromNode.id, pinId),
           );
           if (next.length === current.length) return current;
           emitChange(graphStateRef.current.nodes, next);
@@ -1975,7 +2102,9 @@ function GraphEditorCanvas({
     },
     [
       addEdge,
+      connectDraggedToNode,
       connectEndMode,
+      edgeBreaksAtPin,
       emitChange,
       isValidConnection,
       normalizeConnection,
@@ -2696,10 +2825,9 @@ function GraphEditorCanvas({
         skipPaneClickRef.current = false;
         return;
       }
-      const pending = pendingPinRef.current;
-      if (!readOnly && connectEndMode === "add-node" && pending) {
-        pendingPinRef.current = null;
-        setPendingPin(null);
+      // With a pin chosen to connect, a tap on the empty canvas only drops it.
+      if (!readOnly && pendingPinRef.current) {
+        dropChosenPin();
         return;
       }
       clearSelection();
@@ -2716,7 +2844,7 @@ function GraphEditorCanvas({
     },
     [
       clearSelection,
-      connectEndMode,
+      dropChosenPin,
       readOnly,
       screenToFlowPosition,
     ],
@@ -3250,7 +3378,7 @@ function GraphEditorCanvas({
           edgesReconnectable={false}
           onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
-          onNodeDragStart={(_event, node) => { proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
+          onNodeDragStart={(_event, node) => { dropChosenPin(); proximityDragRef.current = !readOnly && nodesDraggable; shakenRef.current = false; const zoom = storeApi.getState().transform[2]; shakeTracker.current.reset(node.position.x * zoom, node.position.y * zoom, performance.now()); }}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onEdgesChange={handleEdgesChange}
@@ -3258,7 +3386,7 @@ function GraphEditorCanvas({
           onConnectStart={handleConnectStart}
           onConnectEnd={handleConnectEnd}
           onNodeDoubleClick={(_, node) => onNodeDoubleClick?.(node.id)}
-          onEdgeDoubleClick={(_, edge) => onEdgeDoubleClick?.(edge.id)}
+          onEdgeDoubleClick={(event, edge) => onEdgeDoubleClick?.(edge.id, screenToFlowPosition({ x: event.clientX, y: event.clientY }))}
           isValidConnection={readOnly ? () => false : isValidConnection}
           onPaneClick={handlePaneClick}
           onPaneContextMenu={handlePaneContextMenu}
@@ -3327,13 +3455,6 @@ function GraphEditorCanvas({
           />
         </ReactFlow>
         <GraphViewportControls onFitGraph={fitGraph} />
-        {overlay ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-10 flex justify-center px-14">
-            <div className="pointer-events-auto toolbar-island" data-graph-overlay="" data-testid="graph-overlay">
-              {overlay}
-            </div>
-          </div>
-        ) : null}
         {runTrace ? <GraphRunOverlay root={wrapperRef} trace={runTrace} graph={runGraph} /> : null}
         {notice === null ? null : (
           <div className="pointer-events-none absolute inset-x-2 bottom-2 z-20 flex justify-center">

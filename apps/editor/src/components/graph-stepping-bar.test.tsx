@@ -2,7 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { DebugObserveTarget, DebugStep } from "@haptic/bridge";
 import { GraphDebugStore } from "../services/graph-debug-store";
+import type { GraphDebugStepPosition } from "../services/graph-debug-store";
+import { useGraphStepping } from "../lib/use-graph-stepping";
 import { GraphSteppingBar } from "./graph-stepping-bar";
+
+function Bar({ store, controls, onFocus }: {
+  store: GraphDebugStore;
+  controls: { step: () => void; stepPending: boolean };
+  onFocus: (position: GraphDebugStepPosition) => void;
+}) {
+  return <GraphSteppingBar stepping={useGraphStepping(store, controls, onFocus)} controls={controls} />;
+}
 
 const DOOR: DebugObserveTarget = { kind: "class", classId: "Door" };
 
@@ -20,7 +30,7 @@ function renderBar() {
   store.setHeld(true);
   const controls = { step: vi.fn(), stepPending: false };
   const onFocus = vi.fn();
-  render(<GraphSteppingBar store={store} controls={controls} onFocus={onFocus} />);
+  render(<Bar store={store} controls={controls} onFocus={onFocus} />);
   return { store, controls, onFocus };
 }
 
@@ -48,7 +58,7 @@ describe("GraphSteppingBar", () => {
     store.setTarget(DOOR);
     store.receiveRoster({ target: DOOR, reset: true, added: [{ id: "d1", kind: "actor", label: "Front" }], removed: [] });
     store.setHeld(true);
-    render(<GraphSteppingBar store={store} controls={{ step: vi.fn(), stepPending: false }} onFocus={vi.fn()} />);
+    render(<Bar store={store} controls={{ step: vi.fn(), stepPending: false }} onFocus={vi.fn()} />);
     expect(position()).toBe("Nothing Recorded Yet");
     expect(screen.getByRole("button", { name: "Step Back" }).hasAttribute("disabled")).toBe(true);
     act(() => store.receiveTrace(tick(1)));

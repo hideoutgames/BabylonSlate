@@ -1,4 +1,5 @@
-import { breakpointStopText, useBreakpointStop } from "../lib/breakpoint-stop";
+import { useBreakpointStop } from "../lib/breakpoint-stop";
+import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { SceneModeSelect } from "./scene-mode-select";
 import {
   DndContext,
@@ -35,7 +36,7 @@ import {
   EllipsisIcon,
   CircleAlertIcon,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
   type DocumentRef,
@@ -92,7 +93,7 @@ import {
 import { usePlay } from "../context/play-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { useGraphDebugStore } from "../context/graph-debug-context";
-import { PlayBreakToolbarControls, SimulationToolbarControls } from "./simulation-toolbar-controls";
+import { DebugStepToolbarControls, PlayBreakToolbarControls, SimulationToolbarControls } from "./simulation-toolbar-controls";
 import { GraphDebugInstanceSelect } from "./graph-debug-instance-select";
 import { documentGraphDebugTarget } from "../lib/graph-debug-target";
 import { useValidation } from "../context/validation-context";
@@ -347,6 +348,20 @@ export function EditorChromeBar({
   const playBreakControls = sessionState.mode === "play" && simulationControls?.mode === "play" ? simulationControls : null;
   const breakpointStop = useBreakpointStop(simulationControls?.stoppedAt);
   const graphDebug = useGraphDebugStore();
+  // A paused Simulation, or stopped Play, steps in its own island left of the session controls.
+  const debugStepControls = simulationRunning && simulationControls?.paused
+    ? simulationControls
+    : playBreakControls?.paused ? playBreakControls : null;
+  const openBreakpointStop = () => {
+    const cause = simulationControls?.stoppedAt;
+    if (cause) void openSessionSource({ severity: "info", ...cause });
+  };
+  const focusStep = useCallback((position: GraphDebugStepPosition) => {
+    void openSessionSource({
+      severity: "info", code: "editor.step", message: "Step",
+      assetGuid: position.assetGuid, graphId: position.graphId, nodeId: position.nodeId,
+    });
+  }, [openSessionSource]);
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
@@ -1084,6 +1099,18 @@ export function EditorChromeBar({
         </ToolbarOverflowTrack>
 
         <ToolbarOverflowTrack className="editor-global-toolbar-center">
+          {debugStepControls ? (
+            <div className="editor-play-island editor-debug-island" role="group" aria-label="Debugging" data-testid="debug-step-island">
+              <DebugStepToolbarControls
+                controls={debugStepControls}
+                stopping={sessionState.lifecycle === "stopping"}
+                stop={breakpointStop}
+                onOpenStop={openBreakpointStop}
+                graphDebug={graphDebug}
+                onFocusStep={focusStep}
+              />
+            </div>
+          ) : null}
           <div className="editor-play-island" data-testid="play-debug-island">
             {simulationRunning ? (
               <>
@@ -1095,11 +1122,6 @@ export function EditorChromeBar({
                   onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
                     ? () => setActiveDocument(simulationDocumentId)
                     : undefined}
-                  stoppedAt={breakpointStop ? breakpointStopText(breakpointStop) : null}
-                  onOpenStop={() => {
-                    const cause = simulationControls?.stoppedAt;
-                    if (cause) void openSessionSource({ severity: "info", ...cause });
-                  }}
                 />
                 {debugTarget ? (
                   <ToolbarOverflowItem id="debug-instance">
@@ -1113,11 +1135,6 @@ export function EditorChromeBar({
                   controls={playBreakControls}
                   stopping={sessionState.lifecycle === "stopping"}
                   onStop={() => { void sessionOwner.stop(); }}
-                  stoppedAt={breakpointStop ? breakpointStopText(breakpointStop) : null}
-                  onOpenStop={() => {
-                    const cause = playBreakControls.stoppedAt;
-                    if (cause) void openSessionSource({ severity: "info", ...cause });
-                  }}
                 />
                 {debugTarget ? (
                   <ToolbarOverflowItem id="debug-instance">

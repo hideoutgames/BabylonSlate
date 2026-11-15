@@ -282,6 +282,11 @@ export type PinCompatibilityRule = (
   incoming: SerializedPin,
 ) => boolean;
 
+/** Animation Graph pose and frame pins. */
+export function isStructuralPinKind(kind: string): boolean {
+  return kind === "pose" || kind === "frame";
+}
+
 export function pinsAreCompatible(
   source: SerializedPin,
   target: SerializedPin,
@@ -292,6 +297,10 @@ export function pinsAreCompatible(
   const incoming = source.direction === "in" ? source : target;
   if (outgoing.kind !== incoming.kind) return false;
   if (outgoing.kind === "exec") return true;
+  // Poses and frames are structure, not values: they meet only their own kind, never a wildcard or a conversion.
+  if (isStructuralPinKind(outgoing.type.kind) || isStructuralPinKind(incoming.type.kind)) {
+    return outgoing.type.kind === incoming.type.kind;
+  }
   if (rule) return rule(outgoing, incoming);
   if (outgoing.type.kind === incoming.type.kind) return true;
   return (
@@ -321,6 +330,8 @@ const PIN_TYPE_LABEL: Record<string, string> = {
   enumRef: "Enum",
   delegate: "Delegate",
   boxedWildcard: "Wildcard",
+  pose: "Pose",
+  frame: "Frame",
   resolvingWildcard: "Wildcard",
   wildcard: "Wildcard",
 };
@@ -850,12 +861,8 @@ export function connectEndAction(
     if (decision.pointerOverNode) return "none";
     return "add-node";
   }
-  if (mode === "zone-add-node") {
-    if (isNearSnapPin(decision)) return "connect";
-    if (decision.pointerOverNode) return "none";
-    if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
-    return "none";
-  }
+  // Zone Add Node snap-connects onto a nearby compatible pin, then releases as the default mode does.
+  if (mode === "zone-add-node" && isNearSnapPin(decision)) return "connect";
   if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
   if (shouldBreakPinConnectionsOnConnectEnd(decision)) return "break";
   return "none";

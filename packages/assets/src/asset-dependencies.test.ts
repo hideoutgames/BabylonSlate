@@ -21,6 +21,26 @@ describe("typed asset dependencies", () => {
     expect(metadata.requiredDependencies).toEqual(["environment", "font", "hero", "hud", "material", "model", "sound", "spark"]);
   });
 
+  it("requires an Animation Graph's Skeleton and the clips its state graphs play", () => {
+    const player = (id: string, type: string, assetGuid: string) => ({ id, type, position: { x: 0, y: 0 }, data: { assetGuid } });
+    const metadata = collectAssetDependencyMetadata("AnimationGraph3D", {
+      skeletonGuid: "rig",
+      variables: [],
+      stateMachine: {
+        entryStateId: "idle",
+        states: [
+          { id: "idle", stateGraph: { nodes: [player("player", "anim.pose.sequencePlayer", "idle-clip"), player("unset", "anim.pose.sequencePlayer", "")], edges: [] } },
+          { id: "door", stateGraph: { nodes: [player("held", "anim.pose.sequenceEvaluator", "door-open")], edges: [] } },
+          { id: "wave", stateGraph: { nodes: [player("player", "anim.frame.spritePlayer", "wave-frames")], edges: [] } },
+        ],
+        transitions: [],
+      },
+      animationObject: { nodes: [], edges: [] },
+    });
+    expect(metadata.dependencies).toEqual(["door-open", "idle-clip", "rig", "wave-frames"]);
+    expect(metadata.requiredDependencies).toEqual(["door-open", "idle-clip", "rig", "wave-frames"]);
+  });
+
   it("collects the assets a Scene's or Scene Layer's script references, as a Class graph would", () => {
     const script = { nodes: [], edges: [], members: [
       { kind: "variable", name: "Music", typeId: "asset", typeClassId: "Audio", loading: "hard", defaultValue: "music" },
@@ -446,5 +466,36 @@ describe("typed asset dependencies", () => {
     const scene = collectAssetDependencyMetadata("Scene", { actors: [{ classId: "CustomActor", components: [] }] });
     expect(scene.requiredClassReferences).toEqual(["CustomActor"]);
     expect(scene.requiredDependencies).toEqual([]); // Registry resolves the symbolic identity using header metadata.
+  });
+
+  it("requires a Blend Space's Skeleton and every sample's Animation, and a Blend Space Player's Blend Space", () => {
+    const blendSpace = collectAssetDependencyMetadata("BlendSpace", {
+      skeletonGuid: "rig",
+      previewModelGuid: "hero",
+      axes: [{ name: "Speed", min: 0, max: 6 }],
+      samples: [{ animationGuid: "walk", x: 2 }, { animationGuid: "run", x: 6 }],
+    });
+    expect(blendSpace.dependencies).toEqual(["hero", "rig", "run", "walk"]);
+    // The Preview's Model is for the editor only.
+    expect(blendSpace.requiredDependencies).toEqual(["rig", "run", "walk"]);
+    const graph = collectAssetDependencyMetadata("AnimationGraph3D", {
+      skeletonGuid: "rig",
+      variables: [],
+      stateMachine: {
+        entryStateId: "move",
+        states: [{ id: "move", stateGraph: { nodes: [{ id: "bs", type: "anim.pose.blendSpacePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "loco" } }], edges: [] } }],
+        transitions: [],
+      },
+      animationObject: { nodes: [], edges: [] },
+    });
+    expect(graph.requiredDependencies).toEqual(["loco", "rig"]);
+  });
+
+  it("requires every Sprite Animation a Sprite Blend Space places", () => {
+    const metadata = collectAssetDependencyMetadata("SpriteBlendSpace", {
+      axes: [{ name: "Direction", min: -180, max: 180 }],
+      samples: [{ animationGuid: "walk-n", x: 0 }, { animationGuid: "walk-s", x: 180 }],
+    });
+    expect(metadata.requiredDependencies).toEqual(["walk-n", "walk-s"]);
   });
 });

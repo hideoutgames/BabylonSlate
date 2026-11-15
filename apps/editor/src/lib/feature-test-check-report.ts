@@ -183,6 +183,9 @@ function firstDrawLines(first: FirstDraws, when: string): string[] {
   ];
 }
 
+/** How many of a failed readiness probe's blockers a report line names. */
+const MAX_NAMED_BLOCKERS = 3;
+
 /**
  * The Scene readiness probes while Play was sampled: how many of the frames the view drew ran one, and what they
  * cost. A probe walks every mesh, and runs again after anything joins or leaves the Scene.
@@ -195,7 +198,10 @@ function readinessText(sampled: NonNullable<FeatureTestCheckSceneResult["play"][
   const { scopedReadinessProbes: scoped, scopedReadinessMismatches: mismatches } = sampled.work;
   const narrowed = scoped ? ` (${scoped} asked only the changed meshes)` : "";
   const disagreed = mismatches ? ` · ${mismatches} of those DISAGREED with a probe of every mesh` : "";
-  return `${probes} in ${sampled.drawn} drawn frames${narrowed} · ${(ms / probes).toFixed(1)} ms each${perFrame}${causes ? ` · causes: ${causes}` : ""}${disagreed}`;
+  // What the last probe that failed while sampled found unready: a view that holds its picture names what it waits for.
+  const blockers = sampled.work.readinessBlockers;
+  const waited = blockers.length ? ` · the last failed one waited for ${blockers.slice(0, MAX_NAMED_BLOCKERS).join("; ")}` : "";
+  return `${probes} in ${sampled.drawn} drawn frames${narrowed} · ${(ms / probes).toFixed(1)} ms each${perFrame}${causes ? ` · causes: ${causes}` : ""}${disagreed}${waited}`;
 }
 
 /** Plain words for each reason a readiness probe ran (`RenderDiagnostics.rendererWork.readinessProbeReasons`). */

@@ -34,6 +34,9 @@ type AnimStateData = {
   /** Host-supplied clip summary shown under the title. */
   clipLabel?: string;
   __nodeType?: string;
+  /** A State Alias's: whether it covers every state, else how many it covers. */
+  anyState?: boolean;
+  stateCount?: number;
 };
 
 const SIDE_POSITION: Record<AnimStateSide, Position> = {
@@ -60,29 +63,11 @@ function useConnectedSides(id: string): string {
   );
 }
 
-function AnimStateNode({
-  id,
-  data,
-  selected,
-}: NodeProps<Node<AnimStateData>>) {
-  const title = displayNodeTitle(
-    typeof data.__nodeType === "string" ? data.__nodeType : "anim.state",
-    typeof data.title === "string" ? data.title : undefined,
-  );
+/** A state card's four sides, each with an incoming and an outgoing plate. */
+function AnimStateHandles({ id }: { id: string }) {
   const connectedSides = useConnectedSides(id).split(" ");
-  const nodeMenu = useNodeMenu(id);
   return (
-    <div
-      className={cn(
-        "anim-state-node group/title",
-        selected && "anim-state-node-selected",
-        data.entry === true && "anim-state-node-entry",
-      )}
-      data-testid={`anim-state-node-${id}`}
-      data-node-role="anim-state"
-      {...nodeMenu.bind}
-    >
-      <NodeBreakpointTab nodeId={id} data={data} placement="inset" />
+    <>
       {ANIM_STATE_SIDES.map((side) => (
         <span key={side} className="contents">
           <Handle
@@ -106,6 +91,57 @@ function AnimStateNode({
           />
         </span>
       ))}
+    </>
+  );
+}
+
+/**
+ * A State Alias card: dashed, naming the states it covers. Its transitions leave from each of them; nothing enters
+ * it, so the canvas refuses wires into it.
+ */
+function AnimAliasNode({ id, data, selected }: NodeProps<Node<AnimStateData>>) {
+  const nodeMenu = useNodeMenu(id);
+  const count = typeof data.stateCount === "number" ? data.stateCount : 0;
+  const covers = data.anyState === true ? "Any State" : count === 1 ? "1 State" : `${count} States`;
+  return (
+    <div
+      className={cn("anim-state-node anim-alias-node group/title", selected && "anim-state-node-selected")}
+      data-testid={`anim-alias-node-${id}`}
+      data-node-role="anim-alias"
+      {...nodeMenu.bind}
+    >
+      <AnimStateHandles id={id} />
+      <div className="anim-state-node-title">{typeof data.title === "string" ? data.title : "State Alias"}</div>
+      <div className="anim-state-node-clip" data-testid={`anim-alias-node-covers-${id}`}>
+        <span className="truncate">{covers}</span>
+      </div>
+    </div>
+  );
+}
+
+function AnimStateNode({
+  id,
+  data,
+  selected,
+}: NodeProps<Node<AnimStateData>>) {
+  const title = displayNodeTitle(
+    typeof data.__nodeType === "string" ? data.__nodeType : "anim.state",
+    typeof data.title === "string" ? data.title : undefined,
+  );
+  const nodeMenu = useNodeMenu(id);
+  return (
+    <div
+      className={cn(
+        "anim-state-node group/title",
+        selected && "anim-state-node-selected",
+        data.entry === true && "anim-state-node-entry",
+      )}
+      data-testid={`anim-state-node-${id}`}
+      data-node-role="anim-state"
+      {...nodeMenu.bind}
+    >
+      <NodeBreakpointTab nodeId={id} data={data} placement="inset" />
+      <AnimStateHandles id={id} />
       <div className="anim-state-node-title">{title}</div>
       {typeof data.clipLabel === "string" ? (
         <div
@@ -267,6 +303,7 @@ function AnimTransitionEdge({
 
 export const animGraphNodeTypes = {
   "anim.state": AnimStateNode,
+  "anim.alias": AnimAliasNode,
 };
 
 export const animGraphEdgeTypes = {

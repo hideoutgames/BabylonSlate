@@ -117,6 +117,23 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("camera-shake")).toBe("camera-shake-preview");
   });
 
+  it("opens a Blend Space on its Grid, with Animations on the left and Preview above the Inspector on the right", () => {
+    const windows = listDockWindows("blend-space");
+    expect(windows.map((entry) => [entry.id, entry.title])).toEqual([
+      ["blend-space-grid", "Grid"],
+      ["blend-space-animations", "Animations"],
+      ["blend-space-details", "Inspector"],
+      ["blend-space-preview", "Preview"],
+    ]);
+    expect(windows[1]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-grid", direction: "left" } });
+    expect(windows[2]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-grid", direction: "right" } });
+    expect(windows[3]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-details", direction: "above" } });
+    expect(primaryDockPanel("blend-space")).toBe("blend-space-grid");
+    // A Sprite Blend Space opens in the same windows.
+    expect(listDockWindows("sprite-blend-space").map((entry) => entry.id)).toEqual(windows.map((entry) => entry.id));
+    expect(primaryDockPanel("sprite-blend-space")).toBe("blend-space-grid");
+  });
+
   it("omits the Locks window when source control is off", () => {
     for (const kind of [
       "scene",
@@ -260,19 +277,40 @@ describe("particle graph dock catalog", () => {
 });
 
 describe("animation graph and behaviour tree dock catalogs", () => {
-  it("defaults Animation Graph catalogs to State Machine", () => {
-    expect(listDockWindows("anim-graph-3d").map((entry) => entry.id)).toEqual(
-      listDockWindows("anim-graph-3d", { animEditorMode: "stateMachine" }).map(
-        (entry) => entry.id,
-      ),
-    );
-    expect(primaryDockPanel("anim-graph-3d")).toBe("anim-graph-graph");
+  it("puts the Animation Object canvas in a window tabbed beside the Graph", () => {
+    expect(listDockWindows("anim-graph-3d").map((entry) => entry.id)).toEqual([
+      "anim-graph-graph",
+      "anim-object-graph",
+      "anim-graph-variables",
+      "anim-graph-details",
+      "anim-graph-compiler-results",
+      "anim-graph-preview",
+      "anim-graph-preview-values",
+    ]);
+    expect(listDockWindows("anim-graph-3d").find((entry) => entry.id === "anim-object-graph")).toMatchObject({
+      title: "Animation Object",
+      defaultPosition: { referencePanelId: "anim-graph-graph", direction: "within" },
+    });
   });
 
-  it("anchors Animation Graph side docks to the graph", () => {
-    for (const entry of listDockWindows("anim-graph-3d")) {
-      if (!entry.defaultPosition) continue;
-      expect(entry.defaultPosition.referencePanelId).toBe("anim-graph-graph");
+  it("anchors Animation Graph side docks to the graph, the Preview above the Inspector and Preview Values under Variables, in both graph types", () => {
+    const sideColumns: Record<string, string> = {
+      "anim-graph-preview": "anim-graph-details",
+      "anim-graph-preview-values": "anim-graph-variables",
+    };
+    for (const kind of ["anim-graph-3d", "anim-graph-2d"] as const) {
+      for (const entry of listDockWindows(kind)) {
+        if (!entry.defaultPosition) continue;
+        expect(entry.defaultPosition.referencePanelId).toBe(sideColumns[entry.id] ?? "anim-graph-graph");
+      }
+      expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview")).toMatchObject({
+        title: "Preview",
+        defaultPosition: { direction: "above" },
+      });
+      expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview-values")).toMatchObject({
+        title: "Preview Values",
+        defaultPosition: { direction: "below" },
+      });
     }
   });
 

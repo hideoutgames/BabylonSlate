@@ -39,6 +39,7 @@ export * from "./mesh-collision";
 export * from "./skeleton-payload";
 export * from "./skeleton-match";
 export * from "./animation-payload";
+export * from "./blend-space-payload";
 export * from "./skybox-creator-payload";
 export * from "./audio-reverb";
 export * from "./sprite-payload";

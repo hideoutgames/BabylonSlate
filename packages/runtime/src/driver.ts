@@ -569,6 +569,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.breakpoints.set(options.breakpoints ?? []);
     this.scriptHost.setBreakpoints(this.breakpoints);
     this.scriptDebug = createScriptDebug(this);
+    this.scriptHost.setFrameTraces((store) => this.scriptDebug.frameTrace(store));
     this.objectLifetime = new RuntimeObjectLifetime({
       world: () => this.world,
       roots: () => this.scriptRuntime.liveObjects(),
@@ -1068,7 +1069,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   setActorSpriteClip(actor: Actor, clip: SpriteClipState | null): void {
     this.spriteClips.set(actor, clip);
     this.physics.forActor(actor)?.setActorSpriteClip(actor, clip &&
-      { assetGuid: clip.assetGuid, clipName: clip.clipName, normalisedTime: clip.normalisedTime });
+      { assetGuid: clip.assetGuid, clipName: clip.clipName, normalisedTime: clip.normalisedTime, flipX: clip.flipX, flipY: clip.flipY });
   }
 
   /** The render slot this actor's own commands target (`RenderSlots.actorSlot`). */
@@ -1105,6 +1106,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
     }
+    // A breakpoint in Begin Play keeps the frame it stopped in, as a tick's does.
+    this.scriptDebug.endStartup(this.world.clock.tickIndex);
   }
 
   /**

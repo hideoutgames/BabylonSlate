@@ -212,7 +212,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
             : undefined,
         viewportMode: type === "Prefab" ? openSceneViewportMode(getOpenDocuments(), activeDocumentId) : undefined,
         timelineAsset,
-        skeletonGuid: type === "AnimationGraph3D" ? newSkeleton : undefined,
+        skeletonGuid: type === "AnimationGraph3D" || type === "BlendSpace" ? newSkeleton : undefined,
       });
       setNewAssetOpen(false);
       // A Location changed in the dialog shows the folder the asset went to.

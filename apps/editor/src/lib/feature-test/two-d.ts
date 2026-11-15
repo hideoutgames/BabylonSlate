@@ -24,6 +24,7 @@ import {
   tilesetAtlasColumns,
   tilesetAtlasRows,
   type SpriteAnimationPayload,
+  type SpriteBlendSpacePayload,
   type SpriteCollision,
   type SpritePayload,
   type TilemapChunk,
@@ -35,10 +36,10 @@ import {
 import {
   ANIM_EXIT_TIME_REACHED_TYPE,
   ANIM_RULE_ENTER_NODE_ID,
-  createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
   defaultAnimStatePosition,
   type AnimGraphDocument,
+  type AnimState,
   type AnimTransition,
 } from "@haptic/anim-graph";
 import {
@@ -54,6 +55,7 @@ import {
 import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import { engineScriptApiFor } from "@haptic/object-model";
 import { classGraph, gChain, gNode, gWire } from "./graph";
+import { playerNode, playerState, poseGraph, stateMachineGraph } from "./anim-pose-graphs";
 import {
   actor,
   comp,
@@ -82,6 +84,8 @@ const FEATURE_TEST_TWO_D_NAMES = {
   jumpAnimation: "FT_2DRobotJumpAnim",
   fallAnimation: "FT_2DRobotFallAnim",
   robotGraph: "FT_2DRobotGraph",
+  /** Speed Sprite Blend Space of the robot's Idle and Walk, which its Walk state plays. */
+  robotGait: "FT_2DRobotGait",
   torchAnimation: "FT_2DTorchSheetAnim",
   torchGraph: "FT_2DTorchGraph",
   cameraProbe: "FT_2DCameraProbe",
@@ -339,14 +343,15 @@ async function buildTorchGraph(ctx: FeatureTestContext): Promise<string> {
     frames: [cellFrame(DECOR.torch), cellFrame(DECOR.torchFlicker)],
   };
   const animationGuid = (await ctx.createAsset("SpriteAnimation", FOLDER, NAMES.torchAnimation, { payload: payload(animation) })).guid;
-  const graph: AnimGraphDocument = {
-    ...createDefaultAnimGraph(NAMES.torchGraph, { dimension: "2d" }),
+  const burn = { assetGuid: animationGuid, clipName: "", durationMs: spriteAnimationDurationMs(animation) };
+  const graph: AnimGraphDocument = stateMachineGraph("2d", {
+    name: NAMES.torchGraph,
+    skeletonGuid: null,
     entryStateId: "burn",
-    states: [{ id: "burn", name: "Burn", clipId: "clip-burn", speed: 1, loop: true, position: defaultAnimStatePosition(0) }],
-    clips: [{ id: "clip-burn", kind: "sprite", assetGuid: animationGuid, clipName: "", durationMs: spriteAnimationDurationMs(animation) }],
+    states: [playerState("2d", "burn", "Burn", defaultAnimStatePosition(0).x, defaultAnimStatePosition(0).y, burn)],
     transitions: [],
     variables: [],
-  };
+  });
   return (await ctx.createAsset("AnimationGraph2D", FOLDER, NAMES.torchGraph, { payload: payload(graph) })).guid;
 }
 
@@ -371,23 +376,53 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     fall: await save(NAMES.fallAnimation, animations.fall),
   };
   const clip = (key: keyof typeof animations) => ({
-    id: `clip-${key}`,
-    kind: "sprite" as const,
     assetGuid: guids[key],
     clipName: "",
     durationMs: spriteAnimationDurationMs(animations[key]),
   });
-
-  const graph: AnimGraphDocument = {
-    ...createDefaultAnimGraph(NAMES.robotGraph, { dimension: "2d" }),
-    entryStateId: "idle",
-    states: [
-      { id: "idle", name: "Idle", clipId: "clip-idle", speed: 1, loop: true, position: defaultAnimStatePosition(0) },
-      { id: "walk", name: "Walk", clipId: "clip-walk", speed: 1.25, loop: true, position: defaultAnimStatePosition(1) },
-      { id: "jump", name: "Jump", clipId: "clip-jump", speed: 1, loop: false, position: defaultAnimStatePosition(2) },
-      { id: "fall", name: "Fall", clipId: "clip-fall", speed: 1, loop: true, position: defaultAnimStatePosition(3) },
+  // Idle at Speed 0 and Walk at 1: the Sprite Blend Space plays the nearer alone, keeping its time when it changes.
+  const gait: SpriteBlendSpacePayload = {
+    axes: [{ name: "Speed", min: 0, max: 1, gridDivisions: 2, smoothingSeconds: 0, wrap: false }],
+    samples: [
+      { animationGuid: guids.idle, x: 0, y: 0, rateScale: 1 },
+      { animationGuid: guids.walk, x: 1, y: 0, rateScale: 1 },
     ],
-    clips: [clip("idle"), clip("walk"), clip("jump"), clip("fall")],
+    hysteresis: 0.05,
+    keepTime: true,
+  };
+  const gaitGuid = (await ctx.createAsset("SpriteBlendSpace", FOLDER, NAMES.robotGait, { payload: payload(gait) })).guid;
+  const at = (index: number) => defaultAnimStatePosition(index);
+  // Walk plays the gait Sprite Blend Space at Speed 1 and mirrors through Flip Frame (Flip X off, so the robot still
+  // faces right); Jump and Fall pick their frame with Select Frame By Bool and By Int, whose first input plays.
+  const walk: AnimState = {
+    id: "walk", name: "Walk", position: at(1),
+    stateGraph: poseGraph("2d", "flip", [
+      gNode("player", "anim.frame.spriteBlendSpacePlayer", 60, 80, { assetGuid: gaitGuid, "default:x": 1, "default:playRate": 1.25 }),
+      gNode("flip", "anim.frame.flip", 500, 80),
+    ], [gWire("player", "pose", "flip", "frame")]),
+  };
+  const jump: AnimState = {
+    id: "jump", name: "Jump", position: at(2),
+    stateGraph: poseGraph("2d", "pick", [
+      playerNode("2d", "jump", 60, 40, clip("jump"), { loop: false }),
+      playerNode("2d", "fall", 60, 220, clip("fall")),
+      gNode("pick", "anim.frame.selectByBool", 500, 120),
+    ], [gWire("jump", "pose", "pick", "trueFrame"), gWire("fall", "pose", "pick", "falseFrame")]),
+  };
+  const fall: AnimState = {
+    id: "fall", name: "Fall", position: at(3),
+    stateGraph: poseGraph("2d", "pick", [
+      playerNode("2d", "fall", 60, 40, clip("fall")),
+      playerNode("2d", "idle", 60, 220, clip("idle")),
+      gNode("pick", "anim.frame.selectByInt", 500, 120, { count: 2 }),
+    ], [gWire("fall", "pose", "pick", "frame0"), gWire("idle", "pose", "pick", "frame1")]),
+  };
+
+  const graph: AnimGraphDocument = stateMachineGraph("2d", {
+    name: NAMES.robotGraph,
+    skeletonGuid: null,
+    entryStateId: "idle",
+    states: [playerState("2d", "idle", "Idle", at(0).x, at(0).y, clip("idle")), walk, jump, fall],
     // One-way cycle: the disconnected Exit State sink stays true, so each exit time drives Enter State.
     transitions: [
       exitTimeTransition("idle-to-walk", "idle", "walk", 0, 3),
@@ -396,7 +431,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
       exitTimeTransition("fall-to-idle", "fall", "idle", 0, 2),
     ],
     variables: [],
-  };
+  });
   return (await ctx.createAsset("AnimationGraph2D", FOLDER, NAMES.robotGraph, { payload: payload(graph) })).guid;
 }
 

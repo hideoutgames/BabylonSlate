@@ -332,7 +332,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     registerBeforeTransition,
     saveAll,
     setActiveDocument,
-    setAnimEditorMode,
     setSceneMode,
   } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
@@ -1213,7 +1212,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     isDocumentOpen: (id) =>
       getOpenDocuments().some((doc) => doc.id === id && doc.content !== null),
     setActiveDocument,
-    setAnimEditorMode,
     setSceneMode,
     requestDocumentFocus,
     log: appendLog,

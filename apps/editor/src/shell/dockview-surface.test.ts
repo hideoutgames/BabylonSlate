@@ -10,13 +10,8 @@ describe("dockviewApiKey", () => {
     expect(dockviewApiKey("anim-graph:loco", "default")).toBe("anim-graph:loco");
   });
 
-  it("namespaces Animation Graph surface APIs on the same document", () => {
-    expect(dockviewApiKey("anim-graph:loco", "stateMachine")).toBe(
-      "anim-graph:loco::stateMachine",
-    );
-    expect(dockviewApiKey("anim-graph:loco", "animationObject")).toBe(
-      "anim-graph:loco::animationObject",
-    );
+  it("namespaces a Scene mode's surface API on the same document", () => {
+    expect(dockviewApiKey("scene:level", "script")).toBe("scene:level::script");
   });
 });
 
@@ -24,8 +19,6 @@ describe("dockviewApiKeysForDocument", () => {
   it("lists all document surfaces so close disposes every shell", () => {
     expect(dockviewApiKeysForDocument("anim-graph:loco")).toEqual([
       "anim-graph:loco",
-      "anim-graph:loco::stateMachine",
-      "anim-graph:loco::animationObject",
       "anim-graph:loco::design",
       "anim-graph:loco::landscape",
       "anim-graph:loco::foliage",

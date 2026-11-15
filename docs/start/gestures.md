@@ -39,7 +39,7 @@ Class, Material, Animation Graph, Behaviour Tree and Particle Graph editors shar
 | Pinch, including over wires | Zoom between 10% and 150%. |
 | Double-tap empty space | Open **Add Node** at that spot. |
 | Hold empty space, then drag | Draw a selection rectangle. |
-| Tap a pin, then a pin on the other side | Connect them, when **Tap To Connect Pins** is on in **Engine Settings > Accessibility**. Either side can go first; tap the first pin again to cancel. |
+| Tap a pin, then a pin on the other side | Connect them, when **Tap To Connect Pins** is on in **Engine Settings > Accessibility**. Either side can go first; tap the first pin again, or anything else, to cancel. Panning and zooming keep it. |
 | Drag from a pin | Draw a wire. Release over empty space to open Add Node and connect the new node. |
 | Tap empty space | Clear the selection. |
 | Hold a node, or right-click it | Open the node menu. Nodes in Class, Material and Particle graphs list **Copy**, **Paste**, **Duplicate**, **Delete** and **Break Links**; holding an unselected node selects only that node. |

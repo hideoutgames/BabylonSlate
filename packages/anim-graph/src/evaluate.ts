@@ -1,0 +1,773 @@
+import type { SerializedGraph } from "@haptic/core";
+import {
+  animAliasStates,
+  animPoseGraphKey,
+  type AnimClipLayer,
+  type AnimEvalState,
+  type AnimGraphDocument,
+  type AnimGraphInputs,
+  type AnimMachineEvalState,
+  type AnimPlayerClock,
+  type AnimPoseData,
+  type AnimState,
+  type AnimStateFacts,
+  type AnimStateMachine,
+  type AnimSyncGroupClock,
+  type AnimTransition,
+} from "./graph";
+import {
+  blendSpaceAxisDelta,
+  blendSpaceAxisValue,
+  blendSpaceTriangles,
+  blendSpaceWeights,
+  nearestBlendSpaceSample,
+  type BlendSpaceLayout,
+  type BlendSpaceTriangle,
+} from "./blend-space";
+import {
+  ANIM_FRAME_FLIP_TYPE,
+  ANIM_FRAME_SELECT_BY_BOOL_TYPE,
+  ANIM_FRAME_SELECT_BY_INT_TYPE,
+  ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE,
+  ANIM_POSE_BLEND_BY_BOOL_TYPE,
+  ANIM_POSE_BLEND_BY_INT_TYPE,
+  ANIM_POSE_BLEND_TYPE,
+  ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
+  blendSpaceNodeData,
+  isBlendSpacePlayerType,
+  isPoseOutputType,
+  isPosePlayerType,
+  poseClipData,
+  poseGraphIndex,
+  poseInputPins,
+  poseInputSource,
+  poseNodeDefault,
+  poseSyncGroup,
+  primaryPosePlayer,
+  type BlendSpaceNodeAxis,
+  type BlendSpaceNodeSample,
+  type PoseGraphIndex,
+} from "./pose-graph";
+
+type GraphNode = SerializedGraph["nodes"][number];
+
+/** A state with no player keeps a one-second looping clock for its facts. */
+const STATE_CLOCK_MS = 1000;
+/** A Blend Space sample below this weight adds no layer. */
+const BLEND_SPACE_MIN_WEIGHT = 1e-4;
+const NO_TRANSITIONS: readonly AnimTransition[] = [];
+const NO_LAYERS: readonly AnimClipLayer[] = [];
+
+interface MachineIndex {
+  states: Map<string, AnimState>;
+  /** Outgoing transitions per source state in priority order, then document order. */
+  outgoing: Map<string, readonly AnimTransition[]>;
+}
+
+const machineIndexes = new WeakMap<AnimStateMachine, MachineIndex>();
+
+function machineIndex(machine: AnimStateMachine): MachineIndex {
+  let index = machineIndexes.get(machine);
+  if (!index) {
+    const grouped = new Map<string, Array<{ row: AnimTransition; index: number }>>();
+    const add = (stateId: string, row: AnimTransition, position: number) => {
+      const group = grouped.get(stateId);
+      if (group) group.push({ row, index: position });
+      else grouped.set(stateId, [{ row, index: position }]);
+    };
+    const aliases = new Map((machine.aliases ?? []).map((alias) => [alias.id, alias]));
+    machine.transitions.forEach((row, position) => {
+      const alias = aliases.get(row.fromStateId);
+      if (!alias) {
+        add(row.fromStateId, row, position);
+        return;
+      }
+      // A State Alias's transition leaves from each state it covers, but never re-enters the one playing.
+      for (const stateId of animAliasStates(machine, alias)) {
+        if (stateId !== row.toStateId) add(stateId, row, position);
+      }
+    });
+    const outgoing = new Map<string, readonly AnimTransition[]>();
+    for (const [stateId, entries] of grouped) {
+      entries.sort((a, b) => a.row.priority - b.row.priority || a.index - b.index);
+      outgoing.set(stateId, entries.map((entry) => entry.row));
+    }
+    index = { states: new Map(machine.states.map((state) => [state.id, state])), outgoing };
+    machineIndexes.set(machine, index);
+  }
+  return index;
+}
+
+/** Per-evaluation scratch: the previous clocks, the ones this tick writes, and each graph's data. */
+interface EvalContext {
+  inputs: AnimGraphInputs;
+  previousPlayers: Readonly<Record<string, AnimPlayerClock>>;
+  players: Record<string, AnimPlayerClock>;
+  previousSelectors: Readonly<Record<string, number[]>>;
+  selectors: Record<string, number[]>;
+  /** Each Blend Space Player's weights this tick, worked out once for its state clock and its layers. */
+  blendSpaces: Map<string, BlendSpaceTick>;
+  dtMs: number;
+  previousSyncGroups: Readonly<Record<string, AnimSyncGroupClock>>;
+  /** This tick's Sync Groups: the shared phase and the heaviest member, which sets next tick's pace. */
+  syncGroups: Map<string, { phase: number; leaderWeight: number; leaderCycleMs: number }>;
+}
+
+/**
+ * A Sync Group member's cycle position this tick: the group's, advanced once from last tick by its leader's cycle.
+ * The heaviest member (the first at a tie, which is the state being blended into) leads next tick. Null for a group
+ * that had no members last tick: its first member keeps its own time and starts the group.
+ */
+function syncGroupPhase(ctx: EvalContext, group: string, cycleMs: number, weight: number): number | null {
+  let entry = ctx.syncGroups.get(group);
+  if (!entry) {
+    const previous = ctx.previousSyncGroups[group];
+    if (!previous) return null;
+    const phase = (((previous.phase + ctx.dtMs / Math.max(1, previous.cycleMs)) % 1) + 1) % 1;
+    entry = { phase, leaderWeight: -1, leaderCycleMs: previous.cycleMs };
+    ctx.syncGroups.set(group, entry);
+  }
+  if (weight > entry.leaderWeight) {
+    entry.leaderWeight = weight;
+    entry.leaderCycleMs = cycleMs;
+  }
+  return entry.phase;
+}
+
+/** A member's clock moved to its Sync Group's phase, or kept (and starting the group) when the group is new. */
+function syncedClock(ctx: EvalContext, node: GraphNode, clock: Clock, cycleMs: number, weight: number): Clock {
+  const group = poseSyncGroup(node);
+  if (!group) return clock;
+  const phase = syncGroupPhase(ctx, group, cycleMs, weight);
+  if (phase === null) {
+    ctx.syncGroups.set(group, { phase: clock.normalised, leaderWeight: weight, leaderCycleMs: cycleMs });
+    return clock;
+  }
+  return { ...clock, normalised: phase, timeMs: phase * (cycleMs > 0 ? cycleMs : 1) };
+}
+
+interface BlendSpaceTick {
+  samples: readonly BlendSpaceNodeSample[];
+  weights: readonly number[];
+  /** One cycle of the blend: the samples' lengths (over their rate scales) averaged by weight. */
+  cycleMs: number;
+  /** A Sprite Blend Space whose sample changed this tick and does not keep time: its cycle starts over. */
+  restart: boolean;
+}
+
+const EMPTY_BLEND_SPACE: BlendSpaceTick = { samples: [], weights: [], cycleMs: STATE_CLOCK_MS, restart: false };
+
+/** A Sprite Blend Space's playing sample, kept beside its eased inputs. */
+const SAMPLE_KEY = "#sample";
+
+/** A resolved Blend Space's layout and triangulation, kept per stored object so triangles are built once. */
+const blendSpaceLayouts = new WeakMap<
+  object,
+  {
+    layout: BlendSpaceLayout;
+    axes: BlendSpaceNodeAxis[];
+    triangles: BlendSpaceTriangle[];
+    samples: BlendSpaceNodeSample[];
+    hysteresis: number;
+    keepTime: boolean;
+  } | null
+>();
+
+function blendSpaceLayout(node: GraphNode) {
+  const raw = node.data.blendSpace;
+  if (!raw || typeof raw !== "object") return null;
+  if (blendSpaceLayouts.has(raw)) return blendSpaceLayouts.get(raw)!;
+  const space = blendSpaceNodeData(node);
+  const [first, second] = space.axes;
+  const entry = first && space.samples.length > 0
+    ? (() => {
+        const axes: BlendSpaceLayout["axes"] = second ? [first, second] : [first];
+        const layout: BlendSpaceLayout = { axes, samples: space.samples };
+        return {
+          layout,
+          axes: space.axes,
+          triangles: blendSpaceTriangles(layout),
+          samples: space.samples,
+          hysteresis: space.hysteresis ?? 0,
+          keepTime: space.keepTime !== false,
+        };
+      })()
+    : null;
+  blendSpaceLayouts.set(raw, entry);
+  return entry;
+}
+
+/** An input eased toward `target` over about the axis's Smoothing Time, the short way round a wrapping axis. */
+function smoothAxis(axis: BlendSpaceNodeAxis, previous: number | undefined, target: number, dtSeconds: number): number {
+  const value = blendSpaceAxisValue(axis, target);
+  if (previous === undefined || !(axis.smoothingSeconds > 0)) return value;
+  const step = 1 - Math.exp((-3 * Math.max(0, dtSeconds)) / axis.smoothingSeconds);
+  return blendSpaceAxisValue(axis, previous + blendSpaceAxisDelta(axis, previous, value) * step);
+}
+
+/**
+ * A Blend Space Player's tick: its X and Y eased by their Smoothing Times, the samples' weights there and the length
+ * of one shared cycle. A Sprite Blend Space plays only the nearest sample (held by its hysteresis) for that sample's
+ * length. Computed once per tick for each key (a fresh visit apart).
+ */
+function blendSpaceTick(
+  ctx: EvalContext,
+  key: string,
+  node: GraphNode,
+  data: AnimPoseData | undefined,
+  dtSeconds: number,
+  fresh: boolean,
+): BlendSpaceTick {
+  const cacheKey = fresh ? `${key}\0fresh` : key;
+  const cached = ctx.blendSpaces.get(cacheKey);
+  if (cached) return cached;
+  const resolved = blendSpaceLayout(node);
+  if (!resolved) {
+    ctx.blendSpaces.set(cacheKey, EMPTY_BLEND_SPACE);
+    return EMPTY_BLEND_SPACE;
+  }
+  const axes = resolved.axes;
+  const previous = fresh ? undefined : ctx.previousSelectors[key];
+  const input = [dataValue(data, node, "x", 0), dataValue(data, node, "y", 0)];
+  const smoothed = axes.map((axis, index) => smoothAxis(axis, previous?.[index], input[index]!, dtSeconds));
+  ctx.selectors[key] = smoothed;
+  const point = { x: smoothed[0]!, y: smoothed[1] ?? 0 };
+  if (node.type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE) {
+    const held = fresh ? undefined : ctx.previousSelectors[key + SAMPLE_KEY]?.[0];
+    const index = nearestBlendSpaceSample(resolved.layout, point, held ?? null, resolved.hysteresis);
+    ctx.selectors[key + SAMPLE_KEY] = [index];
+    const sample = resolved.samples[index];
+    const tick: BlendSpaceTick = {
+      samples: resolved.samples,
+      weights: resolved.samples.map((_, position) => (position === index ? 1 : 0)),
+      cycleMs: sample ? sample.durationMs / sample.rateScale : STATE_CLOCK_MS,
+      restart: held !== undefined && held !== index && !resolved.keepTime,
+    };
+    ctx.blendSpaces.set(cacheKey, tick);
+    return tick;
+  }
+  const weights = blendSpaceWeights(resolved.layout, point, resolved.triangles);
+  let cycleMs = 0;
+  resolved.samples.forEach((sample, index) => {
+    cycleMs += (weights[index] ?? 0) * (sample.durationMs / sample.rateScale);
+  });
+  const tick = { samples: resolved.samples, weights, cycleMs: cycleMs > 0 ? cycleMs : STATE_CLOCK_MS, restart: false };
+  ctx.blendSpaces.set(cacheKey, tick);
+  return tick;
+}
+
+interface Clock extends AnimPlayerClock {
+  justLooped: boolean;
+  justFinished: boolean;
+}
+
+function advanceClock(previous: AnimPlayerClock, dtMs: number, durationMs: number, loop: boolean): Clock {
+  let timeMs = previous.timeMs + (Number.isFinite(dtMs) ? Math.max(0, dtMs) : 0);
+  if (loop) {
+    let loops = 0;
+    while (timeMs >= durationMs) {
+      timeMs -= durationMs;
+      loops += 1;
+      if (loops > 100_000) {
+        timeMs %= durationMs;
+        break;
+      }
+    }
+    return { timeMs, normalised: timeMs / durationMs, loopCount: previous.loopCount + loops, justLooped: loops > 0, justFinished: false };
+  }
+  const normalised = Math.min(1, timeMs / durationMs);
+  return {
+    timeMs: normalised * durationMs,
+    normalised,
+    loopCount: previous.loopCount,
+    justLooped: false,
+    justFinished: normalised >= 1 && previous.normalised < 1,
+  };
+}
+
+function totalNormalisedTime(loop: boolean, loopCount: number, normalised: number): number {
+  return loop ? loopCount + normalised : normalised;
+}
+
+function factsFor(clock: Clock, durationMs: number, loop: boolean, previousTotal: number): AnimStateFacts {
+  const durationSeconds = durationMs / 1000;
+  const remainingRatio = Math.max(0, 1 - clock.normalised);
+  return {
+    elapsedSeconds: clock.timeMs / 1000,
+    durationSeconds,
+    normalisedTime: clock.normalised,
+    remainingSeconds: remainingRatio * durationSeconds,
+    remainingRatio,
+    looping: loop,
+    loopCount: clock.loopCount,
+    justLooped: clock.justLooped,
+    justFinished: clock.justFinished,
+    totalNormalisedTime: totalNormalisedTime(loop, clock.loopCount, clock.normalised),
+    previousTotalNormalisedTime: previousTotal,
+  };
+}
+
+const ZERO_CLOCK: AnimPlayerClock = { timeMs: 0, loopCount: 0, normalised: 0 };
+
+/** A node's data input this tick: the compiled value when the input is wired, else the value stored on the node. */
+function dataValue<T>(data: AnimPoseData | undefined, node: GraphNode, pin: string, fallback: T): T {
+  const computed = data?.[node.id]?.[pin];
+  if (computed !== undefined) {
+    if (typeof fallback === "number") return (typeof computed === "number" && Number.isFinite(computed) ? computed : fallback) as T;
+    if (typeof fallback === "boolean") return Boolean(computed) as T;
+    return computed as T;
+  }
+  return poseNodeDefault(node, pin, fallback);
+}
+
+/** A player's length in ms at its play rate, its play rate and loop flag. */
+function playerTiming(node: GraphNode, data: AnimPoseData | undefined): { durationMs: number; playRate: number; loop: boolean } {
+  const clip = poseClipData(node);
+  const playRate = dataValue(data, node, "playRate", 1);
+  return { durationMs: Math.max(1, clip.durationMs), playRate, loop: clip.loop };
+}
+
+/** Where a player starts: its Start Position (3D, 0 to 1) or Start Frame (2D, over its frame count). */
+function playerStart(node: GraphNode, data: AnimPoseData | undefined, durationMs: number): AnimPlayerClock {
+  let start: number;
+  if (node.type.startsWith("anim.frame.")) {
+    const frameCount = typeof node.data.frameCount === "number" && node.data.frameCount > 0 ? node.data.frameCount : 0;
+    start = frameCount > 0 ? dataValue(data, node, "startFrame", 0) / frameCount : 0;
+  } else {
+    start = dataValue(data, node, "startPosition", 0);
+  }
+  const normalised = Math.min(1, Math.max(0, Number.isFinite(start) ? start : 0));
+  return { timeMs: normalised * durationMs, loopCount: 0, normalised };
+}
+
+/**
+ * Walks a pose graph from its output: advances every player and selector it reaches by `dtSeconds` (a fresh visit
+ * starts them over) and returns its clip layers at weight 1. `stateId` tags the layers; `machine` plays a State
+ * Machine node.
+ */
+function visitPoseGraph(
+  ctx: EvalContext,
+  graphKey: string,
+  graph: SerializedGraph,
+  data: AnimPoseData | undefined,
+  dtSeconds: number,
+  fresh: boolean,
+  stateId: string,
+): AnimClipLayer[] {
+  const index = poseGraphIndex(graph);
+  if (!index.output) return [];
+  const layers: AnimClipLayer[] = [];
+  const visited = new Set<string>();
+  const visit = (node: GraphNode | undefined, weight: number, flipX: boolean, flipY: boolean): void => {
+    // A pose output feeds one input, so each node is reached once; a cycle stops here.
+    if (!node || visited.has(node.id)) return;
+    visited.add(node.id);
+    const key = `${graphKey}#${node.id}`;
+    const emit = (layer: Omit<AnimClipLayer, "weight" | "stateId">) => {
+      if (weight <= 0) return;
+      layers.push({ ...layer, stateId, weight, ...(flipX ? { flipX: true } : {}), ...(flipY ? { flipY: true } : {}) });
+    };
+    if (isPoseOutputType(node.type)) {
+      visit(firstPoseInput(index, node), weight, flipX, flipY);
+      return;
+    }
+    if (isPosePlayerType(node.type)) {
+      const timing = playerTiming(node, data);
+      const previous = fresh ? playerStart(node, data, timing.durationMs) : ctx.previousPlayers[key] ?? playerStart(node, data, timing.durationMs);
+      // A Play Rate at or below 0 holds the frame.
+      const advanced = advanceClock(previous, timing.playRate > 0 ? dtSeconds * 1000 * timing.playRate : 0, timing.durationMs, timing.loop);
+      // A looping player in a Sync Group runs at the group's phase.
+      const clock = timing.loop
+        ? syncedClock(ctx, node, advanced, timing.durationMs / Math.max(0.001, timing.playRate), weight)
+        : advanced;
+      ctx.players[key] = { timeMs: clock.timeMs, loopCount: clock.loopCount, normalised: clock.normalised };
+      const clip = poseClipData(node);
+      if (clip.assetGuid) {
+        emit({ clipAssetGuid: clip.assetGuid, clipName: clip.clipName, clipKind: node.type.startsWith("anim.frame.") ? "sprite" : "animation", normalisedTime: clock.normalised });
+      }
+      return;
+    }
+    if (isBlendSpacePlayerType(node.type)) {
+      const tick = blendSpaceTick(ctx, key, node, data, dtSeconds, fresh);
+      const playRate = dataValue(data, node, "playRate", 1);
+      // Every sample shares one phase; the cycle's length follows the weights, so the phase carries over, not the time.
+      const prior = fresh || tick.restart ? ZERO_CLOCK : ctx.previousPlayers[key] ?? ZERO_CLOCK;
+      const clock = syncedClock(
+        ctx,
+        node,
+        advanceClock(
+          { ...prior, timeMs: prior.normalised * tick.cycleMs },
+          playRate > 0 ? dtSeconds * 1000 * playRate : 0,
+          tick.cycleMs,
+          true,
+        ),
+        tick.cycleMs / Math.max(0.001, playRate),
+        weight,
+      );
+      ctx.players[key] = { timeMs: clock.timeMs, loopCount: clock.loopCount, normalised: clock.normalised };
+      if (node.type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE) {
+        // Frames cannot blend: the playing sample shows alone, flipped as the graph flips it.
+        const playing = tick.samples[tick.weights.indexOf(1)];
+        if (playing) emit({ clipAssetGuid: playing.animationGuid, clipName: "", clipKind: "sprite", normalisedTime: clock.normalised });
+        return;
+      }
+      tick.samples.forEach((sample, position) => {
+        const sampleWeight = tick.weights[position] ?? 0;
+        if (sampleWeight <= BLEND_SPACE_MIN_WEIGHT || weight <= 0) return;
+        layers.push({
+          stateId,
+          clipAssetGuid: sample.animationGuid,
+          clipName: sample.clipName,
+          clipKind: "animation",
+          normalisedTime: clock.normalised,
+          weight: weight * sampleWeight,
+        });
+      });
+      return;
+    }
+    if (node.type === ANIM_POSE_SEQUENCE_EVALUATOR_TYPE) {
+      const clip = poseClipData(node);
+      const time = dataValue(data, node, "normalizedTime", 0);
+      if (clip.assetGuid) {
+        emit({ clipAssetGuid: clip.assetGuid, clipName: clip.clipName, clipKind: "animation", normalisedTime: Math.min(1, Math.max(0, time)) });
+      }
+      return;
+    }
+    if (node.type === ANIM_POSE_BLEND_TYPE) {
+      const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 0.5)));
+      visit(poseInputSource(index, node.id, "a"), weight * (1 - alpha), flipX, flipY);
+      visit(poseInputSource(index, node.id, "b"), weight * alpha, flipX, flipY);
+      return;
+    }
+    if (node.type === ANIM_POSE_BLEND_BY_BOOL_TYPE || node.type === ANIM_POSE_BLEND_BY_INT_TYPE) {
+      const pins = poseInputPins(node.type, node.data.count);
+      const target = node.type === ANIM_POSE_BLEND_BY_BOOL_TYPE
+        ? (dataValue(data, node, "active", true) ? 0 : 1)
+        : clampIndex(dataValue(data, node, "activeIndex", 0), pins.length);
+      const weights = blendSelector(ctx, key, node, pins.length, target, dtSeconds, fresh);
+      pins.forEach((pin, position) => visit(poseInputSource(index, node.id, pin), weight * weights[position]!, flipX, flipY));
+      return;
+    }
+    if (node.type === ANIM_FRAME_SELECT_BY_BOOL_TYPE || node.type === ANIM_FRAME_SELECT_BY_INT_TYPE) {
+      // Frames cannot blend: the chosen input shows alone, and the others keep their time.
+      const pins = poseInputPins(node.type, node.data.count);
+      const target = node.type === ANIM_FRAME_SELECT_BY_BOOL_TYPE
+        ? (dataValue(data, node, "active", true) ? 0 : 1)
+        : clampIndex(dataValue(data, node, "activeIndex", 0), pins.length);
+      pins.forEach((pin, position) => visit(poseInputSource(index, node.id, pin), position === target ? weight : 0, flipX, flipY));
+      return;
+    }
+    if (node.type === ANIM_FRAME_FLIP_TYPE) {
+      visit(
+        poseInputSource(index, node.id, "frame"),
+        weight,
+        flipX !== dataValue(data, node, "flipX", false),
+        flipY !== dataValue(data, node, "flipY", false),
+      );
+      return;
+    }
+    // Rest Pose and unknown nodes add no clip: the bones keep their rest pose.
+  };
+  visit(index.output, 1, false, false);
+  return layers;
+}
+
+function firstPoseInput(index: PoseGraphIndex, node: GraphNode): GraphNode | undefined {
+  for (const pin of poseInputPins(node.type, node.data.count)) {
+    const source = poseInputSource(index, node.id, pin);
+    if (source) return source;
+  }
+  return undefined;
+}
+
+function clampIndex(value: number, count: number): number {
+  const index = Math.round(Number.isFinite(value) ? value : 0);
+  return Math.min(count - 1, Math.max(0, index));
+}
+
+/**
+ * Weights of a Blend Poses By Bool / Int's inputs, easing toward `target` over its blend time (`trueBlendSeconds`
+ * and `falseBlendSeconds`, or `blendSeconds`). A fresh visit starts on the target.
+ */
+function blendSelector(
+  ctx: EvalContext,
+  key: string,
+  node: GraphNode,
+  count: number,
+  target: number,
+  dtSeconds: number,
+  fresh: boolean,
+): number[] {
+  const previous = fresh ? undefined : ctx.previousSelectors[key];
+  let weights = previous && previous.length === count ? [...previous] : Array.from({ length: count }, (_, i) => (i === target ? 1 : 0));
+  const blendSeconds = node.type === ANIM_POSE_BLEND_BY_BOOL_TYPE
+    ? Number(target === 0 ? node.data.trueBlendSeconds ?? 0.2 : node.data.falseBlendSeconds ?? 0.2)
+    : Number(node.data.blendSeconds ?? 0.2);
+  const step = blendSeconds > 0 && Number.isFinite(blendSeconds) ? Math.max(0, dtSeconds) / blendSeconds : 1;
+  weights = weights.map((weight, i) => (i === target ? Math.min(1, weight + step) : Math.max(0, weight - step)));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  weights = total > 0 ? weights.map((weight) => weight / total) : weights.map((_, i) => (i === target ? 1 : 0));
+  ctx.selectors[key] = weights;
+  return weights;
+}
+
+function scaleLayers(layers: readonly AnimClipLayer[], weight: number): AnimClipLayer[] {
+  return weight <= 0 ? [] : layers.map((layer) => ({ ...layer, weight: layer.weight * weight }));
+}
+
+/**
+ * A state's clock and facts: its primary player's, else a one-second looping state clock. A Blend Space Player's
+ * cycle changes with its weights, so its state carries its phase over (`synced`), not its time.
+ */
+function stateTiming(
+  ctx: EvalContext,
+  stateId: string,
+  state: AnimState,
+  data: AnimPoseData | undefined,
+  dtSeconds: number,
+  fresh: boolean,
+): { durationMs: number; playRate: number; loop: boolean; synced: boolean; restart: boolean } {
+  const player = primaryPosePlayer(state.stateGraph);
+  if (!player) return { durationMs: STATE_CLOCK_MS, playRate: 1, loop: true, synced: false, restart: false };
+  if (isBlendSpacePlayerType(player.type)) {
+    const tick = blendSpaceTick(ctx, `${animPoseGraphKey(stateId)}#${player.id}`, player, data, dtSeconds, fresh);
+    return { durationMs: tick.cycleMs, playRate: dataValue(data, player, "playRate", 1), loop: true, synced: true, restart: tick.restart };
+  }
+  return { ...playerTiming(player, data), synced: false, restart: false };
+}
+
+/**
+ * A state clock whose primary player is in a Sync Group follows the group's phase, as its player does; a wrap past
+ * the end counts a loop.
+ */
+function syncedStateClock(
+  ctx: EvalContext,
+  state: AnimState,
+  clock: Clock,
+  start: AnimPlayerClock,
+  timing: { durationMs: number; playRate: number; loop: boolean },
+): Clock {
+  const player = primaryPosePlayer(state.stateGraph);
+  if (!player || !timing.loop) return clock;
+  const group = poseSyncGroup(player);
+  if (!group) return clock;
+  const phase = syncGroupPhase(ctx, group, timing.durationMs / Math.max(0.001, timing.playRate), 1);
+  if (phase === null) return clock;
+  const wrapped = phase + 1e-9 < start.normalised;
+  return {
+    ...clock,
+    normalised: phase,
+    timeMs: phase * timing.durationMs,
+    justLooped: wrapped,
+    loopCount: start.loopCount + (wrapped ? 1 : 0),
+  };
+}
+
+/** Where a state's clock starts on entry: at its primary player's start, else at 0. */
+function stateStart(state: AnimState, data: AnimPoseData | undefined, durationMs: number): AnimPlayerClock {
+  const player = primaryPosePlayer(state.stateGraph);
+  return player && !isBlendSpacePlayerType(player.type) ? playerStart(player, data, durationMs) : ZERO_CLOCK;
+}
+
+/** The State Machine's tick: run its active state's graph and transitions, and blend. */
+function evaluateMachine(
+  ctx: EvalContext,
+  machine: AnimStateMachine,
+  previous: AnimMachineEvalState | null,
+  dtSeconds: number,
+): { state: AnimMachineEvalState; layers: AnimClipLayer[] } {
+  const { states, outgoing: outgoingByState } = machineIndex(machine);
+  const entryStateId = states.has(machine.entryStateId) ? machine.entryStateId : machine.states[0]?.id;
+  let stateId = previous?.stateId ?? entryStateId;
+  if (stateId === undefined || !states.has(stateId)) stateId = entryStateId;
+  if (stateId === undefined) return { state: idleMachineState(machine.entryStateId), layers: [] };
+  const current = states.get(stateId)!;
+  // A jump leaves the target with a negative time, which enters it fresh.
+  const sameState = previous !== null && previous.stateId === stateId && previous.timeMs >= 0;
+  const entered = !sameState;
+  const currentKey = animPoseGraphKey(stateId);
+  // Data inputs see the state's facts from before this tick's advance.
+  const currentData = ctx.inputs.poseData?.(currentKey, previous && sameState ? previous.facts : null);
+  const timing = stateTiming(ctx, stateId, current, currentData, dtSeconds, entered);
+  const start = sameState
+    ? timing.restart
+      ? { timeMs: 0, loopCount: previous.loopCount, normalised: 0 }
+      : {
+          timeMs: timing.synced ? previous.normalisedTime * timing.durationMs : previous.timeMs,
+          loopCount: previous.loopCount,
+          normalised: previous.normalisedTime,
+        }
+    : stateStart(current, currentData, timing.durationMs);
+  const previousTotal = sameState
+    ? totalNormalisedTime(previous.facts.looping, previous.loopCount, previous.normalisedTime)
+    : start.normalised;
+  const clock = syncedStateClock(
+    ctx,
+    current,
+    advanceClock(start, timing.playRate > 0 ? dtSeconds * 1000 * timing.playRate : 0, timing.durationMs, timing.loop),
+    start,
+    timing,
+  );
+  const currentFacts = factsFor(clock, timing.durationMs / Math.max(0.001, timing.playRate), timing.loop, previousTotal);
+  const currentLayers = visitPoseGraph(ctx, currentKey, current.stateGraph, currentData, dtSeconds, entered, stateId);
+
+  let nextId = stateId;
+  let nextClock: Clock = clock;
+  let nextFacts = currentFacts;
+  let nextLayers = currentLayers;
+  let startedBlend: AnimTransition | null = null;
+  for (const row of outgoingByState.get(stateId) ?? NO_TRANSITIONS) {
+    // A transition to a missing state (`anim.badTransition`) never fires.
+    if (!states.has(row.toStateId)) continue;
+    const decided = ctx.inputs.decideTransition?.(row, currentFacts) ?? ctx.inputs.transitionRules?.[row.id];
+    if (decided && !(decided.enter === true && decided.exit === true)) continue;
+    nextId = row.toStateId;
+    startedBlend = row.blendSeconds > 0 ? row : null;
+    ctx.inputs.transitionTaken?.(row);
+    const next = states.get(nextId)!;
+    const nextKey = animPoseGraphKey(nextId);
+    const nextData = ctx.inputs.poseData?.(nextKey, null);
+    const nextTiming = stateTiming(ctx, nextId, next, nextData, 0, true);
+    const nextStart = stateStart(next, nextData, nextTiming.durationMs);
+    // Entering a state whose player shares a Sync Group picks up the group's phase, so a stride carries on.
+    nextClock = syncedStateClock(ctx, next, { ...nextStart, justLooped: false, justFinished: false }, nextStart, nextTiming);
+    nextClock = { ...nextClock, justLooped: false };
+    nextFacts = factsFor(nextClock, nextTiming.durationMs / Math.max(0.001, nextTiming.playRate), nextTiming.loop, nextStart.normalised);
+    // A self-transition restarts the state, and its blend crossfades from the frame it left.
+    nextLayers = visitPoseGraph(ctx, nextKey, next.stateGraph, nextData, 0, true, nextId);
+    break;
+  }
+
+  let blendFromStateId = previous?.blendFromStateId ?? null;
+  let blendElapsedMs = previous?.blendElapsedMs ?? 0;
+  let blendSeconds = previous?.blendSeconds ?? 0;
+  let fromLayers: readonly AnimClipLayer[] = NO_LAYERS;
+  if (startedBlend) {
+    blendFromStateId = stateId;
+    blendElapsedMs = Math.max(0, dtSeconds) * 1000;
+    blendSeconds = startedBlend.blendSeconds;
+    fromLayers = currentLayers;
+  } else if (nextId !== stateId) {
+    blendFromStateId = null;
+    blendElapsedMs = 0;
+    blendSeconds = 0;
+  } else if (blendFromStateId && blendFromStateId !== nextId && states.has(blendFromStateId)) {
+    blendElapsedMs += Math.max(0, dtSeconds) * 1000;
+    const from = states.get(blendFromStateId)!;
+    const fromKey = animPoseGraphKey(blendFromStateId);
+    fromLayers = visitPoseGraph(ctx, fromKey, from.stateGraph, ctx.inputs.poseData?.(fromKey, null), dtSeconds, false, blendFromStateId);
+  } else {
+    blendFromStateId = null;
+    blendElapsedMs = 0;
+    blendSeconds = 0;
+  }
+
+  const blendWeights: Record<string, number> = {};
+  let toWeight = 1;
+  const layers: AnimClipLayer[] = [];
+  const blendDurationMs = Math.max(0, blendSeconds) * 1000;
+  if (blendFromStateId && blendDurationMs > 0) {
+    const t = Math.min(1, blendElapsedMs / blendDurationMs);
+    if (t >= 1) {
+      blendFromStateId = null;
+      blendElapsedMs = 0;
+      blendSeconds = 0;
+    } else {
+      toWeight = t;
+      layers.push(...scaleLayers(fromLayers, 1 - t));
+      blendWeights[blendFromStateId] = 1 - t;
+    }
+  } else if (blendFromStateId) {
+    blendFromStateId = null;
+    blendElapsedMs = 0;
+    blendSeconds = 0;
+  }
+  layers.push(...scaleLayers(nextLayers, toWeight));
+  blendWeights[nextId] = (blendWeights[nextId] ?? 0) + toWeight;
+
+  const state: AnimMachineEvalState = {
+    stateId: nextId,
+    normalisedTime: nextClock.normalised,
+    blendWeights,
+    timeMs: nextClock.timeMs,
+    facts: nextFacts,
+    blendFromStateId,
+    blendElapsedMs,
+    blendSeconds,
+    loopCount: nextClock.loopCount,
+  };
+  return { state, layers };
+}
+
+function idleFacts(): AnimStateFacts {
+  return {
+    elapsedSeconds: 0,
+    durationSeconds: 0,
+    normalisedTime: 0,
+    remainingSeconds: 0,
+    remainingRatio: 0,
+    looping: false,
+    loopCount: 0,
+    justLooped: false,
+    justFinished: false,
+    totalNormalisedTime: 0,
+    previousTotalNormalisedTime: 0,
+  };
+}
+
+function idleMachineState(stateId: string): AnimMachineEvalState {
+  return {
+    stateId,
+    normalisedTime: 0,
+    blendWeights: {},
+    timeMs: 0,
+    facts: idleFacts(),
+    blendFromStateId: null,
+    blendElapsedMs: 0,
+    blendSeconds: 0,
+    loopCount: 0,
+  };
+}
+
+/**
+ * Pure `(graph, previous, dt, inputs) → AnimEvalState`: runs the State Machine with its active state's graph and
+ * returns the weighted clip layers render blends.
+ */
+export function evaluateAnimGraph(
+  doc: AnimGraphDocument,
+  previous: AnimEvalState | null,
+  dtSeconds: number,
+  inputs: AnimGraphInputs,
+): AnimEvalState {
+  const ctx: EvalContext = {
+    inputs,
+    previousPlayers: previous?.players ?? {},
+    players: {},
+    previousSelectors: previous?.selectors ?? {},
+    selectors: {},
+    blendSpaces: new Map(),
+    dtMs: Math.max(0, Number.isFinite(dtSeconds) ? dtSeconds : 0) * 1000,
+    previousSyncGroups: previous?.syncGroups ?? {},
+    syncGroups: new Map(),
+  };
+  const { state, layers } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
+  const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
+  if (ctx.syncGroups.size > 0) {
+    result.syncGroups = Object.fromEntries(
+      [...ctx.syncGroups].map(([group, entry]) => [group, { phase: entry.phase, cycleMs: entry.leaderCycleMs }]),
+    );
+  }
+  return result;
+}
+
+/** An evaluation that starts the State Machine over in `stateId`. */
+export function animEvalWithJump(
+  doc: AnimGraphDocument,
+  previous: AnimEvalState | null,
+  stateId: string,
+): AnimEvalState | null {
+  if (!doc.stateMachine.states.some((state) => state.id === stateId)) return previous;
+  // A negative time is unknown to the next evaluation, so it enters the state fresh with no blend.
+  const base = previous ?? { ...idleMachineState(stateId), players: {}, selectors: {}, layers: [] };
+  return { ...base, ...idleMachineState(stateId), timeMs: -1 };
+}

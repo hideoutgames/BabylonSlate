@@ -40,6 +40,8 @@ import {
   createDefaultSkyboxCreatorPayload,
   createDefaultSoundAttenuationPayload,
   createDefaultSpriteAnimationPayload,
+  createDefaultBlendSpacePayload,
+  createDefaultSpriteBlendSpacePayload,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
@@ -243,6 +245,19 @@ export function buildNewAssetResult(options: {
         skeletonGuid: options.skeletonGuid ?? null,
       }) as unknown as Record<string, unknown>,
     );
+  }
+
+  if (type === "BlendSpace") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultBlendSpacePayload(options.skeletonGuid ?? null) as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "SpriteBlendSpace") {
+    return documentAsset(type, name, guid, createDefaultSpriteBlendSpacePayload() as unknown as Record<string, unknown>);
   }
 
   if (type === "Material") {

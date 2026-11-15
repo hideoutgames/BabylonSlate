@@ -131,6 +131,27 @@
   box-shadow: var(--surface-shadow);
 }
 
+/* An Animation Graph's Output Pose or Output Frame: a state card (grey border; the selection outline when selected) with
+   its input inside, before the title. */
+.anim-pose-output-node {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 160px;
+  padding: 10px 24px 10px 4px;
+}
+
+.anim-pose-output-pin {
+  flex-shrink: 0;
+}
+
+/* A State Alias plays nothing: a dashed card that only sends transitions. */
+.anim-alias-node {
+  min-height: 64px;
+  border-style: dashed;
+  background: var(--panel-header, var(--graph-node));
+}
+
 .anim-state-node-selected {
   border-color: var(--graph-state-selected);
   box-shadow: 0 0 0 1px var(--graph-state-selected);

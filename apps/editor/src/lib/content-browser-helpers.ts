@@ -236,6 +236,8 @@ export const CREATABLE_ASSET_TYPES = [
   "SpriteAnimation",
   "AnimationGraph3D",
   "AnimationGraph2D",
+  "BlendSpace",
+  "SpriteBlendSpace",
   "Material",
   "MaterialInstance",
   "MaterialFunction",
@@ -292,12 +294,12 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "2d",
     label: "2D",
-    types: ["Sprite", "Tileset", "Tilemap"],
+    types: ["Sprite", "SpriteAnimation", "AnimationGraph2D", "SpriteBlendSpace", "Tileset", "Tilemap"],
   },
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph3D", "AnimationGraph2D", "SpriteAnimation", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
+    types: ["AnimationGraph3D", "BlendSpace", "Timeline", "TimelineClip2D", "TimelineClip3D", "CameraShake"],
   },
   {
     id: "rendering",
@@ -327,6 +329,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
   AnimationGraph3D: "State machines that play Animations on one Skeleton.",
   AnimationGraph2D: "State machines that play Sprite Animations.",
+  BlendSpace: "Animations on one Skeleton placed on one or two axes, such as Speed and Direction, and blended by where the input falls.",
+  SpriteBlendSpace: "Sprite Animations placed on one or two axes, such as Direction; the one nearest the input plays.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
   MaterialInstance: "Parameter values for a parent Material. Shares its compiled shader, so edits and variants cost no recompile.",
@@ -435,6 +439,7 @@ type ContentBrowserContextAction =
   | "create-linked-save-game"
   | "create-render-target-texture"
   | "create-animation-graph"
+  | "create-blend-space"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -484,7 +489,7 @@ function createActionsForTypes(types: readonly string[], canCreateChildClass: bo
   if (single === "Structure") actions.push("create-data-definition");
   if (single === "DataDefinition") actions.push("create-data-tree", "create-linked-save-game");
   if (single === "RenderTarget") actions.push("create-render-target-texture");
-  if (single === "Skeleton" || single === "Model") actions.push("create-animation-graph");
+  if (single === "Skeleton" || single === "Model") actions.push("create-animation-graph", "create-blend-space");
   return actions;
 }
 

@@ -53,6 +53,8 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   SpriteAnimation: ".spriteanim.hasset",
   AnimationGraph3D: ".anim3d.hasset",
   AnimationGraph2D: ".anim2d.hasset",
+  BlendSpace: ".blendspace.hasset",
+  SpriteBlendSpace: ".spriteblend.hasset",
   Material: ".material.hasset",
   MaterialFunction: ".matfunc.hasset",
   MaterialInstance: ".matinst.hasset",

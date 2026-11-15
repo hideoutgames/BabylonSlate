@@ -30,6 +30,7 @@ import {
   normalizeMaterialInstanceDocument,
 } from "@haptic/shader-graph";
 import { animationAssetGuids } from "./animation-payload";
+import { blendSpaceAssetGuids, spriteBlendSpaceAssetGuids } from "./blend-space-payload";
 import { audioAssetDependencies } from "./audio-payload";
 import { ASSET_DEPENDENCY_METADATA_VERSION } from "./hasset";
 import { dataAssetDependencies, dataGraphAssetDependencies, type DataDefinitionFieldsResolver } from "./data-asset-refs";
@@ -434,6 +435,12 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   else if (assetType === "Model") addMany(modelAssetGuids(payload));
   else if (assetType === "Skeleton") addMany(skeletonAssetGuids(payload));
   else if (assetType === "Animation") addMany(animationAssetGuids(payload));
+  else if (assetType === "SpriteBlendSpace") addMany(spriteBlendSpaceAssetGuids(payload));
+  else if (assetType === "BlendSpace") {
+    addMany(blendSpaceAssetGuids(payload));
+    // The Preview window's Model is for the editor only, so a game never loads it.
+    add(payload.previewModelGuid, false);
+  }
   else if (assetType === "SpriteAnimation") addMany(spriteAnimationDependencyGuids(parseSpriteAnimationPayload(payload)));
   else if (assetType === "Sprite" || assetType === "Tileset") add(payload.textureGuid);
   else if (assetType === "Tilemap") { for (const tileset of rows(payload.tilesets)) add(tileset.guid); }
@@ -503,8 +510,18 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
     addMany(areaEmissionTextureGuids(payload), false);
   } else if (isAnimGraphAssetType(assetType)) {
     add(payload.skeletonGuid);
-    for (const clip of rows(payload.clips)) add(clip.assetGuid);
-    for (const transition of rows(payload.transitions)) graph(transition.ruleGraph);
+    // The Preview window's Model is for the editor only, so a game never loads it.
+    add(payload.previewModelGuid, false);
+    // Each state's graph: its players' clips, and the data nodes feeding them.
+    const poseGraph = (value: unknown): void => {
+      for (const node of rows(row(value).nodes)) {
+        if (/^anim\.(?:pose|frame)\./.test(String(node.type))) add(row(node.data).assetGuid);
+      }
+      graph(value);
+    };
+    const machine = row(payload.stateMachine);
+    for (const state of rows(machine.states)) poseGraph(state.stateGraph);
+    for (const transition of rows(machine.transitions)) graph(transition.ruleGraph);
     graph(payload.animationObject);
     for (const variable of rows(payload.variables)) memberValue(variable, variable.defaultValue);
   } else if (assetType === "BehaviourTree") {

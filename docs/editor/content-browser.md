@@ -71,6 +71,8 @@ New assets are named after their source. If that name is taken by an asset of th
 | Create Data Tree | One Data Definition | A [Data Tree](../assets/data-tree.md) that uses the Data Definition. |
 | Create Linked Save Game | One Data Definition | A [Save Game](../assets/save-game.md#fields-from-a-data-definition) that takes its fields from the Data Definition. |
 | Create Render Target Texture | One Render Target | A [Render Target Texture](../assets/render-target-texture.md) that shows the Render Target. |
+| Create Animation Graph | One Skeleton or Model | A 3D [Animation Graph](../assets/animation-graph.md) on the Skeleton (a Model's own Skeleton), named after it without `_Skeleton`. |
+| Create Blend Space | One Skeleton or Model | A [Blend Space](../assets/blend-space.md) on the Skeleton (a Model's own Skeleton), named `<Name> Locomotion`. |
 
 **Create Material** reads the end of each Texture's name:
 

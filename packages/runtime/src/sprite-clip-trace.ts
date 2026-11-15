@@ -1,7 +1,15 @@
 import type { TraceSpriteClip } from "@haptic/debugger";
 import type { Actor } from "@haptic/object-model";
 
-export type SpriteClipState = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
+export type SpriteClipState = {
+  assetGuid: string;
+  clipName: string;
+  normalisedTime: number;
+  stateId?: string;
+  /** Flip Frame mirrors the frame. */
+  flipX?: boolean;
+  flipY?: boolean;
+};
 
 /**
  * The Sprite Animation clip each actor shows, as the Animation Graph and Play

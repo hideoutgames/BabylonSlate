@@ -1,0 +1,7 @@
+KayKit Character Animations 1.1 (free tier) subset, used by the Feature Test starter (CC0, see License.txt).
+
+Mannequin_Large.glb             = skinned mannequin on the Rig_Large rig (texture embedded)
+Rig_Large_MovementBasic.glb     = Rig_Large animation library (walking, running)
+
+Original author: Kay Lousberg (https://kaylousberg.com). Copied unmodified from the
+glTF folders of the free pack as the author distributes it.

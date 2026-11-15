@@ -89,7 +89,7 @@ Compact Mode changes only sizes. Touch gestures, such as holding to open a menu 
 
 These apply to every graph editor: Class, Material, Animation Graph, Behaviour Tree and Particle Graph.
 
-- **Tap To Connect Pins** (default off): tap a pin, then a pin on the other side, to connect them. Either side can go first. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Dragging from one pin to another works either way.
+- **Tap To Connect Pins** (default off): tap a pin, then a pin on the other side, to connect them. Either side can go first. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Tapping anything else, dragging a node, opening a menu or pressing Esc also cancels it; panning and zooming keep it, so you can reach a pin further away. Dragging from one pin to another works either way.
 - **Large Pins** (default 1×): a slider from 1× to 2×, in steps of 0.1×, that enlarges every pin, the area you can tap or click around it, and the wires between pins. Nodes grow to fit.
 - **Pin Type Letters** (default off): shows a short type name inside every data pin, so types do not rely on colour: **B** Boolean, **I** Integer, **F** Float, **S** String, **V2**, **V3** and **V4** vectors, **R** Rotator, **Q** Quaternion, **T** Transform, **C** Color, **O** Object, **Cl** Class, **A** Asset, **Tx** Texture, **St** Structure, **E** Enum, **Tg** Tag, **D** Delegate, **P** Particle and **?** Wildcard. Array and Map pins show their item type.
 

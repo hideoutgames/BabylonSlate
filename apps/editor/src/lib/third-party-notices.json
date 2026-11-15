@@ -337,12 +337,20 @@
    "text": 18
   },
   {
+   "name": "@phosphor-icons/react",
+   "version": "2.1.10",
+   "license": "MIT",
+   "source": "https://github.com/phosphor-icons/react",
+   "inGames": false,
+   "text": 19
+  },
+  {
    "name": "@recast-navigation/core",
    "version": "0.43.1",
    "license": "MIT",
    "source": "https://github.com/isaac-mason/recast-navigation-js",
    "inGames": true,
-   "text": 19
+   "text": 20
   },
   {
    "name": "@recast-navigation/generators",
@@ -350,7 +358,7 @@
    "license": "MIT",
    "source": "https://github.com/isaac-mason/recast-navigation-js",
    "inGames": true,
-   "text": 19
+   "text": 20
   },
   {
    "name": "@recast-navigation/wasm",
@@ -358,7 +366,7 @@
    "license": "MIT",
    "source": "https://github.com/isaac-mason/recast-navigation-js",
    "inGames": true,
-   "text": 19
+   "text": 20
   },
   {
    "name": "@revenuecat/purchases-capacitor",
@@ -366,7 +374,7 @@
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-capacitor",
    "inGames": false,
-   "text": 20
+   "text": 21
   },
   {
    "name": "@revenuecat/purchases-js",
@@ -374,7 +382,7 @@
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-js",
    "inGames": false,
-   "text": 21
+   "text": 22
   },
   {
    "name": "@revenuecat/purchases-typescript-internal-esm",
@@ -382,7 +390,7 @@
    "license": "MIT",
    "source": "https://github.com/RevenueCat/purchases-hybrid-common",
    "inGames": false,
-   "text": 22
+   "text": 23
   },
   {
    "name": "@tanstack/query-core",
@@ -390,7 +398,7 @@
    "license": "MIT",
    "source": "https://github.com/TanStack/query",
    "inGames": false,
-   "text": 23
+   "text": 24
   },
   {
    "name": "@xyflow/react",
@@ -398,7 +406,7 @@
    "license": "MIT",
    "source": "https://github.com/xyflow/xyflow",
    "inGames": false,
-   "text": 24
+   "text": 25
   },
   {
    "name": "@xyflow/system",
@@ -406,7 +414,7 @@
    "license": "MIT",
    "source": "https://github.com/xyflow/xyflow",
    "inGames": false,
-   "text": 24
+   "text": 25
   },
   {
    "name": "Ark Pixel Font",
@@ -414,7 +422,7 @@
    "license": "OFL-1.1",
    "source": "https://github.com/TakWolf/ark-pixel-font",
    "inGames": true,
-   "text": 25
+   "text": 26
   },
   {
    "name": "Babylon.js area light data",
@@ -422,7 +430,7 @@
    "license": "CC-BY-4.0",
    "source": "https://github.com/BabylonJS/Assets/tree/master/core/areaLights",
    "inGames": true,
-   "text": 26
+   "text": 27
   },
   {
    "name": "Babylon.js KTX2 Decoder",
@@ -430,7 +438,7 @@
    "license": "Apache-2.0 AND MIT AND BSD-3-Clause",
    "source": "https://github.com/BabylonJS/Babylon.js",
    "inGames": true,
-   "text": 27
+   "text": 28
   },
   {
    "name": "Basis Universal encoder",
@@ -438,7 +446,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/BinomialLLC/basis_universal",
    "inGames": false,
-   "text": 28
+   "text": 29
   },
   {
    "name": "class-variance-authority",
@@ -446,7 +454,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/joe-bell/cva",
    "inGames": false,
-   "text": 29
+   "text": 30
   },
   {
    "name": "classcat",
@@ -454,7 +462,7 @@
    "license": "MIT",
    "source": "https://github.com/jorgebucaran/classcat",
    "inGames": false,
-   "text": 30
+   "text": 31
   },
   {
    "name": "clsx",
@@ -462,7 +470,7 @@
    "license": "MIT",
    "source": "https://github.com/lukeed/clsx",
    "inGames": false,
-   "text": 31
+   "text": 32
   },
   {
    "name": "coi-serviceworker",
@@ -470,7 +478,7 @@
    "license": "MIT",
    "source": "https://github.com/gzuidhof/coi-serviceworker",
    "inGames": true,
-   "text": 32
+   "text": 33
   },
   {
    "name": "crelt",
@@ -478,7 +486,7 @@
    "license": "MIT",
    "source": "https://code.haverbeke.berlin/marijn/crelt",
    "inGames": false,
-   "text": 33
+   "text": 34
   },
   {
    "name": "d3-color",
@@ -486,7 +494,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-color",
    "inGames": false,
-   "text": 34
+   "text": 35
   },
   {
    "name": "d3-dispatch",
@@ -494,7 +502,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-dispatch",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "d3-drag",
@@ -502,7 +510,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-drag",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "d3-ease",
@@ -510,7 +518,7 @@
    "license": "BSD-3-Clause",
    "source": "https://github.com/d3/d3-ease",
    "inGames": false,
-   "text": 36
+   "text": 37
   },
   {
    "name": "d3-hierarchy",
@@ -518,7 +526,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-hierarchy",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "d3-interpolate",
@@ -526,7 +534,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-interpolate",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "d3-selection",
@@ -534,7 +542,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-selection",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "d3-timer",
@@ -542,7 +550,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-timer",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "d3-transition",
@@ -550,7 +558,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-transition",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "d3-zoom",
@@ -558,7 +566,7 @@
    "license": "ISC",
    "source": "https://github.com/d3/d3-zoom",
    "inGames": false,
-   "text": 35
+   "text": 36
   },
   {
    "name": "dequal",
@@ -566,7 +574,7 @@
    "license": "MIT",
    "source": "https://github.com/lukeed/dequal",
    "inGames": false,
-   "text": 37
+   "text": 38
   },
   {
    "name": "dockview",
@@ -574,7 +582,7 @@
    "license": "MIT",
    "source": "https://github.com/dockview/dockview",
    "inGames": false,
-   "text": 38
+   "text": 39
   },
   {
    "name": "dockview-core",
@@ -582,7 +590,7 @@
    "license": "MIT",
    "source": "https://github.com/dockview/dockview",
    "inGames": false,
-   "text": 38
+   "text": 39
   },
   {
    "name": "dockview-react",
@@ -590,7 +598,7 @@
    "license": "MIT",
    "source": "https://github.com/dockview/dockview",
    "inGames": false,
-   "text": 38
+   "text": 39
   },
   {
    "name": "Draco glTF decoder",
@@ -598,7 +606,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/google/draco",
    "inGames": true,
-   "text": 39
+   "text": 40
   },
   {
    "name": "earcut",
@@ -606,7 +614,7 @@
    "license": "ISC",
    "source": "https://github.com/mapbox/earcut",
    "inGames": true,
-   "text": 40
+   "text": 41
   },
   {
    "name": "fflate",
@@ -614,7 +622,7 @@
    "license": "MIT",
    "source": "https://github.com/101arrowz/fflate",
    "inGames": false,
-   "text": 41
+   "text": 42
   },
   {
    "name": "glob-to-regexp",
@@ -622,7 +630,7 @@
    "license": "BSD-2-Clause",
    "source": "https://github.com/fitzgen/glob-to-regexp",
    "inGames": false,
-   "text": 42
+   "text": 43
   },
   {
    "name": "Gradle Wrapper",
@@ -630,7 +638,7 @@
    "license": "Apache-2.0",
    "source": "https://github.com/gradle/gradle",
    "inGames": false,
-   "text": 43
+   "text": 44
   },
   {
    "name": "js-cookie",
@@ -638,7 +646,7 @@
    "license": "MIT",
    "source": "https://github.com/js-cookie/js-cookie",
    "inGames": false,
-   "text": 44
+   "text": 45
   },
   {
    "name": "js-tokens",
@@ -646,7 +654,7 @@
    "license": "MIT",
    "source": "https://github.com/lydell/js-tokens",
    "inGames": false,
-   "text": 45
+   "text": 46
   },
   {
    "name": "loose-envify",
@@ -654,7 +662,7 @@
    "license": "MIT",
    "source": "https://github.com/zertosh/loose-envify",
    "inGames": false,
-   "text": 46
+   "text": 47
   },
   {
    "name": "lucide-react",
@@ -662,7 +670,7 @@
    "license": "ISC",
    "source": "https://github.com/lucide-icons/lucide",
    "inGames": false,
-   "text": 47
+   "text": 48
   },
   {
    "name": "meshoptimizer",
@@ -670,7 +678,7 @@
    "license": "MIT",
    "source": "https://github.com/zeux/meshoptimizer",
    "inGames": true,
-   "text": 48
+   "text": 49
   },
   {
    "name": "meshoptimizer decoder",
@@ -678,7 +686,7 @@
    "license": "MIT",
    "source": "https://github.com/zeux/meshoptimizer",
    "inGames": true,
-   "text": 49
+   "text": 50
   },
   {
    "name": "object-assign",
@@ -686,7 +694,7 @@
    "license": "MIT",
    "source": "https://github.com/sindresorhus/object-assign",
    "inGames": false,
-   "text": 50
+   "text": 51
   },
   {
    "name": "pe-library",
@@ -694,7 +702,7 @@
    "license": "MIT",
    "source": "https://github.com/jet2jet/pe-library-js",
    "inGames": false,
-   "text": 51
+   "text": 52
   },
   {
    "name": "prop-types",
@@ -702,7 +710,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/prop-types",
    "inGames": false,
-   "text": 52
+   "text": 53
   },
   {
    "name": "react",
@@ -710,7 +718,7 @@
    "license": "MIT",
    "source": "https://github.com/react/react",
    "inGames": false,
-   "text": 53
+   "text": 54
   },
   {
    "name": "react-bootstrap-icons",
@@ -718,7 +726,7 @@
    "license": "MIT",
    "source": "https://github.com/ismamz/react-bootstrap-icons",
    "inGames": false,
-   "text": 54
+   "text": 55
   },
   {
    "name": "react-dom",
@@ -726,7 +734,7 @@
    "license": "MIT",
    "source": "https://github.com/react/react",
    "inGames": false,
-   "text": 53
+   "text": 54
   },
   {
    "name": "react-is",
@@ -734,7 +742,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 55
+   "text": 56
   },
   {
    "name": "react-resizable-panels",
@@ -742,7 +750,7 @@
    "license": "MIT",
    "source": "https://github.com/bvaughn/react-resizable-panels",
    "inGames": false,
-   "text": 56
+   "text": 57
   },
   {
    "name": "resedit",
@@ -750,7 +758,7 @@
    "license": "MIT",
    "source": "https://github.com/jet2jet/resedit-js",
    "inGames": false,
-   "text": 51
+   "text": 52
   },
   {
    "name": "reselect",
@@ -758,7 +766,7 @@
    "license": "MIT",
    "source": "https://github.com/reduxjs/reselect",
    "inGames": false,
-   "text": 57
+   "text": 58
   },
   {
    "name": "scheduler",
@@ -766,7 +774,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 53
+   "text": 54
   },
   {
    "name": "shadcn/ui stylesheet",
@@ -774,7 +782,7 @@
    "license": "MIT",
    "source": "https://github.com/shadcn-ui/ui",
    "inGames": false,
-   "text": 58
+   "text": 59
   },
   {
    "name": "style-mod",
@@ -782,7 +790,7 @@
    "license": "MIT",
    "source": "https://github.com/marijnh/style-mod",
    "inGames": false,
-   "text": 59
+   "text": 60
   },
   {
    "name": "tailwind-merge",
@@ -790,7 +798,7 @@
    "license": "MIT",
    "source": "https://github.com/dcastil/tailwind-merge",
    "inGames": false,
-   "text": 60
+   "text": 61
   },
   {
    "name": "tslib",
@@ -798,7 +806,7 @@
    "license": "0BSD",
    "source": "https://github.com/Microsoft/tslib",
    "inGames": false,
-   "text": 61
+   "text": 62
   },
   {
    "name": "tw-animate-css",
@@ -806,7 +814,7 @@
    "license": "MIT",
    "source": "https://github.com/Wombosvideo/tw-animate-css",
    "inGames": false,
-   "text": 62
+   "text": 63
   },
   {
    "name": "use-sync-external-store",
@@ -814,7 +822,7 @@
    "license": "MIT",
    "source": "https://github.com/facebook/react",
    "inGames": false,
-   "text": 53
+   "text": 54
   },
   {
    "name": "w3c-keyname",
@@ -822,7 +830,7 @@
    "license": "MIT",
    "source": "https://github.com/marijnh/w3c-keyname",
    "inGames": false,
-   "text": 63
+   "text": 64
   },
   {
    "name": "zod",
@@ -830,7 +838,7 @@
    "license": "MIT",
    "source": "https://github.com/colinhacks/zod",
    "inGames": true,
-   "text": 64
+   "text": 65
   },
   {
    "name": "zustand",
@@ -838,7 +846,7 @@
    "license": "MIT",
    "source": "https://github.com/pmndrs/zustand",
    "inGames": false,
-   "text": 65
+   "text": 66
   }
  ],
  "texts": [
@@ -861,6 +869,7 @@
   "MIT License\n\nCopyright (C) 2018 by Marijn Haverbeke <marijn@haverbeke.berlin> and others\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
   "MIT License\n\nCopyright (C) 2024 by Marijn Haverbeke <marijn@haverbeke.berlin>\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
   "The MIT License (MIT)\n\nCopyright (c) 2022 Paul Miller (https://paulmillr.com)\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the “Software”), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
+  "MIT License\n\nCopyright (c) 2020 Phosphor Icons\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "The MIT License\n\nCopyright © 2025 Isaac Mason\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE.",
   "MIT License\n\nCopyright (c) 2023 RevenueCat, Inc.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "MIT License\n\nCopyright (c) 2023 RevenueCat\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",

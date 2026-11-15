@@ -3,6 +3,7 @@ import {
   newAssetGuid,
   normalizeAnimationPayload,
   normalizeFontPayload,
+  normalizeModelPayload,
 } from "@haptic/assets";
 import { SKYBOX_FACE_KEYS } from "@haptic/core";
 import { bundledAsciiTypeFace } from "@haptic/render/default-typeface";
@@ -15,16 +16,19 @@ import {
   FEATURE_TEST_OPTIONAL_SLOTS,
   ONEST_FONT_PATH,
   HOLIDAY_COLORMAP_PATH,
+  KAYKIT_FILES,
   PLATFORMER_TILESHEET_PATH,
   ROBOT_FRAMES,
   SKYBOX_NET_PATH,
   holidayModelPath,
   robotFramePath,
+  type KayKitFile,
 } from "./engine-content-files";
 
 const TEXTURES = "Textures";
 const SKY = "Sky";
 const MODELS = "Models";
+const CHARACTERS = "Characters";
 const FONTS = "Fonts";
 
 /** The generated sprite sheet's grid: Columns × Rows cells of `cell` pixels. */
@@ -147,6 +151,8 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
     }
   }
 
+  await importKayKit(ctx);
+
   const facetype = await ctx.importFile(
     FONTS,
     "FT_Ascii.facetype.json",
@@ -166,6 +172,55 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
     pixelSize: ark.pixelSize,
   });
   assets.fonts.arkPixel = arkFont.header.guid;
+}
+
+/**
+ * KayKit skinned characters, then their rigs' animation libraries. Knight and Rogue Hooded have the same Rig_Medium
+ * bones and rest pose, so the second joins the first's Skeleton, and the libraries' clips land on it too; Mannequin
+ * Large and its library share a Rig_Large Skeleton of the same bone names at another size.
+ */
+async function importKayKit(ctx: FeatureTestContext): Promise<void> {
+  const kaykit = ctx.assets.kaykit;
+  const importRig = async (file: KayKitFile) => {
+    const path = KAYKIT_FILES[file];
+    return ctx.importFile(CHARACTERS, path.slice(path.lastIndexOf("/") + 1), await ctx.host.loadBytes(path), {
+      modelImportScale: ctx.host.modelImportScale,
+    });
+  };
+  const skeletonOf = (created: Awaited<ReturnType<typeof importRig>>, file: KayKitFile) => {
+    const skeleton = normalizeModelPayload(single(created, "Model").header.payload).skeletonGuid;
+    if (!skeleton) throw new Error(`FeatureTest KayKit ${file} imported without a Skeleton.`);
+    return skeleton;
+  };
+  const characters = [
+    ["knight", "mediumSkeleton"],
+    ["rogueHooded", "mediumSkeleton"],
+    ["mannequinLarge", "largeSkeleton"],
+  ] as const;
+  for (const [file, skeletonKey] of characters) {
+    const created = await importRig(file);
+    kaykit[file] = single(created, "Model").header.guid;
+    const skeleton = skeletonOf(created, file);
+    if (kaykit[skeletonKey] && kaykit[skeletonKey] !== skeleton) {
+      throw new Error(`FeatureTest KayKit ${file} did not join the Skeleton its rig shares.`);
+    }
+    kaykit[skeletonKey] = skeleton;
+  }
+  const libraries = [
+    ["rigMediumGeneral", "mediumSkeleton", "mediumAnimations"],
+    ["rigMediumMovement", "mediumSkeleton", "mediumAnimations"],
+    ["rigLargeMovement", "largeSkeleton", "largeAnimations"],
+  ] as const;
+  for (const [file, skeletonKey, animationsKey] of libraries) {
+    const created = await importRig(file);
+    for (const animation of created.filter((asset) => asset.header.type === "Animation")) {
+      const payload = normalizeAnimationPayload(animation.header.payload);
+      if (payload.skeletonGuid !== kaykit[skeletonKey]) {
+        throw new Error(`FeatureTest KayKit ${file} clip "${payload.clipName}" is not on its rig's Skeleton.`);
+      }
+      kaykit[animationsKey][payload.clipName] = animation.header.guid;
+    }
+  }
 }
 
 function single<T extends { header: { type: string } }>(created: readonly T[], type: string): T {

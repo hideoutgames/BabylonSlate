@@ -1791,6 +1791,7 @@ describe("content-browser-helpers", () => {
     expect(creates(["Structure"])).toEqual(["create-data-definition"]);
     expect(creates(["DataDefinition"])).toEqual(["create-data-tree", "create-linked-save-game"]);
     expect(creates(["RenderTarget"])).toEqual(["create-render-target-texture"]);
+    expect(creates(["Skeleton"])).toEqual(["create-animation-graph", "create-blend-space"]);
     expect(creates(["Structure", "Structure"])).toEqual([]);
     expect(creates(["Model"], { folderCount: 1 })).toEqual([]);
   });

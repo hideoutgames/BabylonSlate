@@ -32,9 +32,10 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
 import type { ScriptHost } from "./script-host";
+import type { SpriteClipState } from "./sprite-clip-trace";
 import { walkComponentOwners } from "./world-component-index";
 
-type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
+type SpriteClip = SpriteClipState;
 
 // Shallow BT memory copies retain this live activation, while trace JSON omits
 // it. A resumed task writes to its current board and cannot finish a later run.
@@ -78,6 +79,8 @@ interface BehaviourTreeRuntimeHost {
   recordDiagnostic(diagnostic: RuntimeDiagnostic): void;
   /** The session's node breakpoints, trees' included. */
   breakpoints(): ScriptBreakpoints;
+  /** Where a component the debugger does not follow records, while breakpoints are set, should one stop it. */
+  frameTrace(object: EngineObject): ScriptDebugTrace | null;
   emit(command: CommandMessage): void;
 }
 
@@ -610,7 +613,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const options = source.options;
     options.blackboard = previous ? previous.blackboard : this.blackboardDefaults(blackboardGuid);
     options.seed = this.host.seed();
-    options.trace = followed ? this.followedTrace(guid) : undefined;
+    options.trace = followed ? this.followedTrace(guid) : this.frameTrace(component, guid);
     options.breakpoints = this.treeBreakpoints(guid, component, actor);
     let next: BtEvalState;
     try {
@@ -710,6 +713,16 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
       };
     }
     return this.debugTrace.trace;
+  }
+
+  /** The hooks that record an unfollowed evaluation of a tree with a breakpoint, for the frame a stop shows. */
+  private frameTrace(component: ActorComponent, treeGuid: string): BtEvalTrace | undefined {
+    const recorder = this.host.frameTrace(component)?.graph(treeGuid, BT_DEBUG_GRAPH_ID) ?? null;
+    if (!recorder) return undefined;
+    return {
+      visit: (nodeId) => recorder.exec(nodeId),
+      link: (parentId, childId) => recorder.edge(btEdgeId(parentId, childId)),
+    };
   }
 
   /** Emit the slot's `btState` unless it equals the one last published. */

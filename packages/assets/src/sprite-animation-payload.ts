@@ -302,6 +302,36 @@ export function spriteAnimationFrameAt(
   return payload.frames[payload.frames.length - 1]!;
 }
 
+/**
+ * A frame as a Flip Frame node shows it: its pivot and collision box reflected across the frame, so the mirrored
+ * art and its collider stay on the actor origin. Unflipped frames return as they are.
+ */
+export function flipSpriteAnimationFrame<T extends Pick<SpriteAnimationFrame, "pivot" | "collision" | "uv">>(
+  frame: T,
+  flipX: boolean | undefined,
+  flipY: boolean | undefined,
+): T {
+  if (!flipX && !flipY) return frame;
+  const { pivot, collision } = frame;
+  const uv = frame.uv ?? { u0: 0, v0: 0, u1: 1, v1: 1 };
+  return {
+    ...frame,
+    pivot: { x: flipX ? 1 - pivot.x : pivot.x, y: flipY ? 1 - pivot.y : pivot.y },
+    collision: {
+      ...collision,
+      x: flipX ? 1 - collision.x - collision.width : collision.x,
+      y: flipY ? 1 - collision.y - collision.height : collision.y,
+    },
+    // Swapped edges sample the region mirrored.
+    uv: {
+      u0: flipX ? uv.u1 : uv.u0,
+      u1: flipX ? uv.u0 : uv.u1,
+      v0: flipY ? uv.v1 : uv.v0,
+      v1: flipY ? uv.v0 : uv.v1,
+    },
+  };
+}
+
 export function spriteAnimationFrameStartMs(
   payload: SpriteAnimationPayload,
   index: number,

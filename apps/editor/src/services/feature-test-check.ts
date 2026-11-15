@@ -1408,6 +1408,8 @@ function rendererWorkSince(
     failedReadinessProbes: after.failedReadinessProbes - before.failedReadinessProbes,
     scopedReadinessProbes: after.scopedReadinessProbes - before.scopedReadinessProbes,
     scopedReadinessMismatches: after.scopedReadinessMismatches - before.scopedReadinessMismatches,
+    // Only what failed in between: the last failure before it says nothing of this sample.
+    readinessBlockers: after.failedReadinessProbes > before.failedReadinessProbes ? after.readinessBlockers : [],
   };
 }
 

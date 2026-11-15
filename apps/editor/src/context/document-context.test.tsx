@@ -1094,9 +1094,7 @@ describe("DocumentProvider actions and route", () => {
       }),
     );
     const animationId = documentId({ kind: "anim-graph-3d", path: animation.path });
-    act(() => actions.setAnimEditorMode(animationId, "animationObject"));
     expect(documents().activeDocumentId).toBe(animationId);
-    expect(documents().animEditorMode).toBe("animationObject");
 
     // A Project Settings edit.
     act(() => actions.updateProjectSettings({ compileOnSave: false }));

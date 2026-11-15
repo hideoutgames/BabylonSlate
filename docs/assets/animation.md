@@ -13,6 +13,19 @@ Double-tap the asset to open it. The window has **Preview** and an **Inspector**
 - **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. A clip from a file with no mesh (an animation-only file) always shows its bones. If the Model's file is missing, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
 - The **Inspector** shows the clip's details. Only **Duration** can be changed.
 
+**Preview controls**
+
+| Control | Description |
+| --- | --- |
+| Play / Pause | Starts or stops the clip. It plays while the Preview is visible. |
+| Step | Pauses and moves one frame on, wrapping to the start after the last. |
+| Restart | Returns to the start. |
+| Loop | Repeats the clip. Off, the clip stops on its last frame, and **Play** starts it again. Only the Preview changes. |
+| Speed | 0.25× to 2×. |
+| Show Bones | Shows the bones instead of the mesh. |
+
+The bar under the Preview shows the frame and the time in ms, out of the Duration. Drag it to scrub: the Preview pauses and holds the pose under the playhead.
+
 ## Settings
 
 | Setting | Description |

@@ -20,7 +20,6 @@ import { cn } from "@haptic/ui/lib/utils";
 import { createDefaultLayoutForKind } from "./default-layout";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
-import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
 import {
   enterPhoneDockLayout,
@@ -113,7 +112,6 @@ export interface DockviewShellProps {
   initialLayout?: Record<string, unknown> | null;
   actorPrefab?: boolean;
   sourceControl?: boolean;
-  animEditorMode?: AnimEditorMode;
   sceneMode?: SceneMode;
 }
 
@@ -123,7 +121,6 @@ export function DockviewShell({
   initialLayout,
   actorPrefab = true,
   sourceControl = false,
-  animEditorMode,
   sceneMode,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
@@ -159,7 +156,6 @@ export function DockviewShell({
             listDockWindows(documentKind, {
               actorPrefab,
               sourceControl,
-              animEditorMode,
               sceneMode,
             }),
           )
@@ -174,7 +170,7 @@ export function DockviewShell({
         createDefaultLayoutForKind(
           event.api,
           documentKind,
-          { actorPrefab, sourceControl, animEditorMode, sceneMode },
+          { actorPrefab, sourceControl, sceneMode },
           hostRef.current?.clientWidth ?? 0,
         );
       }
@@ -192,7 +188,6 @@ export function DockviewShell({
       documentKind,
       actorPrefab,
       sourceControl,
-      animEditorMode,
       sceneMode,
       platformOptions.disableFloatingGroups,
       platformOptions.singleWindow,
@@ -263,7 +258,6 @@ export function DockviewShell({
     ...listDockWindows(documentKind, {
       actorPrefab,
       sourceControl,
-      animEditorMode,
       sceneMode,
     }),
     ...functionWindows,

@@ -1,4 +1,3 @@
-import { isAnimGraphDocumentKind } from "@haptic/core";
 import { useCallback, useRef, useState, type RefObject } from "react";
 import type { DockviewApi } from "dockview-react";
 import type { createAppSettingsStore } from "@haptic/vfs";
@@ -25,16 +24,9 @@ import {
   type DockWindowOptions,
 } from "../shell/window-catalog";
 import {
-  applyPreFocusToAnimLayout,
-  parseAnimDocumentLayout,
-  serializeAnimDocumentLayout,
-  type AnimEditorMode,
-} from "../shell/anim-document-layout";
-import {
   dockviewApiKey,
   dockviewApiKeyPairs,
   dockviewApiKeysForDocument,
-  dockviewSurfaceForAnimMode,
   type DockviewSurface,
   type PreFocusSnapshot,
 } from "../shell/dockview-surface";
@@ -44,10 +36,9 @@ import {
   registryClassParentLookup,
 } from "../lib/class-asset-lookup";
 import { moveKeyedEntry } from "../lib/move-keyed-entry";
-import type { DocumentService, OpenDocument } from "../services/document-service";
+import type { DocumentService } from "../services/document-service";
 import type { ProjectService } from "../services/project-service";
 import type { SourceControlService } from "../services/source-control-service";
-import { useRefState } from "./use-ref-state";
 
 function asDockWindowApi(api: DockviewApi): DockWindowApi {
   return api as unknown as DockWindowApi;
@@ -60,7 +51,6 @@ function dockOptionsForIndexed(
     | undefined,
   parentOf: (id: string) => string | null | undefined,
   sourceControlEnabled = false,
-  animEditorMode?: AnimEditorMode,
   sceneMode?: SceneMode,
 ): DockWindowOptions {
   return {
@@ -70,21 +60,7 @@ function dockOptionsForIndexed(
       classDocumentShowsPrefab(indexed.header.parentClass, (id) => parentOf(id) ?? null),
     sourceControl: sourceControlEnabled,
     sceneMode: hasSceneModes(kind) ? (sceneMode ?? "design") : undefined,
-    animEditorMode:
-      isAnimGraphDocumentKind(kind) ? (animEditorMode ?? "stateMachine") : undefined,
   };
-}
-
-export function animEditorModeForDocument(
-  id: string,
-  modes: Record<string, AnimEditorMode>,
-  doc: OpenDocument | undefined,
-): AnimEditorMode {
-  if (modes[id]) return modes[id];
-  if (isAnimGraphDocumentKind(doc?.ref.kind)) {
-    return parseAnimDocumentLayout(doc.layout).animEditorMode;
-  }
-  return "stateMachine";
 }
 
 function findWindowDefinition(
@@ -117,7 +93,7 @@ export interface DocumentDockLayoutDeps {
 
 /**
  * Each open document's DockView layouts: the live APIs per surface, Focus
- * snapshots, Anim modes, remembered panel placements and the Windows menu.
+ * snapshots, remembered panel placements and the Windows menu.
  * Every callback keeps its identity for the provider's lifetime.
  */
 export function useDocumentDockLayouts({
@@ -131,9 +107,6 @@ export function useDocumentDockLayouts({
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
   const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
   const sceneFocusedLayoutsRef = useRef(new Map<string, Record<string, unknown>>());
-  // Callbacks read Anim modes when they run, from the ref its setter writes.
-  const animEditorModesRef = useRef<Record<string, AnimEditorMode>>({});
-  const [animEditorModes, setAnimEditorModes] = useRefState(animEditorModesRef);
   const [focusedLayoutIds, setFocusedLayoutIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -176,35 +149,6 @@ export function useDocumentDockLayouts({
         documentService.setLayout(id, layout);
         return;
       }
-      if (isAnimGraphDocumentKind(doc?.ref.kind)) {
-        const parsed = parseAnimDocumentLayout(doc.layout);
-        const mode = animEditorModeForDocument(id, animEditorModesRef.current, doc);
-        const stateApi = dockviewApisRef.current.get(
-          dockviewApiKey(id, "stateMachine"),
-        );
-        const objectApi = dockviewApisRef.current.get(
-          dockviewApiKey(id, "animationObject"),
-        );
-        const live = {
-          animEditorMode: mode,
-          stateMachine: stateApi
-            ? captureAdaptiveDockviewLayout(stateApi)
-            : parsed.stateMachine,
-          animationObject: objectApi
-            ? captureAdaptiveDockviewLayout(objectApi)
-            : parsed.animationObject,
-        };
-        const animPreFocus = preFocusLayoutsRef.current.get(id);
-        documentService.setLayout(
-          id,
-          serializeAnimDocumentLayout(
-            animPreFocus
-              ? applyPreFocusToAnimLayout(live, animPreFocus)
-              : live,
-          ),
-        );
-        return;
-      }
       const preFocus = preFocusLayoutsRef.current.get(id);
       if (preFocus) {
         documentService.setLayout(id, preFocus.layout);
@@ -234,7 +178,7 @@ export function useDocumentDockLayouts({
     setFocusedLayoutIds(new Set());
   }, [disposeDockSubscriptions]);
 
-  /** A repathed document's Focus state and Anim mode follow it to `newId`. */
+  /** A repathed document's Focus state follows it to `newId`. */
   const moveDockLayouts = useCallback((oldId: string, newId: string) => {
     // Live dock handles belong to the workspace unmounting under the old
     // id. Release them as closeDocument does, so its teardown cannot write
@@ -262,16 +206,7 @@ export function useDocumentDockLayouts({
       }
       return next;
     });
-    setAnimEditorModes((current) => {
-      if (!(oldId in current) && !(newId in current)) return current;
-      const next = { ...current };
-      const mode = next[oldId];
-      delete next[oldId];
-      delete next[newId];
-      if (mode) next[newId] = mode;
-      return next;
-    });
-  }, [disposeDockSubscriptions, setAnimEditorModes]);
+  }, [disposeDockSubscriptions]);
 
   /** A closed document leaves no dock state behind. */
   const forgetDockLayouts = useCallback((id: string) => {
@@ -282,18 +217,12 @@ export function useDocumentDockLayouts({
     }
     disposeDockSubscriptions(id);
     preFocusLayoutsRef.current.delete(id);
-    setAnimEditorModes((current) => {
-      if (!(id in current)) return current;
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
     setFocusedLayoutIds((current) => {
       const next = new Set(current);
       for (const key of dockviewApiKeysForDocument(id)) next.delete(key);
       return next;
     });
-  }, [disposeDockSubscriptions, setAnimEditorModes]);
+  }, [disposeDockSubscriptions]);
 
   const registerDockviewApi = useCallback((
     id: string,
@@ -324,18 +253,11 @@ export function useDocumentDockLayouts({
         parentLookup = { generation, parentOf: classParentLookup(projectService.registry?.list() ?? []) };
       }
       const parentOf = parentLookup.parentOf;
-      const animSurfaceMode: AnimEditorMode | undefined =
-        surface === "animationObject"
-          ? "animationObject"
-          : surface === "stateMachine"
-            ? "stateMachine"
-            : undefined;
       const dockOptions = dockOptionsForIndexed(
         kind ?? "",
         indexed,
         parentOf,
         sourceControlRef.current.enabled,
-        animSurfaceMode,
         surface === "design" || surface === "landscape" || surface === "foliage" || surface === "script" || surface === "timeline"
           ? surface : undefined,
       );
@@ -382,55 +304,8 @@ export function useDocumentDockLayouts({
     if (sceneMode) {
       return dockviewApisRef.current.get(dockviewApiKey(activeDocumentId, sceneMode));
     }
-    if (isAnimGraphDocumentKind(doc.ref.kind)) {
-      const mode = animEditorModeForDocument(
-        activeDocumentId,
-        animEditorModesRef.current,
-        doc,
-      );
-      return (
-        dockviewApisRef.current.get(
-          dockviewApiKey(activeDocumentId, dockviewSurfaceForAnimMode(mode)),
-        ) ?? dockviewApisRef.current.get(activeDocumentId)
-      );
-    }
     return dockviewApisRef.current.get(activeDocumentId);
   }, [documentService]);
-
-  const setAnimEditorMode = useCallback(
-    (id: string, mode: AnimEditorMode) => {
-      captureLayoutForId(id);
-      const doc = documentService.getDocument(id);
-      const currentMode = animEditorModeForDocument(id, animEditorModesRef.current, doc);
-      if (currentMode !== mode) {
-        const snapshot = preFocusLayoutsRef.current.get(id);
-        if (snapshot) {
-          restorePreFocusSnapshot(id, snapshot, dockviewApisRef.current);
-          preFocusLayoutsRef.current.delete(id);
-          setFocusedLayoutIds((current) => {
-            if (!current.has(id)) return current;
-            const next = new Set(current);
-            next.delete(id);
-            return next;
-          });
-        }
-      }
-      setAnimEditorModes((current) =>
-        current[id] === mode ? current : { ...current, [id]: mode },
-      );
-      if (isAnimGraphDocumentKind(doc?.ref.kind)) {
-        const parsed = parseAnimDocumentLayout(doc.layout);
-        if (parsed.animEditorMode !== mode) {
-          documentService.setLayout(
-            id,
-            serializeAnimDocumentLayout({ ...parsed, animEditorMode: mode }),
-          );
-        }
-      }
-      bumpDockWindows();
-    },
-    [bumpDockWindows, captureLayoutForId, documentService, setAnimEditorModes],
-  );
 
   const setSceneMode = useCallback((id: string, mode: SceneMode) => {
     const kind = documentService.getDocument(id)?.ref.kind;
@@ -462,9 +337,6 @@ export function useDocumentDockLayouts({
       indexed,
       parentOf,
       sourceControlRef.current.enabled,
-      isAnimGraphDocumentKind(doc.ref.kind)
-        ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
-        : undefined,
       documentSceneMode(doc.ref.kind, doc.layout),
     );
     const def = findWindowDefinition(doc.ref.kind, panelId, dockOptions);
@@ -537,22 +409,17 @@ export function useDocumentDockLayouts({
     const dock = api;
     const indexed = projectService.registry?.getByPath(doc.ref.path);
     const parentOf = registryClassParentLookup(projectService.registry);
-    const animMode =
-      isAnimGraphDocumentKind(doc.ref.kind)
-        ? animEditorModeForDocument(activeDocumentId, animEditorModesRef.current, doc)
-        : undefined;
     const dockOptions = dockOptionsForIndexed(
       doc.ref.kind,
       indexed,
       parentOf,
       sourceControlRef.current.enabled,
-      animMode,
       sceneMode,
     );
 
     preFocusLayoutsRef.current.set(focusKey, {
       layout: dock.toJSON() as unknown as Record<string, unknown>,
-      surface: sceneMode ?? (animMode ? dockviewSurfaceForAnimMode(animMode) : "default"),
+      surface: sceneMode ?? "default",
     });
     applyFocusLayout(
       doc.ref.kind,
@@ -568,8 +435,6 @@ export function useDocumentDockLayouts({
   }, [activeDockApi, documentService, projectService, settingsStore, sourceControlRef]);
 
   return {
-    animEditorModes,
-    setAnimEditorModes,
     focusedLayoutIds,
     dockWindowTick,
     disposeDockSubscriptions,
@@ -580,7 +445,6 @@ export function useDocumentDockLayouts({
     forgetDockLayouts,
     registerDockviewApi,
     unregisterDockviewApi,
-    setAnimEditorMode,
     setSceneMode,
     activateDockPanel,
     toggleDockWindow,

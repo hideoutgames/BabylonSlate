@@ -38,6 +38,8 @@ import {
   stripAssetFileSuffix,
   type EncodableChunk,
   type HassetHeader,
+  normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
 } from "@haptic/assets";
 import { materialHeaderMeta } from "../lib/material-asset-filters";
 import { asEnumAsset, asStructureAsset } from "../lib/type-asset-payload";
@@ -127,6 +129,9 @@ export function headerMetaForSave(
       methods: Array.isArray(payload.methods) ? payload.methods : [],
     };
   }
+  // Animation Graphs resolve a Blend Space Player's samples from the header, without loading the Blend Space.
+  if (type === "BlendSpace") return { ...normalizeBlendSpacePayload(content) };
+  if (type === "SpriteBlendSpace") return { ...normalizeSpriteBlendSpacePayload(content) };
   if (type === "SpriteAnimation") {
     const parsed = parseSpriteAnimationPayload(content);
     return {

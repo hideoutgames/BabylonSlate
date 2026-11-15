@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { ModelMaterialSlot, SkeletonKind } from "@haptic/assets";
@@ -17,49 +17,66 @@ import {
 } from "@haptic/render";
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
+import type { AnimationPreviewClock } from "../lib/animation-preview-clock";
 import { useModelSlotMaterials } from "../lib/use-model-slot-materials";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
 
-const STOPPED_CLIP = { playing: false, looping: false };
+/** The loaded clip: its length in its file's frames and, at the file's frame rate, in ms. */
+export type AnimationPreviewClip = { frames: number; durationMs: number };
 
+function previewClipOf(group: AnimationGroup): AnimationPreviewClip {
+  const span = Math.max(0, group.to - group.from);
+  const fps = group.targetedAnimations[0]?.animation.framePerSecond ?? 60;
+  return { frames: Math.max(1, Math.round(span)), durationMs: fps > 0 ? (span / fps) * 1000 : 0 };
+}
+
+/**
+ * The Animation preview's 3D view: the clip on its Model, held paused and seeked to the clock's playhead on each
+ * frame, so playing, pausing, stepping and scrubbing all go through the clock.
+ */
 export function AnimationPreviewCanvas({
   sourceBytes,
   materialSlots,
   clipName,
+  clock,
   skeletonKind = null,
   showBones = false,
   sourceClipBytes = null,
-  speedRatio = 1,
   onBonesOnlyChange,
+  onClip,
 }: {
   sourceBytes: Uint8Array;
   /** The Model's slots, drawn with their Materials. */
   materialSlots: readonly ModelMaterialSlot[];
   clipName: string;
+  clock: AnimationPreviewClock;
   skeletonKind?: SkeletonKind | null;
   showBones?: boolean;
   sourceClipBytes?: Uint8Array | null;
-  /** Playback rate of the clip; the Animation's Duration sets it without reloading the preview. */
-  speedRatio?: number;
   /** Reports a Model with nothing to draw (an animation library), whose bones show whatever Show Bones says. */
   onBonesOnlyChange?: (bonesOnly: boolean) => void;
+  /** The loaded clip; null while none is loaded. */
+  onClip?: (clip: AnimationPreviewClip | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
   const { projectDocument } = useProjectState();
   const [engine, setEngine] = useState<AbstractEngine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
-  /** Read back from the AnimationGroup, so the attributes report what plays. */
-  const [clip, setClip] = useState(STOPPED_CLIP);
+  const [clipLoaded, setClipLoaded] = useState(false);
+  const playback = useSyncExternalStore(clock.subscribe, clock.getPlayback, clock.getPlayback);
   const [bonesOnly, setBonesOnly] = useState(false);
   const [bonesAttached, setBonesAttached] = useState(false);
   const onBonesOnlyChangeRef = useRef(onBonesOnlyChange);
   onBonesOnlyChangeRef.current = onBonesOnlyChange;
+  const onClipRef = useRef(onClip);
+  onClipRef.current = onClip;
+  const clockRef = useRef(clock);
+  clockRef.current = clock;
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
   const playingRef = useRef<AnimationGroup | null>(null);
-  const speedRatioRef = useRef(speedRatio);
   const { release: releaseMaterials } = useModelSlotMaterials({
     hostRef,
     engine,
@@ -78,11 +95,6 @@ export function AnimationPreviewCanvas({
   useEffect(() => {
     setEngine(play?.ensureSharedEngine() ?? null);
   }, [play]);
-
-  useEffect(() => {
-    speedRatioRef.current = speedRatio;
-    if (playingRef.current) playingRef.current.speedRatio = speedRatio;
-  }, [speedRatio]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -136,13 +148,10 @@ export function AnimationPreviewCanvas({
         } else {
           group = loaded.animationGroups.find((entry) => entry.name === clipName) ?? null;
         }
-        if (group) group.speedRatio = speedRatioRef.current;
+        // Started and paused with live animatables, so seeking poses it; Babylon never advances it itself.
         group?.play(true);
-        group?.onAnimationGroupEndObservable.add(() => {
-          if (!cancelled) setClip(STOPPED_CLIP);
-        });
+        group?.pause();
         playingRef.current = group;
-        // A playing clip keeps the presenter awake through the Scene's animatables; once it ends the frame is final.
         presenter = createMaterialPreviewPresenter(host, canvas, {
           maxFps: 30,
           staticContent: true,
@@ -158,17 +167,23 @@ export function AnimationPreviewCanvas({
         const restoreObserver = restored?.add(() => presenter?.present({ force: true })) ?? null;
         stopRestoreWatch = () => restored?.remove(restoreObserver);
         presenter.present({ force: true });
-        setClip(
-          group?.isPlaying
-            ? { playing: true, looping: group.loopAnimation }
-            : STOPPED_CLIP,
-        );
+        setClipLoaded(Boolean(group));
+        onClipRef.current?.(group ? previewClipOf(group) : null);
         setBonesOnly(!loaded.hasMesh);
         onBonesOnlyChangeRef.current?.(!loaded.hasMesh);
         setPreviewGeneration((value) => value + 1);
+        // Each frame poses the clip at the clock's playhead when it moved, then redraws.
+        let applied = Number.NaN;
         const tick = () => {
           if (cancelled) return;
-          presenter?.present();
+          const at = clockRef.current.normalised();
+          if (group && at !== applied) {
+            applied = at;
+            group.goToFrame(group.from + at * (group.to - group.from));
+            presenter?.present({ force: true });
+          } else {
+            presenter?.present();
+          }
           raf.id = window.requestAnimationFrame(tick);
         };
         raf.id = window.requestAnimationFrame(tick);
@@ -185,7 +200,8 @@ export function AnimationPreviewCanvas({
         host?.dispose();
         hostRef.current = null;
         presenterRef.current = null;
-        setClip(STOPPED_CLIP);
+        setClipLoaded(false);
+        onClipRef.current?.(null);
       }
     })();
     return () => {
@@ -194,7 +210,7 @@ export function AnimationPreviewCanvas({
       overlay.dispose();
       playingRef.current?.stop();
       playingRef.current = null;
-      setClip(STOPPED_CLIP);
+      setClipLoaded(false);
       bonesRef.current?.dispose();
       bonesRef.current = null;
       releaseMaterials();
@@ -236,10 +252,10 @@ export function AnimationPreviewCanvas({
       ref={canvasRef}
       className="h-full w-full touch-none"
       data-testid="animation-preview-canvas"
-      data-playing={clip.playing ? "true" : "false"}
+      data-playing={clipLoaded && playback.playing ? "true" : "false"}
       data-bones-only={bonesOnly ? "true" : undefined}
       data-bones={bonesAttached ? "true" : "false"}
-      data-looping={clip.looping ? "true" : "false"}
+      data-looping={clipLoaded && playback.loop ? "true" : "false"}
     />
   );
 }

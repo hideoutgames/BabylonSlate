@@ -4,7 +4,6 @@ import {
   animGraphScriptClassId,
   animRuleScriptClassId,
   createDefaultAnimGraph,
-  createDefaultTransitionRuleGraph,
   type AnimGraphDocument,
 } from "@haptic/anim-graph";
 import {
@@ -20,6 +19,7 @@ import {
   type NodeRegistry,
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import { addClipState, addTransition, setStateClip } from "./anim-graph-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -68,49 +68,14 @@ function locoDocument(): AnimGraphDocument {
   doc.variables = [
     { id: "var-moving", name: "moving", typeId: "bool", defaultValue: false },
   ];
-  doc.states.push({
-    id: "run",
-    name: "Run",
-    clipId: "run-clip",
-    speed: 1,
-    loop: true,
-    position: { x: 300, y: 80 },
-  });
-  doc.clips.push({
-    id: "run-clip",
-    kind: "sprite",
-    assetGuid: "sprite-1",
-    clipName: "Run",
-    durationMs: 400,
-  });
-  doc.transitions.push({
-    id: "idle-to-run",
-    fromStateId: "idle",
-    toStateId: "run",
-    blendSeconds: 0,
-    priority: 0,
-    ruleGraph: createDefaultTransitionRuleGraph(),
-  });
+  addClipState(doc, "run", "Run", { assetGuid: "sprite-1", clipName: "Run", durationMs: 400 }, "2d");
+  addTransition(doc, "idle-to-run", "idle", "run");
   return doc;
 }
 
 function jumpDocument(): AnimGraphDocument {
   const doc = createDefaultAnimGraph();
-  doc.states.push({
-    id: "walk",
-    name: "Walk",
-    clipId: "walk-clip",
-    speed: 1,
-    loop: true,
-    position: { x: 300, y: 80 },
-  });
-  doc.clips.push({
-    id: "walk-clip",
-    kind: "animation",
-    assetGuid: "mannequin-walk",
-    clipName: "walk",
-    durationMs: 400,
-  });
+  addClipState(doc, "walk", "Walk", { assetGuid: "mannequin-walk", clipName: "walk", durationMs: 400 });
   return doc;
 }
 
@@ -236,7 +201,7 @@ describe("runtime AnimationGraph scripts", () => {
     const registry = createDefaultNodeRegistry();
     const doc = locoDocument();
     // 300 ms at 60 Hz: 0.9444 on tick 17, wraps to 0 on tick 18.
-    doc.clips[0]!.durationMs = 300;
+    setStateClip(doc, "idle", { durationMs: 300 });
     const rule: LogicGraph = {
       id: "idle-to-run",
       kind: "event",
@@ -417,30 +382,9 @@ describe("runtime AnimationGraph scripts", () => {
 
   it("emits weighted layers and clipAssetGuid while blending", () => {
     const doc = createDefaultAnimGraph();
-    doc.clips[0]!.assetGuid = "anim-idle";
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: "run-clip",
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.clips.push({
-      id: "run-clip",
-      kind: "sprite",
-      assetGuid: "sprite-1",
-      clipName: "Run",
-      durationMs: 400,
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.2,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
+    setStateClip(doc, "idle", { assetGuid: "anim-idle", clipName: "Idle" });
+    addClipState(doc, "run", "Run", { assetGuid: "sprite-1", clipName: "Run", durationMs: 400 }, "2d");
+    addTransition(doc, "idle-to-run", "idle", "run", 0.2);
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -461,29 +405,9 @@ describe("runtime AnimationGraph scripts", () => {
 
   it("starts a reloaded Scene's graph from its entry state instead of the departed actor's state", () => {
     const doc = createDefaultAnimGraph();
-    doc.states.push({
-      id: "run",
-      name: "Run",
-      clipId: "run-clip",
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    doc.clips.push({
-      id: "run-clip",
-      kind: "sprite",
-      assetGuid: "sprite-1",
-      clipName: "Run",
-      durationMs: 400,
-    });
-    doc.transitions.push({
-      id: "idle-to-run",
-      fromStateId: "idle",
-      toStateId: "run",
-      blendSeconds: 0.2,
-      priority: 0,
-      ruleGraph: createDefaultTransitionRuleGraph(),
-    });
+    setStateClip(doc, "idle", { assetGuid: "anim-idle", clipName: "Idle" });
+    addClipState(doc, "run", "Run", { assetGuid: "sprite-1", clipName: "Run", durationMs: 400 }, "2d");
+    addTransition(doc, "idle-to-run", "idle", "run", 0.2);
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -515,21 +439,7 @@ describe("runtime AnimationGraph scripts", () => {
   it("jumps only the wired AnimationGraphComponent when an actor has two graphs", async () => {
     const registry = createDefaultNodeRegistry();
     const secondDoc = createDefaultAnimGraph();
-    secondDoc.states.push({
-      id: "dash",
-      name: "Dash",
-      clipId: "dash-clip",
-      speed: 1,
-      loop: true,
-      position: { x: 300, y: 80 },
-    });
-    secondDoc.clips.push({
-      id: "dash-clip",
-      kind: "sprite",
-      assetGuid: "sprite-2",
-      clipName: "Dash",
-      durationMs: 200,
-    });
+    addClipState(secondDoc, "dash", "Dash", { assetGuid: "sprite-2", clipName: "Dash", durationMs: 200 }, "2d");
     const actorGraph: LogicGraph = {
       id: "hero",
       kind: "event",

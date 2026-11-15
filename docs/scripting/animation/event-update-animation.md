@@ -15,5 +15,5 @@ Runs every update, before the state machine checks its transitions.
 
 ## Notes
 
-- Only available in the Animation Object graph of an Animation Graph asset (the **Animation Object** view).
+- Only available in the Animation Object graph of an Animation Graph asset (its **Animation Object** window).
 - Variables set here are seen by transition rules in the same update.

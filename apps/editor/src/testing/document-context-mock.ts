@@ -236,8 +236,6 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     registerDockviewApi: noop,
     unregisterDockviewApi: noop,
     captureLayoutForId: noop,
-    animEditorMode: "stateMachine",
-    setAnimEditorMode: noop,
     sceneMode: "design",
     setSceneMode: noop,
     activateDockPanel: noop,

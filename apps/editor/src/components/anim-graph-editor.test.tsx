@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, setTransitionBidirectional, type AnimGraphDocument } from "@haptic/anim-graph";
+import {
+  createDefaultAnimGraph,
+  createDefaultTransitionRuleGraph,
+  createStateGraph,
+  setTransitionBidirectional,
+  singlePlayerOf,
+  type AnimGraphDocument,
+} from "@haptic/anim-graph";
 import { GraphDebugProvider, useGraphDebugStore } from "../context/graph-debug-context";
 import type { GraphDebugStore } from "../services/graph-debug-store";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
@@ -125,6 +132,15 @@ vi.mock("../context/document-context", async () => {
             path: "assets/Atlas.texture.hasset",
           },
           {
+            header: {
+              guid: "bs-loco",
+              name: "BS_Locomotion",
+              type: "BlendSpace",
+              payload: { axes: [{ name: "Speed", min: 0, max: 6 }], samples: [{ animationGuid: "anim-1", x: 2 }] },
+            },
+            path: "assets/BS_Locomotion.blendspace.hasset",
+          },
+          {
             header: { guid: "rig", name: "Knight_Skeleton", type: "Skeleton", payload: { kind: "skin", bones: [] } },
             path: "assets/Knight_Skeleton.hasset",
           },
@@ -246,24 +262,26 @@ function lastCommit(): AnimGraphDocument {
   return calls[calls.length - 1]![1] as unknown as AnimGraphDocument;
 }
 
+function machineOf(doc: AnimGraphDocument) {
+  return doc.stateMachine;
+}
+
+/** The data of a state's single player. */
+function playerData(doc: AnimGraphDocument, stateId: string) {
+  const state = machineOf(doc).states.find((row) => row.id === stateId);
+  return state ? singlePlayerOf(state.stateGraph)?.data : undefined;
+}
+
 function locoGraph(): AnimGraphDocument {
   const doc = createDefaultAnimGraph();
-  doc.states.push({
+  const machine = machineOf(doc);
+  machine.states.push({
     id: "run",
     name: "Run",
-    clipId: "run-clip",
-    speed: 1,
-    loop: true,
     position: { x: 300, y: 80 },
+    stateGraph: createStateGraph("3d", { assetGuid: "anim-1", clipName: "Walk", durationMs: 400 }),
   });
-  doc.clips.push({
-    id: "run-clip",
-    kind: "sprite",
-    assetGuid: "spr-1",
-    clipName: "Run",
-    durationMs: 400,
-  });
-  doc.transitions.push({
+  machine.transitions.push({
     id: "idle-to-run",
     fromStateId: "idle",
     toStateId: "run",
@@ -336,17 +354,42 @@ describe("AnimGraphEditor", () => {
 
   it("shows each state's clip on its graph node", async () => {
     const doc = locoGraph();
-    doc.clips = doc.clips.map((clip) =>
-      clip.id === "idle-clip" ? { ...clip, assetGuid: "anim-1" } : clip,
+    const machine = machineOf(doc);
+    machine.states[0]!.stateGraph = createStateGraph("3d", { assetGuid: "anim-1" });
+    const player = (id: string) => ({ id, type: "anim.pose.sequencePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "anim-1" } });
+    machine.states.push(
+      { id: "blank", name: "Blank", position: { x: 600, y: 80 }, stateGraph: { nodes: [], edges: [] } },
+      {
+        id: "moving",
+        name: "Moving",
+        position: { x: 1200, y: 80 },
+        stateGraph: {
+          nodes: [
+            { id: "bs", type: "anim.pose.blendSpacePlayer", position: { x: 0, y: 0 }, data: { assetGuid: "bs-loco" } },
+            { id: "output", type: "anim.pose.output", position: { x: 0, y: 0 }, data: { __protected: true } },
+          ],
+          edges: [{ id: "1", source: "bs", sourceHandle: "pose", target: "output", targetHandle: "pose" }],
+        },
+      },
+      {
+        id: "mixed",
+        name: "Mixed",
+        position: { x: 900, y: 80 },
+        stateGraph: {
+          nodes: [
+            { id: "blend", type: "anim.pose.blend", position: { x: 0, y: 0 }, data: {} },
+            player("a"),
+            player("b"),
+            { id: "output", type: "anim.pose.output", position: { x: 0, y: 0 }, data: { __protected: true } },
+          ],
+          edges: [
+            { id: "1", source: "a", sourceHandle: "pose", target: "blend", targetHandle: "a" },
+            { id: "2", source: "b", sourceHandle: "pose", target: "blend", targetHandle: "b" },
+            { id: "3", source: "blend", sourceHandle: "pose", target: "output", targetHandle: "pose" },
+          ],
+        },
+      },
     );
-    doc.states.push({
-      id: "blank",
-      name: "Blank",
-      clipId: null,
-      speed: 1,
-      loop: false,
-      position: { x: 600, y: 80 },
-    });
     renderAnimGraph(doc);
     await waitFor(() => {
       expect(screen.getByTestId("anim-state-node-clip-idle").textContent).toBe(
@@ -356,23 +399,23 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-state-node-clip-blank").textContent).toBe(
       "No Clip",
     );
+    // A state whose graph is more than one player shows that it plays a State Graph.
+    expect(screen.getByTestId("anim-state-node-clip-mixed").textContent).toBe("State Graph");
+    // A state that plays a Blend Space names it.
+    expect(screen.getByTestId("anim-state-node-clip-moving").textContent).toBe("BS_Locomotion");
   });
 
   it("adds a state from the States list", () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-add-state"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        states: expect.arrayContaining([
-          expect.objectContaining({ id: "idle" }),
-          expect.objectContaining({ name: "State" }),
-        ]),
-      }),
-    );
-    expect(lastCommit().states).toHaveLength(2);
-    expect(lastCommit().states[1]!.position.x).toBeGreaterThan(
-      lastCommit().states[0]!.position.x,
-    );
+    const states = machineOf(lastCommit()).states;
+    expect(states).toEqual([
+      expect.objectContaining({ id: "idle" }),
+      expect.objectContaining({ name: "State" }),
+    ]);
+    expect(states[1]!.position.x).toBeGreaterThan(states[0]!.position.x);
+    // A new state plays one player of the graph's dimension.
+    expect(singlePlayerOf(states[1]!.stateGraph)?.type).toBe("anim.pose.sequencePlayer");
   });
 
   it("shows Details after selecting a state and toggles loop", () => {
@@ -381,11 +424,16 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("property-name")).toBeTruthy();
     expect(screen.getByTestId("property-loop")).toBeTruthy();
     fireEvent.click(screen.getByTestId("property-loop"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        states: [expect.objectContaining({ id: "idle", loop: false })],
-      }),
-    );
+    expect(playerData(lastCommit(), "idle")?.loop).toBe(false);
+  });
+
+  it("puts a state's player in a Sync Group, and takes it out again", () => {
+    renderAnimGraph();
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.change(screen.getByTestId("property-syncGroup"), { target: { value: " Locomotion " } });
+    expect(playerData(lastCommit(), "idle")?.syncGroup).toBe("Locomotion");
+    fireEvent.change(screen.getByTestId("property-syncGroup"), { target: { value: "" } });
+    expect(playerData(lastCommit(), "idle")).not.toHaveProperty("syncGroup");
   });
 
   it("selects a state from the list without zooming the graph to that node", async () => {
@@ -411,9 +459,22 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
   });
 
+  it("draws a State Alias on the State Machine and edits the states it leaves from in the Inspector", async () => {
+    const doc = locoGraph();
+    machineOf(doc).aliases = [{ id: "struck", name: "Struck", position: { x: 0, y: 400 }, anyState: false, stateIds: ["idle"] }];
+    const { container } = renderAnimGraph(doc);
+    await waitFor(() => expect(screen.getByTestId("anim-alias-node-struck")).toBeTruthy());
+    expect(screen.getByTestId("anim-alias-node-covers-struck").textContent).toBe("1 State");
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="struck"]')!);
+    await waitFor(() => expect(screen.getByTestId("anim-graph-alias")).toBeTruthy());
+    // Cover Run too.
+    fireEvent.click(within(screen.getByTestId("property-row-aliasState-run")).getByRole("checkbox").parentElement!.querySelector("input")!);
+    expect(machineOf(lastCommit()).aliases).toEqual([{ id: "struck", name: "Struck", position: { x: 0, y: 400 }, anyState: false, stateIds: ["idle", "run"] }]);
+  });
+
   it("shows the rows two selected states share and adds typed math to each state's Speed in one change", async () => {
     const doc = locoGraph();
-    doc.states.find((state) => state.id === "run")!.speed = 2;
+    machineOf(doc).states[1]!.stateGraph = createStateGraph("3d", { assetGuid: "anim-1", playRate: 2 });
     const { container } = renderAnimGraph(doc);
     await waitFor(() => expect(screen.getByTestId("anim-state-node-run")).toBeTruthy());
     fireEvent.keyDown(document.body, { key: "Control", code: "ControlLeft" });
@@ -421,7 +482,7 @@ describe("AnimGraphEditor", () => {
     fireEvent.click(container.querySelector('.react-flow__node[data-id="run"]')!);
     fireEvent.keyUp(document.body, { key: "Control", code: "ControlLeft" });
     await waitFor(() => expect(screen.getByTestId("anim-graph-details").textContent).toContain("2 States"));
-    // Names, the entry state and transitions stay per state; Idle plays an Animation and Run a Sprite.
+    // Names, the entry state and transitions stay per state; Idle plays no clip and Run plays Hero_Walk.
     expect(screen.queryByTestId("property-name")).toBeNull();
     expect(screen.queryByTestId("property-entry")).toBeNull();
     expect(screen.queryByTestId("anim-graph-transition-idle-to-run")).toBeNull();
@@ -432,7 +493,7 @@ describe("AnimGraphEditor", () => {
     fireEvent.focus(speed);
     fireEvent.change(speed, { target: { value: "Mixed Values+4" } });
     expect(store.applyAssetDocumentChange).toHaveBeenCalledTimes(1);
-    expect(lastCommit().states.map((state) => [state.id, state.speed])).toEqual([["idle", 5], ["run", 6]]);
+    expect(["idle", "run"].map((id) => [id, playerData(lastCommit(), id)?.["default:playRate"]])).toEqual([["idle", 5], ["run", 6]]);
   });
 
   it("opens a nested transition rule graph from Details", async () => {
@@ -505,7 +566,7 @@ describe("AnimGraphEditor", () => {
 
   it("hydrates typed row reads and offers Definition nodes in transition rules", async () => {
     const doc = locoGraph();
-    doc.transitions[0]!.ruleGraph.nodes.push({
+    machineOf(doc).transitions[0]!.ruleGraph.nodes.push({
       id: "read-data", type: "data.readEntry", position: { x: 300, y: 200 },
       data: { "default:tree": "settings", "default:entryPath": "Primary" },
     });
@@ -543,7 +604,7 @@ describe("AnimGraphEditor", () => {
     const flip = screen.getByTestId("anim-graph-flip-direction-idle-to-run");
     expect(flip).toHaveProperty("disabled", false);
     fireEvent.click(flip);
-    expect(lastCommit().transitions[0]).toMatchObject({
+    expect(machineOf(lastCommit()).transitions[0]).toMatchObject({
       id: "idle-to-run",
       fromStateId: "run",
       toStateId: "idle",
@@ -559,7 +620,7 @@ describe("AnimGraphEditor", () => {
   it("sets breakpoints on a state from its menu and on each direction of a Both Ways transition in Details", () => {
     const breakpoints = new BreakpointStore();
     const both = setTransitionBidirectional(locoGraph(), "idle-to-run", true);
-    const reverseId = both.transitions.find((row) => row.fromStateId === "run")!.id;
+    const reverseId = machineOf(both).transitions.find((row) => row.fromStateId === "run")!.id;
     store.reset(both as unknown as Record<string, unknown>);
     render(
       <BreakpointStoreProvider store={breakpoints}>
@@ -626,7 +687,7 @@ describe("AnimGraphEditor", () => {
         },
       ],
     };
-    doc.transitions[0]!.ruleGraph.nodes.push({
+    machineOf(doc).transitions[0]!.ruleGraph.nodes.push({
       id: "get-speed-rule",
       type: "variables.get",
       position: { x: 0, y: 0 },
@@ -647,7 +708,7 @@ describe("AnimGraphEditor", () => {
         .variableName,
     ).toBe("MoveSpeed");
     expect(
-      next.transitions[0]?.ruleGraph.nodes.find((node) => node.id === "get-speed-rule")
+      machineOf(next).transitions[0]?.ruleGraph.nodes.find((node) => node.id === "get-speed-rule")
         ?.data.variableName,
     ).toBe("MoveSpeed");
   });
@@ -662,18 +723,7 @@ describe("AnimGraphEditor", () => {
     expect(screen.queryByTestId("search-item-model-1")).toBeNull();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-anim-1"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        clips: expect.arrayContaining([
-          expect.objectContaining({
-            id: "idle-clip",
-            kind: "animation",
-            assetGuid: "anim-1",
-            clipName: "Walk",
-          }),
-        ]),
-      }),
-    );
+    expect(playerData(lastCommit(), "idle")).toMatchObject({ assetGuid: "anim-1", clipName: "Walk" });
   });
 
   it("offers only Animations on the graph's Skeleton, and sets the Skeleton in the Graph rows", async () => {
@@ -690,13 +740,7 @@ describe("AnimGraphEditor", () => {
   it("offers no Clip Name for a state whose clip still names a Model", () => {
     // Clips are Animation assets: a Model plus a glTF clip name is no longer a clip.
     const doc = createDefaultAnimGraph();
-    doc.clips[0] = {
-      id: "idle-clip",
-      kind: "animation",
-      assetGuid: "model-1",
-      clipName: "Idle",
-      durationMs: 1000,
-    };
+    machineOf(doc).states[0]!.stateGraph = createStateGraph("3d", { assetGuid: "model-1", clipName: "Idle", durationMs: 1000 });
     renderAnimGraph(doc);
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     expect(screen.getByTestId("property-clipAsset")).toBeTruthy();
@@ -716,19 +760,42 @@ describe("AnimGraphEditor", () => {
     expect(screen.queryByTestId("search-item-model-1")).toBeNull();
     expect(screen.queryByTestId("search-item-anim-1")).toBeNull();
     fireEvent.click(screen.getByTestId("search-item-walk-anim"));
-    expect(lastCommit()).toEqual(
-      expect.objectContaining({
-        clips: expect.arrayContaining([
-          expect.objectContaining({
-            id: "idle-clip",
-            kind: "sprite",
-            assetGuid: "walk-anim",
-            clipName: "",
-            durationMs: 250,
-          }),
-        ]),
-      }),
-    );
+    const player = singlePlayerOf(machineOf(lastCommit()).states[0]!.stateGraph);
+    expect(player?.type).toBe("anim.frame.spritePlayer");
+    expect(player?.data).toMatchObject({ assetGuid: "walk-anim", durationMs: 250 });
+  });
+
+  it("opens a state's graph on double-click, ending in its Output Pose, and steps back out with the breadcrumbs", async () => {
+    const { container } = renderAnimGraph(locoGraph());
+    await waitFor(() => expect(container.querySelector('.react-flow__node[data-id="run"]')).not.toBeNull());
+    fireEvent.doubleClick(container.querySelector('.react-flow__node[data-id="run"]')!);
+    await waitFor(() => expect(screen.getByTestId("anim-pose-graph")).toBeTruthy());
+    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
+    expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
+    await waitFor(() => {
+      expect(container.querySelector('.react-flow__node[data-id="output"] .anim-pose-output-node')).not.toBeNull();
+      expect(container.querySelector('.react-flow__node[data-id="player"]')).not.toBeNull();
+    });
+    fireEvent.click(screen.getByTestId("anim-graph-back"));
+    await waitFor(() => expect(screen.getByTestId("anim-graph-editor")).toBeTruthy());
+    expect(screen.queryByTestId("anim-pose-graph")).toBeNull();
+  });
+
+  it("opens the selected state's graph from Details", () => {
+    renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-run"));
+    fireEvent.click(screen.getByTestId("anim-graph-open-state-graph"));
+    expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
+    expect(screen.getByTestId("anim-pose-graph")).toBeTruthy();
+  });
+
+  it("opens on the State Machine, the root, with nothing to step back to and no Name row", () => {
+    renderAnimGraph(locoGraph());
+    expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
+    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
+    expect(screen.queryByTestId("anim-graph-crumb-state")).toBeNull();
+    expect(screen.getByTestId("anim-graph-back")).toHaveProperty("disabled", true);
+    expect(screen.queryByTestId("property-machineName")).toBeNull();
   });
 });
 

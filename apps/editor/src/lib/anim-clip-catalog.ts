@@ -1,5 +1,7 @@
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
+  normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
 } from "@haptic/assets";
@@ -39,7 +41,10 @@ type CatalogAsset = {
   };
 };
 
-/** Build a clip catalog from Content Browser headers: Animation and Sprite Animation clips, and the Models and Skeletons an Animation names. */
+/**
+ * Build a clip catalog from Content Browser headers: Animation and Sprite Animation clips, the Models and Skeletons an
+ * Animation names, and Blend Spaces with their Skeleton, axes and samples.
+ */
 export function animClipCatalogFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): AnimClipCatalogEntry[] {
@@ -52,11 +57,20 @@ export function animClipCatalogFromAssets(
           ? optionalDurationMs(payload.durationMs)
           : undefined;
     const skeletonGuid =
-      asset.header.type === "Model" || asset.header.type === "Animation"
+      asset.header.type === "Model" || asset.header.type === "Animation" || asset.header.type === "BlendSpace"
         ? nullableGuid(payload.skeletonGuid)
+        : undefined;
+    const blendSpace = asset.header.type === "BlendSpace"
+      ? normalizeBlendSpacePayload(payload)
+      : asset.header.type === "SpriteBlendSpace"
+        ? normalizeSpriteBlendSpacePayload(payload)
         : undefined;
     const modelGuid =
       asset.header.type === "Animation" ? trimmed(payload.modelGuid) : "";
+    const frameCount =
+      asset.header.type === "SpriteAnimation" && Array.isArray(payload.frames) && payload.frames.length > 0
+        ? payload.frames.length
+        : undefined;
     return {
       guid: asset.header.guid,
       type: asset.header.type,
@@ -65,8 +79,18 @@ export function animClipCatalogFromAssets(
         typeof payload.clipName === "string" ? payload.clipName : undefined,
       dependencyGuids: asset.header.dependencies ?? [],
       ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(frameCount !== undefined ? { frameCount } : {}),
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
+      ...(blendSpace
+        ? {
+            blendSpace: {
+              axes: blendSpace.axes,
+              samples: blendSpace.samples,
+              ...("hysteresis" in blendSpace ? { hysteresis: blendSpace.hysteresis, keepTime: blendSpace.keepTime } : {}),
+            },
+          }
+        : {}),
     };
   });
 }

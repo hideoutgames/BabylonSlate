@@ -187,11 +187,20 @@ export type ClassEventOptions = {
   parentGraphs?: Record<string, SerializedGraph>;
   assetType?: string | null;
   editorGraph?: boolean;
-  /** Animation Object event graph vs nested transition-rule graph. */
-  animationGraphHost?: "object" | "rule";
+  /**
+   * Animation Object event graph, a transition-rule graph, or a state's pose graph. Rule and pose graphs are pure.
+   */
+  animationGraphHost?: "object" | "rule" | "pose";
+  /** A state graph's dimension (3D poses or 2D frames). */
+  animPose?: { dimension: "3d" | "2d" };
   /** The class's own graph: its interface members (Tickable Object) add events. */
   graph?: SerializedGraph;
 };
+
+/** Rule and pose graphs evaluate pure nodes only and read variables without setting them. */
+export function isPureAnimGraphHost(host: ClassEventOptions["animationGraphHost"] | null | undefined): boolean {
+  return host === "rule" || host === "pose";
+}
 
 function ancestryChain(options?: ClassEventOptions): string[] {
   const parentOf =
@@ -351,6 +360,15 @@ function isAnimCatalogNodeAllowed(
   }
   if (host === "rule") {
     return nodeId.startsWith("anim.state.");
+  }
+  if (host === "pose") {
+    const pose = options?.animPose ?? { dimension: "3d" };
+    // A state graph reads its state's facts.
+    if (nodeId.startsWith("anim.state.")) return true;
+    const prefix = pose.dimension === "3d" ? "anim.pose." : "anim.frame.";
+    if (!nodeId.startsWith(prefix)) return false;
+    // Each state graph has its one protected output.
+    return nodeId !== `${prefix}output`;
   }
   if (nodeId.startsWith("anim.actor.")) {
     return ancestryChain(options).includes("Actor");

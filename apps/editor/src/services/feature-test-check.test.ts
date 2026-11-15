@@ -1310,7 +1310,9 @@ describe("Profile", () => {
     let attempts = 0;
     const work = {
       graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0,
+      // A check that failed before the rows were sampled: none fails while they are.
       readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
+      readinessBlockers: ['mesh "loading"'],
     };
     const editor = fakeEditor({}, undefined, (now, commands) => {
       for (; attempts < Math.floor(now / 25); attempts++) {
@@ -1346,6 +1348,8 @@ describe("Profile", () => {
     expect(perDrawn("baseline 1")).toEqual({ readiness: 2, admissions: 1 });
     expect(perDrawn("shadows off")).toEqual({ readiness: 6, admissions: 3 });
     expect(perDrawn("baseline 2")).toEqual({ readiness: 2, admissions: 1 });
+    // What an earlier failure waited for is not a row's: no check failed while it was sampled.
+    expect(row("baseline 1").work!.readinessBlockers).toEqual([]);
   });
 
   it("samples a step that raises the hold rate past the margin once the wait's bound passes, says so, and goes on", async () => {
@@ -1373,6 +1377,7 @@ describe("Profile", () => {
         rendererWork: {
           graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: drawn, readinessProbeMs: drawn * 30, outlineReadinessChecks: 0,
           readinessProbeReasons: { meshAdded: drawn, prepare: 3 }, readinessSwapRechecks: 0, failedReadinessProbes: drawn * 2, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
+          readinessBlockers: ['mesh "crate" (Material "wood"): pbr #1 linking'],
         },
       };
     };
@@ -1383,12 +1388,14 @@ describe("Profile", () => {
     };
     const quick = await run("quick");
     // The fake's frame sample returns at once, so the measured window is the runner's one 500 ms poll of the
-    // counters: 20 frames drawn, 20 checks, 600 ms of them; causes that did not grow are left out.
+    // counters: 20 frames drawn, 20 checks, 600 ms of them; causes that did not grow are left out. Checks failed in
+    // the window, so it keeps what the last of them waited for.
     expect(quick.work).toEqual({
       drawn: 20,
       work: {
         graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 20, readinessProbeMs: 600, outlineReadinessChecks: 0,
         readinessProbeReasons: { meshAdded: 20 }, readinessSwapRechecks: 0, failedReadinessProbes: 40, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
+        readinessBlockers: ['mesh "crate" (Material "wood"): pbr #1 linking'],
       },
     });
     expect(quick.firstDrawsBeforeSweep).toBeUndefined();

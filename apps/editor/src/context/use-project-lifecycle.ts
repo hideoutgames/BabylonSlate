@@ -27,7 +27,6 @@ import {
   EDITOR_UTILITY_EVENTS,
   emitEditorUtilityLifecycle,
 } from "../lib/editor-utility-scripts";
-import type { AnimEditorMode } from "../shell/anim-document-layout";
 import type { DocumentEditingService } from "../services/document-editing-service";
 import type { DocumentService } from "../services/document-service";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
@@ -73,7 +72,6 @@ export interface ProjectLifecycleDeps {
   cancelSceneDocumentLoad: () => void;
   // Dock layouts.
   resetDockLayouts: () => void;
-  setAnimEditorModes: (modes: Record<string, AnimEditorMode>) => void;
   captureAllLayouts: () => void;
   // Compile.
   setLastCompiledSignature: (signature: string | null) => void;
@@ -127,7 +125,6 @@ export function useProjectLifecycle({
   setSceneDocumentLoad,
   cancelSceneDocumentLoad,
   resetDockLayouts,
-  setAnimEditorModes,
   captureAllLayouts,
   setLastCompiledSignature,
   playContent,
@@ -201,7 +198,6 @@ export function useProjectLifecycle({
         setRecoveryAvailable(unreplayed.length > 0);
       }
       setRoute("editor");
-      setAnimEditorModes({});
       projectService.setDerivedStorage(derived);
       await refreshProjectList();
       await captureMtimeSnapshot();
@@ -218,8 +214,7 @@ export function useProjectLifecycle({
       captureMtimeSnapshot,
       cancelSceneDocumentLoad,
       playContent,
-      setAnimEditorModes,
-      setProjectDocument,
+          setProjectDocument,
       editSessionRef,
       projectSaveState,
       resetThumbnails,
@@ -374,7 +369,6 @@ export function useProjectLifecycle({
     setLastCompiledSignature(null);
     playContent.clearCompileCache();
     setRoute("home");
-    setAnimEditorModes({});
     resetExternalChanges();
     setDocumentOpenError(null);
     await refreshProjectList();
@@ -393,8 +387,7 @@ export function useProjectLifecycle({
     cancelSceneDocumentLoad,
     playContent,
     resetDockLayouts,
-    setAnimEditorModes,
-    setProjectDocument,
+      setProjectDocument,
     documentTransitions,
     unsavedProjectWork,
     cancelExclusiveSceneOpen,
