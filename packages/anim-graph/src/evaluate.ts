@@ -42,6 +42,7 @@ import {
   ANIM_POSE_BLEND_BY_BOOL_TYPE,
   ANIM_POSE_BLEND_BY_INT_TYPE,
   ANIM_POSE_BLEND_TYPE,
+  ANIM_POSE_APPLY_ADDITIVE_TYPE,
   ANIM_CONTROL_TRANSFORM_BONE_TYPE,
   ANIM_POSE_LAYERED_BLEND_TYPE,
   ANIM_POSE_SAVE_CACHED_TYPE,
@@ -53,6 +54,7 @@ import {
   isPoseOutputType,
   isPosePlayerType,
   layeredBlendFilters,
+  parseResolvedClipAdditive,
   poseClipData,
   poseGraphIndex,
   poseInputPins,
@@ -648,13 +650,15 @@ function visitPoseGraph(
     flipX: boolean,
     flipY: boolean,
     masks?: AnimLayerMaskRef[],
+    additive = false,
   ): void => {
     // A pose output feeds one input, so each node is reached once; a cycle stops here.
     if (!node || visited.has(node.id)) return;
     visited.add(node.id);
     const key = `${graphKey}#${node.id}`;
-    const emit = (layer: Omit<AnimClipLayer, "weight" | "stateId">) => {
+    const emit = (layer: Omit<AnimClipLayer, "weight" | "stateId">, additiveData: unknown = node.data.additive) => {
       if (weight <= 0) return;
+      const base = parseResolvedClipAdditive(additiveData);
       layers.push({
         ...layer,
         stateId,
@@ -662,10 +666,14 @@ function visitPoseGraph(
         ...(flipX ? { flipX: true } : {}),
         ...(flipY ? { flipY: true } : {}),
         ...(masks ? { masks } : {}),
+        ...(additive ? { additive: true } : {}),
+        ...(base?.base === "clip"
+          ? { additiveBase: { clipAssetGuid: base.clipAssetGuid, clipName: base.clipName, normalisedTime: base.normalisedTime } }
+          : {}),
       });
     };
     if (isPoseOutputType(node.type)) {
-      visit(firstPoseInput(index, node), weight, flipX, flipY, masks);
+      visit(firstPoseInput(index, node), weight, flipX, flipY, masks, additive);
       return;
     }
     if (isPosePlayerType(node.type)) {
@@ -754,6 +762,7 @@ function visitPoseGraph(
       tick.samples.forEach((sample, position) => {
         const sampleWeight = tick.weights[position] ?? 0;
         if (sampleWeight <= BLEND_SPACE_MIN_WEIGHT || weight <= 0) return;
+        const base = sample.additive;
         layers.push({
           stateId,
           clipAssetGuid: sample.animationGuid,
@@ -762,6 +771,10 @@ function visitPoseGraph(
           normalisedTime: clock.normalised,
           weight: weight * sampleWeight,
           ...(masks ? { masks } : {}),
+          ...(additive ? { additive: true } : {}),
+          ...(base?.base === "clip"
+            ? { additiveBase: { clipAssetGuid: base.clipAssetGuid, clipName: base.clipName, normalisedTime: base.normalisedTime } }
+            : {}),
         });
       });
       return;
@@ -776,8 +789,15 @@ function visitPoseGraph(
     }
     if (node.type === ANIM_POSE_BLEND_TYPE) {
       const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 0.5)));
-      visit(poseInputSource(index, node.id, "a"), weight * (1 - alpha), flipX, flipY, masks);
-      visit(poseInputSource(index, node.id, "b"), weight * alpha, flipX, flipY, masks);
+      visit(poseInputSource(index, node.id, "a"), weight * (1 - alpha), flipX, flipY, masks, additive);
+      visit(poseInputSource(index, node.id, "b"), weight * alpha, flipX, flipY, masks, additive);
+      return;
+    }
+    if (node.type === ANIM_POSE_APPLY_ADDITIVE_TYPE) {
+      // The Additive input's clips add their change from their base pose, at Alpha, to the Base input's pose.
+      const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 1)));
+      visit(poseInputSource(index, node.id, "base"), weight, flipX, flipY, masks, additive);
+      visit(poseInputSource(index, node.id, "additive"), weight * alpha, flipX, flipY, masks, true);
       return;
     }
     if (node.type === ANIM_POSE_LAYERED_BLEND_TYPE) {
@@ -786,10 +806,10 @@ function visitPoseGraph(
       const weights = filters.map((_, position) =>
         Math.min(1, Math.max(0, dataValue(data, node, `blendWeight${position}`, 1))));
       const blend = weights.some((value) => value > 0) && weight > 0 ? ctx.layerBlends.push({ filters, weights }) - 1 : -1;
-      visit(poseInputSource(index, node.id, "basePose"), weight, flipX, flipY, blend < 0 ? masks : withMask(masks, blend, -1));
+      visit(poseInputSource(index, node.id, "basePose"), weight, flipX, flipY, blend < 0 ? masks : withMask(masks, blend, -1), additive);
       filters.forEach((_, position) => {
         const source = poseInputSource(index, node.id, `blendPose${position}`);
-        visit(source, weight * weights[position]!, flipX, flipY, blend < 0 ? masks : withMask(masks, blend, position));
+        visit(source, weight * weights[position]!, flipX, flipY, blend < 0 ? masks : withMask(masks, blend, position), additive);
       });
       return;
     }
@@ -800,9 +820,17 @@ function visitPoseGraph(
       if (weight <= 0) return;
       for (const layer of cached.layers) {
         const nested = masks && layer.masks ? [...masks, ...layer.masks] : masks ?? layer.masks;
-        layers.push({ ...layer, stateId, weight: layer.weight * weight, ...(nested ? { masks: nested } : {}) });
+        layers.push({
+          ...layer,
+          stateId,
+          weight: layer.weight * weight,
+          ...(nested ? { masks: nested } : {}),
+          ...(additive ? { additive: true } : {}),
+        });
       }
       for (const source of cached.sources) sources.push({ key: source.key, weight: source.weight * weight });
+      // Bone changes set bones of the whole pose: an additive input has none.
+      if (additive) return;
       for (const modifier of cached.modifiers) {
         const nested = masks && modifier.masks ? [...masks, ...modifier.masks] : masks ?? modifier.masks;
         modifiers.push({ ...modifier, alpha: modifier.alpha * weight, ...(nested ? { masks: nested } : {}) });
@@ -811,7 +839,8 @@ function visitPoseGraph(
     }
     if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE) {
       // The bone changes after the pose it takes, so a change deeper in the graph applies first.
-      visit(poseInputSource(index, node.id, "sourcePose"), weight, flipX, flipY, masks);
+      visit(poseInputSource(index, node.id, "sourcePose"), weight, flipX, flipY, masks, additive);
+      if (additive) return;
       const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 1)));
       const modifier = transformBoneModifier(node, data, alpha * weight);
       if (modifier) modifiers.push(masks ? { ...modifier, masks } : modifier);
@@ -823,7 +852,7 @@ function visitPoseGraph(
         ? (dataValue(data, node, "active", true) ? 0 : 1)
         : clampIndex(dataValue(data, node, "activeIndex", 0), pins.length);
       const weights = blendSelector(ctx, key, node, pins.length, target, dtSeconds, fresh);
-      pins.forEach((pin, position) => visit(poseInputSource(index, node.id, pin), weight * weights[position]!, flipX, flipY, masks));
+      pins.forEach((pin, position) => visit(poseInputSource(index, node.id, pin), weight * weights[position]!, flipX, flipY, masks, additive));
       return;
     }
     if (node.type === ANIM_FRAME_SELECT_BY_BOOL_TYPE || node.type === ANIM_FRAME_SELECT_BY_INT_TYPE) {

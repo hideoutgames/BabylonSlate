@@ -130,3 +130,13 @@ export interface AnimBoneModifier {
   scale?: AnimBoneChannel;
   masks?: AnimLayerMaskRef[];
 }
+
+/**
+ * The pose an additive clip layer is a change from, when not the Skeleton's rest pose: a clip (the layer's own, for an
+ * Animation additive to its first frame) at a normalised time.
+ */
+export interface AnimAdditiveBase {
+  clipAssetGuid: string;
+  clipName: string;
+  normalisedTime: number;
+}

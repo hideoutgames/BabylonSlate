@@ -390,12 +390,15 @@ describe("FeatureTest starter", () => {
     expect(Math.max(0, ...syncGroupMembers.values())).toBeGreaterThan(1);
     // A State Alias with a transition is showcased.
     expect(aliasTransitions).toBeGreaterThan(0);
-    // Per-bone layering, cached poses and a skeletal control are showcased.
+    // An additive Animation is showcased (Apply Additive adds it).
+    expect(clipCatalog.some((entry) => entry.type === "Animation" && entry.additive)).toBe(true);
+    // Per-bone layering, cached poses, additive poses and a skeletal control are showcased.
     expect([...poseNodeTypes]).toEqual(expect.arrayContaining([
       "anim.pose.layeredBlendPerBone",
       "anim.pose.saveCachedPose",
       "anim.pose.useCachedPose",
       "anim.control.transformBone",
+      "anim.pose.applyAdditive",
     ]));
   });
 

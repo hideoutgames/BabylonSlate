@@ -31,6 +31,7 @@ export {
   animRuleScriptClassId,
   type AnimClipKind,
   type AnimClipLayer,
+  type AnimClipAdditive,
   type AnimClipCatalogEntry,
   type AnimDiagnostic,
   type AnimEvalState,

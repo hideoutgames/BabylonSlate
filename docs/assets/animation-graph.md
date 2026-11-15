@@ -112,6 +112,7 @@ A 3D state graph can play different clips on different parts of the body, reuse 
 
 - [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) plays each Blend Pose on the bones of its branches only, such as an attack on the spine and arms over a run on the legs. Pick each branch's bone in the **Inspector**.
 - A pose output connects to one input. To use a pose in more than one place, or in more than one state, save it with [Save Cached Pose](../scripting/animation/save-cached-pose.md) and read it with [Use Cached Pose](../scripting/animation/use-cached-pose.md) nodes. A cached pose plays once a frame however many nodes use it, and keeps its time as the State Machine moves between states that use it.
+- [Apply Additive](../scripting/animation/apply-additive.md) adds an [additive Animation](animation.md#additive-animations), such as a lean or a flinch, on top of any pose.
 - [Transform Bone](../scripting/animation/transform-bone.md) changes one bone after the clips blend, such as turning the head toward a target.
 
 ## Animation events

@@ -90,6 +90,18 @@ export const animPoseNodes: NodeDefinition[] = [
     ["Layer Blend", "Upper Body", "Bone Mask", "Avatar Mask"],
   ),
   poseNode(
+    "anim.pose.applyAdditive",
+    "Apply Additive",
+    "Adds an additive Animation's change from its base pose, by Alpha, to the Base pose.",
+    () => [
+      pin("base", "base", "in", POSE),
+      pin("additive", "additive", "in", POSE),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["Additive", "Aim Offset", "Lean"],
+  ),
+  poseNode(
     "anim.pose.saveCachedPose",
     "Save Cached Pose",
     "Saves a pose under a name, so Use Cached Pose nodes in any state reuse it, evaluated once a frame.",
