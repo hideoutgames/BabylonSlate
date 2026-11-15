@@ -1,6 +1,7 @@
 import type { SerializedGraph } from "@haptic/core";
 import { formatEventMemberName } from "@haptic/editor-kit";
 import { jsIdent } from "@haptic/scripting";
+import { nextNewMemberName } from "./class-member-sections";
 
 /**
  * Names collide when they compile to one identifier (the validator's rule) or
@@ -46,4 +47,12 @@ export function freeCustomEventName(name: string, taken: ReadonlySet<string>): s
     const candidate = `${stem}_${index}`;
     if (isFree(candidate)) return candidate;
   }
+}
+
+/**
+ * A new custom event's name, as the Class panel's New Event and Add Node's
+ * Create New Custom Event… give it: `NewEvent`, else `NewEvent_1`, ….
+ */
+export function newCustomEventName(graph: SerializedGraph | null | undefined): string {
+  return freeCustomEventName(nextNewMemberName("event", []), takenCustomEventNames(graph));
 }

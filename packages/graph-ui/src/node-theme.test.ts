@@ -47,13 +47,16 @@ describe("nodeVisualRole", () => {
         pure: true,
       }),
     ).toBe("event");
+  });
+
+  it("colours Call Custom Event as a function call, not an event", () => {
     expect(
       nodeVisualRole({
         nodeType: "flow.event.call",
         title: "Call On Hit",
         category: "flow",
       }),
-    ).toBe("event");
+    ).toBe("function");
   });
 
   it("maps Call Parent Event to a distinct brown role", () => {

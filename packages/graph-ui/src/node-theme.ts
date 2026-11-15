@@ -112,6 +112,10 @@ export function nodeVisualRole(input: {
   if (nodeType === "flow.event.callParent") {
     return "call-parent";
   }
+  // Calling a custom event is a function call; red headers are for events.
+  if (nodeType === "flow.event.call") {
+    return "function";
+  }
   if (
     nodeType === "input.actionEvent" ||
     nodeType === "input.axisEvent" ||

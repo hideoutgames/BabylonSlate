@@ -4,11 +4,12 @@
  * `graph-validation.ts` re-exports the public names.
  */
 import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
-import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
+import { engineParentOf, formatEventTitle, walkAncestry } from "@haptic/editor-kit";
 import { EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
 import { sceneAssetClassId } from "@haptic/object-model";
 import type { PaletteNode } from "@haptic/graph-ui";
 import { classLineageIncludesAny, isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
+import { newCustomEventName } from "../lib/custom-event-names";
 import { extensionNodesFingerprint } from "./extension-nodes";
 import { DATA_GRAPH_NODES, dataGraphMetadata, dataGraphNodeTitle } from "../lib/data-graph";
 import { customEventRows, knownClassIdSet } from "./graph-class-symbols";
@@ -318,11 +319,32 @@ export function scriptPaletteInjectorKey(
   });
 }
 
+/** Add Node's row for `flow.event.custom`, which names the action instead of the node. */
+export const NEW_CUSTOM_EVENT_PALETTE_TITLE = "Create New Custom Event…";
+
+/**
+ * The Create New Custom Event… row with a free `NewEvent` name for `graph`.
+ * The Class graph host renames the row again against the live graph as it is
+ * placed, since the palette is not rebuilt for every node added.
+ */
+export function newCustomEventPaletteNode(
+  row: PaletteNode,
+  graph: SerializedGraph | null | undefined,
+): PaletteNode {
+  const name = newCustomEventName(graph);
+  return {
+    ...row,
+    title: NEW_CUSTOM_EVENT_PALETTE_TITLE,
+    nodeTitle: formatEventTitle(name),
+    defaultData: { ...row.defaultData, name },
+  };
+}
+
 function scriptPaletteCatalogNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
-  return nodeRegistry
+  const rows = nodeRegistry
     .list()
     .filter((def) => {
       if (def.internal) return false;
@@ -375,6 +397,12 @@ function scriptPaletteCatalogNodes(
           Object.keys(defaultData).length > 0 ? defaultData : undefined,
       };
     });
+  // Wherever custom events can go, Create New Custom Event… leads the rows it
+  // ties with: first in its category, in a search tier and among pin suggestions.
+  const index = rows.findIndex((row) => row.id === "flow.event.custom");
+  if (index < 0) return rows;
+  const created = newCustomEventPaletteNode(rows[index]!, options?.graph);
+  return [created, ...rows.slice(0, index), ...rows.slice(index + 1)];
 }
 
 function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {

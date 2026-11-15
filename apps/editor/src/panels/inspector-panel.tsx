@@ -66,6 +66,7 @@ import {
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { useCustomEventRename } from "./use-custom-event-rename";
 import { useClassGraphs } from "../lib/use-class-graphs";
 import { documentComponentClassId } from "../lib/linked-scale";
 import { delegateSignatureEntries } from "../lib/delegate-signatures";
@@ -115,7 +116,6 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [parentClassPickOpen, setParentClassPickOpen] = useState(false);
-  const [renameEventOpen, setRenameEventOpen] = useState(false);
   const [selectedJsPin, selectJsPin] = useState<string | null>(null);
   const [parentClassError, setParentClassError] = useState<string | null>(null);
   const [classPinPick, setClassPinPick] = useState<{
@@ -206,6 +206,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     }
     applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
   };
+  // Rename Event opens the event's inline rename in the Class panel.
+  const { start: renameEvent, dialog: renameEventDialog } = useCustomEventRename({
+    graph,
+    documentKind: doc?.ref.kind,
+    classId: graphClassId,
+    commit: persistGraph,
+  });
   const inspectGraph = useMemo(() => {
     if (!graph) return null;
     if (!activeFunctionId) return graph;
@@ -604,15 +611,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         hydratedInspectGraph={hydratedInspectGraph}
         selectedNode={selectedNode}
         activeFunctionId={activeFunctionId}
-        docPath={docPath}
         classId={graphClassId}
         focusBodyLine={focusDiagnostic?.bodyLine}
         catalogs={catalogs}
         persistGraph={persistGraph}
         selectedJsPin={selectedJsPin}
         selectJsPin={selectJsPin}
-        renameEventOpen={renameEventOpen}
-        setRenameEventOpen={setRenameEventOpen}
+        onRenameEvent={renameEvent}
         classPinPick={classPinPick}
         setClassPinPick={setClassPinPick}
         assetPinPick={assetPinPick}
@@ -623,6 +628,7 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         setCommandRowIds={setCommandRowIds}
         delegateSignatures={delegateSignatures}
       />
+      {renameEventDialog}
     </PanelFrame>
   );
 }

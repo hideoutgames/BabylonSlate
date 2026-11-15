@@ -81,6 +81,8 @@ export {
   requireClassGraphPayload,
 } from "./class-graph-defaults";
 export {
+  NEW_CUSTOM_EVENT_PALETTE_TITLE,
+  newCustomEventPaletteNode,
   ScriptPaletteCache,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,

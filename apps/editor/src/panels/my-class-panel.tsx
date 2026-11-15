@@ -35,6 +35,7 @@ import {
   addClassMember,
   addVariableAccessNode,
   blueprintSectionsForClass,
+  canRenameCustomEvent,
   classAllowsMemberKind,
   ensureEventNodeOnGraph,
   isObjectInstanceVariableType,
@@ -43,6 +44,7 @@ import {
   variableFieldsForPickerType,
   patchClassMember,
   removeClassMember,
+  renameCustomEvent,
   canDropClassMember,
   completeClassMemberDrop,
   dropVariableBinding,
@@ -498,6 +500,8 @@ function ClassMembersView({
   classPath,
   canvasDropApi,
   onOpenInherited,
+  renameRequestId,
+  onRenameRequestHandled,
 }: {
   graph: SerializedGraph | null;
   onGraphChange: (next: SerializedGraph) => void;
@@ -513,6 +517,9 @@ function ClassMembersView({
   classPath?: string;
   canvasDropApi?: GraphDropPoint | null;
   onOpenInherited?: (member: MyClassMember) => void;
+  /** A custom event row to open the inline rename on once it is in the tree. */
+  renameRequestId?: string | null;
+  onRenameRequestHandled?: () => void;
 }) {
   const watchStore = useWatchStore();
   const touchSizing = usePhoneTouchSizing();
@@ -567,17 +574,29 @@ function ClassMembersView({
   );
   const renamableIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const member of graph?.members ?? []) {
+    if (!graph) return ids;
+    for (const member of graph.members ?? []) {
       if (member.kind === "variable" || member.kind === "function" || member.kind === "dispatcher") ids.add(member.id);
-      else if (
-        member.kind === "event" &&
-        graph?.nodes.some((node) => node.id === member.id && node.type === "flow.event.custom")
-      ) {
-        ids.add(member.id);
-      }
+    }
+    // Every locally declared custom event, with or without a member (Add Node places none).
+    for (const node of graph.nodes) {
+      if (canRenameCustomEvent(graph, node.id)) ids.add(node.id);
     }
     return ids;
   }, [graph]);
+  // Rename Event and Add Node's new event open the row's inline rename here,
+  // once the row exists, with the Events section expanded.
+  useEffect(() => {
+    if (!renameRequestId || !renamableIds.has(renameRequestId)) return;
+    setCollapsed((current) => {
+      if (!current.has("events")) return current;
+      const next = new Set(current);
+      next.delete("events");
+      return next;
+    });
+    setRenamingId(renameRequestId);
+    onRenameRequestHandled?.();
+  }, [onRenameRequestHandled, renamableIds, renameRequestId]);
   const namesOfKind = (kind: GraphClassMemberKind) =>
     members.filter((member) => member.kind === kind).map((member) => member.name);
   const startRename = (id: string) => {
@@ -586,6 +605,12 @@ function ClassMembersView({
   const finishRename = (id: string, name: string | null) => {
     setRenamingId(null);
     if (!graph || !name) return;
+    // An event row is its node: the rename reaches its member and this Class's calls.
+    if (graph.nodes.some((node) => node.id === id && node.type === "flow.event.custom")) {
+      const next = renameCustomEvent(graph, id, name, classId);
+      if (next !== graph) onGraphChange(next);
+      return;
+    }
     const member = (graph.members ?? []).find((entry) => entry.id === id);
     if (!member) return;
     const taken = members.some(
@@ -1373,6 +1398,8 @@ export function MyClassPanel(props: MyClassPanelProps) {
     setSelectedNodeIds,
     activeFunctionId,
     setActiveFunctionId,
+    eventRenameRequest,
+    clearEventRenameRequest,
   } = useGraphEditing();
   const selectedId = selectedMemberId ?? selectedNodeIds[0] ?? null;
 
@@ -1460,6 +1487,8 @@ export function MyClassPanel(props: MyClassPanelProps) {
         membersOptions={membersOptions}
         onGraphChange={persistGraph}
         onFocusEventNode={focusEvent}
+        renameRequestId={eventRenameRequest}
+        onRenameRequestHandled={clearEventRenameRequest}
         onOpenInherited={(member) => {
           const from = member.inheritedFrom;
           if (!from || isLockedEngineClassId(from)) return;
