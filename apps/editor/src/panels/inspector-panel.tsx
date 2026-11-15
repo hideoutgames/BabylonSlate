@@ -638,6 +638,9 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         commandRowIds={commandRowIds}
         setCommandRowIds={setCommandRowIds}
         delegateSignatures={delegateSignatures}
+        animClipGraph={poseState && parsedAnim
+          ? { dimension: doc?.ref.kind === "anim-graph-2d" ? "2d" : "3d", skeletonGuid: parsedAnim.skeletonGuid }
+          : null}
       />
     </PanelFrame>
   );

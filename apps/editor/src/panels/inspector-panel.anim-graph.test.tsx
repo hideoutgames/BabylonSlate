@@ -37,6 +37,21 @@ const store = vi.hoisted(() => {
   };
 });
 
+/** Animations on two Skeletons, a Blend Space on the graph's and 2D assets, which a 3D graph's clip rows tell apart. */
+const registry = vi.hoisted(() => {
+  const assets = [
+    { path: "assets/Walk.hasset", header: { guid: "walk", name: "Hero_Walk", type: "Animation", payload: { clipName: "Walk", skeletonGuid: "rig" } } },
+    { path: "assets/Ogre.hasset", header: { guid: "ogre-walk", name: "Ogre_Walk", type: "Animation", payload: { clipName: "Walk", skeletonGuid: "ogre-rig" } } },
+    { path: "assets/Loose.hasset", header: { guid: "loose", name: "Loose_Wave", type: "Animation", payload: { clipName: "Wave", skeletonGuid: null } } },
+    { path: "assets/Robot.hasset", header: { guid: "robot", name: "Robot_Walk", type: "SpriteAnimation", payload: {} } },
+  ];
+  return {
+    list: () => assets,
+    getByPath: (path: string) => assets.find((asset) => asset.path === path),
+    getByGuid: (guid: string) => assets.find((asset) => asset.header.guid === guid),
+  };
+});
+
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: DOC_ID }),
 }));
@@ -54,7 +69,7 @@ vi.mock("../context/document-context", async () => {
       activeDocumentId: DOC_ID,
       applyAssetDocumentChange: store.applyAssetDocumentChange,
       projectDocument: { settings: {} },
-      assetRegistry: { list: () => [], getByPath: () => undefined },
+      assetRegistry: registry,
     };
   });
 });
@@ -78,6 +93,7 @@ function SelectionControls() {
     <button onClick={() => navigate({ kind: "state", stateId: "idle" })}>Open Idle Graph</button>
     <button onClick={() => setSelectedNodeIds(["add"])}>Select Add</button>
     <button onClick={() => setSelectedNodeIds(["other"])}>Select Other</button>
+    <button onClick={() => setSelectedNodeIds(["player"])}>Select Player</button>
   </>;
 }
 
@@ -190,5 +206,21 @@ describe("Animation Object Inspector", () => {
     const committed = committedDocument();
     expect(committed.stateMachine.states[0]!.stateGraph.nodes.find((node) => node.id === "add")?.data["default:a"]).toBe(9);
     expect(committed.stateMachine.transitions).toEqual(doc.stateMachine.transitions);
+  });
+
+  it("offers a state's Sequence Player only the Animations on the graph's Skeleton", async () => {
+    const doc = createDefaultAnimGraph("Locomotion", { skeletonGuid: "rig" });
+    renderInspector(doc);
+    fireEvent.click(screen.getByText("Show Graph"));
+    fireEvent.click(screen.getByText("Open Idle Graph"));
+    fireEvent.click(screen.getByText("Select Player"));
+    fireEvent.click(screen.getByTestId("property-animPoseClip"));
+    expect(await screen.findByTestId("search-item-walk")).toBeTruthy();
+    // Another Skeleton's Animation, one with no Skeleton and a Sprite Animation cannot play in this graph.
+    expect(screen.queryByTestId("search-item-ogre-walk")).toBeNull();
+    expect(screen.queryByTestId("search-item-loose")).toBeNull();
+    expect(screen.queryByTestId("search-item-robot")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-walk"));
+    expect(committedDocument().stateMachine.states[0]!.stateGraph.nodes.find((node) => node.id === "player")?.data.assetGuid).toBe("walk");
   });
 });

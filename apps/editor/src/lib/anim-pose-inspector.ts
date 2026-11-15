@@ -1,6 +1,7 @@
 import type { PropertyRow } from "@haptic/editor-kit";
 import { assetRowIdentity } from "@haptic/editor-kit";
 import {
+  type AnimGraphDimension,
   ANIM_FRAME_SELECT_BY_INT_TYPE,
   ANIM_POSE_BLEND_BY_BOOL_TYPE,
   ANIM_POSE_BLEND_BY_INT_TYPE,
@@ -10,10 +11,33 @@ import {
   isPoseTimeSourceType,
   isPosePlayerType,
 } from "@haptic/anim-graph";
+import { normalizeAnimationPayload, normalizeBlendSpacePayload } from "@haptic/assets";
 import { ANIM_POSE_MAX_INPUTS, animPoseInputCount } from "@haptic/scripting-nodes";
 
 /** The asset pick a clip node's Animation row opens; the pick writes the node's clip, not a pin default. */
 export const ANIM_POSE_CLIP_PICK = "__animClip";
+
+/** The Animation Graph a clip pick is for: what decides which assets it can play. */
+export type AnimClipPickGraph = { dimension: AnimGraphDimension; skeletonGuid: string | null };
+
+/**
+ * Whether `asset` can play in `graph`, by the rule validation applies (`anim.clipKind`, `anim.clipSkeleton`): a 3D
+ * graph plays Animations and Blend Spaces on its own Skeleton (no Skeleton matches assets with none), a 2D graph
+ * Sprite Animations and Sprite Blend Spaces.
+ */
+export function animGraphPlaysAsset(asset: { type: string; payload?: unknown }, graph: AnimClipPickGraph): boolean {
+  switch (asset.type) {
+    case "Animation":
+      return graph.dimension === "3d" && normalizeAnimationPayload(asset.payload ?? {}).skeletonGuid === graph.skeletonGuid;
+    case "BlendSpace":
+      return graph.dimension === "3d" && normalizeBlendSpacePayload(asset.payload ?? {}).skeletonGuid === graph.skeletonGuid;
+    case "SpriteAnimation":
+    case "SpriteBlendSpace":
+      return graph.dimension === "2d";
+    default:
+      return false;
+  }
+}
 
 /** The node data a picked clip or Blend Space writes: its asset, with what the catalog fills in again cleared. */
 export function animPoseClipPatch(guid: string | null): Record<string, unknown> {

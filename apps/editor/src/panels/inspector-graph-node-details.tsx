@@ -53,6 +53,7 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { timelineProxyNodeTarget, timelineScriptAssets } from "../lib/timeline-script-catalog";
+import { ANIM_POSE_CLIP_PICK, animGraphPlaysAsset, type AnimClipPickGraph } from "../lib/anim-pose-inspector";
 import {
   committedPinRowIds,
   memberPinsFromRows,
@@ -108,6 +109,8 @@ export interface GraphNodeDetailsProps {
   setCommandRowIds: Dispatch<SetStateAction<CommandRowIds | null>>;
   /** Event Dispatchers a Delegate type can take its signature from. */
   delegateSignatures?: readonly DelegateSignatureEntry[];
+  /** In an Animation Graph's state graph: the graph, so a clip row offers only the assets it can play. */
+  animClipGraph?: AnimClipPickGraph | null;
 }
 
 /** The selected graph node's property rows, pin defaults and pin pickers. */
@@ -135,6 +138,7 @@ export function GraphNodeDetails({
   commandRowIds,
   setCommandRowIds,
   delegateSignatures = [],
+  animClipGraph = null,
 }: GraphNodeDetailsProps) {
   const { dataAssets, objectClassEntries, typeAssets } = catalogs;
   const { assetRegistry, registryEpoch } = useRegistryState();
@@ -497,6 +501,7 @@ export function GraphNodeDetails({
         setAssetPinPick={setAssetPinPick}
         pickClass={nodeRows.pickClass}
         pickAsset={nodeRows.pickAsset}
+        animClipGraph={animClipGraph}
       />
     </>
   );
@@ -524,6 +529,7 @@ function GraphPinPickers({
   setAssetPinPick,
   pickClass,
   pickAsset,
+  animClipGraph,
 }: {
   node: SerializedGraph["nodes"][number];
   catalogs: InspectorCatalogs;
@@ -533,6 +539,7 @@ function GraphPinPickers({
   setAssetPinPick: Dispatch<SetStateAction<AssetPinPick | null>>;
   pickClass: (pinId: string, classId: string) => void;
   pickAsset: (pinId: string, guid: string | null) => void;
+  animClipGraph: AnimClipPickGraph | null;
 }) {
   const { editorGraph, pickerAssets } = catalogs;
   const { assetRegistry } = useRegistryState();
@@ -575,7 +582,12 @@ function GraphPinPickers({
                 assetRegistry?.list() ?? [],
                 pickerMaterialDocuments,
                 { nodeType: node.type },
-              )
+              ).filter((entry) => {
+                // A clip row offers only what its Animation Graph can play: on its Skeleton, or 2D frames.
+                if (assetPinPick.pinId !== ANIM_POSE_CLIP_PICK || !animClipGraph) return true;
+                const asset = assetRegistry?.getByGuid(entry.guid);
+                return asset ? animGraphPlaysAsset(asset.header, animClipGraph) : false;
+              })
             : []
         }
         allowedTypes={assetPinPick?.allowedTypes}

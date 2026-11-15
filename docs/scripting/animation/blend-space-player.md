@@ -22,7 +22,7 @@ Plays a [Blend Space](../../assets/blend-space.md): the Animations around X and 
 
 ## Notes
 
-- Pick its **Blend Space** in the **Inspector**. It must be on the graph's Skeleton.
+- Pick its **Blend Space** in the **Inspector**. The picker lists only Blend Spaces on the graph's Skeleton.
 - The samples nearest X and Y play together, weighted by how close each is. Inputs past an axis's range clamp to it, or wrap round on an axis with **Wrap**; an axis's **Smoothing Time** eases changes in the input.
 - Every sample plays at the same point of its cycle, and one cycle lasts the samples' lengths averaged by their weights, so walking and running feet stay in step as the blend changes.
 - It always loops. As the first player reached from **Output Pose**, it sets the state's time and length, which transition rules read.

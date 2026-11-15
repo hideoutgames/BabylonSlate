@@ -20,5 +20,5 @@ Holds an Animation at a normalized time.
 
 ## Notes
 
-- Pick its **Animation** in the **Inspector**.
+- Pick its **Animation** in the **Inspector**. The picker lists only Animations on the graph's Skeleton.
 - It does not advance on its own. Wire a value into **Normalized Time** to scrub the clip, such as a door opening with a variable.

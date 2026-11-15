@@ -63,7 +63,7 @@ import {
 } from "@haptic/graph-ui";
 import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type BreakpointLocation } from "@haptic/bridge";
 import { parseDocumentId, type SerializedGraph } from "@haptic/core";
-import { normalizeAnimationPayload, type IndexedAsset } from "@haptic/assets";
+import type { IndexedAsset } from "@haptic/assets";
 import type { Diagnostic } from "@haptic/scripting";
 import {
   useActiveDocumentState,
@@ -78,7 +78,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { useAnimStateMachineRunTrace } from "../context/graph-debug-context";
 import { useOptionalAnimGraphPreview } from "../context/anim-graph-preview-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
-import { animSyncGroupRow } from "../lib/anim-pose-inspector";
+import { animGraphPlaysAsset, animSyncGroupRow } from "../lib/anim-pose-inspector";
 import { GraphPanel } from "../panels/graph-panel";
 import { InspectorPanel } from "../panels/inspector-panel";
 import { useValidation } from "../context/validation-context";
@@ -1191,10 +1191,9 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   const registryAssets = assetRegistry?.list() ?? [];
   // A 3D graph's pickers offer only Animations on its Skeleton; a 2D graph's only Sprite Animations.
   const clipAssets = registryAssets
-    .filter((asset) => dimension === "2d"
-      ? asset.header.type === "SpriteAnimation"
-      : asset.header.type === "Animation" &&
-        normalizeAnimationPayload(asset.header.payload ?? {}).skeletonGuid === doc.skeletonGuid)
+    .filter((asset) =>
+      asset.header.type === (dimension === "2d" ? "SpriteAnimation" : "Animation") &&
+      animGraphPlaysAsset(asset.header, { dimension, skeletonGuid: doc.skeletonGuid }))
     .map(pickerEntry);
   const skeletonAssets = registryAssets.filter((asset) => asset.header.type === "Skeleton").map(pickerEntry);
   const skeletonAsset = doc.skeletonGuid
