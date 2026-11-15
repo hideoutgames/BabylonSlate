@@ -55,7 +55,6 @@
     --color-node-pure: var(--node-pure);
     --color-node-flow: var(--node-flow);
     --color-node-variable: var(--node-variable);
-    --color-node-variable-set: var(--node-variable-set);
     --color-node-latent: var(--node-latent);
     --color-node-debug: var(--node-debug);
     --color-node-bt-root: var(--node-bt-root);
@@ -212,11 +211,10 @@
     --pin-frame: oklch(0.36 0.04 300);
     --node-event: oklch(0.48 0.16 25);
     --node-call-parent: oklch(0.42 0.09 55);
-    --node-function: oklch(0.42 0.12 250);
+    --node-function: oklch(0.42 0.15 266);
     --node-pure: oklch(0.42 0.12 155);
     --node-flow: oklch(0.40 0.02 250);
     --node-variable: oklch(0.45 0.10 210);
-    --node-variable-set: oklch(0.42 0.14 20);
     --node-latent: oklch(0.55 0.14 80);
     --node-debug: oklch(0.40 0.04 80);
     --node-bt-root: oklch(0.42 0.10 25);
@@ -343,11 +341,10 @@
     --pin-frame: oklch(0.92 0.04 300);
     --node-event: oklch(0.48 0.16 25);
     --node-call-parent: oklch(0.42 0.09 55);
-    --node-function: oklch(0.42 0.12 250);
+    --node-function: oklch(0.42 0.15 266);
     --node-pure: oklch(0.42 0.12 155);
     --node-flow: oklch(0.40 0.02 250);
     --node-variable: oklch(0.45 0.10 210);
-    --node-variable-set: oklch(0.42 0.14 20);
     --node-debug: oklch(0.40 0.04 80);
     --node-bt-root: oklch(0.42 0.10 25);
     --node-bt-composite: oklch(0.40 0.06 250);

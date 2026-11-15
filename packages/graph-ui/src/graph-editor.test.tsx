@@ -3636,10 +3636,9 @@ describe("GraphEditor", () => {
     const { container } = render(<GraphEditor initialGraph={graph} />);
     const header = (id: string) => container.querySelector(`[data-id="${id}"] [data-header-pin]`);
 
-    // In the title bar, not a pin row, and in place of the inherited event's Plug Zap marker.
+    // In the title bar, not a pin row.
     expect(header("loose")?.closest("[data-pin-row]")).toBeNull();
     expect(container.querySelector('[data-id="loose"] [data-pin-row] [data-pin-id="OutputDelegate"]')).toBeNull();
-    expect(container.querySelector('[data-id="loose"] [aria-label="Event"]')).toBeNull();
     const loose = header("loose")?.querySelector('[data-pin-shape="square"]') as HTMLElement;
     // Unconnected: dark red inside the light-red pin colour; connected swaps them.
     expect(loose.getAttribute("data-pin-connected")).toBe("false");
@@ -3650,7 +3649,7 @@ describe("GraphEditor", () => {
     expect(wired.style.background).toBe("var(--pin-delegate)");
     expect(wired.style.borderColor).toContain("color-mix");
     expect(wired.classList.contains("border-card")).toBe(false);
-    // Bind's Event input is the same square, and dispatcher nodes carry their marker.
+    // Bind's Event input is the same square, and dispatcher nodes carry their kind icon.
     expect(container.querySelector('[data-id="bind"] [data-pin-type="delegate"] [data-pin-shape="square"]')).not.toBeNull();
     expect(container.querySelector('[data-id="bind"] [aria-label="Event Dispatcher"]')).not.toBeNull();
   });
@@ -5279,26 +5278,46 @@ describe("GraphEditor", () => {
     expect(rename).toHaveBeenCalledWith("event");
   });
 
-  it("shows the event corner marker only on native and inherited events", () => {
-    const { getAllByLabelText } = render(
+  it("shows each node's kind icon before its title instead of corner markers", () => {
+    const node = (id: string, type: string, y: number, data: Record<string, unknown>) => ({
+      id,
+      type,
+      position: { x: 0, y },
+      data: { __pins: [], ...data },
+    });
+    const { container } = render(
       <GraphEditor
         initialGraph={{
           nodes: [
-            { id: "native", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: { title: "Event Begin Play", __pins: [] } },
-            { id: "custom", type: "flow.event.custom", position: { x: 0, y: 200 }, data: { title: "Event On Hit", __pins: [] } },
-            {
-              id: "inherited",
-              type: "flow.event.custom",
-              position: { x: 0, y: 400 },
-              data: { title: "Event On Foo", eventQualifier: "Inherited", __pins: [] },
-            },
+            node("native", "flow.event.beginPlay", 0, { title: "Event Begin Play" }),
+            node("custom", "flow.event.custom", 200, { title: "Event On Hit" }),
+            node("delay", "timers.delay", 400, { title: "Delay", __category: "timers", __latent: true }),
+            node("async", "debug.executeJavaScript", 600, { title: "Execute JavaScript", __category: "debug", async: true }),
+            node("iface", "interface.call", 800, { title: "Call Interface Hit", __category: "interface" }),
+            node("entry", "flow.function.input", 1000, { title: "Fire", __category: "flow", __pure: true, __interface: true }),
+            node("call", "flow.event.call", 1200, { title: "Call Jump", __category: "flow" }),
+            node("add", "math.add", 1400, { title: "Add", __category: "math", __pure: true }),
           ],
           edges: [],
         }}
       />,
     );
-    const owners = getAllByLabelText("Event").map((marker) => marker.closest(".react-flow__node")?.getAttribute("data-id"));
-    expect(owners.sort()).toEqual(["inherited", "native"]);
+    const titleIcon = (id: string) =>
+      container.querySelector(`[data-id="${id}"] [data-node-title] > [role="img"]:first-child`)?.getAttribute("aria-label");
+    expect(titleIcon("native")).toBe("Event");
+    expect(titleIcon("custom")).toBe("Event");
+    expect(titleIcon("delay")).toBe("Latent Function");
+    expect(titleIcon("async")).toBe("Latent Function");
+    expect(titleIcon("iface")).toBe("Interface Function");
+    expect(titleIcon("entry")).toBe("Interface Function");
+    expect(titleIcon("call")).toBe("Call Event");
+    expect(titleIcon("add")).toBe("Pure Function");
+    // An async Execute JavaScript waits like a latent call but keeps the Debug header colour.
+    expect(container.querySelector('[data-id="async"] [data-node-role]')?.getAttribute("data-node-role")).toBe("debug");
+    // The title-bar icon is the only one: no corner marker repeats it.
+    for (const id of ["native", "delay", "iface"]) {
+      expect(container.querySelectorAll(`[data-id="${id}"] [role="img"]`)).toHaveLength(1);
+    }
   });
 
   it("opens a long-press menu on a behaviour-tree node", async () => {
