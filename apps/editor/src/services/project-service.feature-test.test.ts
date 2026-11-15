@@ -410,6 +410,14 @@ describe("FeatureTest starter", () => {
   const HEARD: Partial<Record<(typeof FEATURE_TEST_CHECK_SCENES)[number]["name"], string[]>> = {
     main: ["Feature Test scene script heard On Intro Line (Intro) through FT_Timeline", "FT_HUD script plays its own FT_HudPulse"],
     FT_World: ["FT_TimelineListener heard On Door Open (Door Loop)", "FT_SwingDoor heard On Swing Open (FT_DoorSwing)"],
+    // Animation Events reach each graph's Animation Object: clip events, a window's Begin and End, and state events.
+    FT_Animation: [
+      "FT_AnimAdventurer heard Footstep",
+      "FT_AnimAdventurer heard Stride Begin",
+      "FT_AnimAdventurer heard Stride End",
+      "FT_AnimAdventurer heard Move Started",
+    ],
+    FT_2D: ["FT_2DRobotGraph heard Step", "FT_2DRobotGraph heard Jump Started"],
   };
   for (const scene of FEATURE_TEST_CHECK_SCENES) {
     it(`plays ${scene.name} without session errors or failed asserts`, async () => {

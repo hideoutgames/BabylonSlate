@@ -46,7 +46,7 @@ describe("Animation Event rows in Add Node", () => {
     const offered = rows("object");
     expect(offered.map((node) => node.title)).toEqual(["Event Footstep", "Event Swing"]);
     expect(offered[0]!.defaultData).toMatchObject({ eventName: "Footstep", window: false });
-    expect(offered[1]!.pins.map((pin) => pin.id)).toEqual(["begin", "end"]);
+    expect(offered[1]!.pins?.map((pin) => pin.id)).toEqual(["begin", "end"]);
     expect(rows("rule")).toEqual([]);
     expect(rows(undefined)).toEqual([]);
   });
