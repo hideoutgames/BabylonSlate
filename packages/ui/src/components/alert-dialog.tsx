@@ -12,6 +12,7 @@ const alertDialogContentVariants = cva(
       variant: {
         default: "ring-border data-[size=default]:sm:max-w-sm",
         destructive: "ring-destructive/30 sm:max-w-md",
+        warning: "ring-(color:--warning)/40 sm:max-w-md",
       },
     },
     defaultVariants: {
@@ -115,7 +116,7 @@ function AlertDialogMedia({
     <div
       data-slot="alert-dialog-media"
       className={cn(
-        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 group-data-[variant=destructive]/alert-dialog-content:bg-destructive/10 group-data-[variant=destructive]/alert-dialog-content:text-destructive *:[svg:not([class*='size-'])]:size-6",
+        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 group-data-[variant=destructive]/alert-dialog-content:bg-destructive/10 group-data-[variant=destructive]/alert-dialog-content:text-destructive group-data-[variant=warning]/alert-dialog-content:bg-(--warning)/10 group-data-[variant=warning]/alert-dialog-content:text-(--warning) *:[svg:not([class*='size-'])]:size-6",
         className
       )}
       {...props}
@@ -131,7 +132,7 @@ function AlertDialogTitle({
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
       className={cn(
-        "font-heading text-base font-medium sm:group-data-[size=default]/alert-dialog-content:group-has-data-[slot=alert-dialog-media]/alert-dialog-content:col-start-2 group-data-[variant=destructive]/alert-dialog-content:text-destructive",
+        "font-heading text-base font-medium sm:group-data-[size=default]/alert-dialog-content:group-has-data-[slot=alert-dialog-media]/alert-dialog-content:col-start-2 group-data-[variant=destructive]/alert-dialog-content:text-destructive group-data-[variant=warning]/alert-dialog-content:text-(--warning)",
         className
       )}
       {...props}
