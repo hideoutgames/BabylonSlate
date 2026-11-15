@@ -50,7 +50,12 @@ export interface CreateRepositoryInput {
  */
 export interface HostApi {
   repositories(): Promise<HostApiResult<HostRepository[]>>;
-  /** The signed-in user first, then their organizations (GitLab: groups they may create projects in). */
+  /**
+   * The signed-in user first, then their organizations (GitLab: groups they
+   * may create projects in). Only reading the user can fail: when the host
+   * refuses the organization listing (GitHub does for an OAuth token without
+   * `read:org` or `user`), the user is the only owner.
+   */
   owners(): Promise<HostApiResult<HostOwner[]>>;
   /** Creates an empty repository (no README, so the first push sets its branch). */
   createRepository(input: CreateRepositoryInput): Promise<HostApiResult<HostRepository>>;
@@ -187,8 +192,7 @@ function gitHubApi(source: CredentialSource, http: HttpClient): HostApi {
         const name = str(entry, "login");
         return name ? { name, kind: "organization" as const, id: "" } : null;
       }, MAX_LIST_PAGES);
-      if (!isOk(organizations)) return organizations;
-      return ok([{ name: login, kind: "user", id: "" }, ...organizations.value]);
+      return ok([{ name: login, kind: "user", id: "" }, ...(isOk(organizations) ? organizations.value : [])]);
     },
     async createRepository({ owner, name, private: isPrivate }) {
       const url = owner.kind === "user"
@@ -246,8 +250,7 @@ function gitLabApi(credential: HostCredential, source: CredentialSource, http: H
         const id = typeof entry.id === "number" || typeof entry.id === "string" ? String(entry.id) : "";
         return name && id ? { name, kind: "organization" as const, id } : null;
       }, MAX_LIST_PAGES);
-      if (!isOk(groups)) return groups;
-      return ok([{ name: username, kind: "user", id: "" }, ...groups.value]);
+      return ok([{ name: username, kind: "user", id: "" }, ...(isOk(groups) ? groups.value : [])]);
     },
     async createRepository({ owner, name, private: isPrivate }) {
       const created = objectOf(await get(`${base}/projects`, {

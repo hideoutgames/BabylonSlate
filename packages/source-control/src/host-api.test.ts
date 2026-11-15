@@ -139,6 +139,28 @@ describe("host APIs", () => {
     expect(host.requests.find((request) => request.url.includes("/groups"))?.url).toBe("https://gitlab.com/api/v4/groups?min_access_level=30&per_page=100&page=1");
   });
 
+  it("offers the signed-in user alone when the host refuses to list their organizations or groups", async () => {
+    for (const credential of [GITHUB, GITLAB]) {
+      const host = new FakeGitHost();
+      host.organizationsRefused = true;
+      const owners = await hostApiFor(credential, host.http)!.owners();
+      expect(isOk(owners) && owners.value).toEqual([{ name: "test-user", kind: "user", id: "" }]);
+      // The listing was asked for and refused, not skipped.
+      expect(host.requests.map((request) => new URL(request.url).pathname)).toEqual(
+        credential === GITHUB ? ["/user", "/user/orgs"] : ["/api/v4/user", "/api/v4/groups"],
+      );
+    }
+  });
+
+  it("fails the owners when the signed-in user cannot be read", async () => {
+    for (const credential of [GITHUB, GITLAB]) {
+      const host = new FakeGitHost();
+      host.refusedTokens.add(credential.token);
+      const owners = await hostApiFor(credential, host.http)!.owners();
+      expect(isErr(owners) && owners.error).toEqual({ kind: "unauthorized", message: "Bad credentials" });
+    }
+  });
+
   it("reads GitLab's field errors", async () => {
     const api = hostApiFor(GITLAB, async () => ({ status: 400, bodyText: JSON.stringify({ message: { path: ["has already been taken"] } }) }))!;
     const result = await api.createRepository({ owner: { name: "me", kind: "user", id: "" }, name: "taken", private: true });

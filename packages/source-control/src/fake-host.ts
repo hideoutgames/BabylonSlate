@@ -42,6 +42,11 @@ export class FakeGitHost {
   readonly publicRepositories = new Set<string>();
   /** The account's organizations (GitHub) or groups (GitLab). */
   organizations = ["haptic-studio"];
+  /**
+   * Listing organizations or groups answers 403, as GitHub does for an OAuth
+   * token without the `read:org` or `user` scope (Haptic's sign-in asks for `repo`).
+   */
+  organizationsRefused = false;
   branches = ["main", "develop"];
   /** Remote branch content: path → Git blob id, for every repository and branch. */
   readonly remoteBlobs = new Map<string, string>();
@@ -90,6 +95,9 @@ export class FakeGitHost {
     const gitlab = (name: string) => ({ path_with_namespace: name, default_branch: "main", visibility: this.publicRepositories.has(name) ? "public" : "private", last_activity_at: "2026-11-01T10:00:00Z" });
     if (route === "GET https://api.github.com/user/repos") return firstPage(this.repositories.map(github));
     if (route === "GET https://gitlab.com/api/v4/projects") return firstPage(this.repositories.map(gitlab));
+    if (this.organizationsRefused && (route === "GET https://api.github.com/user/orgs" || route === "GET https://gitlab.com/api/v4/groups")) {
+      return json(403, { message: "You need at least read:org scope or user scope to list your organizations." });
+    }
     if (route === "GET https://api.github.com/user/orgs") return firstPage(this.organizations.map((login) => ({ login })));
     if (route === "GET https://gitlab.com/api/v4/groups") {
       return firstPage(this.organizations.map((path, index) => ({ full_path: path, id: index + 100 })));

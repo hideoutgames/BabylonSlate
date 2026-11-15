@@ -60,7 +60,7 @@ To put a project that has no repository yet on GitHub or GitLab, open **Project 
 | Field | Description |
 | --- | --- |
 | Host | **GitHub** or **GitLab**. You need to be signed in to it. |
-| Owner | Your account, or an organization (on GitLab, a group) you can create repositories in. |
+| Owner | Your account, or an organization (on GitLab, a group) you can create repositories in. Organizations are listed only when the host lets Haptic read them; otherwise only your account is offered. |
 | Repository Name | The new repository's name. |
 | Visibility | **Private** or **Public**. |
 

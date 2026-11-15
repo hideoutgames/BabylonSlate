@@ -60,6 +60,18 @@ describe("Publish Project", () => {
     expect(state.publishProject).toHaveBeenCalledWith({ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" });
   });
 
+  it("publishes under the signed-in user when the host will not list their organizations", async () => {
+    host.organizationsRefused = true;
+    render(<PublishProjectDialog open onOpenChange={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("publish-summary").textContent).toContain("Creates github.com/test-user/forest-run"));
+    expect(screen.queryByTestId("publish-error")).toBeNull();
+    expect(screen.queryByTestId("publish-reason")).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("publish-submit"));
+    });
+    await waitFor(() => expect(state.publishProject).toHaveBeenCalledWith({ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" }));
+  });
+
   it("names why Publish waits: unsaved documents, or no account for the host", async () => {
     state.dirty = [{ id: "scene:a", ref: { kind: "scene", path: "assets/a.scene.hasset", label: "A" }, content: {}, layout: null, dirty: true }];
     render(<PublishProjectDialog open onOpenChange={() => {}} />);
