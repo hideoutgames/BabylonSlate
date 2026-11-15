@@ -17,7 +17,7 @@ const speedAxis = { name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSe
 const directionAxis = { name: "Direction", min: -180, max: 180, gridDivisions: 8, smoothingSeconds: 0, wrap: true };
 
 function twoAxes(): BlendSpacePayload {
-  return { skeletonGuid: "rig", previewModelGuid: null, axes: [speedAxis, directionAxis], samples: [] };
+  return { skeletonGuid: "rig", previewModelGuid: null, axes: [speedAxis, directionAxis], samples: [], eventMode: "highestWeight" };
 }
 
 describe("snapToBlendSpaceGrid", () => {

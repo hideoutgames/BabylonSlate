@@ -419,4 +419,22 @@ describe("SpriteAnimation editor", () => {
     expect(next.frames[1]).toMatchObject({ durationMs: 40 });
     expect(next.frames[1]?.durationMsOverride).toBeUndefined();
   });
+
+  it("adds an Animation Event to the selected frame, which fires as the frame starts, and removes it", () => {
+    const payload = createDefaultSpriteAnimationPayload();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SpriteAnimationDetails payload={payload as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    // A frame event has no time of its own: no Time or Duration rows.
+    fireEvent.click(screen.getByTestId("sprite-animation-frame-events-add"));
+    const added = onChange.mock.calls.at(-1)![0] as { frames: Array<{ events?: unknown[] }> };
+    expect(added.frames[0]!.events).toEqual([{ id: "event-1", name: "Event", triggerWeight: 0.5, action: null }]);
+    rerender(<SpriteAnimationDetails payload={added as unknown as Record<string, unknown>} onChange={onChange} />);
+    expect(screen.queryByTestId("property-event-1-time")).toBeNull();
+    fireEvent.change(screen.getByTestId("property-event-1-name"), { target: { value: "Step" } });
+    expect((onChange.mock.calls.at(-1)![0] as { frames: Array<{ events?: Array<{ name: string }> }> }).frames[0]!.events![0]!.name).toBe("Step");
+    fireEvent.click(screen.getByTestId("sprite-animation-frame-events-remove-event-1"));
+    expect((onChange.mock.calls.at(-1)![0] as { frames: Array<{ events?: unknown }> }).frames[0]!.events).toBeUndefined();
+  });
 });

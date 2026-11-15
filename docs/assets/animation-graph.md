@@ -37,7 +37,7 @@ The panels show:
 
 **Animation Object**
 
-The **Animation Object** window holds a script graph that runs for each Animation Graph component using the graph. It starts with [Event Initialize Animation](../scripting/animation/event-initialize-animation.md) and [Event Update Animation](../scripting/animation/event-update-animation.md). Use it to set the graph's variables.
+The **Animation Object** window holds a script graph that runs for each Animation Graph component using the graph. It starts with [Event Initialize Animation](../scripting/animation/event-initialize-animation.md) and [Event Update Animation](../scripting/animation/event-update-animation.md). Use it to set the graph's variables. Its **Add Node** also lists an **Event** node for each [Animation Event](#animation-events) the graph can fire, such as **Event Footstep**.
 
 **Preview**
 
@@ -70,6 +70,7 @@ The bar ends with the playing state and its time. A 3D graph plays on a floor gr
 | Loop | Whether the clip repeats. |
 | Sync Group | Looping players with the same name play at the same point of their cycles. See [Sync Groups](#sync-groups). |
 | Open State Graph | Opens the state's graph in its own tab beside the Graph, or brings its open tab forward. |
+| Enter Event, Exit Event, Fully Blended Event | Animation Events the state fires itself: as it starts, as it is left, and once it plays alone after a blend (at once with no blend). Empty fires none. See [Animation Events](#animation-events). |
 
 **Animation**, **Sprite Animation**, **Speed** and **Loop** edit the state's player while its graph is one player wired to the output. Once you add other nodes, edit the graph's nodes instead; the state's card then shows **State Graph**. A state's time, length and looping, which its transition rules read, follow the player reached from the output through each node's first pose input.
 
@@ -104,6 +105,16 @@ Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule and state 
 ## Sync Groups
 
 Give looping players the same **Sync Group** name, in the state's or the player's **Inspector**, to keep them in step: a Sequence Player, a Sprite Animation Player or a Blend Space Player. Every member plays at the group's point of its cycle, and the most heavily weighted member sets the pace, so a 1 s walk and a 0.5 s run stay in step. A state entered with a blend picks up the group's point instead of starting over, so Walk → Run keeps the stride. Players that do not loop ignore their group.
+
+## Animation events
+
+[Animations](animation.md#animation-events) and [Sprite Animation frames](sprite-animation.md#animation-events) carry named Animation Events, and states can name their own (**Enter Event**, **Exit Event**, **Fully Blended Event**). The graph fires an event when a clip it plays passes the event's time: once each time the clip passes it, including when a looping clip wraps round. A window fires its begin and its end; its end also fires when the clip stops playing first, so the two always pair.
+
+Each event runs the Animation Object's [Animation Event](../scripting/animation/animation-event.md) node of the same name, and only the graph that fired it runs it. An event's **Action** (Play Sound, Spawn Particle System) runs first, with no script needed.
+
+- A clip fires only while it plays at or above the event's **Trigger Weight**, so a clip fading out of a blend does not repeat a footstep.
+- A [Blend Space](blend-space.md) fires the events of its heaviest sample by default; its **Event Mode** can fire every sample's instead, or none. A [Sprite Blend Space](sprite-blend-space.md) fires the events of the sample playing.
+- In one update, events fire in the order they happened: the state being left (its clips' events, then its Exit Event), then the state entered (its Enter Event, then its clips' events), then its Fully Blended Event.
 
 ## Watch the graph run
 

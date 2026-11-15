@@ -14,6 +14,8 @@ import {
 import { PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
 import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import { variableTypeFromPinType, type PinType } from "@haptic/scripting";
+import { parseAnimGraphDocument } from "@haptic/anim-graph";
+import { animGraphEventEntries } from "../lib/anim-graph-events";
 import { nextCopyName } from "@haptic/assets";
 import {
   Empty,
@@ -530,6 +532,17 @@ export function GraphPanel(
     timelineAssets,
   ]);
 
+  // An Animation Object offers an event node for each Animation Event its graph can fire.
+  const animKind = doc?.ref.kind;
+  const animContent = isAnimGraphDocumentKind(animKind) ? doc?.content : undefined;
+  const animEvents = useMemo(() => {
+    void registryEpoch;
+    if (!animContent || !isAnimGraphDocumentKind(animKind)) return undefined;
+    const dimension = animKind === "anim-graph-2d" ? "2d" : "3d";
+    const parsed = parseAnimGraphDocument(animContent, dimension);
+    return parsed ? animGraphEventEntries(parsed, dimension, assetRegistry?.list() ?? []) : undefined;
+  }, [animContent, animKind, assetRegistry, registryEpoch]);
+
   const paletteInput = {
     saveGameDefinition,
     inputAssets,
@@ -554,6 +567,7 @@ export function GraphPanel(
     timelineAssets,
     animationGraphHost:
       isAnimGraphDocumentKind(doc?.ref.kind) ? ("object" as const) : undefined,
+    animEvents,
   };
   const paletteInputRef = useRef(paletteInput);
   paletteInputRef.current = paletteInput;

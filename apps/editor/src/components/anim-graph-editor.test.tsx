@@ -856,6 +856,14 @@ describe("AnimGraphEditor", () => {
     expect(dock.opened[0]!.setActive).toHaveBeenCalledTimes(2);
   });
 
+  it("names a state's Enter, Exit and Fully Blended events, and clears one left empty", () => {
+    renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-run"));
+    const events = screen.getByTestId("anim-graph-state-events");
+    fireEvent.change(within(events).getByTestId("property-stateEvent-enter"), { target: { value: "Run Started" } });
+    expect(machineOf(lastCommit()).states.find((row) => row.id === "run")?.events).toEqual({ enter: "Run Started" });
+  });
+
   it("opens on the State Machine with no breadcrumbs and no Name row", () => {
     renderAnimGraph(locoGraph());
     expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();

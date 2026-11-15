@@ -626,16 +626,18 @@ export class ScriptHost {
     this.services.teleportActor?.(actor);
   }
 
+  /** Runs an Animation Graph script's event; `args` reaches its nodes (an Animation Event's name and phase). */
   invokeAnimEvent(
     classId: string,
     event: string,
     self: Actor | null,
     deltaSeconds: number,
     extras: ScriptExtras = {},
+    args: Record<string, unknown> = {},
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
-    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, {}, extras);
+    this.dispatchEvent(loaded, event, self, deltaSeconds, 0, args, extras);
   }
 
   invokeAnimRule(

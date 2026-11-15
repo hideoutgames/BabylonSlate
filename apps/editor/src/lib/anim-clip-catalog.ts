@@ -1,5 +1,8 @@
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
+  animationClipEvents,
+  normalizeAnimationPayload,
+  spriteAnimationClipEvents,
   normalizeBlendSpacePayload,
   normalizeSpriteBlendSpacePayload,
   parseSpriteAnimationPayload,
@@ -71,6 +74,13 @@ export function animClipCatalogFromAssets(
       asset.header.type === "SpriteAnimation" && Array.isArray(payload.frames) && payload.frames.length > 0
         ? payload.frames.length
         : undefined;
+    // The events a player of this clip fires: an Animation's, or a Sprite Animation's frame events at their frames.
+    const events =
+      asset.header.type === "Animation"
+        ? animationClipEvents(normalizeAnimationPayload(payload).events)
+        : asset.header.type === "SpriteAnimation"
+          ? spriteAnimationClipEvents(parseSpriteAnimationPayload(payload))
+          : [];
     return {
       guid: asset.header.guid,
       type: asset.header.type,
@@ -82,12 +92,15 @@ export function animClipCatalogFromAssets(
       ...(frameCount !== undefined ? { frameCount } : {}),
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
+      ...(events.length > 0 ? { events } : {}),
       ...(blendSpace
         ? {
             blendSpace: {
               axes: blendSpace.axes,
               samples: blendSpace.samples,
-              ...("hysteresis" in blendSpace ? { hysteresis: blendSpace.hysteresis, keepTime: blendSpace.keepTime } : {}),
+              ...("hysteresis" in blendSpace
+                ? { hysteresis: blendSpace.hysteresis, keepTime: blendSpace.keepTime }
+                : { eventMode: blendSpace.eventMode }),
             },
           }
         : {}),

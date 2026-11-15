@@ -55,7 +55,7 @@ import {
 import { parseColliderProperties, parseConstraintProperties } from "@haptic/physics";
 import { engineScriptApiFor } from "@haptic/object-model";
 import { classGraph, gChain, gNode, gWire } from "./graph";
-import { playerNode, playerState, poseGraph, stateMachineGraph } from "./anim-pose-graphs";
+import { animationObjectHearing, playerNode, playerState, poseGraph, stateMachineGraph } from "./anim-pose-graphs";
 import {
   actor,
   comp,
@@ -361,9 +361,25 @@ async function buildTorchGraph(ctx: FeatureTestContext): Promise<string> {
  * 1.25×) → Jump (one-shot 300 ms) → Fall (300 ms) → Idle, all on exit time.
  */
 async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): Promise<string> {
+  // Each contact frame of the walk fires Step as it shows (with the one-shot sound when the audio slot is filled).
+  const sound = ctx.assets.audio.oneShot;
+  const walkCycle = robotAnimation(ctx, sprites, WALK_FRAMES, 80, { walk0: 110, walk4: 110 });
+  walkCycle.frames = walkCycle.frames.map((frame, index) =>
+    WALK_FRAMES[index] === "walk0" || WALK_FRAMES[index] === "walk4"
+      ? {
+          ...frame,
+          events: [{
+            id: "step",
+            name: "Step",
+            triggerWeight: 0.5,
+            action: sound ? { kind: "playSound" as const, assetGuid: sound, volume: 0.3 } : null,
+          }],
+        }
+      : frame,
+  );
   const animations = {
     idle: robotAnimation(ctx, sprites, ["idle"], 500),
-    walk: robotAnimation(ctx, sprites, WALK_FRAMES, 80, { walk0: 110, walk4: 110 }),
+    walk: walkCycle,
     jump: robotAnimation(ctx, sprites, ["jump"], 300),
     fall: robotAnimation(ctx, sprites, ["fall"], 300),
   };
@@ -403,6 +419,8 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
   };
   const jump: AnimState = {
     id: "jump", name: "Jump", position: at(2),
+    // A state event: the Animation Object hears Jump Started as Jump begins.
+    events: { enter: "Jump Started" },
     stateGraph: poseGraph("2d", "pick", [
       playerNode("2d", "jump", 60, 40, clip("jump"), { loop: false }),
       playerNode("2d", "fall", 60, 220, clip("fall")),
@@ -432,6 +450,7 @@ async function buildRobotGraph(ctx: FeatureTestContext, sprites: SpriteGuids): P
     ],
     variables: [],
   });
+  graph.animationObject = animationObjectHearing(NAMES.robotGraph, [{ name: "Step" }, { name: "Jump Started" }]);
   return (await ctx.createAsset("AnimationGraph2D", FOLDER, NAMES.robotGraph, { payload: payload(graph) })).guid;
 }
 

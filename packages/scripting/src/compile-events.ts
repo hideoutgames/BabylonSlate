@@ -8,6 +8,14 @@ import type { ScriptEventName } from "./compile-types";
  */
 export const INPUT_EVENT = "onInput";
 
+/**
+ * The event of every Animation Event node: an Animation Graph's Animation Object receives it once per event fired,
+ * with the event's `name` and `phase` (`event`, `begin`, `end`), and each node runs only for its own name.
+ */
+export const ANIM_NOTIFY_EVENT = "onAnimNotify";
+
+export const ANIM_NOTIFY_EVENT_TYPE = "anim.event.notify";
+
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.scalabilityChanged": "onScalabilityChanged",
@@ -71,6 +79,7 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "anim.event.update": "onUpdateAnimation",
   // Input event entries gate internally. They run with the tick but are their own
   // event, so a class's input events never replace a parent's Event Tick.
+  [ANIM_NOTIFY_EVENT_TYPE]: ANIM_NOTIFY_EVENT,
   "input.actionEvent": INPUT_EVENT,
   "input.axisEvent": INPUT_EVENT,
   "input.onAnyKeyPressed": INPUT_EVENT,
@@ -130,6 +139,7 @@ export function localVariableIdent(name: string): string {
  * trace reports their visit inside the gate, not on every tick.
  */
 export const GATED_EVENT_TYPE_IDS: ReadonlySet<string> = new Set([
+  ANIM_NOTIFY_EVENT_TYPE,
   "input.actionEvent",
   "input.axisEvent",
   "input.onAnyKeyPressed",

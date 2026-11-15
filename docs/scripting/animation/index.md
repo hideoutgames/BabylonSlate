@@ -8,6 +8,7 @@ Nodes that only exist in Animation Graphs: in the Animation Object's event graph
 | --- | --- |
 | [Event Initialize Animation](event-initialize-animation.md) | Runs once when an Animation Graph component first starts running this graph. |
 | [Event Update Animation](event-update-animation.md) | Runs every update, before the state machine checks its transitions. |
+| [Animation Event](animation-event.md) | Runs when this graph fires the Animation Event it is named after, such as a footstep. |
 
 ## Rules
 

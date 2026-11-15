@@ -6,7 +6,7 @@ export * from "./validate";
 export * from "./compiled-nodes";
 export * from "./node-registry";
 export * from "./compile";
-export { jsIdent } from "./compile-events";
+export { ANIM_NOTIFY_EVENT, ANIM_NOTIFY_EVENT_TYPE, jsIdent } from "./compile-events";
 export * from "./latent-functions";
 export * from "./variable-references";
 export * from "./development-only";

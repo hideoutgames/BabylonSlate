@@ -9,6 +9,13 @@ import {
   isPoseOutputType,
   type AnimPoseDimension,
 } from "./pose-graph";
+import {
+  parseAnimStateEvents,
+  type AnimClipEvent,
+  type AnimFiredEvent,
+  type AnimOpenWindow,
+  type AnimStateEvents,
+} from "./events";
 
 export const ANIM_EVENT_INITIALIZE_TYPE = "anim.event.initialize";
 export const ANIM_EVENT_UPDATE_TYPE = "anim.event.update";
@@ -32,6 +39,8 @@ export interface AnimState {
   position: { x: number; y: number };
   /** The state's pose (or frame) graph, ending in its protected Output Pose node. */
   stateGraph: SerializedGraph;
+  /** Animation Events the state fires itself: as it starts, as it is left, and once it plays alone. */
+  events?: AnimStateEvents;
 }
 
 export interface AnimGraphVariable {
@@ -177,6 +186,8 @@ export interface AnimMachineEvalState {
   /** Crossfade length of the transition that started the active blend. */
   blendSeconds: number;
   loopCount: number;
+  /** Set only by a jump: the state it left, whose Exit event the next evaluation fires. */
+  exitingStateId?: string;
 }
 
 /** A player's own clock. */
@@ -195,6 +206,10 @@ export interface AnimEvalState extends AnimMachineEvalState {
   /** Each Sync Group's shared cycle position and its leader's cycle length, by group name. */
   syncGroups?: Record<string, AnimSyncGroupClock>;
   layers: AnimClipLayer[];
+  /** The Animation Events this tick fired, in order; absent when none did. */
+  events?: AnimFiredEvent[];
+  /** Windows that began and have not ended, by window key; absent when none are open. */
+  openWindows?: Record<string, AnimOpenWindow>;
 }
 
 /** A Sync Group's shared clock: where its members are in their cycles, and how long its leader's cycle is. */
@@ -431,6 +446,8 @@ export interface AnimClipCatalogEntry {
   frameCount?: number;
   skeletonGuid?: string | null;
   modelGuid?: string;
+  /** The Animation's events, or a Sprite Animation's frame events at their frames' start times. */
+  events?: readonly AnimClipEvent[];
   /** A Blend Space's or Sprite Blend Space's axes and samples, which a Blend Space Player plays. */
   blendSpace?: {
     axes: ReadonlyArray<{ min: number; max: number; wrap: boolean; smoothingSeconds: number }>;
@@ -439,6 +456,8 @@ export interface AnimClipCatalogEntry {
     hysteresis?: number;
     /** Sprite Blend Space only. */
     keepTime?: boolean;
+    /** Blend Space only: which samples' events fire. */
+    eventMode?: "highestWeight" | "all" | "none";
   };
 }
 
@@ -823,6 +842,7 @@ function parseStateMachine(value: unknown, dimension: AnimGraphDimension): AnimS
         name: typeof state.name === "string" && state.name !== "" ? state.name : state.id,
         position: parsePosition(state.position) ?? defaultAnimStatePosition(states.length),
         stateGraph: parsePoseGraph(state.stateGraph, () => createStateGraph(dimension)),
+        ...((events) => (events ? { events } : {}))(parseAnimStateEvents(state.events)),
       });
     }
   }
@@ -903,11 +923,18 @@ function resolvePoseGraphClips(
       ? entry.durationMs
       : undefined;
     const frameCount = sprite && typeof entry.frameCount === "number" && entry.frameCount > 0 ? entry.frameCount : undefined;
-    if (node.data.clipName === clipName && node.data.durationMs === durationMs && node.data.frameCount === frameCount) return node;
+    const events = entry.events && entry.events.length > 0 ? entry.events : undefined;
+    if (
+      node.data.clipName === clipName &&
+      node.data.durationMs === durationMs &&
+      node.data.frameCount === frameCount &&
+      JSON.stringify(node.data.events ?? null) === JSON.stringify(events ?? null)
+    ) return node;
     changed = true;
     const data: Record<string, unknown> = { ...node.data, clipName };
     if (durationMs !== undefined) data.durationMs = durationMs; else delete data.durationMs;
     if (frameCount !== undefined) data.frameCount = frameCount; else delete data.frameCount;
+    if (events) data.events = events; else delete data.events;
     return { ...node, data };
   });
   return changed ? { ...graph, nodes } : graph;
@@ -941,17 +968,18 @@ function resolvedBlendSpace(nodeType: string, assetGuid: unknown, byGuid: Readon
         x: sample.x,
         y: sample.y,
         rateScale: sample.rateScale,
+        ...(clip.events && clip.events.length > 0 ? { events: clip.events } : {}),
       }];
     }),
   };
   return assetType === "BlendSpace"
-    ? resolved
+    ? { ...resolved, eventMode: entry.blendSpace.eventMode ?? "highestWeight" }
     : { ...resolved, hysteresis: entry.blendSpace.hysteresis ?? 0, keepTime: entry.blendSpace.keepTime !== false };
 }
 
 /**
- * Fill each player's clip name, length and frame count, and each Blend Space Player's Blend Space, from the catalog.
- * Keep Animation guids.
+ * Fill each player's clip name, length, frame count and Animation Events, and each Blend Space Player's Blend Space
+ * (with its samples' events), from the catalog. Keep Animation guids.
  */
 export function resolveAnimGraphClips(
   doc: AnimGraphDocument,

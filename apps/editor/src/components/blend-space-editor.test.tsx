@@ -41,6 +41,7 @@ function payload(extra: Partial<BlendSpacePayload> = {}): BlendSpacePayload {
       { animationGuid: "walk", x: 2, y: 0, rateScale: 1 },
       { animationGuid: "run", x: 6, y: 0, rateScale: 1 },
     ],
+    eventMode: "highestWeight",
     ...extra,
   };
 }
@@ -134,6 +135,16 @@ describe("Blend Space editor", () => {
     expect(lastWrite().samples[1]).toMatchObject({ animationGuid: "run", rateScale: 1.5 });
     fireEvent.keyDown(screen.getByTestId("blend-space-grid"), { key: "Delete" });
     expect(lastWrite().samples.map((entry) => entry.animationGuid)).toEqual(["walk"]);
+  });
+
+  it("sets whose Animation Events fire with Event Mode", () => {
+    harness.content = payload() as unknown as Record<string, unknown>;
+    renderPanels();
+    fireEvent.click(within(screen.getByTestId("blend-space-settings")).getByRole("combobox", { name: "Event Mode" }));
+    const option = screen.getByRole("option", { name: "All" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    expect(lastWrite().eventMode).toBe("all");
   });
 
   it("adds a second axis from the Inspector", () => {

@@ -28,6 +28,7 @@ describe("headerMetaForSave", () => {
       previewModelGuid: null,
       axes: [{ name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0, wrap: false }],
       samples: [{ animationGuid: "walk", x: 2, y: 0, rateScale: 1 }],
+      eventMode: "highestWeight",
     });
   });
 

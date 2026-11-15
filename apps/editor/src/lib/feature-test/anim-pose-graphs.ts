@@ -11,7 +11,7 @@ import {
   type AnimTransition,
 } from "@haptic/anim-graph";
 import type { SerializedGraph } from "@haptic/core";
-import { gNode, gWire } from "./graph";
+import { gNode, gWire, printString } from "./graph";
 
 type GraphNode = SerializedGraph["nodes"][number];
 type GraphEdge = SerializedGraph["edges"][number];
@@ -97,3 +97,33 @@ export function stateMachineGraph(
     animationObject: createDefaultAnimationObjectGraph(),
   };
 }
+
+/**
+ * The default Animation Object with an Event <Name> node for each of `events` that prints, once, that `owner` heard
+ * it (a window: its Begin and its End), so the Feature Test check sees each event reach the graph's Animation Object.
+ */
+export function animationObjectHearing(
+  owner: string,
+  events: ReadonlyArray<{ name: string; window?: boolean }>,
+): SerializedGraph {
+  const graph = createDefaultAnimationObjectGraph();
+  const nodes = [...graph.nodes];
+  const edges = [...graph.edges];
+  events.forEach((event, row) => {
+    const y = 360 + row * 220;
+    const id = `heard-${row + 1}`;
+    nodes.push(gNode(id, "anim.event.notify", 60, y, { eventName: event.name, ...(event.window ? { window: true } : {}) }));
+    const outputs: Array<[string, string]> = event.window ? [["begin", " Begin"], ["end", " End"]] : [["execOut", ""]];
+    outputs.forEach(([pin, suffix], index) => {
+      const once = `${id}-once-${index + 1}`;
+      const print = `${id}-print-${index + 1}`;
+      nodes.push(
+        gNode(once, "flow.doOnce", 380, y + index * 100),
+        printString(print, 640, y + index * 100, `${owner} heard ${event.name}${suffix}`),
+      );
+      edges.push(gWire(id, pin, once, "execIn"), gWire(once, "then", print, "execIn"));
+    });
+  });
+  return { ...graph, nodes, edges };
+}
+
