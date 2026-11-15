@@ -432,6 +432,8 @@ export class ForwardSceneFrameGraph {
   private readonly polledUndrawn = new Set<AbstractMesh>();
   /** Undrawn meshes a passing scoped probe named: they must be asked when they become drawable. */
   private readonly passedOver = new WeakSet<AbstractMesh>();
+  /** Whether each mesh this view follows had a visibility below 1 when last read (`followDrawable`). */
+  private readonly translucent = new WeakMap<AbstractMesh, boolean>();
   private wholeProbesPassed = 0;
   /** The last passing probe was limited to `scopedMeshes` (`isReady`); any other passing probe counts as whole. */
   private scopedProbePassed = false;
@@ -979,6 +981,12 @@ export class ForwardSceneFrameGraph {
    * frame asks its variants before it draws, as the probe that consumed its earlier mark could not.
    */
   private followDrawable(mesh: AbstractMesh): void {
+    // Babylon blends a mesh whose visibility is below 1 (`needAlphaBlendingForMesh`): crossing it changes its variant,
+    // as a glyph revealed from 0 or a fade that ends does.
+    const translucent = mesh.visibility < 1;
+    const wasTranslucent = this.translucent.get(mesh);
+    this.translucent.set(mesh, translucent);
+    if (wasTranslucent !== undefined && wasTranslucent !== translucent) this.markReadinessDirty("meshVisibility", [mesh]);
     const since = this.undrawn.get(mesh);
     if (!mesh.isEnabled() || !mesh.isVisible || !mesh.subMeshes?.length) {
       if (since !== undefined) return;

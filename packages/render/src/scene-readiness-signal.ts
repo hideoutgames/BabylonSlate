@@ -76,7 +76,7 @@ export type SceneReadinessDirtyReason =
   // The Scene renderer's own Babylon observables and checks.
   | "meshAdded" | "meshRemoved" | "materialAdded" | "materialRemoved" | "lightAdded" | "lightRemoved" | "lightEnabled"
   | "textureAdded" | "textureRemoved" | "cameraAdded" | "cameraRemoved" | "activeCamera" | "skeletonAdded"
-  | "skeletonRemoved" | "membership" | "meshMaterial" | "drawable" | "outline" | "shadowRestale" | "prepare" | "invalidate" | "output"
+  | "skeletonRemoved" | "membership" | "meshMaterial" | "drawable" | "meshVisibility" | "outline" | "shadowRestale" | "prepare" | "invalidate" | "output"
   // Project-owned changes (`markSceneReadinessDirty`).
   | "shadowCasters" | "shadowMap" | "particleBind" | "particleCancel" | "particlePreparation" | "particlePrepared"
   | "layerStyle" | "instanceRekey" | "renderSettings" | "environmentLighting" | "reflectionProbes" | "materialLibrary"

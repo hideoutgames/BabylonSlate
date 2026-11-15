@@ -1201,6 +1201,40 @@ it.each(UNDRAWN_VISUALS.flatMap((visual) => PROBING_VIEWS.map((view) => ({ ...vi
   },
 );
 
+it("probes a mesh whose visibility crosses 1, as a revealed glyph's does, and no other fade step", async () => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  kept.material = new StandardMaterial("kept", scene);
+  const glyph = MeshBuilder.CreatePlane("glyph", {}, scene);
+  const glyphMaterial = glyph.material = new StandardMaterial("glyph", scene);
+  glyph.visibility = 0;
+  const graph = new ForwardSceneFrameGraph(scene, { scopedStrictProbes: true });
+  verifyScopedReadinessProbes(true);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const checks = graph.strictReadinessChecks;
+    // Steps of a fade that stays blended draw the variant they drew.
+    glyph.visibility = 0.4;
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.strictReadinessChecks).toBe(checks);
+    // Revealed: no longer blended, it draws another variant, asked before the frame draws.
+    const askedGlyph = vi.spyOn(glyphMaterial, "isReadyForSubMesh");
+    glyph.visibility = 1;
+    expect(graph.readinessDirty).toBe(true);
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(askedGlyph).toHaveBeenCalled();
+    // A later probe for an unrelated change agrees with a probe of every mesh.
+    graph.markReadinessDirty("layerStyle", [kept]);
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessMismatches: 0 });
+  } finally {
+    verifyScopedReadinessProbes(false);
+    graph.dispose();
+  }
+});
+
 it("probes a hidden visual when shown only after a passing probe skipped it, so steady toggles probe nothing", async () => {
   const { scene, camera } = host();
   const kept = MeshBuilder.CreateBox("kept", {}, scene);
