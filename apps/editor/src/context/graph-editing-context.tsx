@@ -25,6 +25,14 @@ export interface GraphEditingContextValue {
   releaseActiveFunctionId: (id: string) => void;
   canvasDropApi: GraphCanvasDropApi | null;
   setCanvasDropApi: (api: GraphCanvasDropApi | null) => void;
+  /**
+   * A custom event node whose Class panel row should open its inline rename
+   * (Rename Event, or a new event from Add Node). The Class panel takes it
+   * once the row exists and clears it.
+   */
+  eventRenameRequest: string | null;
+  requestEventRename: (nodeId: string) => void;
+  clearEventRenameRequest: () => void;
 }
 
 const GraphEditingContext = createContext<GraphEditingContextValue | null>(
@@ -72,6 +80,10 @@ export function GraphEditingProvider({
   const [canvasDropApi, setCanvasDropApi] = useState<GraphCanvasDropApi | null>(
     null,
   );
+  const [eventRenameRequest, setEventRenameRequest] = useState<string | null>(
+    null,
+  );
+  const clearEventRenameRequest = useCallback(() => setEventRenameRequest(null), []);
 
   const setSelectedNodeIds = useCallback(
     (nodeIds: string[]) => {
@@ -116,10 +128,15 @@ export function GraphEditingProvider({
       releaseActiveFunctionId,
       canvasDropApi,
       setCanvasDropApi,
+      eventRenameRequest,
+      requestEventRename: setEventRenameRequest,
+      clearEventRenameRequest,
     }),
     [
       activeFunctionId,
       canvasDropApi,
+      clearEventRenameRequest,
+      eventRenameRequest,
       releaseActiveFunctionId,
       selectedMemberId,
       selectedNodeIds,

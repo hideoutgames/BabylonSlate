@@ -7,7 +7,6 @@ import {
   MultilineTextField,
   ParameterListEditor,
   NamedListEditor,
-  NamePromptDialog,
   PinListEditor,
   PropertyGrid,
   formatEventMemberName,
@@ -42,10 +41,9 @@ import {
   patchFlowSwitchCases,
   javaScriptPinsFromRows,
 } from "../lib/graph-inspector";
-import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
+import { canRenameCustomEvent, patchClassMember } from "../lib/class-members";
 import { filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode, patchInspectedGraphNode } from "../lib/data-graph";
-import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
   TIMELINE_CLIP_DOCUMENT_KINDS,
@@ -87,8 +85,6 @@ export interface GraphNodeDetailsProps {
   hydratedInspectGraph: SerializedGraph | null;
   selectedNode: SerializedGraph["nodes"][number];
   activeFunctionId: string | null;
-  /** The inspected document's path; a renamed event's Calls are scoped to its Class. */
-  docPath: string | undefined;
   /** The graph's host class id, so a function signature edit reaches only its own Calls. */
   classId?: string;
   /** The focused diagnostic's line in an Execute JavaScript body. */
@@ -97,8 +93,8 @@ export interface GraphNodeDetailsProps {
   persistGraph: (next: SerializedGraph) => void;
   selectedJsPin: string | null;
   selectJsPin: Dispatch<SetStateAction<string | null>>;
-  renameEventOpen: boolean;
-  setRenameEventOpen: Dispatch<SetStateAction<boolean>>;
+  /** Rename Event: the selected custom event's inline rename in the Class panel. */
+  onRenameEvent: (nodeId: string) => void;
   classPinPick: ClassPinPick | null;
   setClassPinPick: Dispatch<SetStateAction<ClassPinPick | null>>;
   assetPinPick: AssetPinPick | null;
@@ -120,15 +116,13 @@ export function GraphNodeDetails({
   hydratedInspectGraph,
   selectedNode,
   activeFunctionId,
-  docPath,
   classId,
   focusBodyLine,
   catalogs,
   persistGraph,
   selectedJsPin,
   selectJsPin,
-  renameEventOpen,
-  setRenameEventOpen,
+  onRenameEvent,
   classPinPick,
   setClassPinPick,
   assetPinPick,
@@ -411,21 +405,10 @@ export function GraphNodeDetails({
         {isCustomEvent ? (
           <>
           {canRenameCustomEvent(graph, selectedNode.id) ? (
-            <Button variant="outline" size="sm" onClick={() => setRenameEventOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => onRenameEvent(selectedNode.id)}>
               Rename Event
             </Button>
           ) : null}
-          <NamePromptDialog
-            key={selectedNode.id}
-            open={renameEventOpen}
-            onOpenChange={setRenameEventOpen}
-            title="Rename Event"
-            label="Event Name"
-            confirmLabel="Rename"
-            initialValue={formatEventMemberName(String(selectedNode.data.name ?? selectedNode.data.title ?? ""))}
-            validate={(name) => customEventRenameError(graph, selectedNode.id, name)}
-            onSubmit={(name) => persistGraph(renameCustomEvent(graph, selectedNode.id, name, docPath ? classIdForGraphPath(docPath) : undefined))}
-          />
           {eventSignatureFrom ? (
             <div className="text-xs text-muted-foreground" data-testid="inspector-event-signature-from">
               Signature From: {eventSignatureFrom}

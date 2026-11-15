@@ -11,7 +11,7 @@ import {
   type GraphPinDrop,
   type PaletteNode,
 } from "@haptic/graph-ui";
-import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
+import { PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
 import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import { variableTypeFromPinType, type PinType } from "@haptic/scripting";
 import { nextCopyName } from "@haptic/assets";
@@ -48,21 +48,21 @@ import {
   addClassMember,
   adoptBoundEventSignatures,
   canRenameCustomEvent,
-  customEventRenameError,
   dispatcherEventNodeData,
   dispatcherEventPins,
   freeDispatcherEventName,
   functionLibraryShowsEventGraphEmpty,
-  renameCustomEvent,
 } from "../lib/class-members";
 import { createEventCandidates, createEventPickData } from "../lib/create-event-members";
 import { CreateEventMemberPicker } from "../components/create-event-member-picker";
+import { useCustomEventRename } from "./use-custom-event-rename";
 import { CREATE_EVENT_NODE_TYPE_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
 import {
   classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
+  newCustomEventPaletteNode,
   ScriptPaletteCache,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
@@ -146,7 +146,6 @@ export function GraphPanel(
   const { settings: appSettings } = useAppSettings();
   const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [renameEventId, setRenameEventId] = useState<string | null>(null);
   const paletteCacheRef = useRef(new ScriptPaletteCache());
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
@@ -729,13 +728,22 @@ export function GraphPanel(
     graphId: runGraphId,
     node: extensionNodeRef.current,
   }), [doc?.ref.path, runGraphId]));
+  // Rename Event opens the event's inline rename in the Class panel.
+  const { start: renameEvent, dialog: renameEventDialog } = useCustomEventRename({
+    graph: graphContent,
+    documentKind: doc?.ref.kind,
+    classId,
+    commit: (next) => {
+      if (doc) applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
+    },
+  });
   // Rename (F2) renames the one selected custom event, as the node menu's Rename Event does.
   const renameChord = useKeybindChord("edit.rename");
   const canvasRef = useRef<HTMLDivElement>(null);
   const renameTargetId = selectedNodeIds.length === 1 && graphContent && canRenameCustomEvent(graphContent, selectedNodeIds[0]!)
     ? selectedNodeIds[0]!
     : null;
-  useKeybindCommand("edit.rename", () => { if (renameTargetId) setRenameEventId(renameTargetId); }, {
+  useKeybindCommand("edit.rename", () => { if (renameTargetId) renameEvent(renameTargetId); }, {
     enabled: renameTargetId !== null,
     focusWithinRef: canvasRef,
   });
@@ -747,7 +755,7 @@ export function GraphPanel(
         return [...entries, ...nodeExtensionItems];
       };
       const items: NestedMenuItem[] = graphContent && canRenameCustomEvent(graphContent, nodeId)
-        ? [{ id: "rename-event", label: "Rename Event", shortcut: renameChord, onSelect: () => setRenameEventId(nodeId) }]
+        ? [{ id: "rename-event", label: "Rename Event", shortcut: renameChord, onSelect: () => renameEvent(nodeId) }]
         : [];
       const { nodes, edges } = latestGraph.current;
       const node = nodes.find((candidate) => candidate.id === nodeId);
@@ -761,7 +769,7 @@ export function GraphPanel(
       // The canvas adds the breakpoint items for the whole selection.
       return withExtensions(items);
     },
-    [breakpointLabel, classId, graphContent, nodeExtensionItems, renameChord, runGraphId, watchAsset, watchStore],
+    [breakpointLabel, classId, graphContent, nodeExtensionItems, renameChord, renameEvent, runGraphId, watchAsset, watchStore],
   );
 
   // In a function graph, a wire dropped on the Input or Output node's body adds a pin of its type.
@@ -783,6 +791,17 @@ export function GraphPanel(
       },
     };
   }, [activeFunctionId, documentActions, documentId]);
+
+  // Create New Custom Event…: a name free in the graph as it is now, then the
+  // inline rename in the Class panel, as for the Class panel's New Event.
+  const preparePaletteNode = useCallback(
+    (row: PaletteNode) => row.id === "flow.event.custom" ? newCustomEventPaletteNode(row, graphContentRef.current) : row,
+    [],
+  );
+  const onPaletteNodeAdded = useCallback(
+    (row: PaletteNode, nodeId: string) => { if (row.id === "flow.event.custom") renameEvent(nodeId); },
+    [renameEvent],
+  );
 
   const preparePaste = useCallback(
     (pasted: GraphPasteElements, current: GraphPasteElements) =>
@@ -862,6 +881,8 @@ export function GraphPanel(
             onEmptyCanvasClick={functionMember ? () => setSelectedMemberId(functionMember.id) : undefined}
             contextMenuItemsForNode={contextMenuItemsForNode}
             preparePaste={preparePaste}
+            preparePaletteNode={preparePaletteNode}
+            onPaletteNodeAdded={onPaletteNodeAdded}
             onChange={(next) => {
               if (!doc) return;
               const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
@@ -891,23 +912,7 @@ export function GraphPanel(
         </ClassMaterialsContext.Provider>
         </ClassParticleSystemsContext.Provider>
       )}
-      <NamePromptDialog
-        open={renameEventId !== null}
-        onOpenChange={(open) => { if (!open) setRenameEventId(null); }}
-        title="Rename Event"
-        label="Event Name"
-        confirmLabel="Rename"
-        initialValue={(() => {
-          const node = graphContent?.nodes.find((entry) => entry.id === renameEventId);
-          return formatEventMemberName(String(node?.data.name ?? node?.data.title ?? ""));
-        })()}
-        validate={(name) => graphContent && renameEventId ? customEventRenameError(graphContent, renameEventId, name) : null}
-        onSubmit={(name) => {
-          if (!doc || !graphContent || !renameEventId) return;
-          const next = renameCustomEvent(graphContent, renameEventId, name, classId);
-          applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
-        }}
-      />
+      {renameEventDialog}
       {breakpointSettingsDialog}
     </PanelFrame>
   );

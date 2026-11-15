@@ -7,6 +7,8 @@
 export const FUNCTION_GRAPH_PANEL_COMPONENT = "function-graph";
 /** The Event Graph stays the primary `graph` catalog panel. */
 export const EVENT_GRAPH_PANEL_ID = "graph";
+/** The Class (Script in a Scene) members panel beside it. */
+export const CLASS_PANEL_ID = "my-class";
 
 export const ANIM_STATE_GRAPH_PANEL_COMPONENT = "anim-state-graph";
 /** The State Machine stays the primary `anim-graph-graph` catalog panel; a transition rule still opens inside it. */

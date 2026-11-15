@@ -21,6 +21,7 @@ Defines an event of your own that other graphs can call by name.
 
 ## Notes
 
-- Trigger it with [**Call Custom Event**](call-custom-event.md). Rename the event and add data outputs in the **Inspector**.
+- In **Add Node** this node is **Create New Custom Event…**. The new event is named **NewEvent** (or the first free **NewEvent_1**, **NewEvent_2**, …), and its name opens for editing in the **Class** window.
+- Trigger it with [**Call Custom Event**](call-custom-event.md). Add data outputs in the **Inspector**. **Rename Event**, in the node menu and the **Inspector**, renames it inline in the **Class** window; see [Custom events](../events.md#custom-events).
 - Every call runs the event, even while an earlier call still waits on a latent node such as [**Delay**](delay.md). Each call waits on its own.
 - **Output Delegate** is the square at the right end of the title bar. Connect it to [**Bind Event To Event Dispatcher**](bind-event-to-event-dispatcher.md) to run this event whenever the dispatcher is called. An event with no outputs takes the dispatcher's inputs when you connect it; see [Event Dispatchers](../event-dispatchers.md#bind-a-custom-event).

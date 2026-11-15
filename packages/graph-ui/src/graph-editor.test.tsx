@@ -184,6 +184,32 @@ describe("toolbar Add Node placement", () => {
     ]);
   });
 
+  it("places the host's rewrite of an Add Node row and reports the placed node", () => {
+    let latest: GraphDocument = { nodes: [], edges: [] };
+    const added = vi.fn();
+    const row = { id: "flow.event.custom", title: "Create New Custom Event…", category: "flow", defaultData: { name: "Stale" } };
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={latest}
+        sessionViewport={viewport}
+        paletteNodes={[row]}
+        preparePaletteNode={(picked) => ({ ...picked, nodeTitle: "Event NewEvent_1", defaultData: { name: "NewEvent_1" } })}
+        onPaletteNodeAdded={added}
+        onChange={(graph) => { latest = graph; }}
+      />,
+    );
+    stubGraphBounds(getByTestId("graph-editor"), canvas);
+
+    fireEvent.click(getByTestId("graph-add-node"));
+    fireEvent.click(getByTestId("node-palette-item-flow.event.custom"));
+
+    expect(latest.nodes).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ name: "NewEvent_1", title: "Event NewEvent_1" }) }),
+    ]);
+    expect(added).toHaveBeenCalledTimes(1);
+    expect(added).toHaveBeenCalledWith(expect.objectContaining({ id: "flow.event.custom", defaultData: { name: "NewEvent_1" } }), latest.nodes[0]!.id);
+  });
+
   it("treats an existing node as its measured size, not the larger estimate", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

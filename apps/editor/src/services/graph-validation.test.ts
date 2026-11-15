@@ -14,6 +14,7 @@ import {
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
   materializeLogicGraph,
+  newCustomEventPaletteNode,
   ScriptPaletteCache,
   scriptPaletteNodes,
   scriptPinCompatibility,
@@ -1432,6 +1433,23 @@ describe("scriptPaletteNodes", () => {
       method: "Apply Damage",
       implicitSelf: true,
     });
+  });
+
+  it("lists Create New Custom Event… first, adding an event under a free NewEvent name", () => {
+    const graph: SerializedGraph = {
+      nodes: [{ id: "taken", type: "flow.event.custom", position: { x: 0, y: 0 }, data: { name: "NewEvent", title: "Event NewEvent" } }],
+      edges: [],
+    };
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Hero", graph });
+    const row = nodes.find((node) => node.id === "flow.event.custom")!;
+    expect(row).toMatchObject({
+      title: "Create New Custom Event…",
+      nodeTitle: "Event NewEvent_1",
+      defaultData: { name: "NewEvent_1" },
+    });
+    // Catalog order breaks every tie in Add Node: categories, search tiers and pin suggestions.
+    expect(nodes[0]?.id).toBe("flow.event.custom");
+    expect(newCustomEventPaletteNode(row, { nodes: [], edges: [] }).defaultData).toMatchObject({ name: "NewEvent" });
   });
 
   it("offers events, custom ones included, only in the Event Graph, and still offers calling a custom event from a function", () => {

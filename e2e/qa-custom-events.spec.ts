@@ -59,3 +59,39 @@ test("H12/M28: Ping with its created declaration compiles and runs after reload 
   await expect(page.getByTestId("print-overlay")).toContainText("PING_CALLED", { timeout: 30_000 });
   await page.getByTestId("play-overlay-close").click();
 });
+
+test("Create New Custom Event… and Rename Event open the event's name in the Class panel, focused and selected", async ({ page }) => {
+  await openTestProject(page);
+  await openAssetFromBrowser(page, CLASS_PATH);
+  const graph = page.getByTestId("graph-panel");
+  const classPanel = page.getByTestId("my-class-panel");
+
+  await page.getByTestId("graph-add-node").click();
+  await page.getByTestId("node-palette-search").fill("custom event");
+  await expect(page.getByTestId("node-palette-item-flow.event.custom")).toHaveText(/Create New Custom Event…/);
+  await page.getByTestId("node-palette-item-flow.event.custom").click();
+  await expect(page.getByTestId("node-palette")).toHaveCount(0);
+  const added = classPanel.getByRole("textbox", { name: "Rename NewEvent" });
+  await expect(added).toBeFocused();
+  // Typing replaces the whole name only while it is selected and keeps focus.
+  await page.keyboard.type("Pong");
+  await page.keyboard.press("Enter");
+  await expect(classPanel.getByRole("treeitem", { name: "Pong" })).toBeVisible();
+  const eventId = await graph.locator(".react-flow__node").filter({ hasText: "Event Pong" }).getAttribute("data-id");
+  const event = graph.locator(`.react-flow__node[data-id="${eventId}"]`);
+
+  await graph.getByRole("button", { name: "Size Graph To Fit" }).click();
+  await event.getByText("Event Pong", { exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: /^Rename Event/ }).click();
+  await expect(classPanel.getByRole("textbox", { name: "Rename Pong" })).toBeFocused();
+  await page.keyboard.type("Pang");
+  await page.keyboard.press("Enter");
+  await expect(classPanel.getByRole("treeitem", { name: "Pang" })).toBeVisible();
+
+  await event.getByText("Event Pang", { exact: true }).click();
+  await page.getByTestId("inspector-panel").getByRole("button", { name: "Rename Event" }).click();
+  await expect(classPanel.getByRole("textbox", { name: "Rename Pang" })).toBeFocused();
+  await page.keyboard.type("Ping Back");
+  await page.keyboard.press("Enter");
+  await expect(graph.getByText("Event Ping Back", { exact: true })).toBeVisible();
+});

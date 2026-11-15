@@ -366,6 +366,13 @@ export interface GraphEditorProps {
     pasted: GraphPasteElements,
     current: GraphPasteElements,
   ) => GraphPasteResult;
+  /**
+   * Host rewrite of an Add Node row just before it is placed, read against the
+   * live graph (a new custom event's free name). Bundled nodes are not passed.
+   */
+  preparePaletteNode?: (node: PaletteNode) => PaletteNode;
+  /** After Add Node placed `node` as `nodeId` (a new custom event opens its rename). */
+  onPaletteNodeAdded?: (node: PaletteNode, nodeId: string) => void;
 }
 
 export type GraphPasteElements = { nodes: CanvasNode[]; edges: Edge[] };
@@ -838,6 +845,8 @@ function GraphEditorCanvas({
   pinTypeNames,
   onCanvasApi,
   preparePaste,
+  preparePaletteNode,
+  onPaletteNodeAdded,
 }: GraphEditorProps) {
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
@@ -898,8 +907,12 @@ function GraphEditorCanvas({
     onPaletteOpenChangeRef.current = onPaletteOpenChange;
   });
   const preparePasteRef = useRef(preparePaste);
+  const preparePaletteNodeRef = useRef(preparePaletteNode);
+  const onPaletteNodeAddedRef = useRef(onPaletteNodeAdded);
   useLayoutEffect(() => {
     preparePasteRef.current = preparePaste;
+    preparePaletteNodeRef.current = preparePaletteNode;
+    onPaletteNodeAddedRef.current = onPaletteNodeAdded;
   });
   const setPaletteOpenState = useCallback((next: boolean) => {
     setPaletteOpen(next);
@@ -2137,7 +2150,8 @@ function GraphEditorCanvas({
   );
 
   const handleAddPaletteNode = useCallback(
-    (paletteNode: PaletteNode) => {
+    (picked: PaletteNode) => {
+      const paletteNode = preparePaletteNodeRef.current?.(picked) ?? picked;
       // Toolbar additions have no chosen point: centre them on the canvas and
       // step by node footprint to a free slot.
       let position = pendingConnect?.position;
@@ -2267,6 +2281,7 @@ function GraphEditorCanvas({
       commitGraph(next, nextEdges);
       if (replacedWire) noteReplacedWire();
       setPendingConnect(null);
+      onPaletteNodeAddedRef.current?.(paletteNode, id);
     },
     [
       commitGraph,
