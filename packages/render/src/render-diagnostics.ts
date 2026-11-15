@@ -119,6 +119,12 @@ export type RenderDiagnostics = {
       walks: number; casters: number; visited: number; polledSources: number; polledMaterials: number;
       fullWalks: number; heals: number; mismatches: number; missedKinds: string[];
     };
+    /**
+     * The Scene's Mirror surfaces (`MirrorDiagnostics`): renders in which a visible surface's view had moved since its
+     * draw, so it did not ask what its pass draws changed (`skipped`), and while `verifyMirrorContentPolls` is on, renders
+     * an ask on every render would have decided otherwise (`mismatches`). Absent without Mirrors.
+     */
+    mirrorPolls?: { skipped: number; mismatches: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
