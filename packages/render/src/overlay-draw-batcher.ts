@@ -57,6 +57,14 @@ import { setUnlitBinding, UNLIT_TEXEL_WHOLE, unlitBinding, unlitTexelGrid, type 
  * frames. Each is used at most once per Engine frame (WebGPU queues buffer writes ahead of the frame's draws) and
  * uploads only when what it holds changed. Every cache compares contents, not array identity: owners rewrite vertex
  * arrays in place (sprite quads).
+ *
+ * - **Retention.** Each pass of an Engine frame (by its place among the frame's passes) keeps its entries, batches and
+ *   the slots they filled. Every frame still classifies every member and asks Babylon's readiness gate; what grouping
+ *   reads (the sorted list, each member's draw values at full precision, its bounds' inputs, the Scene's transform,
+ *   the viewport's margins and the eye) is compared by value with what the kept grouping was made from, and any
+ *   difference regroups the whole pass. What a batch's fill writes for each member is compared with 32-bit copies of
+ *   what it last wrote; a batch refills (whole, as without retention) when one differs or its slot no longer holds its
+ *   data. `verifyRetainedOverlayBatches` checks every retained pass against the full path.
  */
 
 /** Babylon 9.29 per-mesh render state `Mesh.render` resets for a drawn mesh. */
@@ -112,6 +120,21 @@ interface Entry {
   maxX: number;
   maxY: number;
   batch: number;
+  /** Why the draw goes on its own, as classified this frame; null when it may batch. */
+  alone: Exclude<OverlayAloneReason, "single" | "unmatched"> | null;
+  /** What grouping read for this draw when the pass's batches were last made or kept (`stampGroup`). */
+  group: Stamp;
+  /** What the member's own draw binds that a batch carries per vertex: colour with alpha, tint, texel grid (`styleOf`). */
+  style: Float32Array;
+  /** A glyph's own values a batch carries per vertex (`styleOf`). */
+  glyph: Float32Array;
+  /**
+   * What the last fill of the member's batch wrote for it, in 32 bits: its vertices, world rows, style, glyph and
+   * extra kinds (`keepWritten`), with its layout then and its indices.
+   */
+  written: Float32Array;
+  writtenLayout: number;
+  writtenIndices: Float64Array;
 }
 
 /** A pass's batch: its draws in order, the union of their projected bounds and the previous batch of the same key. */
@@ -123,6 +146,91 @@ interface Batch {
   maxY: number;
   /** The previous batch whose draws sample the same texture (or, untextured, draw the same Material); -1: none. */
   previousOfKey: number;
+  /** The slot it last drew from. */
+  slot: Slot | null;
+  /** The fill its members' `written` values come from; -1 when none since its pass was grouped. */
+  serial: number;
+  /** The pass (`passSerial`) that last filled it, and the last that gave it a slot. */
+  filledPass: number;
+  heldPass: number;
+}
+
+/**
+ * A pass's work kept between frames: the sorted list it was made for, its entries and batches, and what grouping read
+ * for the whole pass.
+ */
+interface PassRecord {
+  transparent: boolean;
+  sorted: SubMesh[];
+  entries: Entry[];
+  batches: Batch[];
+  batchCount: number;
+  /** Whether `batches` were made from the entries' group stamps (false: regroup). */
+  grouped: boolean;
+  pass: Stamp;
+}
+
+/**
+ * Values compared with those kept from the last time, each kept as it is put: `put` notes a difference, by `!==` (so
+ * at full precision, and NaN always differs).
+ */
+class Stamp {
+  private readonly values: unknown[] = [];
+  private at = 0;
+  private changed = false;
+
+  begin(): void {
+    this.at = 0;
+    this.changed = false;
+  }
+
+  put(value: unknown): void {
+    const at = this.at++;
+    if (at < this.values.length && this.values[at] === value) return;
+    this.values[at] = value;
+    this.changed = true;
+  }
+
+  /** Whether any value differed from the last time (or there were another number of them). */
+  end(): boolean {
+    if (this.values.length !== this.at) {
+      this.values.length = this.at;
+      this.changed = true;
+    }
+    return this.changed;
+  }
+
+  clear(): void {
+    this.values.length = 0;
+  }
+}
+
+/**
+ * How a Scene's batcher drew its passes since it was made: draws of passes that reached grouping (two or more that may
+ * batch) that took the kept work (`retainedMembers`: grouping kept, and no refill of their batch, or no batch) or
+ * did that work again (`fullMembers`), and, while `verifyRetainedOverlayBatches` is on, the retained passes checked
+ * against the full path and those that differed, with the first few differences described.
+ */
+export interface OverlayBatchWork {
+  retainedMembers: number;
+  fullMembers: number;
+  verifiedPasses: number;
+  mismatches: number;
+  mismatchDetails: string[];
+}
+
+/** Differences `OverlayBatchWork.mismatchDetails` describes. */
+const MAX_MISMATCH_DETAILS = 4;
+
+let verifies = false;
+
+/**
+ * Debugging aid: every pass that takes the retained path is followed by the full path's work, on its own entries,
+ * batches and vertex caches, which must give the same batches in the same order with the same members, each from a
+ * slot of its own that holds what the full path would write (`OverlayBatchWork.mismatches`).
+ */
+export function verifyRetainedOverlayBatches(enabled: boolean): void {
+  verifies = enabled;
 }
 
 /** A batch mesh kept between frames, with what its buffers hold. */
@@ -152,6 +260,27 @@ interface Slot {
   batchEffect: Effect | null;
   /** The binding a batch that samples the shared page draws: its first member's, with the page for its texture. */
   pageBinding: UnlitBinding | null;
+  /** The batch whose fill (`serial`) the buffers hold; null while they hold no batch's whole fill. */
+  owner: Batch | null;
+  serial: number;
+  /** The Engine frame that last drew from it: it draws once per Engine frame. */
+  usedFrame: number;
+}
+
+/** The arrays a batch's values are written to: a slot's, or the verifier's. */
+interface BatchArrays {
+  positions: Float32Array;
+  extras: Array<Float32Array | null>;
+  worlds: Float32Array;
+  styles: Float32Array;
+  texts: Float32Array;
+  indices: Uint16Array | Uint32Array | Float64Array;
+}
+
+/** Which of a batch's arrays a write changed, as bits (`writeMembers`). */
+const CHANGED_POSITIONS = 1, CHANGED_WORLDS = 2, CHANGED_STYLES = 4, CHANGED_TEXTS = 8, CHANGED_INDICES = 16;
+function changedExtra(kind: number): number {
+  return 32 << kind;
 }
 
 const bakes = new WeakMap<Mesh, Bake>();
@@ -218,12 +347,12 @@ function packedFloats(mesh: Mesh, kind: string, size: number): FloatArray | null
  * The member's vertices and world matrix as its own draw gives them to the vertex stage: the positions its vertex buffer
  * holds, and the world matrix the floating origin uploads (translation minus the eye, then 32-bit).
  */
-function bakeOf(mesh: Mesh, eye: { x: number; y: number; z: number }): Bake | null {
+function bakeOf(mesh: Mesh, eye: { x: number; y: number; z: number }, store: WeakMap<Mesh, Bake>): Bake | null {
   const source = packedFloats(mesh, VertexBuffer.PositionKind, 3);
   if (!source) return null;
-  let bake = bakes.get(mesh);
+  let bake = store.get(mesh);
   if (!bake)
-    bakes.set(mesh, (bake = {
+    store.set(mesh, (bake = {
       flag: -1, source, copy: new Float32Array(0), eyeX: Number.NaN, eyeY: Number.NaN, eyeZ: Number.NaN, rows: new Float32Array(WORLD_FLOATS), world: null,
       min: [0, 0, 0], max: [0, 0, 0],
     }));
@@ -391,26 +520,255 @@ function drawKey(entry: Entry): object {
   return entry.cell?.page ?? entry.binding?.texture ?? entry.text?.atlas ?? entry.material!;
 }
 
+function createEntry(subMesh: SubMesh): Entry {
+  return {
+    subMesh, mesh: null, material: null, binding: null, cell: null, text: null, clip: null, bake: null, extras: EXTRA_KINDS.map(() => null), layout: 0, indices: null,
+    minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1, alone: null, group: new Stamp(), style: new Float32Array(STYLE_FLOATS), glyph: new Float32Array(TEXT_FLOATS),
+    written: new Float32Array(0), writtenLayout: -1, writtenIndices: new Float64Array(0),
+  };
+}
+
+function createBatch(): Batch {
+  return { entries: [], minX: 0, minY: 0, maxX: 0, maxY: 0, previousOfKey: -1, slot: null, serial: -1, filledPass: 0, heldPass: 0 };
+}
+
+/** Whether `kept` lists the first `count` of `sorted`, in order. */
+function sameList(kept: readonly SubMesh[], sorted: readonly SubMesh[], count: number): boolean {
+  if (kept.length !== count) return false;
+  for (let index = 0; index < count; index += 1) if (kept[index] !== sorted[index]) return false;
+  return true;
+}
+
+/**
+ * Puts what grouping reads for `entry` into its stamp and says whether any of it changed: whether it may batch, what
+ * `sameDraw` and `drawKey` compare (at full precision), and what `bound` projects (its own box and world matrix, or
+ * whether its bounding box holds and that box).
+ */
+function stampGroup(entry: Entry): boolean {
+  const stamp = entry.group;
+  stamp.begin();
+  const mesh = entry.mesh;
+  stamp.put(mesh);
+  if (mesh) {
+    stamp.put(entry.material);
+    const clip = entry.clip;
+    stamp.put(clip !== null);
+    if (clip) { stamp.put(clip.x); stamp.put(clip.y); stamp.put(clip.width); stamp.put(clip.height); }
+    stamp.put(entry.layout);
+    stamp.put(mesh.sideOrientation);
+    const text = entry.text;
+    stamp.put(text !== null);
+    if (text) {
+      stamp.put(text.atlas); stamp.put(text.mode); stamp.put(text.outline);
+      stamp.put(text.outlineColor[0]); stamp.put(text.outlineColor[1]); stamp.put(text.outlineColor[2]);
+    } else {
+      stamp.put(mesh.visibility);
+    }
+    const binding = entry.binding;
+    stamp.put(binding !== null);
+    if (binding) {
+      stamp.put(sampled(entry)); stamp.put(binding.cutoff); stamp.put(binding.blend); stamp.put(binding.textureAlpha); stamp.put(binding.twoSided);
+      const msdf = binding.msdf;
+      stamp.put(!!msdf);
+      if (msdf) { stamp.put(msdf.strokeColor[0]); stamp.put(msdf.strokeColor[1]); stamp.put(msdf.strokeColor[2]); stamp.put(msdf.strokeWidth); }
+    } else {
+      stamp.put(mesh.receiveShadows);
+    }
+    stamp.put(drawKey(entry));
+  }
+  // What `bound` reads.
+  const bake = entry.bake;
+  stamp.put(bake !== null);
+  if (bake) {
+    for (let axis = 0; axis < 3; axis += 1) { stamp.put(bake.min[axis]); stamp.put(bake.max[axis]); }
+    const world = entry.subMesh.getMesh().getWorldMatrix().asArray();
+    for (let index = 0; index < 16; index += 1) stamp.put(world[index]);
+  } else {
+    const holds = boundsHold(entry.subMesh.getMesh(), entry.subMesh.getMaterial());
+    stamp.put(holds);
+    if (holds) {
+      const box = entry.subMesh.getBoundingInfo().boundingBox;
+      const min = box.minimumWorld, max = box.maximumWorld;
+      stamp.put(min.x); stamp.put(min.y); stamp.put(min.z); stamp.put(max.x); stamp.put(max.y); stamp.put(max.z);
+    }
+  }
+  return stamp.end();
+}
+
+/**
+ * Writes what the member's own draw binds and a batch carries per vertex (`bindUnlitUniforms`, `TextMaterialBlock.bind`),
+ * rounded to 32 bits as an upload rounds it, into `entry.style` and, for a glyph, `entry.glyph`.
+ */
+function styleOf(entry: Entry): void {
+  const style = entry.style;
+  // An authored Material reads the tint alone.
+  const binding = entry.binding, { opacity, tint } = overlayVisualStyle(entry.mesh!);
+  style[0] = binding?.color[0] ?? 1; style[1] = binding?.color[1] ?? 1; style[2] = binding?.color[2] ?? 1; style[3] = binding?.alpha ?? 1;
+  style[4] = tint[0]; style[5] = tint[1]; style[6] = tint[2]; style[7] = tint[3] * opacity;
+  // The texel grid the member's own draw binds: over the whole of the texture, or over its image's cell where this
+  // batch samples the page.
+  unlitTexelGrid(binding?.texture ?? null, style, 8);
+  const cell = entry.cell;
+  if (cell) { style[8]! *= cell.width; style[9]! *= cell.height; }
+  style[10] = cell?.x ?? UNLIT_TEXEL_WHOLE; style[11] = cell?.y ?? UNLIT_TEXEL_WHOLE;
+  if (entry.text) {
+    const glyph = entry.glyph;
+    glyph.set(entry.text.atlasRect, 0);
+    glyph.set(entry.text.materialRect, 4);
+    glyph.set(entry.text.color, 8);
+    glyph[11] = entry.mesh!.visibility;
+  }
+}
+
+/** How many values `keepWritten` keeps for `entry`. */
+function writtenLength(entry: Entry): number {
+  const vertices = entry.bake!.copy.length / 3;
+  let length = vertices * 3 + WORLD_FLOATS + STYLE_FLOATS + (entry.text ? TEXT_FLOATS : 0);
+  for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) if (entry.layout & (1 << kind)) length += vertices * EXTRA_SIZES[kind]!;
+  return length;
+}
+
+/** Compares `count` of `values`, rounded to 32 bits, with `kept` from `at`: the place after them, or -1 at a difference. */
+function sameRun(kept: Float32Array, at: number, values: ArrayLike<number>, count: number): number {
+  if (at < 0) return -1;
+  for (let index = 0; index < count; index += 1) if (kept[at + index] !== Math.fround(values[index]!)) return -1;
+  return at + count;
+}
+
+function keepRun(kept: Float32Array, at: number, values: ArrayLike<number>, count: number): number {
+  for (let index = 0; index < count; index += 1) kept[at + index] = values[index]!;
+  return at + count;
+}
+
+/**
+ * Whether what `fill` would write for `entry`'s member now (with `styleOf` written) is what its batch's last fill
+ * wrote for it (`keepWritten`): the same values, in 32 bits as the slot holds them, and the same indices.
+ */
+function holdsWritten(entry: Entry): boolean {
+  const kept = entry.written, indices = entry.indices!, bake = entry.bake!;
+  if (entry.writtenLayout !== entry.layout || kept.length !== writtenLength(entry) || entry.writtenIndices.length !== indices.length) return false;
+  const vertices = bake.copy.length / 3;
+  let at = sameRun(kept, 0, bake.copy, bake.copy.length);
+  at = sameRun(kept, at, bake.world!, WORLD_FLOATS);
+  at = sameRun(kept, at, entry.style, STYLE_FLOATS);
+  if (entry.text) at = sameRun(kept, at, entry.glyph, TEXT_FLOATS);
+  for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1)
+    if (entry.layout & (1 << kind)) at = sameRun(kept, at, entry.extras[kind]!, vertices * EXTRA_SIZES[kind]!);
+  if (at < 0) return false;
+  const keptIndices = entry.writtenIndices;
+  for (let index = 0; index < indices.length; index += 1) if (keptIndices[index] !== indices[index]) return false;
+  return true;
+}
+
+/** Keeps what a fill wrote for `entry`'s member (`holdsWritten`). */
+function keepWritten(entry: Entry): void {
+  const length = writtenLength(entry), indices = entry.indices!, bake = entry.bake!;
+  if (entry.written.length !== length) entry.written = new Float32Array(length);
+  if (entry.writtenIndices.length !== indices.length) entry.writtenIndices = new Float64Array(indices.length);
+  const kept = entry.written, vertices = bake.copy.length / 3;
+  let at = keepRun(kept, 0, bake.copy, bake.copy.length);
+  at = keepRun(kept, at, bake.world!, WORLD_FLOATS);
+  at = keepRun(kept, at, entry.style, STYLE_FLOATS);
+  if (entry.text) at = keepRun(kept, at, entry.glyph, TEXT_FLOATS);
+  for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1)
+    if (entry.layout & (1 << kind)) at = keepRun(kept, at, entry.extras[kind]!, vertices * EXTRA_SIZES[kind]!);
+  for (let index = 0; index < indices.length; index += 1) entry.writtenIndices[index] = indices[index]!;
+  entry.writtenLayout = entry.layout;
+}
+
+/**
+ * Writes the members' vertices, world matrices, styles, glyph values, extra kinds and indices into `into` from its
+ * start, as one batch holds them (`styleOf` written first); returns which arrays it changed (`CHANGED_*`).
+ */
+function writeMembers(into: BatchArrays, members: readonly Entry[]): number {
+  const { positions, extras, worlds, styles, texts, indices } = into;
+  let changed = 0;
+  let vertex = 0, index = 0;
+  for (const entry of members) {
+    const own = entry.bake!.copy, world = entry.bake!.world!;
+    const memberVertices = own.length / 3;
+    for (let offset = 0, at = vertex * 3; offset < own.length; offset += 1, at += 1) {
+      const value = own[offset]!;
+      if (positions[at] !== value) { positions[at] = value; changed |= CHANGED_POSITIONS; }
+    }
+    for (let offset = 0, at = vertex * WORLD_FLOATS; offset < memberVertices * WORLD_FLOATS; offset += 1, at += 1) {
+      const value = world[offset % WORLD_FLOATS]!;
+      if (worlds[at] !== value) { worlds[at] = value; changed |= CHANGED_WORLDS; }
+    }
+    const style = entry.style;
+    for (let offset = 0, at = vertex * STYLE_FLOATS; offset < memberVertices * STYLE_FLOATS; offset += 1, at += 1) {
+      const value = style[offset % STYLE_FLOATS]!;
+      if (styles[at] !== value) { styles[at] = value; changed |= CHANGED_STYLES; }
+    }
+    if (entry.text) {
+      const glyph = entry.glyph;
+      for (let offset = 0, at = vertex * TEXT_FLOATS; offset < memberVertices * TEXT_FLOATS; offset += 1, at += 1) {
+        const value = glyph[offset % TEXT_FLOATS]!;
+        if (texts[at] !== value) { texts[at] = value; changed |= CHANGED_TEXTS; }
+      }
+    }
+    for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) {
+      const target = extras[kind];
+      if (!target) continue;
+      const data = entry.extras[kind]!, size = EXTRA_SIZES[kind]!;
+      for (let offset = 0, at = vertex * size; offset < memberVertices * size; offset += 1, at += 1) {
+        const value = Math.fround(data[offset]!);
+        if (target[at] !== value) { target[at] = value; changed |= changedExtra(kind); }
+      }
+    }
+    const source = entry.indices!;
+    for (let offset = 0, at = index; offset < source.length; offset += 1, at += 1) {
+      const value = source[offset]! + vertex;
+      if (indices[at] !== value) { indices[at] = value; changed |= CHANGED_INDICES; }
+    }
+    vertex += memberVertices;
+    index += source.length;
+  }
+  return changed;
+}
+
+/** A batch's vertex and index counts. */
+function batchCounts(members: readonly Entry[]): { vertices: number; indices: number } {
+  let vertices = 0, indices = 0;
+  for (const entry of members) {
+    vertices += entry.bake!.copy.length / 3;
+    indices += entry.indices!.length;
+  }
+  return { vertices, indices };
+}
+
 /**
  * Draws a Scene's sorted passes in batches (see the module comment). One per Scene, from `setSceneDrawBatching`.
  */
 class OverlayDrawBatcher implements SceneDrawBatcher {
   private readonly scene: Scene;
-  private readonly entries: Entry[] = [];
-  /** The pass's batches in draw order; reused objects, `batchCount` of them in use. */
-  private readonly batches: Batch[] = [];
-  private batchCount = 0;
-  /** Per draw key, the pass's last batch of it. */
+  /** Each pass of an Engine frame's kept work, by the pass's place among the frame's passes. */
+  private readonly records: PassRecord[] = [];
+  /** The Engine frame whose passes took the first `passCount` records. */
+  private passFrame = -1;
+  private passCount = 0;
+  /** Numbers each pass drawn, and each fill. */
+  private passSerial = 0;
+  private fillSerial = 0;
+  /** Per draw key, the pass's last batch of it (empty between `group` calls). */
   private readonly lastOfKey = new Map<object, number>();
   private readonly slots: Slot[] = [];
-  private slotCursor = 0;
-  /** The Engine frame whose draws took the first `slotCursor` slots. */
-  private cursorFrame = -1;
   private disposed = false;
+  /** The pass's Scene transform and two of its viewport's pixels in NDC (`measurePass`). */
+  private transform: Matrix | null = null;
+  private marginX = 0;
+  private marginY = 0;
+  private readonly work: OverlayBatchWork = { retainedMembers: 0, fullMembers: 0, verifiedPasses: 0, mismatches: 0, mismatchDetails: [] };
+  /** The verifier's own entries, batches, vertex caches and arrays: it never reads or writes the retained path's. */
+  private readonly verifyEntries: Entry[] = [];
+  private readonly verifyBatches: Batch[] = [];
+  private readonly verifyBakes = new WeakMap<Mesh, Bake>();
+  private verifyArrays: BatchArrays = {
+    positions: new Float32Array(0), extras: EXTRA_KINDS.map(() => null), worlds: new Float32Array(0), styles: new Float32Array(0), texts: new Float32Array(0),
+    indices: new Float64Array(0),
+  };
   private readonly scratchCorner = { x: 0, y: 0, z: 0 };
-  private readonly scratchStyle = new Float32Array(STYLE_FLOATS);
   private readonly scratchGrid = [0, 0];
-  private readonly scratchGlyph = new Float32Array(TEXT_FLOATS);
   private readonly scratchViewport = new Viewport(0, 0, 1, 1);
   /** The Scene's shared page of small images, which its batches sample; null while they sample their own textures. */
   private atlas: LayerImageAtlas | null;
@@ -446,35 +804,63 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
       return;
     }
-    const entries = this.entries;
+    const record = this.passRecord();
+    if (record.transparent !== transparent || !sameList(record.sorted, sorted, count)) {
+      record.transparent = transparent;
+      record.sorted.length = count;
+      for (let index = 0; index < count; index += 1) record.sorted[index] = sorted[index]!;
+      record.grouped = false;
+    }
+    const entries = record.entries;
+    if (entries.length > count) entries.length = count;
     const eye = scene.floatingOriginOffset;
     let candidates = 0;
     for (let index = 0; index < count; index += 1) {
-      const entry = (entries[index] ??= {
-        subMesh: sorted[index]!, mesh: null, material: null, binding: null, cell: null, text: null, clip: null, bake: null, extras: EXTRA_KINDS.map(() => null), layout: 0, indices: null,
-        minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1,
-      });
+      const entry = (entries[index] ??= createEntry(sorted[index]!));
       entry.subMesh = sorted[index]!;
-      const alone = this.classify(entry, eye);
+      const alone = (entry.alone = this.classify(entry, eye, bakes));
       if (alone) stats.alone[alone] += 1;
       else candidates += 1;
     }
     try {
       if (candidates < 2) {
         // A lone candidate has nothing to batch with.
+        record.grouped = false;
         stats.alone.unmatched += candidates;
         stats.draws += count;
         for (let index = 0; index < count; index += 1) drawOne(sorted[index]!);
         return;
       }
-      this.group(count);
-      this.drawBatches(transparent, drawOne, stats);
-    } finally {
-      for (let index = 0; index < count; index += 1) this.release(entries[index]!);
-      for (let index = 0; index < this.batchCount; index += 1) this.batches[index]!.entries.length = 0;
-      this.batchCount = 0;
-      this.lastOfKey.clear();
+      this.measurePass();
+      // Every stamp is put, so each holds this frame's values.
+      let regroup = !record.grouped;
+      if (this.stampPass(record.pass, eye)) regroup = true;
+      for (let index = 0; index < count; index += 1) if (stampGroup(entries[index]!)) regroup = true;
+      if (regroup) {
+        for (let index = 0; index < record.batchCount; index += 1) record.batches[index]!.entries.length = 0;
+        record.batchCount = this.group(entries, count, record.batches);
+        // No batch's members were written as these batches hold them.
+        for (const batch of record.batches) batch.serial = -1;
+        record.grouped = true;
+      }
+      const pass = ++this.passSerial;
+      const refilled = this.drawBatches(record, transparent, drawOne, stats, pass);
+      if (regroup) {
+        this.work.fullMembers += count;
+      } else {
+        this.work.fullMembers += refilled;
+        this.work.retainedMembers += count - refilled;
+        if (verifies) this.verify(record, count, eye, pass);
+      }
+    } catch (error) {
+      record.grouped = false;
+      throw error;
     }
+  }
+
+  /** What the batcher has done since it was made (`OverlayBatchWork`), as a copy. */
+  get batchWork(): OverlayBatchWork {
+    return { ...this.work, mismatchDetails: [...this.work.mismatchDetails] };
   }
 
   dispose(): void {
@@ -487,10 +873,42 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       slot.textBuffer?.dispose();
     }
     this.slots.length = 0;
-    this.entries.length = 0;
-    this.batches.length = 0;
+    for (const record of this.records) this.dropRecord(record);
+    this.records.length = 0;
+    this.verifyEntries.length = 0;
+    this.verifyBatches.length = 0;
     this.atlas?.dispose();
     this.atlas = null;
+  }
+
+  /**
+   * The kept work of the frame's next pass. A new Engine frame starts from the first record, and records the last frame
+   * drew no pass with let their members go.
+   */
+  private passRecord(): PassRecord {
+    const frame = this.scene.getEngine().frameId;
+    if (frame !== this.passFrame) {
+      for (let index = this.passCount; index < this.records.length; index += 1) this.dropRecord(this.records[index]!);
+      this.records.length = Math.min(this.records.length, this.passCount);
+      this.passFrame = frame;
+      this.passCount = 0;
+    }
+    const index = this.passCount++;
+    return (this.records[index] ??= { transparent: false, sorted: [], entries: [], batches: [], batchCount: 0, grouped: false, pass: new Stamp() });
+  }
+
+  private dropRecord(record: PassRecord): void {
+    for (const batch of record.batches) {
+      if (batch.slot?.owner === batch) batch.slot.owner = null;
+      batch.slot = null;
+      batch.entries.length = 0;
+    }
+    record.batches.length = 0;
+    record.batchCount = 0;
+    record.entries.length = 0;
+    record.sorted.length = 0;
+    record.grouped = false;
+    record.pass.clear();
   }
 
   private release(entry: Entry): void {
@@ -500,12 +918,39 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     entry.batch = -1;
   }
 
+  /**
+   * The pass's Scene transform and margins: two of the camera viewport's pixels in NDC (`toGlobalToRef` fills the ref
+   * but returns the camera's normalised viewport).
+   */
+  private measurePass(): void {
+    const scene = this.scene, engine = scene.getEngine();
+    this.transform = scene.getTransformMatrix();
+    const width = engine.getRenderWidth(), height = engine.getRenderHeight();
+    const viewport = this.scratchViewport;
+    if (scene.activeCamera) scene.activeCamera.viewport.toGlobalToRef(width, height, viewport);
+    else { viewport.width = width; viewport.height = height; }
+    // NDC spans 2 across the camera's viewport: two of its pixels.
+    this.marginX = 4 / Math.max(1, viewport.width);
+    this.marginY = 4 / Math.max(1, viewport.height);
+  }
+
+  /** Puts what grouping reads for the whole pass (its transform, margins and eye) and says whether any changed. */
+  private stampPass(stamp: Stamp, eye: { x: number; y: number; z: number }): boolean {
+    stamp.begin();
+    const m = this.transform!.asArray();
+    for (let index = 0; index < 16; index += 1) stamp.put(m[index]);
+    stamp.put(this.marginX); stamp.put(this.marginY);
+    stamp.put(eye.x); stamp.put(eye.y); stamp.put(eye.z);
+    return stamp.end();
+  }
+
   /** Fills `entry` for a draw that may batch and returns null; otherwise why it draws on its own. */
-  private classify(entry: Entry, eye: { x: number; y: number; z: number }): Exclude<OverlayAloneReason, "single" | "unmatched"> | null {
+  private classify(entry: Entry, eye: { x: number; y: number; z: number }, store: WeakMap<Mesh, Bake>): Exclude<OverlayAloneReason, "single" | "unmatched"> | null {
     const subMesh = entry.subMesh;
     const mesh = subMesh.getMesh();
     const material = subMesh.getMaterial();
-    entry.mesh = null;
+    // What the last frame found goes: a draw that goes on its own carries none of it.
+    this.release(entry);
     if (!(mesh instanceof Mesh) || subMesh.getRenderingMesh() !== mesh) return "other";
     // The unlit Material, or an authored one a batch draws as each of its members would (`markDrawBatchMaterial`).
     const unlit = isUnlitMaterial(material);
@@ -540,7 +985,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     if (!unlit && !text && isDrawBatchTextMaterial(material)) return "other";
     if (text) layout |= TEXT_LAYOUT;
     if (vertexBuffers(layout, unlit) > WEBGPU_VERTEX_BUFFERS && mesh.getEngine().isWebGPU) return "other";
-    const bake = bakeOf(mesh, eye);
+    const bake = bakeOf(mesh, eye, store);
     if (!bake) return "other";
     // A pose that mirrors, or is not affine.
     if (!bake.world) return "transform";
@@ -572,6 +1017,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   private bound(entry: Entry, transform: Matrix, marginX: number, marginY: number): void {
     entry.minX = entry.minY = Number.POSITIVE_INFINITY;
     entry.maxX = entry.maxY = Number.NEGATIVE_INFINITY;
+    // What `stampGroup` stamps.
     const mesh = entry.subMesh.getMesh();
     let min: readonly number[], max: readonly number[];
     // A batchable draw's own box, posed: tighter than its world box when it is turned.
@@ -622,17 +1068,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
    * Puts each draw in the first batch it can join: one of the same draw at or after the last batch holding a draw it
    * overlaps (so it still draws after every draw it covers), else a new batch at the end.
    */
-  private group(count: number): void {
-    const scene = this.scene, engine = scene.getEngine();
-    const transform = scene.getTransformMatrix();
-    const width = engine.getRenderWidth(), height = engine.getRenderHeight();
-    // The camera's viewport in pixels (`toGlobalToRef` fills the ref but returns the camera's normalised viewport).
-    const viewport = this.scratchViewport;
-    if (scene.activeCamera) scene.activeCamera.viewport.toGlobalToRef(width, height, viewport);
-    else { viewport.width = width; viewport.height = height; }
-    // NDC spans 2 across the camera's viewport: two of its pixels.
-    const marginX = 4 / Math.max(1, viewport.width), marginY = 4 / Math.max(1, viewport.height);
-    const entries = this.entries, batches = this.batches, lastOfKey = this.lastOfKey;
+  private group(entries: readonly Entry[], count: number, batches: Batch[]): number {
+    const transform = this.transform!, marginX = this.marginX, marginY = this.marginY;
+    const lastOfKey = this.lastOfKey;
+    lastOfKey.clear();
     let used = 0;
     for (let index = 0; index < count; index += 1) {
       const entry = entries[index]!;
@@ -652,7 +1091,8 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       }
       if (target < 0) {
         target = used++;
-        const batch = (batches[target] ??= { entries: [], minX: 0, minY: 0, maxX: 0, maxY: 0, previousOfKey: -1 });
+        const batch = (batches[target] ??= createBatch());
+        batch.entries.length = 0;
         batch.minX = batch.minY = Number.POSITIVE_INFINITY;
         batch.maxX = batch.maxY = Number.NEGATIVE_INFINITY;
         batch.previousOfKey = key ? lastOfKey.get(key) ?? -1 : -1;
@@ -666,32 +1106,45 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       if (entry.maxY > batch.maxY) batch.maxY = entry.maxY;
       entry.batch = target;
     }
-    this.batchCount = used;
+    lastOfKey.clear();
+    return used;
   }
 
-  private drawBatches(transparent: boolean, drawOne: (subMesh: SubMesh) => void, stats: OverlayBatchStats): void {
-    for (let index = 0; index < this.batchCount; index += 1) {
-      const members = this.batches[index]!.entries;
+  /** Draws the record's batches; returns how many members a fill wrote. */
+  private drawBatches(record: PassRecord, transparent: boolean, drawOne: (subMesh: SubMesh) => void, stats: OverlayBatchStats, pass: number): number {
+    let filled = 0;
+    for (let index = 0; index < record.batchCount; index += 1) {
+      const batch = record.batches[index]!;
+      const members = batch.entries;
       // A member whose own draw would not draw now (Babylon's readiness gate) leaves its batch's members to their own.
-      if (members.length > 1 && members.every(drawsNow) && this.drawBatch(members, transparent)) {
-        stats.draws += 1;
-        stats.batches += 1;
-        stats.batched += members.length;
-        continue;
+      if (members.length > 1 && members.every(drawsNow)) {
+        const drawn = this.drawBatch(batch, transparent, pass);
+        if (batch.filledPass === pass) filled += members.length;
+        if (drawn) {
+          stats.draws += 1;
+          stats.batches += 1;
+          stats.batched += members.length;
+          continue;
+        }
       }
       stats.draws += members.length;
       // A candidate nothing matched, or whose batch could not draw as one now; the others were counted as classified.
       for (const entry of members) if (entry.mesh) stats.alone.unmatched += 1;
       for (const entry of members) drawOne(entry.subMesh);
     }
+    return filled;
   }
 
-  /** Draws `members` as one batch; false (nothing drawn) when its mesh is not ready with their program's batch variant. */
-  private drawBatch(members: readonly Entry[], transparent: boolean): boolean {
+  /** Draws `batch` as one; false (nothing drawn) when its mesh is not ready with its members' program's batch variant. */
+  private drawBatch(batch: Batch, transparent: boolean, pass: number): boolean {
     const scene = this.scene;
+    const members = batch.entries;
     const first = members[0]!;
     const member = first.mesh!;
-    const slot = this.slotFor(first.layout);
+    for (const entry of members) styleOf(entry);
+    const slot = this.slotFor(batch, first.layout);
+    batch.slot = slot;
+    batch.heldPass = pass;
     const mesh = slot.mesh;
     if (mesh.material !== first.material) mesh.material = first.material;
     if (first.binding) setUnlitBinding(mesh, first.cell ? pageBinding(slot, first.binding, first.cell.page) : first.binding);
@@ -702,7 +1155,18 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     shareOverlayVisualStyle(mesh, member);
     mesh.visibility = member.visibility;
     mesh.sideOrientation = member.sideOrientation;
-    this.fill(slot, members);
+    // The slot still holds this batch's last fill, and every member would be written as it was then: nothing to write.
+    let holds = slot.owner === batch && slot.serial === batch.serial;
+    for (let index = 0; holds && index < members.length; index += 1) holds = holdsWritten(members[index]!);
+    if (!holds) {
+      // Owned by no batch until the fill is whole.
+      slot.owner = null;
+      this.fill(slot, members);
+      for (const entry of members) keepWritten(entry);
+      slot.owner = batch;
+      slot.serial = batch.serial = ++this.fillSerial;
+      batch.filledPass = pass;
+    }
     const subMesh = mesh.subMeshes[0]!;
     if (!first.material!.isReadyForSubMesh(mesh, subMesh, false)) return false;
     const effect = subMesh.effect;
@@ -724,16 +1188,27 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   }
 
   /**
-   * The next batch mesh of this Engine frame, created (out of the Scene's lists) when the pool runs out. A batch mesh
-   * draws once per Engine frame: WebGPU writes buffers ahead of the frame's draws, so a second write would show in both.
+   * A batch mesh for `batch` not yet drawn from in this Engine frame: the one it drew from last, else one no batch holds
+   * a fill in, else any, else a new one (out of the Scene's lists). A batch mesh draws once per Engine frame: WebGPU
+   * writes buffers ahead of the frame's draws, so a second write would show in both.
    */
-  private slotFor(layout: number): Slot {
+  private slotFor(batch: Batch, layout: number): Slot {
     const frame = this.scene.getEngine().frameId;
-    if (frame !== this.cursorFrame) {
-      this.cursorFrame = frame;
-      this.slotCursor = 0;
+    let slot = batch.slot;
+    if (!slot || slot.usedFrame === frame) {
+      slot = null;
+      let spare: Slot | null = null;
+      for (const candidate of this.slots) {
+        if (candidate.usedFrame === frame) continue;
+        const owner = candidate.owner;
+        if (!owner || owner.slot !== candidate || owner.serial !== candidate.serial) {
+          slot = candidate;
+          break;
+        }
+        spare ??= candidate;
+      }
+      slot ??= spare;
     }
-    let slot = this.slots[this.slotCursor];
     if (!slot) {
       const scene = this.scene;
       const blocked = scene._blockEntityCollection;
@@ -753,15 +1228,16 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       slot = {
         mesh, layout, vertexCapacity: 0, indexCapacity: 0, positions: new Float32Array(0), extras: EXTRA_KINDS.map(() => null), worlds: new Float32Array(0),
         worldBuffer: null, styles: new Float32Array(0), styleBuffer: null, texts: new Float32Array(0), textBuffer: null, indices: new Uint16Array(0), vertexCount: 0, indexCount: 0, memberEffect: null, batchEffect: null,
-        pageBinding: null,
+        pageBinding: null, owner: null, serial: -1, usedFrame: -1,
       };
       this.slots.push(slot);
     }
-    this.slotCursor += 1;
+    slot.usedFrame = frame;
     if (slot.layout !== layout) {
       // Rebuilt with this layout's vertex data at the next fill.
       slot.layout = layout;
       slot.vertexCapacity = 0;
+      slot.owner = null;
     }
     return slot;
   }
@@ -769,13 +1245,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   /**
    * Writes the members' vertices, world matrices, colours and tints, UVs and indices into the slot's buffers, uploading
    * only the buffers whose contents changed: a member that moves uploads the world matrices alone, a tint the styles.
+   * Each member's `styleOf` is written first.
    */
   private fill(slot: Slot, members: readonly Entry[]): void {
-    let vertexCount = 0, indexCount = 0;
-    for (const entry of members) {
-      vertexCount += entry.bake!.copy.length / 3;
-      indexCount += entry.indices!.length;
-    }
+    const { vertices: vertexCount, indices: indexCount } = batchCounts(members);
     const mesh = slot.mesh;
     const grow = vertexCount > slot.vertexCapacity || indexCount > slot.indexCapacity;
     if (grow) {
@@ -792,65 +1265,8 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const { positions, extras, worlds, styles, texts, indices } = slot;
     // Another count of vertices or indices is drawn from every buffer anew.
     const resized = grow || vertexCount !== slot.vertexCount || indexCount !== slot.indexCount;
-    let positionsChanged = resized, worldsChanged = resized, stylesChanged = resized, textsChanged = resized, indicesChanged = resized;
-    /** The extra kinds whose buffers changed, as bits. */
-    let extrasChanged = resized ? -1 : 0;
-    const style = this.scratchStyle, glyph = this.scratchGlyph;
-    let vertex = 0, index = 0;
-    for (const entry of members) {
-      const own = entry.bake!.copy, world = entry.bake!.world!;
-      const memberVertices = own.length / 3;
-      for (let offset = 0, at = vertex * 3; offset < own.length; offset += 1, at += 1) {
-        const value = own[offset]!;
-        if (positions[at] !== value) { positions[at] = value; positionsChanged = true; }
-      }
-      for (let offset = 0, at = vertex * WORLD_FLOATS; offset < memberVertices * WORLD_FLOATS; offset += 1, at += 1) {
-        const value = world[offset % WORLD_FLOATS]!;
-        if (worlds[at] !== value) { worlds[at] = value; worldsChanged = true; }
-      }
-      // What the member's own draw binds (`bindUnlitUniforms`), rounded to 32 bits as an upload rounds it.
-      // An authored Material reads the tint alone.
-      const binding = entry.binding, { opacity, tint } = overlayVisualStyle(entry.mesh!);
-      style[0] = binding?.color[0] ?? 1; style[1] = binding?.color[1] ?? 1; style[2] = binding?.color[2] ?? 1; style[3] = binding?.alpha ?? 1;
-      style[4] = tint[0]; style[5] = tint[1]; style[6] = tint[2]; style[7] = tint[3] * opacity;
-      // The texel grid the member's own draw binds: over the whole of the texture, or over its image's cell where
-      // this batch samples the page.
-      unlitTexelGrid(binding?.texture ?? null, style, 8);
-      const cell = entry.cell;
-      if (cell) { style[8]! *= cell.width; style[9]! *= cell.height; }
-      style[10] = cell?.x ?? UNLIT_TEXEL_WHOLE; style[11] = cell?.y ?? UNLIT_TEXEL_WHOLE;
-      for (let offset = 0, at = vertex * STYLE_FLOATS; offset < memberVertices * STYLE_FLOATS; offset += 1, at += 1) {
-        const value = style[offset % STYLE_FLOATS]!;
-        if (styles[at] !== value) { styles[at] = value; stylesChanged = true; }
-      }
-      if (entry.text) {
-        // What the glyph's own draw binds (`TextMaterialBlock.bind`).
-        glyph.set(entry.text.atlasRect, 0);
-        glyph.set(entry.text.materialRect, 4);
-        glyph.set(entry.text.color, 8);
-        glyph[11] = entry.mesh!.visibility;
-        for (let offset = 0, at = vertex * TEXT_FLOATS; offset < memberVertices * TEXT_FLOATS; offset += 1, at += 1) {
-          const value = glyph[offset % TEXT_FLOATS]!;
-          if (texts[at] !== value) { texts[at] = value; textsChanged = true; }
-        }
-      }
-      for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) {
-        const target = extras[kind];
-        if (!target) continue;
-        const data = entry.extras[kind]!, size = EXTRA_SIZES[kind]!;
-        for (let offset = 0, at = vertex * size; offset < memberVertices * size; offset += 1, at += 1) {
-          const value = Math.fround(data[offset]!);
-          if (target[at] !== value) { target[at] = value; extrasChanged |= 1 << kind; }
-        }
-      }
-      const source = entry.indices!;
-      for (let offset = 0, at = index; offset < source.length; offset += 1, at += 1) {
-        const value = source[offset]! + vertex;
-        if (indices[at] !== value) { indices[at] = value; indicesChanged = true; }
-      }
-      vertex += memberVertices;
-      index += source.length;
-    }
+    const changed = writeMembers(slot, members) | (resized ? -1 : 0);
+    const vertex = vertexCount, index = indexCount;
     slot.vertexCount = vertex;
     slot.indexCount = index;
     if (grow) {
@@ -884,15 +1300,15 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       }
     } else {
       // In place: the buffers (and their vertex array objects) stay. Whole arrays, which the buffers keep for a rebuild.
-      if (positionsChanged) mesh.getVertexBuffer(VertexBuffer.PositionKind)!.updateDirectly(positions, 0);
+      if (changed & CHANGED_POSITIONS) mesh.getVertexBuffer(VertexBuffer.PositionKind)!.updateDirectly(positions, 0);
       for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1) {
         const data = extras[kind];
-        if (data && extrasChanged & (1 << kind)) mesh.getVertexBuffer(EXTRA_KINDS[kind]!)!.updateDirectly(data, 0);
+        if (data && changed & changedExtra(kind)) mesh.getVertexBuffer(EXTRA_KINDS[kind]!)!.updateDirectly(data, 0);
       }
-      if (worldsChanged) slot.worldBuffer!.updateDirectly(worlds, 0);
-      if (stylesChanged) slot.styleBuffer!.updateDirectly(styles, 0);
-      if (slot.textBuffer && textsChanged) slot.textBuffer.updateDirectly(texts, 0);
-      if (indicesChanged) mesh.updateIndices(indices, 0, true);
+      if (changed & CHANGED_WORLDS) slot.worldBuffer!.updateDirectly(worlds, 0);
+      if (changed & CHANGED_STYLES) slot.styleBuffer!.updateDirectly(styles, 0);
+      if (slot.textBuffer && changed & CHANGED_TEXTS) slot.textBuffer.updateDirectly(texts, 0);
+      if (changed & CHANGED_INDICES) mesh.updateIndices(indices, 0, true);
     }
     const subMesh = mesh.subMeshes[0]!;
     subMesh.verticesStart = 0;
@@ -900,6 +1316,102 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     subMesh.indexStart = 0;
     subMesh.indexCount = index;
   }
+
+  /**
+   * Checks a pass that took the retained path against the full path, worked out on the verifier's own entries,
+   * batches, vertex caches and arrays (`verifyRetainedOverlayBatches`): the same classification, bounds and batches, in
+   * the same order, and every batch given a slot this pass holding, in a slot of its own, what a fill would write now.
+   */
+  private verify(record: PassRecord, count: number, eye: { x: number; y: number; z: number }, pass: number): void {
+    const work = this.work;
+    work.verifiedPasses += 1;
+    const kept = record.entries, shadow = this.verifyEntries, batches = this.verifyBatches;
+    let detail: string | null = null;
+    try {
+      let candidates = 0;
+      for (let index = 0; index < count; index += 1) {
+        const entry = (shadow[index] ??= createEntry(record.sorted[index]!));
+        entry.subMesh = record.sorted[index]!;
+        entry.alone = this.classify(entry, eye, this.verifyBakes);
+        if (!entry.alone) candidates += 1;
+        if (!detail && entry.alone !== kept[index]!.alone) detail = `member ${index}: ${entry.alone ?? "batchable"}, kept ${kept[index]!.alone ?? "batchable"}`;
+      }
+      if (!detail && candidates < 2) detail = `${candidates} batchable members`;
+      if (!detail) {
+        this.measurePass();
+        const used = this.group(shadow, count, batches);
+        detail = compareGrouping(kept, shadow, count, record.batches, record.batchCount, batches, used);
+      }
+      const frame = this.scene.getEngine().frameId;
+      const seen = new Set<Slot>();
+      for (let index = 0; !detail && index < record.batchCount; index += 1) {
+        const batch = record.batches[index]!;
+        if (batch.heldPass !== pass) continue;
+        const slot = batch.slot!;
+        if (slot.owner !== batch || slot.serial !== batch.serial || slot.usedFrame !== frame || seen.has(slot)) {
+          detail = `batch ${index}: its slot is not its own this frame`;
+          break;
+        }
+        seen.add(slot);
+        detail = this.compareSlot(index, slot, batches[index]!.entries);
+      }
+    } finally {
+      for (let index = 0; index < count; index += 1) this.release(shadow[index]!);
+      for (const batch of batches) batch.entries.length = 0;
+    }
+    if (!detail) return;
+    work.mismatches += 1;
+    if (work.mismatchDetails.length < MAX_MISMATCH_DETAILS) work.mismatchDetails.push(detail);
+  }
+
+  /** How `slot` differs from what a fill of `members` would write now, or null when it holds just that. */
+  private compareSlot(batch: number, slot: Slot, members: readonly Entry[]): string | null {
+    const { vertices, indices } = batchCounts(members);
+    const layout = members[0]!.layout;
+    const arrays = this.verifyArrays;
+    const grown = (array: Float32Array, length: number) => (array.length >= length ? array : new Float32Array(length));
+    arrays.positions = grown(arrays.positions, vertices * 3);
+    arrays.worlds = grown(arrays.worlds, vertices * WORLD_FLOATS);
+    arrays.styles = grown(arrays.styles, vertices * STYLE_FLOATS);
+    arrays.texts = grown(arrays.texts, layout & TEXT_LAYOUT ? vertices * TEXT_FLOATS : 0);
+    for (let kind = 0; kind < EXTRA_KINDS.length; kind += 1)
+      arrays.extras[kind] = layout & (1 << kind) ? grown(arrays.extras[kind] ?? new Float32Array(0), vertices * EXTRA_SIZES[kind]!) : null;
+    if (arrays.indices.length < indices) arrays.indices = new Float64Array(indices);
+    for (const entry of members) styleOf(entry);
+    writeMembers(arrays, members);
+    const subMesh = slot.mesh.subMeshes[0];
+    if (slot.layout !== layout || slot.vertexCount !== vertices || slot.indexCount !== indices || subMesh?.verticesCount !== vertices || subMesh.indexCount !== indices)
+      return `batch ${batch}: ${slot.vertexCount} vertices and ${slot.indexCount} indices, not ${vertices} and ${indices}`;
+    const differs = (name: string, held: ArrayLike<number>, expected: ArrayLike<number>, length: number): string | null => {
+      for (let index = 0; index < length; index += 1) if (held[index] !== expected[index]) return `batch ${batch}: ${name}[${index}] is ${held[index]}, not ${expected[index]}`;
+      return null;
+    };
+    let found = differs("position", slot.positions, arrays.positions, vertices * 3) ?? differs("world", slot.worlds, arrays.worlds, vertices * WORLD_FLOATS) ??
+      differs("style", slot.styles, arrays.styles, vertices * STYLE_FLOATS) ?? differs("index", slot.indices, arrays.indices, indices);
+    if (!found && layout & TEXT_LAYOUT) found = differs("glyph", slot.texts, arrays.texts, vertices * TEXT_FLOATS);
+    for (let kind = 0; !found && kind < EXTRA_KINDS.length; kind += 1)
+      if (layout & (1 << kind)) found = differs(EXTRA_KINDS[kind]!, slot.extras[kind]!, arrays.extras[kind]!, vertices * EXTRA_SIZES[kind]!);
+    return found;
+  }
+}
+
+/** How the kept classification's bounds and batches differ from the full path's (`verify`), or null when they agree. */
+function compareGrouping(
+  kept: readonly Entry[], full: readonly Entry[], count: number, keptBatches: readonly Batch[], keptCount: number, fullBatches: readonly Batch[], fullCount: number,
+): string | null {
+  for (let index = 0; index < count; index += 1) {
+    const a = kept[index]!, b = full[index]!;
+    if (!(a.minX === b.minX && a.minY === b.minY && a.maxX === b.maxX && a.maxY === b.maxY))
+      return `member ${index}: bounds ${[a.minX, a.minY, a.maxX, a.maxY].join()}, not ${[b.minX, b.minY, b.maxX, b.maxY].join()}`;
+  }
+  if (keptCount !== fullCount) return `${keptCount} batches, not ${fullCount}`;
+  for (let index = 0; index < keptCount; index += 1) {
+    const a = keptBatches[index]!.entries, b = fullBatches[index]!.entries;
+    if (a.length !== b.length) return `batch ${index}: ${a.length} members, not ${b.length}`;
+    for (let member = 0; member < a.length; member += 1)
+      if (a[member]!.subMesh !== b[member]!.subMesh) return `batch ${index}: member ${member} is ${a[member]!.subMesh.getMesh().name}, not ${b[member]!.subMesh.getMesh().name}`;
+  }
+  return null;
 }
 
 const BATCH_DEFINE = "#define HAPTIC_BATCH\n";
@@ -946,6 +1458,12 @@ export function setSceneImagePages(scene: Scene, enabled: boolean): void {
 export function sceneImagePages(scene: Scene): { images: number; drawn: number } {
   const batcher = sceneDrawBatcher(scene);
   return batcher instanceof OverlayDrawBatcher ? batcher.imagePages : { images: 0, drawn: 0 };
+}
+
+/** What `scene`'s batcher has done since it was made (`OverlayBatchWork`); null for a Scene that does not batch. */
+export function sceneDrawBatchWork(scene: Scene): OverlayBatchWork | null {
+  const batcher = sceneDrawBatcher(scene);
+  return batcher instanceof OverlayDrawBatcher ? batcher.batchWork : null;
 }
 
 /**

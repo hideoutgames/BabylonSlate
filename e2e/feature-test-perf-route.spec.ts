@@ -30,7 +30,9 @@ import {
  *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report),
  *      HAPTIC_PERF_PROFILE=1 (with HAPTIC_PERF_OUT: a CPU profile of each scene's Play windows beside the report),
  *      HAPTIC_PERF_VERIFY_SCOPED=1 (Play follows each scoped readiness probe with a whole one that must agree:
- *      `rendererWork.scopedReadinessMismatches`).
+ *      `rendererWork.scopedReadinessMismatches`),
+ *      HAPTIC_PERF_VERIFY_BATCHES=1 (Play checks each Scene Layer pass whose draw batches kept their work against the
+ *      full path: `layerWork[].batching.mismatches`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -59,6 +61,8 @@ const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
 const PROFILE = process.env.HAPTIC_PERF_PROFILE === "1" && !!process.env.HAPTIC_PERF_OUT;
 /** Each scoped readiness probe in Play is followed by a whole one, which must agree (the measured frames carry its cost). */
 const VERIFY_SCOPED = process.env.HAPTIC_PERF_VERIFY_SCOPED === "1";
+/** Each Scene Layer pass that keeps its batches' work is checked against the full path (the measured frames carry its cost). */
+const VERIFY_BATCHES = process.env.HAPTIC_PERF_VERIFY_BATCHES === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -74,6 +78,7 @@ type PlayHost = {
     liveObjectCounts: () => Record<string, number>;
     spawnableWarm: () => { materials: number; models: number; ms: number } | null;
     verifyScopedReadinessProbes: (enabled: boolean) => void;
+    verifyRetainedOverlayBatches: (enabled: boolean) => void;
   };
 };
 
@@ -318,6 +323,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   // The share of the boot spent compiling what Play may spawn, before the first frame.
   const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
   if (VERIFY_SCOPED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyScopedReadinessProbes(true));
+  if (VERIFY_BATCHES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRetainedOverlayBatches(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
