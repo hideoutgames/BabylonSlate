@@ -1,12 +1,9 @@
-import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
-import { GITIGNORE_ENTRIES, withIgnoreEntries, withLfsRule } from "@haptic/source-control";
+import { isStorageNotFound, PROJECT_CREATION_MARKER, type ProjectStorage } from "@haptic/core";
+import { GITIGNORE_ENTRIES, lfsObjectId, withIgnoreEntries, withLfsRule } from "@haptic/source-control";
 import type { PublishSummary } from "../context/document-context-types";
 
 // Publish's file work, loaded with the Publish dialog: the summary of what it
 // pushes and the `.gitattributes` and `.gitignore` it writes.
-
-const BLOB_PATH = /(?:^|\/)\.blobs\/[0-9a-f]{64}$/;
-const CREATION_MARKER = ".haptic-creating";
 
 /** `.gitignore`'s Publish entries as name globs (`*` within a name). */
 const IGNORED = GITIGNORE_ENTRIES.map((entry) => new RegExp(`^${entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")}$`));
@@ -31,14 +28,14 @@ export async function summarizeProject(storage: ProjectStorage): Promise<Publish
   const walk = async (dir: string): Promise<void> => {
     for (const entry of await storage.readdir(dir)) {
       const path = dir ? `${dir}/${entry.name}` : entry.name;
-      if (path === ".git" || path === CREATION_MARKER || IGNORED.some((rule) => rule.test(entry.name))) continue;
+      if (path === ".git" || path === PROJECT_CREATION_MARKER || IGNORED.some((rule) => rule.test(entry.name))) continue;
       if (entry.isDir) {
         await walk(path);
         continue;
       }
       const size = entry.size ?? (await storage.stat(path)).size ?? 0;
       summary.bytes += size;
-      if (BLOB_PATH.test(path)) summary.lfsBytes += size;
+      if (lfsObjectId(path)) summary.lfsBytes += size;
       else if (path.endsWith(".hasset")) summary.assets += 1;
     }
   };
