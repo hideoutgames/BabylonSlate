@@ -128,6 +128,10 @@ export class SourceControlService {
   };
   private hostOk = false;
   private testMode = false;
+  /** The working copy's checked-out branch in Integrated mode (the sync's HEAD); `""` while none is. */
+  private checkedOut = "";
+  /** The branch the last lock requests named, so a move checks the locks again. */
+  private lastLockBranch: string | null = null;
   private hosts: SourceControlHosts | null = null;
   private detachHosts: (() => void) | null = null;
   private storage: ProjectStorage | null = null;
@@ -191,6 +195,39 @@ export class SourceControlService {
 
   get autoLockOnEdit(): boolean {
     return this.settings.autoLockOnEdit;
+  }
+
+  /**
+   * The branch lock requests name. Integrated mode: the working copy's
+   * checked-out branch, the one a push sends, so a host that scopes locks by
+   * ref checks that branch. Manual mode (another Git app owns the working
+   * copy) and a working copy with no branch checked out (a detached HEAD, an
+   * open that failed or has not finished, a blocked folder) use the project's
+   * default branch: no push can run then, locks stay advisory and keep
+   * working, and an empty ref would name no branch.
+   */
+  get lockBranch(): string {
+    return this.settings.mode === "integrated" && this.checkedOut !== "" ? this.checkedOut : this.settings.branch;
+  }
+
+  /**
+   * The working copy's checked-out branch, from the Integrated sync (`""`
+   * while none is). A move checks the locks again, since a host that scopes
+   * them by ref lists another branch's, and lets auto-lock try each path again.
+   */
+  setCheckedOutBranch(branch: string): void {
+    this.checkedOut = branch;
+    this.followLockBranch();
+  }
+
+  private followLockBranch(): void {
+    const branch = this.lockBranch;
+    if (branch === this.lastLockBranch) return;
+    const moved = this.lastLockBranch !== null;
+    this.lastLockBranch = branch;
+    if (!moved || !this.provider || !this.active || this.unsupported) return;
+    this.autoLockAttempted.clear();
+    this.requestRefresh();
   }
 
   /** Set while the project's host has no credential on this device; nothing is requested until one is saved. */
@@ -296,6 +333,8 @@ export class SourceControlService {
       input.fake ? "fake" : "",
     ].join("|");
     if (identity === this.providerIdentity && this.hosts) {
+      // Manual and Integrated name different branches.
+      this.followLockBranch();
       // A credential saved or removed while the mode was Off applies now.
       await this.connect();
       if (configureRevision !== this.configureRevision) return;
@@ -309,6 +348,8 @@ export class SourceControlService {
     this.providerIdentity = identity;
     this.seededFake = input.fake ?? null;
     this.resetProviderState();
+    // The new provider's first check names the branch it starts on.
+    this.lastLockBranch = this.lockBranch;
     this.emit();
     let hosts: SourceControlHosts;
     try {
@@ -377,7 +418,7 @@ export class SourceControlService {
       try {
         this.provider = new GitLfsLockProvider({
           repositoryUrl: this.settings.repositoryUrl,
-          branch: this.settings.branch,
+          branch: () => this.lockBranch,
           http: hosts.http,
           credential: source,
         });
@@ -716,16 +757,17 @@ export class SourceControlService {
   }
 
   /**
-   * Integrated push: the locks someone else holds on `paths`, from a fresh
+   * Integrated push: the locks someone else holds on `paths` of `branch`,
+   * the branch the push sends (checked out when it runs), from a fresh
    * verify. Empty where there is nothing to check against (no provider yet,
    * or a host without the locking API), so locking never blocks a push it
    * cannot judge; a failed verify rejects.
    */
-  async locksBlockingPush(paths: readonly string[]): Promise<FileLock[]> {
+  async locksBlockingPush(paths: readonly string[], branch: string): Promise<FileLock[]> {
     const provider = this.provider;
     if (!this.active || !provider || this.unsupported || paths.length === 0) return [];
     const revision = this.providerRevision;
-    const result = await provider.verify();
+    const result = await provider.verify({ branch });
     if (!isOk(result)) {
       if (result.error.kind === "unsupported") {
         if (revision === this.providerRevision) this.markUnsupported();

@@ -283,6 +283,8 @@ describe("SourceControlService", () => {
         isPathDirty: (path) => path === "assets/dirty.hasset",
       });
       service.pausePolling();
+      // Manual mode has no Git client here: the remote branch compared is always the default one.
+      service.setCheckedOutBranch("feature");
       for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/changed.hasset", "assets/new.hasset"]) await service.autoLock(path);
       await service.refresh();
       expect(service.canReleasePushed).toBe(true);
@@ -890,6 +892,86 @@ describe("SourceControlService", () => {
   });
 });
 
+describe("SourceControlService lock ref", () => {
+  /** A Git LFS host that records each request's `ref.name` (by endpoint) and answers with no locks. */
+  function recordingHost() {
+    const refs: Array<[string, string]> = [];
+    const http: HttpClient = async (request) => {
+      const body = JSON.parse(String(request.body ?? "{}")) as { path?: string; ref?: { name?: string } };
+      const endpoint = request.url.endsWith("/verify") ? "verify" : request.url.endsWith("/unlock") ? "unlock" : "create";
+      refs.push([endpoint, body.ref?.name ?? ""]);
+      if (endpoint === "create") {
+        return { status: 201, bodyText: JSON.stringify({ lock: { id: `${body.path}-lock`, path: body.path, locked_at: "", owner: { name: "ada" } } }) };
+      }
+      return { status: 200, bodyText: '{"ours":[],"theirs":[]}' };
+    };
+    return { refs, http };
+  }
+
+  it("sends the checked-out branch in Integrated mode for every lock request, and a push's own branch for its check", async () => {
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      await service.autoLock("assets/a.hasset");
+      await service.releasePath("assets/a.hasset");
+      await service.locksBlockingPush(["assets/a.hasset"], "hotfix");
+      expect(refs).toEqual([
+        ["verify", "refs/heads/feature"],
+        ["create", "refs/heads/feature"],
+        ["unlock", "refs/heads/feature"],
+        ["verify", "refs/heads/hotfix"],
+      ]);
+
+      // No branch checked out (a detached HEAD, an open that failed or has not finished, a blocked
+      // folder): no push can run, and locks keep working on the team's default branch, never an empty ref.
+      refs.length = 0;
+      service.setCheckedOutBranch("");
+      await service.refresh();
+      expect(refs).toEqual([["verify", "refs/heads/main"]]);
+    } finally { service.dispose(); }
+  });
+
+  it("checks the locks again when the checked-out branch moves, and only then", async () => {
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http),
+      });
+      await vi.waitFor(() => expect(refs).toEqual([["verify", "refs/heads/main"]]));
+      service.setCheckedOutBranch("main");
+      service.setCheckedOutBranch("feature");
+      await vi.waitFor(() => expect(refs).toEqual([["verify", "refs/heads/main"], ["verify", "refs/heads/feature"]]));
+      service.setCheckedOutBranch("feature");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(refs).toHaveLength(2);
+    } finally { service.dispose(); }
+  });
+
+  it("keeps the default branch in Manual mode, where another Git app owns the working copy", async () => {
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http) });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      await service.autoLock("assets/a.hasset");
+      expect(refs).toEqual([["verify", "refs/heads/main"], ["create", "refs/heads/main"]]);
+    } finally { service.dispose(); }
+  });
+});
+
 describe("SourceControlService around an Integrated push", () => {
   const integrated = { ...manual, mode: "integrated" as const };
 
@@ -902,7 +984,7 @@ describe("SourceControlService around an Integrated push", () => {
       // Taken after the last poll: only a fresh verify sees them.
       fake.addTheirs("assets/rock.hasset", "Sam");
       fake.addTheirs("assets/other.hasset", "Kim");
-      const holders = await service.locksBlockingPush(["assets/rock.hasset", "assets/mine.hasset"]);
+      const holders = await service.locksBlockingPush(["assets/rock.hasset", "assets/mine.hasset"], "main");
       expect(holders.map((lock) => [lock.path, lock.ownerName])).toEqual([["assets/rock.hasset", "Sam"]]);
     } finally {
       service.dispose();
@@ -925,9 +1007,9 @@ describe("SourceControlService around an Integrated push", () => {
       await vi.waitFor(() => expect(service.enabled).toBe(true));
       fake.addTheirs("assets/rock.hasset", "Sam");
       const verify = vi.spyOn(fake, "verify").mockResolvedValueOnce(err({ kind: "http", message: "Bad Gateway", status: 502 }));
-      await expect(service.locksBlockingPush(["assets/rock.hasset"])).rejects.toThrow("Bad Gateway");
+      await expect(service.locksBlockingPush(["assets/rock.hasset"], "main")).rejects.toThrow("Bad Gateway");
       verify.mockResolvedValueOnce(err({ kind: "unsupported", message: "Not Found", status: 404 }));
-      expect(await service.locksBlockingPush(["assets/rock.hasset"])).toEqual([]);
+      expect(await service.locksBlockingPush(["assets/rock.hasset"], "main")).toEqual([]);
       expect(service.lockingUnsupported).toBe(true);
     } finally {
       service.dispose();

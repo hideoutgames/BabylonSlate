@@ -12,6 +12,7 @@ import type {
   LockProvider,
   LockResult,
   UnlockOptions,
+  VerifyOptions,
 } from "./types";
 import { LFS_JSON } from "./types";
 
@@ -31,7 +32,7 @@ interface RawLock {
 export class GitLfsLockProvider implements LockProvider {
   private readonly locksUrl: string;
   private readonly origin: string;
-  private readonly ref: { name: string };
+  private readonly branch: () => string;
   private readonly http: GitLfsLockProviderOptions["http"];
   private readonly credential: GitLfsLockProviderOptions["credential"];
 
@@ -42,7 +43,7 @@ export class GitLfsLockProvider implements LockProvider {
     }
     this.locksUrl = lfsLocksUrl(base);
     this.origin = originOf(base)!;
-    this.ref = { name: lfsRefName(options.branch || "main") };
+    this.branch = options.branch;
     this.http = options.http;
     this.credential = options.credential;
   }
@@ -51,7 +52,7 @@ export class GitLfsLockProvider implements LockProvider {
     const response = await this.request({
       method: "POST",
       url: this.locksUrl,
-      body: { path, ref: this.ref },
+      body: { path, ref: refOf(this.branch()) },
     });
     if (!isOk(response)) return response;
     const { status, json, kind } = response.value;
@@ -76,13 +77,15 @@ export class GitLfsLockProvider implements LockProvider {
     return this.lockingError(status, json, kind);
   }
 
-  async verify(): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>> {
+  async verify(options: VerifyOptions = {}): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>> {
     const ours: FileLock[] = [];
     const theirs: FileLock[] = [];
     const cursors = new Set<string>();
+    // Every page of one listing names the same branch.
+    const ref = refOf(options.branch ?? this.branch());
     let cursor: string | undefined;
     for (;;) {
-      const body: Record<string, unknown> = { ref: this.ref };
+      const body: Record<string, unknown> = { ref };
       if (cursor) body.cursor = cursor;
       const response = await this.request({
         method: "POST",
@@ -114,7 +117,7 @@ export class GitLfsLockProvider implements LockProvider {
     const response = await this.request({
       method: "POST",
       url: `${this.locksUrl}/${encodeURIComponent(id)}/unlock`,
-      body: { force: options?.force === true, ref: this.ref },
+      body: { force: options?.force === true, ref: refOf(this.branch()) },
     });
     if (!isOk(response)) return response;
     const { status, json } = response.value;
@@ -198,6 +201,11 @@ export class GitLfsLockProvider implements LockProvider {
       status,
     });
   }
+}
+
+/** The Git LFS locking API's `ref`: the branch the locks belong to. */
+function refOf(branch: string): { name: string } {
+  return { name: lfsRefName(branch) };
 }
 
 function messageOf(json: Record<string, unknown> | null, fallback: string): string {

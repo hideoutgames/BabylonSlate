@@ -13,6 +13,7 @@ export type {
   LockProvider,
   LockResult,
   UnlockOptions,
+  VerifyOptions,
 } from "./types";
 export { isSourceControlHost, LOCK_POLL_INTERVAL_MS } from "./types";
 export type { HttpClient, HttpRequest, HttpResponse } from "./http";

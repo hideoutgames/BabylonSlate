@@ -52,7 +52,7 @@ async function setup(options: { platform?: string; testMode?: boolean; files?: R
     setAdoption: vi.fn(async () => {}),
   };
   const locks = {
-    theirs: vi.fn<(paths: readonly string[]) => Promise<FileLock[]>>(async () => []),
+    theirs: vi.fn<(paths: readonly string[], branch: string) => Promise<FileLock[]>>(async () => []),
     releaseOwn: vi.fn<(paths: readonly string[]) => Promise<void>>(async () => {}),
   };
   const input = (mode: SourceControlMode, releaseLocksAfterPush = true): SyncConfigureInput => ({
@@ -283,11 +283,21 @@ describe("SourceControlSyncService", () => {
     await storage.writeText("assets/Rock.texture.hasset", "R2");
     locks.theirs.mockImplementation(async (paths) => paths.includes("assets/Rock.texture.hasset") ? [lock("assets/Rock.texture.hasset", "Sam", false)] : []);
     await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: true });
-    expect(locks.theirs).toHaveBeenCalledWith(["assets/Rock.texture.hasset"]);
+    expect(locks.theirs).toHaveBeenCalledWith(["assets/Rock.texture.hasset"], "main");
     expect(spied.push).not.toHaveBeenCalled();
     expect(service.getSnapshot().problem).toMatchObject({ title: "Could Not Push", holders: [{ ownerName: "Sam" }] });
     expect(service.getSnapshot().problem?.message).toContain("Sam");
     expect(service.getSnapshot().ahead).toBe(1);
+  });
+
+  it("checks the locks of the branch it pushes, the one checked out, not the project's default branch", async () => {
+    const { service, input, storage, locks, remote } = await setup();
+    await service.configure(input("integrated"));
+    await service.createBranch("feature");
+    await storage.writeText("assets/Rock.texture.hasset", "R2");
+    await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: true });
+    expect(locks.theirs.mock.calls).toEqual([[["assets/Rock.texture.hasset"], "feature"]]);
+    expect(remote.branches.has("feature")).toBe(true);
   });
 
   it.each([
@@ -350,7 +360,7 @@ describe("SourceControlSyncService", () => {
         ...NOT_ASKED,
       };
       const locks = {
-        theirs: vi.fn<(paths: readonly string[]) => Promise<FileLock[]>>(async () => []),
+        theirs: vi.fn<(paths: readonly string[], branch: string) => Promise<FileLock[]>>(async () => []),
         releaseOwn: vi.fn<(paths: readonly string[]) => Promise<void>>(async () => {}),
       };
       const input = (target: { url: string; folder: SyncConfigureInput["folder"] }): SyncConfigureInput => ({

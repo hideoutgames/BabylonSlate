@@ -31,15 +31,25 @@ export interface UnlockOptions {
   force?: boolean;
 }
 
+export interface VerifyOptions {
+  /** The branch whose locks to list (an Integrated push's own); the provider's branch by default. */
+  branch?: string;
+}
+
 export interface LockProvider {
   create(path: string): Promise<LockResult<FileLock>>;
-  verify(): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>>;
+  verify(options?: VerifyOptions): Promise<LockResult<{ ours: FileLock[]; theirs: FileLock[] }>>;
   unlock(id: string, options?: UnlockOptions): Promise<LockResult<void>>;
 }
 
 export interface GitLfsLockProviderOptions {
   repositoryUrl: string;
-  branch: string;
+  /**
+   * The branch lock requests name (`ref.name`), read on every request, so a
+   * switch to another branch applies at once: the checked-out branch in
+   * Integrated mode, the project's default branch otherwise.
+   */
+  branch: () => string;
   http: HttpClient;
   /** Read on every request, so a credential saved, refreshed or removed later applies at once. */
   credential: CredentialSource;

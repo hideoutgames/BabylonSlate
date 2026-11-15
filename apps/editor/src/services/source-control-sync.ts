@@ -67,8 +67,11 @@ export interface SyncPortFactory {
 
 /** Lock checks around a push, from the lock service. */
 export interface SyncLocks {
-  /** Locks someone else holds on any of `paths`; empty where the host has no locking. Rejects when the check fails. */
-  theirs(paths: readonly string[]): Promise<FileLock[]>;
+  /**
+   * Locks someone else holds on any of `paths` of `branch`, the branch the
+   * push sends; empty where the host has no locking. Rejects when the check fails.
+   */
+  theirs(paths: readonly string[], branch: string): Promise<FileLock[]>;
   /** Releases this device's locks on `paths`, except documents with unsaved edits. */
   releaseOwn(paths: readonly string[]): Promise<void>;
 }
@@ -450,7 +453,8 @@ export class SourceControlSyncService {
     let pushed: string[] | null = null;
     await this.run("push", "Could Not Push", async ({ port, input, signal }) => {
       const outgoing = await port.outgoing({ signal });
-      const holders = await input.locks.theirs(outgoing);
+      // The port's branch, not the snapshot's: a switch or new branch moves it before the snapshot reads it again.
+      const holders = await input.locks.theirs(outgoing, port.branch);
       if (holders.length > 0) throw new LockedByOthersError(holders);
       await port.push({ signal });
       pushed = outgoing;

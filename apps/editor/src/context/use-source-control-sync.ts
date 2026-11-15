@@ -31,6 +31,27 @@ export interface SourceControlSyncDeps {
   runForegroundRescanRef: RefObject<() => Promise<void>>;
 }
 
+/** The lock checks around an Integrated push: the push names the branch it sends. */
+export function syncLocksFor(sourceControl: SourceControlService): SyncLocks {
+  return {
+    theirs: (paths, branch) => sourceControl.locksBlockingPush(paths, branch),
+    releaseOwn: (paths) => sourceControl.releaseOwnLocks(paths),
+  };
+}
+
+/**
+ * Keeps the lock service's requests on the working copy's checked-out branch
+ * (the sync snapshot's, `""` while none is), from now until the returned stop.
+ */
+export function followCheckedOutBranch(
+  sync: Pick<SourceControlSyncService, "subscribe" | "getSnapshot">,
+  sourceControl: Pick<SourceControlService, "setCheckedOutBranch">,
+): () => void {
+  const follow = () => sourceControl.setCheckedOutBranch(sync.getSnapshot().branch);
+  follow();
+  return sync.subscribe(follow);
+}
+
 /** The registry as it is when a status runs: it remounts after a pull or rescan. */
 function registryLookup(projectService: ProjectService): ChangeLookup {
   return (path) => registryChangeLookup(projectService.registry)(path);
@@ -81,22 +102,17 @@ export function useSourceControlSync({
 
   // Integrated mode's Git client: keyed on the settings object, which keeps its
   // identity until a source control setting changes. Off and Manual load nothing.
-  const syncInputFor = useCallback((next: SourceControlProjectSettings): SyncConfigureInput => {
-    const sourceControl = sourceControlRef.current;
-    const locks: SyncLocks = {
-      theirs: (paths) => sourceControl.locksBlockingPush(paths),
-      releaseOwn: (paths) => sourceControl.releaseOwnLocks(paths),
-    };
-    return {
-      settings: next,
-      folder: projectService.storagePort.getCurrentFolder(),
-      storage: projectService.storagePort,
-      platform: getHostPlatform(),
-      testMode: isTestModeEnabled(),
-      lookup: registryLookup(projectService),
-      locks,
-    };
-  }, [projectService, sourceControlRef]);
+  const syncInputFor = useCallback((next: SourceControlProjectSettings): SyncConfigureInput => ({
+    settings: next,
+    folder: projectService.storagePort.getCurrentFolder(),
+    storage: projectService.storagePort,
+    platform: getHostPlatform(),
+    testMode: isTestModeEnabled(),
+    lookup: registryLookup(projectService),
+    locks: syncLocksFor(sourceControlRef.current),
+  }), [projectService, sourceControlRef]);
+  // Integrated mode's lock requests name the branch checked out in the working copy.
+  useEffect(() => followCheckedOutBranch(sourceControlSync, sourceControlRef.current), [sourceControlRef, sourceControlSync]);
   const projectOpen = projectDocument !== null;
   useEffect(() => {
     if (!projectOpen || !settings) {
