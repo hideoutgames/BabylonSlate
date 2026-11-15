@@ -90,7 +90,7 @@ export function HomepageDeleteProjectsDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
         variant="destructive"
-        className="homepage-theme homepage-delete-projects editor-dialog-large editor-dialog-delete flex flex-col gap-0 overflow-hidden p-0"
+        className="homepage-theme homepage-delete-projects editor-dialog-large editor-dialog-delete flex flex-col gap-0 overflow-hidden p-0 data-[size=default]:max-w-md"
         data-testid="homepage-delete-projects-dialog"
       >
         <AlertDialogHeader className="flex shrink-0 items-start gap-3 px-4 pt-4 pb-1">
@@ -146,9 +146,11 @@ export function HomepageDeleteProjectsDialog({
                 testId="homepage-delete-projects-kept"
               />
               <p className="text-xs text-muted-foreground">
-                {kept.length === 1 ? "This project is" : "These projects are"} in
-                a folder you chose and stay as they are. Use Remove From List
-                in a project's actions to take it off the list.
+                {kept.length === 1
+                  ? "This project is in a folder you chose and stays as it is."
+                  : "These projects are in folders you chose and stay as they are."}{" "}
+                Use Remove From List in a project's actions to take it off the
+                list.
               </p>
             </section>
           )}
