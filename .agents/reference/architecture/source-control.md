@@ -2,6 +2,8 @@
 
 Optional Git LFS file locking: the `LockProvider` port, the LFS client, token storage, editor lock UX, and external-change detection by mtime.
 
+This file describes what is built. Built-in Git and a reworked lock-only mode are planned in [source-control-plan.md](../source-control-plan.md).
+
 ## Decisions
 
 - The engine is **not a git client**. It implements Git LFS locking only; clone, commit, pull, push and merge stay in Working Copy (iPad) or a desktop git client. It never reads git state or shows git status badges, and never adds `lockable` to `.gitattributes`.
