@@ -1174,9 +1174,11 @@ it.each(UNDRAWN_VISUALS.flatMap((visual) => PROBING_VIEWS.map((view) => ({ ...vi
       show(late);
       expect(graph.readinessDirty).toBe(true);
       if (tolerant) {
-        // A world view draws on while its variant compiles.
-        expect(probe()).toBe(true);
+        // A world view holds the frame, or hides a mesh that has never drawn until it is ready: either way, no frame
+        // draws without its variant.
+        const ready = probe();
         expect(askedLate).toHaveBeenCalled();
+        expect(!ready || isRevealPending(late)).toBe(true);
       } else {
         // A Scene Layer holds the frame until it is ready.
         expect(probe()).toBe(false);
