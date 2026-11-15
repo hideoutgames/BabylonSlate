@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService } from "../services/source-control-sync";
-import { deviceIntegratedSync, integratedSync } from "../testing/integrated-sync";
+import { deviceIntegratedSync, INTEGRATED_LOOKUP, integratedSync } from "../testing/integrated-sync";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
 import { ChangesPanelContents } from "./changes-panel";
 
@@ -187,11 +187,38 @@ describe("Changes window", () => {
     });
   });
 
+  it("picks the branch in place of its label: this copy's and the remote's branches, and New Branch…", async () => {
+    const { service, remote } = await integratedSync();
+    remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
+    state.sync = service;
+    renderPanel();
+    fireEvent.click(screen.getByTestId("changes-branch"));
+    expect((await screen.findByTestId("changes-branch-main")).getAttribute("aria-checked")).toBe("true");
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("changes-remote-art"));
+    });
+    expect((await screen.findByTestId("source-control-switch-confirm")).textContent).toContain("Switch To art?");
+    fireEvent.click(screen.getByTestId("source-control-switch-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("source-control-switch-confirm")).toBeNull());
+    expect(service.getSnapshot().branch).toBe("main");
+
+    fireEvent.click(screen.getByTestId("changes-branch"));
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("changes-new-branch"));
+    });
+    expect(await screen.findByTestId("source-control-new-branch")).toBeTruthy();
+  });
+
   it("offers Add Git LFS Rule where a commit of blobs is refused, and commits once the rule is in", async () => {
-    const { service, storage, remote } = await integratedSync({ lfsRule: false });
+    const blob = `assets/.blobs/${"a".repeat(64)}`;
+    // Forest's new version stores a chunk in the blob.
+    const { service, storage, remote } = await integratedSync({
+      lfsRule: false,
+      lookup: (path) => (path === "assets/Forest.scene.hasset" ? { name: "Forest", type: "Scene", blobPaths: [blob] } : INTEGRATED_LOOKUP(path)),
+    });
     state.sync = service;
     await storage.writeText("assets/Forest.scene.hasset", "F2");
-    await storage.writeBinary(`assets/.blobs/${"a".repeat(64)}`, new Uint8Array([1, 2]));
+    await storage.writeBinary(blob, new Uint8Array([1, 2]));
     await service.refreshStatus();
     renderPanel();
     fireEvent.change(screen.getByTestId("changes-commit-message"), { target: { value: "Forest" } });

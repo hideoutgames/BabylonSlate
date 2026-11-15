@@ -1,13 +1,6 @@
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import { useCallback, useRef, type MouseEvent } from "react";
 import {
-  Columns3Icon,
-  ListOrderedIcon,
-  PlayIcon,
-  SplitIcon,
-  type LucideIcon,
-} from "lucide-react";
-import {
   ContextMenuOverlay,
   doubleTapWindowMs,
   humanizePropertyLabel,
@@ -17,7 +10,8 @@ import {
 import { cn } from "@haptic/ui/lib/utils";
 import { BlueprintNodeShell, type CanvasNode } from "./graph-nodes";
 import { useGraphEditorContext } from "./graph-editor-context";
-import { nodeRoleClass, type NodeVisualRole } from "./node-theme";
+import { nodeKind, nodeRoleClass, type NodeVisualRole } from "./node-theme";
+import { NodeKindIcon } from "./node-icons";
 import { isPinWired } from "./pin-connections";
 import { useRunNodeStatus } from "./use-run-node-status";
 
@@ -49,13 +43,6 @@ function treeRole(
   if (kind === "task") return "bt-task";
   return "bt-composite";
 }
-
-const KIND_ICON: Record<string, LucideIcon> = {
-  selector: SplitIcon,
-  sequence: ListOrderedIcon,
-  parallel: Columns3Icon,
-  task: PlayIcon,
-};
 
 /** `running`, `success` or `failure` from the run trace; anything else, or none, is idle. */
 function treeState(status: string | undefined): "running" | "success" | "failure" | "idle" {
@@ -163,7 +150,6 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   );
 
   const role = treeRole(kind, protectedNode);
-  const KindIcon = KIND_ICON[kind] ?? PlayIcon;
   const kindLabel = protectedNode
     ? `Root ${humanizePropertyLabel(kind)}`
     : humanizePropertyLabel(kind);
@@ -211,7 +197,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
           )}
           aria-hidden="true"
         >
-          <KindIcon className="size-3.5" />
+          <NodeKindIcon kind={nodeKind({ nodeType: "bt.node", btKind: kind })} className="size-3.5" decorative />
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-sm font-medium leading-5 text-foreground" title={title}>

@@ -1,4 +1,5 @@
 import type { SerializedGraph } from "@haptic/core";
+import { normalizeAnimBranchFilters, type AnimAdditiveBase, type AnimBranchFilter } from "@haptic/core";
 import { parseAnimClipEvents, type AnimClipEvent } from "./events";
 
 type SerializedGraphNode = SerializedGraph["nodes"][number];
@@ -17,6 +18,12 @@ export const ANIM_POSE_BLEND_TYPE = "anim.pose.blend";
 export const ANIM_POSE_BLEND_BY_BOOL_TYPE = "anim.pose.blendByBool";
 export const ANIM_POSE_BLEND_BY_INT_TYPE = "anim.pose.blendByInt";
 export const ANIM_POSE_BLEND_SPACE_PLAYER_TYPE = "anim.pose.blendSpacePlayer";
+export const ANIM_POSE_LAYERED_BLEND_TYPE = "anim.pose.layeredBlendPerBone";
+export const ANIM_POSE_APPLY_ADDITIVE_TYPE = "anim.pose.applyAdditive";
+export const ANIM_POSE_SAVE_CACHED_TYPE = "anim.pose.saveCachedPose";
+export const ANIM_POSE_USE_CACHED_TYPE = "anim.pose.useCachedPose";
+/** Skeletal controls change bones of the pose they take; they draw in the amber control colour. */
+export const ANIM_CONTROL_TRANSFORM_BONE_TYPE = "anim.control.transformBone";
 export const ANIM_FRAME_OUTPUT_TYPE = "anim.frame.output";
 export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
 export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
@@ -66,9 +73,17 @@ export function isPoseAssetNodeType(type: string): boolean {
   return isPoseClipNodeType(type) || isBlendSpacePlayerType(type);
 }
 
-/** The pose (or frame) inputs of a node type, in order; `count` is a Blend Poses By Int / Select By Int's. */
-export function poseInputPins(type: string, count: unknown = 2): string[] {
+/** The pose (or frame) inputs of a node type, in order; `count` is a Blend Poses By Int / Select By Int's or a Layered Blend Per Bone's. */
+export function poseInputPins(type: string, count?: unknown): string[] {
   switch (type) {
+    case ANIM_POSE_LAYERED_BLEND_TYPE:
+      return ["basePose", ...Array.from({ length: layeredBlendInputCount(count) }, (_, index) => `blendPose${index}`)];
+    case ANIM_POSE_SAVE_CACHED_TYPE:
+      return ["pose"];
+    case ANIM_POSE_APPLY_ADDITIVE_TYPE:
+      return ["base", "additive"];
+    case ANIM_CONTROL_TRANSFORM_BONE_TYPE:
+      return ["sourcePose"];
     case ANIM_POSE_OUTPUT_TYPE: return ["pose"];
     case ANIM_FRAME_OUTPUT_TYPE: return ["frame"];
     case ANIM_POSE_BLEND_TYPE: return ["a", "b"];
@@ -84,6 +99,33 @@ export function poseInputPins(type: string, count: unknown = 2): string[] {
 function inputCount(value: unknown): number {
   const count = Number(value);
   return Number.isFinite(count) ? Math.max(2, Math.min(16, Math.round(count))) : 2;
+}
+
+/** A Layered Blend Per Bone's blend inputs (its `count`): 1 to 16. */
+export function layeredBlendInputCount(value: unknown): number {
+  const count = Number(value);
+  return Number.isFinite(count) ? Math.max(1, Math.min(16, Math.round(count))) : 1;
+}
+
+/** Each blend input's branch filters, as stored on a Layered Blend Per Bone (`layers[i].branches`). */
+export function layeredBlendFilters(node: SerializedGraphNode): AnimBranchFilter[][] {
+  const count = layeredBlendInputCount(node.data.count);
+  const layers = Array.isArray(node.data.layers) ? node.data.layers : [];
+  return Array.from({ length: count }, (_, index) => {
+    const layer = layers[index] as { branches?: unknown } | undefined;
+    return normalizeAnimBranchFilters(layer?.branches);
+  });
+}
+
+/** The name a Save Cached Pose stores under, or a Use Cached Pose reads, trimmed. */
+export function cachedPoseName(node: SerializedGraphNode): string {
+  return typeof node.data.name === "string" ? node.data.name.trim() : "";
+}
+
+/** A Save or Use Cached Pose node's title, with the name it saves or reads: `Use Cached Pose Locomotion`. */
+export function cachedPoseNodeTitle(type: string, name: string): string {
+  const base = type === ANIM_POSE_SAVE_CACHED_TYPE ? "Save Cached Pose" : "Use Cached Pose";
+  return name ? `${base} ${name}` : base;
 }
 
 export interface PoseGraphIndex {
@@ -180,7 +222,8 @@ export function primaryPosePlayer(graph: SerializedGraph): SerializedGraphNode |
  * Speed, Loop). Null for any other graph.
  */
 export function singlePlayerOf(graph: SerializedGraph): SerializedGraphNode | null {
-  const posed = graph.nodes.filter((node) => node.type.startsWith("anim.pose.") || node.type.startsWith("anim.frame."));
+  const posed = graph.nodes.filter((node) =>
+    node.type.startsWith("anim.pose.") || node.type.startsWith("anim.frame.") || node.type.startsWith("anim.control."));
   if (posed.length !== 2) return null;
   const player = primaryPosePlayer(graph);
   return player && isPosePlayerType(player.type) && posed.includes(player) ? player : null;
@@ -204,6 +247,29 @@ export interface BlendSpaceNodeSample {
   rateScale: number;
   /** Its Animation's (or Sprite Animation's) events; absent when it has none. */
   events?: AnimClipEvent[];
+  /** Its Animation's additive base, when the Animation is additive (`resolvedClipAdditive`). */
+  additive?: ResolvedClipAdditive;
+}
+
+/**
+ * An additive Animation's base pose as resolution stores it on a clip node (`data.additive`) or a Blend Space sample:
+ * the rest pose, or a clip at a normalised time (the Animation's own first frame, or its base Animation's frame).
+ */
+export type ResolvedClipAdditive = { base: "restPose" } | ({ base: "clip" } & AnimAdditiveBase);
+
+/** A resolved additive base, as stored; undefined for a clip that is not additive. */
+export function parseResolvedClipAdditive(value: unknown): ResolvedClipAdditive | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  if (record.base === "restPose") return { base: "restPose" };
+  if (record.base !== "clip" || typeof record.clipAssetGuid !== "string" || !record.clipAssetGuid) return undefined;
+  const time = typeof record.normalisedTime === "number" && Number.isFinite(record.normalisedTime) ? record.normalisedTime : 0;
+  return {
+    base: "clip",
+    clipAssetGuid: record.clipAssetGuid,
+    clipName: typeof record.clipName === "string" ? record.clipName : "",
+    normalisedTime: Math.min(1, Math.max(0, time)),
+  };
 }
 
 /** The Blend Space a Blend Space Player names, as `resolveAnimGraphClips` stores it on the node. */
@@ -246,6 +312,7 @@ export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeDat
       y: finiteNumber(sample.y, 0),
       rateScale: rateScale > 0 ? rateScale : 1,
       ...((events) => (events.length > 0 ? { events } : {}))(parseAnimClipEvents(sample.events)),
+      ...((additive) => (additive ? { additive } : {}))(parseResolvedClipAdditive(sample.additive)),
     }];
   });
   const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime" | "eventMode"> = {};

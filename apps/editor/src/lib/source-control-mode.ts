@@ -52,13 +52,17 @@ export function asksAdoption(folder: SourceControlFolder): boolean {
 /**
  * Project Settings → Source Control's Mode options, in display order. Off and
  * Manual are always offered. Integrated is offered for a project that already
- * uses it, and on desktop for a folder with a readable `.git`, which then
- * switches only after a warning that no other Git app may use the folder at
- * the same time. Elsewhere Integrated projects come from Clone or Publish.
+ * uses it, and for a folder with a readable `.git` Haptic may run Git in: on
+ * desktop any (it switches only after a warning that no other Git app may use
+ * the folder at the same time), and on iOS and Android app storage, where
+ * Haptic is the only Git client, so a working copy whose `project.json` left
+ * Integrated mode (a branch that turns it off) is never stranded. Elsewhere
+ * Integrated projects come from Clone or Publish.
  */
 export function offeredSourceControlModes(stored: SourceControlMode, folder: SourceControlFolder): SourceControlMode[] {
-  const integrated = stored === "integrated" || (folder.platform === "electron" && folder.hasGit);
-  return integrated ? ["off", "integrated", "manual"] : ["off", "manual"];
+  const repository = folder.hasGit && isSourceControlHost(folder.platform, folder.testMode)
+    && (folder.platform === "electron" || (folder.tier !== null && folder.tier !== "external"));
+  return stored === "integrated" || repository ? ["off", "integrated", "manual"] : ["off", "manual"];
 }
 
 /**
@@ -91,6 +95,34 @@ export function integratedBlockerLabel(blocker: IntegratedBlocker): string {
   if (blocker === "other-git-client") return "Another Git App Syncs This Folder";
   if (blocker === "not-adopted") return "Haptic Does Not Run Git In This Folder Yet";
   return "Source Control Is Not Available Here";
+}
+
+const MODE_NAMES: Record<string, string> = { off: "Off", manual: "Manual" };
+
+/**
+ * Why a switch to `branch` is refused, or null: its committed `project.json`
+ * (`projectJson`, null when it has none) must keep Integrated mode with the
+ * same repository. The switch's reload installs that branch's settings, and
+ * any other mode stops Haptic's Git client in this working copy, which on
+ * iOS and Android may then have no way back.
+ */
+export function branchSettingsRefusal(branch: string, projectJson: Uint8Array | null, repositoryUrl: string): string | null {
+  if (!projectJson) return `${branch} has no Haptic project: project.json is missing.`;
+  let sourceControl: { mode?: unknown; repositoryUrl?: unknown } | undefined;
+  try {
+    sourceControl = (JSON.parse(new TextDecoder().decode(projectJson)) as { settings?: { sourceControl?: { mode?: unknown; repositoryUrl?: unknown } } } | null)?.settings?.sourceControl;
+  } catch {
+    return `${branch}'s project.json cannot be read.`;
+  }
+  const keepOn = "Only a branch in Integrated mode with this repository can be checked out here; change its Project Settings with another Git app first.";
+  if (sourceControl?.mode !== "integrated") {
+    return `${branch}'s Project Settings set Source Control to ${MODE_NAMES[String(sourceControl?.mode)] ?? "Off"}, so switching would stop Haptic's Git in this folder. ${keepOn}`;
+  }
+  const other = typeof sourceControl.repositoryUrl === "string" ? sourceControl.repositoryUrl : "";
+  if (!sameRepository(other, repositoryUrl)) {
+    return `${branch}'s Project Settings use another repository (${other || "none"}), so switching would stop Haptic's Git in this folder. ${keepOn}`;
+  }
+  return null;
 }
 
 /** Whether two repository URLs name the same repository (HTTPS, SSH or scp-style, with or without `.git`). */

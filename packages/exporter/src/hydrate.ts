@@ -32,6 +32,7 @@ import {
   refreshStaleTilemaps,
   spriteAnimationDurationMs,
   animationClipEvents,
+  normalizeAnimationAdditive,
   spriteAnimationClipEvents,
   type AnimationPayload,
   type BlendSpacePayload,
@@ -366,6 +367,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
       ...(payload.modelGuid ? { modelGuid: payload.modelGuid } : {}),
       ...((events) => (events.length > 0 ? { events } : {}))(animationClipEvents(payload.events)),
+      ...((additive) => (additive ? { additive } : {}))(normalizeAnimationAdditive(payload.additive)),
     })),
     ...[...sizedSpriteAnimations.entries()].map(([guid, payload]) => ({
       guid,

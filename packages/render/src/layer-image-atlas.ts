@@ -168,6 +168,11 @@ export class LayerImageAtlas {
   private readonly beforeRender: Nullable<Observer<Scene>>;
   private readonly restored: Nullable<Observer<AbstractEngine>>;
   private disposed = false;
+  /**
+   * Counts what changes the cells `cell` gives out: an image drawn there, taken off or laid out again, a restored
+   * context's redraw, the page made. A reader keeps the answers it got while the count stands.
+   */
+  revision = 0;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -247,6 +252,7 @@ export class LayerImageAtlas {
     if (slot || !shelves.hasFreed) return slot;
     // Freed slots too small for this image: lay the page out again, tallest first, and draw every cell where it is now.
     const images = [...this.images.values()].sort((a, b) => b.cells[0].height - a.cells[0].height);
+    this.revision += 1;
     shelves.reset();
     this.pending.length = 0;
     for (const image of images) {
@@ -289,6 +295,7 @@ export class LayerImageAtlas {
       return false;
     }
     this.unavailable = false;
+    this.revision += 1;
     const wrap = (hasAlpha: boolean) => {
       // Each wrapper holds a reference of its own, so the wrappers and the target release independently.
       target.texture!.incrementReferences();
@@ -314,12 +321,14 @@ export class LayerImageAtlas {
   private remove(image: Image, release = true): void {
     image.texture.onDisposeObservable.remove(image.disposal);
     this.images.delete(image.texture);
+    this.revision += 1;
     const queued = this.pending.indexOf(image);
     if (queued >= 0) this.pending.splice(queued, 1);
     if (release) this.shelves?.release(image.slot);
   }
 
   private redrawAll(): void {
+    this.revision += 1;
     this.pending.length = 0;
     for (const image of this.images.values()) {
       image.drawn = false;
@@ -362,6 +371,7 @@ export class LayerImageAtlas {
         effect.effect.setFloat4("atlasCell", cell.x, cell.y, 0, 0);
         renderer.draw();
         image.drawn = true;
+        this.revision += 1;
       }
       pending.length = kept;
       engine.unBindFramebuffer(target, true);

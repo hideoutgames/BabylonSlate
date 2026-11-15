@@ -12,7 +12,7 @@ Double-tap the asset to open it. The window has **Preview**, a **Timeline** belo
 
 - **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. A clip from a file with no mesh (an animation-only file) always shows its bones. If the Model's file is missing, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
 - **Timeline** shows the clip's [Animation Events](#animation-events) along one pass: single events on the **Events** row, and each window on a row of its own from its begin to its end. Drag the ruler to scrub the Preview. **Add Event** and **Add Window** place a new one at the playhead. Drag a key to move it; drag a window's end key alone to change its Duration. Selected keys open their events in the Inspector.
-- The **Inspector** shows the clip's details and its **Events**. Of the details, only **Duration** can be changed.
+- The **Inspector** shows the clip's details and its **Events**. Of the details, only **Duration** and **Additive** can be changed.
 
 **Preview controls**
 
@@ -35,6 +35,9 @@ The bar under the Preview shows the frame and the time in ms, out of the Duratio
 | Model | The Model the clip came from. |
 | Skeleton | The [Skeleton](skeleton.md) the clip plays on. |
 | Duration | How long one pass of the clip takes, in milliseconds. It starts at the clip's length in the file. A shorter Duration plays the clip faster everywhere it is used, a longer one slower; an [Animation Graph](animation-graph.md) state's **Speed** scales it further. **Reset** restores the clip's length. Shown when the clip's length is known. |
+| Additive | Whether the clip is [additive](#additive-animations), and what its change is relative to. **None** by default. |
+| Base Animation | With **Relative To Animation**: the Animation, on the same Skeleton, whose pose the change is from. |
+| Base Time | With **Relative To Animation**: the time into the Base Animation's Duration of that pose, in milliseconds. |
 
 ## Animation events
 
@@ -51,6 +54,20 @@ Add one on the **Timeline**, or tap **Add Event** under **Events** in the **Insp
 | Action | What the event does on its own, without a script: **None**, **Play Sound** (a **Sound** from the actor at a **Volume**) or **Spawn Particle System** (a **Particle System** at a **Bone**, following it, or at the actor when Bone is **None**; Bone lists the Skeleton's [sockets](skeleton.md#sockets) and bones). A window acts as it begins. |
 
 Tap **Remove Event** on an event's card to delete it. While the Preview plays, each event's name flashes over it as playback passes it.
+
+## Additive animations
+
+An additive Animation holds a change, such as a lean, a breath or a flinch, that you add on top of another pose with [Apply Additive](../scripting/animation/apply-additive.md), so one lean works over idle, walk and run alike. Set **Additive** to what the change is measured from:
+
+| Additive | The change is from |
+| --- | --- |
+| Relative To Rest Pose | The Skeleton's rest pose. |
+| Relative To First Frame | The clip's own first frame, so it adds nothing at its start. |
+| Relative To Animation | The pose of **Base Animation** at **Base Time**. The Base Animation loads with this one. |
+
+- An additive Animation plays only under an Apply Additive's **Additive** input, and only additive Animations play there; the Animation Graph reports either mistake.
+- Positions and rotations add the change; scales multiply by it.
+- The **Preview** plays the clip as it is in the file.
 
 ## Shared Skeletons
 

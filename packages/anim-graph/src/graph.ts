@@ -1,8 +1,24 @@
-import type { GraphClassMember, SerializedGraph } from "@haptic/core";
+import type {
+  AnimAdditiveBase,
+  AnimBoneModifier,
+  AnimLayerBlend,
+  AnimLayerMaskRef,
+  GraphClassMember,
+  SerializedGraph,
+} from "@haptic/core";
 import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
+  type ResolvedClipAdditive,
+  ANIM_CONTROL_TRANSFORM_BONE_TYPE,
+  ANIM_POSE_APPLY_ADDITIVE_TYPE,
   ANIM_FRAME_OUTPUT_TYPE,
+  ANIM_POSE_SAVE_CACHED_TYPE,
+  ANIM_POSE_USE_CACHED_TYPE,
+  cachedPoseName,
   createStateGraph,
+  poseGraphIndex,
+  poseInputPins,
+  poseInputSource,
   ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   isBlendSpacePlayerType,
   isPoseClipNodeType,
@@ -172,6 +188,19 @@ export interface AnimClipLayer {
   /** 2D: Flip Frame mirrors the frame. */
   flipX?: boolean;
   flipY?: boolean;
+  /** The Layered Blend Per Bone inputs it plays under (`AnimEvalState.layerBlends`), outermost first. */
+  masks?: AnimLayerMaskRef[];
+  /** Played under an Apply Additive's Additive input: render adds the clip's change from its base to the pose beneath. */
+  additive?: boolean;
+  /** An additive Animation's base pose when it is not the rest pose (`AnimClipAdditive`, resolved). */
+  additiveBase?: AnimAdditiveBase;
+}
+
+/** An Animation's additive settings as the clip catalog carries them. */
+export interface AnimClipAdditive {
+  base: "restPose" | "firstFrame" | "animation";
+  animationGuid?: string;
+  timeMs?: number;
 }
 
 /** The State Machine's evaluation: its active state, the state's clock and the blend in progress. */
@@ -206,6 +235,10 @@ export interface AnimEvalState extends AnimMachineEvalState {
   /** Each Sync Group's shared cycle position and its leader's cycle length, by group name. */
   syncGroups?: Record<string, AnimSyncGroupClock>;
   layers: AnimClipLayer[];
+  /** The Layered Blend Per Bone nodes this tick reached, which layers' `masks` index; absent when none. */
+  layerBlends?: AnimLayerBlend[];
+  /** Transform Bone changes, in the order render applies them after the layers blend; absent when none. */
+  boneModifiers?: AnimBoneModifier[];
   /** The Animation Events this tick fired, in order; absent when none did. */
   events?: AnimFiredEvent[];
   /** Windows that began and have not ended, by window key; absent when none are open. */
@@ -413,6 +446,18 @@ export function animPoseGraphs(doc: AnimGraphDocument): Array<{
   }));
 }
 
+/** The names the graph's Save Cached Pose nodes save under, once each, sorted. */
+export function animCachedPoseNames(machine: AnimStateMachine): string[] {
+  const names = new Set<string>();
+  for (const state of machine.states) {
+    for (const node of state.stateGraph.nodes) {
+      const name = node.type === ANIM_POSE_SAVE_CACHED_TYPE ? cachedPoseName(node) : "";
+      if (name) names.add(name);
+    }
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 /** Replace the State Machine. */
 export function patchStateMachine(
   doc: AnimGraphDocument,
@@ -448,6 +493,8 @@ export interface AnimClipCatalogEntry {
   modelGuid?: string;
   /** The Animation's events, or a Sprite Animation's frame events at their frames' start times. */
   events?: readonly AnimClipEvent[];
+  /** An additive Animation's settings; absent for one that is not additive. */
+  additive?: AnimClipAdditive;
   /** A Blend Space's or Sprite Blend Space's axes and samples, which a Blend Space Player plays. */
   blendSpace?: {
     axes: ReadonlyArray<{ min: number; max: number; wrap: boolean; smoothingSeconds: number }>;
@@ -514,6 +561,140 @@ export function validateAnimGraph(
       }
       if (!isPoseClipNodeType(node.type)) continue;
       diagnostics.push(...clipDiagnostics(doc, byGuid, node.id, node.type, assetGuid, location, options.dimension));
+    }
+    for (const node of graph.nodes) {
+      if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE && !(typeof node.data.bone === "string" && node.data.bone.trim())) {
+        diagnostics.push({ code: "anim.missingBone", message: "Transform Bone changes no bone until it names one", nodeId: node.id, location, severity: "warning" });
+      }
+    }
+  }
+  diagnostics.push(...cachedPoseDiagnostics(doc));
+  diagnostics.push(...additiveDiagnostics(doc, byGuid));
+  return diagnostics;
+}
+
+/**
+ * Additive Animations play only under an Apply Additive's Additive input, and only additive ones play there. Walks
+ * each state graph from its output, into the cached poses it uses, knowing whether it is under an Additive input.
+ */
+function additiveDiagnostics(doc: AnimGraphDocument, byGuid: ReadonlyMap<string, AnimClipCatalogEntry>): AnimDiagnostic[] {
+  const diagnostics: AnimDiagnostic[] = [];
+  const reported = new Set<string>();
+  const report = (code: "anim.additiveAsPose" | "anim.notAdditive", nodeId: string, location: AnimGraphLocation, name: string) => {
+    const key = `${location.kind === "state" ? location.stateId : ""}\0${nodeId}\0${code}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    diagnostics.push(code === "anim.additiveAsPose"
+      ? { code, message: `Animation "${name}" is additive; play it through an Apply Additive's Additive input`, nodeId, location, severity: "error" }
+      : { code, message: `Animation "${name}" is not additive, so it cannot play under an Apply Additive's Additive input`, nodeId, location, severity: "error" });
+  };
+  const check = (guid: string, additive: boolean, nodeId: string, location: AnimGraphLocation) => {
+    const entry = byGuid.get(guid);
+    if (!entry || entry.type !== "Animation") return;
+    if (entry.additive && !additive) report("anim.additiveAsPose", nodeId, location, entry.name);
+    if (!entry.additive && additive) report("anim.notAdditive", nodeId, location, entry.name);
+  };
+  const saves = new Map<string, { stateId: string; graph: SerializedGraph; node: SerializedGraph["nodes"][number] }>();
+  for (const state of doc.stateMachine.states) {
+    for (const node of state.stateGraph.nodes) {
+      const name = node.type === ANIM_POSE_SAVE_CACHED_TYPE ? cachedPoseName(node) : "";
+      if (name && !saves.has(name)) saves.set(name, { stateId: state.id, graph: state.stateGraph, node });
+    }
+  }
+  const visited = new Set<string>();
+  const walk = (stateId: string, graph: SerializedGraph, start: SerializedGraph["nodes"][number] | undefined, additive: boolean) => {
+    const index = poseGraphIndex(graph);
+    const location: AnimGraphLocation = { kind: "state", stateId };
+    const visit = (node: SerializedGraph["nodes"][number] | undefined, under: boolean) => {
+      if (!node) return;
+      const key = `${stateId}\0${node.id}\0${under}`;
+      if (visited.has(key)) return;
+      visited.add(key);
+      if (node.type.startsWith("anim.pose.") && isPoseClipNodeType(node.type) && typeof node.data.assetGuid === "string") {
+        check(node.data.assetGuid, under, node.id, location);
+      }
+      if (node.type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE && typeof node.data.assetGuid === "string") {
+        for (const sample of byGuid.get(node.data.assetGuid)?.blendSpace?.samples ?? []) check(sample.animationGuid, under, node.id, location);
+      }
+      if (node.type === ANIM_POSE_USE_CACHED_TYPE) {
+        const save = saves.get(cachedPoseName(node));
+        if (save) walk(save.stateId, save.graph, poseInputSource(poseGraphIndex(save.graph), save.node.id, "pose"), under);
+        return;
+      }
+      for (const pin of poseInputPins(node.type, node.data.count)) {
+        visit(poseInputSource(index, node.id, pin), under || (node.type === ANIM_POSE_APPLY_ADDITIVE_TYPE && pin === "additive"));
+      }
+    };
+    visit(start, additive);
+  };
+  for (const state of doc.stateMachine.states) {
+    walk(state.id, state.stateGraph, poseGraphIndex(state.stateGraph).output, false);
+  }
+  return diagnostics;
+}
+
+/** The cached poses used on the way into `start` (inclusive), in its graph. */
+function cachedPosesUsedFrom(graph: SerializedGraph, start: SerializedGraph["nodes"][number]): string[] {
+  const index = poseGraphIndex(graph);
+  const used: string[] = [];
+  const seen = new Set<string>();
+  const stack = [start];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
+    if (node.type === ANIM_POSE_USE_CACHED_TYPE) used.push(cachedPoseName(node));
+    for (const pin of poseInputPins(node.type, node.data.count)) {
+      const source = poseInputSource(index, node.id, pin);
+      if (source) stack.push(source);
+    }
+  }
+  return used;
+}
+
+/**
+ * Cached poses: each Save Cached Pose has a name no other has, each Use Cached Pose names one, and no cached pose
+ * uses itself, directly or through another.
+ */
+function cachedPoseDiagnostics(doc: AnimGraphDocument): AnimDiagnostic[] {
+  const diagnostics: AnimDiagnostic[] = [];
+  const saves = new Map<string, { graph: SerializedGraph; node: SerializedGraph["nodes"][number]; location: AnimGraphLocation }>();
+  const uses: Array<{ name: string; nodeId: string; location: AnimGraphLocation }> = [];
+  for (const { graph, location } of animPoseGraphs(doc)) {
+    for (const node of graph.nodes) {
+      const name = cachedPoseName(node);
+      if (node.type === ANIM_POSE_USE_CACHED_TYPE) uses.push({ name, nodeId: node.id, location });
+      if (node.type !== ANIM_POSE_SAVE_CACHED_TYPE) continue;
+      if (!name) {
+        diagnostics.push({ code: "anim.emptyCachedPoseName", message: "Save Cached Pose needs a name", nodeId: node.id, location, severity: "error" });
+      } else if (saves.has(name)) {
+        diagnostics.push({ code: "anim.duplicateCachedPose", message: `Cached pose "${name}" is saved twice. Choose a unique name.`, nodeId: node.id, location, severity: "error" });
+      } else {
+        saves.set(name, { graph, node, location });
+      }
+    }
+  }
+  for (const use of uses) {
+    if (saves.has(use.name)) continue;
+    const message = use.name ? `No Save Cached Pose saves "${use.name}"` : "Use Cached Pose names no cached pose";
+    diagnostics.push({ code: "anim.missingCachedPose", message, nodeId: use.nodeId, location: use.location, severity: "error" });
+  }
+  // Each cached pose's uses, then a walk that reports each cached pose that leads back to itself.
+  const graphOf = new Map([...saves].map(([name, save]) => [name, cachedPosesUsedFrom(save.graph, save.node).filter((used) => saves.has(used))]));
+  for (const [name, save] of saves) {
+    const seen = new Set<string>();
+    const stack = [...(graphOf.get(name) ?? [])];
+    let cycle = false;
+    while (stack.length > 0 && !cycle) {
+      const next = stack.pop()!;
+      if (next === name) cycle = true;
+      else if (!seen.has(next)) {
+        seen.add(next);
+        stack.push(...(graphOf.get(next) ?? []));
+      }
+    }
+    if (cycle) {
+      diagnostics.push({ code: "anim.cachedPoseCycle", message: `Cached pose "${name}" uses itself`, nodeId: save.node.id, location: save.location, severity: "error" });
     }
   }
   return diagnostics;
@@ -924,20 +1105,41 @@ function resolvePoseGraphClips(
       : undefined;
     const frameCount = sprite && typeof entry.frameCount === "number" && entry.frameCount > 0 ? entry.frameCount : undefined;
     const events = entry.events && entry.events.length > 0 ? entry.events : undefined;
+    const additive = sprite ? undefined : resolvedClipAdditive(entry, byGuid);
     if (
       node.data.clipName === clipName &&
       node.data.durationMs === durationMs &&
       node.data.frameCount === frameCount &&
-      JSON.stringify(node.data.events ?? null) === JSON.stringify(events ?? null)
+      JSON.stringify(node.data.events ?? null) === JSON.stringify(events ?? null) &&
+      JSON.stringify(node.data.additive ?? null) === JSON.stringify(additive ?? null)
     ) return node;
     changed = true;
     const data: Record<string, unknown> = { ...node.data, clipName };
     if (durationMs !== undefined) data.durationMs = durationMs; else delete data.durationMs;
     if (frameCount !== undefined) data.frameCount = frameCount; else delete data.frameCount;
     if (events) data.events = events; else delete data.events;
+    if (additive) data.additive = additive; else delete data.additive;
     return { ...node, data };
   });
   return changed ? { ...graph, nodes } : graph;
+}
+
+/**
+ * An additive Animation's base pose for render: the rest pose, its own first frame, or its base Animation at the base
+ * time (over that Animation's Duration). A base Animation the catalog lacks falls back to the rest pose. Undefined for
+ * an Animation that is not additive.
+ */
+function resolvedClipAdditive(entry: AnimClipCatalogEntry, byGuid: ReadonlyMap<string, AnimClipCatalogEntry>): ResolvedClipAdditive | undefined {
+  const additive = entry.additive;
+  if (!additive) return undefined;
+  if (additive.base === "firstFrame") {
+    return { base: "clip", clipAssetGuid: entry.guid, clipName: entry.clipName ?? "", normalisedTime: 0 };
+  }
+  const base = additive.base === "animation" && additive.animationGuid ? byGuid.get(additive.animationGuid) : undefined;
+  if (!base || base.type !== "Animation") return { base: "restPose" };
+  const durationMs = typeof base.durationMs === "number" && base.durationMs > 0 ? base.durationMs : 1000;
+  const normalisedTime = Math.min(1, Math.max(0, (additive.timeMs ?? 0) / durationMs));
+  return { base: "clip", clipAssetGuid: base.guid, clipName: base.clipName ?? "", normalisedTime };
 }
 
 /** The asset type a Blend Space Player node plays. */
@@ -969,6 +1171,7 @@ function resolvedBlendSpace(nodeType: string, assetGuid: unknown, byGuid: Readon
         y: sample.y,
         rateScale: sample.rateScale,
         ...(clip.events && clip.events.length > 0 ? { events: clip.events } : {}),
+        ...((additive) => (additive ? { additive } : {}))(clipType === "Animation" ? resolvedClipAdditive(clip, byGuid) : undefined),
       }];
     }),
   };

@@ -75,6 +75,7 @@ export function animClipCatalogFromAssets(
         ? payload.frames.length
         : undefined;
     // The events a player of this clip fires: an Animation's, or a Sprite Animation's frame events at their frames.
+    const additive = asset.header.type === "Animation" ? normalizeAnimationPayload(payload).additive : undefined;
     const events =
       asset.header.type === "Animation"
         ? animationClipEvents(normalizeAnimationPayload(payload).events)
@@ -93,6 +94,7 @@ export function animClipCatalogFromAssets(
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
       ...(events.length > 0 ? { events } : {}),
+      ...(additive ? { additive } : {}),
       ...(blendSpace
         ? {
             blendSpace: {

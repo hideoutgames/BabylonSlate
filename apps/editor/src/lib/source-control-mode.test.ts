@@ -41,7 +41,11 @@ describe("Integrated mode rules (one Git client per folder)", () => {
 
   it.each([
     ["Off on an iPad, even with .git", "off", folder("ios", "external", true), ["off", "manual"]],
-    ["Manual on Android", "manual", folder("android", "documents", true), ["off", "manual"]],
+    ["Manual in Android app storage with .git, which only Haptic syncs", "manual", folder("android", "documents", true), ["off", "integrated", "manual"]],
+    ["Off in iPad app storage with .git (Publish also offers to replace it)", "off", folder("ios", "documents", true), ["off", "integrated", "manual"]],
+    ["Manual in iPad app storage without .git", "manual", folder("ios", "documents", false), ["off", "manual"]],
+    ["Manual in a chosen Android folder with .git, which another app syncs", "manual", folder("android", "external", true), ["off", "manual"]],
+    ["production web with .git", "manual", folder("web", "opfs", true), ["off", "manual"]],
     ["an Integrated project anywhere", "integrated", folder("ios", "documents", true), ["off", "integrated", "manual"]],
     ["Manual on desktop with .git", "manual", folder("electron", "external", true), ["off", "integrated", "manual"]],
     ["Off on desktop without .git", "off", folder("electron", "documents", false), ["off", "manual"]],

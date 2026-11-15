@@ -21,7 +21,7 @@ import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
-import type { CreateProjectOptions } from "../lib/create-project";
+import type { CreateProjectOptions, CreateProjectOutcome } from "../lib/create-project";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -70,6 +70,8 @@ export interface ProjectLifecycleDeps {
   setMigrationPending: (pending: MigrationPending[]) => void;
   setRecoveryAvailable: (available: boolean) => void;
   setDocumentOpenError: (error: string | null) => void;
+  /** A Remote New Project's notice belongs to the project it opened. */
+  setPublishNotice: (notice: DocumentContextValue["publishNotice"]) => void;
   // The Loading Document slot.
   sceneDocumentLoad: { ref: DocumentRef; failed: boolean; error?: unknown } | null;
   sceneDocumentLoadRef: RefObject<AbortController | null>;
@@ -126,6 +128,7 @@ export function useProjectLifecycle({
   setMigrationPending,
   setRecoveryAvailable,
   setDocumentOpenError,
+  setPublishNotice,
   sceneDocumentLoad,
   sceneDocumentLoadRef,
   setSceneDocumentLoad,
@@ -257,12 +260,14 @@ export function useProjectLifecycle({
   }, [attachEnginePlugins, enterEditor, projectService, documentTransitions, setNeedsReconnect]);
 
   const createEmptyProject = useCallback(
-    async (name: string, options?: CreateProjectOptions) => {
-      if (!await documentTransitions.check({ kind: "replace-project" })) return;
+    async (name: string, options?: CreateProjectOptions): Promise<CreateProjectOutcome> => {
+      if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
       await attachEnginePlugins(true);
-      const { document, layouts, migrationPending: pending } =
+      const { document, layouts, migrationPending: pending, created } =
         await projectService.createEmptyProject(name, options);
+      options?.onPhase?.("opening");
       await enterEditor(document, layouts, pending);
+      return created ? "created" : "opened";
     },
     [attachEnginePlugins, enterEditor, projectService, documentTransitions],
   );
@@ -272,12 +277,12 @@ export function useProjectLifecycle({
       templateId: string,
       name: string,
       options?: CreateProjectOptions,
-    ) => {
+    ): Promise<CreateProjectOutcome> => {
       const template = templatesRef.current.find((t) => t.id === templateId);
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
       }
-      if (!await documentTransitions.check({ kind: "replace-project" })) return;
+      if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
       await attachEnginePlugins(true);
       const { document, layouts, migrationPending: pending } =
         await projectService.createFromTemplate({
@@ -286,7 +291,9 @@ export function useProjectLifecycle({
           pickFolder: options?.pickFolder,
           appearance: options?.appearance,
         });
+      options?.onPhase?.("opening");
       await enterEditor(document, layouts, pending);
+      return "created";
     },
     [attachEnginePlugins, enterEditor, projectService, documentTransitions, templatesRef],
   );
@@ -404,6 +411,7 @@ export function useProjectLifecycle({
     setRoute("home");
     resetExternalChanges();
     setDocumentOpenError(null);
+    setPublishNotice(null);
     await refreshProjectList();
     bump();
     return { outcome: "closed" };
@@ -429,6 +437,7 @@ export function useProjectLifecycle({
     resetExternalChanges,
     setAutoSaveStatus,
     setDocumentOpenError,
+    setPublishNotice,
     setLastCompiledSignature,
     setMigrationPending,
     setRecoveryAvailable,
@@ -475,8 +484,6 @@ export function useProjectLifecycle({
     (): Pick<
       DocumentActions,
       | "openProject"
-      | "createEmptyProject"
-      | "createFromTemplate"
       | "openListedProject"
       | "cloneProject"
       | "reconnectProject"
@@ -487,8 +494,6 @@ export function useProjectLifecycle({
       | "keepRecovery"
     > => ({
       openProject,
-      createEmptyProject,
-      createFromTemplate,
       openListedProject,
       cloneProject,
       reconnectProject,
@@ -500,8 +505,6 @@ export function useProjectLifecycle({
     }),
     [
       openProject,
-      createEmptyProject,
-      createFromTemplate,
       openListedProject,
       cloneProject,
       reconnectProject,
@@ -513,5 +516,11 @@ export function useProjectLifecycle({
     ],
   );
 
-  return { actions };
+  // The provider adds a Remote New Project's Publish after these open the project.
+  const create = useMemo(
+    () => ({ createEmptyProject, createFromTemplate }),
+    [createEmptyProject, createFromTemplate],
+  );
+
+  return { actions, create };
 }

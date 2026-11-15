@@ -10,7 +10,7 @@ Source Control is available in the iPad, iPhone, Android and desktop apps, not o
 | Integrated | Haptic | Clones, commits, pulls and pushes the project, stores large asset data with Git LFS, and locks files. |
 | Manual | Your Git app, such as Working Copy on iPad or a desktop Git client | Locks files only. |
 
-Only one Git app may work in a project folder at a time. Integrated projects come from **Clone** or **Publish**; a folder another Git app syncs stays in Manual mode. On desktop, Haptic asks once before it runs Git in a folder it didn't clone or publish there (see [On desktop: an existing Git folder](#on-desktop-an-existing-git-folder)).
+Only one Git app may work in a project folder at a time. Integrated projects come from **Clone**, from **Publish**, or from a **Remote** New Project; a folder another Git app syncs stays in Manual mode. On desktop, Haptic asks once before it runs Git in a folder it didn't clone or publish there (see [On desktop: an existing Git folder](#on-desktop-an-existing-git-folder)).
 
 ## Link your accounts
 
@@ -55,6 +55,21 @@ On the Homepage, choose **Clone** next to **New Project**.
 
 Haptic clones the branch into its own storage (the Projects folder on desktop, the app's documents on iPad, iPhone and Android) and opens it in Integrated mode. **Cancel** stops a clone and removes what it had copied. The branch must hold a Haptic project.
 
+## Create a Remote project
+
+To start a new project with its own repository, choose **New Project** on the Homepage and set **Hosting** to **Remote** ([Your First Project](../start/first-project.md#create-a-project)). Haptic creates the project, opens it and then publishes it to a new repository, as [Publish](#publish-a-project) does.
+
+| Field | Description |
+| --- | --- |
+| Host | An account on this device that can create repositories: GitHub, GitLab or a self-managed GitLab. A host added under **Other Git Hosts** can't. With no such account, choose **Sign In To GitHub** or **Sign In To GitLab** here; the link warning comes first. |
+| Owner | Your account, or an organization (on GitLab, a group) you can create repositories in. |
+| Repository Name | Follows the project's name until you change it. |
+| Visibility | **Private** or **Public**. |
+
+Haptic remembers **Local** or **Remote** and the host on this device, so the next New Project starts from them. On iPad, iPhone and Android a Remote project is created in App Documents: Haptic can't run Git in a folder you choose there. On desktop, **Choose Folder** works for a Remote project too.
+
+If the repository can't be created (the name is taken by a repository with commits, or the host can't be reached), the project is still created as a Local project and opens. A notice above the documents says why; publish it later from **Project Settings > Source Control**. If the repository is created but the first push fails, the project opens in Integrated mode with the commit waiting: choose **Push** in the status bar's branch menu once the host is back.
+
 ## Publish a project
 
 To put a project that has no repository yet on GitHub or GitLab, open **Project Settings > Source Control** while **Mode** is **Off** and choose **Publish Project…**.
@@ -70,18 +85,19 @@ The dialog sums up what Publish does: the repository it creates, the Git LFS set
 
 On iPad, iPhone and Android, only a project in Haptic's own storage can be published. On desktop, any project folder can.
 
-If Publish stops before it finishes (the app closes, or the host can't be reached), the project stays Off. On iPad, iPhone and Android you can publish it again under the same name: if the first attempt already created the repository and nothing was pushed to it yet, Haptic publishes into it. Haptic never publishes into a repository that already has commits; choose another name for that. On desktop the folder now has Git, so choose **Integrated** under **Mode** and push instead.
+If only the first push fails, the project is already in Integrated mode with the commit waiting: choose **Push** in the status bar's branch menu once the host is back. If Publish stops earlier (the app closes, or the host can't be reached), the project stays Off. On iPad, iPhone and Android you can publish it again under the same name: if the first attempt already created the repository and nothing was pushed to it yet, Haptic publishes into it. Haptic never publishes into a repository that already has commits; choose another name for that. On desktop the folder now has Git, so choose **Integrated** under **Mode** and push instead.
 
 ## Integrated mode
 
 ### The Changes window
 
-In Integrated mode the **Source Control** tab opens on **Changes**, with **Locks** beside it. The tab shows how many assets have uncommitted changes.
+In Integrated mode the **Source Control** tab opens on **Changes**, with **History** and **Locks** beside it and the **Actors** and **Diff** windows to the right. The tab shows how many assets have uncommitted changes.
 
-- The top row shows the branch, **Refresh**, and **Pull** and **Push** with the number of commits each would bring in or send.
+- The top row shows the branch you are on (choose it to switch branches or start a **New Branch…**, see [Branches](#branches)), **Refresh**, and **Pull** and **Push** with the number of commits each would bring in or send.
 - The status line says how many commits there are to pull and to push, and when Haptic last checked.
 - **Changes** lists each changed asset with its type, folder and **A** (added), **M** (modified) or **D** (deleted). A lock icon marks assets you have locked. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
 - **Incoming** lists the newest commits waiting to be pulled, with their author and age.
+- Choose an asset (anywhere on its row but the checkbox) to see what changed in it: see [Compare versions](#compare-versions).
 
 Haptic reads changes after you save (while a game covers the editor, once you are back) and when you come back to the app, and checks the host when you open the project, come back to the app, choose **Refresh** and after a push.
 
@@ -91,6 +107,8 @@ Haptic reads changes after you save (while a game covers the editor, once you ar
 2. Type a **Commit Message**.
 3. Keep **Push After Commit** on to send the commit at once, or turn it off to commit only on this device.
 4. Choose **Commit N Assets**.
+
+A commit takes each asset with the large data it uses. Large data that no asset in the commit uses, such as what an edit you reverted had added, stays on your device and out of the commit.
 
 **Push** sends your commits. Before it does, Haptic checks the locks on what it sends and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in. Haptic then checks the host for new commits; if that check fails (**Could Not Check For Changes**), the push still went through.
 
@@ -103,9 +121,54 @@ If the host has moved on since your last pull, the push is refused: pull first.
 1. If documents have unsaved changes, choose **Save All** or **Discard** first.
 2. Confirm. A pull replaces files and cannot be undone.
 3. **Pulling** covers the editor until the pull is done. Documents are read-only meanwhile, and Play, Simulate and Preview Build wait: the Output Log says why they didn't start.
-4. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing.
+4. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing. **Compare** shows that asset's diff in the Source Control tab, from the branch's version to yours: Pull Conflicts waits in the corner meanwhile, with your choices kept, until you choose **Back To Pull Conflicts**.
 
-Open documents whose files the pull changed reload before you can edit again, as after any change on disk (the whole project reloads when project settings or many assets changed). An asset you kept stays as an uncommitted change, ready to commit and push.
+Open documents whose files the pull changed reload before you can edit again, as after any change on disk (the whole project reloads when project settings or many assets changed; if anything is still unsaved, Haptic asks first instead of replacing it). An asset you kept stays as an uncommitted change, ready to commit and push.
+
+While a pull, branch switch or revert is open, including while Pull Conflicts waits in the corner, another **Pull**, **Switch Branch** or **Revert** doesn't start.
+
+### Branches
+
+The branch you are on belongs to your copy of the project on this device: switching it changes nothing for your teammates and is not a change to commit. The project's **Default Branch** (in **Project Settings > Source Control**) stays as it is.
+
+**Switch a branch:** choose the branch in **Changes**, **Switch Branch** in the status bar menu, or **Switch Branch** in **More Tools**. The menu lists the branches on this device, with yours checked, then the other branches on the host.
+
+1. If documents have unsaved changes, choose **Save All** or **Discard** first.
+2. Confirm. Files that differ on the other branch are replaced with its versions, and this cannot be undone. Uncommitted changes to other files stay as they are.
+3. **Switching To** covers the editor until the other branch's files are loaded; documents are read-only meanwhile, as during a pull.
+
+If an asset the other branch has a different version of has uncommitted changes, Haptic doesn't switch and names the assets: commit or revert them first. A branch you haven't used on this device yet is downloaded first, without its older history.
+
+Haptic also doesn't switch to a branch whose project settings turn Source Control **Off** or **Manual**, or name another repository: switching would load those settings and stop Haptic syncing your copy. It says why; change that branch's settings with another Git app first.
+
+**Start a branch:** choose **New Branch…**, enter a name and choose **Create Branch**. The branch starts at your last commit and becomes your branch at once, with your uncommitted changes kept. Your next push creates it on the host; until then there is nothing to pull, and **Push** counts only the commits the host doesn't have on any branch. Names that are already taken, here or on the host, are refused as you type. While documents are read-only, for example during a pull, **New Branch…** says why and creates nothing.
+
+### Compare versions
+
+Choosing a change opens its asset in **Actors** and **Diff**, comparing the last commit (**Base**) with your working copy (**Compare**). While the diff is shown, the toolbar holds the **Base** and **Compare** pickers: choose **Working Copy**, the branch's last commit, the branch on the host as last checked, or one of the recent commits that changed the asset.
+
+- **Actors** lists the asset itself first (choose it to see its name, type, stored data and settings), then its items: a Scene's folders and actors, a graph's changed graphs and nodes with its **Variables** and **Functions**, or another asset's groups of properties. Added items are green with **A**, changed ones amber with **M**, removed ones red with **D**; items that didn't change are dimmed. The counts at the top say how many were added, removed and changed, and **Search Actors** finds an item by name. Choose one to see it in **Diff**.
+- **Diff** shows the chosen item in the view for the asset's kind:
+  - Scenes and most assets show **Property**, **Base** and **Working Copy** columns grouped by component, with changed values tinted. **Side By Side** or **Inline** (the old value struck through beside the new) sets the layout; **Changed Only** hides the rest. With no actor chosen, a Scene shows the asset itself and its settings.
+  - Classes and Scene scripts show the graph on its canvas: **Overlay** both versions, or only **Base** or **Working Copy**. Changed nodes are outlined amber, added ones green and removed ones red and dashed, each tagged; a changed pin value shows the old value struck through beside the new. Other graphs, such as Materials, list each changed node's values.
+  - Textures show both images over a checkerboard, **Side By Side**, as a **Swipe** or as their **Difference**, in **RGB** or **Alpha**, beside their size, file size, source image, usage and compression, and how many Materials use the Texture.
+- **Open Scene**, **Open Class** and the like open the asset for editing.
+
+Haptic reads the base version from the project's history, so a diff needs no network unless a large file the base used is no longer in your copy; it then downloads it from the host without adding it to your changes. While a game covers the editor, the diff waits. The diff follows your saves only while **Actors** or **Diff** is on screen: when you come back to them, it shows what changed meanwhile.
+
+### History
+
+**History** lists commits, newest first, with their message, author and age:
+
+- **This Asset** shows the commits that changed the asset you last compared, or the one you were editing when you chose **Open History**. Project Settings and folders aren't assets, so comparing them leaves it as it was. **All Assets** shows every commit on your branch.
+- **Uncommitted Changes** comes first while there are any; choose it to list them, and an asset to see its diff.
+- Choose a commit to see its full message, author, time and short id (**Copy Commit Id** copies the full one), and the assets it changed: choose one to see what that commit did to it.
+- With **This Asset**, **Compare With Working Copy** opens the asset's diff from that commit to your working copy, and **Revert To This Version** puts the asset back as that commit has it, as [Revert Asset](#revert-an-asset) does.
+- **Load Older History** reads more commits. A cloned project starts with only its latest commit, so older history is downloaded from the host the first time you ask for it.
+
+### Revert an asset
+
+**Revert Asset** in **Diff** puts the base version of the asset back in your working copy, with the large files it uses (an asset the base didn't have is removed). If the asset has unsaved edits, choose **Save All** or **Discard** first. Reverting replaces the file and cannot be undone. Documents are read-only while it runs, and the reverted asset reloads as after a pull. **Revert Asset** is unavailable when **Base** is the working copy. Only assets can be reverted, not Project Settings.
 
 ### Repositories Haptic didn't publish
 
@@ -113,13 +176,15 @@ A repository needs a Git LFS rule for the data Haptic stores beside assets. If a
 
 ### The status bar
 
-In Integrated mode the status bar starts with the branch. Its menu holds **Commit…**, **Pull**, **Push**, **Refresh** and **Open Source Control**. Next to it, **N Changes** opens the Changes window, and **Pull N** and **Push N** appear when there is something to pull or push. While a pull, push or publish runs, its progress takes their place. When a commit, pull or push fails, its reason (such as **Could Not Push**) appears there too and opens the Changes window, which says what went wrong. On the right, a small **Saved** shows that everything is saved; save problems such as **Auto-Save Failed — Use Save All** show there instead.
+In Integrated mode the status bar starts with the branch. Its menu holds **Commit…**, **Pull**, **Push**, **Refresh**, **Switch Branch**, **New Branch…**, **Open Source Control** and **Open History**. Next to it, **N Changes** opens the Changes window, and **Pull N** and **Push N** appear when there is something to pull or push. While a pull, push, publish or branch switch runs, its progress takes their place. When a commit, pull or push fails, its reason (such as **Could Not Push**) appears there too and opens the Changes window, which says what went wrong. On the right, a small **Saved** shows that everything is saved; save problems such as **Auto-Save Failed — Use Save All** show there instead.
 
 In the phone layout, which has no status bar, **More Tools** holds the same actions; when one fails, the Changes window opens to say why.
 
+If Haptic can't open the repository, for example because another Git app left it with no branch checked out, the branch reads **No Branch Checked Out** and the branch menu says why. Check out a branch with that app, then choose **Refresh**.
+
 ### On desktop: an existing Git folder
 
-On desktop, a project folder that is already a Git working copy can switch to **Integrated** in **Project Settings > Source Control**. Haptic first warns that no other Git app may use the folder at the same time, then takes the repository and branch from the folder's Git settings. On iPad, iPhone and Android, such a folder stays in Manual mode.
+On desktop, a project folder that is already a Git working copy can switch to **Integrated** in **Project Settings > Source Control**. Haptic first warns that no other Git app may use the folder at the same time, then takes the repository and branch from the folder's Git settings. On iPad, iPhone and Android, a folder another app syncs stays in Manual mode; a project Haptic cloned or published into its own storage can always switch back to **Integrated**, with no warning, since no other Git app uses it.
 
 The mode is part of the project, so it reaches your teammates when you commit it. On desktop, Haptic doesn't start running Git in a folder just because the project says Integrated: until you agree, **Project Settings > Source Control** and the **Changes** window say **Haptic Does Not Run Git In This Folder Yet**. Choose **Use Haptic's Git Here** to see the same warning, then accept to let Haptic sync this folder. **Cancel** changes nothing, and Haptic doesn't ask again by itself. Your answer belongs to this folder on this device: Haptic keeps it in the folder's own Git settings, never in the project, so it isn't committed and stays when you reinstall Haptic. Folders Haptic cloned or published on this device don't ask.
 
@@ -136,11 +201,11 @@ Keep the project in a folder that is a Git working copy whose top folder is the 
 
 | Setting | Description |
 | --- | --- |
-| Mode | **Off**, **Integrated** or **Manual**. Integrated is offered for a project that already uses it and, on desktop, for a folder that is a Git working copy. |
+| Mode | **Off**, **Integrated** or **Manual**. Integrated is offered for a project that already uses it, on desktop for a folder that is a Git working copy, and on iPad, iPhone and Android for a project in the app's own storage that has Git. |
 | Publish | **Publish Project…**, while Mode is Off. |
 | Git App | Desktop, Integrated mode: **Use Haptic's Git Here** for a folder Haptic doesn't sync yet, or **Stop Using Haptic's Git Here** for one it does. Applies to this device only. |
 | Repository | The repository's HTTPS or SSH address. Signed in to GitHub or GitLab, choose it from your repositories; **Use Typed URL** in the list takes an address on another host. Haptic always talks to the host over HTTPS; for an SSH address it uses the same host on the standard HTTPS port. In Integrated mode it shows the repository the project was cloned from or published to, and can't be changed here. |
-| Branch | The branch the locks belong to and, in Integrated mode, the branch Haptic syncs. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it shows the project's branch and can't be changed here. |
+| Branch | The branch the locks belong to. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it is the **Default Branch**, the team's branch, and can't be changed here; the branch you are on is your own, switched from the Source Control tab ([Branches](#branches)). |
 | Account | Who you are signed in as on the repository's host, or **Not Signed In** with **Sign In**. |
 | Auto-Lock On First Edit | Lock a file the first time you edit it in this session. On by default. |
 | Release Locks After Push | Integrated mode: release your locks on the assets a push sent. On by default. |
@@ -162,7 +227,7 @@ Haptic checks locks every minute while it is in the foreground.
 
 While a project's mode is not Off, the **Source Control** tab sits at the right end of the document tabs, beside **Open Documents**. It can't be closed. In the phone layout, which has no tabs, a **Source Control** button beside the **Content Browser** button opens it.
 
-In Integrated mode it holds **Changes** and **Locks**; in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age.
+In Integrated mode it holds **Changes**, **History**, **Locks**, **Actors** and **Diff** ([Compare versions](#compare-versions), [History](#history)); in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age.
 
 | Control | Description |
 | --- | --- |

@@ -69,6 +69,9 @@ const sourceControlPanels = () => import("./asset-panels/source-control");
 const assetEditorPanelComponents = {
   locks: lazyPanel(sourceControlPanels, (m) => m.LocksPanel),
   changes: lazyPanel(sourceControlPanels, (m) => m.ChangesPanel),
+  history: lazyPanel(sourceControlPanels, (m) => m.HistoryPanel),
+  "diff-actors": lazyPanel(sourceControlPanels, (m) => m.DiffActorsPanel),
+  diff: lazyPanel(sourceControlPanels, (m) => m.DiffPanel),
   "save-game-fields": lazyPanel(dataPanels, (m) => m.SaveGameFieldsPanel),
   "save-game-definition": lazyPanel(dataPanels, (m) => m.SaveGameDefinitionPanel),
   watches: lazyPanel(classPanels, (m) => m.WatchesPanel),

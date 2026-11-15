@@ -601,7 +601,8 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await installHooks(page);
-  await seedEngineSettings(page);
+  // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
+  await seedEngineSettings(page, (settings) => { settings.viewportIdleHalfRate = false; });
   await setPhase(page, "create");
   const hooksStart = await take(page);
   const createToInteractiveMs = await createFeatureTestProject(page);

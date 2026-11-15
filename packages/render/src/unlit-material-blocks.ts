@@ -19,12 +19,14 @@ import { ALPHA_COVERAGE_UNIFORM, coverageClip, drawsAlphaCoverage } from "./alph
 import { geometryOutputWrite } from "./geometry-surface-output-block";
 import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TEXEL_KIND, DRAW_BATCH_TINT_KIND, drawBatchValue } from "./draw-batch-world-block";
 import { overlayVisualStyle } from "./overlay-visual-style";
+import { noteRenderChange } from "./render-change-journal";
 
 /**
  * What one mesh draws with the unlit Material (`unlit-material.ts`). Bound per draw, so meshes with different textures,
- * colours and alpha share one program.
+ * colours and alpha share one program. Read-only: a change goes through `setUnlitBinding` or `updateUnlitBinding`,
+ * which tell the Scene's render change journal about every mesh drawing it.
  */
-export type UnlitBinding = {
+export type UnlitBinding = Readonly<{
   /** The texture the colour multiplies, or none (`UnlitMaterialKey.textured` instances read it). */
   texture: BaseTexture | null;
   /** Display-space colour, clamped to [0, 1] (Standard's clamped emissive). */
@@ -39,8 +41,8 @@ export type UnlitBinding = {
   /** Back faces flip the geometry pass's normal (Standard's `twoSidedLighting`). */
   twoSided: boolean;
   /** An MSDF glyph's outline (`UnlitMaterialKey.msdf`): its colour, and its width in distance-field units (0: none). */
-  msdf?: { strokeColor: readonly [number, number, number]; strokeWidth: number };
-};
+  msdf?: Readonly<{ strokeColor: readonly [number, number, number]; strokeWidth: number }>;
+}>;
 
 const bindings = new WeakMap<AbstractMesh, UnlitBinding>();
 const DEFAULT_BINDING: UnlitBinding = {
@@ -48,13 +50,53 @@ const DEFAULT_BINDING: UnlitBinding = {
 };
 
 const materialBindings = new WeakMap<object, UnlitBinding>();
+/** Who draws each binding: the meshes holding it as their own, and the Materials holding it for all their meshes. */
+const meshHolders = new WeakMap<UnlitBinding, Set<AbstractMesh>>();
+const materialHolders = new WeakMap<UnlitBinding, Set<object>>();
+
+/** Notes `mesh` in its Scene's render change journal, with its child meshes that draw its binding (`unlitBinding`). */
+function noteDrawers(mesh: AbstractMesh): void {
+  noteRenderChange(mesh);
+  for (const child of mesh.getChildMeshes(true)) if (!bindings.has(child)) noteRenderChange(child);
+}
+
+/** Notes every mesh drawing a Material that holds a binding of its own. */
+function noteMaterialDrawers(material: object): void {
+  const meshes = (material as { getBindedMeshes?: () => AbstractMesh[] }).getBindedMeshes?.() ?? [];
+  for (const mesh of meshes) noteRenderChange(mesh);
+}
 
 export function setUnlitBinding(mesh: AbstractMesh, binding: UnlitBinding): void {
+  const previous = bindings.get(mesh);
+  if (previous === binding) return;
+  if (previous) meshHolders.get(previous)?.delete(mesh);
+  else mesh.onDisposeObservable.addOnce(() => { const held = bindings.get(mesh); if (held) meshHolders.get(held)?.delete(mesh); });
   bindings.set(mesh, binding);
+  let holders = meshHolders.get(binding);
+  if (!holders) meshHolders.set(binding, (holders = new Set()));
+  holders.add(mesh);
+  noteDrawers(mesh);
 }
 /** Every mesh drawing `material` draws `binding` (`ownedUnlitMaterial`). */
 export function setMaterialUnlitBinding(material: object, binding: UnlitBinding): void {
+  const previous = materialBindings.get(material);
+  if (previous === binding) return;
+  if (previous) materialHolders.get(previous)?.delete(material);
   materialBindings.set(material, binding);
+  let holders = materialHolders.get(binding);
+  if (!holders) materialHolders.set(binding, (holders = new Set()));
+  holders.add(material);
+  noteMaterialDrawers(material);
+}
+
+/**
+ * Changes `binding` in place: every mesh drawing it (holding it, a child falling back to it, or drawing a Material that
+ * holds it) draws the new values from its next draw, and its Scene's render change journal hears of each.
+ */
+export function updateUnlitBinding(binding: UnlitBinding, changes: Partial<UnlitBinding>): void {
+  Object.assign(binding as { -readonly [K in keyof UnlitBinding]: UnlitBinding[K] }, changes);
+  for (const mesh of meshHolders.get(binding) ?? []) noteDrawers(mesh);
+  for (const material of materialHolders.get(binding) ?? []) noteMaterialDrawers(material);
 }
 /**
  * The binding `mesh` draws: its material's own (`ownedUnlitMaterial`), its own, or, for a pooled visual's leaf

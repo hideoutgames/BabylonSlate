@@ -146,6 +146,7 @@ import {
 import { setupDefaultViewport } from "./viewport";
 import { createWorldLayerCamera } from "./world-layer-camera";
 import { RenderScheduler } from "./render-scheduler";
+import { createCameraMotionProbe, observeViewInput } from "./view-activity";
 import { CommandSourcePreparation } from "./command-source-preparation";
 import {
   bindResourceCacheToHandle,
@@ -775,8 +776,16 @@ function initializeEngine(
   const hasReadyContent = () => !worldLoading || (sceneLayerCompositor?.layers().some((layer) => layerLoads.get(layer.layerId)?.ready !== false) ?? false);
   // renderLoop passes the loading permit it already evaluated for this frame.
   const frameBackpressure = engineFrameBackpressure(engine);
-  const shouldRenderFrame = (now: number, loadingFrame?: boolean) => (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
-    (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
+  /** Work that needs this view's frames at its full cap (Half Rate When Idle): loading, recordings, captures, readbacks. */
+  const noteFrameDemand = () => {
+    if (worldLoading || pendingPresentations.size > 0 || hasPendingOwners() || performanceFeed.active || frameReportFeed.active ||
+      presentedImageRequests.length > 0) scheduler.noteActivity();
+  };
+  const shouldRenderFrame = (now: number, loadingFrame?: boolean) => {
+    noteFrameDemand();
+    return (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
+      (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
+  };
   const releaseViewAdmission = registeredView ? admitRegisteredViewFrames(engine, registeredView, () =>
     {
       if (disposed || contextLost) return false;
@@ -824,6 +833,12 @@ function initializeEngine(
   if (options.editor) {
     scheduler.setAlwaysRender(true);
   }
+  // Half Rate When Idle applies to editor views only (the editor turns it on); their input and camera motion are
+  // activity. Play holds a render lease and never halves.
+  const editorActivity = options.editor === true && !options.playMode;
+  const cameraMoved = editorActivity ? createCameraMotionProbe() : null;
+  const releaseViewInput = editorActivity ? observeViewInput(canvas, () => scheduler.noteActivity()) : null;
+  onRollback(() => releaseViewInput?.());
   if (options.frameCap !== undefined) {
     scheduler.setFrameCap(options.frameCap);
   }
@@ -1765,6 +1780,7 @@ function initializeEngine(
     if (registeredView && !registeredViewIsEnabled(registeredView)) {
       return;
     }
+    scheduler.noteActivity();
     lockedViewSize = null;
     syncPlayOutput();
     if (presentRtt) {
@@ -2374,6 +2390,8 @@ function initializeEngine(
         presentationStats.held += 1;
         heldFrames.count(holdReason ?? HELD_FRAME_OTHER);
         if (frameReportFeed.active) scheduler.requestPausedFrame();
+        // A held frame (pipelines or shaders compiling, an unready output) retries at the full cap.
+        scheduler.noteActivity();
         return;
       }
       if (rttPresent) {
@@ -2408,6 +2426,8 @@ function initializeEngine(
     publishDrawPassFrame(drawPasses);
     copyOverlayBatchStats(layerBatches.current, layerBatches.last);
     scheduler.noteRendered(frameStart, performance.now());
+    // After `noteRendered`, so camera motion counts as activity (Half Rate When Idle) though the frame drew it.
+    if (cameraMoved?.(scene.frameGraph?.findMainCamera() ?? scene.activeCamera)) scheduler.noteActivity();
     lastRenderCpuMs = performance.now() - renderStart;
     if (profileReceipt) {
       profileReceipt.sample.submissionMs = lastRenderCpuMs;
@@ -2648,6 +2668,7 @@ function initializeEngine(
       engine.onContextRestoredObservable.remove(contextRestoredObserver);
       engine.onEndFrameObservable.remove(presentationObserver);
       releaseNearestTextures();
+      releaseViewInput?.();
       releaseViewAdmission?.();
       releaseOffscreenDispatch?.();
       releaseViewless?.();
@@ -2837,6 +2858,7 @@ function initializeEngine(
       // A stopped view keeps its Scene until native release; queued commands
       // must not spawn or rebind visuals in it.
       if (disposed) return;
+      scheduler.noteActivity();
       if (!applyingPreparedCommand)
         finalAuthoringDrain?.abort(new Error(`Runtime render command ${command.type} arrived after the final capture fence.`));
       if (!applyingPreparedCommand && commandSources.receive(command, (prepared) => {

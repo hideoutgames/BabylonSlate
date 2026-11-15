@@ -7,6 +7,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseOverlayVisualStyle, type OverlayVisualStyle } from "@haptic/core";
+import { noteRenderChange } from "./render-change-journal";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 type VisualStyleBinding = { style: OverlayVisualStyle; meshes: AbstractMesh[] };
@@ -39,6 +40,7 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
     for (const mesh of binding.meshes) {
       bindings.set(mesh, binding);
       enableOverlayVisualMaterial(mesh);
+      noteRenderChange(mesh);
     }
     root.onDisposeObservable.addOnce(() => {
       roots.delete(root);
@@ -52,6 +54,8 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
   if (style.opacity === held.opacity && style.tint[0] === held.tint[0] && style.tint[1] === held.tint[1] && style.tint[2] === held.tint[2] &&
     style.tint[3] === held.tint[3]) return;
   binding.style = style;
+  // Each of its meshes draws the new style: the render change journal hears of each.
+  for (const mesh of binding.meshes) noteRenderChange(mesh);
   // Only this component's own meshes blend differently now.
   if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene(), "layerStyle", binding.meshes);
 }

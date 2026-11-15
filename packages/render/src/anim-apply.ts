@@ -5,7 +5,8 @@ import { flipSpriteAnimationFrame, spriteAnimationFrameAt } from "@haptic/assets
 import { setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
 import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
-import { applyPose, poseRigFor, type PoseClip } from "./anim-pose";
+import type { AnimLayerMaskRef } from "@haptic/core";
+import { applyPose, poseRigFor, type PoseAdditive, type PoseClip, type PoseLayering } from "./anim-pose";
 
 /**
  * Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its
@@ -268,6 +269,20 @@ const poseClips: (PoseClip | undefined)[] = [];
 const poseLayers: (AnimClipLayer | undefined)[] = [];
 const poseFrames: number[] = [];
 const poseWeights: number[] = [];
+const poseMasks: (readonly AnimLayerMaskRef[] | undefined)[] = [];
+const poseAdditive: (PoseAdditive | undefined)[] = [];
+
+function sameAdditive(a: PoseAdditive | undefined, b: PoseAdditive | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.reference === b.reference && a.frame === b.frame;
+}
+
+function sameMasks(a: readonly AnimLayerMaskRef[] | undefined, b: readonly AnimLayerMaskRef[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i]!.blend !== b[i]!.blend || a[i]!.input !== b[i]!.input) return false;
+  return true;
+}
 
 /** The clip's frame at a layer's normalised time (clamped to the clip). */
 function clipFrame(clip: PoseClip, normalisedTime: number): number {
@@ -311,10 +326,21 @@ export function applyAnimStateToScene(
         });
         continue;
       }
-      // Layers sharing a clip play it once, at the current state's time, with their weights summed.
+      // An additive layer adds its change from its base pose: the rest pose, or its base clip on this slot.
+      let additive: PoseAdditive | undefined;
+      if (layer.additive) {
+        const base = layer.additiveBase;
+        const reference = base ? findClip(slotClips, base.clipName, base.clipAssetGuid) ?? null : null;
+        if (base && !reference) {
+          scene.onMissingClip?.({ slotId: command.slotId, clipName: base.clipName, clipAssetGuid: base.clipAssetGuid, clipKind: "animation" });
+        }
+        additive = { reference, frame: reference && base ? clipFrame(reference, base.normalisedTime) : 0 };
+      }
+      // Layers sharing a clip (under the same Layered Blend inputs, alike additive or not) play it once, at the
+      // current state's time, with their weights summed.
       let at = -1;
       for (let j = 0; j < count; j++) {
-        if (poseClips[j] === clip) {
+        if (poseClips[j] === clip && sameMasks(poseMasks[j], layer.masks) && sameAdditive(poseAdditive[j], additive)) {
           at = j;
           break;
         }
@@ -323,6 +349,8 @@ export function applyAnimStateToScene(
         poseClips[count] = clip;
         poseLayers[count] = layer;
         poseWeights[count] = layer.weight;
+        poseMasks[count] = layer.masks;
+        poseAdditive[count] = additive;
         count++;
         continue;
       }
@@ -332,12 +360,19 @@ export function applyAnimStateToScene(
     // What no layer plays rests.
     if (slotClips.length > 0) {
       for (let i = 0; i < count; i++) poseFrames[i] = clipFrame(poseClips[i]!, poseLayers[i]!.normalisedTime);
-      applyPose(poseRigFor(slotClips), count, poseClips, poseFrames, poseWeights);
+      let anyAdditive = false;
+      for (let i = 0; i < count; i++) anyAdditive ||= poseAdditive[i] !== undefined;
+      const layering: PoseLayering | null = command.layerBlends?.length || command.boneModifiers?.length || anyAdditive
+        ? { masks: poseMasks, blends: command.layerBlends ?? [], modifiers: command.boneModifiers ?? [], additive: poseAdditive }
+        : null;
+      applyPose(poseRigFor(slotClips), count, poseClips, poseFrames, poseWeights, layering);
     }
   } finally {
     for (let i = 0; i < count; i++) {
       poseClips[i] = undefined;
       poseLayers[i] = undefined;
+      poseMasks[i] = undefined;
+      poseAdditive[i] = undefined;
     }
   }
   if (spritePrimary) {

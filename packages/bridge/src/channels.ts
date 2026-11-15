@@ -1059,7 +1059,17 @@ export type CommandMessage =
         /** A sprite layer mirrored by Flip Frame. */
         flipX?: boolean;
         flipY?: boolean;
+        /** The Layered Blend Per Bone inputs the layer plays under, outermost first. */
+        masks?: import("@haptic/core").AnimLayerMaskRef[];
+        /** Under an Apply Additive's Additive input: the clip adds its change from its base pose to the pose beneath. */
+        additive?: boolean;
+        /** An additive clip's base pose when it is not the rest pose. */
+        additiveBase?: import("@haptic/core").AnimAdditiveBase;
       }>;
+      /** The Layered Blend Per Bone nodes the layers' `masks` index. */
+      layerBlends?: import("@haptic/core").AnimLayerBlend[];
+      /** Transform Bone changes, applied in order after the layers blend. */
+      boneModifiers?: import("@haptic/core").AnimBoneModifier[];
       /** Animation Tick Mode When Visible: render poses the actor only while a camera (or a shadow) can see it. */
       whenVisible?: boolean;
     }

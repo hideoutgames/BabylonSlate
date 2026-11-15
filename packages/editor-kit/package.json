@@ -19,6 +19,8 @@
     "@haptic/core": "workspace:*",
     "@haptic/input": "workspace:*",
     "@haptic/ui": "workspace:*",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tabler/icons-react": "3.50.0",
     "lucide-react": "^0.552.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

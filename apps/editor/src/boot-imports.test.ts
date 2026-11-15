@@ -102,6 +102,7 @@ describe("editor boot imports", () => {
   // APIs, the pushed-lock check, the Git core (isomorphic-git) and its port factory, Clone, Publish, the Pull flow and
   // the Source Control tab's windows load on first use, and the Debug Mode Git benchmark only when it is called.
   it("keep Source Control's accounts, sign-in, host APIs, Git core and windows out of the Homepage and the Editor route", () => {
+    const ASSET_DIFF_IMPORT = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["']@haptic\/assets\/asset-diff(?:-client)?["']/m;
     const SOURCE_CONTROL_SUBPATH = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["'](?:@haptic\/source-control\/(?:device-flow|host-api|pushed-locks|token-refresh|fake-host|git|git-benchmark|fake-sync)|isomorphic-git(?:\/[^'"]*)?)["']/m;
     const closure = [...new Set(["main.tsx", "routes/home-route.tsx", "routes/editor-route.tsx"].flatMap((entry) => staticClosure(entry)))];
     expect(closure).toContain("services/source-control-service.ts");
@@ -122,11 +123,26 @@ describe("editor boot imports", () => {
       "components/source-control-pull-flow.tsx",
       "components/clone-project-dialog.tsx",
       "components/publish-project-dialog.tsx",
+      "components/new-project-repository-fields.tsx",
       "services/source-control-sync-port.ts",
       "services/source-control-publish.ts",
       "panels/locks-panel.tsx",
       "panels/changes-panel.tsx",
+      "panels/diff-actors-panel.tsx",
+      "panels/diff-panel.tsx",
+      "panels/diff-graph-view.tsx",
+      "panels/diff-texture-view.tsx",
+      "components/source-control-revert-flow.tsx",
+      "components/source-control-branch-flow.tsx",
+      "components/source-control-new-branch-dialog.tsx",
+      "components/source-control-rewrite.tsx",
+      "panels/history-panel.tsx",
+      "services/source-control-diff-loader.ts",
+      "services/source-control-restore.ts",
     ].includes(file))).toEqual([]);
     expect(closure.filter((file) => SOURCE_CONTROL_SUBPATH.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
+    // The diff model and its worker client load with the first diff; the open diff's service imports only their types.
+    expect(closure).toContain("services/source-control-diff.ts");
+    expect(closure.filter((file) => ASSET_DIFF_IMPORT.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
   });
 });

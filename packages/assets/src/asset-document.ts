@@ -14,8 +14,9 @@ import { stableStringify } from "./bytes";
 import { collectAssetDependencyMetadata, type AssetDependencyContext, type AssetDependencyMetadata } from "./asset-dependencies";
 import { ATLAS_REFERRER_TYPES, ATLAS_TEXTURES_META, atlasTextureGuids } from "./atlas-textures";
 
-/** Editor documents keep their JSON body in one chunk so headers stay cheap to scan. */
-export const DOCUMENT_CHUNK_ID = "document";
+import { DOCUMENT_CHUNK_ID } from "./document-chunk";
+
+export { DOCUMENT_CHUNK_ID };
 
 export interface AssetDocument {
   type: string;

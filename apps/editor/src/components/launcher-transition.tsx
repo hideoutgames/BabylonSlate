@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { useReducedMotion } from "@haptic/editor-kit";
 import { getBuildLabel } from "../lib/build-identity";
+import type { LaunchPhase } from "../lib/create-project";
 import { bootIntroStart, useBootIntro } from "./boot-intro";
 import loadingStyles from "./launcher-transition.css?inline";
 
@@ -17,7 +18,10 @@ type Target = "home" | "editor";
 type Transition = {
   target: Target;
   label: string;
+  /** The boot intro's and the Homepage's loading step (`reportHomeLoading`). */
   status: string;
+  /** A project open's broad step (`begin`, `setPhase`). */
+  phase: LaunchPhase;
   since: number;
   mounted: boolean;
   readyAt: number | null;
@@ -27,19 +31,41 @@ type Transition = {
   boot: boolean;
 };
 const TransitionContext = createContext<{
-  begin: (label: string) => void;
+  /** Shows the project card for `label`, starting at `phase` (Opening project unless creating). */
+  begin: (label: string, phase?: LaunchPhase) => void;
+  /** The project open moved on to `phase`; nothing while no open is under way. */
+  setPhase: (phase: LaunchPhase) => void;
   ready: (target: Target) => void;
   settle: () => void;
   reportHomeLoading: (status: string) => void;
   active: boolean;
 }>({
   begin: () => {},
+  setPhase: () => {},
   ready: () => {},
   settle: () => {},
   reportHomeLoading: () => {},
   active: false,
 });
 export const useLauncherTransition = () => useContext(TransitionContext);
+
+const PHASE_STATUS: Record<LaunchPhase, string> = {
+  creating: "Creating project",
+  "source-control": "Initializing source control",
+  opening: "Opening project",
+};
+
+/**
+ * The card's status: the boot intro's and the Homepage's loading step, or a
+ * project open's phase, which becomes Preparing editor once the editor has
+ * mounted beneath the card. A later step (a Remote New Project's
+ * Publish) keeps its own name, whichever of the two comes first.
+ */
+function statusOf(transition: Transition): string {
+  if (transition.mounted && transition.settled) return "Ready";
+  if (transition.boot || transition.target === "home") return transition.status;
+  return transition.mounted && transition.phase === "opening" ? "Preparing editor" : PHASE_STATUS[transition.phase];
+}
 
 /** The boot intro (index.html) settles its letters at about 2.2 s and then
  * ends at once; the project-open card is quicker and fades out. */
@@ -58,6 +84,7 @@ export function LauncherTransitionProvider({
     target: route === "home" ? "home" : "editor",
     label: "Haptic",
     status: "Loading application",
+    phase: "opening",
     since: performance.now(),
     mounted: false,
     readyAt: null,
@@ -66,11 +93,12 @@ export function LauncherTransitionProvider({
     boot: true,
   }));
   const begin = useCallback(
-    (label: string) =>
+    (label: string, phase: LaunchPhase = "opening") =>
       setTransition({
         target: "editor",
         label,
-        status: "Opening project",
+        status: "",
+        phase,
         since: performance.now(),
         mounted: false,
         readyAt: null,
@@ -78,6 +106,15 @@ export function LauncherTransitionProvider({
         leaving: false,
         boot: false,
       }),
+    [],
+  );
+  const setPhase = useCallback(
+    (phase: LaunchPhase) =>
+      setTransition((current) =>
+        current?.target === "editor" && !current.boot && !current.settled && current.phase !== phase
+          ? { ...current, phase }
+          : current,
+      ),
     [],
   );
   const ready = useCallback(
@@ -88,7 +125,6 @@ export function LauncherTransitionProvider({
               ...current,
               mounted: true,
               readyAt: current.settled ? performance.now() : null,
-              status: current.settled ? "Ready" : "Preparing editor",
             }
           : current,
       ),
@@ -102,7 +138,6 @@ export function LauncherTransitionProvider({
               ...current,
               settled: true,
               readyAt: current.mounted ? performance.now() : null,
-              status: current.mounted ? "Ready" : current.status,
             }
           : current,
       ),
@@ -171,18 +206,18 @@ export function LauncherTransitionProvider({
     transition?.target === "home"
       ? "Loading Haptic"
       : `Opening ${transition?.label ?? "Haptic"}`;
-  useBootIntro(
-    transition?.boot ? { label, status: transition.status } : null,
-  );
+  const status = transition ? statusOf(transition) : "";
+  useBootIntro(transition?.boot ? { label, status } : null);
   const value = useMemo(
     () => ({
       begin,
+      setPhase,
       ready,
       settle,
       reportHomeLoading,
       active,
     }),
-    [begin, ready, settle, reportHomeLoading, active],
+    [begin, setPhase, ready, settle, reportHomeLoading, active],
   );
   return (
     <TransitionContext.Provider value={value}>
@@ -241,7 +276,7 @@ export function LauncherTransitionProvider({
                         </span>
                       )}
                       <span className="slate-splash-status">
-                        {transition.status}
+                        {status}
                       </span>
                     </div>
                     <span className="slate-splash-version">{version}</span>

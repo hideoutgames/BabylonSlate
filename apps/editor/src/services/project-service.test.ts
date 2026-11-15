@@ -547,13 +547,17 @@ describe("project round-trip", () => {
       expect(await storage.exists(".haptic-creating")).toBe(false);
     });
 
-    it("leaves a project.json that already names the repository as it is", async () => {
+    it("leaves a project.json that already names the repository as it is, whichever branch was cloned", async () => {
       const storage = new MemoryStorageAdapter("documents");
       const service = new ProjectService(storage);
       const text = manifest({ mode: "integrated", repositoryUrl: "git@github.com:team/game.git", branch: "main", autoLockOnEdit: true, releaseLocksAfterPush: true });
-      const handle = await service.cloneProject({ name: "Same", repositoryUrl: REPOSITORY, branch: "main", clone: async (folder) => folder.writeText(PROJECT_FILE, text) });
-      await storage.openKnownFolder(handle);
-      expect(await storage.readText(PROJECT_FILE)).toBe(text);
+      // The branch in project.json is the team's default; the clone's own branch is its working copy's, so cloning another writes nothing.
+      for (const branch of ["main", "art"]) {
+        const handle = await service.cloneProject({ name: `Same ${branch}`, repositoryUrl: REPOSITORY, branch, clone: async (folder) => folder.writeText(PROJECT_FILE, text) });
+        await storage.openKnownFolder(handle);
+        expect(await storage.readText(PROJECT_FILE)).toBe(text);
+        await storage.releaseFolder();
+      }
     });
 
     it("refuses a branch without project.json and removes the folder", async () => {
@@ -807,6 +811,18 @@ describe("project round-trip", () => {
     await storage.openDocumentsProject("Kept");
     expect(await storage.readText("notes.txt")).toBe("x");
     expect(await storage.exists(PROJECT_FILE)).toBe(false);
+  });
+
+  it("opens, without creating anything, a picked folder that already holds a project", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    const service = new ProjectService(storage);
+    const first = await service.createEmptyProject("Picked", { pickFolder: true, kind: "2d" });
+    expect(first.created).toBe(true);
+    await service.closeProject();
+    // The same folder again: a Remote New Project must not publish what it opened.
+    const again = await service.createEmptyProject("Another", { pickFolder: true, kind: "2d" });
+    expect(again.created).toBe(false);
+    expect(again.document.metadata.name).toBe("Picked");
   });
 
   it("never scaffolds over a folder that has content but no project.json", async () => {

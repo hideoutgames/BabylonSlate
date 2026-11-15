@@ -50,6 +50,7 @@ import {
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
 import { SourceControlSignInBanner } from "./source-control-sign-in-banner";
+import { SourceControlPublishNotice } from "./source-control-publish-notice";
 import { UndoHistoryNotice } from "./undo-history-notice";
 import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
 import { DockviewShell } from "../shell/dockview-shell";
@@ -274,6 +275,7 @@ export function DocumentWorkspace() {
     <AudioReverbBakeProvider>
     <div className="flex min-h-0 flex-1 flex-col">
       <SourceControlSignInBanner />
+      <SourceControlPublishNotice />
       {visibleTabOrder.map((id) => {
         const doc = openDocuments.find((entry) => entry.id === id);
         if (!doc) return null;
@@ -292,13 +294,16 @@ export function DocumentWorkspace() {
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
                 data-testid="document-workspace-source-control"
               >
-                <RegisteredDockviewShell
-                  key={doc.sourceControlIntegrated ? "integrated" : "manual"}
-                  id={id}
-                  documentKind="source-control"
-                  initialLayout={doc.layout}
-                  sourceControlIntegrated={doc.sourceControlIntegrated}
-                />
+                {/* Its windows tell when another tab is in front (the Actors and Diff windows stop following saves). */}
+                <DocumentWorkspaceProvider documentId={id}>
+                  <RegisteredDockviewShell
+                    key={doc.sourceControlIntegrated ? "integrated" : "manual"}
+                    id={id}
+                    documentKind="source-control"
+                    initialLayout={doc.layout}
+                    sourceControlIntegrated={doc.sourceControlIntegrated}
+                  />
+                </DocumentWorkspaceProvider>
               </div>
             </WorkspaceErrorBoundary>
           );

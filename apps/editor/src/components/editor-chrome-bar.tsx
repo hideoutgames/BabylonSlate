@@ -1,6 +1,7 @@
 import { useBreakpointStop } from "../lib/breakpoint-stop";
 import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { SceneModeSelect } from "./scene-mode-select";
+import { SourceControlDiffPickers } from "./source-control-diff-pickers";
 import {
   DndContext,
   KeyboardSensor,
@@ -1071,6 +1072,11 @@ export function EditorChromeBar({
           {activeKind === "scene" || activeKind === "scene-layer" ? (
             <ToolbarOverflowItem id="scene-mode">
               <SceneModeSelect kind={activeKind} disabled={playing || preparing} />
+            </ToolbarOverflowItem>
+          ) : null}
+          {activeKind === "source-control" ? (
+            <ToolbarOverflowItem id="diff-versions">
+              <SourceControlDiffPickers />
             </ToolbarOverflowItem>
           ) : null}
           {activeKind === "graph" ? (

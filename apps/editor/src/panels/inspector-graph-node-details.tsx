@@ -52,6 +52,9 @@ import {
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { timelineProxyNodeTarget, timelineScriptAssets } from "../lib/timeline-script-catalog";
 import { ANIM_POSE_CLIP_PICK, animGraphPlaysAsset, type AnimClipPickGraph } from "../lib/anim-pose-inspector";
+import { ANIM_POSE_LAYERED_BLEND_TYPE } from "@haptic/anim-graph";
+import { normalizeSkeletonPayload } from "@haptic/assets";
+import { LayeredBlendBranchFilters } from "../components/layered-blend-branch-filters";
 import {
   committedPinRowIds,
   memberPinsFromRows,
@@ -147,6 +150,19 @@ export function GraphNodeDetails({
     return timelineProxyNodeTarget(timelineScriptAssets(assets, projectTimelineClips(assets, clipDocuments)), selectedNode.data).clip;
   }, [assetRegistry, clipDocuments, proxyPicker, registryEpoch, selectedNode.data]);
 
+  // A state graph's node picks bones from the graph's Skeleton and names its saved cached poses.
+  const skeletonGuid = animClipGraph?.skeletonGuid ?? null;
+  const cachedPoses = animClipGraph?.cachedPoses;
+  const animPose = useMemo(() => {
+    void registryEpoch;
+    if (!animClipGraph) return undefined;
+    const skeleton = skeletonGuid ? assetRegistry?.getByGuid(skeletonGuid) : undefined;
+    const bones = skeleton?.header.type === "Skeleton"
+      ? normalizeSkeletonPayload(skeleton.header.payload ?? {}).bones.map((bone) => bone.name)
+      : [];
+    return { bones, cachedPoses: cachedPoses ?? [] };
+  }, [animClipGraph, assetRegistry, cachedPoses, registryEpoch, skeletonGuid]);
+
   const isExecJs = selectedNode.type === "debug.executeJavaScript";
   const isCommandRun = selectedNode.type === "flow.event.commandRun";
   const isCustomEvent = selectedNode.type === "flow.event.custom";
@@ -233,6 +249,7 @@ export function GraphNodeDetails({
     updateNodeData,
     onPickClass: setClassPinPick,
     onPickAsset: setAssetPinPick,
+    animPose,
   });
   const { sections, pinDefaults: pinDefaultRows, pathDefaults, dataLiteralDefaults } = nodeRows;
   const isFlowSwitch = isFlowSwitchTypeId(selectedNode.type);
@@ -245,6 +262,9 @@ export function GraphNodeDetails({
       <div className="flex flex-col gap-3 p-3">
         <div className="text-sm font-medium">{title}</div>
         <GraphNodeRowSections sections={sections} />
+        {selectedNode.type === ANIM_POSE_LAYERED_BLEND_TYPE ? (
+          <LayeredBlendBranchFilters data={selectedNode.data} bones={animPose?.bones ?? []} onPatch={updateNodeData} />
+        ) : null}
         {isFlowSwitch ? (
           <NamedListEditor
             title="Cases"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { animGraphPlaysAsset, type AnimClipPickGraph } from "./anim-pose-inspector";
+import { animGraphPlaysAsset, animPoseNodePropertyRows, type AnimClipPickGraph } from "./anim-pose-inspector";
 
 const onRig: AnimClipPickGraph = { dimension: "3d", skeletonGuid: "rig" };
 const noSkeleton: AnimClipPickGraph = { dimension: "3d", skeletonGuid: null };
@@ -20,5 +20,45 @@ describe("animGraphPlaysAsset", () => {
     ["a Texture", { type: "Texture", payload: {} }, onRig, false],
   ])("%s plays: %s", (_label, asset, graph, expected) => {
     expect(animGraphPlaysAsset(asset, graph)).toBe(expected);
+  });
+});
+
+describe("Phase 5b pose node rows", () => {
+  const rowsOf = (typeId: string, data: Record<string, unknown>, extra: { bones?: string[]; cachedPoses?: string[] } = {}) => {
+    const patches: Array<Record<string, unknown>> = [];
+    const rows = animPoseNodePropertyRows(typeId, data, (patch) => patches.push(patch), {
+      assetEntries: [],
+      onPickClip: () => undefined,
+      ...extra,
+    });
+    return { rows, patches };
+  };
+
+  it("sets a Layered Blend Per Bone's blend inputs from 1 to 16", () => {
+    const { rows, patches } = rowsOf("anim.pose.layeredBlendPerBone", {});
+    const count = rows.find((row) => row.id === "count");
+    expect(count).toMatchObject({ label: "Blend Poses", value: 1, min: 1, max: 16 });
+    if (count?.kind === "number") count.onChange(40);
+    expect(patches).toEqual([{ count: 16 }]);
+  });
+
+  it("names a Save Cached Pose, and picks a Use Cached Pose's from the saved names, keeping a missing one", () => {
+    const save = rowsOf("anim.pose.saveCachedPose", { name: "Loco" });
+    expect(save.rows).toEqual([expect.objectContaining({ kind: "text", label: "Name", value: "Loco" })]);
+    const use = rowsOf("anim.pose.useCachedPose", { name: "Gone" }, { cachedPoses: ["Aim", "Loco"] });
+    expect(use.rows[0]).toMatchObject({ kind: "enum", label: "Cached Pose", value: "Gone", verbatim: true });
+    expect(use.rows[0]?.kind === "enum" ? use.rows[0].options.map((option) => option.value) : []).toEqual(["Gone", "Aim", "Loco"]);
+  });
+
+  it("picks a Transform Bone's bone from the Skeleton and shows a channel's space only while it changes the bone", () => {
+    const { rows, patches } = rowsOf("anim.control.transformBone", { bone: "head", rotationMode: "add" }, { bones: ["root", "head"] });
+    expect(rows.map((row) => row.label)).toEqual(["Bone", "Translation Mode", "Rotation Mode", "Rotation Space", "Scale Mode"]);
+    expect(rows[0]).toMatchObject({ kind: "enum", verbatim: true, value: "head" });
+    const space = rows.find((row) => row.id === "rotationSpace");
+    expect(space).toMatchObject({ value: "actor" });
+    if (space?.kind === "enum") space.onChange("bone");
+    expect(patches).toEqual([{ rotationSpace: "bone" }]);
+    // Without a Skeleton the bone is typed.
+    expect(rowsOf("anim.control.transformBone", {}).rows[0]).toMatchObject({ kind: "text", label: "Bone" });
   });
 });

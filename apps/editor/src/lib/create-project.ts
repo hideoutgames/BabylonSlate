@@ -1,4 +1,5 @@
 import type { ProjectAppearance } from "@haptic/core";
+import type { NewRepositoryRequest, PublishOutcome } from "../services/source-control-publish";
 
 // Descriptor + noun + head noun reads as a compound name in any combination,
 // for example "Walnut Apple Sauce" or "Velvet Comet Parade".
@@ -74,7 +75,18 @@ export function isBuiltInStarterKind(id: string): id is BuiltInStarterKind {
   return (BUILT_IN_STARTER_KINDS as readonly string[]).includes(id);
 }
 
+/**
+ * The broad steps of creating or opening a project, which the launcher card
+ * names: `creating` the project's files, `source-control` (a Remote New
+ * Project's repository, first commit and push) and `opening` it in the editor.
+ */
+export type LaunchPhase = "creating" | "source-control" | "opening";
+
 export type CreateProjectOptions = {
+  /** Remote: once the project opens, publish it to this new repository, as Project Settings' Publish does. */
+  repository?: NewRepositoryRequest;
+  /** Reports each step for the launcher card. */
+  onPhase?: (phase: LaunchPhase) => void;
   appearance?: ProjectAppearance;
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;
@@ -86,3 +98,44 @@ export type CreateProjectOptions = {
   /** Pixel Art Optimized (`pixelArtProjectSettings`). */
   pixelArt?: boolean;
 };
+
+/**
+ * Whether a Remote New Project must be created in App Documents: on iOS and
+ * Android Haptic's Git cannot run in a chosen folder, which another Git app
+ * syncs (`other-git-client`). Desktop adopts any folder it publishes.
+ */
+export function remoteNeedsAppStorage(hostPlatform: string): boolean {
+  return hostPlatform === "ios" || hostPlatform === "android";
+}
+
+/**
+ * What a New Project did: `created` a project and opened it, `opened` the
+ * project a picked folder already held, or nothing (`refused`, by a session
+ * that would not close).
+ */
+export type CreateProjectOutcome = "created" | "opened" | "refused";
+
+/**
+ * A Remote New Project's last step, once its project is open: publishes it to
+ * the new repository with `publish` (Publish to a new repository, as Project
+ * Settings' Publish does), naming the step first. Only a project this create
+ * made is published. Resolves to why the project stayed Local, for the
+ * editor to show, or null: an Integrated project whose push failed shows that
+ * in the status bar instead. Never rejects, as the project is already open.
+ */
+export async function publishCreatedProject(
+  outcome: CreateProjectOutcome,
+  options: CreateProjectOptions | undefined,
+  publish: (repository: NewRepositoryRequest) => Promise<PublishOutcome>,
+): Promise<string | null> {
+  const repository = options?.repository;
+  if (!repository || outcome === "refused") return null;
+  if (outcome === "opened") return "The folder you chose already had a project, so Haptic opened it and created no repository.";
+  options.onPhase?.("source-control");
+  try {
+    const published = await publish(repository);
+    return published.status === "local" ? published.message : null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}

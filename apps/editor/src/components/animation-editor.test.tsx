@@ -211,3 +211,35 @@ describe("AnimationPreview playback", () => {
     expect(position()).toBe("Frame 1/1 · 0/1000 ms");
   });
 });
+
+describe("AnimationEditor additive", () => {
+  const walk = { clipName: "Walk", modelGuid: "hero", skeletonGuid: "rig", durationMs: 1000 };
+  const written = (onChange: ReturnType<typeof vi.fn>) => onChange.mock.calls.at(-1)![0] as Record<string, unknown>;
+  const choose = (label: string) => {
+    fireEvent.click(screen.getByRole("combobox", { name: "Additive" }));
+    const option = screen.getByRole("option", { name: label });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+  };
+
+  it("makes an Animation additive relative to its first frame, and turns it off again", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<AnimationEditor payload={walk} onChange={onChange} />);
+    choose("Relative To First Frame");
+    expect(written(onChange).additive).toEqual({ base: "firstFrame" });
+    // Its base needs no more rows.
+    expect(screen.queryByTestId("property-additiveAnimation")).toBeNull();
+    rerender(<AnimationEditor payload={{ ...walk, additive: { base: "firstFrame" } }} onChange={onChange} />);
+    choose("None");
+    expect(written(onChange)).not.toHaveProperty("additive");
+  });
+
+  it("names its base Animation and edits the Base Time into it", () => {
+    const onChange = vi.fn();
+    documents.assets = [{ path: "assets/Idle.hasset", header: { guid: "idle", name: "Idle", type: "Animation", payload: { skeletonGuid: "rig" } } }];
+    render(<AnimationEditor payload={{ ...walk, additive: { base: "animation", animationGuid: "idle", timeMs: 0 } }} onChange={onChange} />);
+    expect(screen.getByTestId("property-additiveAnimation").textContent).toContain("Idle");
+    fireEvent.change(screen.getByTestId("property-additiveTimeMs"), { target: { value: "250" } });
+    expect(written(onChange).additive).toEqual({ base: "animation", animationGuid: "idle", timeMs: 250 });
+  });
+});

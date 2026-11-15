@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  AssetPicker,
   PanelFrame,
   PropertyGrid,
   ToolbarStrip,
@@ -11,6 +12,7 @@ import { isGltfModelBytes } from "@haptic/render";
 import {
   normalizeAnimationPayload,
   normalizeModelPayload,
+  type AnimationAdditive,
   normalizeSkeletonPayload,
   type AnimationPayload,
   type ModelMaterialSlot,
@@ -293,6 +295,68 @@ export function AnimationPreview({
   );
 }
 
+/** What an Animation's Additive row offers: not additive, or a change relative to one of its base poses. */
+const ADDITIVE_OPTIONS: Array<{ value: AnimationAdditive["base"] | "none"; label: string }> = [
+  { value: "none", label: "None" },
+  { value: "restPose", label: "Relative To Rest Pose" },
+  { value: "firstFrame", label: "Relative To First Frame" },
+  { value: "animation", label: "Relative To Animation" },
+];
+
+/**
+ * An Animation's Additive rows: whether it is additive and its base pose, with the base Animation (one on its
+ * Skeleton) and the time in it when that is the base.
+ */
+function additiveRows(
+  animation: AnimationPayload,
+  assets: ReadonlyArray<{ header: { guid: string; name: string; type: string } }>,
+  onAdditive: ((additive: AnimationAdditive | undefined, mergeKey?: string) => void) | undefined,
+  onPickBase: () => void,
+): PropertyRow[] {
+  const additive = animation.additive;
+  const rows: PropertyRow[] = [{
+    id: "additive",
+    kind: "enum",
+    label: "Additive",
+    value: additive?.base ?? "none",
+    defaultValue: "none",
+    options: ADDITIVE_OPTIONS,
+    verbatim: true,
+    disabled: !onAdditive,
+    onChange: (base) => onAdditive?.(
+      base === "none" ? undefined : base === "animation" ? { base, timeMs: 0 } : { base: base as AnimationAdditive["base"] },
+    ),
+  }];
+  if (additive?.base !== "animation") return rows;
+  const baseAnimation = assets.find((asset) => asset.header.guid === additive.animationGuid);
+  rows.push(
+    {
+      id: "additiveAnimation",
+      kind: "asset",
+      label: "Base Animation",
+      value: additive.animationGuid ?? null,
+      placeholder: "None",
+      assetTypes: ["Animation"],
+      disabled: !onAdditive,
+      onPick: onPickBase,
+      onChange: (guid) => onAdditive?.({ ...additive, ...(guid ? { animationGuid: guid } : { animationGuid: undefined }) }),
+      ...assetRowIdentity(baseAnimation ? { name: baseAnimation.header.name, type: "Animation" } : undefined),
+    },
+    {
+      id: "additiveTimeMs",
+      kind: "number",
+      label: "Base Time",
+      unit: "ms",
+      min: 0,
+      value: additive.timeMs ?? 0,
+      defaultValue: 0,
+      disabled: !onAdditive,
+      onChange: (timeMs) => onAdditive?.({ ...additive, timeMs: Math.max(0, timeMs) }, "animation:additiveTimeMs"),
+    },
+  );
+  return rows;
+}
+
 export function AnimationEditor({
   payload,
   onChange,
@@ -303,6 +367,7 @@ export function AnimationEditor({
 }) {
   const animation = normalizeAnimationPayload(payload);
   const { assetRegistry } = useRegistryState();
+  const [pickingBase, setPickingBase] = useState(false);
   // In the Animation editor, events selected on the Timeline open here and Add Event uses its playhead.
   const editing = useOptionalAnimationEditing();
   const assets = assetRegistry?.list() ?? [];
@@ -365,9 +430,39 @@ export function AnimationEditor({
         ),
     });
   }
+  const setAdditive = onChange
+    ? (additive: AnimationAdditive | undefined, mergeKey?: string) => {
+        const { additive: _previous, ...rest } = { ...payload, ...animation };
+        void _previous;
+        onChange(additive ? { ...rest, additive } : rest, mergeKey);
+      }
+    : undefined;
+  rows.push(...additiveRows(animation, assets, setAdditive, () => setPickingBase(true)));
+  // A base Animation is another Animation on this one's Skeleton.
+  const baseAssets = pickingBase
+    ? assets
+        .filter((asset) => asset.header.type === "Animation" &&
+          normalizeAnimationPayload(asset.header.payload ?? {}).skeletonGuid === animation.skeletonGuid)
+        .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, type: asset.header.type, path: asset.path }))
+    : [];
   return (
     <div data-testid="animation-editor">
       <PropertyGrid rows={rows} />
+      <AssetPicker
+        open={pickingBase}
+        onOpenChange={setPickingBase}
+        assets={baseAssets}
+        allowedTypes={["Animation"]}
+        title="Pick Base Animation"
+        allowNone
+        onPick={(guid) => {
+          if (animation.additive?.base === "animation") {
+            setAdditive?.({ ...animation.additive, ...(guid ? { animationGuid: guid } : { animationGuid: undefined }) });
+          }
+          setPickingBase(false);
+        }}
+        data-testid="animation-additive-base-picker"
+      />
       <AnimationEventsEditor
         events={animation.events ?? []}
         timed

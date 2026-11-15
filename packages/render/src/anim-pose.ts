@@ -1,4 +1,27 @@
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import {
+  animBranchWeight,
+  parseAnimBranchFilterKey,
+  type AnimBoneModifier,
+  type AnimLayerBlend,
+  type AnimLayerMaskRef,
+} from "@haptic/core";
+import {
+  blendTrs,
+  modifiedLocalTrs,
+  modifierChannels,
+  nodeChainNames,
+  readNodeTrs,
+  ROTATION,
+  SCALE,
+  TRANSLATION,
+  TRS_LENGTH,
+  WRITE_ROTATION,
+  WRITE_SCALE,
+  WRITE_TRANSLATION,
+  writeNodeTrs,
+  type BoneNode,
+} from "./anim-bone-modifiers";
 
 /**
  * Haptic's pose evaluator: Play, the editor's previews and exported games pose 3D clips here, never by starting,
@@ -6,7 +29,8 @@ import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
  * Babylon's own interpolation (step, linear, spherical between quaternions, cubic-spline tangents). A slot's rig holds
  * each animated target property once: each pose blends the playing clips into it by weight, filling up to full weight
  * from the property's rest value, and writes each property at most once, skipping values it already holds.
- * Properties no clip plays return to rest.
+ * Properties no clip plays return to rest. Layered Blend Per Bone weights a clip per bone (`PoseLayering.masks`), and
+ * Transform Bone changes apply after the blend (`PoseLayering.modifiers`).
  */
 
 /** Babylon `Animation.ANIMATIONTYPE_*` values a track samples. */
@@ -428,6 +452,8 @@ export interface PoseRig {
   readonly modes: Uint8Array;
   readonly components: Uint8Array;
   readonly quaternions: Uint8Array;
+  /** Per property: 1 for a scale, which an additive clip multiplies rather than adds to. */
+  readonly scales: Uint8Array;
   /** Per clip: its channels' property indices, -1 for a channel that repeats another of the same clip. */
   readonly clipProperties: ReadonlyMap<PoseClip, Int32Array>;
   /** Per property: the pose that last blended into it (`generation`), and the weight it has so far. */
@@ -444,6 +470,23 @@ export interface PoseRig {
   readonly lastClips: (PoseClip | undefined)[];
   readonly lastFrames: number[];
   readonly lastWeights: number[];
+  /** The last pose's layering (`layeringSignature`), "" for none. */
+  lastLayering: string;
+  /** Per branch filter key: each property's weight under it, worked out from its target's chain of names once. */
+  readonly branchWeights: Map<string, Float64Array>;
+  /** Per-pose scratch: each blend's summed input weight per property, and each layer's weight per property. */
+  readonly blendSums: Float64Array[];
+  readonly layerFactors: Float64Array[];
+  /** Transform Bone targets by name (null: none), and the bones changed, with their unanimated channels' rest. */
+  readonly bones: Map<string, BoneNode | null>;
+  readonly changed: Map<BoneNode, ChangedBone>;
+}
+
+/** A bone a Transform Bone changed: the channels changed so far, their rest where no clip animates them, the last pose to change it. */
+interface ChangedBone {
+  readonly rest: Float64Array;
+  touched: number;
+  generation: number;
 }
 
 function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
@@ -481,11 +524,13 @@ function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
   const modes = new Uint8Array(count);
   const components = new Uint8Array(count);
   const quaternions = new Uint8Array(count);
+  const scales = new Uint8Array(count);
   for (let i = 0; i < count; i++) {
     const property = properties[i]!;
     modes[i] = writeModeOf(property.binding.target, property.track);
     components[i] = property.track.components;
     quaternions[i] = property.track.quaternion ? 1 : 0;
+    scales[i] = property.path[property.path.length - 1] === "scaling" ? 1 : 0;
   }
   return {
     members: clips.slice(),
@@ -493,6 +538,7 @@ function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
     modes,
     components,
     quaternions,
+    scales,
     clipProperties,
     stamps: new Uint32Array(count),
     weights: new Float64Array(count),
@@ -506,6 +552,12 @@ function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
     lastClips: [],
     lastFrames: [],
     lastWeights: [],
+    lastLayering: "",
+    branchWeights: new Map(),
+    blendSums: [],
+    layerFactors: [],
+    bones: new Map(),
+    changed: new Map(),
   };
 }
 
@@ -540,13 +592,53 @@ export function invalidatePoseRig(clips: readonly PoseClip[] | undefined): void 
   rig.written.fill(0);
   rig.posed.fill(1);
   rig.lastCount = -1;
+  rig.lastLayering = "";
+}
+
+/**
+ * What a pose blends besides its clips: the Layered Blend Per Bone inputs each clip plays under (`masks[i]` for
+ * `clips[i]`, the blends they index in `blends`), and Transform Bone changes, applied in order after the blend.
+ */
+export interface PoseLayering {
+  readonly masks: ArrayLike<readonly AnimLayerMaskRef[] | undefined>;
+  readonly blends: readonly AnimLayerBlend[];
+  readonly modifiers: readonly AnimBoneModifier[];
+  /** Per clip: present when it plays additively (Apply Additive), with the pose its change is from. */
+  readonly additive?: ArrayLike<PoseAdditive | undefined>;
+}
+
+/**
+ * An additive clip's base pose: a clip at a frame (its own first frame, or another clip's), or null for the rest
+ * pose. The clip adds its change from that pose to the pose blended beneath it.
+ */
+export interface PoseAdditive {
+  readonly reference: PoseClip | null;
+  readonly frame: number;
+}
+
+/** The layering as one string, so a pose whose clips and layering are unchanged writes nothing. */
+function layeringSignature(count: number, layering: PoseLayering | null | undefined): string {
+  if (!layering) return "";
+  const additive: Array<string | null> = [];
+  let anyAdditive = false;
+  for (let l = 0; l < count; l++) {
+    const entry = layering.additive?.[l];
+    anyAdditive ||= entry !== undefined;
+    additive.push(entry ? `${entry.reference?.clipAssetGuid ?? ""}\0${entry.reference?.name ?? ""}\0${entry.frame}` : null);
+  }
+  if (layering.blends.length === 0 && layering.modifiers.length === 0 && !anyAdditive) return "";
+  const masks: Array<readonly AnimLayerMaskRef[] | null> = [];
+  for (let l = 0; l < count; l++) masks.push(layering.masks[l] ?? null);
+  return JSON.stringify([masks, layering.blends, layering.modifiers, additive]);
 }
 
 /** Whether the pose's layers are the last pose's, which then still stands. Records them otherwise. */
 function samePose(
   rig: PoseRig, count: number, clips: ArrayLike<PoseClip | undefined>, frames: ArrayLike<number>, weights: ArrayLike<number>,
+  layering: string,
 ): boolean {
-  let same = rig.lastCount === count;
+  let same = rig.lastCount === count && rig.lastLayering === layering;
+  rig.lastLayering = layering;
   for (let l = 0; same && l < count; l++) {
     same = rig.lastClips[l] === clips[l] && rig.lastFrames[l] === frames[l] && rig.lastWeights[l] === weights[l];
   }
@@ -591,7 +683,8 @@ const sample = new Float64Array(STRIDE);
  * quaternions on one hemisphere, then normalised (the normalised lerp game engines blend bones with). A property's
  * total weight below 1 takes the rest value for the remainder, and a total above 1 normalises. A property no clip plays (total 0) returns to rest. A
  * property already holding its value is not written, and a pose whose layers equal the last pose's writes nothing.
- * Clips not on the rig are skipped.
+ * Clips not on the rig are skipped. `layering` weights clips per bone under Layered Blend Per Bone inputs, and changes
+ * bones after the blend (Transform Bone).
  */
 export function applyPose(
   rig: PoseRig,
@@ -599,8 +692,9 @@ export function applyPose(
   clips: ArrayLike<PoseClip | undefined>,
   frames: ArrayLike<number>,
   weights: ArrayLike<number>,
+  layering?: PoseLayering | null,
 ): void {
-  if (samePose(rig, count, clips, frames, weights)) return;
+  if (samePose(rig, count, clips, frames, weights, layeringSignature(count, layering))) return;
   const { properties, stamps, weights: totals, blended, posed, quaternions, components, clipProperties } = rig;
   // Stamps mark the properties this pose blends; a wrapped counter clears them.
   rig.generation = (rig.generation + 1) >>> 0;
@@ -609,41 +703,49 @@ export function applyPose(
     rig.generation = 1;
   }
   const generation = rig.generation;
+  const blends = layering?.blends ?? NO_BLENDS;
+  if (blends.length > 0) sumBlends(rig, blends);
+  const additive = layering?.additive;
+  let additiveLayers = 0;
   for (let l = 0; l < count; l++) {
     const clip = clips[l]!;
     const weight = weights[l]!;
     const indices = clipProperties.get(clip);
     if (!indices || !(weight > 0)) continue;
+    // Additive clips add to the blended pose afterwards.
+    if (additive?.[l]) {
+      additiveLayers++;
+      continue;
+    }
+    const factors = blends.length > 0 ? layerFactors(rig, l, indices, layering!.masks[l], blends) : null;
     const frame = frames[l]!;
     const channels = clip.channels;
     const hints = clip.keyHints;
     for (let i = 0; i < indices.length; i++) {
       const index = indices[i]!;
       if (index < 0) continue;
+      // Under a Layered Blend Per Bone, the clip's weight on this bone.
+      const w = factors ? weight * factors[index]! : weight;
+      if (!(w > 0)) continue;
       const at = index * STRIDE;
       const n = components[index]!;
       if (stamps[index] !== generation) {
         // The first clip on this property samples straight into it.
         stamps[index] = generation;
-        totals[index] = weight;
+        totals[index] = w;
         sampleTrack(channels[i]!.track, frame, blended, at, hints, i);
-        if (weight !== 1) for (let c = 0; c < n; c++) blended[at + c]! *= weight;
+        if (w !== 1) for (let c = 0; c < n; c++) blended[at + c]! *= w;
         continue;
       }
       sampleTrack(channels[i]!.track, frame, sample, 0, hints, i);
-      totals[index]! += weight;
+      totals[index]! += w;
       // A quaternion joins on the sum's hemisphere: q and -q are one rotation.
-      const signed = quaternions[index] && dot4(blended, at, sample, 0) < 0 ? -weight : weight;
+      const signed = quaternions[index] && dot4(blended, at, sample, 0) < 0 ? -w : w;
       for (let c = 0; c < n; c++) blended[at + c]! += sample[c]! * signed;
     }
   }
   for (let index = 0; index < properties.length; index++) {
-    if (stamps[index] !== generation) {
-      if (!posed[index]) continue;
-      posed[index] = 0;
-      writeIfChanged(rig, index, properties[index]!.rest, 0);
-      continue;
-    }
+    if (stamps[index] !== generation) continue;
     const at = index * STRIDE;
     const total = totals[index]!;
     const n = components[index]!;
@@ -660,8 +762,349 @@ export function applyPose(
     } else if (total > 1) {
       for (let c = 0; c < n; c++) blended[at + c]! /= total;
     }
+  }
+  if (additiveLayers > 0) {
+    for (let l = 0; l < count; l++) {
+      const entry = additive![l];
+      const clip = clips[l]!;
+      const indices = clipProperties.get(clip);
+      if (!entry || !indices || !(weights[l]! > 0)) continue;
+      const factors = blends.length > 0 ? layerFactors(rig, l, indices, layering!.masks[l], blends) : null;
+      addAdditiveClip(rig, clip, indices, frames[l]!, weights[l]!, factors, entry, generation);
+    }
+  }
+  for (let index = 0; index < properties.length; index++) {
+    if (stamps[index] !== generation) {
+      if (!posed[index]) continue;
+      posed[index] = 0;
+      writeIfChanged(rig, index, properties[index]!.rest, 0);
+      continue;
+    }
     posed[index] = 1;
-    writeIfChanged(rig, index, blended, at);
+    writeIfChanged(rig, index, blended, index * STRIDE);
+  }
+  const modifiers = layering?.modifiers ?? NO_MODIFIERS;
+  if (modifiers.length > 0 || rig.changed.size > 0) applyBoneModifiers(rig, modifiers, blends, generation);
+}
+
+const NO_BLENDS: readonly AnimLayerBlend[] = [];
+
+/** Per additive clip: its channels' base values for each base pose it has been played from. */
+const additiveReferences = new WeakMap<PoseClip, Array<{ reference: PoseClip | null; frame: number; values: Float64Array }>>();
+
+/**
+ * The base values an additive clip's channels change from: each channel's value in the base clip at its frame (the
+ * channel with the same target and property), else its rest. Worked out once per clip and base.
+ */
+function additiveReference(clip: PoseClip, base: PoseAdditive): Float64Array {
+  let list = additiveReferences.get(clip);
+  if (!list) {
+    list = [];
+    additiveReferences.set(clip, list);
+  }
+  for (const entry of list) if (entry.reference === base.reference && entry.frame === base.frame) return entry.values;
+  const values = new Float64Array(clip.channels.length * STRIDE);
+  clip.channels.forEach((channel, i) => {
+    const source = base.reference === clip
+      ? channel
+      : base.reference?.channels.find((candidate) =>
+        candidate.binding.target === channel.binding.target &&
+        candidate.track.components === channel.track.components &&
+        candidate.path.join(".") === channel.path.join("."));
+    if (source) samplePoseTrack(source.track, base.frame, values, i * STRIDE);
+    else values.set(channel.rest.subarray(0, channel.track.components), i * STRIDE);
+  });
+  if (list.length >= 8) list.shift();
+  list.push({ reference: base.reference, frame: base.frame, values });
+  return values;
+}
+
+/**
+ * Adds an additive clip's change from its base pose, at `weight`, to the blended pose: translations and other values
+ * add the difference, scales multiply by the ratio, rotations turn by the difference (blended from no turn by the
+ * weight) before the pose's own rotation. A property no other clip plays starts from rest.
+ */
+function addAdditiveClip(
+  rig: PoseRig,
+  clip: PoseClip,
+  indices: Int32Array,
+  frame: number,
+  weight: number,
+  factors: Float64Array | null,
+  base: PoseAdditive,
+  generation: number,
+): void {
+  const { properties, stamps, weights: totals, blended, quaternions, scales, components } = rig;
+  const reference = additiveReference(clip, base);
+  const channels = clip.channels;
+  for (let i = 0; i < indices.length; i++) {
+    const index = indices[i]!;
+    if (index < 0) continue;
+    const w = factors ? weight * factors[index]! : weight;
+    if (!(w > 0)) continue;
+    const at = index * STRIDE;
+    const n = components[index]!;
+    if (stamps[index] !== generation) {
+      stamps[index] = generation;
+      totals[index] = 1;
+      const rest = properties[index]!.rest;
+      for (let c = 0; c < n; c++) blended[at + c] = rest[c]!;
+    }
+    sampleTrack(channels[i]!.track, frame, sample, 0, clip.keyHints, i);
+    const r = i * STRIDE;
+    if (quaternions[index]) {
+      // The turn from the base: sample × base⁻¹, on the identity's hemisphere, scaled by the weight from no turn.
+      const bx = -reference[r]!, by = -reference[r + 1]!, bz = -reference[r + 2]!, bw = reference[r + 3]!;
+      const sx = sample[0]!, sy = sample[1]!, sz = sample[2]!, sw = sample[3]!;
+      let dx = sw * bx + sx * bw + sy * bz - sz * by;
+      let dy = sw * by - sx * bz + sy * bw + sz * bx;
+      let dz = sw * bz + sx * by - sy * bx + sz * bw;
+      let dw = sw * bw - sx * bx - sy * by - sz * bz;
+      if (dw < 0) {
+        dx = -dx;
+        dy = -dy;
+        dz = -dz;
+        dw = -dw;
+      }
+      dx *= w;
+      dy *= w;
+      dz *= w;
+      dw = 1 - w + dw * w;
+      const length = Math.sqrt(dx * dx + dy * dy + dz * dz + dw * dw);
+      if (length < 1e-12) continue;
+      dx /= length;
+      dy /= length;
+      dz /= length;
+      dw /= length;
+      const qx = blended[at]!, qy = blended[at + 1]!, qz = blended[at + 2]!, qw = blended[at + 3]!;
+      const x = dw * qx + dx * qw + dy * qz - dz * qy;
+      const y = dw * qy - dx * qz + dy * qw + dz * qx;
+      const z = dw * qz + dx * qy - dy * qx + dz * qw;
+      const qwOut = dw * qw - dx * qx - dy * qy - dz * qz;
+      const total = Math.sqrt(x * x + y * y + z * z + qwOut * qwOut) || 1;
+      blended[at] = x / total;
+      blended[at + 1] = y / total;
+      blended[at + 2] = z / total;
+      blended[at + 3] = qwOut / total;
+    } else if (scales[index]) {
+      for (let c = 0; c < n; c++) {
+        const from = reference[r + c]!;
+        const ratio = from !== 0 ? sample[c]! / from : 1;
+        blended[at + c]! *= 1 + (ratio - 1) * w;
+      }
+    } else {
+      for (let c = 0; c < n; c++) blended[at + c]! += (sample[c]! - reference[r + c]!) * w;
+    }
+  }
+}
+const NO_MODIFIERS: readonly AnimBoneModifier[] = [];
+
+/** Branch filters by key, parsed once. */
+const parsedFilters = new Map<string, Map<string, number>>();
+
+function branchFilter(key: string): Map<string, number> {
+  let filter = parsedFilters.get(key);
+  if (!filter) {
+    if (parsedFilters.size >= 256) parsedFilters.clear();
+    filter = parseAnimBranchFilterKey(key);
+    parsedFilters.set(key, filter);
+  }
+  return filter;
+}
+
+/** Each property's weight under a branch filter, from its target's chain of names; worked out once per rig. */
+function branchWeights(rig: PoseRig, key: string): Float64Array {
+  let weights = rig.branchWeights.get(key);
+  if (!weights) {
+    const filter = branchFilter(key);
+    weights = new Float64Array(rig.properties.length);
+    for (let index = 0; index < weights.length; index++) {
+      weights[index] = animBranchWeight(filter, nodeChainNames(rig.properties[index]!.binding.target));
+    }
+    rig.branchWeights.set(key, weights);
+  }
+  return weights;
+}
+
+/** Per blend, each property's summed input weight: the inputs' Blend Weights times their branch weights. */
+function sumBlends(rig: PoseRig, blends: readonly AnimLayerBlend[]): void {
+  const count = rig.properties.length;
+  for (let b = 0; b < blends.length; b++) {
+    const blend = blends[b]!;
+    let sums = rig.blendSums[b];
+    if (!sums || sums.length !== count) sums = rig.blendSums[b] = new Float64Array(count);
+    sums.fill(0);
+    for (let input = 0; input < blend.filters.length; input++) {
+      const weight = blend.weights[input] ?? 0;
+      if (!(weight > 0)) continue;
+      const branch = branchWeights(rig, blend.filters[input]!);
+      for (let index = 0; index < count; index++) sums[index]! += weight * branch[index]!;
+    }
+  }
+}
+
+/**
+ * A layer input's share of a property under one blend: the Base Pose takes what the inputs leave, an input its branch
+ * weight (its layers already carry its Blend Weight), the inputs sharing 1 when they sum above it.
+ */
+function maskFactor(sum: number, input: number, branch: number): number {
+  if (input < 0) return 1 - Math.min(1, sum);
+  return sum > 1 ? branch / sum : branch;
+}
+
+/** The clip's weight factor per property under its Layered Blend inputs, or null when it plays under none. */
+function layerFactors(
+  rig: PoseRig,
+  layer: number,
+  indices: Int32Array,
+  masks: readonly AnimLayerMaskRef[] | undefined,
+  blends: readonly AnimLayerBlend[],
+): Float64Array | null {
+  if (!masks || masks.length === 0) return null;
+  let factors = rig.layerFactors[layer];
+  if (!factors || factors.length !== rig.properties.length) factors = rig.layerFactors[layer] = new Float64Array(rig.properties.length);
+  for (let i = 0; i < indices.length; i++) {
+    const index = indices[i]!;
+    if (index < 0) continue;
+    let factor = 1;
+    for (const ref of masks) {
+      const blend = blends[ref.blend];
+      const sums = rig.blendSums[ref.blend];
+      if (!blend || !sums) continue;
+      const branch = ref.input < 0 ? 0 : branchWeights(rig, blend.filters[ref.input] ?? "[]")[index]!;
+      factor *= maskFactor(sums[index]!, ref.input, branch);
+    }
+    factors[index] = factor;
+  }
+  return factors;
+}
+
+/** A bone's weight under its Layered Blend inputs, from its chain of names. */
+function nodeMaskFactor(node: BoneNode, masks: readonly AnimLayerMaskRef[], blends: readonly AnimLayerBlend[]): number {
+  const chain = nodeChainNames(node);
+  let factor = 1;
+  for (const ref of masks) {
+    const blend = blends[ref.blend];
+    if (!blend) continue;
+    let sum = 0;
+    let own = 0;
+    for (let input = 0; input < blend.filters.length; input++) {
+      const branch = animBranchWeight(branchFilter(blend.filters[input]!), chain);
+      sum += (blend.weights[input] ?? 0) * branch;
+      if (input === ref.input) own = branch;
+    }
+    factor *= maskFactor(sum, ref.input, own);
+  }
+  return factor;
+}
+
+function isBoneNode(value: unknown): value is BoneNode {
+  if (!value || typeof value !== "object") return false;
+  const node = value as Partial<BoneNode>;
+  return typeof node.name === "string" && node.position instanceof Vector3 && node.scaling instanceof Vector3;
+}
+
+/** The posed node named `name`: an animated target, else a node under the same root. Null when the rig has none. */
+function boneNodeOf(rig: PoseRig, name: string): BoneNode | null {
+  const cached = rig.bones.get(name);
+  if (cached !== undefined && !cached?.isDisposed?.()) return cached;
+  let found: BoneNode | null = null;
+  let anyTarget: unknown = null;
+  for (const property of rig.properties) {
+    const target = property.binding.target;
+    if (!isBoneNode(target)) continue;
+    anyTarget ??= target;
+    if (target.name === name) {
+      found = target;
+      break;
+    }
+  }
+  if (!found && anyTarget) {
+    let root = anyTarget as { parent?: unknown };
+    while (root.parent && typeof root.parent === "object") root = root.parent as { parent?: unknown };
+    const descendants = (root as { getDescendants?: (direct?: boolean) => unknown[] }).getDescendants?.(false) ?? [];
+    found = (descendants.find((node) => isBoneNode(node) && node.name === name) as BoneNode | undefined) ?? null;
+  }
+  rig.bones.set(name, found);
+  return found;
+}
+
+const PATH_CHANNEL: Readonly<Record<string, number>> = { position: 0, rotationQuaternion: 1, scaling: 2 };
+const nodeIndices = new Int32Array(3);
+
+/** The rig's property indices of a node's translation, rotation and scale; -1 where no clip animates it. */
+function nodePropertyIndices(rig: PoseRig, node: BoneNode): Int32Array {
+  nodeIndices.fill(-1);
+  for (let index = 0; index < rig.properties.length; index++) {
+    const property = rig.properties[index]!;
+    if (property.binding.target !== node || property.path.length !== 1) continue;
+    const channel = PATH_CHANNEL[property.path[0]!];
+    if (channel !== undefined) nodeIndices[channel] = index;
+  }
+  return nodeIndices;
+}
+
+const CHANNEL_BITS = [WRITE_TRANSLATION, WRITE_ROTATION, WRITE_SCALE] as const;
+const CHANNEL_OFFSETS = [TRANSLATION, ROTATION, SCALE] as const;
+const trsBase = new Float64Array(TRS_LENGTH);
+const trsChanged = new Float64Array(TRS_LENGTH);
+const trsOut = new Float64Array(TRS_LENGTH);
+
+/**
+ * Applies Transform Bone changes in order on the posed nodes. A bone's first change in a pose starts from its pose:
+ * the blended value where a clip animates the channel, else its rest. A changed channel a clip animates is written
+ * again by the next pose; a bone no change touches any more returns its other channels to rest.
+ */
+function applyBoneModifiers(
+  rig: PoseRig,
+  modifiers: readonly AnimBoneModifier[],
+  blends: readonly AnimLayerBlend[],
+  generation: number,
+): void {
+  for (const modifier of modifiers) {
+    const node = boneNodeOf(rig, modifier.bone);
+    if (!node) continue;
+    const alpha = Math.min(1, modifier.alpha) * (modifier.masks?.length ? nodeMaskFactor(node, modifier.masks, blends) : 1);
+    const channels = modifierChannels(modifier);
+    if (!(alpha > 0) || channels === 0) continue;
+    const indices = nodePropertyIndices(rig, node);
+    let changed = rig.changed.get(node);
+    if (!changed) {
+      const rest = new Float64Array(TRS_LENGTH);
+      readNodeTrs(node, rest);
+      changed = { rest, touched: 0, generation: 0 };
+      rig.changed.set(node, changed);
+    }
+    readNodeTrs(node, trsBase);
+    if (changed.generation !== generation) {
+      changed.generation = generation;
+      for (let c = 0; c < 3; c++) {
+        if (indices[c]! >= 0) continue;
+        const at = CHANNEL_OFFSETS[c]!;
+        const length = c === 1 ? 4 : 3;
+        for (let k = 0; k < length; k++) trsBase[at + k] = changed.rest[at + k]!;
+      }
+    }
+    modifiedLocalTrs(node, modifier, trsBase, trsChanged);
+    blendTrs(trsBase, trsChanged, alpha, trsOut);
+    writeNodeTrs(node, trsOut, channels);
+    changed.touched |= channels;
+    for (let c = 0; c < 3; c++) {
+      const index = indices[c]!;
+      if (index < 0 || !(channels & CHANNEL_BITS[c]!)) continue;
+      // The node no longer holds the blended value: the next pose writes it again, or rests it.
+      rig.written[index] = 0;
+      rig.posed[index] = 1;
+    }
+  }
+  for (const [node, changed] of rig.changed) {
+    if (changed.generation === generation) continue;
+    rig.changed.delete(node);
+    if (node.isDisposed?.()) continue;
+    const indices = nodePropertyIndices(rig, node);
+    let restore = 0;
+    for (let c = 0; c < 3; c++) if (indices[c]! < 0) restore |= changed.touched & CHANNEL_BITS[c]!;
+    if (restore) writeNodeTrs(node, changed.rest, restore);
   }
 }
 

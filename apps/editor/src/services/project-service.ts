@@ -661,10 +661,14 @@ export class ProjectService {
     return this.loadCurrentProject();
   }
 
+  /**
+   * A new project, opened. `created` is false only when the folder the user
+   * picked already held a project, which is opened as it is.
+   */
   async createEmptyProject(
     name?: string,
     options?: CreateProjectOptions,
-  ): Promise<ProjectLoadResult> {
+  ): Promise<ProjectLoadResult & { created: boolean }> {
     const projectName =
       name && name.trim()
         ? normalizeProjectFolderName(name)
@@ -674,19 +678,20 @@ export class ProjectService {
     if (options?.pickFolder) {
       await this.storage.pickProjectFolder();
       if (await this.storage.exists(PROJECT_FILE)) {
-        return this.loadCurrentProject();
+        return { ...(await this.loadCurrentProject()), created: false };
       }
       await assertEmptyProjectFolder(this.storage);
-      return this.scaffoldNewProject(projectName, options.kind, options);
+      return { ...(await this.scaffoldNewProject(projectName, options.kind, options)), created: true };
     }
     const owned = await openOwnedDocumentsProject(this.storage, projectName);
     if (await this.storage.exists(PROJECT_FILE) && !owned.createdHere) {
       throw new Error("Name already exists.");
     }
     await assertEmptyProjectFolder(this.storage);
-    return scaffoldOwnedProject(this.storage, owned, () =>
+    const result = await scaffoldOwnedProject(this.storage, owned, () =>
       this.scaffoldNewProject(projectName, options?.kind, options),
     );
+    return { ...result, created: true };
   }
 
   async createFromTemplate(options: {
@@ -753,8 +758,9 @@ export class ProjectService {
 
   /**
    * Clone: a new folder in app storage named after `name`, filled by `clone`
-   * (the repository's branch), with Integrated mode and the repository and
-   * branch written into its `project.json` (unless it says so already).
+   * (the repository's branch), with Integrated mode and the repository (the
+   * cloned branch as its default) written into its `project.json`, unless it
+   * already names the repository in Integrated mode.
    * A failure or a cancel through `signal`, even one after the files arrived,
    * removes the folder; a branch with no `project.json` is refused. The
    * folder is released: open it as a listed project.
@@ -780,7 +786,8 @@ export class ProjectService {
       }
       const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as { settings?: { sourceControl?: Partial<SourceControlProjectSettings> } };
       const current = raw.settings?.sourceControl;
-      if (!(current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl) && current.branch === options.branch)) {
+      // Its branch is the team's default; the clone's own branch lives in its working copy, so another branch writes nothing.
+      if (!(current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl))) {
         raw.settings = { ...raw.settings, sourceControl: { ...current, mode: "integrated", repositoryUrl: options.repositoryUrl, branch: options.branch } };
         await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
       }

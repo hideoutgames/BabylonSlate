@@ -50,6 +50,7 @@ import type { PluginImportResult, ProjectService } from "../services/project-ser
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import type { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
+import type { NewRepositoryRequest, PublishOutcome } from "../services/source-control-publish";
 
 /**
  * An editor operation's read-only lock on the documents (`lockAuthoring`) and
@@ -371,11 +372,19 @@ export interface DocumentContextValue {
    */
   cloneProject: (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => Promise<ProjectFolderHandle>;
   /**
-   * Publish the open project to the empty repository just created on the
-   * host: `.gitattributes` and `.gitignore`, Integrated mode, the first
-   * commit and push.
+   * Publish: creates the empty repository on the host and publishes the open
+   * project to it (`.gitattributes` and `.gitignore`, Integrated mode, the
+   * first commit and push). Project Settings' Publish and a Remote New
+   * Project share it. Resolves with how far it got; rejects only without an
+   * open project.
    */
-  publishProject: (request: { repositoryUrl: string; branch: string }) => Promise<void>;
+  publishToNewRepository: (repository: NewRepositoryRequest) => Promise<PublishOutcome>;
+  /**
+   * Why a Remote New Project opened without a repository (it stayed Local),
+   * shown above the documents until dismissed or the project closes.
+   */
+  publishNotice: { message: string } | null;
+  dismissPublishNotice: () => void;
   /** What Publish would push: assets, bytes, and the share stored through Git LFS. */
   summarizeProjectForPublish: () => Promise<PublishSummary>;
   /**
@@ -600,6 +609,7 @@ export type EditorShellState = Pick<
   | "pendingExclusiveScene"
   | "externalChangePrompt"
   | "undoHistoryNotice"
+  | "publishNotice"
   | "thumbnailsEnabled"
 >;
 /** `useSourceControl()`: a new object whenever source control state changes. */

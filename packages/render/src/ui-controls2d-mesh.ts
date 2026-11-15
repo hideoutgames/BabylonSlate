@@ -9,6 +9,7 @@ import { applyAlbedoTexture, restoreAlbedoMaterial, type MeshAssetContext } from
 import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { copyMaterialOf } from "./unlit-material";
+import { updateUnlitBinding } from "./unlit-material-blocks";
 import { createText2DMesh, text2DMeshLayout } from "./text2d-mesh";
 import { VisualBundle } from "./visual-bundle";
 
@@ -153,7 +154,7 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
       // The background and its option rows draw this binding: the colour reaches them at their next draws.
       // Written only when focus changes it.
       const backgroundColor = visual.focused ? BACKGROUND_FOCUSED : BACKGROUND;
-      if (background.fallback.binding.color !== backgroundColor) background.fallback.binding.color = backgroundColor;
+      if (background.fallback.binding.color !== backgroundColor) updateUnlitBinding(background.fallback.binding, { color: backgroundColor });
       if (["2DSliderComponent", "2DRangeSliderComponent", "2DProgressBarComponent"].includes(kind)) {
         const vertical = p.orientation === "vertical";
         const length = vertical ? p.height : p.width;

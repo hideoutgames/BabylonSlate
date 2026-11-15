@@ -16,15 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { UserFocusIcon } from "@phosphor-icons/react/dist/csr/UserFocus";
-import {
-  CircleAlertIcon,
-  ClockIcon,
-  Gamepad2Icon,
-  OctagonPauseIcon,
-  PlugIcon,
-  PlugZapIcon,
-  RadioTowerIcon,
-} from "lucide-react";
+import { CircleAlertIcon, OctagonPauseIcon } from "lucide-react";
 import ImageGlyph from "react-bootstrap-icons/dist/icons/image";
 import ImageFillGlyph from "react-bootstrap-icons/dist/icons/image-fill";
 import {
@@ -34,7 +26,7 @@ import {
   tagDisplayName,
   useTags,
 } from "@haptic/editor-kit";
-import { EVENT_BY_TYPE_ID, isDevelopmentOnlyNode, isTouchEventNodeType } from "@haptic/scripting";
+import { isDevelopmentOnlyNode } from "@haptic/scripting";
 import { Badge } from "@haptic/ui/components/badge";
 import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
@@ -43,14 +35,17 @@ import { useNodeMenu } from "./use-node-menu";
 import { hasSerializedPins, type SerializedPin } from "./graph-types";
 import { displayNodeTitle } from "./graph-connect";
 import {
+  nodeKind,
   nodeRoleClass,
   nodeVisualRole,
   pinCssVar,
   pinTypeLetter,
   pinVisualShape,
+  type NodeKind,
   type NodeVisualRole,
   type PinTypeRef,
 } from "./node-theme";
+import { NodeKindIcon } from "./node-icons";
 import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
@@ -69,6 +64,7 @@ function visualFromData(
 ): {
   title: string;
   role: NodeVisualRole;
+  kind: NodeKind;
 } {
   const nodeType =
     typeof data.__nodeType === "string" ? data.__nodeType : (type ?? "Node");
@@ -77,18 +73,25 @@ function visualFromData(
     typeof data.title === "string" ? data.title : undefined,
     typeof data.eventQualifier === "string" ? data.eventQualifier : undefined,
   );
+  const input = {
+    nodeType,
+    title,
+    category:
+      typeof data.__category === "string" ? data.__category : undefined,
+    pure: data.__pure === true,
+    material: data.__material === true,
+    latent: data.__latent === true,
+    particleRole:
+      typeof data.__particleRole === "string" ? data.__particleRole : undefined,
+  };
   return {
     title,
-    role: nodeVisualRole({
-      nodeType,
-      title,
-      category:
-        typeof data.__category === "string" ? data.__category : undefined,
-      pure: data.__pure === true,
-      material: data.__material === true,
-      latent: data.__latent === true,
-      particleRole:
-        typeof data.__particleRole === "string" ? data.__particleRole : undefined,
+    role: nodeVisualRole(input),
+    kind: nodeKind({
+      ...input,
+      // An async Execute JavaScript waits like a latent call without the latent header colour.
+      latent: input.latent || (nodeType === "debug.executeJavaScript" && data.async === true),
+      interface: data.__interface === true,
     }),
   };
 }
@@ -438,7 +441,7 @@ function PinRow({
 
 /**
  * A node's error count: a destructive Badge sitting just above the node's top edge, so it never covers
- * the title, the breakpoint tab or the corner marker (it moves to the left edge when a marker is shown).
+ * the title, the breakpoint tab or a title-bar pin (it moves to the left edge when the node has one).
  * Its 44px button reaches down to the node.
  */
 function NodeErrorBadge({
@@ -552,46 +555,9 @@ function shellIsDevelopmentOnly(
   });
 }
 
-const INPUT_EVENT_TYPE_IDS = new Set([
-  "input.actionEvent",
-  "input.axisEvent",
-  "input.onAnyKeyPressed",
-  "input.onGamepadConnected",
-  "input.onGamepadDisconnected",
-]);
-
-// Custom Events only get the event marker when they override a parent script's event.
-function isInheritedCustomEvent(nodeType: string, data: Record<string, unknown> | undefined) {
-  if (nodeType !== "flow.event.custom") return false;
-  return data?.eventQualifier === "Inherited" || (typeof data?.parentClassId === "string" && data.parentClassId !== "");
-}
-
 /** Pins drawn in the title bar rather than in a pin row. */
 function headerPinsOf(data: Record<string, unknown> | undefined): SerializedPin[] {
   return hasSerializedPins(data) ? data.__pins.filter((pin) => pin.placement === "header") : [];
-}
-
-function nodeCornerMarker(data: Record<string, unknown> | undefined) {
-  if (data?.__material || data?.__particleRole) return null;
-  const nodeType = typeof data?.__nodeType === "string" ? data.__nodeType : "";
-  // A title-bar pin takes the corner (an inherited custom event's delegate square).
-  if (headerPinsOf(data).length > 0) return null;
-  if (nodeType.startsWith("flow.dispatcher.")) {
-    return { Icon: RadioTowerIcon, label: "Event Dispatcher" };
-  }
-  if (data?.__latent === true || (nodeType === "debug.executeJavaScript" && data?.async === true)) {
-    return { Icon: ClockIcon, label: "Latent Action" };
-  }
-  if (nodeType === "interface.call" || data?.__interface === true) {
-    return { Icon: PlugIcon, label: "Script Interface Function" };
-  }
-  if (INPUT_EVENT_TYPE_IDS.has(nodeType) || isTouchEventNodeType(nodeType)) {
-    return { Icon: Gamepad2Icon, label: "Input Event" };
-  }
-  if (Object.hasOwn(EVENT_BY_TYPE_ID, nodeType) || isInheritedCustomEvent(nodeType, data)) {
-    return { Icon: PlugZapIcon, label: "Event" };
-  }
-  return null;
 }
 
 /**
@@ -609,6 +575,7 @@ export function BlueprintNodeShell({
   nodeId,
   title,
   role,
+  kind,
   selected,
   data,
   children,
@@ -617,6 +584,8 @@ export function BlueprintNodeShell({
   nodeId: string;
   title: string;
   role: NodeVisualRole;
+  /** The kind icon left of the title; none without it. */
+  kind?: NodeKind;
   selected?: boolean;
   data?: Record<string, unknown>;
   children: ReactNode;
@@ -628,26 +597,13 @@ export function BlueprintNodeShell({
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
   const disabled = data?.__disabled === true;
-  const marker = nodeCornerMarker(data);
   const headerPins = card ? [] : headerPinsOf(data);
 
   return (
     <div className={cn("group/node relative", card && "group/title")}>
-      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker || headerPins.length > 0} />
+      <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={headerPins.length > 0} />
       {/* Outside the shell, which clips its body to the rounded corners. */}
       <NodeBreakpointTab nodeId={nodeId} data={data} placement={card ? "cardTop" : "titleBar"} />
-      {marker ? (
-        <span
-          role="img"
-          aria-label={marker.label}
-          className={cn(
-            "pointer-events-none absolute right-1.5 top-1.5 z-10 flex translate-x-1/2 -translate-y-1/2 items-center justify-center text-foreground drop-shadow-[0_2px_3px_rgb(0_0_0/0.6)]",
-            disabled && "opacity-50",
-          )}
-        >
-          <marker.Icon className="size-11" strokeWidth={2} aria-hidden="true" />
-        </span>
-      ) : null}
       <div
         data-node-role={role}
         data-disabled={disabled ? "true" : undefined}
@@ -664,12 +620,13 @@ export function BlueprintNodeShell({
           <div
             data-node-title=""
             className={cn(
-              "group/title relative rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
-              marker && "pr-10",
+              "group/title relative flex items-center gap-2 rounded-t-lg py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
+              kind ? "pl-3 pr-4" : "px-4",
               headerPins.length > 0 && "pr-12",
               nodeRoleClass(role),
             )}
           >
+            {kind ? <NodeKindIcon kind={kind} className="size-5" /> : null}
             {description ? (
               <LabelHint hint={description} underline={false} delay={GRAPH_HINT_DELAY_MS}>
                 <span data-node-title-hint="">{title}</span>
@@ -706,7 +663,7 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   const { renderNodeBody } = useGraphEditorContext();
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
-  const { title, role } = visualFromData(data, type);
+  const { title, role, kind } = visualFromData(data, type);
   const rows = zipPinRows(pins.filter((pin) => pin.placement !== "header"), {
     declaredOrder: data.__declaredPinOrder === true,
   });
@@ -737,7 +694,10 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
               <PinHandle nodeId={id} pin={input} pending={false} hasError={false} connected />
             </div>
           ) : null}
-          <div className="anim-state-node-title">{title}</div>
+          <div className="anim-state-node-title">
+            <NodeKindIcon kind={kind} className="size-4" />
+            <span>{title}</span>
+          </div>
         </div>
         {nodeMenu.overlay}
       </div>
@@ -749,6 +709,7 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
         nodeId={id}
         title={title}
         role={role}
+        kind={kind}
         selected={selected}
         data={data}
       >
