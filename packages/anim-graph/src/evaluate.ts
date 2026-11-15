@@ -48,6 +48,9 @@ import {
   ANIM_POSE_SAVE_CACHED_TYPE,
   ANIM_POSE_SEQUENCE_EVALUATOR_TYPE,
   ANIM_POSE_USE_CACHED_TYPE,
+  ANIM_FRAME_SLOT_TYPE,
+  isSlotNodeType,
+  slotNodeName,
   blendSpaceNodeData,
   cachedPoseName,
   isBlendSpacePlayerType,
@@ -67,6 +70,7 @@ import {
   type BlendSpaceNodeSample,
   type PoseGraphIndex,
 } from "./pose-graph";
+import { advanceAnimSlots, slotClock, type AnimSlotPlayback, type AnimSlotState } from "./slots";
 import {
   animClipEventSpan,
   animClipSweep,
@@ -295,6 +299,8 @@ interface EvalContext {
   layerBlends: AnimLayerBlend[];
   /** Each cached pose evaluated this tick by name; a null visit is one still being evaluated (a cycle reads nothing). */
   cachedPoses: Map<string, PoseVisit | null>;
+  /** The slot animations playing this tick, advanced once before the State Machine runs. */
+  slots: Readonly<Record<string, AnimSlotState>>;
   previousPlayers: Readonly<Record<string, AnimPlayerClock>>;
   players: Record<string, AnimPlayerClock>;
   previousSelectors: Readonly<Record<string, number[]>>;
@@ -793,6 +799,43 @@ function visitPoseGraph(
       visit(poseInputSource(index, node.id, "b"), weight * alpha, flipX, flipY, masks, additive);
       return;
     }
+    if (isSlotNodeType(node.type)) {
+      // A slot animation shows over the Source, which keeps playing underneath.
+      const slot = ctx.slots[slotNodeName(node)];
+      const source = poseInputSource(index, node.id, "source");
+      const active = slot?.active && slot.active.weight > 0 ? slot.active : undefined;
+      const outgoing = slot?.outgoing && slot.outgoing.weight > 0 ? slot.outgoing : undefined;
+      const layer = (playback: AnimSlotPlayback) => ({
+        clipAssetGuid: playback.clip.assetGuid,
+        clipName: playback.clip.clipName,
+        clipKind: playback.clip.clipKind,
+        normalisedTime: slotClock(playback).normalised,
+      });
+      if (node.type === ANIM_FRAME_SLOT_TYPE) {
+        // Frames cannot blend: the slot's newest play shows alone while it has any weight.
+        const shown = active ?? outgoing;
+        visit(source, shown ? 0 : weight, flipX, flipY, masks, additive);
+        if (shown) emit(layer(shown), undefined);
+        return;
+      }
+      const a = active?.weight ?? 0;
+      const b = outgoing?.weight ?? 0;
+      const share = a + b > 1 ? 1 / (a + b) : 1;
+      visit(source, weight * (1 - Math.min(1, a + b)), flipX, flipY, masks, additive);
+      const scaled = (playback: AnimSlotPlayback, slotWeight: number) => {
+        if (weight * slotWeight <= 0) return;
+        layers.push({
+          ...layer(playback),
+          stateId,
+          weight: weight * slotWeight,
+          ...(masks ? { masks } : {}),
+          ...(additive ? { additive: true } : {}),
+        });
+      };
+      if (outgoing) scaled(outgoing, b * share);
+      if (active) scaled(active, a * share);
+      return;
+    }
     if (node.type === ANIM_POSE_APPLY_ADDITIVE_TYPE) {
       // The Additive input's clips add their change from their base pose, at Alpha, to the Base input's pose.
       const alpha = Math.min(1, Math.max(0, dataValue(data, node, "alpha", 1)));
@@ -1209,8 +1252,12 @@ export function evaluateAnimGraph(
   dtSeconds: number,
   inputs: AnimGraphInputs,
 ): AnimEvalState {
+  const dtMs = Math.max(0, Number.isFinite(dtSeconds) ? dtSeconds : 0) * 1000;
+  // Slots run for the whole graph, before the State Machine, whichever state shows them.
+  const slotTick = advanceAnimSlots(previous?.slots, inputs.slotRequests, dtMs);
   const ctx: EvalContext = {
     inputs,
+    slots: slotTick.slots,
     machine: doc.stateMachine,
     dtSeconds,
     layerBlends: [],
@@ -1225,7 +1272,23 @@ export function evaluateAnimGraph(
     syncGroups: new Map(),
   };
   const { state, layers, pending, sources, modifiers } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
+  // A slot animation's clip events fire at its weight, under the state playing.
+  for (const sweep of slotTick.sweeps) {
+    const { playback } = sweep;
+    const source = `slot:${sweep.slot}#${playback.id}`;
+    if (sweep.fresh) pending.push({ restart: source });
+    sources.push({ key: source, weight: playback.weight });
+    sweepEvents(
+      pending,
+      playback.clip.events ?? [],
+      animClipSweep(sweep.previous, sweep.next, playback.loopCount !== 1, sweep.fresh),
+      playback.clip.durationMs,
+      { clipAssetGuid: playback.clip.assetGuid, stateId: state.stateId, weight: playback.weight, source },
+    );
+  }
   const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
+  if (Object.keys(slotTick.slots).length > 0) result.slots = slotTick.slots;
+  if (slotTick.events.length > 0) result.slotEvents = slotTick.events;
   if (ctx.layerBlends.length > 0) result.layerBlends = ctx.layerBlends;
   if (modifiers.length > 0) result.boneModifiers = modifiers;
   const playing = new Map<string, number>();
@@ -1250,8 +1313,9 @@ export function animEvalWithJump(
   if (!doc.stateMachine.states.some((state) => state.id === stateId)) return previous;
   // A negative time is unknown to the next evaluation, so it enters the state fresh with no blend.
   const base = previous ?? { ...idleMachineState(stateId), players: {}, selectors: {}, layers: [] };
-  const { events: _fired, ...kept } = base;
+  const { events: _fired, slotEvents: _slotEvents, ...kept } = base;
   void _fired;
+  void _slotEvents;
   return {
     ...kept,
     ...idleMachineState(stateId),

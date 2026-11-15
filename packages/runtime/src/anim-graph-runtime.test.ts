@@ -203,3 +203,72 @@ describe("AnimGraphRuntime", () => {
     });
   });
 });
+
+describe("AnimGraphRuntime slots", () => {
+  /** The default graph with its player wired through a Slot into the output. */
+  function slottedGraph(): AnimGraphDocument {
+    const document = createDefaultAnimGraph();
+    const graph = document.stateMachine.states[0]!.stateGraph;
+    graph.nodes.push({ id: "slot", type: "anim.pose.slot", position: { x: 0, y: 0 }, data: {} });
+    graph.edges = [
+      { id: "player->slot", source: "player", sourceHandle: "pose", target: "slot", targetHandle: "source" },
+      { id: "slot->output", source: "slot", sourceHandle: "pose", target: ANIM_POSE_OUTPUT_NODE_ID, targetHandle: "pose" },
+    ];
+    return document;
+  }
+  const catalog = [{ guid: "swing", type: "Animation", name: "Swing", clipName: "swing", durationMs: 300 }];
+  /** Records a wait's answer as it settles: at once for a plain answer, else inside the tick that settles it. */
+  const settle = (wait: PromiseLike<boolean> | boolean, record: (value: boolean) => void) => {
+    if (typeof wait === "boolean") record(wait);
+    else wait.then(record);
+  };
+  const request = { animation: "swing", slot: "", blendInSeconds: 0, blendOutSeconds: 0.1, playRate: 1, loopCount: 1, startSeconds: 0 };
+
+  it("plays a slot Animation through the Slot node, and resolves its blend out, then its completion", () => {
+    const { actors, emitted, runtime } = setup(slottedGraph());
+    runtime.replaceAnimClipCatalog(catalog);
+    const control = runtime.control(actors[0]!.components[0]!)!;
+    const handle = control.playSlotAnimation(request);
+    expect(handle).toBeGreaterThan(0);
+    // Queued, it already counts as active.
+    expect(control.isSlotActive("DefaultSlot")).toBe(true);
+    const order: string[] = [];
+    settle(runtime.waitSlot(handle, "blendOut"), (value) => order.push(`blendOut:${value}`));
+    runtime.tick(0.1);
+    const layers = (emitted.at(-1) as Extract<CommandMessage, { type: "animState" }>).layers ?? [];
+    expect(layers.map((layer) => [layer.clipAssetGuid, layer.weight])).toEqual([["swing", 1]]);
+    runtime.tick(0.1);
+    expect(order).toEqual(["blendOut:true"]);
+    settle(runtime.waitSlot(handle, "completed"), (value) => order.push(`completed:${value}`));
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    expect(order).toEqual(["blendOut:true", "completed:true"]);
+    expect(control.isSlotActive("DefaultSlot")).toBe(false);
+  });
+
+  it("answers false for a stopped play's completion, and for an Animation it cannot play", () => {
+    const { actors, runtime } = setup(slottedGraph());
+    runtime.replaceAnimClipCatalog(catalog);
+    const control = runtime.control(actors[0]!.components[0]!)!;
+    expect(control.playSlotAnimation({ ...request, animation: "missing" })).toBe(0);
+    expect(runtime.waitSlot(0, "completed")).toBe(false);
+    const handle = control.playSlotAnimation({ ...request, loopCount: 0 });
+    runtime.tick(0.1);
+    const results: boolean[] = [];
+    settle(runtime.waitSlot(handle, "completed"), (value) => results.push(value));
+    control.stopSlotAnimation("DefaultSlot", 0);
+    runtime.tick(0.1);
+    expect(results).toEqual([false]);
+  });
+
+  it("ends a destroyed actor's plays, so their waits answer false", () => {
+    const { actors, runtime } = setup(slottedGraph());
+    runtime.replaceAnimClipCatalog(catalog);
+    const handle = runtime.control(actors[0]!.components[0]!)!.playSlotAnimation({ ...request, loopCount: 0 });
+    runtime.tick(0.1);
+    const results: boolean[] = [];
+    settle(runtime.waitSlot(handle, "completed"), (value) => results.push(value));
+    runtime.retireActor(actors[0]!);
+    expect(results).toEqual([false]);
+  });
+});
