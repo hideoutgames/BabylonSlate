@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { CircleAlertIcon, GitCompareIcon, TriangleAlertIcon } from "lucide-react";
 import type { PullChoice, PullConflict, PullResult } from "@haptic/source-control";
 import { resolveTypeVisual, TypeVisualIcon } from "@haptic/editor-kit";
@@ -22,28 +22,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@haptic/ui/components/dialog";
-import { Progress } from "@haptic/ui/components/progress";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import {
   useDocumentActions,
   useIntegratedSync,
   useIntegratedSyncState,
   useRegistryState,
-  useSaveState,
 } from "../context/document-context";
-import type { AuthoringHold } from "../context/document-context-types";
-import { commitsLabel, transferLabel } from "../lib/source-control-labels";
+import { commitsLabel } from "../lib/source-control-labels";
 import { conflictChoices, groupConflicts, registryChangeLookup, type ConflictRow } from "../lib/source-control-changes";
-import { useTransferBytes } from "../lib/transfer-bytes";
-import type { SyncSnapshot } from "../services/source-control-sync";
 import { REMOTE, WORKING_COPY } from "../services/source-control-diff";
 import type { DiffRequest } from "./source-control-actions";
+import { RewriteProgress, useRewriteFlow } from "./source-control-rewrite";
 import { UnsavedDocumentsDialog } from "./source-control-unsaved-dialog";
 
 type Step =
-  | { kind: "blocked"; reason: string }
-  | { kind: "unsaved" }
-  | { kind: "confirm" }
   | { kind: "pulling" }
   | { kind: "conflicts"; conflicts: PullConflict[] }
   /** Pull Conflicts set aside while the tab shows one asset's diff; the hold and the choices stay. */
@@ -59,17 +52,6 @@ function sideLabel(row: ConflictRow): string {
   if (row.theirs === "deleted") return "Deleted There, Changed Here";
   if (row.mine === "deleted") return "Changed There, Deleted Here";
   return "Changed Here And There";
-}
-
-/** The running pull with its bytes, then the reload of what it wrote. */
-function PullProgress({ snapshot }: { snapshot: SyncSnapshot }) {
-  const transfer = transferLabel(snapshot, useTransferBytes(useIntegratedSync().transfer));
-  return (
-    <div role="status" className="flex flex-col gap-1 text-xs text-muted-foreground">
-      <span>{transfer ?? "Loading The Pulled Files…"}</span>
-      <Progress value={null} aria-label="Pulling" />
-    </div>
-  );
 }
 
 /**
@@ -88,39 +70,10 @@ export default function SourceControlPullFlow({ onDone, onCompare }: {
 }) {
   const sync = useIntegratedSync();
   const snapshot = useIntegratedSyncState();
-  const { dirtyDocuments, projectDirty } = useSaveState();
   const { assetRegistry } = useRegistryState();
-  const {
-    saveAll,
-    confirmExternalChangeReloadDocs,
-    confirmExternalChangeReloadProject,
-    withProjectWrites,
-    applyPulledChanges,
-    getAuthoringLock,
-    lockAuthoring,
-  } = useDocumentActions();
-  const unsaved = dirtyDocuments.length > 0 || projectDirty;
-  const [step, setStep] = useState<Step>(() => {
-    // Open documents could not reload while Play or a Simulation holds them.
-    const lock = getAuthoringLock();
-    if (lock.readOnly) return { kind: "blocked", reason: lock.reason ?? "Documents are read-only right now." };
-    return unsaved ? { kind: "unsaved" } : { kind: "confirm" };
-  });
-  const [busy, setBusy] = useState(false);
+  const { withProjectWrites, applyPulledChanges } = useDocumentActions();
+  const { step, setStep, busy, setBusy, done, hold, allowed, unsavedDialog } = useRewriteFlow<Step>({ reason: PULLING_REASON, onDone });
   const [choices, setChoices] = useState<ReadonlyMap<string, PullChoice>>(new Map());
-  const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
-  /** The documents' read-only hold, from the confirmation until the pulled files are reloaded. */
-  const hold = useRef<AuthoringHold | null>(null);
-  const releaseHold = useCallback(() => {
-    hold.current?.release();
-    hold.current = null;
-  }, []);
-  useEffect(() => releaseHold, [releaseHold]);
-  const done = useRef(() => {
-    releaseHold();
-    onDoneRef.current();
-  });
   const branch = snapshot.branch;
   const lookup = useMemo(() => registryChangeLookup(assetRegistry), [assetRegistry]);
   const conflicts = step.kind === "conflicts" || step.kind === "comparing" ? step.conflicts : null;
@@ -132,20 +85,12 @@ export default function SourceControlPullFlow({ onDone, onCompare }: {
     setStep({ kind: "comparing", conflicts, name: row.name });
   };
 
-  // A save that lands while the prompt is open (Auto-Save) leaves nothing to ask about.
-  useEffect(() => {
-    if (step.kind === "unsaved" && !unsaved && !busy) setStep({ kind: "confirm" });
-  }, [busy, step.kind, unsaved]);
-
   const pull = async (chosen?: ReadonlyMap<string, PullChoice>) => {
+    if (!allowed()) return;
     setBusy(true);
     // Applying choices keeps Pull Conflicts open (disabled) until the pull settles.
     if (!chosen) setStep({ kind: "pulling" });
-    if (!hold.current) {
-      const release = lockAuthoring(PULLING_REASON);
-      hold.current = { lock: getAuthoringLock(), release };
-    }
-    const held = hold.current;
+    const held = hold();
     let result: PullResult | null = null;
     try {
       result = await withProjectWrites(async () => {
@@ -165,36 +110,14 @@ export default function SourceControlPullFlow({ onDone, onCompare }: {
       setStep({ kind: "conflicts", conflicts: result.conflicts });
       return;
     }
-    done.current();
-  };
-
-  const saveFirst = async () => {
-    setBusy(true);
-    try {
-      // Migrations that refuse the save open their own prompt; the pull waits for another request.
-      if (await saveAll()) setStep({ kind: "confirm" });
-      else done.current();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const discardFirst = async () => {
-    setBusy(true);
-    try {
-      if (projectDirty) await confirmExternalChangeReloadProject();
-      else await confirmExternalChangeReloadDocs(dirtyDocuments.map((doc) => doc.ref.path));
-      setStep({ kind: "confirm" });
-    } finally {
-      setBusy(false);
-    }
+    done();
   };
 
   const missing = rows.find((row) => !choices.has(row.id));
 
   return (
     <>
-      <AlertDialog open={step.kind === "blocked"} onOpenChange={(open) => { if (!open) done.current(); }}>
+      <AlertDialog open={step.kind === "blocked"} onOpenChange={(open) => { if (!open) done(); }}>
         <AlertDialogContent data-testid="source-control-pull-blocked">
           <AlertDialogHeader>
             <AlertDialogTitle>Cannot Pull Now</AlertDialogTitle>
@@ -205,18 +128,9 @@ export default function SourceControlPullFlow({ onDone, onCompare }: {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <UnsavedDocumentsDialog
-        open={step.kind === "unsaved"}
-        names={[...dirtyDocuments.map((doc) => doc.ref.label), ...(projectDirty ? ["Project Settings"] : [])]}
-        description="Save or discard your changes before pulling."
-        busy={busy}
-        testId="source-control-pull"
-        onCancel={() => done.current()}
-        onDiscard={() => void discardFirst()}
-        onSave={() => void saveFirst()}
-      />
+      <UnsavedDocumentsDialog {...unsavedDialog} description="Save or discard your changes before pulling." testId="source-control-pull" />
 
-      <AlertDialog open={step.kind === "confirm"} onOpenChange={(open) => { if (!open) done.current(); }}>
+      <AlertDialog open={step.kind === "confirm"} onOpenChange={(open) => { if (!open) done(); }}>
         <AlertDialogContent variant="warning" data-testid="source-control-pull-confirm">
           <AlertDialogHeader>
             <AlertDialogMedia>
@@ -245,11 +159,11 @@ export default function SourceControlPullFlow({ onDone, onCompare }: {
             <AlertDialogTitle>Pulling From {branch}</AlertDialogTitle>
             <AlertDialogDescription>Documents are read-only until the pulled files are loaded.</AlertDialogDescription>
           </AlertDialogHeader>
-          <PullProgress snapshot={snapshot} />
+          <RewriteProgress after="Loading The Pulled Files…" label="Pulling" />
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={step.kind === "conflicts"} onOpenChange={(open) => { if (!open && !busy) done.current(); }}>
+      <Dialog open={step.kind === "conflicts"} onOpenChange={(open) => { if (!open && !busy) done(); }}>
         <DialogContent showCloseButton={false} className="sm:max-w-lg" data-testid="source-control-pull-conflicts">
           <DialogHeader>
             <DialogTitle>Pull Conflicts</DialogTitle>
@@ -301,7 +215,7 @@ export default function SourceControlPullFlow({ onDone, onCompare }: {
                 <span className="truncate">Choose a version for {missing.name}.</span>
               </span>
             ) : null}
-            <Button variant="outline" data-testid="source-control-pull-conflicts-cancel" disabled={busy} onClick={() => done.current()}>
+            <Button variant="outline" data-testid="source-control-pull-conflicts-cancel" disabled={busy} onClick={() => done()}>
               Cancel Pull
             </Button>
             <Button data-testid="source-control-pull-conflicts-apply" disabled={busy || missing !== undefined} onClick={() => void pull(choices)}>

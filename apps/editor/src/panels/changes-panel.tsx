@@ -4,11 +4,13 @@ import {
   ArrowDownToLineIcon,
   ArrowUpFromLineIcon,
   CheckIcon,
+  ChevronDownIcon,
   FileIcon,
   FolderIcon,
   GitBranchIcon,
   GitCommitHorizontalIcon,
   LockIcon,
+  PlusIcon,
   RefreshCwIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -26,6 +28,14 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@haptic/ui/com
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
 import { Checkbox } from "@haptic/ui/components/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@haptic/ui/components/dropdown-menu";
 import { Field, FieldLabel } from "@haptic/ui/components/field";
 import { Label } from "@haptic/ui/components/label";
 import { ScrollArea } from "@haptic/ui/components/scroll-area";
@@ -34,6 +44,7 @@ import { cn } from "@haptic/ui/lib/utils";
 import { useDocumentActions, useIntegratedSync, useIntegratedSyncState, useSourceControl } from "../context/document-context";
 import { AdoptGitFolderDialog } from "../components/source-control-adopt-dialog";
 import { useSourceControlActions, useSourceControlDiffState } from "../components/source-control-actions";
+import { BranchMenuItems } from "../components/source-control-branch-menu";
 import { integratedBlockerLabel, type IntegratedBlocker } from "../lib/source-control-mode";
 import type { ChangeRow as ChangeRowData } from "../lib/source-control-changes";
 import { agoLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
@@ -123,6 +134,30 @@ function IncomingRow({ commit, now }: { commit: CommitInfo; now: number }) {
         {commit.author.name} · {agoLabel(commit.timestamp * 1000, now)}
       </span>
     </li>
+  );
+}
+
+/** The checked-out branch, as a menu of the branches to switch to and **New Branch…**. */
+function BranchPicker({ branch, busy, committed }: { branch: string; busy: boolean; committed: boolean }) {
+  const { requestNewBranch } = useSourceControlActions();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="min-w-0" aria-label={`Branch ${branch}`} data-testid="changes-branch" />}>
+        <GitBranchIcon data-icon="inline-start" />
+        <span className="truncate">{branch}</span>
+        <ChevronDownIcon data-icon="inline-end" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-48">
+        <BranchMenuItems testId="changes" />
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem disabled={busy || !committed} onClick={requestNewBranch} data-testid="changes-new-branch">
+            <PlusIcon />
+            New Branch…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -284,10 +319,7 @@ export function ChangesPanelContents() {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 flex-col gap-1 p-2">
           <div className="flex items-center gap-1">
-            <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium" data-testid="changes-branch">
-              <GitBranchIcon className="size-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">{snapshot.branch}</span>
-            </span>
+            <BranchPicker branch={snapshot.branch} busy={busy} committed={snapshot.head !== null} />
             <span className="flex-1" />
             <Button
               variant="ghost"

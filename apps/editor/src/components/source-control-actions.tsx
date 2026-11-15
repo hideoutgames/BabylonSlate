@@ -1,12 +1,15 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { SOURCE_CONTROL_ID } from "@haptic/core";
-import { useDocumentActions, useIntegratedSync } from "../context/document-context";
+import { useActiveDocumentId, useDocumentActions, useIntegratedSync } from "../context/document-context";
 import { SourceControlDiffService, type DiffRef, type DiffState, type DiffTarget } from "../services/source-control-diff";
 
 /** The Pull flow (unsaved documents, confirmation, conflicts) loads when a pull is first asked for. */
 const SourceControlPullFlow = lazy(() => import("./source-control-pull-flow"));
 /** The Revert flow loads when a revert is first asked for. */
 const SourceControlRevertFlow = lazy(() => import("./source-control-revert-flow"));
+/** The Switch Branch flow and the New Branch dialog load when first asked for. */
+const SourceControlBranchFlow = lazy(() => import("./source-control-branch-flow"));
+const NewBranchDialog = lazy(() => import("./source-control-new-branch-dialog"));
 
 /** An asset to put back as a version holds it (Revert Asset; History's Revert To This Version). */
 export interface RevertRequest {
@@ -31,10 +34,18 @@ export interface SourceControlActions {
   requestCommit: () => void;
   /** Advances on each Commit… request; the Changes window focuses its message when it changes. */
   readonly commitRequest: number;
-  /** Shows an asset's diff in the Source Control tab's Actors and Diff windows. */
+  /** Shows an asset's diff in the Source Control tab's Actors and Diff windows; History then follows that asset. */
   openDiff: (request: DiffRequest) => void;
   /** Saves or discards the asset's unsaved edits, confirms, then writes `ref`'s version of it into the working copy. */
   requestRevert: (request: RevertRequest) => void;
+  /** Saves or discards unsaved documents, confirms, then checks out `branch` and reloads the files it changed. */
+  requestSwitchBranch: (branch: string) => void;
+  /** Asks for a name, then starts that branch at HEAD and checks it out. */
+  requestNewBranch: () => void;
+  /** Brings the Source Control tab forward with History, on `path`'s history when one is given. */
+  openHistory: (path?: string) => void;
+  /** The asset whose history History shows (**This Asset**): the last one History opened on or a diff showed. */
+  readonly historyPath: string | null;
 }
 
 const SourceControlActionsContext = createContext<SourceControlActions | null>(null);
@@ -51,20 +62,29 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
   const [pullRequest, setPullRequest] = useState(0);
   const [commitRequest, setCommitRequest] = useState(0);
   const [revert, setRevert] = useState<{ key: number; request: RevertRequest } | null>(null);
+  const [switchTo, setSwitchTo] = useState<{ key: number; branch: string } | null>(null);
+  const [newBranchRequest, setNewBranchRequest] = useState(0);
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
   const diff = useMemo(() => new SourceControlDiffService(sync), [sync]);
   useEffect(() => diff.attach(), [diff]);
-  const openSourceControl = useCallback(() => {
+  const showWindow = useCallback((panel: string) => {
     setActiveDocument(SOURCE_CONTROL_ID);
-    // Changes is the tab's first window; a layout that closed it opens it again.
-    requestAnimationFrame(() => activateDockPanel("changes"));
+    // A layout that closed the window opens it again; on a phone it is the window shown.
+    requestAnimationFrame(() => activateDockPanel(panel));
   }, [activateDockPanel, setActiveDocument]);
+  // Changes is the tab's first window.
+  const openSourceControl = useCallback(() => showWindow("changes"), [showWindow]);
   const openDiff = useCallback((request: DiffRequest) => {
     diff.open(request);
-    setActiveDocument(SOURCE_CONTROL_ID);
-    // A layout that closed Diff opens it again; on a phone it is the window shown.
-    requestAnimationFrame(() => activateDockPanel("diff"));
-  }, [activateDockPanel, diff, setActiveDocument]);
+    setHistoryPath(request.path);
+    showWindow("diff");
+  }, [diff, showWindow]);
+  const openHistory = useCallback((path?: string) => {
+    if (path) setHistoryPath(path);
+    showWindow("history");
+  }, [showWindow]);
   const requestRevert = useCallback((request: RevertRequest) => setRevert((current) => ({ key: (current?.key ?? 0) + 1, request })), []);
+  const requestSwitchBranch = useCallback((branch: string) => setSwitchTo((current) => ({ key: (current?.key ?? 0) + 1, branch })), []);
   const value = useMemo<SourceControlActions>(() => ({
     requestPull: () => setPullRequest((request) => request + 1),
     push: () => sync.push(),
@@ -77,7 +97,11 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
     commitRequest,
     openDiff,
     requestRevert,
-  }), [commitRequest, openDiff, openSourceControl, requestRevert, sync]);
+    requestSwitchBranch,
+    requestNewBranch: () => setNewBranchRequest((request) => request + 1),
+    openHistory,
+    historyPath,
+  }), [commitRequest, historyPath, openDiff, openHistory, openSourceControl, requestRevert, requestSwitchBranch, sync]);
   return (
     <SourceControlActionsContext.Provider value={value}>
       <SourceControlDiffContext.Provider value={diff}>
@@ -92,6 +116,16 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
             <SourceControlRevertFlow key={revert.key} request={revert.request} onDone={() => setRevert(null)} />
           </Suspense>
         ) : null}
+        {switchTo ? (
+          <Suspense fallback={null}>
+            <SourceControlBranchFlow key={switchTo.key} branch={switchTo.branch} onDone={() => setSwitchTo(null)} />
+          </Suspense>
+        ) : null}
+        {newBranchRequest > 0 ? (
+          <Suspense fallback={null}>
+            <NewBranchDialog key={newBranchRequest} onDone={() => setNewBranchRequest(0)} />
+          </Suspense>
+        ) : null}
       </SourceControlDiffContext.Provider>
     </SourceControlActionsContext.Provider>
   );
@@ -103,6 +137,18 @@ export function useSourceControlActions(): SourceControlActions {
   const actions = useContext(SourceControlActionsContext);
   if (!actions) throw new Error("useSourceControlActions must be used within SourceControlActionsProvider");
   return actions;
+}
+
+/** **Open History**: on the asset in the active tab, else on the asset History last showed. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOpenHistory(): () => void {
+  const { openHistory } = useSourceControlActions();
+  const { getOpenDocuments } = useDocumentActions();
+  const activeId = useActiveDocumentId();
+  return useCallback(() => {
+    const path = getOpenDocuments().find((doc) => doc.id === activeId)?.ref.path;
+    openHistory(path?.endsWith(".hasset") ? path : undefined);
+  }, [activeId, getOpenDocuments, openHistory]);
 }
 
 /** The Source Control tab's open diff service (stable). */

@@ -6,8 +6,10 @@ import {
   CircleAlertIcon,
   GitBranchIcon,
   GitCommitHorizontalIcon,
+  HistoryIcon,
   LoaderCircleIcon,
   PanelRightOpenIcon,
+  PlusIcon,
   RefreshCwIcon,
 } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
@@ -18,6 +20,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@haptic/ui/components/dropdown-menu";
 import { Progress } from "@haptic/ui/components/progress";
@@ -28,7 +33,8 @@ import { changesLabel, commitsLabel, transferLabel } from "../lib/source-control
 import { useTransferBytes } from "../lib/transfer-bytes";
 import type { SyncSnapshot } from "../services/source-control-sync";
 import { usePhoneLayout } from "../shell/use-platform-layout";
-import { useSourceControlActions } from "./source-control-actions";
+import { useOpenHistory, useSourceControlActions } from "./source-control-actions";
+import { BranchMenuItems } from "./source-control-branch-menu";
 
 function saveStateLabel(unsaved: number, projectDirty: boolean, unrecovered: boolean): string {
   if (unsaved > 0)
@@ -65,6 +71,7 @@ function TransferProgress({ snapshot }: { snapshot: SyncSnapshot }) {
 /** Integrated mode leads the status bar: the branch menu, the change count, and Pull and Push (or the running transfer). */
 function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
   const actions = useSourceControlActions();
+  const openHistory = useOpenHistory();
   const count = snapshot.rows.length;
   const transferring = snapshot.operation !== null && snapshot.operation.kind !== "fetch" && snapshot.operation.kind !== "commit";
   const busy = snapshot.operation !== null && snapshot.operation.kind !== "fetch";
@@ -110,9 +117,29 @@ function SourceControlStatus({ snapshot }: { snapshot: SyncSnapshot }) {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger data-testid="status-source-control-switch-branch" disabled={busy}>
+                <GitBranchIcon />
+                Switch Branch
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-48">
+                <BranchMenuItems testId="status-source-control" />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem data-testid="status-source-control-new-branch" disabled={busy || snapshot.head === null} onClick={actions.requestNewBranch}>
+              <PlusIcon />
+              New Branch…
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
             <DropdownMenuItem data-testid="status-source-control-open" onClick={actions.openSourceControl}>
               <PanelRightOpenIcon />
               Open Source Control
+            </DropdownMenuItem>
+            <DropdownMenuItem data-testid="status-source-control-history" onClick={openHistory}>
+              <HistoryIcon />
+              Open History
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

@@ -403,7 +403,8 @@ export class GitRepository implements SyncPort {
       const read = async (): Promise<CommitInfo[]> => {
         try {
           const entries = await git.log({ ...op.git, ref: this.localRef, depth: skip + limit, ...(path ? { filepath: storagePath(path) } : {}) });
-          return entries.slice(skip).map(({ oid, commit }) => ({
+          // A path's log that stops at `depth` adds the commit it stopped at, which need not change the path.
+          return entries.slice(skip, skip + limit).map(({ oid, commit }) => ({
             id: oid,
             message: commit.message,
             author: { name: commit.author.name, email: commit.author.email },

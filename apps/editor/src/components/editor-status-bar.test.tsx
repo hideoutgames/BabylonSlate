@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { OpenDocument } from "../services/document-service";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import { integratedSync } from "../testing/integrated-sync";
 import { EditorStatusBar } from "./editor-status-bar";
-import { SourceControlActionsProvider } from "./source-control-actions";
+import { SourceControlActionsProvider, useSourceControlActions } from "./source-control-actions";
 
 const state = vi.hoisted(() => ({
   recoveryAvailable: false,
@@ -11,12 +12,14 @@ const state = vi.hoisted(() => ({
   autoSaveStatus: null as { state: "saved" | "error"; message?: string } | null,
   sync: null as SourceControlSyncService | null,
   setActiveDocument: vi.fn(),
+  activeDocumentId: null as string | null,
+  openDocuments: [] as OpenDocument[],
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
-  openDocuments: [],
+  openDocuments: state.openDocuments,
   dirtyDocuments: [],
-  activeDocumentId: null,
+  activeDocumentId: state.activeDocumentId,
   projectDirty: state.projectDirty,
   autoSaveStatus: state.autoSaveStatus,
   recoveryAvailable: state.recoveryAvailable,
@@ -34,6 +37,8 @@ afterEach(() => {
   state.autoSaveStatus = null;
   state.sync = null;
   state.setActiveDocument.mockClear();
+  state.activeDocumentId = null;
+  state.openDocuments = [];
 });
 
 function renderIntegrated() {
@@ -143,7 +148,7 @@ describe("EditorStatusBar", () => {
       expect(state.setActiveDocument).toHaveBeenCalledWith("source-control");
     });
 
-    it("opens a menu with Commit…, Pull, Push, Refresh and Open Source Control", async () => {
+    it("opens a menu with Commit…, Pull, Push, Refresh, the branch actions, Open Source Control and Open History", async () => {
       const { service } = await integratedSync();
       state.sync = service;
       renderIntegrated();
@@ -154,8 +159,53 @@ describe("EditorStatusBar", () => {
         "Pull",
         "Push",
         "Refresh",
+        "Switch Branch",
+        "New Branch…",
         "Open Source Control",
+        "Open History",
       ]);
+    });
+
+    it("lists this copy's branches and the remote's under Switch Branch, and switching asks first", async () => {
+      const { service, remote } = await integratedSync();
+      remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
+      state.sync = service;
+      renderIntegrated();
+      fireEvent.click(screen.getByTestId("status-source-control-menu"));
+      fireEvent.click(await screen.findByTestId("status-source-control-switch-branch"));
+      const current = await screen.findByTestId("status-source-control-branch-main");
+      expect(current.getAttribute("aria-checked")).toBe("true");
+      const art = await screen.findByTestId("status-source-control-remote-art");
+      await act(async () => {
+        fireEvent.click(art);
+      });
+      // A switch rewrites files, so it is confirmed first; nothing has changed yet.
+      expect((await screen.findByTestId("source-control-switch-confirm")).textContent).toContain("Switch To art?");
+      expect(service.getSnapshot().branch).toBe("main");
+    });
+
+    it("opens History on the asset in the active tab", async () => {
+      const { service } = await integratedSync();
+      state.sync = service;
+      state.activeDocumentId = "scene:assets/Forest.scene.hasset";
+      state.openDocuments = [{ id: "scene:assets/Forest.scene.hasset", ref: { kind: "scene", path: "assets/Forest.scene.hasset", label: "Forest" }, content: {}, layout: null, dirty: false }];
+      let historyPath: string | null = null;
+      function Probe() {
+        historyPath = useSourceControlActions().historyPath;
+        return null;
+      }
+      render(
+        <SourceControlActionsProvider>
+          <EditorStatusBar />
+          <Probe />
+        </SourceControlActionsProvider>,
+      );
+      fireEvent.click(screen.getByTestId("status-source-control-menu"));
+      await act(async () => {
+        fireEvent.click(await screen.findByTestId("status-source-control-history"));
+      });
+      expect(state.setActiveDocument).toHaveBeenCalledWith("source-control");
+      expect(historyPath).toBe("assets/Forest.scene.hasset");
     });
   });
 });
