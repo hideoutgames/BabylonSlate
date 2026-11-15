@@ -539,7 +539,7 @@ function GraphPinPickers({
   setAssetPinPick: Dispatch<SetStateAction<AssetPinPick | null>>;
   pickClass: (pinId: string, classId: string) => void;
   pickAsset: (pinId: string, guid: string | null) => void;
-  animClipGraph: AnimClipPickGraph | null;
+  animClipGraph?: AnimClipPickGraph | null;
 }) {
   const { editorGraph, pickerAssets } = catalogs;
   const { assetRegistry } = useRegistryState();

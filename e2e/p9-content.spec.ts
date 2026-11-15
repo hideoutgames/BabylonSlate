@@ -389,7 +389,7 @@ test.describe("P9 content systems", () => {
     await expect(card).toHaveText("Idle To State");
   });
 
-  test("double-clicking an Animation Graph state opens its state graph, and the breadcrumbs step back out", async ({
+  test("double-clicking an Animation Graph state opens its state graph in its own tab beside the Graph", async ({
     page,
   }) => {
     await openTestProject(page);
@@ -399,17 +399,23 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("anim-state-node-idle").dblclick();
     const pose = page.getByTestId("anim-pose-graph");
     await expect(pose).toBeVisible();
-    await expect(page.getByTestId("anim-graph-crumb-state")).toHaveText("Idle");
+    await expect(pose).toHaveAttribute("data-state-id", "idle");
     // One Sequence Player wired into the protected Output Pose.
     await expect(pose.locator('.react-flow__node[data-id="output"] .anim-pose-output-node')).toBeVisible();
     await expect(pose.locator('.react-flow__node[data-id="player"]')).toBeVisible();
     await expect(pose.locator(".react-flow__edge")).toHaveCount(1);
 
-    // The State Machine is the root: its crumb steps out, and there is nothing above it.
-    await page.getByTestId("anim-graph-crumb-machine").click();
+    // The tab is named after the state and marked as one; the Graph tab still holds the State Machine.
+    const stateTab = page.locator(".dv-tab").filter({ hasText: /^Idle$/ });
+    await expect(stateTab).toHaveCount(1);
+    await expect(stateTab.locator('[data-tab-icon="state"]')).toHaveCount(1);
+    await page.locator(".dv-tab").filter({ hasText: /^Graph$/ }).click();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
-    await expect(page.getByTestId("anim-graph-crumb-machine")).toHaveText("State Machine");
-    await expect(page.getByTestId("anim-graph-back")).toBeDisabled();
+    await expect(page.getByTestId("anim-graph-breadcrumbs")).toHaveCount(0);
+    // Opening the state again brings its tab forward rather than adding another.
+    await page.getByTestId("anim-state-node-idle").dblclick();
+    await expect(pose).toBeVisible();
+    await expect(stateTab).toHaveCount(1);
   });
 
   test("double-clicking an Animation Graph transition's wire opens its rule", async ({ page }) => {

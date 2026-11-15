@@ -152,6 +152,8 @@ const assetEditorPanelComponents = {
   "blackboard-keys": lazyPanel(animationAiPanels, (m) => m.BlackboardKeysPanel),
   "blackboard-inspector": lazyPanel(animationAiPanels, (m) => m.BlackboardInspectorPanel),
   "anim-graph-graph": lazyPanel(animationAiPanels, (m) => m.AnimGraphGraphPanel),
+  // ANIM_STATE_GRAPH_PANEL_COMPONENT: one tab per open state graph, opened beside the State Machine.
+  "anim-state-graph": lazyPanel(animationAiPanels, (m) => m.AnimStateGraphPanel),
   "anim-graph-variables": lazyPanel(animationAiPanels, (m) => m.AnimGraphVariablesPanel),
   "anim-graph-details": lazyPanel(animationAiPanels, (m) => m.AnimGraphDetailsPanel),
   "anim-object-graph": lazyPanel(animationAiPanels, (m) => m.AnimObjectGraphPanel),

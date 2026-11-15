@@ -17,7 +17,7 @@ import {
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
 } from "../shell/dock-window-ops";
-import { isFunctionGraphPanelId } from "../shell/function-graph-panels";
+import { isGraphContentPanelId } from "../shell/function-graph-panels";
 import {
   isDockviewDocumentKind,
   listDockWindows,
@@ -262,9 +262,9 @@ export function useDocumentDockLayouts({
           ? surface : undefined,
       );
       for (const panel of listDockPanels(dock)) {
-        // Function graph tabs persist in the DockView snapshot, not as
-        // remembered catalog placements.
-        if (isFunctionGraphPanelId(panel.id)) continue;
+        // Function and state graph tabs persist in the DockView snapshot, not
+        // as remembered catalog placements.
+        if (isGraphContentPanelId(panel.id)) continue;
         const def = isDockviewDocumentKind(kind)
           ? findWindowDefinition(kind, panel.id, dockOptions)
           : undefined;

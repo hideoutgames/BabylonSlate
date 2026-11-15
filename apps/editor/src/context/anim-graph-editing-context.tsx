@@ -8,13 +8,25 @@ import {
 } from "react";
 import { useNodeSelection } from "../lib/node-selection";
 
-/** The graph the Animation Graph editor shows: the State Machine or a state's graph. */
-export type AnimEditorLocation =
-  | { kind: "machine" }
-  | { kind: "state"; stateId: string };
+/* eslint-disable react-refresh/only-export-components -- context module */
 
-/** The Animation Graph canvas last brought forward: the State Machine side (Graph) or the Animation Object script. */
-export type AnimCanvas = "stateMachine" | "animationObject";
+/**
+ * The Animation Graph canvas last brought forward, which the Inspector follows: the State Machine (Graph, where a
+ * transition rule opens in place), the Animation Object script, or a state's graph in its own tab.
+ */
+export type AnimCanvas = "stateMachine" | "animationObject" | `state:${string}`;
+
+const STATE_CANVAS_PREFIX = "state:";
+
+/** The canvas of a state's graph tab. */
+export function animStateCanvas(stateId: string): AnimCanvas {
+  return `${STATE_CANVAS_PREFIX}${stateId}`;
+}
+
+/** The state whose graph `canvas` is, or null for the State Machine or the Animation Object. */
+export function animCanvasStateId(canvas: AnimCanvas): string | null {
+  return canvas.startsWith(STATE_CANVAS_PREFIX) ? canvas.slice(STATE_CANVAS_PREFIX.length) : null;
+}
 
 export interface AnimGraphEditingContextValue {
   /** Every selected state; Details shows the properties they share. */
@@ -31,10 +43,6 @@ export interface AnimGraphEditingContextValue {
   openTransitionId: string | null;
   openTransitionRule: (id: string) => void;
   closeTransitionRule: () => void;
-  /** Where the editor is; null opens the State Machine. */
-  location: AnimEditorLocation | null;
-  /** Shows another graph, closing an open rule and clearing the selection. */
-  navigate: (location: AnimEditorLocation) => void;
   /** The canvas the Inspector follows. */
   canvas: AnimCanvas;
   setCanvas: (canvas: AnimCanvas) => void;
@@ -54,7 +62,6 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   >(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [openTransitionId, setOpenTransitionId] = useState<string | null>(null);
-  const [location, setLocation] = useState<AnimEditorLocation | null>(null);
   const [canvas, setCanvas] = useState<AnimCanvas>("stateMachine");
   const setSelectedIds = useCallback((ids: readonly string[]) => {
     setSelectedIdsState(ids);
@@ -81,12 +88,6 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   const closeTransitionRule = useCallback(() => {
     setOpenTransitionId(null);
   }, []);
-  const navigate = useCallback((next: AnimEditorLocation) => {
-    setOpenTransitionId(null);
-    setSelectedIdsState([]);
-    setSelectedTransitionIdState(null);
-    setLocation(next);
-  }, [setSelectedIdsState]);
   const value = useMemo<AnimGraphEditingContextValue>(
     () => ({
       selectedIds,
@@ -100,15 +101,11 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
       openTransitionId,
       openTransitionRule,
       closeTransitionRule,
-      location,
-      navigate,
       canvas,
       setCanvas,
     }),
     [
       canvas,
-      location,
-      navigate,
       closeTransitionRule,
       focusNode,
       focusedNodeId,
@@ -129,7 +126,6 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   );
 }
 
-/* eslint-disable react-refresh/only-export-components -- context module */
 export function useAnimGraphEditing(): AnimGraphEditingContextValue {
   const context = useContext(AnimGraphEditingContext);
   if (!context) {

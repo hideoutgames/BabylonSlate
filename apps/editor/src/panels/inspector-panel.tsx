@@ -46,7 +46,7 @@ import {
   resolveInspectorNodeId,
   useGraphEditing,
 } from "../context/graph-editing-context";
-import { useOptionalAnimGraphEditing } from "../context/anim-graph-editing-context";
+import { animCanvasStateId, useOptionalAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
@@ -176,10 +176,10 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     openRuleId && parsedAnim
       ? (parsedAnim.stateMachine.transitions.find((transition) => transition.id === openRuleId) ?? null)
       : null;
-  // A state's graph on show on the State Machine canvas (a rule takes precedence).
-  const animLocation = animCanvas === "stateMachine" && !ruleTransition ? animEditing?.location ?? null : null;
-  const poseState = animLocation?.kind === "state" && parsedAnim
-    ? parsedAnim.stateMachine.states.find((row) => row.id === animLocation.stateId) ?? null
+  // A state's graph in its own tab, while that tab has the Inspector.
+  const animStateId = animCanvasStateId(animCanvas);
+  const poseState = animStateId && parsedAnim
+    ? parsedAnim.stateMachine.states.find((row) => row.id === animStateId) ?? null
     : null;
   const poseSource = poseState?.stateGraph ?? null;
   const graph = useMemo(

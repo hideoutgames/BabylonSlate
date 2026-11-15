@@ -1,7 +1,7 @@
 import type { DockviewApi } from "dockview-react";
 import {
-  EVENT_GRAPH_PANEL_ID,
-  isFunctionGraphPanelId,
+  graphContentPrimaryPanelId,
+  isGraphContentPanelId,
 } from "./function-graph-panels";
 
 type DockviewLayout = ReturnType<DockviewApi["toJSON"]>;
@@ -88,9 +88,9 @@ function layoutGroups(layout: DockviewLayout): GroupState[] {
 }
 
 /**
- * Function graph tabs are document content rather than window choices: one
- * opened or renamed on the phone joins the desktop arrangement, as a tab
- * beside the Event Graph (or another function tab).
+ * Function and state graph tabs are document content rather than window
+ * choices: one opened or renamed on the phone joins the desktop arrangement,
+ * as a tab beside the Event Graph or State Machine (or another such tab).
  */
 function withLiveFunctionGraphs(
   desktop: DockviewLayout,
@@ -98,19 +98,20 @@ function withLiveFunctionGraphs(
 ): DockviewLayout {
   const changed = api.panels.filter(
     (panel) =>
-      isFunctionGraphPanelId(panel.id) &&
+      isGraphContentPanelId(panel.id) &&
       (!(panel.id in desktop.panels) ||
         desktop.panels[panel.id]!.title !== panel.title),
   );
   if (changed.length === 0) return desktop;
   const layout = structuredClone(desktop);
   const groups = layoutGroups(layout);
-  const target =
-    groups.find((group) => group.views.includes(EVENT_GRAPH_PANEL_ID)) ??
-    groups.find((group) => group.views.some(isFunctionGraphPanelId)) ??
+  const targetFor = (panelId: string) =>
+    groups.find((group) => group.views.includes(graphContentPrimaryPanelId(panelId))) ??
+    groups.find((group) => group.views.some(isGraphContentPanelId)) ??
     groups[0];
   for (const panel of changed) {
     const saved = layout.panels[panel.id];
+    const target = saved ? undefined : targetFor(panel.id);
     if (saved) {
       saved.title = panel.title;
     } else if (target) {

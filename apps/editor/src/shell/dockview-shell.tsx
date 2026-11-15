@@ -32,8 +32,8 @@ import {
   type DockWindowDefinition,
 } from "./window-catalog";
 import {
-  FUNCTION_GRAPH_PANEL_COMPONENT,
-  isFunctionGraphPanelId,
+  graphContentPanelComponent,
+  isGraphContentPanelId,
 } from "./function-graph-panels";
 import { profileComponents } from "../lib/render-profile";
 import { HapticDockTab } from "./dock-tab";
@@ -197,14 +197,15 @@ export function DockviewShell({
   useLayoutEffect(() => {
     if (!api) return;
     const updateSelection = () => setActivePanelId(api.activePanel?.id ?? null);
-    // Open function graph tabs join the phone Window picker; a rename only
-    // reaches it through the layout change Dockview fires for a new title.
+    // Open function and state graph tabs join the phone Window picker; a
+    // rename only reaches it through the layout change Dockview fires for a
+    // new title.
     const updateFunctionWindows = () => {
       const next = api.panels
-        .filter((panel) => isFunctionGraphPanelId(panel.id))
+        .filter((panel) => isGraphContentPanelId(panel.id))
         .map((panel) => ({
           id: panel.id,
-          component: FUNCTION_GRAPH_PANEL_COMPONENT,
+          component: graphContentPanelComponent(panel.id),
           title: panel.api.title ?? panel.id,
         }));
       setFunctionWindows((current) =>

@@ -5,7 +5,7 @@ import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, createStateGr
 import type { SerializedGraph } from "@haptic/core";
 import { FLOAT, pin } from "@haptic/scripting";
 import { InspectorPanel } from "./inspector-panel";
-import { AnimGraphEditingProvider, useAnimGraphEditing } from "../context/anim-graph-editing-context";
+import { AnimGraphEditingProvider, animStateCanvas, useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { GraphEditingProvider, useGraphEditing } from "../context/graph-editing-context";
 import { PrefabEditingProvider } from "../context/prefab-editing-context";
 
@@ -84,13 +84,13 @@ vi.mock("../context/play-context", () => ({
 }));
 
 function SelectionControls() {
-  const { openTransitionRule, navigate, setCanvas } = useAnimGraphEditing();
+  const { openTransitionRule, setCanvas } = useAnimGraphEditing();
   const { setSelectedNodeIds } = useGraphEditing();
   return <>
     <button onClick={() => setCanvas("stateMachine")}>Show Graph</button>
     <button onClick={() => setCanvas("animationObject")}>Show Animation Object</button>
     <button onClick={() => openTransitionRule("idle-to-run")}>Open Rule</button>
-    <button onClick={() => navigate({ kind: "state", stateId: "idle" })}>Open Idle Graph</button>
+    <button onClick={() => setCanvas(animStateCanvas("idle"))}>Open Idle Graph</button>
     <button onClick={() => setSelectedNodeIds(["add"])}>Select Add</button>
     <button onClick={() => setSelectedNodeIds(["other"])}>Select Other</button>
     <button onClick={() => setSelectedNodeIds(["player"])}>Select Player</button>

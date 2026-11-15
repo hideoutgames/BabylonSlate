@@ -54,7 +54,7 @@ import {
 import { Badge } from "@haptic/ui/components/badge";
 import { Button } from "@haptic/ui/components/button";
 import { Input } from "@haptic/ui/components/input";
-import { ArrowLeftIcon, ChevronRightIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, Trash2Icon } from "lucide-react";
 import {
   GRAPH_DEFAULT_ZOOM,
   GraphEditor,
@@ -72,7 +72,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useAnimGraphEditing, type AnimCanvas, type AnimEditorLocation } from "../context/anim-graph-editing-context";
+import { animStateCanvas, useAnimGraphEditing, type AnimCanvas } from "../context/anim-graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useAnimStateMachineRunTrace } from "../context/graph-debug-context";
@@ -80,6 +80,11 @@ import { useOptionalAnimGraphPreview } from "../context/anim-graph-preview-conte
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
 import { animGraphPlaysAsset, animSyncGroupRow } from "../lib/anim-pose-inspector";
 import { GraphPanel } from "../panels/graph-panel";
+import {
+  ANIM_STATE_MACHINE_PANEL_ID,
+  openAnimStateGraphPanel,
+  type AnimStateGraphPanelParams,
+} from "../shell/function-graph-panels";
 import { InspectorPanel } from "../panels/inspector-panel";
 import { useValidation } from "../context/validation-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
@@ -278,18 +283,8 @@ export function useAnimGraphDocument() {
   }, [assetRegistry, registryEpoch, documentPath]);
   const graphGuid = graphHeader?.guid;
   const assetName = graphHeader?.name ?? doc.name;
-  // The graph on show: the editor opens on the State Machine, and a state whose graph is gone falls back to it.
-  const editing = useAnimGraphEditing();
-  const location = resolveAnimEditorLocation(doc, editing.location);
   const machine = doc.stateMachine;
-  const state = location.kind === "state" ? machine.states.find((row) => row.id === location.stateId) : undefined;
-  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid, assetName, dimension, location, machine, state };
-}
-
-/** The location shown: a state's graph while the state exists, else the State Machine. */
-function resolveAnimEditorLocation(doc: AnimGraphDocument, location: AnimEditorLocation | null): AnimEditorLocation {
-  if (location?.kind === "state" && doc.stateMachine.states.some((row) => row.id === location.stateId)) return location;
-  return { kind: "machine" };
+  return { doc, latestDoc, commit, assetRegistry, documentId, catalog, graphGuid, assetName, dimension, machine };
 }
 
 /** A state's or transition's breakpoint, named as the State Machine shows it. */
@@ -354,9 +349,9 @@ function TransitionBreakpointButton({
   );
 }
 
-function AnimGraphVariablesList() {
-  const { doc, commit, machine, dimension, location } = useAnimGraphDocument();
-  const { selectedIds, setSelectedId, navigate } = useAnimGraphEditing();
+function AnimGraphVariablesList({ containerApi }: { containerApi: IDockviewPanelProps["containerApi"] | undefined }) {
+  const { doc, commit, machine, dimension } = useAnimGraphDocument();
+  const { selectedIds, setSelectedId, setCanvas } = useAnimGraphEditing();
   return (
     <PanelFrame>
       <div className="flex flex-col gap-3 p-2">
@@ -486,8 +481,9 @@ function AnimGraphVariablesList() {
                 aria-pressed={selectedIds.includes(state.id)}
                 data-testid={`anim-graph-state-${state.id}`}
                 onClick={() => {
-                  // A state picked inside a state graph returns to the State Machine first.
-                  if (location.kind !== "machine") navigate({ kind: "machine" });
+                  // A state picked while another canvas has the Inspector selects it on the State Machine.
+                  containerApi?.getPanel(ANIM_STATE_MACHINE_PANEL_ID)?.api.setActive();
+                  setCanvas("stateMachine");
                   setSelectedId(state.id);
                 }}
               >
@@ -505,9 +501,8 @@ function AnimGraphVariablesList() {
   );
 }
 
-export function AnimGraphVariablesPanel(_props: IDockviewPanelProps) {
-  void _props;
-  return <AnimGraphVariablesList />;
+export function AnimGraphVariablesPanel(props: IDockviewPanelProps) {
+  return <AnimGraphVariablesList containerApi={props.containerApi} />;
 }
 
 /**
@@ -567,18 +562,59 @@ export function AnimObjectGraphPanel(props: IDockviewPanelProps) {
   );
 }
 
+/** What a script canvas of the Animation Graph reads: data assets, pin type names and the graph's Variables. */
+function useAnimScriptCanvas(doc: AnimGraphDocument) {
+  const typeCatalog = useDataCatalog();
+  const sheetDocuments = useOpenDocumentsOfKinds(DATA_TREE_KINDS);
+  const dataAssets = useMemo(() => collectDataGraphAssets(typeCatalog.assets, sheetDocuments), [typeCatalog.assets, sheetDocuments]);
+  const pinTypeNames = useMemo(() => Object.fromEntries([
+    ...Object.entries(typeCatalog.schemas.structs),
+    ...Object.entries(typeCatalog.schemas.enums),
+  ].map(([guid, schema]) => [guid, schema.name])), [typeCatalog.schemas]);
+  const members = useMemo(() => animGraphMembersFromVariables(doc.variables), [doc.variables]);
+  const { settings: appSettings } = useAppSettings();
+  const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
+  return { typeCatalog, dataAssets, pinTypeNames, members, defaultZoom };
+}
+
+/** The graph's Variables as the validator reads a script's members. */
+function animValidationMembers(members: ReturnType<typeof animGraphMembersFromVariables>) {
+  return members.map((member) => ({
+    id: member.id,
+    name: member.name,
+    kind: "variable" as const,
+    classId: "AnimGraph",
+    typeId: member.typeId ?? "bool",
+    typeClassId: member.typeClassId,
+  }));
+}
+
+/** The graph id a state graph's validation rows go under; the State Machine's own publishing leaves them. */
+function animStateGraphDiagnosticsId(documentId: string, stateId: string): string {
+  return `${documentId}:pose-state:${stateId}`;
+}
+
+function isAnimStateGraphDiagnosticsId(documentId: string, graphId: string): boolean {
+  return graphId.startsWith(`${documentId}:pose-`);
+}
+
+/**
+ * The State Machine (Graph): states, aliases and transitions. Double-tap a state, or **Open State Graph** in the
+ * Inspector, to open its graph in its own tab beside this one; a transition's rule still opens here, with **Back To
+ * State Machine**.
+ */
 export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
   const claimCanvas = useAnimCanvas("stateMachine", props.api);
-  const { doc, latestDoc, commit, documentId, catalog, graphGuid, assetName, dimension, location, machine, state } = useAnimGraphDocument();
+  const { doc, latestDoc, commit, documentId, catalog, graphGuid, assetName, dimension, machine } = useAnimGraphDocument();
   // While a Simulation debugs this graph, the State Machine shows the states the followed instance samples and its
   // transitions; otherwise, while the Preview window runs, the ones the Preview plays.
-  const simulationTrace = useAnimStateMachineRunTrace(graphGuid, location.kind === "machine");
+  const simulationTrace = useAnimStateMachineRunTrace(graphGuid, true);
   const preview = useOptionalAnimGraphPreview();
   const previewActive = useSyncExternalStore(
     preview?.subscribe ?? NO_SUBSCRIBE,
     () => preview?.getSnapshot().active ?? false,
   );
-  const runTrace = simulationTrace ?? (previewActive && location.kind === "machine" ? preview?.runTrace : undefined);
+  const runTrace = simulationTrace ?? (previewActive ? preview?.runTrace : undefined);
   const {
     selectedId,
     selectedIds,
@@ -589,19 +625,11 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     openTransitionId,
     openTransitionRule,
     closeTransitionRule,
-    navigate,
   } = useAnimGraphEditing();
   const { setSelectedNodeIds } = useGraphEditing();
   const { activeDocumentId } = useActiveDocumentState();
-  const typeCatalog = useDataCatalog();
-  const sheetDocuments = useOpenDocumentsOfKinds(DATA_TREE_KINDS);
-  const dataAssets = useMemo(() => collectDataGraphAssets(typeCatalog.assets, sheetDocuments), [typeCatalog.assets, sheetDocuments]);
-  const pinTypeNames = useMemo(() => Object.fromEntries([
-    ...Object.entries(typeCatalog.schemas.structs),
-    ...Object.entries(typeCatalog.schemas.enums),
-  ].map(([guid, schema]) => [guid, schema.name])), [typeCatalog.schemas]);
-  const poseKey = location.kind === "state" ? `state:${location.stateId}` : "machine";
-  const ruleSurface = openTransitionId ? `rule:${openTransitionId}` : poseKey;
+  const { typeCatalog, dataAssets, pinTypeNames, members: ruleMembers, defaultZoom } = useAnimScriptCanvas(doc);
+  const ruleSurface = openTransitionId ? `rule:${openTransitionId}` : "machine";
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
     ruleSurface,
@@ -628,7 +656,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
       : undefined,
     [breakpointLabel, breakpointStore, editBreakpoint, graphGuid],
   );
-  // A stop in the State Machine (from a breakpoint or the Breakpoints window) opens it, and a stop at a transition
+  // A stop in the State Machine (from a breakpoint or the Breakpoints window) shows it, and a stop at a transition
   // selects it, so Details show it.
   const focusOnMachine = focusDiagnostic?.assetGuid === graphGuid && focusDiagnostic?.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID;
   const focusTransition = focusOnMachine
@@ -638,26 +666,26 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
   const panelApi = props.api;
   useEffect(() => {
     if (!focusOnMachine) return;
-    navigate({ kind: "machine" });
-    // Behind the Animation Object tab, the Graph comes forward.
+    closeTransitionRule();
+    // Behind the Animation Object or a state's tab, the Graph comes forward.
     if (panelApi && !panelApi.isVisible) panelApi.setActive();
-  }, [focusOnMachine, navigate, panelApi]);
+  }, [closeTransitionRule, focusOnMachine, panelApi]);
   useEffect(() => {
     if (focusTransitionId) setSelectedTransitionId(focusTransitionId);
   }, [focusTransitionId, setSelectedTransitionId]);
-  const { settings: appSettings } = useAppSettings();
-  const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
   const [rulePaletteOpen, setRulePaletteOpen] = useState(false);
   const rulePaletteCacheRef = useRef(new ScriptPaletteCache());
-  // This canvas's own rows; the Animation Object panel shows its script's.
+  // This canvas's own rows; the Animation Object panel and the state tabs show their scripts'.
   const graphDiagnostics = useMemo(
     () =>
-      diagnostics.filter((row) => row.graphId.startsWith(`${documentId}:`)).map((row) => ({
-        nodeId: row.nodeId,
-        pinId: row.pinId,
-        severity: row.severity,
-        message: row.message,
-      })),
+      diagnostics
+        .filter((row) => row.graphId.startsWith(`${documentId}:`) && !isAnimStateGraphDiagnosticsId(documentId, row.graphId))
+        .map((row) => ({
+          nodeId: row.nodeId,
+          pinId: row.pinId,
+          severity: row.severity,
+          message: row.message,
+        })),
     [diagnostics, documentId],
   );
   const openTransition = openTransitionId
@@ -687,10 +715,6 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     const reverse = row && findReverseTransition(machineTransitions, row.fromStateId, row.toStateId);
     return reverse && drawn.has(reverse.id) ? reverse.id : undefined;
   }, [machineTransitions, initialGraph.edges, selectedTransitionId]);
-  const ruleMembers = useMemo(
-    () => animGraphMembersFromVariables(doc.variables),
-    [doc.variables],
-  );
   const ruleGraph = useMemo(() => {
     if (!openTransition) return null;
     const oneWay = !findReverseTransition(
@@ -707,35 +731,6 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
       { ...typeCatalog.schemas, dataAssets },
     );
   }, [machineTransitions, openTransition, ruleMembers, typeCatalog.schemas, dataAssets]);
-  // The state graph on show.
-  const poseSource = location.kind === "state" ? state?.stateGraph ?? null : null;
-  const poseGraph = useMemo(() => {
-    if (!poseSource) return null;
-    return hydrateSerializedGraphForEditor({ ...poseSource, members: ruleMembers }, defaultNodeRegistry(), { ...typeCatalog.schemas, dataAssets });
-  }, [poseSource, ruleMembers, typeCatalog.schemas, dataAssets]);
-  const posePaletteInput = {
-    parentClass: "Object",
-    animationGraphHost: "pose" as const,
-    animPose: { dimension },
-    graph: { nodes: [], edges: [], members: ruleMembers },
-    structures: typeCatalog.types.structures,
-    dataDefinitions: typeCatalog.types.dataDefinitions,
-    enums: typeCatalog.types.enums,
-  };
-  const posePaletteInputRef = useRef(posePaletteInput);
-  posePaletteInputRef.current = posePaletteInput;
-  const posePaletteKey = scriptPaletteInjectorKey(posePaletteInput);
-  const [posePaletteOpen, setPosePaletteOpen] = useState(false);
-  const posePaletteCacheRef = useRef(new ScriptPaletteCache());
-  const posePalette = useMemo(
-    () =>
-      scriptPaletteNodes(defaultNodeRegistry(), posePaletteInputRef.current, {
-        injectors: posePaletteOpen,
-        cache: posePaletteCacheRef.current,
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key covers the input
-    [posePaletteKey, posePaletteOpen],
-  );
   const rulePaletteInput = {
     parentClass: "Object",
     animationGraphHost: "rule" as const,
@@ -753,6 +748,7 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
         injectors: rulePaletteOpen,
         cache: rulePaletteCacheRef.current,
       }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key covers the input
     [rulePaletteKey, rulePaletteOpen],
   );
 
@@ -773,39 +769,17 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             dataAssets,
             assetGuid: documentId,
             graphId: `${documentId}:${openTransition.id}`,
-            members: ruleMembers.map((member) => ({
-              id: member.id,
-              name: member.name,
-              kind: "variable" as const,
-              classId: "AnimGraph",
-              typeId: member.typeId ?? "bool",
-              typeClassId: member.typeClassId,
-            })),
+            members: animValidationMembers(ruleMembers),
           })
         : [];
-    const poseRows = !openTransition && poseGraph
-      ? validateSerializedGraph(poseGraph, {
-          ...typeCatalog.schemas,
-          dataAssets,
-          assetGuid: documentId,
-          graphId: `${documentId}:pose-${poseKey}`,
-          members: ruleMembers.map((member) => ({
-            id: member.id,
-            name: member.name,
-            kind: "variable" as const,
-            classId: "AnimGraph",
-            typeId: member.typeId ?? "bool",
-            typeClassId: member.typeClassId,
-          })),
-        })
-      : [];
-    // This canvas's rows (its graphs and open rule) and this asset's Play and Compile rows. The Animation Object
-    // panel publishes its script's rows under the document's own graph id, which stay.
+    // This canvas's rows (the graph and its open rule) and this asset's Play and Compile rows. The Animation Object
+    // panel publishes its script's rows under the document's own graph id, and each state tab its graph's; both stay.
     const path = parseDocumentId(documentId)?.path;
-    setDiagnostics([...animRows, ...ruleRows, ...poseRows], {
+    setDiagnostics([...animRows, ...ruleRows], {
       replaces: (d) =>
-        d.graphId.startsWith(`${documentId}:`) ||
-        ((d.assetGuid === documentId || d.assetGuid === path) && d.graphId !== documentId),
+        !isAnimStateGraphDiagnosticsId(documentId, d.graphId) &&
+        (d.graphId.startsWith(`${documentId}:`) ||
+          ((d.assetGuid === documentId || d.assetGuid === path) && d.graphId !== documentId)),
     });
   }, [
     activeDocumentId,
@@ -815,8 +789,6 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     dimension,
     openTransition,
     ruleGraph,
-    poseGraph,
-    poseKey,
     ruleMembers,
     typeCatalog.schemas,
     dataAssets,
@@ -877,53 +849,9 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
     );
   }
 
-  const crumbs = (
-    <AnimGraphBreadcrumbs
-      doc={doc}
-      location={location}
-      onNavigate={(next) => {
-        setSelectedNodeIds([]);
-        navigate(next);
-      }}
-    />
-  );
-
-  if (location.kind === "state") {
-    const stateId = location.stateId;
-    return (
-      <PanelFrame className="flex-1">
-        <div className="flex h-full min-h-0 flex-col" data-testid="anim-pose-graph" onPointerDownCapture={claimCanvas}>
-          {crumbs}
-          {poseGraph ? (
-            <GraphEditor
-              key={poseKey}
-              initialGraph={poseGraph}
-              commitPositionsOnDragEnd
-              paletteNodes={posePalette}
-              pinTypeNames={pinTypeNames}
-              onPaletteOpenChange={setPosePaletteOpen}
-              diagnostics={graphDiagnostics}
-              defaultZoom={defaultZoom}
-              sessionViewport={sessionViewport}
-              onSessionViewportChange={onSessionViewportChange}
-              onSelectionChange={setSelectedNodeIds}
-              onChange={(next) => {
-                const graph = applyDataGraphAssetPicks(poseGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
-                queueMicrotask(() => {
-                  commit(patchStateGraph(latestDoc(), stateId, persistPoseGraph(graph)));
-                });
-              }}
-            />
-          ) : null}
-        </div>
-      </PanelFrame>
-    );
-  }
-
   return (
     <PanelFrame className="flex-1">
       <div className="anim-graph-canvas flex h-full min-h-0 flex-col" data-testid="anim-graph-editor" onPointerDownCapture={claimCanvas}>
-        {crumbs}
         <GraphEditor
           key="state-machine"
           initialGraph={initialGraph}
@@ -962,10 +890,9 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
             queueMicrotask(() => setSelectedTransitionId(edgeIds[0] ?? null));
           }}
           onNodeDoubleClick={(stateId) => {
-            // Double-tap a state to open its state graph.
-            if (!machine.states.some((row) => row.id === stateId)) return;
-            setSelectedNodeIds([]);
-            navigate({ kind: "state", stateId });
+            // Double-tap a state to open its graph in its own tab.
+            const state = machine.states.find((row) => row.id === stateId);
+            if (state && props.containerApi) openAnimStateGraphPanel(props.containerApi, state.id, state.name);
           }}
           onEdgeDoubleClick={(edgeId, point) => {
             // Double-tap a wire to open its transition's rule; on a shared wire, the direction pointing nearer.
@@ -991,61 +918,130 @@ export function AnimGraphGraphPanel(props: IDockviewPanelProps) {
   );
 }
 
+/**
+ * One state's graph in its own tab beside the State Machine, as a Class's functions open beside its Event Graph: the
+ * players, blends and selections whose pose (3D) or frame (2D) reaches the state's Output. A deleted state closes its
+ * tab and a rename retitles it. Behind another tab its canvas would fit a view with no size, so the graph mounts the
+ * first time the tab shows.
+ */
+export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimStateGraphPanelParams>>) {
+  const { api } = props;
+  const stateId = props.params?.stateId ?? "";
+  const claimCanvas = useAnimCanvas(animStateCanvas(stateId), api);
+  const { doc, latestDoc, commit, documentId, dimension, machine } = useAnimGraphDocument();
+  const state = machine.states.find((row) => row.id === stateId);
+  const { setSelectedNodeIds } = useGraphEditing();
+  const { activeDocumentId } = useActiveDocumentState();
+  const { typeCatalog, dataAssets, pinTypeNames, members, defaultZoom } = useAnimScriptCanvas(doc);
+  const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(documentId, `state:${stateId}`);
+  const { setDiagnostics, diagnostics } = useValidation();
+  const [shown, setShown] = useState(() => api.isVisible);
+  useEffect(() => {
+    if (shown) return;
+    if (api.isVisible) {
+      setShown(true);
+      return;
+    }
+    const subscription = api.onDidVisibilityChange((event) => {
+      if (event.isVisible) setShown(true);
+    });
+    return () => subscription.dispose();
+  }, [api, shown]);
+  // A deleted state closes its tab; a rename retitles it.
+  const stateMissing = !state;
+  const stateName = state?.name;
+  useEffect(() => {
+    if (stateMissing) {
+      api.close();
+      return;
+    }
+    if (stateName && api.title !== stateName) api.setTitle(stateName);
+  }, [api, stateMissing, stateName]);
+  const stateGraph = state?.stateGraph ?? null;
+  const poseGraph = useMemo(() => {
+    if (!stateGraph) return null;
+    return hydrateSerializedGraphForEditor({ ...stateGraph, members }, defaultNodeRegistry(), { ...typeCatalog.schemas, dataAssets });
+  }, [stateGraph, members, typeCatalog.schemas, dataAssets]);
+  const posePaletteInput = {
+    parentClass: "Object",
+    animationGraphHost: "pose" as const,
+    animPose: { dimension },
+    graph: { nodes: [], edges: [], members },
+    structures: typeCatalog.types.structures,
+    dataDefinitions: typeCatalog.types.dataDefinitions,
+    enums: typeCatalog.types.enums,
+  };
+  const posePaletteInputRef = useRef(posePaletteInput);
+  posePaletteInputRef.current = posePaletteInput;
+  const posePaletteKey = scriptPaletteInjectorKey(posePaletteInput);
+  const [posePaletteOpen, setPosePaletteOpen] = useState(false);
+  const posePaletteCacheRef = useRef(new ScriptPaletteCache());
+  const posePalette = useMemo(
+    () =>
+      scriptPaletteNodes(defaultNodeRegistry(), posePaletteInputRef.current, {
+        injectors: posePaletteOpen,
+        cache: posePaletteCacheRef.current,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key covers the input
+    [posePaletteKey, posePaletteOpen],
+  );
+  // This tab publishes its graph's rows under its own id and takes them away when it closes.
+  const diagnosticsId = animStateGraphDiagnosticsId(documentId, stateId);
+  useEffect(() => {
+    if (activeDocumentId !== documentId || !poseGraph) return;
+    const rows = validateSerializedGraph(poseGraph, {
+      ...typeCatalog.schemas,
+      dataAssets,
+      assetGuid: documentId,
+      graphId: diagnosticsId,
+      members: animValidationMembers(members),
+    });
+    setDiagnostics(rows, { replaces: (d) => d.graphId === diagnosticsId });
+  }, [activeDocumentId, dataAssets, diagnosticsId, documentId, members, poseGraph, setDiagnostics, typeCatalog.schemas]);
+  useEffect(
+    () => () => setDiagnostics([], { replaces: (d) => d.graphId === diagnosticsId }),
+    [diagnosticsId, setDiagnostics],
+  );
+  // Its own rows, and the graph's checks of this state's nodes (a clip on another Skeleton, say).
+  const graphDiagnostics = useMemo(
+    () =>
+      diagnostics
+        .filter((row) => row.graphId === diagnosticsId || row.graphId === `${documentId}:anim`)
+        .map((row) => ({ nodeId: row.nodeId, pinId: row.pinId, severity: row.severity, message: row.message })),
+    [diagnostics, diagnosticsId, documentId],
+  );
+  return (
+    <PanelFrame className="flex-1">
+      <div className="flex h-full min-h-0 flex-col" data-testid="anim-pose-graph" data-state-id={stateId} onPointerDownCapture={claimCanvas}>
+        {shown && poseGraph ? (
+          <GraphEditor
+            key={stateId}
+            initialGraph={poseGraph}
+            commitPositionsOnDragEnd
+            paletteNodes={posePalette}
+            pinTypeNames={pinTypeNames}
+            onPaletteOpenChange={setPosePaletteOpen}
+            diagnostics={graphDiagnostics}
+            defaultZoom={defaultZoom}
+            sessionViewport={sessionViewport}
+            onSessionViewportChange={onSessionViewportChange}
+            onSelectionChange={setSelectedNodeIds}
+            onChange={(next) => {
+              const graph = applyDataGraphAssetPicks(poseGraph, { nodes: next.nodes, edges: next.edges }, dataAssets);
+              queueMicrotask(() => {
+                commit(patchStateGraph(latestDoc(), stateId, persistPoseGraph(graph)));
+              });
+            }}
+          />
+        ) : null}
+      </div>
+    </PanelFrame>
+  );
+}
+
 /** A pose graph as stored: its nodes and wires, without the editor's member list. */
 function persistPoseGraph(graph: SerializedGraph): SerializedGraph {
   return { nodes: graph.nodes, edges: graph.edges };
-}
-
-/** State Machine › Walk, with Back stepping out to the State Machine. */
-function AnimGraphBreadcrumbs({
-  doc,
-  location,
-  onNavigate,
-}: {
-  doc: AnimGraphDocument;
-  location: AnimEditorLocation;
-  onNavigate: (location: AnimEditorLocation) => void;
-}) {
-  const state = location.kind === "state" ? doc.stateMachine.states.find((row) => row.id === location.stateId) : undefined;
-  const crumbs: Array<{ id: string; label: string; to: AnimEditorLocation }> = [
-    { id: "machine", label: "State Machine", to: { kind: "machine" } },
-    ...(state ? [{ id: "state", label: state.name, to: { kind: "state" as const, stateId: state.id } }] : []),
-  ];
-  const back = crumbs.length > 1 ? crumbs[crumbs.length - 2]!.to : null;
-  return (
-    <ToolbarStrip data-testid="anim-graph-breadcrumbs">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={!back}
-        data-testid="anim-graph-back"
-        onClick={() => back && onNavigate(back)}
-      >
-        <ArrowLeftIcon data-icon="inline-start" aria-hidden />
-        Back
-      </Button>
-      <nav aria-label="Graph" className="flex min-w-0 items-center gap-1 text-sm">
-        {crumbs.map((crumb, index) => (
-          <span key={crumb.id} className="flex min-w-0 items-center gap-1">
-            {index > 0 ? <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden /> : null}
-            {index === crumbs.length - 1 ? (
-              <span className="truncate font-medium" aria-current="page" data-testid={`anim-graph-crumb-${crumb.id}`}>{crumb.label}</span>
-            ) : (
-              <button
-                type="button"
-                className="truncate text-muted-foreground hover:text-foreground"
-                data-testid={`anim-graph-crumb-${crumb.id}`}
-                onClick={() => onNavigate(crumb.to)}
-              >
-                {crumb.label}
-              </button>
-            )}
-          </span>
-        ))}
-      </nav>
-    </ToolbarStrip>
-  );
 }
 
 function transitionPropertyRows(
@@ -1120,8 +1116,8 @@ function transitionPropertyRows(
   };
 }
 
-export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
-  const { doc, commit, assetRegistry, catalog, graphGuid, assetName, dimension, location, machine } = useAnimGraphDocument();
+export function AnimGraphDetailsPanel(props: IDockviewPanelProps) {
+  const { doc, commit, assetRegistry, catalog, graphGuid, assetName, dimension, machine } = useAnimGraphDocument();
   const breakpointStore = useBreakpointStore();
   const {
     canvas,
@@ -1130,15 +1126,14 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     openTransitionId,
     openTransitionRule,
     setSelectedId,
-    navigate,
   } = useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
   const [skeletonPick, setSkeletonPick] = useState(false);
   // Transition cards start open; collapsing one is remembered while the document is open.
   const [collapsedTransitionIds, setCollapsedTransitionIds] = useState<ReadonlySet<string>>(() => new Set());
-  // The Animation Object script, a rule or a pose graph shows its nodes' details.
-  if (canvas === "animationObject" || openTransitionId || location.kind !== "machine") {
-    return <InspectorPanel {..._props} />;
+  // The Animation Object script, a state's graph or an open rule shows its nodes' details.
+  if (canvas !== "stateMachine" || openTransitionId) {
+    return <InspectorPanel {...props} />;
   }
   const selectedStates = selectedIds.flatMap((id) => machine.states.find((state) => state.id === id) ?? []);
   // Several states show the rows they share; their names, entry and transitions stay per state.
@@ -1358,7 +1353,9 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                 variant="outline"
                 size="sm"
                 data-testid="anim-graph-open-state-graph"
-                onClick={() => navigate({ kind: "state", stateId: selected.id })}
+                onClick={() => {
+                  if (props.containerApi) openAnimStateGraphPanel(props.containerApi, selected.id, selected.name);
+                }}
               >
                 Open State Graph
               </Button>
