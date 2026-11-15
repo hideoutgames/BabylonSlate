@@ -22,6 +22,7 @@ import {
   pinDefaultPropertyKey,
 } from "@haptic/scripting";
 import { animEventNodeTitle } from "../lib/anim-graph-events";
+import { ANIM_POSE_SAVE_CACHED_TYPE, ANIM_POSE_USE_CACHED_TYPE, cachedPoseNodeTitle } from "@haptic/anim-graph";
 import { engineEventTypeClassIds } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
@@ -289,6 +290,11 @@ export function hydrateSerializedGraphForEditor(
           properties.name = bodyName;
           properties.title = `Call ${bodyName}`;
         }
+      }
+
+      if (typeId === ANIM_POSE_SAVE_CACHED_TYPE || typeId === ANIM_POSE_USE_CACHED_TYPE) {
+        const name = typeof properties.name === "string" ? properties.name.trim() : "";
+        properties.title = cachedPoseNodeTitle(typeId, name);
       }
 
       if (typeId === ANIM_NOTIFY_EVENT_TYPE) {

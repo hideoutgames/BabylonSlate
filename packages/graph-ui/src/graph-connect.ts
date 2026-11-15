@@ -50,11 +50,14 @@ export function pinAllowsMultipleIncoming(
   return pin.kind === "exec";
 }
 
-/** Outputs fan out unless the host flags them `singleLink`. Missing pins do not strip. */
+/**
+ * Outputs fan out unless the host flags them `singleLink`. A pose or frame output feeds one input, as in Unreal (Save
+ * Cached Pose reuses a pose). Missing pins do not strip.
+ */
 function pinAllowsMultipleOutgoing(
   pin: SerializedPin | undefined,
 ): boolean {
-  return pin?.singleLink !== true;
+  return pin?.singleLink !== true && !(pin && isStructuralPinKind(pin.type.kind));
 }
 
 function sameDirectedPair(left: PinEdgeRef, right: PinEdgeRef): boolean {

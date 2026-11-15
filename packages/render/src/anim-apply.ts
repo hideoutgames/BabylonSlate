@@ -5,7 +5,8 @@ import { flipSpriteAnimationFrame, spriteAnimationFrameAt } from "@haptic/assets
 import { setSpriteQuadSize, setSpriteQuadUvs } from "./sprite-quad";
 import { applySpriteVisibility } from "./mesh-assets";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
-import { applyPose, poseRigFor, type PoseClip } from "./anim-pose";
+import type { AnimLayerMaskRef } from "@haptic/core";
+import { applyPose, poseRigFor, type PoseClip, type PoseLayering } from "./anim-pose";
 
 /**
  * Bind a Sprite Animation asset frame (texture, region, size, pivot) onto the sprite quad; a sheet cell shows its
@@ -268,6 +269,14 @@ const poseClips: (PoseClip | undefined)[] = [];
 const poseLayers: (AnimClipLayer | undefined)[] = [];
 const poseFrames: number[] = [];
 const poseWeights: number[] = [];
+const poseMasks: (readonly AnimLayerMaskRef[] | undefined)[] = [];
+
+function sameMasks(a: readonly AnimLayerMaskRef[] | undefined, b: readonly AnimLayerMaskRef[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i]!.blend !== b[i]!.blend || a[i]!.input !== b[i]!.input) return false;
+  return true;
+}
 
 /** The clip's frame at a layer's normalised time (clamped to the clip). */
 function clipFrame(clip: PoseClip, normalisedTime: number): number {
@@ -311,10 +320,11 @@ export function applyAnimStateToScene(
         });
         continue;
       }
-      // Layers sharing a clip play it once, at the current state's time, with their weights summed.
+      // Layers sharing a clip (under the same Layered Blend inputs) play it once, at the current state's time, with
+      // their weights summed.
       let at = -1;
       for (let j = 0; j < count; j++) {
-        if (poseClips[j] === clip) {
+        if (poseClips[j] === clip && sameMasks(poseMasks[j], layer.masks)) {
           at = j;
           break;
         }
@@ -323,6 +333,7 @@ export function applyAnimStateToScene(
         poseClips[count] = clip;
         poseLayers[count] = layer;
         poseWeights[count] = layer.weight;
+        poseMasks[count] = layer.masks;
         count++;
         continue;
       }
@@ -332,12 +343,16 @@ export function applyAnimStateToScene(
     // What no layer plays rests.
     if (slotClips.length > 0) {
       for (let i = 0; i < count; i++) poseFrames[i] = clipFrame(poseClips[i]!, poseLayers[i]!.normalisedTime);
-      applyPose(poseRigFor(slotClips), count, poseClips, poseFrames, poseWeights);
+      const layering: PoseLayering | null = command.layerBlends?.length || command.boneModifiers?.length
+        ? { masks: poseMasks, blends: command.layerBlends ?? [], modifiers: command.boneModifiers ?? [] }
+        : null;
+      applyPose(poseRigFor(slotClips), count, poseClips, poseFrames, poseWeights, layering);
     }
   } finally {
     for (let i = 0; i < count; i++) {
       poseClips[i] = undefined;
       poseLayers[i] = undefined;
+      poseMasks[i] = undefined;
     }
   }
   if (spritePrimary) {

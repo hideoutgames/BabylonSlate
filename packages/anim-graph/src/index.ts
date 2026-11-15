@@ -9,6 +9,7 @@ export {
   animGraphDimension,
   animPoseGraphKey,
   animPoseGraphs,
+  animCachedPoseNames,
   animPoseScriptClassId,
   createDefaultAnimGraph,
   createDefaultAnimationObjectGraph,

@@ -21,6 +21,7 @@ import {
 } from "./snapshot-apply";
 import { createSpriteQuad } from "./sprite-quad";
 import { createDefaultSpriteAnimationSheet, type SpriteAnimationPayload, type SpritePayload } from "@haptic/assets";
+import { animBranchFilterKey } from "@haptic/core";
 
 /** A float channel whose value is its frame, so a clip's target shows the frame it was posed at. */
 const FRAME_TRACK: PoseTrackSource = {
@@ -418,6 +419,26 @@ describe("applyAnimStateToScene", () => {
     // Idle at frame 5, Walk at frame 20, by weight.
     expect(pose.value).toBeCloseTo(0.25 * 5 + 0.75 * 20);
     expect(missing).toEqual([]);
+  });
+
+  it("passes Layered Blend masks through, playing one clip apart under each input", () => {
+    // The target is a bone named "spine", under the blend input's branch.
+    const spine = { value: 0, name: "spine" };
+    const swing = frameClip("Swing", 40, "hero-model", spine);
+    const layer = (normalisedTime: number, weight: number, input: number) => ({
+      stateId: "attack", clipAssetGuid: "hero-model", clipName: "Swing", clipKind: "animation" as const,
+      normalisedTime, weight, masks: [{ blend: 0, input }],
+    });
+    applyAnimStateToScene(
+      { getPoseClips: () => [swing] },
+      {
+        type: "animState", slotId: 1, stateId: "attack", normalisedTime: 0, blendWeights: { attack: 1 },
+        layers: [layer(0.25, 1, -1), layer(0.5, 1, 0)],
+        layerBlends: [{ filters: [animBranchFilterKey([{ bone: "spine", blendDepth: 0 }])], weights: [1] }],
+      },
+    );
+    // The blend input's Swing (frame 20) holds the spine; the base's (frame 10) gets none of it.
+    expect(spine.value).toBeCloseTo(20);
   });
 
   it("resolves clips by name and clip asset in a slot with many clips, following clip list changes", () => {
