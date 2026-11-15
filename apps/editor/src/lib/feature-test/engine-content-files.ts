@@ -84,6 +84,12 @@ export const KAYKIT_FILES = {
 
 export type KayKitFile = keyof typeof KAYKIT_FILES;
 
+/**
+ * Quaternius Velociraptor (CC0, `License.txt` and `Source.txt` beside it): a skinned binary FBX with its clips, which
+ * the starter imports through FBX conversion as the Content Browser does.
+ */
+export const QUATERNIUS_VELOCIRAPTOR_PATH = "engine-content/quaternius-assets/Dinosaurs/Velociraptor.fbx";
+
 /** Required repository files that the editor build must publish. */
 export const FEATURE_TEST_ENGINE_CONTENT: readonly string[] = [
   ...FEATURE_TEST_HOLIDAY_MODELS.map(holidayModelPath),
@@ -96,6 +102,7 @@ export const FEATURE_TEST_ENGINE_CONTENT: readonly string[] = [
   ARK_PIXEL_LICENSE_PATH,
   SKYBOX_NET_PATH,
   ...Object.values(KAYKIT_FILES),
+  QUATERNIUS_VELOCIRAPTOR_PATH,
 ];
 
 /**

@@ -18,6 +18,7 @@ import {
   HOLIDAY_COLORMAP_PATH,
   KAYKIT_FILES,
   PLATFORMER_TILESHEET_PATH,
+  QUATERNIUS_VELOCIRAPTOR_PATH,
   ROBOT_FRAMES,
   SKYBOX_NET_PATH,
   holidayModelPath,
@@ -152,6 +153,7 @@ export async function importFeatureTestContent(ctx: FeatureTestContext): Promise
   }
 
   await importKayKit(ctx);
+  await importVelociraptor(ctx);
 
   const facetype = await ctx.importFile(
     FONTS,
@@ -220,6 +222,29 @@ async function importKayKit(ctx: FeatureTestContext): Promise<void> {
       }
       kaykit[animationsKey][payload.clipName] = animation.header.guid;
     }
+  }
+}
+
+/** The Velociraptor FBX is about 12 units long: imported at this scale it is a 1.9 m raptor. */
+const VELOCIRAPTOR_IMPORT_SCALE = 0.15;
+
+/**
+ * The Quaternius Velociraptor, imported from FBX as the Content Browser imports it: converted to GLB, then a Model with
+ * its own Skeleton and an Animation per clip, keyed by the clip's name after its last `_` (`Run`, `Idle`, ...).
+ */
+async function importVelociraptor(ctx: FeatureTestContext): Promise<void> {
+  const name = QUATERNIUS_VELOCIRAPTOR_PATH.slice(QUATERNIUS_VELOCIRAPTOR_PATH.lastIndexOf("/") + 1);
+  const glb = await ctx.host.convertFbx({ name, bytes: await ctx.host.loadBytes(QUATERNIUS_VELOCIRAPTOR_PATH) });
+  const created = await ctx.importFile(CHARACTERS, name.replace(/\.fbx$/i, ".glb"), glb, { modelImportScale: VELOCIRAPTOR_IMPORT_SCALE });
+  const model = single(created, "Model");
+  const skeleton = normalizeModelPayload(model.header.payload).skeletonGuid;
+  if (!skeleton) throw new Error("FeatureTest Velociraptor imported without a Skeleton.");
+  const raptor = ctx.assets.velociraptor;
+  raptor.model = model.header.guid;
+  raptor.skeleton = skeleton;
+  for (const animation of created.filter((asset) => asset.header.type === "Animation")) {
+    const clipName = normalizeAnimationPayload(animation.header.payload).clipName;
+    raptor.animations[clipName.slice(clipName.lastIndexOf("_") + 1)] = animation.header.guid;
   }
 }
 

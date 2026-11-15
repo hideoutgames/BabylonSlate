@@ -5,7 +5,7 @@ import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs"
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
-import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
+import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, resolveExtensionFieldValues, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
@@ -180,6 +180,8 @@ export class ProjectService {
   private readonly writeAdmission = new ProjectWriteAdmission();
   private readonly storage: ProjectStorage;
   private readonly publicStorage: ProjectStorage;
+  /** The storage behind the admission guards, handed only to `withExclusiveWrites` work. */
+  private readonly unguardedStorage: ProjectStorage;
   private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
   readonly extensions: EditorExtensionService;
   private projectGuid: string | null = null;
@@ -231,6 +233,7 @@ export class ProjectService {
     } = {},
   ) {
     this.migrations = options.migrations ?? defaultRegistry();
+    this.unguardedStorage = storage;
     storage = guardProjectStorage(storage, this.writeAdmission, true);
     this.storage = storage;
     this.publicStorage = guardProjectStorage(storage, this.writeAdmission);
@@ -331,7 +334,7 @@ export class ProjectService {
     }, options);
     return admitOwnerWrites(this, this.writeAdmission, [
       "retryTextureEncoding", "retryAllFailedTextureEncoding",
-      "prepareAreaEmission", "deleteListedProject", "openProject", "createEmptyProject",
+      "prepareAreaEmission", "reconvertHdrEnvironment", "deleteListedProject", "openProject", "createEmptyProject",
       "createFromTemplate", "openListedProject", "closeProject",
       "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
@@ -347,6 +350,17 @@ export class ProjectService {
   }
 
   get authoringWriteBlockedReason(): string | null { return this.writeAdmission.reason; }
+
+  /**
+   * Runs `work` as the project's only writer (Remove Unused Files): other
+   * writers are refused with `reason`, admitted ones (saves, imports, copies,
+   * encodes) finish first, and `work` writes through the storage it is given
+   * until it returns. Refused while another operation holds project writes
+   * (Simulation); `signal` ends the wait.
+   */
+  withExclusiveWrites<T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return withExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, work, signal);
+  }
 
   /** Save All owns one admission, even when it saves several documents after awaits. */
   withBaselineSave<T>(save: (writer: Pick<ProjectService, "saveDocument" | "saveProject"> & ProjectSceneWriter) => Promise<T>): Promise<T> {

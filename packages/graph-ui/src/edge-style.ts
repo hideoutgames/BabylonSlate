@@ -7,6 +7,9 @@ import {
   type PinDisplayNode,
 } from "./wildcard-display";
 
+/** A behaviour tree canvas's org-chart wires (`defaultEdgeOptions`): a trunk from the parent splits into square drops to each child. */
+export const treeEdgeOptions = { type: "smoothstep", pathOptions: { borderRadius: 8 } };
+
 export function styleFlowEdges(
   edges: readonly Edge[],
   nodes: readonly PinDisplayNode[],

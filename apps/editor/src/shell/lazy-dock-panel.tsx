@@ -16,8 +16,13 @@ const FAMILY_LOAD_FAILED = "This document's editor didn't load.";
  * React keeps a rejected `lazy()` for good, so a panel that mounts after a failure (Retry, or the document opened
  * again) starts a new one, while the panels that failed keep theirs and show the error rather than loading again in a
  * loop.
+ *
+ * Another component a family module exports (the Diff window's graph canvases) loads the same way.
  */
-export function lazyPanel<M>(load: () => Promise<M>, pick: (module: M) => DockPanel): DockPanel {
+export function lazyPanel<M, P extends object = IDockviewPanelProps>(
+  load: () => Promise<M>,
+  pick: (module: M) => FunctionComponent<P>,
+): FunctionComponent<P> {
   const attempt = () => {
     const next = {
       failed: false,
@@ -45,7 +50,7 @@ export function lazyPanel<M>(load: () => Promise<M>, pick: (module: M) => DockPa
     if (current.failed) current = attempt();
     return current.Panel;
   };
-  return function LazyDockPanel(props: IDockviewPanelProps) {
+  return function LazyDockPanel(props: P) {
     const [Panel] = useState(panelForMount);
     return (
       <Suspense fallback={null}>

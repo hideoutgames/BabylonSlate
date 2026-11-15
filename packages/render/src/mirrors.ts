@@ -95,7 +95,27 @@ export interface MirrorDiagnostics {
   readonly shadowPasses: number;
   /** Surfaces whose reflection holds sun maps of its own (Reflection Shadows). */
   readonly sunShadowViews: number;
+  /** Renders in which a visible surface's view had moved since its draw, so its content was not asked (`current`). */
+  readonly skippedPolls: number;
+  /**
+   * While `verifyMirrorContentPolls` is on: renders whose keep-or-draw decision the skipped asks would have changed,
+   * found by a second `ReflectedContent` that asks on every render as before. Must stay 0.
+   */
+  readonly pollMismatches: number;
 }
+
+let verifyingPolls = false;
+
+/**
+ * Debugging aid: each Mirror surface also follows its content on every render, as it did before a moved view skipped
+ * asking, and counts each render where that would have decided otherwise (`MirrorDiagnostics.pollMismatches`).
+ */
+export function verifyMirrorContentPolls(enabled: boolean): void {
+  verifyingPolls = enabled;
+}
+
+/** The verifier's own record of a surface: what the poll on every render follows, and the dirty flag it keeps. */
+type PollCheck = { content: ReflectedContent; dirty: boolean };
 
 type Surface = MirrorCandidate & {
   readonly mesh: Mesh;
@@ -117,6 +137,8 @@ type Surface = MirrorCandidate & {
   /** The owner's `culls` value when the pass's list was last culled, and the target it was culled into. */
   culledAt: number;
   culledInto: PlanarMirrorTargetState | null;
+  /** While verifying (`verifyMirrorContentPolls`); null otherwise, and until the surface's first draw after it is on. */
+  check: PollCheck | null;
 };
 
 /** What a Moving Actors reflection is cleared to: no colour, and alpha 1, which a drawn fragment turns to 0. */
@@ -169,6 +191,8 @@ class SceneMirrors {
   lastRenderDraws = 0;
   reuses = 0;
   drawnMeshes = 0;
+  skippedPolls = 0;
+  pollMismatches = 0;
   private readonly scene: Scene;
   private beforeRender: Observer<Scene> | null = null;
   /** The owner's renders, and whether Reflection Shadows is on in this one. */
@@ -237,7 +261,7 @@ class SceneMirrors {
     const surface: Surface = {
       mesh, properties, binding: createMirrorReflectionBinding(mesh, properties.tint, properties.reflects), plane: { nx: 0, ny: 0, nz: -1, d: 0 },
       target: null, ready: false, failed: false, content: new ReflectedContent(), dirty: true, drawnViewProjection: new Matrix(),
-      drawnEmpty: false, culledAt: 0, culledInto: null, drawn: false, visible: false, order: this.order++, distance: 0,
+      drawnEmpty: false, culledAt: 0, culledInto: null, check: null, drawn: false, visible: false, order: this.order++, distance: 0,
       cx: 0, cy: 0, cz: 0, nx: 0, ny: 0, nz: -1, ux: 0, uy: 0, uz: 0, vx: 0, vy: 0, vz: 0,
     };
     this.surfaces.push(surface);
@@ -253,6 +277,7 @@ class SceneMirrors {
       draws: this.draws, lastRenderDraws: this.lastRenderDraws, reuses: this.reuses, drawnMeshes: this.drawnMeshes,
       shadowPasses: shadowChangeSequence(this.scene),
       sunShadowViews: this.surfaces.filter((surface) => surface.target?.sunShadows.holdsMaps).length,
+      skippedPolls: this.skippedPolls, pollMismatches: this.pollMismatches,
     };
   }
 
@@ -268,6 +293,8 @@ class SceneMirrors {
     if (surface.target) disposePlanarMirrorTarget(this.scene, surface.target);
     surface.target = surface.culledInto = null;
     surface.content.dispose();
+    surface.check?.content.dispose();
+    surface.check = null;
     if (!this.surfaces.length) {
       this.scene.onBeforeRenderObservable.remove(this.beforeRender);
       this.beforeRender = null;
@@ -378,12 +405,51 @@ class SceneMirrors {
     const scale = surface.properties.resolutionScale;
     if (target.width !== planarMirrorTargetSize(drawnWidth, scale, maxSize) || target.height !== planarMirrorTargetSize(drawnHeight, scale, maxSize)) return false;
     if (!this.mirrorAndCull(surface, camera, target)) return false;
-    if (surface.content.changed(this.scene, target.texture.renderList!)) surface.dirty = true;
-    // Nothing drew and nothing would (a mesh entering the list is a change): the image is open everywhere from any view.
-    if (surface.drawnEmpty && !surface.dirty) return true;
-    if (target.sunShadows.due(this.sunShadows, this.projection)) surface.dirty = true;
     target.mirror.mirrorView.multiplyToRef(target.projection, this.nextViewProjection);
-    return !surface.dirty && surface.drawnViewProjection.equals(this.nextViewProjection);
+    const moved = !surface.drawnViewProjection.equals(this.nextViewProjection);
+    const list = target.texture.renderList!;
+    const check = this.check(surface);
+    // A moved view draws the reflection again whatever it shows, so asking what changed decides nothing now. The ask is
+    // not lost: the next one (this render's draw, or a later render's) reports every change since the last, and the
+    // draw's own ask is what a still view compares with. An empty last draw is kept from any view: it asks.
+    // Its sun maps are asked at most once a render (the ask follows their casters).
+    let due: boolean | undefined;
+    const sunDue = () => (due ??= target.sunShadows.due(this.sunShadows, this.projection));
+    /**
+     * Whether the surface keeps its reflection when its content is `dirty`: nothing drew and nothing would (a mesh
+     * entering the list is a change), so the image is open everywhere from any view; or its sun maps would draw as they
+     * did and the view has not moved. A surface found due through its sun maps stays dirty (`mark`).
+     */
+    const keeps = (dirty: boolean, mark: (sun: boolean) => void) => {
+      if (surface.drawnEmpty && !dirty) return true;
+      const sun = sunDue();
+      mark(sun);
+      return !dirty && !sun && !moved;
+    };
+    let current: boolean;
+    if (moved && !surface.drawnEmpty) {
+      this.skippedPolls++;
+      if (sunDue()) surface.dirty = true;
+      current = false;
+    } else {
+      if (surface.content.changed(this.scene, list)) surface.dirty = true;
+      current = keeps(surface.dirty, (sun) => { if (sun) surface.dirty = true; });
+    }
+    if (check) {
+      // The decision a poll on every render makes, with its own record of what changed since the draw.
+      if (check.content.changed(this.scene, list)) check.dirty = true;
+      const polled = keeps(check.dirty, (sun) => { if (sun) check.dirty = true; });
+      if (polled !== current) this.pollMismatches++;
+    }
+    return current;
+  }
+
+  /** The surface's verifier record while verifying; gives it up once verifying stops. */
+  private check(surface: Surface): PollCheck | null {
+    if (verifyingPolls) return surface.check;
+    surface.check?.content.dispose();
+    surface.check = null;
+    return null;
   }
 
   /**
@@ -452,9 +518,13 @@ class SceneMirrors {
     target.texture.clearColor = this.mode(surface) === "movingActors" ? OPEN : this.scene.clearColor ?? new Color4(0, 0, 0, 1);
     // Its own sun maps first: the shadow passes the content follows from on are then those after them.
     target.sunShadows.prepare(this.sunShadows, this.projection, "mirrors", this.renders);
-    // Follows the drawn list from this draw on (a surface's first draw starts following it here).
-    surface.content.changed(scene, target.texture.renderList!);
+    // Follows the drawn list from this draw on (a surface's first draw starts following it here). A change since the
+    // last ask keeps the surface due if this draw does not happen: `current` may not have asked this render.
+    if (surface.content.changed(scene, target.texture.renderList!)) surface.dirty = true;
+    const check = this.check(surface) ?? (verifyingPolls ? (surface.check = { content: new ReflectedContent(), dirty: surface.dirty }) : null);
+    check?.content.changed(scene, target.texture.renderList!);
     if (!this.draw(surface, target)) return false;
+    if (check) check.dirty = surface.dirty;
     this.draws++;
     this.drawnMeshes += target.texture.renderList!.length;
     surface.drawn = true;

@@ -50,7 +50,7 @@ The **Preview** window plays the graph in the editor, without a Simulation. It r
 | Restart | Returns to the entry state at time 0. Preview Values are kept. |
 | Speed | 0.25× to 2×. |
 | Preview Model | 3D. The Model the Preview shows, from the Models on the graph's Skeleton, or with no Skeleton, the Models its Animations come from. The choice is saved with the graph and is used only in the editor. |
-| Bones | 3D. Shows the Skeleton's bones instead of the mesh. |
+| Bones | 3D. Shows the Skeleton's bones instead of the mesh, with a marker at each [Look At](../scripting/animation/look-at.md) target and [Two Bone IK](../scripting/animation/two-bone-ik.md) Effector (orange) and Joint Target (violet), and each [Spring Bones](../scripting/animation/spring-bones.md) collider (see-through blue). |
 
 The bar ends with the playing state and its time. A 3D graph plays on a floor grid; drag to orbit. A 2D graph shows the current frame on a checkerboard, flipped as the state graph flips it.
 
@@ -100,7 +100,7 @@ An alias's transitions take their turn among each covered state's own transition
 | Open Rule | Opens the transition's rule graph, as double-tapping its wire does. The transition fires when its **Exit State** and **Enter State** nodes are both true. An unconnected one counts as true. **Back To State Machine** returns to the State Machine with the transition selected. |
 | Flip Direction | Swaps the source and target of a One Way transition. |
 
-Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule and state graphs read them with Get Variable nodes.
+Variables can be Bool, Int, Float, String, Vector3, Rotator, Tag or Tag Container. Rule and state graphs read them with Get Variable nodes. A Vector3 suits a point a bone aims at or reaches for, a Rotator a turn for [Transform Bone](../scripting/animation/transform-bone.md).
 
 ## Sync Groups
 
@@ -113,7 +113,24 @@ A 3D state graph can play different clips on different parts of the body, reuse 
 - [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) plays each Blend Pose on the bones of its branches only, such as an attack on the spine and arms over a run on the legs. Pick each branch's bone in the **Inspector**.
 - A pose output connects to one input. To use a pose in more than one place, or in more than one state, save it with [Save Cached Pose](../scripting/animation/save-cached-pose.md) and read it with [Use Cached Pose](../scripting/animation/use-cached-pose.md) nodes. A cached pose plays once a frame however many nodes use it, and keeps its time as the State Machine moves between states that use it.
 - [Apply Additive](../scripting/animation/apply-additive.md) adds an [additive Animation](animation.md#additive-animations), such as a lean or a flinch, on top of any pose.
-- [Transform Bone](../scripting/animation/transform-bone.md) changes one bone after the clips blend, such as turning the head toward a target.
+- [Transform Bone](../scripting/animation/transform-bone.md) changes one bone after the clips blend, such as tilting the head.
+
+## Look At and IK
+
+Skeletal controls aim and place bones after the clips blend, toward points the game gives:
+
+- [Look At](../scripting/animation/look-at.md) turns a bone, such as the head, toward a target, within an angle limit.
+- [Two Bone IK](../scripting/animation/two-bone-ik.md) puts a hand or foot on a point by bending its arm or leg, such as a hand on a door handle.
+
+Give each target a Vector3 variable and set it from a script with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md), such as the location of the actor to look at, in **World Space**. Chain the controls one after another: each takes the pose the one before it made.
+
+[Spring Bones](../scripting/animation/spring-bones.md) make tails, hair, ears and capes trail the pose: the bones below its Root Bone follow the animation through springs, with gravity, wind and colliders, and swing as the actor moves and turns. They are only for looks.
+
+## Slots
+
+Play one-shots such as attacks, hurt flashes or emotes from scripts without adding states for them. Put a [Slot](../scripting/animation/slot.md) node (2D: [Frame Slot](../scripting/animation/frame-slot.md)) in a state graph, over the pose it shows otherwise, and give it a **Slot Name**. A script's [Play Slot Animation](../scripting/class/play-slot-animation.md) plays an Animation there, blending it in and out; [Stop Slot Animation](../scripting/class/stop-slot-animation.md) ends it early and [Is Slot Active](../scripting/class/is-slot-active.md) tells whether it is playing.
+
+A slot's Animation plays for the whole graph, whichever state is active, and every state with a Slot of its name shows it. Under a [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) Blend Pose, it plays on the upper body only.
 
 ## Animation events
 
@@ -136,6 +153,7 @@ To stop the game when the graph enters a state, choose **Add Breakpoint** from t
 
 - Add an [Animation Graph component](../components/animation-graph.md) to an actor to run the graph.
 - Change variables and states from scripts with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md) and [Jump To State](../scripting/class/jump-to-state.md), and read the active state with [Get Current State](../scripting/class/get-current-state.md).
+- An Animation with [Root Motion](animation.md#root-motion) moves the actor while the graph plays it, by its weight in the pose.
 - A 3D graph blends its clips bone by bone, by weight. Where the weights add up to less than full, the rest pose takes the remainder, so blending a clip toward [Rest Pose](../scripting/animation/rest-pose.md) fades it out smoothly. Bones that no playing clip moves stay in their rest pose.
 - A graph has exactly one State Machine, so it cannot run a second set of states, such as upper-body gestures, beside another. Layer clips within a state with [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) instead.
 

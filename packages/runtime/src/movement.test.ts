@@ -148,6 +148,35 @@ describe("the Movement component that moves an actor", () => {
     expect(step()).toEqual([2]);
   });
 
+  it("moves by root motion's velocity for one step in place of its input, then steers again", () => {
+    const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry(),
+      componentHooksFor: () => ({ onCreation: (component) => movement.initialize(component) }),
+    });
+    const translations: Vec3[] = [];
+    let motor: ReturnType<typeof world.createComponent> | null = null;
+    const physics = {
+      getBackend: () => ({ kind: "3d" }),
+      movementDrive: () => (motor ? { component: motor, dynamic: false, mass: 1 } : undefined),
+      moveMovement: (_actor: unknown, translation: Vec3, dt: number) => {
+        translations.push(translation);
+        return { position: { x: 0, y: 0, z: 0 }, velocity: { x: translation.x / dt, y: 0, z: translation.z / dt }, grounded: true };
+      },
+    } as unknown as PhysicsWorldSync;
+    const movement = new MovementWorldSync({ world, physics: () => physics, gravity: () => 0, eligible: () => true, event: () => {}, warn: () => {} });
+    const actor = world.createActor({ classId: "Actor", guid: "rooted" });
+    expect(movement.applyRootMotion(actor, { x: 1, z: 2 })).toBe(false);
+    motor = world.createComponent({ classId: "MovementComponent", variables: { braking: 0 } });
+    actor.attachComponent(motor);
+    world.spawnActorNow(actor);
+    expect(movement.applyRootMotion(actor, { x: 1.2, z: -0.6 })).toBe(true);
+    movement.step(1 / 60, physics);
+    expect(translations[0]!.x).toBeCloseTo(1.2 / 60, 9);
+    expect(translations[0]!.z).toBeCloseTo(-0.6 / 60, 9);
+    // Without Braking, the speed root motion left carries on until something steers it.
+    movement.step(1 / 60, physics);
+    expect(translations[1]!.x).toBeCloseTo(1.2 / 60, 9);
+  });
+
   it("ranks them by their current order once an in-place edit of the component list marks the structure changed", () => {
     const { world, actor, motor, step } = motorWorld();
     actor.attachComponent(motor(1));

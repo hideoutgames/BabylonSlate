@@ -13,6 +13,7 @@ import {
   normalizeAnimationPayload,
   normalizeModelPayload,
   type AnimationAdditive,
+  type AnimationRootMotion,
   normalizeSkeletonPayload,
   type AnimationPayload,
   type ModelMaterialSlot,
@@ -46,6 +47,7 @@ import { asRecord } from "../lib/as-record";
 import { AnimationPreviewClock, animationPreviewFrameAt } from "../lib/animation-preview-clock";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { useModelSourceBytes } from "../lib/use-model-source-bytes";
+import { animationRootMotionFrom } from "../lib/animation-root-motion";
 
 /** A Skeleton asset's bone and socket names, for the Spawn Particle System Bone row. */
 function skeletonAttachPointLists(payload: unknown): { bones: string[]; sockets: string[] } {
@@ -295,6 +297,14 @@ export function AnimationPreview({
   );
 }
 
+/** What the root motion moves its actor by over one pass, for the row's status. */
+function rootMotionStatus(motion: AnimationRootMotion | undefined): string | undefined {
+  if (!motion) return undefined;
+  const { x, z, yaw } = motion.track;
+  const last = x.length - 1;
+  return `Moves ${Math.hypot(x[last]!, z[last]!).toFixed(2)} m and turns ${Math.round(yaw[last]!)}° each pass`;
+}
+
 /** What an Animation's Additive row offers: not additive, or a change relative to one of its base poses. */
 const ADDITIVE_OPTIONS: Array<{ value: AnimationAdditive["base"] | "none"; label: string }> = [
   { value: "none", label: "None" },
@@ -367,7 +377,9 @@ export function AnimationEditor({
 }) {
   const animation = normalizeAnimationPayload(payload);
   const { assetRegistry } = useRegistryState();
+  const { readAssetChunk } = useDocumentActions();
   const [pickingBase, setPickingBase] = useState(false);
+  const [rootMotionError, setRootMotionError] = useState<string | null>(null);
   // In the Animation editor, events selected on the Timeline open here and Add Event uses its playhead.
   const editing = useOptionalAnimationEditing();
   const assets = assetRegistry?.list() ?? [];
@@ -438,6 +450,52 @@ export function AnimationEditor({
       }
     : undefined;
   rows.push(...additiveRows(animation, assets, setAdditive, () => setPickingBase(true)));
+  // Root motion samples the clip from the Animation's own Model file, for the bone chosen (or the first that travels).
+  const skeletonBones = skeleton ? skeletonAttachPointLists(skeleton.header.payload).bones : [];
+  const setRootMotion = onChange
+    ? async (enabled: boolean, bone?: string) => {
+        const { rootMotion: _previous, ...rest } = { ...payload, ...animation };
+        void _previous;
+        if (!enabled) {
+          setRootMotionError(null);
+          onChange(rest);
+          return;
+        }
+        const path = model?.path;
+        const bytes = path ? await readAssetChunk(path, "source").catch(() => null) : null;
+        const motion = bytes ? animationRootMotionFrom(bytes, animation.clipName, skeletonBones, bone) : null;
+        if (!motion) {
+          setRootMotionError(bytes ? "The clip has no keys on that bone." : "The Animation's Model file could not be read.");
+          return;
+        }
+        setRootMotionError(null);
+        onChange({ ...rest, rootMotion: motion });
+      }
+    : undefined;
+  rows.push({
+    id: "rootMotion",
+    kind: "boolean",
+    label: "Root Motion",
+    value: animation.rootMotion !== undefined,
+    disabled: !setRootMotion,
+    description: "Moves the actor by the root bone's travel across the ground and its turn, and holds the bone in place.",
+    ...(rootMotionError ? { error: rootMotionError } : {}),
+    onChange: (enabled) => void setRootMotion?.(enabled),
+  });
+  if (animation.rootMotion) {
+    const bone = animation.rootMotion.bone;
+    rows.push({
+      id: "rootMotionBone",
+      kind: "enum",
+      label: "Root Bone",
+      value: bone,
+      options: (skeletonBones.includes(bone) ? skeletonBones : [bone, ...skeletonBones]).map((name) => ({ value: name, label: name })),
+      verbatim: true,
+      disabled: !setRootMotion,
+      ...((status) => (status ? { status } : {}))(rootMotionStatus(animation.rootMotion)),
+      onChange: (next) => void setRootMotion?.(true, next),
+    });
+  }
   // A base Animation is another Animation on this one's Skeleton.
   const baseAssets = pickingBase
     ? assets

@@ -11,11 +11,12 @@ import { Scene } from "@babylonjs/core/scene";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
-import { createMirrorSurfaceMesh, mirrorDiagnostics } from "./mirrors";
+import { createMirrorSurfaceMesh, mirrorDiagnostics, verifyMirrorContentPolls } from "./mirrors";
+import { ReflectedContent } from "./reflected-content";
 import { setPlanarFootprintCulling } from "./planar-mirror";
 import { isReflectionCamera } from "./reflection-camera";
 import { updateSceneRenderingSettings } from "./render-settings";
@@ -604,4 +605,97 @@ it("keeps a Mirror that asks for less than the quality level allows as it asks",
   updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { mirrorReflections: "movingActors" } }) });
   expect(frame()).toEqual([]);
   expect(mirrorReflectionBinding(surface)!.reflects).toBe("environment");
+});
+
+describe("a moved view skips asking what its reflection's pass draws changed", () => {
+  afterEach(() => verifyMirrorContentPolls(false));
+
+  it("draws on every render while the view moves without asking, and keeps the image once it stops", () => {
+    verifyMirrorContentPolls(true);
+    const { scene, camera, drawsOver } = settledMirror();
+    const changed = vi.spyOn(ReflectedContent.prototype, "changed");
+    for (let i = 0; i < 4; i++) {
+      camera.position.x += 0.1;
+      expect(drawsOver(1)).toBe(1);
+    }
+    expect(mirrorDiagnostics(scene)).toMatchObject({ skippedPolls: 4, pollMismatches: 0 });
+    // Each moved render asked once, at the draw, and the verifier once more each time it would have asked.
+    expect(changed).toHaveBeenCalledTimes(4 * 3);
+    expect(drawsOver(10)).toBe(0);
+    expect(mirrorDiagnostics(scene)).toMatchObject({ skippedPolls: 4, pollMismatches: 0 });
+  });
+
+  it("draws once more when what it reflects changes in the render the view stops", () => {
+    verifyMirrorContentPolls(true);
+    const { scene, camera, box, drawsOver } = settledMirror();
+    camera.position.x += 0.1;
+    expect(drawsOver(1)).toBe(1);
+    // Asked again now that the view is as drawn: the box it showed is gone.
+    box.isVisible = false;
+    expect(drawsOver(1)).toBe(1);
+    expect(drawsOver(10)).toBe(0);
+    // A move is seen once the scene's render has placed it, as for any still view.
+    camera.position.x += 0.1;
+    expect(drawsOver(1)).toBe(1);
+    box.position.x += 0.1;
+    expect(drawsOver(10)).toBe(0);
+    box.isVisible = true;
+    expect(drawsOver(10)).toBe(1);
+    box.position.x += 0.1;
+    expect(drawsOver(10)).toBe(1);
+    expect(mirrorDiagnostics(scene)!.pollMismatches).toBe(0);
+  });
+
+  it("draws a reflection the budget left out when what it reflects changed while the view moved and came back", () => {
+    verifyMirrorContentPolls(true);
+    const { scene, camera, frame } = host();
+    MeshBuilder.CreateBox("box", { size: 0.5 }, scene).position.set(0, 1, 1.5);
+    mirror(scene, "near", new Vector3(0, 1, 3));
+    mirror(scene, "middle", new Vector3(-2, 1, 5));
+    mirror(scene, "far", new Vector3(2, 1, 8));
+    for (let i = 0; i < 4; i++) frame();
+    expect(frame()).toEqual([]);
+    // Moving, the two nearest draw on every render; the far one keeps the image it drew from here, unasked.
+    camera.position.x += 0.1;
+    expect(frame()).toEqual(["mirror:near", "mirror:middle"]);
+    scene.fogMode = Scene.FOGMODE_EXP;
+    camera.position.x += 0.1;
+    expect(frame()).toEqual(["mirror:near", "mirror:middle"]);
+    // Back where the far one was drawn: its view is as drawn, but the fog changed since, so it is due after the others.
+    camera.position.x -= 0.2;
+    expect(frame()).toEqual(["mirror:near", "mirror:middle"]);
+    expect(frame()).toEqual(["mirror:far"]);
+    expect(frame()).toEqual([]);
+    expect(mirrorDiagnostics(scene)!.pollMismatches).toBe(0);
+  });
+
+  it("still asks for a reflection whose last draw was empty, which any view keeps", () => {
+    verifyMirrorContentPolls(true);
+    const { scene, camera, mover, frame } = reflectedPair("movingActors");
+    mover.setEnabled(false);
+    expect(frame()).toEqual(["mirror:mirror"]);
+    camera.position.x = 0.4;
+    expect(frame()).toEqual([]);
+    mover.setEnabled(true);
+    camera.position.x = 0.2;
+    expect(frame()).toEqual(["mirror:mirror"]);
+    expect(mirrorDiagnostics(scene)).toMatchObject({ skippedPolls: 0, pollMismatches: 0 });
+  });
+
+  it("counts a render whose decision an ask on every render would have made otherwise", () => {
+    verifyMirrorContentPolls(true);
+    const { scene, camera, drawsOver } = settledMirror();
+    camera.position.x += 0.1;
+    drawsOver(1);
+    // The verifier's own record (the second one asked) reports a change the surface's record does not see.
+    const seen: ReflectedContent[] = [];
+    const changed = ReflectedContent.prototype.changed;
+    vi.spyOn(ReflectedContent.prototype, "changed").mockImplementation(function (this: ReflectedContent, ...args) {
+      if (!seen.includes(this)) seen.push(this);
+      const result = changed.apply(this, args);
+      return seen.indexOf(this) === 1 ? true : result;
+    });
+    expect(drawsOver(1)).toBe(0);
+    expect(mirrorDiagnostics(scene)!.pollMismatches).toBe(1);
+  });
 });

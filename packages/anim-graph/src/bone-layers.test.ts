@@ -179,6 +179,7 @@ describe("Transform Bone", () => {
     })), null, 0, {});
     const q = rotatorToQuat({ pitch: 0, yaw: 30, roll: 0 });
     expect(state.boneModifiers).toEqual([{
+      kind: "transform",
       bone: "head",
       alpha: 0.5,
       translation: { value: [1, 2, 3], mode: "replace", space: "actor" },

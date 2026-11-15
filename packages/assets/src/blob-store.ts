@@ -16,6 +16,11 @@ export interface BlobStore {
  * re-saving an asset whose large chunks did not change costs no bytes. A blob
  * whose size differs from bytes that do hash to its name is a torn earlier
  * write (storage writes truncate in place), so it is written again.
+ *
+ * Every write asks the storage for one (the folder is made first), even when
+ * the blob is already stored, so a write guard refuses it as it refuses a new
+ * blob: Remove Unused Files removes blobs as the project's only writer, and
+ * an asset must not name a blob it found stored while that removal ran.
  */
 export function createVfsBlobStore(
   storage: ProjectStorage,
@@ -25,13 +30,13 @@ export function createVfsBlobStore(
 
   return {
     async writeBlob(sha256, data) {
+      await storage.mkdir(blobDir, true);
       if (await storage.exists(pathFor(sha256))) {
         const stat = await storage.stat(pathFor(sha256));
         if (!stat.isDir && stat.size === data.byteLength) return;
         // Replace the stored blob only with the bytes its hash names.
         if (await sha256Hex(data) !== sha256) return;
       }
-      await storage.mkdir(blobDir, true);
       await storage.writeBinary(pathFor(sha256), data);
     },
     async readBlob(sha256, options) {

@@ -1,6 +1,7 @@
 import { isStorageNotFound, PROJECT_FILE, type ProjectFolderHandle, type ProjectStorage, type SourceControlProjectSettings } from "@haptic/core";
 import {
   isSyncError,
+  throwIfCancelled,
   withLfsRule,
   type CommitAuthor,
   type CommitInfo,
@@ -18,6 +19,7 @@ import {
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
+import { CommitHistory } from "./source-control-history";
 import { commitPaths, groupChanges, withWorkingHeaders, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { asksAdoption, branchSettingsRefusal, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
@@ -67,8 +69,11 @@ export interface SyncPortFactory {
 
 /** Lock checks around a push, from the lock service. */
 export interface SyncLocks {
-  /** Locks someone else holds on any of `paths`; empty where the host has no locking. Rejects when the check fails. */
-  theirs(paths: readonly string[]): Promise<FileLock[]>;
+  /**
+   * Locks someone else holds on any of `paths` of `branch`, the branch the
+   * push sends; empty where the host has no locking. Rejects when the check fails.
+   */
+  theirs(paths: readonly string[], branch: string): Promise<FileLock[]>;
   /** Releases this device's locks on `paths`, except documents with unsaved edits. */
   releaseOwn(paths: readonly string[]): Promise<void>;
 }
@@ -127,9 +132,26 @@ export interface SyncConfigureInput {
   /** The registry's view of a changed `.hasset`, for names, icons and blob grouping. */
   lookup: ChangeLookup;
   locks: SyncLocks;
+  /**
+   * Runs `work` as the project's only writer (`ProjectService.withExclusiveWrites`),
+   * handing it the project storage past the write barrier; the sync binds it
+   * to the folder. Refused while another operation holds project writes.
+   */
+  exclusiveWrites: <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal: AbortSignal) => Promise<T>;
   /** Defaults to the lazily loaded Git client. */
   factory?: SyncPortFactory;
 }
+
+/** Blob files Remove Unused Files found or removed, and their size on disk. */
+export interface UnusedFiles {
+  readonly paths: readonly string[];
+  readonly bytes: number;
+  /** Nothing was judged: a blob folder is, sits under or holds a symbolic link, so its files may have two paths. */
+  readonly linkedBlobFolders?: true;
+}
+
+/** Why saves and imports are refused while unused files are removed. */
+const REMOVING_UNUSED_REASON = "Read-only while removing unused files";
 
 const IDLE: SyncSnapshot = {
   active: false,
@@ -222,6 +244,8 @@ export class SourceControlSyncService {
   private running: AbortController | null = null;
   /** Bytes the running operation has sent and received, apart from the snapshot: only transfer labels read it. */
   readonly transfer = new TransferBytes();
+  /** The commit lists History and the Diff's version pickers share, read a page at a time. */
+  readonly commitHistory: CommitHistory = new CommitHistory(this);
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -450,7 +474,8 @@ export class SourceControlSyncService {
     let pushed: string[] | null = null;
     await this.run("push", "Could Not Push", async ({ port, input, signal }) => {
       const outgoing = await port.outgoing({ signal });
-      const holders = await input.locks.theirs(outgoing);
+      // The port's branch, not the snapshot's: a switch or new branch moves it before the snapshot reads it again.
+      const holders = await input.locks.theirs(outgoing, port.branch);
       if (holders.length > 0) throw new LockedByOthersError(holders);
       await port.push({ signal });
       pushed = outgoing;
@@ -487,11 +512,6 @@ export class SourceControlSyncService {
    */
   async readFileAt(path: string, commit: string): Promise<Uint8Array | null> {
     return this.openPort().readFile(path, commit);
-  }
-
-  /** The branch's commits that change `path`, newest first, for picking a version to compare. Reads no network. */
-  async commitsOf(path: string, limit: number): Promise<readonly CommitInfo[]> {
-    return (await this.openPort().log({ limit, path })).commits;
   }
 
   /** A `.blobs` object a version references: the working copy's file, else downloaded; never written. */
@@ -596,6 +616,76 @@ export class SourceControlSyncService {
     if (!ran) throw new Error("The project closed while reverting.");
     await this.refreshStatus();
     return written;
+  }
+
+  /**
+   * The working copy's `.blobs` files nothing needs, for **Remove Unused
+   * Files**: untracked, held by no unpushed commit of any local branch and
+   * named by no committed asset whose commit lacks them
+   * (`SyncPort.removableLfsObjects` with `committedBlobNames`; an unpushed
+   * commit's objects exist only here, and so does a blob another Git app
+   * committed an asset without), in a content root's own blob folder and referenced by no asset
+   * header on disk in that root, with their size. An open document needs no
+   * other: a save writes its document blob from memory and carries every
+   * other blob from the header on disk. Queued; reads listings, the headers
+   * of the roots concerned and stats, never a blob, and fetches nothing.
+   * Rejects with what failed.
+   */
+  async findUnusedFiles(): Promise<UnusedFiles> {
+    const revision = this.revision;
+    let found: UnusedFiles | null = null;
+    const ran = await this.run(null, "Could Not Find Unused Files", async ({ port, storage, signal }) => {
+      const { committedBlobNames, unusedLfsObjects } = await import("./source-control-unused-files");
+      found = await unusedLfsObjects(storage, await port.removableLfsObjects({ signal, references: committedBlobNames }), signal);
+    }, revision, { rethrow: true });
+    if (!ran || !found) throw new Error("The project closed while finding unused files.");
+    return found;
+  }
+
+  /**
+   * Removes those of `paths` (what `findUnusedFiles` found, confirmed) that
+   * nothing needs still: the repository's answer is read again (only this
+   * queue's own operations change it), then, as the project's only writer,
+   * the asset headers, so an asset written since the confirmation keeps its
+   * blob. Never a tracked file. Queued; a close cancels it. `signal` (the
+   * user's **Cancel**) ends it, as a `cancelled` `SyncError` and no problem,
+   * until the first file goes: while it waits for its turn and for the
+   * project's other writers (a Texture encode may take minutes), and while it
+   * reads; `onRemoving` says when files start to go, after which only a close
+   * stops it. The status is read again after. Resolves to what it removed;
+   * rejects with what failed.
+   */
+  async removeUnusedFiles(paths: readonly string[], options: { signal?: AbortSignal; onRemoving?: () => void } = {}): Promise<UnusedFiles> {
+    throwIfCancelled(options.signal);
+    const revision = this.revision;
+    let removed: UnusedFiles | null = null;
+    const ran = await this.run(null, "Could Not Remove Unused Files", async ({ port, input, storage, signal }) => {
+      const waiting = options.signal ? AbortSignal.any([signal, options.signal]) : signal;
+      throwIfCancelled(waiting);
+      const { committedBlobNames, removeUnusedLfsObjects } = await import("./source-control-unused-files");
+      const confirmed = new Set(paths);
+      const candidates = (await port.removableLfsObjects({ signal: waiting, references: committedBlobNames })).filter((path) => confirmed.has(path));
+      const folder = input.folder!.id;
+      let started = false;
+      const onRemoving = () => {
+        started = true;
+        options.onRemoving?.();
+      };
+      try {
+        removed = await input.exclusiveWrites(
+          REMOVING_UNUSED_REASON,
+          (writer) => removeUnusedLfsObjects(storage, folderBoundStorage(writer, folder), candidates, { reading: waiting, removing: signal, onRemoving }),
+          waiting,
+        );
+      } catch (error) {
+        // The wait for other writers ends with the signal's own reason.
+        if (!started) throwIfCancelled(waiting);
+        throw error;
+      }
+    }, revision, { rethrow: true });
+    if (!ran || !removed) throw new Error("The project closed while removing unused files.");
+    await this.refreshStatus();
+    return removed;
   }
 
   /**
@@ -791,7 +881,8 @@ export class SourceControlSyncService {
         if (this.snapshot.problem?.title === title) update({ problem: null });
         return true;
       } catch (error) {
-        update({ problem: problemFrom(title, error) });
+        // Cancelled: the user's Cancel, or a close (whose revision no longer updates the snapshot).
+        if (!(isSyncError(error) && error.kind === "cancelled")) update({ problem: problemFrom(title, error) });
         if (options.rethrow && revision === this.revision) throw error;
         return false;
       } finally {

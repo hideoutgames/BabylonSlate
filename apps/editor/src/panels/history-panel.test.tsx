@@ -4,7 +4,8 @@ import type { SourceControlSyncService } from "../services/source-control-sync";
 import type { DiffState } from "../services/source-control-diff";
 import { integratedSync } from "../testing/integrated-sync";
 import { SourceControlActionsProvider, useSourceControlActions, useSourceControlDiffState, type SourceControlActions } from "../components/source-control-actions";
-import { HISTORY_PAGE, HistoryPanelContents } from "./history-panel";
+import { HistoryPanelContents } from "./history-panel";
+import { HISTORY_PAGE } from "../services/source-control-history";
 
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
@@ -171,6 +172,22 @@ describe("History window", () => {
     await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
     expect((screen.getByTestId("history-scope-asset") as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByTestId("history-revert")).toBeNull();
+  });
+
+  it("reads its list again when the pickers' reads of other assets pushed it out of the shared lists", async () => {
+    const sync = await integratedSync();
+    state.sync = sync.service;
+    render(
+      <SourceControlActionsProvider>
+        <HistoryPanelContents />
+      </SourceControlActionsProvider>,
+    );
+    await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
+    act(() => {
+      for (let index = 0; index < 8; index += 1) sync.service.commitHistory.load(`assets/Other${index}.hasset`);
+    });
+    await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
+    expect(sync.service.commitHistory.list(null)?.ready).toBe(true);
   });
 
   it("reads one page of the log, and the next only when asked", async () => {

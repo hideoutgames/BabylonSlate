@@ -1,6 +1,7 @@
 import type { SerializedGraph } from "@haptic/core";
 import { normalizeAnimBranchFilters, type AnimAdditiveBase, type AnimBranchFilter } from "@haptic/core";
 import { parseAnimClipEvents, type AnimClipEvent } from "./events";
+import { parseAnimClipRootMotion, type AnimClipRootMotion } from "./root-motion";
 
 type SerializedGraphNode = SerializedGraph["nodes"][number];
 
@@ -20,10 +21,16 @@ export const ANIM_POSE_BLEND_BY_INT_TYPE = "anim.pose.blendByInt";
 export const ANIM_POSE_BLEND_SPACE_PLAYER_TYPE = "anim.pose.blendSpacePlayer";
 export const ANIM_POSE_LAYERED_BLEND_TYPE = "anim.pose.layeredBlendPerBone";
 export const ANIM_POSE_APPLY_ADDITIVE_TYPE = "anim.pose.applyAdditive";
+/** Slots: where Play Slot Animation shows a one-shot over the Source pose (3D) or frame (2D). */
+export const ANIM_POSE_SLOT_TYPE = "anim.pose.slot";
+export const ANIM_FRAME_SLOT_TYPE = "anim.frame.slot";
 export const ANIM_POSE_SAVE_CACHED_TYPE = "anim.pose.saveCachedPose";
 export const ANIM_POSE_USE_CACHED_TYPE = "anim.pose.useCachedPose";
 /** Skeletal controls change bones of the pose they take; they draw in the amber control colour. */
 export const ANIM_CONTROL_TRANSFORM_BONE_TYPE = "anim.control.transformBone";
+export const ANIM_CONTROL_LOOK_AT_TYPE = "anim.control.lookAt";
+export const ANIM_CONTROL_TWO_BONE_IK_TYPE = "anim.control.twoBoneIk";
+export const ANIM_CONTROL_SPRING_BONES_TYPE = "anim.control.springBones";
 export const ANIM_FRAME_OUTPUT_TYPE = "anim.frame.output";
 export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
 export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
@@ -82,7 +89,13 @@ export function poseInputPins(type: string, count?: unknown): string[] {
       return ["pose"];
     case ANIM_POSE_APPLY_ADDITIVE_TYPE:
       return ["base", "additive"];
+    case ANIM_POSE_SLOT_TYPE:
+    case ANIM_FRAME_SLOT_TYPE:
+      return ["source"];
     case ANIM_CONTROL_TRANSFORM_BONE_TYPE:
+    case ANIM_CONTROL_LOOK_AT_TYPE:
+    case ANIM_CONTROL_TWO_BONE_IK_TYPE:
+    case ANIM_CONTROL_SPRING_BONES_TYPE:
       return ["sourcePose"];
     case ANIM_POSE_OUTPUT_TYPE: return ["pose"];
     case ANIM_FRAME_OUTPUT_TYPE: return ["frame"];
@@ -115,6 +128,22 @@ export function layeredBlendFilters(node: SerializedGraphNode): AnimBranchFilter
     const layer = layers[index] as { branches?: unknown } | undefined;
     return normalizeAnimBranchFilters(layer?.branches);
   });
+}
+
+/** Skeletal controls: nodes that change bones of the pose they take, each naming the bone it changes. */
+export function isSkeletalControlType(type: string): boolean {
+  return type === ANIM_CONTROL_TRANSFORM_BONE_TYPE || type === ANIM_CONTROL_LOOK_AT_TYPE ||
+    type === ANIM_CONTROL_TWO_BONE_IK_TYPE || type === ANIM_CONTROL_SPRING_BONES_TYPE;
+}
+
+export function isSlotNodeType(type: string): boolean {
+  return type === ANIM_POSE_SLOT_TYPE || type === ANIM_FRAME_SLOT_TYPE;
+}
+
+/** The slot a Slot node shows, trimmed; `DefaultSlot` when it names none. */
+export function slotNodeName(node: SerializedGraphNode): string {
+  const name = typeof node.data.slotName === "string" ? node.data.slotName.trim() : "";
+  return name || "DefaultSlot";
 }
 
 /** The name a Save Cached Pose stores under, or a Use Cached Pose reads, trimmed. */
@@ -249,6 +278,8 @@ export interface BlendSpaceNodeSample {
   events?: AnimClipEvent[];
   /** Its Animation's additive base, when the Animation is additive (`resolvedClipAdditive`). */
   additive?: ResolvedClipAdditive;
+  /** Its Animation's root motion, when it has any. */
+  rootMotion?: AnimClipRootMotion;
 }
 
 /**
@@ -313,6 +344,7 @@ export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeDat
       rateScale: rateScale > 0 ? rateScale : 1,
       ...((events) => (events.length > 0 ? { events } : {}))(parseAnimClipEvents(sample.events)),
       ...((additive) => (additive ? { additive } : {}))(parseResolvedClipAdditive(sample.additive)),
+      ...((rootMotion) => (rootMotion ? { rootMotion } : {}))(parseAnimClipRootMotion(sample.rootMotion)),
     }];
   });
   const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime" | "eventMode"> = {};

@@ -472,7 +472,7 @@ export class SceneShadowController {
     this.refresh.syncCasters(this.scene, this.meshes);
     this.maps.retained?.beginFrame();
     // From the walk to the end of this Scene render no caster moves, shows or hides: the layers' lists read them once.
-    this.spatial.prepare(this.casterWalked);
+    this.spatial.prepare(this.casterWalked, this.refresh);
     // A sync("admission") skips the walk, so frozen cascade caster bounds follow it here.
     let casterBounds: ReturnType<ShadowCasterList["bounds"]>;
     for (const entry of this.entries.values())

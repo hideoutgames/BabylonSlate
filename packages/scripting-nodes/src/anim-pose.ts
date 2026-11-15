@@ -90,6 +90,13 @@ export const animPoseNodes: NodeDefinition[] = [
     ["Layer Blend", "Upper Body", "Bone Mask", "Avatar Mask"],
   ),
   poseNode(
+    "anim.pose.slot",
+    "Slot",
+    "Shows the Animations scripts play on this slot with Play Slot Animation over the Source pose.",
+    () => [pin("source", "source", "in", POSE), out(POSE)],
+    ["Montage", "One Shot"],
+  ),
+  poseNode(
     "anim.pose.applyAdditive",
     "Apply Additive",
     "Adds an additive Animation's change from its base pose, by Alpha, to the Base pose.",
@@ -129,6 +136,42 @@ export const animPoseNodes: NodeDefinition[] = [
     ],
     ["Modify Bone", "Transform (Modify) Bone"],
   ),
+  poseNode(
+    "anim.control.lookAt",
+    "Look At",
+    "Turns one bone so its Aim Axis points at Target, within an angle limit, optionally keeping its Up Axis up, blended in by Alpha.",
+    () => [
+      pin("sourcePose", "sourcePose", "in", POSE),
+      pin("target", "target", "in", VEC3, "data", true, { x: 0, y: 0, z: 0 }),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["Aim", "Head Look", "Look At Target"],
+  ),
+  poseNode(
+    "anim.control.twoBoneIk",
+    "Two Bone IK",
+    "Moves a hand or foot to Effector by turning its parent and grandparent, bending toward Joint Target, blended in by Alpha.",
+    () => [
+      pin("sourcePose", "sourcePose", "in", POSE),
+      pin("effector", "effector", "in", VEC3, "data", true, { x: 0, y: 0, z: 0 }),
+      pin("jointTarget", "jointTarget", "in", VEC3, "data", true, { x: 0, y: 0, z: 0 }),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["IK", "Inverse Kinematics", "Reach", "Limb IK"],
+  ),
+  poseNode(
+    "anim.control.springBones",
+    "Spring Bones",
+    "Simulates the bones below a Root Bone as springs that trail the pose, such as a tail, hair or a cape, blended in by Alpha.",
+    () => [
+      pin("sourcePose", "sourcePose", "in", POSE),
+      pin("alpha", "alpha", "in", FLOAT, "data", true, 1),
+      out(POSE),
+    ],
+    ["Kawaii Physics", "Dynamics", "Jiggle", "Tail", "Hair", "Cape"],
+  ),
   // 2D frame graphs.
   poseNode("anim.frame.output", "Output Frame", "The frame this graph shows.", () => [pin("frame", "frame", "in", FRAME)]),
   poseNode("anim.frame.spritePlayer", "Sprite Animation Player", "Plays a Sprite Animation.", () => [
@@ -153,6 +196,13 @@ export const animPoseNodes: NodeDefinition[] = [
     pin("activeIndex", "activeIndex", "in", INT, "data", true, 0),
     out(FRAME),
   ]),
+  poseNode(
+    "anim.frame.slot",
+    "Frame Slot",
+    "Shows the Sprite Animations scripts play on this slot with Play Slot Animation instead of the Source frame.",
+    () => [pin("source", "source", "in", FRAME), out(FRAME)],
+    ["Montage", "One Shot"],
+  ),
   poseNode("anim.frame.flip", "Flip Frame", "Mirrors a frame, so one clip faces both ways.", () => [
     pin("frame", "frame", "in", FRAME),
     pin("flipX", "flipX", "in", BOOL, "data", true, false),

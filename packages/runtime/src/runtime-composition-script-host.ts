@@ -183,6 +183,15 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     ...createNavigationHostBindings({ navigation: () => rt.navigation }),
     ...createSceneStreamHostBindings({ streams: rt.streams, world: () => rt.world }),
     animGraphControl: (target) => rt.animGraphs.control(target),
+    // A slot play's wait resumes in the tick its play blends out or ends, through the session boundary.
+    waitSlotAnimation: (handle, phase, owner) => {
+      const reached = rt.animGraphs.waitSlot(handle, phase);
+      const resume = (value: boolean): boolean | PromiseLike<boolean> => {
+        const pending = continueSimulation(owner ?? null);
+        return pending ? pending.then(() => value) : value;
+      };
+      return typeof reached === "boolean" ? reached : reached.then(resume);
+    },
     registerSaveActor: (actor, persistentId) => rt.registerSaveActor(actor, persistentId),
     getSaveActorId: (actor) => rt.boundaries.saveActorId(actor),
     resolveSaveActor: (id) => rt.boundaries.findSaveActor(id) ?? rt.world.findActor(id),

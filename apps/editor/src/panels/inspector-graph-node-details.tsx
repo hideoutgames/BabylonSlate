@@ -52,9 +52,10 @@ import {
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { timelineProxyNodeTarget, timelineScriptAssets } from "../lib/timeline-script-catalog";
 import { ANIM_POSE_CLIP_PICK, animGraphPlaysAsset, type AnimClipPickGraph } from "../lib/anim-pose-inspector";
-import { ANIM_POSE_LAYERED_BLEND_TYPE } from "@haptic/anim-graph";
+import { ANIM_CONTROL_SPRING_BONES_TYPE, ANIM_POSE_LAYERED_BLEND_TYPE } from "@haptic/anim-graph";
 import { normalizeSkeletonPayload } from "@haptic/assets";
 import { LayeredBlendBranchFilters } from "../components/layered-blend-branch-filters";
+import { SpringBonesLists } from "../components/spring-bones-lists";
 import {
   committedPinRowIds,
   memberPinsFromRows,
@@ -264,6 +265,9 @@ export function GraphNodeDetails({
         <GraphNodeRowSections sections={sections} />
         {selectedNode.type === ANIM_POSE_LAYERED_BLEND_TYPE ? (
           <LayeredBlendBranchFilters data={selectedNode.data} bones={animPose?.bones ?? []} onPatch={updateNodeData} />
+        ) : null}
+        {selectedNode.type === ANIM_CONTROL_SPRING_BONES_TYPE ? (
+          <SpringBonesLists data={selectedNode.data} bones={animPose?.bones ?? []} onPatch={updateNodeData} />
         ) : null}
         {isFlowSwitch ? (
           <NamedListEditor

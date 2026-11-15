@@ -8,13 +8,13 @@ import {
 } from "@haptic/core";
 import {
   blendTrs,
+  ikChainOf,
+  lookAtLocalTrs,
   modifiedLocalTrs,
   modifierChannels,
   nodeChainNames,
   readNodeTrs,
-  ROTATION,
-  SCALE,
-  TRANSLATION,
+  twoBoneIkLocalTrs,
   TRS_LENGTH,
   WRITE_ROTATION,
   WRITE_SCALE,
@@ -22,6 +22,8 @@ import {
   writeNodeTrs,
   type BoneNode,
 } from "./anim-bone-modifiers";
+import { applySpringBones } from "./anim-spring-bones";
+import { holdRoot, rootLockOf } from "./anim-root-lock";
 
 /**
  * Haptic's pose evaluator: Play, the editor's previews and exported games pose 3D clips here, never by starting,
@@ -605,6 +607,8 @@ export interface PoseLayering {
   readonly modifiers: readonly AnimBoneModifier[];
   /** Per clip: present when it plays additively (Apply Additive), with the pose its change is from. */
   readonly additive?: ArrayLike<PoseAdditive | undefined>;
+  /** Per clip: its root motion bone, which it holds in place across the ground (`rootLockOf`). */
+  readonly rootLock?: ArrayLike<string | undefined>;
 }
 
 /**
@@ -626,10 +630,17 @@ function layeringSignature(count: number, layering: PoseLayering | null | undefi
     anyAdditive ||= entry !== undefined;
     additive.push(entry ? `${entry.reference?.clipAssetGuid ?? ""}\0${entry.reference?.name ?? ""}\0${entry.frame}` : null);
   }
-  if (layering.blends.length === 0 && layering.modifiers.length === 0 && !anyAdditive) return "";
+  const locks: Array<string | null> = [];
+  let anyLock = false;
+  for (let l = 0; l < count; l++) {
+    const bone = layering.rootLock?.[l];
+    anyLock ||= bone !== undefined;
+    locks.push(bone ?? null);
+  }
+  if (layering.blends.length === 0 && layering.modifiers.length === 0 && !anyAdditive && !anyLock) return "";
   const masks: Array<readonly AnimLayerMaskRef[] | null> = [];
   for (let l = 0; l < count; l++) masks.push(layering.masks[l] ?? null);
-  return JSON.stringify([masks, layering.blends, layering.modifiers, additive]);
+  return JSON.stringify([masks, layering.blends, layering.modifiers, additive, locks]);
 }
 
 /** Whether the pose's layers are the last pose's, which then still stands. Records them otherwise. */
@@ -694,6 +705,9 @@ export function applyPose(
   weights: ArrayLike<number>,
   layering?: PoseLayering | null,
 ): void {
+  // A change toward a world-space target follows the actor as it moves, and Spring Bones step each pose: both pose
+  // again every time.
+  if (layering?.modifiers.some(posesEveryTime)) rig.lastLayering = "";
   if (samePose(rig, count, clips, frames, weights, layeringSignature(count, layering))) return;
   const { properties, stamps, weights: totals, blended, posed, quaternions, components, clipProperties } = rig;
   // Stamps mark the properties this pose blends; a wrapped counter clears them.
@@ -721,6 +735,9 @@ export function applyPose(
     const frame = frames[l]!;
     const channels = clip.channels;
     const hints = clip.keyHints;
+    // A root motion clip holds its root bone in place across the ground; the actor moves instead.
+    const lockBone = layering?.rootLock?.[l];
+    const lock = lockBone ? rootLockOf(clip, lockBone, samplePoseTrack) : null;
     for (let i = 0; i < indices.length; i++) {
       const index = indices[i]!;
       if (index < 0) continue;
@@ -734,10 +751,12 @@ export function applyPose(
         stamps[index] = generation;
         totals[index] = w;
         sampleTrack(channels[i]!.track, frame, blended, at, hints, i);
+        if (lock) holdRoot(lock, i, blended, at);
         if (w !== 1) for (let c = 0; c < n; c++) blended[at + c]! *= w;
         continue;
       }
       sampleTrack(channels[i]!.track, frame, sample, 0, hints, i);
+      if (lock) holdRoot(lock, i, sample, 0);
       totals[index]! += w;
       // A quaternion joins on the sum's hemisphere: q and -q are one rotation.
       const signed = quaternions[index] && dot4(blended, at, sample, 0) < 0 ? -w : w;
@@ -788,6 +807,13 @@ export function applyPose(
 }
 
 const NO_BLENDS: readonly AnimLayerBlend[] = [];
+
+function posesEveryTime(change: AnimBoneModifier): boolean {
+  if (change.kind === "springBones") return true;
+  if (change.kind === "lookAt") return change.targetSpace === "world";
+  if (change.kind === "twoBoneIk") return change.effectorSpace === "world" || (!!change.jointTarget && change.jointTargetSpace === "world");
+  return false;
+}
 
 /** Per additive clip: its channels' base values for each base pose it has been played from. */
 const additiveReferences = new WeakMap<PoseClip, Array<{ reference: PoseClip | null; frame: number; values: Float64Array }>>();
@@ -1045,15 +1071,51 @@ function nodePropertyIndices(rig: PoseRig, node: BoneNode): Int32Array {
 }
 
 const CHANNEL_BITS = [WRITE_TRANSLATION, WRITE_ROTATION, WRITE_SCALE] as const;
-const CHANNEL_OFFSETS = [TRANSLATION, ROTATION, SCALE] as const;
 const trsBase = new Float64Array(TRS_LENGTH);
 const trsChanged = new Float64Array(TRS_LENGTH);
 const trsOut = new Float64Array(TRS_LENGTH);
 
+const ikBases = [new Float64Array(TRS_LENGTH), new Float64Array(TRS_LENGTH), new Float64Array(TRS_LENGTH)] as const;
+const ikSolved = [new Float64Array(TRS_LENGTH), new Float64Array(TRS_LENGTH), new Float64Array(TRS_LENGTH)] as const;
+
 /**
- * Applies Transform Bone changes in order on the posed nodes. A bone's first change in a pose starts from its pose:
- * the blended value where a clip animates the channel, else its rest. A changed channel a clip animates is written
- * again by the next pose; a bone no change touches any more returns its other channels to rest.
+ * Writes a change to one bone: `solved` (its local transform after the change) blended with `base` (its pose before)
+ * by `alpha`, on `channels`. A changed channel a clip animates is written again by the next pose.
+ */
+function writeBoneChange(
+  rig: PoseRig, node: BoneNode, base: Float64Array, solved: Float64Array, alpha: number, channels: number, generation: number,
+): void {
+  if (!(alpha > 0) || channels === 0) return;
+  let changed = rig.changed.get(node);
+  if (!changed) {
+    // Its pose now: a clip's value, or its rest where no clip and no change has set it.
+    const rest = new Float64Array(TRS_LENGTH);
+    readNodeTrs(node, rest);
+    changed = { rest, touched: 0, generation };
+    rig.changed.set(node, changed);
+  }
+  changed.generation = generation;
+  blendTrs(base, solved, alpha, trsOut);
+  writeNodeTrs(node, trsOut, channels);
+  changed.touched |= channels;
+  const indices = nodePropertyIndices(rig, node);
+  for (let c = 0; c < 3; c++) {
+    const index = indices[c]!;
+    if (index < 0 || !(channels & CHANNEL_BITS[c]!)) continue;
+    // The node no longer holds the blended value: the next pose writes it again, or rests it.
+    rig.written[index] = 0;
+    rig.posed[index] = 1;
+  }
+}
+
+function changeAlpha(node: BoneNode, change: AnimBoneModifier, blends: readonly AnimLayerBlend[]): number {
+  return Math.min(1, change.alpha) * (change.masks?.length ? nodeMaskFactor(node, change.masks, blends) : 1);
+}
+
+/**
+ * Applies skeletal control changes (Transform Bone, Look At, Two Bone IK, Spring Bones) in order on the posed nodes. Each starts
+ * from the bones' pose: the blended value where a clip animates a channel, else its rest, so a channel a change set
+ * last pose and no clip animates returns to rest first. A bone no change touches any more stays at rest.
  */
 function applyBoneModifiers(
   rig: PoseRig,
@@ -1061,50 +1123,46 @@ function applyBoneModifiers(
   blends: readonly AnimLayerBlend[],
   generation: number,
 ): void {
-  for (const modifier of modifiers) {
-    const node = boneNodeOf(rig, modifier.bone);
-    if (!node) continue;
-    const alpha = Math.min(1, modifier.alpha) * (modifier.masks?.length ? nodeMaskFactor(node, modifier.masks, blends) : 1);
-    const channels = modifierChannels(modifier);
-    if (!(alpha > 0) || channels === 0) continue;
-    const indices = nodePropertyIndices(rig, node);
-    let changed = rig.changed.get(node);
-    if (!changed) {
-      const rest = new Float64Array(TRS_LENGTH);
-      readNodeTrs(node, rest);
-      changed = { rest, touched: 0, generation: 0 };
-      rig.changed.set(node, changed);
-    }
-    readNodeTrs(node, trsBase);
-    if (changed.generation !== generation) {
-      changed.generation = generation;
-      for (let c = 0; c < 3; c++) {
-        if (indices[c]! >= 0) continue;
-        const at = CHANNEL_OFFSETS[c]!;
-        const length = c === 1 ? 4 : 3;
-        for (let k = 0; k < length; k++) trsBase[at + k] = changed.rest[at + k]!;
-      }
-    }
-    modifiedLocalTrs(node, modifier, trsBase, trsChanged);
-    blendTrs(trsBase, trsChanged, alpha, trsOut);
-    writeNodeTrs(node, trsOut, channels);
-    changed.touched |= channels;
-    for (let c = 0; c < 3; c++) {
-      const index = indices[c]!;
-      if (index < 0 || !(channels & CHANNEL_BITS[c]!)) continue;
-      // The node no longer holds the blended value: the next pose writes it again, or rests it.
-      rig.written[index] = 0;
-      rig.posed[index] = 1;
-    }
-  }
   for (const [node, changed] of rig.changed) {
-    if (changed.generation === generation) continue;
-    rig.changed.delete(node);
-    if (node.isDisposed?.()) continue;
+    if (node.isDisposed?.()) {
+      rig.changed.delete(node);
+      continue;
+    }
     const indices = nodePropertyIndices(rig, node);
     let restore = 0;
     for (let c = 0; c < 3; c++) if (indices[c]! < 0) restore |= changed.touched & CHANNEL_BITS[c]!;
     if (restore) writeNodeTrs(node, changed.rest, restore);
+    changed.touched = 0;
+  }
+  for (const modifier of modifiers) {
+    const node = boneNodeOf(rig, modifier.bone);
+    if (!node) continue;
+    if (modifier.kind === "springBones") {
+      applySpringBones(rig, node, modifier, generation, (name) => boneNodeOf(rig, name), (bone, base, solved) =>
+        writeBoneChange(rig, bone, base, solved, changeAlpha(bone, modifier, blends), WRITE_ROTATION, generation));
+      continue;
+    }
+    if (modifier.kind === "twoBoneIk") {
+      const chain = ikChainOf(node);
+      if (!chain) continue;
+      const bones = [chain.root, chain.joint, chain.end] as const;
+      bones.forEach((bone, i) => readNodeTrs(bone, ikBases[i]!));
+      const writes = twoBoneIkLocalTrs(chain, modifier, ikBases, ikSolved);
+      if (!writes) continue;
+      bones.forEach((bone, i) => writeBoneChange(rig, bone, ikBases[i]!, ikSolved[i]!, changeAlpha(bone, modifier, blends), writes[i]!, generation));
+      continue;
+    }
+    readNodeTrs(node, trsBase);
+    if (modifier.kind === "lookAt") {
+      lookAtLocalTrs(node, modifier, trsBase, trsChanged);
+      writeBoneChange(rig, node, trsBase, trsChanged, changeAlpha(node, modifier, blends), WRITE_ROTATION, generation);
+      continue;
+    }
+    modifiedLocalTrs(node, modifier, trsBase, trsChanged);
+    writeBoneChange(rig, node, trsBase, trsChanged, changeAlpha(node, modifier, blends), modifierChannels(modifier), generation);
+  }
+  for (const [node, changed] of rig.changed) {
+    if (changed.generation !== generation) rig.changed.delete(node);
   }
 }
 

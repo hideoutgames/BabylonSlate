@@ -42,6 +42,13 @@ describe("Phase 5b pose node rows", () => {
     expect(patches).toEqual([{ count: 16 }]);
   });
 
+  it("names a Slot's slot, DefaultSlot when blank", () => {
+    const { rows, patches } = rowsOf("anim.frame.slot", {});
+    expect(rows).toEqual([expect.objectContaining({ kind: "text", label: "Slot Name", value: "DefaultSlot" })]);
+    if (rows[0]?.kind === "text") rows[0].onChange("  ");
+    expect(patches).toEqual([{ slotName: "DefaultSlot" }]);
+  });
+
   it("names a Save Cached Pose, and picks a Use Cached Pose's from the saved names, keeping a missing one", () => {
     const save = rowsOf("anim.pose.saveCachedPose", { name: "Loco" });
     expect(save.rows).toEqual([expect.objectContaining({ kind: "text", label: "Name", value: "Loco" })]);
@@ -60,5 +67,20 @@ describe("Phase 5b pose node rows", () => {
     expect(patches).toEqual([{ rotationSpace: "bone" }]);
     // Without a Skeleton the bone is typed.
     expect(rowsOf("anim.control.transformBone", {}).rows[0]).toMatchObject({ kind: "text", label: "Bone" });
+  });
+
+  it("shows Look At's target space, axes, limit and easing", () => {
+    const { rows, patches } = rowsOf("anim.control.lookAt", { bone: "head" }, { bones: ["root", "head"] });
+    expect(rows.map((row) => row.label)).toEqual(["Bone", "Target Space", "Aim Axis", "Up Axis", "Angle Limit", "Interpolation Time"]);
+    expect(rows.map((row) => "value" in row ? row.value : undefined)).toEqual(["head", "actor", "z", "none", 180, 0]);
+    const up = rows.find((row) => row.id === "upAxis");
+    if (up?.kind === "enum") up.onChange("y");
+    expect(patches).toEqual([{ upAxis: "y" }]);
+  });
+
+  it("shows Two Bone IK's Joint Target Space only while it uses a Joint Target", () => {
+    const labels = (data: Record<string, unknown>) => rowsOf("anim.control.twoBoneIk", data, { bones: ["hand_r"] }).rows.map((row) => row.label);
+    expect(labels({})).toEqual(["End Bone", "Effector Space", "Use Joint Target", "Max Stretch", "Keep Effector Rotation"]);
+    expect(labels({ useJointTarget: true })).toEqual(["End Bone", "Effector Space", "Use Joint Target", "Joint Target Space", "Max Stretch", "Keep Effector Rotation"]);
   });
 });

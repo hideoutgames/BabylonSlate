@@ -1,5 +1,6 @@
 import { DOCUMENT_CHUNK_ID } from "./document-chunk";
-import { diffGraphDocuments, isGraphDocument, type GraphDiff } from "./asset-diff-graph";
+import type { GraphDiff } from "./asset-diff-graph";
+import { diffGraphDocuments, isGraphDocument } from "./asset-diff-graph-families";
 import { diffSceneDocuments, type SceneDiff } from "./asset-diff-scene";
 import {
   documentGroups,
@@ -18,6 +19,7 @@ import { decodeHassetChunk, readHassetHeader, type ChunkEntry, type HassetHeader
 export * from "./asset-diff-values";
 export * from "./asset-diff-scene";
 export * from "./asset-diff-graph";
+export * from "./asset-diff-graph-families";
 
 /**
  * Where one version of an asset comes from: the working copy, or a commit
@@ -334,12 +336,12 @@ async function propertiesDiff(base: Record<string, unknown> | null, compare: Rec
   return { kind: "properties", groups: documentGroups(base ?? undefined, compare ?? undefined, title) };
 }
 
-/** The document's view: Scenes by actor, graphs by node, Textures by raster, anything else by field. */
+/** The document's view: Scenes by actor, graphs by node (each family's own way), Textures by raster, anything else by field. */
 async function viewFor(type: string, base: Side, compare: Side): Promise<AssetDiffView> {
   if (type === "Texture") return textureDiff(base, compare);
   const [before, after] = await documents(base, compare);
   if (SCENE_TYPES.has(type)) return diffSceneDocuments(before, after);
-  if (isGraphDocument(before) || isGraphDocument(after)) return diffGraphDocuments(before, after);
+  if (isGraphDocument(type, before) || isGraphDocument(type, after)) return diffGraphDocuments(before, after, type);
   return propertiesDiff(before, after, type);
 }
 

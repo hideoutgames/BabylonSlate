@@ -197,6 +197,10 @@ describe("assetPickerAllowedTypes", () => {
     expect(assetPickerAllowedTypes("Material")).toEqual(["Material", "MaterialInstance"]);
   });
 
+  it("admits Sprite Animations for an Animation pin (Play Slot Animation in a 2D graph)", () => {
+    expect(assetPickerAllowedTypes("Animation")).toEqual(["Animation", "SpriteAnimation"]);
+  });
+
   it("lists every asset for a pin that accepts any asset instead of filtering to an empty type", () => {
     expect(assetPickerAllowedTypes("")).toEqual([]);
     expect(assetPickerAllowedTypes("  ")).toEqual([]);

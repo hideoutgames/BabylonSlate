@@ -21,6 +21,7 @@ import {
   MonitorPlayIcon,
   PackageIcon,
   PlayIcon,
+  TimerIcon,
 } from "lucide-react";
 
 /** What the Play button starts. */
@@ -46,6 +47,8 @@ export type PlayDebugMenuItemsProps = {
   onPlayFromSceneChange: (checked: boolean) => void;
   /** Shown for Feature Test projects only. */
   onRunFeatureTestCheck?: () => void;
+  /** Shown in Debug Mode where the Git benchmark can run. */
+  onRunGitBenchmark?: () => void;
   /** The project's recorded traces, newest first; with `onOpenTrace`, shows Recent Traces. */
   listRecentTraces?: () => Promise<readonly TraceDocumentEntry[]>;
   onOpenTrace?: (path: string) => void;
@@ -108,6 +111,7 @@ export function PlayDebugMenuItems({
   onPauseOnPlayChange,
   onPlayFromSceneChange,
   onRunFeatureTestCheck,
+  onRunGitBenchmark,
   listRecentTraces,
   onOpenTrace,
   recentTraceLimit = DEFAULT_TRACES_KEPT,
@@ -204,6 +208,12 @@ export function PlayDebugMenuItems({
         >
           <ClipboardCheckIcon />
           Run Feature Test Check…
+        </DropdownMenuItem>
+      ) : null}
+      {onRunGitBenchmark ? (
+        <DropdownMenuItem data-testid="git-benchmark-open" onClick={onRunGitBenchmark}>
+          <TimerIcon />
+          Run Git Benchmark…
         </DropdownMenuItem>
       ) : null}
       {extensionItems}

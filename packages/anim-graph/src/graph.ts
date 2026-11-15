@@ -9,8 +9,11 @@ import type {
 import { normalizeTag, normalizeTagContainer } from "@haptic/core";
 import {
   type ResolvedClipAdditive,
-  ANIM_CONTROL_TRANSFORM_BONE_TYPE,
+  ANIM_CONTROL_LOOK_AT_TYPE,
+  ANIM_CONTROL_TWO_BONE_IK_TYPE,
+  ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_POSE_APPLY_ADDITIVE_TYPE,
+  isSkeletalControlType,
   ANIM_FRAME_OUTPUT_TYPE,
   ANIM_POSE_SAVE_CACHED_TYPE,
   ANIM_POSE_USE_CACHED_TYPE,
@@ -25,6 +28,8 @@ import {
   isPoseOutputType,
   type AnimPoseDimension,
 } from "./pose-graph";
+import type { AnimSlotEvent, AnimSlotRequest, AnimSlotState } from "./slots";
+import type { AnimClipRootMotion, AnimRootMotionDelta } from "./root-motion";
 import {
   parseAnimStateEvents,
   type AnimClipEvent,
@@ -43,7 +48,7 @@ const ANIM_RULE_EXIT_NODE_ID = "exit-state";
 export const ANIM_EXIT_TIME_REACHED_TYPE = "anim.state.exitTimeReached";
 
 export type AnimClipKind = "animation" | "sprite";
-export type AnimVariableTypeId = "bool" | "int" | "float" | "string" | "tag" | "struct";
+export type AnimVariableTypeId = "bool" | "int" | "float" | "string" | "tag" | "vec3" | "rotator" | "struct";
 
 /** A 3D graph plays Animations on its Skeleton and passes poses; a 2D graph plays Sprite Animations and passes frames. */
 export type AnimGraphDimension = AnimPoseDimension;
@@ -156,6 +161,8 @@ export interface AnimGraphInputs {
    * of its state (null when it is entered). Unlisted inputs use the values stored on their nodes.
    */
   poseData?: (graphKey: string, facts: AnimStateFacts | null) => AnimPoseData | undefined;
+  /** Play and Stop Slot Animation requests since the last evaluation, in order. */
+  slotRequests?: readonly AnimSlotRequest[];
 }
 
 export interface AnimStateFacts {
@@ -194,6 +201,8 @@ export interface AnimClipLayer {
   additive?: boolean;
   /** An additive Animation's base pose when it is not the rest pose (`AnimClipAdditive`, resolved). */
   additiveBase?: AnimAdditiveBase;
+  /** The clip's root motion bone: render holds it in place across the ground, as the actor moves instead. */
+  rootMotionBone?: string;
 }
 
 /** An Animation's additive settings as the clip catalog carries them. */
@@ -237,8 +246,16 @@ export interface AnimEvalState extends AnimMachineEvalState {
   layers: AnimClipLayer[];
   /** The Layered Blend Per Bone nodes this tick reached, which layers' `masks` index; absent when none. */
   layerBlends?: AnimLayerBlend[];
-  /** Transform Bone changes, in the order render applies them after the layers blend; absent when none. */
+  /** Skeletal control changes, in the order render applies them after the layers blend; absent when none. */
   boneModifiers?: AnimBoneModifier[];
+  /** Each Look At's target as it eases toward the one it is given (its Interpolation Time), by `graphKey#nodeId`. */
+  lookAtTargets?: Record<string, number[]>;
+  /** The root motion the clips made this tick, in the actor's axes; absent when they moved nothing. */
+  rootMotion?: AnimRootMotionDelta;
+  /** Slot animations playing, by slot name; absent when none. */
+  slots?: Record<string, AnimSlotState>;
+  /** What happened to slot plays this tick (blend out, completed, interrupted), in order; absent when nothing. */
+  slotEvents?: AnimSlotEvent[];
   /** The Animation Events this tick fired, in order; absent when none did. */
   events?: AnimFiredEvent[];
   /** Windows that began and have not ended, by window key; absent when none are open. */
@@ -300,6 +317,10 @@ export function defaultAnimVariableValue(
       return 0;
     case "string":
       return "";
+    case "vec3":
+      return { x: 0, y: 0, z: 0 };
+    case "rotator":
+      return { pitch: 0, yaw: 0, roll: 0 };
     case "struct":
       return typeClassId === "engine:TagContainer" ? { Tags: [] } : {};
   }
@@ -495,6 +516,8 @@ export interface AnimClipCatalogEntry {
   events?: readonly AnimClipEvent[];
   /** An additive Animation's settings; absent for one that is not additive. */
   additive?: AnimClipAdditive;
+  /** An Animation's root motion, in the actor's units; absent when it plays in place. */
+  rootMotion?: AnimClipRootMotion;
   /** A Blend Space's or Sprite Blend Space's axes and samples, which a Blend Space Player plays. */
   blendSpace?: {
     axes: ReadonlyArray<{ min: number; max: number; wrap: boolean; smoothingSeconds: number }>;
@@ -563,8 +586,9 @@ export function validateAnimGraph(
       diagnostics.push(...clipDiagnostics(doc, byGuid, node.id, node.type, assetGuid, location, options.dimension));
     }
     for (const node of graph.nodes) {
-      if (node.type === ANIM_CONTROL_TRANSFORM_BONE_TYPE && !(typeof node.data.bone === "string" && node.data.bone.trim())) {
-        diagnostics.push({ code: "anim.missingBone", message: "Transform Bone changes no bone until it names one", nodeId: node.id, location, severity: "warning" });
+      if (isSkeletalControlType(node.type) && !(typeof node.data.bone === "string" && node.data.bone.trim())) {
+        const title = SKELETAL_CONTROL_TITLES[node.type] ?? "Transform Bone";
+        diagnostics.push({ code: "anim.missingBone", message: `${title} changes no bone until it names one`, nodeId: node.id, location, severity: "warning" });
       }
     }
   }
@@ -572,6 +596,12 @@ export function validateAnimGraph(
   diagnostics.push(...additiveDiagnostics(doc, byGuid));
   return diagnostics;
 }
+
+const SKELETAL_CONTROL_TITLES: Record<string, string> = {
+  [ANIM_CONTROL_LOOK_AT_TYPE]: "Look At",
+  [ANIM_CONTROL_TWO_BONE_IK_TYPE]: "Two Bone IK",
+  [ANIM_CONTROL_SPRING_BONES_TYPE]: "Spring Bones",
+};
 
 /**
  * Additive Animations play only under an Apply Additive's Additive input, and only additive ones play there. Walks
@@ -903,10 +933,22 @@ function copyGraph(graph: SerializedGraph): SerializedGraph {
 
 function parseVariableType(value: unknown, typeClassId?: unknown): AnimVariableTypeId {
   if (value === "struct" && typeClassId === "engine:TagContainer") return "struct";
-  if (value === "int" || value === "float" || value === "string" || value === "bool" || value === "tag") {
+  if (value === "int" || value === "float" || value === "string" || value === "bool" || value === "tag" || value === "vec3" || value === "rotator") {
     return value;
   }
   return "bool";
+}
+
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/** A Vector or Rotator variable's default as stored, with every component a number. */
+function normalizeStructDefault(typeId: "vec3" | "rotator", value: unknown): Record<string, number> {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return typeId === "vec3"
+    ? { x: finiteOr(row.x, 0), y: finiteOr(row.y, 0), z: finiteOr(row.z, 0) }
+    : { pitch: finiteOr(row.pitch, 0), yaw: finiteOr(row.yaw, 0), roll: finiteOr(row.roll, 0) };
 }
 
 function parseVariables(
@@ -935,6 +977,7 @@ function parseVariables(
         defaultValue:
           typeId === "tag" ? normalizeTag(variable.defaultValue) :
           typeId === "struct" ? normalizeTagContainer(variable.defaultValue) :
+          typeId === "vec3" || typeId === "rotator" ? normalizeStructDefault(typeId, variable.defaultValue) :
           variable.defaultValue !== undefined
             ? variable.defaultValue
             : defaultAnimVariableValue(typeId),
@@ -1106,12 +1149,14 @@ function resolvePoseGraphClips(
     const frameCount = sprite && typeof entry.frameCount === "number" && entry.frameCount > 0 ? entry.frameCount : undefined;
     const events = entry.events && entry.events.length > 0 ? entry.events : undefined;
     const additive = sprite ? undefined : resolvedClipAdditive(entry, byGuid);
+    const rootMotion = sprite ? undefined : entry.rootMotion;
     if (
       node.data.clipName === clipName &&
       node.data.durationMs === durationMs &&
       node.data.frameCount === frameCount &&
       JSON.stringify(node.data.events ?? null) === JSON.stringify(events ?? null) &&
-      JSON.stringify(node.data.additive ?? null) === JSON.stringify(additive ?? null)
+      JSON.stringify(node.data.additive ?? null) === JSON.stringify(additive ?? null) &&
+      JSON.stringify(node.data.rootMotion ?? null) === JSON.stringify(rootMotion ?? null)
     ) return node;
     changed = true;
     const data: Record<string, unknown> = { ...node.data, clipName };
@@ -1119,6 +1164,7 @@ function resolvePoseGraphClips(
     if (frameCount !== undefined) data.frameCount = frameCount; else delete data.frameCount;
     if (events) data.events = events; else delete data.events;
     if (additive) data.additive = additive; else delete data.additive;
+    if (rootMotion) data.rootMotion = rootMotion; else delete data.rootMotion;
     return { ...node, data };
   });
   return changed ? { ...graph, nodes } : graph;
@@ -1172,6 +1218,7 @@ function resolvedBlendSpace(nodeType: string, assetGuid: unknown, byGuid: Readon
         rateScale: sample.rateScale,
         ...(clip.events && clip.events.length > 0 ? { events: clip.events } : {}),
         ...((additive) => (additive ? { additive } : {}))(clipType === "Animation" ? resolvedClipAdditive(clip, byGuid) : undefined),
+        ...(clipType === "Animation" && clip.rootMotion ? { rootMotion: clip.rootMotion } : {}),
       }];
     }),
   };

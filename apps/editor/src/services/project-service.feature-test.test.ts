@@ -172,6 +172,10 @@ describe("FeatureTest starter", () => {
       .map((payload) => payload.clipName);
     expect(clipsOn(medium)).toEqual(expect.arrayContaining(["Idle_A", "Interact", "PickUp", "Walking_A", "Running_A"]));
     expect(clipsOn(large)).toEqual(expect.arrayContaining(["Walking_A", "Running_A"]));
+    // The Velociraptor comes from FBX: a Model on its own Skeleton with the file's clips.
+    const raptor = skeletonOfModel("Velociraptor");
+    expect(raptor).toBeTruthy();
+    expect(clipsOn(raptor).map((clip) => clip.slice(clip.lastIndexOf("_") + 1))).toEqual(expect.arrayContaining(["Run", "Idle", "Walk"]));
   });
 
   it("paints a Tilemap with a terrain of every autotile style, current with its Tilesets", async () => {
@@ -360,6 +364,7 @@ describe("FeatureTest starter", () => {
     const clipCatalog = animClipCatalogFromAssets(reopened.registry!.list());
     const blendSpacePlayers = new Set<string>();
     const poseNodeTypes = new Set<string>();
+    const variableTypes = new Set<string>();
     const syncGroupMembers = new Map<string, number>();
     let aliasTransitions = 0;
     for (const [type, kind, dimension] of [
@@ -369,6 +374,7 @@ describe("FeatureTest starter", () => {
       for (const asset of ofType(type)) {
         const graph = (await reopened.loadDocument(kind, asset.path)) as unknown as AnimGraphDocument;
         expect(validateAnimGraph(graph, clipCatalog, { dimension }).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+        for (const variable of graph.variables) variableTypes.add(variable.typeId);
         const aliasIds = new Set((graph.stateMachine.aliases ?? []).map((alias) => alias.id));
         aliasTransitions += graph.stateMachine.transitions.filter((row) => aliasIds.has(row.fromStateId)).length;
         // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
@@ -390,16 +396,24 @@ describe("FeatureTest starter", () => {
     expect(Math.max(0, ...syncGroupMembers.values())).toBeGreaterThan(1);
     // A State Alias with a transition is showcased.
     expect(aliasTransitions).toBeGreaterThan(0);
-    // An additive Animation is showcased (Apply Additive adds it).
+    // An additive Animation is showcased (Apply Additive adds it), and one with root motion.
     expect(clipCatalog.some((entry) => entry.type === "Animation" && entry.additive)).toBe(true);
+    expect(clipCatalog.find((entry) => entry.type === "Animation" && entry.rootMotion)?.rootMotion?.bone).toBe("hips");
     // Per-bone layering, cached poses, additive poses and a skeletal control are showcased.
     expect([...poseNodeTypes]).toEqual(expect.arrayContaining([
       "anim.pose.layeredBlendPerBone",
       "anim.pose.saveCachedPose",
       "anim.pose.useCachedPose",
       "anim.control.transformBone",
+      "anim.control.lookAt",
+      "anim.control.twoBoneIk",
+      "anim.control.springBones",
       "anim.pose.applyAdditive",
+      "anim.pose.slot",
+      "anim.frame.slot",
     ]));
+    // Vector and Rotator graph variables drive the skeletal controls' targets.
+    expect([...variableTypes]).toEqual(expect.arrayContaining(["vec3", "rotator"]));
   });
 
   it("authors physics without pairing problems", async () => {
@@ -430,8 +444,19 @@ describe("FeatureTest starter", () => {
       "FT_AnimAdventurer heard Move Started",
       // A socket name attaches like a bone name.
       "FT_Animation script attached Socket Prop to Knight's FT_Grip",
+      // Play Slot Animation's On Completed runs once the Throw has played through on the UpperBody slot.
+      "FT_AnimKnight finished Throw on UpperBody",
+      // Set Anim Graph Variable takes a Vector for the reacher's Two Bone IK.
+      "FT_Animation script set IK Reacher's ReachTarget",
+      // Death_A's root motion moves its actor back until its Class returns it.
+      "FT_AnimRootMotionActor moved back 1.2 m by root motion",
     ],
-    FT_2D: ["FT_2DRobotGraph heard Step", "FT_2DRobotGraph heard Jump Started"],
+    FT_2D: [
+      "FT_2DRobotGraph heard Step",
+      "FT_2DRobotGraph heard Jump Started",
+      // A 2D graph's Frame Slot plays a Sprite Animation from a script.
+      "FT_2D script played Jump on Robot Mascot's Action slot",
+    ],
   };
   for (const scene of FEATURE_TEST_CHECK_SCENES) {
     it(`plays ${scene.name} without session errors or failed asserts`, async () => {

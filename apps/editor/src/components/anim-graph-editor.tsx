@@ -117,6 +117,8 @@ const VARIABLE_TYPES = [
   "int",
   "float",
   "string",
+  "vec3",
+  "rotator",
   "tag",
   "tagContainer",
 ] as const;
@@ -447,7 +449,8 @@ function AnimGraphVariablesList({ containerApi }: { containerApi: IDockviewPanel
                   <Trash2Icon />
                 </IconActionButton>
               </div>
-              {variable.typeId === "tag" || (variable.typeId === "struct" && variable.typeClassId === "engine:TagContainer") ? (
+              {variable.typeId === "tag" || variable.typeId === "vec3" || variable.typeId === "rotator" ||
+                (variable.typeId === "struct" && variable.typeClassId === "engine:TagContainer") ? (
                 <PropertyGrid
                   rows={variableDefaultPropertyRows(variable.typeId, variable.defaultValue, (defaultValue) => {
                     commit(commitAnimGraphVariables(doc, doc.variables.map((row) =>

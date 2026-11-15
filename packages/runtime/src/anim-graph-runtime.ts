@@ -3,15 +3,22 @@ import type { TraceAnimGraphState } from "@haptic/debugger";
 import { Actor, ActorComponent, type EngineObject, type World } from "@haptic/object-model";
 import {
   animEvalWithJump,
+  animGraphDimension,
   animGraphScriptClassId,
   animPoseScriptClassId,
   animRuleScriptClassId,
   animTransitionEdgeId,
   defaultAnimVariableValue,
   evaluateAnimGraph,
+  ANIM_DEFAULT_SLOT,
+  type AnimClipCatalogEntry,
+  type AnimSlotClip,
+  type AnimSlotEvent,
+  type AnimSlotRequest,
   type AnimEvalState,
   type AnimFiredEvent,
   type AnimGraphDocument,
+  type AnimRootMotionDelta,
   type AnimTransition,
 } from "@haptic/anim-graph";
 import { ANIM_NOTIFY_EVENT } from "@haptic/scripting";
@@ -23,6 +30,7 @@ import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
 import type { SpriteClipState } from "./sprite-clip-trace";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
+import { TickWait } from "./tick-wait";
 
 type SpriteClip = SpriteClipState;
 /** Stops on the State Machine's state or transition when it has a breakpoint. */
@@ -49,6 +57,21 @@ interface AnimGraphRuntimeHost {
   playEventSound(actor: Actor, assetGuid: string, volume: number): void;
   /** An Animation Event's Spawn Particle System: on the actor, at `bone` when it names one. */
   spawnEventParticles(actor: Actor, assetGuid: string, bone: string): void;
+  /** Moves the actor by a tick's root motion: travel along its own X and Z (in its units) and a turn about Y. */
+  applyRootMotion(actor: Actor, motion: AnimRootMotionDelta, dtSeconds: number): void;
+}
+
+/** An ended play's handle stays this many ticks for a script still to ask how it ended (On Completed). */
+const ENDED_SLOT_PLAY_TICKS = 600;
+
+/** A Play Slot Animation's handle while scripts may wait on it. */
+interface SlotPlay {
+  component: string;
+  blendedOut: boolean;
+  ended?: "completed" | "interrupted";
+  /** Ticks since it ended: a handle nothing waited on goes after `ENDED_SLOT_PLAY_TICKS`. */
+  endedTicks?: number;
+  waits: Array<{ phase: "blendOut" | "completed"; resolve: (value: boolean) => void }>;
 }
 
 /** AnimationGraph documents and per-component evaluation state for Play. */
@@ -60,6 +83,13 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   /** The graph guid of each component the current tick visited. */
   private readonly liveGraphByComponent = new Map<string, string>();
   private readonly pendingJumpByComponent = new Map<string, string>();
+  /** Play and Stop Slot Animation requests since a component's last evaluation, in order. */
+  private readonly slotRequestsByComponent = new Map<string, AnimSlotRequest[]>();
+  /** Each Play Slot Animation's handle: its component, whether it began blending out, how it ended, and its waits. */
+  private readonly slotPlays = new Map<number, SlotPlay>();
+  private nextSlotPlayId = 1;
+  /** Animations and Sprite Animations by guid, which Play Slot Animation plays. */
+  private readonly clipCatalog = new Map<string, AnimClipCatalogEntry>();
   /** The graph guid a component's evaluation and queued jump belong to. */
   private readonly graphByComponent = new Map<string, string>();
   /** The AnimationGraphComponent the editor's graph debugger follows, and where its State Machine reports. */
@@ -71,6 +101,72 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
 
   register(guid: string, document: AnimGraphDocument): void {
     this.documents.set(guid, document);
+  }
+
+  replaceAnimClipCatalog(entries: Iterable<AnimClipCatalogEntry>): void {
+    this.clipCatalog.clear();
+    for (const entry of entries) if (entry.guid) this.clipCatalog.set(entry.guid, entry);
+  }
+
+  /** The clip a slot plays for `guid`: an Animation in a 3D graph, a Sprite Animation in a 2D one. */
+  private slotClip(guid: string, document: AnimGraphDocument): AnimSlotClip | null {
+    const entry = this.clipCatalog.get(guid);
+    const sprite = animGraphDimension(document) === "2d";
+    if (!entry || entry.type !== (sprite ? "SpriteAnimation" : "Animation")) return null;
+    const durationMs = typeof entry.durationMs === "number" && entry.durationMs > 0 ? entry.durationMs : 1000;
+    return {
+      assetGuid: guid,
+      clipName: sprite ? "" : entry.clipName ?? "",
+      clipKind: sprite ? "sprite" : "animation",
+      durationMs,
+      ...(entry.events && entry.events.length > 0 ? { events: [...entry.events] } : {}),
+      ...(!sprite && entry.rootMotion ? { rootMotion: entry.rootMotion } : {}),
+    };
+  }
+
+  /**
+   * Waits for a Play Slot Animation to reach `phase`: true once it begins blending out, or (for `completed`) once
+   * it has played through; false when it never started, or ended early for `completed`.
+   */
+  waitSlot(handle: number, phase: "blendOut" | "completed"): PromiseLike<boolean> | boolean {
+    const play = this.slotPlays.get(handle);
+    if (!play) return false;
+    if (phase === "blendOut" && (play.blendedOut || play.ended)) return play.blendedOut;
+    if (phase === "completed" && play.ended) {
+      this.slotPlays.delete(handle);
+      return play.ended === "completed";
+    }
+    return TickWait.start<boolean>((resolve) => {
+      play.waits.push({ phase, resolve });
+    });
+  }
+
+  /** A play's blend out or end: resolves its waits; an ended play's handle is dropped once nothing waits on it. */
+  private settleSlotEvent(event: AnimSlotEvent): void {
+    const play = this.slotPlays.get(event.id);
+    if (!play) return;
+    if (event.phase === "blendOut") play.blendedOut = true;
+    else play.ended = event.phase;
+    const waits = play.waits.splice(0);
+    for (const wait of waits) {
+      if (wait.phase === "blendOut" && play.blendedOut) wait.resolve(true);
+      else if (wait.phase === "completed" && play.ended) wait.resolve(play.ended === "completed");
+      else if (wait.phase === "blendOut" && play.ended) wait.resolve(false);
+      else play.waits.push(wait);
+    }
+  }
+
+  /** Ends every play of a component that will not run again: their waits answer false. */
+  private dropSlotPlays(componentGuid: string): void {
+    this.slotRequestsByComponent.delete(componentGuid);
+    for (const [handle, play] of this.slotPlays) {
+      if (play.component !== componentGuid) continue;
+      if (!play.ended) {
+        if (!play.blendedOut) this.settleSlotEvent({ id: handle, phase: "blendOut" });
+        this.settleSlotEvent({ id: handle, phase: "interrupted" });
+      }
+      this.slotPlays.delete(handle);
+    }
   }
 
   /**
@@ -92,6 +188,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   /** Forget a removed actor's component evaluations, pending jumps and initialization. */
   retireActor(actor: Actor): void {
     for (const component of actor.components) {
+      this.dropSlotPlays(component.guid);
       this.evalByComponent.delete(component.guid);
       this.pendingJumpByComponent.delete(component.guid);
       this.graphByComponent.delete(component.guid);
@@ -132,6 +229,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     if (bound === undefined) return;
     this.evalByComponent.delete(componentGuid);
     this.pendingJumpByComponent.delete(componentGuid);
+    this.dropSlotPlays(componentGuid);
   }
 
   /** Script-facing control of one AnimationGraphComponent. */
@@ -173,7 +271,41 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         this.bindGraph(evalKey, guid);
         this.pendingJumpByComponent.set(evalKey, match.id);
       },
+      playSlotAnimation: (request) => {
+        const clip = document && guid && hasSlot ? this.slotClip(request.animation, document) : null;
+        if (!clip || !guid) return 0;
+        this.bindGraph(evalKey, guid);
+        const id = this.nextSlotPlayId++;
+        this.slotPlays.set(id, { component: evalKey, blendedOut: false, waits: [] });
+        this.queueSlotRequest(evalKey, {
+          kind: "play", id, slot: request.slot.trim() || ANIM_DEFAULT_SLOT, clip,
+          blendInSeconds: request.blendInSeconds, blendOutSeconds: request.blendOutSeconds,
+          playRate: request.playRate, loopCount: request.loopCount, startSeconds: request.startSeconds,
+        });
+        return id;
+      },
+      stopSlotAnimation: (slot, blendOutSeconds) => {
+        if (!guid || !document) return;
+        this.queueSlotRequest(evalKey, { kind: "stop", slot: slot.trim() || ANIM_DEFAULT_SLOT, blendOutSeconds });
+      },
+      isSlotActive: (slot) => {
+        const name = slot.trim() || ANIM_DEFAULT_SLOT;
+        // A play queued since the last evaluation already counts.
+        const requests = this.slotRequestsByComponent.get(evalKey) ?? [];
+        for (let i = requests.length - 1; i >= 0; i--) {
+          const request = requests[i]!;
+          if (request.slot === name) return request.kind === "play";
+        }
+        const evalState = guid && this.graphByComponent.get(evalKey) === guid ? this.evalByComponent.get(evalKey) : undefined;
+        return evalState?.slots?.[name]?.active !== undefined;
+      },
     };
+  }
+
+  private queueSlotRequest(componentGuid: string, request: AnimSlotRequest): void {
+    const requests = this.slotRequestsByComponent.get(componentGuid);
+    if (requests) requests.push(request);
+    else this.slotRequestsByComponent.set(componentGuid, [request]);
   }
 
   private seedVariables(
@@ -205,6 +337,15 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     // A component the walk missed, or reached with another graph, initializes again when it next runs.
     for (const [evalKey, graphGuid] of this.initializedGraphByComponent) {
       if (live.get(evalKey) !== graphGuid) this.initializedGraphByComponent.delete(evalKey);
+    }
+    for (const evalKey of this.slotRequestsByComponent.keys()) {
+      if (!live.has(evalKey)) this.dropSlotPlays(evalKey);
+    }
+    for (const [handle, play] of this.slotPlays) {
+      if (!live.has(play.component)) this.dropSlotPlays(play.component);
+      else if (play.ended && play.waits.length === 0 && (play.endedTicks = (play.endedTicks ?? 0) + 1) > ENDED_SLOT_PLAY_TICKS) {
+        this.slotPlays.delete(handle);
+      }
     }
     for (const byComponent of [this.graphByComponent, this.evalByComponent, this.pendingJumpByComponent]) {
       for (const evalKey of byComponent.keys()) {
@@ -341,6 +482,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         extras,
       );
       const previous = this.evalByComponent.get(evalKey) ?? null;
+      const slotRequests = this.slotRequestsByComponent.get(evalKey);
+      this.slotRequestsByComponent.delete(evalKey);
       let taken: AnimTransition | null = null;
       const next = evaluateAnimGraph(
         document,
@@ -361,9 +504,13 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
               actor,
               { variableStore: component, ...(facts ? { animFacts: facts } : {}) },
             ),
+          slotRequests,
         },
       );
       this.evalByComponent.set(evalKey, next);
+      if (next.rootMotion) this.host.applyRootMotion(actor, next.rootMotion, dtSeconds);
+      // A play's waits resume their scripts here, in the tick it blended out or ended.
+      for (const event of next.slotEvents ?? []) this.settleSlotEvent(event);
       if (next.events) this.fireEvents(next.events, objectClassId, actor, dtSeconds, { variableStore: component, animFacts: next.facts });
       if (hit) this.reportStateBreakpoints(hit, previous, next, taken);
       // The followed component reports to the debugger; another, while breakpoints are set, for the frame a stop shows.

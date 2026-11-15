@@ -271,6 +271,7 @@ const poseFrames: number[] = [];
 const poseWeights: number[] = [];
 const poseMasks: (readonly AnimLayerMaskRef[] | undefined)[] = [];
 const poseAdditive: (PoseAdditive | undefined)[] = [];
+const poseRootLock: (string | undefined)[] = [];
 
 function sameAdditive(a: PoseAdditive | undefined, b: PoseAdditive | undefined): boolean {
   if (!a || !b) return a === b;
@@ -351,6 +352,7 @@ export function applyAnimStateToScene(
         poseWeights[count] = layer.weight;
         poseMasks[count] = layer.masks;
         poseAdditive[count] = additive;
+        poseRootLock[count] = layer.rootMotionBone;
         count++;
         continue;
       }
@@ -360,10 +362,11 @@ export function applyAnimStateToScene(
     // What no layer plays rests.
     if (slotClips.length > 0) {
       for (let i = 0; i < count; i++) poseFrames[i] = clipFrame(poseClips[i]!, poseLayers[i]!.normalisedTime);
-      let anyAdditive = false;
-      for (let i = 0; i < count; i++) anyAdditive ||= poseAdditive[i] !== undefined;
-      const layering: PoseLayering | null = command.layerBlends?.length || command.boneModifiers?.length || anyAdditive
-        ? { masks: poseMasks, blends: command.layerBlends ?? [], modifiers: command.boneModifiers ?? [], additive: poseAdditive }
+      // Additive and root motion clips need the layering too.
+      let perClip = false;
+      for (let i = 0; i < count; i++) perClip ||= poseAdditive[i] !== undefined || poseRootLock[i] !== undefined;
+      const layering: PoseLayering | null = command.layerBlends?.length || command.boneModifiers?.length || perClip
+        ? { masks: poseMasks, blends: command.layerBlends ?? [], modifiers: command.boneModifiers ?? [], additive: poseAdditive, rootLock: poseRootLock }
         : null;
       applyPose(poseRigFor(slotClips), count, poseClips, poseFrames, poseWeights, layering);
     }
@@ -373,6 +376,7 @@ export function applyAnimStateToScene(
       poseLayers[i] = undefined;
       poseMasks[i] = undefined;
       poseAdditive[i] = undefined;
+      poseRootLock[i] = undefined;
     }
   }
   if (spritePrimary) {

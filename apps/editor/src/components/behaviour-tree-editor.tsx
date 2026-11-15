@@ -71,7 +71,7 @@ import {
   type Vector3Value,
 } from "@haptic/editor-kit";
 import { BT_DEBUG_GRAPH_ID } from "@haptic/bridge";
-import { GraphEditor, GraphKeybindsContext, breakpointMenuItems, treeNodeTypes, type PaletteNode } from "@haptic/graph-ui";
+import { GraphEditor, GraphKeybindsContext, breakpointMenuItems, treeEdgeOptions, treeNodeTypes, type PaletteNode } from "@haptic/graph-ui";
 import { defaultJsValue } from "@haptic/scripting";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
@@ -94,9 +94,6 @@ import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-edit
 import { sessionReportNodeTitle } from "../lib/session-report-locations";
 import { useBehaviourTreeRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
-
-/** Org-chart wires: a trunk from the parent splits into square drops to each child. */
-const BT_EDGE_OPTIONS = { type: "smoothstep", pathOptions: { borderRadius: 8 } };
 
 const BT_HIDDEN_TOOLBAR_ACTIONS: Array<"copy" | "paste" | "breakLinks" | "format"> = [
   "copy",
@@ -644,7 +641,7 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
         <GraphEditor
           initialGraph={initialGraph}
           nodeTypes={treeNodeTypes}
-          defaultEdgeOptions={BT_EDGE_OPTIONS}
+          defaultEdgeOptions={treeEdgeOptions}
           nodesDraggable={!play.playing}
           nodeDragHandle=".bt-node-drag-handle"
           connectEndMode="add-node"

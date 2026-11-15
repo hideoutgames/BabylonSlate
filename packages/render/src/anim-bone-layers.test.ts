@@ -4,7 +4,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
-import { animBranchFilterKey, type AnimBoneModifier, type AnimBranchFilter, type AnimLayerMaskRef } from "@haptic/core";
+import { animBranchFilterKey, type AnimBranchFilter, type AnimLayerMaskRef, type AnimTransformBoneChange } from "@haptic/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyPose, bindPoseClip, poseRigFor, type PoseAdditive, type PoseClip, type PoseLayering } from "./anim-pose";
 
@@ -94,8 +94,8 @@ describe("Layered Blend Per Bone masks", () => {
   });
 });
 
-function modifier(change: Partial<AnimBoneModifier> & { bone: string }): PoseLayering {
-  return { masks: [], blends: [], modifiers: [{ alpha: 1, ...change }] };
+function modifier(change: Partial<AnimTransformBoneChange> & { bone: string }): PoseLayering {
+  return { masks: [], blends: [], modifiers: [{ kind: "transform", alpha: 1, ...change }] };
 }
 
 const actorPosition = (node: TransformNode) => {
@@ -159,7 +159,7 @@ describe("Transform Bone changes", () => {
     applyPose(poseRigFor(clips), 1, clips, [0], [1], {
       masks: [undefined],
       blends: [{ filters: [animBranchFilterKey([{ bone: "spine", blendDepth: 2 }])], weights: [1] }],
-      modifiers: [{ bone: "spine", alpha: 1, masks: [{ blend: 0, input: 0 }], rotation: { value: [turn.x, turn.y, turn.z, turn.w], mode: "replace", space: "parent" } }],
+      modifiers: [{ kind: "transform", bone: "spine", alpha: 1, masks: [{ blend: 0, input: 0 }], rotation: { value: [turn.x, turn.y, turn.z, turn.w], mode: "replace", space: "parent" } }],
     });
     // The spine is at half weight in its branch: half of the turn.
     const half = Quaternion.RotationAxis(Vector3.Up(), 0.5);

@@ -93,7 +93,7 @@ If only the first push fails, the project is already in Integrated mode with the
 
 In Integrated mode the **Source Control** tab opens on **Changes**, with **History** and **Locks** beside it and the **Actors** and **Diff** windows to the right. The tab shows how many assets have uncommitted changes.
 
-- The top row shows the branch you are on (choose it to switch branches or start a **New Branch…**, see [Branches](#branches)), **Refresh**, and **Pull** and **Push** with the number of commits each would bring in or send.
+- The top row shows the branch you are on (choose it to switch branches or start a **New Branch…**, see [Branches](#branches)), **Refresh**, **Pull** and **Push** with the number of commits each would bring in or send, and **More Actions** with **Remove Unused Files…** ([Remove unused files](#remove-unused-files)).
 - The status line says how many commits there are to pull and to push, and when Haptic last checked.
 - **Changes** lists each changed asset with its type, folder and **A** (added), **M** (modified) or **D** (deleted). A lock icon marks assets you have locked. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
 - **Incoming** lists the newest commits waiting to be pulled, with their author and age.
@@ -108,11 +108,21 @@ Haptic reads changes after you save (while a game covers the editor, once you ar
 3. Keep **Push After Commit** on to send the commit at once, or turn it off to commit only on this device.
 4. Choose **Commit N Assets**.
 
-A commit takes each asset with the large data it uses. Large data that no asset in the commit uses, such as what an edit you reverted had added, stays on your device and out of the commit.
+A commit takes each asset with the large data it uses. Large data that no asset in the commit uses, such as what an edit you reverted had added, stays on your device and out of the commit until you remove it ([Remove unused files](#remove-unused-files)).
 
-**Push** sends your commits. Before it does, Haptic checks the locks on what it sends and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in. Haptic then checks the host for new commits; if that check fails (**Could Not Check For Changes**), the push still went through.
+**Push** sends your commits. Before it does, Haptic checks the locks on what it sends, on the branch it pushes, and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in. Haptic then checks the host for new commits; if that check fails (**Could Not Check For Changes**), the push still went through.
 
 If the host has moved on since your last pull, the push is refused: pull first.
+
+### Remove unused files
+
+Large asset data that no asset uses any more stays on your device: what an edit you reverted or discarded had stored, what a deleted asset used, and what another branch's assets use after you switch away from it. **Remove Unused Files…** in the **Changes** window's **More Actions** menu removes it.
+
+1. Save or discard your changes first: Haptic doesn't remove files while documents have unsaved changes.
+2. Haptic lists what no asset in the project, its plugins or its extensions uses, and confirms with the number of files and their size. Removing them cannot be undone.
+3. **Remove** removes them. Saves and imports wait until it is done. If a save, import or Texture encode is still running, Haptic waits for it first; **Cancel** stops while it waits, with nothing removed. Once files are being removed, it finishes.
+
+Haptic keeps every file an asset uses, every file that is part of a commit (data you committed is never removed), and data that only a commit you haven't pushed yet holds, on any branch: until you push, your device has the only copy. It also keeps data a committed version of an asset uses when that commit doesn't hold it, as when another Git app committed the asset without its data: your device has the only copy, and comparing or reverting to that version needs it. Data of commits on the host can be downloaded again when a branch, pull or revert needs it. On desktop, while a folder of asset data is a symbolic link (or sits inside one, or holds one), Haptic removes nothing and says so (**Nothing Removed**), since one file may then belong to two folders.
 
 ### Pull
 
@@ -145,12 +155,12 @@ Haptic also doesn't switch to a branch whose project settings turn Source Contro
 
 ### Compare versions
 
-Choosing a change opens its asset in **Actors** and **Diff**, comparing the last commit (**Base**) with your working copy (**Compare**). While the diff is shown, the toolbar holds the **Base** and **Compare** pickers: choose **Working Copy**, the branch's last commit, the branch on the host as last checked, or one of the recent commits that changed the asset.
+Choosing a change opens its asset in **Actors** and **Diff**, comparing the last commit (**Base**) with your working copy (**Compare**). While the diff is shown, the toolbar holds the **Base** and **Compare** pickers: choose **Working Copy**, the branch's last commit, the branch on the host as last checked, or a commit that changed the asset. The pickers list the same commits as [History](#history) for the asset, newest first; **Load Older** at the end reads more, as **Load Older History** does.
 
-- **Actors** lists the asset itself first (choose it to see its name, type, stored data and settings), then its items: a Scene's folders and actors, a graph's changed graphs and nodes with its **Variables** and **Functions**, or another asset's groups of properties. Added items are green with **A**, changed ones amber with **M**, removed ones red with **D**; items that didn't change are dimmed. The counts at the top say how many were added, removed and changed, and **Search Actors** finds an item by name. Choose one to see it in **Diff**.
+- **Actors** lists the asset itself first (choose it to see its name, type, stored data and settings), then its items: a Scene's folders and actors, a graph asset's changed graphs and nodes with its changed **Variables**, **Parameters**, **Inputs**, **Outputs** and **Functions**, or another asset's groups of properties. Added items are green with **A**, changed ones amber with **M**, removed ones red with **D**; items that didn't change are dimmed. The counts at the top say how many were added, removed and changed, and **Search Actors** finds an item by name. Choose one to see it in **Diff**.
 - **Diff** shows the chosen item in the view for the asset's kind:
   - Scenes and most assets show **Property**, **Base** and **Working Copy** columns grouped by component, with changed values tinted. **Side By Side** or **Inline** (the old value struck through beside the new) sets the layout; **Changed Only** hides the rest. With no actor chosen, a Scene shows the asset itself and its settings.
-  - Classes and Scene scripts show the graph on its canvas: **Overlay** both versions, or only **Base** or **Working Copy**. Changed nodes are outlined amber, added ones green and removed ones red and dashed, each tagged; a changed pin value shows the old value struck through beside the new. Other graphs, such as Materials, list each changed node's values.
+  - Graphs show on a read-only canvas drawn as their own editor draws them: Classes, Scene scripts, Materials and Material Functions, Particle Graphs, Behaviour Trees, and an Animation Graph's State Machine, state graphs, transition rules and Animation Object. Choose **Overlay** for both versions, or only **Base** or **Working Copy**; when several graphs changed, choose one above the canvas. Changed nodes are outlined amber, added ones green and removed ones red and dashed, each tagged; a changed node lists its changed values, the old value struck through beside the new. Choose the asset itself in **Actors** to see a graph asset's settings, such as a Material's blend mode or an Animation Graph's transition settings.
   - Textures show both images over a checkerboard, **Side By Side**, as a **Swipe** or as their **Difference**, in **RGB** or **Alpha**, beside their size, file size, source image, usage and compression, and how many Materials use the Texture.
 - **Open Scene**, **Open Class** and the like open the asset for editing.
 
@@ -205,7 +215,7 @@ Keep the project in a folder that is a Git working copy whose top folder is the 
 | Publish | **Publish Project…**, while Mode is Off. |
 | Git App | Desktop, Integrated mode: **Use Haptic's Git Here** for a folder Haptic doesn't sync yet, or **Stop Using Haptic's Git Here** for one it does. Applies to this device only. |
 | Repository | The repository's HTTPS or SSH address. Signed in to GitHub or GitLab, choose it from your repositories; **Use Typed URL** in the list takes an address on another host. Haptic always talks to the host over HTTPS; for an SSH address it uses the same host on the standard HTTPS port. In Integrated mode it shows the repository the project was cloned from or published to, and can't be changed here. |
-| Branch | The branch the locks belong to. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it is the **Default Branch**, the team's branch, and can't be changed here; the branch you are on is your own, switched from the Source Control tab ([Branches](#branches)). |
+| Branch | The branch the locks belong to. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it is the **Default Branch**, the team's branch, and can't be changed here; the branch you are on is your own, switched from the Source Control tab ([Branches](#branches)), and locks belong to the branch you are on. |
 | Account | Who you are signed in as on the repository's host, or **Not Signed In** with **Sign In**. |
 | Auto-Lock On First Edit | Lock a file the first time you edit it in this session. On by default. |
 | Release Locks After Push | Integrated mode: release your locks on the assets a push sent. On by default. |
@@ -216,7 +226,8 @@ If you open a project in Integrated or Manual mode on a device that has no accou
 
 ## Working with locks
 
-- **Your edits:** with Auto-Lock on, the first change to a document locks its file. If locking fails, the edit still applies and an **Unlocked** banner warns you.
+- **Your edits:** with Auto-Lock on, the first change to a document locks its file. If locking fails, the edit still applies and an **Unlocked** banner warns you. In Integrated mode locks belong to the branch you are on, so until Haptic has opened the repository and knows that branch, locking waits: edits made meanwhile are locked once it does, and **Release** says why it waits.
+- **Switching branches:** on a host that keeps locks per branch, your locks on the branch you switched away from stay in **Locks**, marked **On** and the branch's name. **Release** releases them there, and **Release Locks After Push** releases them too when the push sent their assets.
 - **Someone else's lock:** the document opens read-only with a **Locked by** banner showing the owner and how long ago they locked it. Choose **Edit Anyway** only after talking to them; your changes may conflict.
 - **Content Browser:** locked assets show a lock badge, **Locked By You** or **Locked By** the owner's name.
 - **Renaming and moving:** your locks move with the file. Haptic refuses to rename, move or delete a file someone else has locked.

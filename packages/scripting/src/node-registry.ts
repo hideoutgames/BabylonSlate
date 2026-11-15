@@ -21,6 +21,11 @@ export type CodegenContext = {
   /** Choose exactly one outgoing execution pin after this node completes. */
   branch?(expression: string, truePin: string, falsePin: string): void;
   /**
+   * A latent node whose outputs run at different times: run output pin `pinId`'s execution chain here, between the
+   * node's own statements, when `expression` is true. Once a node runs an output this way, nothing runs after it.
+   */
+  runOutputIf?(expression: string, pinId: string): void;
+  /**
    * Static type of the source pin wired into an input data pin (resolved in
    * compileGraph; declared in transition-rule graphs). Undefined when the
    * input is disconnected or its source is stripped from this build.

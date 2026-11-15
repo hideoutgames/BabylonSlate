@@ -10,6 +10,13 @@ const LABELS = ["Float", "Vector2", "Vector3", "Vector4"];
 // The Function Body tooltip; it also stays readable as screen-reader text in the row.
 const GLSL_SIGNATURE_HINT = "Use input names as variables. Return the primary output; assign additional output names before returning. Pin names are case sensitive. GLSL/WebGL only.";
 
+/** A Material graph canvas's node body: a Custom GLSL node's code under its pins; other nodes draw none. */
+// The Material canvases' `renderNodeBody` (the graph windows and the Diff window's) lives with the Custom GLSL editor.
+// eslint-disable-next-line react-refresh/only-export-components
+export function renderMaterialNodeBody(_id: string, data: Record<string, unknown>) {
+  return data.__nodeType === "custom.glsl" ? <div className="w-88 max-w-88 overflow-hidden border-t px-3 py-2"><LazyGlslCodePreview value={String(data.body ?? "")} /></div> : null;
+}
+
 export function MaterialCustomGlsl({ node, setProperties, bodyLine }: {
   bodyLine?: number;
   node: MaterialGraphNode;

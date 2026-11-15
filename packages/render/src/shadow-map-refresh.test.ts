@@ -27,6 +27,8 @@ import { updateSceneRenderingSettings } from "./render-settings";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { createLandscapeMesh, updateLandscapeMesh } from "./landscape-mesh";
 import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { verifyRenderChangeJournal } from "./render-change-journal";
+import { BoundingInfo } from "@babylonjs/core/Culling/boundingInfo";
 import { setLatticeBinding } from "./lattice-deformer-binding";
 import { followPose, updatePoseBounds } from "./pose-bounds";
 import { skinnedRig, skinnedStrip } from "./skinned-test-fixtures";
@@ -1054,5 +1056,119 @@ describe("what casters share", () => {
     expect(refresh.casterState(first)!.safe).toBe(true);
     setLatticeBinding(instance);
     refresh.dispose();
+  });
+});
+
+describe("the changed-set caster pipeline", () => {
+  afterEach(() => verifyRenderChangeJournal(false));
+
+  /** The fixture with a second caster and the light's range bounded, and what the stages counted since the last call. */
+  async function pipeline() {
+    const scene = await fixture();
+    scene.light.range = 10;
+    const other = MeshBuilder.CreateBox("other caster", {}, scene.scene);
+    other.material = scene.material;
+    other.position.x = 2;
+    scene.controller.setParticipation(other, { castShadows: true });
+    await scene.material.forceCompilationAsync(other);
+    expect(scene.render()).toBe(6);
+    expect(scene.render()).toBe(0);
+    let last = scene.controller.journalDiagnostics();
+    const counted = () => {
+      const now = scene.controller.journalDiagnostics();
+      const step = {
+        localVisited: now.localVisited - last.localVisited, localScans: now.localScans - last.localScans,
+        prepared: now.prepared - last.prepared, prepareScans: now.prepareScans - last.prepareScans,
+        cascadeSkips: now.cascadeSkips - last.cascadeSkips, mismatches: now.mismatches - last.mismatches,
+      };
+      last = now;
+      return step;
+    };
+    return { ...scene, other, counted };
+  }
+
+  it("refreshes a local map from the casters that changed, as a read of every caster agrees, for each change kind", async () => {
+    verifyRenderChangeJournal(true);
+    const { scene, other, light, render, counted } = await pipeline();
+    counted();
+    // Nothing changed: no caster read, no redraw.
+    expect(render()).toBe(0);
+    expect(counted()).toMatchObject({ localVisited: 0, prepared: 0, localScans: 0, prepareScans: 0, mismatches: 0 });
+    // A move within the range: that caster alone.
+    other.position.z = 1;
+    expect(render()).toBe(6);
+    expect(counted()).toMatchObject({ localVisited: 1, prepared: 1, mismatches: 0 });
+    // Out of the range: it leaves the map, which draws without it.
+    other.position.x = 50;
+    expect(render()).toBe(6);
+    expect(counted()).toMatchObject({ localVisited: 1, mismatches: 0 });
+    // A caster out of range that moves changes nothing the map draws.
+    other.position.x = 60;
+    expect(render()).toBe(0);
+    expect(counted()).toMatchObject({ localVisited: 1, mismatches: 0 });
+    // Back in range, then hidden, then removed.
+    other.position.x = 2;
+    expect(render()).toBe(6);
+    other.isVisible = false;
+    expect(render()).toBe(6);
+    other.dispose();
+    expect(render()).toBe(6);
+    expect(counted()).toMatchObject({ mismatches: 0 });
+    // The light moves: every caster is read again.
+    light.position.y = 4;
+    expect(render()).toBe(6);
+    expect(counted()).toMatchObject({ localScans: 1, mismatches: 0 });
+    expect(render()).toBe(0);
+    void scene;
+  });
+
+  it("counts a kept caster box a bounds change no walk saw left stale, and redraws everywhere to heal it", async () => {
+    verifyRenderChangeJournal(true);
+    const { other, render, counted } = await pipeline();
+    counted();
+    // New bounds with no world matrix change: no write the walk follows.
+    other.setBoundingInfo(new BoundingInfo(new Vector3(-2, -2, -2), new Vector3(2, 2, 2), other.getWorldMatrix()));
+    expect(render()).toBe(6);
+    expect(counted().mismatches).toBeGreaterThan(0);
+    expect(render()).toBe(0);
+    expect(counted().mismatches).toBe(0);
+  });
+
+  it("leaves out a cascaded map's casters while its view moves, and draws no more once the view stops unless a caster changed", async () => {
+    const { scene, camera, controller, other, counted } = await pipeline();
+    const engine = scene.getEngine();
+    engine._features.supportCSM = true;
+    engine._features.supportShadowSamplers = true;
+    const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const sunlight = controller.generator(sun)!;
+    await sunlight.forceCompilationAsync();
+    const sunMap = sunlight.getShadowMap()!;
+    const bindSun = sunMap._bindFrameBuffer.bind(sunMap);
+    const sunDraw = vi.spyOn(sunMap, "_bindFrameBuffer").mockImplementation((...args) => bindSun(...args));
+    const frame = () => {
+      const before = sunDraw.mock.calls.length;
+      scene.render();
+      return sunDraw.mock.calls.length - before;
+    };
+    frame();
+    frame();
+    counted();
+    // Moving: the map draws each frame, and its caster bookkeeping is left out.
+    camera.position.x += 1;
+    expect(frame()).toBe(1);
+    camera.position.x += 1;
+    expect(frame()).toBe(1);
+    expect(counted().cascadeSkips).toBe(2);
+    // Stopped, nothing else changed: the depth it drew holds.
+    expect(frame()).toBe(0);
+    expect(frame()).toBe(0);
+    // Stopped while a caster moved: that frame draws.
+    camera.position.x += 1;
+    expect(frame()).toBe(1);
+    other.position.y = 1;
+    expect(frame()).toBe(1);
+    expect(frame()).toBe(0);
   });
 });
