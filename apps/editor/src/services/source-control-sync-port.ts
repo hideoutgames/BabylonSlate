@@ -7,6 +7,7 @@ import {
   type TransferOptions,
 } from "@haptic/source-control";
 import type { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
+import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { sourceControlAccounts } from "./source-control-accounts";
 import type { SyncPortFactory, SyncPortRequest, TransferMonitor } from "./source-control-sync";
 
@@ -112,12 +113,14 @@ export const syncPortFactory: SyncPortFactory = {
  */
 export async function cloneIntoFolder(request: SyncPortRequest & TransferOptions): Promise<SyncPort> {
   const signal = request.signal ? { signal: request.signal } : {};
+  // Test mode keeps this copy and `open` hands it out again: like every port, it works on its own folder only.
+  const bound = { ...request, storage: folderBoundStorage(request.storage, request.folderId) };
   if (request.testMode) {
     const { FakeSync } = await import("@haptic/source-control/fake-sync");
-    const copy = await FakeSync.clone({ storage: request.storage, remote: await testRemote(request.repositoryUrl), branch: request.branch, ...signal });
+    const copy = await FakeSync.clone({ storage: bound.storage, remote: await testRemote(request.repositoryUrl), branch: request.branch, ...signal });
     testCopies.set(copyKey(request), copy);
     return copy;
   }
-  const { git, options } = await deviceRepository(request);
+  const { git, options } = await deviceRepository(bound);
   return git.cloneRepository({ ...options, ...signal });
 }

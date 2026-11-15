@@ -1,4 +1,4 @@
-import { isChromeDocumentKind } from "@haptic/core";
+import { isChromeDocumentKind, PROJECT_FILE } from "@haptic/core";
 import {
   useCallback,
   useEffect,
@@ -23,6 +23,9 @@ import type { DocumentService, OpenDocument } from "../services/document-service
 import type { ProjectService } from "../services/project-service";
 import type { AuthoringHold, DocumentActions } from "./document-context-types";
 
+/** A time no file has: the previous time of a file a pull wrote, so it always classifies as changed. */
+const PULLED_MTIME = -1;
+
 /** Open documents read from disk, not yet in their tabs. */
 interface OpenDocumentReads {
   contents: { id: string; content: NonNullable<OpenDocument["content"]> }[];
@@ -43,6 +46,8 @@ export interface ExternalChangeDeps {
   bump: () => void;
   /** Written by the document tabs hook, which is set up after this one. */
   closeDocumentsForPathsRef: RefObject<(paths: Iterable<string>) => void>;
+  /** A remount here only re-read the files: the foreground refresh or the pull reads the Integrated status itself. */
+  noteRegistryReread: () => void;
 }
 
 /**
@@ -60,6 +65,7 @@ export function useExternalChanges({
   setProjectDocument,
   bump,
   closeDocumentsForPathsRef,
+  noteRegistryReread,
 }: ExternalChangeDeps) {
   const [externalChangePrompt, setExternalChangePrompt] =
     useState<ExternalChangeClassification | null>(null);
@@ -158,6 +164,7 @@ export function useExternalChanges({
     const guid = projectService.guid;
     const previous = mtimeSnapshotRef.current;
     await projectService.remountRegistry();
+    noteRegistryReread();
     bump();
     // Another project, or a snapshot an own save took meanwhile, is newer
     // than this scan: classifying against it would report the wrong changes.
@@ -188,7 +195,7 @@ export function useExternalChanges({
       }
     }
     next.projectJson = nextProject;
-  }, [bump, documentService, projectService, projectDocumentRef]);
+  }, [bump, documentService, noteRegistryReread, projectService, projectDocumentRef]);
   useLayoutEffect(() => {
     runForegroundRescanRef.current = runForegroundRescan;
   }, [runForegroundRescan]);
@@ -248,6 +255,8 @@ export function useExternalChanges({
       const previous = mtimeSnapshotRef.current;
       if (!projectDocumentRef.current || !previous || paths.length === 0) return;
       await projectService.remountRegistry();
+      // The pull already read the status after writing these files.
+      noteRegistryReread();
       bump();
       const nextAssets = snapshotIndexedMtimes(projectService.registry?.list() ?? []);
       const nextProject = await readProjectJsonMtime(projectService.storagePort);
@@ -255,10 +264,16 @@ export function useExternalChanges({
         .getOpenDocumentsOrdered()
         .filter((doc) => !isChromeDocumentKind(doc.ref.kind))
         .map((doc) => ({ path: doc.ref.path, dirty: doc.dirty }));
+      // The files the pull wrote count as changed even when the snapshot already has their times
+      // (a foreground rescan during a long pull, or a write within the clock's resolution).
+      const previousAssets = { ...previous.assets };
+      for (const path of paths) {
+        if (path.endsWith(".hasset") && previousAssets[path] === nextAssets[path]) previousAssets[path] = PULLED_MTIME;
+      }
       const result = classifyExternalChanges({
-        previousAssets: previous.assets,
+        previousAssets,
         nextAssets,
-        previousProjectJsonMtime: previous.projectJson,
+        previousProjectJsonMtime: paths.includes(PROJECT_FILE) && previous.projectJson === nextProject ? PULLED_MTIME : previous.projectJson,
         nextProjectJsonMtime: nextProject,
         openDocs,
       });
@@ -266,7 +281,7 @@ export function useExternalChanges({
       const reloadProject = result.kind === "reload-project" && result.dirtyChangedPaths.length === 0;
       const project = reloadProject ? (await projectService.loadCurrentProject()).document : null;
       const reads = await readOpenDocuments(reloadProject ? openDocs.map((doc) => doc.path) : result.cleanChangedPaths);
-      if (documentService.getAuthoringLock() !== hold.lock || mtimeSnapshotRef.current !== previous) return;
+      if (documentService.getAuthoringLock() !== hold.lock) return;
       hold.release();
       if (project) {
         projectSaveState.current.reset(project);
@@ -280,7 +295,7 @@ export function useExternalChanges({
     } finally {
       hold.release();
     }
-  }, [applyOpenDocuments, bump, documentService, projectDocumentRef, projectSaveState, projectService, readOpenDocuments, setProjectDocument]);
+  }, [applyOpenDocuments, bump, documentService, noteRegistryReread, projectDocumentRef, projectSaveState, projectService, readOpenDocuments, setProjectDocument]);
 
   const dismissExternalChange = useCallback(() => {
     setExternalChangePrompt(null);

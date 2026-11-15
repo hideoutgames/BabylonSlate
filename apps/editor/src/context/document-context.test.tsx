@@ -794,9 +794,16 @@ describe("DocumentProvider actions and route", () => {
       act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } })); });
       await waitFor(() => expect(documents().assetRegistry).not.toBe(registry));
       await act(async () => { await Promise.resolve(); });
+      // A pull's reload: the pull read the status after writing.
+      let release!: () => void;
+      act(() => { release = actions.lockAuthoring("Read-only while pulling"); });
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], { lock: actions.getAuthoringLock(), release }));
       expect(noteSaved).not.toHaveBeenCalled();
+      // The remount after an import follows the editor's own writes.
+      await act(() => actions.refreshAssetRegistry());
+      expect(noteSaved).toHaveBeenCalledTimes(1);
       await createScene(actions, "Second");
-      expect(noteSaved).toHaveBeenCalled();
+      expect(noteSaved).toHaveBeenCalledTimes(2);
     } finally {
       noteSaved.mockRestore();
     }
@@ -832,6 +839,38 @@ describe("DocumentProvider actions and route", () => {
       expect(documents().openDocuments.find((doc) => doc.id === MAIN_SCENE_ID)!.dirty).toBe(false);
       expect(actions.getAuthoringLock().readOnly).toBe(false);
       expect(documents().externalChangePrompt).toBeNull();
+    });
+
+    it("reloads the whole project under the hold when the pull changed project.json, then releases it", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const storage = new OpfsStorageAdapter();
+      await storage.openDocumentsProject("Stable");
+      const other = new ProjectService(storage);
+      const { document, layouts } = await other.loadCurrentProject();
+      const changed = movedScene((await other.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene, 5);
+      await other.saveDocument("scene", MAIN_SCENE_FILE, changed);
+      await other.saveProject({ ...document, metadata: { ...document.metadata, version: "9.9" } }, layouts);
+      await other.closeProject();
+      const hold = holdForPull(actions);
+      await act(() => actions.applyPulledChanges([PROJECT_FILE, MAIN_SCENE_FILE], hold));
+      expect(documents().projectDocument?.metadata.version).toBe("9.9");
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(changed.actors[0]!.transform.position);
+      expect(actions.getAuthoringLock().readOnly).toBe(false);
+      expect(documents().externalChangePrompt).toBeNull();
+    });
+
+    it("reloads the pulled Scene even when a foreground rescan during the pull already took its new time", async () => {
+      const actions = await openProject();
+      await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+      const pulled = await pullChangesMain();
+      // Back from another app while the pull's transfer still runs.
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: false } })); });
+      act(() => { window.dispatchEvent(new CustomEvent("haptic:appstate", { detail: { isActive: true } })); });
+      await waitFor(() => expect(documents().externalChangePrompt?.cleanChangedPaths).toEqual([MAIN_SCENE_FILE]));
+      const hold = holdForPull(actions);
+      await act(() => actions.applyPulledChanges([MAIN_SCENE_FILE], hold));
+      expect(firstActorPosition(MAIN_SCENE_ID)).toEqual(pulled.actors[0]!.transform.position);
     });
 
     it("leaves a pulled change it could not reload for the next foreground rescan", async () => {

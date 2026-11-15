@@ -303,7 +303,8 @@ export function ChangesPanelContents() {
           <Badge variant="secondary" data-testid="changes-count">{rows.length}</Badge>
         </SectionHeading>
         {/* The rows come first in their scroll region, so the windowed list measures from its top. */}
-        <ScrollArea className="min-h-0 flex-1">
+        {/* At least three rows on a short panel; the window scrolls the rest. */}
+        <ScrollArea className="min-h-[calc(3*var(--chrome-row,28px))] flex-1">
           <div>
             {rows.length === 0 ? (
               <p className="px-2 pb-1 text-sm text-muted-foreground" data-testid="changes-empty">

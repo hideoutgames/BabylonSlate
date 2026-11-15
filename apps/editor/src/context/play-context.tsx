@@ -744,6 +744,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     preparingRef,
     playRequestInputsRef,
     saveAll,
+    getAuthoringLock,
     exportGameArtifact,
     setPreparing,
     setPlayOpen,

@@ -17,7 +17,6 @@ import {
   appendJournalLines,
   type AssetLoadScope,
   type AssetLoadPriority,
-  type AssetRegistry,
   type MigrationPending,
 } from "@haptic/assets";
 import {
@@ -309,6 +308,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }), [documentService]);
   /** Set once `closeDocumentsForPaths` exists; reload closes tabs whose file is gone. */
   const closeDocumentsForPathsRef = useRef<(paths: Iterable<string>) => void>(() => {});
+  /** The registry epoch a remount that only re-read the files reached; it needs no Integrated status of its own. */
+  const rereadEpochRef = useRef<number | null>(null);
+  const noteRegistryReread = useCallback(() => {
+    rereadEpochRef.current = projectService.registryGeneration + registryTickRef.current;
+  }, [projectService]);
   // Effects after the history-reopen subscription, before source control's.
   const {
     externalChangePrompt,
@@ -326,18 +330,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setProjectDocument,
     bump,
     closeDocumentsForPathsRef,
+    noteRegistryReread,
   });
   // Asset writes that are not saves (a new asset, an import, a move or delete,
   // a Texture encode) advance the registry: Integrated status follows them too.
-  // A remount (a new registry) only re-read the files: the foreground refresh,
-  // the pull or the project open that remounted it reads the status itself.
-  const statusRegistryRef = useRef<AssetRegistry | null>(null);
+  // A remount that only re-read the files (the foreground rescan, a pull's
+  // reload) marks the epoch it reached: the foreground refresh or the pull
+  // reads the status itself. Any other advance, later writes included, notes.
   useEffect(() => {
-    const registry = projectService.registry;
-    const remounted = registry !== statusRegistryRef.current;
-    statusRegistryRef.current = registry;
-    if (!remounted) sourceControlSync.noteSaved();
-  }, [projectService, registryEpoch, sourceControlSync]);
+    if (registryEpoch !== rereadEpochRef.current) sourceControlSync.noteSaved();
+  }, [registryEpoch, sourceControlSync]);
   /** Every editor save ends here: the change snapshot is recaptured and Integrated status runs once the burst settles. */
   const afterEditorSave = useCallback(async () => {
     await captureMtimeSnapshot();
@@ -435,9 +437,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const refreshAssetRegistry = useCallback(async () => {
     await projectService.remountRegistry();
     noteAssetsCreated();
-    // It follows the editor's own writes (imports, new assets, renames), which the remount hides from the status trigger above.
-    sourceControlSync.noteSaved();
-  }, [noteAssetsCreated, projectService, sourceControlSync]);
+  }, [noteAssetsCreated, projectService]);
 
   const subscribeDocumentIdentity = useCallback(
     (listener: DocumentIdentityListener) =>

@@ -367,11 +367,15 @@ it("starts neither Play nor a Simulation while an editor operation holds the doc
   act(() => { controls.registerSimulationViewport({ documentId: scene.id, host: document.body, suspend: async () => {}, restore() {} }); });
   await act(async () => { await controls.requestPlay({ saveChoice: "skip" }); });
   await act(async () => { await controls.requestSimulate(); });
+  act(() => { controls.setPreviewBuild(true); });
+  await act(async () => { await controls.requestPlay({ saveChoice: "skip" }); });
   expect(controls.sessionState.generation).toBe(0);
   expect(lockAuthoringWrites).not.toHaveBeenCalled();
-  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe(
-    "Play did not start: Read-only while pulling.\nSimulation did not start: Read-only while pulling.",
-  ));
+  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe([
+    "Play did not start: Read-only while pulling.",
+    "Simulation did not start: Read-only while pulling.",
+    "Preview Build did not start: Read-only while pulling.",
+  ].join("\n")));
 });
 
 it("cancels Simulation before save admission drains without touching its scene or starting a viewport", async () => {

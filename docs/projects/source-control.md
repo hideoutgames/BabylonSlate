@@ -100,7 +100,7 @@ If the host has moved on since your last pull, the push is refused: pull first.
 
 1. If documents have unsaved changes, choose **Save All** or **Discard** first.
 2. Confirm. A pull replaces files and cannot be undone.
-3. **Pulling** covers the editor until the pull is done. Documents are read-only meanwhile, and Play and Simulate wait: the Output Log says why they didn't start.
+3. **Pulling** covers the editor until the pull is done. Documents are read-only meanwhile, and Play, Simulate and Preview Build wait: the Output Log says why they didn't start.
 4. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing.
 
 Open documents whose files the pull changed reload before you can edit again, as after any change on disk (the whole project reloads when project settings or many assets changed). An asset you kept stays as an uncommitted change, ready to commit and push.
