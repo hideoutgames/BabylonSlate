@@ -93,8 +93,12 @@ export class FakeGitHost {
     const tree = [...this.remoteBlobs].map(([path, id]) => ({ path, type: "blob", sha: id, id }));
     if (/^GET https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/git\/trees\/[^/]+$/.test(route)) return json(200, { tree, truncated: false });
     if (/^GET https:\/\/gitlab\.com\/api\/v4\/projects\/[^/]+\/repository\/tree$/.test(route)) {
+      // One folder's entries, as GitLab lists them without `recursive`.
+      const folder = url.searchParams.get("path") ?? "";
+      const listing = tree.filter((entry) => entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))) === folder);
+      if (folder && listing.length === 0) return json(404, { message: "404 Tree Not Found" });
       const size = Number(url.searchParams.get("per_page") ?? "20");
-      return json(200, tree.slice((page - 1) * size, page * size));
+      return json(200, listing.slice((page - 1) * size, page * size));
     }
     return json(404, { message: "Not Found" });
   }

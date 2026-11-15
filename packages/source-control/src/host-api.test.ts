@@ -44,26 +44,42 @@ describe("host APIs", () => {
     ]);
   });
 
-  it("pages the GitLab tree only until every wanted path is found", async () => {
+  it("lists only the GitLab folders that hold wanted paths, each until its paths are found", async () => {
     const urls: string[] = [];
-    const entries = Array.from({ length: 250 }, (_, index) => ({ path: `assets/${index}.hasset`, type: "blob", id: `id-${index}` }));
+    const folders: Record<string, { path: string; type: string; id: string }[]> = {
+      assets: Array.from({ length: 250 }, (_, index) => ({ path: `assets/${index}.hasset`, type: "blob", id: `id-${index}` })),
+      "assets/Levels": [{ path: "assets/Levels/Forest.scene.hasset", type: "blob", id: "forest" }],
+    };
     const http = async (request: HttpRequest) => {
       urls.push(request.url);
-      const page = Number(new URL(request.url).searchParams.get("page"));
-      return { status: 200, bodyText: JSON.stringify(entries.slice((page - 1) * 100, page * 100)) };
+      const params = new URL(request.url).searchParams;
+      expect(params.has("recursive")).toBe(false);
+      const listing = folders[params.get("path") ?? ""];
+      if (!listing) return { status: 404, bodyText: JSON.stringify({ message: "404 Tree Not Found" }) };
+      const page = Number(params.get("page"));
+      return { status: 200, bodyText: JSON.stringify(listing.slice((page - 1) * 100, page * 100)) };
     };
     const api = hostApiFor(GITLAB, http)!;
-    const found = await api.blobIds("group/sub/game", "main", new Set(["assets/5.hasset", "assets/120.hasset"]));
-    expect(isOk(found) && [...found.value]).toEqual([["assets/5.hasset", "id-5"], ["assets/120.hasset", "id-120"]]);
+    const found = await api.blobIds("group/sub/game", "main", new Set([
+      "assets/5.hasset",
+      "assets/120.hasset",
+      "assets/Levels/Forest.scene.hasset",
+      "assets/Gone/Old.hasset",
+    ]));
+    expect(isOk(found) && Object.fromEntries(found.value)).toEqual({
+      "assets/5.hasset": "id-5",
+      "assets/120.hasset": "id-120",
+      "assets/Levels/Forest.scene.hasset": "forest",
+    });
+    const project = "https://gitlab.com/api/v4/projects/group%2Fsub%2Fgame/repository/tree?ref=main";
     expect(urls).toEqual([
-      "https://gitlab.com/api/v4/projects/group%2Fsub%2Fgame/repository/tree?ref=main&recursive=true&per_page=100&page=1",
-      "https://gitlab.com/api/v4/projects/group%2Fsub%2Fgame/repository/tree?ref=main&recursive=true&per_page=100&page=2",
+      // Stops at page 2 once both wanted `assets` paths are found.
+      `${project}&path=assets&per_page=100&page=1`,
+      `${project}&path=assets&per_page=100&page=2`,
+      `${project}&path=assets%2FLevels&per_page=100&page=1`,
+      // A folder missing from the branch holds nothing pushed.
+      `${project}&path=assets%2FGone&per_page=100&page=1`,
     ]);
-    urls.length = 0;
-    const partial = await api.blobIds("group/sub/game", "main", new Set(["assets/5.hasset", "assets/999.hasset"]));
-    expect(isOk(partial) && [...partial.value.keys()]).toEqual(["assets/5.hasset"]);
-    // A short page ends the listing.
-    expect(urls).toHaveLength(3);
   });
 
   it("uses a self-managed GitLab instance's own API and maps failures", async () => {

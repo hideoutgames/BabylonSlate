@@ -12,7 +12,8 @@ import { errorMessage, parseJsonArray, parseJsonObject, stringField, type HttpCl
 import { repositoryCloneUrl } from "./lfs-endpoint";
 
 export interface HostApiError {
-  kind: "unauthorized" | "offline" | "http";
+  /** `not-found`: a 404, such as a folder that is not on the branch. */
+  kind: "unauthorized" | "offline" | "not-found" | "http";
   message: string;
 }
 
@@ -46,8 +47,8 @@ export interface HostApi {
 const PAGE_SIZE = 100;
 /** Pickers list at most this many pages; a larger account searches on the host. */
 const MAX_LIST_PAGES = 10;
-/** A recursive GitLab tree page holds 100 entries; stop well past any project size. */
-const MAX_TREE_PAGES = 2_000;
+/** A GitLab folder listing page holds 100 entries; stop well past any folder size. */
+const MAX_TREE_PAGES = 200;
 
 type Json = Record<string, unknown>;
 
@@ -65,7 +66,8 @@ function client(source: CredentialSource, http: HttpClient, accept: string) {
       return body ? ok(body) : err({ kind: "http", message: "Invalid host response" });
     }
     const message = stringField(parseJsonObject(response.bodyText), "message") ?? `HTTP ${response.status}`;
-    return err({ kind: response.status === 401 || response.status === 403 ? "unauthorized" : "http", message });
+    const kind = response.status === 401 || response.status === 403 ? "unauthorized" : response.status === 404 ? "not-found" : "http";
+    return err({ kind, message });
   };
 }
 
@@ -94,6 +96,19 @@ async function paged<T>(
 function str(json: Json, key: string): string {
   const value = json[key];
   return typeof value === "string" ? value : "";
+}
+
+/** Wanted paths grouped by their folder (`""` for the repository root). */
+function pathsByFolder(paths: ReadonlySet<string>): Map<string, Set<string>> {
+  const folders = new Map<string, Set<string>>();
+  for (const path of paths) {
+    const slash = path.lastIndexOf("/");
+    const folder = slash < 0 ? "" : path.slice(0, slash);
+    const wanted = folders.get(folder) ?? new Set<string>();
+    wanted.add(path);
+    folders.set(folder, wanted);
+  }
+  return folders;
 }
 
 function blobEntry(json: Json, idKey: string): [string, string] | null {
@@ -150,19 +165,31 @@ function gitLabApi(credential: HostCredential, source: CredentialSource, http: H
       } : null;
     }, MAX_LIST_PAGES),
     branches: (path) => paged(get, (page) => `${project(path)}/repository/branches?per_page=${PAGE_SIZE}&page=${page}`, (entry) => str(entry, "name") || null, MAX_LIST_PAGES),
+    // GitLab has no single-request recursive tree, so list only the folders
+    // that hold wanted paths, each until its wanted paths are found.
     async blobIds(path, branch, paths) {
       const ref = encodeURIComponent(branch);
-      const listed = await paged(
-        get,
-        (page) => `${project(path)}/repository/tree?ref=${ref}&recursive=true&per_page=${PAGE_SIZE}&page=${page}`,
-        (entry) => {
-          const blob = blobEntry(entry, "id");
-          return blob && paths.has(blob[0]) ? blob : null;
-        },
-        MAX_TREE_PAGES,
-        (found) => found.length >= paths.size,
-      );
-      return isOk(listed) ? ok(new Map(listed.value)) : listed;
+      const found = new Map<string, string>();
+      for (const [folder, wanted] of pathsByFolder(paths)) {
+        const at = folder ? `&path=${encodeURIComponent(folder)}` : "";
+        const listed = await paged(
+          get,
+          (page) => `${project(path)}/repository/tree?ref=${ref}${at}&per_page=${PAGE_SIZE}&page=${page}`,
+          (entry) => {
+            const blob = blobEntry(entry, "id");
+            return blob && wanted.has(blob[0]) ? blob : null;
+          },
+          MAX_TREE_PAGES,
+          (items) => items.length >= wanted.size,
+        );
+        // A folder missing from the branch holds nothing pushed.
+        if (!isOk(listed)) {
+          if (listed.error.kind === "not-found") continue;
+          return listed;
+        }
+        for (const [blobPath, id] of listed.value) found.set(blobPath, id);
+      }
+      return ok(found);
     },
   };
 }
