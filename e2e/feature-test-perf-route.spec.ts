@@ -33,6 +33,7 @@ import {
  *      HAPTIC_PERF_VERIFY_SCOPED=1 (Play follows each scoped readiness probe with a whole one that must agree:
  *      `rendererWork.scopedReadinessMismatches`),
  *      HAPTIC_PERF_GPU_BUSY=1 (each Play window measures GPU-busy time per frame: `rendering.gpuBusy`),
+ *      HAPTIC_PERF_IDLE_HALF_RATE=1 (the editor viewport keeps Half Rate When Idle on; the route turns it off otherwise),
  *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
  *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`).
  *
@@ -67,6 +68,8 @@ const PROFILE = process.env.HAPTIC_PERF_PROFILE === "1" && !!process.env.HAPTIC_
 const VERIFY_SCOPED = process.env.HAPTIC_PERF_VERIFY_SCOPED === "1";
 /** Each Play window restarts the GPU-busy measurement (`gpubusy on`), so `rendering.gpuBusy` is that window's own. */
 const GPU_BUSY = process.env.HAPTIC_PERF_GPU_BUSY === "1";
+/** Leaves Engine Settings' Half Rate When Idle on, to measure the idle editor viewport as a user has it by default. */
+const IDLE_HALF_RATE = process.env.HAPTIC_PERF_IDLE_HALF_RATE === "1";
 /** Each shadow caster walk of the change journal in Play is followed by the full walk (the measured frames carry its cost). */
 const VERIFY_JOURNAL = process.env.HAPTIC_PERF_VERIFY_JOURNAL === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
@@ -417,7 +420,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
     // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
-    settings.viewportIdleHalfRate = false;
+    settings.viewportIdleHalfRate = IDLE_HALF_RATE;
     if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
   });
   const cdp = await page.context().newCDPSession(page);
