@@ -110,6 +110,7 @@ export function useSourceControlSync({
     testMode: isTestModeEnabled(),
     lookup: registryLookup(projectService),
     locks: syncLocksFor(sourceControlRef.current),
+    exclusiveWrites: (reason, work, signal) => projectService.withExclusiveWrites(reason, work, signal),
   }), [projectService, sourceControlRef]);
   // Integrated mode's lock requests name the branch checked out in the working copy.
   useEffect(() => followCheckedOutBranch(sourceControlSync, sourceControlRef.current), [sourceControlRef, sourceControlSync]);

@@ -63,6 +63,7 @@ async function setup(options: { platform?: string; testMode?: boolean; files?: R
     testMode: options.testMode ?? true,
     lookup,
     locks,
+    exclusiveWrites: (_reason, work) => work(storage),
     factory,
   });
   const service = new SourceControlSyncService();
@@ -371,6 +372,7 @@ describe("SourceControlSyncService", () => {
         testMode: true,
         lookup,
         locks,
+        exclusiveWrites: (_reason, work) => work(storage),
         factory,
       });
       return { storage, a, b, input, locks, factory, releaseAuthor };
@@ -683,6 +685,7 @@ describe("SourceControlSyncService", () => {
         testMode: true,
         lookup,
         locks: { theirs: async () => [], releaseOwn: async () => {} },
+        exclusiveWrites: (_reason, work) => work(storage),
         factory,
       });
       return { remote, storage, factory, input };

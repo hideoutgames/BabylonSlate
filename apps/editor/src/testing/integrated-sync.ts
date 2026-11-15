@@ -1,4 +1,4 @@
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, type StorageTier } from "@haptic/core";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, type ProjectStorage, type StorageTier } from "@haptic/core";
 import { GITATTRIBUTES_LFS_RULE, type FileLock } from "@haptic/source-control";
 import { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -18,12 +18,23 @@ export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
     : path === "assets/Rock.texture.hasset" ? { name: "Rock", type: "Texture", blobPaths: [] }
       : null;
 
+/** `ProjectService.withExclusiveWrites` as tests see it: `storage` is the project folder's. */
+export type TestExclusiveWrites = <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, storage: ProjectStorage) => Promise<T>;
+
 /**
  * A real `SourceControlSyncService` in Integrated mode over `FakeSync`: a
  * working copy in memory storage of a `FakeRemote` seeded with Forest and
- * Rock, so editor tests drive the same service the editor runs.
+ * Rock (`files` adds, replaces or, with null, leaves out seed files), so
+ * editor tests drive the same service the editor runs. The project's only
+ * writer is the test itself unless `exclusiveWrites` says otherwise.
  */
-export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsRule?: boolean; files?: Record<string, string | Uint8Array>; lookup?: ChangeLookup } = {}) {
+export async function integratedSync(options: {
+  locks?: Partial<SyncLocks>;
+  lfsRule?: boolean;
+  files?: Record<string, string | Uint8Array | null>;
+  lookup?: ChangeLookup;
+  exclusiveWrites?: TestExclusiveWrites;
+} = {}) {
   const remote = new FakeRemote();
   remote.commit({
     ...(options.lfsRule === false ? {} : { ".gitattributes": `${GITATTRIBUTES_LFS_RULE}\n` }),
@@ -48,6 +59,7 @@ export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsR
     testMode: true,
     lookup: options.lookup ?? INTEGRATED_LOOKUP,
     locks,
+    exclusiveWrites: (reason, work) => (options.exclusiveWrites ?? ((_reason, own, project) => own(project)))(reason, work, storage),
     factory: {
       open: async () => port,
       init: async () => port,
@@ -94,6 +106,7 @@ export async function deviceIntegratedSync(options: { adopted: boolean; platform
     testMode: false,
     lookup: INTEGRATED_LOOKUP,
     locks: { theirs: async () => [], releaseOwn: async () => {} },
+    exclusiveWrites: (_reason, work) => work(storage),
     factory,
   };
   await service.configure(input);

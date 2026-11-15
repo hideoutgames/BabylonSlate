@@ -10,9 +10,11 @@ import {
   GitBranchIcon,
   GitCommitHorizontalIcon,
   LockIcon,
+  MoreHorizontalIcon,
   PlusIcon,
   RefreshCwIcon,
   SettingsIcon,
+  Trash2Icon,
 } from "lucide-react";
 import type { ChangeKind, CommitInfo } from "@haptic/source-control";
 import {
@@ -45,6 +47,7 @@ import { useDocumentActions, useIntegratedSync, useIntegratedSyncState, useSourc
 import { AdoptGitFolderDialog } from "../components/source-control-adopt-dialog";
 import { useSourceControlActions, useSourceControlDiffState } from "../components/source-control-actions";
 import { BranchMenuItems } from "../components/source-control-branch-menu";
+import { SourceControlUnusedFilesFlow } from "../components/source-control-unused-files-flow";
 import { integratedBlockerLabel, type IntegratedBlocker } from "../lib/source-control-mode";
 import type { ChangeRow as ChangeRowData } from "../lib/source-control-changes";
 import { agoLabel, branchLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
@@ -154,6 +157,25 @@ function BranchPicker({ branch, busy, committed }: { branch: string; busy: boole
           <DropdownMenuItem disabled={busy || !committed} onClick={requestNewBranch} data-testid="changes-new-branch">
             <PlusIcon />
             New Branch…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** The window's other actions: **Remove Unused Files…**. */
+function ChangesMenu({ disabled, onRemoveUnused }: { disabled: boolean; onRemoveUnused: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More Actions" title="More Actions" data-testid="changes-more" />}>
+        <MoreHorizontalIcon />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-48">
+        <DropdownMenuGroup>
+          <DropdownMenuItem disabled={disabled} onClick={onRemoveUnused} data-testid="changes-remove-unused">
+            <Trash2Icon />
+            Remove Unused Files…
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
@@ -290,6 +312,9 @@ export function ChangesPanelContents() {
   const diffState = useSourceControlDiffState();
   const touch = useTouchUi();
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
+  // Each Remove Unused Files request mounts the flow afresh.
+  const [unusedFlow, setUnusedFlow] = useState<number | null>(null);
+  const unusedRequests = useRef(0);
   const now = Date.now();
   const busy = snapshot.operation !== null && snapshot.operation.kind !== "fetch";
   // The repository did not open (a detached HEAD): nothing to commit to or pull into.
@@ -344,6 +369,13 @@ export function ChangesPanelContents() {
               Push
               {snapshot.ahead > 0 ? <Badge variant="secondary">{snapshot.ahead}</Badge> : null}
             </Button>
+            <ChangesMenu
+              disabled={busy || unopened}
+              onRemoveUnused={() => {
+                unusedRequests.current += 1;
+                setUnusedFlow(unusedRequests.current);
+              }}
+            />
           </div>
           <StatusLine snapshot={snapshot} now={now} />
         </div>
@@ -419,6 +451,7 @@ export function ChangesPanelContents() {
         </ScrollArea>
         <CommitBox included={included} busy={busy || unopened} onCommitted={includeAll} />
       </div>
+      {unusedFlow !== null ? <SourceControlUnusedFilesFlow key={unusedFlow} onDone={() => setUnusedFlow(null)} /> : null}
     </PanelFrame>
   );
 }

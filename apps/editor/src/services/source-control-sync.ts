@@ -130,9 +130,24 @@ export interface SyncConfigureInput {
   /** The registry's view of a changed `.hasset`, for names, icons and blob grouping. */
   lookup: ChangeLookup;
   locks: SyncLocks;
+  /**
+   * Runs `work` as the project's only writer (`ProjectService.withExclusiveWrites`),
+   * handing it the project storage past the write barrier; the sync binds it
+   * to the folder. Refused while another operation holds project writes.
+   */
+  exclusiveWrites: <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal: AbortSignal) => Promise<T>;
   /** Defaults to the lazily loaded Git client. */
   factory?: SyncPortFactory;
 }
+
+/** Blob files Remove Unused Files found or removed, and their size on disk. */
+export interface UnusedFiles {
+  readonly paths: readonly string[];
+  readonly bytes: number;
+}
+
+/** Why saves and imports are refused while unused files are removed. */
+const REMOVING_UNUSED_REASON = "Read-only while removing unused files";
 
 const IDLE: SyncSnapshot = {
   active: false,
@@ -600,6 +615,55 @@ export class SourceControlSyncService {
     if (!ran) throw new Error("The project closed while reverting.");
     await this.refreshStatus();
     return written;
+  }
+
+  /**
+   * The working copy's `.blobs` files nothing needs, for **Remove Unused
+   * Files**: untracked and held by no unpushed commit of any local branch
+   * (`SyncPort.removableLfsObjects`; an unpushed commit's objects exist only
+   * here), in a content root's own blob folder and referenced by no asset
+   * header on disk in that root, with their size. An open document needs no
+   * other: a save writes its document blob from memory and carries every
+   * other blob from the header on disk. Queued; reads listings, the headers
+   * of the roots concerned and stats, never a blob, and fetches nothing.
+   * Rejects with what failed.
+   */
+  async findUnusedFiles(): Promise<UnusedFiles> {
+    const revision = this.revision;
+    let found: UnusedFiles | null = null;
+    const ran = await this.run(null, "Could Not Find Unused Files", async ({ port, storage, signal }) => {
+      const { unusedLfsObjects } = await import("./source-control-unused-files");
+      found = await unusedLfsObjects(storage, await port.removableLfsObjects({ signal }), signal);
+    }, revision, { rethrow: true });
+    if (!ran || !found) throw new Error("The project closed while finding unused files.");
+    return found;
+  }
+
+  /**
+   * Removes those of `paths` (what `findUnusedFiles` found, confirmed) that
+   * nothing needs still: the repository's answer is read again (only this
+   * queue's own operations change it), then, as the project's only writer,
+   * the asset headers, so an asset written since the confirmation keeps its
+   * blob. Never a tracked file. Queued; a close cancels it. The status is
+   * read again after. Resolves to what it removed; rejects with what failed.
+   */
+  async removeUnusedFiles(paths: readonly string[]): Promise<UnusedFiles> {
+    const revision = this.revision;
+    let removed: UnusedFiles | null = null;
+    const ran = await this.run(null, "Could Not Remove Unused Files", async ({ port, input, storage, signal }) => {
+      const { removeUnusedLfsObjects } = await import("./source-control-unused-files");
+      const confirmed = new Set(paths);
+      const candidates = (await port.removableLfsObjects({ signal })).filter((path) => confirmed.has(path));
+      const folder = input.folder!.id;
+      removed = await input.exclusiveWrites(
+        REMOVING_UNUSED_REASON,
+        (writer) => removeUnusedLfsObjects(storage, folderBoundStorage(writer, folder), candidates, signal),
+        signal,
+      );
+    }, revision, { rethrow: true });
+    if (!ran || !removed) throw new Error("The project closed while removing unused files.");
+    await this.refreshStatus();
+    return removed;
   }
 
   /**

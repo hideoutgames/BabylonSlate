@@ -1,0 +1,170 @@
+import { describe, expect, it, vi } from "vitest";
+import type { ProjectStorage } from "@haptic/core";
+import { testAsset } from "../testing/diff-assets";
+import { integratedSync } from "../testing/integrated-sync";
+
+const AUTHOR = { name: "ada", email: "" };
+/** Large enough for a chunk to live in a blob. */
+const BLOB_BYTES = 70 * 1024;
+
+/** A Texture whose one chunk is a blob, and that blob. */
+async function texture(name: string, fill: number) {
+  const asset = await testAsset("Texture", name, { chunks: [{ id: "pixels", kind: "pixels", mime: "application/octet-stream", data: new Uint8Array(BLOB_BYTES).fill(fill) }] });
+  const [sha, blob] = [...asset.blobs][0]!;
+  return { bytes: asset.bytes, sha, blob };
+}
+
+/** The seed's assets as real `.hasset` files (an unreadable one would keep its root's blobs): Rock with its blob, no Forest. */
+async function seed(extra: Record<string, Uint8Array> = {}) {
+  const rock = await texture("Rock", 1);
+  return {
+    rock,
+    files: { "assets/Forest.scene.hasset": null, "assets/Rock.texture.hasset": rock.bytes, [`assets/.blobs/${rock.sha}`]: rock.blob, ...extra },
+  };
+}
+
+/** `storage` recording the paths removed through it. */
+function recording(storage: ProjectStorage): { storage: ProjectStorage; removed: string[] } {
+  const removed: string[] = [];
+  return {
+    removed,
+    storage: new Proxy(storage, {
+      get(target, key) {
+        const value = Reflect.get(target, key, target) as unknown;
+        if (typeof value !== "function") return value;
+        if (key !== "remove") return value.bind(target);
+        return (path: string, ...rest: unknown[]) => {
+          removed.push(path);
+          return Reflect.apply(value, target, [path, ...rest]);
+        };
+      },
+    }),
+  };
+}
+
+describe("Remove Unused Files", () => {
+  it("removes untracked blob files nothing needs, keeping those a plugin asset, an unpushed branch or a commit holds", async () => {
+    const stale = await texture("Stale", 2);
+    const lost = await texture("Lost", 3);
+    const crate = await texture("Crate", 4);
+    const fern = await texture("Fern", 5);
+    const writes: string[] = [];
+    // Tracked, though no asset uses it any more.
+    const { rock, files } = await seed({ [`assets/.blobs/${stale.sha}`]: stale.blob });
+    const { service, storage, port } = await integratedSync({
+      files,
+      exclusiveWrites: async (reason, work, storage) => {
+        writes.push(reason);
+        return work(storage);
+      },
+    });
+    // A blob only a commit of another branch holds, not pushed yet: it exists nowhere else.
+    await port.createBranch("feature");
+    await storage.writeBinary(`assets/.blobs/${fern.sha}`, fern.blob);
+    await storage.writeBinary("assets/Fern.texture.hasset", fern.bytes);
+    await port.commit({ paths: [`assets/.blobs/${fern.sha}`, "assets/Fern.texture.hasset"], message: "Fern", author: AUTHOR });
+    await port.switchBranch("main");
+    // A reverted edit's blob, which nothing references.
+    await storage.writeBinary(`assets/.blobs/${lost.sha}`, lost.blob);
+    // A plugin asset's blob, in its own root's folder; the registry need not index the plugin.
+    await storage.writeBinary(`plugins/Props/assets/.blobs/${crate.sha}`, crate.blob);
+    await storage.writeBinary("plugins/Props/assets/Crate.texture.hasset", crate.bytes);
+    // Rock's blob copied into the plugin's folder: only the plugin's own assets would load it.
+    await storage.writeBinary(`plugins/Props/assets/.blobs/${rock.sha}`, rock.blob);
+    await service.refreshStatus();
+
+    const unused = [`assets/.blobs/${lost.sha}`, `plugins/Props/assets/.blobs/${rock.sha}`].sort();
+    expect(await service.findUnusedFiles()).toEqual({ paths: unused, bytes: 2 * BLOB_BYTES });
+    expect(await service.removeUnusedFiles(unused)).toEqual({ paths: unused, bytes: 2 * BLOB_BYTES });
+    expect(writes).toEqual(["Read-only while removing unused files"]);
+
+    for (const path of unused) expect(await storage.exists(path)).toBe(false);
+    for (const path of [`assets/.blobs/${rock.sha}`, `assets/.blobs/${stale.sha}`, `assets/.blobs/${fern.sha}`, `plugins/Props/assets/.blobs/${crate.sha}`]) {
+      expect(await storage.exists(path)).toBe(true);
+    }
+    expect(await service.findUnusedFiles()).toEqual({ paths: [], bytes: 0 });
+    // The unpushed branch still pushes its object from the working copy.
+    await port.switchBranch("feature");
+    expect(await port.push()).toMatchObject({ uploaded: 1 });
+  });
+
+  it("keeps a confirmed file that an asset references by the time it would be removed, and removes only through the project's only writer", async () => {
+    const lost = await texture("Lost", 3);
+    const other = await texture("Other", 6);
+    const exclusive = { reasons: [] as string[], removed: [] as string[] };
+    const { service, storage } = await integratedSync({
+      files: (await seed()).files,
+      exclusiveWrites: async (reason, work, storage) => {
+        exclusive.reasons.push(reason);
+        const own = recording(storage);
+        try {
+          return await work(own.storage);
+        } finally {
+          exclusive.removed.push(...own.removed);
+        }
+      },
+    });
+    await storage.writeBinary(`assets/.blobs/${lost.sha}`, lost.blob);
+    await storage.writeBinary(`assets/.blobs/${other.sha}`, other.blob);
+    const found = await service.findUnusedFiles();
+    expect(found.paths).toEqual([`assets/.blobs/${lost.sha}`, `assets/.blobs/${other.sha}`].sort());
+
+    // Imported again after the confirmation: the import found the blob in place and only wrote its asset.
+    await storage.writeBinary("assets/Lost.texture.hasset", lost.bytes);
+    expect(await service.removeUnusedFiles(found.paths)).toEqual({ paths: [`assets/.blobs/${other.sha}`], bytes: BLOB_BYTES });
+    expect(await storage.exists(`assets/.blobs/${lost.sha}`)).toBe(true);
+    expect(exclusive).toEqual({ reasons: ["Read-only while removing unused files"], removed: [`assets/.blobs/${other.sha}`] });
+  });
+
+  it("reads only the headers of the content roots that hold a file to remove, and only their headers", async () => {
+    const lost = await texture("Lost", 3);
+    const crate = await texture("Crate", 4);
+    const { service, storage } = await integratedSync({ files: (await seed()).files });
+    await storage.writeBinary(`plugins/Props/assets/.blobs/${lost.sha}`, lost.blob);
+    await storage.writeBinary(`plugins/Props/assets/.blobs/${crate.sha}`, crate.blob);
+    await storage.writeBinary("plugins/Props/assets/Crate.texture.hasset", crate.bytes);
+    const whole = vi.spyOn(storage, "readBinary");
+    const ranges = vi.spyOn(storage, "readBinaryRange");
+
+    expect(await service.findUnusedFiles()).toEqual({ paths: [`plugins/Props/assets/.blobs/${lost.sha}`], bytes: BLOB_BYTES });
+    // No asset or blob is read whole, and the project root's assets, which cannot load the plugin's blobs, are not read at all.
+    expect(whole.mock.calls.map(([path]) => path).filter((path) => path.endsWith(".hasset") || path.includes("/.blobs/"))).toEqual([]);
+    expect([...new Set(ranges.mock.calls.map(([path]) => path))]).toEqual(["plugins/Props/assets/Crate.texture.hasset"]);
+  });
+
+  it("removes nothing once the project closes while it waits to be the only writer", async () => {
+    const lost = await texture("Lost", 3);
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    let proceed!: () => void;
+    const gate = new Promise<void>((resolve) => { proceed = resolve; });
+    const { service, storage } = await integratedSync({
+      files: (await seed()).files,
+      exclusiveWrites: async (_reason, work, storage) => {
+        enter();
+        await gate;
+        return work(storage);
+      },
+    });
+    await storage.writeBinary(`assets/.blobs/${lost.sha}`, lost.blob);
+    const found = await service.findUnusedFiles();
+    expect(found.paths).toEqual([`assets/.blobs/${lost.sha}`]);
+
+    const removing = service.removeUnusedFiles(found.paths);
+    await entered;
+    service.stop();
+    proceed();
+    await expect(removing).rejects.toThrow();
+    expect(await storage.exists(`assets/.blobs/${lost.sha}`)).toBe(true);
+  });
+
+  it("keeps every blob of a content root that holds an asset whose header cannot be read", async () => {
+    const lost = await texture("Lost", 3);
+    const { service, storage } = await integratedSync({ files: (await seed()).files });
+    await storage.writeBinary(`assets/.blobs/${lost.sha}`, lost.blob);
+    await storage.writeBinary(`plugins/Props/assets/.blobs/${lost.sha}`, lost.blob);
+    await storage.writeText("assets/Broken.texture.hasset", "not an asset");
+    // Its root's blobs stay; another root's are judged by their own assets.
+    expect(await service.findUnusedFiles()).toEqual({ paths: [`plugins/Props/assets/.blobs/${lost.sha}`], bytes: BLOB_BYTES });
+  });
+});

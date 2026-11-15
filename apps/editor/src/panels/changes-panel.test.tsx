@@ -15,12 +15,16 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
   setAdoption: null as ((adopted: boolean) => Promise<void>) | null,
+  dirtyDocuments: [] as unknown[],
+  withProjectWrites: null as (<T>(work: () => Promise<T>) => Promise<T>) | null,
 }));
 
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     ...(state.sync ? { sourceControlSync: state.sync } : {}),
     ...(state.setAdoption ? { setSourceControlAdoption: state.setAdoption } : {}),
+    ...(state.withProjectWrites ? { withProjectWrites: state.withProjectWrites } : {}),
+    dirtyDocuments: state.dirtyDocuments,
   })),
 );
 
@@ -29,6 +33,8 @@ afterEach(() => {
   state.sync?.dispose();
   state.sync = null;
   state.setAdoption = null;
+  state.dirtyDocuments = [];
+  state.withProjectWrites = null;
 });
 
 function renderPanel() {
@@ -207,6 +213,48 @@ describe("Changes window", () => {
       fireEvent.click(await screen.findByTestId("changes-new-branch"));
     });
     expect(await screen.findByTestId("source-control-new-branch")).toBeTruthy();
+  });
+
+  it("removes unused files from its menu after a confirmation naming their count and size, refused while documents are unsaved", async () => {
+    // The seed's assets as no files at all: only the loose blob is left to judge.
+    const { service, storage } = await integratedSync({ files: { "assets/Forest.scene.hasset": null, "assets/Rock.texture.hasset": null } });
+    state.sync = service;
+    const loose = `assets/.blobs/${"b".repeat(64)}`;
+    await storage.writeBinary(loose, new Uint8Array(3 * 1024));
+    state.dirtyDocuments = [{ ref: { kind: "scene", path: "assets/Forest.scene.hasset", label: "Forest" } }];
+    let queued = 0;
+    state.withProjectWrites = <T,>(work: () => Promise<T>) => {
+      queued += 1;
+      return work();
+    };
+    renderPanel();
+    const open = async () => {
+      fireEvent.click(screen.getByTestId("changes-more"));
+      await act(async () => {
+        fireEvent.click(await screen.findByTestId("changes-remove-unused"));
+      });
+    };
+
+    await open();
+    const refused = await screen.findByTestId("source-control-unused-blocked");
+    expect(refused.textContent).toContain("Forest");
+    fireEvent.click(within(refused).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByTestId("source-control-unused-blocked")).toBeNull());
+    expect(await storage.exists(loose)).toBe(true);
+
+    state.dirtyDocuments = [];
+    await open();
+    const confirm = await screen.findByTestId("source-control-unused-confirm");
+    expect(confirm.textContent).toContain("Remove 1 Unused File?");
+    expect(confirm.textContent).toContain("3 KB");
+    expect(await storage.exists(loose)).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-unused-confirm-action"));
+    });
+    expect((await screen.findByTestId("source-control-unused-done")).textContent).toContain("Removed 1 Unused File");
+    expect(await storage.exists(loose)).toBe(false);
+    // In the project write queue, so no editor save runs meanwhile.
+    expect(queued).toBe(1);
   });
 
   it("offers Add Git LFS Rule where a commit of blobs is refused, and commits once the rule is in", async () => {

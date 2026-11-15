@@ -114,6 +114,80 @@ describe("ProjectService lifecycle", () => {
     await service.closeProject();
   });
 
+  it("runs work as the project's only writer: after admitted saves finish, refusing every other writer, writing through its own storage", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Alone", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    await storage.writeText("assets/.blobs/loose", "x");
+    let proceed!: () => void;
+    let wroteScene!: () => void;
+    const firstWrite = new Promise<void>(resolve => { wroteScene = resolve; });
+    const paused = new Promise<void>(resolve => { proceed = resolve; });
+    const saving = service.withBaselineSave(async writer => {
+      await writer.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Saved first" });
+      wroteScene();
+      await paused;
+    });
+    await firstWrite;
+    const steps: string[] = [];
+    let kept: ProjectStorage | null = null;
+    const alone = service.withExclusiveWrites("Removing unused files", async (own) => {
+      steps.push("work");
+      kept = own;
+      await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/Removing unused files/);
+      await expect(service.storagePort.remove("assets/.blobs/loose")).rejects.toThrow(/Removing unused files/);
+      await own.remove("assets/.blobs/loose");
+      return "done";
+    });
+    // A save admitted before it ends first; new writers are refused meanwhile.
+    await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/Removing unused files/);
+    expect(steps).toEqual([]);
+    proceed();
+    await saving;
+    expect(await alone).toBe("done");
+    expect(await storage.exists("assets/.blobs/loose")).toBe(false);
+    expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe("Saved first");
+    // Its storage writes nothing once it ended, and writers are admitted again.
+    await expect(kept!.writeText("assets/.blobs/late", "x")).rejects.toThrow();
+    expect(await storage.exists("assets/.blobs/late")).toBe(false);
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    await service.closeProject();
+  });
+
+  it("refuses to run as the only writer while another operation holds project writes, and stops waiting when aborted", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Held", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    const work = vi.fn(async () => "ran");
+
+    const simulation = service.lockAuthoringWrites("Read-only during Simulation Play");
+    await expect(service.withExclusiveWrites("Removing unused files", work)).rejects.toThrow(/Simulation/);
+    simulation.release();
+    expect(work).not.toHaveBeenCalled();
+
+    // Waiting for an admitted save: an abort ends the wait, runs nothing and admits writers again.
+    let proceed!: () => void;
+    const paused = new Promise<void>(resolve => { proceed = resolve; });
+    let started!: () => void;
+    const saveStarted = new Promise<void>(resolve => { started = resolve; });
+    const saving = service.withBaselineSave(async () => {
+      started();
+      await paused;
+    });
+    await saveStarted;
+    const controller = new AbortController();
+    const waiting = service.withExclusiveWrites("Removing unused files", work, controller.signal);
+    controller.abort();
+    await expect(waiting).rejects.toThrow();
+    expect(work).not.toHaveBeenCalled();
+    proceed();
+    await saving;
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    await service.closeProject();
+  });
+
   it("drains an active texture encode through its final chunk commit before admitting a session baseline", async () => {
     const storage = new MemoryStorageAdapter("documents");
     let finishEncode!: (result: { ktx2: Uint8Array; wallMs: number }) => void;
