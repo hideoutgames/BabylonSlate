@@ -30,7 +30,8 @@ import {
  *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report),
  *      HAPTIC_PERF_PROFILE=1 (with HAPTIC_PERF_OUT: a CPU profile of each scene's Play windows beside the report),
  *      HAPTIC_PERF_VERIFY_SCOPED=1 (Play follows each scoped readiness probe with a whole one that must agree:
- *      `rendererWork.scopedReadinessMismatches`).
+ *      `rendererWork.scopedReadinessMismatches`),
+ *      HAPTIC_PERF_GPU_BUSY=1 (each Play window measures GPU-busy time per frame: `rendering.gpuBusy`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -59,6 +60,8 @@ const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
 const PROFILE = process.env.HAPTIC_PERF_PROFILE === "1" && !!process.env.HAPTIC_PERF_OUT;
 /** Each scoped readiness probe in Play is followed by a whole one, which must agree (the measured frames carry its cost). */
 const VERIFY_SCOPED = process.env.HAPTIC_PERF_VERIFY_SCOPED === "1";
+/** Each Play window restarts the GPU-busy measurement (`gpubusy on`), so `rendering.gpuBusy` is that window's own. */
+const GPU_BUSY = process.env.HAPTIC_PERF_GPU_BUSY === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -283,6 +286,8 @@ async function samplePlay(page: Page, durationMs: number) {
       drawCalls: rendering.drawCalls ?? null,
       cpuMs: rendering.cpuMs ?? null,
       gpuMs: rendering.gpuMs ?? null,
+      gpuBusy: rendering.gpuBusy ?? null,
+      frameBackpressure: rendering.frameBackpressure ?? null,
       settings: rendering.settings ?? null,
       rendererWork: rendering.rendererWork ?? null,
       layerWork: rendering.layerWork ?? null,
@@ -335,6 +340,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   }
   const windows = [];
   for (let index = 0; index < SAMPLES; index += 1) {
+    if (GPU_BUSY) await runConsoleCommand(page, "gpubusy on");
     const since = await pageNow(page);
     const { result, busy } = await busyFraction(cdp, () => samplePlay(page, SAMPLE_MS));
     windows.push({ ...result, mainThreadBusy: busy, longTasks: await longTasksSince(page, since) });
@@ -451,7 +457,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     browserVersion: page.context().browser()?.version() ?? null,
     viewportCss: page.viewportSize(),
     adapter,
-    env: { SCENES, SAMPLE_MS, SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS },
+    env: { SCENES, SAMPLE_MS, SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,
     pageErrors,
