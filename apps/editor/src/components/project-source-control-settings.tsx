@@ -110,7 +110,7 @@ export function ProjectSourceControlSettings({
     };
   }, [readSourceControlFolder, settings.mode]);
   const modes = offeredSourceControlModes(settings.mode, folder);
-  // Integrated mode's repository and branch are the working copy's: they change only with it (Clone, Publish, branch switch).
+  // Integrated mode: the repository is the working copy's (it changes only with Clone or Publish), and the branch here is the team's default; the checked-out branch is the working copy's own, switched from the Source Control tab.
   const fixed = settings.mode === "integrated";
   const blocker = settings.mode === "integrated" ? syncBlocked : null;
   // On desktop this device's answer can be taken back: Haptic stops running Git here, `project.json` stays Integrated.
@@ -216,7 +216,7 @@ export function ProjectSourceControlSettings({
   );
   const branchField = () => (
     <Field className="settings-field">
-      <FieldLabel htmlFor="settings-source-control-branch">Branch</FieldLabel>
+      <FieldLabel htmlFor="settings-source-control-branch">{fixed ? "Default Branch" : "Branch"}</FieldLabel>
       <Input
         id="settings-source-control-branch"
         value={settings.branch}

@@ -1111,6 +1111,8 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("settings-source-control-url").hasAttribute("readonly")).toBe(true);
     expect(screen.getByTestId("settings-source-control-branch").hasAttribute("readonly")).toBe(true);
     expect(screen.getByTestId("settings-source-control-branch").getAttribute("role")).not.toBe("combobox");
+    // The project's branch is the team's default; the checked-out one is the working copy's own.
+    expect(screen.getByLabelText("Default Branch")).toBe(screen.getByTestId("settings-source-control-branch"));
   });
 
   it("fills Source Control from Git without replacing a URL typed during the read", async () => {
