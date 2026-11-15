@@ -6,7 +6,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { Mesh as BabylonMesh, type Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
@@ -254,6 +254,24 @@ describe("the render change journal", () => {
     source.setVerticesData(VertexBuffer.PositionKind, source.getVerticesData(VertexBuffer.PositionKind)!.map((value) => value * 2));
     // New positions also refit the source's bounds, which recomputes its world matrix.
     expect(read().map(([name, kinds]) => [name, kinds & RenderChange.Geometry])).toEqual([["source", RenderChange.Geometry], ["instance", RenderChange.Geometry]]);
+    reader.dispose();
+  });
+
+  it("lets a geometry several meshes share be disposed: Babylon then releases a mesh that is not there", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene = new Scene(engine);
+    const first = MeshBuilder.CreateBox("first", {}, scene);
+    const second = new BabylonMesh("second", scene);
+    const third = new BabylonMesh("third", scene);
+    first.geometry!.applyToMesh(second);
+    first.geometry!.applyToMesh(third);
+    const reader = openRenderChangeReader(scene);
+    // `Geometry.dispose` walks its meshes by index while each release removes one, so it also releases `undefined`.
+    expect(() => first.geometry!.dispose()).not.toThrow();
+    const seen: string[] = [];
+    reader.drain((node, kinds) => { if (kinds & RenderChange.Geometry) seen.push(node.name); });
+    expect(seen).toContain("first");
     reader.dispose();
   });
 });

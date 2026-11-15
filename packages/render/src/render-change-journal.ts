@@ -350,18 +350,20 @@ function install(): void {
   geometryPrototype._notifyUpdate = function (this: Geometry, kind?: string) {
     notifyUpdate.call(this, kind);
     const journal = journalOf(this);
-    if (journal) for (const mesh of internals(this)._meshes) noteMesh(journal, mesh, RenderChange.Geometry);
+    if (journal) for (const mesh of internals(this)._meshes) if (mesh) noteMesh(journal, mesh, RenderChange.Geometry);
   };
   const applyToMesh = geometryPrototype.applyToMesh;
   geometryPrototype.applyToMesh = function (this: Geometry, mesh: Mesh) {
     applyToMesh.call(this, mesh);
-    const journal = journalOf(mesh);
+    const journal = mesh ? journalOf(mesh) : undefined;
     if (journal) noteMesh(journal, mesh, RenderChange.Geometry);
   };
   const releaseForMesh = geometryPrototype.releaseForMesh;
-  geometryPrototype.releaseForMesh = function (this: Geometry, mesh: Mesh, shouldDispose?: boolean) {
-    releaseForMesh.call(this, mesh, shouldDispose);
-    const journal = journalOf(mesh);
-    if (journal) noteMesh(journal, mesh, RenderChange.Geometry);
+  // `Geometry.dispose` walks its mesh list by index while each release shortens it, so Babylon itself asks to release
+  // `undefined` for a geometry several meshes share; its own method ignores that.
+  geometryPrototype.releaseForMesh = function (this: Geometry, mesh: Mesh | undefined, shouldDispose?: boolean) {
+    releaseForMesh.call(this, mesh as Mesh, shouldDispose);
+    const journal = mesh ? journalOf(mesh) : undefined;
+    if (journal) noteMesh(journal, mesh!, RenderChange.Geometry);
   };
 }
