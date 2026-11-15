@@ -32,7 +32,7 @@ function refreshing(store: CredentialStore, http: HttpClient, time: ReturnType<t
 }
 
 const refreshes = (host: FakeGitHost) =>
-  host.requests.filter((request) => new URLSearchParams(request.body ?? "").get("grant_type") === "refresh_token");
+  host.requests.filter((request) => new URLSearchParams((request.body as string | undefined) ?? "").get("grant_type") === "refresh_token");
 
 describe("GitLab sign-in refresh", () => {
   it("saves the refresh token and expiry a GitLab sign-in returns, but none for GitHub", async () => {
@@ -59,7 +59,7 @@ describe("GitLab sign-in refresh", () => {
     time.set(credential.expiresAt! - REFRESH_MARGIN_MS);
     const [a, b, c] = await Promise.all([source.current(), source.current(), source.current()]);
     expect([a?.token, b?.token, c?.token]).toEqual(["fake-gitlab-token-2", "fake-gitlab-token-2", "fake-gitlab-token-2"]);
-    expect(refreshes(host).map((request) => Object.fromEntries(new URLSearchParams(request.body)))).toEqual([
+    expect(refreshes(host).map((request) => Object.fromEntries(new URLSearchParams(request.body as string)))).toEqual([
       { grant_type: "refresh_token", refresh_token: "fake-gitlab-refresh-1", client_id: "client" },
     ]);
     expect(refreshes(host)[0]?.url).toBe("https://gitlab.com/oauth/token");

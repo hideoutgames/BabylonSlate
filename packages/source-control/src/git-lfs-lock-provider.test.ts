@@ -54,7 +54,7 @@ describe("GitLfsLockProvider", () => {
     );
     // Credentialed requests never follow a redirect to another host.
     expect(calls[0]?.disableRedirects).toBe(true);
-    expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
+    expect(JSON.parse((calls[0]?.body as string | undefined) ?? "{}")).toEqual({
       path: "assets/hero.scene.hasset",
       ref: { name: "refs/heads/main" },
     });
@@ -122,7 +122,7 @@ describe("GitLfsLockProvider", () => {
       branch: "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
-        const cursor = (JSON.parse(request.body ?? "{}") as { cursor?: string }).cursor;
+        const cursor = (JSON.parse((request.body as string | undefined) ?? "{}") as { cursor?: string }).cursor;
         cursors.push(cursor);
         if (!cursor) {
           return jsonResponse(200, { ours: [sampleLock], theirs: [], next_cursor: "page-2" });
@@ -162,7 +162,7 @@ describe("GitLfsLockProvider", () => {
         expect(request.url).toBe(
           "https://github.com/org/repo.git/info/lfs/locks/verify",
         );
-        expect(JSON.parse(request.body ?? "{}")).toEqual({
+        expect(JSON.parse((request.body as string | undefined) ?? "{}")).toEqual({
           ref: { name: "refs/heads/release" },
         });
         return jsonResponse(200, {
@@ -196,7 +196,7 @@ describe("GitLfsLockProvider", () => {
         expect(request.url).toBe(
           "https://github.com/org/repo.git/info/lfs/locks/lock-1/unlock",
         );
-        bodies.push(JSON.parse(request.body ?? "{}"));
+        bodies.push(JSON.parse((request.body as string | undefined) ?? "{}"));
         return jsonResponse(200, { lock: sampleLock });
       },
     });

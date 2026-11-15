@@ -1,28 +1,4 @@
-/** A Git LFS object: a project blob, raw bytes named by their SHA-256 (the LFS oid). */
-const LFS_BLOB_PATH = /(?:^|\/)\.blobs\/([0-9a-f]{64})$/;
-
-function hex(bytes: ArrayBuffer): string {
-  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-/** Git's object id for file content: SHA-1 of `"blob " + byteLength + "\0" + bytes`. */
-export async function gitBlobSha1(bytes: Uint8Array): Promise<string> {
-  const header = new TextEncoder().encode(`blob ${bytes.byteLength}\0`);
-  const object = new Uint8Array(header.byteLength + bytes.byteLength);
-  object.set(header);
-  object.set(bytes, header.byteLength);
-  return hex(await crypto.subtle.digest("SHA-1", object));
-}
-
-/** The pointer file Git stores for an LFS object. */
-export function lfsPointerText(oid: string, size: number): string {
-  return `version https://git-lfs.github.com/spec/v1\noid sha256:${oid}\nsize ${size}\n`;
-}
-
-/** The LFS oid a `.blobs` path names, or null for a file Git stores itself. */
-export function lfsObjectId(path: string): string | null {
-  return LFS_BLOB_PATH.exec(path)?.[1] ?? null;
-}
+import { gitBlobSha1, lfsObjectId, lfsPointerText } from "./lfs-pointer";
 
 /** The working copy as the check reads it: bytes, or only the size for LFS objects. */
 export interface LocalFiles {

@@ -394,8 +394,13 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     const url = new URL(request.url);
     requireValue(url.protocol === "https:" && !url.username && !url.password);
     requireValue(request.method === undefined || ["GET", "POST", "PUT", "DELETE", "HEAD"].includes(String(request.method)));
-    if (request.body !== undefined) text(request.body);
+    // Git packs and LFS objects cross as an exact ArrayBuffer, within the IPC limit, and only as a POST or PUT body.
+    if (request.body instanceof ArrayBuffer) {
+      requireValue(request.body.byteLength <= MAX_IPC_BYTES && (request.method === "POST" || request.method === "PUT"));
+    } else if (request.body !== undefined) text(request.body);
     if (request.upload !== undefined) validateImageUpload(request);
+    requireValue(request.responseType === undefined || request.responseType === "text" || request.responseType === "binary");
+    requireValue(request.disableRedirects === undefined || typeof request.disableRedirects === "boolean");
     if (request.headers !== undefined) {
       requireValue(request.headers && typeof request.headers === "object" && !Array.isArray(request.headers));
       for (const [key, value] of Object.entries(request.headers)) {

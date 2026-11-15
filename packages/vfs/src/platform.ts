@@ -45,16 +45,20 @@ export interface ElectronSecretsBridge {
   delete(key: string): Promise<void>;
 }
 
+/** `lfs:fetch`: a byte body crosses IPC as an `ArrayBuffer`, and a `binary` answer as bytes. */
 export interface ElectronHttpBridge {
   fetch(request: {
     method: string;
     url: string;
     headers: Record<string, string>;
-    body?: string;
+    body?: string | ArrayBuffer;
     upload?: NativeHttpImageUpload;
+    responseType?: "text" | "binary";
+    disableRedirects?: boolean;
   }): Promise<{
     status: number;
     bodyText: string;
+    bodyBytes?: Uint8Array;
     headers?: Record<string, string>;
   }>;
 }

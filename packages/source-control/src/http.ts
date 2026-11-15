@@ -1,16 +1,22 @@
 /** One request through the host's native HTTP (CapacitorHttp, Electron `net.fetch`); web has none. */
 export interface HttpRequest {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PUT";
   url: string;
   headers: Record<string, string>;
-  body?: string;
+  /** Text, or bytes (Git packs, LFS objects). */
+  body?: string | Uint8Array;
+  /** `binary` answers `bodyBytes` instead of `bodyText`. */
+  responseType?: "text" | "binary";
   /** Return a 3xx as is instead of following it. Every credentialed request sets it. */
   disableRedirects?: boolean;
 }
 
 export interface HttpResponse {
   status: number;
+  /** Empty for a `binary` request. */
   bodyText: string;
+  /** A `binary` request's body. */
+  bodyBytes?: Uint8Array;
   headers?: Record<string, string>;
 }
 

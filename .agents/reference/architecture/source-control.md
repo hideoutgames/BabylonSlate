@@ -1,13 +1,13 @@
 # Source Control
 
-Optional Git LFS file locking (Manual mode): the `LockProvider` port and LFS client, device credentials with GitHub and GitLab device sign-in, the host REST clients, editor lock UX in the pinned Source Control tab, and external-change detection by mtime.
+Optional Git LFS file locking (Manual mode): the `LockProvider` port and LFS client, device credentials with GitHub and GitLab device sign-in, the host REST clients, editor lock UX in the pinned Source Control tab, and external-change detection by mtime. Also the Git core Integrated mode will sync with ([Git core](#git-core)): built and tested, not yet used by the editor.
 
-This file describes what is built. Built-in Git (Integrated mode) is planned in [source-control-plan.md](../source-control-plan.md).
+This file describes what is built. The rest of built-in Git (Integrated mode) is planned in [source-control-plan.md](../source-control-plan.md).
 
 ## Decisions
 
 - Per project, `ProjectSettings.sourceControl.mode`: `off` (default), `integrated`, `manual`. **Off costs nothing**: `SourceControlService.configure` returns before loading credentials, HTTP or timers and emits nothing, and no tab, banner, phone button, lazy chunk or polling exists. Any other mode on a source-control host is *active*.
-- **Manual**: another Git app (Working Copy, a desktop client) syncs; Haptic implements Git LFS locking only. It reads no git state beyond the `.git/config` prefill, shows no git status and never adds `lockable` to `.gitattributes`. `integrated` is a valid stored value but nothing syncs yet; it behaves as Manual for locks, and Project Settings offers only **Off** and **Manual**.
+- **Manual**: another Git app (Working Copy, a desktop client) syncs; Haptic implements Git LFS locking only. It reads no git state beyond the `.git/config` prefill, shows no git status and never adds `lockable` to `.gitattributes`. `integrated` is a valid stored value but the editor does not sync yet (the [Git core](#git-core) is not wired in); it behaves as Manual for locks, and Project Settings offers only **Off** and **Manual**.
 - No source control on production web: GitHub's LFS and REST endpoints send no CORS headers and a proxy is out of scope. Native hosts bypass CORS (`CapacitorHttp`, Electron `net.fetch`). Test mode uses `FakeLockProvider`, in-memory credentials and `FakeGitHost`.
 - Locks are **advisory** and failure never blocks editing. Release is explicit only (per lock, **Release All My Locks**, **Release Pushed Locks**), never on a timer, close or heuristic.
 - Credentials are **per device and host origin**, never per project and never in `project.json` or Git. Clerk's GitHub sign-in cannot supply them (Clerk keeps provider tokens server-side), so host sign-in is separate from the Haptic account.
@@ -44,10 +44,17 @@ This file describes what is built. Built-in Git (Integrated mode) is planned in 
 | SecretStore and native HTTP | [`packages/vfs/src/`](../../../packages/vfs/src/) `secret-store.ts`, `capacitor-secret-store.ts`, `electron-secret-store.ts`, `native-http.ts` |
 | Desktop IPC (`secrets:*`, `lfs:fetch`), device pages allowlist | [`apps/desktop/src/`](../../../apps/desktop/src/) `desktop-secret-store.ts`, `desktop-http.ts`, `packaged-security.ts` |
 | mtime diff (`MANY_EXTERNAL_CHANGES` = 8) | [`mtime-diff.ts`](../../../packages/assets/src/mtime-diff.ts) |
+| `SyncPort`, `SyncError`, Publish's `.gitattributes` and `.gitignore` helpers | [`sync-port.ts`](../../../packages/source-control/src/sync-port.ts) |
+| Whole-file pull decision, shared by both `SyncPort`s | [`pull-plan.ts`](../../../packages/source-control/src/pull-plan.ts) |
+| LFS pointer text, `.blobs` path rule, Git and LFS ids | [`lfs-pointer.ts`](../../../packages/source-control/src/lfs-pointer.ts) |
+| Git core (subpath `./git`): `GitRepository`, `cloneRepository`, `openRepository` | [`packages/source-control/src/git/`](../../../packages/source-control/src/git/) `repository.ts`, `storage-fs.ts` (fs, LFS filters), `git-http.ts`, `lfs-transfer.ts`, `history.ts` (ahead/behind), `errors.ts` |
+| `FakeSync`, `FakeRemote` (subpath `./fake-sync`) | [`fake-sync.ts`](../../../packages/source-control/src/fake-sync.ts) |
+| Git benchmark (subpath `./git-benchmark`); its Debug Mode console entry | [`git/benchmark.ts`](../../../packages/source-control/src/git/benchmark.ts); `apps/editor/src/lib/` `git-benchmark-hook.ts`, `git-benchmark-runner.ts` |
+| Test Git server (`git http-backend`, LFS batch API, LFS store on a second origin) | [`test-support/git-server.ts`](../../../packages/source-control/src/test-support/git-server.ts) |
 
 ## Loading
 
-- The startup path imports only the `@haptic/source-control` barrel (provider, credential store, scheduler, types). Device sign-in, token refresh, the host REST clients, the comparator and the fake host are subpath exports kept out of the barrel, so the bundler splits them.
+- The startup path imports only the `@haptic/source-control` barrel (provider, credential store, scheduler, types). Device sign-in, token refresh, the host REST clients, the comparator, the fake host, the Git core (`./git`, with isomorphic-git), `./fake-sync` and `./git-benchmark` are subpath exports kept out of the barrel, so the bundler splits them. The Git core installs the `buffer` package as `globalThis.Buffer` (isomorphic-git reads the global; WKWebView and Electron renderers have none) only when a repository opens; its `sha.js` dependency resolves the same package.
 - The device accounts module loads on the first configure of an active project or with a Source Control settings page; the Engine Settings page, the Project Settings account rows, the Sign In dialog and the Locks window (`lazyPanel`) load on first use. `boot-imports.test.ts` pins this.
 
 ## Port and client
@@ -102,6 +109,44 @@ Linux without a keyring stores new values with an explicit plaintext tag (accept
 - While a project's mode is not Off, the Texture alignment pass never re-encodes older Textures in the background (it would race a teammate for the file); only user-initiated re-encodes run, and they count as edits for auto-lock. Content Browser tiles expose `data-lock-state` `mine` / `theirs`.
 - `LockPollScheduler` ticks on start, then every 60 s; pause/resume follow background/foreground and `editorQuiet`, and ticks never overlap. Failed checks keep the cached list as the last known result; superseded replies never replace current state, and a verify reply that a local create or unlock overtook is requested again before it replaces the list. A refresh asks at most three times; when local lock changes overtake every reply, it keeps the cached list and its previous status and asks the scheduler for another tick, which waits for resume while paused.
 - The Locks window re-renders only rows whose lock changed: `locks` is a stable snapshot until the list changes, and rows are memoized with primitive props.
+
+## Git core
+
+Integrated mode's sync, in `packages/source-control/src/git/` (pure: storage, HTTP, credentials and clock injected). isomorphic-git, pinned exactly, does objects, packs, refs, the index and smart HTTP; Haptic's code does LFS, pull and the history walk.
+
+- **Repository:** the project folder is the working tree and `.git` sits at its root beside `assets/`. `GitRepository` runs one operation at a time and keeps isomorphic-git's cache (packs are immutable; the index is re-read when its stat changes). `core.filemode` is false: storage keeps no modes.
+- **`StorageFs`** (one per operation) is the `fs` isomorphic-git runs on: stats are storage's size and mtime (mode 100644, ctime = mtime), and a directory listing answers the following stats, so a status costs one storage call per directory and reads only files whose stats differ from the index. A file with no mtime is always content-checked. `rmdir` removes only an empty directory, so checkout never deletes untracked files. Every method returns a promise, even for a bad argument: isomorphic-git takes anything else for a callback `fs`.
+- **LFS** is git-lfs's clean and smudge, inside `StorageFs`, for working tree `**/.blobs/<sha256>` files:
+  - reading one answers its pointer (`version …\noid sha256:<name>\nsize <stat size>\n`), so the object is never read or Git-hashed, and status, `git.add` and checkout see the pointer's id;
+  - writing a pointer to one keeps the object's file when it is there with the pointer's size (otherwise `lfs-object-missing`; a pointer naming another object is `lfs-object-corrupt`); other bytes are written as they are;
+  - so the index holds the real file's stats against the pointer blob, as git-lfs leaves it, and status compares `.blobs` files by name and size.
+- **Downloads come first:** clone (fetch without checkout, download the head tree's objects, then check out) and pull (the objects of the paths it writes) download only objects whose file is missing or of another size, through the batch API, checked against size and SHA-256 before they are written. Checkout's write of the pointer then finds the file in place.
+- **Transfers:** the batch request carries the repository credential (`authorizedHttp`); an action is sent with exactly its own headers (replacing Haptic's whatever their case, less transport framing such as GitLab's `Transfer-Encoding: chunked`, since bodies go whole), plus the credential only when it is on the repository's origin and has no Authorization. Nothing follows a redirect; a non-HTTPS action is refused. Batches hold 100 objects; transfers run one at a time. Smart HTTP requests send `User-Agent: git/isomorphic-git@<version>`, not the WebView's.
+- **Clone:** shallow (`DEFAULT_CLONE_DEPTH` 1, or the caller's), single branch, no tags, into an empty folder (creation markers ignored; otherwise `conflict` / `not-empty`).
+- **Status:** `statusMatrix` rows as added, modified and deleted paths; `.gitignore`d untracked files are left out.
+- **Commit:** exactly the chosen paths that changed (`git.add`, `git.remove`), signed with the given author at the injected clock. A present `.blobs` file needs the rule `**/.blobs/** filter=lfs` in `.gitattributes` as the commit will hold it (the chosen working file, else HEAD's), otherwise `lfs` / `missing-lfs-rule`, so Publish's first commit may add rule and blobs together. Publish's helpers: `GITATTRIBUTES_LFS_RULE`, `GITIGNORE_ENTRIES` (`layout.json`, `.haptic-*.tmp`, `.haptic-move-*`), `withLfsRule`, `withIgnoreEntries`.
+- **Fetch and history:** `relate` paints both sides newest first and stops when every queued commit is common, so it reads only commits since the fork; it gives ahead, behind and the merge base. A fork older than the shallow history deepens the fetch by 50, 100, 200 and 400 commits, then gives up; a pull with no base is `conflict` / `unrelated-histories`.
+- **Pull** (fetch first): the incoming files are those that differ between the merge base and the remote (identical subtrees skipped). Mine is the working tree's file, committed or not (hashed only when its stats changed). `planPull`: a file whose working copy equals the base or the remote's takes the remote's; any other is a whole-file conflict needing `mine` or `theirs`. Without a choice for each, nothing changes and the conflicts are returned; every call recomputes them. Applying checks out exactly the paths taken (forced, HEAD unmoved), then either moves the branch (fast-forward; a kept file's index entry takes the remote's id, so it reads as an uncommitted change) or commits a merge of local and remote from the index (local tree plus the taken paths; a kept path keeps its committed local version). `changedPaths` feeds the external-change reload.
+- **Push:** the objects introduced by the commits being pushed (each against its first parent; a new remote branch counts from the tracked branch's remote ref) go through a batch `upload`; only objects the server answers with an upload action are sent (then `verify` when given); then the refs. A remote that moved is `conflict` / `push-rejected`.
+- **`readFile(path, commit)`** answers the Git blob; for a `.blobs` pointer, the working copy's file of that size (an object never changes under its name) or a download, never written.
+- **`log`** walks the branch until the shallow boundary; `deepen` fetches `limit` more commits once when the history ends early. `hasMore` stays true while the copy is shallow.
+- **Errors:** `SyncError` with `kind` `auth` (no credential, credential refused, 401/403), `network` (no answer, Git server failure), `conflict`, `not-found` (repository, branch, object) or `lfs`, and a `code` where the kind alone does not say. Storage failures and bugs pass through untyped.
+
+### Sync port and fake
+
+- `SyncPort` is what the editor will use: `status`, `commit`, `fetch`, `pull`, `push`, `readFile`, `log`. Clone and open are factories (`cloneRepository`, `openRepository`).
+- `FakeSync` (subpath `./fake-sync`) implements it for editor and end-to-end tests: the working tree is real project storage, history lives in a `FakeRemote` shared by every copy (a teammate commits through `FakeRemote.commit`), with full history, no `.git` and `.gitignore` lines as name or path globs. It shares `planPull` and `relate`, and ids content as Git does (`.blobs` by name and size).
+- [`sync-port.contract.test.ts`](../../../packages/source-control/src/sync-port.contract.test.ts) runs every case against `GitRepository` on the test Git server and against `FakeSync`, so the fake cannot drift.
+- The test server ([`git-server.ts`](../../../packages/source-control/src/test-support/git-server.ts)) runs the system `git http-backend` as CGI behind Node `http` with no system or user Git configuration, plus the batch API and an object store on a second origin whose actions bring their own Authorization. Tests reach both through an injected `HttpClient` that routes `https://git.test` and `https://lfs-storage.test` to loopback, so the code keeps its HTTPS-only credential rule; the store refuses any other Authorization.
+
+### Binary HTTP
+
+`HttpClient` and `NativeHttp` carry GET, POST and PUT; a body is text or bytes, and `responseType: "binary"` answers `bodyBytes`. Bodies cross whole (no streaming): Electron's `lfs:fetch` takes a byte body as an exact `ArrayBuffer` (POST or PUT, ≤ `MAX_IPC_BYTES`, 512 MiB) and answers binary bodies up to the same limit (text 16 MiB); CapacitorHttp gets base64 `data` with `dataType: "file"` under a Content-Type that is present and not JSON (default `application/octet-stream`; Android reads JSON first) and answers `arraybuffer` as base64 (JSON content types arrive parsed, Android sends error bodies as text, Android's base64 is line-wrapped). Native streaming waits for the iPad benchmark ([plan](../source-control-plan.md#order)).
+
+### Benchmark
+
+- `runGitBenchmark` (subpath `./git-benchmark`): a shallow clone, a status of the unchanged tree (it reports the files it read, which must be none), a one-file commit and its push, then a few large LFS objects (default 3 of 32 MiB) committed, uploaded and downloaded again; each step's time, bytes sent and received and working files read. Its commits go to a new remote branch only.
+- In Debug Mode on iOS and Android, `DiagnosticLogInstaller` puts `hapticGitBenchmark({ repositoryUrl, branch?, blobs?, blobMiB?, depth? })` on `globalThis` for the Web Inspector console. Called, it loads the runner, clones into a new Documents folder through its own storage instance with the device's saved credential for the host, pushes `haptic-benchmark-<time>`, prints and returns the result and deletes the folder. The branch and its LFS objects stay on the host. Not on desktop: Electron binds one project folder per window, so a second storage instance would move the open project.
 
 ## External change
 
