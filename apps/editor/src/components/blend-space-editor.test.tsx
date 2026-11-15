@@ -4,12 +4,14 @@ import type { IDockviewPanelProps } from "dockview-react";
 import type { BlendSpacePayload } from "@haptic/assets";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { BlendSpaceEditingProvider } from "../context/blend-space-editing-context";
+import { AssetOpenProvider } from "@haptic/editor-kit";
 import { BlendSpaceAnimationsPanel, BlendSpaceDetailsPanel, BlendSpaceGridPanel } from "./blend-space-editor";
 
 const harness = vi.hoisted(() => ({
   kind: "blend-space" as "blend-space" | "sprite-blend-space",
   content: {} as Record<string, unknown>,
   applyAssetDocumentChange: vi.fn<(id: string, next: Record<string, unknown>, mergeKey?: string) => Promise<boolean>>(async () => true),
+  openAsset: vi.fn<(guid: string) => void>(),
 }));
 
 const assets = [
@@ -50,13 +52,15 @@ const panelProps = {} as IDockviewPanelProps;
 
 function renderPanels() {
   return render(
-    <DocumentWorkspaceProvider documentId="bs">
-      <BlendSpaceEditingProvider>
-        <BlendSpaceGridPanel {...panelProps} />
-        <BlendSpaceAnimationsPanel {...panelProps} />
-        <BlendSpaceDetailsPanel {...panelProps} />
-      </BlendSpaceEditingProvider>
-    </DocumentWorkspaceProvider>,
+    <AssetOpenProvider value={{ canOpen: () => true, openAsset: harness.openAsset }}>
+      <DocumentWorkspaceProvider documentId="bs">
+        <BlendSpaceEditingProvider>
+          <BlendSpaceGridPanel {...panelProps} />
+          <BlendSpaceAnimationsPanel {...panelProps} />
+          <BlendSpaceDetailsPanel {...panelProps} />
+        </BlendSpaceEditingProvider>
+      </DocumentWorkspaceProvider>
+    </AssetOpenProvider>,
   );
 }
 
@@ -83,6 +87,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   harness.applyAssetDocumentChange.mockClear();
+  harness.openAsset.mockClear();
   harness.kind = "blend-space";
 });
 
@@ -112,6 +117,26 @@ describe("Blend Space editor", () => {
     expect(screen.queryByTestId("blend-space-animation-other")).toBeNull();
     fireEvent.click(screen.getByTestId("blend-space-add-run"));
     expect(lastWrite().samples).toEqual([{ animationGuid: "run", x: 0, y: 0, rateScale: 1 }]);
+  });
+
+  it("opens an Animation on a double-click or double-tap of its row, but not from Add At Preview Point", () => {
+    harness.content = payload({ samples: [] }) as unknown as Record<string, unknown>;
+    renderPanels();
+    const row = screen.getByTestId("blend-space-animation-walk");
+    fireEvent.click(row, { detail: 1 });
+    expect(harness.openAsset).not.toHaveBeenCalled();
+    fireEvent.click(row, { detail: 2 });
+    expect(harness.openAsset).toHaveBeenCalledWith("walk");
+    // Two taps (each detail 1) inside the double-tap window.
+    harness.openAsset.mockClear();
+    const run = screen.getByTestId("blend-space-animation-run");
+    fireEvent.click(run, { detail: 1 });
+    fireEvent.click(run, { detail: 1 });
+    expect(harness.openAsset).toHaveBeenCalledWith("run");
+    harness.openAsset.mockClear();
+    fireEvent.click(screen.getByTestId("blend-space-add-run"), { detail: 1 });
+    fireEvent.click(screen.getByTestId("blend-space-add-run"), { detail: 2 });
+    expect(harness.openAsset).not.toHaveBeenCalled();
   });
 
   it("drags a sample along the grid, snapped, as one undo step", () => {

@@ -11,7 +11,7 @@ In the **Content Browser**, choose **New Asset > 2D > Sprite Blend Space**. It s
 Double-tap a Sprite Blend Space to open it. It has the same windows as a [Blend Space](blend-space.md#editor):
 
 - **Grid**: the axes and the samples. Drag a sample to move it; it snaps to the grid. The red cross is the preview point, and the corner names the sample playing there.
-- **Animations**: every Sprite Animation. Drag one onto the Grid, or tap its **+** to add it at the preview point.
+- **Animations**: every Sprite Animation. Drag one onto the Grid, or tap its **+** to add it at the preview point. Double-click or double-tap one to open it.
 - **Preview**: the frames the preview point plays, as a game would, with **Play** or **Pause** and **Speed**. Every sample's images load when the Preview opens, so a change of sample shows its frame at once.
 - **Inspector**: **Hysteresis** and **Keep Time**, the **Axes** (one or two), each axis's settings and the selected sample's.
 
