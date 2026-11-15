@@ -19,10 +19,8 @@ export const STATUS_DEBOUNCE_MS = 800;
 
 /** Network transfer of the operation running now, for its progress display. */
 export interface TransferMonitor {
-  /** Bytes sent and received so far. */
+  /** Bytes one request sent and received. */
   bytes(count: number): void;
-  /** The running operation's cancellation: once aborted, the next request is refused. */
-  signal(): AbortSignal | null;
 }
 
 export interface SyncPortRequest {
@@ -401,8 +399,6 @@ export class SourceControlSyncService {
           const operation = this.snapshot.operation;
           if (operation) this.set({ ...this.snapshot, operation: { ...operation, bytes: operation.bytes + count } });
         },
-        // Pull, push and publish run to the end; only Clone offers Cancel.
-        signal: () => null,
       },
     };
   }

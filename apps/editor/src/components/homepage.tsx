@@ -144,7 +144,7 @@ interface HomepageProps {
   onOpenExternal: (source?: "folder" | "zip") => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
   /** Clone Project; the clone then opens like a listed project. */
-  onCloneProject?: (request: CloneProjectRequest, transfer: TransferMonitor) => Promise<ProjectFolderHandle>;
+  onCloneProject?: (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => Promise<ProjectFolderHandle>;
   onUpdateProject: (
     handle: ProjectFolderHandle,
     details: UpdateListedProjectOptions,
@@ -956,8 +956,8 @@ export function Homepage({
             open
             onOpenChange={setCloneOpen}
             existingNames={projects.map((project) => project.name)}
-            onClone={async (request, transfer) => {
-              const handle = await onCloneProject(request, transfer);
+            onClone={async (request, transfer, signal) => {
+              const handle = await onCloneProject(request, transfer, signal);
               setCloneOpen(false);
               await run(() => launch(() => onOpenProject(handle), request.name));
             }}

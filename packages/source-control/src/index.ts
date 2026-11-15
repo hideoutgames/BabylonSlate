@@ -62,14 +62,17 @@ export type {
   SyncErrorKind,
   SyncPort,
   SyncStatus,
+  TransferOptions,
 } from "./sync-port";
 export {
+  cancelledError,
   GITATTRIBUTES_LFS_RULE,
   GITIGNORE_ENTRIES,
   hasLfsRule,
   INCOMING_LIMIT,
   isSyncError,
   SyncError,
+  throwIfCancelled,
   withIgnoreEntries,
   withLfsRule,
 } from "./sync-port";

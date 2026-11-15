@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleAlertIcon, DownloadIcon, FolderGit2Icon } from "lucide-react";
 import { isOk } from "@haptic/core";
-import { parseRepositoryUrl } from "@haptic/source-control";
+import { isSyncError, parseRepositoryUrl } from "@haptic/source-control";
 import type { HostRepository } from "@haptic/source-control/host-api";
 import { SearchInput } from "@haptic/editor-kit";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
@@ -51,7 +51,8 @@ export default function CloneProjectDialog({
   onOpenChange: (open: boolean) => void;
   /** Project names already listed: a clone needs a folder of its own. */
   existingNames: readonly string[];
-  onClone: (request: CloneProjectRequest, transfer: TransferMonitor) => Promise<void>;
+  /** Rejects with a `cancelled` `SyncError` once `signal` aborts (the folder is gone by then). */
+  onClone: (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => Promise<void>;
 }) {
   const [host, setHost] = useState<CloneHost>("github");
   const [typedUrl, setTypedUrl] = useState("");
@@ -139,13 +140,12 @@ export default function CloneProjectDialog({
     const release = holdSessionCheck?.();
     const transfer: TransferMonitor = {
       bytes: (count) => setCloning((current) => (current ? { bytes: current.bytes + count } : current)),
-      signal: () => controller.signal,
     };
     try {
-      await onClone({ repositoryUrl, branch: branch.trim(), name: trimmedName }, transfer);
+      await onClone({ repositoryUrl, branch: branch.trim(), name: trimmedName }, transfer, controller.signal);
     } catch (failure) {
-      // The Git client reports a refused request as a network failure: a cancel is known by its signal.
-      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
+      // A cancel is not an error.
+      if (!(isSyncError(failure) && failure.kind === "cancelled")) setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       release?.();
       cancel.current = null;

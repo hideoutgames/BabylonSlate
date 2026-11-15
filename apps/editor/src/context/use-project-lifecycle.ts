@@ -289,7 +289,7 @@ export function useProjectLifecycle({
   );
 
   const cloneProject = useCallback(
-    async (request: CloneProjectRequest, transfer: TransferMonitor) => {
+    async (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => {
       // The Git client loads with the first clone, never with the Homepage.
       const { cloneIntoFolder } = await import("../services/source-control-sync-port");
       const testMode = isTestModeEnabled();
@@ -298,8 +298,9 @@ export function useProjectLifecycle({
           name: request.name,
           repositoryUrl: request.repositoryUrl,
           branch: request.branch,
+          signal,
           clone: async (storage, folderId) => {
-            await cloneIntoFolder({ storage, folderId, repositoryUrl: request.repositoryUrl, branch: request.branch, testMode, transfer });
+            await cloneIntoFolder({ storage, folderId, repositoryUrl: request.repositoryUrl, branch: request.branch, testMode, transfer, signal });
           },
         });
       } finally {

@@ -356,9 +356,10 @@ export interface DocumentContextValue {
   /**
    * Clone: the repository's branch into a new project in app storage, with
    * Integrated mode and the repository and branch filled in; open the
-   * returned folder as a listed project. `transfer` reports bytes and cancels.
+   * returned folder as a listed project. `transfer` reports bytes; `signal`
+   * cancels, which removes the folder and rejects with a `cancelled` `SyncError`.
    */
-  cloneProject: (request: CloneProjectRequest, transfer: TransferMonitor) => Promise<ProjectFolderHandle>;
+  cloneProject: (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => Promise<ProjectFolderHandle>;
   /**
    * Publish the open project to the empty repository just created on the
    * host: `.gitattributes` and `.gitignore`, Integrated mode, the first

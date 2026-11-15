@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cancelledError, SyncError } from "@haptic/source-control";
 import { FakeGitHost } from "@haptic/source-control/fake-host";
 import type { SourceControlAccounts } from "../services/source-control-accounts";
 import type { TransferMonitor } from "../services/source-control-sync";
@@ -45,6 +46,7 @@ describe("Clone Project", () => {
     expect(onClone).toHaveBeenCalledWith(
       { repositoryUrl: "https://github.com/haptic-test/game.git", branch: "main", name: "Game" },
       expect.anything(),
+      expect.any(AbortSignal),
     );
   });
 
@@ -55,27 +57,40 @@ describe("Clone Project", () => {
     expect(screen.getByTestId("clone-submit").hasAttribute("disabled")).toBe(true);
   });
 
-  it("cancels a running clone: its transfer refuses further requests", async () => {
+  it("cancels a running clone through its signal, and shows no error for the cancel", async () => {
     let transfer!: TransferMonitor;
-    const onClone = vi.fn((_request: unknown, monitor: TransferMonitor) => {
+    let signal!: AbortSignal;
+    const onClone = vi.fn((_request: unknown, monitor: TransferMonitor, cancel: AbortSignal) => {
       transfer = monitor;
+      signal = cancel;
+      // As the Git client ends a cancelled clone.
       return new Promise<void>((_resolve, reject) => {
-        // As the Git client reports it: a network failure.
-        monitor.signal()!.addEventListener("abort", () => reject(new Error("Cancelled.")));
+        cancel.addEventListener("abort", () => reject(cancelledError()));
       });
     });
     render(<CloneProjectDialog open onOpenChange={() => {}} existingNames={[]} onClone={onClone} />);
     await chooseGame();
     fireEvent.click(screen.getByTestId("clone-submit"));
     act(() => transfer.bytes(2048));
-    expect(screen.getByTestId("clone-progress").textContent).toContain("2 KB received");
+    await waitFor(() => expect(screen.getByTestId("clone-progress").textContent).toContain("2 KB received"));
     await act(async () => {
       fireEvent.click(screen.getByTestId("clone-cancel"));
     });
-    expect(transfer.signal()!.aborted).toBe(true);
+    expect(signal.aborted).toBe(true);
     expect(screen.queryByTestId("clone-progress")).toBeNull();
-    // A cancel is not an error.
     expect(screen.queryByTestId("clone-error")).toBeNull();
+  });
+
+  it("reports a clone that fails for another reason", async () => {
+    const onClone = vi.fn(async () => {
+      throw new SyncError("network", "The Git server could not be reached.");
+    });
+    render(<CloneProjectDialog open onOpenChange={() => {}} existingNames={[]} onClone={onClone} />);
+    await chooseGame();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("clone-submit"));
+    });
+    expect(screen.getByTestId("clone-error").textContent).toContain("The Git server could not be reached.");
   });
 
   it("takes any host by URL, asking for a token where there is no device sign-in", async () => {

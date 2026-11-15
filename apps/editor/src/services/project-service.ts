@@ -115,6 +115,7 @@ import {
   type CreateProjectOptions,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
+import { throwIfCancelled } from "@haptic/source-control";
 import { sameRepository } from "../lib/source-control-mode";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
 import { syncExtensionNodes } from "./extension-nodes";
@@ -754,13 +755,15 @@ export class ProjectService {
    * Clone: a new folder in app storage named after `name`, filled by `clone`
    * (the repository's branch), with Integrated mode and the repository and
    * branch written into its `project.json` (unless it says so already).
-   * A failure or cancel removes the folder; a branch with no `project.json`
-   * is refused. The folder is released: open it as a listed project.
+   * A failure or a cancel through `signal`, even one after the files arrived,
+   * removes the folder; a branch with no `project.json` is refused. The
+   * folder is released: open it as a listed project.
    */
   async cloneProject(options: {
     name: string;
     repositoryUrl: string;
     branch: string;
+    signal?: AbortSignal;
     clone: (storage: ProjectStorage, folderId: string) => Promise<void>;
   }): Promise<ProjectFolderHandle> {
     const projectName = normalizeProjectFolderName(options.name);
@@ -777,9 +780,12 @@ export class ProjectService {
       }
       const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as { settings?: { sourceControl?: Partial<SourceControlProjectSettings> } };
       const current = raw.settings?.sourceControl;
-      if (current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl) && current.branch === options.branch) return;
-      raw.settings = { ...raw.settings, sourceControl: { ...current, mode: "integrated", repositoryUrl: options.repositoryUrl, branch: options.branch } };
-      await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+      if (!(current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl) && current.branch === options.branch)) {
+        raw.settings = { ...raw.settings, sourceControl: { ...current, mode: "integrated", repositoryUrl: options.repositoryUrl, branch: options.branch } };
+        await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+      }
+      // Cancel stays offered to the end: only a throw in here removes the folder.
+      throwIfCancelled(options.signal);
     });
     await this.storage.releaseFolder();
     return owned.handle;

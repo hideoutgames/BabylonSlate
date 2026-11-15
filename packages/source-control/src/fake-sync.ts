@@ -6,6 +6,7 @@ import {
   hasLfsRule,
   INCOMING_LIMIT,
   SyncError,
+  throwIfCancelled,
   type CommitAuthor,
   type CommitInfo,
   type CommitInput,
@@ -19,6 +20,7 @@ import {
   type RemoteState,
   type SyncPort,
   type SyncStatus,
+  type TransferOptions,
 } from "./sync-port";
 
 type Files = ReadonlyMap<string, Uint8Array>;
@@ -139,11 +141,19 @@ export class FakeSync implements SyncPort {
     this.tracking = this.head;
   }
 
-  /** A working copy of the remote branch, written into the empty folder `storage` is bound to. */
-  static async clone(options: { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }): Promise<FakeSync> {
+  /**
+   * A working copy of the remote branch, written into the empty folder
+   * `storage` is bound to; a cancel stops the writes and rejects as `cancelled`.
+   */
+  static async clone(options: TransferOptions & { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }): Promise<FakeSync> {
+    throwIfCancelled(options.signal);
     const sync = new FakeSync(options);
     if (!sync.head) throw new SyncError("not-found", `The repository has no branch ${options.branch}.`);
-    for (const [path, bytes] of sync.files(sync.head)) await sync.storage.writeBinary(path, bytes);
+    for (const [path, bytes] of sync.files(sync.head)) {
+      throwIfCancelled(options.signal);
+      await sync.storage.writeBinary(path, bytes);
+    }
+    throwIfCancelled(options.signal);
     return sync;
   }
 
@@ -185,8 +195,13 @@ export class FakeSync implements SyncPort {
     return { commit: this.head };
   }
 
-  async fetch(): Promise<RemoteState> {
+  async fetch(options: TransferOptions = {}): Promise<RemoteState> {
+    throwIfCancelled(options.signal);
     this.tracking = this.remote.branches.get(this.branch) ?? null;
+    return this.remoteState();
+  }
+
+  async remoteState(): Promise<RemoteState> {
     const relation = this.head ? await this.relation(this.head, this.tracking) : null;
     const incoming = relation ? relation.behind : this.tracking ? (await this.relation(this.tracking, null)).ahead : [];
     return {
@@ -214,7 +229,8 @@ export class FakeSync implements SyncPort {
     return out.sort();
   }
 
-  async pull({ author, choices }: PullInput): Promise<PullResult> {
+  async pull({ author, choices, signal }: PullInput): Promise<PullResult> {
+    throwIfCancelled(signal);
     const remote = this.remote.branches.get(this.branch) ?? null;
     this.tracking = remote;
     if (!remote || remote === this.head) return { kind: "up-to-date", head: this.head };
@@ -233,6 +249,8 @@ export class FakeSync implements SyncPort {
     const plan = planPull(incoming, choices);
     if (!plan.ready) return { kind: "conflicts", conflicts: plan.conflicts };
     for (const path of plan.writes) {
+      // As checkout: a cancel stops the writes and leaves the branch where it was.
+      throwIfCancelled(signal);
       const bytes = theirsFiles.get(path);
       if (bytes) await this.storage.writeBinary(path, bytes);
       else if (working.has(path)) await this.storage.remove(path);
@@ -257,7 +275,8 @@ export class FakeSync implements SyncPort {
     return { kind: "merged", head: this.head, changedPaths: plan.writes };
   }
 
-  async push(): Promise<PushResult> {
+  async push(options: TransferOptions = {}): Promise<PushResult> {
+    throwIfCancelled(options.signal);
     if (!this.head) throw new SyncError("not-found", "There is nothing to push yet.");
     const remote = this.remote.branches.get(this.branch) ?? null;
     const { ahead, base } = await this.relation(this.head, remote);

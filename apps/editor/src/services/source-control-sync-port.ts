@@ -4,6 +4,7 @@ import {
   repositoryCloneUrl,
   type HttpClient,
   type SyncPort,
+  type TransferOptions,
 } from "@haptic/source-control";
 import type { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
 import { sourceControlAccounts } from "./source-control-accounts";
@@ -16,26 +17,16 @@ import type { SyncPortFactory, SyncPortRequest, TransferMonitor } from "./source
  * host, and in test mode `FakeSync` over remotes kept in memory for the page.
  */
 
-/** A transfer the user cancelled: the request after the cancel is refused. */
-export class TransferCancelledError extends Error {
-  constructor() {
-    super("Cancelled.");
-    this.name = "TransferCancelledError";
-  }
-}
-
 function byteLength(body: string | Uint8Array | undefined): number {
   if (body === undefined) return 0;
   return typeof body === "string" ? new TextEncoder().encode(body).byteLength : body.byteLength;
 }
 
-/** Native HTTP that reports each request's bytes and refuses requests once the operation is cancelled. */
+/** Native HTTP that reports each request's bytes. */
 export function monitoredHttp(http: HttpClient, monitor: TransferMonitor): HttpClient {
   return async (request) => {
-    if (monitor.signal()?.aborted) throw new TransferCancelledError();
     const response = await http(request);
     monitor.bytes(byteLength(request.body) + (response.bodyBytes?.byteLength ?? byteLength(response.bodyText)));
-    if (monitor.signal()?.aborted) throw new TransferCancelledError();
     return response;
   };
 }
@@ -116,16 +107,17 @@ export const syncPortFactory: SyncPortFactory = {
 
 /**
  * Clone: the repository's branch into the empty project folder `storage` is
- * bound to. Its working copy then opens through `syncPortFactory.open`.
+ * bound to. Its working copy then opens through `syncPortFactory.open`. A
+ * cancel through `signal` rejects with a `cancelled` `SyncError`.
  */
-export async function cloneIntoFolder(request: SyncPortRequest): Promise<SyncPort> {
+export async function cloneIntoFolder(request: SyncPortRequest & TransferOptions): Promise<SyncPort> {
+  const signal = request.signal ? { signal: request.signal } : {};
   if (request.testMode) {
     const { FakeSync } = await import("@haptic/source-control/fake-sync");
-    if (request.transfer.signal()?.aborted) throw new TransferCancelledError();
-    const copy = await FakeSync.clone({ storage: request.storage, remote: await testRemote(request.repositoryUrl), branch: request.branch });
+    const copy = await FakeSync.clone({ storage: request.storage, remote: await testRemote(request.repositoryUrl), branch: request.branch, ...signal });
     testCopies.set(copyKey(request), copy);
     return copy;
   }
   const { git, options } = await deviceRepository(request);
-  return git.cloneRepository(options);
+  return git.cloneRepository({ ...options, ...signal });
 }

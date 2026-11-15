@@ -21,11 +21,17 @@ import { blobBytes, blobPath, GitTestServer, REPOSITORY_URL } from "./test-suppo
 
 type Changes = Record<string, string | Uint8Array | null>;
 
+interface CopyOptions {
+  signal?: AbortSignal;
+  /** Called before each working tree write (not `.git`), as checkout makes them. */
+  onWorkingWrite?: (path: string) => void;
+}
+
 interface Fixture {
   /** Commits `changes` to the remote's main as a teammate; resolves to the new head. */
   teammate(changes: Changes, message?: string): Promise<string>;
   /** A new working copy of main, in its own project folder. */
-  copy(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
+  copy(options?: CopyOptions): Promise<{ port: SyncPort; storage: ProjectStorage }>;
   /** A new working copy with no commits in an empty project folder, as Publish starts one. */
   init(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
   dispose(): Promise<void>;
@@ -37,6 +43,22 @@ const RULE = `${GITATTRIBUTES_LFS_RULE}\n`;
 const encode = (value: string) => new TextEncoder().encode(value);
 const text = (bytes: Uint8Array | null) => (bytes ? new TextDecoder().decode(bytes) : null);
 
+/** `storage` calling `onWrite` before each working tree write. */
+function watched(storage: ProjectStorage, onWrite: ((path: string) => void) | undefined): ProjectStorage {
+  if (!onWrite) return storage;
+  return new Proxy(storage, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      if (property !== "writeBinary" && property !== "writeText") return (value as (...args: unknown[]) => unknown).bind(target);
+      return (path: string, ...rest: unknown[]) => {
+        if (path !== ".git" && !path.startsWith(".git/")) onWrite(path);
+        return (value as (...args: unknown[]) => unknown).call(target, path, ...rest);
+      };
+    },
+  });
+}
+
 async function gitFixture(): Promise<Fixture> {
   const server = await GitTestServer.start();
   return {
@@ -46,9 +68,17 @@ async function gitFixture(): Promise<Fixture> {
       teammate.remove(...Object.keys(changes).filter((path) => changes[path] === null));
       return teammate.commitAndPush(message);
     },
-    async copy() {
-      const storage = await server.storage();
-      const port = await cloneRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW });
+    async copy(options = {}) {
+      const storage = watched(await server.storage(), options.onWorkingWrite);
+      const port = await cloneRepository({
+        storage,
+        http: server.http,
+        credential: server.credential(),
+        repositoryUrl: REPOSITORY_URL,
+        branch: "main",
+        now: () => NOW,
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
       return { port, storage };
     },
     async init() {
@@ -68,11 +98,12 @@ async function fakeFixture(): Promise<Fixture> {
     async teammate(changes, message) {
       return remote.commit(changes, message);
     },
-    async copy() {
+    async copy(options = {}) {
       copies += 1;
-      const storage = new NodeStorageAdapter(root);
-      await storage.openDocumentsProject(`copy-${copies}`);
-      return { port: await FakeSync.clone({ storage, remote, branch: "main", now: () => NOW }), storage };
+      const node = new NodeStorageAdapter(root);
+      await node.openDocumentsProject(`copy-${copies}`);
+      const storage = watched(node, options.onWorkingWrite);
+      return { port: await FakeSync.clone({ storage, remote, branch: "main", now: () => NOW, ...(options.signal ? { signal: options.signal } : {}) }), storage };
     },
     async init() {
       copies += 1;
@@ -167,6 +198,45 @@ describe.each([
       [true, "Two", "Teammate"],
       [false, "One", "Teammate"],
     ]);
+  });
+
+  it("reads the counts as last fetched without asking the remote", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
+    const remote = await fixture.teammate({ "assets/b.hasset": "B" }, "Later");
+    // The teammate's commit is not known until a fetch.
+    expect(await port.remoteState()).toMatchObject({ local: commit, ahead: 1, behind: 0, incoming: [] });
+    await port.fetch();
+    const state = await port.remoteState();
+    expect(state).toMatchObject({ local: commit, remote, ahead: 1, behind: 1 });
+    expect(state.incoming.map((entry) => entry.message.trim())).toEqual(["Later"]);
+  });
+
+  it("ends a clone cancelled during checkout as cancelled", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+    const controller = new AbortController();
+    const error = await rejection(fixture.copy({ signal: controller.signal, onWorkingWrite: () => controller.abort() }));
+    expect(error.kind).toBe("cancelled");
+  });
+
+  it("changes nothing when a fetch, pull or push is cancelled", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    const remote = await fixture.teammate({ "assets/b.hasset": "B" }, "Teammate");
+    const cancelled = new AbortController();
+    cancelled.abort();
+    const { signal } = cancelled;
+    expect((await rejection(port.fetch({ signal }))).kind).toBe("cancelled");
+    expect(await port.remoteState()).toMatchObject({ behind: 0 });
+    expect((await rejection(port.pull({ author: AUTHOR, signal }))).kind).toBe("cancelled");
+    expect(await storage.exists("assets/b.hasset")).toBe(false);
+    await port.pull({ author: AUTHOR });
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
+    expect((await rejection(port.push({ signal }))).kind).toBe("cancelled");
+    expect(await port.fetch()).toMatchObject({ local: commit, remote, ahead: 1 });
   });
 
   it("lists the paths a push would change, against the remote as last fetched", async () => {

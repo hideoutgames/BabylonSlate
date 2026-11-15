@@ -1,6 +1,6 @@
 import { isStorageNotFound, type FileStat, type ProjectStorage } from "@haptic/core";
 import { lfsObjectId, lfsPointerText, parseLfsPointer } from "../lfs-pointer";
-import { SyncError } from "../sync-port";
+import { SyncError, throwIfCancelled } from "../sync-port";
 
 /** The working tree root isomorphic-git is given; its paths map to project storage paths below it. */
 export const WORKTREE = "/";
@@ -84,10 +84,12 @@ function statsOf(stat: FileStat): StorageStats {
  *   file's stats against the pointer's id, as git-lfs leaves it.
  * A directory listing answers the following stats of its entries, so a status
  * costs one storage call per directory. Use one instance per operation: the
- * listing cache does not see writes made outside it.
+ * listing cache does not see writes made outside it. Once the operation's
+ * signal aborts, every write and remove is refused (checkout stops).
  */
 export class StorageFs {
   readonly counters: StorageFsCounters = { workingReads: 0, pointerReads: 0, smudgedPointers: 0 };
+  private readonly signal: AbortSignal | undefined;
   readonly promises: {
     readFile(path: string, options?: unknown): Promise<Uint8Array | string>;
     writeFile(path: string, data: Uint8Array | string, options?: unknown): Promise<void>;
@@ -103,18 +105,31 @@ export class StorageFs {
   private readonly storage: ProjectStorage;
   private readonly listed = new Map<string, FileStat>();
 
-  constructor(storage: ProjectStorage) {
+  constructor(storage: ProjectStorage, signal?: AbortSignal) {
     this.storage = storage;
+    this.signal = signal;
     // Every method is async, even with a bad argument: isomorphic-git calls `readFile()` bare and
     // treats an fs whose answer is not a promise as callback-style.
     this.promises = {
       readFile: async (path, options) => this.readFile(storagePath(path), options),
-      writeFile: async (path, data) => this.writeFile(storagePath(path), data),
-      unlink: async (path) => this.unlink(storagePath(path)),
+      writeFile: async (path, data) => {
+        throwIfCancelled(this.signal);
+        return this.writeFile(storagePath(path), data);
+      },
+      unlink: async (path) => {
+        throwIfCancelled(this.signal);
+        return this.unlink(storagePath(path));
+      },
       readdir: async (path) => this.readdir(storagePath(path)),
-      mkdir: async (path) => this.mkdir(storagePath(path)),
+      mkdir: async (path) => {
+        throwIfCancelled(this.signal);
+        return this.mkdir(storagePath(path));
+      },
       // One parameter: isomorphic-git takes a two-parameter rmdir for a recursive remove.
-      rmdir: async (path) => this.rmdir(storagePath(path)),
+      rmdir: async (path) => {
+        throwIfCancelled(this.signal);
+        return this.rmdir(storagePath(path));
+      },
       stat: async (path) => this.stat(storagePath(path)),
       lstat: async (path) => this.stat(storagePath(path)),
       readlink: async (path) => {

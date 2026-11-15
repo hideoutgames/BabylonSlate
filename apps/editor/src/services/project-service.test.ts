@@ -568,6 +568,25 @@ describe("project round-trip", () => {
       expect((await storage.listProjects()).map((project) => project.name)).not.toContain("Empty");
     });
 
+    it("removes the folder of a clone cancelled after its files arrived, and keeps it unlisted", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      const controller = new AbortController();
+      const error = await service.cloneProject({
+        name: "Cancelled",
+        repositoryUrl: REPOSITORY,
+        branch: "main",
+        signal: controller.signal,
+        clone: async (folder) => {
+          await folder.writeText(PROJECT_FILE, manifest());
+          // Cancel is pressed while the clone finishes.
+          controller.abort();
+        },
+      }).then(() => null, (reason: unknown) => reason);
+      expect(error).toMatchObject({ kind: "cancelled" });
+      expect((await storage.listProjects()).map((project) => project.name)).not.toContain("Cancelled");
+    });
+
     it("refuses a name another project has", async () => {
       const storage = new MemoryStorageAdapter("documents");
       const service = new ProjectService(storage);
