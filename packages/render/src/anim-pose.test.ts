@@ -7,11 +7,12 @@ import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { MorphTarget } from "@babylonjs/core/Morph/morphTarget";
 import { Scene } from "@babylonjs/core/scene";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyPose,
   applyPoseClip,
   bindPoseClip,
+  invalidatePoseRig,
   poseRigFor,
   poseTrackOf,
   samplePoseTrack,
@@ -86,6 +87,23 @@ describe("samplePoseTrack", () => {
     expectSamplesMatchBabylon(rotation, SWEEP);
   });
 
+  it("interpolates quaternion keys under 90° apart within 0.005° of Babylon's slerp", () => {
+    const rotation = new Animation("q", "rotationQuaternion", 30, Animation.ANIMATIONTYPE_QUATERNION);
+    rotation.setKeys([
+      { frame: 0, value: Quaternion.RotationAxis(new Vector3(0, 1, 0), 0.2) },
+      { frame: 10, value: Quaternion.RotationAxis(new Vector3(1, 1, 0).normalize(), 1.4) },
+      { frame: 20, value: Quaternion.RotationAxis(new Vector3(0, 0, 1), 0.1) },
+    ]);
+    const track = poseTrackOf(rotation)!;
+    const out = new Float64Array(4);
+    for (let frame = 0; frame <= 20; frame += 0.25) {
+      samplePoseTrack(track, frame, out);
+      const expected = rotation.evaluate(frame) as Quaternion;
+      const cos = Math.min(1, Math.abs(out[0]! * expected.x + out[1]! * expected.y + out[2]! * expected.z + out[3]! * expected.w));
+      expect(2 * Math.acos(cos) * (180 / Math.PI)).toBeLessThan(0.005);
+    }
+  });
+
   it("samples cubic-spline keys with their tangents, as Babylon does", () => {
     const float = new Animation("f", "influence", 30, Animation.ANIMATIONTYPE_FLOAT);
     float.setKeys([
@@ -130,7 +148,7 @@ describe("applyPose", () => {
     expect(node.position.y).toBe(0);
   });
 
-  it("blends quaternions by successive slerps from the rest pose, as Babylon blends weighted animations", () => {
+  it("blends quaternions by normalised weighted sum on one hemisphere, the rest pose taking what the clips leave", () => {
     const node = new TransformNode("node", scene);
     const rest = Quaternion.RotationAxis(new Vector3(0, 0, 1), 0.3);
     node.rotationQuaternion = rest.clone();
@@ -141,16 +159,20 @@ describe("applyPose", () => {
       animation.setKeys([{ frame: 0, value }, { frame: 10, value }]);
       return bindPoseClip(group(name, [[animation, node]]), undefined);
     };
+    // b keyed on the other hemisphere: the same rotation, so it blends as b.
     const clipA = held("A", a);
-    const clipB = held("B", b);
+    const clipB = held("B", b.scale(-1));
     const rig = poseRigFor([clipA, clipB]);
+    // q and -q are one rotation.
+    const expectRotation = (expected: Quaternion) => {
+      const actual = node.rotationQuaternion!;
+      expect(Math.abs(Quaternion.Dot(actual, expected))).toBeCloseTo(1, 12);
+    };
     pose(rig, [[clipA, 0, 0.3], [clipB, 0, 0.5]]);
-    // Rest takes 0.2: slerp(rest, a, 0.3 / 0.5), then toward b by 0.5 / 1.
-    const expected = Quaternion.Slerp(Quaternion.Slerp(rest, a, 0.3 / 0.5), b, 0.5);
-    expect(node.rotationQuaternion!.asArray().map((v) => Number(v.toFixed(10)))).toEqual(expected.asArray().map((v) => Number(v.toFixed(10))));
-    pose(rig, [[clipA, 0, 2], [clipB, 0, 2]]);
-    const half = Quaternion.Slerp(a, b, 0.5);
-    for (const [index, value] of node.rotationQuaternion!.asArray().entries()) expect(value).toBeCloseTo(half.asArray()[index]!, 10);
+    expectRotation(a.scale(0.3).add(b.scale(0.5)).add(rest.scale(0.2)).normalize());
+    // Order does not matter, and weights above one normalise.
+    pose(rig, [[clipB, 0, 2], [clipA, 0, 2]]);
+    expectRotation(a.add(b).normalize());
   });
 
   it("returns what no clip plays to rest, and a fresh rig rests all it does not play", () => {
@@ -168,6 +190,49 @@ describe("applyPose", () => {
     // A replaced list builds a fresh rig, which rests the hip its first pose leaves out.
     applyPoseClip(poseRigFor([...clips]), wave, 0);
     expect(hip.position.x).toBe(0);
+  });
+
+  it("writes only what changed: nothing for an unchanged pose, and not a property that holds its value", () => {
+    const hip = new TransformNode("hip", scene);
+    const hand = new TransformNode("hand", scene);
+    const held = new Animation("held", "position", 30, Animation.ANIMATIONTYPE_VECTOR3);
+    held.setKeys([{ frame: 0, value: new Vector3(1, 2, 3) }, { frame: 10, value: new Vector3(1, 2, 3) }]);
+    const clip = bindPoseClip(group("Wave", [[positionX("wave", [[0, 0], [10, 5]]), hand], [held, hip]]), undefined);
+    const rig = poseRigFor([clip]);
+    applyPoseClip(rig, clip, 2);
+    const hipDirty = vi.spyOn(hip, "markAsDirty");
+    const handDirty = vi.spyOn(hand, "markAsDirty");
+    applyPoseClip(rig, clip, 2);
+    expect(handDirty).not.toHaveBeenCalled();
+    applyPoseClip(rig, clip, 4);
+    expect(handDirty).toHaveBeenCalledTimes(1);
+    expect(hand.position.x).toBe(2);
+    expect(hipDirty).not.toHaveBeenCalled();
+    expect(hip.position.asArray()).toEqual([1, 2, 3]);
+  });
+
+  it("writes every property again once invalidated, after something else moved the nodes", () => {
+    const hand = new TransformNode("hand", scene);
+    const clip = bindPoseClip(group("Wave", [[positionX("wave", [[0, 0], [10, 5]]), hand]]), undefined);
+    const clips = [clip];
+    applyPoseClip(poseRigFor(clips), clip, 4);
+    hand.position.x = 9;
+    applyPoseClip(poseRigFor(clips), clip, 4);
+    expect(hand.position.x).toBe(9);
+    invalidatePoseRig(clips);
+    applyPoseClip(poseRigFor(clips), clip, 4);
+    expect(hand.position.x).toBe(2);
+  });
+
+  it("samples correctly when a clip jumps back or skips keys", () => {
+    const node = new TransformNode("node", scene);
+    const animation = positionX("walk", [[0, 0], [2, 1], [4, -1], [6, 3], [8, 0], [10, 2]]);
+    const clip = bindPoseClip(group("Walk", [[animation, node]]), undefined);
+    const rig = poseRigFor([clip]);
+    for (const frame of [0.5, 1.5, 2.5, 9.5, 3, 0.1, 7.9, 8.1, 5]) {
+      applyPoseClip(rig, clip, frame);
+      expect(node.position.x).toBeCloseTo((animation.evaluate(frame) as Vector3).x, 12);
+    }
   });
 
   it("writes a channel's current target after its node is handed over", () => {

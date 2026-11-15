@@ -479,7 +479,7 @@ describe("applyAnimStateToScene", () => {
     const clips: PoseClip[] = Array.from({ length: 50 }, (_, index) => {
       const bound = frameClip("Idle", 10, undefined, loggingTarget(sought, `actor-${index}`));
       return {
-        name: bound.name, from: bound.from, to: bound.to, channels: bound.channels,
+        name: bound.name, from: bound.from, to: bound.to, channels: bound.channels, keyHints: bound.keyHints,
         get clipAssetGuid() { reads++; return `actor-${index}`; },
       };
     });

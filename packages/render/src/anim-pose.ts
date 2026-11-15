@@ -3,9 +3,10 @@ import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 /**
  * Haptic's pose evaluator: Play, the editor's previews and exported games pose 3D clips here, never by starting,
  * seeking or weighting Babylon AnimationGroups. A clip's channels compile once into flat key tracks, which sample like
- * Babylon's own interpolation (step, linear with spherical quaternions, and cubic-spline tangents). A slot's rig holds
- * each animated target property once: every frame the playing clips blend into it by weight, filling up to full weight
- * from the property's rest value, and each property is written once. Properties no clip plays return to rest.
+ * Babylon's own interpolation (step, linear, spherical between quaternions, cubic-spline tangents). A slot's rig holds
+ * each animated target property once: each pose blends the playing clips into it by weight, filling up to full weight
+ * from the property's rest value, and writes each property at most once, skipping values it already holds.
+ * Properties no clip plays return to rest.
  */
 
 /** Babylon `Animation.ANIMATIONTYPE_*` values a track samples. */
@@ -53,6 +54,8 @@ export interface PoseTrack {
   readonly tangentKeys: Uint8Array | null;
   /** Per key: 1 holds its value until the next key. Null when no key steps. */
   readonly steps: Uint8Array | null;
+  /** Every key holds the first key's value (and no tangent bends it): sampling copies that value. */
+  readonly constant: boolean;
 }
 
 const IN_TANGENT = 1;
@@ -108,7 +111,9 @@ function compilePoseTrack(source: PoseTrackSource): PoseTrack | null {
       tangentKeys[k]! |= OUT_TANGENT;
     }
   }
-  return { components, quaternion: source.dataType === QUATERNION, frames, values, inTangents, outTangents, tangentKeys, steps };
+  let constant = !inTangents?.some((value) => value !== 0) && !outTangents?.some((value) => value !== 0);
+  for (let i = components; constant && i < values.length; i++) constant = values[i] === values[i % components];
+  return { components, quaternion: source.dataType === QUATERNION, frames, values, inTangents, outTangents, tangentKeys, steps, constant };
 }
 
 const tracks = new WeakMap<PoseTrackSource, PoseTrack | null>();
@@ -163,6 +168,39 @@ function normalizeQuaternion(out: Float64Array, offset: number): void {
   out[offset + 3] = w * inverse;
 }
 
+/**
+ * Spherical interpolation between two quaternion keys without trigonometry where they are under about 90° apart: a
+ * normalised lerp with its parameter corrected (zeux.io, "Approximating slerp"), within 0.005° of `slerpInto`.
+ * Farther keys take the exact slerp.
+ */
+function interpolateKeys(values: Float64Array, a: number, b: number, t: number, out: Float64Array, o: number): void {
+  const ax = values[a]!, ay = values[a + 1]!, az = values[a + 2]!, aw = values[a + 3]!;
+  let bx = values[b]!, by = values[b + 1]!, bz = values[b + 2]!, bw = values[b + 3]!;
+  let d = ax * bx + ay * by + az * bz + aw * bw;
+  if (d < 0) {
+    d = -d;
+    bx = -bx;
+    by = -by;
+    bz = -bz;
+    bw = -bw;
+  }
+  if (d < 0.7) {
+    slerpInto(values, a, values, b, t, out, o);
+    return;
+  }
+  const A = 1.0904 + d * (-3.2452 + d * (3.55645 - d * 1.43519));
+  const B = 0.848013 + d * (-1.06021 + d * 0.215638);
+  const k = A * (t - 0.5) * (t - 0.5) + B;
+  const u = t + t * (t - 0.5) * (t - 1) * k;
+  const r = 1 - u;
+  const x = ax * r + bx * u, y = ay * r + by * u, z = az * r + bz * u, w = aw * r + bw * u;
+  const inverse = 1 / Math.sqrt(x * x + y * y + z * z + w * w);
+  out[o] = x * inverse;
+  out[o + 1] = y * inverse;
+  out[o + 2] = z * inverse;
+  out[o + 3] = w * inverse;
+}
+
 function copyKey(track: PoseTrack, key: number, out: Float64Array, offset: number): void {
   const n = track.components;
   for (let c = 0; c < n; c++) out[offset + c] = track.values[key * n + c]!;
@@ -171,12 +209,23 @@ function copyKey(track: PoseTrack, key: number, out: Float64Array, offset: numbe
 /**
  * The track's value at `frame` into `out`, as Babylon's `Animation._interpolate` computes it: held at the first and
  * last keys outside them, a stepped key held to the next, cubic-spline (Hermite) keys where both neighbours carry
- * tangents, spherical between quaternion keys and linear otherwise. Easing functions are not sampled; glTF has none.
+ * tangents, spherical between quaternion keys (`interpolateKeys`) and linear otherwise. Easing functions are not
+ * sampled; glTF has none.
  */
 export function samplePoseTrack(track: PoseTrack, frame: number, out: Float64Array, offset = 0): void {
+  sampleTrack(track, frame, out, offset, null, 0);
+}
+
+/**
+ * `samplePoseTrack` with a key hint: `hints[hint]` holds the key the last sample started from, which a clip playing
+ * forward reuses or moves past by one, so most samples skip the binary search.
+ */
+function sampleTrack(
+  track: PoseTrack, frame: number, out: Float64Array, offset: number, hints: Int32Array | null, hint: number,
+): void {
   const { frames, values, components: n } = track;
   const last = frames.length - 1;
-  if (!(frame > frames[0]!) || last === 0) {
+  if (track.constant || !(frame > frames[0]!) || last === 0) {
     copyKey(track, 0, out, offset);
     return;
   }
@@ -185,15 +234,23 @@ export function samplePoseTrack(track: PoseTrack, frame: number, out: Float64Arr
     return;
   }
   // The last key at or before `frame`; the one after it is later than `frame`.
-  let low = 0;
-  let high = last;
-  while (high - low > 1) {
-    const middle = (low + high) >> 1;
-    if (frames[middle]! <= frame) low = middle;
-    else high = middle;
+  let start = hints ? hints[hint]! : 0;
+  if (!(start < last && frames[start]! <= frame && frame < frames[start + 1]!)) {
+    if (start + 1 < last && frames[start + 1]! <= frame && frame < frames[start + 2]!) {
+      start += 1;
+    } else {
+      let low = 0;
+      let high = last;
+      while (high - low > 1) {
+        const middle = (low + high) >> 1;
+        if (frames[middle]! <= frame) low = middle;
+        else high = middle;
+      }
+      start = low;
+    }
+    if (hints) hints[hint] = start;
   }
-  const start = low;
-  const end = low + 1;
+  const end = start + 1;
   if (track.steps?.[start]) {
     copyKey(track, start, out, offset);
     return;
@@ -218,7 +275,7 @@ export function samplePoseTrack(track: PoseTrack, frame: number, out: Float64Arr
     return;
   }
   if (track.quaternion) {
-    slerpInto(values, start * 4, values, end * 4, t, out, offset);
+    interpolateKeys(values, start * 4, end * 4, t, out, offset);
     return;
   }
   for (let c = 0; c < n; c++) {
@@ -245,6 +302,8 @@ export interface PoseClip {
   readonly to: number;
   readonly clipAssetGuid?: string;
   readonly channels: readonly PoseClipChannel[];
+  /** Per channel: the key its last sample started from (`sampleTrack`). Each bound clip has its own. */
+  readonly keyHints: Int32Array;
 }
 
 /** The AnimationGroup a clip binds: its range and channels. */
@@ -309,7 +368,10 @@ export function bindPoseClip<Extra extends object = object>(
     if (!rest) continue;
     channels.push({ binding, path, track, rest });
   }
-  return { name: group.name, from: group.from, to: group.to, clipAssetGuid, channels, ...(extra as Extra) };
+  return {
+    name: group.name, from: group.from, to: group.to, clipAssetGuid, channels,
+    keyHints: new Int32Array(channels.length), ...(extra as Extra),
+  };
 }
 
 const WRITE_ASSIGN = 0;
@@ -329,9 +391,10 @@ const scratchQuaternion = new Quaternion();
 /** Writes a property's value, then marks its target dirty as Babylon's own animation write does. */
 function writeChannel(channel: PoseClipChannel, mode: number, values: Float64Array, offset: number): void {
   const target = channel.binding.target as { markAsDirty?: (property: string) => unknown } | null;
-  const holder = propertyHolder(target, channel.path);
+  const path = channel.path;
+  const holder = path.length === 1 ? (target as Record<string, unknown> | null) : propertyHolder(target, path);
   if (!holder) return;
-  const property = channel.path[channel.path.length - 1]!;
+  const property = path[path.length - 1]!;
   if (mode === WRITE_ASSIGN) {
     holder[property] = values[offset];
   } else {
@@ -356,20 +419,31 @@ const STRIDE = 4;
 
 /**
  * A slot's animated properties, each once: the union of its clips' channels by target and property path. It keeps
- * the per-frame blend buffers and which properties the last pose moved off their rest values.
+ * the per-pose blend buffers, the value each property last had written, and the last pose's inputs.
  */
 export interface PoseRig {
   readonly members: readonly PoseClip[];
   /** Per property: the first clip channel that animates it, whose target, path and rest the rig writes with. */
   readonly properties: readonly PoseClipChannel[];
   readonly modes: Uint8Array;
+  readonly components: Uint8Array;
+  readonly quaternions: Uint8Array;
   /** Per clip: its channels' property indices, -1 for a channel that repeats another of the same clip. */
   readonly clipProperties: ReadonlyMap<PoseClip, Int32Array>;
-  readonly totals: Float64Array;
+  /** Per property: the pose that last blended into it (`generation`), and the weight it has so far. */
+  readonly stamps: Uint32Array;
+  readonly weights: Float64Array;
   readonly blended: Float64Array;
-  readonly accumulated: Float64Array;
-  /** 1 while the property is off its rest value; a fresh rig starts with all set, so it rests what it does not play. */
+  /** Per property: the value last written, valid where `written` is 1. A property off its rest has `posed` 1. */
+  readonly last: Float64Array;
+  readonly written: Uint8Array;
   readonly posed: Uint8Array;
+  generation: number;
+  /** The last pose's layers, so an unchanged pose writes nothing; `lastCount` -1 when it must be posed again. */
+  lastCount: number;
+  readonly lastClips: (PoseClip | undefined)[];
+  readonly lastFrames: number[];
+  readonly lastWeights: number[];
 }
 
 function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
@@ -389,7 +463,7 @@ function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
         paths = new Map();
         byTarget.set(channel.binding.target, paths);
       }
-      const key = channel.path.join(".");
+      const key = channel.path.length === 1 ? channel.path[0]! : channel.path.join(".");
       let index = paths.get(key);
       if (index === undefined) {
         index = properties.length;
@@ -405,16 +479,33 @@ function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
   }
   const count = properties.length;
   const modes = new Uint8Array(count);
-  for (let i = 0; i < count; i++) modes[i] = writeModeOf(properties[i]!.binding.target, properties[i]!.track);
+  const components = new Uint8Array(count);
+  const quaternions = new Uint8Array(count);
+  for (let i = 0; i < count; i++) {
+    const property = properties[i]!;
+    modes[i] = writeModeOf(property.binding.target, property.track);
+    components[i] = property.track.components;
+    quaternions[i] = property.track.quaternion ? 1 : 0;
+  }
   return {
     members: clips.slice(),
     properties,
     modes,
+    components,
+    quaternions,
     clipProperties,
-    totals: new Float64Array(count),
+    stamps: new Uint32Array(count),
+    weights: new Float64Array(count),
     blended: new Float64Array(count * STRIDE),
-    accumulated: new Float64Array(count),
+    last: new Float64Array(count * STRIDE),
+    written: new Uint8Array(count),
+    // A fresh rig rests every property its first pose leaves out.
     posed: new Uint8Array(count).fill(1),
+    generation: 0,
+    lastCount: -1,
+    lastClips: [],
+    lastFrames: [],
+    lastWeights: [],
   };
 }
 
@@ -439,13 +530,68 @@ export function poseRigFor(clips: readonly PoseClip[]): PoseRig {
   return rig;
 }
 
+/**
+ * Forgets what the slot's rig last wrote, so its next pose writes every property again: for when something other
+ * than the evaluator moved the nodes (a ragdoll handing the pose back).
+ */
+export function invalidatePoseRig(clips: readonly PoseClip[] | undefined): void {
+  const rig = clips ? rigs.get(clips) : undefined;
+  if (!rig) return;
+  rig.written.fill(0);
+  rig.posed.fill(1);
+  rig.lastCount = -1;
+}
+
+/** Whether the pose's layers are the last pose's, which then still stands. Records them otherwise. */
+function samePose(
+  rig: PoseRig, count: number, clips: ArrayLike<PoseClip | undefined>, frames: ArrayLike<number>, weights: ArrayLike<number>,
+): boolean {
+  let same = rig.lastCount === count;
+  for (let l = 0; same && l < count; l++) {
+    same = rig.lastClips[l] === clips[l] && rig.lastFrames[l] === frames[l] && rig.lastWeights[l] === weights[l];
+  }
+  if (same) return true;
+  rig.lastCount = count;
+  rig.lastClips.length = count;
+  rig.lastFrames.length = count;
+  rig.lastWeights.length = count;
+  for (let l = 0; l < count; l++) {
+    rig.lastClips[l] = clips[l];
+    rig.lastFrames[l] = frames[l]!;
+    rig.lastWeights[l] = weights[l]!;
+  }
+  return false;
+}
+
+/** Writes a property's value unless it already holds it (`last`), which spares Babylon recomputing the node. */
+function writeIfChanged(rig: PoseRig, index: number, values: Float64Array, offset: number): void {
+  const at = index * STRIDE;
+  const n = rig.components[index]!;
+  const last = rig.last;
+  if (rig.written[index]) {
+    let same = true;
+    for (let c = 0; c < n; c++) {
+      if (last[at + c] !== values[offset + c]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return;
+  }
+  for (let c = 0; c < n; c++) last[at + c] = values[offset + c]!;
+  rig.written[index] = 1;
+  writeChannel(rig.properties[index]!, rig.modes[index]!, values, offset);
+}
+
 const sample = new Float64Array(STRIDE);
 
 /**
  * Poses the rig from `count` weighted clips (`clips[i]` at `frames[i]`, weight `weights[i]`), writing each property
- * once. A property's weights sum to its total: below 1 its rest value fills the rest, above 1 they are normalised.
- * Vectors, colours and numbers blend linearly; quaternions by successive spherical steps, as Babylon blends weighted
- * animations. A property no clip plays (total 0) returns to rest. Clips not on the rig are skipped.
+ * at most once. Clips blend by weighted sum, in any order alike: vectors, colours and numbers as they are, and
+ * quaternions on one hemisphere, then normalised (the normalised lerp game engines blend bones with). A property's
+ * total weight below 1 takes the rest value for the remainder, and a total above 1 normalises. A property no clip plays (total 0) returns to rest. A
+ * property already holding its value is not written, and a pose whose layers equal the last pose's writes nothing.
+ * Clips not on the rig are skipped.
  */
 export function applyPose(
   rig: PoseRig,
@@ -454,73 +600,73 @@ export function applyPose(
   frames: ArrayLike<number>,
   weights: ArrayLike<number>,
 ): void {
-  const { properties, totals, blended, accumulated, posed, modes, clipProperties } = rig;
-  totals.fill(0);
-  accumulated.fill(0);
-  for (let l = 0; l < count; l++) {
-    const weight = weights[l]!;
-    const indices = clipProperties.get(clips[l]!);
-    if (!indices || !(weight > 0)) continue;
-    for (let i = 0; i < indices.length; i++) {
-      const index = indices[i]!;
-      if (index >= 0) totals[index] += weight;
-    }
+  if (samePose(rig, count, clips, frames, weights)) return;
+  const { properties, stamps, weights: totals, blended, posed, quaternions, components, clipProperties } = rig;
+  // Stamps mark the properties this pose blends; a wrapped counter clears them.
+  rig.generation = (rig.generation + 1) >>> 0;
+  if (rig.generation === 0) {
+    stamps.fill(0);
+    rig.generation = 1;
   }
+  const generation = rig.generation;
   for (let l = 0; l < count; l++) {
     const clip = clips[l]!;
     const weight = weights[l]!;
     const indices = clipProperties.get(clip);
     if (!indices || !(weight > 0)) continue;
     const frame = frames[l]!;
+    const channels = clip.channels;
+    const hints = clip.keyHints;
     for (let i = 0; i < indices.length; i++) {
       const index = indices[i]!;
       if (index < 0) continue;
-      const channel = clip.channels[i]!;
-      const track = channel.track;
-      samplePoseTrack(track, frame, sample, 0);
-      const total = totals[index]!;
       const at = index * STRIDE;
-      const n = track.components;
-      if (track.quaternion) {
-        if (accumulated[index] === 0) {
-          if (total < 1) {
-            // Rest takes the weight the clips leave: rest, then each clip in turn.
-            const rest = properties[index]!.rest;
-            for (let c = 0; c < 4; c++) blended[at + c] = rest[c]!;
-            accumulated[index] = 1 - total + weight;
-            slerpInto(blended, at, sample, 0, weight / accumulated[index]!, blended, at);
-          } else {
-            for (let c = 0; c < 4; c++) blended[at + c] = sample[c]!;
-            accumulated[index] = weight;
-          }
-          continue;
-        }
-        accumulated[index] += weight;
-        slerpInto(blended, at, sample, 0, weight / accumulated[index]!, blended, at);
+      const n = components[index]!;
+      if (stamps[index] !== generation) {
+        // The first clip on this property samples straight into it.
+        stamps[index] = generation;
+        totals[index] = weight;
+        sampleTrack(channels[i]!.track, frame, blended, at, hints, i);
+        if (weight !== 1) for (let c = 0; c < n; c++) blended[at + c]! *= weight;
         continue;
       }
-      const share = total < 1 ? weight : weight / total;
-      if (accumulated[index] === 0) {
-        const restShare = total < 1 ? 1 - total : 0;
-        const rest = properties[index]!.rest;
-        for (let c = 0; c < n; c++) blended[at + c] = rest[c]! * restShare + sample[c]! * share;
-        accumulated[index] = weight;
-        continue;
-      }
-      accumulated[index] += weight;
-      for (let c = 0; c < n; c++) blended[at + c] += sample[c]! * share;
+      sampleTrack(channels[i]!.track, frame, sample, 0, hints, i);
+      totals[index]! += weight;
+      // A quaternion joins on the sum's hemisphere: q and -q are one rotation.
+      const signed = quaternions[index] && dot4(blended, at, sample, 0) < 0 ? -weight : weight;
+      for (let c = 0; c < n; c++) blended[at + c]! += sample[c]! * signed;
     }
   }
   for (let index = 0; index < properties.length; index++) {
-    const property = properties[index]!;
-    if (totals[index]! > 0) {
-      writeChannel(property, modes[index]!, blended, index * STRIDE);
-      posed[index] = 1;
-    } else if (posed[index]) {
-      writeChannel(property, modes[index]!, property.rest, 0);
+    if (stamps[index] !== generation) {
+      if (!posed[index]) continue;
       posed[index] = 0;
+      writeIfChanged(rig, index, properties[index]!.rest, 0);
+      continue;
     }
+    const at = index * STRIDE;
+    const total = totals[index]!;
+    const n = components[index]!;
+    if (total < 1) {
+      // Rest takes the weight the clips leave.
+      const rest = properties[index]!.rest;
+      const restWeight = quaternions[index] && dot4(blended, at, rest, 0) < 0 ? total - 1 : 1 - total;
+      for (let c = 0; c < n; c++) blended[at + c]! += rest[c]! * restWeight;
+    }
+    if (quaternions[index]) {
+      const length = Math.sqrt(dot4(blended, at, blended, at));
+      if (length > 1e-12) for (let c = 0; c < 4; c++) blended[at + c]! /= length;
+      else for (let c = 0; c < 4; c++) blended[at + c] = properties[index]!.rest[c]!;
+    } else if (total > 1) {
+      for (let c = 0; c < n; c++) blended[at + c]! /= total;
+    }
+    posed[index] = 1;
+    writeIfChanged(rig, index, blended, at);
   }
+}
+
+function dot4(a: Float64Array, ai: number, b: Float64Array, bi: number): number {
+  return a[ai]! * b[bi]! + a[ai + 1]! * b[bi + 1]! + a[ai + 2]! * b[bi + 2]! + a[ai + 3]! * b[bi + 3]!;
 }
 
 const one = [1];
