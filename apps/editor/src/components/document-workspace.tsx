@@ -90,6 +90,7 @@ function RegisteredDockviewShell({
   initialLayout,
   actorPrefab,
   sceneMode,
+  sourceControlIntegrated,
   surface,
 }: {
   id: string;
@@ -97,6 +98,7 @@ function RegisteredDockviewShell({
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
   sceneMode?: SceneMode;
+  sourceControlIntegrated?: boolean;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
   const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId } =
@@ -123,6 +125,7 @@ function RegisteredDockviewShell({
       initialLayout={initialLayout}
       actorPrefab={actorPrefab}
       sceneMode={sceneMode}
+      sourceControlIntegrated={sourceControlIntegrated}
       onReady={onReady}
     />
   );
@@ -289,7 +292,13 @@ export function DocumentWorkspace() {
                 className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
                 data-testid="document-workspace-source-control"
               >
-                <RegisteredDockviewShell id={id} documentKind="source-control" initialLayout={doc.layout} />
+                <RegisteredDockviewShell
+                  key={doc.sourceControlIntegrated ? "integrated" : "manual"}
+                  id={id}
+                  documentKind="source-control"
+                  initialLayout={doc.layout}
+                  sourceControlIntegrated={doc.sourceControlIntegrated}
+                />
               </div>
             </WorkspaceErrorBoundary>
           );

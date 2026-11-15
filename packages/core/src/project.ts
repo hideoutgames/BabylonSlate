@@ -31,6 +31,8 @@ import {
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
+/** Marks an app-owned project folder whose scaffold or clone has not finished; a retry may clear it. */
+export const PROJECT_CREATION_MARKER = ".haptic-creating";
 export const MAIN_CLASS_FILE = "assets/main.class.hasset";
 export const MAIN_SCENE_FILE = "assets/main.scene.hasset";
 

@@ -36,8 +36,26 @@ export class FakeGitHost {
   /** `error` answers for the next token polls, in order; once empty, the token is granted. */
   tokenReplies: string[] = ["authorization_pending"];
   account = "test-user";
+  accountId = 1001;
   repositories = ["haptic-test/game", "haptic-test/prototype"];
+  /** Repositories listed as Public; every other one is Private. */
+  readonly publicRepositories = new Set<string>();
+  /** The account's organizations (GitHub) or groups (GitLab). */
+  organizations = ["haptic-studio"];
+  /**
+   * Listing organizations or groups answers 403, as GitHub does for an OAuth
+   * token without the `read:org` or `user` scope (a sign-in from before
+   * Haptic asked for `read:org`, or an organization that restricts OAuth apps).
+   */
+  organizationsRefused = false;
+  /** The branches of every repository not in `repositoryBranches`. */
   branches = ["main", "develop"];
+  /**
+   * Branches by repository name. A repository created through the API has
+   * none (it is empty until a push, which this host never sees: tests set
+   * them as a push would).
+   */
+  readonly repositoryBranches = new Map<string, string[]>();
   /** Remote branch content: path → Git blob id, for every repository and branch. */
   readonly remoteBlobs = new Map<string, string>();
   /** Seconds between token polls the device code asks for. */
@@ -77,18 +95,47 @@ export class FakeGitHost {
     }
     const token = request.headers.Authorization?.replace(/^Bearer /, "") ?? "";
     if (!bearer || this.refusedTokens.has(token)) return json(401, { message: "Bad credentials" });
-    if (route === "GET https://api.github.com/user") return json(200, { login: this.account });
-    if (route === "GET https://gitlab.com/api/v4/user") return json(200, { username: this.account });
+    if (route === "GET https://api.github.com/user") return json(200, { login: this.account, id: this.accountId });
+    if (route === "GET https://gitlab.com/api/v4/user") return json(200, { username: this.account, id: this.accountId });
     const page = Number(url.searchParams.get("page") ?? "1");
     const firstPage = <T>(items: T[]) => json(200, page === 1 ? items : []);
-    if (route === "GET https://api.github.com/user/repos") {
-      return firstPage(this.repositories.map((name) => ({ full_name: name, default_branch: "main", private: true, pushed_at: "2026-11-01T10:00:00Z" })));
+    const github = (name: string) => ({ full_name: name, default_branch: "main", private: !this.publicRepositories.has(name), pushed_at: "2026-11-01T10:00:00Z" });
+    const gitlab = (name: string) => ({ path_with_namespace: name, default_branch: "main", visibility: this.publicRepositories.has(name) ? "public" : "private", last_activity_at: "2026-11-01T10:00:00Z" });
+    if (route === "GET https://api.github.com/user/repos") return firstPage(this.repositories.map(github));
+    if (route === "GET https://gitlab.com/api/v4/projects") return firstPage(this.repositories.map(gitlab));
+    if (this.organizationsRefused && (route === "GET https://api.github.com/user/orgs" || route === "GET https://gitlab.com/api/v4/groups")) {
+      return json(403, { message: "You need at least read:org scope or user scope to list your organizations." });
     }
-    if (route === "GET https://gitlab.com/api/v4/projects") {
-      return firstPage(this.repositories.map((name) => ({ path_with_namespace: name, default_branch: "main", visibility: "private", last_activity_at: "2026-11-01T10:00:00Z" })));
+    if (route === "GET https://api.github.com/user/orgs") return firstPage(this.organizations.map((login) => ({ login })));
+    if (route === "GET https://gitlab.com/api/v4/groups") {
+      return firstPage(this.organizations.map((path, index) => ({ full_path: path, id: index + 100 })));
     }
-    if (/^GET https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/branches$/.test(route) || /^GET https:\/\/gitlab\.com\/api\/v4\/projects\/[^/]+\/repository\/branches$/.test(route)) {
-      return firstPage(this.branches.map((name) => ({ name })));
+    const gitHubCreate = /^POST https:\/\/api\.github\.com\/(?:user|orgs\/([^/]+))\/repos$/.exec(route);
+    if (gitHubCreate || route === "POST https://gitlab.com/api/v4/projects") {
+      const body = JSON.parse(typeof request.body === "string" ? request.body : "{}") as { name?: string; private?: boolean; visibility?: string; namespace_id?: string };
+      const namespace = gitHubCreate
+        ? (gitHubCreate[1] ? decodeURIComponent(gitHubCreate[1]) : this.account)
+        : body.namespace_id ? this.organizations[Number(body.namespace_id) - 100] : this.account;
+      const name = `${namespace}/${body.name ?? ""}`;
+      if (!body.name || !namespace) return json(422, { message: "Repository creation failed." });
+      if (this.repositories.includes(name)) {
+        // As each host refuses a taken name.
+        return gitHubCreate
+          ? json(422, { message: "Repository creation failed.", errors: [{ message: "name already exists on this account" }] })
+          : json(400, { message: { name: ["has already been taken"], path: ["has already been taken"] } });
+      }
+      this.repositories.unshift(name);
+      this.repositoryBranches.set(name, []);
+      if (body.private === false || body.visibility === "public") this.publicRepositories.add(name);
+      return json(201, gitHubCreate ? github(name) : gitlab(name));
+    }
+    const repository = /^GET https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)(\/branches)?$/.exec(route)
+      ?? /^GET https:\/\/gitlab\.com\/api\/v4\/projects\/([^/]+)(\/repository\/branches)?$/.exec(route);
+    if (repository) {
+      const name = decodeURIComponent(repository[1]!);
+      if (repository[2]) return firstPage((this.repositoryBranches.get(name) ?? this.branches).map((branch) => ({ name: branch })));
+      if (!this.repositories.includes(name)) return json(404, { message: "Not Found" });
+      return json(200, route.includes("api.github.com") ? github(name) : gitlab(name));
     }
     const tree = [...this.remoteBlobs].map(([path, id]) => ({ path, type: "blob", sha: id, id }));
     if (/^GET https:\/\/api\.github\.com\/repos\/[^/]+\/[^/]+\/git\/trees\/[^/]+$/.test(route)) return json(200, { tree, truncated: false });

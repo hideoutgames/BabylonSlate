@@ -889,3 +889,71 @@ describe("SourceControlService", () => {
     expect(service.lockStateForPath("assets/hero.scene.hasset")).toBe("mine");
   });
 });
+
+describe("SourceControlService around an Integrated push", () => {
+  const integrated = { ...manual, mode: "integrated" as const };
+
+  it("names the locks someone else holds on what a push sends, from a fresh verify", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({ settings: integrated, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      // Taken after the last poll: only a fresh verify sees them.
+      fake.addTheirs("assets/rock.hasset", "Sam");
+      fake.addTheirs("assets/other.hasset", "Kim");
+      const holders = await service.locksBlockingPush(["assets/rock.hasset", "assets/mine.hasset"]);
+      expect(holders.map((lock) => [lock.path, lock.ownerName])).toEqual([["assets/rock.hasset", "Sam"]]);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it("never blocks a push on a host without the locking API, and rejects when the check fails", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const other = "https://code.example.com";
+    try {
+      await service.configure({
+        settings: { ...integrated, repositoryUrl: `${other}/team/game.git` },
+        projectKey: "proj",
+        platform: "electron",
+        testMode: true,
+        hosts: await signedIn(null, { ...GITHUB, origin: other, kind: "token" }),
+        fake,
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      fake.addTheirs("assets/rock.hasset", "Sam");
+      const verify = vi.spyOn(fake, "verify").mockResolvedValueOnce(err({ kind: "http", message: "Bad Gateway", status: 502 }));
+      await expect(service.locksBlockingPush(["assets/rock.hasset"])).rejects.toThrow("Bad Gateway");
+      verify.mockResolvedValueOnce(err({ kind: "unsupported", message: "Not Found", status: 404 }));
+      expect(await service.locksBlockingPush(["assets/rock.hasset"])).toEqual([]);
+      expect(service.lockingUnsupported).toBe(true);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it("releases own locks on pushed paths, keeping documents with unsaved edits locked", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({
+        settings: integrated,
+        projectKey: "proj",
+        platform: "electron",
+        testMode: true,
+        hosts: await signedIn(),
+        fake,
+        isPathDirty: (path) => path === "assets/dirty.hasset",
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/unpushed.hasset"]) await service.autoLock(path);
+      await service.releaseOwnLocks(["assets/pushed.hasset", "assets/dirty.hasset"]);
+      expect(fake.snapshot().map((lock) => lock.path).sort()).toEqual(["assets/dirty.hasset", "assets/unpushed.hasset"]);
+      expect(service.lockStateForPath("assets/pushed.hasset")).toBeNull();
+    } finally {
+      service.dispose();
+    }
+  });
+});

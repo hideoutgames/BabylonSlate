@@ -152,10 +152,19 @@ describe("listDockWindows", () => {
     }
   });
 
-  it("holds only the Locks window in the pinned Source Control document", () => {
+  it("holds only the Locks window in the pinned Source Control document in Manual mode", () => {
     expect(isDockviewDocumentKind("source-control")).toBe(true);
     expect(listDockWindows("source-control")).toEqual([{ id: "locks", component: "locks", title: "Locks" }]);
     expect(primaryDockPanel("source-control")).toBe("locks");
+  });
+
+  it("opens Integrated mode's Source Control document on Changes, with Locks tabbed beside it", () => {
+    const options = { sourceControlIntegrated: true };
+    expect(listDockWindows("source-control", options).map((entry) => [entry.id, entry.title, entry.defaultPosition?.referencePanelId ?? null, entry.defaultPosition?.direction ?? null])).toEqual([
+      ["changes", "Changes", null, null],
+      ["locks", "Locks", "changes", "within"],
+    ]);
+    expect(primaryDockPanel("source-control", options)).toBe("changes");
   });
 });
 

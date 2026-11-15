@@ -36,6 +36,7 @@ export function WindowsMenu() {
   const activeKind = activeDoc?.ref.kind;
   const activePath = activeDoc?.ref.path;
   const canToggleWindows = isDockviewDocumentKind(activeKind);
+  const sourceControlIntegrated = activeDoc?.sourceControlIntegrated;
   // Class ancestry only changes with the registry, not with document edits.
   const actorPrefab = useMemo(() => {
     void registryEpoch;
@@ -60,6 +61,7 @@ export function WindowsMenu() {
       ? listDockWindows(activeKind, {
           actorPrefab,
           sceneMode: hasSceneModes(activeKind) ? sceneMode : undefined,
+          sourceControlIntegrated,
         })
       : [];
     return windows.map((entry) => {
@@ -81,6 +83,7 @@ export function WindowsMenu() {
     activeKind,
     actorPrefab,
     sceneMode,
+    sourceControlIntegrated,
     isDockWindowOpen,
     openDockWindowCount,
     toggleDockWindow,

@@ -322,6 +322,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     createAssetLoadScope,
     exportGameArtifact,
     getAssetLoadState,
+    getAuthoringLock,
     getOpenDocuments,
     loadAssetDocument,
     lockAuthoring,
@@ -743,6 +744,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     preparingRef,
     playRequestInputsRef,
     saveAll,
+    getAuthoringLock,
     exportGameArtifact,
     setPreparing,
     setPlayOpen,
@@ -767,6 +769,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (!sessionOwner.canStart() || preparingRef.current) return;
+      // An editor operation holds the documents (a Pull until its files are reloaded): the content is about to change.
+      const authoring = getAuthoringLock();
+      if (authoring.readOnly) {
+        appendLog(`${simulating ? "Simulation" : "Play"} did not start: ${authoring.reason}.`);
+        return;
+      }
       // Read at call time (see playRequestInputsRef); shadows the render values.
       const {
         activeDocumentId, assetRegistry, dirtyDocuments, extensionService, graphsNeedCompile, migrationPending,
@@ -1016,6 +1024,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       collectPlayInputAssets,
       collectPlayPreviewScripts,
       createAssetLoadScope,
+      getAuthoringLock,
       getOpenDocuments,
       lockAuthoringWrites,
       saveAll,

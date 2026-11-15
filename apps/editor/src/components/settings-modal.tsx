@@ -53,6 +53,7 @@ import {
 import { isSourceControlHost } from "@haptic/source-control";
 import {
   useDocumentActions,
+  useIntegratedSync,
   useProjectState,
   useRegistryState,
 } from "../context/document-context";
@@ -137,7 +138,10 @@ export function SettingsModal({
     updateProjectSettings: applyProjectSettings,
     updateProjectVersion,
     prefillSourceControlFromGit,
+    readSourceControlFolder,
+    setSourceControlAdoption,
   } = useDocumentActions();
+  const sourceControlSync = useIntegratedSync();
   const { projectDocument: liveProjectDocument } = useProjectState();
   const { projectGuid, assetRegistry, registryEpoch, extensionService } = useRegistryState();
   const extensionSnapshot = useSyncExternalStore(extensionService.subscribe, extensionService.getSnapshot);
@@ -761,6 +765,9 @@ export function SettingsModal({
           projectGuid={projectGuid}
           latest={latest}
           prefillSourceControlFromGit={prefillSourceControlFromGit}
+          readSourceControlFolder={readSourceControlFolder}
+          setSourceControlAdoption={setSourceControlAdoption}
+          sourceControlSync={sourceControlSync}
           sourceControlUrlMissing={sourceControlUrlMissing}
           setSourceControlUrlMissing={setSourceControlUrlMissing}
           setDisableSourceControlOpen={setDisableSourceControlOpen}

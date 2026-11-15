@@ -1,4 +1,4 @@
-import { isChromeDocumentKind } from "@haptic/core";
+import { isChromeDocumentKind, PROJECT_FILE } from "@haptic/core";
 import {
   useCallback,
   useEffect,
@@ -19,9 +19,21 @@ import type { EditSession } from "@haptic/edit";
 import { readProjectJsonMtime } from "../lib/external-change";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import { editorTabContentForKind } from "../lib/scene-layer-document";
-import type { DocumentService } from "../services/document-service";
+import type { DocumentService, OpenDocument } from "../services/document-service";
 import type { ProjectService } from "../services/project-service";
-import type { DocumentActions } from "./document-context-types";
+import type { AuthoringHold, DocumentActions } from "./document-context-types";
+
+/** A time no file has: the previous time of a file a pull wrote, so it always classifies as changed. */
+const PULLED_MTIME = -1;
+
+/** Open documents read from disk, not yet in their tabs. */
+interface OpenDocumentReads {
+  contents: { id: string; content: NonNullable<OpenDocument["content"]> }[];
+  /** Paths whose file is gone: their tabs close. */
+  deleted: string[];
+  /** Paths that could not be read: their tabs keep their content. */
+  failed: string[];
+}
 
 export interface ExternalChangeDeps {
   projectService: ProjectService;
@@ -34,6 +46,8 @@ export interface ExternalChangeDeps {
   bump: () => void;
   /** Written by the document tabs hook, which is set up after this one. */
   closeDocumentsForPathsRef: RefObject<(paths: Iterable<string>) => void>;
+  /** A remount here only re-read the files: the foreground refresh or the pull reads the Integrated status itself. */
+  noteRegistryReread: () => void;
 }
 
 /**
@@ -51,6 +65,7 @@ export function useExternalChanges({
   setProjectDocument,
   bump,
   closeDocumentsForPathsRef,
+  noteRegistryReread,
 }: ExternalChangeDeps) {
   const [externalChangePrompt, setExternalChangePrompt] =
     useState<ExternalChangeClassification | null>(null);
@@ -82,48 +97,66 @@ export function useExternalChanges({
   );
 
   /**
-   * Returns the paths whose file could not be read; their tabs keep their
-   * content. A tab whose file was deleted on disk closes, as reloading it has
-   * nothing to load.
+   * Reads the open documents of `paths` from disk without changing anything:
+   * the content of each, the ones whose file was deleted, the ones that could
+   * not be read.
    */
-  const reloadDocumentsFromDisk = useCallback(
-    async (paths: string[]): Promise<string[]> => {
-      const authoring = documentService.getAuthoringLock();
-      const failed: string[] = [];
-      const deleted: string[] = [];
-      if (authoring.readOnly) return failed;
+  const readOpenDocuments = useCallback(
+    async (paths: readonly string[]): Promise<OpenDocumentReads> => {
+      const reads: OpenDocumentReads = { contents: [], deleted: [], failed: [] };
       for (const path of paths) {
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.path === path,
         );
         if (!doc || isChromeDocumentKind(doc.ref.kind)) continue;
         try {
-          const loaded = await projectService.loadDocument(
-            doc.ref.kind,
-            doc.ref.path,
-          );
-          if (documentService.getAuthoringLock() !== authoring) return failed;
-          documentService.replaceLoadedContent(
-            doc.id,
-            editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content>,
-          );
-          editSessionRef.current.dropDocument(doc.id);
+          const loaded = await projectService.loadDocument(doc.ref.kind, doc.ref.path);
+          reads.contents.push({ id: doc.id, content: editorTabContentForKind(doc.ref.kind, loaded) as NonNullable<typeof doc.content> });
         } catch (error) {
-          const exists = await projectService.documentExists(path).catch(() => true);
-          if (documentService.getAuthoringLock() !== authoring) return failed;
-          if (!exists) {
-            deleted.push(path);
+          if (!(await projectService.documentExists(path).catch(() => true))) {
+            reads.deleted.push(path);
             continue;
           }
           console.warn(`[editor] Could not reload ${path} from disk`, error);
-          failed.push(path);
+          reads.failed.push(path);
         }
       }
-      if (deleted.length > 0) closeDocumentsForPathsRef.current(deleted);
-      bump();
-      return failed;
+      return reads;
     },
-    [bump, documentService, projectService, closeDocumentsForPathsRef, editSessionRef],
+    [documentService, projectService],
+  );
+
+  /**
+   * Puts what `readOpenDocuments` read into the tabs, in one synchronous
+   * step: each loses its history, and a tab whose file was deleted closes, as
+   * reloading it has nothing to load.
+   */
+  const applyOpenDocuments = useCallback(
+    (reads: OpenDocumentReads) => {
+      for (const { id, content } of reads.contents) {
+        documentService.replaceLoadedContent(id, content);
+        editSessionRef.current.dropDocument(id);
+      }
+      if (reads.deleted.length > 0) closeDocumentsForPathsRef.current(reads.deleted);
+      bump();
+    },
+    [bump, closeDocumentsForPathsRef, documentService, editSessionRef],
+  );
+
+  /**
+   * Returns the paths whose file could not be read; their tabs keep their
+   * content. Nothing changes when an authoring lease starts or ends meanwhile.
+   */
+  const reloadDocumentsFromDisk = useCallback(
+    async (paths: string[]): Promise<string[]> => {
+      const authoring = documentService.getAuthoringLock();
+      if (authoring.readOnly) return [];
+      const reads = await readOpenDocuments(paths);
+      if (documentService.getAuthoringLock() !== authoring) return [];
+      applyOpenDocuments(reads);
+      return reads.failed;
+    },
+    [applyOpenDocuments, documentService, readOpenDocuments],
   );
 
   const runForegroundRescan = useCallback(async () => {
@@ -131,6 +164,7 @@ export function useExternalChanges({
     const guid = projectService.guid;
     const previous = mtimeSnapshotRef.current;
     await projectService.remountRegistry();
+    noteRegistryReread();
     bump();
     // Another project, or a snapshot an own save took meanwhile, is newer
     // than this scan: classifying against it would report the wrong changes.
@@ -161,7 +195,7 @@ export function useExternalChanges({
       }
     }
     next.projectJson = nextProject;
-  }, [bump, documentService, projectService, projectDocumentRef]);
+  }, [bump, documentService, noteRegistryReread, projectService, projectDocumentRef]);
   useLayoutEffect(() => {
     runForegroundRescanRef.current = runForegroundRescan;
   }, [runForegroundRescan]);
@@ -206,6 +240,63 @@ export function useExternalChanges({
     [documentService, reloadDocumentsFromDisk],
   );
 
+  /**
+   * After a pull that wrote `paths`, while `hold` (the pull's read-only lock)
+   * keeps Play, Simulation and edits out: classifies what changed against the
+   * change snapshot, as the foreground rescan does, and reads the project or
+   * the clean changed documents. Then, in one synchronous step, it releases
+   * the hold and applies them, so nothing runs against a half-reloaded
+   * project. Changed documents with unsaved edits are never replaced: they get
+   * the external-change prompt. If another lock arrived meanwhile nothing is
+   * applied and the snapshot stays, so the next foreground rescan reports it.
+   */
+  const applyPulledChanges = useCallback(async (paths: readonly string[], hold: AuthoringHold) => {
+    try {
+      const previous = mtimeSnapshotRef.current;
+      if (!projectDocumentRef.current || !previous || paths.length === 0) return;
+      await projectService.remountRegistry();
+      // The pull already read the status after writing these files.
+      noteRegistryReread();
+      bump();
+      const nextAssets = snapshotIndexedMtimes(projectService.registry?.list() ?? []);
+      const nextProject = await readProjectJsonMtime(projectService.storagePort);
+      const openDocs = documentService
+        .getOpenDocumentsOrdered()
+        .filter((doc) => !isChromeDocumentKind(doc.ref.kind))
+        .map((doc) => ({ path: doc.ref.path, dirty: doc.dirty }));
+      // The files the pull wrote count as changed even when the snapshot already has their times
+      // (a foreground rescan during a long pull, or a write within the clock's resolution).
+      const previousAssets = { ...previous.assets };
+      for (const path of paths) {
+        if (path.endsWith(".hasset") && previousAssets[path] === nextAssets[path]) previousAssets[path] = PULLED_MTIME;
+      }
+      const result = classifyExternalChanges({
+        previousAssets,
+        nextAssets,
+        previousProjectJsonMtime: paths.includes(PROJECT_FILE) && previous.projectJson === nextProject ? PULLED_MTIME : previous.projectJson,
+        nextProjectJsonMtime: nextProject,
+        openDocs,
+      });
+      // Unsaved edits a pulled change reaches are the user's call.
+      const reloadProject = result.kind === "reload-project" && result.dirtyChangedPaths.length === 0;
+      const project = reloadProject ? (await projectService.loadCurrentProject()).document : null;
+      const reads = await readOpenDocuments(reloadProject ? openDocs.map((doc) => doc.path) : result.cleanChangedPaths);
+      if (documentService.getAuthoringLock() !== hold.lock) return;
+      hold.release();
+      if (project) {
+        projectSaveState.current.reset(project);
+        setProjectDocument(project);
+      }
+      applyOpenDocuments(reads);
+      // A document that could not be read keeps its old time, so the next rescan offers it again.
+      for (const path of reads.failed) if (path in previous.assets) nextAssets[path] = previous.assets[path] ?? null;
+      mtimeSnapshotRef.current = { assets: nextAssets, projectJson: nextProject };
+      if (result.dirtyChangedPaths.length > 0) setExternalChangePrompt(result);
+    } finally {
+      hold.release();
+    }
+  }, [applyOpenDocuments, bump, documentService, noteRegistryReread, projectDocumentRef, projectSaveState, projectService, readOpenDocuments, setProjectDocument]);
+
   const dismissExternalChange = useCallback(() => {
     setExternalChangePrompt(null);
   }, []);
@@ -239,6 +330,7 @@ export function useExternalChanges({
     captureMtimeSnapshot,
     runForegroundRescanRef,
     resetExternalChanges,
+    applyPulledChanges,
     actions,
   };
 }
