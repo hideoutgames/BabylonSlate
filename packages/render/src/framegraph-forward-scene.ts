@@ -323,7 +323,9 @@ export class ForwardSceneFrameGraph {
 
   diagnostics() {
     this.measureWork = true;
+    const shadowJournal = findSceneShadowController(this.scene)?.journalDiagnostics();
     return {
+      ...(shadowJournal ? { shadowJournal } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,

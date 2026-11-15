@@ -42,7 +42,7 @@ import {
 } from "./shadow-mesh-policy";
 import { ShadowCasterList } from "./shadow-caster-list";
 import { partitionShadowGeometry } from "./shadow-geometry-partitions";
-import { ShadowMapRefresh } from "./shadow-map-refresh";
+import { ShadowMapRefresh, type ShadowJournalDiagnostics } from "./shadow-map-refresh";
 import { RetainedShadowCasters, type RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { writeSceneShadowDebug } from "./shadow-debug";
 import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
@@ -192,6 +192,10 @@ export class SceneShadowController {
   }
   shadowTriangles(): number {
     return this.counters.triangles;
+  }
+  /** How the caster walks went (`ShadowMapRefresh.journalDiagnostics`). */
+  journalDiagnostics(): ShadowJournalDiagnostics {
+    return this.refresh.journalDiagnostics();
   }
   /** The casters the maps draw from the shared buffer (`RetainedShadowCasters`); null where none can be. */
   retainedCasters(): RetainedShadowDiagnostics | null {
