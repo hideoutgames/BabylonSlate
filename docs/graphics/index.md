@@ -75,7 +75,7 @@ With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and 
 | **Play Frame Cap** | Frames per second for Play and Preview. Default 60. |
 | **Follow System**, **Aspect Ratio** | Play Preview aspect. Turn off Follow System to use a fixed ratio. |
 
-The editor viewport has its own **Viewport Frame Cap (FPS)** in **Engine Settings > Viewport**. Turn on **Override Project Rendering** there to lower resolution or skip post-processing in editor previews only; exported games are unchanged.
+The editor viewport has its own **Viewport Frame Cap (FPS)** in **Engine Settings > Viewport**, halved while the viewport sits idle when **Half Rate When Idle** is on. Turn on **Override Project Rendering** there to lower resolution or skip post-processing in editor previews only; exported games are unchanged.
 
 ## Viewport Mode
 

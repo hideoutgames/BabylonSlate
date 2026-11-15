@@ -285,6 +285,92 @@ describe("render scheduler", () => {
   });
 });
 
+describe("render scheduler: Half Rate When Idle", () => {
+  const VSYNC = 1000 / 60;
+  /** An editor viewport: always renders, paced by its Viewport Frame Cap. */
+  const editorView = (cap: number, idleHalfRate: boolean) => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    scheduler.setFrameCap(cap);
+    scheduler.setIdleHalfRate(idleHalfRate);
+    return scheduler;
+  };
+  /** 60 Hz display callbacks in [from, to); returns when each drawn frame began. */
+  const drive = (scheduler: RenderScheduler, from: number, to: number, duringFrame?: () => void) => {
+    const drawn: number[] = [];
+    for (let vsync = Math.ceil(from / VSYNC - 1e-9); vsync * VSYNC < to; vsync += 1) {
+      const now = vsync * VSYNC;
+      if (!scheduler.shouldRender(now)) continue;
+      duringFrame?.();
+      scheduler.noteRendered(now);
+      drawn.push(now);
+    }
+    return drawn;
+  };
+
+  it("draws at the full cap for a second without activity, then at half the cap", () => {
+    const scheduler = editorView(60, true);
+    expect(drive(scheduler, 0, 1000)).toHaveLength(60);
+    expect(scheduler.gateState(990).halfRate).toBe(false);
+    expect(drive(scheduler, 1000, 2000).length).toBeLessThanOrEqual(31);
+    expect(drive(scheduler, 2000, 3000)).toHaveLength(30);
+    expect(scheduler.gateState(3000)).toMatchObject({ idleHalfRate: true, halfRate: true, frameCap: 60 });
+  });
+
+  it("never halves with the setting off", () => {
+    const scheduler = editorView(60, false);
+    expect(drive(scheduler, 0, 3000)).toHaveLength(180);
+    expect(scheduler.gateState(3000).halfRate).toBe(false);
+  });
+
+  it("never halves while a render lease is held, as Play and the fly-through hold one", () => {
+    const scheduler = editorView(60, true);
+    const release = scheduler.acquireContinuous("play");
+    expect(drive(scheduler, 0, 3000)).toHaveLength(180);
+    expect(scheduler.gateState(3000).halfRate).toBe(false);
+    // Released: a full second at the cap before halving again.
+    release();
+    expect(drive(scheduler, 3000, 3990)).toHaveLength(60);
+    expect(drive(scheduler, 5000, 6000)).toHaveLength(30);
+  });
+
+  it("halves from a changed Viewport Frame Cap", () => {
+    const scheduler = editorView(60, true);
+    drive(scheduler, 0, 2000);
+    scheduler.setFrameCap(30);
+    drive(scheduler, 2000, 3000);
+    expect(drive(scheduler, 3000, 4000)).toHaveLength(15);
+    expect(scheduler.gateState(4000)).toMatchObject({ halfRate: true, frameCap: 30 });
+  });
+
+  it("does not count work raised by its own frames as activity", () => {
+    // Editor cables invalidate from inside the frame that steps them.
+    const scheduler = editorView(60, true);
+    const invalidate = () => scheduler.invalidate("asset");
+    drive(scheduler, 0, 2000, invalidate);
+    expect(drive(scheduler, 2000, 3000, invalidate)).toHaveLength(30);
+  });
+
+  it.each([
+    ["an invalidation (camera, gizmo, selection, edit)", (scheduler: RenderScheduler) => scheduler.invalidate("camera")],
+    ["input or other view activity", (scheduler: RenderScheduler) => scheduler.noteActivity()],
+    ["a render lease", (scheduler: RenderScheduler) => { scheduler.acquireContinuous("viewport-joystick")(); }],
+    ["a requested frame", (scheduler: RenderScheduler) => scheduler.requestPausedFrame()],
+    ["a resize", (scheduler: RenderScheduler) => { scheduler.setResizing(true); scheduler.setResizing(false); }],
+    ["the view being shown again", (scheduler: RenderScheduler) => { scheduler.setVisible(false); scheduler.setVisible(true); }],
+  ] as const)("returns to the full cap at once on %s", (_signal, signal) => {
+    const scheduler = editorView(60, true);
+    const last = drive(scheduler, 0, 3000).at(-1)!;
+    expect(scheduler.shouldRender(last + VSYNC)).toBe(false);
+    signal(scheduler);
+    // The responding frame takes the next full-rate slot, not the next half-rate one.
+    expect(scheduler.shouldRender(last + VSYNC)).toBe(true);
+    expect(scheduler.gateState(last + VSYNC).halfRate).toBe(false);
+    scheduler.noteRendered(last + VSYNC);
+    expect(drive(scheduler, last + 2 * VSYNC, last + 2 * VSYNC + 890)).toHaveLength(54);
+  });
+});
+
 describe("snapshot sampler", () => {
   it("replaces capacity state and ignores stale layout generations", () => {
     const sampler = new SnapshotSampler(1);

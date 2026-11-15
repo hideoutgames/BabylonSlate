@@ -416,6 +416,8 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await recordProgramLinks(page);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
+    // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
+    settings.viewportIdleHalfRate = false;
     if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
   });
   const cdp = await page.context().newCDPSession(page);

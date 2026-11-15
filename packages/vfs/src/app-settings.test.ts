@@ -368,13 +368,16 @@ describe("app settings", () => {
     localStorage.clear();
     const store = new WebAppSettingsStore();
     const settings = defaultEngineSettings();
+    expect(settings.viewportIdleHalfRate).toBe(true);
     settings.viewportFrameCap = 30;
+    settings.viewportIdleHalfRate = false;
     settings.graphDefaultZoom = 0.8;
     settings.viewportDropDistance = 25_000.5;
     settings.traceByteBudget = 201_326_592;
     await store.save(settings);
     const reloaded = new WebAppSettingsStore();
     expect((await reloaded.load()).viewportFrameCap).toBe(30);
+    expect((await reloaded.load()).viewportIdleHalfRate).toBe(false);
     expect((await reloaded.load()).graphDefaultZoom).toBe(0.8);
     expect((await reloaded.load()).viewportDropDistance).toBe(25_000.5);
     expect((await reloaded.load()).traceByteBudget).toBe(201_326_592);
