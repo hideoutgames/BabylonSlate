@@ -30,7 +30,7 @@ Read these rules in full at the start of each task:
 | --- | --- |
 | [engine-plan.md](.agents/reference/engine-plan.md) | Product decisions, non-goals, architecture, open roadmap (authoritative) |
 | [multiplayer-plan.md](.agents/reference/multiplayer-plan.md) | Deferred multiplayer design: listen server, transports, Online Subsystem, replication, messaging, Play mode |
-| [source-control-plan.md](.agents/reference/source-control-plan.md) | Deferred built-in Git design: modes, hosts, GitHub and GitLab sign-in, LFS mapping, lock rework, order |
+| [source-control-plan.md](.agents/reference/source-control-plan.md) | Deferred built-in Git design: modes, hosts, GitHub and GitLab sign-in, LFS mapping, lock rework, UI, order |
 | [architecture.md](.agents/reference/architecture.md) | Package map, data flow, coding standards, gesture rules |
 | [architecture/](.agents/reference/architecture/) | Per-subsystem invariants and formats |
 | [components.md](.agents/reference/components.md) | Reusable Editor UI component catalog |

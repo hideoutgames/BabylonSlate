@@ -4,7 +4,7 @@ Deferred design for built-in Git: clone, pull, commit, push, diff and history in
 
 ## Scope
 
-- In: Git over HTTPS with Git LFS in the iOS, Android and desktop apps; GitHub and GitLab sign-in; cloning and publishing from the project browser; a Source Control window (changes, asset diffs, commit, pull, push, branches, history, revert); Git LFS locks in every mode; other Git hosts by URL and token.
+- In: Git over HTTPS with Git LFS in the iOS, Android and desktop apps; GitHub and GitLab sign-in; cloning and publishing from the project browser; a pinned Source Control tab (changes, asset diffs, commit, pull, push, branches, history, revert) and status bar controls; Git LFS locks in every mode; other Git hosts by URL and token.
 - Out for now: the web build (GitHub's Git and LFS endpoints send no CORS headers, and a proxy is out of scope); SSH transport (SSH remotes map to their HTTPS host, as `lfsEndpointFromRepoUrl` already does); line-level merge, rebase, stash and submodules; non-Git systems such as Diversion or Perforce; source control providers in Engine Extensions.
 - Free: no Haptic-run server, proxy or paid service. Repository and LFS storage, bandwidth and request limits fall on each user's own host plan.
 
@@ -66,7 +66,7 @@ Per project (`project.json` `sourceControl.mode`), off by default.
 ## Editor
 
 - Project browser: **Clone From GitHub** and **Clone From GitLab** (repository and branch pickers), **Clone From URL** (other hosts), and **Publish To GitHub** / **Publish To GitLab** on an existing project (creates the repository, writes `.gitattributes` and `.gitignore`, commits and pushes). Clones go to app storage and open when done.
-- **Source Control** window, listed only in Integrated mode (as Locks is listed only with source control on): changes by asset; **Commit** with a message; **Pull**; **Push**; branch switch and create; per-asset history and **Revert**.
+- The pinned **Source Control** tab ([UI](#ui)): changes by asset; **Commit** with a message; **Pull**; **Push**; branch switch and create; per-asset history and **Revert**; diffs.
   - An asset's change covers its `.hasset` file and the blobs it references; blobs are never listed alone.
 - Diffs compare decoded assets, because `.hasset` is a binary container and Git's text diff says nothing: header payload fields and changed chunks first (Textures as before and after previews), then Scenes by actor id and graphs by node id. The base version comes from the Git object store.
 - Conflicts are whole-file: per asset **Keep Mine** or **Take Theirs**; no textual merge. Locks keep conflicts rare.
@@ -82,6 +82,29 @@ Per project (`project.json` `sourceControl.mode`), off by default.
 
 Today's feature with: credentials from Engine Settings; the single **Sign In** prompt; Repository and Branch pickers when signed in to GitHub or GitLab (the `.git/config` prefill stays); no Token or Poll Interval rows; **Release Pushed Locks**; the missing-lock-support message.
 
+## UI
+
+Approved layouts. Everything keeps the editor's compact density, tokens and Lucide icons; assets show their usual type visuals; settings rows carry no explanatory text ([row descriptions](../rules/row-descriptions.md)).
+
+- **Source Control tab:** a pinned document tab that cannot be closed, at the right end of the document tab bar, left of **Open Documents**, with the count of uncommitted changes. Diffs open inside it, never as separate document tabs. Its windows:
+  - **Changes**, tabbed with **History** and **Locks**: branch picker; **Pull** and **Push** with counts; a status line (commits to pull and push, last check); changed assets as rows (include checkbox, type icon, folder, own-lock icon, A/M/D in success/warning/destructive); **Incoming** commits; the commit box (**Commit Message**, **Push After Commit**, **Commit N Assets**).
+  - **Actors** (Scenes; the matching tree for other kinds): added, removed and changed items marked and tinted, unchanged ones muted, with search and Added/Removed/Changed counts.
+  - **Diff**: the view for the asset's kind, with **Open <Kind>** and **Revert Asset**.
+  - The global toolbar's document slot (where Compile or the scene mode picker sit) holds the **Base** and **Compare** pickers.
+- **Diff views:**
+  - Properties: Property, Base (branch and short id) and Working Copy columns grouped by component; changed cells tinted destructive (base) and success (working copy); **Side By Side** / **Inline**; **Changed Only**.
+  - Graphs: **Overlay** / **Base** / **Working Copy**; changed nodes outlined warning, added success, removed destructive and dashed, each tagged; a changed pin value shows the old value struck through beside the new; a side list grouped by graph, Variables and Functions.
+  - Textures: **Side By Side** / **Swipe** / **Difference** and **RGB** / **Alpha** over a checkerboard; size, file size, source, compression, sRGB and mipmaps compared; how many Materials use it.
+- **Status bar** (Integrated): source control leads. A branch button opens **Commit…**, **Pull**, **Push**, **Refresh**, **Switch Branch**, **New Branch…**, **Open Source Control** and **Open History**; then **N Changes** (brings the tab forward), **Pull N** and **Push N**. Save state shrinks to **Saved** on the right; a transfer replaces Pull and Push with its progress; **Auto-Save Failed — Use Save All** still takes the right side.
+- **Pull Conflicts** dialog: a row per asset with **Compare** and **Keep Mine** / **Take Theirs**; **Cancel Pull**; **Apply And Finish Pull** stays disabled, with the reason shown, until every asset has a choice.
+- **History** window: the selected asset's commits (**This Asset** / **All Assets**), uncommitted changes first; the selected commit's message, author, time and short id (with copy), **Compare With Working Copy**, **Revert To This Version** and its assets; **Load Older History** at the end of a shallow clone.
+- **Engine Settings → Source Control** (Projects group): **Accounts** (GitHub and GitLab rows with the signed-in user and **Sign Out**, or **Sign In**), **Self-Managed GitLab** (Instance URL, Token, **Save Token**), **Other Git Hosts** (a row per host with its token state and **Remove**; **Add Host**).
+- **Linking:** the warning dialog (amber icon, **Decline** / **Accept**), then **Sign In To GitHub** / **GitLab**: the code in a large monospace field with **Copy**, **Open GitHub** / **Open GitLab**, a waiting status with the code's remaining time, and **Cancel**.
+- **Clone Project** (project browser): **GitHub** / **GitLab** / **URL**, the signed-in user, repository search and list (Private/Public, last update), **Branch**, **Project Name**, **Clone**.
+- **Publish Project**: Host, Owner, Repository Name, Visibility (**Private** / **Public**), a summary of what it creates and pushes (asset count, size, the share through LFS), **Publish**.
+- **Project Settings → Source Control**: Mode (**Off** / **Integrated** / **Manual**), Repository with **Change**, Branch, the account state, and Locking (**Auto-Lock On First Edit**, **Release Locks After Push**).
+- **Manual mode:** the signed-out banner with **Sign In** at the top of documents; Locks with **Release Pushed Locks (N)**, **Release All My Locks (N)** and **Pushed** / **Not Pushed** on your own locks.
+
 ## Engine integration points
 
 What exists today and what each part must change. Check these against the code before building; they are a starting map, not a contract.
@@ -92,7 +115,8 @@ What exists today and what each part must change. Check these against the code b
 - **Device page:** desktop hands only allowlisted links to the system browser (`externalOpenUrl`, `apps/desktop/src/packaged-security.ts`); it must admit GitHub's and gitlab.com's device pages.
 - **Settings:** `ProjectSettings.sourceControl` (`packages/core/src/project.ts`): `enabled` becomes `mode`, `pollIntervalMs` goes, `releaseLocksAfterPush` joins. The rows live in `apps/editor/src/components/project-source-control-settings.tsx`. Project setting changes follow the [FeatureTest starter rule](../rules/feature-test.md).
 - **Assets:** `packages/assets/src/blob-store.ts` (write-once blobs, `BLOBS_DIR`), `hasset.ts` (container decode for diffs), `mtime-diff.ts` and `apps/editor/src/lib/external-change.ts` (reload after pull).
-- **Windows:** `listDockWindows` lists Locks only with `sourceControl: true`; the Source Control window follows the same pattern.
+- **Source Control tab:** a new pinned document kind beside the pinned Content Browser in the chrome tab bar; follow the [DockView asset editor tabs rule](../rules/dockview-editor-tabs.md). `listDockWindows` lists Locks only with `sourceControl: true` today.
+- **Status bar:** `apps/editor/src/components/editor-status-bar.tsx`, which renders nothing in the phone layout.
 - **Docs:** `docs/projects/source-control.md` and `docs/editor/settings.md` change with each step.
 
 ## Order
@@ -100,7 +124,7 @@ What exists today and what each part must change. Check these against the code b
 1. Gate on the A16 iPad: isomorphic-git clone, status, commit and push of a project with a few thousand assets through the Capacitor storage adapter, and LFS transfer of large blobs through native HTTP. Status must use stat data, not re-hashing. Choose the streaming transfer path from the results.
 2. Device credentials, GitHub and GitLab sign-in in Engine Settings and the Manual mode rework; update `architecture/source-control.md`. First check by hand, with real sign-in tokens from both registered apps, that each host accepts them with the stored username for Git, LFS transfer and LFS locks.
 3. Git core in `packages/source-control`: clone, status, commit, pull (fast-forward and whole-file conflicts), push and LFS transfer, tested against a local Git HTTP server and a fake LFS server.
-4. Integrated mode in the editor: Clone and Publish for GitHub and GitLab, Clone From URL, the Source Control window, lock verify before push and release after it.
+4. Integrated mode in the editor: Clone and Publish for GitHub and GitLab, Clone From URL, the Source Control tab and status bar controls, lock verify before push and release after it.
 5. Asset diffs: payload and chunk level, then Scene and graph views.
 6. Branches, history and revert.
 
@@ -108,6 +132,9 @@ What exists today and what each part must change. Check these against the code b
 
 | Decision | Recommendation |
 | --- | --- |
+| Source Control tab on phones (no tab strip or status bar) | A Source Control button beside the Content Browser button, opening the tab; the status bar menu's actions in More Tools |
+| Source Control tab in Manual mode | Shown, with Locks only |
+| Where Locks lives | Only in the Source Control tab; the per-document Locks window goes |
 | Adopting an existing desktop clone as Integrated | Allow on desktop when `.git` is readable, warning that no other Git app may use it at the same time |
 | Web build | Stay out unless a proxy is accepted |
 | Providers in Engine Extensions | No. A non-Git system such as Diversion needs a sync-level provider (status, update, commit, base version, locks, history), built first-party first |
