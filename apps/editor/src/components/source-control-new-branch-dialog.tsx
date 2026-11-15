@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { CircleAlertIcon, GitBranchPlusIcon } from "lucide-react";
 import { isValidBranchName } from "@haptic/source-control";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
@@ -13,7 +13,12 @@ import {
 } from "@haptic/ui/components/dialog";
 import { Field, FieldGroup, FieldLabel } from "@haptic/ui/components/field";
 import { Input } from "@haptic/ui/components/input";
-import { useIntegratedSync, useIntegratedSyncState } from "../context/document-context";
+import { useDocumentActions, useIntegratedSync, useIntegratedSyncState } from "../context/document-context";
+
+/** While documents are held read-only (a pull, switch or revert in progress, Play), why no branch is created now. */
+function heldReason(reason: string | null): string {
+  return `${(reason ?? "Documents are read-only right now").replace(/\.$/, "")}. Create the branch once that has finished.`;
+}
 
 /** Why Create Branch is disabled, or null. */
 function refusal(name: string, local: readonly string[], remote: readonly string[]): string | null {
@@ -29,11 +34,15 @@ function refusal(name: string, local: readonly string[], remote: readonly string
  * checked out. No file changes, so nothing is saved or reloaded first; the
  * next push creates it on the remote. Names this copy or the remote already
  * has are refused as they are typed (the remote's list only when it could be
- * read).
+ * read). Refused, saying why, while documents are held read-only: a branch
+ * checked out under a pull's conflicts would make **Apply And Finish Pull**
+ * pull the new branch instead.
  */
 export default function NewBranchDialog({ onDone }: { onDone: () => void }) {
   const sync = useIntegratedSync();
   const { branch } = useIntegratedSyncState();
+  const { getAuthoringLock, subscribeAuthoringLock } = useDocumentActions();
+  const authoring = useSyncExternalStore(subscribeAuthoringLock, getAuthoringLock);
   const [name, setName] = useState("");
   const [local, setLocal] = useState<readonly string[]>([]);
   const [remote, setRemote] = useState<readonly string[]>([]);
@@ -57,9 +66,13 @@ export default function NewBranchDialog({ onDone }: { onDone: () => void }) {
   }, [sync]);
 
   const trimmed = name.trim();
-  const reason = refusal(trimmed, local, remote);
+  const nameReason = refusal(trimmed, local, remote);
+  const reason = authoring.readOnly ? heldReason(authoring.reason) : nameReason;
+  const invalid = (trimmed !== "" && nameReason !== null) || undefined;
 
   const create = async () => {
+    // A hold that started since the last render (a pull from the status bar) refuses it too.
+    if (getAuthoringLock().readOnly) return;
     setBusy(true);
     setError(null);
     try {
@@ -89,7 +102,7 @@ export default function NewBranchDialog({ onDone }: { onDone: () => void }) {
           }}
         >
           <FieldGroup className="gap-3">
-            <Field orientation="horizontal" data-invalid={(trimmed !== "" && reason !== null) || undefined}>
+            <Field orientation="horizontal" data-invalid={invalid}>
               <FieldLabel htmlFor="source-control-new-branch-name">Name</FieldLabel>
               <Input
                 id="source-control-new-branch-name"
@@ -97,7 +110,7 @@ export default function NewBranchDialog({ onDone }: { onDone: () => void }) {
                 disabled={busy}
                 autoComplete="off"
                 spellCheck={false}
-                aria-invalid={(trimmed !== "" && reason !== null) || undefined}
+                aria-invalid={invalid}
                 onChange={(event) => setName(event.target.value)}
                 data-testid="source-control-new-branch-name"
               />

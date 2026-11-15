@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import type { OpenDocument } from "../services/document-service";
 import { integratedSync } from "../testing/integrated-sync";
+import { SourceControlActionsProvider, useSourceControlActions, type SourceControlActions } from "./source-control-actions";
 import SourceControlPullFlow from "./source-control-pull-flow";
 
 const state = vi.hoisted(() => ({
@@ -254,6 +255,55 @@ describe("Pull", () => {
     fireEvent.click(screen.getByTestId("source-control-pull-comparing-back"));
     await screen.findByTestId("source-control-pull-conflicts");
     // Forest keeps its choice; Rock still needs one.
+    expect(screen.getByTestId("source-control-pull-conflicts-reason").textContent).toBe("Choose a version for Rock.");
+  });
+
+  it("ignores another Pull, Switch Branch or Revert while Pull Conflicts compares, keeping its choices and hold", async () => {
+    const { service, remote, storage } = await integratedSync();
+    state.sync = service;
+    remote.commit({ "assets/Rock.texture.hasset": "R-theirs", "assets/Forest.scene.hasset": "F-theirs" }, "Teammate");
+    remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
+    await storage.writeText("assets/Rock.texture.hasset", "R-mine");
+    await storage.writeText("assets/Forest.scene.hasset", "F-mine");
+    const release = vi.fn();
+    state.lockAuthoring.mockImplementation(() => release);
+    let actions!: SourceControlActions;
+    function Probe() {
+      actions = useSourceControlActions();
+      return null;
+    }
+    render(
+      <SourceControlActionsProvider>
+        <Probe />
+      </SourceControlActionsProvider>,
+    );
+    act(() => actions.requestPull());
+    const confirm = await screen.findByTestId("source-control-pull-confirm-action");
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+    await screen.findByTestId("source-control-pull-conflicts");
+    fireEvent.click(screen.getByTestId("source-control-conflict-mine-assets/Forest.scene.hasset"));
+    fireEvent.click(screen.getByTestId("source-control-conflict-compare-assets/Rock.texture.hasset"));
+    await screen.findByTestId("source-control-pull-comparing");
+
+    // The status bar's Pull, a branch menu and the Diff window's Revert Asset stay reachable beside the non-modal step.
+    act(() => actions.requestPull());
+    act(() => actions.requestSwitchBranch("art"));
+    act(() => actions.requestRevert({ path: "assets/Forest.scene.hasset", name: "Forest", ref: { kind: "head" } }));
+    await act(async () => {
+      await Promise.all([import("./source-control-branch-flow"), import("./source-control-revert-flow")]);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(screen.getByTestId("source-control-pull-comparing")).toBeTruthy();
+    expect(screen.queryByTestId("source-control-pull-confirm")).toBeNull();
+    expect(screen.queryByTestId("source-control-switch-confirm")).toBeNull();
+    expect(screen.queryByTestId("source-control-revert-confirm")).toBeNull();
+    expect(release).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("source-control-pull-comparing-back"));
+    await screen.findByTestId("source-control-pull-conflicts");
+    // Forest keeps its choice.
     expect(screen.getByTestId("source-control-pull-conflicts-reason").textContent).toBe("Choose a version for Rock.");
   });
 

@@ -23,8 +23,14 @@ export interface RevertRequest {
 /** The asset whose diff to show, with the versions to compare (HEAD and the working copy by default). */
 export type DiffRequest = Omit<DiffTarget, "base" | "compare"> & Partial<Pick<DiffTarget, "base" | "compare">>;
 
+/** A flow that rewrites working files; one runs at a time. */
+type RewriteFlow =
+  | { kind: "pull" }
+  | { kind: "revert"; request: RevertRequest }
+  | { kind: "switch"; branch: string };
+
 export interface SourceControlActions {
-  /** Saves or discards unsaved documents, confirms, then pulls (with Pull Conflicts when needed). */
+  /** Saves or discards unsaved documents, confirms, then pulls (with Pull Conflicts when needed). Ignored while a Pull, Revert or Switch Branch flow is open. */
   requestPull: () => void;
   /** Settles once the push (or its refusal) is in the snapshot. */
   push: () => Promise<void>;
@@ -37,9 +43,9 @@ export interface SourceControlActions {
   readonly commitRequest: number;
   /** Shows an asset's diff in the Source Control tab's Actors and Diff windows; History then follows that asset. */
   openDiff: (request: DiffRequest) => void;
-  /** Saves or discards the asset's unsaved edits, confirms, then writes `ref`'s version of it into the working copy; only a `.hasset` (`isAssetPath`). */
+  /** Saves or discards the asset's unsaved edits, confirms, then writes `ref`'s version of it into the working copy; only a `.hasset` (`isAssetPath`), and not while another rewrite flow is open. */
   requestRevert: (request: RevertRequest) => void;
-  /** Saves or discards unsaved documents, confirms, then checks out `branch` and reloads the files it changed. */
+  /** Saves or discards unsaved documents, confirms, then checks out `branch` and reloads the files it changed; not while another rewrite flow is open. */
   requestSwitchBranch: (branch: string) => void;
   /** Asks for a name, then starts that branch at HEAD and checks it out. */
   requestNewBranch: () => void;
@@ -55,15 +61,16 @@ const SourceControlDiffContext = createContext<SourceControlDiffService | null>(
 /**
  * Integrated mode's actions, shared by the status bar, the phone's More
  * Tools and the Changes window, so each runs the same Pull flow; and the
- * Source Control tab's open diff.
+ * Source Control tab's open diff. Pull, Revert and Switch Branch share one
+ * slot: while one of them is open (its hold included), the others and a
+ * second request of its own are ignored.
  */
 export function SourceControlActionsProvider({ children }: { children: ReactNode }) {
   const sync = useIntegratedSync();
   const { setActiveDocument, activateDockPanel } = useDocumentActions();
-  const [pullRequest, setPullRequest] = useState(0);
+  // One rewrite flow at a time: a request while one is mounted (Pull Conflicts' non-modal Compare leaves the status bar reachable) is ignored.
+  const [rewrite, setRewrite] = useState<{ key: number; flow: RewriteFlow | null }>({ key: 0, flow: null });
   const [commitRequest, setCommitRequest] = useState(0);
-  const [revert, setRevert] = useState<{ key: number; request: RevertRequest } | null>(null);
-  const [switchTo, setSwitchTo] = useState<{ key: number; branch: string } | null>(null);
   const [newBranchRequest, setNewBranchRequest] = useState(0);
   const [historyPath, setHistoryPath] = useState<string | null>(null);
   const diff = useMemo(() => new SourceControlDiffService(sync), [sync]);
@@ -84,14 +91,17 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
     if (path && isAssetPath(path)) setHistoryPath(path);
     showWindow("history");
   }, [showWindow]);
+  const startRewrite = useCallback((flow: RewriteFlow) => setRewrite((current) => (current.flow ? current : { key: current.key + 1, flow })), []);
+  const endRewrite = useCallback(() => setRewrite((current) => ({ key: current.key, flow: null })), []);
+  const requestPull = useCallback(() => startRewrite({ kind: "pull" }), [startRewrite]);
   const requestRevert = useCallback((request: RevertRequest) => {
     // Only an asset: a reverted project.json would reload the whole project, unsaved documents included.
-    if (!isAssetPath(request.path)) return;
-    setRevert((current) => ({ key: (current?.key ?? 0) + 1, request }));
-  }, []);
-  const requestSwitchBranch = useCallback((branch: string) => setSwitchTo((current) => ({ key: (current?.key ?? 0) + 1, branch })), []);
+    if (isAssetPath(request.path)) startRewrite({ kind: "revert", request });
+  }, [startRewrite]);
+  const requestSwitchBranch = useCallback((branch: string) => startRewrite({ kind: "switch", branch }), [startRewrite]);
+  const flow = rewrite.flow;
   const value = useMemo<SourceControlActions>(() => ({
-    requestPull: () => setPullRequest((request) => request + 1),
+    requestPull,
     push: () => sync.push(),
     refresh: () => sync.refresh(),
     openSourceControl,
@@ -106,24 +116,24 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
     requestNewBranch: () => setNewBranchRequest((request) => request + 1),
     openHistory,
     historyPath,
-  }), [commitRequest, historyPath, openDiff, openHistory, openSourceControl, requestRevert, requestSwitchBranch, sync]);
+  }), [commitRequest, historyPath, openDiff, openHistory, openSourceControl, requestPull, requestRevert, requestSwitchBranch, sync]);
   return (
     <SourceControlActionsContext.Provider value={value}>
       <SourceControlDiffContext.Provider value={diff}>
         {children}
-        {pullRequest > 0 ? (
+        {flow?.kind === "pull" ? (
           <Suspense fallback={null}>
-            <SourceControlPullFlow key={pullRequest} onDone={() => setPullRequest(0)} onCompare={openDiff} />
+            <SourceControlPullFlow key={rewrite.key} onDone={endRewrite} onCompare={openDiff} />
           </Suspense>
         ) : null}
-        {revert ? (
+        {flow?.kind === "revert" ? (
           <Suspense fallback={null}>
-            <SourceControlRevertFlow key={revert.key} request={revert.request} onDone={() => setRevert(null)} />
+            <SourceControlRevertFlow key={rewrite.key} request={flow.request} onDone={endRewrite} />
           </Suspense>
         ) : null}
-        {switchTo ? (
+        {flow?.kind === "switch" ? (
           <Suspense fallback={null}>
-            <SourceControlBranchFlow key={switchTo.key} branch={switchTo.branch} onDone={() => setSwitchTo(null)} />
+            <SourceControlBranchFlow key={rewrite.key} branch={flow.branch} onDone={endRewrite} />
           </Suspense>
         ) : null}
         {newBranchRequest > 0 ? (

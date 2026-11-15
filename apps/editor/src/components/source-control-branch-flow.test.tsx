@@ -172,4 +172,22 @@ describe("New Branch", () => {
     expect(service.getSnapshot().rows.map((row) => row.id)).toEqual(["assets/Forest.scene.hasset"]);
     expect(await service.localBranches()).toEqual(["feature/bridge", "main"]);
   });
+
+  it("is refused while a pull holds the documents, saying why, so Apply And Finish Pull never pulls a new branch", async () => {
+    const { service } = await integratedSync();
+    state.sync = service;
+    state.lock = { readOnly: true, reason: "Read-only while pulling", revision: 1 };
+    const onDone = vi.fn();
+    render(<NewBranchDialog onDone={onDone} />);
+    fireEvent.change(screen.getByTestId("source-control-new-branch-name"), { target: { value: "feature/bridge" } });
+    expect(screen.getByTestId("source-control-new-branch-reason").textContent).toBe("Read-only while pulling. Create the branch once that has finished.");
+    const create = screen.getByTestId("source-control-new-branch-create") as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.submit(create.closest("form")!);
+    });
+    expect(service.getSnapshot().branch).toBe("main");
+    expect(await service.localBranches()).toEqual(["main"]);
+    expect(onDone).not.toHaveBeenCalled();
+  });
 });
