@@ -68,6 +68,8 @@ The dialog sums up what Publish does: the repository it creates, the Git LFS set
 
 On iPad, iPhone and Android, only a project in Haptic's own storage can be published. On desktop, any project folder can.
 
+If Publish stops before it finishes (the app closes, or the host can't be reached), the project stays Off. On iPad, iPhone and Android you can publish it again; give the repository a new name if the first attempt already created one. On desktop the folder now has Git, so choose **Integrated** under **Mode** and push instead.
+
 ## Integrated mode
 
 ### The Changes window
@@ -79,7 +81,7 @@ In Integrated mode the **Source Control** tab opens on **Changes**, with **Locks
 - **Changes** lists each changed asset with its type, folder and **A** (added), **M** (modified) or **D** (deleted). A lock icon marks assets you have locked. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
 - **Incoming** lists the newest commits waiting to be pulled, with their author and age.
 
-Haptic reads changes after you save and when you come back to the app, and checks the host when you open the project, come back to the app, choose **Refresh** and after a push.
+Haptic reads changes after you save (while a game covers the editor, once you are back) and when you come back to the app, and checks the host when you open the project, come back to the app, choose **Refresh** and after a push.
 
 ### Commit and push
 
@@ -88,7 +90,7 @@ Haptic reads changes after you save and when you come back to the app, and check
 3. Keep **Push After Commit** on to send the commit at once, or turn it off to commit only on this device.
 4. Choose **Commit N Assets**.
 
-**Push** sends your commits. Before it does, Haptic checks the locks on what it sends and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in.
+**Push** sends your commits. Before it does, Haptic checks the locks on what it sends and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in. Haptic then checks the host for new commits; if that check fails (**Could Not Check For Changes**), the push still went through.
 
 If the host has moved on since your last pull, the push is refused: pull first.
 
@@ -98,9 +100,10 @@ If the host has moved on since your last pull, the push is refused: pull first.
 
 1. If documents have unsaved changes, choose **Save All** or **Discard** first.
 2. Confirm. A pull replaces files and cannot be undone.
-3. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing.
+3. **Pulling** covers the editor until the pull is done. Documents are read-only meanwhile, and Play and Simulate wait: the Output Log says why they didn't start.
+4. If an asset changed both on your device and on the branch, **Pull Conflicts** lists each one. Choose **Keep Mine** or **Take Theirs** for every asset; **Apply And Finish Pull** stays unavailable until each has a choice. **Cancel Pull** changes nothing.
 
-Open documents whose files the pull changed reload, as after any change on disk. An asset you kept stays as an uncommitted change, ready to commit and push.
+Open documents whose files the pull changed reload before you can edit again, as after any change on disk (the whole project reloads when project settings or many assets changed). An asset you kept stays as an uncommitted change, ready to commit and push.
 
 ### Repositories Haptic didn't publish
 

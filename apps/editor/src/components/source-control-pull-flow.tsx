@@ -127,22 +127,26 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
       hold.current = { lock: getAuthoringLock(), release };
     }
     const held = hold.current;
+    let result: PullResult | null = null;
     try {
-      const result: PullResult | null = await withProjectWrites(async () => {
+      result = await withProjectWrites(async () => {
         const pulled = await sync.pull(chosen ? conflictChoices(rows, chosen) : undefined);
         // In the same write-queue turn: a save queued behind the pull finds the reloaded documents.
         if (pulled && (pulled.kind === "fast-forward" || pulled.kind === "merged")) await applyPulledChanges(pulled.changedPaths, held);
         return pulled;
       });
-      if (result?.kind === "conflicts") {
-        setChoices(new Map());
-        setStep({ kind: "conflicts", conflicts: result.conflicts });
-        return;
-      }
-      done.current();
+    } catch (error) {
+      // The pull itself reports through the sync snapshot; a reload that failed leaves its changes to the next foreground rescan.
+      console.warn("[editor] Could not reload the pulled files", error);
     } finally {
       setBusy(false);
     }
+    if (result?.kind === "conflicts") {
+      setChoices(new Map());
+      setStep({ kind: "conflicts", conflicts: result.conflicts });
+      return;
+    }
+    done.current();
   };
 
   const saveFirst = async () => {

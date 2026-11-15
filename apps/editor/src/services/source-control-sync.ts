@@ -326,11 +326,8 @@ export class SourceControlSyncService {
   }
 
   /** Counts the commits on each side and lists the incoming ones. */
-  async fetch(revision = this.revision): Promise<void> {
-    await this.run("fetch", "Could Not Check For Changes", async ({ port, signal, update }) => {
-      const remote = await port.fetch({ signal });
-      update({ ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
-    }, revision);
+  fetch(): Promise<void> {
+    return this.fetchFor(this.revision);
   }
 
   /**
@@ -350,7 +347,7 @@ export class SourceControlSyncService {
     if (!committed) return false;
     await this.readLocal(revision);
     // Only while the project that committed is open: never another project's push.
-    if (push) await this.push(revision);
+    if (push) await this.pushFor(revision);
     return true;
   }
 
@@ -380,7 +377,12 @@ export class SourceControlSyncService {
    * with Release Locks After Push, this device's locks on pushed assets that
    * have no further change, then a fetch.
    */
-  async push(revision = this.revision): Promise<void> {
+  push(): Promise<void> {
+    return this.pushFor(this.revision);
+  }
+
+  /** The push of the project open at `revision`; nothing runs once another is open. */
+  private async pushFor(revision: number): Promise<void> {
     let pushed: string[] | null = null;
     await this.run("push", "Could Not Push", async ({ port, input, signal }) => {
       const outgoing = await port.outgoing();
@@ -400,7 +402,14 @@ export class SourceControlSyncService {
         await input.locks.releaseOwn(outgoing.filter((path) => !changed.has(path)));
       }, revision);
     }
-    await this.fetch(revision);
+    await this.fetchFor(revision);
+  }
+
+  private async fetchFor(revision: number): Promise<void> {
+    await this.run("fetch", "Could Not Check For Changes", async ({ port, signal, update }) => {
+      const remote = await port.fetch({ signal });
+      update({ ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
+    }, revision);
   }
 
   /**
@@ -465,7 +474,7 @@ export class SourceControlSyncService {
     }, revision, { rethrow: true });
     if (!published) throw new Error("The project closed while publishing.");
     await this.readLocal(revision);
-    await this.fetch(revision);
+    await this.fetchFor(revision);
   }
 
   private request(input: SyncConfigureInput, storage: ProjectStorage, revision: number): SyncPortRequest {
