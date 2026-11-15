@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   lockAuthoring: vi.fn<(reason: string) => () => void>(() => () => {}),
   writing: false,
   lock: null as { readOnly: true; reason: string; revision: number } | null,
+  unlocked: Object.freeze({ readOnly: false as const, reason: null, revision: 0 }),
 }));
 
 const headers: Record<string, { name: string; type: string; chunks: [] }> = {
@@ -31,7 +32,8 @@ vi.mock("../context/document-context", async () =>
     saveAll: state.saveAll,
     applyPulledChanges: state.applyPulledChanges,
     lockAuthoring: state.lockAuthoring,
-    ...(state.lock ? { getAuthoringLock: () => state.lock! } : {}),
+    // Read when called, as the document service answers: a lock can arrive between renders.
+    getAuthoringLock: () => state.lock ?? state.unlocked,
     withProjectWrites: async <T,>(work: () => Promise<T>) => {
       state.writing = true;
       try {
@@ -202,6 +204,24 @@ describe("New Branch", () => {
     expect(create.disabled).toBe(true);
     await act(async () => {
       fireEvent.submit(create.closest("form")!);
+    });
+    expect(service.getSnapshot().branch).toBe("main");
+    expect(await service.localBranches()).toEqual(["main"]);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("checks again on Create Branch, so a pull that took the documents since the dialog last drew still refuses it", async () => {
+    const { service } = await integratedSync();
+    state.sync = service;
+    const onDone = vi.fn();
+    render(<NewBranchDialog onDone={onDone} />);
+    fireEvent.change(screen.getByTestId("source-control-new-branch-name"), { target: { value: "feature/bridge" } });
+    const create = screen.getByTestId("source-control-new-branch-create") as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+    // The hold starts in the same moment as the click, before the dialog hears of it.
+    state.lock = { readOnly: true, reason: "Read-only while pulling", revision: 1 };
+    await act(async () => {
+      fireEvent.click(create);
     });
     expect(service.getSnapshot().branch).toBe("main");
     expect(await service.localBranches()).toEqual(["main"]);

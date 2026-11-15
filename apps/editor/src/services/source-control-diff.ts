@@ -175,7 +175,7 @@ export class SourceControlDiffService {
       if (!watching) return;
       watching = false;
       this.viewers -= 1;
-      if (this.viewers === 0) this.idleTimer = setTimeout(() => this.idle(), DIFF_IDLE_MS);
+      this.armIdle();
     };
   }
 
@@ -213,6 +213,11 @@ export class SourceControlDiffService {
   private disposeLoader(): void {
     void this.loader?.then((loader) => loader.dispose(), () => undefined);
     this.loader = null;
+  }
+
+  /** No window shows the diff and it holds a worker: free it `DIFF_IDLE_MS` from now (a closed diff holds none, so it waits for nothing). */
+  private armIdle(): void {
+    if (this.viewers === 0 && this.loader && this.idleTimer === null) this.idleTimer = setTimeout(() => this.idle(), DIFF_IDLE_MS);
   }
 
   private clearIdle(): void {
@@ -311,6 +316,7 @@ export class SourceControlDiffService {
     this.loadedFor = commitsShown(target, snapshot);
     this.rowsSeen = snapshot.rows;
     this.stamp = null;
+    this.stale = false;
     this.set({ ...this.state, phase: "loading", error: null });
     try {
       await whenEditorAwake(controller.signal);
@@ -331,6 +337,9 @@ export class SourceControlDiffService {
       if (this.running !== controller) return;
       this.running = null;
       this.set({ ...this.state, phase: "error", diff: null, error: error instanceof Error ? error.message : String(error) });
+    } finally {
+      // The last window may have gone while this created the worker.
+      this.armIdle();
     }
   }
 
