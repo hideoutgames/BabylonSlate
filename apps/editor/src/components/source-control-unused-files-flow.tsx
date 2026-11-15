@@ -45,6 +45,20 @@ function messageOf(error: unknown): string {
  * (a Texture encode may take minutes), **Cancel** ends it with nothing
  * removed; once files go it runs to the end.
  */
+
+function doneTitle(removed: UnusedFiles): string {
+  if (removed.paths.length > 0) return `Removed ${filesLabel(removed.paths.length)}`;
+  return removed.linkedBlobFolders ? "Nothing Removed" : "No Unused Files";
+}
+
+function doneMessage(removed: UnusedFiles): string {
+  if (removed.paths.length > 0) return `${bytesLabel(removed.bytes)} freed.`;
+  if (removed.linkedBlobFolders) {
+    return "A stored asset data folder is a symbolic link or holds one, so the same file can appear under two paths and Haptic cannot tell which files are unused.";
+  }
+  return "All stored asset data is used by an asset or by a commit that is not pushed yet.";
+}
+
 export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void }) {
   const sync = useIntegratedSync();
   const { dirtyDocuments, projectDirty } = useSaveState();
@@ -194,12 +208,8 @@ export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void })
         <AlertDialogContent data-testid="source-control-unused-done">
           {step.kind === "done" ? (
             <AlertDialogHeader>
-              <AlertDialogTitle>{step.removed.paths.length > 0 ? `Removed ${filesLabel(step.removed.paths.length)}` : "No Unused Files"}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {step.removed.paths.length > 0
-                  ? `${bytesLabel(step.removed.bytes)} freed.`
-                  : "All stored asset data is used by an asset or by a commit that is not pushed yet."}
-              </AlertDialogDescription>
+              <AlertDialogTitle>{doneTitle(step.removed)}</AlertDialogTitle>
+              <AlertDialogDescription>{doneMessage(step.removed)}</AlertDialogDescription>
             </AlertDialogHeader>
           ) : null}
           <AlertDialogFooter>

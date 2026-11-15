@@ -257,6 +257,21 @@ describe("Changes window", () => {
     expect(queued).toBe(1);
   });
 
+  it("says nothing was removed, and why, when a blob folder is a symbolic link", async () => {
+    const { service } = await integratedSync();
+    state.sync = service;
+    vi.spyOn(service, "findUnusedFiles").mockResolvedValue({ paths: [], bytes: 0, linkedBlobFolders: true });
+    renderPanel();
+    fireEvent.click(screen.getByTestId("changes-more"));
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("changes-remove-unused"));
+    });
+    const done = await screen.findByTestId("source-control-unused-done");
+    expect(done.textContent).toContain("Nothing Removed");
+    expect(done.textContent).toContain("symbolic link");
+    expect(done.textContent).not.toContain("No Unused Files");
+  });
+
   it("offers Cancel while the removal waits for other writers, which removes nothing, and none once files are being removed", async () => {
     let drain!: () => void;
     const drained = new Promise<void>((resolve) => { drain = resolve; });

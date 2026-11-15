@@ -117,7 +117,7 @@ export async function unusedLfsObjects(storage: ProjectStorage, candidates: read
   const inRoots = candidates.filter((path) => assetBlobFolder(path) === parentOf(path));
   if (inRoots.length === 0) return { paths: [], bytes: 0 };
   const kept = await keptBy(storage, new Set(inRoots.map(parentOf)), signal);
-  if (!kept) return { paths: [], bytes: 0 };
+  if (!kept) return { paths: [], bytes: 0, linkedBlobFolders: true };
   const paths: string[] = [];
   let bytes = 0;
   for (const path of inRoots) {

@@ -146,6 +146,8 @@ export interface SyncConfigureInput {
 export interface UnusedFiles {
   readonly paths: readonly string[];
   readonly bytes: number;
+  /** Nothing was judged: a blob folder is, sits under or holds a symbolic link, so its files may have two paths. */
+  readonly linkedBlobFolders?: true;
 }
 
 /** Why saves and imports are refused while unused files are removed. */

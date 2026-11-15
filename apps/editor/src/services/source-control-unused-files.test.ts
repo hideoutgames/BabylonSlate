@@ -272,20 +272,20 @@ describe("Remove Unused Files", () => {
 
     // The plugin's folder is a link to the project's.
     await symlink(join(project, "assets", ".blobs"), join(project, "plugins", "Props", "assets", ".blobs"));
-    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0 });
+    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0, linkedBlobFolders: true });
 
     // The project's folder is a link to the plugin's.
     await rm(join(project, "plugins", "Props", "assets", ".blobs"));
     await rename(join(project, "assets", ".blobs"), join(project, "plugins", "Props", "assets", ".blobs"));
     await symlink(join(project, "plugins", "Props", "assets", ".blobs"), join(project, "assets", ".blobs"));
-    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0 });
+    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0, linkedBlobFolders: true });
 
     // One blob file is a link to another folder's.
     await rm(join(project, "assets", ".blobs"));
     await rename(join(project, "plugins", "Props", "assets", ".blobs"), join(project, "assets", ".blobs"));
     await mkdir(join(project, "plugins", "Props", "assets", ".blobs"));
     await symlink(join(project, "assets", ".blobs", crate.sha), join(project, "plugins", "Props", "assets", ".blobs", crate.sha));
-    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0 });
+    expect(await unusedLfsObjects(storage, [own, plugin], signal)).toEqual({ paths: [], bytes: 0, linkedBlobFolders: true });
     expect(await storage.readBinary(plugin)).toEqual(crate.blob);
   });
 
