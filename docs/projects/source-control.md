@@ -120,9 +120,9 @@ Large asset data that no asset uses any more stays on your device: what an edit 
 
 1. Save or discard your changes first: Haptic doesn't remove files while documents have unsaved changes.
 2. Haptic lists what no asset in the project, its plugins or its extensions uses, and confirms with the number of files and their size. Removing them cannot be undone.
-3. **Remove** removes them. Saves and imports wait until it is done.
+3. **Remove** removes them. Saves and imports wait until it is done. If a save, import or Texture encode is still running, Haptic waits for it first; **Cancel** stops while it waits, with nothing removed. Once files are being removed, it finishes.
 
-Haptic keeps every file an asset uses, every file that is part of a commit (data you committed is never removed), and data that only a commit you haven't pushed yet holds, on any branch: until you push, your device has the only copy. Data of commits on the host can be downloaded again when a branch, pull or revert needs it.
+Haptic keeps every file an asset uses, every file that is part of a commit (data you committed is never removed), and data that only a commit you haven't pushed yet holds, on any branch: until you push, your device has the only copy. It also keeps data a committed version of an asset uses when that commit doesn't hold it, as when another Git app committed the asset without its data: your device has the only copy, and comparing or reverting to that version needs it. Data of commits on the host can be downloaded again when a branch, pull or revert needs it. On desktop, while a folder of asset data is a symbolic link (or sits inside one, or holds one), Haptic removes nothing, since one file may then belong to two folders.
 
 ### Pull
 
@@ -226,7 +226,8 @@ If you open a project in Integrated or Manual mode on a device that has no accou
 
 ## Working with locks
 
-- **Your edits:** with Auto-Lock on, the first change to a document locks its file. If locking fails, the edit still applies and an **Unlocked** banner warns you.
+- **Your edits:** with Auto-Lock on, the first change to a document locks its file. If locking fails, the edit still applies and an **Unlocked** banner warns you. In Integrated mode locks belong to the branch you are on, so until Haptic has opened the repository and knows that branch, locking waits: edits made meanwhile are locked once it does, and **Release** says why it waits.
+- **Switching branches:** on a host that keeps locks per branch, your locks on the branch you switched away from stay in **Locks**, marked **On** and the branch's name. **Release** releases them there, and **Release Locks After Push** releases them too when the push sent their assets.
 - **Someone else's lock:** the document opens read-only with a **Locked by** banner showing the owner and how long ago they locked it. Choose **Edit Anyway** only after talking to them; your changes may conflict.
 - **Content Browser:** locked assets show a lock badge, **Locked By You** or **Locked By** the owner's name.
 - **Renaming and moving:** your locks move with the file. Haptic refuses to rename, move or delete a file someone else has locked.
