@@ -61,7 +61,8 @@ test.describe("Source Control in Integrated mode", () => {
     await page.goto("/?test=1");
     await page.waitForFunction(() => window.crossOriginIsolated, undefined, { timeout: 15_000 });
     await page.getByTestId("create-project").click();
-    await page.getByTestId("create-project-blank").click();
+    // Basic 3D: blobs through Git LFS, and whatever the editor writes as it opens while Publish runs.
+    await page.getByTestId("create-project-empty").click();
     await page.getByTestId("create-project-name").fill("Remote Game");
     await page.getByTestId("create-project-hosting-remote").click();
     // Signing in to the fake GitHub from the New Project dialog, without leaving it.
@@ -69,13 +70,18 @@ test.describe("Source Control in Integrated mode", () => {
     await page.getByTestId("source-control-link-accept").click();
     await expect(page.getByTestId("create-project-remote-host")).toContainText("GitHub · test-user", { timeout: 30_000 });
     await expect(page.getByTestId("create-project-remote-name")).toHaveValue("remote-game");
+    // An organization as the owner; choosing it in the form creates nothing yet.
+    await page.getByTestId("create-project-remote-owner").click();
+    await page.getByRole("option", { name: "haptic-studio" }).click();
+    await expect(page.getByTestId("create-project-remote-owner")).toContainText("haptic-studio");
+    await expect(page.getByTestId("create-project-dialog")).toBeVisible();
     await expect(page.getByTestId("create-project-submit")).toBeEnabled({ timeout: 30_000 });
     await page.getByTestId("create-project-submit").click();
     await waitForEditorInteractive(page);
     // Pushed whole: nothing written between the project opening and its first commit is left over.
     await expect(page.getByTestId("status-source-control-changes")).toHaveText("0 Changes", { timeout: 30_000 });
     await expect.poll(() => settled(page), { timeout: 30_000 }).toEqual({ active: true, ahead: 0, behind: 0, rows: [], busy: false });
-    expect(await remoteText(page, "project.json", "https://github.com/test-user/remote-game.git")).toContain('"integrated"');
+    expect(await remoteText(page, "project.json", "https://github.com/haptic-studio/remote-game.git")).toContain('"integrated"');
     await expect(page.getByTestId("source-control-publish-notice")).toHaveCount(0);
   });
 
