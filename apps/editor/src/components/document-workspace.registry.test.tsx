@@ -38,7 +38,10 @@ vi.mock("../context/audio-reverb-bake-context", () => ({
   AudioReverbBakeProvider: state.passthrough,
 }));
 vi.mock("../context/document-workspace-context", () => ({
-  DocumentWorkspaceProvider: state.passthrough,
+  // Marks which document a dock belongs to, so a window can tell when its document is behind another.
+  DocumentWorkspaceProvider: ({ documentId, children }: { documentId: string; children: ReactNode }) => (
+    <div data-workspace-document={documentId}>{children}</div>
+  ),
 }));
 vi.mock("../context/data-definition-editing-context", () => ({
   DataDefinitionEditingProvider: state.passthrough,
@@ -141,6 +144,8 @@ describe("Source Control tab", () => {
     render(<DocumentWorkspace />);
     const workspace = screen.getByTestId("document-workspace-source-control");
     expect(workspace.querySelector("[data-testid='prefab-docks']")?.getAttribute("data-kind")).toBe("source-control");
+    // Its windows know the tab's document, so the Actors and Diff windows count as hidden behind another tab.
+    expect(workspace.querySelector("[data-workspace-document='source-control'] [data-testid='prefab-docks']")).toBeTruthy();
   });
 });
 

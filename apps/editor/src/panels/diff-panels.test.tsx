@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SOURCE_CONTROL_ID } from "@haptic/core";
 import { SourceControlActionsProvider, useSourceControlDiff } from "../components/source-control-actions";
+import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SourceControlDiffPickers } from "../components/source-control-diff-pickers";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import { sceneActor, sceneAsset, testAsset } from "../testing/diff-assets";
@@ -21,12 +23,14 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
   openDocument: vi.fn(async () => {}),
+  activeDocumentId: null as string | null,
 }));
 
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     ...(state.sync ? { sourceControlSync: state.sync } : {}),
     openDocument: state.openDocument,
+    activeDocumentId: state.activeDocumentId,
   })),
 );
 
@@ -35,6 +39,7 @@ afterEach(() => {
   state.sync?.dispose();
   state.sync = null;
   state.openDocument.mockClear();
+  state.activeDocumentId = null;
 });
 
 const PATH = "assets/Forest.scene.hasset";
@@ -274,6 +279,30 @@ describe("Source Control diff windows", () => {
     act(() => actors.show(true));
     await waitFor(() => expect(loads()).toBe(2));
     await waitFor(() => expect(screen.getByTestId("diff-counts").textContent).toBe("0 Added1 Removed1 Changed"));
+  });
+
+  it("counts the windows as hidden while another document's tab is in front of the Source Control tab", async () => {
+    const { service } = await forest();
+    const reads = vi.spyOn(service, "readWorking");
+    state.activeDocumentId = "scene:assets/Forest.scene.hasset";
+    const tab = () => (
+      <SourceControlActionsProvider>
+        <CaptureDiff />
+        <DocumentWorkspaceProvider documentId={SOURCE_CONTROL_ID}>
+          <DiffPanel {...({ api: dockApi(true) } as unknown as IDockviewPanelProps)} />
+        </DocumentWorkspaceProvider>
+      </SourceControlActionsProvider>
+    );
+    const view = render(tab());
+    act(() => diffService!.open({ path: PATH, name: "Forest", type: "Scene" }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(reads).not.toHaveBeenCalled();
+    state.activeDocumentId = SOURCE_CONTROL_ID;
+    view.rerender(tab());
+    await screen.findByTestId("diff-item-name");
+    expect(reads.mock.calls.filter(([path]) => path === PATH)).toHaveLength(1);
   });
 
   it("shows why a version cannot be compared", async () => {
