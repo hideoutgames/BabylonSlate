@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleAlertIcon, TriangleAlertIcon } from "lucide-react";
 import type { PullChoice, PullConflict, PullResult } from "@haptic/source-control";
 import { resolveTypeVisual, TypeVisualIcon } from "@haptic/editor-kit";
@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@haptic/ui/components/dialog";
+import { Progress } from "@haptic/ui/components/progress";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import {
   useDocumentActions,
@@ -30,15 +31,21 @@ import {
   useRegistryState,
   useSaveState,
 } from "../context/document-context";
-import { commitsLabel } from "../lib/source-control-labels";
+import type { AuthoringHold } from "../context/document-context-types";
+import { commitsLabel, transferLabel } from "../lib/source-control-labels";
 import { conflictChoices, groupConflicts, registryChangeLookup, type ConflictRow } from "../lib/source-control-changes";
+import { useTransferBytes } from "../lib/transfer-bytes";
+import type { SyncSnapshot } from "../services/source-control-sync";
 
 type Step =
   | { kind: "blocked"; reason: string }
   | { kind: "unsaved" }
   | { kind: "confirm" }
-  | { kind: "running" }
+  | { kind: "pulling" }
   | { kind: "conflicts"; conflicts: PullConflict[] };
+
+/** Why documents are read-only while a pull runs; Play and Simulation name it when they refuse to start. */
+const PULLING_REASON = "Read-only while pulling";
 
 function sideLabel(row: ConflictRow): string {
   if (row.theirs === "deleted") return "Deleted There, Changed Here";
@@ -46,12 +53,25 @@ function sideLabel(row: ConflictRow): string {
   return "Changed Here And There";
 }
 
+/** The running pull with its bytes, then the reload of what it wrote. */
+function PullProgress({ snapshot }: { snapshot: SyncSnapshot }) {
+  const transfer = transferLabel(snapshot, useTransferBytes(useIntegratedSync().transfer));
+  return (
+    <div role="status" className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <span>{transfer ?? "Loading The Pulled Files…"}</span>
+      <Progress value={null} aria-label="Pulling" />
+    </div>
+  );
+}
+
 /**
  * Pull, as the status bar, More Tools and the Changes window start it: unsaved
  * documents are saved or discarded first, the pull is confirmed (it cannot be
  * undone), then it fast-forwards or merges, or asks for a version of every
- * asset changed on both sides (Pull Conflicts). The pulled files then reload
- * as after an external change.
+ * asset changed on both sides (Pull Conflicts). From the confirmation until
+ * the pulled files are reloaded (as after an external change), documents are
+ * read-only, so no edit, Play or Simulation meets a half-pulled project, and
+ * the modal Pulling step covers the editor.
  */
 export default function SourceControlPullFlow({ onDone }: { onDone: () => void }) {
   const sync = useIntegratedSync();
@@ -65,6 +85,7 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
     withProjectWrites,
     applyPulledChanges,
     getAuthoringLock,
+    lockAuthoring,
   } = useDocumentActions();
   const unsaved = dirtyDocuments.length > 0 || projectDirty;
   const [step, setStep] = useState<Step>(() => {
@@ -75,8 +96,19 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
   });
   const [busy, setBusy] = useState(false);
   const [choices, setChoices] = useState<ReadonlyMap<string, PullChoice>>(new Map());
-  const done = useRef(onDone);
-  done.current = onDone;
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  /** The documents' read-only hold, from the confirmation until the pulled files are reloaded. */
+  const hold = useRef<AuthoringHold | null>(null);
+  const releaseHold = useCallback(() => {
+    hold.current?.release();
+    hold.current = null;
+  }, []);
+  useEffect(() => releaseHold, [releaseHold]);
+  const done = useRef(() => {
+    releaseHold();
+    onDoneRef.current();
+  });
   const branch = snapshot.branch;
   const lookup = useMemo(() => registryChangeLookup(assetRegistry), [assetRegistry]);
   const rows = useMemo(() => (step.kind === "conflicts" ? groupConflicts(step.conflicts, lookup) : []), [lookup, step]);
@@ -86,23 +118,28 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
     if (step.kind === "unsaved" && !unsaved && !busy) setStep({ kind: "confirm" });
   }, [busy, step.kind, unsaved]);
 
-  const finish = async (result: PullResult | null) => {
-    if (result?.kind === "conflicts") {
-      setChoices(new Map());
-      setStep({ kind: "conflicts", conflicts: result.conflicts });
-      return;
-    }
-    if (result && result.kind !== "up-to-date") await applyPulledChanges(result.changedPaths);
-    done.current();
-  };
-
   const pull = async (chosen?: ReadonlyMap<string, PullChoice>) => {
     setBusy(true);
     // Applying choices keeps Pull Conflicts open (disabled) until the pull settles.
-    if (!chosen) setStep({ kind: "running" });
+    if (!chosen) setStep({ kind: "pulling" });
+    if (!hold.current) {
+      const release = lockAuthoring(PULLING_REASON);
+      hold.current = { lock: getAuthoringLock(), release };
+    }
+    const held = hold.current;
     try {
-      const result = await withProjectWrites(() => sync.pull(chosen ? conflictChoices(rows, chosen) : undefined));
-      await finish(result);
+      const result: PullResult | null = await withProjectWrites(async () => {
+        const pulled = await sync.pull(chosen ? conflictChoices(rows, chosen) : undefined);
+        // In the same write-queue turn: a save queued behind the pull finds the reloaded documents.
+        if (pulled && (pulled.kind === "fast-forward" || pulled.kind === "merged")) await applyPulledChanges(pulled.changedPaths, held);
+        return pulled;
+      });
+      if (result?.kind === "conflicts") {
+        setChoices(new Map());
+        setStep({ kind: "conflicts", conflicts: result.conflicts });
+        return;
+      }
+      done.current();
     } finally {
       setBusy(false);
     }
@@ -187,6 +224,17 @@ export default function SourceControlPullFlow({ onDone }: { onDone: () => void }
               Pull
             </AlertDialogAction>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* No way to close it: it ends when the pulled files are loaded. */}
+      <AlertDialog open={step.kind === "pulling"}>
+        <AlertDialogContent data-testid="source-control-pull-running">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Pulling From {branch}</AlertDialogTitle>
+            <AlertDialogDescription>Documents are read-only until the pulled files are loaded.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <PullProgress snapshot={snapshot} />
         </AlertDialogContent>
       </AlertDialog>
 

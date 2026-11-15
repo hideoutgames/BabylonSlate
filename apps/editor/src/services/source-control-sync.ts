@@ -11,6 +11,7 @@ import {
   type SyncErrorKind,
   type SyncPort,
 } from "@haptic/source-control";
+import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
 import { commitPaths, groupChanges, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
@@ -178,6 +179,11 @@ export class SourceControlSyncService {
   private input: SyncConfigureInput | null = null;
   private factory: SyncPortFactory | null = null;
   private statusTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The app is in the background. */
+  private hidden = false;
+  /** A status came due while away; it runs once the editor and the app are back. */
+  private statusHeld = false;
+  private wake: (() => void) | null = null;
   /** Operations run one at a time, so the snapshot always follows the last one. */
   private queue: Promise<unknown> = Promise.resolve();
   /** The running operation's cancel. */
@@ -194,9 +200,9 @@ export class SourceControlSyncService {
 
   readonly getSnapshot = (): SyncSnapshot => this.snapshot;
 
-  /** True while a debounced status waits; tests check that nothing is left scheduled. */
+  /** True while a debounced or held status waits; tests check that nothing is left scheduled. */
   get statusPending(): boolean {
-    return this.statusTimer !== null;
+    return this.statusTimer !== null || this.statusHeld;
   }
 
   /**
@@ -256,6 +262,7 @@ export class SourceControlSyncService {
     this.running?.abort();
     this.running = null;
     this.clearTimer();
+    this.dropHeldStatus();
     this.port = null;
     this.storage = null;
     this.identity = "";
@@ -273,19 +280,35 @@ export class SourceControlSyncService {
     this.stop();
   }
 
-  /** An editor save changed files: one status once the burst settles. */
+  /**
+   * An editor save changed files: one status once the burst settles. While a
+   * game covers the editor (`editorQuiet`) or the app is hidden, the status
+   * waits and runs once on return.
+   */
   noteSaved(): void {
     if (!this.port) return;
+    if (this.away()) {
+      this.holdStatus();
+      return;
+    }
     this.clearTimer();
     this.statusTimer = setTimeout(() => {
       this.statusTimer = null;
-      void this.refreshStatus();
+      if (this.away()) this.holdStatus();
+      else void this.refreshStatus();
     }, STATUS_DEBOUNCE_MS);
+  }
+
+  /** The app went to the background or came back (the editor-quiet flag is read directly). */
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+    this.resumeStatus();
   }
 
   /** Status from file stats; unchanged files are never read. */
   async refreshStatus(): Promise<void> {
     this.clearTimer();
+    this.dropHeldStatus();
     await this.run(null, "Could Not Read Changes", async ({ port, input, update }) => {
       const status = await port.status();
       update({ branch: status.branch, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true });
@@ -530,6 +553,29 @@ export class SourceControlSyncService {
   private clearTimer(): void {
     if (this.statusTimer !== null) clearTimeout(this.statusTimer);
     this.statusTimer = null;
+  }
+
+  private away(): boolean {
+    return this.hidden || editorQuiet();
+  }
+
+  /** A status came due while away: no timer runs; it waits for the editor and the app to be back. */
+  private holdStatus(): void {
+    this.clearTimer();
+    this.statusHeld = true;
+    this.wake ??= subscribeEditorQuiet(() => this.resumeStatus());
+  }
+
+  private resumeStatus(): void {
+    if (!this.statusHeld || this.away()) return;
+    this.dropHeldStatus();
+    this.noteSaved();
+  }
+
+  private dropHeldStatus(): void {
+    this.statusHeld = false;
+    this.wake?.();
+    this.wake = null;
   }
 
   private set(next: SyncSnapshot): void {

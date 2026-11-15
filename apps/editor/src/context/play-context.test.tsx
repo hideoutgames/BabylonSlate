@@ -339,6 +339,41 @@ it("cancels or plays without saving from the Unsaved Changes prompt", async () =
 });
 
 
+it("starts neither Play nor a Simulation while an editor operation holds the documents read-only (a Pull)", async () => {
+  const scene = {
+    id: "scene:assets/Main.scene.hasset",
+    ref: { kind: "scene", path: "assets/Main.scene.hasset", label: "Main" },
+    content: createDefaultScene(),
+    dirty: false,
+  };
+  const lockAuthoringWrites = vi.fn(() => ({ ready: Promise.resolve(true), release: () => {} }));
+  host.documents = {
+    ...host.noProject,
+    openDocuments: [scene],
+    activeDocumentId: scene.id,
+    getAuthoringLock: () => ({ readOnly: true, reason: "Read-only while pulling", revision: 1 }),
+    lockAuthoringWrites,
+  };
+  let controls!: ReturnType<typeof usePlay>;
+  function PlayConsumer() {
+    controls = usePlay();
+    return null;
+  }
+  function LogConsumer() {
+    const { lines } = useOutputLog();
+    return <output data-testid="logs">{lines.join("\n")}</output>;
+  }
+  render(<PlayProvider><PlayConsumer /><LogConsumer /></PlayProvider>);
+  act(() => { controls.registerSimulationViewport({ documentId: scene.id, host: document.body, suspend: async () => {}, restore() {} }); });
+  await act(async () => { await controls.requestPlay({ saveChoice: "skip" }); });
+  await act(async () => { await controls.requestSimulate(); });
+  expect(controls.sessionState.generation).toBe(0);
+  expect(lockAuthoringWrites).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.getByTestId("logs").textContent).toBe(
+    "Play did not start: Read-only while pulling.\nSimulation did not start: Read-only while pulling.",
+  ));
+});
+
 it("cancels Simulation before save admission drains without touching its scene or starting a viewport", async () => {
   const scene = {
     id: "scene:assets/Main.scene.hasset",

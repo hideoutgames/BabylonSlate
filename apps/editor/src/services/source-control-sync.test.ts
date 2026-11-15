@@ -3,6 +3,7 @@ import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, type SourceControlMode } from 
 import { GITATTRIBUTES_LFS_RULE, SyncError, type FileLock, type SyncPort } from "@haptic/source-control";
 import { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { setEditorQuiet } from "../lib/editor-quiet";
 import type { ChangeLookup } from "../lib/source-control-changes";
 import { SourceControlSyncService, STATUS_DEBOUNCE_MS, type SyncConfigureInput, type SyncPortFactory } from "./source-control-sync";
 
@@ -111,6 +112,30 @@ describe("SourceControlSyncService", () => {
     expect(spied.status).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
     expect(service.statusPending).toBe(false);
+  });
+
+  it.each([
+    ["a game covers the editor", (_service: SourceControlSyncService, away: boolean) => setEditorQuiet(away)],
+    ["the app is in the background", (service: SourceControlSyncService, away: boolean) => service.setHidden(away)],
+  ])("holds a status due while %s and reads it once on return", async (_name, setAway) => {
+    const { service, input, spied } = await setup();
+    await service.configure(input("integrated"));
+    vi.useFakeTimers();
+    try {
+      spied.status.mockClear();
+      // Play's Save All, just before the game covers the editor.
+      service.noteSaved();
+      setAway(service, true);
+      service.noteSaved();
+      await vi.advanceTimersByTimeAsync(STATUS_DEBOUNCE_MS * 4);
+      expect(spied.status).not.toHaveBeenCalled();
+      setAway(service, false);
+      await vi.advanceTimersByTimeAsync(STATUS_DEBOUNCE_MS);
+      expect(spied.status).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      setAway(service, false);
+    }
   });
 
   it("commits the chosen asset with its blob and pushes after", async () => {

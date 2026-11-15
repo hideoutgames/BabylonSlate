@@ -10,7 +10,9 @@ const state = vi.hoisted(() => ({
   dirty: [] as OpenDocument[],
   saveAll: vi.fn(async () => true),
   reloadDocs: vi.fn<(paths: string[]) => Promise<void>>(async () => {}),
-  applyPulledChanges: vi.fn<(paths: readonly string[]) => Promise<void>>(async () => {}),
+  applyPulledChanges: vi.fn<(paths: readonly string[], hold?: { release: () => void }) => Promise<void>>(async () => {}),
+  lockAuthoring: vi.fn<(reason: string) => () => void>(() => () => {}),
+  withProjectWrites: null as (<T>(work: () => Promise<T>) => Promise<T>) | null,
   writes: 0,
   lock: null as { readOnly: true; reason: string; revision: number } | null,
 }));
@@ -29,10 +31,11 @@ vi.mock("../context/document-context", async () =>
     saveAll: state.saveAll,
     confirmExternalChangeReloadDocs: state.reloadDocs,
     applyPulledChanges: state.applyPulledChanges,
+    lockAuthoring: state.lockAuthoring,
     ...(state.lock ? { getAuthoringLock: () => state.lock! } : {}),
     withProjectWrites: async <T,>(work: () => Promise<T>) => {
       state.writes += 1;
-      return work();
+      return state.withProjectWrites ? state.withProjectWrites(work) : work();
     },
   })),
 );
@@ -43,7 +46,10 @@ afterEach(() => {
   state.dirty = [];
   state.saveAll.mockClear();
   state.reloadDocs.mockClear();
-  state.applyPulledChanges.mockClear();
+  state.applyPulledChanges.mockReset();
+  state.lockAuthoring.mockReset();
+  state.lockAuthoring.mockImplementation(() => () => {});
+  state.withProjectWrites = null;
   state.writes = 0;
   state.lock = null;
 });
@@ -80,7 +86,56 @@ describe("Pull", () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(state.writes).toBe(1);
     expect(await storage.readText("assets/Rock.texture.hasset")).toBe("R2");
-    expect(state.applyPulledChanges).toHaveBeenCalledWith(["assets/Rock.texture.hasset"]);
+    expect(state.applyPulledChanges).toHaveBeenCalledWith(["assets/Rock.texture.hasset"], expect.objectContaining({ release: expect.any(Function) }));
+  });
+
+  it("holds the documents read-only behind a Pulling step until the pulled files are reloaded, in the same write-queue turn", async () => {
+    const { service, remote, port } = await integratedSync();
+    state.sync = service;
+    remote.commit({ "assets/Rock.texture.hasset": "R2" }, "Teammate");
+    await service.fetch();
+    const events: string[] = [];
+    let writing = false;
+    state.lockAuthoring.mockImplementation((reason: string) => {
+      events.push(`lock: ${reason}`);
+      // As the document service's: a repeated release is harmless.
+      let held = true;
+      return () => {
+        if (held) events.push("release");
+        held = false;
+      };
+    });
+    state.withProjectWrites = async <T,>(work: () => Promise<T>) => {
+      writing = true;
+      try {
+        return await work();
+      } finally {
+        writing = false;
+      }
+    };
+    state.applyPulledChanges.mockImplementation(async (paths, hold) => {
+      events.push(`reload ${paths.join(", ")}${writing ? " in the write queue" : ""}`);
+      hold?.release();
+    });
+    let finishPull!: () => void;
+    const pulled = new Promise<void>((resolve) => { finishPull = resolve; });
+    const original = port.pull.bind(port);
+    vi.spyOn(port, "pull").mockImplementation(async (input) => {
+      await pulled;
+      return original(input);
+    });
+    const onDone = vi.fn();
+    render(<SourceControlPullFlow onDone={onDone} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-pull-confirm-action"));
+    });
+    expect((await screen.findByTestId("source-control-pull-running")).textContent).toContain("Pulling");
+    expect(events).toEqual(["lock: Read-only while pulling"]);
+    await act(async () => {
+      finishPull();
+    });
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(events).toEqual(["lock: Read-only while pulling", "reload assets/Rock.texture.hasset in the write queue", "release"]);
   });
 
   it("refuses to start while Play holds the documents, naming why", async () => {
@@ -135,7 +190,7 @@ describe("Pull", () => {
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(await storage.readText("assets/Rock.texture.hasset")).toBe("R-theirs");
     expect(await storage.readText("assets/Forest.scene.hasset")).toBe("F-mine");
-    expect(state.applyPulledChanges).toHaveBeenCalledWith(["assets/Rock.texture.hasset"]);
+    expect(state.applyPulledChanges).toHaveBeenCalledWith(["assets/Rock.texture.hasset"], expect.objectContaining({ release: expect.any(Function) }));
     // Kept: Forest is still an uncommitted change.
     expect(service.getSnapshot().rows.map((row) => row.name)).toEqual(["Forest"]);
   });

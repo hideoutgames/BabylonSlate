@@ -152,6 +152,8 @@ export function useSourceControlSync({
     const detachQuiet = subscribeEditorQuiet(apply);
     const detachLifecycle = attachLifecyclePause((paused) => {
       hidden = paused;
+      // A status due while hidden waits; the foreground refresh below reads it anyway.
+      sourceControlSync.setHidden(paused);
       // Coming back to the app rescans the project, once the editor is back too.
       if (!paused) rescanPending = true;
       apply();

@@ -17,6 +17,7 @@ import {
   appendJournalLines,
   type AssetLoadScope,
   type AssetLoadPriority,
+  type AssetRegistry,
   type MigrationPending,
 } from "@haptic/assets";
 import {
@@ -328,9 +329,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   });
   // Asset writes that are not saves (a new asset, an import, a move or delete,
   // a Texture encode) advance the registry: Integrated status follows them too.
+  // A remount (a new registry) only re-read the files: the foreground refresh,
+  // the pull or the project open that remounted it reads the status itself.
+  const statusRegistryRef = useRef<AssetRegistry | null>(null);
   useEffect(() => {
-    sourceControlSync.noteSaved();
-  }, [registryEpoch, sourceControlSync]);
+    const registry = projectService.registry;
+    const remounted = registry !== statusRegistryRef.current;
+    statusRegistryRef.current = registry;
+    if (!remounted) sourceControlSync.noteSaved();
+  }, [projectService, registryEpoch, sourceControlSync]);
   /** Every editor save ends here: the change snapshot is recaptured and Integrated status runs once the burst settles. */
   const afterEditorSave = useCallback(async () => {
     await captureMtimeSnapshot();
@@ -428,7 +435,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const refreshAssetRegistry = useCallback(async () => {
     await projectService.remountRegistry();
     noteAssetsCreated();
-  }, [noteAssetsCreated, projectService]);
+    // It follows the editor's own writes (imports, new assets, renames), which the remount hides from the status trigger above.
+    sourceControlSync.noteSaved();
+  }, [noteAssetsCreated, projectService, sourceControlSync]);
 
   const subscribeDocumentIdentity = useCallback(
     (listener: DocumentIdentityListener) =>

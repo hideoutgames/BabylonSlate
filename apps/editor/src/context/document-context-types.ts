@@ -43,13 +43,23 @@ import type { GitConfigPrefill } from "@haptic/source-control";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ListedProject, UpdateListedProjectOptions } from "../lib/listed-projects";
 import type { AssetThumbnailWriteIdentity } from "../lib/asset-thumbnail-revision";
-import type { DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
+import type { DocumentAuthoringLock, DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { PlayScriptCompileOptions } from "../services/play-content-service";
 import type { PluginImportResult, ProjectService } from "../services/project-service";
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import type { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
+
+/**
+ * An editor operation's read-only lock on the documents (`lockAuthoring`) and
+ * the lock state it saw right after taking it: work done for that operation
+ * may still change documents while the lock state is exactly this one.
+ */
+export interface AuthoringHold {
+  readonly lock: DocumentAuthoringLock;
+  release(): void;
+}
 
 export interface CloneProjectRequest {
   repositoryUrl: string;
@@ -374,11 +384,13 @@ export interface DocumentContextValue {
    */
   withProjectWrites: <T>(work: () => Promise<T>) => Promise<T>;
   /**
-   * A pull wrote `paths`: rescans the registry and reloads open documents
-   * (the whole project when `project.json` or many files changed) as after an
-   * external change, without asking, then recaptures the change snapshot.
+   * A pull wrote `paths` while `hold` kept the documents read-only: rescans
+   * the registry and classifies the changes as the foreground rescan does,
+   * reloads the whole project or the clean changed documents without asking,
+   * releasing `hold` in the same step, and leaves changed documents with
+   * unsaved edits to the external-change prompt. Releases `hold` in any case.
    */
-  applyPulledChanges: (paths: readonly string[]) => Promise<void>;
+  applyPulledChanges: (paths: readonly string[], hold: AuthoringHold) => Promise<void>;
   externalChangePrompt: ExternalChangeClassification | null;
   confirmExternalChangeReloadProject: () => Promise<void>;
   confirmExternalChangeReloadDocs: (paths: string[]) => Promise<void>;
