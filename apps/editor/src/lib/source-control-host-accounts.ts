@@ -1,11 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Github as GithubIcon, Gitlab as GitlabIcon, LinkIcon } from "lucide-react";
+import { isOk } from "@haptic/core";
 import {
   GITHUB_ORIGIN,
   GITLAB_ORIGIN,
   type HostCredential,
 } from "@haptic/source-control";
-import { hostApiFor, type HostApi } from "@haptic/source-control/host-api";
+import { hostApiFor, type HostApi, type HostOwner } from "@haptic/source-control/host-api";
 import type { SourceControlAccounts } from "../services/source-control-accounts";
 import { useSourceControlCredentials } from "./use-source-control-credentials";
 
@@ -35,6 +36,27 @@ export function useHostAccount(origin: string | null): HostAccount {
     [accounts, credential],
   );
   return { accounts, credential, api };
+}
+
+/**
+ * Where Publish can create a repository with `api` (`HostApi.owners`: the
+ * signed-in user first, then organizations or groups); null while loading or
+ * without an API, with the error when the user cannot be read.
+ */
+export function useHostOwners(api: HostApi | null): { owners: HostOwner[] | null; error: string | null } {
+  const [loaded, setLoaded] = useState<{ api: HostApi; owners: HostOwner[] | null; error: string | null } | null>(null);
+  useEffect(() => {
+    if (!api) return;
+    let alive = true;
+    void api.owners().then((result) => {
+      if (alive) setLoaded(isOk(result) ? { api, owners: result.value, error: null } : { api, owners: null, error: result.error.message });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [api]);
+  // A reply for another account's API is never shown.
+  return loaded && loaded.api === api ? { owners: loaded.owners, error: loaded.error } : { owners: null, error: null };
 }
 
 /** A repository name from a project name: `Forest Run` → `forest-run`. */

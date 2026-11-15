@@ -1,4 +1,5 @@
 import type { ProjectAppearance } from "@haptic/core";
+import type { NewRepositoryRequest } from "../services/source-control-publish";
 
 // Descriptor + noun + head noun reads as a compound name in any combination,
 // for example "Walnut Apple Sauce" or "Velvet Comet Parade".
@@ -74,7 +75,21 @@ export function isBuiltInStarterKind(id: string): id is BuiltInStarterKind {
   return (BUILT_IN_STARTER_KINDS as readonly string[]).includes(id);
 }
 
+/**
+ * The broad steps of creating or opening a project, which the launcher card
+ * names: `creating` the project's files, `source-control` (a Remote New
+ * Project's repository, first commit and push) and `opening` it in the editor.
+ */
+export type LaunchPhase = "creating" | "source-control" | "opening";
+
+/** New Project's Hosting choice: this device only, or a new repository on a Git host. */
+export type NewProjectHosting = "local" | "remote";
+
 export type CreateProjectOptions = {
+  /** Remote: once the project opens, publish it to this new repository, as Project Settings' Publish does. */
+  repository?: NewRepositoryRequest;
+  /** Reports each step for the launcher card. */
+  onPhase?: (phase: LaunchPhase) => void;
   appearance?: ProjectAppearance;
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;

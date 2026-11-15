@@ -4,13 +4,14 @@ import { createEmptyProject } from "@haptic/core";
 import { FakeGitHost } from "@haptic/source-control/fake-host";
 import type { SourceControlAccounts } from "../services/source-control-accounts";
 import type { OpenDocument } from "../services/document-service";
+import type { NewRepositoryRequest, PublishOutcome } from "../services/source-control-publish";
 import { signedInHosts } from "../testing/source-control-hosts";
 import PublishProjectDialog from "./publish-project-dialog";
 
 const state = vi.hoisted(() => ({
   accounts: null as SourceControlAccounts | null,
   dirty: [] as OpenDocument[],
-  publishProject: vi.fn<(request: { repositoryUrl: string; branch: string }) => Promise<void>>(async () => {}),
+  publish: vi.fn<(request: NewRepositoryRequest) => Promise<PublishOutcome>>(async () => ({ status: "published", repositoryUrl: "https://github.com/test-user/forest-run.git" })),
   // Actions keep their identity, as the provider's do.
   summarize: vi.fn(async () => ({ assets: 312, bytes: 840 * 1024 * 1024, lfsBytes: 790 * 1024 * 1024 })),
 }));
@@ -24,7 +25,7 @@ vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     projectDocument: createEmptyProject("Forest Run"),
     dirtyDocuments: state.dirty,
-    publishProject: state.publishProject,
+    publishToNewRepository: state.publish,
     summarizeProjectForPublish: state.summarize,
   })),
 );
@@ -39,11 +40,11 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   state.dirty = [];
-  state.publishProject.mockClear();
+  state.publish.mockClear();
 });
 
 describe("Publish Project", () => {
-  it("creates the repository under the chosen owner, then publishes the project to it", async () => {
+  it("publishes the project to a new repository under the chosen owner", async () => {
     const onOpenChange = vi.fn();
     render(<PublishProjectDialog open onOpenChange={onOpenChange} />);
     expect((await screen.findByTestId("publish-account-signed-in")).textContent).toBe("Signed In As ada");
@@ -55,9 +56,12 @@ describe("Publish Project", () => {
       fireEvent.click(screen.getByTestId("publish-submit"));
     });
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(host.repositories[0]).toBe("test-user/forest-run");
-    expect(host.publicRepositories.has("test-user/forest-run")).toBe(true);
-    expect(state.publishProject).toHaveBeenCalledWith({ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" });
+    expect(state.publish).toHaveBeenCalledWith({
+      origin: "https://github.com",
+      owner: { name: "test-user", kind: "user", id: "" },
+      name: "forest-run",
+      private: false,
+    });
   });
 
   it("publishes under the signed-in user when the host will not list their organizations", async () => {
@@ -69,7 +73,7 @@ describe("Publish Project", () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId("publish-submit"));
     });
-    await waitFor(() => expect(state.publishProject).toHaveBeenCalledWith({ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" }));
+    await waitFor(() => expect(state.publish).toHaveBeenCalledWith(expect.objectContaining({ owner: { name: "test-user", kind: "user", id: "" } })));
   });
 
   it("names why Publish waits: unsaved documents, or no account for the host", async () => {
@@ -81,41 +85,16 @@ describe("Publish Project", () => {
     expect(screen.getByTestId("publish-reason").textContent).toBe("Sign in to GitLab to publish.");
   });
 
-  it("refuses a name taken by a repository that is not empty, and publishes nothing", async () => {
-    host.repositories.unshift("test-user/forest-run");
-    host.repositoryBranches.set("test-user/forest-run", ["main"]);
-    render(<PublishProjectDialog open onOpenChange={() => {}} />);
-    await waitFor(() => expect(screen.queryByTestId("publish-reason")).toBeNull());
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("publish-submit"));
-    });
-    expect((await screen.findByTestId("publish-error")).textContent).toContain("test-user/forest-run already exists and is not empty. Choose another repository name.");
-    expect(state.publishProject).not.toHaveBeenCalled();
-  });
-
-  it("publishes again under the same name into the empty repository an interrupted Publish created", async () => {
+  it("stays open with why Publish stopped, so it can be tried again", async () => {
     const onOpenChange = vi.fn();
-    // The first attempt created the repository, then stopped before its push.
-    state.publishProject.mockRejectedValueOnce(new Error("The host could not be reached."));
-    const first = render(<PublishProjectDialog open onOpenChange={onOpenChange} />);
-    await waitFor(() => expect(screen.queryByTestId("publish-reason")).toBeNull());
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("publish-submit"));
-    });
-    expect((await screen.findByTestId("publish-error")).textContent).toContain("The host could not be reached.");
-    first.unmount();
-
+    state.publish.mockResolvedValueOnce({ status: "local", message: "test-user/forest-run already exists and is not empty. Choose another repository name." });
     render(<PublishProjectDialog open onOpenChange={onOpenChange} />);
     await waitFor(() => expect(screen.queryByTestId("publish-reason")).toBeNull());
     await act(async () => {
       fireEvent.click(screen.getByTestId("publish-submit"));
     });
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(screen.queryByTestId("publish-error")).toBeNull();
-    expect(state.publishProject.mock.calls).toEqual([
-      [{ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" }],
-      [{ repositoryUrl: "https://github.com/test-user/forest-run.git", branch: "main" }],
-    ]);
-    expect(host.repositories.filter((name) => name === "test-user/forest-run")).toHaveLength(1);
+    expect((await screen.findByTestId("publish-error")).textContent).toContain("test-user/forest-run already exists and is not empty. Choose another repository name.");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId("publish-submit").hasAttribute("disabled")).toBe(false);
   });
 });

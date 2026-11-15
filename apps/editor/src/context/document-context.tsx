@@ -28,7 +28,6 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
-  getHostPlatform,
   isTestModeEnabled,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type EngineSettings,
@@ -48,7 +47,7 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { SourceControlSyncService } from "../services/source-control-sync";
-import { publishReplacesRepository } from "../lib/source-control-mode";
+import type { CreateProjectOptions } from "../lib/create-project";
 import { documentContentIdentity } from "../lib/document-content-identity";
 import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import {
@@ -96,7 +95,7 @@ import { useProjectList } from "./use-project-list";
 import { useProjectSave } from "./use-project-save";
 import { useDocumentTabs } from "./use-document-tabs";
 import { useAssetFileOperations } from "./use-asset-file-operations";
-import { useProjectLifecycle } from "./use-project-lifecycle";
+import { useProjectLifecycle, type CreateProjectOutcome } from "./use-project-lifecycle";
 import { useProjectAssetActions } from "./use-project-asset-actions";
 import { useDocumentStateSlices } from "./use-document-state-slices";
 
@@ -176,6 +175,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const [undoHistoryNotice, setUndoHistoryNotice] = useState<DocumentContextValue["undoHistoryNotice"]>(null);
   const dismissUndoHistoryNotice = useCallback(() => setUndoHistoryNotice(null), []);
+  const [publishNotice, setPublishNotice] = useState<DocumentContextValue["publishNotice"]>(null);
+  const dismissPublishNotice = useCallback(() => setPublishNotice(null), []);
   const noteUndoHistoryCleared = useCallback((id: string) => {
     setUndoHistoryNotice((current) => ({ documentId: id, sequence: (current?.sequence ?? 0) + 1 }));
   }, []);
@@ -548,7 +549,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     saveProjectNow,
   });
   // Effects after the deferred auto-save, before the open Texture Usage effect.
-  const { actions: lifecycleActions } = useProjectLifecycle({
+  const { actions: lifecycleActions, create: createLifecycle } = useProjectLifecycle({
     projectService,
     documentService,
     documentTransitions,
@@ -566,6 +567,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setMigrationPending,
     setRecoveryAvailable,
     setDocumentOpenError,
+    setPublishNotice,
     sceneDocumentLoad,
     sceneDocumentLoadRef,
     setSceneDocumentLoad,
@@ -606,28 +608,55 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     });
   }, [cancelDebouncedSave, enqueueProjectWrite]);
 
-  const publishProject = useCallback<DocumentContextValue["publishProject"]>(async ({ repositoryUrl, branch }) => {
+  const publishToNewRepository = useCallback<DocumentContextValue["publishToNewRepository"]>(async (repository) => {
     const opened = projectDocumentRef.current;
     if (!opened) throw new Error("Open a project first.");
-    const { writePublishFiles } = await import("../services/source-control-publish");
-    await writePublishFiles(projectService.storagePort);
-    const settings = { ...opened.settings.sourceControl, mode: "integrated" as const, repositoryUrl, branch };
-    const { tier, hasGit } = await sourceControlActions.readSourceControlFolder();
-    await sourceControlSync.publish({
-      input: syncInputFor(settings),
-      repositoryUrl,
-      branch,
-      // The .git of an interrupted Publish (app storage on a device) is replaced; elsewhere init refuses one.
-      replace: publishReplacesRepository({ platform: getHostPlatform(), testMode: isTestModeEnabled(), tier, hasGit }),
-      // The first commit holds Integrated mode; the client is already open, so the mode change keeps it.
-      beforeCommit: async () => {
+    const publish = await import("../services/source-control-publish");
+    return publish.publishToNewRepository({
+      api: await publish.hostApiForOrigin(repository.origin, isTestModeEnabled()),
+      repository,
+      sync: sourceControlSync,
+      input: syncInputFor(opened.settings.sourceControl),
+      saveSettings: async (sourceControl) => {
         const live = projectDocumentRef.current ?? opened;
-        const next = { ...live, settings: { ...live.settings, sourceControl: settings } };
+        const next = { ...live, settings: { ...live.settings, sourceControl } };
         setProjectDocument(next);
         await saveProjectNow(next);
       },
     });
-  }, [projectDocumentRef, projectService, saveProjectNow, setProjectDocument, sourceControlActions, sourceControlSync, syncInputFor]);
+  }, [projectDocumentRef, saveProjectNow, setProjectDocument, sourceControlSync, syncInputFor]);
+
+  /**
+   * A Remote New Project, once it has opened: Publish to a new repository on
+   * the host, as Project Settings' Publish does. A project that stays Local
+   * says why in the editor; an Integrated one whose push failed shows that in
+   * the status bar, as Publish does. It never rejects: the project is open.
+   */
+  const publishNewProject = useCallback(async (outcome: CreateProjectOutcome, options: CreateProjectOptions | undefined) => {
+    const repository = options?.repository;
+    if (!repository || outcome === "refused") return;
+    if (outcome === "opened") {
+      setPublishNotice({ message: "The folder you chose already had a project, so Haptic opened it and created no repository." });
+      return;
+    }
+    options.onPhase?.("source-control");
+    let message: string | null;
+    try {
+      const published = await publishToNewRepository(repository);
+      message = published.status === "local" ? published.message : null;
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    if (message) setPublishNotice({ message });
+  }, [publishToNewRepository]);
+
+  const createEmptyProject = useCallback<DocumentActions["createEmptyProject"]>(async (name, options) => {
+    await publishNewProject(await createLifecycle.createEmptyProject(name, options), options);
+  }, [createLifecycle, publishNewProject]);
+
+  const createFromTemplate = useCallback<DocumentActions["createFromTemplate"]>(async (templateId, name, options) => {
+    await publishNewProject(await createLifecycle.createFromTemplate(templateId, name, options), options);
+  }, [createLifecycle, publishNewProject]);
 
   const setSourceControlAdoption = useCallback<DocumentContextValue["setSourceControlAdoption"]>(async (adopted) => {
     const opened = projectDocumentRef.current;
@@ -839,10 +868,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ...fileOperationActions,
       ...lifecycleActions,
       ...projectAssetActions,
+      createEmptyProject,
+      createFromTemplate,
       lockAuthoring,
       withProjectWrites,
       applyPulledChanges,
-      publishProject,
+      publishToNewRepository,
+      dismissPublishNotice,
       summarizeProjectForPublish,
       setSourceControlAdoption,
       beginSimulationDocument,
@@ -904,10 +936,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       fileOperationActions,
       lifecycleActions,
       projectAssetActions,
+      createEmptyProject,
+      createFromTemplate,
       lockAuthoring,
       withProjectWrites,
       applyPulledChanges,
-      publishProject,
+      publishToNewRepository,
+      dismissPublishNotice,
       summarizeProjectForPublish,
       setSourceControlAdoption,
       beginSimulationDocument,
@@ -1037,9 +1072,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pendingExclusiveScene,
       externalChangePrompt,
       undoHistoryNotice,
+      publishNotice,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
   );
 
   return (
