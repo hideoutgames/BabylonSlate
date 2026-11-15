@@ -10,9 +10,11 @@ import {
   defaultAnimVariableValue,
   evaluateAnimGraph,
   type AnimEvalState,
+  type AnimFiredEvent,
   type AnimGraphDocument,
   type AnimTransition,
 } from "@haptic/anim-graph";
+import { ANIM_NOTIFY_EVENT } from "@haptic/scripting";
 import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptBreakpoints } from "./script-breakpoints";
@@ -42,6 +44,10 @@ interface AnimGraphRuntimeHost {
   /** Where a component the debugger does not follow records, while breakpoints are set, should one stop it. */
   frameTrace(object: EngineObject): ScriptDebugTrace | null;
   emit(command: CommandMessage): void;
+  /** An Animation Event's Play Sound: the sound from the actor. */
+  playEventSound(actor: Actor, assetGuid: string, volume: number): void;
+  /** An Animation Event's Spawn Particle System: on the actor, at `bone` when it names one. */
+  spawnEventParticles(actor: Actor, assetGuid: string, bone: string): void;
 }
 
 /** AnimationGraph documents and per-component evaluation state for Play. */
@@ -255,6 +261,28 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     hit(taken.toStateId, "entered");
   }
 
+  /**
+   * The Animation Events a tick fired, in order: each one's own action (Play Sound, Spawn Particle System), then its
+   * event in the graph's Animation Object, which runs the Animation Event node of that name.
+   */
+  private fireEvents(
+    events: readonly AnimFiredEvent[],
+    objectClassId: string,
+    actor: Actor,
+    dtSeconds: number,
+    extras: { variableStore: EngineObject; animFacts: AnimEvalState["facts"] },
+  ): void {
+    for (const event of events) {
+      if (event.action?.kind === "playSound") this.host.playEventSound(actor, event.action.assetGuid, event.action.volume);
+      else if (event.action?.kind === "spawnParticles") this.host.spawnEventParticles(actor, event.action.assetGuid, event.action.bone);
+      this.host.scripts().invokeAnimEvent(objectClassId, ANIM_NOTIFY_EVENT, actor, dtSeconds, extras, {
+        name: event.name,
+        phase: event.phase,
+        animation: event.clipAssetGuid,
+      });
+    }
+  }
+
   private tickActor(actor: Actor, dtSeconds: number): void {
     const slotId = this.host.slot(actor);
     // A graph skipped this tick (owner not admitted, no slot, or a Behaviour
@@ -332,6 +360,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         },
       );
       this.evalByComponent.set(evalKey, next);
+      if (next.events) this.fireEvents(next.events, objectClassId, actor, dtSeconds, { variableStore: component, animFacts: next.facts });
       if (hit) this.reportStateBreakpoints(hit, previous, next, taken);
       // The followed component reports to the debugger; another, while breakpoints are set, for the frame a stop shows.
       const sink = component === this.debugComponent ? this.debugSink : this.host.frameTrace(component);

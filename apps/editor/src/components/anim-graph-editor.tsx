@@ -1315,6 +1315,23 @@ export function AnimGraphDetailsPanel(props: IDockviewPanelProps) {
         },
       ]
     : [];
+  // A state's own Animation Events, each fired by name to the Animation Object.
+  const stateEventRows: PropertyRow[] = selected && !multi
+    ? ([["enter", "Enter Event"], ["exit", "Exit Event"], ["fullyBlended", "Fully Blended Event"]] as const).map(([key, label]) => ({
+        id: `stateEvent-${key}`,
+        kind: "text" as const,
+        label,
+        value: selected.events?.[key] ?? "",
+        onChange: (name: string) => {
+          const events = { ...selected.events, [key]: name };
+          if (!name.trim()) delete events[key];
+          commit(
+            patchState(doc, selected.id, { events: Object.keys(events).length > 0 ? events : undefined }),
+            `anim-graph:state:${selected.id}:event:${key}`,
+          );
+        },
+      }))
+    : [];
   const stateRows = selectedStates.map(sharedStateRows);
   const clipRows: PropertyRow[] = multi ? [] : stateRows[0]?.clip ?? [];
   const playbackRows: PropertyRow[] = multi ? [] : stateRows[0]?.playback ?? [];
@@ -1345,6 +1362,9 @@ export function AnimGraphDetailsPanel(props: IDockviewPanelProps) {
           {clipRows.length > 0 ? <PropertyGrid title="Clip" rows={clipRows} /> : null}
           {playbackRows.length > 0 ? (
             <PropertyGrid title="Playback" rows={playbackRows} />
+          ) : null}
+          {stateEventRows.length > 0 ? (
+            <PropertyGrid title="Events" rows={stateEventRows} data-testid="anim-graph-state-events" />
           ) : null}
           {selected ? (
             <div className="flex flex-wrap gap-1 px-2 py-1.5">

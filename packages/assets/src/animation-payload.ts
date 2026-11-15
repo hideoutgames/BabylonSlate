@@ -1,3 +1,5 @@
+import { animationEventActionGuids, normalizeAnimationEvents, type AnimationEventPayload } from "./animation-events";
+
 export interface AnimationPayload {
   clipName: string;
   modelGuid: string;
@@ -7,6 +9,8 @@ export interface AnimationPayload {
   /** The clip's length in its source file, set at import; Reset restores `durationMs` to it. */
   clipDurationMs?: number;
   sourceAnimationGuid?: string | null;
+  /** Animation Events, by time; absent when there are none. */
+  events?: AnimationEventPayload[];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -43,6 +47,8 @@ export function normalizeAnimationPayload(value: unknown): AnimationPayload {
   const durationMs = optionalDurationMs(record.durationMs) ?? clipDurationMs;
   if (durationMs !== undefined) payload.durationMs = durationMs;
   if (clipDurationMs !== undefined) payload.clipDurationMs = clipDurationMs;
+  const events = normalizeAnimationEvents(record.events);
+  if (events.length > 0) payload.events = events;
   return payload;
 }
 
@@ -52,6 +58,7 @@ export function animationAssetGuids(payload: unknown): string[] {
   if (animation.modelGuid) guids.add(animation.modelGuid);
   if (animation.skeletonGuid) guids.add(animation.skeletonGuid);
   if (animation.sourceAnimationGuid) guids.add(animation.sourceAnimationGuid);
+  for (const guid of animationEventActionGuids(animation.events ?? [])) guids.add(guid);
   return [...guids].sort();
 }
 

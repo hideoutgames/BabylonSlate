@@ -31,6 +31,8 @@ import {
   parseSpriteAnimationPayload,
   refreshStaleTilemaps,
   spriteAnimationDurationMs,
+  animationClipEvents,
+  spriteAnimationClipEvents,
   type AnimationPayload,
   type BlendSpacePayload,
   type SpriteBlendSpacePayload,
@@ -363,6 +365,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       ...(payload.durationMs !== undefined ? { durationMs: payload.durationMs } : {}),
       ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
       ...(payload.modelGuid ? { modelGuid: payload.modelGuid } : {}),
+      ...((events) => (events.length > 0 ? { events } : {}))(animationClipEvents(payload.events)),
     })),
     ...[...sizedSpriteAnimations.entries()].map(([guid, payload]) => ({
       guid,
@@ -370,6 +373,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       name: guid,
       durationMs: spriteAnimationDurationMs(payload),
       frameCount: payload.frames.length,
+      ...((events) => (events.length > 0 ? { events } : {}))(spriteAnimationClipEvents(payload)),
     })),
     // A Blend Space Player plays its samples from these; their Animations are in the closure as its dependencies.
     ...[...blendSpaces.entries()].map(([guid, { name, payload }]) => ({
@@ -377,7 +381,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       type: "BlendSpace",
       name,
       ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
-      blendSpace: { axes: payload.axes, samples: payload.samples },
+      blendSpace: { axes: payload.axes, samples: payload.samples, eventMode: payload.eventMode },
     })),
     ...[...spriteBlendSpaces.entries()].map(([guid, { name, payload }]) => ({
       guid,

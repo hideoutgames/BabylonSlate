@@ -44,10 +44,22 @@ import {
   poseNodeDefault,
   poseSyncGroup,
   primaryPosePlayer,
+  poseClipEvents,
   type BlendSpaceNodeAxis,
   type BlendSpaceNodeSample,
   type PoseGraphIndex,
 } from "./pose-graph";
+import {
+  animClipEventSpan,
+  animClipSweep,
+  animSweepCrossings,
+  type AnimClipEvent,
+  type AnimClipSweep,
+  type AnimEventAction,
+  type AnimFiredEvent,
+  type AnimFiredEventPhase,
+  type AnimOpenWindow,
+} from "./events";
 
 type GraphNode = SerializedGraph["nodes"][number];
 
@@ -56,7 +68,137 @@ const STATE_CLOCK_MS = 1000;
 /** A Blend Space sample below this weight adds no layer. */
 const BLEND_SPACE_MIN_WEIGHT = 1e-4;
 const NO_TRANSITIONS: readonly AnimTransition[] = [];
-const NO_LAYERS: readonly AnimClipLayer[] = [];
+
+/** A clip event a visit crossed, at the source's weight in its graph; the State Machine scales it with its state. */
+interface PendingEvent {
+  name: string;
+  phase: AnimFiredEventPhase;
+  clipAssetGuid: string;
+  stateId: string;
+  action: AnimEventAction | null;
+  weight: number;
+  triggerWeight: number;
+  /** The player or Blend Space sample it plays on. */
+  source: string;
+  /** A window's key, shared by its begin and end. */
+  window?: string;
+}
+
+/** A source started over this tick: any window still open on it ends first. */
+interface PendingRestart {
+  restart: string;
+}
+
+type Pending = PendingEvent | PendingRestart;
+
+/** What one visit of a pose graph produced: its layers, the events it crossed and the sources it played, each weighted. */
+interface PoseVisit {
+  layers: AnimClipLayer[];
+  pending: Pending[];
+  sources: Array<{ key: string; weight: number }>;
+}
+
+const EMPTY_VISIT: PoseVisit = { layers: [], pending: [], sources: [] };
+
+function scaleVisit(visit: PoseVisit, weight: number): PoseVisit {
+  if (weight === 1) return visit;
+  return {
+    layers: scaleLayers(visit.layers, weight),
+    pending: visit.pending.map((item) => ("restart" in item ? item : { ...item, weight: item.weight * weight })),
+    sources: visit.sources.map((source) => ({ ...source, weight: source.weight * weight })),
+  };
+}
+
+/** A state's own event (Enter, Exit, Fully Blended), which always fires. */
+function stateEvent(name: string | undefined, stateId: string): PendingEvent[] {
+  return name
+    ? [{ name, phase: "event", clipAssetGuid: "", stateId, action: null, weight: 1, triggerWeight: 0, source: "" }]
+    : [];
+}
+
+/**
+ * The events a source crossed in `sweep`, in the order it crossed them: single events and each window's begin and
+ * end. `durationMs` is one pass of the clip the events are on.
+ */
+function sweepEvents(
+  pending: Pending[],
+  events: readonly AnimClipEvent[],
+  sweep: AnimClipSweep,
+  durationMs: number,
+  info: { clipAssetGuid: string; stateId: string; weight: number; source: string },
+): void {
+  if (events.length === 0) return;
+  const crossed: Array<{ position: number; order: number; event: PendingEvent }> = [];
+  events.forEach((event, index) => {
+    const span = animClipEventSpan(event, durationMs);
+    const base = {
+      name: event.name,
+      clipAssetGuid: info.clipAssetGuid,
+      stateId: info.stateId,
+      weight: info.weight,
+      triggerWeight: event.triggerWeight,
+      source: info.source,
+    };
+    if (span.end === null) {
+      for (const position of animSweepCrossings(sweep, span.begin)) {
+        crossed.push({ position, order: index * 2, event: { ...base, phase: "event", action: event.action } });
+      }
+      return;
+    }
+    const window = `${info.source}#${index}`;
+    for (const position of animSweepCrossings(sweep, span.begin)) {
+      crossed.push({ position, order: index * 2, event: { ...base, phase: "begin", action: event.action, window } });
+    }
+    for (const position of animSweepCrossings(sweep, span.end)) {
+      // An end at the begin's own position (a window as long as the pass) closes after it opens.
+      crossed.push({ position, order: index * 2 + 1, event: { ...base, phase: "end", action: null, window } });
+    }
+  });
+  crossed.sort((a, b) => a.position - b.position || a.order - b.order);
+  for (const entry of crossed) pending.push(entry.event);
+}
+
+/**
+ * Fires a tick's events in order: a single event or a window's begin at or above its Trigger Weight, a window's end
+ * once it began; then the end of every open window whose source no longer plays.
+ */
+function fireEvents(
+  pending: readonly Pending[],
+  sources: ReadonlyMap<string, number>,
+  previousOpen: Readonly<Record<string, AnimOpenWindow>> | undefined,
+): { fired: AnimFiredEvent[]; open: Map<string, AnimOpenWindow> } {
+  const open = new Map(Object.entries(previousOpen ?? {}));
+  const fired: AnimFiredEvent[] = [];
+  const end = (key: string, window: AnimOpenWindow) => {
+    open.delete(key);
+    fired.push({ name: window.name, phase: "end", clipAssetGuid: window.clipAssetGuid, stateId: window.stateId, action: null });
+  };
+  for (const item of pending) {
+    if ("restart" in item) {
+      // A Blend Space's samples play under its key.
+      for (const [key, window] of [...open]) {
+        if (window.source === item.restart || window.source.startsWith(`${item.restart}@`)) end(key, window);
+      }
+      continue;
+    }
+    const playing = item.weight > 0 && item.weight + 1e-9 >= item.triggerWeight;
+    if (item.phase === "event") {
+      if (playing) fired.push({ name: item.name, phase: "event", clipAssetGuid: item.clipAssetGuid, stateId: item.stateId, action: item.action });
+    } else if (item.phase === "begin") {
+      if (playing && item.window && !open.has(item.window)) {
+        open.set(item.window, { name: item.name, clipAssetGuid: item.clipAssetGuid, stateId: item.stateId, source: item.source });
+        fired.push({ name: item.name, phase: "begin", clipAssetGuid: item.clipAssetGuid, stateId: item.stateId, action: item.action });
+      }
+    } else if (item.window) {
+      const window = open.get(item.window);
+      if (window) end(item.window, window);
+    }
+  }
+  for (const [key, window] of [...open]) {
+    if (!((sources.get(window.source) ?? 0) > 0)) end(key, window);
+  }
+  return { fired, open };
+}
 
 interface MachineIndex {
   states: Map<string, AnimState>;
@@ -340,10 +482,17 @@ function playerStart(node: GraphNode, data: AnimPoseData | undefined, durationMs
   return { timeMs: normalised * durationMs, loopCount: 0, normalised };
 }
 
+/** Which of a Blend Space's samples fire their events. */
+function blendSpaceEventMode(node: GraphNode): "highestWeight" | "all" | "none" {
+  const raw = node.data.blendSpace;
+  const mode = raw && typeof raw === "object" ? (raw as Record<string, unknown>).eventMode : undefined;
+  return mode === "all" || mode === "none" ? mode : "highestWeight";
+}
+
 /**
  * Walks a pose graph from its output: advances every player and selector it reaches by `dtSeconds` (a fresh visit
- * starts them over) and returns its clip layers at weight 1. `stateId` tags the layers; `machine` plays a State
- * Machine node.
+ * starts them over) and returns its clip layers, the clip events its players crossed and the sources that played,
+ * at weight 1. `stateId` tags them.
  */
 function visitPoseGraph(
   ctx: EvalContext,
@@ -353,10 +502,12 @@ function visitPoseGraph(
   dtSeconds: number,
   fresh: boolean,
   stateId: string,
-): AnimClipLayer[] {
+): PoseVisit {
   const index = poseGraphIndex(graph);
-  if (!index.output) return [];
+  if (!index.output) return EMPTY_VISIT;
   const layers: AnimClipLayer[] = [];
+  const pending: Pending[] = [];
+  const sources: PoseVisit["sources"] = [];
   const visited = new Set<string>();
   const visit = (node: GraphNode | undefined, weight: number, flipX: boolean, flipY: boolean): void => {
     // A pose output feeds one input, so each node is reached once; a cycle stops here.
@@ -373,7 +524,8 @@ function visitPoseGraph(
     }
     if (isPosePlayerType(node.type)) {
       const timing = playerTiming(node, data);
-      const previous = fresh ? playerStart(node, data, timing.durationMs) : ctx.previousPlayers[key] ?? playerStart(node, data, timing.durationMs);
+      const kept = fresh ? undefined : ctx.previousPlayers[key];
+      const previous = kept ?? playerStart(node, data, timing.durationMs);
       // A Play Rate at or below 0 holds the frame.
       const advanced = advanceClock(previous, timing.playRate > 0 ? dtSeconds * 1000 * timing.playRate : 0, timing.durationMs, timing.loop);
       // A looping player in a Sync Group runs at the group's phase.
@@ -384,6 +536,15 @@ function visitPoseGraph(
       const clip = poseClipData(node);
       if (clip.assetGuid) {
         emit({ clipAssetGuid: clip.assetGuid, clipName: clip.clipName, clipKind: node.type.startsWith("anim.frame.") ? "sprite" : "animation", normalisedTime: clock.normalised });
+        // A player starting over counts an event exactly at its start.
+        if (!kept) pending.push({ restart: key });
+        sources.push({ key, weight });
+        sweepEvents(pending, poseClipEvents(node), animClipSweep(previous, clock, timing.loop, !kept), timing.durationMs, {
+          clipAssetGuid: clip.assetGuid,
+          stateId,
+          weight,
+          source: key,
+        });
       }
       return;
     }
@@ -391,7 +552,8 @@ function visitPoseGraph(
       const tick = blendSpaceTick(ctx, key, node, data, dtSeconds, fresh);
       const playRate = dataValue(data, node, "playRate", 1);
       // Every sample shares one phase; the cycle's length follows the weights, so the phase carries over, not the time.
-      const prior = fresh || tick.restart ? ZERO_CLOCK : ctx.previousPlayers[key] ?? ZERO_CLOCK;
+      const kept = fresh || tick.restart ? undefined : ctx.previousPlayers[key];
+      const prior = kept ?? ZERO_CLOCK;
       const clock = syncedClock(
         ctx,
         node,
@@ -405,11 +567,43 @@ function visitPoseGraph(
         weight,
       );
       ctx.players[key] = { timeMs: clock.timeMs, loopCount: clock.loopCount, normalised: clock.normalised };
+      if (!kept) pending.push({ restart: key });
+      const sweep = animClipSweep(prior, clock, true, !kept);
+      // A sample's events, at their positions in its own pass, which the shared phase runs through.
+      const sampleEvents = (position: number, sampleWeight: number) => {
+        const sample = tick.samples[position];
+        if (!sample) return;
+        const source = `${key}@${position}`;
+        sources.push({ key: source, weight: sampleWeight });
+        sweepEvents(pending, sample.events ?? [], sweep, sample.durationMs, {
+          clipAssetGuid: sample.animationGuid,
+          stateId,
+          weight: sampleWeight,
+          source,
+        });
+      };
       if (node.type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE) {
         // Frames cannot blend: the playing sample shows alone, flipped as the graph flips it.
-        const playing = tick.samples[tick.weights.indexOf(1)];
-        if (playing) emit({ clipAssetGuid: playing.animationGuid, clipName: "", clipKind: "sprite", normalisedTime: clock.normalised });
+        const position = tick.weights.indexOf(1);
+        const playing = tick.samples[position];
+        if (playing) {
+          emit({ clipAssetGuid: playing.animationGuid, clipName: "", clipKind: "sprite", normalisedTime: clock.normalised });
+          sampleEvents(position, weight);
+        }
         return;
+      }
+      const mode = blendSpaceEventMode(node);
+      if (mode === "highestWeight") {
+        // One footstep however the blend falls: the heaviest sample's events, at the Blend Space's own weight.
+        let heaviest = -1;
+        tick.weights.forEach((sampleWeight, position) => {
+          if (sampleWeight > BLEND_SPACE_MIN_WEIGHT && (heaviest < 0 || sampleWeight > tick.weights[heaviest]!)) heaviest = position;
+        });
+        if (heaviest >= 0) sampleEvents(heaviest, weight);
+      } else if (mode === "all") {
+        tick.weights.forEach((sampleWeight, position) => {
+          if (sampleWeight > BLEND_SPACE_MIN_WEIGHT) sampleEvents(position, weight * sampleWeight);
+        });
       }
       tick.samples.forEach((sample, position) => {
         const sampleWeight = tick.weights[position] ?? 0;
@@ -469,7 +663,7 @@ function visitPoseGraph(
     // Rest Pose and unknown nodes add no clip: the bones keep their rest pose.
   };
   visit(index.output, 1, false, false);
-  return layers;
+  return { layers, pending, sources };
 }
 
 function firstPoseInput(index: PoseGraphIndex, node: GraphNode): GraphNode | undefined {
@@ -575,12 +769,12 @@ function evaluateMachine(
   machine: AnimStateMachine,
   previous: AnimMachineEvalState | null,
   dtSeconds: number,
-): { state: AnimMachineEvalState; layers: AnimClipLayer[] } {
+): { state: AnimMachineEvalState; layers: AnimClipLayer[]; pending: Pending[]; sources: PoseVisit["sources"] } {
   const { states, outgoing: outgoingByState } = machineIndex(machine);
   const entryStateId = states.has(machine.entryStateId) ? machine.entryStateId : machine.states[0]?.id;
   let stateId = previous?.stateId ?? entryStateId;
   if (stateId === undefined || !states.has(stateId)) stateId = entryStateId;
-  if (stateId === undefined) return { state: idleMachineState(machine.entryStateId), layers: [] };
+  if (stateId === undefined) return { state: idleMachineState(machine.entryStateId), layers: [], pending: [], sources: [] };
   const current = states.get(stateId)!;
   // A jump leaves the target with a negative time, which enters it fresh.
   const sameState = previous !== null && previous.stateId === stateId && previous.timeMs >= 0;
@@ -609,12 +803,12 @@ function evaluateMachine(
     timing,
   );
   const currentFacts = factsFor(clock, timing.durationMs / Math.max(0.001, timing.playRate), timing.loop, previousTotal);
-  const currentLayers = visitPoseGraph(ctx, currentKey, current.stateGraph, currentData, dtSeconds, entered, stateId);
+  const currentVisit = visitPoseGraph(ctx, currentKey, current.stateGraph, currentData, dtSeconds, entered, stateId);
 
   let nextId = stateId;
   let nextClock: Clock = clock;
   let nextFacts = currentFacts;
-  let nextLayers = currentLayers;
+  let nextVisit = currentVisit;
   let startedBlend: AnimTransition | null = null;
   for (const row of outgoingByState.get(stateId) ?? NO_TRANSITIONS) {
     // A transition to a missing state (`anim.badTransition`) never fires.
@@ -634,19 +828,22 @@ function evaluateMachine(
     nextClock = { ...nextClock, justLooped: false };
     nextFacts = factsFor(nextClock, nextTiming.durationMs / Math.max(0.001, nextTiming.playRate), nextTiming.loop, nextStart.normalised);
     // A self-transition restarts the state, and its blend crossfades from the frame it left.
-    nextLayers = visitPoseGraph(ctx, nextKey, next.stateGraph, nextData, 0, true, nextId);
+    nextVisit = visitPoseGraph(ctx, nextKey, next.stateGraph, nextData, 0, true, nextId);
     break;
   }
+  const transitioned = nextVisit !== currentVisit;
 
   let blendFromStateId = previous?.blendFromStateId ?? null;
   let blendElapsedMs = previous?.blendElapsedMs ?? 0;
   let blendSeconds = previous?.blendSeconds ?? 0;
-  let fromLayers: readonly AnimClipLayer[] = NO_LAYERS;
+  let fromVisit: PoseVisit = EMPTY_VISIT;
+  // Blending from a state that is still blending out keeps the frame it left.
+  const wasBlending = !!blendFromStateId;
   if (startedBlend) {
     blendFromStateId = stateId;
     blendElapsedMs = Math.max(0, dtSeconds) * 1000;
     blendSeconds = startedBlend.blendSeconds;
-    fromLayers = currentLayers;
+    fromVisit = currentVisit;
   } else if (nextId !== stateId) {
     blendFromStateId = null;
     blendElapsedMs = 0;
@@ -655,7 +852,7 @@ function evaluateMachine(
     blendElapsedMs += Math.max(0, dtSeconds) * 1000;
     const from = states.get(blendFromStateId)!;
     const fromKey = animPoseGraphKey(blendFromStateId);
-    fromLayers = visitPoseGraph(ctx, fromKey, from.stateGraph, ctx.inputs.poseData?.(fromKey, null), dtSeconds, false, blendFromStateId);
+    fromVisit = visitPoseGraph(ctx, fromKey, from.stateGraph, ctx.inputs.poseData?.(fromKey, null), dtSeconds, false, blendFromStateId);
   } else {
     blendFromStateId = null;
     blendElapsedMs = 0;
@@ -664,6 +861,7 @@ function evaluateMachine(
 
   const blendWeights: Record<string, number> = {};
   let toWeight = 1;
+  let fromWeight = 0;
   const layers: AnimClipLayer[] = [];
   const blendDurationMs = Math.max(0, blendSeconds) * 1000;
   if (blendFromStateId && blendDurationMs > 0) {
@@ -674,7 +872,7 @@ function evaluateMachine(
       blendSeconds = 0;
     } else {
       toWeight = t;
-      layers.push(...scaleLayers(fromLayers, 1 - t));
+      fromWeight = 1 - t;
       blendWeights[blendFromStateId] = 1 - t;
     }
   } else if (blendFromStateId) {
@@ -682,8 +880,31 @@ function evaluateMachine(
     blendElapsedMs = 0;
     blendSeconds = 0;
   }
-  layers.push(...scaleLayers(nextLayers, toWeight));
+  const from = scaleVisit(fromVisit, fromWeight);
+  const to = scaleVisit(nextVisit, toWeight);
+  layers.push(...from.layers, ...to.layers);
   blendWeights[nextId] = (blendWeights[nextId] ?? 0) + toWeight;
+
+  // Events in the order they happened: the state left (its own crossings, then Exit), the state entered (Enter, then
+  // its crossings), and Fully Blended once it plays alone.
+  const pending: Pending[] = [];
+  const sources = [...from.sources, ...to.sources];
+  const enteredFresh = previous === null || previous.timeMs < 0;
+  // A jump left a state: its Exit fires before the target's Enter.
+  if (enteredFresh && previous?.exitingStateId) pending.push(...stateEvent(states.get(previous.exitingStateId)?.events?.exit, previous.exitingStateId));
+  if (enteredFresh) pending.push(...stateEvent(current.events?.enter, stateId));
+  if (transitioned) {
+    // A crossfade keeps the left state playing in `from`; an instant transition stops it at once.
+    pending.push(...(startedBlend ? from.pending : scaleVisit(currentVisit, 0).pending));
+    pending.push(...stateEvent(current.events?.exit, stateId));
+    pending.push(...stateEvent(states.get(nextId)?.events?.enter, nextId));
+    pending.push(...to.pending);
+  } else {
+    pending.push(...from.pending, ...to.pending);
+  }
+  // Fully Blended: on entry with no crossfade, or the tick a crossfade into this state completes.
+  const fullyBlended = !blendFromStateId && (transitioned || enteredFresh || (wasBlending && previous?.stateId === nextId));
+  if (fullyBlended) pending.push(...stateEvent(states.get(nextId)?.events?.fullyBlended, nextId));
 
   const state: AnimMachineEvalState = {
     stateId: nextId,
@@ -696,7 +917,7 @@ function evaluateMachine(
     blendSeconds,
     loopCount: nextClock.loopCount,
   };
-  return { state, layers };
+  return { state, layers, pending, sources };
 }
 
 function idleFacts(): AnimStateFacts {
@@ -750,8 +971,13 @@ export function evaluateAnimGraph(
     previousSyncGroups: previous?.syncGroups ?? {},
     syncGroups: new Map(),
   };
-  const { state, layers } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
+  const { state, layers, pending, sources } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
   const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
+  const playing = new Map<string, number>();
+  for (const source of sources) playing.set(source.key, Math.max(playing.get(source.key) ?? 0, source.weight));
+  const { fired, open } = fireEvents(pending, playing, previous?.openWindows);
+  if (fired.length > 0) result.events = fired;
+  if (open.size > 0) result.openWindows = Object.fromEntries(open);
   if (ctx.syncGroups.size > 0) {
     result.syncGroups = Object.fromEntries(
       [...ctx.syncGroups].map(([group, entry]) => [group, { phase: entry.phase, cycleMs: entry.leaderCycleMs }]),
@@ -769,5 +995,13 @@ export function animEvalWithJump(
   if (!doc.stateMachine.states.some((state) => state.id === stateId)) return previous;
   // A negative time is unknown to the next evaluation, so it enters the state fresh with no blend.
   const base = previous ?? { ...idleMachineState(stateId), players: {}, selectors: {}, layers: [] };
-  return { ...base, ...idleMachineState(stateId), timeMs: -1 };
+  const { events: _fired, ...kept } = base;
+  void _fired;
+  return {
+    ...kept,
+    ...idleMachineState(stateId),
+    timeMs: -1,
+    // The state left fires its Exit event on the next evaluation, which enters the target.
+    ...(previous ? { exitingStateId: previous.stateId } : {}),
+  };
 }

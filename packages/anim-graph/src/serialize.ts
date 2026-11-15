@@ -466,6 +466,7 @@ export function serializedToStateMachine(
       name,
       position: node.position ?? defaultAnimStatePosition(index),
       stateGraph: existing?.stateGraph ?? createStateGraph(dimension),
+      ...(existing?.events ? { events: existing.events } : {}),
     };
   });
   const stateIds = new Set(states.map((state) => state.id));

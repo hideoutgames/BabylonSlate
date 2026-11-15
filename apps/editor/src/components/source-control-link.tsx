@@ -27,9 +27,9 @@ export function LinkHostWarningDialog({
 }) {
   return (
     <AlertDialog open={open} onOpenChange={(next) => { if (!next) onDecline(); }}>
-      <AlertDialogContent data-testid="source-control-link-warning">
+      <AlertDialogContent variant="warning" data-testid="source-control-link-warning">
         <AlertDialogHeader>
-          <AlertDialogMedia className="bg-(--warning)/15 text-(--warning)">
+          <AlertDialogMedia>
             <TriangleAlertIcon aria-hidden="true" />
           </AlertDialogMedia>
           <AlertDialogTitle>Link {label}?</AlertDialogTitle>

@@ -20,6 +20,8 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
   const gate = { canTick: true, playAnimationOwns: false };
   const invokeAnimEvent = vi.fn();
   const setSpriteClip = vi.fn();
+  const playEventSound = vi.fn();
+  const spawnEventParticles = vi.fn();
   const runtime = new AnimGraphRuntime({
     world: () => world,
     stopped: () => false,
@@ -32,12 +34,49 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
     breakpoints: () => breakpoints,
     frameTrace: () => null,
     emit: () => {},
+    playEventSound,
+    spawnEventParticles,
   });
   runtime.register("graph", document);
-  return { actors, gate, invokeAnimEvent, runtime, setSpriteClip };
+  return { actors, gate, invokeAnimEvent, playEventSound, runtime, setSpriteClip, spawnEventParticles };
 }
 
 describe("AnimGraphRuntime", () => {
+  it("runs each fired Animation Event in the graph's Animation Object, after its own action", () => {
+    const document = createDefaultAnimGraph();
+    const idle = document.stateMachine.states[0]!;
+    idle.events = { enter: "Idle Started" };
+    idle.stateGraph.nodes = idle.stateGraph.nodes.map((node) =>
+      node.id === "player"
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              assetGuid: "walk",
+              durationMs: 1000,
+              events: [
+                { name: "Footstep", timeMs: 50, durationMs: 0, triggerWeight: 0.5, action: { kind: "playSound", assetGuid: "step", volume: 0.7 } },
+                { name: "Dust", timeMs: 80, durationMs: 0, triggerWeight: 0.5, action: { kind: "spawnParticles", assetGuid: "dust", bone: "foot_l" } },
+              ],
+            },
+          }
+        : node);
+    const { actors, invokeAnimEvent, playEventSound, runtime, spawnEventParticles } = setup(document);
+    runtime.tick(0.1);
+    const notifies = invokeAnimEvent.mock.calls.filter(([, event]) => event === "onAnimNotify");
+    expect(notifies.map(([classId, , self, , , args]) => [classId, self, args])).toEqual([
+      ["AnimGraph:graph", actors[0], { name: "Idle Started", phase: "event", animation: "" }],
+      ["AnimGraph:graph", actors[0], { name: "Footstep", phase: "event", animation: "walk" }],
+      ["AnimGraph:graph", actors[0], { name: "Dust", phase: "event", animation: "walk" }],
+    ]);
+    expect(playEventSound).toHaveBeenCalledWith(actors[0], "step", 0.7);
+    expect(spawnEventParticles).toHaveBeenCalledWith(actors[0], "dust", "foot_l");
+    // Nothing is crossed again until the next pass.
+    invokeAnimEvent.mockClear();
+    runtime.tick(0.1);
+    expect(invokeAnimEvent.mock.calls.filter(([, event]) => event === "onAnimNotify")).toEqual([]);
+  });
+
   it("stops on a state when the graph starts in it, jumps to it or enters it, and on a transition it takes", () => {
     const document = createDefaultAnimGraph();
     const machine = document.stateMachine;

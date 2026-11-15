@@ -7,6 +7,7 @@ import {
   normalizeSpriteBlendSpacePayload,
   SPRITE_BLEND_SPACE_MAX_HYSTERESIS,
   type BlendSpaceAxisPayload,
+  type BlendSpaceEventMode,
   type BlendSpaceLayoutPayload,
 } from "@haptic/assets";
 import {
@@ -48,6 +49,8 @@ const BLEND_SPACE_ANIMATION_DRAG = "application/x-haptic-blend-space-animation";
 export type BlendSpaceEditorPayload = BlendSpaceLayoutPayload & {
   skeletonGuid?: string | null;
   previewModelGuid?: string | null;
+  /** A Blend Space's: whose Animation Events fire. */
+  eventMode?: BlendSpaceEventMode;
   hysteresis?: number;
   keepTime?: boolean;
 };
@@ -589,6 +592,18 @@ export function BlendSpaceDetailsPanel(_props: IDockviewPanelProps) {
                 onPick: () => setSkeletonPick(true),
                 onChange: (value) => commit({ ...payload, skeletonGuid: value || null }),
                 ...assetRowIdentity(skeleton ? { name: skeleton.header.name, type: "Skeleton" } : undefined),
+              }, {
+                kind: "enum",
+                id: "event-mode",
+                label: "Event Mode",
+                value: payload.eventMode ?? "highestWeight",
+                options: [
+                  { value: "highestWeight", label: "Highest Weight" },
+                  { value: "all", label: "All" },
+                  { value: "none", label: "None" },
+                ],
+                description: "Whose Animation Events fire: the heaviest sample's, every sample's at or above their Trigger Weights, or none.",
+                onChange: (eventMode) => commit({ ...payload, eventMode: eventMode as BlendSpaceEventMode }),
               }]
             : [
                 {

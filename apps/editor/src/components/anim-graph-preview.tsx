@@ -18,6 +18,8 @@ import { variableDefaultPropertyRows } from "../lib/graph-inspector";
 import { useAnimGraphDocument } from "./anim-graph-editor";
 import { AnimPreview3DView, AnimPreviewModelControls } from "./anim-preview-model-controls";
 import { AnimSpriteFrameView } from "./anim-sprite-frame-view";
+import { AnimEventFlashes } from "./anim-event-flashes";
+import { useFiredEventFlashes } from "../lib/anim-event-flashes";
 import { IconActionButton } from "./icon-action-button";
 import { PlaybackSpeedSelect } from "./playback-controls";
 
@@ -134,6 +136,8 @@ function Preview3D({ api }: { api: IDockviewPanelProps["api"] }) {
   const preview = useAnimPreviewModel({ skeletonGuid: doc.skeletonGuid, animationGuids, previewModelGuid: doc.previewModelGuid });
   const [showBones, setShowBones] = useState(false);
   const getState = useCallback(() => session.getSnapshot().state, [session]);
+  const firedEvents = useCallback(() => session.getSnapshot().state?.events, [session]);
+  const flashes = useFiredEventFlashes(session.subscribe, firedEvents);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PreviewTransport
@@ -147,14 +151,17 @@ function Preview3D({ api }: { api: IDockviewPanelProps["api"] }) {
           />
         }
       />
-      <AnimPreview3DView
-        preview={preview}
-        showBones={showBones}
-        getState={getState}
-        subscribe={session.subscribe}
-        emptyText={doc.skeletonGuid ? "No Model is on the graph's Skeleton." : "Set the graph's Skeleton to preview it."}
-        data-testid="anim-preview-3d"
-      />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <AnimPreview3DView
+          preview={preview}
+          showBones={showBones}
+          getState={getState}
+          subscribe={session.subscribe}
+          emptyText={doc.skeletonGuid ? "No Model is on the graph's Skeleton." : "Set the graph's Skeleton to preview it."}
+          data-testid="anim-preview-3d"
+        />
+        <AnimEventFlashes flashes={flashes} data-testid="anim-preview-events" />
+      </div>
       <PreviewClock api={api} />
     </div>
   );
@@ -165,10 +172,15 @@ function Preview2D({ api }: { api: IDockviewPanelProps["api"] }) {
   const session = useAnimGraphPreview();
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const spriteAnimationGuids = useMemo(() => graphAnimationGuids(doc), [doc]);
+  const firedEvents = useCallback(() => session.getSnapshot().state?.events, [session]);
+  const flashes = useFiredEventFlashes(session.subscribe, firedEvents);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PreviewTransport />
-      <AnimSpriteFrameView state={snapshot.state} spriteAnimationGuids={spriteAnimationGuids} data-testid="anim-preview-2d" />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <AnimSpriteFrameView state={snapshot.state} spriteAnimationGuids={spriteAnimationGuids} data-testid="anim-preview-2d" />
+        <AnimEventFlashes flashes={flashes} data-testid="anim-preview-events" />
+      </div>
       <PreviewClock api={api} />
     </div>
   );

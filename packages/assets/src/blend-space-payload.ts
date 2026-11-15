@@ -20,6 +20,14 @@ export interface BlendSpaceSamplePayload {
   rateScale: number;
 }
 
+/**
+ * Which samples' Animation Events fire: the heaviest sample's (one footstep however the blend falls), every sample's
+ * at or above its events' Trigger Weights, or none.
+ */
+export type BlendSpaceEventMode = "highestWeight" | "all" | "none";
+
+export const BLEND_SPACE_EVENT_MODES: readonly BlendSpaceEventMode[] = ["highestWeight", "all", "none"];
+
 /** Animations on one Skeleton, placed on one or two axes and blended by where the input falls among them. */
 export interface BlendSpacePayload {
   skeletonGuid: string | null;
@@ -27,6 +35,7 @@ export interface BlendSpacePayload {
   previewModelGuid: string | null;
   axes: [BlendSpaceAxisPayload] | [BlendSpaceAxisPayload, BlendSpaceAxisPayload];
   samples: BlendSpaceSamplePayload[];
+  eventMode: BlendSpaceEventMode;
 }
 
 export const BLEND_SPACE_MAX_GRID_DIVISIONS = 64;
@@ -98,11 +107,14 @@ export function normalizeBlendSpacePayload(value: unknown): BlendSpacePayload {
   const { axes, samples } = normalizeLayout(record);
   const skeletonGuid = trimmed(record.skeletonGuid);
   const previewModelGuid = trimmed(record.previewModelGuid);
-  return { skeletonGuid: skeletonGuid || null, previewModelGuid: previewModelGuid || null, axes, samples };
+  const eventMode = BLEND_SPACE_EVENT_MODES.includes(record.eventMode as BlendSpaceEventMode)
+    ? (record.eventMode as BlendSpaceEventMode)
+    : "highestWeight";
+  return { skeletonGuid: skeletonGuid || null, previewModelGuid: previewModelGuid || null, axes, samples, eventMode };
 }
 
 export function createDefaultBlendSpacePayload(skeletonGuid: string | null): BlendSpacePayload {
-  return { skeletonGuid, previewModelGuid: null, axes: [defaultBlendSpaceAxis(0)], samples: [] };
+  return { skeletonGuid, previewModelGuid: null, axes: [defaultBlendSpaceAxis(0)], samples: [], eventMode: "highestWeight" };
 }
 
 /** The Skeleton and every sample's Animation, which a Blend Space needs loaded with it. */

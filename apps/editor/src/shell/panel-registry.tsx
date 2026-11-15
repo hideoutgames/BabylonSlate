@@ -142,6 +142,7 @@ const assetEditorPanelComponents = {
   "skeleton-details": lazyPanel(panels3d, (m) => m.SkeletonDetailsPanel),
   "animation-preview": lazyPanel(panels3d, (m) => m.AnimationPreviewPanel),
   "animation-details": lazyPanel(panels3d, (m) => m.AnimationDetailsPanel),
+  "animation-timeline": lazyPanel(panels3d, (m) => m.AnimationTimelinePanel),
   "skybox-creator-preview": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorPreviewPanel),
   "skybox-creator-cubemap": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorCubemapPanel),
   "skybox-creator-details": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorDetailsPanel),

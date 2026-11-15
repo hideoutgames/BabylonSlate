@@ -288,6 +288,23 @@ describe("SpriteAnimation editor", () => {
     expect(position.textContent).toBe("Frame 1/1 · 0/100 ms");
   });
 
+  it("marks the frames that fire Animation Events on the frame strip", () => {
+    const frame = (events?: unknown[]) => ({
+      textureGuid: "a",
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      ...(events ? { events } : {}),
+    });
+    render(
+      <SpriteAnimationPreview
+        payload={{ frames: [frame(), frame([{ id: "e", name: "Step" }])] } as unknown as Record<string, unknown>}
+      />,
+    );
+    expect(screen.queryByTestId("sprite-animation-frame-0-events")).toBeNull();
+    expect(screen.getByTestId("sprite-animation-frame-1-events").getAttribute("title")).toBe("Step");
+  });
+
   it("pauses and seeks when the frame strip is clicked", () => {
     const payload = {
       frames: [
@@ -418,5 +435,23 @@ describe("SpriteAnimation editor", () => {
     expect(next.frames).toHaveLength(2);
     expect(next.frames[1]).toMatchObject({ durationMs: 40 });
     expect(next.frames[1]?.durationMsOverride).toBeUndefined();
+  });
+
+  it("adds an Animation Event to the selected frame, which fires as the frame starts, and removes it", () => {
+    const payload = createDefaultSpriteAnimationPayload();
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SpriteAnimationDetails payload={payload as unknown as Record<string, unknown>} onChange={onChange} />,
+    );
+    // A frame event has no time of its own: no Time or Duration rows.
+    fireEvent.click(screen.getByTestId("sprite-animation-frame-events-add"));
+    const added = onChange.mock.calls.at(-1)![0] as { frames: Array<{ events?: unknown[] }> };
+    expect(added.frames[0]!.events).toEqual([{ id: "event-1", name: "Event", triggerWeight: 0.5, action: null }]);
+    rerender(<SpriteAnimationDetails payload={added as unknown as Record<string, unknown>} onChange={onChange} />);
+    expect(screen.queryByTestId("property-event-1-time")).toBeNull();
+    fireEvent.change(screen.getByTestId("property-event-1-name"), { target: { value: "Step" } });
+    expect((onChange.mock.calls.at(-1)![0] as { frames: Array<{ events?: Array<{ name: string }> }> }).frames[0]!.events![0]!.name).toBe("Step");
+    fireEvent.click(screen.getByTestId("sprite-animation-frame-events-remove-event-1"));
+    expect((onChange.mock.calls.at(-1)![0] as { frames: Array<{ events?: unknown }> }).frames[0]!.events).toBeUndefined();
   });
 });

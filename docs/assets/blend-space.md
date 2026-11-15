@@ -14,7 +14,7 @@ Double-tap a Blend Space to open it. Its windows:
 - **Grid**: the axes, with each sample as a diamond. Drag a sample to move it; it snaps to the grid. Select one and press Delete to remove it. A two-axis space shows the triangles its weights come from. The red cross is the preview point: click or drag on the Grid to move it (on touch, tap where it should go or drag the cross). The corner shows the point and the heaviest samples there.
 - **Animations**: the Animations on the Blend Space's Skeleton. Drag one onto the Grid to add it there, or tap its **+** to add it at the preview point. The count beside an Animation says how often it is placed.
 - **Preview**: a Model on the Skeleton playing the blend at the preview point, as a game would, with **Play** or **Pause**, **Speed**, the **Preview Model** list and **Bones**. The bar ends with the cycle's position and length.
-- **Inspector**: the **Skeleton**, the **Axes** (one or two), each axis's settings and the selected sample's. Going from one axis to two adds a Direction axis with the samples on its centre line, where the one-axis Grid drew them.
+- **Inspector**: the **Skeleton**, the **Event Mode**, the **Axes** (one or two), each axis's settings and the selected sample's. Going from one axis to two adds a Direction axis with the samples on its centre line, where the one-axis Grid drew them.
 
 ## Settings
 
@@ -37,6 +37,8 @@ Double-tap a Blend Space to open it. Its windows:
 | Rate Scale | Plays this sample faster or slower; 1 plays it at its Animation's **Duration**. |
 
 The Preview's Model is saved with the Blend Space and is used only in the editor.
+
+**Event Mode** chooses whose [Animation Events](animation-graph.md#animation-events) fire while the Blend Space plays (the **Preview** flashes their names): **Highest Weight** (the default) fires only the heaviest sample's, so a blend of Walk and Run steps once; **All** fires every sample's that plays at or above an event's **Trigger Weight**; **None** fires none.
 
 ## How it blends
 

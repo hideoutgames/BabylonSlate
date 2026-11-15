@@ -32,7 +32,7 @@ import {
   type Vec3,
 } from "./context";
 import { classGraph, gChain, gExec, getVar, gNode, gWire, setVar, varMember } from "./graph";
-import { playerNode, playerState, poseGraph, stateMachineGraph, type FeatureTestClip } from "./anim-pose-graphs";
+import { animationObjectHearing, playerNode, playerState, poseGraph, stateMachineGraph, type FeatureTestClip } from "./anim-pose-graphs";
 import { stressPoint } from "./layout";
 
 /**
@@ -142,6 +142,7 @@ const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
  */
 export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promise<void> {
   await authorDoorOpenDuration(ctx);
+  await authorAdventurerFootsteps(ctx);
   const mannequinRun = await saveSpeedBlendSpace(
     ctx,
     NAMES.mannequinBlendSpace,
@@ -255,6 +256,38 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
   await ctx.addSceneDocument({ kind: "scene", folder: SCENES_FOLDER, name: ANIMATION_SCENE, content: scene, order: SCENE_SAVE_ORDER.scene });
 }
 
+/**
+ * The KayKit Walk and Run Animations get Animation Events: a Footstep at each foot's contact (playing the one-shot
+ * sound when the audio slot is filled) and a Stride window across the first step. The adventurers' graph hears them in
+ * its Animation Object.
+ */
+async function authorAdventurerFootsteps(ctx: FeatureTestContext): Promise<void> {
+  const sound = ctx.assets.audio.oneShot;
+  for (const name of [KAYKIT_CLIPS.walk, KAYKIT_CLIPS.run]) {
+    const guid = ctx.assets.kaykit.mediumAnimations[name];
+    const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+    if (!asset) continue;
+    const payload = normalizeAnimationPayload(asset.header.payload);
+    const lengthMs = payload.durationMs ?? payload.clipDurationMs ?? 1000;
+    const step = (id: string, at: number) => ({
+      id,
+      name: "Footstep",
+      timeMs: Math.round(lengthMs * at),
+      durationMs: 0,
+      triggerWeight: 0.5,
+      action: sound ? { kind: "playSound" as const, assetGuid: sound, volume: 0.4 } : null,
+    });
+    await ctx.host.saveDocument("animation", asset.path, {
+      ...payload,
+      events: [
+        { id: "stride", name: "Stride", timeMs: Math.round(lengthMs * 0.1), durationMs: Math.round(lengthMs * 0.3), triggerWeight: 0.5, action: null },
+        step("footstep-left", 0.25),
+        step("footstep-right", 0.75),
+      ],
+    });
+  }
+}
+
 /** Save the door's Open Animation with a Duration longer than its clip, as the Inspector's Duration field does. */
 async function authorDoorOpenDuration(ctx: FeatureTestContext): Promise<void> {
   const guid = ctx.assets.doorAnimations.open;
@@ -290,6 +323,8 @@ async function saveSpeedBlendSpace(
       { animationGuid: walk, x: RUN_SPEED - 1, y: 0, rateScale: 1 },
       { animationGuid: run, x: RUN_SPEED, y: 0, rateScale: 1 },
     ],
+    // One footstep however Walk and Run blend: only the heavier sample's events fire.
+    eventMode: "highestWeight",
   };
   return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
 }
@@ -453,13 +488,14 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
 function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string): AnimGraphDocument {
   const animations = ctx.assets.kaykit.mediumAnimations;
   const clip = (name: string) => kaykitClip(ctx, animations, name);
-  return stateMachineGraph("3d", {
+  const graph = stateMachineGraph("3d", {
     name: NAMES.adventurerGraph,
     skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
     entryStateId: "idle",
     states: [
       playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
-      speedBlendSpaceState("move", "Move", 400, 220, moveBlendSpace),
+      // Move fires Move Started as it starts; its Walk and Run samples fire Footstep and Stride (Highest Weight only).
+      { ...speedBlendSpaceState("move", "Move", 400, 220, moveBlendSpace), events: { enter: "Move Started" } },
       playerState("3d", "interact", "Interact", 80, 480, clip(KAYKIT_CLIPS.interact), { loop: false }),
       playerState("3d", "pick-up", "Pick Up", 400, 480, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
       playerState("3d", "hit", "Hit", -240, 480, clip(KAYKIT_CLIPS.hit), { loop: false }),
@@ -477,6 +513,14 @@ function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string
       transition("adventurer-pick-up-to-idle", "pick-up", "idle", 0.2, 0, UPWARD, [exitTime(1)]),
     ],
   });
+  return {
+    ...graph,
+    animationObject: animationObjectHearing(NAMES.adventurerGraph, [
+      { name: "Footstep" },
+      { name: "Stride", window: true },
+      { name: "Move Started" },
+    ]),
+  };
 }
 
 /** Rig_Large: its library has walking and running only, so one Move state blends them by Speed. */

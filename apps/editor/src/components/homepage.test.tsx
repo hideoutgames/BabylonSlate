@@ -424,15 +424,15 @@ describe("Slate project browser", () => {
   });
 
   it.each([
-    ["web", "opfs", "Delete", "Delete Game?", "Delete"],
-    ["ios", "documents", "Delete", "Delete Game?", "Delete"],
-    ["android", "documents", "Delete", "Delete Game?", "Delete"],
-    ["electron", "documents", "Delete", "Delete Game?", "Delete"],
-    ["ios", "external", "Remove From List", "Remove Project?", "Remove"],
-    ["electron", "external", "Remove From List", "Remove Project?", "Remove"],
+    ["web", "opfs", "Delete", "Delete Game?", "destructive", "Delete"],
+    ["ios", "documents", "Delete", "Delete Game?", "destructive", "Delete"],
+    ["android", "documents", "Delete", "Delete Game?", "destructive", "Delete"],
+    ["electron", "documents", "Delete", "Delete Game?", "destructive", "Delete"],
+    ["ios", "external", "Remove From List", "Remove Game?", "warning", "Remove From List"],
+    ["electron", "external", "Remove From List", "Remove Game?", "warning", "Remove From List"],
   ] as const)(
     "confirms %s %s project removal before changing storage",
-    async (platform, tier, item, title, action) => {
+    async (platform, tier, item, title, variant, action) => {
       getHostPlatform.mockReturnValue(platform);
       const onRemoveFromList = vi.fn(async () => {});
       renderHomepage({
@@ -444,15 +444,16 @@ describe("Slate project browser", () => {
       );
       expect(screen.getByTestId("homepage-project-remove").textContent).toBe(item);
       fireEvent.click(screen.getByTestId("homepage-project-remove"));
-      expect(
-        within(screen.getByTestId("homepage-remove-dialog")).getByRole(
-          "heading",
-          { name: title },
-        ),
-      ).toBeTruthy();
-      expect(
-        screen.getByTestId("homepage-remove-confirm").textContent,
-      ).toContain(action);
+      const dialog = screen.getByTestId("homepage-remove-dialog");
+      expect(within(dialog).getByRole("heading", { name: title })).toBeTruthy();
+      expect(dialog.getAttribute("data-variant")).toBe(variant);
+      // Removing explains how it differs from deleting; deleting needs no comparison.
+      expect(!!within(dialog).queryByTestId("homepage-remove-compare")).toBe(
+        tier === "external",
+      );
+      expect(screen.getByTestId("homepage-remove-confirm").textContent).toBe(
+        action,
+      );
       expect(onRemoveFromList).not.toHaveBeenCalled();
       fireEvent.click(screen.getByTestId("homepage-remove-confirm"));
       await waitFor(() => expect(onRemoveFromList).toHaveBeenCalledOnce());

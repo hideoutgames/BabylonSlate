@@ -1,4 +1,5 @@
 import type { SerializedGraph } from "@haptic/core";
+import { parseAnimClipEvents, type AnimClipEvent } from "./events";
 
 type SerializedGraphNode = SerializedGraph["nodes"][number];
 
@@ -135,6 +136,11 @@ export interface PoseClipData {
   loop: boolean;
 }
 
+/** A player's clip events, as resolution copied them onto the node. */
+export function poseClipEvents(node: SerializedGraphNode): AnimClipEvent[] {
+  return parseAnimClipEvents(node.data.events);
+}
+
 export function poseClipData(node: SerializedGraphNode): PoseClipData {
   const data = node.data;
   const durationMs = typeof data.durationMs === "number" && Number.isFinite(data.durationMs) && data.durationMs > 0
@@ -196,6 +202,8 @@ export interface BlendSpaceNodeSample {
   x: number;
   y: number;
   rateScale: number;
+  /** Its Animation's (or Sprite Animation's) events; absent when it has none. */
+  events?: AnimClipEvent[];
 }
 
 /** The Blend Space a Blend Space Player names, as `resolveAnimGraphClips` stores it on the node. */
@@ -206,6 +214,8 @@ export interface BlendSpaceNodeData {
   hysteresis?: number;
   /** A Sprite Blend Space's: whether the next sample goes on from the cycle's position (else from its start). */
   keepTime?: boolean;
+  /** A Blend Space's: which samples' events fire (the heaviest's by default). */
+  eventMode?: "highestWeight" | "all" | "none";
 }
 
 function finiteNumber(value: unknown, fallback: number): number {
@@ -235,11 +245,13 @@ export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeDat
       x: finiteNumber(sample.x, 0),
       y: finiteNumber(sample.y, 0),
       rateScale: rateScale > 0 ? rateScale : 1,
+      ...((events) => (events.length > 0 ? { events } : {}))(parseAnimClipEvents(sample.events)),
     }];
   });
-  const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime"> = {};
+  const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime" | "eventMode"> = {};
   if (typeof record.hysteresis === "number" && Number.isFinite(record.hysteresis)) sprite.hysteresis = Math.max(0, record.hysteresis);
   if (typeof record.keepTime === "boolean") sprite.keepTime = record.keepTime;
+  if (record.eventMode === "highestWeight" || record.eventMode === "all" || record.eventMode === "none") sprite.eventMode = record.eventMode;
   return { axes, samples, ...sprite };
 }
 

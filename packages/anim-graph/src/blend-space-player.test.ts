@@ -170,6 +170,8 @@ describe("Blend Space Player resolve and validation", () => {
         // An Animation with no known length plays for a second.
         { animationGuid: "run", clipName: "Run", durationMs: 1000, x: 6, y: 0, rateScale: 1.5 },
       ],
+      // With none chosen, the heaviest sample's events fire.
+      eventMode: "highestWeight",
     });
     // Resolving again changes nothing.
     expect(resolveAnimGraphClips(resolved, catalog)).toBe(resolved);
