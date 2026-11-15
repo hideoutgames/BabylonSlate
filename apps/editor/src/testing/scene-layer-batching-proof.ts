@@ -17,6 +17,8 @@ import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { Scene } from "@babylonjs/core/scene";
 import type { LayerCameraState } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+// The engine-wide registrations a shipped Engine loads before it exists (multiple render targets among them).
+import "../../../../packages/render/src/babylon-registrations";
 import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { sceneImagePages, setSceneDrawBatching, setSceneImagePages } from "../../../../packages/render/src/overlay-draw-batcher";
