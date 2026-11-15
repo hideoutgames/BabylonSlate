@@ -65,10 +65,6 @@ function lfsId(oid: string, size: number): Promise<string> {
   return gitBlobSha1(pointerBytes(oid, size));
 }
 
-function objectMissing(oid: string): SyncError {
-  return new SyncError("lfs", `The server has no LFS object ${oid}.`, { code: "lfs-object-missing" });
-}
-
 /** A checkout's paths that change working files: an LFS object's file the target lacks stays, untracked, as the Git core keeps it. */
 function writtenPaths(writes: readonly string[], target: Files): string[] {
   return writes.filter((path) => !(lfsObjectId(path) && !target.has(path)));
@@ -401,7 +397,7 @@ export class FakeSync implements SyncPort {
   /** An LFS object as the server holds it: only what was seeded or pushed (a commit never pushed uploaded nothing). */
   private storedObject(oid: string, size: number): Uint8Array {
     const stored = this.remote.lfsObjects.get(oid);
-    if (!stored || stored.byteLength !== size) throw objectMissing(oid);
+    if (!stored || stored.byteLength !== size) throw new SyncError("lfs", `The server has no LFS object ${oid}.`, { code: "lfs-object-missing" });
     return stored;
   }
 
