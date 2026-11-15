@@ -5,7 +5,12 @@ Deferred design for built-in Git: clone, pull, commit, push, diff and history in
 ## Scope
 
 - In: Git over HTTPS with Git LFS in the iOS, Android and desktop apps; GitHub and GitLab sign-in; cloning and publishing from the project browser; a pinned Source Control tab (changes, asset diffs, commit, pull, push, branches, history, revert) and status bar controls; Git LFS locks in every mode; other Git hosts by URL and token.
-- Out for now: the web build (GitHub's Git and LFS endpoints send no CORS headers, and a proxy is out of scope); SSH transport (SSH remotes map to their HTTPS host, as `lfsEndpointFromRepoUrl` already does); line-level merge, rebase, stash and submodules; non-Git systems such as Diversion or Perforce; source control providers in Engine Extensions.
+- Out for now:
+  - The web build: GitHub's Git and LFS endpoints send no CORS headers, and it stays out unless a proxy is accepted.
+  - SSH transport: SSH remotes map to their HTTPS host, as `lfsEndpointFromRepoUrl` already does.
+  - Line-level merge, rebase, stash and submodules.
+  - Non-Git systems such as Diversion or Perforce. Diversion waits until its public API offers locks.
+  - Source control providers in Engine Extensions. A non-Git system needs a sync-level provider (status, update, commit, base version, locks, history), which would be built first-party first.
 - Free: no Haptic-run server, proxy or paid service. Repository and LFS storage, bandwidth and request limits fall on each user's own host plan.
 
 ## Modes
@@ -18,7 +23,7 @@ Per project (`project.json` `sourceControl.mode`), off by default.
 | Integrated | Haptic | Clone, pull, commit, push, diff, history, branches, LFS transfer and locks |
 | Manual | Working Copy or a desktop Git app | Locks only: today's feature, reworked ([Manual mode](#manual-mode)) |
 
-- One Git client per folder: Integrated projects come from Clone or Publish in app storage, and an existing working copy stays Manual, because two clients writing one index race. Working Copy exposes the working tree only, so its folders are always Manual.
+- One Git client per folder, because two clients writing one index race. Integrated projects come from Clone or Publish in app storage. On desktop an existing clone whose `.git` is readable may switch to Integrated, with a warning that no other Git app may use it at the same time; elsewhere an existing working copy stays Manual. Working Copy exposes the working tree only, so its folders are always Manual.
 
 ## Hosts
 
@@ -61,7 +66,7 @@ Per project (`project.json` `sourceControl.mode`), off by default.
   - Pull and checkout download a `.blobs` object only when its file is missing.
   - Status compares `.blobs` files by name and size, never by Git blob hash.
 - Git itself carries `.hasset` files (chunks under 64 KiB stay inline), `project.json`, plugin and extension files and `.haptic-folder` markers.
-- Publish writes `.gitattributes` (`**/.blobs/** filter=lfs diff=lfs merge=lfs -text`) and `.gitignore` (`layout.json`, which holds one person's dock layout, plus the `.haptic-*.tmp` and `.haptic-move-*` files that storage writes and moves leave). `lockable` is still never added.
+- Publish writes `.gitattributes` (`**/.blobs/** filter=lfs diff=lfs merge=lfs -text`) and `.gitignore` (`layout.json`, which holds one person's dock layout, plus the `.haptic-*.tmp` and `.haptic-move-*` files that storage writes and moves leave). `lockable` is still never added. A repository Publish did not create (a cloned one, or an adopted desktop clone) may lack the `.blobs` rule; Integrated mode must not commit `.blobs` until the rule is in place, and step 3 of [Order](#order) decides how it is added.
 
 ## Editor
 
@@ -80,17 +85,18 @@ Per project (`project.json` `sourceControl.mode`), off by default.
 
 ## Manual mode
 
-Today's feature with: credentials from Engine Settings; the single **Sign In** prompt; Repository and Branch pickers when signed in to GitHub or GitLab (the `.git/config` prefill stays); no Token or Poll Interval rows; **Release Pushed Locks**; the missing-lock-support message.
+Today's feature with: credentials from Engine Settings; the single **Sign In** prompt; Repository and Branch pickers when signed in to GitHub or GitLab (the `.git/config` prefill stays); no Token or Poll Interval rows; **Release Pushed Locks**; the missing-lock-support message. The pinned Source Control tab shows only **Locks**.
 
 ## UI
 
 Approved layouts. Everything keeps the editor's compact density, tokens and Lucide icons; assets show their usual type visuals; settings rows carry no explanatory text ([row descriptions](../rules/row-descriptions.md)).
 
-- **Source Control tab:** a pinned document tab that cannot be closed, at the right end of the document tab bar, left of **Open Documents**, with the count of uncommitted changes. Diffs open inside it, never as separate document tabs. Its windows:
+- **Source Control tab:** a pinned document tab that cannot be closed, at the right end of the document tab bar, left of **Open Documents**, with the count of uncommitted changes. It shows in Integrated and Manual modes; in Manual it holds only **Locks**. Diffs open inside it, never as separate document tabs. Locks lives only here: the per-document Locks window goes. Its windows:
   - **Changes**, tabbed with **History** and **Locks**: branch picker; **Pull** and **Push** with counts; a status line (commits to pull and push, last check); changed assets as rows (include checkbox, type icon, folder, own-lock icon, A/M/D in success/warning/destructive); **Incoming** commits; the commit box (**Commit Message**, **Push After Commit**, **Commit N Assets**).
   - **Actors** (Scenes; the matching tree for other kinds): added, removed and changed items marked and tinted, unchanged ones muted, with search and Added/Removed/Changed counts.
   - **Diff**: the view for the asset's kind, with **Open <Kind>** and **Revert Asset**.
   - The global toolbar's document slot (where Compile or the scene mode picker sit) holds the **Base** and **Compare** pickers.
+- **Phone layout:** it has no tab strip or status bar, so a **Source Control** button beside the Content Browser button opens the tab, and **More Tools** holds the status bar menu's actions.
 - **Diff views:**
   - Properties: Property, Base (branch and short id) and Working Copy columns grouped by component; changed cells tinted destructive (base) and success (working copy); **Side By Side** / **Inline**; **Changed Only**.
   - Graphs: **Overlay** / **Base** / **Working Copy**; changed nodes outlined warning, added success, removed destructive and dashed, each tagged; a changed pin value shows the old value struck through beside the new; a side list grouped by graph, Variables and Functions.
@@ -103,7 +109,7 @@ Approved layouts. Everything keeps the editor's compact density, tokens and Luci
 - **Clone Project** (project browser): **GitHub** / **GitLab** / **URL**, the signed-in user, repository search and list (Private/Public, last update), **Branch**, **Project Name**, **Clone**.
 - **Publish Project**: Host, Owner, Repository Name, Visibility (**Private** / **Public**), a summary of what it creates and pushes (asset count, size, the share through LFS), **Publish**.
 - **Project Settings → Source Control**: Mode (**Off** / **Integrated** / **Manual**), Repository with **Change**, Branch, the account state, and Locking (**Auto-Lock On First Edit**, **Release Locks After Push**).
-- **Manual mode:** the signed-out banner with **Sign In** at the top of documents; Locks with **Release Pushed Locks (N)**, **Release All My Locks (N)** and **Pushed** / **Not Pushed** on your own locks.
+- **Manual mode:** the signed-out banner with **Sign In** at the top of documents; **Locks** in the Source Control tab, with **Release Pushed Locks (N)**, **Release All My Locks (N)** and **Pushed** / **Not Pushed** on your own locks.
 
 ## Engine integration points
 
@@ -115,27 +121,15 @@ What exists today and what each part must change. Check these against the code b
 - **Device page:** desktop hands only allowlisted links to the system browser (`externalOpenUrl`, `apps/desktop/src/packaged-security.ts`); it must admit GitHub's and gitlab.com's device pages.
 - **Settings:** `ProjectSettings.sourceControl` (`packages/core/src/project.ts`): `enabled` becomes `mode`, `pollIntervalMs` goes, `releaseLocksAfterPush` joins. The rows live in `apps/editor/src/components/project-source-control-settings.tsx`. Project setting changes follow the [FeatureTest starter rule](../rules/feature-test.md).
 - **Assets:** `packages/assets/src/blob-store.ts` (write-once blobs, `BLOBS_DIR`), `hasset.ts` (container decode for diffs), `mtime-diff.ts` and `apps/editor/src/lib/external-change.ts` (reload after pull).
-- **Source Control tab:** a new pinned document kind beside the pinned Content Browser in the chrome tab bar; follow the [DockView asset editor tabs rule](../rules/dockview-editor-tabs.md). `listDockWindows` lists Locks only with `sourceControl: true` today.
+- **Source Control tab:** a new pinned document kind beside the pinned Content Browser in the chrome tab bar; follow the [DockView asset editor tabs rule](../rules/dockview-editor-tabs.md). Today `listDockWindows` adds a Locks window to every document kind when passed `sourceControl: true` (`withOptionalLocks` in `apps/editor/src/shell/window-catalog.ts`); that goes, and Locks becomes one of the tab's windows. The phone layout's Content Browser button gains the Source Control button beside it. Step 2 of [Order](#order) builds the tab with Locks only; step 4 adds its other windows.
 - **Status bar:** `apps/editor/src/components/editor-status-bar.tsx`, which renders nothing in the phone layout.
 - **Docs:** `docs/projects/source-control.md` and `docs/editor/settings.md` change with each step.
 
 ## Order
 
 1. Gate on the A16 iPad: isomorphic-git clone, status, commit and push of a project with a few thousand assets through the Capacitor storage adapter, and LFS transfer of large blobs through native HTTP. Status must use stat data, not re-hashing. Choose the streaming transfer path from the results.
-2. Device credentials, GitHub and GitLab sign-in in Engine Settings and the Manual mode rework; update `architecture/source-control.md`. First check by hand, with real sign-in tokens from both registered apps, that each host accepts them with the stored username for Git, LFS transfer and LFS locks.
+2. Device credentials, GitHub and GitLab sign-in in Engine Settings and the Manual mode rework, including the pinned Source Control tab holding only **Locks**, the phone Source Control button, and removal of the per-document Locks window; update `architecture/source-control.md`. First check by hand, with real sign-in tokens from both registered apps, that each host accepts them with the stored username for Git, LFS transfer and LFS locks.
 3. Git core in `packages/source-control`: clone, status, commit, pull (fast-forward and whole-file conflicts), push and LFS transfer, tested against a local Git HTTP server and a fake LFS server.
-4. Integrated mode in the editor: Clone and Publish for GitHub and GitLab, Clone From URL, the Source Control tab and status bar controls, lock verify before push and release after it.
+4. Integrated mode in the editor: Clone and Publish for GitHub and GitLab, Clone From URL, the Source Control tab's Changes, History, Actors and Diff windows, the status bar controls and the phone More Tools actions, lock verify before push and release after it.
 5. Asset diffs: payload and chunk level, then Scene and graph views.
 6. Branches, history and revert.
-
-## Open decisions
-
-| Decision | Recommendation |
-| --- | --- |
-| Source Control tab on phones (no tab strip or status bar) | A Source Control button beside the Content Browser button, opening the tab; the status bar menu's actions in More Tools |
-| Source Control tab in Manual mode | Shown, with Locks only |
-| Where Locks lives | Only in the Source Control tab; the per-document Locks window goes |
-| Adopting an existing desktop clone as Integrated | Allow on desktop when `.git` is readable, warning that no other Git app may use it at the same time |
-| Web build | Stay out unless a proxy is accepted |
-| Providers in Engine Extensions | No. A non-Git system such as Diversion needs a sync-level provider (status, update, commit, base version, locks, history), built first-party first |
-| Diversion | Deferred until its public API offers locks |
