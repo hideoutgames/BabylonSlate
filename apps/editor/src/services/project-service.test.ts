@@ -4,6 +4,8 @@ import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vf
 import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@haptic/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@haptic/vfs";
 import { encodeAssetDocument, encodeHasset, decodeHasset } from "@haptic/assets";
+import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
+import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
@@ -19,6 +21,11 @@ afterEach(() => vi.unstubAllGlobals());
 vi.mock("@haptic/vfs", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@haptic/vfs")>();
   return { ...mod, pickImportFiles: vi.fn(mod.pickImportFiles) };
+});
+
+vi.mock("@haptic/assets/import-worker-client", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@haptic/assets/import-worker-client")>();
+  return { ...mod, convertHdrEnvironmentOffMainThread: vi.fn(mod.convertHdrEnvironmentOffMainThread) };
 });
 
 vi.mock("../lib/kenney-mannequin", async (importOriginal) => {
@@ -111,6 +118,131 @@ describe("ProjectService lifecycle", () => {
     expect(JSON.parse(await storage.readText(PROJECT_FILE)).metadata.version).toBe("2.0");
     expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe("Saved baseline");
     lease.release();
+    await service.closeProject();
+  });
+
+  it("runs work as the project's only writer: after admitted saves finish, refusing every other writer, writing through its own storage", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Alone", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    await storage.writeText("assets/.blobs/loose", "x");
+    let proceed!: () => void;
+    let wroteScene!: () => void;
+    const firstWrite = new Promise<void>(resolve => { wroteScene = resolve; });
+    const paused = new Promise<void>(resolve => { proceed = resolve; });
+    const saving = service.withBaselineSave(async writer => {
+      await writer.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Saved first" });
+      wroteScene();
+      await paused;
+    });
+    await firstWrite;
+    const steps: string[] = [];
+    let kept: ProjectStorage | null = null;
+    const alone = service.withExclusiveWrites("Removing unused files", async (own) => {
+      steps.push("work");
+      kept = own;
+      await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/Removing unused files/);
+      await expect(service.storagePort.remove("assets/.blobs/loose")).rejects.toThrow(/Removing unused files/);
+      await own.remove("assets/.blobs/loose");
+      return "done";
+    });
+    // A save admitted before it ends first; new writers are refused meanwhile.
+    await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/Removing unused files/);
+    expect(steps).toEqual([]);
+    proceed();
+    await saving;
+    expect(await alone).toBe("done");
+    expect(await storage.exists("assets/.blobs/loose")).toBe(false);
+    expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe("Saved first");
+    // Its storage writes nothing once it ended, and writers are admitted again.
+    await expect(kept!.writeText("assets/.blobs/late", "x")).rejects.toThrow();
+    expect(await storage.exists("assets/.blobs/late")).toBe(false);
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    await service.closeProject();
+  });
+
+  it("refuses to run as the only writer while another operation holds project writes, and stops waiting when aborted", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Held", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    const work = vi.fn(async () => "ran");
+
+    const simulation = service.lockAuthoringWrites("Read-only during Simulation Play");
+    await expect(service.withExclusiveWrites("Removing unused files", work)).rejects.toThrow(/Simulation/);
+    simulation.release();
+    expect(work).not.toHaveBeenCalled();
+
+    // Waiting for an admitted save: an abort ends the wait, runs nothing and admits writers again.
+    let proceed!: () => void;
+    const paused = new Promise<void>(resolve => { proceed = resolve; });
+    let started!: () => void;
+    const saveStarted = new Promise<void>(resolve => { started = resolve; });
+    const saving = service.withBaselineSave(async () => {
+      started();
+      await paused;
+    });
+    await saveStarted;
+    const controller = new AbortController();
+    const waiting = service.withExclusiveWrites("Removing unused files", work, controller.signal);
+    controller.abort();
+    await expect(waiting).rejects.toThrow();
+    expect(work).not.toHaveBeenCalled();
+    proceed();
+    await saving;
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    await service.closeProject();
+  });
+
+  it("waits for a Face Size conversion to write its Texture before running as the only writer", async () => {
+    // The conversion writes the cube's blob, then the header naming it: removing unused files in between
+    // could take a blob the conversion found already stored, and the header would name a missing file.
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Sky", { kind: "2d" });
+    const [sky] = await service.registry!.importFile("project", "", "Sky.hdr", buildRadianceHdrFixture({ width: 64, height: 32, color: () => [1, 1, 1] }), { hdrFaceSize: 128 });
+    const guid = sky!.header.guid;
+    const converting = () => {
+      let started!: () => void;
+      let finish!: () => void;
+      const running = new Promise<void>((resolve) => { started = resolve; });
+      const release = new Promise<void>((resolve) => { finish = resolve; });
+      const convert = async () => {
+        started();
+        await release;
+        return buildFloatDdsCubeFixture({ size: 4, halfFloat: true });
+      };
+      return { running, finish, convert };
+    };
+    const steps: string[] = [];
+    const alone = () => service.withExclusiveWrites("Removing unused files", async () => { steps.push("work"); });
+
+    // Texture Details' Face Size, through the project service.
+    const details = converting();
+    vi.mocked(convertHdrEnvironmentOffMainThread).mockImplementationOnce(details.convert);
+    const reconverted = service.reconvertHdrEnvironment(guid, 512);
+    await details.running;
+    const first = alone();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(steps).toEqual([]);
+    details.finish();
+    expect(await reconverted).toBe(true);
+    await first;
+    expect(steps).toEqual(["work"]);
+
+    // The same through the registry editor tools are handed.
+    const tools = converting();
+    const viaRegistry = service.registry!.reconvertHdrEnvironment(guid, 256, tools.convert);
+    await tools.running;
+    const second = alone();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(steps).toEqual(["work"]);
+    tools.finish();
+    expect(await viaRegistry).toBe(true);
+    await second;
+    expect(steps).toEqual(["work", "work"]);
+    expect(service.registry!.getByGuid(guid)!.header.payload).toMatchObject({ hdrFaceSize: 256 });
     await service.closeProject();
   });
 

@@ -1,3 +1,4 @@
+import { normalizeAnimationRootMotion, type AnimationRootMotion } from "./animation-root-motion";
 import { animationEventActionGuids, normalizeAnimationEvents, type AnimationEventPayload } from "./animation-events";
 
 export interface AnimationPayload {
@@ -13,6 +14,8 @@ export interface AnimationPayload {
   events?: AnimationEventPayload[];
   /** Present when the Animation is additive: a change from a base pose that Apply Additive adds to another pose. */
   additive?: AnimationAdditive;
+  /** Present when the Animation drives its actor by root motion: the root bone and its sampled travel and turn. */
+  rootMotion?: AnimationRootMotion;
 }
 
 /** What an additive Animation is a change from: the Skeleton's rest pose, its own first frame, or another Animation's pose. */
@@ -75,6 +78,8 @@ export function normalizeAnimationPayload(value: unknown): AnimationPayload {
   if (events.length > 0) payload.events = events;
   const additive = normalizeAnimationAdditive(record.additive);
   if (additive) payload.additive = additive;
+  const rootMotion = normalizeAnimationRootMotion(record.rootMotion);
+  if (rootMotion) payload.rootMotion = rootMotion;
   return payload;
 }
 

@@ -23,6 +23,8 @@ import {
   type BoneNode,
 } from "./anim-bone-modifiers";
 import { applySpringBones } from "./anim-spring-bones";
+import { holdRoot, rootLockOf } from "./anim-root-lock";
+import { applyFootPlacement, sceneOfNode } from "./anim-foot-placement";
 
 /**
  * Haptic's pose evaluator: Play, the editor's previews and exported games pose 3D clips here, never by starting,
@@ -606,6 +608,8 @@ export interface PoseLayering {
   readonly modifiers: readonly AnimBoneModifier[];
   /** Per clip: present when it plays additively (Apply Additive), with the pose its change is from. */
   readonly additive?: ArrayLike<PoseAdditive | undefined>;
+  /** Per clip: its root motion bone, which it holds in place across the ground (`rootLockOf`). */
+  readonly rootLock?: ArrayLike<string | undefined>;
 }
 
 /**
@@ -627,10 +631,17 @@ function layeringSignature(count: number, layering: PoseLayering | null | undefi
     anyAdditive ||= entry !== undefined;
     additive.push(entry ? `${entry.reference?.clipAssetGuid ?? ""}\0${entry.reference?.name ?? ""}\0${entry.frame}` : null);
   }
-  if (layering.blends.length === 0 && layering.modifiers.length === 0 && !anyAdditive) return "";
+  const locks: Array<string | null> = [];
+  let anyLock = false;
+  for (let l = 0; l < count; l++) {
+    const bone = layering.rootLock?.[l];
+    anyLock ||= bone !== undefined;
+    locks.push(bone ?? null);
+  }
+  if (layering.blends.length === 0 && layering.modifiers.length === 0 && !anyAdditive && !anyLock) return "";
   const masks: Array<readonly AnimLayerMaskRef[] | null> = [];
   for (let l = 0; l < count; l++) masks.push(layering.masks[l] ?? null);
-  return JSON.stringify([masks, layering.blends, layering.modifiers, additive]);
+  return JSON.stringify([masks, layering.blends, layering.modifiers, additive, locks]);
 }
 
 /** Whether the pose's layers are the last pose's, which then still stands. Records them otherwise. */
@@ -725,6 +736,9 @@ export function applyPose(
     const frame = frames[l]!;
     const channels = clip.channels;
     const hints = clip.keyHints;
+    // A root motion clip holds its root bone in place across the ground; the actor moves instead.
+    const lockBone = layering?.rootLock?.[l];
+    const lock = lockBone ? rootLockOf(clip, lockBone, samplePoseTrack) : null;
     for (let i = 0; i < indices.length; i++) {
       const index = indices[i]!;
       if (index < 0) continue;
@@ -738,10 +752,12 @@ export function applyPose(
         stamps[index] = generation;
         totals[index] = w;
         sampleTrack(channels[i]!.track, frame, blended, at, hints, i);
+        if (lock) holdRoot(lock, i, blended, at);
         if (w !== 1) for (let c = 0; c < n; c++) blended[at + c]! *= w;
         continue;
       }
       sampleTrack(channels[i]!.track, frame, sample, 0, hints, i);
+      if (lock) holdRoot(lock, i, sample, 0);
       totals[index]! += w;
       // A quaternion joins on the sum's hemisphere: q and -q are one rotation.
       const signed = quaternions[index] && dot4(blended, at, sample, 0) < 0 ? -w : w;
@@ -794,7 +810,7 @@ export function applyPose(
 const NO_BLENDS: readonly AnimLayerBlend[] = [];
 
 function posesEveryTime(change: AnimBoneModifier): boolean {
-  if (change.kind === "springBones") return true;
+  if (change.kind === "springBones" || change.kind === "footPlacement") return true;
   if (change.kind === "lookAt") return change.targetSpace === "world";
   if (change.kind === "twoBoneIk") return change.effectorSpace === "world" || (!!change.jointTarget && change.jointTargetSpace === "world");
   return false;
@@ -1098,7 +1114,8 @@ function changeAlpha(node: BoneNode, change: AnimBoneModifier, blends: readonly 
 }
 
 /**
- * Applies skeletal control changes (Transform Bone, Look At, Two Bone IK, Spring Bones) in order on the posed nodes. Each starts
+ * Applies skeletal control changes (Transform Bone, Look At, Two Bone IK, Spring Bones, Foot Placement) in order on
+ * the posed nodes. Each starts
  * from the bones' pose: the blended value where a clip animates a channel, else its rest, so a channel a change set
  * last pose and no clip animates returns to rest first. A bone no change touches any more stays at rest.
  */
@@ -1122,6 +1139,14 @@ function applyBoneModifiers(
   for (const modifier of modifiers) {
     const node = boneNodeOf(rig, modifier.bone);
     if (!node) continue;
+    if (modifier.kind === "footPlacement") {
+      const scene = sceneOfNode(node);
+      if (scene) {
+        applyFootPlacement(scene, modifier, (name) => boneNodeOf(rig, name), (bone, base, solved, channels) =>
+          writeBoneChange(rig, bone, base, solved, changeAlpha(bone, modifier, blends), channels, generation));
+      }
+      continue;
+    }
     if (modifier.kind === "springBones") {
       applySpringBones(rig, node, modifier, generation, (name) => boneNodeOf(rig, name), (bone, base, solved) =>
         writeBoneChange(rig, bone, base, solved, changeAlpha(bone, modifier, blends), WRITE_ROTATION, generation));

@@ -100,7 +100,8 @@ describe("editor boot imports", () => {
 
   // A project whose source control mode is Off loads none of it: the credential store, device sign-in, the host REST
   // APIs, the pushed-lock check, the Git core (isomorphic-git) and its port factory, Clone, Publish, the Pull flow and
-  // the Source Control tab's windows load on first use, and the Debug Mode Git benchmark only when it is called.
+  // the Source Control tab's windows load on first use, and the Debug Mode Git benchmark's dialog on its first open
+  // and its runner only when it runs.
   it("keep Source Control's accounts, sign-in, host APIs, Git core and windows out of the Homepage and the Editor route", () => {
     const ASSET_DIFF_IMPORT = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["']@haptic\/assets\/asset-diff(?:-client)?["']/m;
     const SOURCE_CONTROL_SUBPATH = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["'](?:@haptic\/source-control\/(?:device-flow|host-api|pushed-locks|token-refresh|fake-host|git|git-benchmark|fake-sync)|isomorphic-git(?:\/[^'"]*)?)["']/m;
@@ -115,6 +116,7 @@ describe("editor boot imports", () => {
       "services/source-control-pushed.ts",
       "lib/use-source-control-credentials.ts",
       "lib/git-benchmark-runner.ts",
+      "components/git-benchmark-dialog.tsx",
       "components/engine-source-control-settings.tsx",
       "components/project-source-control-host-fields.tsx",
       "components/source-control-sign-in-dialog.tsx",
@@ -131,6 +133,7 @@ describe("editor boot imports", () => {
       "panels/diff-actors-panel.tsx",
       "panels/diff-panel.tsx",
       "panels/diff-graph-view.tsx",
+      "panels/diff-graph-canvas.tsx",
       "panels/diff-texture-view.tsx",
       "components/source-control-revert-flow.tsx",
       "components/source-control-branch-flow.tsx",
@@ -139,10 +142,35 @@ describe("editor boot imports", () => {
       "panels/history-panel.tsx",
       "services/source-control-diff-loader.ts",
       "services/source-control-restore.ts",
+      "services/source-control-unused-files.ts",
+      "components/source-control-unused-files-flow.tsx",
     ].includes(file))).toEqual([]);
     expect(closure.filter((file) => SOURCE_CONTROL_SUBPATH.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
     // The diff model and its worker client load with the first diff; the open diff's service imports only their types.
     expect(closure).toContain("services/source-control-diff.ts");
     expect(closure.filter((file) => ASSET_DIFF_IMPORT.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
+  });
+
+  // A Material, Particle Graph, Behaviour Tree or Animation Graph diff draws on a canvas its family's chunk exports, so
+  // neither the Source Control windows nor the graph diff view bring a family's editors.
+  it("load each graph family's diff canvas with that family's editors, never with the Diff window", () => {
+    const canvases = [
+      "components/material-diff-canvas.tsx",
+      "panels/particle-diff-canvas.tsx",
+      "components/behaviour-tree-diff-canvas.tsx",
+      "components/anim-graph-diff-canvas.tsx",
+    ];
+    const familyClosure = ["shell/asset-panels/rendering.ts", "shell/asset-panels/animation-ai.ts"].flatMap((entry) => staticClosure(entry));
+    for (const canvas of canvases) expect(familyClosure).toContain(canvas);
+    const diffWindow = [...new Set(["shell/asset-panels/source-control.ts", "panels/diff-graph-view.tsx"].flatMap((entry) => staticClosure(entry)))];
+    expect(diffWindow).toContain("panels/diff-panel.tsx");
+    expect(diffWindow).toContain("panels/diff-graph-canvas.tsx");
+    expect(diffWindow.filter((file) => [
+      ...canvases,
+      "components/material-editor.tsx",
+      "panels/particle-graph-panels.tsx",
+      "components/behaviour-tree-editor.tsx",
+      "components/anim-graph-editor.tsx",
+    ].includes(file))).toEqual([]);
   });
 });

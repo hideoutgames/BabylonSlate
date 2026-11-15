@@ -8,7 +8,7 @@ export function guardProjectAssetRegistry(registry: AssetRegistry, admission: Pr
     "createAsset", "deleteAsset", "deleteFolder", "createFolder", "moveAsset",
     "renameAsset", "duplicateAsset", "copyAsset", "copyFolder", "duplicateFolder",
     "moveFolder", "importFile", "setCompressionState", "commitCompressedTexture",
-    "prepareAreaEmission", "retryTextureEncoding", "requeueUncompressedTextures",
+    "prepareAreaEmission", "reconvertHdrEnvironment", "retryTextureEncoding", "requeueUncompressedTextures",
     "reconcileTextureAlignment", "withAssetWrite", "mountRoot", "reindexPath",
   ]);
   const storageViews = new WeakMap<ProjectStorage, ProjectStorage>();

@@ -181,9 +181,13 @@ describe("asset diffs", () => {
     expect(event.nodes[0]!.pins).toEqual([{ id: "maxWalkSpeed", name: "Max Walk Speed", base: "600", compare: "750" }]);
     expect(event.edgesAdded).toEqual(["e3"]);
     expect(event.edgesRemoved).toEqual(["e2"]);
-    expect(event.base?.nodes).toHaveLength(3);
-    expect(view.variables).toEqual([{ id: "mult", name: "Sprint Multiplier", kind: "variable", status: "added", summary: "Float · 1.5" }]);
-    expect(view.functions).toEqual([{ id: "sprint", name: "Sprint", kind: "function", status: "changed", summary: "1 Node Changed" }]);
+    // The script canvas draws each version as stored.
+    expect(event.canvas).toBe("script");
+    expect((event.base as { nodes: unknown[] }).nodes).toHaveLength(3);
+    expect(view.memberGroups).toEqual([
+      { id: "variables", title: "Variables", members: [{ id: "mult", name: "Sprint Multiplier", kind: "variable", status: "added", summary: "Float · 1.5" }] },
+      { id: "functions", title: "Functions", members: [{ id: "sprint", name: "Sprint", kind: "function", status: "changed", summary: "1 Node Changed" }] },
+    ]);
     expect(view.sections[1]).toMatchObject({ id: "sprint", title: "Sprint", status: "changed" });
     expect(view.counts).toEqual({ added: 2, removed: 1, changed: 3 });
   });
@@ -195,6 +199,142 @@ describe("asset diffs", () => {
     });
     const view = (await diff(await asset("Class", { document: document("x") }), await asset("Class", { document: document("y") }))).view as GraphDiff;
     expect(view.sections[0]).toMatchObject({ status: "unchanged", nodes: [], base: null, compare: null });
+  });
+
+  it("compares a Material as stored: nodes titled and pins named by its catalog, wires by their ends, each version kept for its canvas", async () => {
+    const node = (id: string, type: string, properties: Record<string, unknown> = {}, x = 0) => ({ id, type, position: { x, y: 0 }, properties });
+    const wire = (id: string, from: string, fromPin: string, to: string, toPin: string) => ({ id, sourceNodeId: from, sourcePinId: fromPin, targetNodeId: to, targetPinId: toPin });
+    const material = (nodes: unknown[], edges: unknown[], blendMode: string) => ({ name: "Water", domain: "surface", shadingModel: "pbr", blendMode, twoSided: false, nodes, edges });
+    const base = await asset("Material", { document: material(
+      [node("out", "output.surface", { "default:roughness": [0.5] }), node("wet", "param.float", { name: "Wetness", value: [1] }), node("mul", "math.multiply", { "default:b": [1] })],
+      [wire("e1", "wet", "out", "mul", "a"), wire("e2", "mul", "out", "out", "roughness")],
+      "opaque",
+    ) });
+    const compare = await asset("Material", { document: material(
+      [node("out", "output.surface", { "default:roughness": [0.25] }), node("wet", "param.float", { name: "Wetness", value: [1] }, 40), node("tint", "const.float", { value: [2] })],
+      [wire("e3", "tint", "out", "out", "roughness")],
+      "translucent",
+    ) });
+    const view = (await diff(base, compare)).view as GraphDiff;
+    expect(view.sections).toHaveLength(1);
+    const graph = view.sections[0]!;
+    expect([graph.id, graph.title, graph.canvas, graph.status]).toEqual(["graph", "Graph", "material", "changed"]);
+    expect(graph.nodes.map((entry) => [entry.title, entry.status, entry.connections, entry.moved])).toEqual([
+      ["Material Output", "changed", 2, false],
+      ["Wetness", "changed", 1, true],
+      ["Float", "added", 1, false],
+      ["Multiply", "removed", 2, false],
+    ]);
+    expect(graph.nodes[0]!.pins).toEqual([{ id: "roughness", name: "Roughness", base: "0.5", compare: "0.25" }]);
+    expect(graph.edgesAdded).toEqual(["e3"]);
+    expect(graph.edgesRemoved).toEqual(["e1", "e2"]);
+    expect((graph.compare as { blendMode: string }).blendMode).toBe("translucent");
+    expect(view.groups[0]!.rows.find((row) => row.id === "blendMode")).toMatchObject({ base: "opaque", compare: "translucent", changed: true });
+    expect(view.counts).toEqual({ added: 1, removed: 1, changed: 2 });
+  });
+
+  it("compares a Material Function's Inputs and Outputs as members", async () => {
+    const fn = (defaultValue: number[], outputs: unknown[]) => ({ name: "Fresnel", description: "", inputs: [{ id: "power", name: "Power", type: "float", defaultValue }], outputs, nodes: [], edges: [] });
+    const view = (await diff(
+      await asset("MaterialFunction", { document: fn([5], []) }),
+      await asset("MaterialFunction", { document: fn([3], [{ id: "result", name: "Result", type: "float" }]) }),
+    )).view as GraphDiff;
+    expect(view.memberGroups).toEqual([
+      { id: "inputs", title: "Inputs", members: [{ id: "inputs:power", name: "Power", kind: "input", status: "changed", summary: "Float · 3" }] },
+      { id: "outputs", title: "Outputs", members: [{ id: "outputs:result", name: "Result", kind: "output", status: "added", summary: "Float" }] },
+    ]);
+    expect(view.sections[0]).toMatchObject({ canvas: "material", status: "unchanged", base: null, compare: null });
+  });
+
+  it("compares a Particle Graph: Parameter nodes by their parameter's name, and its Parameters as members", async () => {
+    const node = (id: string, type: string, properties: Record<string, unknown> = {}) => ({ id, type, position: { x: 0, y: 0 }, properties });
+    const graph = (emitRate: number, speed: number, edges: unknown[]) => ({
+      name: "Sparks",
+      materialGuid: null,
+      settings: { capacity: 256, loop: "infinite", duration: 1, prewarm: 0, blendMode: "additive", billboard: "camera" },
+      parameters: [{ id: "speed", name: "Speed", type: "float", defaultValue: [speed] }],
+      nodes: [node("out", "particle.output", { "default:emitRate": [emitRate] }), node("create", "particle.create"), node("p", "input.parameter", { parameterId: "speed" })],
+      edges,
+    });
+    const view = (await diff(
+      await asset("ParticleGraph", { document: graph(30, 1, []) }),
+      await asset("ParticleGraph", { document: graph(60, 2, [{ id: "w", sourceNodeId: "p", sourcePinId: "out", targetNodeId: "create", targetPinId: "emitPower" }]) }),
+    )).view as GraphDiff;
+    const section = view.sections[0]!;
+    expect(section.canvas).toBe("particle");
+    expect(section.nodes.map((entry) => [entry.title, entry.status, entry.connections])).toEqual([
+      ["Emitter Output", "changed", 0],
+      ["Create Particle", "changed", 1],
+      ["Speed", "changed", 1],
+    ]);
+    expect(section.nodes[0]!.pins).toEqual([{ id: "emitRate", name: "Emit Rate", base: "30", compare: "60" }]);
+    expect(view.memberGroups).toEqual([{ id: "parameters", title: "Parameters", members: [{ id: "speed", name: "Speed", kind: "parameter", status: "changed", summary: "Float · 2" }] }]);
+  });
+
+  it("compares a Behaviour Tree: its nodes' settings, and parent-to-child links as wires", async () => {
+    const node = (id: string, kind: string, classId: string, children: string[], properties: Record<string, unknown> = {}) => ({ id, kind, classId, children, decorators: [], services: [], properties });
+    const tree = (durationMs: number, extra: boolean) => ({
+      name: "Guard",
+      rootId: "root",
+      blackboardGuid: null,
+      nodes: [
+        node("root", "selector", "bt.composite.selector", ["seq"]),
+        node("seq", "sequence", "bt.composite.sequence", extra ? ["wait", "fail"] : ["wait"]),
+        node("wait", "task", "bt.task.wait", [], { durationMs }),
+        ...(extra ? [node("fail", "task", "bt.task.fail", [])] : []),
+      ],
+      editorPositions: { root: { x: 0, y: 0 }, seq: { x: 0, y: 180 }, wait: { x: 0, y: 360 }, ...(extra ? { fail: { x: 248, y: 360 } } : {}) },
+    });
+    const view = (await diff(await asset("BehaviourTree", { document: tree(1000, false) }), await asset("BehaviourTree", { document: tree(2000, true) }))).view as GraphDiff;
+    const section = view.sections[0]!;
+    expect([section.canvas, section.status]).toEqual(["behaviour-tree", "changed"]);
+    expect(section.nodes.map((entry) => [entry.title, entry.status, entry.connections])).toEqual([
+      ["Sequence", "changed", 1],
+      ["Wait", "changed", 0],
+      ["Fail", "added", 1],
+    ]);
+    expect(section.nodes[1]!.fields).toEqual([{ id: "properties.durationMs", label: "Duration MS", base: "1000", compare: "2000", changed: true }]);
+    expect(section.edgesAdded).toEqual(["bt-seq-fail"]);
+    // The tree is not a graph by its fields: nothing else is listed.
+    expect(view.groups.flatMap((group) => group.rows).filter((row) => row.changed)).toEqual([]);
+  });
+
+  it("compares an Animation Graph's State Machine, each state's and rule's graph, its Variables and the transitions' settings", async () => {
+    const script = (value: number) => ({ nodes: [{ id: "play", type: "pinNode", position: { x: 0, y: 0 }, data: { __nodeType: "anim.pose.play", title: "Play Animation", "default:rate": value } }], edges: [] });
+    const state = (id: string, name: string, x: number, rate = 1) => ({ id, name, position: { x, y: 0 }, stateGraph: script(rate) });
+    const document = (rate: number, blendSeconds: number, run: boolean, speed: number) => ({
+      name: "Locomotion",
+      skeletonGuid: null,
+      previewModelGuid: null,
+      variables: [{ id: "v", name: "Speed", typeId: "float", defaultValue: speed }],
+      stateMachine: {
+        entryStateId: "idle",
+        states: [state("idle", "Idle", 0, rate), state("walk", "Walk", 240), ...(run ? [state("run", "Run", 480)] : [])],
+        transitions: [{ id: "t1", fromStateId: "idle", toStateId: "walk", blendSeconds, priority: 0, ruleGraph: { nodes: [], edges: [] } }],
+        aliases: [],
+      },
+      animationObject: { nodes: [{ id: "event-update", type: "anim.event.update", position: { x: 80, y: 240 }, data: { title: "Event Update Animation" } }], edges: [] },
+    });
+    const view = (await diff(
+      await asset("AnimationGraph3D", { document: document(1, 0.2, false, 0) }),
+      await asset("AnimationGraph3D", { document: document(1.5, 0.3, true, 1) }),
+    )).view as GraphDiff;
+    expect(view.sections.map((section) => [section.id, section.title, section.canvas, section.status])).toEqual([
+      ["machine", "State Machine", "state-machine", "changed"],
+      ["state:idle", "Idle", "script", "changed"],
+      ["state:walk", "Walk", "script", "unchanged"],
+      ["state:run", "Run", "script", "added"],
+      ["rule:t1", "Idle To Walk", "script", "unchanged"],
+      ["object", "Animation Object", "script", "unchanged"],
+    ]);
+    expect(view.sections[0]!.nodes.map((entry) => [entry.title, entry.status])).toEqual([["Run", "added"]]);
+    // The State Machine's canvas reads states and transitions without their graphs.
+    expect((view.sections[0]!.compare as { stateMachine: { states: Record<string, unknown>[] } }).stateMachine.states.map((row) => "stateGraph" in row)).toEqual([false, false, false]);
+    expect(view.sections[1]!.nodes[0]!.pins).toEqual([{ id: "rate", name: "Rate", base: "1", compare: "1.5" }]);
+    expect(view.memberGroups).toEqual([{ id: "variables", title: "Variables", members: [{ id: "v", name: "Speed", kind: "variable", status: "changed", summary: "Float · 1" }] }]);
+    const transition = view.groups.find((group) => group.id === "transition:t1")!;
+    expect(transition.title).toBe("Idle To Walk");
+    expect(transition.rows.filter((row) => row.changed)).toEqual([{ id: "blendSeconds", label: "Blend Seconds", base: "0.2", compare: "0.3", changed: true }]);
   });
 
   it("decodes a document both versions share once, and each side's own document when it changed", async () => {

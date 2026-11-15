@@ -14,7 +14,7 @@ import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
-  verifyScopedReadinessProbes,
+  verifyMirrorContentPolls, verifyScopedReadinessProbes,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1257,6 +1257,8 @@ function PlayOverlayView({
         verifyRetainedOverlayBatches: (enabled: boolean) => void;
         /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
         verifyRenderChangeJournal: (enabled: boolean) => void;
+        /** Has Mirror surfaces also ask what changed on every render, as before a moved view skipped it (`rendererWork.mirrorPolls.mismatches`). */
+        verifyMirrorContentPolls: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1281,6 +1283,7 @@ function PlayOverlayView({
       verifyScopedReadinessProbes,
       verifyRetainedOverlayBatches,
       verifyRenderChangeJournal,
+      verifyMirrorContentPolls,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

@@ -49,6 +49,25 @@ export interface SyncPort {
    * `lfs` / `lfs-object-missing`.
    */
   readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;
+  /**
+   * The working tree's `.blobs` files Git can do without, sorted: untracked
+   * (neither HEAD nor the index holds them) and held by no commit of any
+   * local branch that the remote-tracking branches lack, the checked-out
+   * branch's older ones included (an unpushed commit's objects exist only
+   * here, and a push uploads them from these files; a pushed one's can be
+   * downloaded again). Pushed means a remote-tracking ref as last fetched
+   * reaches it: a push uploads the objects before it moves the remote branch,
+   * and a stale ref only keeps more. Nor may a committed `.hasset` name its
+   * object while that commit holds none of that name in the candidates'
+   * folders (another Git app committed the asset without its blob, or
+   * `.blobs` was ignored): no server has it then, and only this file lets
+   * that version be diffed or reverted. Every
+   * `.hasset` version local history holds is read once (each commit's files
+   * against its first parent; all of a commit whose parent this shallow copy
+   * lacks), and `references` names what it needs. From stats and Git objects:
+   * no working file is read and nothing is fetched.
+   */
+  removableLfsObjects(options: RemovableLfsOptions): Promise<string[]>;
   /** The branch's commits, newest first; `deepen` fetches older history once when the page ends at this shallow copy's boundary. */
   log(options: LogOptions): Promise<LogPage>;
   /**
@@ -97,6 +116,15 @@ export interface SyncPort {
  */
 export interface TransferOptions {
   signal?: AbortSignal;
+}
+
+export interface RemovableLfsOptions extends TransferOptions {
+  /**
+   * The LFS objects (their `.blobs` names) a committed `.hasset` at `path`
+   * needs, from its bytes (the asset's chunk table); none for a file that is
+   * no readable asset, which no version of it can load anyway.
+   */
+  references: (path: string, bytes: Uint8Array) => readonly string[];
 }
 
 export type ChangeKind = "added" | "modified" | "deleted";

@@ -25,7 +25,7 @@ describe("GitLfsLockProvider", () => {
     const calls: HttpRequest[] = [];
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("ghp_secret")),
       http: async (request) => {
         calls.push(request);
@@ -63,7 +63,7 @@ describe("GitLfsLockProvider", () => {
   it("maps 409 to a conflict when verify lists the lock as theirs", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo.git",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         if (request.url.endsWith("/locks/verify")) {
@@ -90,7 +90,7 @@ describe("GitLfsLockProvider", () => {
     const urls: string[] = [];
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo.git",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         urls.push(`${request.method} ${request.url}`);
@@ -119,7 +119,7 @@ describe("GitLfsLockProvider", () => {
     let repeat = false;
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         const cursor = (JSON.parse((request.body as string | undefined) ?? "{}") as { cursor?: string }).cursor;
@@ -155,7 +155,7 @@ describe("GitLfsLockProvider", () => {
   it("POSTs verify and marks ours versus theirs", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "git@github.com:org/repo.git",
-      branch: "release",
+      branch: () => "release",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         expect(request.method).toBe("POST");
@@ -190,7 +190,7 @@ describe("GitLfsLockProvider", () => {
     const bodies: unknown[] = [];
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         expect(request.url).toBe(
@@ -208,10 +208,45 @@ describe("GitLfsLockProvider", () => {
     ]);
   });
 
+  it("names the branch read at each request, and a verify's own branch when it gives one", async () => {
+    const refs: unknown[] = [];
+    let branch = "main";
+    const provider = new GitLfsLockProvider({
+      repositoryUrl: "https://github.com/org/repo",
+      branch: () => branch,
+      credential: fixedCredential(github("token")),
+      http: async (request) => {
+        refs.push((JSON.parse((request.body as string | undefined) ?? "{}") as { ref?: unknown }).ref);
+        return request.url.endsWith("/verify") ? jsonResponse(200, { ours: [], theirs: [] }) : jsonResponse(201, { lock: sampleLock });
+      },
+    });
+    await provider.verify();
+    // A switch moves the next requests to the branch now checked out; nothing is rebuilt.
+    branch = "feature";
+    await provider.create("assets/hero.scene.hasset");
+    await provider.unlock("lock-1");
+    await provider.verify();
+    // A push checks the locks of the branch it pushes.
+    await provider.verify({ branch: "hotfix" });
+    // Never an empty ref (`refs/heads/`): an empty branch names the provider's, and an empty provider branch the default one.
+    await provider.verify({ branch: "" });
+    branch = "";
+    await provider.create("assets/hero.scene.hasset");
+    expect(refs).toEqual([
+      { name: "refs/heads/main" },
+      { name: "refs/heads/feature" },
+      { name: "refs/heads/feature" },
+      { name: "refs/heads/feature" },
+      { name: "refs/heads/hotfix" },
+      { name: "refs/heads/feature" },
+      { name: "refs/heads/main" },
+    ]);
+  });
+
   it("returns unauthorized without a request when no credential is stored", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: { current: async () => null, renew: async () => null },
       http: async () => {
         throw new Error("no request without a credential");
@@ -224,7 +259,7 @@ describe("GitLfsLockProvider", () => {
   it("maps thrown fetch failures to offline", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async () => {
         throw new Error("network down");
@@ -237,7 +272,7 @@ describe("GitLfsLockProvider", () => {
   it("maps 401 to unauthorized", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("bad")),
       http: async () => jsonResponse(401, { message: "bad credentials" }),
     });
@@ -250,7 +285,7 @@ describe("GitLfsLockProvider", () => {
       () =>
         new GitLfsLockProvider({
           repositoryUrl: "not-a-url",
-          branch: "main",
+          branch: () => "main",
           credential: fixedCredential(github("token")),
           http: async () => jsonResponse(200, {}),
         }),
@@ -260,7 +295,7 @@ describe("GitLfsLockProvider", () => {
   it("maps create 201 without a lock object to an http error", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async () => jsonResponse(201, { message: "ok" }),
     });
@@ -274,7 +309,7 @@ describe("GitLfsLockProvider", () => {
   it("maps non-success create and unlock statuses to http errors", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         if (request.url.endsWith("/unlock")) {
@@ -297,7 +332,7 @@ describe("GitLfsLockProvider", () => {
     let bodyText = "";
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         if (request.url.endsWith("/locks/verify")) return { status: 200, bodyText };
@@ -318,7 +353,7 @@ describe("GitLfsLockProvider", () => {
   it("skips verify entries missing id or path and leaves a missing locked_at unknown", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async () =>
         jsonResponse(200, {
@@ -341,7 +376,7 @@ describe("GitLfsLockProvider", () => {
   it("treats 409 as conflict when verify cannot confirm the path is ours", async () => {
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://github.com/org/repo.git",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("token")),
       http: async (request) => {
         if (request.url.endsWith("/locks/verify")) {
@@ -364,7 +399,7 @@ describe("GitLfsLockProvider", () => {
     const gitlab: HostCredential = { origin: "https://gitlab.com", username: credentialUsername("gitlab"), token: "glo", kind: "gitlab" };
     const provider = new GitLfsLockProvider({
       repositoryUrl: "git@gitlab.com:group/game.git",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(gitlab),
       http: async (request) => {
         calls.push(request);
@@ -380,7 +415,7 @@ describe("GitLfsLockProvider", () => {
     let requests = 0;
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://gitea.example.com/org/repo",
-      branch: "main",
+      branch: () => "main",
       credential: fixedCredential(github("ghp_secret")),
       http: async () => {
         requests += 1;
@@ -401,7 +436,7 @@ describe("GitLfsLockProvider", () => {
       for (const status of [404, 501]) {
         const provider = new GitLfsLockProvider({
           repositoryUrl,
-          branch: "main",
+          branch: () => "main",
           credential: fixedCredential(credential),
           http: async () => jsonResponse(status, { message: "Not Found" }),
         });
@@ -418,7 +453,7 @@ describe("GitLfsLockProvider", () => {
     let renewals = 0;
     const provider = new GitLfsLockProvider({
       repositoryUrl: "https://gitlab.com/group/game",
-      branch: "main",
+      branch: () => "main",
       credential: {
         current: async () => ({ origin: "https://gitlab.com", username: "oauth2", token: "old", kind: "gitlab" }),
         renew: async (refused) => {
@@ -437,7 +472,7 @@ describe("GitLfsLockProvider", () => {
     tokens.length = 0;
     const refusing = new GitLfsLockProvider({
       repositoryUrl: "https://gitlab.com/group/game",
-      branch: "main",
+      branch: () => "main",
       credential: { current: async () => ({ origin: "https://gitlab.com", username: "oauth2", token: "old", kind: "gitlab" }), renew: async (refused) => ({ ...refused, token: "new" }) },
       http: async (request) => {
         tokens.push(request.headers.Authorization!);
@@ -453,7 +488,7 @@ describe("GitLfsLockProvider", () => {
     for (const status of [404, 501]) {
       const provider = new GitLfsLockProvider({
         repositoryUrl: "https://bitbucket.example.com/org/repo",
-        branch: "main",
+        branch: () => "main",
         credential: fixedCredential({ origin: "https://bitbucket.example.com", username: "x-access-token", token: "t", kind: "token" }),
         http: async () => jsonResponse(status, { message: "Not Found" }),
       });

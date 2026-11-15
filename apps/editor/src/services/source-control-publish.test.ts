@@ -77,6 +77,7 @@ async function newProject(mode: SourceControlMode = "off", options: { pushFails?
     testMode: true,
     lookup: () => null,
     locks: { theirs: async () => [], releaseOwn: async () => {} },
+    exclusiveWrites: (_reason, work) => work(storage),
     factory,
   });
   const saved: SourceControlProjectSettings[] = [];

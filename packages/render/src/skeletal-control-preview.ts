@@ -8,6 +8,7 @@ import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
 import { animBoneAxisVector, type AnimBoneModifier, type AnimSpringCollider } from "@haptic/core";
 import { actorRootOf, worldPoint, type BoneNode } from "./anim-bone-modifiers";
+import { markEditorHelperMesh } from "./helper-mesh";
 import { isRigJointNode } from "./skeleton-preview";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 
@@ -70,6 +71,8 @@ export function attachSkeletalControlPreview(root: TransformNode, scene: Scene):
       mesh = CreatePolyhedron(`ik_target_${index}`, { type: 1, size: 1 }, scene);
       mesh.scaling.setAll(size);
       mesh.isPickable = false;
+      // Foot Placement's traces pass through the markers.
+      markEditorHelperMesh(mesh);
       mesh.alwaysSelectAsActiveMesh = true;
       targets.push(mesh);
     }
@@ -91,6 +94,7 @@ export function attachSkeletalControlPreview(root: TransformNode, scene: Scene):
           : CreateDisc(name, { radius: extent * PLANE_SHARE, tessellation: 24 }, scene);
       mesh.isPickable = false;
       mesh.alwaysSelectAsActiveMesh = true;
+      markEditorHelperMesh(mesh);
       mesh.rotationQuaternion = Quaternion.Identity();
       setUnlitMaterial(mesh, MARKER_MATERIAL, {
         texture: null, color: COLLIDER_COLOR, alpha: COLLIDER_ALPHA, cutoff: 0, blend: true, textureAlpha: false, twoSided: true,
@@ -114,7 +118,7 @@ export function attachSkeletalControlPreview(root: TransformNode, scene: Scene):
         worldPoint(node as unknown as BoneNode, value, space, target(usedTargets++, color).position);
       };
       for (const change of changes) {
-        if (change.kind === "transform") continue;
+        if (change.kind === "transform" || change.kind === "footPlacement") continue;
         const node = boneOf(change.bone);
         if (!node) continue;
         if (change.kind === "lookAt") {

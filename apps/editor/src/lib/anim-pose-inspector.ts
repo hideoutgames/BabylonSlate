@@ -5,6 +5,7 @@ import {
   ANIM_SPRING_PLANAR_CONSTRAINTS,
   ANIM_SPRING_PLANAR_LABELS,
   normalizeAnimSpringBoneSettings,
+  normalizeAnimFootPlacement,
   ANIM_BONE_AXES,
   ANIM_BONE_AXIS_LABELS,
   ANIM_BONE_MODIFY_MODE_LABELS,
@@ -21,6 +22,7 @@ import {
   ANIM_CONTROL_TRANSFORM_BONE_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
   ANIM_CONTROL_SPRING_BONES_TYPE,
+  ANIM_CONTROL_FOOT_PLACEMENT_TYPE,
   ANIM_POSE_LAYERED_BLEND_TYPE,
   isSkeletalControlType,
   ANIM_POSE_SAVE_CACHED_TYPE,
@@ -261,6 +263,38 @@ function springBonesRows(data: Record<string, unknown>, onPatch: (patch: Record<
   ];
 }
 
+/** Foot Placement's rows (its Feet are a list of their own, `FootPlacementFeet`). */
+function footPlacementRows(data: Record<string, unknown>, bones: readonly string[], onPatch: (patch: Record<string, unknown>) => void): PropertyRow[] {
+  const settings = normalizeAnimFootPlacement(data);
+  const pelvis = settings.pelvisBone ?? "";
+  return [
+    {
+      kind: "enum",
+      id: "pelvisBone",
+      label: "Pelvis Bone",
+      value: pelvis,
+      options: [{ value: "", label: "None" }, ...nameOptions(bones, pelvis)],
+      verbatim: true,
+      description: "Drops by as much as the lowest foot, so that leg can reach lower ground.",
+      onChange: (next) => onPatch({ pelvisBone: next || undefined }),
+    },
+    {
+      kind: "number", id: "traceUp", label: "Trace Up", unit: "m", min: 0, value: settings.traceUp, defaultValue: 0.5,
+      description: "How far above each foot its trace for the ground starts.",
+      onChange: (traceUp) => onPatch({ traceUp: Math.max(0, traceUp) }),
+    },
+    {
+      kind: "number", id: "traceDown", label: "Trace Down", unit: "m", min: 0, value: settings.traceDown, defaultValue: 0.5,
+      description: "How far below each foot its trace looks for ground.",
+      onChange: (traceDown) => onPatch({ traceDown: Math.max(0, traceDown) }),
+    },
+    {
+      kind: "boolean", id: "alignToGround", label: "Align To Ground", value: settings.alignToGround,
+      onChange: (alignToGround) => onPatch({ alignToGround }),
+    },
+  ];
+}
+
 /** Transform Bone's mode and space rows for one channel; the space shows only while the channel changes the bone. */
 function boneChannelRows(
   channel: "translation" | "rotation" | "scale",
@@ -357,7 +391,7 @@ export function animPoseNodePropertyRows(
       onChange: (name) => onPatch({ name }),
     });
   }
-  if (isSkeletalControlType(typeId)) {
+  if (isSkeletalControlType(typeId) && typeId !== ANIM_CONTROL_FOOT_PLACEMENT_TYPE) {
     const bone = typeof data.bone === "string" ? data.bone : "";
     const bones = options.bones ?? [];
     const ik = typeId === ANIM_CONTROL_TWO_BONE_IK_TYPE;
@@ -380,6 +414,7 @@ export function animPoseNodePropertyRows(
   if (typeId === ANIM_CONTROL_LOOK_AT_TYPE) rows.push(...lookAtRows(data, onPatch));
   if (typeId === ANIM_CONTROL_TWO_BONE_IK_TYPE) rows.push(...twoBoneIkRows(data, onPatch));
   if (typeId === ANIM_CONTROL_SPRING_BONES_TYPE) rows.push(...springBonesRows(data, onPatch));
+  if (typeId === ANIM_CONTROL_FOOT_PLACEMENT_TYPE) rows.push(...footPlacementRows(data, options.bones ?? [], onPatch));
   if (isPoseAssetNodeType(typeId)) {
     const { assetType, label } = poseAssetKind(typeId);
     const assetGuid = typeof data.assetGuid === "string" ? data.assetGuid : "";

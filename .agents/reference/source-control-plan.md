@@ -1,6 +1,6 @@
 # Source Control Plan
 
-What remains of built-in Git before Integrated mode ships: the iPad benchmark and the native streaming path it decides, graph diffs on the canvas for every graph family, locks on the checked-out branch, loose blob clean-up and one picker follow-up. [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Manual mode's Git LFS locks, device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes and History windows, commit, pull with whole-file conflicts, push with lock verify and release, branches, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers, Revert Asset and Revert To This Version, Compare in Pull Conflicts). Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
+What remains of built-in Git before Integrated mode ships: the iPad benchmark and the native streaming path it decides. [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Git LFS locks (on the checked-out branch in Integrated mode), device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes and History windows, commit, pull with whole-file conflicts, push with lock verify and release, branches, Remove Unused Files, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers over History's commit lists, Revert Asset and Revert To This Version, Compare in Pull Conflicts). Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
 
 ## Scope
 
@@ -32,14 +32,7 @@ What remains of built-in Git before Integrated mode ships: the iPad benchmark an
 
 ## UI
 
-- The toolbar's **Base** and **Compare** pickers list the asset's last 20 commits (`commitsOf`), read when a menu opens. They should take their commit list from History's loaded pages for the same asset, so a commit History reached past the first 20 can be picked too, and both read the log once.
-- **Graph diffs on the canvas for every graph family.** The approved design draws changed graphs as **Overlay** / **Base** / **Working Copy** on the graph canvas. Only Class and Scene script graphs do today; Material, Particle, Behaviour Tree and Animation graphs list their node changes as properties, because their node components load in their own editor chunks. Each family's read-only canvas joins the Diff window, loaded with that family's chunk.
 - **Texture diff rows:** the design compares sRGB and mipmaps, which Texture assets do not store; the Diff shows **Usage** and **Downsample** instead. Rows for sRGB and mipmaps join it if Textures gain those settings.
-
-## Locks and blobs
-
-- **Locks on the checked-out branch.** Lock requests (create, verify, release) send the project's default branch (`sourceControl.branch`) as their ref. Since the checked-out branch is the working copy's HEAD, they should send HEAD's branch, so a host that scopes locks by ref checks the branch being pushed.
-- **Loose blob clean-up.** A commit takes each asset's blobs from the header it commits, so a blob no asset references (left by a reverted or discarded edit, or a deleted asset) is never committed, but it stays in `.blobs` as an untracked file. A clean-up removes untracked `.blobs` files no asset header in any content root references, never one a commit holds.
 
 ## Engine integration points
 
@@ -50,7 +43,4 @@ What exists today and what each part must change. Check these against the code b
 
 ## Order
 
-1. The owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships. Run it against a repository with a few thousand assets ([benchmark](architecture/source-control.md#benchmark)); the unchanged status must read no files.
-2. Locks on the checked-out branch and loose blob clean-up ([Locks and blobs](#locks-and-blobs)).
-3. Graph diffs on the canvas for Material, Particle, Behaviour Tree and Animation graphs ([UI](#ui)).
-4. The Base and Compare pickers take their commits from History ([UI](#ui)).
+1. The owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships. Run it from **Debug > Run Git Benchmark…** with Debug Mode on (any build, TestFlight included) against a repository with a few thousand assets, and copy the results from its dialog ([benchmark](architecture/source-control.md#benchmark)); the unchanged status must read no files.

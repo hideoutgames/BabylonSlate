@@ -1,6 +1,7 @@
 import type { SerializedGraph } from "@haptic/core";
 import { normalizeAnimBranchFilters, type AnimAdditiveBase, type AnimBranchFilter } from "@haptic/core";
 import { parseAnimClipEvents, type AnimClipEvent } from "./events";
+import { parseAnimClipRootMotion, type AnimClipRootMotion } from "./root-motion";
 
 type SerializedGraphNode = SerializedGraph["nodes"][number];
 
@@ -30,6 +31,7 @@ export const ANIM_CONTROL_TRANSFORM_BONE_TYPE = "anim.control.transformBone";
 export const ANIM_CONTROL_LOOK_AT_TYPE = "anim.control.lookAt";
 export const ANIM_CONTROL_TWO_BONE_IK_TYPE = "anim.control.twoBoneIk";
 export const ANIM_CONTROL_SPRING_BONES_TYPE = "anim.control.springBones";
+export const ANIM_CONTROL_FOOT_PLACEMENT_TYPE = "anim.control.footPlacement";
 export const ANIM_FRAME_OUTPUT_TYPE = "anim.frame.output";
 export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
 export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
@@ -95,6 +97,7 @@ export function poseInputPins(type: string, count?: unknown): string[] {
     case ANIM_CONTROL_LOOK_AT_TYPE:
     case ANIM_CONTROL_TWO_BONE_IK_TYPE:
     case ANIM_CONTROL_SPRING_BONES_TYPE:
+    case ANIM_CONTROL_FOOT_PLACEMENT_TYPE:
       return ["sourcePose"];
     case ANIM_POSE_OUTPUT_TYPE: return ["pose"];
     case ANIM_FRAME_OUTPUT_TYPE: return ["frame"];
@@ -132,7 +135,7 @@ export function layeredBlendFilters(node: SerializedGraphNode): AnimBranchFilter
 /** Skeletal controls: nodes that change bones of the pose they take, each naming the bone it changes. */
 export function isSkeletalControlType(type: string): boolean {
   return type === ANIM_CONTROL_TRANSFORM_BONE_TYPE || type === ANIM_CONTROL_LOOK_AT_TYPE ||
-    type === ANIM_CONTROL_TWO_BONE_IK_TYPE || type === ANIM_CONTROL_SPRING_BONES_TYPE;
+    type === ANIM_CONTROL_TWO_BONE_IK_TYPE || type === ANIM_CONTROL_SPRING_BONES_TYPE || type === ANIM_CONTROL_FOOT_PLACEMENT_TYPE;
 }
 
 export function isSlotNodeType(type: string): boolean {
@@ -277,6 +280,8 @@ export interface BlendSpaceNodeSample {
   events?: AnimClipEvent[];
   /** Its Animation's additive base, when the Animation is additive (`resolvedClipAdditive`). */
   additive?: ResolvedClipAdditive;
+  /** Its Animation's root motion, when it has any. */
+  rootMotion?: AnimClipRootMotion;
 }
 
 /**
@@ -341,6 +346,7 @@ export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeDat
       rateScale: rateScale > 0 ? rateScale : 1,
       ...((events) => (events.length > 0 ? { events } : {}))(parseAnimClipEvents(sample.events)),
       ...((additive) => (additive ? { additive } : {}))(parseResolvedClipAdditive(sample.additive)),
+      ...((rootMotion) => (rootMotion ? { rootMotion } : {}))(parseAnimClipRootMotion(sample.rootMotion)),
     }];
   });
   const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime" | "eventMode"> = {};

@@ -52,10 +52,11 @@ import {
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { timelineProxyNodeTarget, timelineScriptAssets } from "../lib/timeline-script-catalog";
 import { ANIM_POSE_CLIP_PICK, animGraphPlaysAsset, type AnimClipPickGraph } from "../lib/anim-pose-inspector";
-import { ANIM_CONTROL_SPRING_BONES_TYPE, ANIM_POSE_LAYERED_BLEND_TYPE } from "@haptic/anim-graph";
+import { ANIM_CONTROL_FOOT_PLACEMENT_TYPE, ANIM_CONTROL_SPRING_BONES_TYPE, ANIM_POSE_LAYERED_BLEND_TYPE } from "@haptic/anim-graph";
 import { normalizeSkeletonPayload } from "@haptic/assets";
 import { LayeredBlendBranchFilters } from "../components/layered-blend-branch-filters";
 import { SpringBonesLists } from "../components/spring-bones-lists";
+import { FootPlacementFeet } from "../components/foot-placement-feet";
 import {
   committedPinRowIds,
   memberPinsFromRows,
@@ -268,6 +269,9 @@ export function GraphNodeDetails({
         ) : null}
         {selectedNode.type === ANIM_CONTROL_SPRING_BONES_TYPE ? (
           <SpringBonesLists data={selectedNode.data} bones={animPose?.bones ?? []} onPatch={updateNodeData} />
+        ) : null}
+        {selectedNode.type === ANIM_CONTROL_FOOT_PLACEMENT_TYPE ? (
+          <FootPlacementFeet data={selectedNode.data} bones={animPose?.bones ?? []} onPatch={updateNodeData} />
         ) : null}
         {isFlowSwitch ? (
           <NamedListEditor

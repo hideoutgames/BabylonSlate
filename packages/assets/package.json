@@ -15,6 +15,7 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/assets"
   },
   "dependencies": {
+    "@haptic/behaviour-tree": "workspace:*",
     "@haptic/core": "workspace:*",
     "@haptic/object-model": "workspace:*",
     "@haptic/particle-graph": "workspace:*",

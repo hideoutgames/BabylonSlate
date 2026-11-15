@@ -423,6 +423,9 @@ importers:
 
   packages/assets:
     dependencies:
+      '@haptic/behaviour-tree':
+        specifier: workspace:*
+        version: link:../behaviour-tree
       '@haptic/core':
         specifier: workspace:*
         version: link:../core

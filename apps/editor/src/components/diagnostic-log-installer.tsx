@@ -1,9 +1,8 @@
 import { useEffect } from "react";
 import { installGlErrorTrace } from "@haptic/render/gl-error-trace";
-import { isMobilePlatform } from "@haptic/vfs";
 import { useDebugMode, useGraphicsErrorTrace } from "../context/app-settings-context";
 import { installDiagnosticLog } from "../lib/diagnostic-info";
-import { installGitBenchmark } from "../lib/git-benchmark-hook";
+import { gitBenchmarkAvailable, installGitBenchmark } from "../lib/git-benchmark-hook";
 
 /**
  * In Debug Mode, keeps recent console errors and warnings (and, when enabled, WebGL call
@@ -14,6 +13,6 @@ export function DiagnosticLogInstaller() {
   const traceGraphics = useGraphicsErrorTrace();
   useEffect(() => (debugMode ? installDiagnosticLog() : undefined), [debugMode]);
   useEffect(() => (traceGraphics ? installGlErrorTrace() : undefined), [traceGraphics]);
-  useEffect(() => (debugMode && isMobilePlatform() ? installGitBenchmark() : undefined), [debugMode]);
+  useEffect(() => (debugMode && gitBenchmarkAvailable() ? installGitBenchmark() : undefined), [debugMode]);
   return null;
 }

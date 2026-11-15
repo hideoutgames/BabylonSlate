@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { normalizeAnimSpringBoneSettings } from "@haptic/core";
 import { SpringBonesLists } from "./spring-bones-lists";
@@ -24,10 +24,10 @@ describe("Spring Bones lists", () => {
     }
     render(<Editor />);
     fireEvent.click(screen.getByTestId("spring-bones-exclude-add"));
-    fireEvent.click(screen.getByText("Tail2"));
+    fireEvent.click(within(screen.getByTestId("spring-bones-exclude-picker")).getByText("Tail2"));
     expect(normalizeAnimSpringBoneSettings(saved).excludeBones).toEqual(["Tail2"]);
     fireEvent.click(screen.getByTestId("spring-collider-add"));
-    fireEvent.click(screen.getByText("Hips"));
+    fireEvent.click(within(screen.getByTestId("spring-collider-picker")).getByText("Hips"));
     expect(normalizeAnimSpringBoneSettings(saved).colliders).toEqual([
       { kind: "sphere", bone: "Hips", offset: [0, 0, 0], radius: 0.1, length: 0.2, axis: "y" },
     ]);
