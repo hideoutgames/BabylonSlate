@@ -15,7 +15,7 @@ import { engineBillboardUrl } from "./default-billboard/urls";
 import { createEngineTextureFromUrl } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
 import { isUnlitMaterial, setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
-import { unlitBinding } from "./unlit-material-blocks";
+import { unlitBinding, updateUnlitBinding } from "./unlit-material-blocks";
 
 /** A light or camera icon from both sides, blended by its coverage; editor helpers draw without fog. */
 const BILLBOARD_MATERIAL: UnlitMaterialKey = { textured: true, backFaceCulling: false, fog: false, role: "helper" };
@@ -164,7 +164,7 @@ export function applyEditorBillboardFromActor(
   // The billboard's own binding: its tint reaches its next draw.
   const binding = unlitBinding(mesh);
   const tint = (fill: Color3) => {
-    if (binding.color[0] !== fill.r || binding.color[1] !== fill.g || binding.color[2] !== fill.b) binding.color = [fill.r, fill.g, fill.b];
+    if (binding.color[0] !== fill.r || binding.color[1] !== fill.g || binding.color[2] !== fill.b) updateUnlitBinding(binding, { color: [fill.r, fill.g, fill.b] });
   };
   if (!LIGHT_ICONS.has(resolved)) {
     tint(DEFAULT_FILL);

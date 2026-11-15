@@ -18,7 +18,7 @@ import type { FirstDrawStats, ProgramInventory } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { DrawPassCounts } from "./draw-passes";
-import type { OverlayBatchStats } from "./overlay-draw-batcher";
+import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
@@ -123,9 +123,10 @@ export type RenderDiagnostics = {
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
    * for the world, with the layer's mesh count. A layer whose strict checks grow with every frame has something
-   * marking its readiness each frame. Empty where the view composites no layer.
+   * marking its readiness each frame. Empty where the view composites no layer. `batching` is how its draw batcher kept
+   * its work between frames, and what its verifier found (`OverlayBatchWork`); null where the layer does not batch.
    */
-  layerWork?: Array<{ layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]> }>;
+  layerWork?: Array<{ layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]>; batching?: OverlayBatchWork | null }>;
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;
     pendingPresentations: number;
