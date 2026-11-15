@@ -3,8 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DockviewApi, IDockviewPanelProps } from "dockview-react";
 import { DockviewShell } from "./dockview-shell";
 import {
+  ANIM_STATE_MACHINE_PANEL_ID,
   EVENT_GRAPH_PANEL_ID,
+  animStateGraphPanelId,
   functionGraphPanelId,
+  openAnimStateGraphPanel,
   openFunctionGraphPanel,
 } from "./function-graph-panels";
 
@@ -29,6 +32,14 @@ vi.mock("./panel-registry", () => {
         "my-class",
         "inspector",
         "compiler-results",
+        "anim-graph-graph",
+        "anim-object-graph",
+        "anim-graph-variables",
+        "anim-graph-details",
+        "anim-graph-compiler-results",
+        "anim-graph-preview",
+        "anim-graph-preview-values",
+        "anim-state-graph",
       ].map((id) => [id, panel]),
     ),
   };
@@ -117,5 +128,50 @@ describe("function graph tabs", () => {
     expect(dock.getPanel(functionGraphPanelId("fn-land"))!.group.id).toBe(
       dock.getPanel(functionGraphPanelId("fn-jump"))!.group.id,
     );
+  });
+});
+
+function renderAnimGraphDock(initialLayout?: Record<string, unknown>) {
+  let dock: DockviewApi | undefined;
+  render(
+    <DockviewShell
+      documentKind="anim-graph-3d"
+      actorPrefab={false}
+      initialLayout={initialLayout ?? null}
+      onReady={(api) => {
+        dock = api;
+      }}
+    />,
+  );
+  return dock!;
+}
+
+describe("Animation Graph state tabs", () => {
+  it("open as one focused tab per state beside the State Machine, with the state icon, and restore from the layout", () => {
+    const dock = renderAnimGraphDock();
+    const machine = dock.getPanel(ANIM_STATE_MACHINE_PANEL_ID)!;
+    act(() => {
+      openAnimStateGraphPanel(dock, "run", "Run");
+      openAnimStateGraphPanel(dock, "run", "Sprint");
+    });
+    const tabs = dock.panels.filter((panel) => panel.id === animStateGraphPanelId("run"));
+    expect(tabs).toHaveLength(1);
+    const run = tabs[0]!;
+    expect(run.group.id).toBe(machine.group.id);
+    expect(run.title).toBe("Sprint");
+    expect(run.params).toEqual({ stateId: "run" });
+    expect(dock.activePanel?.id).toBe(run.id);
+    const icon = () =>
+      [...document.querySelectorAll(".dv-tab")]
+        .find((tab) => tab.querySelector(".dv-default-tab-content")?.textContent === "Sprint")
+        ?.querySelector("[data-tab-icon]")
+        ?.getAttribute("data-tab-icon");
+    expect(icon()).toBe("state");
+
+    const saved = dock.toJSON() as unknown as Record<string, unknown>;
+    cleanup();
+    const restored = renderAnimGraphDock(saved);
+    expect(restored.getPanel(animStateGraphPanelId("run"))?.params).toEqual({ stateId: "run" });
+    expect(icon()).toBe("state");
   });
 });

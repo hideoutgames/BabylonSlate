@@ -23,6 +23,7 @@ import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import {
   AnimGraphDetailsPanel,
   AnimGraphGraphPanel,
+  AnimStateGraphPanel,
   AnimGraphVariablesPanel,
 } from "./anim-graph-editor";
 
@@ -234,20 +235,80 @@ beforeEach(() => {
 
 const panelProps = {} as IDockviewPanelProps;
 
+/** A DockView container that records the tabs opened in it. */
+function fakeDock() {
+  const panels: Array<{ id: string; api: { title?: string; setActive: ReturnType<typeof vi.fn>; setTitle: ReturnType<typeof vi.fn> } }> = [];
+  const opened: Array<{ setActive: ReturnType<typeof vi.fn> }> = [];
+  const addPanel = vi.fn((options: { id: string; title: string }) => {
+    const panel = { id: options.id, api: { title: options.title, setActive: vi.fn(), setTitle: vi.fn() } };
+    panels.push(panel);
+    opened.push(panel.api);
+    return panel;
+  });
+  const machine = { id: "anim-graph-graph", api: { title: "Graph", setActive: vi.fn(), setTitle: vi.fn() } };
+  panels.push(machine);
+  const containerApi = {
+    get panels() {
+      return panels;
+    },
+    getPanel: (id: string) => panels.find((panel) => panel.id === id),
+    addPanel,
+  } as unknown as IDockviewPanelProps["containerApi"];
+  return { containerApi, addPanel, opened };
+}
+
+/** A state tab's DockView panel API. */
+function fakeTabApi({ isActive, title = "" }: { isActive: boolean; title?: string }) {
+  const none = { dispose: () => {} };
+  return {
+    isActive,
+    isVisible: true,
+    title,
+    onDidActiveChange: () => none,
+    onDidVisibilityChange: () => none,
+    setTitle: vi.fn(),
+    setActive: vi.fn(),
+    close: vi.fn(),
+  };
+}
+
 function renderAnimGraph(
   payload: AnimGraphDocument = createDefaultAnimGraph(),
   kind: "anim-graph-3d" | "anim-graph-2d" = "anim-graph-3d",
+  containerApi?: IDockviewPanelProps["containerApi"],
 ) {
   store.view.kind = kind;
   store.reset(payload as unknown as Record<string, unknown>);
+  const props = { ...panelProps, containerApi } as IDockviewPanelProps;
   return render(
     <ValidationProvider>
       <DocumentWorkspaceProvider documentId={DOC_ID}>
         <AnimGraphEditingProvider>
           <PrefabEditingProvider>
             <GraphEditingProvider>
-              <AnimGraphVariablesPanel {...panelProps} />
-              <AnimGraphGraphPanel {...panelProps} />
+              <AnimGraphVariablesPanel {...props} />
+              <AnimGraphGraphPanel {...props} />
+              <AnimGraphDetailsPanel {...props} />
+            </GraphEditingProvider>
+          </PrefabEditingProvider>
+        </AnimGraphEditingProvider>
+      </DocumentWorkspaceProvider>
+    </ValidationProvider>,
+  );
+}
+
+/** One state's tab beside Details, as the dock shows them. */
+function renderStateTab(payload: AnimGraphDocument, stateId: string, api: ReturnType<typeof fakeTabApi>) {
+  store.view.kind = "anim-graph-3d";
+  store.reset(payload as unknown as Record<string, unknown>);
+  const tabProps = { api, params: { stateId } } as unknown as IDockviewPanelProps<{ stateId: string }>;
+  return render(
+    <ValidationProvider>
+      <DocumentWorkspaceProvider documentId={DOC_ID}>
+        <AnimGraphEditingProvider>
+          <PrefabEditingProvider>
+            <GraphEditingProvider>
+              <AnimStateGraphPanel {...tabProps} />
               <AnimGraphDetailsPanel {...panelProps} />
             </GraphEditingProvider>
           </PrefabEditingProvider>
@@ -765,37 +826,86 @@ describe("AnimGraphEditor", () => {
     expect(player?.data).toMatchObject({ assetGuid: "walk-anim", durationMs: 250 });
   });
 
-  it("opens a state's graph on double-click, ending in its Output Pose, and steps back out with the breadcrumbs", async () => {
-    const { container } = renderAnimGraph(locoGraph());
+  it("opens a state's graph in its own tab beside the State Machine on double-click", async () => {
+    const dock = fakeDock();
+    const { container } = renderAnimGraph(locoGraph(), "anim-graph-3d", dock.containerApi);
     await waitFor(() => expect(container.querySelector('.react-flow__node[data-id="run"]')).not.toBeNull());
     fireEvent.doubleClick(container.querySelector('.react-flow__node[data-id="run"]')!);
-    await waitFor(() => expect(screen.getByTestId("anim-pose-graph")).toBeTruthy());
-    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
-    expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
-    await waitFor(() => {
-      expect(container.querySelector('.react-flow__node[data-id="output"] .anim-pose-output-node')).not.toBeNull();
-      expect(container.querySelector('.react-flow__node[data-id="player"]')).not.toBeNull();
+    expect(dock.addPanel).toHaveBeenCalledWith({
+      id: "anim-state-graph:run",
+      component: "anim-state-graph",
+      title: "Run",
+      params: { stateId: "run" },
+      position: { referencePanel: "anim-graph-graph", direction: "within" },
     });
-    fireEvent.click(screen.getByTestId("anim-graph-back"));
-    await waitFor(() => expect(screen.getByTestId("anim-graph-editor")).toBeTruthy());
+    expect(dock.opened.at(-1)?.setActive).toHaveBeenCalled();
+    // The State Machine stays on show in its own tab.
+    expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
     expect(screen.queryByTestId("anim-pose-graph")).toBeNull();
   });
 
-  it("opens the selected state's graph from Details", () => {
-    renderAnimGraph(locoGraph());
+  it("opens the selected state's graph tab from Details, or brings an open one forward", () => {
+    const dock = fakeDock();
+    renderAnimGraph(locoGraph(), "anim-graph-3d", dock.containerApi);
     fireEvent.click(screen.getByTestId("anim-graph-state-run"));
     fireEvent.click(screen.getByTestId("anim-graph-open-state-graph"));
-    expect(screen.getByTestId("anim-graph-crumb-state").textContent).toBe("Run");
-    expect(screen.getByTestId("anim-pose-graph")).toBeTruthy();
+    expect(dock.addPanel).toHaveBeenCalledTimes(1);
+    expect(dock.addPanel.mock.calls[0]![0]).toMatchObject({ id: "anim-state-graph:run", title: "Run" });
+    fireEvent.click(screen.getByTestId("anim-graph-open-state-graph"));
+    expect(dock.addPanel).toHaveBeenCalledTimes(1);
+    expect(dock.opened[0]!.setActive).toHaveBeenCalledTimes(2);
   });
 
-  it("opens on the State Machine, the root, with nothing to step back to and no Name row", () => {
+  it("opens on the State Machine with no breadcrumbs and no Name row", () => {
     renderAnimGraph(locoGraph());
     expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
-    expect(screen.getByTestId("anim-graph-crumb-machine").textContent).toBe("State Machine");
-    expect(screen.queryByTestId("anim-graph-crumb-state")).toBeNull();
-    expect(screen.getByTestId("anim-graph-back")).toHaveProperty("disabled", true);
+    expect(screen.queryByTestId("anim-graph-breadcrumbs")).toBeNull();
     expect(screen.queryByTestId("property-machineName")).toBeNull();
+  });
+});
+
+describe("AnimStateGraphPanel", () => {
+  it("shows the state's graph ending in its Output Pose, and the Inspector follows it while it is active", async () => {
+    const tab = fakeTabApi({ isActive: true });
+    const { container } = renderStateTab(locoGraph(), "run", tab);
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="anim-pose-graph"] .react-flow__node[data-id="output"] .anim-pose-output-node')).not.toBeNull();
+      expect(container.querySelector('[data-testid="anim-pose-graph"] .react-flow__node[data-id="player"]')).not.toBeNull();
+    });
+    // Details shows the state graph's node details, not the State Machine's.
+    expect(screen.getByTestId("inspector-panel")).toBeTruthy();
+    expect(screen.queryByTestId("anim-graph-details")).toBeNull();
+    fireEvent.click(container.querySelector('[data-testid="anim-pose-graph"] .react-flow__node[data-id="player"]')!);
+    await waitFor(() => expect(screen.getByTestId("property-animPoseClip")).toBeTruthy());
+  });
+
+  it("edits the state's own graph and keeps the others", async () => {
+    const doc = locoGraph();
+    const { container } = renderStateTab(doc, "run", fakeTabApi({ isActive: true }));
+    await waitFor(() => expect(container.querySelector('.react-flow__node[data-id="player"]')).not.toBeNull());
+    fireEvent.click(container.querySelector('.react-flow__node[data-id="player"]')!);
+    await waitFor(() => expect(screen.getByTestId("property-animPoseLoop")).toBeTruthy());
+    fireEvent.click(within(screen.getByTestId("property-row-animPoseLoop")).getByRole("checkbox"));
+    const committed = lastCommit();
+    expect(playerData(committed, "run")?.loop).toBe(false);
+    expect(machineOf(committed).states.find((row) => row.id === "idle")?.stateGraph).toEqual(
+      machineOf(doc).states.find((row) => row.id === "idle")?.stateGraph,
+    );
+  });
+
+  it("retitles its tab when the state is renamed and closes it when the state is deleted", async () => {
+    const tab = fakeTabApi({ isActive: false, title: "Run" });
+    const doc = locoGraph();
+    renderStateTab(doc, "run", tab);
+    const renamed = structuredClone(doc);
+    machineOf(renamed).states.find((row) => row.id === "run")!.name = "Sprint";
+    act(() => store.reset(renamed as unknown as Record<string, unknown>));
+    expect(tab.setTitle).toHaveBeenCalledWith("Sprint");
+    const deleted = structuredClone(renamed);
+    machineOf(deleted).states = machineOf(deleted).states.filter((row) => row.id !== "run");
+    machineOf(deleted).transitions = [];
+    act(() => store.reset(deleted as unknown as Record<string, unknown>));
+    expect(tab.close).toHaveBeenCalled();
   });
 });
 

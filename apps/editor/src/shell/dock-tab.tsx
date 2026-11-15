@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DockviewPanelApi, IDockviewPanelHeaderProps } from "dockview-react";
-import { SquareFunctionIcon } from "lucide-react";
-import { isFunctionGraphPanelId } from "./function-graph-panels";
+import { RectangleHorizontalIcon, SquareFunctionIcon } from "lucide-react";
+import { isAnimStateGraphPanelId, isFunctionGraphPanelId } from "./function-graph-panels";
 
 /** Dockview's close glyph (`createCloseButton` in dockview-core). */
 const CLOSE_GLYPH_PATH =
@@ -22,7 +22,8 @@ function usePanelTitle(api: DockviewPanelApi): string | undefined {
  * a `role="button"` close action named "Close <title>" from the dock's message
  * catalog, close on click), led by a kind icon chosen from the panel id, so
  * restored tabs get it too: Class function graphs show the Function icon, as
- * in My Class, to stand apart from the Event Graph and windows.
+ * in My Class, to stand apart from the Event Graph and windows, and Animation
+ * Graph state graphs a state card's outline.
  */
 export function HapticDockTab({ api, containerApi }: IDockviewPanelHeaderProps) {
   const title = usePanelTitle(api);
@@ -31,6 +32,8 @@ export function HapticDockTab({ api, containerApi }: IDockviewPanelHeaderProps) 
     <>
       {isFunctionGraphPanelId(api.id) ? (
         <SquareFunctionIcon className="dock-tab-icon" aria-hidden="true" data-tab-icon="function" />
+      ) : isAnimStateGraphPanelId(api.id) ? (
+        <RectangleHorizontalIcon className="dock-tab-icon" aria-hidden="true" data-tab-icon="state" />
       ) : null}
       <div className="dv-default-tab">
         <div className="dv-default-tab-content">{title ?? ""}</div>
