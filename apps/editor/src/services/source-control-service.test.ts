@@ -925,6 +925,8 @@ describe("SourceControlService lock ref", () => {
       await service.locksBlockingPush(["assets/a.hasset"], "hotfix");
       expect(refs).toEqual([
         ["verify", "refs/heads/feature"],
+        // Once for the move: this device's own locks on the branch it left.
+        ["verify", "refs/heads/main"],
         ["create", "refs/heads/feature"],
         ["unlock", "refs/heads/feature"],
         ["verify", "refs/heads/hotfix"],
@@ -935,7 +937,7 @@ describe("SourceControlService lock ref", () => {
       refs.length = 0;
       service.setCheckedOutBranch("");
       await service.refresh();
-      expect(refs).toEqual([["verify", "refs/heads/main"]]);
+      expect(refs).toEqual([["verify", "refs/heads/main"], ["verify", "refs/heads/feature"]]);
     } finally { service.dispose(); }
   });
 
@@ -950,10 +952,11 @@ describe("SourceControlService lock ref", () => {
       await vi.waitFor(() => expect(refs).toEqual([["verify", "refs/heads/main"]]));
       service.setCheckedOutBranch("main");
       service.setCheckedOutBranch("feature");
-      await vi.waitFor(() => expect(refs).toEqual([["verify", "refs/heads/main"], ["verify", "refs/heads/feature"]]));
+      // The new branch, and once the branch left for this device's own locks there.
+      await vi.waitFor(() => expect(refs).toEqual([["verify", "refs/heads/main"], ["verify", "refs/heads/feature"], ["verify", "refs/heads/main"]]));
       service.setCheckedOutBranch("feature");
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(refs).toHaveLength(2);
+      expect(refs).toHaveLength(3);
     } finally { service.dispose(); }
   });
 
@@ -989,6 +992,95 @@ describe("SourceControlService lock ref", () => {
       service.setCheckedOutBranch(null);
       await service.autoLock("assets/d.hasset");
       expect(changes()).toEqual([["create", "refs/heads/feature"], ["create", "refs/heads/main"]]);
+    } finally { service.dispose(); }
+  });
+
+  /** A Git LFS host that scopes locks by ref, recording each request's endpoint and ref. */
+  function scopedHost() {
+    const requests: Array<[string, string]> = [];
+    const byRef = new Map<string, Map<string, string>>();
+    let next = 1;
+    const listed = (id: string, path: string) => ({ id, path, locked_at: "", owner: { name: "ada" } });
+    const http: HttpClient = async (request) => {
+      const body = JSON.parse(String(request.body ?? "{}")) as { path?: string; ref?: { name?: string } };
+      const ref = body.ref?.name ?? "";
+      const locks = byRef.get(ref) ?? new Map<string, string>();
+      byRef.set(ref, locks);
+      if (request.url.endsWith("/verify")) {
+        requests.push(["verify", ref]);
+        return { status: 200, bodyText: JSON.stringify({ ours: [...locks].map(([path, id]) => listed(id, path)), theirs: [] }) };
+      }
+      const unlock = /\/locks\/([^/]+)\/unlock$/.exec(request.url);
+      if (unlock) {
+        requests.push(["unlock", ref]);
+        const id = decodeURIComponent(unlock[1]!);
+        const path = [...locks].find(([, held]) => held === id)?.[0];
+        if (path === undefined) return { status: 404, bodyText: '{"message":"Lock not found"}' };
+        locks.delete(path);
+        return { status: 200, bodyText: JSON.stringify({ lock: listed(id, path) }) };
+      }
+      requests.push(["create", ref]);
+      const id = `lock-${next++}`;
+      locks.set(body.path!, id);
+      return { status: 201, bodyText: JSON.stringify({ lock: listed(id, body.path!) }) };
+    };
+    const held = (branch: string) => [...(byRef.get(`refs/heads/${branch}`) ?? new Map()).keys()].sort();
+    return { requests, http, held };
+  }
+
+  it("keeps own locks on the branch it moved from listed and releasable, released after a push of their paths, checking that branch once", async () => {
+    const host = scopedHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    const HERO = "assets/hero.scene.hasset";
+    const ROCK = "assets/rock.hasset";
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(host.http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("main");
+      await service.autoLock(HERO);
+      await service.autoLock(ROCK);
+
+      // A new branch is checked out: its own locks are listed, and those on main stay in view.
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      expect(service.locks.map((lock) => [lock.path, lock.ours, lock.branch])).toEqual([[HERO, true, "main"], [ROCK, true, "main"]]);
+      expect(service.heldCount).toBe(2);
+      // Main is checked once for the move, not on every check.
+      await service.refresh();
+      expect(host.requests.filter(([endpoint]) => endpoint === "verify")).toEqual([
+        ["verify", "refs/heads/feature"],
+        ["verify", "refs/heads/main"],
+        ["verify", "refs/heads/feature"],
+      ]);
+
+      // Release Locks After Push: Hero was pushed from feature; its lock is on main.
+      await service.releaseOwnLocks([HERO]);
+      expect(host.held("main")).toEqual([ROCK]);
+      // Release in the Locks window, on the lock's own branch.
+      await service.release(service.locks.find((lock) => lock.path === ROCK)!.id);
+      expect(host.held("main")).toEqual([]);
+      expect(host.requests.filter(([endpoint]) => endpoint === "unlock")).toEqual([["unlock", "refs/heads/main"], ["unlock", "refs/heads/main"]]);
+      expect([service.locks, service.heldCount, service.operationError]).toEqual([[], 0, null]);
+    } finally { service.dispose(); }
+  });
+
+  it("lists a lock once after a branch move on a host that does not scope locks by ref", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: { ...manual, mode: "integrated", branch: "main" }, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("main");
+      await service.autoLock("assets/a.hasset");
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      expect(service.locks.map((lock) => [lock.path, lock.branch])).toEqual([["assets/a.hasset", undefined]]);
+      expect(service.heldCount).toBe(1);
     } finally { service.dispose(); }
   });
 

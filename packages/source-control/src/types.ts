@@ -13,6 +13,12 @@ export interface FileLock {
   ownerName: string;
   lockedAt: string;
   ours: boolean;
+  /**
+   * The branch it is held on, set only when that is not the branch lock
+   * requests name now: an own lock of a branch an Integrated copy moved from,
+   * on a host that scopes locks by ref.
+   */
+  branch?: string;
 }
 
 /** `unsupported`: the host has no Git LFS locking API (404 or 501 from the locks endpoints). */
@@ -29,6 +35,8 @@ export type LockResult<T> = Result<T, LockError>;
 
 export interface UnlockOptions {
   force?: boolean;
+  /** The branch the lock is held on; the provider's branch by default. */
+  branch?: string;
 }
 
 export interface VerifyOptions {

@@ -141,6 +141,16 @@ export class SourceControlService {
   private heldAutoLocks = new Set<string>();
   /** The branch the last lock requests named, so a move checks the locks again. */
   private lastLockBranch: string | null = null;
+  /** The branch `locksByPath` was listed for. */
+  private listBranch: string | null = null;
+  /**
+   * This device's own locks on branches lock requests no longer name (an
+   * Integrated copy moved off them), by branch: a host that scopes locks by
+   * ref lists them only there, and they must stay in view and releasable.
+   */
+  private otherBranchLocks = new Map<string, FileLock[]>();
+  /** Branches moved off whose own locks the next check lists, once per move. */
+  private branchesLeft = new Set<string>();
   private hosts: SourceControlHosts | null = null;
   private detachHosts: (() => void) | null = null;
   private storage: ProjectStorage | null = null;
@@ -239,13 +249,25 @@ export class SourceControlService {
     this.followLockBranch();
   }
 
+  /**
+   * A move keeps the own locks of the branch left in view at once (from the
+   * list, when it is that branch's) and has the next check list that
+   * branch's own locks once, so they stay releasable where a host scopes
+   * locks by ref; moving back lists them as the branch's own again.
+   */
   private followLockBranch(): void {
     const branch = this.lockBranch;
-    if (branch !== this.lastLockBranch) {
-      const moved = this.lastLockBranch !== null;
+    const left = this.lastLockBranch;
+    if (branch !== left) {
       this.lastLockBranch = branch;
-      if (moved && this.provider && this.active && !this.unsupported) {
+      if (left !== null && this.provider && this.active && !this.unsupported) {
+        if (this.listBranch === left) this.keepOtherBranch(left, this.locks.filter((lock) => lock.ours && lock.branch === undefined));
+        this.otherBranchLocks.delete(branch);
+        this.branchesLeft.delete(branch);
+        this.branchesLeft.add(left);
+        this.locksSnapshot = null;
         this.autoLockAttempted.clear();
+        this.emit();
         this.requestRefresh();
       }
     }
@@ -284,10 +306,33 @@ export class SourceControlService {
     return this.pushedState;
   }
 
-  /** Stable until the lock list changes, so a panel re-rendering for another reason keeps its rows. */
+  /**
+   * The branch's locks, then this device's own on branches it moved off
+   * (`FileLock.branch`; one a host that ignores refs lists for both appears
+   * once). Stable until the lists change, so a panel re-rendering for
+   * another reason keeps its rows.
+   */
   get locks(): FileLock[] {
-    this.locksSnapshot ??= [...this.locksByPath.values()];
+    if (!this.locksSnapshot) {
+      const listed = [...this.locksByPath.values()];
+      const ids = new Set(listed.map((lock) => lock.id));
+      for (const locks of this.otherBranchLocks.values()) {
+        for (const lock of locks) {
+          if (ids.has(lock.id)) continue;
+          ids.add(lock.id);
+          listed.push(lock);
+        }
+      }
+      this.locksSnapshot = listed;
+    }
     return this.locksSnapshot;
+  }
+
+  /** `locks` are this device's own on `branch`, which lock requests no longer name. */
+  private keepOtherBranch(branch: string, locks: readonly FileLock[]): void {
+    if (locks.length > 0) this.otherBranchLocks.set(branch, locks.map((lock) => ({ ...lock, branch })));
+    else this.otherBranchLocks.delete(branch);
+    this.locksSnapshot = null;
   }
 
   get heldCount(): number {
@@ -483,6 +528,9 @@ export class SourceControlService {
     this.unsupported = false;
     this.pushedState = IDLE_PUSHED;
     this.setLocks([]);
+    this.listBranch = this.lockBranch;
+    this.otherBranchLocks.clear();
+    this.branchesLeft.clear();
     // The old provider's locks are gone, so their read-only tabs and banners go
     // too, even when the new provider never refreshes.
     this.reconcileDocumentLockState();
@@ -547,12 +595,14 @@ export class SourceControlService {
     try {
       let result;
       let mutations;
+      let branch;
       let attempts = 0;
       // The server may have answered before a lock this editor created or
       // released meanwhile; that list would revive or drop it, so ask again.
       do {
         mutations = this.lockMutations;
-        result = await provider.verify();
+        branch = this.lockBranch;
+        result = await provider.verify({ branch });
         if (revision !== this.refreshRevision) return;
         attempts += 1;
       } while (isOk(result) && mutations !== this.lockMutations && attempts < MAX_OVERTAKEN_VERIFY_ATTEMPTS);
@@ -579,8 +629,10 @@ export class SourceControlService {
         };
       } else {
         this.setLocks([...result.value.ours, ...result.value.theirs]);
+        this.listBranch = branch;
         this.reconcileDocumentLockState();
         this.lockRefreshState = { status: "ready", error: null, lastSuccessAt: Date.now() };
+        if (!(await this.listBranchesLeft(provider, revision))) return;
       }
     } catch (error) {
       if (revision !== this.refreshRevision) return;
@@ -591,6 +643,24 @@ export class SourceControlService {
       };
     }
     this.emit();
+  }
+
+  /**
+   * Lists this device's own locks on each branch moved off since the last
+   * check, once per move (a failed listing keeps those already in view).
+   * False when a newer check or provider took over meanwhile.
+   */
+  private async listBranchesLeft(provider: LockProvider, revision: number): Promise<boolean> {
+    for (const branch of [...this.branchesLeft]) {
+      this.branchesLeft.delete(branch);
+      if (branch === this.lockBranch) continue;
+      const mutations = this.lockMutations;
+      const listed = await provider.verify({ branch });
+      if (revision !== this.refreshRevision) return false;
+      // A release meanwhile would come back to life in that list.
+      if (isOk(listed) && mutations === this.lockMutations && branch !== this.lockBranch) this.keepOtherBranch(branch, listed.value.ours);
+    }
+    return true;
   }
 
   /** No locking API: stop polling and auto-lock; the Locks window says so instead of an error. */
@@ -858,8 +928,10 @@ export class SourceControlService {
     const provider = this.provider;
     const revision = this.providerRevision;
     if (!provider) return "Source control is unavailable.";
+    // A lock of a branch moved off is released on its own branch.
+    const branch = this.locks.find((lock) => lock.id === id)?.branch;
     try {
-      const result = await (force ? provider.unlock(id, { force: true }) : provider.unlock(id));
+      const result = await provider.unlock(id, { ...(force ? { force: true } : {}), ...(branch ? { branch } : {}) });
       if (!isOk(result)) return result.error.message || "Could not release the lock. Try again.";
       if (revision === this.providerRevision) this.removeLockId(id);
       return null;
@@ -869,6 +941,11 @@ export class SourceControlService {
   }
 
   private removeLockId(id: string): void {
+    for (const [branch, locks] of this.otherBranchLocks) {
+      if (!locks.some((lock) => lock.id === id)) continue;
+      this.keepOtherBranch(branch, locks.filter((lock) => lock.id !== id));
+      this.lockMutations += 1;
+    }
     for (const [path, lock] of this.locksByPath) {
       if (lock.id === id) {
         this.deleteLock(path);

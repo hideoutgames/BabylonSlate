@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { err } from "@haptic/core";
+import { err, ok } from "@haptic/core";
 import { FakeLockProvider, tokenCredential } from "@haptic/source-control";
 import { FakeGitHost } from "@haptic/source-control/fake-host";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -170,6 +170,36 @@ describe("LocksPanelContents", () => {
       expect(screen.getByTestId("locks-unsupported").textContent).toBe("This Host Does Not Support File Locking.");
       expect(screen.queryByText("Could Not Refresh Locks")).toBeNull();
       expect(screen.queryByTestId("locks-release-all")).toBeNull();
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it("names the branch of an own lock left on the branch the working copy moved off, and releases it there", async () => {
+    // A host that scopes locks by ref: Hero was locked on main, and the working copy is on feature now.
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const hero = { id: "hero-lock", path: "assets/hero.hasset", ownerName: "Ada", lockedAt: "", ours: true };
+    let heldOnMain = true;
+    vi.spyOn(fake, "verify").mockImplementation(async (options) => ok({ ours: options?.branch === "main" && heldOnMain ? [hero] : [], theirs: [] }));
+    const unlock = vi.spyOn(fake, "unlock").mockImplementation(async (_id, options) => {
+      if (options?.branch === "main") heldOnMain = false;
+      return ok(undefined);
+    });
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: { ...MANUAL_SOURCE_CONTROL, mode: "integrated" }, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedInHosts(), fake });
+      service.setCheckedOutBranch("main");
+      await service.refresh();
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      render(<LiveLocks service={service} />);
+      expect(screen.getByTestId("locks-row-main:assets/hero.hasset").textContent).toContain("On main");
+      await act(async () => {
+        fireEvent.click(screen.getByTestId("locks-release-main:assets/hero.hasset"));
+      });
+      expect(unlock).toHaveBeenCalledWith("hero-lock", { branch: "main" });
+      await waitFor(() => expect(screen.queryByTestId("locks-row-main:assets/hero.hasset")).toBeNull());
     } finally {
       service.dispose();
     }

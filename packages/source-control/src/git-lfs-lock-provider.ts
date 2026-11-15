@@ -117,7 +117,7 @@ export class GitLfsLockProvider implements LockProvider {
     const response = await this.request({
       method: "POST",
       url: `${this.locksUrl}/${encodeURIComponent(id)}/unlock`,
-      body: { force: options?.force === true, ref: refOf(this.branch()) },
+      body: { force: options?.force === true, ref: refOf(options?.branch || this.branch()) },
     });
     if (!isOk(response)) return response;
     const { status, json } = response.value;
