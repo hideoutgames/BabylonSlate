@@ -90,7 +90,10 @@ function statsOf(stat: FileStat): StorageStats {
  *   and the stat size, so the object's bytes are never read or Git-hashed;
  * - writing a pointer to a `.blobs` path leaves the object's file in place
  *   (callers download missing objects first), so the index records the real
- *   file's stats against the pointer's id, as git-lfs leaves it.
+ *   file's stats against the pointer's id, as git-lfs leaves it;
+ * - removing a `.blobs` file keeps it: it may be the object's only copy (a
+ *   commit not pushed yet), so a checkout of a tree without it only drops its
+ *   index entry and leaves it untracked.
  * A directory listing answers the following stats of its entries, so a status
  * costs one storage call per directory. Use one instance per operation: the
  * listing cache does not see writes made outside it. Once the operation's
@@ -251,6 +254,7 @@ export class StorageFs {
   }
 
   private async unlink(path: string): Promise<void> {
+    if (workingLfsObject(path)) return;
     if (this.held && isGitMetadata(path)) {
       this.held.set(path, null);
       return;

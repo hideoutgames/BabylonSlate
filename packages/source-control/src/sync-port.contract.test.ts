@@ -34,6 +34,8 @@ interface Fixture {
   copy(options?: CopyOptions): Promise<{ port: SyncPort; storage: ProjectStorage }>;
   /** A new working copy with no commits in an empty project folder, as Publish starts one. */
   init(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
+  /** The LFS object the server stores under `oid`, if any. */
+  stored(oid: string): Uint8Array | undefined;
   dispose(): Promise<void>;
 }
 
@@ -87,6 +89,7 @@ async function gitFixture(): Promise<Fixture> {
       const port = await initRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW });
       return { port, storage };
     },
+    stored: (oid) => server.objects.get(oid),
     dispose: () => server.stop(),
   };
 }
@@ -112,6 +115,7 @@ async function fakeFixture(): Promise<Fixture> {
       await storage.openDocumentsProject(`copy-${copies}`);
       return { port: FakeSync.init({ storage, remote, branch: "main", now: () => NOW }), storage };
     },
+    stored: (oid) => remote.lfsObjects.get(oid),
     async dispose() {
       rmSync(root, { recursive: true, force: true });
     },
@@ -450,6 +454,62 @@ describe.each([
     expect(text(await storage.readBinary("assets/b.hasset"))).toBe("B");
     expect(await storage.exists("assets/c.hasset")).toBe(false);
     expect(await port.status()).toEqual({ branch: "main", head: main, changes: [{ path: "assets/e.hasset", kind: "modified" }] });
+  });
+
+  it("keeps a blob only an unpushed branch holds through a switch away and back, and pushes it from the working copy", async () => {
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    const main = (await port.status()).head;
+    await port.createBranch("feature");
+    const texture = blobBytes(9, 4096);
+    await storage.writeBinary(blobPath(texture), texture);
+    await storage.writeBinary("assets/t.hasset", encode("T"));
+    const { commit } = await port.commit({ paths: [blobPath(texture), "assets/t.hasset"], message: "Texture", author: AUTHOR });
+
+    // main lacks it: the switch drops it from the index and keeps the file, its only copy.
+    expect(await port.switchBranch("main")).toEqual({ head: main, changedPaths: ["assets/t.hasset"] });
+    expect(await storage.exists("assets/t.hasset")).toBe(false);
+    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [{ path: blobPath(texture), kind: "added" }] });
+
+    // The file is the object the branch names, so switching back takes it as it is.
+    expect(await port.switchBranch("feature")).toEqual({ head: commit, changedPaths: ["assets/t.hasset"] });
+    expect(await port.status()).toEqual({ branch: "feature", head: commit, changes: [] });
+    expect(await port.push()).toEqual({ head: commit, uploaded: 1 });
+    expect(fixture.stored(blobPath(texture).slice(-64))).toEqual(texture);
+    const other = await fixture.copy();
+    await other.port.switchBranch("feature");
+    expect(await other.storage.readBinary(blobPath(texture))).toEqual(texture);
+  });
+
+  it("keeps a blob file the remote removed on a pull, untracked", async () => {
+    const texture = blobBytes(10, 2048);
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(texture)]: texture });
+    const { port, storage } = await fixture.copy();
+    const remote = await fixture.teammate({ [blobPath(texture)]: null, "assets/a.hasset": "A2" });
+    expect(await port.pull({ author: AUTHOR })).toEqual({ kind: "fast-forward", head: remote, changedPaths: ["assets/a.hasset"] });
+    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(await port.status()).toEqual({ branch: "main", head: remote, changes: [{ path: blobPath(texture), kind: "added" }] });
+  });
+
+  it("never makes up an LFS object the working copy lost and the server never had", async () => {
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    const main = (await port.status()).head;
+    await port.createBranch("feature");
+    const texture = blobBytes(11, 3000);
+    await storage.writeBinary(blobPath(texture), texture);
+    await storage.writeBinary("assets/t.hasset", encode("T"));
+    await port.commit({ paths: [blobPath(texture), "assets/t.hasset"], message: "Texture", author: AUTHOR });
+    await storage.remove(blobPath(texture));
+
+    expect(await rejection(port.push())).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    expect(fixture.stored(blobPath(texture).slice(-64))).toBeUndefined();
+    await port.switchBranch("main");
+    // Nothing is written when an object the branch needs is nowhere.
+    expect(await rejection(port.switchBranch("feature"))).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [] });
+    expect(await storage.exists("assets/t.hasset")).toBe(false);
   });
 
   it("refuses to push over commits it has not pulled", async () => {

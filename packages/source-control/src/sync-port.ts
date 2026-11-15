@@ -70,7 +70,9 @@ export interface SyncPort {
   /**
    * Checks out `name`: a local branch, or the remote's (fetched first, as
    * shallow as a clone). Files that differ between the branches take the
-   * other branch's version; uncommitted changes to other files stay. Refuses
+   * other branch's version; uncommitted changes to other files stay, and so
+   * does a `.blobs` file the other branch lacks, untracked (it may be the
+   * only copy of an object a commit not pushed yet holds). Refuses
    * (`conflict` / `uncommitted-changes`, with the paths) when one of those
    * files has an uncommitted change the switch would overwrite; then nothing
    * changes. The current branch is a no-op.

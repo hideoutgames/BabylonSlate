@@ -1,6 +1,6 @@
 import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
 import { relate } from "./git/history";
-import { gitBlobSha1, lfsObjectId, lfsPointerText } from "./lfs-pointer";
+import { gitBlobSha1, lfsObjectId, lfsPointerText, parseLfsPointer } from "./lfs-pointer";
 import { planPull } from "./pull-plan";
 import {
   hasLfsRule,
@@ -26,6 +26,7 @@ import {
   type TransferOptions,
 } from "./sync-port";
 
+/** A commit's files as Git holds them: a `.blobs` file as its LFS pointer, never the object's bytes. */
 type Files = ReadonlyMap<string, Uint8Array>;
 
 interface FakeCommit {
@@ -46,19 +47,31 @@ function encode(content: string | Uint8Array): Uint8Array {
 /** Committed content never changes, so each file's id is hashed once. */
 const committedIds = new WeakMap<Uint8Array, string>();
 
-/** A file's content id as Git sees it: an LFS object's by its name and size. */
-async function contentId(path: string, bytes: Uint8Array | undefined): Promise<string | null> {
+/** A committed file's content id, as Git's: an LFS object's is its pointer's. */
+async function contentId(bytes: Uint8Array | undefined): Promise<string | null> {
   if (!bytes) return null;
   const known = committedIds.get(bytes);
   if (known) return known;
-  const oid = lfsObjectId(path);
-  const id = await (oid ? lfsId(oid, bytes.byteLength) : gitBlobSha1(bytes));
+  const id = await gitBlobSha1(bytes);
   committedIds.set(bytes, id);
   return id;
 }
 
+function pointerBytes(oid: string, size: number): Uint8Array {
+  return new TextEncoder().encode(lfsPointerText(oid, size));
+}
+
 function lfsId(oid: string, size: number): Promise<string> {
-  return gitBlobSha1(new TextEncoder().encode(lfsPointerText(oid, size)));
+  return gitBlobSha1(pointerBytes(oid, size));
+}
+
+function objectMissing(oid: string): SyncError {
+  return new SyncError("lfs", `The server has no LFS object ${oid}.`, { code: "lfs-object-missing" });
+}
+
+/** A checkout's paths that change working files: an LFS object's file the target lacks stays, untracked, as the Git core keeps it. */
+function writtenPaths(writes: readonly string[], target: Files): string[] {
+  return writes.filter((path) => !(lfsObjectId(path) && !target.has(path)));
 }
 
 /** A working file as a listing gives it: `.blobs` files are compared by name and size, never read. */
@@ -86,8 +99,8 @@ export class FakeRemote {
 
   /**
    * Commits `changes` (null removes a file) on top of `branch` as a teammate
-   * pushing; a branch the remote lacks starts from main, as a teammate's new
-   * branch would.
+   * pushing, a `.blobs` file's bytes into the LFS store; a branch the remote
+   * lacks starts from main, as a teammate's new branch would.
    */
   commit(changes: Record<string, string | Uint8Array | null>, message = "Teammate", branch = "main"): string {
     const head = this.branches.get(branch) ?? this.branches.get("main") ?? null;
@@ -98,9 +111,9 @@ export class FakeRemote {
         continue;
       }
       const bytes = encode(content);
-      files.set(path, bytes);
       const oid = lfsObjectId(path);
       if (oid) this.lfsObjects.set(oid, bytes);
+      files.set(path, oid ? pointerBytes(oid, bytes.byteLength) : bytes);
     }
     const id = this.add({ parents: head ? [head] : [], files, message, author: { name: "Teammate", email: "teammate@example.com" }, timestamp: Math.floor(this.now() / 1000) });
     this.branches.set(branch, id);
@@ -127,7 +140,10 @@ export class FakeRemote {
  * `SyncPort` in memory for editor and end-to-end tests: the working tree is
  * real project storage, history lives in a `FakeRemote`. Same results as
  * `GitRepository` for the same steps (the contract test runs both), with no
- * network, no `.git` folder and full history.
+ * network, no `.git` folder and full history. As in Git, commits hold LFS
+ * pointers: an object's bytes are only in working copies and the remote's
+ * store, so a push uploads the working file and a checkout takes the
+ * working file or the store's.
  */
 export class FakeSync implements SyncPort {
   private readonly storage: ProjectStorage;
@@ -191,9 +207,10 @@ export class FakeSync implements SyncPort {
     throwIfCancelled(options.signal);
     const sync = new FakeSync(options);
     if (!sync.head) throw new SyncError("not-found", `The repository has no branch ${options.branch}.`);
-    for (const [path, bytes] of sync.files(sync.head)) {
+    const files = sync.files(sync.head);
+    for (const { path, bytes } of await sync.checkoutWrites([...files.keys()], files, new Map())) {
       throwIfCancelled(options.signal);
-      await sync.storage.writeBinary(path, bytes);
+      if (bytes) await sync.storage.writeBinary(path, bytes);
     }
     throwIfCancelled(options.signal);
     return sync;
@@ -212,7 +229,7 @@ export class FakeSync implements SyncPort {
     const committed = this.head ? this.files(this.head) : new Map<string, Uint8Array>();
     const changes: FileChange[] = [];
     for (const path of [...new Set([...working.keys(), ...committed.keys()])].sort()) {
-      const before = await contentId(path, committed.get(path));
+      const before = await contentId(committed.get(path));
       const after = await this.workingId(path, working.get(path));
       if (before === after) continue;
       changes.push({ path, kind: before === null ? "added" : after === null ? "deleted" : "modified" });
@@ -227,8 +244,11 @@ export class FakeSync implements SyncPort {
     const working = await this.workingEntries();
     const files = new Map(this.head ? this.files(this.head) : []);
     for (const path of selected) {
-      if (working.has(path)) files.set(path, await this.storage.readBinary(path));
-      else files.delete(path);
+      const entry = working.get(path);
+      const oid = lfsObjectId(path);
+      // An LFS object is committed as its pointer, from its name and size: never read.
+      if (!entry) files.delete(path);
+      else files.set(path, oid ? pointerBytes(oid, await this.workingSize(path, entry)) : await this.storage.readBinary(path));
     }
     if (selected.some((path) => lfsObjectId(path) && working.has(path)) && !hasLfsRule(new TextDecoder().decode(files.get(".gitattributes") ?? new Uint8Array()))) {
       throw new SyncError("lfs", "Add the .blobs rule to .gitattributes before committing asset blobs.", { code: "missing-lfs-rule" });
@@ -283,22 +303,22 @@ export class FakeSync implements SyncPort {
     const working = await this.workingEntries();
     const incoming = [];
     for (const path of [...new Set([...baseFiles.keys(), ...theirsFiles.keys()])].sort()) {
-      const baseId = await contentId(path, baseFiles.get(path));
-      const theirs = await contentId(path, theirsFiles.get(path));
+      const baseId = await contentId(baseFiles.get(path));
+      const theirs = await contentId(theirsFiles.get(path));
       if (baseId !== theirs) incoming.push({ path, base: baseId, theirs, mine: await this.workingId(path, working.get(path)) });
     }
     const plan = planPull(incoming, choices);
     if (!plan.ready) return { kind: "conflicts", conflicts: plan.conflicts };
-    for (const path of plan.writes) {
+    for (const { path, bytes } of await this.checkoutWrites(plan.writes, theirsFiles, working)) {
       // As checkout: a cancel stops the writes and leaves the branch where it was.
       throwIfCancelled(signal);
-      const bytes = theirsFiles.get(path);
       if (bytes) await this.storage.writeBinary(path, bytes);
       else if (working.has(path)) await this.storage.remove(path);
     }
+    const changedPaths = writtenPaths(plan.writes, theirsFiles);
     if (!relation || relation.ahead.length === 0) {
       this.head = remote;
-      return { kind: "fast-forward", head: remote, changedPaths: plan.writes };
+      return { kind: "fast-forward", head: remote, changedPaths };
     }
     const files = new Map(this.files(this.head!));
     for (const path of plan.writes) {
@@ -313,7 +333,7 @@ export class FakeSync implements SyncPort {
       author,
       timestamp: Math.floor(this.now() / 1000),
     });
-    return { kind: "merged", head: this.head, changedPaths: plan.writes };
+    return { kind: "merged", head: this.head, changedPaths };
   }
 
   async push(options: TransferOptions = {}): Promise<PushResult> {
@@ -326,15 +346,24 @@ export class FakeSync implements SyncPort {
     if (remote && base !== remote) {
       throw new SyncError("conflict", "The remote branch has commits this copy lacks. Pull first.", { code: "push-rejected" });
     }
-    let uploaded = 0;
+    // The objects the pushed commits introduce (against their first parent), uploaded from the working copy: commits hold only pointers.
+    const objects = new Map<string, { path: string; size: number }>();
     for (const id of ahead) {
-      for (const [path, bytes] of this.files(id)) {
-        const oid = lfsObjectId(path);
-        if (oid && !this.remote.lfsObjects.has(oid)) {
-          this.remote.lfsObjects.set(oid, bytes);
-          uploaded += 1;
-        }
+      const commit = this.remote.get(id);
+      const parent = commit.parents[0] ? this.files(commit.parents[0]) : new Map<string, Uint8Array>();
+      for (const [path, bytes] of commit.files) {
+        const pointer = lfsObjectId(path) ? parseLfsPointer(bytes) : null;
+        if (!pointer || this.remote.lfsObjects.has(pointer.oid) || (await contentId(parent.get(path))) === (await contentId(bytes))) continue;
+        if (!objects.has(pointer.oid)) objects.set(pointer.oid, { path, size: pointer.size });
       }
+    }
+    let uploaded = 0;
+    for (const [oid, { path, size }] of objects) {
+      throwIfCancelled(options.signal);
+      const bytes = await this.workingObject(path, size);
+      if (!bytes) throw new SyncError("lfs", `${path} is missing, so it cannot be uploaded.`, { code: "lfs-object-missing" });
+      this.remote.lfsObjects.set(oid, bytes);
+      uploaded += 1;
     }
     this.remote.branches.set(this.current, head);
     this.fetched.set(this.current, head);
@@ -342,22 +371,33 @@ export class FakeSync implements SyncPort {
   }
 
   async readFile(path: string, commit: string): Promise<Uint8Array | null> {
-    return this.files(commit).get(path) ?? null;
+    const bytes = this.files(commit).get(path) ?? null;
+    const pointer = bytes && lfsObjectId(path) ? parseLfsPointer(bytes) : null;
+    return pointer ? ((await this.workingObject(path, pointer.size)) ?? this.storedObject(pointer.oid, pointer.size)) : bytes;
   }
 
   async readLfsObject(path: string, size: number, options: TransferOptions = {}): Promise<Uint8Array> {
     throwIfCancelled(options.signal);
     const oid = lfsObjectId(path);
     if (!oid) throw new Error(`${path} is not an LFS object.`);
+    return (await this.workingObject(path, size)) ?? this.storedObject(oid, size);
+  }
+
+  /** The working copy's file for an LFS object of `size` (an object never changes under its name), or null. */
+  private async workingObject(path: string, size: number): Promise<Uint8Array | null> {
     try {
       const local = await this.storage.readBinary(path);
-      if (local.byteLength === size) return local;
+      return local.byteLength === size ? local : null;
     } catch (error) {
-      if (!isStorageNotFound(error)) throw error;
+      if (isStorageNotFound(error)) return null;
+      throw error;
     }
-    // Only what the server holds: a commit that was never pushed uploaded nothing.
+  }
+
+  /** An LFS object as the server holds it: only what was seeded or pushed (a commit never pushed uploaded nothing). */
+  private storedObject(oid: string, size: number): Uint8Array {
     const stored = this.remote.lfsObjects.get(oid);
-    if (!stored || stored.byteLength !== size) throw new SyncError("lfs", `The server has no LFS object ${oid}.`, { code: "lfs-object-missing" });
+    if (!stored || stored.byteLength !== size) throw objectMissing(oid);
     return stored;
   }
 
@@ -375,7 +415,7 @@ export class FakeSync implements SyncPort {
       seen.add(commit.id);
       queue.push(...commit.parents);
       const parent = commit.parents[0] ? this.files(commit.parents[0]) : new Map<string, Uint8Array>();
-      if (path && (await contentId(path, commit.files.get(path))) === (await contentId(path, parent.get(path)))) continue;
+      if (path && (await contentId(commit.files.get(path))) === (await contentId(parent.get(path)))) continue;
       if (skipped < skip) {
         skipped += 1;
         continue;
@@ -430,20 +470,48 @@ export class FakeSync implements SyncPort {
     if (blocked.length > 0) throw uncommittedChangesError(name, blocked);
     const writes = differing.filter(({ path, to }) => mine.get(path) !== to).map(({ path }) => path);
     const files = this.files(target);
-    for (const path of writes) {
+    for (const { path, bytes } of await this.checkoutWrites(writes, files, working)) {
       // As checkout: a cancel stops the writes and leaves the branch where it was.
       throwIfCancelled(options.signal);
-      const bytes = files.get(path);
       if (bytes) await this.storage.writeBinary(path, bytes);
       else await this.storage.remove(path);
     }
     this.heads.set(name, target);
     this.current = name;
-    return { head: target, changedPaths: writes };
+    return { head: target, changedPaths: writtenPaths(writes, files) };
   }
 
   private files(id: string): Files {
     return this.remote.get(id).files;
+  }
+
+  /**
+   * What checking out `paths` from `files` writes (null: remove), worked out
+   * before any write, as the Git core downloads first. An LFS object's file
+   * stays when the target lacks it (it may be the object's only copy) or
+   * already holds it (by name and size); a missing one comes from the
+   * remote's store, never from a commit, and one the store lacks is
+   * `lfs-object-missing`.
+   */
+  private async checkoutWrites(paths: readonly string[], files: Files, working: ReadonlyMap<string, WorkingEntry>): Promise<{ path: string; bytes: Uint8Array | null }[]> {
+    const out: { path: string; bytes: Uint8Array | null }[] = [];
+    for (const path of paths) {
+      const committed = files.get(path) ?? null;
+      if (!lfsObjectId(path)) {
+        out.push({ path, bytes: committed });
+        continue;
+      }
+      const pointer = committed ? parseLfsPointer(committed) : null;
+      if (!pointer) continue;
+      const entry = working.get(path);
+      if (entry && (await this.workingSize(path, entry)) === pointer.size) continue;
+      out.push({ path, bytes: this.storedObject(pointer.oid, pointer.size) });
+    }
+    return out;
+  }
+
+  private async workingSize(path: string, entry: WorkingEntry): Promise<number> {
+    return entry.size ?? (await this.storage.stat(path)).size ?? 0;
   }
 
   /** The files that differ between two commits (null: no commit), sorted, with their content ids. */
@@ -452,8 +520,8 @@ export class FakeSync implements SyncPort {
     const after = to ? this.files(to) : new Map<string, Uint8Array>();
     const out = [];
     for (const path of [...new Set([...before.keys(), ...after.keys()])].sort()) {
-      const fromId = await contentId(path, before.get(path));
-      const toId = await contentId(path, after.get(path));
+      const fromId = await contentId(before.get(path));
+      const toId = await contentId(after.get(path));
       if (fromId !== toId) out.push({ path, from: fromId, to: toId });
     }
     return out;
@@ -486,7 +554,7 @@ export class FakeSync implements SyncPort {
   private async workingId(path: string, entry: WorkingEntry | undefined): Promise<string | null> {
     if (!entry) return null;
     const oid = lfsObjectId(path);
-    if (oid) return lfsId(oid, entry.size ?? (await this.storage.stat(path)).size ?? 0);
+    if (oid) return lfsId(oid, await this.workingSize(path, entry));
     const cached = this.statCache.get(path);
     if (cached && cached.size === entry.size && cached.mtime === entry.mtime && cached.mtime < cached.hashedAt) return cached.id;
     const hashedAt = Date.now();

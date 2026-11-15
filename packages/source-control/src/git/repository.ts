@@ -95,6 +95,15 @@ function parentOf(path: string): string {
   return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
 
+/**
+ * The working files a checkout of `writes` changes: an LFS object's file the
+ * target lacks (`target` gives each path's id there, null when absent) stays,
+ * since `StorageFs` never removes one; it is only untracked.
+ */
+function writtenPaths(writes: readonly string[], target: ReadonlyMap<string, string | null>): string[] {
+  return writes.filter((path) => !(lfsObjectId(path) && target.get(path) === null));
+}
+
 async function blobOid(entry: WalkerEntry | null | undefined): Promise<string | null> {
   return entry && (await entry.type()) === "blob" ? ((await entry.oid()) ?? null) : null;
 }
@@ -307,16 +316,17 @@ export class GitRepository implements SyncPort {
 
       await this.downloadMissing(op, remote, new Set(writes));
       if (writes.length > 0) await git.checkout({ ...op.git, ref: remote, filepaths: writes, force: true, noUpdateHead: true });
+      const theirs = new Map(incoming.map((entry) => [entry.path, entry.theirs]));
+      const changedPaths = writtenPaths(writes, theirs);
       if (fastForward) {
         // The index follows the new HEAD; a kept file then reads as an uncommitted change.
-        const theirs = new Map(incoming.map((entry) => [entry.path, entry.theirs]));
         for (const path of kept) {
           const oid = theirs.get(path);
           if (oid) await git.updateIndex({ ...op.git, filepath: path, oid, add: true });
           else await git.updateIndex({ ...op.git, filepath: path, remove: true, force: true });
         }
         await git.writeRef({ ...op.git, ref: this.localRef, value: remote, force: true });
-        return { kind: "fast-forward", head: remote, changedPaths: writes };
+        return { kind: "fast-forward", head: remote, changedPaths };
       }
       const signature = this.signature(author);
       const head = await git.commit({
@@ -326,7 +336,7 @@ export class GitRepository implements SyncPort {
         committer: signature,
         parent: [local!, remote],
       });
-      return { kind: "merged", head, changedPaths: writes };
+      return { kind: "merged", head, changedPaths };
     }, signal);
   }
 
@@ -503,6 +513,8 @@ export class GitRepository implements SyncPort {
       const blocked = differing.filter(({ path, from, to }) => mine(path) !== from && mine(path) !== to).map(({ path }) => path);
       if (blocked.length > 0) throw uncommittedChangesError(name, blocked);
 
+      // An LFS object's file the target lacks stays, untracked: it may be the only copy of an unpushed commit's object.
+      // One already there is the object the target names (by name and size), so it is taken as it is.
       const writes = differing.filter(({ path, to }) => mine(path) !== to).map(({ path }) => path);
       await this.downloadMissing(op, target, new Set(writes));
       if (writes.length > 0) await git.checkout({ ...op.git, ref: target, filepaths: writes, force: true, noUpdateHead: true });
@@ -518,7 +530,7 @@ export class GitRepository implements SyncPort {
       }
       await git.writeRef({ ...op.git, ref: "HEAD", value: `refs/heads/${name}`, symbolic: true, force: true });
       this.current = name;
-      return { head: target, changedPaths: writes };
+      return { head: target, changedPaths: writtenPaths(writes, new Map(differing.map(({ path, to }) => [path, to]))) };
     }, options.signal);
   }
 
