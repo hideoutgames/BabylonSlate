@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultScene,
-  DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   documentId,
   MAIN_SCENE_FILE,
   type DocumentRef,
@@ -22,7 +21,7 @@ import {
 } from "@haptic/edit";
 import { FakeLockProvider } from "@haptic/source-control";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
+import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import { JournalBuffer } from "../lib/journal-buffer";
 import { DocumentEditingService } from "./document-editing-service";
 import { DocumentService } from "./document-service";
@@ -251,8 +250,8 @@ describe("DocumentEditingService", () => {
     const saves = vi.fn();
     try {
       await sourceControl.configure({
-        settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, enabled: true }, projectGuid: "project-guid",
-        platform: "web", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake,
+        settings: MANUAL_SOURCE_CONTROL, projectKey: "project-guid",
+        platform: "web", testMode: true, hosts: await signedInHosts(), fake,
       });
       sourceControl.pausePolling();
       await sourceControl.refresh();

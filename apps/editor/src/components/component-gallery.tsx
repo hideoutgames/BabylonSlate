@@ -512,6 +512,8 @@ export function ComponentGallery() {
             <div className="flex gap-2">
               <Badge>Default</Badge>
               <Badge variant="secondary">Secondary</Badge>
+              <Badge variant="success">Pushed</Badge>
+              <Badge variant="warning">Not Pushed</Badge>
               <Badge className="bg-vector text-background">Vector</Badge>
             </div>
             <Skeleton className="h-10 w-full max-w-sm" />

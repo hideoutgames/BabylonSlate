@@ -109,6 +109,8 @@ jobs:
       HAPTIC_GAME_SHELL_OWN: windows-x64
       # Public repository variable. Unset builds have no Clerk sign-in; mobile then offers only the demo account.
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      VITE_GITHUB_CLIENT_ID: ${{ vars.VITE_GITHUB_CLIENT_ID }}
+      VITE_GITLAB_CLIENT_ID: ${{ vars.VITE_GITLAB_CLIENT_ID }}
       # Public RevenueCat Web Billing key. Unset builds show subscriptions as not set up.
       VITE_REVENUECAT_WEB_API_KEY: ${{ vars.VITE_REVENUECAT_WEB_API_KEY }}
       VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
@@ -162,6 +164,8 @@ jobs:
       # Players this build carries for packaging native games; a desktop app reuses its own Electron for its own OS.
       HAPTIC_GAME_SHELLS: windows-x64,linux-x64,macos-arm64
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      VITE_GITHUB_CLIENT_ID: ${{ vars.VITE_GITHUB_CLIENT_ID }}
+      VITE_GITLAB_CLIENT_ID: ${{ vars.VITE_GITLAB_CLIENT_ID }}
       # Public RevenueCat Web Billing key. Unset builds show subscriptions as not set up.
       VITE_REVENUECAT_WEB_API_KEY: ${{ vars.VITE_REVENUECAT_WEB_API_KEY }}
       VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
@@ -220,6 +224,8 @@ jobs:
       HAPTIC_GAME_SHELLS: windows-x64
       HAPTIC_GAME_SHELL_OWN: linux-x64
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      VITE_GITHUB_CLIENT_ID: ${{ vars.VITE_GITHUB_CLIENT_ID }}
+      VITE_GITLAB_CLIENT_ID: ${{ vars.VITE_GITLAB_CLIENT_ID }}
       # Public RevenueCat Web Billing key. Unset builds show subscriptions as not set up.
       VITE_REVENUECAT_WEB_API_KEY: ${{ vars.VITE_REVENUECAT_WEB_API_KEY }}
       VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
@@ -267,6 +273,8 @@ jobs:
       # Players this build carries for packaging native games; a desktop app reuses its own Electron for its own OS.
       HAPTIC_GAME_SHELLS: windows-x64,linux-x64
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      VITE_GITHUB_CLIENT_ID: ${{ vars.VITE_GITHUB_CLIENT_ID }}
+      VITE_GITLAB_CLIENT_ID: ${{ vars.VITE_GITLAB_CLIENT_ID }}
       # Public RevenueCat SDK key. Unset builds show in-app purchases as not set up.
       VITE_REVENUECAT_ANDROID_API_KEY: ${{ vars.VITE_REVENUECAT_ANDROID_API_KEY }}
       VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}
@@ -328,6 +336,8 @@ jobs:
       # Players this build carries for packaging native games; a desktop app reuses its own Electron for its own OS.
       HAPTIC_GAME_SHELLS: windows-x64,linux-x64
       VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+      VITE_GITHUB_CLIENT_ID: ${{ vars.VITE_GITHUB_CLIENT_ID }}
+      VITE_GITLAB_CLIENT_ID: ${{ vars.VITE_GITLAB_CLIENT_ID }}
       # Public RevenueCat SDK key. Unset builds show in-app purchases as not set up.
       VITE_REVENUECAT_IOS_API_KEY: ${{ vars.VITE_REVENUECAT_IOS_API_KEY }}
       VITE_REVENUECAT_PRO_ENTITLEMENT: ${{ vars.VITE_REVENUECAT_PRO_ENTITLEMENT }}

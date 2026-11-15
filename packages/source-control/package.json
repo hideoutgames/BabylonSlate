@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./device-flow": "./src/device-flow.ts",
+    "./host-api": "./src/host-api.ts",
+    "./pushed-locks": "./src/pushed-locks.ts",
+    "./token-refresh": "./src/token-refresh.ts",
+    "./fake-host": "./src/fake-host.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

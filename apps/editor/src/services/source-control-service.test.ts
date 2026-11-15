@@ -1,48 +1,302 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, err } from "@haptic/core";
-import { FakeLockProvider } from "@haptic/source-control";
-import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
+import { err } from "@haptic/core";
+import { FakeLockProvider, type HostCredential, type HttpClient } from "@haptic/source-control";
+import { FakeGitHost, MemorySecrets } from "@haptic/source-control/fake-host";
+import { MemoryStorageAdapter } from "@haptic/vfs";
+import {
+  MANUAL_SOURCE_CONTROL as manual,
+  signedInHosts as signedIn,
+  TEST_GITHUB_CREDENTIAL as GITHUB,
+} from "../testing/source-control-hosts";
+import { SourceControlAccounts } from "./source-control-accounts";
 import {
   SourceControlService,
+  type SourceControlHosts,
 } from "./source-control-service";
 
-const enabled = {
-  ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
-  enabled: true,
-  repositoryUrl: "https://github.com/org/repo",
-};
-
 describe("SourceControlService", () => {
-  it("requires Save Token to authorize a repository host, including legacy credentials", async () => {
-    const secrets = new MemorySecretStore();
-    await secrets.set("source-control:proj", "legacy-fixture");
-    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+  it("does nothing at all while the mode is Off: no credentials, network, timers or notifications", async () => {
+    vi.useFakeTimers();
     const service = new SourceControlService();
-    const config = { settings: enabled, projectGuid: "proj", platform: "electron", testMode: false, secretStore: secrets,
-      nativeHttp: async (request: { url: string; headers: Record<string, string> }) => {
-        requests.push(request);
-        return { status: 200, bodyText: '{"ours":[],"theirs":[]}' };
-      } };
+    const credentialFor = vi.fn(async () => GITHUB);
+    const subscribe = vi.fn(() => () => {});
+    const http = vi.fn();
+    const hosts: SourceControlHosts = {
+      credentialSource: () => ({ current: credentialFor, renew: credentialFor }),
+      subscribe,
+      http,
+    };
+    const fake = new FakeLockProvider();
+    const verify = vi.spyOn(fake, "verify");
+    const listener = vi.fn();
+    service.subscribe(listener);
+    try {
+      for (const platform of ["electron", "ios", "web"]) {
+        await service.configure({ settings: { ...manual, mode: "off" }, projectKey: "proj", platform, testMode: true, hosts, fake });
+      }
+      await service.autoLock("assets/a.hasset");
+      service.requestRefresh();
+      await vi.runAllTimersAsync();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(credentialFor).not.toHaveBeenCalled();
+      expect(subscribe).not.toHaveBeenCalled();
+      expect(http).not.toHaveBeenCalled();
+      expect(verify).not.toHaveBeenCalled();
+      expect(listener).not.toHaveBeenCalled();
+      expect([service.active, service.enabled, service.signIn, service.mode]).toEqual([false, false, null, "off"]);
+    } finally {
+      service.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("asks to sign in and requests nothing until the repository's host has a credential, then starts locking", async () => {
+    vi.useFakeTimers();
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const verify = vi.spyOn(fake, "verify");
+    const accounts = await signedIn(null, null);
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake });
+      expect(service.signIn).toEqual({ origin: "https://github.com", deviceHost: "github", label: "GitHub" });
+      expect(service.enabled).toBe(false);
+      await service.autoLock("assets/a.hasset");
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(verify).not.toHaveBeenCalled();
+      expect(fake.snapshot()).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+
+      // A credential for another host never satisfies this repository.
+      await accounts.save({ ...GITHUB, origin: "https://gitlab.com", kind: "gitlab", username: "oauth2" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.signIn?.origin).toBe("https://github.com");
+
+      await accounts.save(GITHUB);
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      expect(service.signIn).toBeNull();
+      expect(verify).toHaveBeenCalledTimes(1);
+      // Polling runs on the fixed 60 s interval.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(verify).toHaveBeenCalledTimes(2);
+
+      // Signing out stops every request and brings the prompt back.
+      await accounts.remove("https://github.com");
+      await vi.waitFor(() => expect(service.signIn?.label).toBe("GitHub"));
+      expect(service.enabled).toBe(false);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(verify).toHaveBeenCalledTimes(2);
+    } finally {
+      service.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("names a token host in the prompt and never offers device sign-in for it", async () => {
+    const service = new SourceControlService();
+    try {
+      await service.configure({
+        settings: { ...manual, repositoryUrl: "git@gitea.example.com:team/game.git" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(),
+      });
+      expect(service.signIn).toEqual({ origin: "https://gitea.example.com", deviceHost: null, label: "gitea.example.com" });
+    } finally { service.dispose(); }
+  });
+
+  it("sends Git LFS requests with the stored credential's username, only to its origin", async () => {
+    const requests: Array<{ url: string; authorization?: string }> = [];
+    const http: HttpClient = async (request) => {
+      requests.push({ url: request.url, authorization: request.headers.Authorization });
+      return { status: 200, bodyText: '{"ours":[],"theirs":[]}' };
+    };
+    const gitlab: HostCredential = { origin: "https://gitlab.com", username: "oauth2", token: "glo", kind: "gitlab" };
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({
+        settings: { ...manual, repositoryUrl: "https://gitlab.com/group/game.git" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http, gitlab),
+      });
+      await service.refresh();
+      expect(requests).toEqual([
+        { url: "https://gitlab.com/group/game.git/info/lfs/locks/verify", authorization: `Basic ${btoa("oauth2:glo")}` },
+      ]);
+    } finally { service.dispose(); }
+  });
+
+  it("stops polling and auto-lock when the host has no locking API", async () => {
+    vi.useFakeTimers();
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const verify = vi.spyOn(fake, "verify").mockResolvedValue(err({ kind: "unsupported", message: "This Host Does Not Support File Locking.", status: 404 }));
+    const create = vi.spyOn(fake, "create");
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
+      await vi.waitFor(() => expect(service.lockingUnsupported).toBe(true));
+      expect(service.refreshState.error).toBeNull();
+      expect(service.canReleasePushed).toBe(false);
+      await service.autoLock("assets/a.hasset");
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(create).not.toHaveBeenCalled();
+      expect(service.bannerFor("assets/a.hasset")).toBeNull();
+    } finally {
+      service.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies a sign-in or sign-out made while the mode was Off when it comes back", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const accounts = await signedIn();
+    const config = { settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake };
+    service.pausePolling();
     try {
       await service.configure(config);
+      expect(service.enabled).toBe(true);
+      await service.configure({ ...config, settings: { ...manual, mode: "off" as const } });
+      await accounts.remove("https://github.com");
+      await service.configure(config);
+      expect(service.enabled).toBe(false);
+      expect(service.signIn?.label).toBe("GitHub");
+      await service.configure({ ...config, settings: { ...manual, mode: "off" as const } });
+      await accounts.save(GITHUB);
+      await service.configure(config);
+      expect(service.signIn).toBeNull();
+      expect(service.enabled).toBe(true);
+    } finally { service.dispose(); }
+  });
+
+  it("brings the sign-in banner back when a GitLab sign-in can no longer be refreshed", async () => {
+    let now = 1_000_000;
+    const host = new FakeGitHost();
+    const accounts = new SourceControlAccounts(new MemorySecrets(), host.http, { clientId: () => "client", now: () => now });
+    // A refresh token the host no longer accepts (spent, or revoked on gitlab.com).
+    await accounts.save({ origin: "https://gitlab.com", username: "oauth2", token: "fake-gitlab-token", kind: "gitlab", account: "ada", refreshToken: "revoked", expiresAt: now + 3_600_000 });
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({
+        settings: { ...manual, repositoryUrl: "https://gitlab.com/group/game.git" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: accounts,
+      });
+      expect(service.enabled).toBe(true);
+      // The next lock check finds the token expiring and the refresh rejected.
+      now += 3_600_000;
+      await service.refresh();
+      await vi.waitFor(() => expect(service.signIn?.label).toBe("GitLab"));
+      expect(service.enabled).toBe(false);
+      expect(await accounts.list()).toEqual([]);
+    } finally { service.dispose(); }
+  });
+
+  it("keeps checking a GitHub repository that answers 404 rather than calling it unsupported", async () => {
+    vi.useFakeTimers();
+    const requests: string[] = [];
+    const http: HttpClient = async (request) => {
+      requests.push(request.url);
+      return { status: 404, bodyText: JSON.stringify({ message: "Not Found" }) };
+    };
+    const service = new SourceControlService();
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http) });
+      await vi.waitFor(() => expect(service.refreshState.error).toBe("Repository Not Found Or No Access"));
+      expect(service.lockingUnsupported).toBe(false);
+      await service.autoLock("assets/a.hasset");
+      await vi.advanceTimersByTimeAsync(60_000);
+      // The create and the next scheduled check both went out.
+      expect(requests.filter((url) => url.endsWith("/locks/verify"))).toHaveLength(2);
+      expect(requests.filter((url) => url.endsWith("/locks"))).toHaveLength(1);
+    } finally {
+      service.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("tries again with a newly saved credential after the host reported no locking API", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const verify = vi.spyOn(fake, "verify").mockResolvedValueOnce(err({ kind: "unsupported", message: "Not Found", status: 404 }));
+    const accounts = await signedIn();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake });
+      await service.refresh();
+      expect(service.lockingUnsupported).toBe(true);
+      // The same credential saved again changes nothing.
+      await accounts.save({ ...GITHUB });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      expect(service.lockingUnsupported).toBe(true);
+      // Another account may see the repository the first could not.
+      await accounts.save({ ...GITHUB, token: "other-account", account: "bea" });
+      await vi.waitFor(() => expect(service.lockingUnsupported).toBe(false));
+      await service.refresh();
+      expect(service.refreshState.status).toBe("ready");
+      expect(verify).toHaveBeenCalledTimes(2);
+    } finally { service.dispose(); }
+  });
+
+  it("keeps each unchanged lock object across a refresh, so the Locks rows do not re-render", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    fake.addTheirs("assets/a.hasset", "Bob", "2026-08-15T12:00:00Z");
+    fake.addTheirs("assets/b.hasset", "Bob", "2026-08-15T12:00:00Z");
+    service.pausePolling();
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
+      await service.refresh();
+      const [a, b] = [service.lockForPath("assets/a.hasset"), service.lockForPath("assets/b.hasset")];
+      const snapshot = service.locks;
+      expect(service.locks).toBe(snapshot);
+      await fake.unlock(b!.id, { force: true });
+      fake.addTheirs("assets/b.hasset", "Cy", "2026-08-15T13:00:00Z");
+      await service.refresh();
+      expect(service.lockForPath("assets/a.hasset")).toBe(a);
+      expect(service.lockForPath("assets/b.hasset")).not.toBe(b);
+      expect(service.lockForPath("assets/b.hasset")?.ownerName).toBe("Cy");
+      expect(service.locks).not.toBe(snapshot);
+    } finally { service.dispose(); }
+  });
+
+  it("releases only our locks whose files match the remote branch, skipping unsaved documents", async () => {
+    const host = new FakeGitHost();
+    const storage = new MemoryStorageAdapter();
+    await storage.openDocumentsProject("game");
+    const pushedBytes = new Uint8Array([1, 2, 3]);
+    await storage.writeBinary("assets/pushed.hasset", pushedBytes);
+    await storage.writeBinary("assets/dirty.hasset", pushedBytes);
+    await storage.writeBinary("assets/changed.hasset", new Uint8Array([9]));
+    await storage.writeBinary("assets/new.hasset", pushedBytes);
+    // `git hash-object` of the bytes 01 02 03.
+    const blob = "aed2973e4b8a7ff1b30ff5c4751e5a2b38989e74";
+    host.remoteBlobs.set("assets/pushed.hasset", blob);
+    host.remoteBlobs.set("assets/dirty.hasset", blob);
+    host.remoteBlobs.set("assets/changed.hasset", blob);
+    host.remoteBlobs.set("assets/theirs.hasset", blob);
+    const fake = new FakeLockProvider();
+    fake.addTheirs("assets/theirs.hasset", "Bob");
+    const service = new SourceControlService();
+    try {
+      await service.configure({
+        settings: manual, projectKey: "proj", platform: "electron", testMode: true,
+        hosts: await signedIn(host.http), fake, storage,
+        isPathDirty: (path) => path === "assets/dirty.hasset",
+      });
       service.pausePolling();
+      for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/changed.hasset", "assets/new.hasset"]) await service.autoLock(path);
       await service.refresh();
-      expect(service.hasToken).toBe(false);
-      expect(requests).toEqual([]);
-      expect(await secrets.get("source-control:proj")).toBe("legacy-fixture");
-      await service.saveToken("authorized-fixture");
-      await service.refresh();
-      expect(requests.map((request) => new URL(request.url).origin)).toEqual(["https://github.com"]);
-      expect(requests[0].headers.Authorization).toBe(`Basic ${btoa("x-access-token:authorized-fixture")}`);
-      await service.configure({ ...config, settings: { ...enabled, repositoryUrl: "https://changed.example/repo" } });
-      service.pausePolling();
-      await service.refresh();
-      expect(service.hasToken).toBe(false);
-      expect(requests).toHaveLength(1);
-      await service.saveToken("second-fixture");
-      await service.refresh();
-      expect(new URL(requests[1].url).origin).toBe("https://changed.example");
-      expect(requests[1].headers.Authorization).toBe(`Basic ${btoa("x-access-token:second-fixture")}`);
+      expect(service.canReleasePushed).toBe(true);
+      const checked = await service.checkPushed();
+      expect([...checked!].sort()).toEqual(["assets/dirty.hasset", "assets/pushed.hasset"]);
+      // One tree request per check.
+      expect(host.requests.filter((request) => request.url.includes("/git/trees/")).map((request) => request.url)).toEqual([
+        "https://api.github.com/repos/org/repo/git/trees/main?recursive=1",
+      ]);
+      await service.releasePushedMine();
+      expect(fake.snapshot().map((lock) => lock.path).sort()).toEqual([
+        "assets/changed.hasset", "assets/dirty.hasset", "assets/new.hasset", "assets/theirs.hasset",
+      ]);
+      expect(service.lockForPath("assets/pushed.hasset")).toBeUndefined();
     } finally { service.dispose(); }
   });
 
@@ -52,7 +306,7 @@ describe("SourceControlService", () => {
     const verify = vi.spyOn(fake, "verify");
     try {
       service.pausePolling();
-      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(verify).not.toHaveBeenCalled();
       service.resumePolling();
@@ -60,16 +314,17 @@ describe("SourceControlService", () => {
     } finally { service.dispose(); }
   });
 
-  it("does not revive a disposed service when its secret lookup finishes", async () => {
+  it("does not revive a disposed service when its credential lookup finishes", async () => {
     const service = new SourceControlService();
-    const secrets = new MemorySecretStore();
-    let finish!: (value: string | null) => void;
-    vi.spyOn(secrets, "get").mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const accounts = await signedIn();
+    let finish!: (value: HostCredential | null) => void;
+    const lookup = new Promise<HostCredential | null>((resolve) => { finish = resolve; });
+    vi.spyOn(accounts, "credentialSource").mockReturnValueOnce({ current: () => lookup, renew: async () => null });
     const fake = new FakeLockProvider();
     const verify = vi.spyOn(fake, "verify");
-    const pending = service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: secrets, nativeHttp: null, fake });
+    const pending = service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake });
     service.dispose();
-    finish(null);
+    finish(GITHUB);
     await pending;
     expect(service.enabled).toBe(false);
     expect(service.refreshState.status).toBe("idle");
@@ -78,17 +333,18 @@ describe("SourceControlService", () => {
 
   it("keeps the newer provider when configuration lookups finish out of order", async () => {
     const service = new SourceControlService();
-    const secrets = new MemorySecretStore();
-    let finish!: (value: string | null) => void;
-    vi.spyOn(secrets, "get").mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const accounts = await signedIn();
+    let finish!: (value: HostCredential | null) => void;
+    const lookup = new Promise<HostCredential | null>((resolve) => { finish = resolve; });
+    vi.spyOn(accounts, "credentialSource").mockReturnValueOnce({ current: () => lookup, renew: async () => null });
     const first = new FakeLockProvider();
     const second = new FakeLockProvider();
-    const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: secrets, nativeHttp: null, fake: first };
+    const config = { settings: manual, projectKey: "first", platform: "electron", testMode: true, hosts: accounts, fake: first };
     try {
       const pending = service.configure(config);
-      await service.configure({ ...config, projectGuid: "second", fake: second });
+      await service.configure({ ...config, projectKey: "second", fake: second });
       service.pausePolling();
-      finish(null);
+      finish(GITHUB);
       await pending;
       await service.autoLock("assets/current.hasset");
       expect(first.snapshot()).toEqual([]);
@@ -100,7 +356,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     try {
-      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
       await service.autoLock("assets/old.hasset");
       const unlock = vi.spyOn(fake, "unlock");
@@ -120,7 +376,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     try {
-      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
       await service.autoLock("assets/old.hasset");
       vi.spyOn(fake, "unlock").mockResolvedValueOnce(err({ kind: "offline", message: "Connection lost" }));
@@ -136,7 +392,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     try {
-      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
       await service.autoLock("assets/old.hasset");
       // The server answers verify with the locks it held before the transfer.
@@ -157,7 +413,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     try {
-      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
       // A folder move locks its assets one after another, each while a lock list is on its way.
       let movesLeft = 20;
@@ -186,7 +442,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     fake.addTheirs("assets/hero.scene.hasset", "Ada");
-    const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake };
+    const config = { settings: manual, projectKey: "first", platform: "electron", testMode: true, hosts: await signedIn(), fake };
     await service.configure(config);
     service.pausePolling();
     try {
@@ -195,7 +451,7 @@ describe("SourceControlService", () => {
       let finish!: (value: Awaited<ReturnType<typeof fake.unlock>>) => void;
       vi.spyOn(fake, "unlock").mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
       const pending = service.forceUnlock(lock.id);
-      await service.configure({ ...config, projectGuid: "second", fake: new FakeLockProvider() });
+      await service.configure({ ...config, projectKey: "second", fake: new FakeLockProvider() });
       service.pausePolling();
       finish(err({ kind: "http", status: 403, message: "Old project token rejected" }));
       await pending;
@@ -209,7 +465,7 @@ describe("SourceControlService", () => {
     const first = new FakeLockProvider({ selfName: "First Project" });
     const second = new FakeLockProvider({ selfName: "Second Project" });
     const path = "assets/hero.scene.hasset";
-    const config = { settings: enabled, projectGuid: "first", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake: first };
+    const config = { settings: manual, projectKey: "first", platform: "electron", testMode: true, hosts: await signedIn(), fake: first };
     const createFirstLock = first.create.bind(first);
     let finish!: () => void;
     const response = new Promise<void>((resolve) => { finish = resolve; });
@@ -222,7 +478,7 @@ describe("SourceControlService", () => {
       service.pausePolling();
       const pending = service.autoLock(path);
       service.dispose();
-      await service.configure({ ...config, projectGuid: "second", fake: second });
+      await service.configure({ ...config, projectKey: "second", fake: second });
       service.pausePolling();
       finish();
       await pending;
@@ -238,7 +494,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     fake.addTheirs("assets/hero.scene.hasset", "Ada");
-    await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+    await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
     service.pausePolling();
     try {
       await service.refresh();
@@ -263,7 +519,7 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     fake.addTheirs("assets/hero.scene.hasset", "Ada");
-    await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+    await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
     service.pausePolling();
     try {
       await service.refresh();
@@ -289,7 +545,7 @@ describe("SourceControlService", () => {
     const path = "assets/hero.scene.hasset";
     const oldLock = fake.addTheirs(path, "Ada");
     try {
-      await service.configure({ settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake });
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
       service.pausePolling();
       await service.refresh();
       service.onOpenDocument(path);
@@ -304,34 +560,15 @@ describe("SourceControlService", () => {
       expect(service.lockStateForPath(path)).toBe(state === "ours" ? "mine" : null);
     } finally { service.dispose(); }
   });
-  it("does nothing when source control is disabled", async () => {
-    const service = new SourceControlService();
-    const fake = new FakeLockProvider();
-    await service.configure({
-      settings: DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
-      projectGuid: "proj",
-      platform: "electron",
-      testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
-      fake,
-    });
-    expect(service.enabled).toBe(false);
-    expect(service.lockStateForPath("assets/a.hasset")).toBeNull();
-    await service.autoLock("assets/a.hasset");
-    expect(fake.snapshot()).toHaveLength(0);
-  });
-
   it("auto-locks on first edit and skips a second attempt", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "web",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await service.autoLock("assets/hero.scene.hasset");
@@ -345,12 +582,11 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "web",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     service.pausePolling();
@@ -372,12 +608,11 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "web",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     service.pausePolling();
@@ -404,12 +639,11 @@ describe("SourceControlService", () => {
     const fake = new FakeLockProvider({ selfName: "Ada" });
     fake.addTheirs("assets/hero.scene.hasset", "Bob");
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await service.refresh();
@@ -423,22 +657,21 @@ describe("SourceControlService", () => {
     service.dispose();
   });
 
-  it("lifts a read-only tab when the repository changes and the new provider cannot refresh", async () => {
+  it("lifts a read-only tab when the repository changes and the new host has no credential", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
     fake.addTheirs("assets/hero.scene.hasset", "Bob");
-    const config = { settings: enabled, projectGuid: "proj", platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake };
+    const hosts = await signedIn();
+    const config = { settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts, fake };
     try {
       await service.configure(config);
       service.pausePolling();
       await service.refresh();
       service.onOpenDocument("assets/hero.scene.hasset");
       expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(true);
-      // The new repository's provider never verifies, so no refresh reconciles the tab.
-      await service.configure({
-        settings: { ...enabled, repositoryUrl: "https://changed.example/repo" },
-        projectGuid: "proj", platform: "web", testMode: false, secretStore: new MemorySecretStore(), nativeHttp: null,
-      });
+      // The new host has no credential, so no refresh reconciles the tab.
+      await service.configure({ ...config, settings: { ...manual, repositoryUrl: "https://changed.example/repo" } });
+      expect(service.signIn?.origin).toBe("https://changed.example");
       expect(service.lockForPath("assets/hero.scene.hasset")).toBeUndefined();
       expect(service.isDocumentReadOnly("assets/hero.scene.hasset")).toBe(false);
       expect(service.bannerFor("assets/hero.scene.hasset")).toBeNull();
@@ -451,12 +684,11 @@ describe("SourceControlService", () => {
     if (failure === "conflicts") fake.addTheirs("assets/a.hasset", "Bob");
     else vi.spyOn(fake, "create").mockRejectedValue(new TypeError("Failed to fetch"));
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await service.autoLock("assets/a.hasset");
@@ -465,8 +697,6 @@ describe("SourceControlService", () => {
   });
 
   it("keeps a Git LFS 409 already-ours lock as held", async () => {
-    const secrets = new MemorySecretStore();
-    await secrets.set("source-control:proj", JSON.stringify({ version: 1, origin: "https://github.com", token: "token" }));
     const lock = {
       id: "lock-1",
       path: "assets/a.hasset",
@@ -475,12 +705,11 @@ describe("SourceControlService", () => {
     };
     const service = new SourceControlService();
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: false,
-      secretStore: secrets,
-      nativeHttp: async (request) => {
+      hosts: await signedIn(async (request) => {
         if (request.method === "POST" && request.url.endsWith("/locks")) {
           return {
             status: 409,
@@ -497,7 +726,7 @@ describe("SourceControlService", () => {
           };
         }
         return { status: 500, bodyText: "{}" };
-      },
+      }),
     });
     await service.autoLock("assets/a.hasset");
     expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
@@ -510,12 +739,11 @@ describe("SourceControlService", () => {
     const fake = new FakeLockProvider({ selfName: "Ada" });
     fake.addTheirs("assets/theirs.hasset", "Bob");
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await service.refresh();
@@ -529,47 +757,25 @@ describe("SourceControlService", () => {
     expect(service.lockForPath("assets/renamed.hasset")?.ours).toBe(true);
   });
 
-  it("stores the token outside project settings", async () => {
-    const service = new SourceControlService();
-    const secrets = new MemorySecretStore();
-    await service.configure({
-      settings: enabled,
-      projectGuid: "proj-1",
-      platform: "electron",
-      testMode: true,
-      secretStore: secrets,
-      nativeHttp: null,
-      fake: new FakeLockProvider(),
-    });
-    await service.saveToken("ghp_secret");
-    expect(service.hasToken).toBe(true);
-    expect(JSON.parse((await secrets.get("source-control:proj-1"))!)).toEqual({ version: 1, origin: "https://github.com", token: "ghp_secret" });
-    await service.clearToken();
-    expect(service.hasToken).toBe(false);
-    expect(await secrets.get("source-control:proj-1")).toBeNull();
-  });
-
   it("keeps held locks when only auto-lock settings change", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
-    const secrets = new MemorySecretStore();
+    const hosts = await signedIn();
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: secrets,
-      nativeHttp: null,
+      hosts,
       fake,
     });
     await service.autoLock("assets/a.hasset");
     await service.configure({
-      settings: { ...enabled, autoLockOnEdit: false },
-      projectGuid: "proj",
+      settings: { ...manual, autoLockOnEdit: false },
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: secrets,
-      nativeHttp: null,
+      hosts,
       fake,
     });
     expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
@@ -580,12 +786,11 @@ describe("SourceControlService", () => {
     const fake = new FakeLockProvider({ selfName: "Ada" });
     const first = new SourceControlService();
     await first.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await first.autoLock("assets/a.hasset");
@@ -593,12 +798,11 @@ describe("SourceControlService", () => {
 
     const second = new SourceControlService();
     await second.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await second.refresh();
@@ -613,12 +817,11 @@ describe("SourceControlService", () => {
     const fake = new FakeLockProvider({ selfName: "Ada" });
     fake.addTheirs("assets/theirs.hasset", "Bob");
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await service.autoLock("assets/mine.hasset");
@@ -633,12 +836,11 @@ describe("SourceControlService", () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider();
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await service.autoLock("assets/a.hasset");
@@ -649,40 +851,37 @@ describe("SourceControlService", () => {
     expect(fake.snapshot()).toHaveLength(0);
   });
 
-  it("keeps the lock list when Enable is turned off and on", async () => {
+  it("keeps the lock list when the mode is turned Off and back on", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     await service.autoLock("assets/hero.scene.hasset");
     expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
 
     await service.configure({
-      settings: { ...enabled, enabled: false },
-      projectGuid: "proj",
+      settings: { ...manual, mode: "off" as const },
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     expect(service.enabled).toBe(false);
     expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
 
     await service.configure({
-      settings: enabled,
-      projectGuid: "proj",
+      settings: manual,
+      projectKey: "proj",
       platform: "electron",
       testMode: true,
-      secretStore: new MemorySecretStore(),
-      nativeHttp: null,
+      hosts: await signedIn(),
       fake,
     });
     expect(service.enabled).toBe(true);

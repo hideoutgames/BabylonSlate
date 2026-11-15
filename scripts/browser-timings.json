@@ -102,7 +102,7 @@
     "[desktop-chrome] > p14-preview-build.spec.ts > P14 Preview Build > a Font that cannot load stops Play with an error naming it instead of drawing a fallback": 9200,
     "[desktop-chrome] > p14-preview-build.spec.ts > P14 Preview Build > custom Fonts lay out their own faces on a cold load in Play and Preview Build": 16900,
     "[desktop-chrome] > p14-preview-build.spec.ts > P14 Preview Build > lights beyond the fourth illuminate Scene Viewport, Play, and Preview Build": 37700,
-    "[desktop-chrome] > p15-source-control.spec.ts > P15 source-control locking > enables Fake locks, auto-locks on edit, Edit Anyway, Release All, and mtime reload": 14200,
+    "[desktop-chrome] > p15-source-control.spec.ts > P15 source-control locking > signs in from the prompt, auto-locks on edit in the Source Control tab, Edit Anyway, Release All, and mtime reload": 14200,
     "[desktop-chrome] > p16-audio.spec.ts > P16 audio > Play unlocks on first gesture, reports spatial distance, and tears down": 22700,
     "[desktop-chrome] > p16-audio.spec.ts > P16 audio > imports WAV, authors mixer/channel/attenuation, and wires refs": 29300,
     "[desktop-chrome] > p17-particles.spec.ts > P17 particles > Particle Emitter and System assets survive save and reopen": 18800,

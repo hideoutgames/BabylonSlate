@@ -31,6 +31,26 @@ describe("Capacitor nativeHttp", () => {
     });
   });
 
+  it("asks the native layer not to follow redirects for a credentialed request", async () => {
+    request.mockResolvedValueOnce({ status: 302, data: "" });
+    const http = createNativeHttp();
+    const response = await http!({
+      method: "GET",
+      url: "https://api.github.com/user",
+      headers: { Authorization: "Bearer token" },
+      disableRedirects: true,
+    });
+    expect(response.status).toBe(302);
+    expect(request).toHaveBeenLastCalledWith({
+      url: "https://api.github.com/user",
+      method: "GET",
+      headers: { Authorization: "Bearer token" },
+      data: undefined,
+      disableRedirects: true,
+      responseType: "text",
+    });
+  });
+
   // iOS and Android drop a body when Content-Type is missing, and treat a JSON
   // or URL-encoded type as text, so an upload must reach them as `formData`
   // entries under a multipart type whatever the caller sent.

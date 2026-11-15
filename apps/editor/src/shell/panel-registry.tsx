@@ -9,7 +9,6 @@ import { MyClassPanel } from "../panels/my-class-panel";
 import { SceneOutlinerPanel } from "../panels/scene-outliner-panel";
 import { SceneDetailsPanel } from "../panels/scene-details-panel";
 import { SceneAssetsPanel } from "../panels/scene-assets-panel";
-import { LocksPanel } from "../panels/locks-panel";
 import { BreakpointsPanel } from "../panels/breakpoints-panel";
 import {
   FoliageGroupsPanel,
@@ -43,7 +42,6 @@ export const scenePanelComponents = {
     <SceneDetailsPanel {...props} />
   ),
   "scene-assets": (props: IDockviewPanelProps) => <SceneAssetsPanel {...props} />,
-  locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
   breakpoints: () => <BreakpointsPanel />,
   "landscape-outliner": LandscapeOutlinerPanel,
   "landscape-settings": LandscapeSettingsPanel,
@@ -61,6 +59,7 @@ const renderingPanels = () => import("./asset-panels/rendering");
 const panels2d = () => import("./asset-panels/2d");
 const panels3d = () => import("./asset-panels/3d");
 const dataPanels = () => import("./asset-panels/data");
+const sourceControlPanels = () => import("./asset-panels/source-control");
 
 /**
  * Every other document kind's windows, loaded by family. Each lazily loaded module is a chunk entry, and the bundler
@@ -68,6 +67,7 @@ const dataPanels = () => import("./asset-panels/data");
  * keep those routes in fewer, larger chunks than one entry per asset editor would.
  */
 const assetEditorPanelComponents = {
+  locks: lazyPanel(sourceControlPanels, (m) => m.LocksPanel),
   "save-game-fields": lazyPanel(dataPanels, (m) => m.SaveGameFieldsPanel),
   "save-game-definition": lazyPanel(dataPanels, (m) => m.SaveGameDefinitionPanel),
   watches: lazyPanel(classPanels, (m) => m.WatchesPanel),

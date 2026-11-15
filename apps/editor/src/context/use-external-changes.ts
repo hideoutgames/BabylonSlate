@@ -1,3 +1,4 @@
+import { isChromeDocumentKind } from "@haptic/core";
 import {
   useCallback,
   useEffect,
@@ -95,7 +96,7 @@ export function useExternalChanges({
         const doc = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.path === path,
         );
-        if (!doc || doc.ref.kind === "content-browser") continue;
+        if (!doc || isChromeDocumentKind(doc.ref.kind)) continue;
         try {
           const loaded = await projectService.loadDocument(
             doc.ref.kind,
@@ -146,7 +147,7 @@ export function useExternalChanges({
     if (previous) {
       const openDocs = documentService
         .getOpenDocumentsOrdered()
-        .filter((doc) => doc.ref.kind !== "content-browser")
+        .filter((doc) => !isChromeDocumentKind(doc.ref.kind))
         .map((doc) => ({ path: doc.ref.path, dirty: doc.dirty }));
       const result = classifyExternalChanges({
         previousAssets: previous.assets,
@@ -174,7 +175,7 @@ export function useExternalChanges({
     setProjectDocument(document);
     const paths = documentService
       .getOpenDocumentsOrdered()
-      .filter((doc) => doc.ref.kind !== "content-browser")
+      .filter((doc) => !isChromeDocumentKind(doc.ref.kind))
       .map((doc) => doc.ref.path);
     await reloadDocumentsFromDisk(paths);
     await captureMtimeSnapshot();

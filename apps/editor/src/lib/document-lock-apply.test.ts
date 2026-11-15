@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@haptic/core";
 import { FakeLockProvider } from "@haptic/source-control";
-import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
+import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import { SourceControlService } from "../services/source-control-service";
 import {
   afterMutatingApply,
@@ -9,21 +8,16 @@ import {
   requeueWithEditLock,
 } from "./document-lock-apply";
 
-const enabled = {
-  ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
-  enabled: true,
-  repositoryUrl: "https://github.com/org/repo",
-};
+const enabled = MANUAL_SOURCE_CONTROL;
 
 async function readyService(fake: FakeLockProvider): Promise<SourceControlService> {
   const service = new SourceControlService();
   await service.configure({
     settings: enabled,
-    projectGuid: "proj",
+    projectKey: "proj",
     platform: "electron",
     testMode: true,
-    secretStore: new MemorySecretStore(),
-    nativeHttp: null,
+    hosts: await signedInHosts(),
     fake,
   });
   return service;

@@ -62,6 +62,7 @@ async function capacitorNativeHttp(
     ...(request.upload
       ? capacitorUploadOptions(request.headers, request.upload)
       : { headers: request.headers, data: request.body }),
+    ...(request.disableRedirects ? { disableRedirects: true } : {}),
     responseType: "text",
   });
   const data = response.data;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lfsEndpointFromRepoUrl } from "./lfs-endpoint";
+import { hostOrigin, lfsEndpointFromRepoUrl, parseRepositoryUrl } from "./lfs-endpoint";
 
 describe("lfsEndpointFromRepoUrl", () => {
   it("derives GitHub HTTPS URLs with and without .git", () => {
@@ -54,5 +54,36 @@ describe("lfsEndpointFromRepoUrl", () => {
     expect(lfsEndpointFromRepoUrl("")).toBeNull();
     expect(lfsEndpointFromRepoUrl("   ")).toBeNull();
     expect(lfsEndpointFromRepoUrl("not-a-url")).toBeNull();
+  });
+
+  it("upgrades a plain HTTP remote so a token never travels over plain HTTP", () => {
+    expect(lfsEndpointFromRepoUrl("http://gitea.example.com:3000/org/repo")).toBe(
+      "https://gitea.example.com:3000/org/repo.git/info/lfs",
+    );
+  });
+});
+
+describe("parseRepositoryUrl", () => {
+  it("names the HTTPS origin a credential is looked up by and the repository path", () => {
+    expect(parseRepositoryUrl("git@github.com:org/repo.git")).toEqual({ origin: "https://github.com", path: "org/repo" });
+    expect(parseRepositoryUrl("ssh://git@gitlab.example.com:2222/group/sub/repo.git")).toEqual({
+      origin: "https://gitlab.example.com",
+      path: "group/sub/repo",
+    });
+    expect(parseRepositoryUrl("https://Gitea.Example.com:8443/org/repo/")).toEqual({
+      origin: "https://gitea.example.com:8443",
+      path: "org/repo",
+    });
+    expect(parseRepositoryUrl("ftp://example.com/org/repo")).toBeNull();
+    expect(parseRepositoryUrl("https://github.com/")).toBeNull();
+  });
+});
+
+describe("hostOrigin", () => {
+  it("names the HTTPS origin of a typed host, upgrading plain HTTP", () => {
+    expect(hostOrigin("gitea.example.com")).toBe("https://gitea.example.com");
+    expect(hostOrigin("http://git.example.com:3000/team/game.git")).toBe("https://git.example.com:3000");
+    expect(hostOrigin("ssh://git.example.com")).toBeNull();
+    expect(hostOrigin("   ")).toBeNull();
   });
 });

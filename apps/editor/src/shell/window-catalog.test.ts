@@ -134,67 +134,28 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("sprite-blend-space")).toBe("blend-space-grid");
   });
 
-  it("omits the Locks window when source control is off", () => {
-    for (const kind of [
-      "scene",
-      "graph",
-      "enum",
-      "structure",
-      "script-interface",
-      "sprite",
-      "sprite-animation",
-      "tileset",
-      "tilemap",
-      "plugin-settings",
-      "anim-graph-3d",
-      "behaviour-tree",
-      "audio-mixer",
-      "audio-channel",
-      "sound-attenuation",
-      "camera-shake",
-      "particle-emitter",
-      "particle-graph",
-      "particle-system",
-      "model",
-      "skeleton",
-      "animation",
-      "audio",
-      "skybox-creator",
-    ] as const) {
-      expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
-        false,
-      );
+  // Locks lives only in the pinned Source Control document; no asset document lists it, whatever its options.
+  it("lists Locks in no asset document", () => {
+    const kinds = [
+      "scene", "scene-layer", "graph", "prefab", "enum", "structure", "data-definition", "data-tree", "float-curve",
+      "global-parameter-collection", "timeline", "timeline-clip-2d", "script-interface", "sprite", "sprite-animation",
+      "tileset", "tilemap", "material", "material-function", "material-instance", "plugin-settings", "anim-graph-3d",
+      "anim-graph-2d", "blend-space", "behaviour-tree", "audio", "save-game", "input-action", "audio-mixer",
+      "audio-channel", "sound-attenuation", "camera-shake", "particle-emitter", "particle-graph", "particle-system",
+      "water", "render-target", "model", "skeleton", "animation", "skybox-creator", "trace", "texture", "font",
+      "blackboard", "extension-asset",
+    ] as const;
+    for (const kind of kinds) {
+      for (const options of [{}, { actorPrefab: false }, { sceneMode: "script" as const }, { sceneMode: "timeline" as const }]) {
+        expect(listDockWindows(kind, options).filter((entry) => entry.component === "locks")).toEqual([]);
+      }
     }
   });
 
-  it("appends Locks below each kind's primary panel when source control is on", () => {
-    const scene = listDockWindows("scene", { sourceControl: true });
-    expect(scene.map((entry) => entry.id)).toContain("locks");
-    expect(scene.find((entry) => entry.id === "locks")).toEqual({
-      id: "locks",
-      component: "locks",
-      title: "Locks",
-      defaultPosition: {
-        referencePanelId: "viewport",
-        direction: "below",
-        initialHeight: 180,
-      },
-    });
-    expect(
-      listDockWindows("graph", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("graph");
-    expect(
-      listDockWindows("sprite", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("sprite-preview");
-    expect(
-      listDockWindows("sprite-animation", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("sprite-animation-preview");
+  it("holds only the Locks window in the pinned Source Control document", () => {
+    expect(isDockviewDocumentKind("source-control")).toBe(true);
+    expect(listDockWindows("source-control")).toEqual([{ id: "locks", component: "locks", title: "Locks" }]);
+    expect(primaryDockPanel("source-control")).toBe("locks");
   });
 });
 
@@ -257,24 +218,8 @@ describe("material dock catalog", () => {
     expect(primaryDockPanel("extension-asset")).toBe("extension-asset-details");
   });
 
-  it("anchors Locks under the material graph when source control is on", () => {
-    expect(
-      listDockWindows("material", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("material-graph");
-  });
 });
 
-describe("particle graph dock catalog", () => {
-  it("anchors Locks under the Graph when source control is on", () => {
-    expect(
-      listDockWindows("particle-graph", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("particle-graph-canvas");
-  });
-});
 
 describe("animation graph and behaviour tree dock catalogs", () => {
   it("puts the Animation Object canvas in a window tabbed beside the Graph", () => {

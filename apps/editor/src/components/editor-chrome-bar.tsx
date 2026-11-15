@@ -39,9 +39,13 @@ import {
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
+  isChromeDocumentId,
+  isChromeDocumentKind,
+  SOURCE_CONTROL_ID,
   type DocumentRef,
   type SerializedGraph,
 } from "@haptic/core";
+import { ChromeDocumentIcon } from "./chrome-document-icon";
 import {
   ShortcutKeys,
   ToolbarOverflow,
@@ -135,8 +139,8 @@ const FeatureTestCheckDialog = lazy(() =>
 );
 
 function kindIcon(ref: DocumentRef, resolveVisual: DocumentTypeVisualResolver) {
-  if (ref.kind === "content-browser") {
-    return <LayoutGridIcon className="size-4 shrink-0" />;
+  if (isChromeDocumentKind(ref.kind)) {
+    return <ChromeDocumentIcon kind={ref.kind} className="size-4 shrink-0" />;
   }
   const visual = resolveVisual(ref);
   return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;
@@ -399,13 +403,17 @@ export function EditorChromeBar({
   // Sheet row editors retain canonical documents for save/history without
   // opening a visible standalone tab until the user explicitly opens it.
   const visibleDocuments = openDocuments.filter((doc) => !doc.background);
-  const hasClosableDocuments = openDocuments.some((doc) => doc.id !== CONTENT_BROWSER_ID);
+  const hasClosableDocuments = openDocuments.some((doc) => !isChromeDocumentId(doc.id));
   const contentBrowserDoc = visibleDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
   );
+  // Only while the project's source control mode is not Off.
+  const sourceControlDoc = visibleDocuments.find(
+    (doc) => doc.id === SOURCE_CONTROL_ID,
+  );
   const pinnedSceneDoc = visibleDocuments.find((doc) => doc.ref.kind === "scene");
   const scrollableDocs = visibleDocuments.filter(
-    (doc) => doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
+    (doc) => !isChromeDocumentKind(doc.ref.kind) && doc.ref.kind !== "scene",
   );
   const activeKind = visibleDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
@@ -851,6 +859,21 @@ export function EditorChromeBar({
             >
               <LayoutGridIcon />
             </Button>
+            {sourceControlDoc ? (
+              <Button
+                variant="ghost"
+                size={touch ? "touch-icon" : "icon-sm"}
+                aria-label="Source Control"
+                title="Source Control"
+                data-testid="phone-source-control"
+                onClick={() => setActiveDocument(SOURCE_CONTROL_ID)}
+                aria-current={
+                  activeDocumentId === SOURCE_CONTROL_ID ? "page" : undefined
+                }
+              >
+                <ChromeDocumentIcon kind="source-control" />
+              </Button>
+            ) : null}
             <DocumentSwitcher
               documents={visibleDocuments}
               resolveVisual={resolveDocumentVisual}
@@ -921,6 +944,19 @@ export function EditorChromeBar({
                 </SortableContext>
               </DndContext>
             </div>
+            {sourceControlDoc ? (
+              <div
+                className="editor-chrome-tabs-pinned editor-chrome-tabs-pinned-end"
+                data-testid="document-tab-pinned-end"
+              >
+                <PinnedDocumentTab
+                  doc={sourceControlDoc}
+                  icon={kindIcon(sourceControlDoc.ref, resolveDocumentVisual)}
+                  active={activeDocumentId === SOURCE_CONTROL_ID}
+                  onSelect={() => setActiveDocument(SOURCE_CONTROL_ID)}
+                />
+              </div>
+            ) : null}
             <DocumentSwitcher
               documents={visibleDocuments}
               resolveVisual={resolveDocumentVisual}

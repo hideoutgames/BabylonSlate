@@ -14,7 +14,7 @@ export const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> =
   {
     id: "sourceControl",
     label: "Source Control",
-    keywords: "git lfs lock token repository branch poll auto lock",
+    keywords: "git lfs lock locking mode off manual repository branch account sign in auto lock",
   },
   {
     id: "export",
@@ -154,6 +154,11 @@ export const ENGINE_CATEGORIES: Array<
     keywords: "keyboard shortcuts hotkeys keybinds keys bindings",
   },
   {
+    id: "sourceControl",
+    label: "Source Control",
+    keywords: "git lfs lock github gitlab account sign in sign out token host self-managed gitea",
+  },
+  {
     id: "packaging",
     label: "Packaging",
     keywords: "macos mac signing developer id codesign certificate keychain notarization notarytool profile gatekeeper",
@@ -177,7 +182,7 @@ export const ENGINE_GROUPS: CatalogCategoryGroup[] = [
       "about",
     ],
   },
-  { label: "Projects", ids: ["templates", "plugins", "extensions", "packaging"] },
+  { label: "Projects", ids: ["templates", "plugins", "extensions", "sourceControl", "packaging"] },
 ];
 
 export function matchesSearch(

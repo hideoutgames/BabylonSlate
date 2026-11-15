@@ -5,7 +5,7 @@ import { BlackboardEditingProvider } from "../context/blackboard-editing-context
 import { SaveGameEditingProvider } from "../context/save-game-editing-context";
 import { DataAssetEditingProvider } from "../context/data-asset-editing-context";
 import { SceneToolsProvider } from "../context/scene-tools-context";
-import { CONTENT_BROWSER_ID, isSceneWorkspaceKind, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
+import { CONTENT_BROWSER_ID, isChromeDocumentKind, isSceneWorkspaceKind, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
@@ -48,6 +48,7 @@ import {
 } from "../lib/document-working-set";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
+import { SourceControlSignInBanner } from "./source-control-sign-in-banner";
 import { UndoHistoryNotice } from "./undo-history-notice";
 import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
 import { DockviewShell } from "../shell/dockview-shell";
@@ -97,7 +98,6 @@ function RegisteredDockviewShell({
   sceneMode?: SceneMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
-  const { sourceControl } = useSourceControl();
   const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId } =
     useDocumentActions();
   const onReady = useCallback(
@@ -121,7 +121,6 @@ function RegisteredDockviewShell({
       documentKind={documentKind}
       initialLayout={initialLayout}
       actorPrefab={actorPrefab}
-      sourceControl={sourceControl.enabled}
       sceneMode={sceneMode}
       onReady={onReady}
     />
@@ -270,15 +269,30 @@ export function DocumentWorkspace() {
   return (
     <AudioReverbBakeProvider>
     <div className="flex min-h-0 flex-1 flex-col">
+      <SourceControlSignInBanner />
       {visibleTabOrder.map((id) => {
         const doc = openDocuments.find((entry) => entry.id === id);
         if (!doc) return null;
         // Restored tabs become consumers only after their asynchronous activation.
-        if (doc.ref.kind !== "content-browser" && doc.content === null) return null;
+        if (!isChromeDocumentKind(doc.ref.kind) && doc.content === null) return null;
         const active = id === resolvedActiveId;
         const shouldMount =
           id === simulationDocumentId || mountedIds.has(id) ||
-          (doc.ref.kind === "content-browser" && active);
+          (isChromeDocumentKind(doc.ref.kind) && active);
+
+        if (doc.ref.kind === "source-control") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id} renderProfileId={`document:${id}`}>
+              <div
+                className={active ? "flex min-h-0 flex-1 flex-col" : "hidden"}
+                data-testid="document-workspace-source-control"
+              >
+                <RegisteredDockviewShell id={id} documentKind="source-control" initialLayout={doc.layout} />
+              </div>
+            </WorkspaceErrorBoundary>
+          );
+        }
 
         if (doc.ref.kind === "content-browser") {
           if (!shouldMount) return null;

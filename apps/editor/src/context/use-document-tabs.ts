@@ -6,6 +6,7 @@ import {
   documentId,
   isAssetDocumentKind,
   isSceneWorkspaceKind,
+  isChromeDocumentKind,
 } from "@haptic/core";
 import { listTraceDocuments, newAssetGuid, pruneTraceDocuments } from "@haptic/assets";
 import { journalDiscardLine, type EditSession } from "@haptic/edit";
@@ -92,7 +93,7 @@ export function useDocumentTabs({
       documentService.assertDocumentCanClose(id);
       const doc = documentService.getDocument(id);
       const guid = projectService.guid;
-      if (doc && doc.ref.kind !== "content-browser" && guid) {
+      if (doc && !isChromeDocumentKind(doc.ref.kind) && guid) {
         journalBuffer.append(guid, journalDiscardLine(id, new Date().toISOString()));
       }
       forgetDockLayouts(id);
@@ -144,7 +145,7 @@ export function useDocumentTabs({
       }
       const ids: string[] = [];
       for (const doc of documentService.getOpenDocumentsOrdered()) {
-        if (doc.ref.kind === "content-browser") continue;
+        if (isChromeDocumentKind(doc.ref.kind)) continue;
         if (pathSet.has(doc.ref.path)) ids.push(doc.id);
       }
       for (const id of ids) performCloseDocument(id);
@@ -357,7 +358,7 @@ export function useDocumentTabs({
       const { activeDocumentId } = documentService.getState();
       if (id === activeDocumentId) return;
       const target = documentService.getState().openDocuments.get(id);
-      if (target?.content === null && target.ref.kind !== "content-browser") {
+      if (target?.content === null && !isChromeDocumentKind(target.ref.kind)) {
         // A restored tab reads its asset when first selected. Callers do not
         // wait for it, so a failed read is reported here.
         finishOpenDocument(target.ref).catch((error: unknown) => {

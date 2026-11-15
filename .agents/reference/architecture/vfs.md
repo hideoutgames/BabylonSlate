@@ -62,7 +62,8 @@ The Documents tier crosses the Capacitor bridge once per asset write as base64 d
 
 ## Secrets and native HTTP
 
-- `SecretStore { available, get, set, delete }`; source-control key `source-control:{projectGuid}`. Never in Capacitor Preferences or `project.json`.
+- `SecretStore { available, get, set, delete }`; Source Control keeps every device credential under `source-control:credentials` ([source-control.md](source-control.md#credentials)). Never in Capacitor Preferences or `project.json`.
+- `NativeHttpRequest.disableRedirects` returns a 3xx unfollowed on mobile (CapacitorHttp `disableRedirects`); desktop `lfs:fetch` never follows redirects. Credentialed source-control requests set it.
 
 | Host | SecretStore | `nativeHttp` |
 | --- | --- | --- |
@@ -71,7 +72,7 @@ The Documents tier crosses the Capacitor bridge once per asset write as base64 d
 | Electron | `secrets:get/set/delete` IPC → versioned file, atomic owner-only writes, values tagged `safeStorage` or plaintext; read failures reject, never reset | `lfs:fetch` → `net.fetch`, bodies ≤ 16 MiB, no redirects or cookies |
 | Web | `UnavailableSecretStore` (`available: false`): Source Control hidden | none |
 
-- `nativeHttp`: `{ method, url, headers, body?, upload? }` → `{ status, bodyText, headers? }`. `upload` is one base64 image (PNG, JPEG, GIF or WEBP) sent as a `multipart/form-data` POST instead of `body`; the transport owns the encoding and `Content-Type` (Capacitor `formData` entries, or Electron's main process), see [accounts](accounts.md#account-management). Account tokens on Electron use a separate `accountSecrets` bridge.
+- `nativeHttp`: `{ method, url, headers, body?, upload?, disableRedirects? }` → `{ status, bodyText, headers? }`. `upload` is one base64 image (PNG, JPEG, GIF or WEBP) sent as a `multipart/form-data` POST instead of `body`; the transport owns the encoding and `Content-Type` (Capacitor `formData` entries, or Electron's main process), see [accounts](accounts.md#account-management). Account tokens on Electron use a separate `accountSecrets` bridge.
 - Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`, `.files` (`file:save`, see [Saving exported files](#saving-exported-files)), `.memory` (`memory:stats`: the calling renderer's, the GPU process's, the main process's and every app process's working set, read-only, no arguments).
 
 ## Saving exported files
