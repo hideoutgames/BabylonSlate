@@ -82,7 +82,7 @@ describe("SourceControlSyncService", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("opens the folder's client once per repository and branch, then reads changes and what the remote has", async () => {
+  it("opens the folder's client once per repository, then reads changes and what the remote has", async () => {
     const { service, factory, input, storage, remote } = await setup();
     remote.commit({ "assets/Rock.texture.hasset": "R2" }, "Brighter rock");
     await storage.writeText("assets/Forest.scene.hasset", "F2");
@@ -410,6 +410,78 @@ describe("SourceControlSyncService", () => {
     vi.useRealTimers();
     finishPush();
     await pushing;
+  });
+
+  describe("branches", () => {
+    it("shows the working copy's branch, not the project's default, and reopens nothing when the default changes", async () => {
+      const { service, factory, input, port } = await setup();
+      await port.createBranch("feature");
+      await service.configure(input("integrated"));
+      expect(service.getSnapshot()).toMatchObject({ active: true, branch: "feature" });
+      const current = input("integrated");
+      await service.configure({ ...current, settings: { ...current.settings, branch: "release" } });
+      expect(factory.open).toHaveBeenCalledTimes(1);
+      expect(service.getSnapshot().branch).toBe("feature");
+    });
+
+    it("lists this copy's branches without the network and the remote's from it", async () => {
+      const { service, input, remote, port } = await setup();
+      remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
+      await service.configure(input("integrated"));
+      const remoteBranches = vi.spyOn(port, "remoteBranches");
+      expect(await service.localBranches()).toEqual(["main"]);
+      expect(remoteBranches).not.toHaveBeenCalled();
+      expect(await service.remoteBranches()).toEqual(["art", "main"]);
+    });
+
+    it("starts a branch at HEAD that has nothing to push until it has a commit, which a push then creates on the remote", async () => {
+      const { service, input, storage, remote } = await setup();
+      await service.configure(input("integrated"));
+      const head = service.getSnapshot().head;
+      await service.createBranch("feature");
+      expect(service.getSnapshot()).toMatchObject({ branch: "feature", head, ahead: 0, behind: 0, rows: [] });
+      await expect(service.createBranch("feature")).rejects.toMatchObject({ code: "branch-exists" });
+      await storage.writeText("assets/Rock.texture.hasset", "R2");
+      await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: true });
+      expect(remote.branches.get("feature")).toBe(service.getSnapshot().head);
+      expect(service.getSnapshot()).toMatchObject({ branch: "feature", ahead: 0, problem: null });
+    });
+
+    it("switches branch, returning the files it wrote, and refuses while a file it would replace has uncommitted changes", async () => {
+      const { service, input, storage, remote } = await setup();
+      const art = remote.commit({ "assets/Rock.texture.hasset": "R-art" }, "Art", "art");
+      await service.configure(input("integrated"));
+      const main = service.getSnapshot().head;
+      await storage.writeText("assets/Rock.texture.hasset", "R-mine");
+      await service.refreshStatus();
+
+      await expect(service.switchBranch("art")).rejects.toMatchObject({ kind: "conflict", code: "uncommitted-changes", paths: ["assets/Rock.texture.hasset"] });
+      expect(service.getSnapshot()).toMatchObject({ branch: "main", head: main, operation: null, problem: { title: "Could Not Switch Branch" } });
+      expect(await storage.readText("assets/Rock.texture.hasset")).toBe("R-mine");
+
+      await storage.writeText("assets/Rock.texture.hasset", "R");
+      expect(await service.switchBranch("art")).toEqual({ head: art, changedPaths: ["assets/Rock.texture.hasset"] });
+      expect(await storage.readText("assets/Rock.texture.hasset")).toBe("R-art");
+      // The local counts are in when it returns; the check of the remote follows without holding the reload.
+      expect(service.getSnapshot()).toMatchObject({ branch: "art", head: art, rows: [], problem: null, operation: { kind: "fetch" } });
+      await service.settled();
+      expect(service.getSnapshot()).toMatchObject({ branch: "art", remoteHead: art, operation: null });
+      expect(await service.localBranches()).toEqual(["art", "main"]);
+    });
+
+    it("pages the history of an asset or the branch, and lists the files a commit changed", async () => {
+      const { service, input, storage } = await setup();
+      await service.configure(input("integrated"));
+      await storage.writeText("assets/Rock.texture.hasset", "R2");
+      await service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: false });
+      await storage.writeText("assets/Forest.scene.hasset", "F2");
+      await service.commit({ rowIds: new Set(["assets/Forest.scene.hasset"]), message: "Forest", push: false });
+      const all = await service.history({ limit: 2 });
+      expect(all.commits.map((commit) => commit.message)).toEqual(["Forest", "Rock"]);
+      expect((await service.history({ limit: 2, skip: 2 })).commits.map((commit) => commit.message)).toEqual(["Seed"]);
+      expect((await service.history({ limit: 5, path: "assets/Rock.texture.hasset" })).commits.map((commit) => commit.message)).toEqual(["Rock", "Seed"]);
+      expect(await service.commitChanges(all.commits[0]!.id)).toEqual([{ path: "assets/Forest.scene.hasset", kind: "modified" }]);
+    });
   });
 
   describe("after a push or pull", () => {

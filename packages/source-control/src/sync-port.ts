@@ -6,6 +6,8 @@
  * project folder is the repository root.
  */
 export interface SyncPort {
+  /** The checked-out branch: the working copy's own (Git's HEAD), never a project setting. */
+  readonly branch: string;
   /** Uncommitted changes against HEAD, from stat data: unchanged files are never read. */
   status(): Promise<SyncStatus>;
   /** Commits exactly `paths` (changed or deleted) on the current branch. */

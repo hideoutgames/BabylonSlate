@@ -54,6 +54,7 @@ export function transferLabel(snapshot: Pick<SyncSnapshot, "operation" | "ahead"
   if (operation.kind === "push") return `Pushing ${commitsLabel(snapshot.ahead)}${bytes}`;
   if (operation.kind === "pull") return `Pulling ${commitsLabel(snapshot.behind)}${bytes}`;
   if (operation.kind === "publish") return `Publishing${bytes}`;
+  if (operation.kind === "switch") return `Switching Branch${bytes}`;
   if (operation.kind === "commit") return "Committing";
   return null;
 }
