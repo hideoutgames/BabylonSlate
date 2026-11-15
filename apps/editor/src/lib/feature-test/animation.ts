@@ -82,7 +82,7 @@ const SCENES_FOLDER = "Scenes";
 const ANIMATION_SCENE_CAMERA = { position: [0, 2.2, -7] as Vec3, target: [0, 1, 0] as Vec3 };
 
 /** KayKit clip names (Rig_Medium General and Movement Basic, Rig_Large Movement Basic). */
-const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A" } as const;
+const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A", flinch: "Hit_B" } as const;
 
 /**
  * Perf knob: the `FT_Stress` crowd is `columns × rows` (64) Locomotor
@@ -150,6 +150,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   await authorDoorOpenDuration(ctx);
   await authorAdventurerFootsteps(ctx);
   await authorAdventurerGripSocket(ctx);
+  await authorAdventurerFlinch(ctx);
   const mannequinRun = await saveSpeedBlendSpace(
     ctx,
     NAMES.mannequinBlendSpace,
@@ -344,6 +345,37 @@ async function authorAdventurerGripSocket(ctx: FeatureTestContext): Promise<void
     ...skeleton,
     sockets: [{ name: GRIP_SOCKET, bone, position: [0, 0.1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }],
   });
+}
+
+/** The adventurers' Hit_B Animation, made additive to its first frame: their Idle adds it over Idle_A as a flinch. */
+async function authorAdventurerFlinch(ctx: FeatureTestContext): Promise<void> {
+  const guid = ctx.assets.kaykit.mediumAnimations[KAYKIT_CLIPS.flinch];
+  const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+  if (!asset) throw new Error(`FeatureTest needs the KayKit "${KAYKIT_CLIPS.flinch}" Animation.`);
+  await ctx.host.saveDocument("animation", asset.path, {
+    ...normalizeAnimationPayload(asset.header.payload),
+    additive: { base: "firstFrame" },
+  });
+}
+
+/** How much of the additive flinch the adventurers' Idle adds. */
+const IDLE_FLINCH_ALPHA = 0.35;
+
+/** Idle: Idle_A with the additive Hit_B flinch added over it by Apply Additive, the state's time following Idle_A. */
+function flinchIdleState(idle: FeatureTestClip, flinch: FeatureTestClip): AnimState {
+  return {
+    id: "idle",
+    name: "Idle",
+    position: { x: 80, y: 220 },
+    stateGraph: poseGraph("3d", "flinch-over-idle", [
+      playerNode("3d", "player", 60, 40, idle),
+      playerNode("3d", "flinch", 60, 220, flinch),
+      gNode("flinch-over-idle", "anim.pose.applyAdditive", 500, 120, { "default:alpha": IDLE_FLINCH_ALPHA }),
+    ], [
+      gWire("player", "pose", "flinch-over-idle", "base"),
+      gWire("flinch", "pose", "flinch-over-idle", "additive"),
+    ]),
+  };
 }
 
 /** Save the door's Open Animation with a Duration longer than its clip, as the Inspector's Duration field does. */
@@ -593,7 +625,7 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
 }
 
 /**
- * Rig_Medium: Idle ⇄ Move on Speed; Move layers Interact on the upper body over the Locomotion cached pose and turns
+ * Rig_Medium: Idle ⇄ Move on Speed; Idle adds the additive Hit_B flinch over Idle_A (`flinchIdleState`); Move layers Interact on the upper body over the Locomotion cached pose and turns
  * the head (`layeredMoveState`). The Struck State Alias covers Idle and Move: while Cheer is set either one plays Hit,
  * then Interact → Pick Up by exit time, and Pick Up returns to Idle once it has played.
  */
@@ -605,7 +637,7 @@ function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string
     skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
     entryStateId: "idle",
     states: [
-      playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
+      flinchIdleState(clip(KAYKIT_CLIPS.idle), clip(KAYKIT_CLIPS.flinch)),
       // Move fires Move Started as it starts; its Walk and Run samples fire Footstep and Stride (Highest Weight only)
       // through the Locomotion cached pose.
       { ...layeredMoveState(400, 220, moveBlendSpace, clip(KAYKIT_CLIPS.interact), adventurerLayerBones(ctx)), events: { enter: "Move Started" } },
