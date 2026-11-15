@@ -9,6 +9,9 @@ import { PrecisionDate } from "@babylonjs/core/Misc/precisionDate";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMaterialModes";
 import { NullEngine, NullEngineOptions } from "@babylonjs/core/Engines/nullEngine";
@@ -1108,6 +1111,125 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
     expect(graph.diagnostics().scopedReadinessMismatchCauses[1]).toMatch(/^the whole probe failed after particleBind \(0 scoped\)/);
   } finally {
     verifyScopedReadinessProbes(false);
+    graph.dispose();
+  }
+});
+
+/** Ways a visual is in the Scene while no pass draws it, and how it becomes drawable. */
+const UNDRAWN_VISUALS: Array<{ way: string; make: (scene: Scene) => Mesh; show: (mesh: Mesh) => void }> = [
+  {
+    way: "disabled",
+    make: (scene) => { const mesh = MeshBuilder.CreateBox("late", {}, scene); mesh.setEnabled(false); return mesh; },
+    show: (mesh) => mesh.setEnabled(true),
+  },
+  {
+    way: "invisible",
+    make: (scene) => { const mesh = MeshBuilder.CreateBox("late", {}, scene); mesh.isVisible = false; return mesh; },
+    show: (mesh) => { mesh.isVisible = true; },
+  },
+  {
+    way: "under a disabled parent",
+    make: (scene) => {
+      const parent = new TransformNode("row", scene);
+      parent.setEnabled(false);
+      const mesh = MeshBuilder.CreateBox("late", {}, scene);
+      mesh.parent = parent;
+      return mesh;
+    },
+    show: (mesh) => mesh.parent!.setEnabled(true),
+  },
+  {
+    way: "without geometry",
+    make: (scene) => new Mesh("late", scene),
+    show: (mesh) => VertexData.CreateBox({}).applyToMesh(mesh),
+  },
+];
+
+const PROBING_VIEWS = [
+  { view: "a Scene Layer", options: { scopedStrictProbes: true }, tolerant: false },
+  { view: "a world view's steady frame", options: {}, tolerant: true },
+];
+
+it.each(UNDRAWN_VISUALS.flatMap((visual) => PROBING_VIEWS.map((view) => ({ ...visual, ...view }))))(
+  "probes a visual $way on the first frame it becomes drawable, in $view",
+  async ({ make, show, options, tolerant }) => {
+    const { scene, camera } = host();
+    const kept = MeshBuilder.CreateBox("kept", {}, scene);
+    kept.material = new StandardMaterial("kept", scene);
+    const graph = new ForwardSceneFrameGraph(scene, options);
+    verifyScopedReadinessProbes(true);
+    try {
+      expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      graph.diagnostics();
+      const probe = () => tolerant ? probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera)) : graph.sceneStrictlyReady(camera);
+      // Spawned while no pass draws it: the probe its arrival marks for passes over it.
+      const late = make(scene);
+      const lateMaterial = late.material = new StandardMaterial("late", scene);
+      expect(probe()).toBe(true);
+      const own = lateMaterial.isReadyForSubMesh.bind(lateMaterial);
+      let compiled = false;
+      const askedLate = vi.spyOn(lateMaterial, "isReadyForSubMesh").mockImplementation((...args) => compiled && own(...args));
+      // Drawable now, with nothing else marked: the next frame asks it before drawing.
+      show(late);
+      expect(graph.readinessDirty).toBe(true);
+      if (tolerant) {
+        // A world view draws on while its variant compiles.
+        expect(probe()).toBe(true);
+        expect(askedLate).toHaveBeenCalled();
+      } else {
+        // A Scene Layer holds the frame until it is ready.
+        expect(probe()).toBe(false);
+        expect(askedLate).toHaveBeenCalled();
+      }
+      compiled = true;
+      await vi.waitFor(() => {
+        if (tolerant) graph.recheckVariantSwaps();
+        expect(probe()).toBe(true);
+        expect(isRevealPending(late)).toBe(false);
+      });
+      // A later probe for an unrelated change agrees with a probe of every mesh.
+      graph.markReadinessDirty("layerStyle", [kept]);
+      expect(probe()).toBe(true);
+      expect(graph.diagnostics()).toMatchObject({ scopedReadinessMismatches: 0 });
+    } finally {
+      verifyScopedReadinessProbes(false);
+      graph.dispose();
+    }
+  },
+);
+
+it("probes a hidden visual when shown only after a passing probe skipped it, so steady toggles probe nothing", async () => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  kept.material = new StandardMaterial("kept", scene);
+  const toggled = MeshBuilder.CreateBox("toggled", {}, scene);
+  toggled.material = new StandardMaterial("toggled", scene);
+  const graph = new ForwardSceneFrameGraph(scene, { scopedStrictProbes: true });
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    const checks = graph.strictReadinessChecks;
+    // Hidden and shown again, its geometry rewritten in place: its variants are as the last probe found them.
+    for (let frame = 0; frame < 3; frame += 1) {
+      toggled.setEnabled(false);
+      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      toggled.setEnabled(true);
+      toggled.isVisible = false;
+      toggled.isVisible = true;
+      toggled.updateVerticesData(VertexBuffer.PositionKind, toggled.getVerticesData(VertexBuffer.PositionKind)!);
+      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    }
+    expect(graph.strictReadinessChecks).toBe(checks);
+    // A probe for a change touching a hidden visual's variants passes over it: shown, it is asked before it draws.
+    toggled.setEnabled(false);
+    graph.markReadinessDirty("layerStyle", [toggled, kept]);
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    const askedToggled = vi.spyOn(toggled.material, "isReadyForSubMesh").mockReturnValue(false);
+    toggled.setEnabled(true);
+    expect(graph.render(camera)).toMatchObject({ rendered: false });
+    expect(askedToggled).toHaveBeenCalled();
+  } finally {
     graph.dispose();
   }
 });
