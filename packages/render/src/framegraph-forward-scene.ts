@@ -947,8 +947,10 @@ export class ForwardSceneFrameGraph {
    * the readiness-relevant collection sizes each frame so a membership change
    * still invalidates the cache before the very next render.
    */
-  private syncMembership(): void {
-    this.syncDrawable();
+  private syncMembership(afterDraw = false): void {
+    // What draws is read as the next probe will find it: a mesh shown only for the draw (a Fog Volume's pass, enabled
+    // while it renders) is never drawable to a probe, and marking it at the draw's end would hold every frame.
+    if (!afterDraw) this.syncDrawable();
     const outlineRevision = this.outlineView?.revision ?? -1;
     if (outlineRevision !== this.observedOutlineRevision) {
       this.observedOutlineRevision = outlineRevision;
@@ -1003,7 +1005,7 @@ export class ForwardSceneFrameGraph {
 
   /**
    * Reads the meshes whose enabled state, visibility or geometry changed since the last frame (the render change
-   * journal's writes), and those it cannot hear that are undrawn. Runs before every probe and at each draw's end, so
+   * journal's writes), and those it cannot hear that are undrawn. Runs before every probe, not at a draw's end, so
    * what a probe found drawable is what it asked. A frame that shows or hides nothing marks nothing.
    */
   private syncDrawable(): void {
@@ -1021,6 +1023,9 @@ export class ForwardSceneFrameGraph {
    * frame asks its variants before it draws, as the probe that consumed its earlier mark could not.
    */
   private followDrawable(mesh: AbstractMesh): void {
+    // Editor guides and Play helpers are shown and hidden as selection changes, without a probe
+    // (render.md, Editor selection): they are editor chrome, never a game's visuals.
+    if (isEditorHelperMesh(mesh)) return;
     // Babylon blends a mesh whose visibility is below 1 (`needAlphaBlendingForMesh`): crossing it changes its variant,
     // as a glyph revealed from 0 or a fade that ends does.
     const translucent = mesh.visibility < 1;
@@ -1388,7 +1393,7 @@ export class ForwardSceneFrameGraph {
     const engine = this.scene.getEngine();
     enterDrawPass(engine, "readiness");
     try {
-      this.syncMembership();
+      this.syncMembership(true);
     } finally {
       leaveDrawPass(engine);
     }
