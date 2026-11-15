@@ -63,17 +63,46 @@ describe("desktop native HTTP", () => {
 
   it("rejects a response body larger than the cap, declared or streamed", async () => {
     const request = { url: "https://lfs.example.com/locks" };
+    const limits = { text: 8, binary: 8 };
     await expect(
-      fetchDesktopHttp(request, async () => new Response("x".repeat(9), { headers: { "Content-Length": "9" } }), 8),
+      fetchDesktopHttp(request, async () => new Response("x".repeat(9), { headers: { "Content-Length": "9" } }), limits),
     ).rejects.toThrow("too large");
-    const chunks = new ReadableStream<Uint8Array>({
+    const chunks = () => new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new Uint8Array(5));
         controller.enqueue(new Uint8Array(5));
         controller.close();
       },
     });
-    await expect(fetchDesktopHttp(request, async () => new Response(chunks), 8)).rejects.toThrow("too large");
-    expect((await fetchDesktopHttp(request, async () => new Response("é".repeat(4)), 8)).bodyText).toBe("éééé");
+    await expect(fetchDesktopHttp(request, async () => new Response(chunks()), limits)).rejects.toThrow("too large");
+    await expect(fetchDesktopHttp({ ...request, responseType: "binary" }, async () => new Response(chunks()), limits)).rejects.toThrow("too large");
+    expect((await fetchDesktopHttp(request, async () => new Response("é".repeat(4)), limits)).bodyText).toBe("éééé");
+  });
+
+  // Git packs and LFS objects: bytes that are not valid UTF-8 must arrive unchanged in both directions.
+  it("sends a byte body as is and answers a binary request with the exact bytes", async () => {
+    const sent = Uint8Array.from([0x50, 0x41, 0x43, 0x4b, 0x00, 0xff, 0xfe, 0x0d, 0x0a, 0x80]);
+    const answer = Uint8Array.from([0x00, 0x08, 0xc3, 0x28, 0xff, 0x01]);
+    const fetch = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
+      async () => new Response(answer, { status: 200, headers: { "Content-Type": "application/x-git-receive-pack-result" } }),
+    );
+    const result = await fetchDesktopHttp(
+      {
+        url: "https://github.com/org/game.git/git-receive-pack",
+        method: "POST",
+        headers: { "Content-Type": "application/x-git-receive-pack-request" },
+        body: sent.buffer,
+        responseType: "binary",
+      },
+      fetch,
+    );
+    expect(new Uint8Array(await new Response(fetch.mock.calls[0]![1].body).arrayBuffer())).toEqual(sent);
+    expect(fetch.mock.calls[0]![1]).toMatchObject({ method: "POST", redirect: "error", credentials: "omit" });
+    expect(result).toEqual({
+      status: 200,
+      bodyText: "",
+      bodyBytes: answer,
+      headers: { "content-type": "application/x-git-receive-pack-result" },
+    });
   });
 });

@@ -18,8 +18,8 @@ function fakeClock(start = 1_000_000) {
   return { clock, waits, advance: (ms: number) => { now += ms; } };
 }
 
-function form(body: string | undefined) {
-  return Object.fromEntries(new URLSearchParams(body ?? ""));
+function form(body: string | Uint8Array | undefined) {
+  return Object.fromEntries(new URLSearchParams(typeof body === "string" ? body : ""));
 }
 
 describe("device sign-in", () => {

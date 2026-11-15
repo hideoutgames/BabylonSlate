@@ -1,6 +1,6 @@
 # Source Control Plan
 
-Deferred design for built-in Git (Integrated mode): clone, pull, commit, push, diff and history inside Haptic. [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes setting, Manual mode (Git LFS locks only), device credentials with GitHub and GitLab sign-in, the link warning and the pinned Source Control tab holding **Locks**. Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
+Deferred design for built-in Git (Integrated mode): clone, pull, commit, push, diff and history inside Haptic. [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes setting, Manual mode (Git LFS locks only), device credentials with GitHub and GitLab sign-in, the link warning, the pinned Source Control tab holding **Locks**, and the [Git core](architecture/source-control.md#git-core) (clone, status, commit, pull, push and LFS transfer behind `SyncPort`, with its benchmark), which the editor does not use yet. Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
 
 ## Scope
 
@@ -49,6 +49,8 @@ Per project (`project.json` `sourceControl.mode`), off by default.
 
 ## Git and LFS
 
+Built as the [Git core](architecture/source-control.md#git-core); the decisions stay here for the steps that use it.
+
 - isomorphic-git, with an `fs` adapter over project storage and its `http` over native HTTP. Rejected: host REST APIs for sync (per-host code, a hand-made index, no offline commits, request limits on large pushes) and the `git` binary on desktop (a second implementation; iOS has none).
 - Clones are shallow and single-branch; history fetches deeper on demand.
 - Blobs are LFS objects: `**/.blobs/<sha256>` files are raw chunk bytes named by their SHA-256, which is the LFS object id, and are never rewritten ([containers.md](architecture/containers.md)).
@@ -56,7 +58,7 @@ Per project (`project.json` `sourceControl.mode`), off by default.
   - Pull and checkout download a `.blobs` object only when its file is missing.
   - Status compares `.blobs` files by name and size, never by Git blob hash.
 - Git itself carries `.hasset` files (chunks under 64 KiB stay inline), `project.json`, plugin and extension files and `.haptic-folder` markers.
-- Publish writes `.gitattributes` (`**/.blobs/** filter=lfs diff=lfs merge=lfs -text`) and `.gitignore` (`layout.json`, which holds one person's dock layout, plus the `.haptic-*.tmp` and `.haptic-move-*` files that storage writes and moves leave). `lockable` is still never added. A repository Publish did not create (a cloned one, or an adopted desktop clone) may lack the `.blobs` rule; Integrated mode must not commit `.blobs` until the rule is in place, and step 2 of [Order](#order) decides how it is added.
+- Publish writes `.gitattributes` (`**/.blobs/** filter=lfs diff=lfs merge=lfs -text`) and `.gitignore` (`layout.json`, which holds one person's dock layout, plus the `.haptic-*.tmp` and `.haptic-move-*` files that storage writes and moves leave). `lockable` is still never added. A repository Publish did not create (a cloned one, or an adopted desktop clone) may lack the `.blobs` rule; the Git core refuses to commit `.blobs` until the rule is in place, and step 2 of [Order](#order) decides how the editor adds it.
 
 ## Editor
 
@@ -97,18 +99,17 @@ Approved layouts. Everything keeps the editor's compact density, tokens and Luci
 
 What exists today and what each part must change. Check these against the code before building; they are a starting map, not a contract.
 
-- **Package:** `packages/source-control` holds the lock client, credentials, device sign-in, the GitHub and GitLab REST clients and the poll scheduler, and imports neither Capacitor nor Electron. The Git client and LFS transfer join it on the same terms (storage, HTTP and credentials injected), as subpath exports so they load only with Integrated mode.
-- **Native HTTP:** `NativeHttp` (`packages/vfs/src/native-http-port.ts`) carries GET and POST with text bodies and returns `bodyText`; its only binary path is a single base64 image upload. Git smart HTTP needs binary request and response bodies, and LFS needs PUT and large binary transfers, so the port needs binary bodies and a streaming file transfer in the native plugins and the desktop IPC (`lfs:fetch`).
+- **Package:** `packages/source-control` holds the lock client, credentials, device sign-in, the GitHub and GitLab REST clients, the poll scheduler and the Git core (`SyncPort`, subpath `./git`; `FakeSync`, subpath `./fake-sync`), and imports neither Capacitor nor Electron. The editor loads `./git` only for an Integrated project and tests on `FakeSync`.
+- **Native HTTP:** `NativeHttp` (`packages/vfs/src/native-http-port.ts`) carries GET, POST and PUT with text or byte bodies and binary answers, whole ([binary HTTP](architecture/source-control.md#binary-http)). A streaming file transfer in the native plugins and the desktop IPC (`lfs:fetch`) waits for step 1's results.
 - **Settings:** the Integrated rows live in `apps/editor/src/components/project-source-control-settings.tsx` (`OFFERED_MODES`). Project setting changes follow the [FeatureTest starter rule](../rules/feature-test.md).
 - **Assets:** `packages/assets/src/blob-store.ts` (write-once blobs, `BLOBS_DIR`), `hasset.ts` (container decode for diffs), `mtime-diff.ts` and `apps/editor/src/lib/external-change.ts` (reload after pull).
-- **Source Control tab:** the `source-control` DockView document (`SOURCE_CONTROL_WINDOWS` in `apps/editor/src/shell/window-catalog.ts`, panels in `shell/asset-panels/source-control.ts`); step 3 of [Order](#order) adds its other windows there, following the [DockView asset editor tabs rule](../rules/dockview-editor-tabs.md).
+- **Source Control tab:** the `source-control` DockView document (`SOURCE_CONTROL_WINDOWS` in `apps/editor/src/shell/window-catalog.ts`, panels in `shell/asset-panels/source-control.ts`); step 2 of [Order](#order) adds its other windows there, following the [DockView asset editor tabs rule](../rules/dockview-editor-tabs.md).
 - **Status bar:** `apps/editor/src/components/editor-status-bar.tsx`, which renders nothing in the phone layout.
 - **Docs:** `docs/projects/source-control.md` and `docs/editor/settings.md` change with each step.
 
 ## Order
 
-1. Gate on the A16 iPad: isomorphic-git clone, status, commit and push of a project with a few thousand assets through the Capacitor storage adapter, and LFS transfer of large blobs through native HTTP. Status must use stat data, not re-hashing. Choose the streaming transfer path from the results.
-2. Git core in `packages/source-control`: clone, status, commit, pull (fast-forward and whole-file conflicts), push and LFS transfer, tested against a local Git HTTP server and a fake LFS server.
-3. Integrated mode in the editor: the **Integrated** Mode option, Clone and Publish for GitHub and GitLab, Clone From URL, the Source Control tab's Changes, History, Actors and Diff windows, the status bar controls and the phone More Tools actions, lock verify before push and release after it.
-4. Asset diffs: payload and chunk level, then Scene and graph views.
-5. Branches, history and revert.
+1. The owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships. Run it against a repository with a few thousand assets ([benchmark](architecture/source-control.md#benchmark)); the unchanged status must read no files.
+2. Integrated mode in the editor: the **Integrated** Mode option, Clone and Publish for GitHub and GitLab, Clone From URL, the Source Control tab's Changes, History, Actors and Diff windows, the status bar controls and the phone More Tools actions, lock verify before push and release after it.
+3. Asset diffs: payload and chunk level, then Scene and graph views.
+4. Branches, history and revert.

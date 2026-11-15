@@ -1,6 +1,7 @@
 // The editor's startup path imports this barrel; device sign-in, token refresh, the host
-// REST APIs, the pushed-lock comparator and the fake host are subpath
-// exports, so they load only with the screens that use them.
+// REST APIs, the pushed-lock comparator, the fake host, the Git core (`./git`, which brings
+// isomorphic-git), `./fake-sync` and `./git-benchmark` are subpath exports, so they load
+// only with the screens that use them. `SyncPort`'s types are here; its code is not.
 export type {
   FileLock,
   GitConfigPrefill,
@@ -37,6 +38,27 @@ export {
   type RepositoryLocation,
 } from "./lfs-endpoint";
 export { parseGitConfigPrefill } from "./git-config";
+export type {
+  ChangeKind,
+  CommitAuthor,
+  CommitInfo,
+  CommitInput,
+  CommitResult,
+  FileChange,
+  LogOptions,
+  LogPage,
+  PullChoice,
+  PullChoices,
+  PullConflict,
+  PullInput,
+  PullResult,
+  PushResult,
+  RemoteState,
+  SyncErrorCode,
+  SyncErrorKind,
+  SyncPort,
+  SyncStatus,
+} from "./sync-port";
 export { GitLfsLockProvider } from "./git-lfs-lock-provider";
 export { FakeLockProvider } from "./fake-lock-provider";
 export { LockPollScheduler } from "./poll-scheduler";

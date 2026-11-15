@@ -65,7 +65,7 @@ export class FakeGitHost {
         return json(200, { device_code: DEVICE_CODE, user_code: "WDJB-MJHT", verification_uri: "https://example.invalid/", expires_in: 900, interval: this.interval });
       case "POST https://github.com/login/oauth/access_token":
       case "POST https://gitlab.com/oauth/token": {
-        const params = new URLSearchParams(request.body ?? "");
+        const params = new URLSearchParams(typeof request.body === "string" ? request.body : "");
         if (params.get("grant_type") === "refresh_token") return this.refresh(params.get("refresh_token") ?? "");
         if (params.get("device_code") !== DEVICE_CODE) return json(400, { error: "incorrect_device_code" });
         const error = this.tokenReplies.shift();

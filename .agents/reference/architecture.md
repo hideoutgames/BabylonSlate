@@ -27,7 +27,7 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | [shader-graph](../../packages/shader-graph/src/) | Material and Material Function IR, validator, lowering (Babylon-free) |
 | [particle-graph](../../packages/particle-graph/src/) | Particle Graph IR, catalog, validator, compile key (Babylon-free) |
 | [exporter](../../packages/exporter/src/) | Headless game packer: export closure, `game.json` catalog, zip |
-| [source-control](../../packages/source-control/src/) | Git LFS locking client behind `LockProvider`, device credentials, GitHub and GitLab device sign-in and REST clients, the pushed-lock comparator, plus fakes |
+| [source-control](../../packages/source-control/src/) | Git LFS locking client behind `LockProvider`, device credentials, GitHub and GitLab device sign-in and REST clients, the pushed-lock comparator, the Git core (isomorphic-git with Git LFS transfer) behind `SyncPort`, plus fakes |
 | [ui](../../packages/ui/src/) | shadcn primitives and design tokens |
 | [editor-kit](../../packages/editor-kit/src/) | Reusable editor components and touch hooks: property grid, tree view, pickers, panel frame, context menu, `SelectableText`, `WindowedList` |
 | [graph-ui](../../packages/graph-ui/src/) | React Flow editor shell shared by every node graph |

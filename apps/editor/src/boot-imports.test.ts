@@ -99,16 +99,19 @@ describe("editor boot imports", () => {
   });
 
   // A project whose source control mode is Off loads none of it: the credential store, device sign-in, the host REST
-  // APIs, the pushed-lock check and the Source Control tab's windows load on first use.
-  it("keep Source Control's accounts, sign-in, host APIs and windows out of the Homepage and the Editor route", () => {
-    const SOURCE_CONTROL_SUBPATH = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["']@haptic\/source-control\/(?:device-flow|host-api|pushed-locks|token-refresh|fake-host)["']/m;
+  // APIs, the pushed-lock check, the Git core (isomorphic-git) and the Source Control tab's windows load on first use,
+  // and the Debug Mode Git benchmark only when it is called.
+  it("keep Source Control's accounts, sign-in, host APIs, Git core and windows out of the Homepage and the Editor route", () => {
+    const SOURCE_CONTROL_SUBPATH = /^\s*(?:import|export)\s+(?!type\b)(?:[^'"]*?\sfrom\s+)?["'](?:@haptic\/source-control\/(?:device-flow|host-api|pushed-locks|token-refresh|fake-host|git|git-benchmark|fake-sync)|isomorphic-git(?:\/[^'"]*)?)["']/m;
     const closure = [...new Set(["main.tsx", "routes/home-route.tsx", "routes/editor-route.tsx"].flatMap((entry) => staticClosure(entry)))];
     expect(closure).toContain("services/source-control-service.ts");
     expect(closure).toContain("components/source-control-sign-in-banner.tsx");
+    expect(closure).toContain("lib/git-benchmark-hook.ts");
     expect(closure.filter((file) => [
       "services/source-control-accounts.ts",
       "services/source-control-pushed.ts",
       "lib/use-source-control-credentials.ts",
+      "lib/git-benchmark-runner.ts",
       "components/engine-source-control-settings.tsx",
       "components/project-source-control-host-fields.tsx",
       "components/source-control-sign-in-dialog.tsx",

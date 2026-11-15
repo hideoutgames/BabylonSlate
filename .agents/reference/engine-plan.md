@@ -321,7 +321,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 ## Source control
 
 - Per project, `sourceControl.mode` **Off** (default), **Manual** or **Integrated**; Off has no polling, credential reads, network, tab or other UI difference. Hidden on production web. Details: [architecture/source-control.md](architecture/source-control.md).
-- Manual is built: Git LFS locking only, behind a `LockProvider` port with a fake, while another Git app syncs. Integrated (built-in Git) is planned and deferred: [source-control-plan.md](source-control-plan.md).
+- Manual is built: Git LFS locking only, behind a `LockProvider` port with a fake, while another Git app syncs. Integrated (built-in Git) is planned and deferred: [source-control-plan.md](source-control-plan.md). Its Git core (isomorphic-git with Git LFS, behind a `SyncPort` with a fake) is built and not yet used by the editor.
 - Credentials are per device and host origin, linked in Engine Settings → Source Control: GitHub and gitlab.com by OAuth device sign-in with public clients, tokens for self-managed GitLab and other hosts. No Haptic-run server; a token goes only to its own host; every link shows a use-at-your-own-risk warning.
 - Auto-lock on first edit (the create call is the atomic check). Failure never blocks work; locks are advisory (read-only by default with Edit Anyway). `lockable` is never added to `.gitattributes`.
 - Release is explicit only: per lock, Release All My Locks (with a warning), or Release Pushed Locks, which releases only locks whose local file matches the remote branch read through the GitHub or GitLab API. Never on a timer, close or heuristic.
@@ -367,10 +367,10 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 ## Dependency upgrade policy
 
 - Babylon packages are pinned to one exact version across editor, player, render and physics, with a repository patch; an upgrade is its own change that re-applies the patch and re-checks particle, material, light block and WebGPU behaviour.
-- Add a dependency only when it removes real risk; record the rejected alternative. Settled choices: `dockview-react` 8 (touch docking), `@xyflow/react` 12, Vitest 4, Playwright, `zod` 4, `fflate`, `fast-check`, Rapier deterministic 2D, recast-navigation core/generators, `d3-hierarchy` (not `elkjs`), CodeMirror 6 loaded lazily (not Monaco), `meshoptimizer`, `earcut` injected.
+- Add a dependency only when it removes real risk; record the rejected alternative. Settled choices: `dockview-react` 8 (touch docking), `@xyflow/react` 12, Vitest 4, Playwright, `zod` 4, `fflate`, `fast-check`, Rapier deterministic 2D, recast-navigation core/generators, `d3-hierarchy` (not `elkjs`), CodeMirror 6 loaded lazily (not Monaco), `meshoptimizer`, `earcut` injected, `isomorphic-git` pinned exactly with the `buffer` polyfill it needs in WebViews (not host REST APIs or the `git` binary, [source-control-plan.md](source-control-plan.md#git-and-lfs)).
 - Deliberately absent: Comlink on the hot path, `planck.js`, `@recast-navigation/babylon`, `@babylonjs/addons` / `@babylonjs/materials`, a list virtualizer library.
 - Vendored, never fetched from a CDN: `coi-serviceworker.js` (locally modified), the Basis encoder and KTX2 transcoder set, Havok wasm.
-- Heavy optional runtimes (Rapier, Recast, CodeMirror) load only when a scene or editor surface needs them.
+- Heavy optional runtimes (Rapier, Recast, CodeMirror, isomorphic-git) load only when a scene or editor surface needs them.
 
 ## Multiplayer (planned)
 
@@ -378,7 +378,7 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
 
 ## Open work
 
-- Built-in Git: the A16 iPad gate in [source-control-plan.md](source-control-plan.md#order) (isomorphic-git through the Capacitor storage adapter, LFS transfer through native HTTP) comes before any Git code.
+- Built-in Git: the owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships ([source-control-plan.md](source-control-plan.md#order)).
 - Source control sign-in needs registered apps and a hand check: create the GitHub OAuth App (Device Flow on) and the gitlab.com application, set `VITE_GITHUB_CLIENT_ID` and `VITE_GITLAB_CLIENT_ID` for distribution builds, and check with real sign-in tokens that each host accepts them with the stored username for Git, LFS transfer and LFS locks, and that GitLab's token refresh works against gitlab.com.
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
 - Water performance qualification: confirm the many-body CPU savings on the A16 iPad (Medium) and a budget Android phone (Low).
