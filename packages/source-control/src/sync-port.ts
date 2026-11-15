@@ -20,11 +20,14 @@ export interface SyncPort {
    */
   remoteState(): Promise<RemoteState>;
   /**
-   * Paths whose committed content differs between the branch and the remote
-   * branch as last fetched (every committed path when the remote has no
-   * branch yet), sorted: what a push would change. Reads no network.
+   * Paths a push would change, sorted: what the branch changed since it left
+   * what the remote holds (its remote branch, or before its first push every
+   * remote branch this copy tracks; every committed path when there is none).
+   * Reads the remote's ref advertisement first and brings every
+   * remote-tracking branch up to it (a deleted one goes, a moved one is
+   * fetched), so no stale tip hides paths, and the locks on them.
    */
-  outgoing(): Promise<string[]>;
+  outgoing(options?: TransferOptions): Promise<string[]>;
   /**
    * Fetches, then integrates the remote branch: fast-forward, or a merge commit
    * when both sides have commits. Paths changed on both sides (the working

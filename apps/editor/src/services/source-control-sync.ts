@@ -444,7 +444,7 @@ export class SourceControlSyncService {
   private async pushFor(revision: number): Promise<void> {
     let pushed: string[] | null = null;
     await this.run("push", "Could Not Push", async ({ port, input, signal }) => {
-      const outgoing = await port.outgoing();
+      const outgoing = await port.outgoing({ signal });
       const holders = await input.locks.theirs(outgoing);
       if (holders.length > 0) throw new LockedByOthersError(holders);
       await port.push({ signal });

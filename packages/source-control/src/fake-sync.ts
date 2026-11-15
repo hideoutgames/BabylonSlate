@@ -283,11 +283,15 @@ export class FakeSync implements SyncPort {
     };
   }
 
-  async outgoing(): Promise<string[]> {
+  async outgoing(options: TransferOptions = {}): Promise<string[]> {
+    throwIfCancelled(options.signal);
+    // Every remote-tracking branch as the remote holds it now (a deleted one goes), as the Git core refreshes them.
+    for (const name of [...this.fetched.keys()]) this.fetchRef(name);
     const head = this.head;
-    if (!head || head === this.tracking) return [];
-    // A branch not pushed yet sends what it added since it left the branches the remote has.
-    const base = this.tracking ?? (await this.relation(head, [...this.fetched.values()])).base;
+    const tracking = this.tracking;
+    if (!head || head === tracking) return [];
+    // What a push sends: the branch's work since it left what the remote holds (its own branch, or before its first push every branch the remote has).
+    const { base } = await this.relation(head, tracking ? [tracking] : [...this.fetched.values()]);
     return (await this.differing(base, head)).map((entry) => entry.path);
   }
 

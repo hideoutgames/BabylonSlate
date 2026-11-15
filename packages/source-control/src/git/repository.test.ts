@@ -341,12 +341,15 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     teammate.checkout("art");
     teammate.write({ "assets/b.hasset": "B" });
     teammate.commitAndPush("Art", "art");
+    teammate.write({ "assets/b.hasset": "B2" });
+    const art = teammate.commitAndPush("More art", "art");
     const storage = await server.storage();
     const repository = await clone(storage, { depth: 10 });
     // Switching to a branch only the remote has fetches it one commit deep: the copy is shallow from then on.
     await repository.switchBranch("art");
+    expect(await repository.log({ limit: 50 })).toMatchObject({ commits: [{ id: art }], hasMore: true, shallow: true });
     await repository.switchBranch("main");
-    expect(await storage.readText(".git/shallow")).not.toBe("");
+    expect((await storage.readText(".git/shallow")).trim()).toBe(art);
 
     server.requests.length = 0;
     for (const options of [{ limit: 50 }, { limit: 50, deepen: true }, { limit: 50, path: "assets/a.hasset", deepen: true }]) {
@@ -355,6 +358,20 @@ describe("GitRepository", { timeout: 60_000 }, () => {
       expect(page).toMatchObject({ hasMore: false, shallow: false });
     }
     expect(server.requests.filter((request) => request.origin === GIT_ORIGIN)).toEqual([]);
+  });
+
+  it("leaves no shallow boundary at a branch fetched one deep whose parent it already holds", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    const teammate = server.teammate();
+    teammate.checkout("art");
+    teammate.write({ "assets/b.hasset": "B" });
+    teammate.commitAndPush("Art", "art");
+    const storage = await server.storage();
+    const repository = await clone(storage, { depth: 10 });
+    await repository.switchBranch("art");
+    expect(await storage.exists(".git/shallow")).toBe(false);
+    expect(await repository.log({ limit: 50 })).toMatchObject({ commits: [{ message: "Art\n" }, { message: "Two\n" }, { message: "One\n" }], hasMore: false, shallow: false });
   });
 
   it("opens on the branch the working copy's HEAD names, and refuses a detached HEAD", async () => {

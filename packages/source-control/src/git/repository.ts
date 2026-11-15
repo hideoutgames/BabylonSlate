@@ -280,15 +280,16 @@ export class GitRepository implements SyncPort {
     return this.run((op) => this.state(op, false));
   }
 
-  outgoing(): Promise<string[]> {
+  outgoing(options: TransferOptions = {}): Promise<string[]> {
     return this.run(async (op) => {
+      await this.refreshRemoteHeads(op);
       const local = await this.resolve(op, this.localRef);
       const remote = await this.resolve(op, this.remoteRef);
       if (!local || local === remote) return [];
-      // A branch not pushed yet sends what it added since it left the branches the remote has.
-      const base = remote ?? (await this.relation(op, local, await this.remoteHeads(op), false)).base;
+      // What a push sends: the branch's work since it left what the remote holds (its own branch, or before its first push every branch the remote has).
+      const { base } = await this.relation(op, local, remote ? [remote] : await this.remoteHeads(op), false);
       return (await this.differing(op, base, local)).map((entry) => entry.path);
-    });
+    }, options.signal);
   }
 
   pull({ author, choices = {}, signal }: PullInput): Promise<PullResult> {
@@ -602,6 +603,7 @@ export class GitRepository implements SyncPort {
         tags: false,
         ...(options.deepen ? { depth: options.deepen, relative: true } : options.depth ? { depth: options.depth } : {}),
       }));
+      await this.trimShallow(op);
       return true;
     } catch (error) {
       const missing = (error as { code?: unknown; data?: { what?: unknown } }).code === "NotFoundError" && (error as { data?: { what?: unknown } }).data?.what === remoteRef;
@@ -615,6 +617,31 @@ export class GitRepository implements SyncPort {
   private async setUpstream(op: Op, branch: string): Promise<void> {
     await git.setConfig({ ...op.git, path: `branch.${branch}.remote`, value: "origin" });
     await git.setConfig({ ...op.git, path: `branch.${branch}.merge`, value: `refs/heads/${branch}` });
+  }
+
+  /**
+   * Brings every remote-tracking branch to what the remote holds now, from
+   * one ref advertisement, as `git fetch --prune` would: a branch the remote
+   * no longer has loses its ref; one that moved points at its new commit when
+   * this copy has it, and is fetched otherwise (only what this copy lacks
+   * when a local branch of that name gives the fetch its haves, else as deep
+   * as a switch fetches). What a push sends is measured against these, so a
+   * stale one (force-pushed or deleted) would leave out paths and their locks.
+   */
+  private async refreshRemoteHeads(op: Op): Promise<void> {
+    const refs = await git.listServerRefs({ http: op.http, url: this.url, prefix: "refs/heads/" });
+    const advertised = new Map(refs.map(({ ref, oid }) => [ref.slice("refs/heads/".length), oid]));
+    for (const name of await git.listBranches({ ...op.git, remote: "origin" })) {
+      if (name === "HEAD") continue;
+      const ref = `refs/remotes/origin/${name}`;
+      const tip = advertised.get(name);
+      if (!tip) {
+        await git.deleteRef({ ...op.git, ref });
+      } else if (tip !== (await this.resolve(op, ref))) {
+        if (await this.readCommit(op, tip)) await git.writeRef({ ...op.git, ref, value: tip, force: true });
+        else await this.fetchBranch(op, { branch: name, ...((await this.resolve(op, `refs/heads/${name}`)) ? {} : { depth: DEFAULT_CLONE_DEPTH }) });
+      }
+    }
   }
 
   /** Every remote branch this copy has fetched: what a branch not pushed yet is measured against. */
@@ -652,6 +679,27 @@ export class GitRepository implements SyncPort {
       },
     })) as Differing[];
     return result.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  }
+
+  /**
+   * Drops from `.git/shallow` the commits whose parents this copy holds.
+   * isomorphic-git means to leave those out, but checks before the fetch's
+   * pack is stored, so a branch fetched one deep from a commit this copy
+   * already has (a teammate's branch off main) would stay a boundary: every
+   * walk would stop at its tip, short of the merge base.
+   */
+  private async trimShallow(op: Op): Promise<void> {
+    const shallow = await this.shallowCommits();
+    const boundary: string[] = [];
+    for (const oid of shallow) {
+      const commit = await this.readCommit(op, oid);
+      let complete = commit !== null;
+      for (const parent of commit?.parent ?? []) complete &&= (await this.readCommit(op, parent)) !== null;
+      if (!complete) boundary.push(oid);
+    }
+    if (boundary.length === shallow.size) return;
+    if (boundary.length === 0) await op.fs.promises.unlink(`${GITDIR}/shallow`);
+    else await op.fs.promises.writeFile(`${GITDIR}/shallow`, `${boundary.join("\n")}\n`);
   }
 
   private async shallowCommits(): Promise<Set<string>> {

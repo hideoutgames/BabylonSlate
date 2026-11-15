@@ -34,6 +34,8 @@ interface Fixture {
   copy(options?: CopyOptions): Promise<{ port: SyncPort; storage: ProjectStorage }>;
   /** A new working copy with no commits in an empty project folder, as Publish starts one. */
   init(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
+  /** Deletes the remote's `branch`, as a teammate would. */
+  deleteBranch(branch: string): Promise<void>;
   /** The LFS object the server stores under `oid`, if any. */
   stored(oid: string): Uint8Array | undefined;
   dispose(): Promise<void>;
@@ -89,6 +91,9 @@ async function gitFixture(): Promise<Fixture> {
       const port = await initRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW });
       return { port, storage };
     },
+    async deleteBranch(branch) {
+      server.git(server.bare, "branch", "-D", branch);
+    },
     stored: (oid) => server.objects.get(oid),
     dispose: () => server.stop(),
   };
@@ -114,6 +119,9 @@ async function fakeFixture(): Promise<Fixture> {
       const storage = new NodeStorageAdapter(root);
       await storage.openDocumentsProject(`copy-${copies}`);
       return { port: FakeSync.init({ storage, remote, branch: "main", now: () => NOW }), storage };
+    },
+    async deleteBranch(branch) {
+      remote.branches.delete(branch);
     },
     stored: (oid) => remote.lfsObjects.get(oid),
     async dispose() {
@@ -268,7 +276,7 @@ describe.each([
     expect(await port.fetch()).toMatchObject({ local: commit, remote, ahead: 1 });
   });
 
-  it("lists the paths a push would change, against the remote as last fetched", async () => {
+  it("lists the paths a push would change", async () => {
     await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
     const { port, storage } = await fixture.copy();
     expect(await port.outgoing()).toEqual([]);
@@ -510,6 +518,34 @@ describe.each([
     expect(await rejection(port.switchBranch("feature"))).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
     expect(await port.status()).toEqual({ branch: "main", head: main, changes: [] });
     expect(await storage.exists("assets/t.hasset")).toBe(false);
+  });
+
+  it("measures a new branch's push against the remote's branches as they are now", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+    await fixture.teammate({ "assets/b.hasset": "B-art" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    await port.switchBranch("art");
+    await port.createBranch("feature");
+    await storage.writeBinary("assets/a.hasset", encode("A-feature"));
+    await port.commit({ paths: ["assets/a.hasset"], message: "Feature", author: AUTHOR });
+
+    // art moved on: the commits feature started from are still on the remote, so only its own work goes.
+    await fixture.teammate({ "assets/c.hasset": "C-art" }, "More art", "art");
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+    // art deleted: a push sends the art commits too, so their paths count (and their locks).
+    await fixture.deleteBranch("art");
+    expect(await port.outgoing()).toEqual(["assets/a.hasset", "assets/b.hasset"]);
+  });
+
+  it("lists only the branch's own work when the remote moved on since the last fetch", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B" });
+    const { port, storage } = await fixture.copy();
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
+    await fixture.teammate({ "assets/b.hasset": "B2" });
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+    await port.fetch();
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
   });
 
   it("refuses to push over commits it has not pulled", async () => {
