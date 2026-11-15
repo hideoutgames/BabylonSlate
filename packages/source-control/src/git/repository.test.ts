@@ -304,6 +304,59 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await repository.commitChanges(shallow.commits[0]!.id)).toEqual([{ path: "assets/a.hasset", kind: "modified" }]);
   });
 
+  it("leaves the history as it was when a deepen is cancelled mid-fetch, so the next one deepens it", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    server.seed({ "assets/a.hasset": "3" }, "Three");
+    const controller = new AbortController();
+    let armed = false;
+    // Cancels at the deepen's first write into .git, letting that one write through as storage already had it.
+    const storage = new Proxy(await server.storage(), {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (typeof value !== "function") return value;
+        if (property !== "writeBinary" && property !== "writeText") return (value as (...args: unknown[]) => unknown).bind(target);
+        return (path: string, ...rest: unknown[]) => {
+          if (armed && path.startsWith(".git/")) controller.abort();
+          return (value as (...args: unknown[]) => unknown).call(target, path, ...rest);
+        };
+      },
+    });
+    const repository = await clone(storage);
+    armed = true;
+    expect((await rejection(repository.log({ limit: 3, skip: 1, deepen: true, signal: controller.signal }))).kind).toBe("cancelled");
+    armed = false;
+
+    expect(await repository.log({ limit: 3 })).toMatchObject({ commits: [{ message: "Three\n" }], hasMore: true, shallow: true });
+    expect((await repository.fetch()).behind).toBe(0);
+    const older = await repository.log({ limit: 3, skip: 1, deepen: true });
+    expect(older.commits.map((commit) => commit.message)).toEqual(["Two\n", "One\n"]);
+    expect(server.git(folder(storage), "log", "--format=%s").trim().split("\n")).toEqual(["Three", "Two", "One"]);
+  });
+
+  it("offers older history only when the branch's own history stops at the shallow boundary", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    const teammate = server.teammate();
+    teammate.checkout("art");
+    teammate.write({ "assets/b.hasset": "B" });
+    teammate.commitAndPush("Art", "art");
+    const storage = await server.storage();
+    const repository = await clone(storage, { depth: 10 });
+    // Switching to a branch only the remote has fetches it one commit deep: the copy is shallow from then on.
+    await repository.switchBranch("art");
+    await repository.switchBranch("main");
+    expect(await storage.readText(".git/shallow")).not.toBe("");
+
+    server.requests.length = 0;
+    for (const options of [{ limit: 50 }, { limit: 50, deepen: true }, { limit: 50, path: "assets/a.hasset", deepen: true }]) {
+      const page = await repository.log(options);
+      expect(page.commits.map((commit) => commit.message.trim())).toEqual(["Two", "One"]);
+      expect(page).toMatchObject({ hasMore: false, shallow: false });
+    }
+    expect(server.requests.filter((request) => request.origin === GIT_ORIGIN)).toEqual([]);
+  });
+
   it("opens on the branch the working copy's HEAD names, and refuses a detached HEAD", async () => {
     server.seed({ "assets/a.hasset": "A" });
     const storage = await server.storage();

@@ -361,7 +361,8 @@ export class FakeSync implements SyncPort {
     return stored;
   }
 
-  async log({ limit, skip = 0, path }: LogOptions): Promise<LogPage> {
+  async log({ limit, skip = 0, path, signal }: LogOptions): Promise<LogPage> {
+    throwIfCancelled(signal);
     const commits: CommitInfo[] = [];
     const seen = new Set<string>();
     const queue = this.head ? [this.head] : [];

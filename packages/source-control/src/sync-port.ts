@@ -46,7 +46,7 @@ export interface SyncPort {
    * `lfs` / `lfs-object-missing`.
    */
   readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;
-  /** The branch's commits, newest first; `deepen` fetches older history once when a shallow clone ends early. */
+  /** The branch's commits, newest first; `deepen` fetches older history once when the page ends at this shallow copy's boundary. */
   log(options: LogOptions): Promise<LogPage>;
   /**
    * The files `commit` changed against its first parent (every file of a root
@@ -173,12 +173,14 @@ export interface SwitchResult {
   changedPaths: string[];
 }
 
-export interface LogOptions {
+/** `signal` cancels a deepen's download. */
+export interface LogOptions extends TransferOptions {
   limit: number;
   /** Commits to leave out first: the ones earlier pages listed. */
   skip?: number;
   /** Only commits that change this path. */
   path?: string;
+  /** Fetch older history once when the page ends at this shallow copy's boundary (writes `.git`). */
   deepen?: boolean;
 }
 
@@ -195,7 +197,7 @@ export interface LogPage {
   commits: CommitInfo[];
   /** False only when the branch's first commit was reached. */
   hasMore: boolean;
-  /** The page ended at this shallow copy's oldest commit: older ones come with `deepen`. */
+  /** The page ended where the branch's history reaches this shallow copy's boundary: older commits come with `deepen`. */
   shallow: boolean;
 }
 

@@ -506,6 +506,48 @@ describe("SourceControlSyncService", () => {
       expect((await service.history({ limit: 5, path: "assets/Rock.texture.hasset" })).commits.map((commit) => commit.message)).toEqual(["Rock", "Seed"]);
       expect(await service.commitChanges(all.commits[0]!.id)).toEqual([{ path: "assets/Forest.scene.hasset", kind: "modified" }]);
     });
+
+    it("loads older history in the queue, where a close waits for it and cancels its download, and reads the counts the download moved", async () => {
+      const { service, input, remote, port } = await setup();
+      await service.configure(input("integrated"));
+      remote.commit({ "assets/Rock.texture.hasset": "R2" }, "Brighter rock");
+      // A deepen fetches the branch, which moves its remote-tracking branch, as the Git core's does.
+      let finish!: () => void;
+      const signals: (AbortSignal | undefined)[] = [];
+      const log = port.log.bind(port);
+      vi.spyOn(port, "log").mockImplementation(async (options) => {
+        if (options.deepen) {
+          signals.push(options.signal);
+          await port.fetch();
+          await new Promise<void>((resolve, reject) => {
+            finish = resolve;
+            options.signal?.addEventListener("abort", () => reject(new SyncError("cancelled", "Cancelled.")));
+          });
+        }
+        return log(options);
+      });
+
+      const loading = service.history({ limit: 50, deepen: true });
+      await vi.waitFor(() => expect(signals).toHaveLength(1));
+      let settled = false;
+      void service.settled().then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      expect(signals[0]).toBeInstanceOf(AbortSignal);
+      finish();
+      expect((await loading).commits.map((commit) => commit.message)).toEqual(["Seed"]);
+      await service.settled();
+      expect(service.getSnapshot()).toMatchObject({ behind: 1, incoming: [{ message: "Brighter rock" }] });
+
+      const closing = service.history({ limit: 50, deepen: true });
+      await vi.waitFor(() => expect(signals).toHaveLength(2));
+      service.stop();
+      expect(signals[1]!.aborted).toBe(true);
+      await expect(closing).rejects.toThrow();
+      await service.settled();
+    });
   });
 
   describe("after a push or pull", () => {

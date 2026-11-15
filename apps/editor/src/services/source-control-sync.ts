@@ -492,11 +492,23 @@ export class SourceControlSyncService {
 
   /**
    * A page of the branch's commits (of `path` only, when given), newest
-   * first, for History; `deepen` downloads older history when this shallow
-   * copy's ends. Not queued, as `readFileAt`.
+   * first, for History. A plain read is not queued, as `readFileAt`.
+   * `deepen` (Load Older History) downloads older history when this shallow
+   * copy's ends, which writes `.git` and moves the remote-tracking branch: it
+   * runs in the queue (a close waits for it and cancels its download), and
+   * the counts are read again from local refs after it. Rejects with what
+   * failed, or when the project closed.
    */
-  history(options: LogOptions): Promise<LogPage> {
-    return this.openPort().log(options);
+  async history(options: LogOptions): Promise<LogPage> {
+    if (!options.deepen) return this.openPort().log(options);
+    const revision = this.revision;
+    let page: LogPage | null = null;
+    const ran = await this.run(null, "Could Not Load Older History", async ({ port, signal }) => {
+      page = await port.log({ ...options, signal });
+    }, revision, { rethrow: true });
+    if (!ran || !page) throw new Error("The project closed while loading older history.");
+    await this.readLocal(revision);
+    return page;
   }
 
   /** The files a commit changed against its parent; null when this shallow copy lacks the parent. */

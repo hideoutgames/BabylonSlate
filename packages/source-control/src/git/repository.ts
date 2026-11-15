@@ -397,7 +397,7 @@ export class GitRepository implements SyncPort {
     return downloaded;
   }
 
-  log({ limit, skip = 0, path, deepen = false }: LogOptions): Promise<LogPage> {
+  log({ limit, skip = 0, path, deepen = false, signal }: LogOptions): Promise<LogPage> {
     return this.run(async (op) => {
       // isomorphic-git walks from HEAD each time; the pages before are read again (from its object cache) and left out.
       const read = async (): Promise<CommitInfo[]> => {
@@ -416,16 +416,41 @@ export class GitRepository implements SyncPort {
           throw error;
         }
       };
+      // Older history exists only past a boundary this branch's walk reached, not wherever the copy is shallow (another branch fetched one deep).
+      const atBoundary = async (page: readonly CommitInfo[]) => page.length < limit && (await this.reachesShallow(op));
       let commits = await read();
-      let shallow = (await this.shallowCommits()).size > 0;
-      if (deepen && commits.length < limit && shallow) {
+      let shallow = await atBoundary(commits);
+      if (deepen && shallow) {
         await this.fetchBranch(op, { deepen: limit });
         commits = await read();
-        shallow = (await this.shallowCommits()).size > 0;
+        shallow = await atBoundary(commits);
       }
-      const ended = commits.length < limit;
-      return { commits, hasMore: !ended || shallow, shallow: ended && shallow };
-    });
+      return { commits, hasMore: commits.length === limit || shallow, shallow };
+    }, signal);
+  }
+
+  /**
+   * Whether the branch's history, walked from its head, reaches a commit
+   * whose parents this copy lacks (listed in `.git/shallow`, or missing).
+   * Read only when a page ended early, so the walk is the one the log made,
+   * from the object cache.
+   */
+  private async reachesShallow(op: Op): Promise<boolean> {
+    const shallow = await this.shallowCommits();
+    if (shallow.size === 0) return false;
+    const head = await this.resolve(op, this.localRef);
+    const queue = head ? [head] : [];
+    const seen = new Set<string>();
+    while (queue.length > 0) {
+      const oid = queue.pop()!;
+      if (seen.has(oid)) continue;
+      seen.add(oid);
+      if (shallow.has(oid)) return true;
+      const commit = await this.readCommit(op, oid);
+      if (!commit) return true;
+      queue.push(...commit.parent);
+    }
+    return false;
   }
 
   commitChanges(commit: string): Promise<FileChange[] | null> {
@@ -544,7 +569,9 @@ export class GitRepository implements SyncPort {
 
   /**
    * Fetches `branch` (the checked-out one by default): `deepen` commits older
-   * than this copy's oldest, or a branch new to this copy `depth` deep.
+   * than this copy's oldest, or a branch new to this copy `depth` deep. The
+   * shallow list and the remote-tracking ref change only once the pack is
+   * stored (`objectsFirst`), so a cancelled fetch leaves history as it was.
    * Resolves false when the remote has no such branch (not pushed yet, or
    * deleted there), whose remote-tracking ref then goes, as `git fetch
    * --prune` drops it.
@@ -553,7 +580,7 @@ export class GitRepository implements SyncPort {
     const branch = options.branch ?? this.current;
     const remoteRef = `refs/heads/${branch}`;
     try {
-      await git.fetch({
+      await op.fs.objectsFirst(() => git.fetch({
         ...op.git,
         http: op.http,
         remote: "origin",
@@ -562,7 +589,7 @@ export class GitRepository implements SyncPort {
         singleBranch: true,
         tags: false,
         ...(options.deepen ? { depth: options.deepen, relative: true } : options.depth ? { depth: options.depth } : {}),
-      });
+      }));
       return true;
     } catch (error) {
       const missing = (error as { code?: unknown; data?: { what?: unknown } }).code === "NotFoundError" && (error as { data?: { what?: unknown } }).data?.what === remoteRef;
