@@ -113,6 +113,29 @@ test.describe("3D Empty Kenney Mannequin", () => {
       path: testInfo.outputPath("skeleton-preview.png"),
     });
 
+    // A socket added to a bone lists under it and is the Preview's gizmo target.
+    await page.getByTestId("tree-row-torso").click();
+    await page.getByTestId("skeleton-add-socket").click();
+    await expect(page.getByTestId("tree-row-socket:torso_Socket")).toBeVisible();
+    await expect(skeletonCanvas).toHaveAttribute("data-sockets", "1");
+    await expect(skeletonCanvas).toHaveAttribute("data-selected-socket", "torso_Socket");
+    await expect(page.getByTestId("skeleton-socket-details")).toContainText("Position");
+    // Its gizmo draws through the preview renderer; dragging the X handle moves the socket in its bone's space.
+    const socketInputs = () => page.getByTestId("skeleton-socket-details").locator("input")
+      .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
+    expect((await socketInputs()).slice(2, 5)).toEqual(["0", "0", "0"]);
+    await page.waitForTimeout(1000);
+    await skeletonCanvas.screenshot({
+      path: testInfo.outputPath("skeleton-socket.png"),
+    });
+    const canvasBox = (await skeletonCanvas.boundingBox())!;
+    const handle = { x: canvasBox.x + canvasBox.width / 2 + 105, y: canvasBox.y + 432 };
+    await page.mouse.move(handle.x, handle.y);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + 80, handle.y, { steps: 16 });
+    await page.mouse.up();
+    await expect.poll(async () => (await socketInputs())[2]).not.toBe("0");
+
     await openAssetFromBrowser(
       page,
       "assets/Mannequin/mannequin_idle.hasset",

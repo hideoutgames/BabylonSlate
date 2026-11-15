@@ -25,12 +25,29 @@ export interface SkeletonBone {
   posed?: SkeletonRestChannel[];
 }
 
+/**
+ * A named point that follows a bone: its offset from the bone, in the bone's own space. Anything that takes a bone
+ * name (Attach To Bone, Spawn Particles Attached, an Animation Event's particles) takes a socket's name too.
+ */
+export interface SkeletonSocket {
+  /** Unique among the Skeleton's sockets and bones. */
+  name: string;
+  /** The bone it follows. A bone the Skeleton no longer has leaves the socket unresolved. */
+  bone: string;
+  position: Vec3Tuple;
+  /** Quaternion, x y z w. */
+  rotation: QuatTuple;
+  scale: Vec3Tuple;
+}
+
 export interface SkeletonPayload {
   /** The Model the Skeleton editor previews; any Model on the Skeleton can be picked. */
   modelGuid: string;
   kind: SkeletonKind;
   /** Parents before children where the source file lists them that way; matching ignores the order. */
   bones: SkeletonBone[];
+  /** In the order they were added. */
+  sockets: SkeletonSocket[];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -77,13 +94,49 @@ function normalizeBones(value: unknown): SkeletonBone[] {
   return bones;
 }
 
+/** Named sockets on a bone, each name unique and none a bone's; unnamed and repeated ones are dropped. */
+export function normalizeSkeletonSockets(value: unknown, bones: readonly SkeletonBone[] = []): SkeletonSocket[] {
+  if (!Array.isArray(value)) return [];
+  const taken = new Set(bones.map((bone) => bone.name));
+  const sockets: SkeletonSocket[] = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    if (!name || taken.has(name)) continue;
+    taken.add(name);
+    sockets.push({
+      name,
+      bone: typeof record.bone === "string" ? record.bone : "",
+      position: numberTuple<Vec3Tuple>(record.position, [0, 0, 0]),
+      rotation: numberTuple<QuatTuple>(record.rotation, [0, 0, 0, 1]),
+      scale: numberTuple<Vec3Tuple>(record.scale, [1, 1, 1]),
+    });
+  }
+  return sockets;
+}
+
 export function normalizeSkeletonPayload(value: unknown): SkeletonPayload {
   const record = asRecord(value);
+  const bones = normalizeBones(record.bones);
   return {
     modelGuid: trimmedGuid(record.modelGuid),
     kind: record.kind === "skin" ? "skin" : "hierarchy",
-    bones: normalizeBones(record.bones),
+    bones,
+    sockets: normalizeSkeletonSockets(record.sockets, bones),
   };
+}
+
+/** A name for a new socket on `bone`, unique among the Skeleton's sockets and bones. */
+export function nextSkeletonSocketName(payload: SkeletonPayload, bone: string): string {
+  const taken = new Set([...payload.bones.map((entry) => entry.name), ...payload.sockets.map((entry) => entry.name)]);
+  const base = `${bone}_Socket`;
+  if (!taken.has(base)) return base;
+  for (let index = 2; ; index++) if (!taken.has(`${base}${index}`)) return `${base}${index}`;
+}
+
+/** The bone and socket names an attachment can name, bones first, in the Skeleton's order. */
+export function skeletonAttachPointNames(payload: SkeletonPayload): string[] {
+  return [...payload.bones.map((bone) => bone.name), ...payload.sockets.map((socket) => socket.name)];
 }
 
 export function skeletonBoneNames(payload: SkeletonPayload): string[] {

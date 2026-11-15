@@ -5,6 +5,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { CommandMessage } from "@haptic/bridge";
+import type { ModelPayload } from "@haptic/assets";
 import { isRigJointNode } from "./skeleton-preview";
 import type { SampledAudioPose } from "./snapshot-sync";
 
@@ -24,11 +25,23 @@ export interface BoneAttachment {
   applied: boolean;
   root?: Mesh;
   resolved?: { node: TransformNode } | { bone: Bone; mesh: AbstractMesh };
+  /** When `boneName` names a socket: its offset from its bone, applied in the bone's space. */
+  socketOffset?: Matrix;
 }
 
 interface BoneAttachmentBinding {
   meshes: Map<number, Mesh>;
   boneAttachments: Map<number, BoneAttachment>;
+  /** With the Model payloads, where a target's sockets come from (its Model's `sockets`). */
+  meshAssetGuids?: ReadonlyMap<number, string | null>;
+  modelPayloads?: ReadonlyMap<string, ModelPayload>;
+}
+
+/** The socket `name` on the target slot's Model, if it is one. */
+function targetSocket(binding: BoneAttachmentBinding, slotId: number, name: string) {
+  const guid = binding.meshAssetGuids?.get(slotId);
+  const sockets = guid ? binding.modelPayloads?.get(guid)?.sockets : undefined;
+  return sockets?.find((socket) => socket.name === name);
 }
 
 function restoreSnapshotPose(binding: BoneAttachmentBinding, slotId: number): void {
@@ -101,7 +114,16 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
   if (attachment.root !== target || !source ||
     ("node" in source ? source.node.isDisposed() : source.mesh.isDisposed() || source.mesh.skeleton !== source.bone.getSkeleton())) {
     attachment.root = target;
-    source = attachment.resolved = resolveBone(target, attachment.boneName);
+    // A socket attaches to its bone, offset in the bone's space.
+    const socket = targetSocket(binding, attachment.targetSlotId, attachment.boneName);
+    source = attachment.resolved = resolveBone(target, socket ? socket.bone : attachment.boneName);
+    attachment.socketOffset = socket
+      ? Matrix.Compose(
+        new Vector3(...socket.scale),
+        new Quaternion(...socket.rotation),
+        new Vector3(...socket.position),
+      )
+      : undefined;
   }
   if (!source) return;
   if ("node" in source) {
@@ -120,6 +142,10 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
       }
       source.bone.getAbsoluteMatrix().multiplyToRef(source.mesh.computeWorldMatrix(true), attachment.boneWorld);
     }
+  }
+  if (attachment.socketOffset) {
+    attachment.socketOffset.multiplyToRef(attachment.boneWorld, socketWorld);
+    attachment.boneWorld.copyFrom(socketWorld);
   }
   // Snapshot TRS is already parent-composed. Undo the runtime's TRS composition
   // before applying the bone, including nonuniform scale without introducing shear.
@@ -141,6 +167,7 @@ function updateAttachedSlot(binding: BoneAttachmentBinding, slotId: number, fram
   attachment.applied = true;
 }
 
+const socketWorld = new Matrix();
 let attachmentFrame = 0;
 const preparedSkeletons = new Set<Skeleton>();
 /** Run after all snapshot TRS writes, so slot ordering cannot lag moving parents. */

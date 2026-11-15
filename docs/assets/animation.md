@@ -48,7 +48,7 @@ Add one on the **Timeline**, or tap **Add Event** under **Events** in the **Insp
 | Time | Where in one pass the event fires, in milliseconds. |
 | Duration | 0 for a single event. Above 0, the event is a window: it begins at its Time and ends this many milliseconds later. |
 | Trigger Weight | The weight, 0 to 1, the clip must play at for the event to fire. At the default 0.5, a clip fading out of a blend does not fire it. |
-| Action | What the event does on its own, without a script: **None**, **Play Sound** (a **Sound** from the actor at a **Volume**) or **Spawn Particle System** (a **Particle System** at a **Bone**, following it, or at the actor when Bone is empty). A window acts as it begins. |
+| Action | What the event does on its own, without a script: **None**, **Play Sound** (a **Sound** from the actor at a **Volume**) or **Spawn Particle System** (a **Particle System** at a **Bone**, following it, or at the actor when Bone is **None**; Bone lists the Skeleton's [sockets](skeleton.md#sockets) and bones). A window acts as it begins. |
 
 Tap **Remove Event** on an event's card to delete it. While the Preview plays, each event's name flashes over it as playback passes it.
 

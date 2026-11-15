@@ -48,12 +48,14 @@ function eventSummary(event: EditableAnimationEvent): string {
 /**
  * An asset's or frame's Animation Events, one card each: Name, Time and Duration (an Animation's: Duration above 0
  * makes a window), Trigger Weight, and an optional built-in Action. `timed` adds the time rows; `bones` the Bone row
- * of Spawn Particle System. Edits go through `onChange`, with a merge key per field so a scrub is one undo step.
+ * of Spawn Particle System, a list of the Skeleton's bones and sockets (or typed, without one). Edits go through
+ * `onChange`, with a merge key per field so a scrub is one undo step.
  */
 export function AnimationEventsEditor({
   events,
   timed,
   bones,
+  attachPoints,
   newEventTimeMs = 0,
   selectedIds,
   onChange,
@@ -63,6 +65,8 @@ export function AnimationEventsEditor({
   events: readonly EditableAnimationEvent[];
   timed: boolean;
   bones: boolean;
+  /** The Animation's Skeleton's sockets and bones, which the Bone row offers; typed when absent. */
+  attachPoints?: { bones: readonly string[]; sockets: readonly string[] };
   /** Where Add Event places a new event (an Animation's). */
   newEventTimeMs?: number;
   /** Events selected elsewhere (the Timeline): their cards open and are marked. */
@@ -181,15 +185,32 @@ export function AnimationEventsEditor({
         ...assetIdentity(action.assetGuid, "ParticleSystem"),
       });
       if (bones) {
-        rows.push({
-          id: `${event.id}-bone`,
-          kind: "text",
-          label: "Bone",
-          value: action.bone,
-          description: "Spawns it at this bone, following it. Empty spawns it at the actor.",
-          disabled,
-          onChange: (bone) => patchAction(event, { bone }, "bone"),
-        });
+        const names = attachPoints ? [...attachPoints.sockets, ...attachPoints.bones] : [];
+        rows.push(names.length > 0
+          ? {
+              id: `${event.id}-bone`,
+              kind: "enum",
+              label: "Bone",
+              value: action.bone,
+              verbatim: true,
+              options: [
+                { value: "", label: "None" },
+                ...(action.bone && !names.includes(action.bone) ? [{ value: action.bone, label: `${action.bone} (Not On Skeleton)` }] : []),
+                ...names.map((name) => ({ value: name, label: name })),
+              ],
+              description: "Spawns it at this bone or socket, following it. None spawns it at the actor.",
+              disabled,
+              onChange: (bone) => patchAction(event, { bone }),
+            }
+          : {
+              id: `${event.id}-bone`,
+              kind: "text",
+              label: "Bone",
+              value: action.bone,
+              description: "Spawns it at this bone or socket, following it. Empty spawns it at the actor.",
+              disabled,
+              onChange: (bone) => patchAction(event, { bone }, "bone"),
+            });
       }
     }
     return rows;

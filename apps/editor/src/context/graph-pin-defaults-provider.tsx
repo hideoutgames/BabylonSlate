@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { AttachPointPin, isAttachPointPin } from "../components/attach-point-pin";
 import { isEditorGraphClass } from "@haptic/core";
 import {
   AssetPicker, ClassPicker, PropertyGrid, humanizePropertyLabel,
@@ -162,6 +163,9 @@ export function GraphPinDefaultsProvider({ children }: { children: ReactNode }) 
     }
     if (materialParameterPinTypes(request)) {
       return <MaterialParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;
+    }
+    if (isAttachPointPin(request.nodeType, request.pin.id)) {
+      return <AttachPointPin key={`${request.nodeId}:${request.pin.id}`} request={request} />;
     }
     if (request.pin.id === "name" && particleParameterNameTypes(request.nodeType, request.nodeData) !== undefined) {
       return <ParticleParameterNamePin key={`${request.nodeId}:${request.pin.id}`} request={request} />;

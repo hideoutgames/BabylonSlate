@@ -783,6 +783,40 @@ describe("loadExportDocuments", () => {
     expect(loaded.payloadByGuid("hero-model")).toMatchObject({ importScale: 4 });
   });
 
+  it("packs a Model with its Skeleton's sockets, reading the Skeleton once", async () => {
+    const { decodePackedModelAsset } = await import("@haptic/assets");
+    const kinds: string[] = [];
+    const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 9, 8]);
+    const header = (guid: string, type: string, path: string) => ({
+      rootId: "project",
+      path,
+      header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [], guid, type, name: guid, engineVersion: "0.0.0", version: 1,
+        mode: "thin" as const, dependencies: [], payload: {},
+        chunks: type === "Model"
+          ? [{ id: "source", kind: "geometry", mime: "model/gltf-binary", sha256: "aa", byteLength: 6, locator: { inline: { offset: 0, length: 6 } } }]
+          : [],
+      },
+    });
+    const grip = { name: "Grip", bone: "hand", position: [0, 0.1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] };
+    const loaded = await loadFixtureExportDocuments({
+      assets: [
+        header("hero", "Model", "assets/Hero.model.hasset"),
+        header("rogue", "Model", "assets/Rogue.model.hasset"),
+        header("rig", "Skeleton", "assets/Rig.skeleton.hasset"),
+      ],
+      loadDocument: async (kind) => {
+        kinds.push(kind);
+        return kind === "skeleton" ? { kind: "skin", bones: [{ name: "hand" }], sockets: [grip] } : { skeletonGuid: "rig" };
+      },
+      readAssetChunk: async (_path, chunkId) => (chunkId === "source" ? glb : null),
+    });
+    for (const guid of ["hero", "rogue"]) {
+      expect(decodePackedModelAsset(loaded.bytesByGuid(guid)!)!.payload.sockets).toEqual([grip]);
+    }
+    expect(kinds.filter((kind) => kind === "skeleton")).toHaveLength(2);
+  });
+
   it("serializes SceneLayer documents as JSON payloads", async () => {
     const layer = createDefaultSceneLayer();
     layer.name = "HUD";
