@@ -17,6 +17,10 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
+  ANIMATION_TICK_MODE_LABELS,
+  ANIMATION_TICK_MODE_PROPERTY,
+  ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+  type AnimationTickMode,
 } from "@haptic/core";
 import { animClipCatalogFromAssets } from "../anim-clip-catalog";
 import {
@@ -198,7 +202,7 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
   const doorModel = requireRef(ctx.assets.models["cabin-door-rotate"], "the cabin-door-rotate Model");
   add(actor("ft-anim-door", "Swinging Door", tf(zone.at(7, 0, 0), { scale: [DOOR_SCALE, DOOR_SCALE, DOOR_SCALE] }), [
     meshComp("ft-anim-door-mesh", "box", { assetGuid: doorModel }),
-    comp("ft-anim-door-graph", "AnimationGraphComponent", { graphGuid: refs.doorGraph }),
+    comp("ft-anim-door-graph", "AnimationGraphComponent", { graphGuid: refs.doorGraph, [ANIMATION_TICK_MODE_PROPERTY]: "whenVisible" }),
   ]));
 
   const font = ctx.assets.fonts.facetype || null;
@@ -214,7 +218,8 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
       const phase = roundTo(((index % 16) * CYCLE_SECONDS) / 16, 100);
       const id = `ft-anim-stress-${index + 1}`;
       const position = stressPoint("animation", [x, 0, z]);
-      ctx.addActor(locomotorActor(refs.locomotor, id, `Crowd Mannequin ${index + 1}`, position, phase), {
+      // The crowd poses only what the camera sees.
+      ctx.addActor(locomotorActor(refs.locomotor, id, `Crowd Mannequin ${index + 1}`, position, phase, "whenVisible"), {
         scene: ctx.stressScene,
       });
     }
@@ -629,14 +634,26 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
   const elapsed = varMember("ft-anim-var-elapsed", "Elapsed", "float", 0, { category: "Locomotion" });
   const phase = varMember("ft-anim-var-phase", "Phase", "float", 0, { category: "Locomotion" });
   const cycleRate = varMember("ft-anim-var-cycle-rate", "CycleRate", "float", CYCLE_RATE, { category: "Locomotion" });
+  // Begin Play hands it to the graph component: the FT_Stress crowd sets When Visible.
+  const tickMode = varMember("ft-anim-var-tick-mode", "TickMode", "enum", ANIMATION_TICK_MODE_LABELS.always, {
+    typeClassId: ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+    category: "Locomotion",
+  });
   const components: SerializedComponent[] = [
     meshComp("prefab-mesh", "box", { assetGuid: modelGuid }),
     comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
   ];
   const graph = classGraph({
-    members: [elapsed, phase, cycleRate],
+    members: [elapsed, phase, cycleRate, tickMode],
     components,
     nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, -320),
+      getVar("get-tick-mode", tickMode, 0, -160),
+      gNode("tick-mode-graph", "component.getNamed", 240, -160, {
+        componentClassId: "AnimationGraphComponent",
+        implicitSelf: true,
+      }),
+      gNode("set-tick-mode", "anim.actor.setTickMode", 480, -320),
       gNode("tick", "flow.event.tick", 0, 0),
       getVar("get-elapsed", elapsed, 0, 160),
       gNode("advance", "math.add", 240, 120),
@@ -657,6 +674,9 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
       gNode("set-cheer", "anim.actor.setVariable", 2140, 0, { "default:name": CHEER.name }),
     ],
     edges: [
+      gExec("begin", "set-tick-mode"),
+      gWire("tick-mode-graph", "out", "set-tick-mode", "target"),
+      gWire("get-tick-mode", "value", "set-tick-mode", "tickMode"),
       gExec("tick", "set-elapsed"),
       ...gChain("set-elapsed", "set-speed", "set-cheer"),
       gWire("get-elapsed", "value", "advance", "a"),
@@ -683,11 +703,18 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
 // ---------------------------------------------------------------------------
 // Actors
 
-/** Locomotor instance with a per-instance Phase (seconds) override. */
-function locomotorActor(placed: PlacedClass, id: string, name: string, position: Vec3, phase: number): SerializedActor {
+/** Locomotor instance with a per-instance Phase (seconds) override, and its Tick Mode when not Always. */
+function locomotorActor(
+  placed: PlacedClass,
+  id: string,
+  name: string,
+  position: Vec3,
+  phase: number,
+  tickMode?: AnimationTickMode,
+): SerializedActor {
   return actor(id, name, tf(position), instanceComponents(id, placed.components), {
     classId: placed.ref.classId,
-    properties: { Phase: phase },
+    properties: { Phase: phase, ...(tickMode ? { TickMode: ANIMATION_TICK_MODE_LABELS[tickMode] } : {}) },
   });
 }
 

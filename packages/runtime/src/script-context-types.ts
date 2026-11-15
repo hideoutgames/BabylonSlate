@@ -523,6 +523,9 @@ export interface ScriptContext {
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
   getAnimGraphCurrentState(target: unknown): { id: string; name: string } | null;
   jumpAnimGraphState(target: unknown, state: string): void;
+  /** Get Animation Tick Mode: the member name (Always, When Visible, Never); Always for no graph component. */
+  getAnimGraphTickMode(target: unknown): string;
+  setAnimGraphTickMode(target: unknown, tickMode: unknown): void;
   invokeCustomEvent(
     target: EngineObject | null | undefined,
     eventName: string,
@@ -847,7 +850,8 @@ export type HostContextKey =
   | "getTimeDilation" | "setTimeDilation" | "getGameTimeSeconds" | "getRealTimeSeconds" | "getLocalTimeNow"
   | "getLocalDateNow" | "setGamePaused" | "isGamePaused" | "quitGame" | "getPlatform" | "isTouchDevice" | "isInEditor" | "isDevelopmentBuild"
   | "getViewportSize" | "getLocale" | "copyToClipboard" | "openUrl" | "newGuid" | "getSubsystem" | "getGameInstance" | "isA" | "getAnimGraphVariable"
-  | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "setChannelVolume"
+  | "setAnimGraphVariable" | "getAnimGraphCurrentState" | "jumpAnimGraphState" | "getAnimGraphTickMode"
+  | "setAnimGraphTickMode" | "setChannelVolume"
   | "setGlobalVolume" | "changeScene" | "createSceneLayer" | "removeSceneLayer" | "clearSceneLayers"
   | "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess"
   | "registerScenePostProcess" | "unregisterScenePostProcess"

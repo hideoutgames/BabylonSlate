@@ -5,7 +5,7 @@ import {
   createDefaultTransitionRuleGraph,
   type AnimGraphDocument,
 } from "@haptic/anim-graph";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/bridge";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { ScriptBreakpoints, type BreakpointHit } from "./script-breakpoints";
@@ -22,6 +22,7 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
   const setSpriteClip = vi.fn();
   const playEventSound = vi.fn();
   const spawnEventParticles = vi.fn();
+  const emitted: CommandMessage[] = [];
   const runtime = new AnimGraphRuntime({
     world: () => world,
     stopped: () => false,
@@ -33,12 +34,12 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
     setSpriteClip,
     breakpoints: () => breakpoints,
     frameTrace: () => null,
-    emit: () => {},
+    emit: (command) => emitted.push(command),
     playEventSound,
     spawnEventParticles,
   });
   runtime.register("graph", document);
-  return { actors, gate, invokeAnimEvent, playEventSound, runtime, setSpriteClip, spawnEventParticles };
+  return { actors, emitted, gate, invokeAnimEvent, playEventSound, runtime, setSpriteClip, spawnEventParticles };
 }
 
 describe("AnimGraphRuntime", () => {
@@ -75,6 +76,27 @@ describe("AnimGraphRuntime", () => {
     invokeAnimEvent.mockClear();
     runtime.tick(0.1);
     expect(invokeAnimEvent.mock.calls.filter(([, event]) => event === "onAnimNotify")).toEqual([]);
+  });
+
+  it("follows its Tick Mode: Never stops the graph where it is, When Visible runs it and asks render to pose only in view", () => {
+    const document = createDefaultAnimGraph();
+    document.stateMachine.states[0]!.events = { enter: "Idle Started" };
+    const { actors, emitted, invokeAnimEvent, runtime } = setup(document);
+    const component = actors[0]!.components[0]!;
+    const notifies = () => invokeAnimEvent.mock.calls.filter(([, event]) => event === "onAnimNotify").length;
+    component.setVariable("tickMode", "never");
+    runtime.tick(0.1);
+    expect(emitted).toEqual([]);
+    expect(notifies()).toBe(0);
+    expect(invokeAnimEvent).not.toHaveBeenCalled();
+    component.setVariable("tickMode", "whenVisible");
+    runtime.tick(0.1);
+    expect(notifies()).toBe(1);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({ type: "animState", slotId: 0, normalisedTime: expect.any(Number), whenVisible: true });
+    component.setVariable("tickMode", "always");
+    runtime.tick(0.1);
+    expect(emitted[1]).not.toHaveProperty("whenVisible");
   });
 
   it("stops on a state when the graph starts in it, jumps to it or enters it, and on a transition it takes", () => {

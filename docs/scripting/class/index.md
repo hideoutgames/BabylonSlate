@@ -802,9 +802,11 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | Node | Description |
 | --- | --- |
 | [Get Anim Graph Variable](get-anim-graph-variable.md) | Returns the value of a variable on an Animation Graph component. |
+| [Get Animation Tick Mode](get-animation-tick-mode.md) | Returns when an Animation Graph runs: Always, When Visible or Never. |
 | [Get Current State](get-current-state.md) | Returns the name and ID of the state an Animation Graph is in. |
 | [Jump To State](jump-to-state.md) | Switches an Animation Graph to a named state, skipping its transitions. |
 | [Set Anim Graph Variable](set-anim-graph-variable.md) | Sets a variable on an Animation Graph component. |
+| [Set Animation Tick Mode](set-animation-tick-mode.md) | Changes when an Animation Graph runs, for example to stop animating characters nobody can see. |
 
 ## Behaviour Tree
 
