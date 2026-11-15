@@ -94,4 +94,129 @@ describe("host APIs", () => {
     const offline = await hostApiFor(GITLAB, async () => { throw new Error("down"); })!.branches("g/p");
     expect(isErr(offline) && offline.error.kind).toBe("offline");
   });
+
+  it("lists the GitHub user first, then their organizations, and creates an empty repository under either", async () => {
+    const host = new FakeGitHost();
+    const api = hostApiFor(GITHUB, host.http)!;
+    const owners = await api.owners();
+    expect(isOk(owners) && owners.value).toEqual([
+      { name: "test-user", kind: "user", id: "" },
+      { name: "haptic-studio", kind: "organization", id: "" },
+    ]);
+    const mine = await api.createRepository({ owner: { name: "test-user", kind: "user", id: "" }, name: "forest-run", private: true });
+    expect(isOk(mine) && mine.value).toMatchObject({ name: "test-user/forest-run", repositoryUrl: "https://github.com/test-user/forest-run.git", private: true });
+    const team = await api.createRepository({ owner: { name: "haptic-studio", kind: "organization", id: "" }, name: "racer", private: false });
+    expect(isOk(team) && team.value).toMatchObject({ name: "haptic-studio/racer", private: false });
+    const posts = host.requests.filter((request) => request.method === "POST");
+    expect(posts.map((request) => [request.url, JSON.parse(request.body as string)])).toEqual([
+      ["https://api.github.com/user/repos", { name: "forest-run", private: true, auto_init: false }],
+      ["https://api.github.com/orgs/haptic-studio/repos", { name: "racer", private: false, auto_init: false }],
+    ]);
+    // A created repository is then listed, as the Clone picker reads it.
+    const listed = await api.repositories();
+    expect(isOk(listed) && listed.value.map((repository) => repository.name).slice(0, 2)).toEqual(["haptic-studio/racer", "test-user/forest-run"]);
+  });
+
+  describe("a Publish retried under the same name", () => {
+    const owner = { name: "test-user", kind: "user", id: "" } as const;
+
+    it.each([
+      ["GitHub", GITHUB, "https://github.com/test-user/forest-run.git", [
+        "POST https://api.github.com/user/repos",
+        "GET https://api.github.com/repos/test-user/forest-run/branches?per_page=100&page=1",
+        "GET https://api.github.com/repos/test-user/forest-run",
+      ]],
+      ["GitLab", GITLAB, "https://gitlab.com/test-user/forest-run.git", [
+        "POST https://gitlab.com/api/v4/projects",
+        "GET https://gitlab.com/api/v4/projects/test-user%2Fforest-run/repository/branches?per_page=100&page=1",
+        "GET https://gitlab.com/api/v4/projects/test-user%2Fforest-run",
+      ]],
+    ] as const)("on %s takes the empty repository the interrupted attempt created", async (_host, credential, url, requests) => {
+      const host = new FakeGitHost();
+      const api = hostApiFor(credential, host.http)!;
+      await api.createRepository({ owner, name: "forest-run", private: true });
+      // The first attempt stopped before its push: the repository has no branch.
+      host.requests.length = 0;
+      const again = await api.createRepository({ owner, name: "forest-run", private: false });
+      expect(isOk(again) && again.value).toMatchObject({ name: "test-user/forest-run", repositoryUrl: url, defaultBranch: "main", private: true });
+      expect(host.requests.map((request) => `${request.method} ${request.url}`)).toEqual(requests);
+      expect(host.repositories.filter((name) => name === "test-user/forest-run")).toHaveLength(1);
+    });
+
+    it.each([["GitHub", GITHUB], ["GitLab", GITLAB]] as const)("on %s refuses a repository that has branches, pushing nothing to it", async (_host, credential) => {
+      const host = new FakeGitHost();
+      const api = hostApiFor(credential, host.http)!;
+      await api.createRepository({ owner, name: "forest-run", private: true });
+      host.repositoryBranches.set("test-user/forest-run", ["main"]);
+      const taken = await api.createRepository({ owner, name: "forest-run", private: true });
+      expect(isErr(taken) && taken.error).toEqual({
+        kind: "http",
+        message: "test-user/forest-run already exists and is not empty. Choose another repository name.",
+      });
+    });
+
+    it("keeps the host's reason when the name is refused for another reason, and asks nothing more after a refused token", async () => {
+      const host = new FakeGitHost();
+      const missing = await hostApiFor(GITHUB, async (request) => {
+        host.requests.push(request);
+        return request.method === "POST"
+          ? { status: 422, bodyText: JSON.stringify({ message: "Repository creation failed.", errors: [{ message: "name is invalid" }] }) }
+          : { status: 404, bodyText: JSON.stringify({ message: "Not Found" }) };
+      })!.createRepository({ owner, name: "bad name", private: true });
+      expect(isErr(missing) && missing.error).toEqual({ kind: "http", message: "Repository creation failed. name is invalid" });
+
+      host.requests.length = 0;
+      host.refusedTokens.add(GITHUB.token);
+      const refused = await hostApiFor(GITHUB, host.http)!.createRepository({ owner, name: "forest-run", private: true });
+      expect(isErr(refused) && refused.error.kind).toBe("unauthorized");
+      expect(host.requests.map((request) => request.method)).toEqual(["POST"]);
+    });
+  });
+
+  it("creates a GitLab project in the user's namespace or a group's, by namespace id", async () => {
+    const host = new FakeGitHost();
+    const api = hostApiFor(GITLAB, host.http)!;
+    const owners = await api.owners();
+    expect(isOk(owners) && owners.value).toEqual([
+      { name: "test-user", kind: "user", id: "" },
+      { name: "haptic-studio", kind: "organization", id: "100" },
+    ]);
+    await api.createRepository({ owner: { name: "test-user", kind: "user", id: "" }, name: "solo", private: true });
+    const group = await api.createRepository({ owner: { name: "haptic-studio", kind: "organization", id: "100" }, name: "team", private: false });
+    expect(isOk(group) && group.value).toMatchObject({ name: "haptic-studio/team", repositoryUrl: "https://gitlab.com/haptic-studio/team.git", private: false });
+    const posts = host.requests.filter((request) => request.method === "POST");
+    expect(posts.map((request) => JSON.parse(request.body as string))).toEqual([
+      { name: "solo", path: "solo", visibility: "private" },
+      { name: "team", path: "team", visibility: "public", namespace_id: "100" },
+    ]);
+    expect(host.requests.find((request) => request.url.includes("/groups"))?.url).toBe("https://gitlab.com/api/v4/groups?min_access_level=30&per_page=100&page=1");
+  });
+
+  it("offers the signed-in user alone when the host refuses to list their organizations or groups", async () => {
+    for (const credential of [GITHUB, GITLAB]) {
+      const host = new FakeGitHost();
+      host.organizationsRefused = true;
+      const owners = await hostApiFor(credential, host.http)!.owners();
+      expect(isOk(owners) && owners.value).toEqual([{ name: "test-user", kind: "user", id: "" }]);
+      // The listing was asked for and refused, not skipped.
+      expect(host.requests.map((request) => new URL(request.url).pathname)).toEqual(
+        credential === GITHUB ? ["/user", "/user/orgs"] : ["/api/v4/user", "/api/v4/groups"],
+      );
+    }
+  });
+
+  it("fails the owners when the signed-in user cannot be read", async () => {
+    for (const credential of [GITHUB, GITLAB]) {
+      const host = new FakeGitHost();
+      host.refusedTokens.add(credential.token);
+      const owners = await hostApiFor(credential, host.http)!.owners();
+      expect(isErr(owners) && owners.error).toEqual({ kind: "unauthorized", message: "Bad credentials" });
+    }
+  });
+
+  it("reads GitLab's field errors", async () => {
+    const api = hostApiFor(GITLAB, async () => ({ status: 400, bodyText: JSON.stringify({ message: { path: ["has already been taken"] } }) }))!;
+    const result = await api.createRepository({ owner: { name: "me", kind: "user", id: "" }, name: "taken", private: true });
+    expect(isErr(result) && result.error).toEqual({ kind: "http", message: "path has already been taken" });
+  });
 });

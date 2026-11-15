@@ -1,14 +1,17 @@
 import * as git from "isomorphic-git";
-import type { HttpClient as IsoHttpClient, WalkerEntry } from "isomorphic-git";
-import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
+import type { CommitObject, HttpClient as IsoHttpClient, WalkerEntry } from "isomorphic-git";
+import { isStorageNotFound, PROJECT_CREATION_MARKER, type ProjectStorage } from "@haptic/core";
 import { authorizedHttp, type CredentialSource } from "../credentials";
 import type { HttpClient } from "../http";
 import { parseRepositoryUrl, repositoryCloneUrl } from "../lfs-endpoint";
 import { gitBlobSha1, lfsObjectId, parseLfsPointer } from "../lfs-pointer";
 import { planPull } from "../pull-plan";
 import {
+  cancelledError,
   hasLfsRule,
+  INCOMING_LIMIT,
   SyncError,
+  throwIfCancelled,
   type CommitAuthor,
   type CommitInfo,
   type CommitInput,
@@ -22,10 +25,12 @@ import {
   type RemoteState,
   type SyncPort,
   type SyncStatus,
+  type TransferOptions,
 } from "../sync-port";
+import { ADOPTION_CONFIG } from "./adoption";
 import { installBufferGlobal } from "./buffer-global";
 import { toSyncError } from "./errors";
-import { gitHttp, type TransferCounters } from "./git-http";
+import { cancellableHttp, gitHttp, type TransferCounters } from "./git-http";
 import { relate, type CommitNode, type Relation } from "./history";
 import { LfsTransfer, type LfsObject } from "./lfs-transfer";
 import { GITDIR, StorageFs, storagePath, WORKTREE, type StorageFsCounters } from "./storage-fs";
@@ -36,7 +41,7 @@ export const DEFAULT_CLONE_DEPTH = 1;
 const DEEPEN_STEP = 50;
 const MAX_DEEPENS = 4;
 /** Markers a new project folder may hold before a clone. */
-const CLONE_IGNORES = new Set([".haptic-creating", ".DS_Store", "Thumbs.db", "desktop.ini"]);
+const CLONE_IGNORES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db", "desktop.ini"]);
 
 export interface GitRepositoryOptions {
   /** Bound to the project folder, which is the repository root (`.git` beside `assets/`). */
@@ -62,6 +67,8 @@ interface Op {
   git: { fs: StorageFs; dir: string; gitdir: string; cache: object };
   http: IsoHttpClient;
   lfs: LfsTransfer;
+  /** Commits read so far: the history walk's reads serve the incoming list too. */
+  commits: Map<string, CommitObject>;
 }
 
 interface Incoming {
@@ -93,11 +100,29 @@ export async function openRepository(options: GitRepositoryOptions): Promise<Git
   return new GitRepository(options);
 }
 
-/** Clones `repositoryUrl`'s branch into the empty project folder `storage` is bound to. */
-export async function cloneRepository(options: GitRepositoryOptions & { depth?: number }): Promise<GitRepository> {
+/**
+ * Makes the project folder `storage` is bound to a new working copy with no
+ * commits, whose `origin` is `repositoryUrl` (Publish: the first push creates
+ * the remote branch), adopted as Haptic's. A folder that already has `.git` is
+ * refused, unless `replace` (the caller decided the `.git` is an interrupted
+ * Publish's) removes it first.
+ */
+export async function initRepository(options: GitRepositoryOptions & { replace?: boolean }): Promise<GitRepository> {
   installBufferGlobal();
   const repository = new GitRepository(options);
-  await repository.clone(options.depth ?? DEFAULT_CLONE_DEPTH);
+  await repository.init(options.replace ?? false);
+  return repository;
+}
+
+/**
+ * Clones `repositoryUrl`'s branch into the empty project folder `storage` is
+ * bound to, adopted as Haptic's. A cancel (download or checkout) rejects with
+ * `cancelled`; the caller removes the folder.
+ */
+export async function cloneRepository(options: GitRepositoryOptions & TransferOptions & { depth?: number }): Promise<GitRepository> {
+  installBufferGlobal();
+  const repository = new GitRepository(options);
+  await repository.clone(options.depth ?? DEFAULT_CLONE_DEPTH, options.signal);
   return repository;
 }
 
@@ -115,7 +140,6 @@ export class GitRepository implements SyncPort {
   };
   private readonly storage: ProjectStorage;
   private readonly http: HttpClient;
-  private readonly authorized: HttpClient;
   private readonly credential: CredentialSource;
   private readonly repositoryUrl: string;
   private readonly url: string;
@@ -133,7 +157,6 @@ export class GitRepository implements SyncPort {
     this.storage = options.storage;
     this.http = options.http;
     this.credential = options.credential;
-    this.authorized = authorizedHttp(options.credential, options.http, "basic");
     this.now = options.now ?? Date.now;
   }
 
@@ -146,18 +169,39 @@ export class GitRepository implements SyncPort {
   }
 
   /** @internal Use `cloneRepository`. */
-  clone(depth: number): Promise<void> {
+  clone(depth: number, signal?: AbortSignal): Promise<void> {
     return this.run(async (op) => {
       const existing = (await this.storage.readdir("")).filter((entry) => !CLONE_IGNORES.has(entry.name));
       if (existing.length > 0) throw new SyncError("conflict", "A clone needs an empty project folder.", { code: "not-empty" });
       await git.clone({ ...op.git, http: op.http, url: this.url, ref: this.branch, singleBranch: true, depth, noCheckout: true, noTags: true });
-      // Project storage keeps no file modes.
-      await git.setConfig({ ...op.git, path: "core.filemode", value: false });
+      await this.configureNew(op);
       const head = await this.resolve(op, this.localRef);
       if (!head) throw new SyncError("not-found", `The repository has no branch ${this.branch}.`);
       await this.downloadMissing(op, head, null);
       await git.checkout({ ...op.git, ref: this.branch, force: true });
+      // Checkout starts every write at once, so the last ones can land after a cancel.
+      throwIfCancelled(signal);
+    }, signal);
+  }
+
+  /** @internal Use `initRepository`. */
+  init(replace: boolean): Promise<void> {
+    return this.run(async (op) => {
+      if (replace) {
+        if (await this.storage.exists(".git")) await this.storage.remove(".git");
+      } else if (await this.storage.exists(".git/HEAD")) {
+        throw new SyncError("conflict", "This folder already has a Git repository.", { code: "repository-exists" });
+      }
+      await git.init({ ...op.git, defaultBranch: this.branch });
+      await git.addRemote({ ...op.git, remote: "origin", url: this.url });
+      await this.configureNew(op);
     });
+  }
+
+  /** A working copy Haptic made: project storage keeps no file modes, and the copy is Haptic's (`ADOPTION_CONFIG`). */
+  private async configureNew(op: Op): Promise<void> {
+    await git.setConfig({ ...op.git, path: "core.filemode", value: false });
+    await git.setConfig({ ...op.git, path: ADOPTION_CONFIG, value: true });
   }
 
   status(): Promise<SyncStatus> {
@@ -189,21 +233,40 @@ export class GitRepository implements SyncPort {
     });
   }
 
-  fetch(): Promise<RemoteState> {
+  fetch(options: TransferOptions = {}): Promise<RemoteState> {
     return this.run(async (op) => {
       await this.fetchBranch(op);
+      return this.state(op, true);
+    }, options.signal);
+  }
+
+  remoteState(): Promise<RemoteState> {
+    return this.run((op) => this.state(op, false));
+  }
+
+  outgoing(): Promise<string[]> {
+    return this.run(async (op) => {
       const local = await this.resolve(op, this.localRef);
       const remote = await this.resolve(op, this.remoteRef);
-      if (!local) {
-        const behind = remote ? (await this.relation(op, remote, null)).ahead.length : 0;
-        return { branch: this.branch, local, remote, ahead: 0, behind };
-      }
-      const relation = await this.relation(op, local, remote);
-      return { branch: this.branch, local, remote, ahead: relation.ahead.length, behind: relation.behind.length };
+      if (!local || local === remote) return [];
+      const trees = [git.TREE({ ref: local }), ...(remote ? [git.TREE({ ref: remote })] : [])];
+      const paths = (await git.walk({
+        ...op.git,
+        trees,
+        map: async (path, [mine, theirs]) => {
+          if (path === ".") return undefined;
+          const mineId = mine ? await mine.oid() : null;
+          // The same id on both sides: nothing below it differs.
+          if (mineId === (theirs ? await theirs.oid() : null)) return null;
+          const isBlob = (await blobOid(mine)) !== null || (await blobOid(theirs)) !== null;
+          return isBlob ? path : undefined;
+        },
+      })) as string[];
+      return paths.sort();
     });
   }
 
-  pull({ author, choices = {} }: PullInput): Promise<PullResult> {
+  pull({ author, choices = {}, signal }: PullInput): Promise<PullResult> {
     return this.run(async (op) => {
       await this.fetchBranch(op);
       const local = await this.resolve(op, this.localRef);
@@ -248,10 +311,10 @@ export class GitRepository implements SyncPort {
         parent: [local!, remote],
       });
       return { kind: "merged", head, changedPaths: writes };
-    });
+    }, signal);
   }
 
-  push(options: { remoteBranch?: string } = {}): Promise<PushResult> {
+  push(options: TransferOptions & { remoteBranch?: string } = {}): Promise<PushResult> {
     return this.run(async (op) => {
       const head = await this.resolve(op, this.localRef);
       if (!head) throw new SyncError("not-found", "There is nothing to push yet.");
@@ -272,7 +335,7 @@ export class GitRepository implements SyncPort {
       });
       await git.push({ ...op.git, http: op.http, remote: "origin", ref: this.branch, remoteRef: remoteBranch });
       return { head, uploaded };
-    });
+    }, options.signal);
   }
 
   readFile(path: string, commit: string): Promise<Uint8Array | null> {
@@ -329,19 +392,28 @@ export class GitRepository implements SyncPort {
     });
   }
 
-  private run<T>(work: (op: Op) => Promise<T>): Promise<T> {
+  /**
+   * Runs `work` after the operations before it. Once `signal` aborts, requests
+   * and working tree writes are refused and the operation rejects as
+   * `cancelled`, whatever the refusal looked like on its way out.
+   */
+  private run<T>(work: (op: Op) => Promise<T>, signal?: AbortSignal): Promise<T> {
     const result = this.queue.then(async () => {
-      const fs = new StorageFs(this.storage);
+      throwIfCancelled(signal);
+      const fs = new StorageFs(this.storage, signal);
       const transfer: TransferCounters = { sent: 0, received: 0 };
+      const http = cancellableHttp(this.http, signal);
       const op: Op = {
         fs,
         git: { fs, dir: WORKTREE, gitdir: GITDIR, cache: this.cache },
-        http: gitHttp(this.authorized, transfer),
-        lfs: new LfsTransfer({ repositoryUrl: this.repositoryUrl, branch: this.branch, http: this.http, credential: this.credential, counters: transfer }),
+        http: gitHttp(authorizedHttp(this.credential, http, "basic"), transfer),
+        lfs: new LfsTransfer({ repositoryUrl: this.repositoryUrl, branch: this.branch, http, credential: this.credential, counters: transfer }),
+        commits: new Map(),
       };
       try {
         return await work(op);
       } catch (error) {
+        if (signal?.aborted) throw cancelledError();
         throw toSyncError(error);
       } finally {
         this.lastOperation = { storage: { ...fs.counters }, transfer };
@@ -387,23 +459,71 @@ export class GitRepository implements SyncPort {
     }
   }
 
+  /** The first `INCOMING_LIMIT` of `oids` (newest first, as `relate` lists them), as the log lists commits. */
+  private async commitInfos(op: Op, oids: readonly string[]): Promise<CommitInfo[]> {
+    const commits: CommitInfo[] = [];
+    for (const oid of oids.slice(0, INCOMING_LIMIT)) {
+      const commit = await this.readCommit(op, oid);
+      if (!commit) continue;
+      commits.push({
+        id: oid,
+        message: commit.message,
+        author: { name: commit.author.name, email: commit.author.email },
+        timestamp: commit.author.timestamp,
+        parents: commit.parent,
+      });
+    }
+    return commits;
+  }
+
   private async commitNode(op: Op, oid: string): Promise<CommitNode | null> {
+    const commit = await this.readCommit(op, oid);
+    return commit ? { parents: commit.parent, timestamp: commit.committer.timestamp } : null;
+  }
+
+  /** A commit object, read once per operation; null when this (shallow) copy lacks it, which a deepen may change. */
+  private async readCommit(op: Op, oid: string): Promise<CommitObject | null> {
+    const known = op.commits.get(oid);
+    if (known) return known;
     try {
       const { commit } = await git.readCommit({ ...op.git, oid });
-      return { parents: commit.parent, timestamp: commit.committer.timestamp };
+      op.commits.set(oid, commit);
+      return commit;
     } catch (error) {
       if ((error as { code?: unknown }).code === "NotFoundError") return null;
       throw error;
     }
   }
 
-  /** Splits the history; a fork older than the shallow history deepens it a bounded number of times. */
-  private async relation(op: Op, local: string, remote: string | null): Promise<Relation> {
+  /**
+   * Splits the history; a fork older than the shallow history deepens it a
+   * bounded number of times, unless `deepen` is false (no network).
+   */
+  private async relation(op: Op, local: string, remote: string | null, deepen = true): Promise<Relation> {
     for (let attempt = 0; ; attempt += 1) {
       const relation = await relate(local, remote, (oid) => this.commitNode(op, oid), await this.shallowCommits());
-      if (!remote || relation.base || !relation.truncated || attempt >= MAX_DEEPENS) return relation;
+      if (!deepen || !remote || relation.base || !relation.truncated || attempt >= MAX_DEEPENS) return relation;
       await this.fetchBranch(op, DEEPEN_STEP * 2 ** attempt);
     }
+  }
+
+  /** Counts and incoming commits against the remote-tracking branch; `deepen` may fetch older history. */
+  private async state(op: Op, deepen: boolean): Promise<RemoteState> {
+    const local = await this.resolve(op, this.localRef);
+    const remote = await this.resolve(op, this.remoteRef);
+    if (!local) {
+      const incoming = remote ? (await this.relation(op, remote, null, deepen)).ahead : [];
+      return { branch: this.branch, local, remote, ahead: 0, behind: incoming.length, incoming: await this.commitInfos(op, incoming) };
+    }
+    const relation = await this.relation(op, local, remote, deepen);
+    return {
+      branch: this.branch,
+      local,
+      remote,
+      ahead: relation.ahead.length,
+      behind: relation.behind.length,
+      incoming: await this.commitInfos(op, relation.behind),
+    };
   }
 
   /** Files the remote changed since `base`, with their base, remote and local commit ids. */

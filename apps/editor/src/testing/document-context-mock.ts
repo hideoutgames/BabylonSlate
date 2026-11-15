@@ -38,6 +38,7 @@ import type { DocumentContextValue } from "../context/document-context-types";
 import { documentKindsRevision, type DocumentRevisions, type OpenDocument } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
 import { SourceControlService } from "../services/source-control-service";
+import { SourceControlSyncService } from "../services/source-control-sync";
 
 type DocumentContextModule = typeof import("../context/document-context");
 /** What every mocked hook reads: the context's fields plus the open-document state behind the subscription hooks. */
@@ -222,7 +223,16 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     updateProjectVersion: noop,
     updateProjectSettings: noop,
     sourceControl: new SourceControlService(),
+    // Idle: no mode is Integrated until a test configures it.
+    sourceControlSync: new SourceControlSyncService(),
     prefillSourceControlFromGit: unavailable("prefillSourceControlFromGit"),
+    readSourceControlFolder: async () => ({ tier: null, hasGit: false }),
+    withProjectWrites: (work) => work(),
+    applyPulledChanges: resolved,
+    cloneProject: unavailable("cloneProject"),
+    publishProject: unavailable("publishProject"),
+    summarizeProjectForPublish: unavailable("summarizeProjectForPublish"),
+    setSourceControlAdoption: unavailable("setSourceControlAdoption"),
     externalChangePrompt: null,
     confirmExternalChangeReloadProject: resolved,
     confirmExternalChangeReloadDocs: resolved,
@@ -355,6 +365,11 @@ export function documentContextMock(
     useCompileState: useMockValue,
     useEditorShellState: useMockValue,
     useSourceControl: useMockValue,
+    useIntegratedSync: () => useMockValue().sourceControlSync,
+    useIntegratedSyncState: () => {
+      const sync = useMockValue().sourceControlSync;
+      return useSyncExternalStore(sync.subscribe, sync.getSnapshot);
+    },
     // Single-value narrow hooks read their field of the same value.
     useActiveDocumentId: () => useMockValue().activeDocumentId,
     useTabOrder: () => useMockValue().tabOrder,

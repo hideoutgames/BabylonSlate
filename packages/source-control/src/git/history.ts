@@ -8,9 +8,9 @@ export interface CommitNode {
 export interface Relation {
   /** The newest commit both sides reach, or null when none was found. */
   base: string | null;
-  /** Commits only the local side reaches. */
+  /** Commits only the local side reaches, newest first (commit time; ties in walk order). */
   ahead: string[];
-  /** Commits only the remote side reaches. */
+  /** Commits only the remote side reaches, newest first (commit time; ties in walk order). */
   behind: string[];
   /** The walk reached a commit whose parents this shallow copy lacks. */
   truncated: boolean;
@@ -74,6 +74,8 @@ export async function relate(
     queue.sort((a, b) => time(b) - time(a));
     base = queue.find((oid) => marks.get(oid) === BOTH) ?? null;
   }
-  const only = (side: number) => [...marks].filter(([oid, flags]) => flags === side && nodes.get(oid)).map(([oid]) => oid);
+  // Sorting is stable: commits of one second keep the walk's order, which reaches newer ones first.
+  const only = (side: number) =>
+    [...marks].filter(([oid, flags]) => flags === side && nodes.get(oid)).map(([oid]) => oid).sort((a, b) => time(b) - time(a));
   return { base, ahead: only(LOCAL), behind: only(REMOTE), truncated };
 }

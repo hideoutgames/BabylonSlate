@@ -1,0 +1,58 @@
+import { useMemo } from "react";
+import { Github as GithubIcon, Gitlab as GitlabIcon, LinkIcon } from "lucide-react";
+import {
+  GITHUB_ORIGIN,
+  GITLAB_ORIGIN,
+  type HostCredential,
+} from "@haptic/source-control";
+import { hostApiFor, type HostApi } from "@haptic/source-control/host-api";
+import type { SourceControlAccounts } from "../services/source-control-accounts";
+import { useSourceControlCredentials } from "./use-source-control-credentials";
+
+/** The hosts whose REST API Clone and Publish use; any other host is a typed URL. */
+export type ApiHost = "github" | "gitlab";
+
+export const API_HOSTS: Record<ApiHost, { label: string; origin: string; icon: typeof GithubIcon }> = {
+  github: { label: "GitHub", origin: GITHUB_ORIGIN, icon: GithubIcon },
+  gitlab: { label: "GitLab", origin: GITLAB_ORIGIN, icon: GitlabIcon },
+};
+
+export const URL_HOST_ICON = LinkIcon;
+
+export interface HostAccount {
+  accounts: SourceControlAccounts | null;
+  credential: HostCredential | null;
+  /** The host's REST API for the credential (GitHub and GitLab only). */
+  api: HostApi | null;
+}
+
+/** This device's credential for `origin`, kept current as accounts are linked, and its host API. */
+export function useHostAccount(origin: string | null): HostAccount {
+  const { accounts, credentials } = useSourceControlCredentials();
+  const credential = origin ? credentials.find((candidate) => candidate.origin === origin) ?? null : null;
+  const api = useMemo(
+    () => (credential && accounts?.http ? hostApiFor(credential, accounts.http, accounts.credentialSource(credential.origin)) : null),
+    [accounts, credential],
+  );
+  return { accounts, credential, api };
+}
+
+/** A repository name from a project name: `Forest Run` → `forest-run`. */
+export function repositoryNameFor(projectName: string): string {
+  return projectName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 100);
+}
+
+/** A project name from a repository path: `team/forest-run` → `Forest Run`. */
+export function projectNameFor(repositoryPath: string): string {
+  const name = repositoryPath.replace(/\.git$/, "").split("/").pop() ?? "";
+  return name
+    .split(/[-_.\s]+/)
+    .filter(Boolean)
+    .map((word) => word[0]!.toUpperCase() + word.slice(1))
+    .join(" ");
+}

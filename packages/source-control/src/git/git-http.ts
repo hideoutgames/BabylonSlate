@@ -1,6 +1,21 @@
 import { version, type GitHttpRequest, type GitHttpResponse, type HttpClient as IsoHttpClient } from "isomorphic-git";
 import type { HttpClient } from "../http";
+import { throwIfCancelled } from "../sync-port";
 import { requestError } from "./errors";
+
+/**
+ * `http` refusing to send once `signal` aborts, and refusing the answer of a
+ * request that was cancelled while it ran (native HTTP cannot stop one).
+ */
+export function cancellableHttp(http: HttpClient, signal: AbortSignal | undefined): HttpClient {
+  if (!signal) return http;
+  return async (request) => {
+    throwIfCancelled(signal);
+    const response = await http(request);
+    throwIfCancelled(signal);
+    return response;
+  };
+}
 
 /** Servers tell Git clients by a `git/` agent; native HTTP would otherwise send the WebView's. */
 const USER_AGENT = `git/isomorphic-git@${version()}`;

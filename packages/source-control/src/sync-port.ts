@@ -10,8 +10,19 @@ export interface SyncPort {
   status(): Promise<SyncStatus>;
   /** Commits exactly `paths` (changed or deleted) on the current branch. */
   commit(input: CommitInput): Promise<CommitResult>;
-  /** Fetches the branch and counts commits on each side. */
-  fetch(): Promise<RemoteState>;
+  /** Fetches the branch, counts commits on each side and lists the newest incoming ones. */
+  fetch(options?: TransferOptions): Promise<RemoteState>;
+  /**
+   * The counts and incoming commits against the remote branch as last fetched,
+   * from local refs only: what a pull, push or commit leaves, with no network.
+   */
+  remoteState(): Promise<RemoteState>;
+  /**
+   * Paths whose committed content differs between the branch and the remote
+   * branch as last fetched (every committed path when the remote has no
+   * branch yet), sorted: what a push would change. Reads no network.
+   */
+  outgoing(): Promise<string[]>;
   /**
    * Fetches, then integrates the remote branch: fast-forward, or a merge commit
    * when both sides have commits. Paths changed on both sides (the working
@@ -21,11 +32,21 @@ export interface SyncPort {
    */
   pull(input: PullInput): Promise<PullResult>;
   /** Uploads the LFS objects the server lacks, then updates the remote branch. */
-  push(): Promise<PushResult>;
+  push(options?: TransferOptions): Promise<PushResult>;
   /** A file's bytes at a commit (an LFS object's own bytes), or null when the commit has no such file. */
   readFile(path: string, commit: string): Promise<Uint8Array | null>;
   /** The branch's commits, newest first; `deepen` fetches older history once when a shallow clone ends early. */
   log(options: LogOptions): Promise<LogPage>;
+}
+
+/**
+ * An operation that talks to the remote. Once `signal` aborts, no further
+ * request is sent and no further working file is written, and the operation
+ * rejects with a `cancelled` `SyncError`; a request already sent still
+ * finishes (native HTTP cannot stop one).
+ */
+export interface TransferOptions {
+  signal?: AbortSignal;
 }
 
 export type ChangeKind = "added" | "modified" | "deleted";
@@ -66,13 +87,18 @@ export interface RemoteState {
   ahead: number;
   /** Remote commits not yet pulled. */
   behind: number;
+  /** The newest of those commits, newest first, at most {@link INCOMING_LIMIT}. */
+  incoming: CommitInfo[];
 }
+
+/** Incoming commits a fetch lists; `behind` still counts them all. */
+export const INCOMING_LIMIT = 50;
 
 /** Per conflicting path: keep the working tree's file, or take the remote's. */
 export type PullChoice = "mine" | "theirs";
 export type PullChoices = Readonly<Record<string, PullChoice>>;
 
-export interface PullInput {
+export interface PullInput extends TransferOptions {
   /** Signs the merge commit when both sides have commits. */
   author: CommitAuthor;
   choices?: PullChoices;
@@ -127,9 +153,9 @@ export interface LogPage {
  * `auth`: no or refused credential. `network`: the host could not be reached.
  * `conflict`: the remote moved (push) or histories cannot be joined.
  * `not-found`: repository, branch or object missing. `lfs`: an LFS transfer or
- * rule failed.
+ * rule failed. `cancelled`: the operation's signal aborted.
  */
-export type SyncErrorKind = "auth" | "network" | "conflict" | "not-found" | "lfs";
+export type SyncErrorKind = "auth" | "network" | "conflict" | "not-found" | "lfs" | "cancelled";
 
 /** What exactly failed, where the kind alone does not say. */
 export type SyncErrorCode =
@@ -138,7 +164,8 @@ export type SyncErrorCode =
   | "missing-lfs-rule"
   | "lfs-object-missing"
   | "lfs-object-corrupt"
-  | "not-empty";
+  | "not-empty"
+  | "repository-exists";
 
 export class SyncError extends Error {
   readonly kind: SyncErrorKind;
@@ -156,6 +183,16 @@ export class SyncError extends Error {
 
 export function isSyncError(error: unknown): error is SyncError {
   return error instanceof SyncError;
+}
+
+/** What an operation whose signal aborted rejects with. */
+export function cancelledError(): SyncError {
+  return new SyncError("cancelled", "Cancelled.");
+}
+
+/** Rejects the operation once `signal` has aborted. */
+export function throwIfCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw cancelledError();
 }
 
 /** The `.gitattributes` line Publish writes: `.blobs` files are LFS objects. */

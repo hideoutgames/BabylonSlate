@@ -50,7 +50,7 @@ describe("GitLab sign-in refresh", () => {
   it("refreshes shortly before expiry, once for requests made together, and keeps the new token", async () => {
     const host = new FakeGitHost();
     const time = clock();
-    const { store, credential } = await signedInToGitLab(host, time);
+    const { store, secrets, credential } = await signedInToGitLab(host, time);
     const { credentials, onChange } = refreshing(store, host.http, time);
     const source = credentials.source("https://gitlab.com");
     time.set(credential.expiresAt! - REFRESH_MARGIN_MS - 1);
@@ -63,11 +63,13 @@ describe("GitLab sign-in refresh", () => {
       { grant_type: "refresh_token", refresh_token: "fake-gitlab-refresh-1", client_id: "client" },
     ]);
     expect(refreshes(host)[0]?.url).toBe("https://gitlab.com/oauth/token");
-    expect(await store.reload("https://gitlab.com")).toMatchObject({
+    // Read back as another window would, through the stored text: the account and its id (the commit author) survive.
+    expect(await new CredentialStore(secrets).get("https://gitlab.com")).toMatchObject({
       token: "fake-gitlab-token-2",
       refreshToken: "fake-gitlab-refresh-2",
       expiresAt: time.now() + 2 * HOUR,
       account: "test-user",
+      accountId: "1001",
     });
     expect(onChange).toHaveBeenCalledOnce();
   });

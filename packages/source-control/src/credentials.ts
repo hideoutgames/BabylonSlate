@@ -1,5 +1,6 @@
 import type { HttpClient, HttpRequest, HttpResponse } from "./http";
 import { originOf } from "./http";
+import type { CommitAuthor } from "./sync-port";
 
 export const GITHUB_ORIGIN = "https://github.com";
 export const GITLAB_ORIGIN = "https://gitlab.com";
@@ -21,6 +22,8 @@ export interface HostCredential {
   kind: CredentialKind;
   /** The signed-in user's name, for sign-in kinds. */
   account?: string;
+  /** The signed-in user's numeric id, for the host's no-reply commit email. */
+  accountId?: string;
   /** GitLab sign-in tokens expire; the refresh token gets the next one. */
   refreshToken?: string;
   /** Clock time when `token` expires. */
@@ -34,6 +37,19 @@ export function credentialUsername(kind: CredentialKind): string {
   if (kind === "gitlab") return "oauth2";
   if (kind === "gitlab-token") return GITLAB_TOKEN_USERNAME;
   return "x-access-token";
+}
+
+/**
+ * Who commits with a credential. A signed-in GitHub or gitlab.com account
+ * commits as the host's private no-reply address, which the host links to
+ * the account without exposing its email. Other hosts get no email.
+ */
+export function commitAuthorFor(credential: HostCredential | null): CommitAuthor {
+  const name = credential?.account || "Haptic";
+  const id = credential?.accountId;
+  if (credential?.account && id && credential.kind === "github") return { name, email: `${id}+${credential.account}@users.noreply.github.com` };
+  if (credential?.account && id && credential.kind === "gitlab") return { name, email: `${id}-${credential.account}@users.noreply.gitlab.com` };
+  return { name, email: "" };
 }
 
 /** Whether the host has a REST API Haptic uses (repository and branch pickers, Release Pushed Locks). */
@@ -146,6 +162,7 @@ function parseCredentials(text: string | null): HostCredential[] {
       token: value.token,
       kind: value.kind as CredentialKind,
       ...(typeof value.account === "string" && value.account !== "" ? { account: value.account } : {}),
+      ...(typeof value.accountId === "string" && /^\d+$/.test(value.accountId) ? { accountId: value.accountId } : {}),
       ...(typeof value.refreshToken === "string" && value.refreshToken !== "" ? { refreshToken: value.refreshToken } : {}),
       ...(typeof value.expiresAt === "number" && Number.isFinite(value.expiresAt) ? { expiresAt: value.expiresAt } : {}),
     });

@@ -108,6 +108,8 @@ export interface DockviewShellProps {
   initialLayout?: Record<string, unknown> | null;
   actorPrefab?: boolean;
   sceneMode?: SceneMode;
+  /** The pinned Source Control document in Integrated mode (Changes and Locks). */
+  sourceControlIntegrated?: boolean;
 }
 
 export function DockviewShell({
@@ -116,6 +118,7 @@ export function DockviewShell({
   initialLayout,
   actorPrefab = true,
   sceneMode,
+  sourceControlIntegrated,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -144,10 +147,10 @@ export function DockviewShell({
 
       // Retitled before the phone keeps it as the layout to return to. A
       // window the catalog no longer lists (with its emptied group) is dropped.
-      const windows = listDockWindows(documentKind, { actorPrefab, sceneMode });
+      const windows = listDockWindows(documentKind, { actorPrefab, sceneMode, sourceControlIntegrated });
       const catalogIds = new Set([
         ...windows,
-        ...listDockWindows(documentKind, { sceneMode }),
+        ...listDockWindows(documentKind, { sceneMode, sourceControlIntegrated }),
       ].map((window) => window.id));
       const savedLayout = initialLayoutRef.current
         ? withoutUnknownPanels(
@@ -168,7 +171,7 @@ export function DockviewShell({
         createDefaultLayoutForKind(
           event.api,
           documentKind,
-          { actorPrefab, sceneMode },
+          { actorPrefab, sceneMode, sourceControlIntegrated },
           hostRef.current?.clientWidth ?? 0,
         );
       }
@@ -186,6 +189,7 @@ export function DockviewShell({
       documentKind,
       actorPrefab,
       sceneMode,
+      sourceControlIntegrated,
       platformOptions.disableFloatingGroups,
       platformOptions.singleWindow,
     ],
@@ -256,6 +260,7 @@ export function DockviewShell({
     ...listDockWindows(documentKind, {
       actorPrefab,
       sceneMode,
+      sourceControlIntegrated,
     }),
     ...functionWindows,
   ];
