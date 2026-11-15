@@ -196,23 +196,29 @@ function CommitBox({
 }
 
 /**
- * Why Integrated mode does not run in this folder; a desktop working copy
- * this device has not adopted offers **Use Haptic's Git Here** behind the
- * one-Git-app warning, which nothing opens by itself.
+ * Integrated mode not running here: why (a desktop working copy this device
+ * has not adopted offers **Use Haptic's Git Here** behind the one-Git-app
+ * warning, which nothing opens by itself), or that the repository is
+ * opening. One component for both, so the warning stays open while an
+ * accept closes and reads the folder again, and can show why it failed.
  */
-function BlockedChanges({ blocker }: { blocker: IntegratedBlocker }) {
+function InactiveChanges({ blocker }: { blocker: IntegratedBlocker | null }) {
   const { setSourceControlAdoption } = useDocumentActions();
   const [asking, setAsking] = useState(false);
   return (
     <PanelFrame data-testid="changes-panel">
-      <div className="flex flex-col items-start gap-2 p-2" data-testid="changes-blocked">
-        <p className="text-sm text-muted-foreground">{integratedBlockerLabel(blocker)}</p>
-        {blocker === "not-adopted" ? (
-          <Button variant="outline" size="sm" data-testid="changes-adopt" onClick={() => setAsking(true)}>
-            Use Haptic&apos;s Git Here
-          </Button>
-        ) : null}
-      </div>
+      {blocker ? (
+        <div className="flex flex-col items-start gap-2 p-2" data-testid="changes-blocked">
+          <p className="text-sm text-muted-foreground">{integratedBlockerLabel(blocker)}</p>
+          {blocker === "not-adopted" ? (
+            <Button variant="outline" size="sm" data-testid="changes-adopt" onClick={() => setAsking(true)}>
+              Use Haptic&apos;s Git Here
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="p-2 text-sm text-muted-foreground">Opening The Repository…</p>
+      )}
       <AdoptGitFolderDialog open={asking} onOpenChange={setAsking} onAccept={() => setSourceControlAdoption(true)} />
     </PanelFrame>
   );
@@ -247,14 +253,7 @@ export function ChangesPanelContents() {
   }, []);
   const includeAll = useCallback(() => setExcluded(new Set()), []);
 
-  if (snapshot.blocked) return <BlockedChanges blocker={snapshot.blocked} />;
-  if (!snapshot.active) {
-    return (
-      <PanelFrame data-testid="changes-panel">
-        <p className="p-2 text-sm text-muted-foreground">Opening The Repository…</p>
-      </PanelFrame>
-    );
-  }
+  if (snapshot.blocked || !snapshot.active) return <InactiveChanges blocker={snapshot.blocked} />;
 
   const problem = snapshot.problem;
 

@@ -65,6 +65,21 @@ describe("Changes window", () => {
     expect(screen.queryByTestId("changes-blocked")).toBeNull();
   });
 
+  it("keeps the warning open with the reason when the answer cannot be recorded, while the folder is read again", async () => {
+    const desktop = await deviceIntegratedSync({ adopted: false });
+    state.sync = desktop.service;
+    state.setAdoption = desktop.setAdoption;
+    vi.spyOn(desktop.factory, "setAdoption").mockRejectedValueOnce(new Error("The folder is read-only."));
+    renderPanel();
+    fireEvent.click(screen.getByTestId("changes-adopt"));
+    await act(async () => {
+      fireEvent.click(await screen.findByTestId("source-control-adopt-confirm-action"));
+    });
+    expect((await screen.findByTestId("source-control-adopt-error")).textContent).toContain("The folder is read-only.");
+    expect(screen.getByTestId("changes-blocked").textContent).toContain("Haptic Does Not Run Git In This Folder Yet");
+    expect(desktop.adoption.adopted).toBe(false);
+  });
+
   it("offers nothing to accept where another app owns the folder", async () => {
     state.sync = (await deviceIntegratedSync({ adopted: false, platform: "ios", tier: "external" })).service;
     renderPanel();

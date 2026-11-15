@@ -3,7 +3,7 @@ import { GITATTRIBUTES_LFS_RULE, type FileLock } from "@haptic/source-control";
 import { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import type { ChangeLookup } from "../lib/source-control-changes";
-import { SourceControlSyncService, type SyncConfigureInput, type SyncLocks } from "../services/source-control-sync";
+import { SourceControlSyncService, type SyncConfigureInput, type SyncLocks, type SyncPortFactory } from "../services/source-control-sync";
 
 export const INTEGRATED_REPOSITORY = "https://github.com/team/game.git";
 
@@ -71,6 +71,15 @@ export async function deviceIntegratedSync(options: { adopted: boolean; platform
   await storage.writeText(".git/HEAD", "ref: refs/heads/main\n");
   const adoption = { adopted: options.adopted };
   const service = new SourceControlSyncService();
+  const factory: SyncPortFactory = {
+    open: async () => port,
+    init: async () => port,
+    author: async () => ({ name: "ada", email: "" }),
+    readAdoption: async () => adoption.adopted,
+    setAdoption: async (_storage, adopted) => {
+      adoption.adopted = adopted;
+    },
+  };
   const input: SyncConfigureInput = {
     settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, mode: "integrated", repositoryUrl: INTEGRATED_REPOSITORY, branch: "main" },
     folder,
@@ -79,16 +88,8 @@ export async function deviceIntegratedSync(options: { adopted: boolean; platform
     testMode: false,
     lookup: INTEGRATED_LOOKUP,
     locks: { theirs: async () => [], releaseOwn: async () => {} },
-    factory: {
-      open: async () => port,
-      init: async () => port,
-      author: async () => ({ name: "ada", email: "" }),
-      readAdoption: async () => adoption.adopted,
-      setAdoption: async (_storage, adopted) => {
-        adoption.adopted = adopted;
-      },
-    },
+    factory,
   };
   await service.configure(input);
-  return { service, adoption, setAdoption: (adopted: boolean) => service.setAdopted(input, adopted) };
+  return { service, adoption, factory, setAdoption: (adopted: boolean) => service.setAdopted(input, adopted) };
 }
