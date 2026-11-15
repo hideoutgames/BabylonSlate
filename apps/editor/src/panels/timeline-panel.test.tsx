@@ -266,7 +266,7 @@ describe("Timeline window", () => {
     vi.spyOn(lanes, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 72));
     const empty = { clientX: 10 + 3 * 91.5, clientY: 36 };
     fireEvent.contextMenu(lanes, empty);
-    expect((await screen.findByTestId("timeline-lane-menu-paste")).hasAttribute("data-disabled")).toBe(true);
+    expect((await screen.findByTestId<HTMLButtonElement>("timeline-lane-menu-paste")).disabled).toBe(true);
     fireEvent.click(screen.getByTestId("context-menu-backdrop"));
 
     fireEvent.contextMenu(lanes, { clientX: 10, clientY: 36 });
@@ -275,8 +275,8 @@ describe("Timeline window", () => {
     view.refresh();
     // Pressed at 3 s; the copy lands on the playhead at 4 s.
     fireEvent.contextMenu(lanes, empty);
-    const paste = await screen.findByTestId("timeline-lane-menu-paste");
-    expect(paste.hasAttribute("data-disabled")).toBe(false);
+    const paste = await screen.findByTestId<HTMLButtonElement>("timeline-lane-menu-paste");
+    expect(paste.disabled).toBe(false);
     fireEvent.click(paste);
     expect(lastClip().objects[0]!.tracks[0]!.keys.map((entry) => [entry.Time, entry.Value])).toEqual([
       [0, { x: 0, y: 0, z: 0 }], [2, { x: 4, y: 0, z: 0 }], [4, { x: 0, y: 0, z: 0 }],
