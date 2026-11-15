@@ -28,8 +28,8 @@ interface CopyOptions {
 }
 
 interface Fixture {
-  /** Commits `changes` to the remote's main as a teammate; resolves to the new head. */
-  teammate(changes: Changes, message?: string): Promise<string>;
+  /** Commits `changes` to the remote's `branch` (main; a new branch starts from main) as a teammate; resolves to the new head. */
+  teammate(changes: Changes, message?: string, branch?: string): Promise<string>;
   /** A new working copy of main, in its own project folder. */
   copy(options?: CopyOptions): Promise<{ port: SyncPort; storage: ProjectStorage }>;
   /** A new working copy with no commits in an empty project folder, as Publish starts one. */
@@ -62,11 +62,12 @@ function watched(storage: ProjectStorage, onWrite: ((path: string) => void) | un
 async function gitFixture(): Promise<Fixture> {
   const server = await GitTestServer.start();
   return {
-    async teammate(changes, message = "Teammate") {
+    async teammate(changes, message = "Teammate", branch = "main") {
       const teammate = server.teammate();
+      if (branch !== "main") teammate.checkout(branch);
       teammate.write(Object.fromEntries(Object.entries(changes).filter((entry): entry is [string, string | Uint8Array] => entry[1] !== null)));
       teammate.remove(...Object.keys(changes).filter((path) => changes[path] === null));
-      return teammate.commitAndPush(message);
+      return teammate.commitAndPush(message, branch);
     },
     async copy(options = {}) {
       const storage = watched(await server.storage(), options.onWorkingWrite);
@@ -95,8 +96,8 @@ async function fakeFixture(): Promise<Fixture> {
   const remote = new FakeRemote({ now: () => NOW });
   let copies = 0;
   return {
-    async teammate(changes, message) {
-      return remote.commit(changes, message);
+    async teammate(changes, message, branch) {
+      return remote.commit(changes, message, branch);
     },
     async copy(options = {}) {
       copies += 1;
@@ -351,6 +352,12 @@ describe.each([
     const deep = await port.log({ limit: 3, deepen: true });
     expect(deep.commits.map((commit) => commit.message.trim())).toEqual(["Three", "Two", "One"]);
     expect((await port.log({ limit: 10, deepen: true })).hasMore).toBe(false);
+    // Pages: the next one leaves out what the first listed.
+    const first = await port.log({ limit: 2 });
+    expect(first).toMatchObject({ hasMore: true, shallow: false });
+    const next = await port.log({ limit: 2, skip: first.commits.length });
+    expect(next.commits.map((commit) => commit.message.trim())).toEqual(["One"]);
+    expect(next).toMatchObject({ hasMore: false, shallow: false });
 
     await storage.writeBinary("assets/a.hasset", encode("4"));
     const { commit: a4 } = await port.commit({ paths: ["assets/a.hasset"], message: "A4", author: AUTHOR });
@@ -361,6 +368,88 @@ describe.each([
     const ofB = (await port.log({ limit: 10, path: "assets/b.hasset" })).commits.map((commit) => commit.id);
     expect(ofB[0]).toBe(b2);
     expect(ofB).not.toContain(a4);
+  });
+
+  it("lists the files a commit changed against its parent", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B" });
+    const { port, storage } = await fixture.copy();
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await storage.remove("assets/b.hasset");
+    await storage.writeBinary("assets/c.hasset", encode("C"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"], message: "Mine", author: AUTHOR });
+    expect(await port.commitChanges(commit)).toEqual([
+      { path: "assets/a.hasset", kind: "modified" },
+      { path: "assets/b.hasset", kind: "deleted" },
+      { path: "assets/c.hasset", kind: "added" },
+    ]);
+  });
+
+  it("starts a branch at HEAD that the next push creates on the remote, where another copy lists it and switches to it", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A" });
+    await fixture.teammate({ "assets/art.hasset": "Art" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    expect(await port.localBranches()).toEqual(["main"]);
+    expect(await port.remoteBranches()).toEqual(["art", "main"]);
+
+    expect(await rejection(port.createBranch("bad name"))).toMatchObject({ kind: "conflict", code: "invalid-branch-name" });
+    expect(await rejection(port.createBranch("main"))).toMatchObject({ kind: "conflict", code: "branch-exists" });
+    const { head } = await port.status();
+    await port.createBranch("feature");
+    expect(await port.localBranches()).toEqual(["feature", "main"]);
+    expect(await port.status()).toEqual({ branch: "feature", head, changes: [] });
+    // Not on the remote yet: nothing to pull, nothing new to push, and fetching it is no failure.
+    expect(await port.fetch()).toMatchObject({ branch: "feature", local: head, remote: null, ahead: 0, behind: 0 });
+
+    await storage.writeBinary("assets/a.hasset", encode("A-feature"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Feature", author: AUTHOR });
+    expect(await port.remoteState()).toMatchObject({ local: commit, remote: null, ahead: 1, behind: 0 });
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+    await port.push();
+    expect(await port.fetch()).toMatchObject({ local: commit, remote: commit, ahead: 0, behind: 0 });
+    expect(await port.remoteBranches()).toEqual(["art", "feature", "main"]);
+
+    const other = await fixture.copy();
+    expect(await other.port.switchBranch("feature")).toEqual({ head: commit, changedPaths: ["assets/a.hasset"] });
+    expect(text(await other.storage.readBinary("assets/a.hasset"))).toBe("A-feature");
+    expect(await other.port.status()).toEqual({ branch: "feature", head: commit, changes: [] });
+    expect(await other.port.localBranches()).toEqual(["feature", "main"]);
+    expect((await other.port.log({ limit: 1 })).commits[0]!.id).toBe(commit);
+    // It tracks the remote branch: a teammate's commit there comes in with a pull.
+    const later = await fixture.teammate({ "assets/b.hasset": "B" }, "Later", "feature");
+    expect(await other.port.pull({ author: AUTHOR })).toMatchObject({ kind: "fast-forward", head: later, changedPaths: ["assets/b.hasset"] });
+    expect(await other.port.switchBranch("feature")).toEqual({ head: later, changedPaths: [] });
+    expect(await rejection(other.port.switchBranch("missing"))).toMatchObject({ kind: "not-found" });
+  });
+
+  it("switches branches, keeping uncommitted changes the switch does not touch and refusing ones it would overwrite", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/e.hasset": "E" });
+    const art = await fixture.teammate({ "assets/a.hasset": "A-art", "assets/b.hasset": null, "assets/c.hasset": "C" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    const main = (await port.status()).head;
+    await storage.writeBinary("assets/e.hasset", encode("E-mine"));
+
+    // A file the branches hold differently: refused, and nothing changes.
+    await storage.writeBinary("assets/a.hasset", encode("A-mine"));
+    expect(await rejection(port.switchBranch("art"))).toMatchObject({ kind: "conflict", code: "uncommitted-changes", paths: ["assets/a.hasset"] });
+    // As is a file only the other branch has, which would be written over.
+    await storage.writeBinary("assets/a.hasset", encode("A"));
+    await storage.writeBinary("assets/c.hasset", encode("C-mine"));
+    expect(await rejection(port.switchBranch("art"))).toMatchObject({ code: "uncommitted-changes", paths: ["assets/c.hasset"] });
+    expect(await port.status()).toMatchObject({ branch: "main", head: main });
+    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A");
+    await storage.remove("assets/c.hasset");
+
+    expect(await port.switchBranch("art")).toEqual({ head: art, changedPaths: ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"] });
+    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-art");
+    expect(await storage.exists("assets/b.hasset")).toBe(false);
+    expect(text(await storage.readBinary("assets/c.hasset"))).toBe("C");
+    // The edit to e, which both branches hold alike, came along.
+    expect(await port.status()).toEqual({ branch: "art", head: art, changes: [{ path: "assets/e.hasset", kind: "modified" }] });
+
+    expect(await port.switchBranch("main")).toEqual({ head: main, changedPaths: ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"] });
+    expect(text(await storage.readBinary("assets/b.hasset"))).toBe("B");
+    expect(await storage.exists("assets/c.hasset")).toBe(false);
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [{ path: "assets/e.hasset", kind: "modified" }] });
   });
 
   it("refuses to push over commits it has not pulled", async () => {

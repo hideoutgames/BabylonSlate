@@ -5,8 +5,10 @@ import { planPull } from "./pull-plan";
 import {
   hasLfsRule,
   INCOMING_LIMIT,
+  isValidBranchName,
   SyncError,
   throwIfCancelled,
+  uncommittedChangesError,
   type CommitAuthor,
   type CommitInfo,
   type CommitInput,
@@ -18,6 +20,7 @@ import {
   type PullResult,
   type PushResult,
   type RemoteState,
+  type SwitchResult,
   type SyncPort,
   type SyncStatus,
   type TransferOptions,
@@ -81,9 +84,13 @@ export class FakeRemote {
     this.now = options.now ?? Date.now;
   }
 
-  /** Commits `changes` (null removes a file) on top of `branch` as a teammate pushing. */
+  /**
+   * Commits `changes` (null removes a file) on top of `branch` as a teammate
+   * pushing; a branch the remote lacks starts from main, as a teammate's new
+   * branch would.
+   */
   commit(changes: Record<string, string | Uint8Array | null>, message = "Teammate", branch = "main"): string {
-    const head = this.branches.get(branch) ?? null;
+    const head = this.branches.get(branch) ?? this.branches.get("main") ?? null;
     const files = new Map(head ? this.get(head).files : []);
     for (const [path, content] of Object.entries(changes)) {
       if (content === null) {
@@ -123,12 +130,15 @@ export class FakeRemote {
  * network, no `.git` folder and full history.
  */
 export class FakeSync implements SyncPort {
-  readonly branch: string;
   private readonly storage: ProjectStorage;
   private readonly remote: FakeRemote;
   private readonly now: () => number;
-  private head: string | null;
-  private tracking: string | null;
+  /** The checked-out branch, this copy's own (as HEAD is). */
+  private current: string;
+  /** Local branches with a commit, as `refs/heads`. */
+  private readonly heads = new Map<string, string>();
+  /** The remote's branches as this copy last fetched them, as `refs/remotes/origin`. */
+  private readonly fetched = new Map<string, string>();
   /**
    * Content ids of working files by size and mtime, as Git's index keeps
    * them, so a status reads only files whose stats changed. An entry is
@@ -140,10 +150,37 @@ export class FakeSync implements SyncPort {
   constructor(options: { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }) {
     this.storage = options.storage;
     this.remote = options.remote;
-    this.branch = options.branch;
+    this.current = options.branch;
     this.now = options.now ?? Date.now;
-    this.head = options.remote.branches.get(options.branch) ?? null;
-    this.tracking = this.head;
+    const head = options.remote.branches.get(options.branch);
+    if (head) {
+      this.heads.set(options.branch, head);
+      this.fetched.set(options.branch, head);
+    }
+  }
+
+  get branch(): string {
+    return this.current;
+  }
+
+  private get head(): string | null {
+    return this.heads.get(this.current) ?? null;
+  }
+
+  private set head(commit: string) {
+    this.heads.set(this.current, commit);
+  }
+
+  private get tracking(): string | null {
+    return this.fetched.get(this.current) ?? null;
+  }
+
+  /** Records what the remote holds for `branch` now (none: the ref goes, as a pruning fetch drops it). */
+  private fetchRef(branch: string): string | null {
+    const remote = this.remote.branches.get(branch) ?? null;
+    if (remote) this.fetched.set(branch, remote);
+    else this.fetched.delete(branch);
+    return remote;
   }
 
   /**
@@ -165,8 +202,8 @@ export class FakeSync implements SyncPort {
   /** A working copy with no commits in the folder `storage` is bound to, as Publish starts one; the first push creates the branch. */
   static init(options: { storage: ProjectStorage; remote: FakeRemote; branch: string; now?: () => number }): FakeSync {
     const sync = new FakeSync(options);
-    sync.head = null;
-    sync.tracking = null;
+    sync.heads.clear();
+    sync.fetched.clear();
     return sync;
   }
 
@@ -202,17 +239,20 @@ export class FakeSync implements SyncPort {
 
   async fetch(options: TransferOptions = {}): Promise<RemoteState> {
     throwIfCancelled(options.signal);
-    this.tracking = this.remote.branches.get(this.branch) ?? null;
+    this.fetchRef(this.current);
     return this.remoteState();
   }
 
   async remoteState(): Promise<RemoteState> {
-    const relation = this.head ? await this.relation(this.head, this.tracking) : null;
-    const incoming = relation ? relation.behind : this.tracking ? (await this.relation(this.tracking, null)).ahead : [];
+    const head = this.head;
+    const tracking = this.tracking;
+    // A branch the remote lacks has nothing to pull, and is ahead by what none of the fetched remote branches holds.
+    const relation = head ? await this.relation(head, tracking ? [tracking] : [...this.fetched.values()]) : null;
+    const incoming = !tracking ? [] : relation ? relation.behind : (await this.relation(tracking, [])).ahead;
     return {
-      branch: this.branch,
-      local: this.head,
-      remote: this.tracking,
+      branch: this.current,
+      local: head,
+      remote: tracking,
       ahead: relation?.ahead.length ?? 0,
       behind: incoming.length,
       // `relate` lists them newest first.
@@ -224,22 +264,18 @@ export class FakeSync implements SyncPort {
   }
 
   async outgoing(): Promise<string[]> {
-    if (!this.head || this.head === this.tracking) return [];
-    const mine = this.files(this.head);
-    const theirs = this.tracking ? this.files(this.tracking) : new Map<string, Uint8Array>();
-    const out: string[] = [];
-    for (const path of new Set([...mine.keys(), ...theirs.keys()])) {
-      if ((await contentId(path, mine.get(path))) !== (await contentId(path, theirs.get(path)))) out.push(path);
-    }
-    return out.sort();
+    const head = this.head;
+    if (!head || head === this.tracking) return [];
+    // A branch not pushed yet sends what it added since it left the branches the remote has.
+    const base = this.tracking ?? (await this.relation(head, [...this.fetched.values()])).base;
+    return (await this.differing(base, head)).map((entry) => entry.path);
   }
 
   async pull({ author, choices, signal }: PullInput): Promise<PullResult> {
     throwIfCancelled(signal);
-    const remote = this.remote.branches.get(this.branch) ?? null;
-    this.tracking = remote;
+    const remote = this.fetchRef(this.current);
     if (!remote || remote === this.head) return { kind: "up-to-date", head: this.head };
-    const relation = this.head ? await this.relation(this.head, remote) : null;
+    const relation = this.head ? await this.relation(this.head, [remote]) : null;
     if (relation && relation.behind.length === 0) return { kind: "up-to-date", head: this.head };
     const base = relation?.base ?? null;
     const baseFiles = base ? this.files(base) : new Map<string, Uint8Array>();
@@ -273,7 +309,7 @@ export class FakeSync implements SyncPort {
     this.head = this.remote.add({
       parents: [this.head!, remote],
       files,
-      message: `Merge remote-tracking branch 'origin/${this.branch}'\n`,
+      message: `Merge remote-tracking branch 'origin/${this.current}'\n`,
       author,
       timestamp: Math.floor(this.now() / 1000),
     });
@@ -282,9 +318,11 @@ export class FakeSync implements SyncPort {
 
   async push(options: TransferOptions = {}): Promise<PushResult> {
     throwIfCancelled(options.signal);
-    if (!this.head) throw new SyncError("not-found", "There is nothing to push yet.");
-    const remote = this.remote.branches.get(this.branch) ?? null;
-    const { ahead, base } = await this.relation(this.head, remote);
+    const head = this.head;
+    if (!head) throw new SyncError("not-found", "There is nothing to push yet.");
+    const remote = this.remote.branches.get(this.current) ?? null;
+    // A new remote branch starts from what the remote's other branches already hold.
+    const { ahead, base } = await this.relation(head, remote ? [remote] : [...this.remote.branches.values()]);
     if (remote && base !== remote) {
       throw new SyncError("conflict", "The remote branch has commits this copy lacks. Pull first.", { code: "push-rejected" });
     }
@@ -298,9 +336,9 @@ export class FakeSync implements SyncPort {
         }
       }
     }
-    this.remote.branches.set(this.branch, this.head);
-    this.tracking = this.head;
-    return { head: this.head, uploaded };
+    this.remote.branches.set(this.current, head);
+    this.fetched.set(this.current, head);
+    return { head, uploaded };
   }
 
   async readFile(path: string, commit: string): Promise<Uint8Array | null> {
@@ -323,10 +361,11 @@ export class FakeSync implements SyncPort {
     return stored;
   }
 
-  async log({ limit, path }: LogOptions): Promise<LogPage> {
+  async log({ limit, skip = 0, path }: LogOptions): Promise<LogPage> {
     const commits: CommitInfo[] = [];
     const seen = new Set<string>();
     const queue = this.head ? [this.head] : [];
+    let skipped = 0;
     let more = false;
     while (queue.length > 0) {
       queue.sort((a, b) => this.remote.get(b).sequence - this.remote.get(a).sequence);
@@ -336,21 +375,91 @@ export class FakeSync implements SyncPort {
       queue.push(...commit.parents);
       const parent = commit.parents[0] ? this.files(commit.parents[0]) : new Map<string, Uint8Array>();
       if (path && (await contentId(path, commit.files.get(path))) === (await contentId(path, parent.get(path)))) continue;
+      if (skipped < skip) {
+        skipped += 1;
+        continue;
+      }
       if (commits.length === limit) {
         more = true;
         break;
       }
       commits.push({ id: commit.id, message: commit.message, author: commit.author, timestamp: commit.timestamp, parents: commit.parents });
     }
-    return { commits, hasMore: more || commits.length >= limit };
+    // Full history: never shallow.
+    return { commits, hasMore: more || commits.length >= limit, shallow: false };
+  }
+
+  async commitChanges(commit: string): Promise<FileChange[] | null> {
+    const parent = this.remote.get(commit).parents[0] ?? null;
+    return (await this.differing(parent, commit)).map(({ path, from, to }) => ({ path, kind: from === null ? "added" : to === null ? "deleted" : "modified" }));
+  }
+
+  async localBranches(): Promise<string[]> {
+    return [...this.heads.keys()].sort();
+  }
+
+  async remoteBranches(options: TransferOptions = {}): Promise<string[]> {
+    throwIfCancelled(options.signal);
+    return [...this.remote.branches.keys()].sort();
+  }
+
+  async createBranch(name: string): Promise<void> {
+    if (!isValidBranchName(name)) throw new SyncError("conflict", `"${name}" is not a valid branch name.`, { code: "invalid-branch-name" });
+    const head = this.head;
+    if (!head) throw new SyncError("not-found", "Commit something before starting a branch.");
+    if (this.heads.has(name)) throw new SyncError("conflict", `There is already a branch named ${name}.`, { code: "branch-exists" });
+    this.heads.set(name, head);
+    this.current = name;
+  }
+
+  async switchBranch(name: string, options: TransferOptions = {}): Promise<SwitchResult> {
+    throwIfCancelled(options.signal);
+    const head = this.head;
+    if (name === this.current) return { head, changedPaths: [] };
+    const local = this.heads.get(name) ?? null;
+    // A branch only the remote has is fetched first.
+    const target = local ?? this.fetchRef(name);
+    if (!target) throw new SyncError("not-found", `There is no branch ${name}.`);
+    const differing = await this.differing(head, target);
+    const working = await this.workingEntries();
+    const mine = new Map<string, string | null>();
+    for (const { path } of differing) mine.set(path, await this.workingId(path, working.get(path)));
+    // A file the switch replaces must hold what one of the branches holds; anything else is work it would lose.
+    const blocked = differing.filter(({ path, from, to }) => mine.get(path) !== from && mine.get(path) !== to).map(({ path }) => path);
+    if (blocked.length > 0) throw uncommittedChangesError(name, blocked);
+    const writes = differing.filter(({ path, to }) => mine.get(path) !== to).map(({ path }) => path);
+    const files = this.files(target);
+    for (const path of writes) {
+      // As checkout: a cancel stops the writes and leaves the branch where it was.
+      throwIfCancelled(options.signal);
+      const bytes = files.get(path);
+      if (bytes) await this.storage.writeBinary(path, bytes);
+      else await this.storage.remove(path);
+    }
+    this.heads.set(name, target);
+    this.current = name;
+    return { head: target, changedPaths: writes };
   }
 
   private files(id: string): Files {
     return this.remote.get(id).files;
   }
 
-  private relation(local: string, remote: string | null) {
-    return relate(local, remote, async (id) => {
+  /** The files that differ between two commits (null: no commit), sorted, with their content ids. */
+  private async differing(from: string | null, to: string | null): Promise<{ path: string; from: string | null; to: string | null }[]> {
+    const before = from ? this.files(from) : new Map<string, Uint8Array>();
+    const after = to ? this.files(to) : new Map<string, Uint8Array>();
+    const out = [];
+    for (const path of [...new Set([...before.keys(), ...after.keys()])].sort()) {
+      const fromId = await contentId(path, before.get(path));
+      const toId = await contentId(path, after.get(path));
+      if (fromId !== toId) out.push({ path, from: fromId, to: toId });
+    }
+    return out;
+  }
+
+  private relation(local: string, remotes: readonly string[]) {
+    return relate(local, remotes, async (id) => {
       const commit = this.remote.get(id);
       return { parents: commit.parents, timestamp: commit.sequence };
     }, new Set());

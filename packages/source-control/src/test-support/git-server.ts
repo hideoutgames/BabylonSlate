@@ -290,10 +290,20 @@ export class Teammate {
     for (const path of paths) rmSync(join(this.dir, path));
   }
 
-  commitAndPush(message: string): string {
+  /** Works on `branch`: the remote's, or a new one from main. */
+  checkout(branch: string): void {
+    try {
+      this.server.git(this.dir, "rev-parse", "--verify", "--quiet", `origin/${branch}`);
+      this.server.git(this.dir, "checkout", "--quiet", "-B", branch, `origin/${branch}`);
+    } catch {
+      this.server.git(this.dir, "checkout", "--quiet", "-b", branch);
+    }
+  }
+
+  commitAndPush(message: string, branch = "main"): string {
     this.server.git(this.dir, "add", "--all");
     this.server.git(this.dir, "commit", "--quiet", "-m", message);
-    this.server.git(this.dir, "push", "--quiet", "origin", "HEAD:main");
+    this.server.git(this.dir, "push", "--quiet", "origin", `HEAD:${branch}`);
     return this.server.git(this.dir, "rev-parse", "HEAD").trim();
   }
 

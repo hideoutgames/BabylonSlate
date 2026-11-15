@@ -46,6 +46,34 @@ export interface SyncPort {
   readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;
   /** The branch's commits, newest first; `deepen` fetches older history once when a shallow clone ends early. */
   log(options: LogOptions): Promise<LogPage>;
+  /**
+   * The files `commit` changed against its first parent (every file of a root
+   * commit), sorted; null when this shallow copy lacks the parent.
+   */
+  commitChanges(commit: string): Promise<FileChange[] | null>;
+  /** The working copy's branches, sorted. Reads no network. */
+  localBranches(): Promise<string[]>;
+  /**
+   * The remote's branches, sorted, from its Git ref advertisement: one
+   * request and no host REST API, so every Git host lists them.
+   */
+  remoteBranches(options?: TransferOptions): Promise<string[]>;
+  /**
+   * Starts `name` at HEAD and checks it out; no working file changes. The
+   * next push creates it on the remote and makes that its upstream. Refuses
+   * an invalid name (`conflict` / `invalid-branch-name`), a local branch of
+   * that name (`conflict` / `branch-exists`) and a copy with no commit yet.
+   */
+  createBranch(name: string): Promise<void>;
+  /**
+   * Checks out `name`: a local branch, or the remote's (fetched first, as
+   * shallow as a clone). Files that differ between the branches take the
+   * other branch's version; uncommitted changes to other files stay. Refuses
+   * (`conflict` / `uncommitted-changes`, with the paths) when one of those
+   * files has an uncommitted change the switch would overwrite; then nothing
+   * changes. The current branch is a no-op.
+   */
+  switchBranch(name: string, options?: TransferOptions): Promise<SwitchResult>;
 }
 
 /**
@@ -136,8 +164,17 @@ export interface PushResult {
   uploaded: number;
 }
 
+export interface SwitchResult {
+  /** The branch's commit, null for a branch with none. */
+  head: string | null;
+  /** Working tree files the switch wrote or removed, for the external-change reload. */
+  changedPaths: string[];
+}
+
 export interface LogOptions {
   limit: number;
+  /** Commits to leave out first: the ones earlier pages listed. */
+  skip?: number;
   /** Only commits that change this path. */
   path?: string;
   deepen?: boolean;
@@ -156,6 +193,16 @@ export interface LogPage {
   commits: CommitInfo[];
   /** False only when the branch's first commit was reached. */
   hasMore: boolean;
+  /** The page ended at this shallow copy's oldest commit: older ones come with `deepen`. */
+  shallow: boolean;
+}
+
+/** Git's branch name rules (`git check-ref-format --branch`), so both clients and the editor refuse the same names. */
+// eslint-disable-next-line no-control-regex -- Git refuses control characters in ref names.
+const BAD_REF = /(^|[/.])([/.]|$)|^@$|@\{|[\x00-\x20\x7f~^:?*[\\]|\.lock(\/|$)/;
+
+export function isValidBranchName(name: string): boolean {
+  return name !== "" && !name.startsWith("-") && !BAD_REF.test(name);
 }
 
 /**
@@ -174,20 +221,33 @@ export type SyncErrorCode =
   | "lfs-object-missing"
   | "lfs-object-corrupt"
   | "not-empty"
-  | "repository-exists";
+  | "repository-exists"
+  | "uncommitted-changes"
+  | "branch-exists"
+  | "invalid-branch-name"
+  | "detached-head";
 
 export class SyncError extends Error {
   readonly kind: SyncErrorKind;
   readonly code?: SyncErrorCode;
   readonly status?: number;
+  /** The files a refusal is about (`uncommitted-changes`), sorted. */
+  readonly paths?: readonly string[];
 
-  constructor(kind: SyncErrorKind, message: string, options: { code?: SyncErrorCode; status?: number; cause?: unknown } = {}) {
+  constructor(kind: SyncErrorKind, message: string, options: { code?: SyncErrorCode; status?: number; paths?: readonly string[]; cause?: unknown } = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "SyncError";
     this.kind = kind;
     if (options.code) this.code = options.code;
     if (options.status !== undefined) this.status = options.status;
+    if (options.paths) this.paths = options.paths;
   }
+}
+
+/** A switch refused because `paths` (sorted) have uncommitted changes it would overwrite. */
+export function uncommittedChangesError(branch: string, paths: readonly string[]): SyncError {
+  const named = paths.slice(0, 3).join(", ") + (paths.length > 3 ? ` and ${paths.length - 3} more` : "");
+  return new SyncError("conflict", `Commit or revert your changes to ${named} before switching to ${branch}.`, { code: "uncommitted-changes", paths });
 }
 
 export function isSyncError(error: unknown): error is SyncError {

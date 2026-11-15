@@ -16,7 +16,7 @@ import {
 } from "../test-support/git-server";
 import { fixedCredential } from "../credentials";
 import { readAdoption, setAdoption } from "./adoption";
-import { cloneRepository, initRepository, type GitRepository } from "./repository";
+import { cloneRepository, initRepository, openRepository, type GitRepository } from "./repository";
 
 // isomorphic-git as it is, with its commit reads counted.
 vi.mock("isomorphic-git", async (importOriginal) => {
@@ -293,10 +293,34 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     server.seed({ "assets/a.hasset": "2" }, "Two");
     server.seed({ "assets/a.hasset": "3" }, "Three");
     const repository = await clone();
-    expect(await repository.log({ limit: 3 })).toMatchObject({ commits: [{ message: "Three\n" }], hasMore: true });
-    const page = await repository.log({ limit: 3, deepen: true });
-    expect(page.commits.map((commit) => commit.message)).toEqual(["Three\n", "Two\n", "One\n"]);
-    expect((await repository.log({ limit: 10, deepen: true })).hasMore).toBe(false);
+    // The clone's one commit ends the history it has; its parent is not here, so neither are its changes.
+    const shallow = await repository.log({ limit: 3 });
+    expect(shallow).toMatchObject({ commits: [{ message: "Three\n" }], hasMore: true, shallow: true });
+    expect(await repository.commitChanges(shallow.commits[0]!.id)).toBeNull();
+    // The next page deepens: the clone's commit is left out, the older ones come.
+    const older = await repository.log({ limit: 3, skip: 1, deepen: true });
+    expect(older.commits.map((commit) => commit.message)).toEqual(["Two\n", "One\n"]);
+    expect(older).toMatchObject({ hasMore: false, shallow: false });
+    expect(await repository.commitChanges(shallow.commits[0]!.id)).toEqual([{ path: "assets/a.hasset", kind: "modified" }]);
+  });
+
+  it("opens on the branch the working copy's HEAD names, and refuses a detached HEAD", async () => {
+    server.seed({ "assets/a.hasset": "A" });
+    const storage = await server.storage();
+    const repository = await clone(storage);
+    await repository.createBranch("feature");
+    const options = { storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, now: () => NOW };
+    expect((await (await openRepository(options)).status()).branch).toBe("feature");
+    expect(server.git(folder(storage), "symbolic-ref", "HEAD").trim()).toBe("refs/heads/feature");
+
+    // Its first push makes the remote branch its upstream, as other Git apps read it.
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await repository.commit({ paths: ["assets/a.hasset"], message: "Feature", author: AUTHOR });
+    await repository.push();
+    expect(server.git(folder(storage), "config", "--get", "branch.feature.merge").trim()).toBe("refs/heads/feature");
+
+    server.git(folder(storage), "checkout", "--quiet", "--detach");
+    expect(await rejection(openRepository(options))).toMatchObject({ kind: "conflict", code: "detached-head" });
   });
 
   it("types refused credentials, missing repositories and unreachable hosts", async () => {

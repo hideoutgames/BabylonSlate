@@ -10,8 +10,11 @@ import {
   cancelledError,
   hasLfsRule,
   INCOMING_LIMIT,
+  isValidBranchName,
   SyncError,
   throwIfCancelled,
+  uncommittedChangesError,
+  type ChangeKind,
   type CommitAuthor,
   type CommitInfo,
   type CommitInput,
@@ -23,6 +26,7 @@ import {
   type PullResult,
   type PushResult,
   type RemoteState,
+  type SwitchResult,
   type SyncPort,
   type SyncStatus,
   type TransferOptions,
@@ -51,6 +55,7 @@ export interface GitRepositoryOptions {
   credential: CredentialSource;
   /** The configured remote (HTTPS, SSH or scp-style; Git always uses its HTTPS form). */
   repositoryUrl: string;
+  /** The branch to clone or start; an opened copy is on the branch its HEAD names. */
   branch: string;
   /** Commit times; tests pass a fixed clock. */
   now?: () => number;
@@ -94,10 +99,27 @@ async function blobOid(entry: WalkerEntry | null | undefined): Promise<string | 
   return entry && (await entry.type()) === "blob" ? ((await entry.oid()) ?? null) : null;
 }
 
-/** Opens the Git working copy already in `storage`. */
-export async function openRepository(options: GitRepositoryOptions): Promise<GitRepository> {
+/** A working copy's change at a path that differs between two commits. */
+interface Differing {
+  path: string;
+  /** Blob ids, null when absent. */
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * Opens the Git working copy already in `storage`, on the branch its HEAD
+ * names: the checked-out branch is this device's, never the project's. A
+ * detached HEAD (another Git app left it) is refused, since commits would
+ * move no branch.
+ */
+export async function openRepository(options: Omit<GitRepositoryOptions, "branch">): Promise<GitRepository> {
   installBufferGlobal();
-  return new GitRepository(options);
+  const branch = await git.currentBranch({ fs: new StorageFs(options.storage), gitdir: GITDIR });
+  if (!branch) {
+    throw new SyncError("conflict", "This working copy has no branch checked out. Check out a branch with the Git app that left it, then open the project again.", { code: "detached-head" });
+  }
+  return new GitRepository({ ...options, branch });
 }
 
 /**
@@ -132,7 +154,6 @@ export async function cloneRepository(options: GitRepositoryOptions & TransferOp
  * Clones are shallow and single-branch; history deepens on demand.
  */
 export class GitRepository implements SyncPort {
-  readonly branch: string;
   /** Storage and network traffic of the last finished operation. */
   lastOperation: OperationCounters = {
     storage: { workingReads: 0, pointerReads: 0, smudgedPointers: 0 },
@@ -147,25 +168,31 @@ export class GitRepository implements SyncPort {
   /** isomorphic-git's object and index cache: packs are immutable and the index is checked by stat. */
   private readonly cache = {};
   private queue: Promise<unknown> = Promise.resolve();
+  /** The checked-out branch: HEAD's, moved only by a switch or a new branch. */
+  private current: string;
 
   constructor(options: GitRepositoryOptions) {
     const location = parseRepositoryUrl(options.repositoryUrl);
     if (!location) throw new SyncError("not-found", `Invalid repository URL: ${options.repositoryUrl}`);
     this.url = repositoryCloneUrl(location);
     this.repositoryUrl = options.repositoryUrl;
-    this.branch = options.branch;
+    this.current = options.branch;
     this.storage = options.storage;
     this.http = options.http;
     this.credential = options.credential;
     this.now = options.now ?? Date.now;
   }
 
+  get branch(): string {
+    return this.current;
+  }
+
   private get localRef() {
-    return `refs/heads/${this.branch}`;
+    return `refs/heads/${this.current}`;
   }
 
   private get remoteRef() {
-    return `refs/remotes/origin/${this.branch}`;
+    return `refs/remotes/origin/${this.current}`;
   }
 
   /** @internal Use `cloneRepository`. */
@@ -173,12 +200,12 @@ export class GitRepository implements SyncPort {
     return this.run(async (op) => {
       const existing = (await this.storage.readdir("")).filter((entry) => !CLONE_IGNORES.has(entry.name));
       if (existing.length > 0) throw new SyncError("conflict", "A clone needs an empty project folder.", { code: "not-empty" });
-      await git.clone({ ...op.git, http: op.http, url: this.url, ref: this.branch, singleBranch: true, depth, noCheckout: true, noTags: true });
+      await git.clone({ ...op.git, http: op.http, url: this.url, ref: this.current, singleBranch: true, depth, noCheckout: true, noTags: true });
       await this.configureNew(op);
       const head = await this.resolve(op, this.localRef);
-      if (!head) throw new SyncError("not-found", `The repository has no branch ${this.branch}.`);
+      if (!head) throw new SyncError("not-found", `The repository has no branch ${this.current}.`);
       await this.downloadMissing(op, head, null);
-      await git.checkout({ ...op.git, ref: this.branch, force: true });
+      await git.checkout({ ...op.git, ref: this.current, force: true });
       // Checkout starts every write at once, so the last ones can land after a cancel.
       throwIfCancelled(signal);
     }, signal);
@@ -192,7 +219,7 @@ export class GitRepository implements SyncPort {
       } else if (await this.storage.exists(".git/HEAD")) {
         throw new SyncError("conflict", "This folder already has a Git repository.", { code: "repository-exists" });
       }
-      await git.init({ ...op.git, defaultBranch: this.branch });
+      await git.init({ ...op.git, defaultBranch: this.current });
       await git.addRemote({ ...op.git, remote: "origin", url: this.url });
       await this.configureNew(op);
     });
@@ -208,7 +235,7 @@ export class GitRepository implements SyncPort {
     return this.run(async (op) => {
       const rows = (await git.statusMatrix({ ...op.git })) as StatusRow[];
       return {
-        branch: this.branch,
+        branch: this.current,
         head: await this.resolve(op, this.localRef),
         changes: rows.map(changeOf).filter((change): change is FileChange => change !== null),
       };
@@ -249,20 +276,9 @@ export class GitRepository implements SyncPort {
       const local = await this.resolve(op, this.localRef);
       const remote = await this.resolve(op, this.remoteRef);
       if (!local || local === remote) return [];
-      const trees = [git.TREE({ ref: local }), ...(remote ? [git.TREE({ ref: remote })] : [])];
-      const paths = (await git.walk({
-        ...op.git,
-        trees,
-        map: async (path, [mine, theirs]) => {
-          if (path === ".") return undefined;
-          const mineId = mine ? await mine.oid() : null;
-          // The same id on both sides: nothing below it differs.
-          if (mineId === (theirs ? await theirs.oid() : null)) return null;
-          const isBlob = (await blobOid(mine)) !== null || (await blobOid(theirs)) !== null;
-          return isBlob ? path : undefined;
-        },
-      })) as string[];
-      return paths.sort();
+      // A branch not pushed yet sends what it added since it left the branches the remote has.
+      const base = remote ?? (await this.relation(op, local, await this.remoteHeads(op), false)).base;
+      return (await this.differing(op, local, base)).map((entry) => entry.path);
     });
   }
 
@@ -275,7 +291,7 @@ export class GitRepository implements SyncPort {
       let base: string | null = null;
       let fastForward = true;
       if (local) {
-        const relation = await this.relation(op, local, remote);
+        const relation = await this.relation(op, local, [remote]);
         if (relation.behind.length === 0) return { kind: "up-to-date", head: local };
         if (!relation.base) {
           throw new SyncError("conflict", "The remote branch shares no history with this copy.", { code: "unrelated-histories" });
@@ -305,7 +321,7 @@ export class GitRepository implements SyncPort {
       const signature = this.signature(author);
       const head = await git.commit({
         ...op.git,
-        message: `Merge remote-tracking branch 'origin/${this.branch}'`,
+        message: `Merge remote-tracking branch 'origin/${this.current}'`,
         author: signature,
         committer: signature,
         parent: [local!, remote],
@@ -318,10 +334,10 @@ export class GitRepository implements SyncPort {
     return this.run(async (op) => {
       const head = await this.resolve(op, this.localRef);
       if (!head) throw new SyncError("not-found", "There is nothing to push yet.");
-      const remoteBranch = options.remoteBranch ?? this.branch;
-      // A new remote branch starts from what the tracked branch already has on the server.
-      const remote = (await this.resolve(op, `refs/remotes/origin/${remoteBranch}`)) ?? (await this.resolve(op, this.remoteRef));
-      const { ahead } = await this.relation(op, head, remote);
+      const remoteBranch = options.remoteBranch ?? this.current;
+      // A new remote branch starts from what the remote's other branches already hold.
+      const remote = await this.resolve(op, `refs/remotes/origin/${remoteBranch}`);
+      const { ahead } = await this.relation(op, head, remote ? [remote] : await this.remoteHeads(op), remoteBranch === this.current && remote !== null);
       const objects = await this.introducedObjects(op, ahead);
       const uploaded = await op.lfs.upload([...objects.values()].map(({ object }) => object), async (object) => {
         const path = objects.get(object.oid)!.path;
@@ -333,7 +349,11 @@ export class GitRepository implements SyncPort {
         }
         throw new SyncError("lfs", `${path} is missing, so it cannot be uploaded.`, { code: "lfs-object-missing" });
       });
-      await git.push({ ...op.git, http: op.http, remote: "origin", ref: this.branch, remoteRef: remoteBranch });
+      await git.push({ ...op.git, http: op.http, remote: "origin", ref: this.current, remoteRef: remoteBranch });
+      // The first push of a branch makes the remote's its upstream, as `git push -u` does.
+      if (remoteBranch === this.current && !(await git.getConfig({ ...op.git, path: `branch.${this.current}.merge` }))) {
+        await this.setUpstream(op, this.current);
+      }
       return { head, uploaded };
     }, options.signal);
   }
@@ -377,12 +397,13 @@ export class GitRepository implements SyncPort {
     return downloaded;
   }
 
-  log({ limit, path, deepen = false }: LogOptions): Promise<LogPage> {
+  log({ limit, skip = 0, path, deepen = false }: LogOptions): Promise<LogPage> {
     return this.run(async (op) => {
+      // isomorphic-git walks from HEAD each time; the pages before are read again (from its object cache) and left out.
       const read = async (): Promise<CommitInfo[]> => {
         try {
-          const entries = await git.log({ ...op.git, ref: this.localRef, depth: limit, ...(path ? { filepath: storagePath(path) } : {}) });
-          return entries.map(({ oid, commit }) => ({
+          const entries = await git.log({ ...op.git, ref: this.localRef, depth: skip + limit, ...(path ? { filepath: storagePath(path) } : {}) });
+          return entries.slice(skip).map(({ oid, commit }) => ({
             id: oid,
             message: commit.message,
             author: { name: commit.author.name, email: commit.author.email },
@@ -397,12 +418,82 @@ export class GitRepository implements SyncPort {
       let commits = await read();
       let shallow = (await this.shallowCommits()).size > 0;
       if (deepen && commits.length < limit && shallow) {
-        await this.fetchBranch(op, limit);
+        await this.fetchBranch(op, { deepen: limit });
         commits = await read();
         shallow = (await this.shallowCommits()).size > 0;
       }
-      return { commits, hasMore: commits.length >= limit || shallow };
+      const ended = commits.length < limit;
+      return { commits, hasMore: !ended || shallow, shallow: ended && shallow };
     });
+  }
+
+  commitChanges(commit: string): Promise<FileChange[] | null> {
+    return this.run(async (op) => {
+      const node = await this.readCommit(op, commit);
+      if (!node) throw new SyncError("not-found", `This copy has no commit ${commit}.`);
+      const parent = node.parent[0] ?? null;
+      if (parent && ((await this.shallowCommits()).has(commit) || !(await this.readCommit(op, parent)))) return null;
+      return (await this.differing(op, parent, commit)).map(({ path, from, to }) => ({ path, kind: (from === null ? "added" : to === null ? "deleted" : "modified") satisfies ChangeKind }));
+    });
+  }
+
+  localBranches(): Promise<string[]> {
+    return this.run(async (op) => (await git.listBranches({ ...op.git })).sort());
+  }
+
+  remoteBranches(options: TransferOptions = {}): Promise<string[]> {
+    return this.run(async (op) => {
+      const refs = await git.listServerRefs({ http: op.http, url: this.url, prefix: "refs/heads/" });
+      return refs.map((entry) => entry.ref.slice("refs/heads/".length)).filter((name) => name !== "").sort();
+    }, options.signal);
+  }
+
+  createBranch(name: string): Promise<void> {
+    return this.run(async (op) => {
+      if (!isValidBranchName(name)) throw new SyncError("conflict", `"${name}" is not a valid branch name.`, { code: "invalid-branch-name" });
+      if (!(await this.resolve(op, this.localRef))) throw new SyncError("not-found", "Commit something before starting a branch.");
+      if (await this.resolve(op, `refs/heads/${name}`)) throw new SyncError("conflict", `There is already a branch named ${name}.`, { code: "branch-exists" });
+      await git.branch({ ...op.git, ref: name, checkout: true });
+      this.current = name;
+    });
+  }
+
+  switchBranch(name: string, options: TransferOptions = {}): Promise<SwitchResult> {
+    return this.run(async (op) => {
+      const head = await this.resolve(op, this.localRef);
+      if (name === this.current) return { head, changedPaths: [] };
+      const local = await this.resolve(op, `refs/heads/${name}`);
+      // A branch only the remote has comes as a clone's does: its newest commit, older history on demand.
+      if (!local && !(await this.fetchBranch(op, { branch: name, depth: DEFAULT_CLONE_DEPTH }))) {
+        throw new SyncError("not-found", `There is no branch ${name}.`);
+      }
+      const target = local ?? (await this.resolve(op, `refs/remotes/origin/${name}`));
+      if (!target) throw new SyncError("not-found", `There is no branch ${name}.`);
+
+      const differing = await this.differing(op, head, target);
+      const working = await this.workingOids(op, differing.map(({ path, from, to }) => ({ path, base: null, theirs: to, head: from })));
+      const mine = (path: string) => working.get(path) ?? null;
+      // A file the switch replaces must hold what one of the branches holds; anything else is work it would lose.
+      const blocked = differing.filter(({ path, from, to }) => mine(path) !== from && mine(path) !== to).map(({ path }) => path);
+      if (blocked.length > 0) throw uncommittedChangesError(name, blocked);
+
+      const writes = differing.filter(({ path, to }) => mine(path) !== to).map(({ path }) => path);
+      await this.downloadMissing(op, target, new Set(writes));
+      if (writes.length > 0) await git.checkout({ ...op.git, ref: target, filepaths: writes, force: true, noUpdateHead: true });
+      // A file that already holds the other branch's version keeps it; only its index entry moves.
+      for (const { path, to } of differing) {
+        if (mine(path) !== to) continue;
+        if (to) await git.updateIndex({ ...op.git, filepath: path, oid: to, add: true });
+        else await git.updateIndex({ ...op.git, filepath: path, remove: true, force: true });
+      }
+      if (!local) {
+        await git.writeRef({ ...op.git, ref: `refs/heads/${name}`, value: target });
+        await this.setUpstream(op, name);
+      }
+      await git.writeRef({ ...op.git, ref: "HEAD", value: `refs/heads/${name}`, symbolic: true, force: true });
+      this.current = name;
+      return { head: target, changedPaths: writes };
+    }, options.signal);
   }
 
   /**
@@ -420,7 +511,7 @@ export class GitRepository implements SyncPort {
         fs,
         git: { fs, dir: WORKTREE, gitdir: GITDIR, cache: this.cache },
         http: gitHttp(authorizedHttp(this.credential, http, "basic"), transfer),
-        lfs: new LfsTransfer({ repositoryUrl: this.repositoryUrl, branch: this.branch, http, credential: this.credential, counters: transfer }),
+        lfs: new LfsTransfer({ repositoryUrl: this.repositoryUrl, branch: this.current, http, credential: this.credential, counters: transfer }),
         commits: new Map(),
       };
       try {
@@ -450,16 +541,77 @@ export class GitRepository implements SyncPort {
     }
   }
 
-  private async fetchBranch(op: Op, deepen?: number): Promise<void> {
-    await git.fetch({
+  /**
+   * Fetches `branch` (the checked-out one by default): `deepen` commits older
+   * than this copy's oldest, or a branch new to this copy `depth` deep.
+   * Resolves false when the remote has no such branch (not pushed yet, or
+   * deleted there), whose remote-tracking ref then goes, as `git fetch
+   * --prune` drops it.
+   */
+  private async fetchBranch(op: Op, options: { branch?: string; deepen?: number; depth?: number } = {}): Promise<boolean> {
+    const branch = options.branch ?? this.current;
+    const remoteRef = `refs/heads/${branch}`;
+    try {
+      await git.fetch({
+        ...op.git,
+        http: op.http,
+        remote: "origin",
+        ref: branch,
+        remoteRef,
+        singleBranch: true,
+        tags: false,
+        ...(options.deepen ? { depth: options.deepen, relative: true } : options.depth ? { depth: options.depth } : {}),
+      });
+      return true;
+    } catch (error) {
+      const missing = (error as { code?: unknown; data?: { what?: unknown } }).code === "NotFoundError" && (error as { data?: { what?: unknown } }).data?.what === remoteRef;
+      if (!missing) throw error;
+      if (await this.resolve(op, `refs/remotes/origin/${branch}`)) await git.deleteRef({ ...op.git, ref: `refs/remotes/origin/${branch}` });
+      return false;
+    }
+  }
+
+  /** Makes the remote's `branch` the local one's upstream, as other Git apps read it. */
+  private async setUpstream(op: Op, branch: string): Promise<void> {
+    await git.setConfig({ ...op.git, path: `branch.${branch}.remote`, value: "origin" });
+    await git.setConfig({ ...op.git, path: `branch.${branch}.merge`, value: `refs/heads/${branch}` });
+  }
+
+  /** Every remote branch this copy has fetched: what a branch not pushed yet is measured against. */
+  private async remoteHeads(op: Op): Promise<string[]> {
+    const heads: string[] = [];
+    for (const name of await git.listBranches({ ...op.git, remote: "origin" })) {
+      if (name === "HEAD") continue;
+      const oid = await this.resolve(op, `refs/remotes/origin/${name}`);
+      if (oid && !heads.includes(oid)) heads.push(oid);
+    }
+    return heads;
+  }
+
+  /**
+   * The files that differ between two commits (null: no commit, so every
+   * file of the other), sorted, with their blob ids; identical subtrees are
+   * skipped, and no working file is read.
+   */
+  private async differing(op: Op, from: string | null, to: string | null): Promise<Differing[]> {
+    if (from === to) return [];
+    const sides = [from, to].filter((ref): ref is string => ref !== null);
+    const result = (await git.walk({
       ...op.git,
-      http: op.http,
-      remote: "origin",
-      ref: this.branch,
-      singleBranch: true,
-      tags: false,
-      ...(deepen ? { depth: deepen, relative: true } : {}),
-    });
+      trees: sides.map((ref) => git.TREE({ ref })),
+      map: async (path, entries) => {
+        if (path === ".") return undefined;
+        const before = from ? entries[0] : null;
+        const after = to ? entries[from ? 1 : 0] : null;
+        // The same id on both sides: nothing below it differs.
+        if ((before ? await before.oid() : null) === (after ? await after.oid() : null)) return null;
+        const fromId = await blobOid(before);
+        const toId = await blobOid(after);
+        if (fromId === null && toId === null) return undefined;
+        return { path, from: fromId, to: toId } satisfies Differing;
+      },
+    })) as Differing[];
+    return result.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   }
 
   private async shallowCommits(): Promise<Set<string>> {
@@ -509,28 +661,37 @@ export class GitRepository implements SyncPort {
   }
 
   /**
-   * Splits the history; a fork older than the shallow history deepens it a
-   * bounded number of times, unless `deepen` is false (no network).
+   * Splits the history against `remotes`; a fork older than the shallow
+   * history deepens the checked-out branch a bounded number of times, unless
+   * `deepen` is false (no network, or a branch the remote lacks).
    */
-  private async relation(op: Op, local: string, remote: string | null, deepen = true): Promise<Relation> {
+  private async relation(op: Op, local: string, remotes: readonly string[], deepen = true): Promise<Relation> {
     for (let attempt = 0; ; attempt += 1) {
-      const relation = await relate(local, remote, (oid) => this.commitNode(op, oid), await this.shallowCommits());
-      if (!deepen || !remote || relation.base || !relation.truncated || attempt >= MAX_DEEPENS) return relation;
-      await this.fetchBranch(op, DEEPEN_STEP * 2 ** attempt);
+      const relation = await relate(local, remotes, (oid) => this.commitNode(op, oid), await this.shallowCommits());
+      if (!deepen || remotes.length === 0 || relation.base || !relation.truncated || attempt >= MAX_DEEPENS) return relation;
+      await this.fetchBranch(op, { deepen: DEEPEN_STEP * 2 ** attempt });
     }
   }
 
-  /** Counts and incoming commits against the remote-tracking branch; `deepen` may fetch older history. */
+  /**
+   * Counts and incoming commits against the remote-tracking branch; `deepen`
+   * may fetch older history. A branch the remote lacks has nothing to pull,
+   * and is ahead by what none of the remote's fetched branches holds.
+   */
   private async state(op: Op, deepen: boolean): Promise<RemoteState> {
     const local = await this.resolve(op, this.localRef);
     const remote = await this.resolve(op, this.remoteRef);
     if (!local) {
-      const incoming = remote ? (await this.relation(op, remote, null, deepen)).ahead : [];
-      return { branch: this.branch, local, remote, ahead: 0, behind: incoming.length, incoming: await this.commitInfos(op, incoming) };
+      const incoming = remote ? (await this.relation(op, remote, [], deepen)).ahead : [];
+      return { branch: this.current, local, remote, ahead: 0, behind: incoming.length, incoming: await this.commitInfos(op, incoming) };
     }
-    const relation = await this.relation(op, local, remote, deepen);
+    if (!remote) {
+      const { ahead } = await this.relation(op, local, await this.remoteHeads(op), false);
+      return { branch: this.current, local, remote, ahead: ahead.length, behind: 0, incoming: [] };
+    }
+    const relation = await this.relation(op, local, [remote], deepen);
     return {
-      branch: this.branch,
+      branch: this.current,
       local,
       remote,
       ahead: relation.ahead.length,
