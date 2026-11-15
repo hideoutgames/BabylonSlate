@@ -25,6 +25,11 @@ interface Pending {
   reject: (error: unknown) => void;
 }
 
+/** A view of a whole, transferable buffer: moving it takes nothing else along. */
+function wholeBuffer(bytes: Uint8Array): bytes is Uint8Array<ArrayBuffer> {
+  return bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+}
+
 function moduleWorker(): AssetDiffWorkerHandle | null {
   if (typeof Worker === "undefined") return null;
   return new Worker(new URL("./asset-diff-worker.ts", import.meta.url), { type: "module" });
@@ -128,10 +133,10 @@ export class AssetDiffClient {
     const transfer: Transferable[] = [];
     try {
       const bytes = message.blob ? await source.readBlob(message.blob.sha256, message.blob.byteLength) : await source.read();
-      // A copy moves to the worker, so the source's own bytes stay readable.
-      const copy = bytes ? bytes.slice() : null;
-      if (copy) transfer.push(copy.buffer);
-      reply = { type: "read-result", id: message.id, read: message.read, bytes: copy };
+      // Fresh bytes (the working copy's files) move to the worker as they are; a copy of others, so their holder's stay readable.
+      const sent = bytes ? (source.owned && wholeBuffer(bytes) ? bytes : bytes.slice()) : null;
+      if (sent) transfer.push(sent.buffer);
+      reply = { type: "read-result", id: message.id, read: message.read, bytes: sent };
     } catch (error) {
       const code = (error as { code?: unknown } | null)?.code;
       reply = { type: "read-error", id: message.id, read: message.read, message: error instanceof Error ? error.message : String(error), ...(typeof code === "string" ? { code } : {}) };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AssetVersionCache, diffAssetVersions, type AssetDiff, type AssetVersionSource, type SceneDiff, type GraphDiff, type TextureDiff } from "./asset-diff";
-import { AssetDiffClient } from "./asset-diff-client";
+import { AssetDiffClient, type AssetDiffWorkerHandle } from "./asset-diff-client";
+import { createAssetDiffHandler, type AssetDiffReplyMessage, type AssetDiffRequestMessage } from "./asset-diff-protocol";
 import { encodeHasset, type ChunkInput } from "./hasset";
 import { sha256Hex } from "./bytes";
 
@@ -217,18 +218,35 @@ describe("asset diffs", () => {
     expect((changed.view as SceneDiff).counts).toEqual({ added: 0, removed: 0, changed: 1 });
   });
 
-  it("keeps a commit's decoded version for the next diff, and never the working copy's", async () => {
-    const stored = await asset("Scene", { document: scene([actor("a", "A")]) });
-    const cache = new AssetVersionCache(2);
+  it("keeps commit versions for the next diff within a byte budget, the least recently used going first, and never the working copy's", async () => {
+    const document = scene([actor("a", "A")]);
+    const stored = await asset("Scene", { document });
+    // A kept version holds its .hasset and its parsed document, counted at the document chunk's length.
+    const kept = stored.bytes.byteLength + encode(document).byteLength;
+    // Room for two such versions, not three.
+    const cache = new AssetVersionCache(2 * kept + kept / 2);
     const base = source(stored, "assets/Forest.scene.hasset@abc");
     const working = source(stored, null);
     await diffAssetVersions("assets/Forest.scene.hasset", base, working, cache);
     await diffAssetVersions("assets/Forest.scene.hasset", base, working, cache);
     expect([base.reads, working.reads]).toEqual([1, 2]);
-    // The least recently used commit goes when the cache is full.
-    for (const key of ["one", "two"]) await diffAssetVersions("p", source(stored, key), working, cache);
+    expect(cache.bytes).toBe(kept);
+    const two = source(stored, "two");
+    await diffAssetVersions("p", two, working, cache);
+    // Over the budget: the least recently used (the first base) goes.
+    await diffAssetVersions("p", source(stored, "three"), working, cache);
+    expect(cache.bytes).toBe(2 * kept);
+    await diffAssetVersions("p", two, working, cache);
+    expect(two.reads).toBe(1);
     await diffAssetVersions("assets/Forest.scene.hasset", base, working, cache);
     expect(base.reads).toBe(2);
+
+    // A version bigger than the whole budget serves its diff and is not kept.
+    const small = new AssetVersionCache(kept - 1);
+    const big = source(stored, "big");
+    await diffAssetVersions("p", big, working, small);
+    await diffAssetVersions("p", big, working, small);
+    expect([big.reads, small.bytes]).toEqual([2, 0]);
   });
 
   it("compares a Texture's facts and hands over both rasters, decoding a raster the versions share once", async () => {
@@ -252,6 +270,75 @@ describe("asset diffs", () => {
     expect(view.base?.bytes).toEqual(raster);
     expect(view.compare).toBe(view.base);
     expect([baseSource.blobReads.length, compareSource.blobReads.length]).toEqual([1, 0]);
+  });
+
+  it("hands a Texture's raster to the main thread as it was read, keeping none of it in the cache", async () => {
+    const raster = new Uint8Array(70 * 1024).fill(7);
+    const texture = (width: number) => asset("Texture", { payload: { width, height: width }, chunks: [{ id: "source", kind: "source", mime: "image/png", data: raster }] });
+    const base = source(await texture(1024), "t@base");
+    const compare = source(await texture(2048), null);
+    const cache = new AssetVersionCache();
+    /** The diff on the worker side, each read answered with a buffer of its own, as the client sends them. */
+    const run = () => new Promise<{ diff: AssetDiff; transfer: Transferable[]; sent: Uint8Array[] }>((resolve, reject) => {
+      const sent: Uint8Array[] = [];
+      const handle = createAssetDiffHandler((message, transfer = []) => {
+        if (message.type === "read") {
+          const side = message.side === "base" ? base : compare;
+          void (message.blob ? side.readBlob(message.blob.sha256, message.blob.byteLength) : side.read()).then((bytes) => {
+            const own = bytes ? bytes.slice() : null;
+            if (own) sent.push(own);
+            handle({ type: "read-result", id: message.id, read: message.read, bytes: own });
+          });
+        } else if (message.type === "result") resolve({ diff: message.diff, transfer, sent });
+        else reject(new Error(message.message));
+      }, cache);
+      handle({ type: "diff", id: 1, path: "assets/Rock.texture.hasset", base: { key: base.key }, compare: { key: compare.key } });
+    });
+    const first = await run();
+    const view = first.diff.view as TextureDiff;
+    expect(view.base?.bytes).toEqual(raster);
+    // The read itself moves on, no copy of it: the raster is one of the read's buffers, and transferred.
+    expect(first.sent).toContain(view.base!.bytes);
+    expect(first.transfer).toEqual([view.base!.bytes.buffer]);
+    // The cached base keeps its .hasset, not the raster: the next diff reads the raster again, the .hasset not.
+    await run();
+    expect([base.reads, base.blobReads.length]).toEqual([1, 2]);
+  });
+
+  it("moves the working copy's reads to the worker without a copy, and copies a commit's, which its source may still hold", async () => {
+    const stored = await asset("Scene", { document: scene([actor("a", "A")]) });
+    const handed: Uint8Array[] = [];
+    const fresh = (from: Recording): AssetVersionSource => ({
+      ...from,
+      owned: true,
+      read: async () => {
+        const bytes = (await from.read())!.slice();
+        handed.push(bytes);
+        return bytes;
+      },
+    });
+    const commit = source(stored, "s@1");
+    const posted: { message: AssetDiffRequestMessage; transfer: Transferable[] }[] = [];
+    const worker = {
+      onmessage: null as ((event: MessageEvent<AssetDiffReplyMessage>) => void) | null,
+      onerror: null,
+      terminate: () => {},
+      postMessage(message: AssetDiffRequestMessage, transfer: Transferable[] = []) {
+        posted.push({ message, transfer });
+        handler(message);
+      },
+    };
+    const handler = createAssetDiffHandler((reply) => queueMicrotask(() => worker.onmessage!({ data: reply } as MessageEvent<AssetDiffReplyMessage>)));
+    const client = new AssetDiffClient({ createWorker: () => worker as unknown as AssetDiffWorkerHandle });
+    await client.diff({ path: "p", base: commit, compare: fresh(source(stored, null)) });
+    const reads = posted.flatMap(({ message, transfer }) => (message.type === "read-result" && message.bytes ? [{ bytes: message.bytes, transfer }] : []));
+    expect(reads).toHaveLength(2);
+    const working = reads.find((read) => read.bytes === handed[0]);
+    expect(working?.transfer).toEqual([handed[0]!.buffer]);
+    const base = reads.find((read) => read.bytes !== handed[0])!;
+    expect(base.bytes).not.toBe(stored.bytes);
+    expect(base.transfer).toEqual([base.bytes.buffer]);
+    client.dispose();
   });
 
   it("reports an asset the base lacks as added, and lists the other kinds' fields as groups", async () => {

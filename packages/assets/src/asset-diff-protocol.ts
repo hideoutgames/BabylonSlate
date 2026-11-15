@@ -33,15 +33,20 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Raster copies the reply can transfer: the decoded chunk stays in the cache for the next diff. */
-function detachRasters(diff: AssetDiff): Transferable[] {
+/**
+ * The rasters' buffers, which the reply moves to the main thread without a
+ * copy: each diff reads its own and the cache keeps none (`AssetVersion.chunk`).
+ * Base and compare share one when the raster did not change.
+ */
+function rasterBuffers(diff: AssetDiff): Transferable[] {
   if (diff.view.kind !== "texture") return [];
-  const copies = new Map<Uint8Array, Uint8Array>();
-  const copy = (bytes: Uint8Array) => copies.get(bytes) ?? copies.set(bytes, bytes.slice()).get(bytes)!;
-  const view = diff.view;
-  if (view.base) view.base = { ...view.base, bytes: copy(view.base.bytes) };
-  if (view.compare) view.compare = { ...view.compare, bytes: copy(view.compare.bytes) };
-  return [...copies.values()].map((bytes) => bytes.buffer);
+  const buffers = new Set<ArrayBuffer>();
+  for (const raster of [diff.view.base, diff.view.compare]) {
+    const bytes = raster?.bytes;
+    // A view of a larger buffer is cloned with the reply instead (its buffer may hold more).
+    if (bytes && bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength) buffers.add(bytes.buffer);
+  }
+  return [...buffers];
 }
 
 /**
@@ -81,7 +86,7 @@ export function createAssetDiffHandler(post: (message: AssetDiffReplyMessage, tr
         diffAssetVersions(message.path, source(id, "base", message.base.key), source(id, "compare", message.compare.key), cache).then(
           (diff) => {
             if (cancelled.delete(id)) return;
-            post({ type: "result", id, diff }, detachRasters(diff));
+            post({ type: "result", id, diff }, rasterBuffers(diff));
           },
           (error: unknown) => {
             if (cancelled.delete(id)) return;

@@ -19,6 +19,8 @@ function versionSource(sync: SourceControlSyncService, path: string, commit: str
   if (working) {
     return {
       key: null,
+      // Each read is a fresh file read: it moves to the worker without a copy.
+      owned: true,
       read: () => sync.readWorking(path),
       readBlob: async (sha256, byteLength) => {
         const bytes = await sync.readWorking(blobPath(sha256));

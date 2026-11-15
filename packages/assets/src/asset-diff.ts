@@ -27,6 +27,12 @@ export * from "./asset-diff-graph";
 export interface AssetVersionSource {
   /** `path@commit` for a version that never changes; null for the working copy. */
   key: string | null;
+  /**
+   * Its reads return buffers nobody else holds (a file just read from
+   * storage), so they move to the worker without a copy. Leave it unset when
+   * the bytes may be kept elsewhere (a Git object cache).
+   */
+  owned?: boolean;
   /** The `.hasset` bytes, or null when this version has no such asset. */
   read(): Promise<Uint8Array | null>;
   /** A blob chunk's bytes (the `.blobs/<sha256>` object), as its chunk entry names it. */
@@ -42,7 +48,7 @@ export interface ChunkDiff {
   compare: { byteLength: number; sha256: string } | null;
 }
 
-/** A Texture's raster (its `source` or `pixels` chunk) for the preview. */
+/** A Texture's raster (its `source` or `pixels` chunk) for the preview; its bytes are its own buffer, which the worker hands over. */
 export interface TextureRaster {
   bytes: Uint8Array;
   mime: string;
@@ -102,16 +108,19 @@ async function memo<T>(cache: Map<string, Promise<T>>, key: string, work: () => 
 }
 
 /**
- * One decoded version: its header, with chunks decoded (and checked) only
- * when asked, once. A cached version serves many diffs, so every read goes
- * through the source of the diff asking: never through the one that opened it.
+ * One decoded version: its header, and its document parsed once when asked.
+ * Other chunks (a Texture's raster) are read for each diff and kept by none:
+ * they are the largest, and the reply hands them over. A cached version
+ * serves many diffs, so every read goes through the source of the diff
+ * asking: never through the one that opened it.
  */
 export class AssetVersion {
   readonly header: HassetHeader | null;
   readonly byteLength: number;
   private readonly bytes: Uint8Array | null;
-  private readonly decoded = new Map<string, Promise<Uint8Array | null>>();
   private readonly documents = new Map<string, Promise<Record<string, unknown> | null>>();
+  /** The parsed document's share of `retainedBytes`: its chunk's length. */
+  private documentBytes = 0;
 
   private constructor(bytes: Uint8Array | null) {
     this.bytes = bytes;
@@ -123,25 +132,37 @@ export class AssetVersion {
     return new AssetVersion(await source.read());
   }
 
+  /** What a cache keeps of it: the `.hasset`, and the parsed document counted at its chunk's length. */
+  get retainedBytes(): number {
+    return this.byteLength + this.documentBytes;
+  }
+
   entry(id: string): ChunkEntry | undefined {
     return this.header?.chunks.find((chunk) => chunk.id === id);
   }
 
-  /** A chunk's bytes, checked against its digest; read (a blob through `source`) and decoded once. */
-  chunk(id: string, source: AssetVersionSource): Promise<Uint8Array | null> {
+  /**
+   * A chunk's bytes for one diff, checked against its digest and kept by
+   * nothing: a blob's bytes as `source` read them, an inline chunk copied out
+   * of the `.hasset`, so the caller owns the buffer.
+   */
+  async chunk(id: string, source: AssetVersionSource): Promise<Uint8Array | null> {
     const entry = this.entry(id);
     const bytes = this.bytes;
-    if (!bytes || !entry) return Promise.resolve(null);
-    return memo(this.decoded, id, () => decodeHassetChunk(bytes, id, (sha) => source.readBlob(sha, entry.byteLength)));
+    if (!bytes || !entry) return null;
+    const data = await decodeHassetChunk(bytes, id, (sha) => source.readBlob(sha, entry.byteLength));
+    return data && "inline" in entry.locator ? data.slice() : data;
   }
 
   /** The editor document: the `document` chunk's JSON, or the header payload of a header-only asset. */
   document(source: AssetVersionSource): Promise<Record<string, unknown> | null> {
     return memo(this.documents, DOCUMENT_CHUNK_ID, async () => {
-      if (!this.header) return null;
-      if (!this.entry(DOCUMENT_CHUNK_ID)) return this.header.payload;
-      const bytes = await this.chunk(DOCUMENT_CHUNK_ID, source);
+      const entry = this.entry(DOCUMENT_CHUNK_ID);
+      if (!this.header || !this.bytes) return null;
+      if (!entry) return this.header.payload;
+      const bytes = await decodeHassetChunk(this.bytes, DOCUMENT_CHUNK_ID, (sha) => source.readBlob(sha, entry.byteLength));
       const value: unknown = bytes ? JSON.parse(new TextDecoder().decode(bytes)) : null;
+      this.documentBytes = entry.byteLength;
       return isPlainObject(value) ? value : null;
     });
   }
@@ -153,17 +174,36 @@ interface Side {
   source: AssetVersionSource;
 }
 
-/** Decoded versions that never change (a commit's), by `path@commit`; the least recently used goes first. */
+/**
+ * What the diff worker keeps of decoded commit versions. It needs the base
+ * (and often the remote side) of the open diff while saves reload the working
+ * side, plus the last few versions History browsed: a few large Scenes'
+ * documents. Rasters are never kept, so no single version comes near it; it
+ * shares the device's memory with the editor, hence no more.
+ */
+export const DIFF_CACHE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Decoded versions that never change (a commit's), by `path@commit`, within a
+ * byte budget (`AssetVersion.retainedBytes`): after each diff (`trim`), the
+ * least recently used go until the rest fit, so one larger than the whole
+ * budget serves its diff and is not kept.
+ */
 export class AssetVersionCache {
   private readonly entries = new Map<string, Promise<AssetVersion>>();
-  private readonly capacity: number;
+  /** The entries that have opened, with their sizes. */
+  private readonly opened = new Map<string, AssetVersion>();
+  private readonly budget: number;
 
-  constructor(capacity = 8) {
-    this.capacity = capacity;
+  constructor(budget = DIFF_CACHE_BYTES) {
+    this.budget = budget;
   }
 
-  get size(): number {
-    return this.entries.size;
+  /** What the kept versions hold now. */
+  get bytes(): number {
+    let total = 0;
+    for (const key of this.entries.keys()) total += this.opened.get(key)?.retainedBytes ?? 0;
+    return total;
   }
 
   async open(source: AssetVersionSource): Promise<AssetVersion> {
@@ -174,9 +214,23 @@ export class AssetVersionCache {
       this.entries.delete(key);
       this.entries.set(key, known);
     }
-    const opened = memo(this.entries, key, () => AssetVersion.open(source));
-    while (this.entries.size > this.capacity) this.entries.delete(this.entries.keys().next().value!);
-    return opened;
+    const version = await memo(this.entries, key, () => AssetVersion.open(source));
+    // Kept unless `trim` dropped it meanwhile.
+    if (this.entries.has(key) && !this.opened.has(key)) this.opened.set(key, version);
+    return version;
+  }
+
+  /** Drops the least recently used versions until the kept ones fit the budget; one still opening stays. */
+  trim(): void {
+    let total = this.bytes;
+    for (const key of [...this.entries.keys()]) {
+      if (total <= this.budget) return;
+      const version = this.opened.get(key);
+      if (!version) continue;
+      this.entries.delete(key);
+      this.opened.delete(key);
+      total -= version.retainedBytes;
+    }
   }
 }
 
@@ -296,6 +350,15 @@ async function viewFor(type: string, base: Side, compare: Side): Promise<AssetDi
  * `.hasset` rejects.
  */
 export async function diffAssetVersions(path: string, base: AssetVersionSource, compare: AssetVersionSource, cache: AssetVersionCache): Promise<AssetDiff> {
+  try {
+    return await diffVersions(path, base, compare, cache);
+  } finally {
+    // The versions have decoded what this diff needed: only now is their size known.
+    cache.trim();
+  }
+}
+
+async function diffVersions(path: string, base: AssetVersionSource, compare: AssetVersionSource, cache: AssetVersionCache): Promise<AssetDiff> {
   const [before, after] = await Promise.all([cache.open(base), cache.open(compare)]);
   const shown = after.header ?? before.header;
   const status: DiffStatus = !before.header && !after.header ? "unchanged" : !before.header ? "added" : !after.header ? "removed" : "changed";
