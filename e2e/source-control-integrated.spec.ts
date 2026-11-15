@@ -139,6 +139,10 @@ test.describe("Source Control in Integrated mode", () => {
     await expect(diff.getByTestId("diff-properties").locator('[data-changed="true"]').first()).toBeVisible();
     await expect(page.getByTestId("diff-base")).toContainText("main ·");
     await expect(page.getByTestId("diff-compare")).toContainText("Working Copy");
+    // The pickers list the commits History reads for the Scene.
+    await page.getByTestId("diff-base").click();
+    await expect(page.getByTestId("diff-base-commits")).toContainText("Publish project", { timeout: 30_000 });
+    await page.keyboard.press("Escape");
     await diff.getByTestId("diff-revert").click();
     await expect(page.getByTestId("source-control-revert-confirm")).toContainText("It cannot be undone.");
     await page.getByTestId("source-control-revert-confirm-action").click();
@@ -153,6 +157,13 @@ test.describe("Source Control in Integrated mode", () => {
     await changes.getByTestId("changes-commit").click();
     await expect.poll(() => remoteHeadMessage(page), { timeout: 30_000 }).toBe("Move the first actor");
     await expect.poll(() => settled(page), { timeout: 30_000 }).toEqual({ active: true, ahead: 0, behind: 0, rows: [], busy: false });
+    // Every blob file is used: Remove Unused Files finds nothing to remove.
+    await changes.getByTestId("changes-more").click();
+    await page.getByTestId("changes-remove-unused").click();
+    const unused = page.getByTestId("source-control-unused-done");
+    await expect(unused).toContainText("No Unused Files", { timeout: 30_000 });
+    await unused.getByRole("button", { name: "Close" }).click();
+    await expect(unused).toHaveCount(0);
 
     // A teammate changes the same Scene and adds a file; this copy edits the Scene again.
     await teammateCommit(page, { [SCENE_PATH]: "teammate", "notes/teammate.txt": "hello" }, "Teammate edit");

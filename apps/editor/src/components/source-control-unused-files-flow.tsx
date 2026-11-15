@@ -112,7 +112,7 @@ export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void })
         <AlertDialogContent data-testid="source-control-unused-finding">
           <AlertDialogHeader>
             <AlertDialogTitle>Finding Unused Files</AlertDialogTitle>
-            <AlertDialogDescription>Checking which blob files assets and unpushed commits still use.</AlertDialogDescription>
+            <AlertDialogDescription>Checking which stored asset data the assets and unpushed commits still use.</AlertDialogDescription>
           </AlertDialogHeader>
           <Progress value={null} aria-label="Finding Unused Files" />
           <AlertDialogFooter>
@@ -131,7 +131,7 @@ export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void })
                 </AlertDialogMedia>
                 <AlertDialogTitle>Remove {filesLabel(step.found.paths.length)}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  {bytesLabel(step.found.bytes)} of blob files that no asset uses and that no unpushed commit holds. Removing them cannot be undone.
+                  {bytesLabel(step.found.bytes)} of stored asset data that no asset uses and no unpushed commit holds. Removing it cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -164,7 +164,7 @@ export function SourceControlUnusedFilesFlow({ onDone }: { onDone: () => void })
               <AlertDialogDescription>
                 {step.removed.paths.length > 0
                   ? `${bytesLabel(step.removed.bytes)} freed.`
-                  : "Every blob file is used by an asset or by a commit that is not pushed yet."}
+                  : "All stored asset data is used by an asset or by a commit that is not pushed yet."}
               </AlertDialogDescription>
             </AlertDialogHeader>
           ) : null}
