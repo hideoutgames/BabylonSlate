@@ -14,4 +14,4 @@ The Skeleton's rest pose.
 
 ## Notes
 
-- Blend toward it to fade a clip out, for example with [Blend Poses By Bool](blend-poses-by-bool.md).
+- Blend toward it to fade a clip out, for example with [Blend Poses By Bool](blend-poses-by-bool.md). Partway through the blend, each bone sits between the clip's pose and its rest pose.

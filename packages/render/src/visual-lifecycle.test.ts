@@ -85,7 +85,7 @@ describe("visual generation ownership", () => {
     expect(scene.materials).toContain(borrowed);
     expect(scene.materials).toHaveLength(warmed);
     expect(scene.meshes).toHaveLength(0);
-    expect(binding.slotAnimationGroups?.size ?? 0).toBe(0);
+    expect(binding.slotPoseClips?.size ?? 0).toBe(0);
   });
 
   it("stages editor model replacement and preserves the working hierarchy on failure", async () => {

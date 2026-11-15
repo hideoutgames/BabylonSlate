@@ -272,11 +272,6 @@ export class RagdollPoseController {
           session.targets = targets;
           session.byName = new Map(targets.map((target) => [target.name, target]));
           session.byBone = new Map(targets.filter((target) => target.bone).map((target) => [target.bone!, target]));
-          // The preceding animation pass consumed queued weighted seeks. Preserve
-          // the evaluated pose of unselected bones instead of resetting to rest.
-          for (const group of this.binding.slotAnimationGroups?.get(slotId) ?? []) {
-            group.pause();
-          }
           this.reply({ type: "ragdollPoseCaptured", slotId, requestId: session.request.requestId, bones });
         }
         // An in-process reply may synchronously disable or destroy this actor.

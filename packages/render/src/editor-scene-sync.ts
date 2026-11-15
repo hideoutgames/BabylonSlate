@@ -161,7 +161,7 @@ export class EditorSceneSync {
   private modelLoadSlot = 0;
   private readonly modelLoadBinding: ModelAnimLoadBinding = {
     slotAnimEpoch: new Map<number, number>(),
-    slotAnimationGroups: new Map(),
+    slotPoseClips: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
   };
 

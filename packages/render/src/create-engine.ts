@@ -1093,8 +1093,8 @@ function initializeEngine(
   const warnMissingClip = onceMissingClip((info) =>
     console.warn(`[render] missing ${info.clipKind} clip "${info.clipName}" on slot ${info.slotId}`));
   const animHostReportingMissing = sceneAnimHostFromBinding(binding, animHostOptions((info) => {
-    const groups = binding.slotAnimationGroups?.get(info.slotId);
-    if (info.clipKind === "animation" && (!groups || groups.length === 0)) return;
+    const clips = binding.slotPoseClips?.get(info.slotId);
+    if (info.clipKind === "animation" && (!clips || clips.length === 0)) return;
     warnMissingClip(info);
   }));
   binding.slotVisualReady = (slotId, successor) => {

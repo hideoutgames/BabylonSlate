@@ -289,7 +289,7 @@ describe("applyAlbedoTexture", () => {
       const still = createDefaultSpriteAnimationPayload();
       still.frames[0]!.textureGuid = "atlas";
       const fade = (weight: number) => applyAnimStateToScene({
-        getAnimationGroups: () => [],
+        getPoseClips: () => [],
         getSpriteSlot: () => ({ mesh: f.mesh, overlayMesh: overlay, payload: f.sprite, spriteAnimations: new Map([["still", still]]) }),
       }, {
         type: "animState", slotId: 1, stateId: "idle", normalisedTime: 0, blendWeights: {},
