@@ -114,4 +114,28 @@ describe("retargetAnimationLoadsFromAnimations", () => {
       ]),
     );
   });
+
+  it("gives each Model the other Models' Animations on its Skeleton, bound by name, and their retargeted ones", () => {
+    const animations = [
+      { guid: "knight-walk", payload: normalizeAnimationPayload({ clipName: "Walk", modelGuid: "knight", skeletonGuid: "rig" }) },
+      { guid: "library-run", payload: normalizeAnimationPayload({ clipName: "Run", modelGuid: "library", skeletonGuid: "rig" }) },
+      { guid: "mixamo-idle", payload: normalizeAnimationPayload({ clipName: "Idle", modelGuid: "mixamo", skeletonGuid: "mixamo-rig" }) },
+      {
+        guid: "knight-idle",
+        payload: normalizeAnimationPayload({ clipName: "Idle", modelGuid: "knight", skeletonGuid: "rig", sourceAnimationGuid: "mixamo-idle" }),
+      },
+    ];
+    const loads = retargetAnimationLoadsFromAnimations(animations, new Map([["rogue", "rig"], ["knight", "rig"], ["prop", null]]));
+    expect(loads.get("rogue")).toEqual([
+      { animationGuid: "knight-walk", clipName: "Walk", sourceModelGuid: "knight", bindByName: true },
+      { animationGuid: "library-run", clipName: "Run", sourceModelGuid: "library", bindByName: true },
+      { animationGuid: "knight-idle", clipName: "Idle", sourceModelGuid: "mixamo" },
+    ]);
+    // The Knight's own clip plays natively; its retargeted one stays listed once.
+    expect(loads.get("knight")).toEqual([
+      { animationGuid: "knight-idle", clipName: "Idle", sourceModelGuid: "mixamo" },
+      { animationGuid: "library-run", clipName: "Run", sourceModelGuid: "library", bindByName: true },
+    ]);
+    expect(loads.has("prop")).toBe(false);
+  });
 });

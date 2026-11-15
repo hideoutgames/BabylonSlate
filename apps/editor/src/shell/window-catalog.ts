@@ -1,5 +1,5 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import type { DockWindowDirection } from "@haptic/core";
-import type { AnimEditorMode } from "./anim-document-layout";
 import type { SceneMode } from "./scene-document-layout";
 
 export type DockviewDocumentKind =
@@ -27,7 +27,10 @@ export type DockviewDocumentKind =
   | "material-function"
   | "material-instance"
   | "plugin-settings"
-  | "anim-graph"
+  | "anim-graph-3d"
+  | "anim-graph-2d"
+  | "blend-space"
+  | "sprite-blend-space"
   | "behaviour-tree"
   | "audio"
   | "save-game"
@@ -51,7 +54,8 @@ export type DockviewDocumentKind =
   | "texture"
   | "font"
   | "blackboard"
-  | "extension-asset";
+  | "extension-asset"
+  | "source-control";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -79,7 +83,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "material-function",
   "material-instance",
   "plugin-settings",
-  "anim-graph",
+  "anim-graph-3d",
+  "anim-graph-2d",
   "behaviour-tree",
   "audio",
   "save-game",
@@ -98,12 +103,15 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "model",
   "skeleton",
   "animation",
+  "blend-space",
+  "sprite-blend-space",
   "skybox-creator",
   "trace",
   "texture",
   "font",
   "blackboard",
   "extension-asset",
+  "source-control",
 ]);
 
 export function isDockviewDocumentKind(
@@ -123,14 +131,13 @@ const MATERIAL_SIDE_STACK_WIDTH = 360;
 export type DockWindowOptions = {
   /** Actor-lineage class documents get Prefab + Components. Default true. */
   actorPrefab?: boolean;
-  /** Opt-in Git LFS locking; hides the Locks window entirely when off. */
-  sourceControl?: boolean;
-  /** Animation Graph State Machine vs Animation Object surface. */
-  animEditorMode?: AnimEditorMode;
   sceneMode?: SceneMode;
 };
 
-export const LOCKS_WINDOW_ID = "locks";
+/** Locks lives only in the pinned Source Control document. */
+const SOURCE_CONTROL_WINDOWS: DockWindowDefinition[] = [
+  { id: "locks", component: "locks", title: "Locks" },
+];
 
 const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   scene: "viewport",
@@ -157,7 +164,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "material-function": "material-function-graph",
   "material-instance": "material-instance-preview",
   "plugin-settings": "plugin-settings-details",
-  "anim-graph": "anim-graph-graph",
+  "anim-graph-3d": "anim-graph-graph",
+  "anim-graph-2d": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
   audio: "audio-preview",
   "save-game": "save-game-fields",
@@ -176,50 +184,25 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   model: "model-preview",
   skeleton: "skeleton-preview",
   animation: "animation-preview",
+  "blend-space": "blend-space-grid",
+  "sprite-blend-space": "blend-space-grid",
   "skybox-creator": "skybox-creator-preview",
   "extension-asset": "extension-asset-details",
   trace: "trace-timeline",
   texture: "texture-preview",
   font: "font-preview",
   blackboard: "blackboard-keys",
+  "source-control": "locks",
 };
 
 export function primaryDockPanel(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
 ): string {
-  if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
-    return "anim-object-graph";
-  }
   if ((kind === "scene" || kind === "scene-layer") && options?.sceneMode === "script") {
     return "graph";
   }
   return DOCK_PRIMARY_PANEL[kind];
-}
-
-function locksWindow(
-  kind: DockviewDocumentKind,
-  options?: DockWindowOptions,
-): DockWindowDefinition {
-  return {
-    id: LOCKS_WINDOW_ID,
-    component: "locks",
-    title: "Locks",
-    defaultPosition: {
-      referencePanelId: primaryDockPanel(kind, options),
-      direction: "below",
-      initialHeight: 180,
-    },
-  };
-}
-
-function withOptionalLocks(
-  kind: DockviewDocumentKind,
-  windows: DockWindowDefinition[],
-  options?: DockWindowOptions,
-): DockWindowDefinition[] {
-  if (!options?.sourceControl) return windows;
-  return [...windows, locksWindow(kind, options)];
 }
 
 export interface DockWindowDefaultPosition {
@@ -654,8 +637,19 @@ const SKELETON_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+/** Animation: the Preview, its event Timeline below it, and the Inspector on the right. */
 const ANIMATION_WINDOWS: DockWindowDefinition[] = [
   { id: "animation-preview", component: "animation-preview", title: "Preview" },
+  {
+    id: "animation-timeline",
+    component: "animation-timeline",
+    title: "Timeline",
+    defaultPosition: {
+      referencePanelId: "animation-preview",
+      direction: "below",
+      initialHeight: 160,
+    },
+  },
   {
     id: "animation-details",
     component: "animation-details",
@@ -664,6 +658,41 @@ const ANIMATION_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "animation-preview",
       direction: "right",
       initialWidth: 280,
+    },
+  },
+];
+
+/** Blend Space: the Grid in the middle, its Animations on the left, Preview above the Inspector on the right. */
+const BLEND_SPACE_WINDOWS: DockWindowDefinition[] = [
+  { id: "blend-space-grid", component: "blend-space-grid", title: "Grid" },
+  {
+    id: "blend-space-animations",
+    component: "blend-space-animations",
+    title: "Animations",
+    defaultPosition: {
+      referencePanelId: "blend-space-grid",
+      direction: "left",
+      initialWidth: 224,
+    },
+  },
+  {
+    id: "blend-space-details",
+    component: "blend-space-details",
+    title: "Inspector",
+    defaultPosition: {
+      referencePanelId: "blend-space-grid",
+      direction: "right",
+      initialWidth: 288,
+    },
+  },
+  {
+    id: "blend-space-preview",
+    component: "blend-space-preview",
+    title: "Preview",
+    defaultPosition: {
+      referencePanelId: "blend-space-details",
+      direction: "above",
+      initialHeight: 260,
     },
   },
 ];
@@ -1072,8 +1101,18 @@ const CAMERA_SHAKE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
+/**
+ * The State Machine canvas (Graph) and the Animation Object script share the centre group as tabs. The Preview stacks
+ * above the Inspector and Preview Values under Variables, so the centre keeps its width.
+ */
+const ANIM_GRAPH_WINDOWS: DockWindowDefinition[] = [
   { id: "anim-graph-graph", component: "anim-graph-graph", title: "Graph" },
+  {
+    id: "anim-object-graph",
+    component: "anim-object-graph",
+    title: "Animation Object",
+    defaultPosition: { referencePanelId: "anim-graph-graph", direction: "within" },
+  },
   {
     id: "anim-graph-variables",
     component: "anim-graph-variables",
@@ -1104,38 +1143,24 @@ const ANIM_GRAPH_STATE_WINDOWS: DockWindowDefinition[] = [
       initialHeight: 160,
     },
   },
-];
-
-const ANIM_GRAPH_OBJECT_WINDOWS: DockWindowDefinition[] = [
-  { id: "anim-object-graph", component: "anim-object-graph", title: "Graph" },
   {
-    id: "anim-object-variables",
-    component: "anim-object-variables",
-    title: "Variables",
+    id: "anim-graph-preview",
+    component: "anim-graph-preview",
+    title: "Preview",
     defaultPosition: {
-      referencePanelId: "anim-object-graph",
-      direction: "left",
-      initialWidth: 224,
+      referencePanelId: "anim-graph-details",
+      direction: "above",
+      initialHeight: 260,
     },
   },
   {
-    id: "anim-object-inspector",
-    component: "anim-object-inspector",
-    title: "Inspector",
+    id: "anim-graph-preview-values",
+    component: "anim-graph-preview-values",
+    title: "Preview Values",
     defaultPosition: {
-      referencePanelId: "anim-object-graph",
-      direction: "right",
-      initialWidth: 280,
-    },
-  },
-  {
-    id: "anim-graph-compiler-results",
-    component: "anim-graph-compiler-results",
-    title: "Compiler Results",
-    defaultPosition: {
-      referencePanelId: "anim-object-graph",
+      referencePanelId: "anim-graph-variables",
       direction: "below",
-      initialHeight: 160,
+      initialHeight: 200,
     },
   },
 ];
@@ -1193,21 +1218,22 @@ export function listDockWindows(
   options?: DockWindowOptions,
 ): DockWindowDefinition[] {
   if (kind === "scene" || kind === "scene-layer") {
-    if (options?.sceneMode === "script") return withOptionalLocks(kind, SCENE_SCRIPT_WINDOWS, options);
-    if (options?.sceneMode === "timeline") return withOptionalLocks(kind, SCENE_TIMELINE_WINDOWS, options);
-    if (kind === "scene" && options?.sceneMode === "landscape") return withOptionalLocks(kind, LANDSCAPE_WINDOWS, options);
-    if (kind === "scene" && options?.sceneMode === "foliage") return withOptionalLocks(kind, FOLIAGE_WINDOWS, options);
-    return withOptionalLocks(kind, SCENE_WINDOWS, options);
+    if (options?.sceneMode === "script") return SCENE_SCRIPT_WINDOWS;
+    if (options?.sceneMode === "timeline") return SCENE_TIMELINE_WINDOWS;
+    if (kind === "scene" && options?.sceneMode === "landscape") return LANDSCAPE_WINDOWS;
+    if (kind === "scene" && options?.sceneMode === "foliage") return FOLIAGE_WINDOWS;
+    return SCENE_WINDOWS;
   }
-  if (kind === "prefab") return withOptionalLocks(kind, PREFAB_WINDOWS, options);
-  if (kind === "save-game") return withOptionalLocks(kind, SAVE_GAME_WINDOWS, options);
-  if (kind === "input-action" || kind === "input-axis") return withOptionalLocks(kind, INPUT_WINDOWS, options);
-  if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
-  if (kind === "data-definition") return withOptionalLocks(kind, [
+  if (kind === "source-control") return SOURCE_CONTROL_WINDOWS;
+  if (kind === "prefab") return PREFAB_WINDOWS;
+  if (kind === "save-game") return SAVE_GAME_WINDOWS;
+  if (kind === "input-action" || kind === "input-axis") return INPUT_WINDOWS;
+  if (kind === "enum") return ENUM_WINDOWS;
+  if (kind === "data-definition") return [
     { id: "data-definition-fields", component: "data-definition-fields", title: "Fields" },
     { id: "data-definition-details", component: "data-definition-details", title: "Inspector", defaultPosition: { referencePanelId: "data-definition-fields", direction: "right", initialWidth: 320 } },
-  ], options);
-  if (kind === "timeline-clip-2d" || kind === "timeline-clip-3d") return withOptionalLocks(kind, [
+  ];
+  if (kind === "timeline-clip-2d" || kind === "timeline-clip-3d") return [
     { id: "timeline-clip-viewport", component: "timeline-clip-viewport", title: "Viewport" },
     // Proxies sit above the Inspector, as a short list rarely needs a column of its own.
     { id: "timeline-clip-inspector", component: "timeline-clip-inspector", title: "Inspector", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "right", initialWidth: 320 } },
@@ -1215,104 +1241,104 @@ export function listDockWindows(
     { id: "timeline-clip-timeline", component: "timeline-clip-timeline", title: "Timeline", defaultPosition: { referencePanelId: "timeline-clip-viewport", direction: "below", initialHeight: 320 } },
     // The clip asset's own checks (Timeline Asset, proxy names, Classes and placement).
     { id: "compiler-results", component: "compiler-results", title: "Compiler Results", openByDefault: false, defaultPosition: { referencePanelId: "timeline-clip-timeline", direction: "within" } },
-  ], options);
-  if (kind === "timeline") return withOptionalLocks(kind, [
+  ];
+  if (kind === "timeline") return [
     { id: "timeline-asset-clips", component: "timeline-asset-clips", title: "Timeline Clips" },
     { id: "timeline-asset-events", component: "timeline-asset-events", title: "Events", defaultPosition: { referencePanelId: "timeline-asset-clips", direction: "right", initialWidth: 300 } },
-  ], options);
-  if (kind === "global-parameter-collection") return withOptionalLocks(kind, [
+  ];
+  if (kind === "global-parameter-collection") return [
     { id: "global-parameter-collection", component: "global-parameter-collection", title: "Parameters" },
-  ], options);
-  if (kind === "float-curve" || kind === "vector-curve" || kind === "color-curve") return withOptionalLocks(kind, [
+  ];
+  if (kind === "float-curve" || kind === "vector-curve" || kind === "color-curve") return [
     { id: "curve-asset-editor", component: "curve-asset-editor", title: "Curve Editor" },
     { id: "curve-asset-details", component: "curve-asset-details", title: "Details", defaultPosition: { referencePanelId: "curve-asset-editor", direction: "right", initialWidth: 300 } },
-  ], options);
-  if (kind === "data-tree") return withOptionalLocks(kind, [
+  ];
+  if (kind === "data-tree") return [
     { id: "data-tree-entries", component: "data-tree-entries", title: "Entries" },
     { id: "data-tree-hierarchy", component: "data-tree-hierarchy", title: "Tree", defaultPosition: { referencePanelId: "data-tree-entries", direction: "left", initialWidth: 260 } },
     { id: "data-tree-values", component: "data-tree-values", title: "Values", defaultPosition: { referencePanelId: "data-tree-entries", direction: "right", initialWidth: 320 } },
     { id: "data-tree-validation", component: "data-tree-validation", title: "Validation", defaultPosition: { referencePanelId: "data-tree-entries", direction: "below", initialHeight: 150 } },
-  ], options);
+  ];
   if (kind === "structure") {
-    return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);
+    return STRUCTURE_WINDOWS;
   }
   if (kind === "script-interface") {
-    return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
+    return SCRIPT_INTERFACE_WINDOWS;
   }
-  if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
-  if (kind === "model") return withOptionalLocks(kind, MODEL_WINDOWS, options);
+  if (kind === "sprite") return SPRITE_WINDOWS;
+  if (kind === "model") return MODEL_WINDOWS;
   if (kind === "skeleton") {
-    return withOptionalLocks(kind, SKELETON_WINDOWS, options);
+    return SKELETON_WINDOWS;
   }
   if (kind === "animation") {
-    return withOptionalLocks(kind, ANIMATION_WINDOWS, options);
+    return ANIMATION_WINDOWS;
   }
-  if (kind === "audio") return withOptionalLocks(kind, AUDIO_WINDOWS, options);
+  // A Sprite Blend Space opens in the same windows, which read its kind.
+  if (kind === "blend-space" || kind === "sprite-blend-space") {
+    return BLEND_SPACE_WINDOWS;
+  }
+  if (kind === "audio") return AUDIO_WINDOWS;
   if (kind === "particle-emitter") {
-    return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
+    return PARTICLE_EMITTER_WINDOWS;
   }
   if (kind === "particle-graph") {
-    return withOptionalLocks(kind, PARTICLE_GRAPH_WINDOWS, options);
+    return PARTICLE_GRAPH_WINDOWS;
   }
-  if (kind === "water") return withOptionalLocks(kind, WATER_WINDOWS, options);
-  if (kind === "render-target") return withOptionalLocks(kind, [{ id: "render-target-details", component: "render-target-details", title: "Inspector" }], options);
-  if (kind === "render-target-texture") return withOptionalLocks(kind, [{ id: "render-target-texture-details", component: "render-target-texture-details", title: "Inspector" }], options);
-  if (kind === "extension-asset") return withOptionalLocks(kind, [{ id: "extension-asset-details", component: "extension-asset-details", title: "Inspector" }], options);
+  if (kind === "water") return WATER_WINDOWS;
+  if (kind === "render-target") return [{ id: "render-target-details", component: "render-target-details", title: "Inspector" }];
+  if (kind === "render-target-texture") return [{ id: "render-target-texture-details", component: "render-target-texture-details", title: "Inspector" }];
+  if (kind === "extension-asset") return [{ id: "extension-asset-details", component: "extension-asset-details", title: "Inspector" }];
   if (kind === "particle-system") {
-    return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
+    return PARTICLE_SYSTEM_WINDOWS;
   }
   if (kind === "skybox-creator") {
-    return withOptionalLocks(kind, SKYBOX_CREATOR_WINDOWS, options);
+    return SKYBOX_CREATOR_WINDOWS;
   }
-  if (kind === "trace") return withOptionalLocks(kind, TRACE_WINDOWS, options);
-  if (kind === "texture") return withOptionalLocks(kind, TEXTURE_WINDOWS, options);
-  if (kind === "font") return withOptionalLocks(kind, FONT_WINDOWS, options);
-  if (kind === "blackboard") return withOptionalLocks(kind, BLACKBOARD_WINDOWS, options);
+  if (kind === "trace") return TRACE_WINDOWS;
+  if (kind === "texture") return TEXTURE_WINDOWS;
+  if (kind === "font") return FONT_WINDOWS;
+  if (kind === "blackboard") return BLACKBOARD_WINDOWS;
   if (kind === "sprite-animation") {
-    return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
+    return SPRITE_ANIMATION_WINDOWS;
   }
   if (kind === "tileset") {
-    return withOptionalLocks(kind, TILESET_WINDOWS, options);
+    return TILESET_WINDOWS;
   }
   if (kind === "tilemap") {
-    return withOptionalLocks(kind, TILEMAP_WINDOWS, options);
+    return TILEMAP_WINDOWS;
   }
   if (kind === "material") {
-    return withOptionalLocks(kind, MATERIAL_WINDOWS, options);
+    return MATERIAL_WINDOWS;
   }
   if (kind === "material-function") {
-    return withOptionalLocks(kind, MATERIAL_FUNCTION_WINDOWS, options);
+    return MATERIAL_FUNCTION_WINDOWS;
   }
   if (kind === "material-instance") {
-    return withOptionalLocks(kind, MATERIAL_INSTANCE_WINDOWS, options);
+    return MATERIAL_INSTANCE_WINDOWS;
   }
   if (kind === "plugin-settings") {
-    return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);
+    return PLUGIN_SETTINGS_WINDOWS;
   }
   if (kind === "audio-mixer") {
-    return withOptionalLocks(kind, AUDIO_MIXER_WINDOWS, options);
+    return AUDIO_MIXER_WINDOWS;
   }
   if (kind === "audio-channel") {
-    return withOptionalLocks(kind, AUDIO_CHANNEL_WINDOWS, options);
+    return AUDIO_CHANNEL_WINDOWS;
   }
   if (kind === "sound-attenuation") {
-    return withOptionalLocks(kind, SOUND_ATTENUATION_WINDOWS, options);
+    return SOUND_ATTENUATION_WINDOWS;
   }
   if (kind === "camera-shake") {
-    return withOptionalLocks(kind, CAMERA_SHAKE_WINDOWS, options);
+    return CAMERA_SHAKE_WINDOWS;
   }
-  if (kind === "anim-graph") {
-    const windows =
-      options?.animEditorMode === "animationObject"
-        ? ANIM_GRAPH_OBJECT_WINDOWS
-        : ANIM_GRAPH_STATE_WINDOWS;
-    return withOptionalLocks(kind, windows, options);
+  if (isAnimGraphDocumentKind(kind)) {
+    return ANIM_GRAPH_WINDOWS;
   }
   if (kind === "behaviour-tree") {
-    return withOptionalLocks(kind, BEHAVIOUR_TREE_WINDOWS, options);
+    return BEHAVIOUR_TREE_WINDOWS;
   }
   if (options?.actorPrefab === false) {
-    return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
+    return OBJECT_GRAPH_WINDOWS;
   }
-  return withOptionalLocks(kind, GRAPH_WINDOWS, options);
+  return GRAPH_WINDOWS;
 }

@@ -486,7 +486,11 @@ describe("PhysicsWorldSync tilemap colliders", () => {
 });
 
 describe("PhysicsWorldSync sprite collision", () => {
-  it("maps the current Sprite Animation frame AABB onto a box2d collider", () => {
+  it.each([
+    { flipX: false, inside: 0.25, outside: -0.4 },
+    // Flip Frame mirrors the box across the pivot.
+    { flipX: true, inside: -0.25, outside: 0.4 },
+  ])("maps the current Sprite Animation frame AABB onto a box2d collider (flipX $flipX)", ({ flipX, inside, outside }) => {
     const world = createWorld();
     const actor = world.createActor({
       classId: "Actor",
@@ -544,14 +548,15 @@ describe("PhysicsWorldSync sprite collision", () => {
       assetGuid: "walk-anim",
       clipName: "",
       normalisedTime: 0,
+      flipX,
     });
     sync.syncFromWorld(world);
 
     expect(
-      backend.sphereOverlap({ x: 0.25, y: 0, z: 0 }, 0.05).actorIds,
+      backend.sphereOverlap({ x: inside, y: 0, z: 0 }, 0.05).actorIds,
     ).toContain("hero");
     expect(
-      backend.sphereOverlap({ x: -0.4, y: 0, z: 0 }, 0.05).actorIds,
+      backend.sphereOverlap({ x: outside, y: 0, z: 0 }, 0.05).actorIds,
     ).toEqual([]);
     sync.dispose();
   });
@@ -971,7 +976,6 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
       models: {
         "model-1": {
           materialSlots: [],
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [
@@ -1009,7 +1013,6 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
       models: {
         "model-1": {
           materialSlots: [],
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],

@@ -6,6 +6,7 @@
 import type { SerializedGraph } from "@haptic/core";
 import { formatEventMemberName, formatEventTitle } from "@haptic/editor-kit";
 import {
+  ANIM_NOTIFY_EVENT_TYPE,
   fromSerializedGraph,
   isAssignable,
   isLogicGraphPayload,
@@ -20,6 +21,7 @@ import {
   firstEnumMember,
   pinDefaultPropertyKey,
 } from "@haptic/scripting";
+import { animEventNodeTitle } from "../lib/anim-graph-events";
 import { engineEventTypeClassIds } from "@haptic/object-model";
 import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
@@ -287,6 +289,11 @@ export function hydrateSerializedGraphForEditor(
           properties.name = bodyName;
           properties.title = `Call ${bodyName}`;
         }
+      }
+
+      if (typeId === ANIM_NOTIFY_EVENT_TYPE) {
+        const eventName = typeof properties.eventName === "string" ? properties.eventName.trim() : "";
+        properties.title = eventName ? animEventNodeTitle(eventName) : "Animation Event";
       }
 
       if (typeId === "flow.event.callParent") {

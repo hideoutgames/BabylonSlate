@@ -69,11 +69,11 @@ test("a Simulation shows a Behaviour Tree and an Animation Graph run for the ins
   test.setTimeout(240_000);
   await openTestProject(page);
   await createContentBrowserAsset(page, "BehaviourTree", "Patrol");
-  await createContentBrowserAsset(page, "AnimationGraph", "Loco");
+  await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
   await openAsset(page, "assets/Patrol.bt.hasset", "behaviour-tree-editor");
-  await openAsset(page, "assets/Loco.anim.hasset", "anim-graph-editor");
+  await openAsset(page, "assets/Loco.anim3d.hasset", "anim-graph-editor");
   const guid = (path: string) => page.evaluate((assetPath) => (globalThis as TestHost).__hapticTest.guidForPath(assetPath) ?? "", path);
-  const [treeGuid, graphGuid] = [await guid("assets/Patrol.bt.hasset"), await guid("assets/Loco.anim.hasset")];
+  const [treeGuid, graphGuid] = [await guid("assets/Patrol.bt.hasset"), await guid("assets/Loco.anim3d.hasset")];
   expect(treeGuid).not.toBe("");
   expect(graphGuid).not.toBe("");
 
@@ -117,7 +117,7 @@ test("a Simulation shows a Behaviour Tree and an Animation Graph run for the ins
   await expect(page.getByTestId("bt-node-task")).toHaveAttribute("data-bt-state", "success");
 
   // The Animation Graph lists its own component, and its State Machine lights the state it plays.
-  await page.locator('[data-testid="document-tab"][data-document-kind="anim-graph"]').click();
+  await page.locator('[data-testid="document-tab"][data-document-kind="anim-graph-3d"]').click();
   await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
   await expect(select(page)).toContainText("Empty", { timeout: 15_000 });
   const machine = await watchCanvas(page, "anim-graph-editor", 1000);
@@ -164,9 +164,9 @@ test("a breakpoint on a Behaviour Tree node stops a Simulation when the node sta
 test("a breakpoint on a State Machine state stops a Simulation when the graph enters it", async ({ page }) => {
   test.setTimeout(240_000);
   await openTestProject(page);
-  await createContentBrowserAsset(page, "AnimationGraph", "Loco");
-  await openAsset(page, "assets/Loco.anim.hasset", "anim-graph-editor");
-  const graphGuid = await page.evaluate(() => (globalThis as TestHost).__hapticTest.guidForPath("assets/Loco.anim.hasset") ?? "");
+  await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+  await openAsset(page, "assets/Loco.anim3d.hasset", "anim-graph-editor");
+  const graphGuid = await page.evaluate(() => (globalThis as TestHost).__hapticTest.guidForPath("assets/Loco.anim3d.hasset") ?? "");
   expect(graphGuid).not.toBe("");
   const idle = page.getByTestId("anim-state-node-idle");
   await idle.click({ button: "right" });

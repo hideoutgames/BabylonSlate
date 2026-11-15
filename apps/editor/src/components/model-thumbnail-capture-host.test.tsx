@@ -670,7 +670,6 @@ describe("ModelThumbnailCaptureHost", () => {
           materialSlots: [
             { index: 0, name: "Hero Mat", materialGuid: "mat-1" },
           ],
-          clipNames: [],
         },
       },
     ]);

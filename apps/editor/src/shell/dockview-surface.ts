@@ -4,20 +4,12 @@ export type DockviewSurface =
   | "landscape"
   | "foliage"
   | "script"
-  | "timeline"
-  | "stateMachine"
-  | "animationObject";
+  | "timeline";
 
 export type PreFocusSnapshot = {
   layout: Record<string, unknown>;
   surface: DockviewSurface;
 };
-
-export function dockviewSurfaceForAnimMode(
-  mode: "stateMachine" | "animationObject",
-): DockviewSurface {
-  return mode;
-}
 
 export function dockviewApiKey(
   documentId: string,
@@ -28,8 +20,6 @@ export function dockviewApiKey(
 
 const DOCKVIEW_SURFACES: readonly DockviewSurface[] = [
   "default",
-  "stateMachine",
-  "animationObject",
   "design",
   "landscape",
   "foliage",

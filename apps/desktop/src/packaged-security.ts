@@ -103,12 +103,14 @@ export function isBillingFrameUrl(rawUrl: string): boolean {
 const HAPTIC_SITE_HOST = /(^|\.)haptic\.no$/;
 /** App Store and Google Play subscription management, for plans bought in the mobile apps. */
 const STORE_MANAGEMENT_HOSTS = new Set(["apps.apple.com", "play.google.com"]);
+/** GitHub's and gitlab.com's device sign-in pages, where the user enters the code Source Control shows. */
+const DEVICE_SIGN_IN_PAGES = new Set(["https://github.com/login/device", "https://gitlab.com/oauth/device"]);
 
 /**
  * Links the editor hands to the system browser or mail client: Haptic's site,
- * Web Billing and store subscription pages over HTTPS, and mailto. Anything
- * else stays denied, so project scripts in the Preview frame cannot open
- * arbitrary sites.
+ * Web Billing and store subscription pages and the GitHub and GitLab device
+ * sign-in pages over HTTPS, and mailto. Anything else stays denied, so project
+ * scripts in the Preview frame cannot open arbitrary sites.
  */
 export function externalOpenUrl(rawUrl: string): string | null {
   try {
@@ -117,7 +119,8 @@ export function externalOpenUrl(rawUrl: string): string | null {
     if (url.protocol !== "https:" || url.username || url.password) return null;
     return HAPTIC_SITE_HOST.test(url.hostname) ||
       STORE_MANAGEMENT_HOSTS.has(url.hostname) ||
-      isBillingFrameUrl(url.href)
+      isBillingFrameUrl(url.href) ||
+      (DEVICE_SIGN_IN_PAGES.has(`${url.origin}${url.pathname}`) && !url.search && !url.hash)
       ? url.href
       : null;
   } catch {
@@ -271,7 +274,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
   const counts: Record<string, number> = {
     "save-games:read": 1, "save-games:write": 2, "save-games:remove": 1,
     "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,
-    "memory:stats": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
+    "memory:stats": 0, "updates:status": 0, "updates:restart": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
@@ -391,8 +394,13 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     const url = new URL(request.url);
     requireValue(url.protocol === "https:" && !url.username && !url.password);
     requireValue(request.method === undefined || ["GET", "POST", "PUT", "DELETE", "HEAD"].includes(String(request.method)));
-    if (request.body !== undefined) text(request.body);
+    // Git packs and LFS objects cross as an exact ArrayBuffer, within the IPC limit, and only as a POST or PUT body.
+    if (request.body instanceof ArrayBuffer) {
+      requireValue(request.body.byteLength <= MAX_IPC_BYTES && (request.method === "POST" || request.method === "PUT"));
+    } else if (request.body !== undefined) text(request.body);
     if (request.upload !== undefined) validateImageUpload(request);
+    requireValue(request.responseType === undefined || request.responseType === "text" || request.responseType === "binary");
+    requireValue(request.disableRedirects === undefined || typeof request.disableRedirects === "boolean");
     if (request.headers !== undefined) {
       requireValue(request.headers && typeof request.headers === "object" && !Array.isArray(request.headers));
       for (const [key, value] of Object.entries(request.headers)) {

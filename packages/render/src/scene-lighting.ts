@@ -6,6 +6,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
+import { installLightFreeMeshes } from "./light-free-meshes";
 
 type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
 
@@ -37,6 +38,8 @@ export function sceneLightingLimits(scene: Scene): string[] {
 }
 
 function installSceneLighting(scene: Scene): SceneLighting {
+  // Budget changes toggle lights every few frames; meshes whose Materials read none skip Babylon's light-dirty marks.
+  installLightFreeMeshes(scene);
   let dirty = true;
   let lightCount = -1;
   let materialCount = -1;
@@ -57,14 +60,21 @@ function installSceneLighting(scene: Scene): SceneLighting {
   const watchLight = () => {
     dirty = true;
   };
+  // The last sync wrote the block of a Scene without lights.
+  let wroteLightless = false;
 
   const sync = (): void => {
     if (scene.isDisposed) return;
+    // A Scene without lights (a Scene Layer) admits and writes nothing new once its empty block is written: a sync,
+    // several per frame, changes nothing until a light or Material joins or a flag below changes.
+    if (wroteLightless && !dirty && !scene.lights.length && materialCount === scene.materials.length &&
+      sceneLightsEnabled === scene.lightsEnabled && sceneShadowsEnabled === scene.shadowsEnabled) return;
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
     admission = syncForwardLightPolicy(scene, Math.max(0, sceneRenderingSettings(scene).localLightBudget), selectHapticLights);
     // HapticLightingBlock reads the admitted lights from one block, rewritten each frame; its Materials hold no light defines.
     writeHapticLights(scene);
+    wroteLightless = !scene.lights.length;
     nextEnabled.clear();
     let enabledChanged = false;
     for (const light of scene.lights) {

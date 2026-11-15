@@ -39,6 +39,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Duplicate | Copy the selection in place. |
 | Rename | Rename one asset or folder on its tile (see [Rename](#rename)). References to it stay connected. |
 | Retarget… | Animations only. Retarget the selected Animations to another Skeleton. |
+| Assign Skeleton… | One Model with a Skeleton. Move the Model and its Animations onto another Skeleton with the same bones (see [Skeleton](../assets/skeleton.md#move-a-model-onto-another-skeleton)). |
 | Move… / Copy to Folder… | Move or copy the selection to a folder you pick. |
 | Copy Asset Reference | Copy the asset's ID to the clipboard. If the clipboard refuses the copy, the Content Browser says so. |
 | Show References | Open the references graph (below). |
@@ -70,6 +71,8 @@ New assets are named after their source. If that name is taken by an asset of th
 | Create Data Tree | One Data Definition | A [Data Tree](../assets/data-tree.md) that uses the Data Definition. |
 | Create Linked Save Game | One Data Definition | A [Save Game](../assets/save-game.md#fields-from-a-data-definition) that takes its fields from the Data Definition. |
 | Create Render Target Texture | One Render Target | A [Render Target Texture](../assets/render-target-texture.md) that shows the Render Target. |
+| Create Animation Graph | One Skeleton or Model | A 3D [Animation Graph](../assets/animation-graph.md) on the Skeleton (a Model's own Skeleton), named after it without `_Skeleton`. |
+| Create Blend Space | One Skeleton or Model | A [Blend Space](../assets/blend-space.md) on the Skeleton (a Model's own Skeleton), named `<Name> Locomotion`. |
 
 **Create Material** reads the end of each Texture's name:
 

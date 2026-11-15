@@ -25,6 +25,7 @@ export {
   localVariableIdent,
 } from "./compile-events";
 export { compileTransitionRuleGraph } from "./compile-transition-rule";
+export { compilePoseDataGraph, isAnimPoseNodeType } from "./compile-pose-data";
 
 /**
  * Deterministic JS module compiler with line/column anchors.

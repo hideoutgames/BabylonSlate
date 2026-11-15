@@ -60,6 +60,12 @@ Switching **Source** back to **Frames** keeps each frame's Texture or Sprite, an
 
 A frame's size in the scene is its image's size in pixels (the whole Texture, the Sprite's Texture, or one cell) divided by the project's pixels per unit.
 
+## Animation events
+
+A frame can fire named Animation Events as it starts showing, such as a footstep on each contact frame. A 2D [Animation Graph](animation-graph.md#animation-events) playing the Sprite Animation fires them, and each name runs its own event node in the graph's Animation Object.
+
+Select the frame, then tap **Add Event** under **Events** in the **Inspector**. Each event has a **Name**, a **Trigger Weight** (the weight the Sprite Animation must play at for it to fire) and an optional **Action**: **Play Sound** or **Spawn Particle System** at the actor. Tap **Remove Event** to delete one. A frame with events shows a small diamond on the frame strip; hold the pointer over it to see their names.
+
 ## Notes
 
 - A Sprite Animation plays only from an [Animation Graph](animation-graph.md). Set a state's **Clip Kind** to **Sprite** and **Clip Asset** to the Sprite Animation.

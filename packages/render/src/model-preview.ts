@@ -6,6 +6,7 @@ import type { Material } from "@babylonjs/core/Materials/material";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { loadModelContainer, modelMaterialIndexOf, parentContainerRoots } from "./model-container";
 import { normalizeModelImportScale, type ModelMaterialSlot } from "@haptic/assets";
 import {
@@ -71,11 +72,24 @@ export function previewRigRoot(host: MaterialPreviewScene): TransformNode {
 const previewRequests = new WeakMap<MaterialPreviewScene, object>();
 const previewBundles = new WeakMap<MaterialPreviewScene, VisualBundle>();
 
+/** World-space bounds of a node tree's origins. */
+function nodeExtent(root: TransformNode): { min: Vector3; max: Vector3 } {
+  const min = new Vector3(Infinity, Infinity, Infinity);
+  const max = new Vector3(-Infinity, -Infinity, -Infinity);
+  for (const node of root.getChildTransformNodes(false)) {
+    node.computeWorldMatrix(true);
+    const position = node.getAbsolutePosition();
+    min.minimizeInPlace(position);
+    max.maximizeInPlace(position);
+  }
+  return { min, max };
+}
+
 export async function loadModelPreviewSource(
   host: MaterialPreviewScene,
   bytes: Uint8Array,
   importScale = 1,
-): Promise<{ dispose: () => void; animationGroups: AnimationGroup[] } | null> {
+): Promise<{ dispose: () => void; animationGroups: AnimationGroup[]; hasMesh: boolean } | null> {
   if (!isGltfModelBytes(bytes)) return null;
   const request = {};
   previewRequests.set(host, request);
@@ -106,7 +120,11 @@ export async function loadModelPreviewSource(
     const previous = previewBundles.get(host);
     // Frame the candidate alone; the prior generation can still be visible.
     wrapper.computeWorldMatrix(true);
-    const extent = wrapper.getHierarchyBoundingVectors(true, (mesh) => mesh instanceof AbstractMesh && mesh.getTotalVertices() > 0);
+    const hasMesh = container.meshes.some((mesh) => mesh.getTotalVertices() > 0);
+    // A file with nothing to draw (an animation library) frames its nodes, which its bones show.
+    const extent = hasMesh
+      ? wrapper.getHierarchyBoundingVectors(true, (mesh) => mesh instanceof AbstractMesh && mesh.getTotalVertices() > 0)
+      : nodeExtent(wrapper);
     const center = extent.min.add(extent.max).scale(0.5);
     if ([center.x, center.y, center.z].every(Number.isFinite)) host.camera.setTarget(center);
     const size = extent.max.subtract(extent.min).length();
@@ -125,6 +143,7 @@ export async function loadModelPreviewSource(
     return {
       dispose: () => bundle.dispose(),
       animationGroups: container.animationGroups,
+      hasMesh,
     };
   } catch (error) {
     host.camera.setTarget(priorTarget);

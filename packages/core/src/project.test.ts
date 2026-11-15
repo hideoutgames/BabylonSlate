@@ -387,65 +387,58 @@ describe("project schema", () => {
     ).toEqual(["Tools", "Inspector"]);
   });
 
-  it("defaults source control to disabled with a 60s poll and auto-lock", () => {
+  it("defaults source control to Off with auto-lock and release after push", () => {
     expect(normalizeProjectSettings(undefined).sourceControl).toEqual({
-      enabled: false,
+      mode: "off",
       repositoryUrl: "",
       branch: "main",
       autoLockOnEdit: true,
-      pollIntervalMs: 60_000,
+      releaseLocksAfterPush: true,
     });
-    expect(createEmptyProject("Demo").settings.sourceControl.enabled).toBe(
-      false,
-    );
+    expect(createEmptyProject("Demo").settings.sourceControl.mode).toBe("off");
     expect(
       normalizeProjectSettings({
         sourceControl: {
-          enabled: true,
+          mode: "manual",
           repositoryUrl: "  git@github.com:org/repo.git  ",
           branch: "  develop  ",
           autoLockOnEdit: false,
-          pollIntervalMs: 15_000,
+          releaseLocksAfterPush: false,
         },
       }).sourceControl,
     ).toEqual({
-      enabled: true,
+      mode: "manual",
       repositoryUrl: "git@github.com:org/repo.git",
       branch: "develop",
       autoLockOnEdit: false,
-      pollIntervalMs: 15_000,
+      releaseLocksAfterPush: false,
     });
     expect(
       normalizeProjectSettings({
-        sourceControl: { enabled: true, pollIntervalMs: 0, branch: "" },
+        sourceControl: { mode: "integrated", branch: "" },
       } as unknown as Partial<ProjectSettings>).sourceControl,
-    ).toMatchObject({
-      enabled: true,
-      branch: "main",
-      autoLockOnEdit: true,
-      pollIntervalMs: 60_000,
-    });
+    ).toMatchObject({ mode: "integrated", branch: "main", autoLockOnEdit: true, releaseLocksAfterPush: true });
   });
 
-  it("drops a token field from source control project settings", () => {
+  it("reads an unknown mode as Off and keeps only the current source control fields", () => {
     const settings = normalizeProjectSettings({
       sourceControl: {
+        mode: "enabled",
         enabled: true,
         repositoryUrl: "https://github.com/org/repo.git",
         branch: "main",
         autoLockOnEdit: true,
-        pollIntervalMs: 60_000,
-        token: "ghp_secret",
+        pollIntervalMs: 15_000,
+        token: "secret",
       },
     } as unknown as Partial<ProjectSettings>).sourceControl;
     expect(settings).toEqual({
-      enabled: true,
+      mode: "off",
       repositoryUrl: "https://github.com/org/repo.git",
       branch: "main",
       autoLockOnEdit: true,
-      pollIntervalMs: 60_000,
+      releaseLocksAfterPush: true,
     });
-    expect(settings).not.toHaveProperty("token");
   });
 
   it("keeps extension settings values that are plain text, numbers or toggles", () => {

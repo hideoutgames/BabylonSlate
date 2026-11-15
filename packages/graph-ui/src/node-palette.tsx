@@ -107,7 +107,7 @@ function NodeRoleMark({ node }: { node: PaletteNode }) {
         "size-2.5 shrink-0 rounded-sm",
         nodeRoleClass(
           nodeVisualRole({
-            nodeType: node.id,
+            nodeType: node.nodeType ?? node.id,
             title: node.title,
             category: node.category,
             pure: node.pure,

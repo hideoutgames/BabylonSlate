@@ -23,10 +23,10 @@ function animationWithData(value: SerializedGraph["nodes"][number], rule: Serial
       { id: "value", source: value.id, sourceHandle: value.type === "struct.make" ? "out" : "value", target: "log", targetHandle: "message" },
     ],
   };
-  document.transitions.push({
+  document.stateMachine.transitions.push({
     id: "data-rule", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0, ruleGraph: rule,
   });
-  return [{ guid: "data-animation", path: "assets/Data.anim.hasset", document }];
+  return [{ guid: "data-animation", path: "assets/Data.anim3d.hasset", document }];
 }
 
 describe("Animation data graph compilation", () => {

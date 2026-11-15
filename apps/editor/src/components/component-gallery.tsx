@@ -1,4 +1,10 @@
-import { BoxIcon, LightbulbIcon, OctagonAlertIcon, SaveIcon } from "lucide-react";
+import {
+  BoxIcon,
+  LightbulbIcon,
+  ListXIcon,
+  OctagonAlertIcon,
+  SaveIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { TagGallery } from "./tag-gallery";
 import { GalleryComposites } from "./component-gallery-composites";
@@ -356,6 +362,39 @@ function GalleryForms() {
   );
 }
 
+/** Warning chrome: a consequential action that destroys nothing (Homepage Remove From List). */
+function GalleryWarningDialog() {
+  const [open, setOpen] = useState(false);
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger
+        render={
+          <Button variant="outline" data-testid="gallery-warning-dialog-open" />
+        }
+      >
+        Open Warning Dialog
+      </AlertDialogTrigger>
+      <AlertDialogContent variant="warning" data-testid="gallery-warning-dialog">
+        <AlertDialogHeader>
+          <AlertDialogMedia>
+            <ListXIcon />
+          </AlertDialogMedia>
+          <AlertDialogTitle>Remove Items?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The items leave this list. Nothing is deleted.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel size="touch">Cancel</AlertDialogCancel>
+          <AlertDialogAction size="touch" onClick={() => setOpen(false)}>
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function GalleryDangerDialog() {
   // Controlled like production callers: the Action is a plain button.
   const [open, setOpen] = useState(false);
@@ -491,6 +530,7 @@ export function ComponentGallery() {
               <Button variant="destructive">Destructive</Button>
             </div>
             <GalleryDangerDialog />
+            <GalleryWarningDialog />
             <Sheet modal={false}>
               <SheetTrigger render={<Button variant="outline" size="sm" data-testid="gallery-console-sheet-open" />}>Open Console Sheet</SheetTrigger>
               <SheetContent side="bottom" showOverlay={false} className="rounded-none shadow-none data-[side=bottom]:h-[min(40dvh,22rem)] pointer-coarse:data-[side=bottom]:h-[min(50dvh,26rem)]" bodyClassName="gap-0" data-testid="gallery-console-sheet">
@@ -512,6 +552,8 @@ export function ComponentGallery() {
             <div className="flex gap-2">
               <Badge>Default</Badge>
               <Badge variant="secondary">Secondary</Badge>
+              <Badge variant="success">Pushed</Badge>
+              <Badge variant="warning">Not Pushed</Badge>
               <Badge className="bg-vector text-background">Vector</Badge>
             </div>
             <Skeleton className="h-10 w-full max-w-sm" />

@@ -38,7 +38,7 @@ import {
 } from "./layout";
 
 export type Vec3 = [number, number, number];
-type SavedKind = Exclude<DocumentKind, "content-browser">;
+type SavedKind = Exclude<DocumentKind, "content-browser" | "source-control">;
 
 /** Root of every FeatureTest asset, relative to the project `assets/` folder. */
 export const FEATURE_TEST_ROOT = "FeatureTest";
@@ -131,6 +131,16 @@ export interface FeatureTestAssets {
     classPath: string;
     /** The Basic 3D Mannequin actor kept at the hub. */
     actorId: string;
+  };
+  /** KayKit skinned characters: Models, the Skeleton each rig shares, and its Animation guids keyed by clip name. */
+  kaykit: {
+    knight: string;
+    rogueHooded: string;
+    mannequinLarge: string;
+    mediumSkeleton: string;
+    largeSkeleton: string;
+    mediumAnimations: Record<string, string>;
+    largeAnimations: Record<string, string>;
   };
   fonts: {
     /** Facetype Font built from the engine's bundled ASCII glyph outlines. */
@@ -347,6 +357,15 @@ function emptyAssets(): FeatureTestAssets {
       classId: "",
       classPath: "",
       actorId: "",
+    },
+    kaykit: {
+      knight: "",
+      rogueHooded: "",
+      mannequinLarge: "",
+      mediumSkeleton: "",
+      largeSkeleton: "",
+      mediumAnimations: {},
+      largeAnimations: {},
     },
     fonts: { facetype: "", onest: "", arkPixel: "" },
     audio: { loop: null, oneShot: null, mixer: null, channel: null, attenuation: null },

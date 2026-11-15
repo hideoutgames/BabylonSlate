@@ -15,6 +15,7 @@ import {
   DialogDescription,
 } from "@haptic/ui/components/dialog";
 import { getHostPlatform } from "@haptic/vfs";
+import { HomepageAccountReport } from "./homepage-account-report";
 import { HomepageProfileMenu } from "./homepage-profile-menu";
 import {
   nativeProfileEditing,
@@ -46,11 +47,14 @@ export function HomepageAccount({
   onOpenChange,
   onEngineSettings,
   onChangelog,
+  onAccountChange,
 }: {
   disabled?: boolean;
   onOpenChange?: (open: boolean) => void;
   onEngineSettings?: () => void;
   onChangelog?: () => void;
+  /** The signed-in account id, or null for a guest, once sign-in has settled. */
+  onAccountChange?: (accountId: string | null) => void;
 }) {
   const nativeAccount = useNativeHomepageAccount();
   const [desktopAccount, setDesktopAccount] =
@@ -58,6 +62,7 @@ export function HomepageAccount({
   const [menuOpen, setMenuOpen] = useState(false);
   const [clerkOverlayOpen, setClerkOverlayOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [desktopRestored, setDesktopRestored] = useState(false);
   const host = getHostPlatform();
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim();
   const desktopClient = useMemo(
@@ -106,14 +111,16 @@ export function HomepageAccount({
         .then((client) => client.restoreSession())
         .then((session) => {
           if (cancelled) return;
-          if (session) void acceptDesktopSession(session);
-          else setDesktopAccount(null);
+          // Settles after the account is set, so the first report is not a guest.
+          if (session) return acceptDesktopSession(session);
+          setDesktopAccount(null);
         })
         .catch(() => {
           /* Guests can still open local projects. */
         })
         .finally(() => {
           pending = false;
+          if (!cancelled) setDesktopRestored(true);
         });
     };
     restore();
@@ -131,6 +138,8 @@ export function HomepageAccount({
     onOpenChange?.(menuOpen || clerkOverlayOpen || authOpen);
   }, [menuOpen, clerkOverlayOpen, authOpen, onOpenChange]);
   const account = nativeAccount ?? desktopAccount;
+  const clerkAccount = !nativeAccount && host === "web" && Boolean(publishableKey);
+  const accountSettled = Boolean(nativeAccount) || !desktopClient || desktopRestored;
   const billing = useSubscriptionBilling(account?.session.userId, account?.session.email);
   const fallback = (
     <HomepageProfileMenu
@@ -153,8 +162,18 @@ export function HomepageAccount({
   );
   return (
     <>
-      {!nativeAccount && host === "web" && publishableKey ? (
-        <AccountErrorBoundary fallback={fallback}>
+      {clerkAccount && publishableKey ? (
+        <AccountErrorBoundary
+          fallback={
+            <>
+              {fallback}
+              <HomepageAccountReport
+                accountId={null}
+                onAccountChange={onAccountChange}
+              />
+            </>
+          }
+        >
           <Suspense fallback={fallback}>
             <ClerkAccount
               publishableKey={publishableKey}
@@ -163,12 +182,21 @@ export function HomepageAccount({
               onChangelog={onChangelog}
               onOpenChange={setMenuOpen}
               onOverlayChange={setClerkOverlayOpen}
+              onAccountChange={onAccountChange}
               fallback={fallback}
             />
           </Suspense>
         </AccountErrorBoundary>
       ) : (
-        fallback
+        <>
+          {fallback}
+          {accountSettled && (
+            <HomepageAccountReport
+              accountId={account?.session.userId ?? null}
+              onAccountChange={onAccountChange}
+            />
+          )}
+        </>
       )}
       <Dialog open={authOpen} onOpenChange={setAuthOpen}>
         <DialogContent

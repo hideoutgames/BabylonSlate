@@ -72,7 +72,7 @@ export function useModelSlotMaterials({
         const materials = await collectPlayMaterialLibrary(
           undefined,
           [],
-          modelMaterialGuids({ materialSlots: current, clipNames: [] }),
+          modelMaterialGuids({ materialSlots: current }),
         );
         const textureBytes = installTextureBytes(await collectPlayTextureBytes(
           new Map(),

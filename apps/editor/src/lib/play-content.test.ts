@@ -78,12 +78,12 @@ describe("collectAnimGraphCompileDocuments", () => {
       collectAnimGraphCompileDocuments(
         [{ guid: "graph-guid", document: graph }],
         (guid) =>
-          guid === "graph-guid" ? "assets/Loco.anim.hasset" : null,
+          guid === "graph-guid" ? "assets/Loco.anim3d.hasset" : null,
       ),
     ).toEqual([
       {
         guid: "graph-guid",
-        path: "assets/Loco.anim.hasset",
+        path: "assets/Loco.anim3d.hasset",
         document: graph,
       },
     ]);
@@ -166,7 +166,6 @@ describe("scene-referenced Play content", () => {
   it("builds a worker loadModels control from Model payloads and cooked meshes", () => {
     const payload = {
       materialSlots: [],
-      clipNames: [],
       skeletonGuid: null,
       importScale: 1,
       simpleColliders: [],
@@ -327,7 +326,6 @@ describe("scene-referenced Play content", () => {
       [
         "hero",
         {
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],
@@ -341,7 +339,6 @@ describe("scene-referenced Play content", () => {
       [
         "rock",
         {
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],

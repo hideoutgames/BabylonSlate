@@ -70,7 +70,11 @@ describe("P9 document kinds", () => {
   });
 
   it("maps Sprite / AnimationGraph kinds", () => {
-    expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
+    expect(documentKindForAssetType("AnimationGraph3D")).toBe("anim-graph-3d");
+    expect(documentKindForAssetType("AnimationGraph2D")).toBe("anim-graph-2d");
+    expect(documentKindForAssetType("AnimationGraph")).toBeNull();
+    expect(assetTypeForDocumentKind("anim-graph-2d")).toBe("AnimationGraph2D");
+    expect(documentKindLabel("anim-graph-3d")).toBe("3D Animation Graph");
     expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");
     expect(documentKindForAssetType("Blackboard")).toBe("blackboard");
     expect(documentKindForAssetType("SaveGame")).toBe("save-game");
@@ -117,6 +121,20 @@ describe("P9 document kinds", () => {
         name: "Walk",
       }).label,
     ).toBe("Walk Sprite Animation");
+  });
+
+  it("opens a Blend Space as its own document kind, and labels animation suffixes without them", () => {
+    expect(documentKindForAssetType("BlendSpace")).toBe("blend-space");
+    expect(assetTypeForDocumentKind("blend-space")).toBe("BlendSpace");
+    expect(documentKindLabel("blend-space")).toBe("Blend Space");
+    expect(labelFromPath("assets/hero_locomotion.blendspace.hasset")).toBe("Hero Locomotion");
+    expect(labelFromPath("assets/loco.anim3d.hasset")).toBe("Loco");
+    expect(labelFromPath("assets/robot.anim2d.hasset")).toBe("Robot");
+    expect(createDocumentRef("blend-space", "assets/walk_run.blendspace.hasset", { name: "Walk Run" }).label).toBe("Walk Run Blend Space");
+    expect(documentKindForAssetType("SpriteBlendSpace")).toBe("sprite-blend-space");
+    expect(assetTypeForDocumentKind("sprite-blend-space")).toBe("SpriteBlendSpace");
+    expect(labelFromPath("assets/soldier_walk.spriteblend.hasset")).toBe("Soldier Walk");
+    expect(documentKindLabel("sprite-blend-space")).toBe("Sprite Blend Space");
   });
 
   it("parses document ids and labels compound suffixes", () => {

@@ -8,14 +8,24 @@ import { ktx2HeaderBytes } from "./texture-test-fixtures";
  * The real container runs without its decoder module: decoding and the GPU
  * upload are stubbed, so only the per-texture RGBA decision executes.
  */
-async function uploadDecodeOptions(webgpu: boolean, bytes: Uint8Array): Promise<unknown> {
+function stubbedContainer(webgpu: boolean) {
   const container = Object.create(KhronosTextureContainer2.prototype) as KhronosTextureContainer2;
   Object.assign(container, { _engine: { isWebGPU: webgpu, getCaps: () => ({ astc: {}, bptc: {} }) } });
   const decode = vi.spyOn(container, "_decodeAsync").mockResolvedValue({} as Awaited<ReturnType<KhronosTextureContainer2["_decodeAsync"]>>);
   const create = vi
     .spyOn(container as unknown as { _createTexture: () => void }, "_createTexture")
     .mockImplementation(() => {});
-  await container._uploadAsync(bytes, {} as InternalTexture);
+  return { container, decode, create };
+}
+
+/** A texture that still owns its GPU texture, as a live one does. */
+function liveTexture(): InternalTexture & { _hardwareTexture: unknown } {
+  return { _hardwareTexture: {} } as unknown as InternalTexture & { _hardwareTexture: unknown };
+}
+
+async function uploadDecodeOptions(webgpu: boolean, bytes: Uint8Array): Promise<unknown> {
+  const { container, decode, create } = stubbedContainer(webgpu);
+  await container._uploadAsync(bytes, liveTexture());
   expect(create).toHaveBeenCalledOnce();
   return decode.mock.calls[0]![1];
 }
@@ -44,5 +54,17 @@ describe("KTX2 upload on WebGPU (Babylon patch)", () => {
     ["a header too short to size", true, ktx2HeaderBytes(1, 1).subarray(0, 24)],
   ])("leaves %s to the decoder's own choice", async (_case, webgpu, bytes) => {
     expect(await uploadDecodeOptions(webgpu, bytes)).toBeUndefined();
+  });
+});
+
+describe("KTX2 upload of a texture disposed while it decodes (Babylon patch)", () => {
+  it("skips the upload, since binding a released texture binds nothing", async () => {
+    const { container, create } = stubbedContainer(false);
+    const texture = liveTexture();
+    const upload = container._uploadAsync(ktx2HeaderBytes(4, 4), texture);
+    // InternalTexture.dispose releases the GPU texture while the transcoder still runs.
+    texture._hardwareTexture = null;
+    await upload;
+    expect(create).not.toHaveBeenCalled();
   });
 });

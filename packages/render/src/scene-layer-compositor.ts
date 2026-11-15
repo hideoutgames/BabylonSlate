@@ -158,7 +158,9 @@ export class SceneLayerCompositor {
       zOrder: command.zOrder,
       scene,
       camera,
-      renderer: new SceneRenderCoordinator(scene),
+      // A layer draws every frame: a visual that joins or changes how it draws is probed for itself, not with every
+      // other visual of the layer.
+      renderer: new SceneRenderCoordinator(scene, { scopedStrictProbes: true }),
       designBounds: sceneLayerOrthoBounds(command.layerBounds),
       viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
       cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
@@ -303,6 +305,15 @@ export class SceneLayerCompositor {
 
   layers(): SceneLayerView[] {
     return [...this.byId.values()];
+  }
+
+  /**
+   * Each layer's renderer work in draw order (`ForwardSceneFrameGraph.diagnostics`: its graph builds, strict readiness
+   * checks with their reasons and time, and what the last failed one waited for) with its mesh count. Reading starts
+   * the measuring, as a view's own does.
+   */
+  diagnostics(): Array<{ layerId: string; meshes: number; work: ReturnType<SceneRenderCoordinator["diagnostics"]> }> {
+    return this.orderedLayers().map((layer) => ({ layerId: layer.layerId, meshes: layer.scene.meshes.length, work: layer.renderer.diagnostics() }));
   }
 
   sortedLayers(): SceneLayerView[] {

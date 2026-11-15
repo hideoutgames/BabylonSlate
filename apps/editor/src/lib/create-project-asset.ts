@@ -54,6 +54,8 @@ export async function createProjectAsset(options: {
   viewportMode?: ViewportMode;
   /** A new 2D or 3D Timeline Clip's required Timeline Asset guid. */
   timelineAsset?: string;
+  /** A new 3D Animation Graph's Skeleton. */
+  skeletonGuid?: string | null;
   /** A new Class's starting components (Create Actor). */
   classComponents?: import("@haptic/core").SerializedComponent[];
 }): Promise<IndexedAsset> {
@@ -106,6 +108,7 @@ export async function createProjectAsset(options: {
     saveGameDataDefinitionGuid: linkedDefinition,
     viewportMode: options.viewportMode,
     timelineAsset: options.timelineAsset,
+    skeletonGuid: options.skeletonGuid,
     classComponents: type === "Class" ? options.classComponents : undefined,
   });
   if (type === "DataDefinition" || type === "DataTree" || linkedDefinition) {

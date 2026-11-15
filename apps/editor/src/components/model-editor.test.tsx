@@ -105,13 +105,8 @@ describe("ModelEditor", () => {
     expect(screen.getByTestId("property-slot-0").textContent).not.toContain(
       "mat-1",
     );
-    expect(screen.getByTestId("property-clip-0")).toHaveProperty(
-      "disabled",
-      true,
-    );
-    expect((screen.getByTestId("property-clip-0") as HTMLInputElement).value).toBe(
-      "Walk",
-    );
+    // Clips are Animation assets: a stored clip name list is not shown.
+    expect(screen.queryByTestId("property-clip-0")).toBeNull();
     expect(screen.queryByTestId("property-materialCount")).toBeNull();
     expect(screen.queryByTestId("property-textureCount")).toBeNull();
     expect(screen.queryByTestId("property-animationCount")).toBeNull();
@@ -125,7 +120,6 @@ describe("ModelEditor", () => {
           materialSlots: [
             { index: 0, name: "Hero Mat", materialGuid: "mat-1" },
           ],
-          clipNames: [],
         }}
         onChange={onChange}
       />,
@@ -154,7 +148,6 @@ describe("ModelEditor", () => {
       <ModelEditor
         payload={{
           materialSlots: [{ index: 0, name: "Slot 1", materialGuid: null }],
-          clipNames: [],
         }}
         onChange={vi.fn()}
       />,
@@ -167,11 +160,11 @@ describe("ModelEditor", () => {
 
 describe("ModelPreview", () => {
   it("shows Empty copy when the source is not a loadable glTF mesh", () => {
-    const { rerender } = render(<ModelPreview payload={{ materialSlots: [], clipNames: [] }} />);
+    const { rerender } = render(<ModelPreview payload={{ materialSlots: [] }} />);
     expect(screen.getByTestId("model-preview")).toBeTruthy();
     expect(screen.getByText("No Mesh")).toBeTruthy();
     expect(screen.queryByTestId("model-preview-shading")).toBeNull();
-    rerender(<ModelPreview payload={{ materialSlots: [], clipNames: [] }} sourceBytes={new Uint8Array([111, 98, 106])} />);
+    rerender(<ModelPreview payload={{ materialSlots: [] }} sourceBytes={new Uint8Array([111, 98, 106])} />);
     expect(screen.getByText("Preview Unavailable")).toBeTruthy();
     expect(screen.queryByText("No Mesh")).toBeNull();
   });
@@ -180,7 +173,7 @@ describe("ModelPreview", () => {
     playStub.ensureSharedEngine.mockReturnValue({});
     render(
       <ModelPreview
-        payload={{ materialSlots: [], clipNames: [] }}
+        payload={{ materialSlots: [] }}
         sourceBytes={encodeTriangleGlb()}
       />,
     );
@@ -195,7 +188,7 @@ describe("ModelPreview", () => {
   it("renders a preview canvas instead of No Mesh for glTF source bytes", () => {
     render(
       <ModelPreview
-        payload={{ materialSlots: [], clipNames: [] }}
+        payload={{ materialSlots: [] }}
         sourceBytes={encodeTriangleGlb()}
       />,
     );
@@ -207,7 +200,7 @@ describe("ModelPreview", () => {
     render(
       <ModelColliderSessionProvider>
         <ModelPreview
-          payload={{ materialSlots: [], clipNames: [] }}
+          payload={{ materialSlots: [] }}
           sourceBytes={encodeTriangleGlb()}
         />
       </ModelColliderSessionProvider>,
@@ -242,7 +235,7 @@ describe("ModelPreview", () => {
     const preview = (session: string) => (
       <ModelColliderSessionProvider key={session}>
         <ModelPreview
-          payload={{ materialSlots: [], clipNames: [] }}
+          payload={{ materialSlots: [] }}
           sourceBytes={encodeTriangleGlb()}
         />
       </ModelColliderSessionProvider>
@@ -294,7 +287,6 @@ function ColliderHarness({
 }) {
   const [payload, setPayload] = useState<Record<string, unknown>>({
     materialSlots: [],
-    clipNames: [],
   });
   return (
     <ModelColliderSessionProvider>

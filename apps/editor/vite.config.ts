@@ -14,6 +14,7 @@ import { playerHostVitePlugin } from "./vite-player-host.ts";
 import { havokHostedWasmVitePlugin } from "./vite-havok-wasm.ts";
 import { rapierHostedWasmVitePlugin } from "./vite-rapier-wasm.ts";
 import { recastHostedWasmVitePlugin } from "./vite-recast-wasm.ts";
+import { hostLoadedModulePreload } from "./vite-module-preload.ts";
 import { validateChangelog, validatePatchNotes } from "../../scripts/distribution/changelog.mjs";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,8 @@ const releaseNotes = buildIdentity
       declaredVersion,
     ).find(notes => notes.version === declaredVersion) ?? null);
 
+const modulePreload = hostLoadedModulePreload();
+
 export default defineConfig({
   define: {
     __HAPTIC_BUILD__: JSON.stringify(buildIdentity),
@@ -86,6 +89,7 @@ export default defineConfig({
     },
     react(),
     tailwindcss(),
+    modulePreload.plugin,
     havokHostedWasmVitePlugin(),
     rapierHostedWasmVitePlugin(),
     recastHostedWasmVitePlugin(),
@@ -108,6 +112,9 @@ export default defineConfig({
       path.join(rootDir, "dist"),
     ),
   ],
+  build: {
+    modulePreload: { resolveDependencies: modulePreload.resolveDependencies },
+  },
   resolve: {
     alias: {
       "@": path.resolve(rootDir, "./src"),

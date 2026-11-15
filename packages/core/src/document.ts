@@ -9,7 +9,10 @@ export const ASSET_DOCUMENT_KINDS = [
   "font",
   "sprite",
   "sprite-animation",
-  "anim-graph",
+  "anim-graph-3d",
+  "anim-graph-2d",
+  "blend-space",
+  "sprite-blend-space",
   "behaviour-tree",
   "blackboard",
   "save-game",
@@ -55,7 +58,26 @@ export const ASSET_DOCUMENT_KINDS = [
 
 export type AssetDocumentKind = (typeof ASSET_DOCUMENT_KINDS)[number];
 
-export type DocumentKind = "content-browser" | AssetDocumentKind;
+/** Pinned chrome tabs with no asset behind them: never closed by the user, never saved. */
+export type ChromeDocumentKind = "content-browser" | "source-control";
+
+export type DocumentKind = ChromeDocumentKind | AssetDocumentKind;
+
+/**
+ * 3D and 2D Animation Graph assets: one editor and one document shape. A 3D graph plays Animations on its Skeleton
+ * and passes poses; a 2D graph plays Sprite Animations and passes frames. The two types never convert.
+ */
+export const ANIM_GRAPH_ASSET_TYPES = ["AnimationGraph3D", "AnimationGraph2D"] as const;
+export type AnimGraphAssetType = (typeof ANIM_GRAPH_ASSET_TYPES)[number];
+export type AnimGraphDocumentKind = "anim-graph-3d" | "anim-graph-2d";
+
+export function isAnimGraphAssetType(type: string | null | undefined): type is AnimGraphAssetType {
+  return type === "AnimationGraph3D" || type === "AnimationGraph2D";
+}
+
+export function isAnimGraphDocumentKind(kind: string | null | undefined): kind is AnimGraphDocumentKind {
+  return kind === "anim-graph-3d" || kind === "anim-graph-2d";
+}
 
 export const CONTENT_BROWSER_ID = "content-browser";
 
@@ -64,6 +86,24 @@ export const CONTENT_BROWSER_REF: DocumentRef = {
   path: "",
   label: "Content Browser",
 };
+
+/** Shown while the project's source control mode is not Off. */
+export const SOURCE_CONTROL_ID = "source-control";
+
+export const SOURCE_CONTROL_REF: DocumentRef = {
+  kind: "source-control",
+  path: "",
+  label: "Source Control",
+};
+
+export function isChromeDocumentKind(kind: string): kind is ChromeDocumentKind {
+  return kind === "content-browser" || kind === "source-control";
+}
+
+/** Content Browser and Source Control: pinned tabs the user cannot close. */
+export function isChromeDocumentId(id: string): boolean {
+  return id === CONTENT_BROWSER_ID || id === SOURCE_CONTROL_ID;
+}
 
 export interface DocumentRef {
   kind: DocumentKind;
@@ -102,8 +142,14 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Sprite";
     case "sprite-animation":
       return "SpriteAnimation";
-    case "anim-graph":
-      return "AnimationGraph";
+    case "anim-graph-3d":
+      return "AnimationGraph3D";
+    case "blend-space":
+      return "BlendSpace";
+    case "sprite-blend-space":
+      return "SpriteBlendSpace";
+    case "anim-graph-2d":
+      return "AnimationGraph2D";
     case "behaviour-tree":
       return "BehaviourTree";
     case "blackboard":
@@ -218,8 +264,14 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "sprite";
     case "SpriteAnimation":
       return "sprite-animation";
-    case "AnimationGraph":
-      return "anim-graph";
+    case "AnimationGraph3D":
+      return "anim-graph-3d";
+    case "BlendSpace":
+      return "blend-space";
+    case "SpriteBlendSpace":
+      return "sprite-blend-space";
+    case "AnimationGraph2D":
+      return "anim-graph-2d";
     case "BehaviourTree":
       return "behaviour-tree";
     case "Blackboard":
@@ -321,8 +373,14 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Sprite";
     case "sprite-animation":
       return "Sprite Animation";
-    case "anim-graph":
-      return "Anim Graph";
+    case "anim-graph-3d":
+      return "3D Animation Graph";
+    case "blend-space":
+      return "Blend Space";
+    case "sprite-blend-space":
+      return "Sprite Blend Space";
+    case "anim-graph-2d":
+      return "2D Animation Graph";
     case "behaviour-tree":
       return "Behaviour Tree";
     case "blackboard":
@@ -409,27 +467,21 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
 }
 
 export function documentId(ref: Pick<DocumentRef, "kind" | "path">): string {
-  if (ref.kind === "content-browser") {
-    return CONTENT_BROWSER_ID;
-  }
+  if (isChromeDocumentKind(ref.kind)) return ref.kind;
   return `${ref.kind}:${ref.path}`;
 }
 
 export function parseDocumentId(
   id: string,
 ): { kind: DocumentKind; path: string } | null {
-  if (id === CONTENT_BROWSER_ID) {
-    return { kind: "content-browser", path: "" };
+  if (isChromeDocumentId(id)) {
+    return { kind: id as ChromeDocumentKind, path: "" };
   }
   const colon = id.indexOf(":");
   if (colon <= 0) return null;
   const kind = id.slice(0, colon);
   if (!isAssetDocumentKind(kind)) return null;
   return { kind, path: id.slice(colon + 1) };
-}
-
-export function isContentBrowserId(id: string): boolean {
-  return id === CONTENT_BROWSER_ID;
 }
 
 export type DockWindowDirection = "left" | "right" | "above" | "below" | "within";
@@ -468,7 +520,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|shake|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water|globalparams)\.hasset$/i,
+        /\.(inputaction|inputaxis|scene|scenelayer|prefab|spriteanim|sprite|anim3d|anim2d|blendspace|spriteblend|anim|material|matfunc|matinst|class|tileset|tilemap|datadefinition|datatree|plugin|mixer|channel|atten|shake|emitter|particlegraph|particles|skyboxcreator|rendertargettexture|rendertarget|savegame|bt|blackboard|water|globalparams)\.hasset$/i,
         "",
       )
       .replace(/\.hasset$/i, "")

@@ -1,5 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import type { AnimationGroup } from "@babylonjs/core/Animations/animationGroup";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { Scene } from "@babylonjs/core/scene";
+import { FBXFileLoader } from "@babylonjs/loaders/FBX/fbxFileLoader";
 import { parseGlbForBrowse, splitGlbJsonBin } from "@haptic/assets";
 import { convertFbxToGlb } from "./fbx-conversion";
 import { createTestEngine } from "./test-support/test-engine";
@@ -42,6 +48,34 @@ function bounds(container: Awaited<ReturnType<typeof loadModelContainer>>) {
   }
   const round = (values: number[]) => values.map((value) => Math.round(value * 1000) / 1000);
   return { min: round(min), max: round(max) };
+}
+
+/** World bounds (min xyz, max xyz) of the skinned vertices at rest and halfway through `clip`. */
+function skinnedBoundsAtRestAndMidClip(
+  meshes: readonly AbstractMesh[],
+  clip: AnimationGroup,
+): { rest: number[]; midClip: number[] } {
+  const bounds = () => {
+    const min = new Vector3(Infinity, Infinity, Infinity);
+    const max = new Vector3(-Infinity, -Infinity, -Infinity);
+    for (const mesh of meshes) {
+      if (!mesh.skeleton || mesh.getTotalVertices() === 0) continue;
+      mesh.skeleton.prepare(true);
+      const world = mesh.computeWorldMatrix(true);
+      const data = mesh.getPositionData(true, false)!;
+      for (let index = 0; index < data.length; index += 3) {
+        const point = Vector3.TransformCoordinates(Vector3.FromArray(data, index), world);
+        min.minimizeInPlace(point);
+        max.maximizeInPlace(point);
+      }
+    }
+    return [...min.asArray(), ...max.asArray()];
+  };
+  const rest = bounds();
+  clip.start(false);
+  clip.goToFrame(clip.from + (clip.to - clip.from) / 2);
+  clip.pause();
+  return { rest, midClip: bounds() };
 }
 
 describe("FBX canonical conversion", () => {
@@ -91,6 +125,32 @@ describe("FBX canonical conversion", () => {
       clip.start(true);
       expect(clip.animatables.length).toBeGreaterThan(0);
     });
+  });
+
+  it("keeps a skinned mesh on its skeleton, at rest and mid-clip, as Babylon draws the FBX itself", async () => {
+    // The fixture's mesh and armature sit under differently scaled nodes; exported unchanged, glTF drew the mesh at a
+    // tenth of its skeleton's size, since glTF skins in world space and Babylon in the mesh's.
+    const source = fixture("animation_with_skeleton.fbx");
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    let fbx: { rest: number[]; midClip: number[] };
+    try {
+      const container = await new FBXFileLoader({ materials: "pbr", unitScale: "meters" })
+        .loadAssetContainerAsync(scene, source.bytes.slice().buffer, "file:");
+      container.addAllToScene();
+      fbx = skinnedBoundsAtRestAndMidClip(container.meshes, container.animationGroups[0]!);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+    const glb = await withModel(await convertFbxToGlb(source), (container) =>
+      skinnedBoundsAtRestAndMidClip(container.meshes, container.animationGroups[0]!));
+    for (const pose of ["rest", "midClip"] as const) {
+      expect(glb[pose].length).toBe(6);
+      glb[pose].forEach((value, axis) => expect(value, `${pose} bound ${axis}`).toBeCloseTo(fbx[pose][axis]!, 1));
+    }
+    // The clip moves the mesh, so the mid-clip comparison checks the bind as well as the rest pose.
+    expect(fbx.midClip).not.toEqual(fbx.rest);
   });
 
   it("rejects malformed FBX instead of importing a different file from the batch", async () => {

@@ -1,5 +1,5 @@
-import type { ProjectDocument } from "@haptic/core";
-import { LabelHint, NumberField } from "@haptic/editor-kit";
+import { lazy, Suspense } from "react";
+import type { ProjectDocument, SourceControlMode, SourceControlProjectSettings } from "@haptic/core";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,28 +10,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@haptic/ui/components/alert-dialog";
-import { Button } from "@haptic/ui/components/button";
 import {
   Field,
-  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
 } from "@haptic/ui/components/field";
 import { Input } from "@haptic/ui/components/input";
 import { Switch } from "@haptic/ui/components/switch";
+import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { SettingsSection } from "./settings-section";
 import type {
   DocumentActions,
   RegistryState,
-  SourceControlState,
 } from "../context/document-context-types";
+
+// The account-aware rows (repository and branch pickers, Sign In) load only
+// while the mode is not Off, so an Off project never loads the credential store.
+const ProjectSourceControlHostFields = lazy(() => import("./project-source-control-host-fields"));
+
+/** Integrated joins once Haptic syncs projects itself. */
+const OFFERED_MODES: Array<{ value: SourceControlMode; label: string }> = [
+  { value: "off", label: "Off" },
+  { value: "manual", label: "Manual" },
+];
 
 interface ProjectSourceControlSettingsProps {
   projectDocument: ProjectDocument;
   updateProjectSettings: DocumentActions["updateProjectSettings"];
   projectGuid: RegistryState["projectGuid"];
-  /** The host's live ref: Enable reads it once the Git read settles. */
+  /** The host's live ref: turning Manual on reads it once the Git read settles. */
   latest: {
     readonly current: {
       project: ProjectDocument | null;
@@ -40,19 +48,14 @@ interface ProjectSourceControlSettingsProps {
     };
   };
   prefillSourceControlFromGit: DocumentActions["prefillSourceControlFromGit"];
-  sourceControl: SourceControlState["sourceControl"];
-  tokenDraft: string;
-  setTokenDraft: (tokenDraft: string) => void;
-  tokenError: string | null;
-  setTokenError: (tokenError: string | null) => void;
   sourceControlUrlMissing: boolean;
   setSourceControlUrlMissing: (missing: boolean) => void;
   setDisableSourceControlOpen: (open: boolean) => void;
 }
 
 /**
- * Project Settings → Source Control. The token draft, its error and the URL
- * check live in the host so they survive category switches.
+ * Project Settings → Source Control. The URL check lives in the host so it
+ * survives category switches.
  */
 export function ProjectSourceControlSettings({
   projectDocument,
@@ -60,233 +63,152 @@ export function ProjectSourceControlSettings({
   projectGuid,
   latest,
   prefillSourceControlFromGit,
-  sourceControl,
-  tokenDraft,
-  setTokenDraft,
-  tokenError,
-  setTokenError,
   sourceControlUrlMissing,
   setSourceControlUrlMissing,
   setDisableSourceControlOpen,
 }: ProjectSourceControlSettingsProps) {
+  const settings = projectDocument.settings.sourceControl;
+  const change = (patch: Partial<SourceControlProjectSettings>) =>
+    updateProjectSettings({ sourceControl: { ...settings, ...patch } });
+  const chooseMode = (mode: SourceControlMode) => {
+    if (mode === settings.mode) return;
+    if (mode === "off") {
+      setDisableSourceControlOpen(true);
+      return;
+    }
+    if (settings.repositoryUrl.trim()) {
+      setSourceControlUrlMissing(false);
+      change({ mode });
+      return;
+    }
+    // No repository yet: read the folder's Git settings, and refuse to turn
+    // source control on when they hold none either.
+    const requestedProject = projectGuid;
+    void prefillSourceControlFromGit().then((prefill) => {
+      // Fill from the settings as they are now: a URL typed during the Git read wins.
+      const live = latest.current;
+      if (!live.project || live.projectGuid !== requestedProject) return;
+      const now = live.project.settings.sourceControl;
+      const repositoryUrl = now.repositoryUrl.trim() || prefill.repositoryUrl;
+      if (!repositoryUrl) {
+        setSourceControlUrlMissing(true);
+        return;
+      }
+      setSourceControlUrlMissing(false);
+      live.applyProjectSettings({
+        sourceControl: {
+          ...now,
+          mode,
+          repositoryUrl,
+          branch: now.branch === settings.branch && prefill.branch ? prefill.branch : now.branch,
+        },
+      });
+    });
+  };
+
+  const urlField = () => (
+    <Field className="settings-field" data-invalid={sourceControlUrlMissing || undefined}>
+      <FieldLabel htmlFor="settings-source-control-url">Repository</FieldLabel>
+      <Input
+        id="settings-source-control-url"
+        value={settings.repositoryUrl}
+        placeholder="https://"
+        aria-invalid={sourceControlUrlMissing || undefined}
+        aria-describedby={sourceControlUrlMissing ? "settings-source-control-url-error" : undefined}
+        onChange={(event) => {
+          setSourceControlUrlMissing(false);
+          change({ repositoryUrl: event.target.value });
+        }}
+        data-testid="settings-source-control-url"
+      />
+      {sourceControlUrlMissing ? (
+        <FieldError id="settings-source-control-url-error" data-testid="settings-source-control-url-error">
+          Enter a repository URL before turning on Source Control.
+        </FieldError>
+      ) : null}
+    </Field>
+  );
+  const branchField = () => (
+    <Field className="settings-field">
+      <FieldLabel htmlFor="settings-source-control-branch">Branch</FieldLabel>
+      <Input
+        id="settings-source-control-branch"
+        value={settings.branch}
+        onChange={(event) => change({ branch: event.target.value })}
+        data-testid="settings-source-control-branch"
+      />
+    </Field>
+  );
+
   return (
     <FieldGroup>
       <SettingsSection id="repository" title="Repository">
-          <Field orientation="horizontal" className="settings-field">
-          <FieldLabel htmlFor="settings-source-control-enabled">
-            Enable
-          </FieldLabel>
-          <Switch
-            id="settings-source-control-enabled"
-            checked={projectDocument.settings.sourceControl.enabled}
-            onCheckedChange={(checked) => {
-              const enabled = checked === true;
-              const current = projectDocument.settings.sourceControl;
-              if (!enabled) {
-                setDisableSourceControlOpen(true);
-                return;
-              }
-              if (current.repositoryUrl.trim()) {
-                setSourceControlUrlMissing(false);
-                updateProjectSettings({
-                  sourceControl: { ...current, enabled },
-                });
-                return;
-              }
-              // No URL typed: read the folder's Git settings, and refuse
-              // to enable when they hold none either.
-              const requestedProject = projectGuid;
-              void prefillSourceControlFromGit().then((prefill) => {
-                // Fill from the settings as they are now: a URL typed
-                // during the Git read wins.
-                const live = latest.current;
-                if (!live.project || live.projectGuid !== requestedProject) return;
-                const now = live.project.settings.sourceControl;
-                const repositoryUrl = now.repositoryUrl.trim() || prefill.repositoryUrl;
-                if (!repositoryUrl) {
-                  setSourceControlUrlMissing(true);
-                  return;
-                }
-                setSourceControlUrlMissing(false);
-                live.applyProjectSettings({
-                  sourceControl: {
-                    ...now,
-                    enabled: true,
-                    repositoryUrl,
-                    branch:
-                      now.branch === current.branch && prefill.branch
-                        ? prefill.branch
-                        : now.branch,
-                  },
-                });
-              });
-            }}
-            data-testid="settings-source-control-enabled"
-          />
-        </Field>
-          <Field className="settings-field" data-invalid={sourceControlUrlMissing || undefined}>
-          <FieldLabel htmlFor="settings-source-control-url">
-            Repository URL
-          </FieldLabel>
-          <Input
-            id="settings-source-control-url"
-            value={projectDocument.settings.sourceControl.repositoryUrl}
-            aria-invalid={sourceControlUrlMissing || undefined}
-            aria-describedby={sourceControlUrlMissing ? "settings-source-control-url-error" : undefined}
-            onChange={(event) => {
-              setSourceControlUrlMissing(false);
-              updateProjectSettings({
-                sourceControl: {
-                  ...projectDocument.settings.sourceControl,
-                  repositoryUrl: event.target.value,
-                },
-              });
-            }}
-            data-testid="settings-source-control-url"
-          />
-          {sourceControlUrlMissing ? (
-            <FieldError id="settings-source-control-url-error" data-testid="settings-source-control-url-error">
-              Enter a Repository URL before turning on Source Control.
-            </FieldError>
-          ) : null}
-        </Field>
-          <Field className="settings-field">
-          <FieldLabel htmlFor="settings-source-control-branch">
-            Branch
-          </FieldLabel>
-          <Input
-            id="settings-source-control-branch"
-            value={projectDocument.settings.sourceControl.branch}
-            onChange={(event) =>
-              updateProjectSettings({
-                sourceControl: {
-                  ...projectDocument.settings.sourceControl,
-                  branch: event.target.value,
-                },
-              })
-            }
-            data-testid="settings-source-control-branch"
-          />
-        </Field>
-          <Field className="settings-field">
-          <LabelHint hint="Stored on this device for this project. Never included in project files or Git.">
-            <FieldLabel htmlFor="settings-source-control-token">
-              Token
-            </FieldLabel>
-          </LabelHint>
-          <div className="flex min-w-0 flex-col gap-1.5">
-          <Input
-            id="settings-source-control-token"
-            type="password"
-            autoComplete="off"
-            value={tokenDraft}
-            aria-invalid={tokenError ? true : undefined}
-            aria-describedby={tokenError ? "settings-source-control-token-error" : undefined}
-            onChange={(event) => {
-              setTokenError(null);
-              setTokenDraft(event.target.value);
-            }}
-            data-testid="settings-source-control-token"
-          />
-          {tokenError ? (
-            <FieldError id="settings-source-control-token-error" data-testid="settings-source-control-token-error">
-              {tokenError}
-            </FieldError>
-          ) : null}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-              className="min-h-[var(--chrome-row,28px)]"
-            data-testid="settings-source-control-save-token"
-            disabled={!tokenDraft}
-            onClick={() => {
-              setTokenError(null);
-              void sourceControl.saveToken(tokenDraft).then(() => {
-                setTokenDraft("");
-              }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
-            }}
-          >
-            Save Token
-          </Button>
-          <Button
-            type="button"
+        <Field orientation="horizontal" className="settings-field">
+          <FieldLabel id="settings-source-control-mode-label">Mode</FieldLabel>
+          <ToggleGroup
+            id="settings-source-control-mode"
+            aria-labelledby="settings-source-control-mode-label"
             variant="outline"
-              className="min-h-[var(--chrome-row,28px)]"
-            data-testid="settings-source-control-clear-token"
-            onClick={() => {
-              setTokenError(null);
-              void sourceControl.clearToken().then(() => {
-                setTokenDraft("");
-              }, (error: unknown) => setTokenError(error instanceof Error ? error.message : String(error)));
+            size="sm"
+            spacing={0}
+            className="justify-self-end"
+            value={[settings.mode]}
+            onValueChange={(value) => {
+              const next = value[0] as SourceControlMode | undefined;
+              if (next) chooseMode(next);
             }}
+            data-testid="settings-source-control-mode"
           >
-            Clear Token
-          </Button>
-        </div>
-          </div>
-          {sourceControl.hasToken ? (
-            <FieldDescription data-testid="settings-source-control-token-status">Token Saved.</FieldDescription>
-          ) : (
-            // Until a token is saved, the row says how to create one.
-            <FieldDescription data-testid="settings-source-control-token-help">
-              Create one in{" "}
-              <a
-                href="https://github.com/settings/tokens"
-                target="_blank"
-                rel="noreferrer"
-              >
-                GitHub Token Settings
-              </a>{" "}
-              with repo scope, or Contents: Read and Write for a fine-grained
-              token. GitLab and Gitea tokens with push access also work.
-            </FieldDescription>
-          )}
+            {OFFERED_MODES.map((mode) => (
+              <ToggleGroupItem key={mode.value} value={mode.value} data-testid={`settings-source-control-mode-${mode.value}`}>
+                {mode.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </Field>
+        {settings.mode === "off" ? (
+          <>
+            {urlField()}
+            {branchField()}
+          </>
+        ) : (
+          <Suspense fallback={<>{urlField()}{branchField()}</>}>
+            <ProjectSourceControlHostFields
+              settings={settings}
+              onChange={change}
+              urlMissing={sourceControlUrlMissing}
+              onUrlTyped={() => setSourceControlUrlMissing(false)}
+              renderUrlField={urlField}
+              renderBranchField={branchField}
+            />
+          </Suspense>
+        )}
       </SettingsSection>
       <SettingsSection id="locking" title="Locking">
-          <Field orientation="horizontal" className="settings-field">
+        <Field orientation="horizontal" className="settings-field">
           <FieldLabel htmlFor="settings-source-control-auto-lock">
             Auto-Lock On First Edit
           </FieldLabel>
           <Switch
             id="settings-source-control-auto-lock"
-              checked={
-                projectDocument.settings.sourceControl.autoLockOnEdit
-              }
-            onCheckedChange={(checked) =>
-              updateProjectSettings({
-                sourceControl: {
-                  ...projectDocument.settings.sourceControl,
-                  autoLockOnEdit: checked === true,
-                },
-              })
-            }
+            checked={settings.autoLockOnEdit}
+            onCheckedChange={(checked) => change({ autoLockOnEdit: checked === true })}
             data-testid="settings-source-control-auto-lock"
           />
         </Field>
-          <Field className="settings-field">
-          <FieldLabel htmlFor="settings-source-control-poll">
-              Poll Interval (Seconds)
-          </FieldLabel>
-          <NumberField
-            id="settings-source-control-poll"
-            min={1}
-            className="min-h-[var(--chrome-row,28px)]"
-            value={Math.round(
-                projectDocument.settings.sourceControl.pollIntervalMs /
-                  1000,
-            )}
-            onChange={(seconds) =>
-              updateProjectSettings({
-                sourceControl: {
-                  ...projectDocument.settings.sourceControl,
-                  pollIntervalMs: Math.round(seconds * 1000),
-                },
-              })
-            }
-            data-testid="settings-source-control-poll"
-          />
-        </Field>
+        {settings.mode === "integrated" ? (
+          <Field orientation="horizontal" className="settings-field">
+            <FieldLabel htmlFor="settings-source-control-release-after-push">
+              Release Locks After Push
+            </FieldLabel>
+            <Switch
+              id="settings-source-control-release-after-push"
+              checked={settings.releaseLocksAfterPush}
+              onCheckedChange={(checked) => change({ releaseLocksAfterPush: checked === true })}
+              data-testid="settings-source-control-release-after-push"
+            />
+          </Field>
+        ) : null}
       </SettingsSection>
     </FieldGroup>
   );
@@ -315,8 +237,8 @@ export function DisableSourceControlDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Turn Off Source Control?</AlertDialogTitle>
           <AlertDialogDescription>
-            Locks stay until you release them. Turning Enable back on keeps
-            the lock list.
+            Locks stay until you release them. Turning it back on keeps the
+            lock list.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -327,7 +249,7 @@ export function DisableSourceControlDialog({
               if (!projectDocument) return;
               const current = projectDocument.settings.sourceControl;
               updateProjectSettings({
-                sourceControl: { ...current, enabled: false },
+                sourceControl: { ...current, mode: "off" },
               });
               setDisableSourceControlOpen(false);
             }}

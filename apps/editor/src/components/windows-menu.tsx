@@ -9,7 +9,6 @@ import {
   useOpenDocumentTabs,
   useProjectState,
   useRegistryState,
-  useSourceControl,
 } from "../context/document-context";
 import {
   isDockviewDocumentKind,
@@ -27,9 +26,8 @@ export function WindowsMenu() {
     useDocumentActions();
   const { projectName } = useProjectState();
   const openDocuments = useOpenDocumentTabs();
-  const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
+  const { activeDocumentId, sceneMode } = useActiveDocumentState();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { sourceControl } = useSourceControl();
   // Dock windows opening or closing: `isDockWindowOpen` and the count change.
   useDockWindowTick();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -61,9 +59,6 @@ export function WindowsMenu() {
     const windows = isDockviewDocumentKind(activeKind)
       ? listDockWindows(activeKind, {
           actorPrefab,
-          sourceControl: sourceControl.enabled,
-          animEditorMode:
-            activeKind === "anim-graph" ? animEditorMode : undefined,
           sceneMode: hasSceneModes(activeKind) ? sceneMode : undefined,
         })
       : [];
@@ -85,9 +80,7 @@ export function WindowsMenu() {
   }, [
     activeKind,
     actorPrefab,
-    animEditorMode,
     sceneMode,
-    sourceControl.enabled,
     isDockWindowOpen,
     openDockWindowCount,
     toggleDockWindow,

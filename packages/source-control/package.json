@@ -4,16 +4,27 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./device-flow": "./src/device-flow.ts",
+    "./host-api": "./src/host-api.ts",
+    "./pushed-locks": "./src/pushed-locks.ts",
+    "./token-refresh": "./src/token-refresh.ts",
+    "./fake-host": "./src/fake-host.ts",
+    "./git": "./src/git/index.ts",
+    "./fake-sync": "./src/fake-sync.ts",
+    "./git-benchmark": "./src/git/benchmark.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node ../../scripts/run-tests.mjs unit packages/source-control"
   },
   "dependencies": {
-    "@haptic/core": "workspace:*"
+    "@haptic/core": "workspace:*",
+    "buffer": "6.0.3",
+    "isomorphic-git": "1.44.9"
   },
   "devDependencies": {
+    "@haptic/vfs": "workspace:*",
     "typescript": "~6.0.3"
   }
 }

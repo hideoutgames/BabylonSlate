@@ -33,6 +33,11 @@ export interface ImportOptions {
   fontGuidsByName?: Map<string, string>;
   /** Force attach onto this Font even when the family name differs. */
   attachToGuid?: string;
+  /**
+   * The project's Skeletons in the import's content root. A rigged Model, or an animation library, whose rig matches
+   * one joins it instead of getting its own (`skeleton-match.ts`).
+   */
+  skeletons?: ReadonlyArray<{ guid: string; name: string; payload: import("../skeleton-payload").SkeletonPayload }>;
   /** Uniform Model import multiplier. Defaults to DEFAULT_MODEL_IMPORT_SCALE. */
   modelImportScale?: number;
   /**

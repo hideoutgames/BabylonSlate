@@ -2,7 +2,7 @@ import { SimulationInspector } from "./simulation-inspector";
 import { ActorDefaultsGrid, GameInstanceDefaultsGrid } from "./actor-defaults-grid";
 import { useSimulationInspectionStore } from "../context/simulation-inspection-context";
 import { SceneLayerSwitcherFields } from "../components/scene-layer-switcher-fields";
-import { normalizeClassMemberCategory } from "@haptic/core";
+import { normalizeClassMemberCategory, isAnimGraphDocumentKind } from "@haptic/core";
 import { useMemo, useState } from "react";
 import {
   ClassPicker,
@@ -26,6 +26,7 @@ import {
 } from "@haptic/core";
 import {
   animGraphMembersFromVariables,
+  patchStateGraph,
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
   findReverseTransition,
@@ -36,7 +37,6 @@ import {
   useDocumentActions,
   useProjectState,
   useRegistryState,
-  useActiveDocumentState,
   useOpenDocument,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
@@ -46,7 +46,7 @@ import {
   resolveInspectorNodeId,
   useGraphEditing,
 } from "../context/graph-editing-context";
-import { useOptionalAnimGraphEditing } from "../context/anim-graph-editing-context";
+import { animCanvasStateId, useOptionalAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
@@ -66,6 +66,7 @@ import {
 import { hydrateSerializedGraphForEditor } from "../services/graph-validation";
 import { isDataGraphNode } from "../lib/data-graph";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { useCustomEventRename } from "./use-custom-event-rename";
 import { useClassGraphs } from "../lib/use-class-graphs";
 import { documentComponentClassId } from "../lib/linked-scale";
 import { delegateSignatureEntries } from "../lib/delegate-signatures";
@@ -96,7 +97,6 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const { applyAssetDocumentChange, reparentClassDocument } = documentActions;
   const { projectDocument } = useProjectState();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { animEditorMode } = useActiveDocumentState();
   // The open world Scene or Scene Layer sets the physics world.
   const worldDocuments = useOpenDocumentsOfKinds(WORLD_KINDS);
   const { focusDiagnostic } = useValidation();
@@ -104,6 +104,8 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
     useGraphEditing();
   const animEditing = useOptionalAnimGraphEditing();
+  // The Animation Graph canvas the Inspector follows: its State Machine side or the Animation Object script.
+  const animCanvas = animEditing?.canvas ?? "stateMachine";
   const {
     selectedId: prefabSelectedId,
     selectedIds: prefabSelectedIds,
@@ -115,7 +117,6 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
   const [parentClassPickOpen, setParentClassPickOpen] = useState(false);
-  const [renameEventOpen, setRenameEventOpen] = useState(false);
   const [selectedJsPin, selectJsPin] = useState<string | null>(null);
   const [parentClassError, setParentClassError] = useState<string | null>(null);
   const [classPinPick, setClassPinPick] = useState<{
@@ -163,25 +164,33 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
   const graphClassId = logicGraphHostClass(doc?.ref.kind, docPath, indexed, classIdForGraphPath).classId;
   const parsedAnim = useMemo(
     () =>
-      doc?.ref.kind === "anim-graph"
+      isAnimGraphDocumentKind(doc?.ref.kind)
         ? parseAnimGraphDocument(doc.content)
         : null,
     [doc?.content, doc?.ref.kind],
   );
-  const openRuleId = animEditorMode === "stateMachine"
+  const openRuleId = animCanvas === "stateMachine"
     ? animEditing?.openTransitionId ?? null
     : null;
   const ruleTransition =
     openRuleId && parsedAnim
-      ? (parsedAnim.transitions.find((row) => row.id === openRuleId) ?? null)
+      ? (parsedAnim.stateMachine.transitions.find((transition) => transition.id === openRuleId) ?? null)
       : null;
+  // A state's graph in its own tab, while that tab has the Inspector.
+  const animStateId = animCanvasStateId(animCanvas);
+  const poseState = animStateId && parsedAnim
+    ? parsedAnim.stateMachine.states.find((row) => row.id === animStateId) ?? null
+    : null;
+  const poseSource = poseState?.stateGraph ?? null;
   const graph = useMemo(
-    () => ruleTransition && parsedAnim
+    () => poseSource && parsedAnim
+      ? { ...poseSource, members: animGraphMembersFromVariables(parsedAnim.variables) }
+      : ruleTransition && parsedAnim
       ? {
           ...decorateTransitionRuleGraph(
             ruleTransition.ruleGraph,
             !findReverseTransition(
-              parsedAnim.transitions,
+              parsedAnim.stateMachine.transitions,
               ruleTransition.fromStateId,
               ruleTransition.toStateId,
             ),
@@ -189,10 +198,17 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
           members: animGraphMembersFromVariables(parsedAnim.variables),
         }
       : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
-    [doc?.content, doc?.ref.kind, parsedAnim, ruleTransition],
+    [doc?.content, doc?.ref.kind, parsedAnim, ruleTransition, poseSource],
   );
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
+    if (poseState && parsedAnim) {
+      void applyAssetDocumentChange(
+        documentId,
+        patchStateGraph(parsedAnim, poseState.id, { nodes: next.nodes, edges: next.edges }) as unknown as Record<string, unknown>,
+      );
+      return;
+    }
     if (ruleTransition && parsedAnim) {
       const ruleKey = logicGraphEditMergeKey(graph, next);
       void applyAssetDocumentChange(
@@ -206,6 +222,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
     }
     applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
   };
+  // Rename Event opens the event's inline rename in the Class panel.
+  const { start: renameEvent, dialog: renameEventDialog } = useCustomEventRename({
+    graph,
+    documentKind: doc?.ref.kind,
+    classId: graphClassId,
+    commit: persistGraph,
+  });
   const inspectGraph = useMemo(() => {
     if (!graph) return null;
     if (!activeFunctionId) return graph;
@@ -604,15 +627,13 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         hydratedInspectGraph={hydratedInspectGraph}
         selectedNode={selectedNode}
         activeFunctionId={activeFunctionId}
-        docPath={docPath}
         classId={graphClassId}
         focusBodyLine={focusDiagnostic?.bodyLine}
         catalogs={catalogs}
         persistGraph={persistGraph}
         selectedJsPin={selectedJsPin}
         selectJsPin={selectJsPin}
-        renameEventOpen={renameEventOpen}
-        setRenameEventOpen={setRenameEventOpen}
+        onRenameEvent={renameEvent}
         classPinPick={classPinPick}
         setClassPinPick={setClassPinPick}
         assetPinPick={assetPinPick}
@@ -622,7 +643,11 @@ function AuthoringInspectorPanel(_props: IDockviewPanelProps) {
         commandRowIds={commandRowIds}
         setCommandRowIds={setCommandRowIds}
         delegateSignatures={delegateSignatures}
+        animClipGraph={poseState && parsedAnim
+          ? { dimension: doc?.ref.kind === "anim-graph-2d" ? "2d" : "3d", skeletonGuid: parsedAnim.skeletonGuid }
+          : null}
       />
+      {renameEventDialog}
     </PanelFrame>
   );
 }

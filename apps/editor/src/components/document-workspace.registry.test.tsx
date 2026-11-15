@@ -75,8 +75,8 @@ vi.mock("../context/scene-editing-context", () => ({
   ),
 }));
 vi.mock("../shell/dockview-shell", () => ({
-  DockviewShell: ({ actorPrefab }: { actorPrefab?: boolean }) => (
-    <div data-testid="prefab-docks" data-prefab={String(actorPrefab)} />
+  DockviewShell: ({ actorPrefab, documentKind }: { actorPrefab?: boolean; documentKind: string }) => (
+    <div data-testid="prefab-docks" data-prefab={String(actorPrefab)} data-kind={documentKind} />
   ),
 }));
 vi.mock("./document-lock-banner", () => ({ DocumentLockBanner: () => null }));
@@ -131,6 +131,17 @@ afterEach(() => {
   state.mountedIds = new Set();
   state.documents = null;
   vi.restoreAllMocks();
+});
+
+describe("Source Control tab", () => {
+  it("mounts the Source Control dock, which has no content to load", () => {
+    state.tabs = ["source-control"];
+    state.mountedIds = new Set(state.tabs);
+    state.documents = [{ id: "source-control", ref: { kind: "source-control", path: "", label: "Source Control" }, content: null, layout: null, dirty: false }];
+    render(<DocumentWorkspace />);
+    const workspace = screen.getByTestId("document-workspace-source-control");
+    expect(workspace.querySelector("[data-testid='prefab-docks']")?.getAttribute("data-kind")).toBe("source-control");
+  });
 });
 
 describe("workspace registry traversal", () => {

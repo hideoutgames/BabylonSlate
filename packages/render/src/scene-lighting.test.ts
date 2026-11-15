@@ -385,6 +385,25 @@ describe("scene material lighting", () => {
     await check(true);
   });
 
+  it("writes a lightless Scene's block once, and again when a light joins or the last one leaves", () => {
+    const scene = host(false);
+    const writes = vi.spyOn(hapticLightBuffer(scene), "update");
+    syncSceneLighting(scene);
+    syncSceneLighting(scene);
+    syncSceneLighting(scene);
+    expect(writes).toHaveBeenCalledTimes(1);
+    const lamp = new PointLight("lamp", new Vector3(0, 3, 0), scene);
+    expect(blockLights(scene)).toEqual([0, 1, 0, 0, 0]);
+    // A lit Scene writes at every sync: its lights and the camera move without an event.
+    syncSceneLighting(scene);
+    expect(writes).toHaveBeenCalledTimes(3);
+    lamp.dispose();
+    expect(blockLights(scene)).toEqual([0, 0, 0, 0, 0]);
+    syncSceneLighting(scene);
+    syncSceneLighting(scene);
+    expect(writes).toHaveBeenCalledTimes(4);
+  });
+
   it("keeps unlit materials unchanged", () => {
     const scene = host();
     lights(scene, 6);

@@ -226,6 +226,42 @@ describe("animation nodes", () => {
     ]);
   });
 
+  it("runs each Animation Event node only for its own name: a single event through Then, a window through Begin and End", () => {
+    const registry = createDefaultNodeRegistry();
+    const print = (id: string, text: string) => node(registry, id, "debug.printString", { "default:inString": text });
+    const graph: LogicGraph = {
+      id: "object",
+      kind: "event",
+      nodes: [
+        node(registry, "step", "anim.event.notify", { eventName: "Footstep" }),
+        node(registry, "hit", "anim.event.notify", { eventName: "Hit", window: true }),
+        print("step-print", "step"),
+        print("hit-begin", "hit begin"),
+        print("hit-end", "hit end"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "step", sourcePinId: "execOut", targetNodeId: "step-print", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "hit", sourcePinId: "begin", targetNodeId: "hit-begin", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "hit", sourcePinId: "end", targetNodeId: "hit-end", targetPinId: "execIn" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "anim-1", registry });
+    expect(compiled.entryPoints.map((entry) => entry.event)).toEqual(["onAnimNotify", "onAnimNotify"]);
+    const body = compiled.source.replace(/export\s+function\s+/g, "function ");
+    const names = compiled.entryPoints.map((entry) => entry.name);
+    const entries = new Function(`${body}\nreturn [${names.join(", ")}];`)() as Array<(ctx: unknown) => void>;
+    const heard = (name: string, phase: string) => {
+      const printed: string[] = [];
+      const ctx = { args: { name, phase, animation: "" }, print: (text: string) => printed.push(text) };
+      for (const entry of entries) entry(ctx);
+      return printed;
+    };
+    expect(heard("Footstep", "event")).toEqual(["step"]);
+    expect(heard("Hit", "begin")).toEqual(["hit begin"]);
+    expect(heard("Hit", "end")).toEqual(["hit end"]);
+    expect(heard("Landing", "event")).toEqual([]);
+  });
+
   it("takes an AnimationGraphComponent target on Get and Set Anim Graph Variable", () => {
     const getPins = animationNodes.find(
       (entry) => entry.id === "anim.actor.getVariable",

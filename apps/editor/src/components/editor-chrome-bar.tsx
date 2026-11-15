@@ -1,4 +1,5 @@
-import { breakpointStopText, useBreakpointStop } from "../lib/breakpoint-stop";
+import { useBreakpointStop } from "../lib/breakpoint-stop";
+import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { SceneModeSelect } from "./scene-mode-select";
 import {
   DndContext,
@@ -35,12 +36,16 @@ import {
   EllipsisIcon,
   CircleAlertIcon,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CONTENT_BROWSER_ID,
+  isChromeDocumentId,
+  isChromeDocumentKind,
+  SOURCE_CONTROL_ID,
   type DocumentRef,
   type SerializedGraph,
 } from "@haptic/core";
+import { ChromeDocumentIcon } from "./chrome-document-icon";
 import {
   ShortcutKeys,
   ToolbarOverflow,
@@ -92,7 +97,7 @@ import {
 import { usePlay } from "../context/play-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { useGraphDebugStore } from "../context/graph-debug-context";
-import { PlayBreakToolbarControls, SimulationToolbarControls } from "./simulation-toolbar-controls";
+import { DebugStepToolbarControls, PlayBreakToolbarControls, SimulationToolbarControls } from "./simulation-toolbar-controls";
 import { GraphDebugInstanceSelect } from "./graph-debug-instance-select";
 import { documentGraphDebugTarget } from "../lib/graph-debug-target";
 import { useValidation } from "../context/validation-context";
@@ -134,8 +139,8 @@ const FeatureTestCheckDialog = lazy(() =>
 );
 
 function kindIcon(ref: DocumentRef, resolveVisual: DocumentTypeVisualResolver) {
-  if (ref.kind === "content-browser") {
-    return <LayoutGridIcon className="size-4 shrink-0" />;
+  if (isChromeDocumentKind(ref.kind)) {
+    return <ChromeDocumentIcon kind={ref.kind} className="size-4 shrink-0" />;
   }
   const visual = resolveVisual(ref);
   return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;
@@ -347,6 +352,20 @@ export function EditorChromeBar({
   const playBreakControls = sessionState.mode === "play" && simulationControls?.mode === "play" ? simulationControls : null;
   const breakpointStop = useBreakpointStop(simulationControls?.stoppedAt);
   const graphDebug = useGraphDebugStore();
+  // A paused Simulation, or stopped Play, steps in its own island left of the session controls.
+  const debugStepControls = simulationRunning && simulationControls?.paused
+    ? simulationControls
+    : playBreakControls?.paused ? playBreakControls : null;
+  const openBreakpointStop = () => {
+    const cause = simulationControls?.stoppedAt;
+    if (cause) void openSessionSource({ severity: "info", ...cause });
+  };
+  const focusStep = useCallback((position: GraphDebugStepPosition) => {
+    void openSessionSource({
+      severity: "info", code: "editor.step", message: "Step",
+      assetGuid: position.assetGuid, graphId: position.graphId, nodeId: position.nodeId,
+    });
+  }, [openSessionSource]);
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
     "project" | "engine" | null
@@ -384,13 +403,17 @@ export function EditorChromeBar({
   // Sheet row editors retain canonical documents for save/history without
   // opening a visible standalone tab until the user explicitly opens it.
   const visibleDocuments = openDocuments.filter((doc) => !doc.background);
-  const hasClosableDocuments = openDocuments.some((doc) => doc.id !== CONTENT_BROWSER_ID);
+  const hasClosableDocuments = openDocuments.some((doc) => !isChromeDocumentId(doc.id));
   const contentBrowserDoc = visibleDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
   );
+  // Only while the project's source control mode is not Off.
+  const sourceControlDoc = visibleDocuments.find(
+    (doc) => doc.id === SOURCE_CONTROL_ID,
+  );
   const pinnedSceneDoc = visibleDocuments.find((doc) => doc.ref.kind === "scene");
   const scrollableDocs = visibleDocuments.filter(
-    (doc) => doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
+    (doc) => !isChromeDocumentKind(doc.ref.kind) && doc.ref.kind !== "scene",
   );
   const activeKind = visibleDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
@@ -836,6 +859,21 @@ export function EditorChromeBar({
             >
               <LayoutGridIcon />
             </Button>
+            {sourceControlDoc ? (
+              <Button
+                variant="ghost"
+                size={touch ? "touch-icon" : "icon-sm"}
+                aria-label="Source Control"
+                title="Source Control"
+                data-testid="phone-source-control"
+                onClick={() => setActiveDocument(SOURCE_CONTROL_ID)}
+                aria-current={
+                  activeDocumentId === SOURCE_CONTROL_ID ? "page" : undefined
+                }
+              >
+                <ChromeDocumentIcon kind="source-control" />
+              </Button>
+            ) : null}
             <DocumentSwitcher
               documents={visibleDocuments}
               resolveVisual={resolveDocumentVisual}
@@ -906,6 +944,19 @@ export function EditorChromeBar({
                 </SortableContext>
               </DndContext>
             </div>
+            {sourceControlDoc ? (
+              <div
+                className="editor-chrome-tabs-pinned editor-chrome-tabs-pinned-end"
+                data-testid="document-tab-pinned-end"
+              >
+                <PinnedDocumentTab
+                  doc={sourceControlDoc}
+                  icon={kindIcon(sourceControlDoc.ref, resolveDocumentVisual)}
+                  active={activeDocumentId === SOURCE_CONTROL_ID}
+                  onSelect={() => setActiveDocument(SOURCE_CONTROL_ID)}
+                />
+              </div>
+            ) : null}
             <DocumentSwitcher
               documents={visibleDocuments}
               resolveVisual={resolveDocumentVisual}
@@ -1084,6 +1135,18 @@ export function EditorChromeBar({
         </ToolbarOverflowTrack>
 
         <ToolbarOverflowTrack className="editor-global-toolbar-center">
+          {debugStepControls ? (
+            <div className="editor-play-island editor-debug-island" role="group" aria-label="Debugging" data-testid="debug-step-island">
+              <DebugStepToolbarControls
+                controls={debugStepControls}
+                stopping={sessionState.lifecycle === "stopping"}
+                stop={breakpointStop}
+                onOpenStop={openBreakpointStop}
+                graphDebug={graphDebug}
+                onFocusStep={focusStep}
+              />
+            </div>
+          ) : null}
           <div className="editor-play-island" data-testid="play-debug-island">
             {simulationRunning ? (
               <>
@@ -1095,11 +1158,6 @@ export function EditorChromeBar({
                   onReturnToScene={simulationDocumentId && activeDocumentId !== simulationDocumentId
                     ? () => setActiveDocument(simulationDocumentId)
                     : undefined}
-                  stoppedAt={breakpointStop ? breakpointStopText(breakpointStop) : null}
-                  onOpenStop={() => {
-                    const cause = simulationControls?.stoppedAt;
-                    if (cause) void openSessionSource({ severity: "info", ...cause });
-                  }}
                 />
                 {debugTarget ? (
                   <ToolbarOverflowItem id="debug-instance">
@@ -1113,11 +1171,6 @@ export function EditorChromeBar({
                   controls={playBreakControls}
                   stopping={sessionState.lifecycle === "stopping"}
                   onStop={() => { void sessionOwner.stop(); }}
-                  stoppedAt={breakpointStop ? breakpointStopText(breakpointStop) : null}
-                  onOpenStop={() => {
-                    const cause = playBreakControls.stoppedAt;
-                    if (cause) void openSessionSource({ severity: "info", ...cause });
-                  }}
                 />
                 {debugTarget ? (
                   <ToolbarOverflowItem id="debug-instance">

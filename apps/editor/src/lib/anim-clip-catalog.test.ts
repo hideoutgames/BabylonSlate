@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { animClipCatalogFromAssets } from "./anim-clip-catalog";
 
 describe("animClipCatalogFromAssets", () => {
-  it("reads Model clipNames and Animation clipName from payload", () => {
+  it("reads the Animation clipName from payload and lists Models by name only", () => {
     expect(
       animClipCatalogFromAssets([
         {
@@ -11,7 +11,7 @@ describe("animClipCatalogFromAssets", () => {
             type: "Model",
             name: "Hero",
             dependencies: ["hero-walk"],
-            payload: { clipNames: ["Idle", "Walk"] },
+            payload: {},
           },
         },
         {
@@ -29,7 +29,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Model",
         name: "Hero",
         clipName: undefined,
-        clipNames: ["Idle", "Walk"],
         dependencyGuids: ["hero-walk"],
       },
       {
@@ -37,7 +36,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Animation",
         name: "Hero_Walk",
         clipName: "Walk",
-        clipNames: [],
         dependencyGuids: [],
       },
     ]);
@@ -83,7 +81,7 @@ describe("animClipCatalogFromAssets", () => {
     ]);
   });
 
-  it("drops non-string clipNames and ignores a non-object payload", () => {
+  it("ignores a non-object payload", () => {
     expect(
       animClipCatalogFromAssets([
         {
@@ -91,7 +89,7 @@ describe("animClipCatalogFromAssets", () => {
             guid: "model",
             type: "Model",
             name: "Hero",
-            payload: { clipNames: ["Idle", 2, null, "Walk"] },
+            payload: {},
           },
         },
         {
@@ -109,7 +107,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Model",
         name: "Hero",
         clipName: undefined,
-        clipNames: ["Idle", "Walk"],
         dependencyGuids: [],
       },
       {
@@ -117,7 +114,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "Animation",
         name: "Clip",
         clipName: undefined,
-        clipNames: [],
         dependencyGuids: [],
       },
     ]);
@@ -141,7 +137,6 @@ describe("animClipCatalogFromAssets", () => {
         type: "SpriteAnimation",
         name: "Walk",
         clipName: undefined,
-        clipNames: [],
         dependencyGuids: [],
         durationMs: 250,
       },
@@ -192,5 +187,48 @@ describe("animClipCatalogFromAssets", () => {
         durationMs: 80,
       }),
     ]);
+  });
+
+  it("lists a Blend Space with its Skeleton, axes and samples", () => {
+    const [entry] = animClipCatalogFromAssets([
+      {
+        header: {
+          guid: "bs",
+          type: "BlendSpace",
+          name: "BS_Loco",
+          payload: {
+            skeletonGuid: "rig",
+            axes: [{ name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0.2, wrap: false }],
+            samples: [{ animationGuid: "walk", x: 2, y: 0, rateScale: 1 }],
+          },
+        },
+      },
+    ]);
+    expect(entry).toMatchObject({
+      guid: "bs",
+      type: "BlendSpace",
+      skeletonGuid: "rig",
+      blendSpace: {
+        axes: [{ name: "Speed", min: 0, max: 6, gridDivisions: 6, smoothingSeconds: 0.2, wrap: false }],
+        samples: [{ animationGuid: "walk", x: 2, y: 0, rateScale: 1 }],
+      },
+    });
+  });
+
+  it("lists a Sprite Blend Space with its axes, samples, hysteresis and Keep Time", () => {
+    const [entry] = animClipCatalogFromAssets([
+      {
+        header: {
+          guid: "gait",
+          type: "SpriteBlendSpace",
+          name: "Robot Gait",
+          payload: { axes: [{ name: "Speed", min: 0, max: 1 }], samples: [{ animationGuid: "walk", x: 1 }], hysteresis: 0.2, keepTime: false },
+        },
+      },
+    ]);
+    expect(entry).toMatchObject({
+      type: "SpriteBlendSpace",
+      blendSpace: { samples: [{ animationGuid: "walk", x: 1, y: 0, rateScale: 1 }], hysteresis: 0.2, keepTime: false },
+    });
   });
 });

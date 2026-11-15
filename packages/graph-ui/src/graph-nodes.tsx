@@ -15,7 +15,18 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { CircleAlertIcon, ClockIcon, Gamepad2Icon, PlugIcon, PlugZapIcon, RadioTowerIcon } from "lucide-react";
+import { UserFocusIcon } from "@phosphor-icons/react/dist/csr/UserFocus";
+import {
+  CircleAlertIcon,
+  ClockIcon,
+  Gamepad2Icon,
+  OctagonPauseIcon,
+  PlugIcon,
+  PlugZapIcon,
+  RadioTowerIcon,
+} from "lucide-react";
+import ImageGlyph from "react-bootstrap-icons/dist/icons/image";
+import ImageFillGlyph from "react-bootstrap-icons/dist/icons/image-fill";
 import {
   humanizePropertyLabel,
   LabelHint,
@@ -156,6 +167,9 @@ function PinVisual({
   const { pinTypeLetters } = useContext(GraphInteractionSettingsContext);
   const shape = byReference ? "reference" : pinVisualShape(type, pin);
   const color = pinCssVar(type);
+  if (type.kind === "pose" || type.kind === "frame") {
+    return <AnimPinGlyph kind={type.kind} color={color} connected={connected} />;
+  }
   const glyph = (
     <PinShapeGlyph
       shape={shape}
@@ -241,6 +255,31 @@ function PinHandle({
     >
       <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} />
     </Handle>
+  );
+}
+
+/**
+ * An Animation Graph's Pose pin (Phosphor User Focus) or Frame pin (Bootstrap Image), drawn larger than other pins and
+ * without a box: the icon's outline glyph while unwired, its fill glyph once wired. Phosphor pads its glyph, so the
+ * Pose pin's box is larger for the figure to read as large as the Frame pin's picture.
+ */
+function AnimPinGlyph({ kind, color, connected }: { kind: "pose" | "frame"; color: string; connected: boolean }) {
+  const size = `calc(var(--graph-pin-glyph, var(--graph-pin-size, 22px)) * ${kind === "pose" ? 1.6 : 1.4})`;
+  const FrameGlyph = connected ? ImageFillGlyph : ImageGlyph;
+  return (
+    <span
+      className="graph-pin-visual relative block"
+      data-pin-shape={kind}
+      data-connected={connected ? "true" : "false"}
+      style={{ width: size, height: size, color }}
+      aria-hidden="true"
+    >
+      {kind === "pose" ? (
+        <UserFocusIcon className="absolute inset-0 size-full" size="100%" weight={connected ? "fill" : "regular"} />
+      ) : (
+        <FrameGlyph className="absolute inset-0 size-full" size="100%" />
+      )}
+    </span>
   );
 }
 
@@ -399,7 +438,7 @@ function PinRow({
 
 /**
  * A node's error count: a destructive Badge sitting just above the node's top edge, so it never covers
- * the title, the breakpoint dot or the corner marker (it moves to the left edge when a marker is shown).
+ * the title, the breakpoint tab or the corner marker (it moves to the left edge when a marker is shown).
  * Its 44px button reaches down to the node.
  */
 function NodeErrorBadge({
@@ -449,16 +488,28 @@ function NodeErrorBadge({
   );
 }
 
+/** Where a node shows its breakpoint tab. */
+export type NodeBreakpointPlacement = "titleBar" | "cardTop" | "inset";
+
+const BREAKPOINT_TAB_PLACEMENT: Record<NodeBreakpointPlacement, string> = {
+  // Outside the title bar's left end, as tall as the bar (42px below the shell's 1px border).
+  titleBar:
+    "right-full top-px h-[2.625rem] w-9 rounded-l-md [&_svg]:size-[1.375rem] group-has-[[data-node-title]:hover]/node:opacity-40",
+  // On a card's top edge at its left: siblings sit only 24px apart, so a tab beside the card would overlap one.
+  cardTop: "bottom-full left-3 h-7 w-9 rounded-t-md [&_svg]:size-[1.125rem] group-hover/title:opacity-40",
+  // Inside a node's top-left corner, for nodes whose sides carry handles (states).
+  inset: "graph-breakpoint-tab-inset left-0 top-0 h-7 w-9 rounded-tl-[inherit] rounded-br-md [&_svg]:size-[1.125rem] group-hover/title:opacity-40",
+};
+
 /**
- * A node's breakpoint at the start of its title bar, or on the left edge of a card node's header: a red
- * dot, hollow while disabled. With a mouse the dot toggles it, and a faint dot on title-bar (or card)
- * hover adds one; touch uses the node menu, and the keyboard the canvas's Toggle Breakpoint key.
+ * A node's breakpoint as a red tab with a stop sign, striped while disabled. With a mouse the tab
+ * toggles it, and a faint tab on title-bar (or card) hover adds one; touch uses the node menu, and the
+ * keyboard the canvas's breakpoint keys.
  */
-export function NodeBreakpointDot({ nodeId, data, className }: {
+export function NodeBreakpointTab({ nodeId, data, placement }: {
   nodeId: string;
   data?: Record<string, unknown>;
-  /** Places the dot; the default sits at the start of a title bar. */
-  className?: string;
+  placement: NodeBreakpointPlacement;
 }) {
   const { breakpoints } = useGraphEditorContext();
   const state = useNodeBreakpoint(nodeId);
@@ -472,9 +523,9 @@ export function NodeBreakpointDot({ nodeId, data, className }: {
       title={label}
       data-breakpoint={state ?? undefined}
       className={cn(
-        "nodrag absolute flex size-3 -translate-y-1/2 items-center justify-center pointer-coarse:pointer-events-none",
-        className ?? "left-1 top-1/2",
-        !state && "opacity-0 group-hover/title:opacity-40 pointer-coarse:hidden",
+        "graph-breakpoint-tab nodrag absolute z-10 flex items-center justify-center pointer-coarse:pointer-events-none",
+        BREAKPOINT_TAB_PLACEMENT[placement],
+        !state && "opacity-0 hover:opacity-40 pointer-coarse:hidden",
       )}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
@@ -482,7 +533,7 @@ export function NodeBreakpointDot({ nodeId, data, className }: {
         breakpoints.toggle(nodeId);
       }}
     >
-      <span className={cn("size-2.5 rounded-full border-2 border-destructive", state !== "disabled" && "bg-destructive")} />
+      <OctagonPauseIcon aria-hidden="true" strokeWidth={2.25} />
     </button>
   );
 }
@@ -543,8 +594,11 @@ function nodeCornerMarker(data: Record<string, unknown> | undefined) {
   return null;
 }
 
-/** A canvas waits before a node or pin tooltip, so moving across nodes does not flash them. */
-const GRAPH_HINT_DELAY_MS = 600;
+/**
+ * A canvas waits a second before a node or pin description, so passing over nodes or working on them does not
+ * open one. The debugger's value tips (`GraphRunOverlay`) open at once.
+ */
+const GRAPH_HINT_DELAY_MS = 1000;
 
 /** A pin name with a `description` explains it as a tooltip (`LabelHint`). */
 function PinHint({ pin, children }: { pin: SerializedPin; children: ReactElement }) {
@@ -578,10 +632,10 @@ export function BlueprintNodeShell({
   const headerPins = card ? [] : headerPinsOf(data);
 
   return (
-    <div className={cn("relative", card && "group/title")}>
+    <div className={cn("group/node relative", card && "group/title")}>
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={!!marker || headerPins.length > 0} />
-      {/* Outside the card's clipped body, straddling its left border at the header. */}
-      {card ? <NodeBreakpointDot nodeId={nodeId} data={data} className="-left-1.5 top-6 z-10" /> : null}
+      {/* Outside the shell, which clips its body to the rounded corners. */}
+      <NodeBreakpointTab nodeId={nodeId} data={data} placement={card ? "cardTop" : "titleBar"} />
       {marker ? (
         <span
           role="img"
@@ -608,6 +662,7 @@ export function BlueprintNodeShell({
       >
         {card ? null : (
           <div
+            data-node-title=""
             className={cn(
               "group/title relative rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
               marker && "pr-10",
@@ -615,7 +670,6 @@ export function BlueprintNodeShell({
               nodeRoleClass(role),
             )}
           >
-            <NodeBreakpointDot nodeId={nodeId} data={data} />
             {description ? (
               <LabelHint hint={description} underline={false} delay={GRAPH_HINT_DELAY_MS}>
                 <span data-node-title-hint="">{title}</span>
@@ -668,6 +722,27 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
     updateNodeInternals(id);
   }, [handleOrder, id, updateNodeInternals]);
 
+  // An Animation Graph's Output Pose (or Output Frame) is drawn like a state card, its pose input inside it.
+  const nodeType = typeof data.__nodeType === "string" ? data.__nodeType : type;
+  if (nodeType === "anim.pose.output" || nodeType === "anim.frame.output") {
+    const input = pins.find((pin) => pin.direction === "in");
+    return (
+      <div {...nodeMenu.bind}>
+        <div
+          className={cn("anim-state-node anim-pose-output-node", selected && "anim-state-node-selected")}
+          data-testid={`anim-pose-output-${id}`}
+        >
+          {input ? (
+            <div className="anim-pose-output-pin">
+              <PinHandle nodeId={id} pin={input} pending={false} hasError={false} connected />
+            </div>
+          ) : null}
+          <div className="anim-state-node-title">{title}</div>
+        </div>
+        {nodeMenu.overlay}
+      </div>
+    );
+  }
   return (
     <div {...nodeMenu.bind}>
       <BlueprintNodeShell

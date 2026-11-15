@@ -1,0 +1,327 @@
+import type { SerializedGraph } from "@haptic/core";
+import { parseAnimClipEvents, type AnimClipEvent } from "./events";
+
+type SerializedGraphNode = SerializedGraph["nodes"][number];
+
+/**
+ * Pose graphs: each state's graph, ending in its Output Pose (3D) or Output Frame (2D). Pose and frame wires are read
+ * here as structure; data inputs (Play Rate, Alpha, Active) come from a compiled pose-data module, or from the value
+ * stored on the node when the input is unwired.
+ */
+
+export const ANIM_POSE_OUTPUT_TYPE = "anim.pose.output";
+export const ANIM_POSE_SEQUENCE_PLAYER_TYPE = "anim.pose.sequencePlayer";
+export const ANIM_POSE_SEQUENCE_EVALUATOR_TYPE = "anim.pose.sequenceEvaluator";
+export const ANIM_POSE_REST_TYPE = "anim.pose.restPose";
+export const ANIM_POSE_BLEND_TYPE = "anim.pose.blend";
+export const ANIM_POSE_BLEND_BY_BOOL_TYPE = "anim.pose.blendByBool";
+export const ANIM_POSE_BLEND_BY_INT_TYPE = "anim.pose.blendByInt";
+export const ANIM_POSE_BLEND_SPACE_PLAYER_TYPE = "anim.pose.blendSpacePlayer";
+export const ANIM_FRAME_OUTPUT_TYPE = "anim.frame.output";
+export const ANIM_FRAME_PLAYER_TYPE = "anim.frame.spritePlayer";
+export const ANIM_FRAME_SELECT_BY_BOOL_TYPE = "anim.frame.selectByBool";
+export const ANIM_FRAME_SELECT_BY_INT_TYPE = "anim.frame.selectByInt";
+export const ANIM_FRAME_FLIP_TYPE = "anim.frame.flip";
+export const ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE = "anim.frame.spriteBlendSpacePlayer";
+
+/** The protected output node every pose graph has, under this id. */
+export const ANIM_POSE_OUTPUT_NODE_ID = "output";
+
+export type AnimPoseDimension = "3d" | "2d";
+
+export function poseOutputType(dimension: AnimPoseDimension): string {
+  return dimension === "3d" ? ANIM_POSE_OUTPUT_TYPE : ANIM_FRAME_OUTPUT_TYPE;
+}
+
+export function posePlayerType(dimension: AnimPoseDimension): string {
+  return dimension === "3d" ? ANIM_POSE_SEQUENCE_PLAYER_TYPE : ANIM_FRAME_PLAYER_TYPE;
+}
+
+export function isPoseOutputType(type: string): boolean {
+  return type === ANIM_POSE_OUTPUT_TYPE || type === ANIM_FRAME_OUTPUT_TYPE;
+}
+
+/** Nodes that play a clip and keep their own time. */
+export function isPosePlayerType(type: string): boolean {
+  return type === ANIM_POSE_SEQUENCE_PLAYER_TYPE || type === ANIM_FRAME_PLAYER_TYPE;
+}
+
+/** Nodes that name a clip asset: players and the Sequence Evaluator. */
+export function isPoseClipNodeType(type: string): boolean {
+  return isPosePlayerType(type) || type === ANIM_POSE_SEQUENCE_EVALUATOR_TYPE;
+}
+
+/** Blend Space Players: the 3D one, which blends its samples, and the 2D one, which plays the nearest. */
+export function isBlendSpacePlayerType(type: string): boolean {
+  return type === ANIM_POSE_BLEND_SPACE_PLAYER_TYPE || type === ANIM_FRAME_SPRITE_BLEND_SPACE_PLAYER_TYPE;
+}
+
+/** Nodes that keep their own time, which a state's facts can follow: players and Blend Space Players. */
+export function isPoseTimeSourceType(type: string): boolean {
+  return isPosePlayerType(type) || isBlendSpacePlayerType(type);
+}
+
+/** Nodes that name an asset (a clip or a Blend Space), which load with the graph. */
+export function isPoseAssetNodeType(type: string): boolean {
+  return isPoseClipNodeType(type) || isBlendSpacePlayerType(type);
+}
+
+/** The pose (or frame) inputs of a node type, in order; `count` is a Blend Poses By Int / Select By Int's. */
+export function poseInputPins(type: string, count: unknown = 2): string[] {
+  switch (type) {
+    case ANIM_POSE_OUTPUT_TYPE: return ["pose"];
+    case ANIM_FRAME_OUTPUT_TYPE: return ["frame"];
+    case ANIM_POSE_BLEND_TYPE: return ["a", "b"];
+    case ANIM_POSE_BLEND_BY_BOOL_TYPE: return ["truePose", "falsePose"];
+    case ANIM_FRAME_SELECT_BY_BOOL_TYPE: return ["trueFrame", "falseFrame"];
+    case ANIM_POSE_BLEND_BY_INT_TYPE: return Array.from({ length: inputCount(count) }, (_, index) => `pose${index}`);
+    case ANIM_FRAME_SELECT_BY_INT_TYPE: return Array.from({ length: inputCount(count) }, (_, index) => `frame${index}`);
+    case ANIM_FRAME_FLIP_TYPE: return ["frame"];
+    default: return [];
+  }
+}
+
+function inputCount(value: unknown): number {
+  const count = Number(value);
+  return Number.isFinite(count) ? Math.max(2, Math.min(16, Math.round(count))) : 2;
+}
+
+export interface PoseGraphIndex {
+  nodes: Map<string, SerializedGraphNode>;
+  /** The node wired into each pose input, keyed `nodeId\0pinId`. */
+  poseSource: Map<string, string>;
+  /** The output node, or undefined in a graph that lost it. */
+  output: SerializedGraphNode | undefined;
+}
+
+const poseIndexes = new WeakMap<SerializedGraph, PoseGraphIndex>();
+
+/** Derived once per graph object; graphs are replaced, never mutated. */
+export function poseGraphIndex(graph: SerializedGraph): PoseGraphIndex {
+  let index = poseIndexes.get(graph);
+  if (!index) {
+    const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+    const poseSource = new Map<string, string>();
+    for (const edge of graph.edges) {
+      const target = nodes.get(edge.target);
+      if (!target || !edge.targetHandle || !nodes.has(edge.source)) continue;
+      if (!poseInputPins(target.type, target.data.count).includes(edge.targetHandle)) continue;
+      poseSource.set(`${edge.target}\u0000${edge.targetHandle}`, edge.source);
+    }
+    index = { nodes, poseSource, output: graph.nodes.find((node) => isPoseOutputType(node.type)) };
+    poseIndexes.set(graph, index);
+  }
+  return index;
+}
+
+export function poseInputSource(index: PoseGraphIndex, nodeId: string, pin: string): SerializedGraphNode | undefined {
+  const source = index.poseSource.get(`${nodeId}\u0000${pin}`);
+  return source === undefined ? undefined : index.nodes.get(source);
+}
+
+/** A node's stored value for a data input (`default:<pin>`), else `fallback`. */
+export function poseNodeDefault<T>(node: SerializedGraphNode, pin: string, fallback: T): T {
+  const value = node.data[`default:${pin}`];
+  if (typeof fallback === "number") return (typeof value === "number" && Number.isFinite(value) ? value : fallback) as T;
+  if (typeof fallback === "boolean") return (typeof value === "boolean" ? value : fallback) as T;
+  return (value ?? fallback) as T;
+}
+
+/** The clip a player or Sequence Evaluator names, as stored on the node. */
+export interface PoseClipData {
+  assetGuid: string;
+  /** Filled from the Animation asset at load (`resolveAnimGraphClips`); empty for a Sprite Animation. */
+  clipName: string;
+  durationMs: number;
+  loop: boolean;
+}
+
+/** A player's clip events, as resolution copied them onto the node. */
+export function poseClipEvents(node: SerializedGraphNode): AnimClipEvent[] {
+  return parseAnimClipEvents(node.data.events);
+}
+
+export function poseClipData(node: SerializedGraphNode): PoseClipData {
+  const data = node.data;
+  const durationMs = typeof data.durationMs === "number" && Number.isFinite(data.durationMs) && data.durationMs > 0
+    ? data.durationMs
+    : 1000;
+  return {
+    assetGuid: typeof data.assetGuid === "string" ? data.assetGuid : "",
+    clipName: typeof data.clipName === "string" ? data.clipName : "",
+    durationMs,
+    loop: data.loop !== false,
+  };
+}
+
+/**
+ * The player a state's facts follow (its time, length and loop): reached from the output through the first pose
+ * input of each node on the way. Null when that path ends without one.
+ */
+export function primaryPosePlayer(graph: SerializedGraph): SerializedGraphNode | null {
+  const index = poseGraphIndex(graph);
+  let node = index.output;
+  const seen = new Set<string>();
+  while (node && !seen.has(node.id)) {
+    seen.add(node.id);
+    if (isPoseTimeSourceType(node.type)) return node;
+    let next: SerializedGraphNode | undefined;
+    for (const pin of poseInputPins(node.type, node.data.count)) {
+      next = poseInputSource(index, node.id, pin);
+      if (next) break;
+    }
+    node = next;
+  }
+  return null;
+}
+
+/**
+ * A state graph that is a single player wired to the output, which the state Inspector edits directly (Animation,
+ * Speed, Loop). Null for any other graph.
+ */
+export function singlePlayerOf(graph: SerializedGraph): SerializedGraphNode | null {
+  const posed = graph.nodes.filter((node) => node.type.startsWith("anim.pose.") || node.type.startsWith("anim.frame."));
+  if (posed.length !== 2) return null;
+  const player = primaryPosePlayer(graph);
+  return player && isPosePlayerType(player.type) && posed.includes(player) ? player : null;
+}
+
+/** A Blend Space axis as a Blend Space Player plays it. */
+export interface BlendSpaceNodeAxis {
+  min: number;
+  max: number;
+  wrap: boolean;
+  smoothingSeconds: number;
+}
+
+/** A Blend Space sample with its Animation's clip, filled at load (`resolveAnimGraphClips`). */
+export interface BlendSpaceNodeSample {
+  animationGuid: string;
+  clipName: string;
+  durationMs: number;
+  x: number;
+  y: number;
+  rateScale: number;
+  /** Its Animation's (or Sprite Animation's) events; absent when it has none. */
+  events?: AnimClipEvent[];
+}
+
+/** The Blend Space a Blend Space Player names, as `resolveAnimGraphClips` stores it on the node. */
+export interface BlendSpaceNodeData {
+  axes: BlendSpaceNodeAxis[];
+  samples: BlendSpaceNodeSample[];
+  /** A Sprite Blend Space's: how much nearer (in grid widths) another sample must be to take over. */
+  hysteresis?: number;
+  /** A Sprite Blend Space's: whether the next sample goes on from the cycle's position (else from its start). */
+  keepTime?: boolean;
+  /** A Blend Space's: which samples' events fire (the heaviest's by default). */
+  eventMode?: "highestWeight" | "all" | "none";
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/** The node's resolved Blend Space; no axes and no samples before it resolves. */
+export function blendSpaceNodeData(node: SerializedGraphNode): BlendSpaceNodeData {
+  const raw = node.data.blendSpace;
+  if (!raw || typeof raw !== "object") return { axes: [], samples: [] };
+  const record = raw as Record<string, unknown>;
+  const axes = (Array.isArray(record.axes) ? record.axes : []).slice(0, 2).map((entry): BlendSpaceNodeAxis => {
+    const axis = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    const min = finiteNumber(axis.min, 0);
+    const max = finiteNumber(axis.max, min + 1);
+    return { min, max: max > min ? max : min + 1, wrap: axis.wrap === true, smoothingSeconds: Math.max(0, finiteNumber(axis.smoothingSeconds, 0)) };
+  });
+  const samples = (Array.isArray(record.samples) ? record.samples : []).flatMap((entry): BlendSpaceNodeSample[] => {
+    const sample = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
+    if (typeof sample.animationGuid !== "string" || !sample.animationGuid) return [];
+    const durationMs = finiteNumber(sample.durationMs, 1000);
+    const rateScale = finiteNumber(sample.rateScale, 1);
+    return [{
+      animationGuid: sample.animationGuid,
+      clipName: typeof sample.clipName === "string" ? sample.clipName : "",
+      durationMs: durationMs > 0 ? durationMs : 1000,
+      x: finiteNumber(sample.x, 0),
+      y: finiteNumber(sample.y, 0),
+      rateScale: rateScale > 0 ? rateScale : 1,
+      ...((events) => (events.length > 0 ? { events } : {}))(parseAnimClipEvents(sample.events)),
+    }];
+  });
+  const sprite: Pick<BlendSpaceNodeData, "hysteresis" | "keepTime" | "eventMode"> = {};
+  if (typeof record.hysteresis === "number" && Number.isFinite(record.hysteresis)) sprite.hysteresis = Math.max(0, record.hysteresis);
+  if (typeof record.keepTime === "boolean") sprite.keepTime = record.keepTime;
+  if (record.eventMode === "highestWeight" || record.eventMode === "all" || record.eventMode === "none") sprite.eventMode = record.eventMode;
+  return { axes, samples, ...sprite };
+}
+
+/** The Sync Group a looping player or Blend Space Player shares its time with; empty for none. */
+export function poseSyncGroup(node: SerializedGraphNode): string {
+  const group = node.data.syncGroup;
+  return typeof group === "string" ? group.trim() : "";
+}
+
+/** A player node's stored data for a clip. */
+export interface PosePlayerSettings {
+  assetGuid?: string;
+  clipName?: string;
+  durationMs?: number;
+  playRate?: number;
+  loop?: boolean;
+  /** Shares its time with the group's other looping players; empty for none. */
+  syncGroup?: string;
+}
+
+function playerData(settings: PosePlayerSettings): Record<string, unknown> {
+  return {
+    assetGuid: settings.assetGuid ?? "",
+    ...(settings.clipName ? { clipName: settings.clipName } : {}),
+    ...(settings.durationMs ? { durationMs: settings.durationMs } : {}),
+    loop: settings.loop !== false,
+    "default:playRate": settings.playRate ?? 1,
+    ...(settings.syncGroup?.trim() ? { syncGroup: settings.syncGroup.trim() } : {}),
+  };
+}
+
+/** A state graph: one player (Sequence Player or Sprite Animation Player) into the output. */
+export function createStateGraph(dimension: AnimPoseDimension, settings: PosePlayerSettings = {}): SerializedGraph {
+  const playerType = posePlayerType(dimension);
+  return {
+    nodes: [
+      { id: "player", type: playerType, position: { x: 60, y: 80 }, data: playerData(settings) },
+      { id: ANIM_POSE_OUTPUT_NODE_ID, type: poseOutputType(dimension), position: { x: 560, y: 80 }, data: { __protected: true } },
+    ],
+    edges: [{
+      id: `player:pose->${ANIM_POSE_OUTPUT_NODE_ID}:${dimension === "3d" ? "pose" : "frame"}`,
+      source: "player",
+      sourceHandle: "pose",
+      target: ANIM_POSE_OUTPUT_NODE_ID,
+      targetHandle: dimension === "3d" ? "pose" : "frame",
+    }],
+  };
+}
+
+/** Sets a player's stored settings, keeping the rest of the node. */
+export function patchPosePlayer(graph: SerializedGraph, nodeId: string, settings: PosePlayerSettings): SerializedGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (node.id !== nodeId) return node;
+      const data = { ...node.data };
+      if (settings.assetGuid !== undefined) {
+        data.assetGuid = settings.assetGuid;
+        delete data.clipName;
+        delete data.durationMs;
+      }
+      if (settings.clipName !== undefined) data.clipName = settings.clipName;
+      if (settings.durationMs !== undefined) data.durationMs = settings.durationMs;
+      if (settings.loop !== undefined) data.loop = settings.loop;
+      if (settings.playRate !== undefined) data["default:playRate"] = settings.playRate;
+      if (settings.syncGroup !== undefined) {
+        if (settings.syncGroup.trim()) data.syncGroup = settings.syncGroup.trim();
+        else delete data.syncGroup;
+      }
+      return { ...node, data };
+    }),
+  };
+}

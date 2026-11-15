@@ -9,7 +9,6 @@ import { MyClassPanel } from "../panels/my-class-panel";
 import { SceneOutlinerPanel } from "../panels/scene-outliner-panel";
 import { SceneDetailsPanel } from "../panels/scene-details-panel";
 import { SceneAssetsPanel } from "../panels/scene-assets-panel";
-import { LocksPanel } from "../panels/locks-panel";
 import { BreakpointsPanel } from "../panels/breakpoints-panel";
 import {
   FoliageGroupsPanel,
@@ -43,7 +42,6 @@ export const scenePanelComponents = {
     <SceneDetailsPanel {...props} />
   ),
   "scene-assets": (props: IDockviewPanelProps) => <SceneAssetsPanel {...props} />,
-  locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
   breakpoints: () => <BreakpointsPanel />,
   "landscape-outliner": LandscapeOutlinerPanel,
   "landscape-settings": LandscapeSettingsPanel,
@@ -61,6 +59,7 @@ const renderingPanels = () => import("./asset-panels/rendering");
 const panels2d = () => import("./asset-panels/2d");
 const panels3d = () => import("./asset-panels/3d");
 const dataPanels = () => import("./asset-panels/data");
+const sourceControlPanels = () => import("./asset-panels/source-control");
 
 /**
  * Every other document kind's windows, loaded by family. Each lazily loaded module is a chunk entry, and the bundler
@@ -68,6 +67,7 @@ const dataPanels = () => import("./asset-panels/data");
  * keep those routes in fewer, larger chunks than one entry per asset editor would.
  */
 const assetEditorPanelComponents = {
+  locks: lazyPanel(sourceControlPanels, (m) => m.LocksPanel),
   "save-game-fields": lazyPanel(dataPanels, (m) => m.SaveGameFieldsPanel),
   "save-game-definition": lazyPanel(dataPanels, (m) => m.SaveGameDefinitionPanel),
   watches: lazyPanel(classPanels, (m) => m.WatchesPanel),
@@ -142,6 +142,7 @@ const assetEditorPanelComponents = {
   "skeleton-details": lazyPanel(panels3d, (m) => m.SkeletonDetailsPanel),
   "animation-preview": lazyPanel(panels3d, (m) => m.AnimationPreviewPanel),
   "animation-details": lazyPanel(panels3d, (m) => m.AnimationDetailsPanel),
+  "animation-timeline": lazyPanel(panels3d, (m) => m.AnimationTimelinePanel),
   "skybox-creator-preview": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorPreviewPanel),
   "skybox-creator-cubemap": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorCubemapPanel),
   "skybox-creator-details": lazyPanel(renderingPanels, (m) => m.SkyboxCreatorDetailsPanel),
@@ -152,9 +153,17 @@ const assetEditorPanelComponents = {
   "blackboard-keys": lazyPanel(animationAiPanels, (m) => m.BlackboardKeysPanel),
   "blackboard-inspector": lazyPanel(animationAiPanels, (m) => m.BlackboardInspectorPanel),
   "anim-graph-graph": lazyPanel(animationAiPanels, (m) => m.AnimGraphGraphPanel),
+  // ANIM_STATE_GRAPH_PANEL_COMPONENT: one tab per open state graph, opened beside the State Machine.
+  "anim-state-graph": lazyPanel(animationAiPanels, (m) => m.AnimStateGraphPanel),
   "anim-graph-variables": lazyPanel(animationAiPanels, (m) => m.AnimGraphVariablesPanel),
   "anim-graph-details": lazyPanel(animationAiPanels, (m) => m.AnimGraphDetailsPanel),
-  "anim-object-variables": lazyPanel(animationAiPanels, (m) => m.AnimObjectVariablesPanel),
+  "anim-object-graph": lazyPanel(animationAiPanels, (m) => m.AnimObjectGraphPanel),
+  "anim-graph-preview": lazyPanel(animationAiPanels, (m) => m.AnimGraphPreviewPanel),
+  "anim-graph-preview-values": lazyPanel(animationAiPanels, (m) => m.AnimGraphPreviewValuesPanel),
+  "blend-space-grid": lazyPanel(animationAiPanels, (m) => m.BlendSpaceGridPanel),
+  "blend-space-animations": lazyPanel(animationAiPanels, (m) => m.BlendSpaceAnimationsPanel),
+  "blend-space-details": lazyPanel(animationAiPanels, (m) => m.BlendSpaceDetailsPanel),
+  "blend-space-preview": lazyPanel(animationAiPanels, (m) => m.BlendSpacePreviewPanel),
   "behaviour-tree-graph": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeGraphPanel),
   "behaviour-tree-details": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeDetailsPanel),
   "behaviour-tree-blackboard": lazyPanel(animationAiPanels, (m) => m.BehaviourTreeBlackboardPanel),
@@ -164,8 +173,6 @@ const assetEditorPanelComponents = {
   "trace-log": lazyPanel(dataPanels, (m) => m.TraceLogPanel),
   // The Animation Graph's Animation Object mode reuses the shared Class panels, which load with the Scene's.
   "anim-graph-compiler-results": (props: IDockviewPanelProps) => <CompilerResultsPanel {...props} />,
-  "anim-object-graph": (props: IDockviewPanelProps) => <GraphPanel {...props} />,
-  "anim-object-inspector": (props: IDockviewPanelProps) => <InspectorPanel {...props} />,
 } satisfies Record<string, DockPanel>;
 
 export const panelComponents: Record<string, DockPanel> = {

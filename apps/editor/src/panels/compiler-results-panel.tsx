@@ -22,6 +22,7 @@ import {
   normalizeTimelineClipAsset,
   parseDocumentId,
   type SerializedScene,
+  isAnimGraphDocumentKind,
 } from "@haptic/core";
 import type { Diagnostic } from "@haptic/scripting";
 import { useValidation } from "../context/validation-context";
@@ -122,7 +123,7 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
   const { clearFocusedNode, openSessionSource } = usePlay();
   const { setSceneMode, toggleDockWindow } = useDocumentActions();
   const activeDocumentId = useActiveDocumentId();
-  const { animEditorMode, sceneMode } = useActiveDocumentState();
+  const { sceneMode } = useActiveDocumentState();
   // Labels and ids for the result headers; content edits elsewhere skip them.
   const openDocuments = useOpenDocumentTabs();
   const workspace = useOptionalDocumentWorkspace();
@@ -240,16 +241,13 @@ export function CompilerResultsPanel(props: IDockviewPanelProps) {
     }
     // A node shows in the graph that holds it (an Animation Graph's states in its
     // State Machine); an Actor in the viewport.
-    const shown = owner?.kind === "event" || (d.nodeId && kind === "anim-graph") ||
+    const shown = owner?.kind === "event" || (d.nodeId && isAnimGraphDocumentKind(kind)) ||
       (!d.nodeId && d.actorId && VIEWPORT_DOCUMENT_KINDS.has(kind));
     if (!shown) return true;
     revealResultWindow({
       dock,
       resultsGroupId,
-      panelId: primaryDockPanel(kind, {
-        animEditorMode: kind === "anim-graph" ? animEditorMode : undefined,
-        sceneMode,
-      }),
+      panelId: primaryDockPanel(kind, { sceneMode }),
       open,
       reopen: toggleDockWindow,
     });

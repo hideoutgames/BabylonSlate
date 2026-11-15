@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   CONTENT_BROWSER_ID,
+  SOURCE_CONTROL_ID,
   createDefaultScene,
   createEmptyProject,
   createEmptyLayouts,
@@ -35,6 +36,48 @@ function createMockProjectService(
       }),
   } as unknown as ProjectService;
 }
+
+describe("DocumentService Source Control tab", () => {
+  it("pins Source Control after every other tab, never closes it and drops it when the mode turns Off", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const graph = await service.openDocument(createMockProjectService(), { kind: "graph", path: MAIN_CLASS_FILE, label: "Main" });
+    expect(service.setSourceControlTab(true)).toBe(true);
+    expect(service.setSourceControlTab(true)).toBe(false);
+    const scene = await service.openDocument(createMockProjectService(), { kind: "scene", path: MAIN_SCENE_FILE, label: "Main" });
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID, scene, graph, SOURCE_CONTROL_ID]);
+    expect(service.getScrollableDocumentsOrdered().map((doc) => doc.id)).toEqual([graph]);
+    service.setActiveDocument(SOURCE_CONTROL_ID);
+    service.closeDocument(SOURCE_CONTROL_ID);
+    service.reorderTabs(3, 2);
+    expect(service.getState().tabOrder.at(-1)).toBe(SOURCE_CONTROL_ID);
+    expect(service.getState().activeDocumentId).toBe(SOURCE_CONTROL_ID);
+    expect(service.setSourceControlTab(false)).toBe(true);
+    expect(service.getDocument(SOURCE_CONTROL_ID)).toBeUndefined();
+    expect(service.getState().activeDocumentId).toBe(CONTENT_BROWSER_ID);
+  });
+
+  it("changes nothing while the mode is Off", async () => {
+    const service = new DocumentService();
+    await service.initializeFromProject(createMockProjectService(), createEmptyProject("Off"), createEmptyLayouts());
+    const tabs = [...service.getState().tabOrder];
+    const revisions = service.getRevisions();
+    expect(service.setSourceControlTab(false)).toBe(false);
+    expect(service.getState().tabOrder).toEqual(tabs);
+    expect(service.getRevisions()).toBe(revisions);
+  });
+
+  it("keeps the tab across a reopen only for a project whose mode is not Off", async () => {
+    const service = new DocumentService();
+    service.setSourceControlTab(true);
+    const manual = createEmptyProject("Manual");
+    manual.settings.sourceControl = { ...manual.settings.sourceControl, mode: "manual" };
+    await service.initializeFromProject(createMockProjectService(), manual, createEmptyLayouts());
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID, SOURCE_CONTROL_ID]);
+    await service.initializeFromProject(createMockProjectService(), createEmptyProject("Off"), createEmptyLayouts());
+    expect(service.getState().tabOrder).toEqual([CONTENT_BROWSER_ID]);
+  });
+});
 
 describe("DocumentService", () => {
   it("tracks saved content through undo, redo, rename and a save completed during newer edits", async () => {

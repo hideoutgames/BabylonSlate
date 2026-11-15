@@ -4,11 +4,14 @@
  * `graph-validation.ts` re-exports the public names.
  */
 import { isEditorGraphHost, type SerializedGraph } from "@haptic/core";
-import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
+import { engineParentOf, formatEventTitle, walkAncestry } from "@haptic/editor-kit";
+import { isPureAnimGraphHost } from "../lib/class-event-catalog";
+import { ANIM_NOTIFY_EVENT_TYPE, EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
+import { animEventNodeTitle } from "../lib/anim-graph-events";
 import { sceneAssetClassId } from "@haptic/object-model";
 import type { PaletteNode } from "@haptic/graph-ui";
 import { classLineageIncludesAny, isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
+import { newCustomEventName } from "../lib/custom-event-names";
 import { extensionNodesFingerprint } from "./extension-nodes";
 import { DATA_GRAPH_NODES, dataGraphMetadata, dataGraphNodeTitle } from "../lib/data-graph";
 import { customEventRows, knownClassIdSet } from "./graph-class-symbols";
@@ -70,7 +73,7 @@ function structPaletteNodes(
 }
 
 function saveGamePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
-  if (isEditorGraphHost(options ?? {}) || options?.animationGraphHost === "rule") return [];
+  if (isEditorGraphHost(options ?? {}) || isPureAnimGraphHost(options?.animationGraphHost)) return [];
   return (options?.saveGameDefinition?.fields ?? []).flatMap((field) =>
     ["getField", "setField", "migrationGetField", "migrationSetField"].map((operation): PaletteNode => {
       const def = nodeRegistry.get(`saveGame.${operation}`)!;
@@ -292,6 +295,8 @@ export function scriptPaletteInjectorKey(
     classId: options?.classId ?? null,
     assetType: options?.assetType ?? null,
     animationGraphHost: options?.animationGraphHost ?? null,
+    animPose: options?.animPose ?? null,
+    animEvents: options?.animEvents ?? [],
     activeFunctionId: options?.activeFunctionId ?? null,
     classes: classIds.map((id) => [id, parentOf(id) ?? null]),
     graph: graphPaletteMemberFingerprint(options?.graph),
@@ -318,11 +323,32 @@ export function scriptPaletteInjectorKey(
   });
 }
 
+/** Add Node's row for `flow.event.custom`, which names the action instead of the node. */
+export const NEW_CUSTOM_EVENT_PALETTE_TITLE = "Create New Custom Event…";
+
+/**
+ * The Create New Custom Event… row with a free `NewEvent` name for `graph`.
+ * The Class graph host renames the row again against the live graph as it is
+ * placed, since the palette is not rebuilt for every node added.
+ */
+export function newCustomEventPaletteNode(
+  row: PaletteNode,
+  graph: SerializedGraph | null | undefined,
+): PaletteNode {
+  const name = newCustomEventName(graph);
+  return {
+    ...row,
+    title: NEW_CUSTOM_EVENT_PALETTE_TITLE,
+    nodeTitle: formatEventTitle(name),
+    defaultData: { ...row.defaultData, name },
+  };
+}
+
 function scriptPaletteCatalogNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
-  return nodeRegistry
+  const rows = nodeRegistry
     .list()
     .filter((def) => {
       if (def.internal) return false;
@@ -341,7 +367,7 @@ function scriptPaletteCatalogNodes(
       if (def.hosts?.length && !classLineageIncludesAny(def.hosts, options)) {
         return false;
       }
-      if (options?.animationGraphHost === "rule" && def.pure !== true) {
+      if (isPureAnimGraphHost(options?.animationGraphHost) && def.pure !== true) {
         return false;
       }
       return isScriptCatalogNodeAllowed(def.id, options);
@@ -375,6 +401,24 @@ function scriptPaletteCatalogNodes(
           Object.keys(defaultData).length > 0 ? defaultData : undefined,
       };
     });
+  // Wherever custom events can go, Create New Custom Event… leads the rows it
+  // ties with: first in its category, in a search tier and among pin suggestions.
+  const index = rows.findIndex((row) => row.id === "flow.event.custom");
+  if (index < 0) return rows;
+  const created = newCustomEventPaletteNode(rows[index]!, options?.graph);
+  return [created, ...rows.slice(0, index), ...rows.slice(index + 1)];
+}
+
+/** The Animation Object's Event <Name> rows, one per Animation Event its graph can fire. */
+function animEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
+  if (options?.animationGraphHost !== "object" || options.activeFunctionId) return [];
+  const def = nodeRegistry.get(ANIM_NOTIFY_EVENT_TYPE);
+  if (!def) return [];
+  return (options.animEvents ?? []).map((event) => {
+    const title = animEventNodeTitle(event.name);
+    const defaultData = { eventName: event.name, window: event.window, title };
+    return { id: `${ANIM_NOTIFY_EVENT_TYPE}:${event.name}`, nodeType: ANIM_NOTIFY_EVENT_TYPE, title, category: def.category, pins: def.pins(defaultData), defaultData };
+  });
 }
 
 function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
@@ -437,7 +481,7 @@ function scriptPaletteInjectorNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
-  if (options?.animationGraphHost === "rule") {
+  if (isPureAnimGraphHost(options?.animationGraphHost)) {
     return markOutOfContext(
       [
         ...variableAccessPaletteNodes(nodeRegistry, options),
@@ -450,6 +494,7 @@ function scriptPaletteInjectorNodes(
   }
   return markOutOfContext(
     [
+      ...animEventPaletteNodes(nodeRegistry, options),
       ...inputEventPaletteNodes(nodeRegistry, options),
       ...callCustomEventPaletteNodes(nodeRegistry, options),
       ...dispatcherPaletteNodes(nodeRegistry, options),

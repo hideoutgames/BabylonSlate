@@ -342,7 +342,6 @@ describe("beginSlotModelAnimLoad", () => {
         "model-1",
         {
           materialSlots: [],
-          clipNames: [],
           skeletonGuid: null,
           importScale: 10,
           simpleColliders: [],
@@ -374,7 +373,7 @@ describe("beginSlotModelAnimLoad", () => {
     handles.push(handle);
     const { scene } = handle;
     const binding = createSnapshotSceneBinding();
-    const payload = { materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true };
+    const payload = { materialSlots: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true };
     binding.modelPayloads = new Map([["model-1", payload]]);
     const bytes = installAssetBytes(encodeUvSphereGlb());
     const root = createModelActorRoot(scene, "actor-2");
@@ -412,7 +411,7 @@ describe("beginSlotModelAnimLoad", () => {
       const { scene } = handle;
       const binding = createSnapshotSceneBinding();
       binding.modelPayloads = new Map([["held-model", {
-        materialSlots: [], clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+        materialSlots: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
       }]]);
       const root = createModelActorRoot(scene, "actor-3");
       await beginSlotModelAnimLoad(scene, binding, 3, "held-model", installAssetBytes(encodeUvSphereGlb()), root);

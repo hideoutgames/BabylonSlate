@@ -87,7 +87,20 @@ export function createAnimGraphs(rt: RuntimeComposition): AnimGraphRuntime {
     scripts: () => rt.scriptHost,
     setSpriteClip: (actor, clip) => rt.setActorSpriteClip(actor, clip),
     breakpoints: () => rt.breakpoints,
+    frameTrace: (object) => rt.scriptDebug.frameTrace(object),
     emit: (command) => rt.emit(command),
+    playEventSound: (actor, assetGuid, volume) =>
+      rt.emit({
+        type: "playSound",
+        assetGuid,
+        volume,
+        frameId: rt.frameId,
+        emitterActorGuid: actor.guid,
+        voiceId: rt.voices.scriptVoiceId(),
+      }),
+    spawnEventParticles: (actor, assetGuid, bone) => {
+      rt.particleEffects.spawn({ systemGuid: assetGuid, attachTo: actor, ...(bone ? { bone } : {}), autoDestroy: true }, actor);
+    },
   });
 }
 
@@ -108,6 +121,7 @@ export function createBehaviourTrees(rt: RuntimeComposition): BehaviourTreeRunti
     actorName: (actor) => debugActorName(actor),
     recordDiagnostic: (diagnostic) => recordDiagnostic(rt, diagnostic),
     breakpoints: () => rt.breakpoints,
+    frameTrace: (object) => rt.scriptDebug.frameTrace(object),
     emit: (command) => rt.emit(command),
   }, nowMs);
 }
@@ -464,6 +478,7 @@ export function createScriptDebug(rt: RuntimeComposition): ScriptDebugObserver {
       rt.behaviourTrees.setDebugTrace(object, sink);
       rt.animGraphs.setDebugTrace(object, sink);
     },
+    breakpoints: () => rt.breakpoints,
   });
 }
 

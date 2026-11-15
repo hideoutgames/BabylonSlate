@@ -488,7 +488,6 @@ describe("createPlayMesh", () => {
       [
         "model-1",
         {
-            clipNames: [],
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
@@ -519,7 +518,6 @@ describe("createPlayMesh", () => {
       [
         "model-1",
         {
-            clipNames: [],
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
@@ -574,7 +572,6 @@ describe("createPlayMesh", () => {
       [
         "hero-model",
         {
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],
@@ -611,7 +608,6 @@ describe("createPlayMesh", () => {
       [
         "hero-model",
         {
-          clipNames: [],
           skeletonGuid: null,
           importScale: 1,
           simpleColliders: [],
@@ -731,7 +727,6 @@ describe("createPlayMesh", () => {
       [
         "mannequin",
         {
-          clipNames: ["idle"],
           simpleColliders: [],
           autoLod: true,
           skeletonGuid: null,

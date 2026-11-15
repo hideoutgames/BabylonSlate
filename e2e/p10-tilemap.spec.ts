@@ -27,7 +27,7 @@ async function showContentBrowser(page: Page): Promise<void> {
 
 async function createAsset(
   page: Page,
-  type: "Tileset" | "Tilemap" | "Sprite" | "AnimationGraph",
+  type: "Tileset" | "Tilemap" | "Sprite" | "AnimationGraph2D",
   name: string,
 ): Promise<void> {
   await showContentBrowser(page);
@@ -355,7 +355,7 @@ test.describe("P10 tilemaps", () => {
     await createAsset(page, "Sprite", "Hero");
     await page.locator('[data-asset-path="assets/Hero.sprite.hasset"]').dblclick();
     await expect(page.getByTestId("sprite-editor")).toBeVisible();
-    await createAsset(page, "AnimationGraph", "Loco");
+    await createAsset(page, "AnimationGraph2D", "Loco");
 
     await showContentBrowser(page);
     await openMainScene(page);
@@ -387,7 +387,7 @@ test.describe("P10 tilemaps", () => {
 
     const spriteGuid = await guidForPath(page, "assets/Hero.sprite.hasset");
     await pickSelectedAsset(page, "Sprite", spriteGuid);
-    const graphGuid = await guidForPath(page, "assets/Loco.anim.hasset");
+    const graphGuid = await guidForPath(page, "assets/Loco.anim2d.hasset");
     await pickSelectedAsset(
       page,
       "Animation Graph",

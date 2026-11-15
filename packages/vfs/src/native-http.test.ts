@@ -66,4 +66,16 @@ describe("nativeHttp", () => {
       headers: { Accept: "application/vnd.git-lfs+json" },
     });
   });
+
+  // IPC validation takes a byte body only as an ArrayBuffer, which must hold exactly the view's bytes.
+  it("hands the Electron bridge a byte body as an exact ArrayBuffer", async () => {
+    const fetch = vi.fn<(request: { body?: unknown }) => Promise<{ status: number; bodyText: string; bodyBytes: Uint8Array }>>(async () => ({ status: 200, bodyText: "", bodyBytes: new Uint8Array([9]) }));
+    (globalThis as { haptic?: unknown }).haptic = { userData: { readSettings: async () => null, writeSettings: async () => {} }, http: { fetch } };
+    const view = new Uint8Array([1, 2, 3, 4, 5]).subarray(1, 4);
+    const response = await createNativeHttp()!({ method: "PUT", url: "https://lfs.example/objects/a", headers: {}, body: view, responseType: "binary" });
+    const sent = fetch.mock.calls[0]![0].body;
+    expect(sent).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(sent as ArrayBuffer)).toEqual(new Uint8Array([2, 3, 4]));
+    expect(response.bodyBytes).toEqual(new Uint8Array([9]));
+  });
 });

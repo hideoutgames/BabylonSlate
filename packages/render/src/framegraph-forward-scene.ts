@@ -46,6 +46,7 @@ import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelp
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
 import type { SceneReadinessScope } from "./scene-readiness-signal";
 import { verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
+import { collectReadinessBlockers, noteReadinessBlocker } from "./readiness-blockers";
 import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
@@ -106,6 +107,12 @@ type ForwardSceneFrameGraphOptions = {
    * Not the editor's viewport, whose depth also holds its helper visuals. Never with `auxiliary`.
    */
   seedsFromSceneDepth?: boolean;
+  /**
+   * A view that draws every frame and never tolerates a variant swap (a Scene Layer): its strict probes are limited to
+   * the meshes the marks since its last passing probe named, as a world view's steady probes are (`probeScope`). Every
+   * other mesh is as that probe found it, ready. A mark that names no mesh, and the view's preparation, still ask all.
+   */
+  scopedStrictProbes?: boolean;
 };
 /**
  * Graph renders and camera assignments in progress, per scene. Babylon clears
@@ -309,6 +316,10 @@ export class ForwardSceneFrameGraph {
   private scopedProbes = 0;
   /** Scoped probes a whole probe disagreed with, counted while verifying (`verifyScopedReadinessProbes`). */
   private scopedMismatches = 0;
+  /** What the strict probe running names as unready (`collectReadinessBlockers`), while measuring. */
+  private readonly probeBlockers: string[] = [];
+  /** What the last strict probe that failed named; kept until the next one fails. */
+  private failedBlockers: string[] = [];
 
   diagnostics() {
     this.measureWork = true;
@@ -316,7 +327,7 @@ export class ForwardSceneFrameGraph {
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
-      scopedReadinessMismatches: this.scopedMismatches,
+      scopedReadinessMismatches: this.scopedMismatches, readinessBlockers: [...this.failedBlockers],
     };
   }
   private graph: FrameGraph | undefined;
@@ -349,6 +360,8 @@ export class ForwardSceneFrameGraph {
   /** A world view's occlusion culling; kept across graph rebuilds. */
   private readonly occlusion: ViewOcclusion | undefined;
   private readonly seedsFromSceneDepth: boolean;
+  /** `ForwardSceneFrameGraphOptions.scopedStrictProbes`. */
+  private readonly scopedStrictProbes: boolean;
   /** The candidates a seeded spatial geometry pass's readiness probe asks (`sceneDepthLacks`). */
   private readonly seededProbeList: FrameGraphObjectList = { meshes: [], particleSystems: null };
   private clear: FrameGraphClearTextureTask | undefined;
@@ -436,6 +449,7 @@ export class ForwardSceneFrameGraph {
     this.auxiliary = options.auxiliary;
     this.occlusion = options.occlusion && !options.auxiliary ? new ViewOcclusion() : undefined;
     this.seedsFromSceneDepth = options.seedsFromSceneDepth === true && !options.auxiliary;
+    this.scopedStrictProbes = options.scopedStrictProbes === true && !options.auxiliary;
     // Strict readiness probes rebuild every light/material variant. Cache the
     // result and re-probe only after scene or rendering-definition changes.
     const mark = (reason: SceneReadinessDirtyReason) => () => this.markReadinessDirty(reason);
@@ -967,14 +981,20 @@ export class ForwardSceneFrameGraph {
     if (this.measureWork) this.failedProbes += 1;
   }
 
-  /** Runs a strict readiness check (each counts in `strictChecks`), adding its time once a reader asked (`diagnostics`). */
+  /**
+   * Runs a strict readiness check (each counts in `strictChecks`). Once a reader asked (`diagnostics`), its time is
+   * added and a check that fails leaves what it named as unready (`readinessBlockers`).
+   */
   private timedProbe(probe: () => boolean): boolean {
     if (!this.measureWork) return probe();
     const started = performance.now();
+    let passed = false;
     try {
-      return probe();
+      passed = collectReadinessBlockers(this.probeBlockers, probe);
+      return passed;
     } finally {
       this.work.readinessProbeMs += performance.now() - started;
+      if (!passed) this.failedBlockers = [...this.probeBlockers];
     }
   }
 
@@ -1795,11 +1815,13 @@ export class ForwardSceneFrameGraph {
 
   /**
    * The meshes the next probe may be limited to, or undefined for all of them. Only a world view's steady frame is
-   * limited (a probe that tolerates no swap asks every mesh), only when every mark since the last passing probe named
-   * its meshes, and not while a swap is pending: a hidden mesh outside the scope would be revealed by no round.
+   * limited, or any probe of a view that asked for it (`scopedStrictProbes`: a Scene Layer); another probe that
+   * tolerates no swap asks every mesh. Only when every mark since the last passing probe named its meshes, and not
+   * while a swap is pending: a hidden mesh outside the scope would be revealed by no round.
    */
   private probeScope(): ReadonlySet<AbstractMesh> | undefined {
-    return this.unscopedMark || this.variantSwaps || !variantSwapsTolerated() ? undefined : this.scopedMeshes;
+    if (this.unscopedMark || this.variantSwaps) return undefined;
+    return variantSwapsTolerated() || this.scopedStrictProbes ? this.scopedMeshes : undefined;
   }
 
   /** `candidates` narrowed to what a seeded spatial geometry pass draws, so its probe compiles no variant it never draws. */
@@ -1882,9 +1904,12 @@ export class ForwardSceneFrameGraph {
     if (typeof context?._isReady !== "function")
       throw new Error("Unsupported Babylon frame graph readiness layout: _renderContext._isReady is missing.");
     let ready = context._isReady();
+    if (!ready) noteReadinessBlocker(() => "the frame graph's copy effects");
     for (const task of graph.tasks) {
-      if (ready) ready = task.isReady();
-      else if (compileAheadBudget(engine) > 0) task.isReady();
+      if (ready) {
+        ready = task.isReady();
+        if (!ready) noteReadinessBlocker(() => `task "${task.name}"`);
+      } else if (compileAheadBudget(engine) > 0) task.isReady();
       else break;
     }
     return ready;

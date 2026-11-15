@@ -200,7 +200,6 @@ it("reuses unchanged installed collision content and resolves only its changed s
   collider.destroyed = true;
   const model = {
     materialSlots: [],
-    clipNames: [],
     skeletonGuid: null,
     importScale: 1,
     simpleColliders: [

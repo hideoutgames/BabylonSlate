@@ -5,6 +5,7 @@ import {
   CopyPlusIcon,
   FileInputIcon,
   FolderInputIcon,
+  GitMergeIcon,
   ImageIcon,
   LinkIcon,
   PencilIcon,
@@ -76,6 +77,7 @@ export interface ContentBrowserTileMenuDeps {
   /** Renames a folder or asset inline in its tile, or in the name dialog. */
   startRename: (target: ContentBrowserTileHit) => void;
   setRetargetPickerOpen: (open: boolean) => void;
+  setAssignSkeletonPickerOpen: (open: boolean) => void;
   openMoveForSnapshot: (operation: "move" | "copy") => void;
   setReferenceGuid: (guid: string | null) => void;
   requestDeleteSnapshot: (guids: string[], folderPaths: string[]) => void;
@@ -111,6 +113,7 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
     runCopySteps,
     startRename,
     setRetargetPickerOpen,
+    setAssignSkeletonPickerOpen,
     openMoveForSnapshot,
     setReferenceGuid,
     requestDeleteSnapshot,
@@ -316,6 +319,13 @@ export function contentBrowserTileMenuItems(deps: ContentBrowserTileMenuDeps) {
       icon: <BoneIcon />,
       testId: "content-browser-retarget",
       onSelect: () => setRetargetPickerOpen(true),
+    },
+    {
+      id: "assign-skeleton" as const,
+      label: "Assign Skeleton…",
+      icon: <GitMergeIcon />,
+      testId: "content-browser-assign-skeleton",
+      onSelect: () => setAssignSkeletonPickerOpen(true),
     },
     {
       id: "move" as const,

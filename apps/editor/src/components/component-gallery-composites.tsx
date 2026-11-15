@@ -572,7 +572,7 @@ export function GalleryComposites() {
           </div>
           <div className="flex flex-col items-center gap-1">
             <TypeVisualIcon
-              visual={resolveTypeVisual({ assetType: "AnimationGraph" })}
+              visual={resolveTypeVisual({ assetType: "AnimationGraph3D" })}
               size={TYPE_VISUAL_ICON_TILE_SIZE}
               data-testid="gallery-type-visual-animation-graph"
             />

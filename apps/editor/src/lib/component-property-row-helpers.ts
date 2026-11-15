@@ -23,6 +23,8 @@ export type ComponentPropertyContext = {
   collisionPresets?: readonly CollisionPreset[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType?: (guid: string | null | undefined) => string | undefined;
+  /** An asset's header payload, for rows that compare assets (a 3D Animation Graph's Skeleton with the Model's). */
+  assetPayload?: (guid: string) => Record<string, unknown> | undefined;
   modelMaterialSlots?: (guid: string) => readonly ModelMaterialSlot[];
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
   fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
@@ -50,7 +52,7 @@ export function guidValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function componentPropertyGuid(
+export function componentPropertyGuid(
   component: SerializedComponent,
   property: string,
 ): string | null {

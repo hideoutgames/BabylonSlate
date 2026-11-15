@@ -1,5 +1,5 @@
 import type { AssetRegistry } from "@haptic/assets";
-import { assetTypeForDocumentKind, type DocumentRef } from "@haptic/core";
+import { assetTypeForDocumentKind, isChromeDocumentKind, type DocumentRef } from "@haptic/core";
 import { resolveTypeVisual } from "@haptic/editor-kit";
 import {
   classParentLookup,
@@ -27,7 +27,7 @@ export function createDocumentTypeVisualResolver(
       ? visualForIndexedAsset(indexed, parentOf, extensionTypes)
       : resolveTypeVisual({
           assetType:
-            ref.kind === "content-browser"
+            isChromeDocumentKind(ref.kind)
               ? undefined
               : assetTypeForDocumentKind(ref.kind),
         });

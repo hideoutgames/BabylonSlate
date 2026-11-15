@@ -39,6 +39,10 @@ With a keyboard attached, editor commands have shortcuts. You can change any of 
 | Play | <kbd>Alt</kbd>+<kbd>P</kbd> |
 | Compile | <kbd>F7</kbd> |
 | Toggle Breakpoint | <kbd>F9</kbd> |
+| Enable Or Disable Breakpoint | <kbd>Mod</kbd>+<kbd>F9</kbd> |
+| Edit Breakpoint | <kbd>Shift</kbd>+<kbd>F9</kbd> |
+
+The breakpoint shortcuts act on every selected node in a graph. **Edit Breakpoint** needs exactly one selected node with a breakpoint.
 
 ### Viewport
 
@@ -78,6 +82,7 @@ The mode shortcuts switch the active Scene between its Design, Landscape, Foliag
 | Duplicate | <kbd>Mod</kbd>+<kbd>D</kbd> |
 | Rename | <kbd>F2</kbd> |
 | Delete | <kbd>Delete</kbd> or <kbd>Backspace</kbd> |
+| Break Links | <kbd>Alt</kbd>+<kbd>L</kbd> |
 | Search Panel | <kbd>Mod</kbd>+<kbd>F</kbd> |
 | New Folder | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> |
 | Place Actors | <kbd>Alt</kbd>+<kbd>A</kbd> |

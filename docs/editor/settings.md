@@ -31,7 +31,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 | Group | Pages |
 | --- | --- |
 | Editor | Undo, Debugger, Viewport, Graph, Assets, Thumbnails, Focus, Keybinds, Interface, Accessibility, About |
-| Projects | Templates, Engine Plugins, Engine Extensions, Packaging |
+| Projects | Templates, Engine Plugins, Engine Extensions, Source Control, Packaging |
 
 - **Undo**: history limits. See [Undo and Saving](undo-and-saving.md).
 - **Debugger**: Play debugging defaults and **Debug Mode**. See [Debugging](../debugging/index.md).
@@ -45,6 +45,7 @@ Every page groups its settings into sub-categories, such as **Shadows** and **Po
 - **Accessibility**: text size, motion, touch and timing, number dragging, and graph pin and connection options. See [Accessibility](#accessibility).
 - **About**: version and build. The desktop app also has **Automatic Updates** here.
 - **Templates**, **Engine Plugins** and **Engine Extensions**: what new projects start with. See [Plugins](../projects/plugins.md) and [Extensions](../projects/extensions.md).
+- **Source Control**: your GitHub and GitLab accounts and tokens for other Git hosts on this device. Desktop and mobile apps only. See [Source Control](../projects/source-control.md#link-your-accounts).
 - **Packaging**: how the desktop app on a Mac signs and notarizes macOS games and which Apple team signs iOS games, and the build tools and keystore the desktop apps use for Android games. See [macOS games](../publishing/index.md#macos-games), [iOS games](../publishing/index.md#ios-games) and [Android games](../publishing/index.md#android-games).
 
 ## Theme
@@ -89,7 +90,7 @@ Compact Mode changes only sizes. Touch gestures, such as holding to open a menu 
 
 These apply to every graph editor: Class, Material, Animation Graph, Behaviour Tree and Particle Graph.
 
-- **Tap To Connect Pins** (default off): tap a pin, then a pin on the other side, to connect them. Either side can go first. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Dragging from one pin to another works either way.
+- **Tap To Connect Pins** (default off): tap a pin, then a pin on the other side, to connect them. Either side can go first. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Tapping anything else, dragging a node, opening a menu or pressing Esc also cancels it; panning and zooming keep it, so you can reach a pin further away. Dragging from one pin to another works either way.
 - **Large Pins** (default 1×): a slider from 1× to 2×, in steps of 0.1×, that enlarges every pin, the area you can tap or click around it, and the wires between pins. Nodes grow to fit.
 - **Pin Type Letters** (default off): shows a short type name inside every data pin, so types do not rely on colour: **B** Boolean, **I** Integer, **F** Float, **S** String, **V2**, **V3** and **V4** vectors, **R** Rotator, **Q** Quaternion, **T** Transform, **C** Color, **O** Object, **Cl** Class, **A** Asset, **Tx** Texture, **St** Structure, **E** Enum, **Tg** Tag, **D** Delegate, **P** Particle and **?** Wildcard. Array and Map pins show their item type.
 
@@ -115,7 +116,7 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 | Group | Page | Covers |
 | --- | --- | --- |
 | Project | General | Auto-Save Interval, Compile On Save, infinite loop detection, Garbage Collection Interval, Editor Utility Objects |
-| Project | Source Control | Git LFS file locking. Desktop and mobile apps only. |
+| Project | Source Control | Mode, repository, branch and Git LFS file locking. Desktop and mobile apps only. |
 | Project | Export | What a game package includes, its App Identity (with the project version and build number) and App Icon, and Export Project |
 | Gameplay | Game | Startup Scene, Game Instance, 2D pixels per unit and sorting layers |
 | Gameplay | Save Games | Default save definition, slot and profile; preview saves |

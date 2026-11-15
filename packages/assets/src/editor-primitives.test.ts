@@ -114,7 +114,7 @@ describe("buildEditorPrimitivesFiles", () => {
       guids.add(header.guid);
       const payload = normalizeModelPayload(header.payload);
       expect(payload.materialSlots).toEqual([{ index: 0, name: "Material", materialGuid: null }]);
-      expect(payload).toMatchObject({ importScale: 1, skeletonGuid: null, clipNames: [], autoLod: shape.autoLod });
+      expect(payload).toMatchObject({ importScale: 1, skeletonGuid: null, autoLod: shape.autoLod });
       expect(payload.simpleColliders).toHaveLength(1);
       expect(payload.simpleColliders[0]).toMatchObject(shape.collider);
       const glb = await decodeHassetChunk(file.data, "source");

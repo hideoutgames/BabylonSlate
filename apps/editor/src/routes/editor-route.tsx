@@ -1,5 +1,5 @@
 import { lazy, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CONTENT_BROWSER_ID } from "@haptic/core";
+import { isChromeDocumentId } from "@haptic/core";
 import { Button } from "@haptic/ui/components/button";
 import {
   AlertDialog,
@@ -371,7 +371,7 @@ function EditorChromeAndPrompts() {
 
   const requestCloseAllDocuments = () => {
     closeRequest.current += 1;
-    const tabs = getOpenDocuments().filter((doc) => doc.id !== CONTENT_BROWSER_ID);
+    const tabs = getOpenDocuments().filter((doc) => !isChromeDocumentId(doc.id));
     if (tabs.some((doc) => doc.dirty)) {
       setPendingTabClose(tabs.map((doc) => doc.id));
       return;

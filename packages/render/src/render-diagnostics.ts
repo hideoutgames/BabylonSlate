@@ -99,7 +99,18 @@ export type RenderDiagnostics = {
     scopedReadinessProbes: number;
     /** Scoped checks a check of every mesh disagreed with, counted only while that verification is on. */
     scopedReadinessMismatches: number;
+    /**
+     * What the last strict check that failed since the first reading found unready, in the order it met them (at most
+     * `MAX_READINESS_BLOCKERS`): a graph task, a mesh and its Material, a texture, a render target. Empty before one fails.
+     */
+    readinessBlockers: string[];
   };
+  /**
+   * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
+   * for the world, with the layer's mesh count. A layer whose strict checks grow with every frame has something
+   * marking its readiness each frame. Empty where the view composites no layer.
+   */
+  layerWork?: Array<{ layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]> }>;
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;
     pendingPresentations: number;

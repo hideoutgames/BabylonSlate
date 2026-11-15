@@ -504,7 +504,7 @@ describe("collectExportReachability", () => {
         asset({ guid: "scene-1", type: "Scene", name: "Main" }),
         asset({
           guid: "loco-1",
-          type: "AnimationGraph",
+          type: "AnimationGraph3D",
           name: "Loco",
           dependencies: [],
         }),

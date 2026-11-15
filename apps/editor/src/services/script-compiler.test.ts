@@ -1406,13 +1406,13 @@ describe("GraphScriptCompileCache", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const cache = new GraphScriptCompileCache();
-    const documents = [{ guid: "loco", path: "assets/Loco.anim.hasset", document: createDefaultAnimGraph() }];
+    const documents = [{ guid: "loco", path: "assets/Loco.anim3d.hasset", document: createDefaultAnimGraph() }];
     const objectGraph = (options: Parameters<typeof compileAnimGraphScripts>[1]) =>
       compileAnimGraphScripts(documents, { cache, ...options }).find((script) => script.classId === "AnimGraph:loco")!;
     const plain = objectGraph({});
     const traced = objectGraph({ instrumentExecutionTrace: true });
     expect(plain.source).not.toContain("__dbg");
-    expect(traced.source).toContain('ctx.debugTrace.graph("assets/Loco.anim.hasset", "animation-object")');
+    expect(traced.source).toContain('ctx.debugTrace.graph("assets/Loco.anim3d.hasset", "animation-object")');
     // Each is cached under its own key, and a release compile never carries the probes.
     expect(objectGraph({})).toBe(plain);
     expect(objectGraph({ instrumentExecutionTrace: true })).toBe(traced);
@@ -1423,7 +1423,7 @@ describe("GraphScriptCompileCache", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const graph = [{ path: "assets/First.class.hasset", content: tickToLog }];
-    const animation = [{ guid: "animation", path: "assets/Animation.anim.hasset", document: createDefaultAnimGraph() }];
+    const animation = [{ guid: "animation", path: "assets/Animation.anim3d.hasset", document: createDefaultAnimGraph() }];
     const measure = new GraphScriptCompileCache();
     compileGraphDocuments(graph, { cache: measure });
     const graphBytes = measure.retainedBytes;
@@ -2043,7 +2043,7 @@ describe("compileAnimGraphScripts", () => {
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
     doc.animationObject = tagMatchGraph("anim.event.update");
-    doc.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "tag-rule", fromStateId: "idle", toStateId: "idle", blendSeconds: 0, priority: 0,
       ruleGraph: {
         nodes: [
@@ -2053,7 +2053,7 @@ describe("compileAnimGraphScripts", () => {
         edges: [{ id: "condition", source: "match", sourceHandle: "out", target: "enter", targetHandle: "value" }],
       },
     });
-    const documents = [{ guid: "tags", path: "assets/Tags.anim.hasset", document: doc }];
+    const documents = [{ guid: "tags", path: "assets/Tags.anim3d.hasset", document: doc }];
     const cache = new GraphScriptCompileCache();
     for (const [tagRegistry, expected, message] of [
       [stateTags, true, "matched"],
@@ -2076,7 +2076,7 @@ describe("compileAnimGraphScripts", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
-    doc.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "idle-to-idle",
       fromStateId: "idle",
       toStateId: "idle",
@@ -2101,7 +2101,7 @@ describe("compileAnimGraphScripts", () => {
       },
     });
     const scripts = compileAnimGraphScripts([
-      { guid: "graph-1", path: "assets/Loco.anim.hasset", document: doc },
+      { guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: doc },
     ]);
     expect(scripts.map((entry) => entry.classId)).toEqual([
       "AnimGraph:graph-1",
@@ -2114,6 +2114,38 @@ describe("compileAnimGraphScripts", () => {
     expect(scripts[1]?.source).toContain("enter: (true)");
   });
 
+  it("compiles a pose graph's wired data inputs into its own module, and nothing for a graph without any", async () => {
+    const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const doc = createDefaultAnimGraph();
+    doc.variables = [{ id: "var-speed", name: "Speed", typeId: "float", defaultValue: 1 }];
+    const idle = doc.stateMachine.states[0]!;
+    idle.stateGraph = {
+      nodes: [
+        ...idle.stateGraph.nodes,
+        {
+          id: "get-speed",
+          type: "variables.get",
+          position: { x: 0, y: 200 },
+          data: { variableId: "var-speed", variableName: "Speed", typeId: "float", implicitSelf: true },
+        },
+      ],
+      edges: [
+        ...idle.stateGraph.edges,
+        { id: "rate", source: "get-speed", sourceHandle: "value", target: "player", targetHandle: "playRate" },
+      ],
+    };
+    const scripts = compileAnimGraphScripts([
+      { guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: doc },
+    ]);
+    expect(scripts.map((entry) => entry.classId)).toEqual([
+      "AnimGraph:graph-1",
+      "AnimPose:graph-1:idle",
+    ]);
+    expect(scripts[1]?.source).toContain("export function evaluate(ctx)");
+    expect(scripts[1]?.source).toMatch(/"player": \{ "playRate": /);
+  });
+
   it("reuses Animation Graph compiles when the document is unchanged", async () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
@@ -2123,7 +2155,7 @@ describe("compileAnimGraphScripts", () => {
     const doc = createDefaultAnimGraph();
     const entry = {
       guid: "graph-1",
-      path: "assets/Loco.anim.hasset",
+      path: "assets/Loco.anim3d.hasset",
       document: doc,
     };
     const first = compileAnimGraphScripts([entry], { cache });
@@ -2143,7 +2175,7 @@ describe("compileAnimGraphScripts", () => {
     const doc = createDefaultAnimGraph();
     const entry = {
       guid: "graph-1",
-      path: "assets/Loco.anim.hasset",
+      path: "assets/Loco.anim3d.hasset",
       document: doc,
     };
     compileAnimGraphScripts([entry], { cache });
@@ -2156,12 +2188,19 @@ describe("compileAnimGraphScripts", () => {
         position: { x: 99, y: 40 },
       })),
     };
-    nudged.states = nudged.states.map((state) => ({
-      ...state,
-      position: { x: 50, y: 80 },
-    }));
+    nudged.stateMachine = {
+      ...nudged.stateMachine,
+      states: nudged.stateMachine.states.map((state) => ({
+        ...state,
+        position: { x: 50, y: 80 },
+        stateGraph: {
+          ...state.stateGraph,
+          nodes: state.stateGraph.nodes.map((node) => ({ ...node, position: { x: 7, y: 7 } })),
+        },
+      })),
+    };
     compileAnimGraphScripts(
-      [{ guid: "graph-1", path: "assets/Loco.anim.hasset", document: nudged }],
+      [{ guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: nudged }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
@@ -2175,7 +2214,7 @@ describe("compileAnimGraphScripts", () => {
     const cache = new GraphScriptCompileCache();
     const doc = createDefaultAnimGraph();
     compileAnimGraphScripts(
-      [{ guid: "graph-1", path: "assets/Loco.anim.hasset", document: doc }],
+      [{ guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: doc }],
       { cache },
     );
     expect(cache.compiles).toBe(1);
@@ -2189,7 +2228,7 @@ describe("compileAnimGraphScripts", () => {
       ),
     };
     compileAnimGraphScripts(
-      [{ guid: "graph-1", path: "assets/Loco.anim.hasset", document: edited }],
+      [{ guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: edited }],
       { cache },
     );
     expect(cache.compiles).toBe(2);
@@ -2203,7 +2242,7 @@ describe("compileAnimGraphScripts", () => {
     const cache = new GraphScriptCompileCache();
     const entry = {
       guid: "graph-1",
-      path: "assets/Loco.anim.hasset",
+      path: "assets/Loco.anim3d.hasset",
       document: createDefaultAnimGraph(),
     };
     compileAnimGraphScripts([entry], { cache });
@@ -2215,15 +2254,13 @@ describe("compileAnimGraphScripts", () => {
     const { createDefaultAnimGraph } = await import("@haptic/anim-graph");
     const { compileAnimGraphScripts } = await import("./script-compiler");
     const doc = createDefaultAnimGraph();
-    doc.states.push({
+    doc.stateMachine.states.push({
       id: "run",
       name: "Run",
-      clipId: null,
-      speed: 1,
-      loop: true,
       position: { x: 300, y: 80 },
+      stateGraph: doc.stateMachine.states[0]!.stateGraph,
     });
-    doc.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "idle-to-run",
       fromStateId: "idle",
       toStateId: "run",
@@ -2266,7 +2303,7 @@ describe("compileAnimGraphScripts", () => {
       },
     });
     const scripts = compileAnimGraphScripts([
-      { guid: "graph-1", path: "assets/Loco.anim.hasset", document: doc },
+      { guid: "graph-1", path: "assets/Loco.anim3d.hasset", document: doc },
     ]);
     const rule = scripts.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-run");
     expect(rule?.source).toContain("exit: (true)");

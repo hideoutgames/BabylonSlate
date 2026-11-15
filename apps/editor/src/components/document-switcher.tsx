@@ -1,12 +1,14 @@
 import {
   ChevronDownIcon,
-  LayoutGridIcon,
   PanelsTopLeftIcon,
   XIcon,
 } from "lucide-react";
 import {
   CONTENT_BROWSER_ID,
+  isChromeDocumentId,
+  isChromeDocumentKind,
 } from "@haptic/core";
+import { ChromeDocumentIcon } from "./chrome-document-icon";
 import { TypeVisualIcon, ShortcutKeys, ariaKeyShortcuts, useTouchUi } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -39,7 +41,7 @@ export function DocumentSwitcher({
   onSelect,
   onClose,
   onCloseAll,
-  hasClosableDocuments = documents.some((doc) => doc.id !== CONTENT_BROWSER_ID),
+  hasClosableDocuments = documents.some((doc) => !isChromeDocumentId(doc.id)),
   compact = false,
 }: {
   documents: OpenDocument[];
@@ -68,7 +70,7 @@ export function DocumentSwitcher({
   useKeybindCommand("document.close", () => {
     if (active) onClose(active.id);
   }, {
-    enabled: Boolean(active && active.id !== CONTENT_BROWSER_ID),
+    enabled: Boolean(active && !isChromeDocumentId(active.id)),
   });
   useKeybindCommand("document.closeAll", () => onCloseAll?.(), {
     enabled: Boolean(onCloseAll) && hasClosableDocuments,
@@ -126,8 +128,8 @@ export function DocumentSwitcher({
                 data-document-id={doc.id}
                 aria-keyshortcuts={doc.id === CONTENT_BROWSER_ID && browserChord ? ariaKeyShortcuts(browserChord) : undefined}
               >
-                {doc.ref.kind === "content-browser" ? (
-                  <LayoutGridIcon />
+                {isChromeDocumentKind(doc.ref.kind) ? (
+                  <ChromeDocumentIcon kind={doc.ref.kind} />
                 ) : (
                   <TypeVisualIcon
                     visual={resolveVisual(doc.ref)}
@@ -151,7 +153,7 @@ export function DocumentSwitcher({
             ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuGroup>
-        {active && active.id !== CONTENT_BROWSER_ID ? (
+        {active && !isChromeDocumentId(active.id) ? (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>

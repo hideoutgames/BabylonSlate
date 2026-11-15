@@ -52,7 +52,8 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
   if (style.opacity === held.opacity && style.tint[0] === held.tint[0] && style.tint[1] === held.tint[1] && style.tint[2] === held.tint[2] &&
     style.tint[3] === held.tint[3]) return;
   binding.style = style;
-  if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene(), "layerStyle");
+  // Only this component's own meshes blend differently now.
+  if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene(), "layerStyle", binding.meshes);
 }
 
 /** Also called when a texture finishes replacing its owned construction material. */

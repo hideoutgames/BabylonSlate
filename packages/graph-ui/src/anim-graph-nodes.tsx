@@ -9,13 +9,13 @@ import {
   type Node,
   type NodeProps,
 } from "@xyflow/react";
-import { useCallback } from "react";
+import { useCallback, useId, type CSSProperties } from "react";
 import { Repeat2Icon } from "lucide-react";
 import { cn } from "@haptic/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { animTransitionPath } from "./anim-transition-path";
 import { useNodeBreakpoint } from "./graph-breakpoints";
-import { NodeBreakpointDot } from "./graph-nodes";
+import { NodeBreakpointTab } from "./graph-nodes";
 import { useNodeMenu } from "./use-node-menu";
 
 type AnimStateSide = "top" | "right" | "bottom" | "left";
@@ -34,6 +34,9 @@ type AnimStateData = {
   /** Host-supplied clip summary shown under the title. */
   clipLabel?: string;
   __nodeType?: string;
+  /** A State Alias's: whether it covers every state, else how many it covers. */
+  anyState?: boolean;
+  stateCount?: number;
 };
 
 const SIDE_POSITION: Record<AnimStateSide, Position> = {
@@ -60,29 +63,11 @@ function useConnectedSides(id: string): string {
   );
 }
 
-function AnimStateNode({
-  id,
-  data,
-  selected,
-}: NodeProps<Node<AnimStateData>>) {
-  const title = displayNodeTitle(
-    typeof data.__nodeType === "string" ? data.__nodeType : "anim.state",
-    typeof data.title === "string" ? data.title : undefined,
-  );
+/** A state card's four sides, each with an incoming and an outgoing plate. */
+function AnimStateHandles({ id }: { id: string }) {
   const connectedSides = useConnectedSides(id).split(" ");
-  const nodeMenu = useNodeMenu(id);
   return (
-    <div
-      className={cn(
-        "anim-state-node group/title",
-        selected && "anim-state-node-selected",
-        data.entry === true && "anim-state-node-entry",
-      )}
-      data-testid={`anim-state-node-${id}`}
-      data-node-role="anim-state"
-      {...nodeMenu.bind}
-    >
-      <NodeBreakpointDot nodeId={id} data={data} className="left-2.5 top-3" />
+    <>
       {ANIM_STATE_SIDES.map((side) => (
         <span key={side} className="contents">
           <Handle
@@ -106,6 +91,57 @@ function AnimStateNode({
           />
         </span>
       ))}
+    </>
+  );
+}
+
+/**
+ * A State Alias card: dashed, naming the states it covers. Its transitions leave from each of them; nothing enters
+ * it, so the canvas refuses wires into it.
+ */
+function AnimAliasNode({ id, data, selected }: NodeProps<Node<AnimStateData>>) {
+  const nodeMenu = useNodeMenu(id);
+  const count = typeof data.stateCount === "number" ? data.stateCount : 0;
+  const covers = data.anyState === true ? "Any State" : count === 1 ? "1 State" : `${count} States`;
+  return (
+    <div
+      className={cn("anim-state-node anim-alias-node group/title", selected && "anim-state-node-selected")}
+      data-testid={`anim-alias-node-${id}`}
+      data-node-role="anim-alias"
+      {...nodeMenu.bind}
+    >
+      <AnimStateHandles id={id} />
+      <div className="anim-state-node-title">{typeof data.title === "string" ? data.title : "State Alias"}</div>
+      <div className="anim-state-node-clip" data-testid={`anim-alias-node-covers-${id}`}>
+        <span className="truncate">{covers}</span>
+      </div>
+    </div>
+  );
+}
+
+function AnimStateNode({
+  id,
+  data,
+  selected,
+}: NodeProps<Node<AnimStateData>>) {
+  const title = displayNodeTitle(
+    typeof data.__nodeType === "string" ? data.__nodeType : "anim.state",
+    typeof data.title === "string" ? data.title : undefined,
+  );
+  const nodeMenu = useNodeMenu(id);
+  return (
+    <div
+      className={cn(
+        "anim-state-node group/title",
+        selected && "anim-state-node-selected",
+        data.entry === true && "anim-state-node-entry",
+      )}
+      data-testid={`anim-state-node-${id}`}
+      data-node-role="anim-state"
+      {...nodeMenu.bind}
+    >
+      <NodeBreakpointTab nodeId={id} data={data} placement="inset" />
+      <AnimStateHandles id={id} />
       <div className="anim-state-node-title">{title}</div>
       {typeof data.clipLabel === "string" ? (
         <div
@@ -153,6 +189,11 @@ function insetTowardNode(
   }
 }
 
+/** The canvas zoom, so a wire's hit band can stay the same width on screen. */
+function selectZoom(state: { transform: [number, number, number] }): number {
+  return state.transform[2];
+}
+
 function AnimTransitionEdge({
   id,
   sourceX,
@@ -162,12 +203,13 @@ function AnimTransitionEdge({
   sourcePosition,
   targetPosition,
   style,
-  markerEnd,
-  markerStart,
   selected,
   type,
 }: EdgeProps) {
   const { setEdges, setNodes } = useReactFlow();
+  const zoom = useStore(selectZoom);
+  // The wire draws its own arrowheads, so they take the wire's hover and selection colour.
+  const arrowId = `anim-transition-arrow-${useId().replace(/[^\w-]/g, "")}`;
   const source = insetTowardNode(sourceX, sourceY, sourcePosition, SOURCE_PLATE_OVERHANG);
   const target = insetTowardNode(targetX, targetY, targetPosition, TARGET_PLATE_OVERHANG);
   const { path: edgePath, labelX, labelY, angle } = animTransitionPath({
@@ -181,14 +223,45 @@ function AnimTransitionEdge({
   const bidirectional = type === "animTransitionBoth";
   // The host's state for a Both Ways pair, drawn as one edge, covers either direction.
   const breakpoint = useNodeBreakpoint(id);
+  const arrow = `url(#${arrowId})`;
   return (
     <>
+      <defs>
+        <marker
+          id={arrowId}
+          className="anim-transition-arrow"
+          viewBox="-10 -10 20 20"
+          markerWidth={12.5}
+          markerHeight={12.5}
+          markerUnits="strokeWidth"
+          orient="auto-start-reverse"
+          refX={0}
+          refY={0}
+        >
+          <polyline
+            points="-5,-4 0,0 -5,4 -5,-4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1}
+          />
+        </marker>
+      </defs>
       <BaseEdge
         id={id}
         path={edgePath}
         style={style}
-        markerEnd={markerEnd}
-        markerStart={bidirectional ? markerStart : undefined}
+        markerEnd={arrow}
+        markerStart={bidirectional ? arrow : undefined}
+        interactionWidth={0}
+      />
+      {/* A hit band of the same width on screen at every zoom; React Flow's is fixed in canvas units. */}
+      <path
+        d={edgePath}
+        fill="none"
+        strokeOpacity={0}
+        className="react-flow__edge-interaction anim-transition-hit"
+        style={{ "--anim-transition-zoom": zoom } as CSSProperties}
+        data-testid={`anim-transition-hit-${id}`}
       />
       <EdgeLabelRenderer>
         <button
@@ -230,6 +303,7 @@ function AnimTransitionEdge({
 
 export const animGraphNodeTypes = {
   "anim.state": AnimStateNode,
+  "anim.alias": AnimAliasNode,
 };
 
 export const animGraphEdgeTypes = {

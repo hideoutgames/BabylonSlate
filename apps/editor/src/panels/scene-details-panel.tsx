@@ -617,6 +617,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     collisionPresets: projectDocument?.settings.physics?.collisionPresets,
     assetLabel,
     assetType,
+    assetPayload: (guid) => assetRegistry?.getByGuid?.(guid)?.header.payload,
     modelMaterialSlots: (guid) => normalizeModelPayload(
       modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
         ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},

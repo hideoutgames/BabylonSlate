@@ -1199,7 +1199,7 @@ describe("EditorSceneSync", () => {
     second.properties.assetGuid = "model-2";
     const materials = new Map([["mat-a", slotA], ["mat-b", slotB], ["red", red]]);
     const sync = new EditorSceneSync(scene, undefined, { resolveMaterial: (guid) => materials.get(guid) ?? null });
-    const payload = (materialGuid: string) => ({ clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+    const payload = (materialGuid: string) => ({ skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
       materialSlots: [{ index: 0, name: "Mat", materialGuid }] });
     sync.setMeshAssets({
       modelBytes: new Map([["model-1", encodeTriangleGlb()], ["model-2", encodeTriangleGlb()]]),
@@ -1533,7 +1533,6 @@ describe("EditorSceneSync", () => {
         [
           "model-1",
           {
-            clipNames: [],
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
@@ -1587,7 +1586,7 @@ describe("EditorSceneSync", () => {
       modelPayloads: new Map([
         [
           "sphere-model",
-          { clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true, materialSlots: [] },
+          { skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true, materialSlots: [] },
         ],
       ]),
     });
@@ -1622,7 +1621,6 @@ describe("EditorSceneSync", () => {
         [
           "hero-model",
           {
-            clipNames: [],
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
@@ -1665,7 +1663,6 @@ describe("EditorSceneSync", () => {
         [
           "hero-model",
           {
-            clipNames: [],
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],
@@ -1702,7 +1699,7 @@ describe("EditorSceneSync", () => {
     sync.setMeshAssets({
       modelBytes: new Map([["hero-model", encodeUvHierarchyGlb()]]),
       modelPayloads: new Map([["hero-model", {
-        clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+        skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
         materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
       }]]),
     });
@@ -1745,7 +1742,7 @@ describe("EditorSceneSync", () => {
     sync.setMeshAssets({
       modelBytes: new Map([["hero-model", encodeUvHierarchyGlb()]]),
       modelPayloads: new Map([["hero-model", {
-        clipNames: [], skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
+        skeletonGuid: null, importScale: 1, simpleColliders: [], autoLod: true,
         materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
       }]]),
     });
@@ -1781,7 +1778,6 @@ describe("EditorSceneSync", () => {
         [
           "mannequin",
           {
-            clipNames: ["idle"],
             skeletonGuid: null,
             importScale: 1,
             simpleColliders: [],

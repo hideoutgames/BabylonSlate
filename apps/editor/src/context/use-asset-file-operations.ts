@@ -1,6 +1,6 @@
 import { useCallback, useMemo, type RefObject } from "react";
 import type { AssetDocumentKind, ProjectDocument } from "@haptic/core";
-import { documentId, removeAlwaysPackageFolders } from "@haptic/core";
+import { documentId, removeAlwaysPackageFolders, isChromeDocumentKind } from "@haptic/core";
 import {
   clearDeletedAssetRefs,
   clearDeletedRefsFromProjectSettings,
@@ -122,7 +122,7 @@ export function useAssetFileOperations({
     const schemas = collectGraphTypeSchemas();
     const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
     const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
-      if (doc.ref.kind === "content-browser" || doc.ref.kind === "trace" || !doc.content) return [];
+      if (isChromeDocumentKind(doc.ref.kind) || doc.ref.kind === "trace" || !doc.content) return [];
       const asset = registry?.getByPath(doc.ref.path);
       if (asset && deletingGuids.has(asset.header.guid)) return [];
       const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
@@ -169,7 +169,7 @@ export function useAssetFileOperations({
       const schemas = collectGraphTypeSchemas();
       const definitionFields = (definitionGuid: string) => schemas.structs?.[definitionGuid]?.fields;
       const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
-        if (!doc.content || doc.ref.kind === "content-browser" || doc.ref.kind === "trace") return [];
+        if (!doc.content || isChromeDocumentKind(doc.ref.kind) || doc.ref.kind === "trace") return [];
         const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
         if (!walked.changed) return [];
         const asset = registry.getByPath(doc.ref.path);
@@ -204,7 +204,7 @@ export function useAssetFileOperations({
       // while the rename wrote can add a reference the walk above missed.
       const rewritten = new Set(openChanges.map(({ doc }) => doc.id));
       for (const open of documentService.getOpenDocumentsOrdered()) {
-        if (!open.content || open.ref.kind === "content-browser" || open.ref.kind === "trace") continue;
+        if (!open.content || isChromeDocumentKind(open.ref.kind) || open.ref.kind === "trace") continue;
         const walked = replaceClassAssetReferences(open.content, replacements, definitionFields);
         if (!walked.changed) continue;
         documentService.applyFileRewrite(open.id, walked.value);
@@ -244,7 +244,7 @@ export function useAssetFileOperations({
         onProgress,
       });
       for (const doc of documentService.getOpenDocumentsOrdered()) {
-        if (doc.ref.kind === "content-browser" || !doc.content) continue;
+        if (isChromeDocumentKind(doc.ref.kind) || !doc.content) continue;
         await onProgress?.(doc.ref.path);
         const walked = clearDeletedAssetRefs(
           doc.content,

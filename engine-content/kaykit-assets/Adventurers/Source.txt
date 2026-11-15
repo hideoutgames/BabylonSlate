@@ -1,0 +1,8 @@
+KayKit Adventurers Character Pack 2.0 (free tier) subset, used by the Feature Test starter (CC0, see License.txt).
+
+Knight.glb, Rogue_Hooded.glb    = skinned characters on the Rig_Medium rig (textures embedded)
+Rig_Medium_General.glb          = Rig_Medium animation library (idle, hit, death, interact, ...)
+Rig_Medium_MovementBasic.glb    = Rig_Medium animation library (walking, running, jumping)
+
+Original author: Kay Lousberg (https://kaylousberg.com). Copied unmodified from the
+glTF folders of the free pack as the author distributes it.

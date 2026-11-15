@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import type { AssetRegistry } from "@haptic/assets";
 import type { DebugInstance, DebugObserveTarget } from "@haptic/bridge";
 import { walkAncestry } from "@haptic/editor-kit";
@@ -31,7 +32,7 @@ export function documentGraphDebugTarget(
 ): DebugObserveTarget | null {
   if (!document) return null;
   if (document.kind === "graph") return classGraphDebugTarget(document.path, registryClassParentLookup(registry));
-  if (document.kind !== "behaviour-tree" && document.kind !== "anim-graph") return null;
+  if (document.kind !== "behaviour-tree" && !isAnimGraphDocumentKind(document.kind)) return null;
   const assetGuid = registry?.getByPath(document.path)?.header.guid;
   if (!assetGuid) return null;
   return document.kind === "behaviour-tree" ? { kind: "behaviourTree", assetGuid } : { kind: "animationGraph", assetGuid };

@@ -14,7 +14,7 @@ describe("model thumbnail queue", () => {
       {
         guid: "model-1",
         path: "assets/hero.hasset",
-        payload: { materialSlots: [], clipNames: [] },
+        payload: { materialSlots: [] },
       },
     ]);
     expect(received).toEqual([[{ guid: "model-1" }]]);
@@ -23,7 +23,7 @@ describe("model thumbnail queue", () => {
       {
         guid: "model-2",
         path: "assets/rock.hasset",
-        payload: { materialSlots: [], clipNames: [] },
+        payload: { materialSlots: [] },
       },
     ]);
     expect(received).toHaveLength(1);

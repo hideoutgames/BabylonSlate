@@ -1,14 +1,14 @@
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
+  animationClipEvents,
+  normalizeAnimationPayload,
+  spriteAnimationClipEvents,
+  normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
 } from "@haptic/assets";
 import { asRecord } from "./as-record";
-
-function stringList(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
 
 function trimmed(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -44,7 +44,10 @@ type CatalogAsset = {
   };
 };
 
-/** Build a clip catalog from Content Browser headers (Model clipNames, Animation clipName). */
+/**
+ * Build a clip catalog from Content Browser headers: Animation and Sprite Animation clips, the Models and Skeletons an
+ * Animation names, and Blend Spaces with their Skeleton, axes and samples.
+ */
 export function animClipCatalogFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): AnimClipCatalogEntry[] {
@@ -57,22 +60,50 @@ export function animClipCatalogFromAssets(
           ? optionalDurationMs(payload.durationMs)
           : undefined;
     const skeletonGuid =
-      asset.header.type === "Model" || asset.header.type === "Animation"
+      asset.header.type === "Model" || asset.header.type === "Animation" || asset.header.type === "BlendSpace"
         ? nullableGuid(payload.skeletonGuid)
+        : undefined;
+    const blendSpace = asset.header.type === "BlendSpace"
+      ? normalizeBlendSpacePayload(payload)
+      : asset.header.type === "SpriteBlendSpace"
+        ? normalizeSpriteBlendSpacePayload(payload)
         : undefined;
     const modelGuid =
       asset.header.type === "Animation" ? trimmed(payload.modelGuid) : "";
+    const frameCount =
+      asset.header.type === "SpriteAnimation" && Array.isArray(payload.frames) && payload.frames.length > 0
+        ? payload.frames.length
+        : undefined;
+    // The events a player of this clip fires: an Animation's, or a Sprite Animation's frame events at their frames.
+    const events =
+      asset.header.type === "Animation"
+        ? animationClipEvents(normalizeAnimationPayload(payload).events)
+        : asset.header.type === "SpriteAnimation"
+          ? spriteAnimationClipEvents(parseSpriteAnimationPayload(payload))
+          : [];
     return {
       guid: asset.header.guid,
       type: asset.header.type,
       name: asset.header.name,
       clipName:
         typeof payload.clipName === "string" ? payload.clipName : undefined,
-      clipNames: stringList(payload.clipNames),
       dependencyGuids: asset.header.dependencies ?? [],
       ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(frameCount !== undefined ? { frameCount } : {}),
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
+      ...(events.length > 0 ? { events } : {}),
+      ...(blendSpace
+        ? {
+            blendSpace: {
+              axes: blendSpace.axes,
+              samples: blendSpace.samples,
+              ...("hysteresis" in blendSpace
+                ? { hysteresis: blendSpace.hysteresis, keepTime: blendSpace.keepTime }
+                : { eventMode: blendSpace.eventMode }),
+            },
+          }
+        : {}),
     };
   });
 }

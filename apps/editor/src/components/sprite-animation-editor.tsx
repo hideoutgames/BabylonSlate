@@ -3,7 +3,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
@@ -19,7 +18,6 @@ import {
   type PropertyRow,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
-import { Slider } from "@haptic/ui/components/slider";
 import { Toggle } from "@haptic/ui/components/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@haptic/ui/components/toggle-group";
 import { cn } from "@haptic/ui/lib/utils";
@@ -36,7 +34,6 @@ import {
   type SpriteAnimationFrame,
   type SpriteAnimationPayload,
   type SpriteAnimationSource,
-  type TileRect,
 } from "@haptic/assets";
 import {
   useDocumentActions,
@@ -48,8 +45,11 @@ import { useOptionalSpriteAnimationEditing } from "../context/sprite-animation-e
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
+import { PlaybackScrubber } from "./playback-controls";
 import { TexturePreviewStatus, useTexturePreviews } from "./texture-preview-status";
+import { AnimationEventsEditor } from "./animation-events-editor";
 import { useResolvedSpriteAnimation, type SpriteAnimationFrameView } from "./sprite-animation-sources";
+import { CHECKERBOARD, FrameImage } from "./sprite-frame-image";
 import {
   ExternalLinkIcon,
   Grid3x3Icon,
@@ -62,8 +62,6 @@ import {
 } from "lucide-react";
 
 const TOOL_ITEM = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
-const CHECKERBOARD =
-  "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)";
 
 function useSpriteAnimationSelection(frameCount: number) {
   const ctx = useOptionalSpriteAnimationEditing();
@@ -137,11 +135,6 @@ function spriteFrameMergeKey(frameIndex: number, field: string): string {
   return `sprite-animation:frame:${frameIndex}:${field}`;
 }
 
-function sliderNumber(next: number | readonly number[]): number | undefined {
-  const value = Array.isArray(next) ? next[0] : next;
-  return typeof value === "number" ? value : undefined;
-}
-
 /** The frame's pixel size: its region, else its resolved size; null when unknown. */
 function framePixels(view: SpriteAnimationFrameView | undefined, frame: SpriteAnimationFrame | undefined) {
   if (view?.rect) return { width: view.rect.width, height: view.rect.height };
@@ -150,52 +143,6 @@ function framePixels(view: SpriteAnimationFrameView | undefined, frame: SpriteAn
 }
 
 /** Places the whole Texture so `rect` of it fills the box it sits in. */
-function cropStyle(rect: TileRect, atlas: { width: number; height: number }): CSSProperties {
-  return {
-    left: `${(-rect.x / rect.width) * 100}%`,
-    top: `${(-rect.y / rect.height) * 100}%`,
-    width: `${(atlas.width / rect.width) * 100}%`,
-    height: `${(atlas.height / rect.height) * 100}%`,
-  };
-}
-
-/** The frame's image inside its box: a sheet cell is cropped from the sheet, other frames show the whole Texture. */
-function FrameImage({
-  url,
-  view,
-  className,
-  onError,
-}: {
-  url: string;
-  view: SpriteAnimationFrameView | undefined;
-  className?: string;
-  onError?: () => void;
-}) {
-  if (view?.rect && view.atlas) {
-    return (
-      <div className="absolute inset-0 overflow-hidden">
-        <img
-          src={url}
-          alt=""
-          draggable={false}
-          onError={onError}
-          className={cn("absolute max-w-none [image-rendering:pixelated]", className)}
-          style={cropStyle(view.rect, view.atlas)}
-        />
-      </div>
-    );
-  }
-  return (
-    <img
-      src={url}
-      alt=""
-      draggable={false}
-      onError={onError}
-      className={cn("absolute inset-0 size-full object-contain [image-rendering:pixelated]", className)}
-    />
-  );
-}
-
 function boxStyle(box: { left: number; top: number; width: number; height: number }): CSSProperties {
   return {
     left: `${box.left * 100}%`,
@@ -203,39 +150,6 @@ function boxStyle(box: { left: number; top: number; width: number; height: numbe
     width: `${box.width * 100}%`,
     height: `${box.height * 100}%`,
   };
-}
-
-/** Frame and time beside the scrubber, on one line at a steady width while it plays. */
-function PlaybackPosition({
-  frameIndex,
-  frameCount,
-  timeMs,
-  durationMs,
-}: {
-  frameIndex: number;
-  frameCount: number;
-  timeMs: number;
-  durationMs: number;
-}) {
-  const frameDigits = String(frameCount).length;
-  const timeDigits = String(durationMs).length;
-  return (
-    <span
-      className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground"
-      data-testid="sprite-animation-position"
-    >
-      Frame{" "}
-      <span className="inline-block text-right text-foreground" style={{ minWidth: `${frameDigits}ch` }}>
-        {frameIndex + 1}
-      </span>
-      /{frameCount}
-      {" · "}
-      <span className="inline-block text-right text-foreground" style={{ minWidth: `${timeDigits}ch` }}>
-        {Math.round(timeMs)}
-      </span>
-      /{durationMs} ms
-    </span>
-  );
 }
 
 /**
@@ -259,46 +173,6 @@ class PlaybackClock {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
-}
-
-/** Scrubber and position readout, which follow the clock on every frame. */
-function PlaybackScrubber({
-  clock,
-  frameIndex,
-  frameCount,
-  durationMs,
-  onSeek,
-}: {
-  clock: PlaybackClock;
-  frameIndex: number;
-  frameCount: number;
-  durationMs: number;
-  onSeek: (timeMs: number) => void;
-}) {
-  const timeMs = useSyncExternalStore(clock.subscribe, clock.get, clock.get);
-  return (
-    <>
-      <Slider
-        className="min-w-0 flex-1"
-        min={0}
-        max={durationMs}
-        step={1}
-        value={timeMs}
-        aria-label="Playback"
-        data-testid="sprite-animation-scrubber"
-        onValueChange={(next) => {
-          const value = sliderNumber(next);
-          if (value !== undefined) onSeek(value);
-        }}
-      />
-      <PlaybackPosition
-        frameIndex={frameIndex}
-        frameCount={frameCount}
-        timeMs={timeMs}
-        durationMs={durationMs}
-      />
-    </>
-  );
 }
 
 type PreviewView = "frame" | "sheet";
@@ -537,11 +411,12 @@ export function SpriteAnimationPreview({
       <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-panel-header px-2 py-2">
         <div className="flex min-w-0 items-center gap-3">
           <PlaybackScrubber
-            clock={clock}
-            frameIndex={selectedFrameIndex}
+            time={clock}
+            frameAt={() => selectedFrameIndex}
             frameCount={frameCount}
             durationMs={durationMs}
             onSeek={seekToTime}
+            testIdPrefix="sprite-animation"
           />
         </div>
         <div
@@ -558,6 +433,7 @@ export function SpriteAnimationPreview({
               view={views[index]}
               pixels={framePixels(views[index], resolved.frames[index])}
               durationMs={entry.durationMsOverride ? entry.durationMs : undefined}
+              eventNames={(entry.events ?? []).map((event) => event.name || "Event")}
               selected={index === selectedFrameIndex}
               onSelect={() => seekToFrame(index)}
             />
@@ -574,6 +450,7 @@ function SpriteAnimationFrameThumb({
   view,
   pixels,
   durationMs,
+  eventNames = [],
   selected,
   onSelect,
 }: {
@@ -582,6 +459,8 @@ function SpriteAnimationFrameThumb({
   view: SpriteAnimationFrameView | undefined;
   pixels: { width: number; height: number } | null;
   durationMs?: number;
+  /** The frame's Animation Events, marked on the thumb. */
+  eventNames?: readonly string[];
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -617,6 +496,14 @@ function SpriteAnimationFrameThumb({
         <span className="absolute right-0.5 top-0.5 rounded-sm bg-background/85 px-1 text-[10px] leading-tight tabular-nums text-muted-foreground">
           {durationMs}
         </span>
+      ) : null}
+      {eventNames.length > 0 ? (
+        // The frame fires Animation Events as it starts: a marker naming them.
+        <span
+          className="absolute bottom-0.5 right-0.5 size-2 rotate-45 rounded-[1px] bg-primary ring-1 ring-background"
+          title={eventNames.join(", ")}
+          data-testid={`sprite-animation-frame-${index}-events`}
+        />
       ) : null}
     </Button>
   );
@@ -976,6 +863,18 @@ export function SpriteAnimationDetails({
           </Button>
         </div>
       ) : null}
+      <AnimationEventsEditor
+        events={animation.frames[selectedFrameIndex]?.events ?? []}
+        timed={false}
+        bones={false}
+        mergeKeyPrefix={`sprite-animation:frame:${selectedFrameIndex}:event`}
+        onChange={(events, mergeKey) => {
+          const frameEvents = events.map(({ id, name, triggerWeight, action }) => ({ id, name, triggerWeight, action }));
+          if (frameEvents.length > 0) patchFrame({ events: frameEvents }, mergeKey ? mergeKey.replace(/^sprite-animation:frame:\d+:/, "") : undefined);
+          else patchFrame({}, undefined, ["events"]);
+        }}
+        data-testid="sprite-animation-frame-events"
+      />
       <AssetPicker
         open={pickerTarget !== null}
         onOpenChange={(open) => {

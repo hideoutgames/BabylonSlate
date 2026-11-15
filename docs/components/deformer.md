@@ -34,7 +34,7 @@ Tap anywhere else in the viewport to give the gizmo back to the actor. Handles s
 - The deformation is applied after skeletal animation and any Material vertex offsets.
 - It is visual only. Collision and picking keep the original shape.
 - If several Deformers target the same Mesh, only the first enabled one applies.
-- Vertices outside the cage keep their positions. Turn off Fit To Mesh and widen the bounds if the mesh animates beyond its rest size.
+- Vertices outside the cage keep their positions. A vertex on the cage's surface, as Fit To Mesh places the mesh's outermost ones, always deforms with the cage. Turn off Fit To Mesh and widen the bounds if the mesh animates beyond its rest size.
 - Scripts can change the cage with the component's **Set Control Point Offset** and **Reset Control Points** functions.
 
 ## Related

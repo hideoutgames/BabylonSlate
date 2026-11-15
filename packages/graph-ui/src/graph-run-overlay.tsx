@@ -182,7 +182,7 @@ export function GraphRunOverlay({
       role="tooltip"
       data-testid={pin ? "graph-pin-value-tip" : "graph-node-status-tip"}
       data-pin-id={pin?.pinId}
-      className="pointer-events-none fixed z-50 w-fit max-w-xs rounded-md bg-foreground px-3 py-1.5 text-xs break-words whitespace-pre-wrap text-background shadow-md"
+      className="pointer-events-none fixed z-50 w-fit max-w-xs rounded-[4px] border border-border bg-popover px-2 py-1 text-xs leading-snug break-words whitespace-pre-wrap text-popover-foreground shadow-md"
       style={{
         left: tip.x,
         top: above ? tip.top - 6 : tip.bottom + 6,

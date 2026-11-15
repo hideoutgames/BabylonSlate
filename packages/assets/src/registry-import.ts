@@ -4,6 +4,7 @@ import { DOCUMENT_CHUNK_ID } from "./asset-document";
 import { stableStringify } from "./bytes";
 import type { ContentRoot } from "./content-root";
 import { mergeFontAttachPayload } from "./font-payload";
+import { normalizeSkeletonPayload } from "./skeleton-payload";
 import { decodeHasset, encodeHasset, readHassetHeader, type ChunkInput } from "./hasset";
 import { remapImportResultGuids, type ImportOptions, type ImportResult } from "./importers";
 import { joinRelative, joinRootPath, parentPath, sanitizeFileName } from "./registry-paths";
@@ -101,6 +102,7 @@ export async function importFile(
     fileName,
     existingGuids: new Set(host.byGuid.keys()),
     fontGuidsByName: fontGuidsByName(host, rootId, folderRelative),
+    skeletons: importSkeletons(host, rootId),
     modelImportScale: extras?.modelImportScale,
     sidecars: extras?.sidecars,
     attachToGuid: extras?.attachToGuid,
@@ -191,7 +193,15 @@ function fontGuidsByName(host: RegistryHost, rootId: string, folderRelative: str
   return map;
 }
 
-/** Attach a representation chunk (facetype / msdf) to an existing Font asset. */
+/** The Skeletons an imported rig may join: those in the import's own root, by name then guid so a tie is stable. */
+function importSkeletons(host: RegistryHost, rootId: string): NonNullable<ImportOptions["skeletons"]> {
+  return [...host.byGuid.values()]
+    .filter((asset) => !asset.placeholder && asset.header.type === "Skeleton" && asset.rootId === rootId)
+    .map((asset) => ({ guid: asset.header.guid, name: asset.header.name, payload: normalizeSkeletonPayload(asset.header.payload) }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.guid.localeCompare(b.guid));
+}
+
+/** Attach a representation chunk to an existing asset: a Font's facetype or msdf, or the bones a rig adds to its Skeleton. */
 async function attachToExistingAsset(host: RegistryHost, guid: string, result: ImportResult): Promise<void> {
   return host.withAssetWrite(guid, () => attachToExistingAssetUnlocked(host, guid, result));
 }

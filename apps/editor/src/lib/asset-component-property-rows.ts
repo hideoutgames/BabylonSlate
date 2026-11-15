@@ -1,8 +1,10 @@
 import { PARTICLE_RETRIGGER_LABELS, PARTICLE_RETRIGGER_MODES, parseParticleRetrigger, type SerializedComponent } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
+import { normalizeModelPayload } from "@haptic/assets";
 import {
   asNumber,
   assetRow,
+  componentPropertyGuid,
   genericRows,
   rowId,
   sortingLayerRow,
@@ -70,23 +72,44 @@ export function tilemapPropertyRows(
   ];
 }
 
+/** Why a 3D Animation Graph cannot play on the actor: its Skeleton is not the one the actor's Model is on. */
+function animationGraphSkeletonStatus(
+  actorId: string,
+  graphGuid: string | null,
+  context: ComponentPropertyContext,
+): string | undefined {
+  if (!graphGuid || context.assetType?.(graphGuid) !== "AnimationGraph3D") return undefined;
+  const graph = context.assetPayload?.(graphGuid);
+  if (!graph) return undefined;
+  const graphSkeleton = typeof graph.skeletonGuid === "string" && graph.skeletonGuid ? graph.skeletonGuid : null;
+  const modelGuid = (context.actorComponents?.(actorId) ?? [])
+    .flatMap((entry) => entry.classId === "MeshComponent" ? [componentPropertyGuid(entry, "assetGuid")] : [])
+    .find((guid): guid is string => Boolean(guid) && context.assetType?.(guid) === "Model");
+  if (!modelGuid) return undefined;
+  const modelSkeleton = normalizeModelPayload(context.assetPayload?.(modelGuid) ?? {}).skeletonGuid;
+  if (modelSkeleton === graphSkeleton) return undefined;
+  return "The graph's Skeleton differs from the actor's Model's, so its Animations will not play.";
+}
+
 export function animationGraphPropertyRows(
   actorId: string,
   component: SerializedComponent,
   update: ComponentPropertyUpdate,
   context: ComponentPropertyContext,
 ): PropertyRow[] {
+  const graphRow = assetRow(
+    actorId,
+    component,
+    "graphGuid",
+    "Animation Graph",
+    ["AnimationGraph3D", "AnimationGraph2D"],
+    update,
+    context,
+    "Pick Animation Graph",
+  );
+  const status = animationGraphSkeletonStatus(actorId, componentPropertyGuid(component, "graphGuid"), context);
   return [
-    assetRow(
-      actorId,
-      component,
-      "graphGuid",
-      "Animation Graph",
-      ["AnimationGraph"],
-      update,
-      context,
-      "Pick Animation Graph",
-    ),
+    status ? { ...graphRow, status } : graphRow,
     ...genericRows(actorId, component, update, new Set(["graphGuid"])),
   ];
 }

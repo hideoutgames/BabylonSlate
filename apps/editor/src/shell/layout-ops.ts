@@ -1,3 +1,4 @@
+import { isAnimGraphDocumentKind } from "@haptic/core";
 import type { EngineSettings } from "@haptic/vfs";
 import {
   isDockviewDocumentKind,
@@ -30,10 +31,7 @@ export function canFocusLayout(kind: string | undefined): boolean {
   return isDockviewDocumentKind(kind);
 }
 
-/**
- * Engine Settings keep-list for a document kind.
- * Animation Object uses `animGraphObject`; State Machine uses `anim-graph`.
- */
+/** Engine Settings keep-list for a document kind. */
 export function focusKeepPanelIds(
   settings: Pick<EngineSettings, "focusKeepPanels">,
   kind: FocusDocumentKind,
@@ -46,9 +44,8 @@ export function focusKeepPanelIds(
   if (kind === "scene-layer" && options?.sceneMode === "script") return panels.sceneLayerScript;
   if (kind === "scene" && options?.sceneMode === "timeline") return panels.sceneTimeline;
   if (kind === "scene-layer" && options?.sceneMode === "timeline") return panels.sceneLayerTimeline;
-  if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
-    return panels.animGraphObject;
-  }
+  // 3D and 2D Animation Graphs share one keep-list.
+  if (isAnimGraphDocumentKind(kind)) return panels["anim-graph"];
   const configured: Partial<Record<FocusDocumentKind, readonly string[]>> = panels;
   return configured[kind];
 }

@@ -11,6 +11,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { isUnlitMaterial } from "./unlit-material";
 import {
   attachSkeletonPreview,
+  bindAnimationGroupByName,
   createLinkedSkeletonFromNodeRig,
   ensureNodeRotationQuaternion,
   retargetAnimationGroupWithMeshProxy,
@@ -228,6 +229,20 @@ describe("node-rig helpers", () => {
     handle.dispose();
   });
 
+  it("draws an animation library's nodes for a skin Skeleton, since it has nothing else to draw", () => {
+    const { engine, scene } = makeScene();
+    engines.push(engine);
+    const root = new TransformNode("library", scene);
+    const hips = new TransformNode("hips", scene);
+    hips.parent = root;
+    const spine = new TransformNode("spine", scene);
+    spine.parent = hips;
+    spine.position.y = 0.3;
+    const handle = attachSkeletonPreview(root, scene, "skin");
+    expect(handle.boneCount).toBe(3);
+    handle.dispose();
+  });
+
   it("follows glTF-linked joints independently of the hidden skin mesh transform", () => {
     const { engine, scene } = makeScene();
     engines.push(engine);
@@ -309,5 +324,41 @@ describe("node-rig helpers", () => {
     createLinkedSkeletonFromNodeRig(target.root, { createMesh: true });
     const group = rotationClip(scene, source, "spin");
     expect(retargetAnimationGroupWithMeshProxy(group, target.root)).toBeNull();
+  });
+});
+
+describe("bindAnimationGroupByName", () => {
+  it("drives the same-named nodes of another Model with the clip's own keys and range, dropping unmatched channels", () => {
+    const { engine, scene } = makeScene();
+    try {
+      const sourceRoot = new TransformNode("library", scene);
+      const sourceHips = new TransformNode("hips", scene);
+      sourceHips.parent = sourceRoot;
+      const sourceTail = new TransformNode("tail", scene);
+      sourceTail.parent = sourceHips;
+      const source = new AnimationGroup("Walk", scene);
+      const hipsKeys = new Animation("hips-pos", "position", 30, Animation.ANIMATIONTYPE_VECTOR3);
+      hipsKeys.setKeys([{ frame: 0, value: new Vector3(0, 1, 0) }, { frame: 30, value: new Vector3(0, 1.2, 0) }]);
+      const tailKeys = new Animation("tail-pos", "position", 30, Animation.ANIMATIONTYPE_VECTOR3);
+      tailKeys.setKeys([{ frame: 0, value: Vector3.Zero() }, { frame: 30, value: Vector3.One() }]);
+      source.addTargetedAnimation(hipsKeys, sourceHips);
+      source.addTargetedAnimation(tailKeys, sourceTail);
+      source.from = 5;
+      source.to = 25;
+
+      const knight = new TransformNode("knight", scene);
+      const hips = new TransformNode("hips", scene);
+      hips.parent = knight;
+      const bound = bindAnimationGroupByName(source, knight)!;
+      expect(bound.targetedAnimations.map(({ target }) => target)).toEqual([hips]);
+      expect(bound.targetedAnimations[0]!.animation).toBe(hipsKeys);
+      expect([bound.from, bound.to]).toEqual([5, 25]);
+
+      const empty = new TransformNode("crate", scene);
+      expect(bindAnimationGroupByName(source, empty)).toBeNull();
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
   });
 });

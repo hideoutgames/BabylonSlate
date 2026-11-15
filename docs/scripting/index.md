@@ -21,7 +21,7 @@ The pages in this section cover Class graphs.
 - **Reference pins** (small diamonds) take a variable rather than a value, and the node can change that variable. See [Reference pins](pin-types.md#reference-pins).
 - **Pure nodes** have no execution pins, such as [Add](class/add.md) or [Get Actor Location](class/get-actor-location.md). They produce a value when a connected node needs it: once for each execution node that runs, however many wires leave the pure node, and again for the next execution node. A [Random Float](class/random-float.md) wired to two inputs of one node is one number; to keep a value across several execution nodes, store it in a variable.
 - **Latent nodes**, such as [Delay](class/delay.md), finish later without pausing the rest of the game. They show a clock icon.
-- **Tooltips:** hover a node's title to see what it does, or a pin name with a dotted underline to see what the pin is for. On touch, tap it. Class graphs and Particle Graphs show them where the node or pin has a description.
+- **Tooltips:** hover a node's title for a second to see what it does, or a pin name with a dotted underline to see what the pin is for. On touch, tap it. Class graphs and Particle Graphs show them where the node or pin has a description.
 
 ## Add a node
 
@@ -37,7 +37,7 @@ In Class, Material and Particle graphs, Add Node learns from the nodes you add f
 
 ## Connect pins
 
-- Drag from one pin to another. With **Tap To Connect Pins** on in **Engine Settings > Accessibility**, you can also tap a pin and then a pin on the other side, starting from either one. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead.
+- Drag from one pin to another. With **Tap To Connect Pins** on in **Engine Settings > Accessibility**, you can also tap a pin and then a pin on the other side, starting from either one. Tap the first pin again to cancel, or tap another pin on the same side to choose it instead. Tapping anything else, dragging a node, opening a menu or pressing Esc also cancels it; you can still pan and zoom to reach the other pin.
 - A data input takes one wire. Connecting a new wire replaces the old one.
 - An execution output drives one wire; an execution input accepts several. Connecting a second wire from an execution output replaces the first and shows **Replaced the existing wire. Use a Sequence to run several.** To run several nodes in order, wire the output to a [Sequence](class/sequence.md).
 - While you drag a wire over a pin it cannot connect to, a label gives the reason, such as **Float does not connect to Vector3**.

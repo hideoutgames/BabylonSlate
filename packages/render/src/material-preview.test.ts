@@ -529,6 +529,39 @@ describe("material preview orbit gestures", () => {
     expect(host.camera.target.equals(targetBefore)).toBe(true);
   });
 
+  it("orbits a new one-finger drag after a finger whose up never came, instead of zooming against it", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const handle = attachMaterialPreviewGestures(canvas as unknown as HTMLCanvasElement, host.camera);
+    disposers.push(() => handle.dispose());
+    // A finger goes down and lifts, but its up never reaches the canvas.
+    canvas.emit("pointerdown", { ...pointer(1, 40, 40), isPrimary: true });
+    const alphaBefore = host.camera.alpha;
+    const radiusBefore = host.camera.radius;
+    // The next touch is a new gesture's primary pointer: one finger orbits.
+    canvas.emit("pointerdown", { ...pointer(2, 160, 90), isPrimary: true });
+    canvas.emit("pointermove", { ...pointer(2, 220, 110), isPrimary: true });
+    expect(host.camera.alpha).not.toBeCloseTo(alphaBefore, 5);
+    expect(host.camera.radius).toBeCloseTo(radiusBefore, 9);
+  });
+
+  it("goes back to orbiting when a pinching finger's capture is lost", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const handle = attachMaterialPreviewGestures(canvas as unknown as HTMLCanvasElement, host.camera);
+    disposers.push(() => handle.dispose());
+    canvas.emit("pointerdown", { ...pointer(1, 100, 90), isPrimary: true });
+    canvas.emit("pointerdown", { ...pointer(2, 220, 90), isPrimary: false });
+    canvas.emit("lostpointercapture", pointer(2, 220, 90));
+    const alphaBefore = host.camera.alpha;
+    const radiusBefore = host.camera.radius;
+    canvas.emit("pointermove", { ...pointer(1, 160, 110), isPrimary: true });
+    expect(host.camera.alpha).not.toBeCloseTo(alphaBefore, 5);
+    expect(host.camera.radius).toBeCloseTo(radiusBefore, 9);
+  });
+
   it("notifies onChange after orbit, pinch, and wheel", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());

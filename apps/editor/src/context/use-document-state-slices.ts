@@ -2,19 +2,16 @@ import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import type { DocumentRef } from "@haptic/core";
 import type { EditSession } from "@haptic/edit";
 import { documentSceneMode } from "../shell/scene-document-layout";
-import type { AnimEditorMode } from "../shell/anim-document-layout";
 import {
   dockviewApiKey,
 } from "../shell/dockview-surface";
 import type { DocumentService, OpenDocument } from "../services/document-service";
 import type { ActiveDocumentState } from "./document-context-types";
 import { DocumentSubscriptions, sameDocumentRef } from "./document-subscriptions";
-import { animEditorModeForDocument } from "./use-document-dock-layouts";
 
 export interface DocumentStateSliceDeps {
   documentService: DocumentService;
   editSessionRef: RefObject<EditSession>;
-  animEditorModes: Record<string, AnimEditorMode>;
   focusedLayoutIds: Set<string>;
 }
 
@@ -27,7 +24,6 @@ export interface DocumentStateSliceDeps {
 export function useDocumentStateSlices({
   documentService,
   editSessionRef,
-  animEditorModes,
   focusedLayoutIds,
 }: DocumentStateSliceDeps) {
   // Every service mutation is followed by a context update, so reading the
@@ -72,22 +68,18 @@ export function useDocumentStateSlices({
     activeId && documentMode
       ? dockviewApiKey(activeId, documentMode)
       : activeId;
-  const animEditorMode = activeId
-    ? animEditorModeForDocument(activeId, animEditorModes, activeDoc)
-    : "stateMachine";
   const isLayoutFocused = focusKey ? focusedLayoutIds.has(focusKey) : false;
   const canUndoActiveDocument = !authoringReadOnly && (activeStack?.canUndo ?? false);
   const canRedoActiveDocument = !authoringReadOnly && (activeStack?.canRedo ?? false);
   const activeDocumentState = useMemo<ActiveDocumentState>(
     () => ({
       activeDocumentId: activeId,
-      animEditorMode,
       sceneMode,
       isLayoutFocused,
       canUndoActiveDocument,
       canRedoActiveDocument,
     }),
-    [activeId, animEditorMode, sceneMode, isLayoutFocused, canUndoActiveDocument, canRedoActiveDocument],
+    [activeId, sceneMode, isLayoutFocused, canUndoActiveDocument, canRedoActiveDocument],
   );
 
   return {

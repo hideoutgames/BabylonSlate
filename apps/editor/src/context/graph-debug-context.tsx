@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, ANIM_OBJECT_DEBUG_GRAPH_ID, type DebugObserveTarget } from "@haptic/bridge";
+import { ANIM_OBJECT_DEBUG_GRAPH_ID, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type DebugObserveTarget } from "@haptic/bridge";
 import type { GraphRunTrace } from "@haptic/graph-ui";
 import { createBehaviourTreeRunTrace, createGraphRunTrace } from "../lib/graph-run-trace";
 import { GraphDebugStore, type GraphDebugSnapshot } from "../services/graph-debug-store";
@@ -79,12 +79,12 @@ export function useBehaviourTreeRunTrace(treeGuid: string | undefined): GraphRun
   );
 }
 
-/** An Animation Graph's State Machine canvas: the states the followed instance samples and the transitions it takes. */
-export function useAnimStateMachineRunTrace(graphGuid: string | undefined): GraphRunTrace | undefined {
+/** An Animation Graph's State Machine canvas while `shown`: the states the followed instance samples and the transitions it takes. */
+export function useAnimStateMachineRunTrace(graphGuid: string | undefined, shown: boolean): GraphRunTrace | undefined {
   return useRunTrace(
-    (target) => graphGuid !== undefined && target.kind === "animationGraph" && target.assetGuid === graphGuid,
+    (target) => graphGuid !== undefined && shown && target.kind === "animationGraph" && target.assetGuid === graphGuid,
     (store) => createGraphRunTrace(store, graphGuid!, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID),
-    [graphGuid],
+    [graphGuid, shown],
   );
 }
 

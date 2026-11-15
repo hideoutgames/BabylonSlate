@@ -586,6 +586,33 @@ describe("AssetRegistry", () => {
     expect(remounted.list({ type: "Model" }).length).toBeGreaterThanOrEqual(1);
   });
 
+  it("puts a second file with the same rig on the first file's Skeleton, and saves the bones a larger rig adds", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const rig = (joints: string[], clip: string) => new TextEncoder().encode(JSON.stringify({
+      asset: { version: "2.0" },
+      nodes: [
+        ...joints.map((name, index) => ({ name, translation: [0, 0.5, 0], ...(index + 1 < joints.length ? { children: [index + 1] } : {}) })),
+        { name: "Body", mesh: 0, skin: 0 },
+      ],
+      meshes: [{ primitives: [] }],
+      skins: [{ joints: joints.map((_, index) => index) }],
+      animations: [{ name: clip, channels: [{ target: { node: 0, path: "rotation" }, sampler: 0 }], samplers: [{ input: 0 }] }],
+      accessors: [{ max: [1] }],
+    }));
+    const knight = await registry.importFile("project", "", "knight.gltf", rig(["Hips", "Spine"], "Walk"));
+    const skeleton = knight.find((asset) => asset.header.type === "Skeleton")!;
+    const rogue = await registry.importFile("project", "", "rogue.gltf", rig(["Hips", "Spine", "Head"], "Run"));
+    expect(rogue.some((asset) => asset.header.type === "Skeleton")).toBe(false);
+    expect(rogue.find((asset) => asset.header.type === "Model")!.header.payload.skeletonGuid).toBe(skeleton.header.guid);
+    expect(rogue.find((asset) => asset.header.type === "Animation")!.header.payload.skeletonGuid).toBe(skeleton.header.guid);
+    const updated = registry.getByGuid(skeleton.header.guid)!;
+    expect((updated.header.payload.bones as Array<{ name: string }>).map((bone) => bone.name)).toEqual(["Hips", "Spine", "Head"]);
+    expect(registry.list({ type: "Skeleton" })).toHaveLength(1);
+  });
+
   it("removes a file's assets already written when its import is cancelled partway", async () => {
     const storage = await createStorage();
     await storage.mkdir("assets", true);

@@ -365,6 +365,10 @@ function zoomPreviewCamera(camera: ArcRotateCamera, factor: number): void {
  *
  * Do not use `camera.attachControl` — Babylon 8 binds that to the Engine
  * input element (the Scene / Play canvas).
+ *
+ * A finger whose up never reaches the canvas (its capture lost, or the up delivered elsewhere) would stay counted, so
+ * every later one-finger drag would read as a pinch against it and only zoom. As in the viewport, such fingers are
+ * dropped when their capture is lost or when a new gesture's primary pointer goes down.
  */
 export function attachMaterialPreviewGestures(
   canvas: HTMLCanvasElement,
@@ -396,6 +400,11 @@ export function attachMaterialPreviewGestures(
   };
 
   const onPointerDown = (event: PointerEvent) => {
+    // A primary pointer starts a new gesture: any pointer still listed lifted without an up reaching the canvas.
+    if (event.isPrimary === true && pointers.size > 0) {
+      for (const [pointerId, stale] of pointers) options?.onPointer?.("up", stale.x, stale.y, pointerId);
+      pointers.clear();
+    }
     const point = toCanvas(event);
     options?.onPointer?.("down", point.x, point.y, event.pointerId);
     pointers.set(event.pointerId, point);
@@ -486,6 +495,11 @@ export function attachMaterialPreviewGestures(
     endPointer(event);
   };
 
+  // A pointer whose capture is lost gets no up here; one that did end is already gone.
+  const onLostCapture = (event: PointerEvent) => {
+    if (pointers.has(event.pointerId)) cancelPointer(event);
+  };
+
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
     zoomPreviewCamera(camera, event.deltaY < 0 ? 1.1 : 1 / 1.1);
@@ -500,6 +514,7 @@ export function attachMaterialPreviewGestures(
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", cancelPointer);
+  canvas.addEventListener("lostpointercapture", onLostCapture);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("touchstart", onTouch, { passive: false });
   canvas.addEventListener("touchmove", onTouch, { passive: false });
@@ -510,6 +525,7 @@ export function attachMaterialPreviewGestures(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", endPointer);
       canvas.removeEventListener("pointercancel", cancelPointer);
+      canvas.removeEventListener("lostpointercapture", onLostCapture);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("touchstart", onTouch);
       canvas.removeEventListener("touchmove", onTouch);

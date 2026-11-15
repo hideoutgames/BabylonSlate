@@ -2,9 +2,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ASSET_DOCUMENT_KINDS,
-  DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
+  SOURCE_CONTROL_ID,
   PROJECT_FILE,
   createActor,
   documentId,
@@ -22,7 +22,7 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
 } from "@haptic/vfs";
-import { MemorySecretStore } from "../../../../packages/vfs/src/test-support/memory-secret-store";
+import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import { FakeLockProvider } from "@haptic/source-control";
 import { createFakeWebLocks } from "../../../../packages/vfs/src/test-support/fake-web-locks";
 import { appendJournalLines, readJournalLines, sealJournalForRecovery } from "@haptic/assets";
@@ -646,16 +646,24 @@ describe("DocumentProvider actions and route", () => {
     const classBytes = await storage.readBinary(asset.path);
     const fake = new FakeLockProvider();
     fake.addTheirs(MAIN_SCENE_FILE, "Teammate");
+    const hosts = await signedInHosts();
     await act(() => documents().sourceControl.configure({
-      settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, enabled: true }, projectGuid: documents().projectGuid,
-      platform: "electron", testMode: true, secretStore: new MemorySecretStore(), nativeHttp: null, fake,
+      settings: MANUAL_SOURCE_CONTROL, projectKey: documents().projectGuid,
+      platform: "electron", testMode: true, hosts, fake,
     }));
+    // Source control sync pins the Source Control tab last while the mode is not Off.
+    expect(documents().tabOrder.at(-1)).toBe(SOURCE_CONTROL_ID);
     await act(() => documents().sourceControl.refresh());
     await act(async () => { await expect(actions.renameAsset(asset.header.guid, "Champion")).rejects.toThrow("Locked by Teammate"); });
     expect(await storage.readBinary(MAIN_SCENE_FILE)).toEqual(sceneBytes);
     expect(await storage.readBinary(asset.path)).toEqual(classBytes);
     expect(await storage.exists("assets/Champion.class.hasset")).toBe(false);
     expect(documents().assetRegistry!.getByGuid(asset.header.guid)?.path).toBe(asset.path);
+    await act(() => documents().sourceControl.configure({
+      settings: { ...MANUAL_SOURCE_CONTROL, mode: "off" }, projectKey: documents().projectGuid,
+      platform: "electron", testMode: true, hosts, fake,
+    }));
+    expect(documents().tabOrder).not.toContain(SOURCE_CONTROL_ID);
   });
 
   it("finishes an admitted Save All including its bake writes before a file lock and defers later saves", async () => {
@@ -1081,22 +1089,20 @@ describe("DocumentProvider actions and route", () => {
         registry: documents().assetRegistry!,
         rootId: "project",
         folderRelative: "",
-        type: "AnimationGraph",
+        type: "AnimationGraph3D",
         name: "Locomotion",
       }),
     );
     act(() => actions.noteAssetsCreated());
     await act(() =>
       actions.openDocument({
-        kind: "anim-graph",
+        kind: "anim-graph-3d",
         path: animation.path,
         label: "Locomotion",
       }),
     );
-    const animationId = documentId({ kind: "anim-graph", path: animation.path });
-    act(() => actions.setAnimEditorMode(animationId, "animationObject"));
+    const animationId = documentId({ kind: "anim-graph-3d", path: animation.path });
     expect(documents().activeDocumentId).toBe(animationId);
-    expect(documents().animEditorMode).toBe("animationObject");
 
     // A Project Settings edit.
     act(() => actions.updateProjectSettings({ compileOnSave: false }));
@@ -1336,11 +1342,11 @@ describe("DocumentProvider actions and route", () => {
   it("keeps the last tab asked for active when an earlier open finishes later", async () => {
     const actions = await openProject();
     const animation = await act(() => createProjectAsset({
-      registry: documents().assetRegistry!, rootId: "project", folderRelative: "", type: "AnimationGraph", name: "Locomotion",
+      registry: documents().assetRegistry!, rootId: "project", folderRelative: "", type: "AnimationGraph3D", name: "Locomotion",
     }));
     act(() => actions.noteAssetsCreated());
     const classRef = { kind: "graph" as const, path: MAIN_CLASS_FILE, label: "Main" };
-    const animationRef = { kind: "anim-graph" as const, path: animation.path, label: "Locomotion" };
+    const animationRef = { kind: "anim-graph-3d" as const, path: animation.path, label: "Locomotion" };
     let finishRead!: () => void;
     const heldRead = new Promise<void>((resolve) => { finishRead = resolve; });
     const realLoad = ProjectService.prototype.loadDocument;

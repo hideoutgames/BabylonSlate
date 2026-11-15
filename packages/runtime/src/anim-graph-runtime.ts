@@ -2,25 +2,29 @@ import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/
 import type { TraceAnimGraphState } from "@haptic/debugger";
 import { Actor, ActorComponent, type EngineObject, type World } from "@haptic/object-model";
 import {
+  animEvalWithJump,
   animGraphScriptClassId,
+  animPoseScriptClassId,
   animRuleScriptClassId,
   animTransitionEdgeId,
-  clipForState,
   defaultAnimVariableValue,
   evaluateAnimGraph,
   type AnimEvalState,
+  type AnimFiredEvent,
   type AnimGraphDocument,
   type AnimTransition,
 } from "@haptic/anim-graph";
+import { ANIM_NOTIFY_EVENT } from "@haptic/scripting";
 import { animGraphGuidOf } from "./component-assets";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptBreakpoints } from "./script-breakpoints";
-import type { ScriptDebugTrace } from "./script-debug";
+import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
+import type { SpriteClipState } from "./sprite-clip-trace";
 import type { AnimGraphControl, ScriptHost } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 
-type SpriteClip = { assetGuid: string; clipName: string; normalisedTime: number; stateId?: string };
-/** Stops on a state or transition when it has a breakpoint. */
+type SpriteClip = SpriteClipState;
+/** Stops on the State Machine's state or transition when it has a breakpoint. */
 type StateMachineHit = (id: string, event: "entered" | "taken") => void;
 
 interface AnimGraphRuntimeHost {
@@ -33,11 +37,17 @@ interface AnimGraphRuntimeHost {
   hasRenderSlot(actor: Actor): boolean;
   /** A Behaviour Tree Play Animation task owns this slot's animation state. */
   playAnimationOwns(slotId: number): boolean;
-  scripts(): Pick<ScriptHost, "invokeAnimEvent" | "invokeAnimRule">;
+  scripts(): Pick<ScriptHost, "invokeAnimEvent" | "invokeAnimRule" | "invokeAnimPose">;
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
-  /** The session's node breakpoints, State Machines' included. */
+  /** The session's node breakpoints, the State Machine's included. */
   breakpoints(): ScriptBreakpoints;
+  /** Where a component the debugger does not follow records, while breakpoints are set, should one stop it. */
+  frameTrace(object: EngineObject): ScriptDebugTrace | null;
   emit(command: CommandMessage): void;
+  /** An Animation Event's Play Sound: the sound from the actor. */
+  playEventSound(actor: Actor, assetGuid: string, volume: number): void;
+  /** An Animation Event's Spawn Particle System: on the actor, at `bone` when it names one. */
+  spawnEventParticles(actor: Actor, assetGuid: string, bone: string): void;
 }
 
 /** AnimationGraph documents and per-component evaluation state for Play. */
@@ -147,14 +157,15 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         const evalState = guid && this.graphByComponent.get(evalKey) === guid
           ? this.evalByComponent.get(evalKey)
           : undefined;
-        const stateId = evalState?.stateId ?? document?.entryStateId;
-        if (!stateId || !document) return null;
-        const state = document.states.find((row) => row.id === stateId);
+        const machine = document?.stateMachine;
+        const stateId = evalState?.stateId ?? machine?.entryStateId;
+        if (!stateId || !machine) return null;
+        const state = machine.states.find((row) => row.id === stateId);
         return { id: stateId, name: state?.name ?? stateId };
       },
       jumpToState: (state) => {
         if (!document || !hasSlot) return;
-        const match = document.states.find(
+        const match = document.stateMachine.states.find(
           (row) => row.id === state || row.name === state,
         );
         if (!match || !guid) return;
@@ -203,46 +214,73 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   }
 
   /**
-   * What the followed component's State Machine did this tick: every state it sampled (the active
-   * one, and the one a blend is leaving) and, when the active state changed, the transition taken.
-   * A Jump To State replaces the previous evaluation, so it is no transition.
+   * What the followed component's State Machine did this tick, under its debug graph: every state it sampled (the
+   * active one, and the one a blend is leaving, whether or not they play a clip) and, when the active state changed,
+   * the transition taken. A Jump To State replaces the previous evaluation, so it is no transition.
    */
   private reportStateMachine(
-    graphGuid: string,
+    recorder: ScriptGraphRecorder | null | undefined,
     document: AnimGraphDocument,
     previous: AnimEvalState | null,
     next: AnimEvalState,
   ): void {
-    const recorder = this.debugSink?.graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
     if (!recorder) return;
     recorder.exec(next.stateId);
-    for (const layer of next.layers) recorder.exec(layer.stateId);
+    for (const stateId in next.blendWeights) {
+      if (stateId !== next.stateId && next.blendWeights[stateId]! > 0) recorder.exec(stateId);
+    }
     if (previous && previous.stateId !== next.stateId) {
-      const edge = animTransitionEdgeId(document.transitions, previous.stateId, next.stateId);
+      const edge = animTransitionEdgeId(document.stateMachine.transitions, previous.stateId, next.stateId);
       if (edge !== undefined) recorder.edge(edge);
     }
   }
 
-  /** Stops on `graphGuid`'s states and transitions as `component` runs them, or null when it has no breakpoints. */
+  /** Stops on `graphGuid`'s states and transitions as `component` runs them, or null when the session has no breakpoints. */
   private stateMachineBreakpoints(graphGuid: string, component: ActorComponent, actor: Actor): StateMachineHit | null {
-    const breakpoints = this.host.breakpoints().graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
-    if (!breakpoints) return null;
+    const breakpoints = this.host.breakpoints();
+    if (breakpoints.empty) return null;
     return (id, event) => {
-      if (breakpoints.has(id)) breakpoints.hit(id, "", component, { owner: actor, event });
+      const graph = breakpoints.graph(graphGuid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID);
+      if (graph?.has(id)) graph.hit(id, "", component, { owner: actor, event });
     };
   }
 
-  /** In order: the state a new evaluation started in, then the transition it took and the state that entered. */
+  /**
+   * In order: the state a new evaluation started in, then the transition the State Machine took and the state that
+   * entered.
+   */
   private reportStateBreakpoints(
     hit: StateMachineHit,
     previous: AnimEvalState | null,
     next: AnimEvalState,
-    taken: AnimTransition | undefined,
+    taken: AnimTransition | null,
   ): void {
     if (!previous) hit(taken?.fromStateId ?? next.stateId, "entered");
     if (!taken) return;
     hit(taken.id, "taken");
     hit(taken.toStateId, "entered");
+  }
+
+  /**
+   * The Animation Events a tick fired, in order: each one's own action (Play Sound, Spawn Particle System), then its
+   * event in the graph's Animation Object, which runs the Animation Event node of that name.
+   */
+  private fireEvents(
+    events: readonly AnimFiredEvent[],
+    objectClassId: string,
+    actor: Actor,
+    dtSeconds: number,
+    extras: { variableStore: EngineObject; animFacts: AnimEvalState["facts"] },
+  ): void {
+    for (const event of events) {
+      if (event.action?.kind === "playSound") this.host.playEventSound(actor, event.action.assetGuid, event.action.volume);
+      else if (event.action?.kind === "spawnParticles") this.host.spawnEventParticles(actor, event.action.assetGuid, event.action.bone);
+      this.host.scripts().invokeAnimEvent(objectClassId, ANIM_NOTIFY_EVENT, actor, dtSeconds, extras, {
+        name: event.name,
+        phase: event.phase,
+        animation: event.clipAssetGuid,
+      });
+    }
   }
 
   private tickActor(actor: Actor, dtSeconds: number): void {
@@ -270,34 +308,10 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       const jumpTo = this.pendingJumpByComponent.get(evalKey);
       if (jumpTo) {
         this.pendingJumpByComponent.delete(evalKey);
-        const jumped = document.states.find((state) => state.id === jumpTo);
+        const jumped = animEvalWithJump(document, this.evalByComponent.get(evalKey) ?? null, jumpTo);
         if (jumped) {
-          this.evalByComponent.set(evalKey, {
-            stateId: jumped.id,
-            normalisedTime: 0,
-            blendWeights: { [jumped.id]: 1 },
-            timeMs: 0,
-            facts: {
-              elapsedSeconds: 0,
-              durationSeconds: 0,
-              normalisedTime: 0,
-              remainingSeconds: 0,
-              remainingRatio: 1,
-              looping: jumped.loop,
-              loopCount: 0,
-              justLooped: false,
-              justFinished: false,
-              totalNormalisedTime: 0,
-              previousTotalNormalisedTime: 0,
-            },
-            layers: [],
-            blendFromStateId: null,
-            blendFromTimeMs: 0,
-            blendElapsedMs: 0,
-            blendSeconds: 0,
-            loopCount: 0,
-          });
-          hit?.(jumped.id, "entered");
+          this.evalByComponent.set(evalKey, jumped);
+          hit?.(jumpTo, "entered");
         }
       }
       const extras = {
@@ -323,7 +337,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         extras,
       );
       const previous = this.evalByComponent.get(evalKey) ?? null;
-      let taken: AnimTransition | undefined;
+      let taken: AnimTransition | null = null;
       const next = evaluateAnimGraph(
         document,
         previous,
@@ -336,18 +350,34 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
               { variableStore: component, animFacts: facts },
             ),
           transitionTaken: hit ? (transition) => { taken = transition; } : undefined,
+          // Each state graph's wired data inputs, with its state's facts.
+          poseData: (graphKey, facts) =>
+            this.host.scripts().invokeAnimPose(
+              animPoseScriptClassId(guid, graphKey),
+              actor,
+              { variableStore: component, ...(facts ? { animFacts: facts } : {}) },
+            ),
         },
       );
       this.evalByComponent.set(evalKey, next);
+      if (next.events) this.fireEvents(next.events, objectClassId, actor, dtSeconds, { variableStore: component, animFacts: next.facts });
       if (hit) this.reportStateBreakpoints(hit, previous, next, taken);
-      if (component === this.debugComponent) this.reportStateMachine(guid, document, previous, next);
-      const clip = clipForState(document, next.stateId);
-      if (clip?.kind === "sprite" && clip.assetGuid) {
+      // The followed component reports to the debugger; another, while breakpoints are set, for the frame a stop shows.
+      const sink = component === this.debugComponent ? this.debugSink : this.host.frameTrace(component);
+      if (sink) this.reportStateMachine(sink.graph(guid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID), document, previous, next);
+      // The frame a 2D graph shows most: its heaviest Sprite Animation layer.
+      let sprite: (typeof next.layers)[number] | undefined;
+      for (const layer of next.layers) {
+        if (layer.clipKind === "sprite" && (!sprite || layer.weight > sprite.weight)) sprite = layer;
+      }
+      if (sprite) {
         this.host.setSpriteClip(actor, {
-          assetGuid: clip.assetGuid,
-          clipName: clip.clipName,
-          normalisedTime: next.normalisedTime,
-          stateId: next.stateId,
+          assetGuid: sprite.clipAssetGuid,
+          clipName: sprite.clipName,
+          normalisedTime: sprite.normalisedTime,
+          stateId: sprite.stateId,
+          ...(sprite.flipX ? { flipX: true } : {}),
+          ...(sprite.flipY ? { flipY: true } : {}),
         });
       } else {
         this.host.setSpriteClip(actor, null);
@@ -361,9 +391,9 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         stateId: next.stateId,
         normalisedTime: next.normalisedTime,
         blendWeights: next.blendWeights,
-        clipName: currentLayer?.clipName || clip?.clipName,
-        clipKind: currentLayer?.clipKind ?? clip?.kind,
-        clipAssetGuid: currentLayer?.clipAssetGuid || clip?.assetGuid,
+        clipName: currentLayer?.clipName,
+        clipKind: currentLayer?.clipKind,
+        clipAssetGuid: currentLayer?.clipAssetGuid,
         justFinished: next.facts.justFinished,
         justLooped: next.facts.justLooped,
         layers: next.layers,

@@ -85,7 +85,7 @@ describe("importers", () => {
     expect(types).toContain("Animation");
     const model = results.find((result) => result.type === "Model")!;
     expect(model.dependencies.length).toBeGreaterThan(0);
-    expect(model.payload.clipNames).toEqual(["Walk"]);
+    expect(results.find((result) => result.type === "Animation")!.payload).toMatchObject({ clipName: "Walk" });
     expect(model.payload.importScale).toBe(1);
     // Extracted images record their source size like image imports (the fixture's PNG is 1x1).
     expect(results.find((result) => result.type === "Texture")!.payload).toMatchObject({ width: 1, height: 1 });

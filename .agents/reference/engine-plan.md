@@ -22,7 +22,7 @@ A touch-first Babylon.js game engine and editor whose baseline is an 11-inch A16
 - Homepage and project browser, per-document undo, touch + gamepad + keyboard/mouse input.
 - 3D and 2D as flagship modes sharing one scene graph and a viewport toggle; tilemaps and a dedicated 2D physics backend.
 - Behaviour trees authored in React Flow over a Recast navmesh shared by 2D and 3D.
-- Git LFS file locking for collaboration (sync stays in an external git client); web-only game export.
+- Git LFS file locking for collaboration, then built-in Git sync ([Source control](#source-control)); web-only game export.
 - Built and maintained by parallel autonomous agents: narrow package boundaries, deterministic tests, goldens, automated review.
 
 Shipped systems beyond the core (do not rebuild): Save Games (typed definitions, separate preview/player storage), `MovementComponent`, Scene streaming (`SceneStreamingActor`), SceneLayers (2D overlay documents), Game/Scene Subsystems, Design / Landscape / Foliage scene modes, Water, Render Targets, lattice `DeformerComponent`, automatic Model LOD, Data Definitions / Data Trees, Tags, Editor Extensions, PBR or native CEL project rendering.
@@ -35,7 +35,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 - One parent world Scene and one physics world at a time. Streaming adds owned instances beneath it; SceneLayers are a separate overlay stack.
 - No live property editing of authored content while playing (stop, edit, play). Simulate edits runtime objects only; authored documents stay read-only until it stops.
 - No asset marketplace or remote asset fetching.
-- The engine is not a git client: Git LFS locking only.
+- The engine is not a Git client yet: Git LFS locking only (Manual mode). Built-in Git is planned and deferred: [source-control-plan.md](source-control-plan.md).
 - Undo does not cover asset file creation or deletion; those are confirmed instead.
 - No game HUD / UserInterface / widget system (removed; see Asset type catalog).
 
@@ -212,7 +212,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 | World | Scene (one Scene tab at a time), SceneLayer (2D overlay), Prefab (placeable components without logic) |
 | Scripting | Class, Enum, Structure, ScriptInterface, SaveGame |
 | Data and input | DataDefinition, DataTree, FloatCurve, VectorCurve, ColorCurve, InputAction, InputAxis |
-| 2D and animation | Sprite, SpriteAnimation, Tileset, Tilemap, AnimationGraph |
+| 2D and animation | Sprite, SpriteAnimation, Tileset, Tilemap, AnimationGraph3D, AnimationGraph2D, BlendSpace, SpriteBlendSpace |
 | Rendering | Material (the shader graph; there is no separate Shader type), MaterialFunction, MaterialInstance, RenderTarget, RenderTargetTexture, Water, ParticleEmitter, ParticleGraph, ParticleSystem, SkyboxCreator (editor-only helper) |
 | Audio | AudioMixer, AudioChannel, SoundAttenuation |
 | AI | BehaviourTree, Blackboard |
@@ -262,7 +262,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Every asset editor is a per-document DockView layout registered in [window-catalog.ts](../../apps/editor/src/shell/window-catalog.ts) so **Windows** can toggle panels and Focus can collapse to a keep-list ([dockview-editor-tabs.md](../rules/dockview-editor-tabs.md)). The pinned Content Browser is not a DockView document.
 - Phone-sized windows show one dock window at a time without overwriting the saved tablet layout.
 - **Engine Settings** are global to the install, stored outside projects through the `vfs` app-settings port (undo limits, viewport frame cap, budgets, debugger defaults, Focus keep-lists, graph defaults); they persist immediately.
-- **Project Settings** live in `project.json` and save with Save All (startup scene, GameInstance, rendering incl. frame cap and game render size, texture policy, physics, plugins, extensions, source control repo/branch, export presets, compile-on-save, autosave interval). The source-control token lives in the platform secret store, never in the file.
+- **Project Settings** live in `project.json` and save with Save All (startup scene, GameInstance, rendering incl. frame cap and game render size, texture policy, physics, plugins, extensions, source control mode/repo/branch, export presets, compile-on-save, autosave interval). Source control credentials are per device and host in the platform secret store, never in the file.
 - Rule: if a setting should change the exported game, it belongs in Project Settings; if it only changes how the editor feels on this machine, it belongs in Engine Settings. The two are separate modals, never nested.
 - Undo is **per document**, never global. `edit` command objects have `apply`, `invert` and a merge key; no surface mutates a document model directly. Continuous gestures coalesce into one entry; completed edits stay separate. Entry limit (default 50) and byte budget (default 16 MB) both apply.
 - Undo boundary = asset-file boundary: everything inside a document (including adding/removing actors, nodes, components) is undoable; asset/folder/plugin/project create and delete are not, and deletion uses a destructive dialog that names the selection and lists inbound references.
@@ -320,12 +320,14 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 
 ## Source control
 
-- Optional, per project, off by default; when off there is no polling, token, network or UI difference. Hidden on production web.
-- Implements only the Git LFS locking REST API (`POST /locks`, `/locks/verify`, `/locks/:id/unlock`) behind a `LockProvider` port with a fake. Repo URL and branch are explicit settings, never parsed from `.git`.
+- Per project, `sourceControl.mode` **Off** (default), **Manual** or **Integrated**; Off has no polling, credential reads, network, tab or other UI difference. Hidden on production web. Details: [architecture/source-control.md](architecture/source-control.md).
+- Manual is built: Git LFS locking only, behind a `LockProvider` port with a fake, while another Git app syncs. Integrated (built-in Git) is planned and deferred: [source-control-plan.md](source-control-plan.md). Its Git core (isomorphic-git with Git LFS, behind a `SyncPort` with a fake) is built and not yet used by the editor.
+- Credentials are per device and host origin, linked in Engine Settings → Source Control: GitHub and gitlab.com by OAuth device sign-in with public clients, tokens for self-managed GitLab and other hosts. No Haptic-run server; a token goes only to its own host; every link shows a use-at-your-own-risk warning.
 - Auto-lock on first edit (the create call is the atomic check). Failure never blocks work; locks are advisory (read-only by default with Edit Anyway). `lockable` is never added to `.gitattributes`.
-- Release is explicit only (Release All My Locks with a warning, or per asset); never on a timer, close or heuristic, because the engine cannot observe a push.
+- Release is explicit only: per lock, Release All My Locks (with a warning), or Release Pushed Locks, which releases only locks whose local file matches the remote branch read through the GitHub or GitLab API. Never on a timer, close or heuristic.
+- Locks live in the pinned Source Control tab, shown only while the mode is not Off.
 - External change is normal: on foreground the registry rescans and offers reloads, warning loudly when a dirty document's file changed.
-- Git status is never shown (the engine never reads git state).
+- Git status is never shown in Manual mode (it reads no git state beyond the `.git/config` prefill).
 
 ## 2D
 
@@ -365,10 +367,10 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 ## Dependency upgrade policy
 
 - Babylon packages are pinned to one exact version across editor, player, render and physics, with a repository patch; an upgrade is its own change that re-applies the patch and re-checks particle, material, light block and WebGPU behaviour.
-- Add a dependency only when it removes real risk; record the rejected alternative. Settled choices: `dockview-react` 8 (touch docking), `@xyflow/react` 12, Vitest 4, Playwright, `zod` 4, `fflate`, `fast-check`, Rapier deterministic 2D, recast-navigation core/generators, `d3-hierarchy` (not `elkjs`), CodeMirror 6 loaded lazily (not Monaco), `meshoptimizer`, `earcut` injected.
+- Add a dependency only when it removes real risk; record the rejected alternative. Settled choices: `dockview-react` 8 (touch docking), `@xyflow/react` 12, Vitest 4, Playwright, `zod` 4, `fflate`, `fast-check`, Rapier deterministic 2D, recast-navigation core/generators, `d3-hierarchy` (not `elkjs`), CodeMirror 6 loaded lazily (not Monaco), `meshoptimizer`, `earcut` injected, `isomorphic-git` pinned exactly with the `buffer` polyfill it needs in WebViews (not host REST APIs or the `git` binary, [source-control-plan.md](source-control-plan.md#git-and-lfs)).
 - Deliberately absent: Comlink on the hot path, `planck.js`, `@recast-navigation/babylon`, `@babylonjs/addons` / `@babylonjs/materials`, a list virtualizer library.
 - Vendored, never fetched from a CDN: `coi-serviceworker.js` (locally modified), the Basis encoder and KTX2 transcoder set, Havok wasm.
-- Heavy optional runtimes (Rapier, Recast, CodeMirror) load only when a scene or editor surface needs them.
+- Heavy optional runtimes (Rapier, Recast, CodeMirror, isomorphic-git) load only when a scene or editor surface needs them.
 
 ## Multiplayer (planned)
 
@@ -376,6 +378,8 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
 
 ## Open work
 
+- Built-in Git: the owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships ([source-control-plan.md](source-control-plan.md#order)).
+- Source control sign-in needs registered apps and a hand check: create the GitHub OAuth App (Device Flow on) and the gitlab.com application, set `VITE_GITHUB_CLIENT_ID` and `VITE_GITLAB_CLIENT_ID` for distribution builds, and check with real sign-in tokens that each host accepts them with the stored username for Git, LFS transfer and LFS locks, and that GitLab's token refresh works against gitlab.com.
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
 - Water performance qualification: confirm the many-body CPU savings on the A16 iPad (Medium) and a budget Android phone (Low).
 - Mid-game compiles still holding the picture or blocking: on WebGPU, a depth variant a drawn shadow map's caster has not drawn (a Material swap whose colour variant is ready, a mesh's first instances: created synchronously in the shadow pass, since leaving the caster out would drop its shadow), a geometry pass's first draws (holding the view: an effect or quality change switched mid-game, a Fog Volume coming within reach), spatial-effect and other post-process passes after a graph build (a quality step), and a drawn Effect needing a pipeline for a state no draw has used; in steady frames a mesh whose geometry variant is new (a spawn, a Material change; a light change only for the surfaces above) shows spatial-effect artefacts for a few frames instead. A spawn whose variant the load's warm-up missed (skinned, morphed or instanced meshes, a Material changed at runtime) appears a few frames late, as one actor once every variant its meshes draw with is ready. The first draw of each new program on iPad WebKit WebGL2 still blocks its thread (about 100 ms each) for anything the load did not draw or warm; spreading first draws across frames bounds how many land in one frame, nothing removes them. A new map waits for its casters' pipelines before its first draw. Still open: a first directional map and, on WebGL2, the first draw itself.
@@ -385,8 +389,15 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
   - FT_World is GPU-bound.
   - The main and stress scenes are CPU-bound by their draw counts, far past the Medium draw-call warning.
 - Occlusion culling (`quality.geometry.occlusionCulling`) is on at every tier (André's call, 2026-11-03), ahead of an iPad A/B; Breakdown's FT_Occlusion steps measure it. Turn a tier off if the A/B shows it costs more than it saves there.
+- Animation Graph layering (such as upper-body gestures over locomotion): pose nodes inside state graphs.
 - Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
+- Discord roles from subscriptions (not built). The free plan needs no database and no Discord sign-in scopes:
+  - A Cloudflare Worker (free tier) receives RevenueCat webhooks, checks their `Authorization` header and re-reads the customer with `GET /v1/subscribers/{app_user_id}` instead of interpreting event types.
+  - `app_user_id` is the Clerk user id; the Worker reads the Discord user id from that Clerk user's `oauth_discord` external account (Backend API).
+  - The bot adds or removes the plan's role with `PUT` / `DELETE /guilds/{guild}/members/{user}/roles/{role}`; its own role must sit above the plan roles and hold Manage Roles. Worker secrets: RevenueCat secret key, Clerk secret key, bot token, webhook header value.
+  - Rejected: RevenueCat's Discord integration only posts messages; Linked Roles need each member to opt in and still need a server; no-code tools need paid plans or their own checkout.
+  - Gaps: only accounts with Discord linked get roles (desktop and mobile cannot link a second sign-in method yet). A subscriber who joins the server later waits for the next subscription event unless the launcher asks the Worker, with a verified Clerk session, to re-sync the signed-in account at most daily. Enterprise seats outside RevenueCat need their role set by hand.
 
 ## Key risks
 
@@ -410,6 +421,7 @@ Deliberate product decisions that can look like bugs. Do not "fix" them without 
 
 - Gameplay logic lives in Class event graphs; the scene's Game Instance row only displays the project setting; Material is the shader graph editor.
 - Animation Graph variables are restricted to Bool, Int, Float, String, Tag and Tag Container.
+- An Animation Graph is exactly one root State Machine, with no Anim Graph pose layer above it and no State Machine nodes, so Get Current State, Jump To State and the debugger always mean that one machine; layering is never a second State Machine ([anim-graph.md](architecture/anim-graph.md)).
 - Windows and Focus are disabled on the pinned Content Browser; the last remaining dock panel cannot be closed.
 - Toggling 2D/3D dirties the scene: it is an authored, undoable setting.
 - Engine Settings save immediately; Project Settings save with Save All.

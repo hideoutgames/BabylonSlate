@@ -8,10 +8,17 @@ import {
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@haptic/core";
-import { validateAnimGraph, type AnimGraphDocument } from "@haptic/anim-graph";
+import {
+  blendSpaceNodeData,
+  isBlendSpacePlayerType,
+  resolveAnimGraphClips,
+  validateAnimGraph,
+  type AnimGraphDocument,
+} from "@haptic/anim-graph";
 import {
   decodeTileGid,
   normalizeAnimationPayload,
+  normalizeModelPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
@@ -40,6 +47,7 @@ import {
   type MaterialFunctionDocument,
 } from "@haptic/shader-graph";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import { ENGINE_BASE_CLASSES } from "../lib/class-asset-lookup";
 import {
   CREATABLE_ASSET_TYPES,
@@ -144,6 +152,26 @@ describe("FeatureTest starter", () => {
       .filter((payload) => payload.durationMs !== payload.clipDurationMs);
     expect(authored.map(({ clipName, durationMs, clipDurationMs }) => ({ clipName, durationMs, clipDurationMs })))
       .toEqual([{ clipName: "open", durationMs: 1500, clipDurationMs: 1000 }]);
+  });
+
+  it("puts skinned characters with the same rig, and their rig's animation libraries, on one Skeleton", () => {
+    const assets = reopened.registry!.list();
+    const skeletonOfModel = (name: string) =>
+      normalizeModelPayload(assets.find((asset) => asset.header.type === "Model" && asset.header.name === name)?.header.payload).skeletonGuid;
+    const medium = skeletonOfModel("Knight");
+    expect(medium).toBeTruthy();
+    expect(skeletonOfModel("Rogue_Hooded")).toBe(medium);
+    expect(skeletonOfModel("Rig_Medium_MovementBasic")).toBe(medium);
+    const large = skeletonOfModel("Mannequin_Large");
+    expect(large).toBeTruthy();
+    expect(large).not.toBe(medium);
+    const clipsOn = (skeleton: string | null) => assets
+      .filter((asset) => asset.header.type === "Animation")
+      .map((asset) => normalizeAnimationPayload(asset.header.payload))
+      .filter((payload) => payload.skeletonGuid === skeleton)
+      .map((payload) => payload.clipName);
+    expect(clipsOn(medium)).toEqual(expect.arrayContaining(["Idle_A", "Interact", "PickUp", "Walking_A", "Running_A"]));
+    expect(clipsOn(large)).toEqual(expect.arrayContaining(["Walking_A", "Running_A"]));
   });
 
   it("paints a Tilemap with a terrain of every autotile style, current with its Tilesets", async () => {
@@ -329,10 +357,37 @@ describe("FeatureTest starter", () => {
       const graph = normalizeParticleGraphDocument(await reopened.loadDocument("particle-graph", asset.path));
       expect(validateParticleGraphDocument(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
     }
-    for (const asset of ofType("AnimationGraph")) {
-      const graph = (await reopened.loadDocument("anim-graph", asset.path)) as unknown as AnimGraphDocument;
-      expect(validateAnimGraph(graph).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+    const clipCatalog = animClipCatalogFromAssets(reopened.registry!.list());
+    const blendSpacePlayers = new Set<string>();
+    const syncGroupMembers = new Map<string, number>();
+    let aliasTransitions = 0;
+    for (const [type, kind, dimension] of [
+      ["AnimationGraph3D", "anim-graph-3d", "3d"],
+      ["AnimationGraph2D", "anim-graph-2d", "2d"],
+    ] as const) {
+      for (const asset of ofType(type)) {
+        const graph = (await reopened.loadDocument(kind, asset.path)) as unknown as AnimGraphDocument;
+        expect(validateAnimGraph(graph, clipCatalog, { dimension }).filter((row) => row.severity === "error"), asset.path).toEqual([]);
+        const aliasIds = new Set((graph.stateMachine.aliases ?? []).map((alias) => alias.id));
+        aliasTransitions += graph.stateMachine.transitions.filter((row) => aliasIds.has(row.fromStateId)).length;
+        // Every Blend Space Player finds its samples in the catalog, as Play resolves them.
+        for (const state of resolveAnimGraphClips(graph, clipCatalog).stateMachine.states) {
+          for (const node of state.stateGraph.nodes) {
+            const group = typeof node.data.syncGroup === "string" ? node.data.syncGroup : "";
+            if (group) syncGroupMembers.set(`${asset.path}:${group}`, (syncGroupMembers.get(`${asset.path}:${group}`) ?? 0) + 1);
+            if (!isBlendSpacePlayerType(node.type)) continue;
+            blendSpacePlayers.add(node.type);
+            expect(blendSpaceNodeData(node).samples.length, `${asset.path} ${state.name}`).toBeGreaterThan(1);
+          }
+        }
+      }
     }
+    // Both the 3D and the 2D Blend Space Player are showcased.
+    expect([...blendSpacePlayers].sort()).toEqual(["anim.frame.spriteBlendSpacePlayer", "anim.pose.blendSpacePlayer"]);
+    // A Sync Group is showcased: one graph has at least two players in the same group.
+    expect(Math.max(0, ...syncGroupMembers.values())).toBeGreaterThan(1);
+    // A State Alias with a transition is showcased.
+    expect(aliasTransitions).toBeGreaterThan(0);
   });
 
   it("authors physics without pairing problems", async () => {
@@ -355,6 +410,14 @@ describe("FeatureTest starter", () => {
   const HEARD: Partial<Record<(typeof FEATURE_TEST_CHECK_SCENES)[number]["name"], string[]>> = {
     main: ["Feature Test scene script heard On Intro Line (Intro) through FT_Timeline", "FT_HUD script plays its own FT_HudPulse"],
     FT_World: ["FT_TimelineListener heard On Door Open (Door Loop)", "FT_SwingDoor heard On Swing Open (FT_DoorSwing)"],
+    // Animation Events reach each graph's Animation Object: clip events, a window's Begin and End, and state events.
+    FT_Animation: [
+      "FT_AnimAdventurer heard Footstep",
+      "FT_AnimAdventurer heard Stride Begin",
+      "FT_AnimAdventurer heard Stride End",
+      "FT_AnimAdventurer heard Move Started",
+    ],
+    FT_2D: ["FT_2DRobotGraph heard Step", "FT_2DRobotGraph heard Jump Started"],
   };
   for (const scene of FEATURE_TEST_CHECK_SCENES) {
     it(`plays ${scene.name} without session errors or failed asserts`, async () => {

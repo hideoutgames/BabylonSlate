@@ -40,7 +40,7 @@ See [Materials](materials.md) to edit imported Materials or make your own.
 
 ## Skeletons and animation clips
 
-- A **Skeleton** shows the model's bones.
+- A **Skeleton** shows the model's bones; select a bone in its **Inspector** to highlight it.
 - An **Animation** previews one clip on its model. Turn on **Show Bones** to see the bones instead of the mesh.
 - To reuse clips on another character, select Animation assets in the **Content Browser**, choose **Retarget…** and pick the target Skeleton.
 

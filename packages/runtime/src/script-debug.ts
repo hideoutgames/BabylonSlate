@@ -9,6 +9,7 @@ import { sameDebugObserveTarget } from "@haptic/bridge";
 import { formatValue } from "@haptic/core";
 import { EngineObject, type Actor, type World } from "@haptic/object-model";
 import { animGraphGuidOf, behaviourTreeGuidOf, evaluatedBehaviourTreeComponent } from "./component-assets";
+import type { ScriptBreakpoints } from "./script-breakpoints";
 import { componentOwners } from "./world-component-index";
 
 /**
@@ -307,6 +308,120 @@ export class ExecutionTraceSink implements ScriptDebugTrace, StepLog {
   }
 }
 
+/** The most objects one tick records for a breakpoint stop; the runs of later ones that tick are not recorded. */
+export const DEBUG_FRAME_OBJECTS_PER_TICK = 256;
+
+/** One object's `ctx.debugTrace` while breakpoints are set and the editor does not follow it. */
+class FrameTrace implements ScriptDebugTrace {
+  /** This tick's recording, made when the object first runs a graph of an asset with a breakpoint. */
+  sink: ExecutionTraceSink | null = null;
+  private readonly frames: BreakpointFrameRecorder;
+
+  constructor(frames: BreakpointFrameRecorder) {
+    this.frames = frames;
+  }
+
+  graph(assetGuid: string, graphId: string): ScriptGraphRecorder | null {
+    return this.frames.graphOf(this, assetGuid, graphId);
+  }
+}
+
+/** What the stopped object ran in the tick a breakpoint stopped it, kept until the next tick ends. */
+type StopFrame = {
+  object: object;
+  tickIndex: number;
+  graphs: DebugGraphTrace[];
+  steps: { steps: DebugStep[]; truncated: boolean } | null;
+};
+
+/**
+ * While breakpoints are set, records each tick what the objects running an asset with a breakpoint ran in
+ * that asset's graphs, so a stop can show the frame it stopped in: the path, the pin values and the steps.
+ * Only the stopped object's recording is kept, and only until the next tick ends; every other one is
+ * dropped at the end of its tick. A tick records at most `DEBUG_FRAME_OBJECTS_PER_TICK` objects, each
+ * bounded like a followed instance's tick (`DEBUG_STEPS_PER_TICK`). The followed instance records into its
+ * own sink instead.
+ */
+export class BreakpointFrameRecorder {
+  private readonly traces = new WeakMap<object, FrameTrace>();
+  private touched: FrameTrace[] = [];
+  private stopped: object | null = null;
+  private kept: StopFrame | null = null;
+  private readonly breakpoints: () => ScriptBreakpoints | null;
+
+  constructor(breakpoints: () => ScriptBreakpoints | null) {
+    this.breakpoints = breakpoints;
+  }
+
+  /** `ctx.debugTrace` (or a tree's or State Machine's recorder) for `object`; null while no breakpoint is set. */
+  traceFor(object: unknown): ScriptDebugTrace | null {
+    if (object === null || typeof object !== "object" || this.breakpoints()?.empty !== false) return null;
+    let trace = this.traces.get(object);
+    if (!trace) this.traces.set(object, trace = new FrameTrace(this));
+    return trace;
+  }
+
+  /** @internal */
+  graphOf(trace: FrameTrace, assetGuid: string, graphId: string): ScriptGraphRecorder | null {
+    if (!this.breakpoints()?.hasAsset(assetGuid)) return null;
+    if (!trace.sink) {
+      if (this.touched.length >= DEBUG_FRAME_OBJECTS_PER_TICK) return null;
+      trace.sink = new ExecutionTraceSink();
+      this.touched.push(trace);
+    }
+    return trace.sink.graph(assetGuid, graphId);
+  }
+
+  /** A breakpoint stopped `object` (the first hit of the tick): its recording is kept when the tick ends. */
+  stop(object: object): void {
+    this.stopped = object;
+  }
+
+  /**
+   * The editor follows `object` from now on: its recording so far this tick, if any, which goes on in the
+   * same sink, so a follow that starts mid-tick loses nothing.
+   */
+  adopt(object: object): ExecutionTraceSink | null {
+    const trace = this.traces.get(object);
+    const sink = trace?.sink ?? null;
+    if (trace) trace.sink = null;
+    if (this.stopped === object) this.stopped = null;
+    return sink;
+  }
+
+  /** The tick ended: keep the stopped object's recording, drop every other one and any frame kept before. */
+  endTick(tickIndex: number): void {
+    const stopped = this.stopped;
+    const sink = stopped ? this.traces.get(stopped)?.sink ?? null : null;
+    this.kept = null;
+    if (stopped && sink) {
+      const graphs = sink.drain();
+      if (graphs.length > 0) this.kept = { object: stopped, tickIndex, graphs, steps: sink.drainSteps(graphs) };
+    }
+    for (const trace of this.touched) {
+      trace.sink?.close();
+      trace.sink = null;
+    }
+    this.touched = [];
+    this.stopped = null;
+  }
+
+  /** The frame `object` stopped in, if it is kept; taken once. */
+  take(object: object): StopFrame | null {
+    const kept = this.kept;
+    if (kept?.object !== object) return null;
+    this.kept = null;
+    return kept;
+  }
+
+  dispose(): void {
+    for (const trace of this.touched) trace.sink?.close();
+    this.touched = [];
+    this.stopped = null;
+    this.kept = null;
+  }
+}
+
 /** An object's name as the Debug Instance list shows it: its `name` variable, else its class. */
 export function debugInstanceLabel(object: EngineObject): string {
   const name = object.variables.get("name");
@@ -403,6 +518,8 @@ export interface ScriptDebugObserverHost {
   emit(command: CommandMessage): void;
   /** Routes `ctx.debugTrace` to `sink` for runs on `object`; null removes it. */
   setDebugTrace(object: EngineObject | null, sink: ScriptDebugTrace | null): void;
+  /** The session's breakpoints, which decide what the stop frame recorder records. */
+  breakpoints(): ScriptBreakpoints | null;
 }
 
 /** What the world looked like when the roster was last built. */
@@ -414,6 +531,8 @@ type RosterBasis = { revision: number; gameInstance: EngineObject | null; subsys
  * off until the editor asks (`debugObserve`) and costs nothing afterwards.
  */
 export class ScriptDebugObserver {
+  /** What objects ran in the tick a breakpoint stopped, for the one the editor then follows. */
+  private readonly frames: BreakpointFrameRecorder;
   private target: DebugObserveTarget | null = null;
   private followed: EngineObject | null = null;
   private sink: ExecutionTraceSink | null = null;
@@ -428,6 +547,22 @@ export class ScriptDebugObserver {
 
   constructor(host: ScriptDebugObserverHost) {
     this.host = host;
+    this.frames = new BreakpointFrameRecorder(() => host.breakpoints());
+  }
+
+  /** The recorder for a run on `object`, which the editor does not follow, while breakpoints are set. */
+  frameTrace(object: unknown): ScriptDebugTrace | null {
+    return this.frames.traceFor(object);
+  }
+
+  /** A breakpoint stopped `object`; the frame it ran is kept for when the editor follows it. */
+  stoppedOn(object: EngineObject | null): void {
+    if (object && object !== this.followed) this.frames.stop(object);
+  }
+
+  /** Begin Play ran (before the first tick): a stop there keeps its frame like a tick's. */
+  endStartup(tickIndex: number): void {
+    this.frames.endTick(tickIndex);
   }
 
   /** Applies the editor's request; it replaces the previous one. */
@@ -446,12 +581,14 @@ export class ScriptDebugObserver {
     if (instanceId === null) this.follow(null);
     else if (changed || this.followed?.guid !== instanceId || this.followed.destroyed) {
       this.follow(findInstance(this.host.world(), target, instanceId));
+      this.publishStopFrame();
       this.publishVariables(this.host.world().clock.tickIndex);
     }
   }
 
   /** End of a tick: what the followed instance ran, then roster changes. */
   flush(tickIndex: number): void {
+    this.frames.endTick(tickIndex);
     const target = this.target;
     if (!target) return;
     const graphs = this.sink?.drain() ?? [];
@@ -472,15 +609,30 @@ export class ScriptDebugObserver {
   dispose(): void {
     this.target = null;
     this.follow(null);
+    this.frames.dispose();
   }
 
   private follow(object: EngineObject | null): void {
     this.sink?.close();
     this.followed = object;
-    this.sink = object ? new ExecutionTraceSink() : null;
+    // A follow that starts mid-tick carries on the recording the stop frame recorder began.
+    this.sink = object ? this.frames.adopt(object) ?? new ExecutionTraceSink() : null;
     this.variableTexts = new Map();
     this.variablesRevision = Number.NaN;
     this.host.setDebugTrace(object, this.sink);
+  }
+
+  /** The editor followed the object a breakpoint stopped: send the frame it stopped in, which no follow recorded. */
+  private publishStopFrame(): void {
+    const object = this.followed;
+    const target = this.target;
+    const frame = object && target ? this.frames.take(object) : null;
+    if (!object || !target || !frame) return;
+    const { tickIndex, graphs, steps } = frame;
+    this.host.emit({
+      type: "executionTrace", target, instanceId: object.guid, tickIndex, graphs,
+      ...(steps ? { steps: steps.steps, ...(steps.truncated ? { stepsTruncated: true } : {}) } : {}),
+    });
   }
 
   /**

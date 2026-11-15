@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, type Dispatch, type SetStateAction } from
 import { FolderPlusIcon, Grid2x2Icon, PlusIcon, UploadIcon } from "lucide-react";
 import { useContextMenu, useContextMenuGesture, type ContextMenuItem } from "@haptic/editor-kit";
 import {
+  canAssignSkeleton,
   canRetargetSelectedAssets,
   classDocumentShowsPrefab,
   classIdFromClassAsset,
@@ -79,6 +80,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
     runCopySteps,
     startRename,
     setRetargetPickerOpen,
+    setAssignSkeletonPickerOpen,
     openMoveForSnapshot,
     setReferenceGuid,
     requestDeleteSnapshot,
@@ -119,6 +121,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
       runCopySteps,
       startRename,
       setRetargetPickerOpen,
+      setAssignSkeletonPickerOpen,
       openMoveForSnapshot,
       setReferenceGuid,
       requestDeleteSnapshot,
@@ -154,6 +157,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
       setOperationError,
       startRename,
       setRetargetPickerOpen,
+      setAssignSkeletonPickerOpen,
       setReferenceGuid,
     ],
   );
@@ -252,6 +256,10 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
           canCreateChildClass: (() => {
             const asset = guids.length === 1 ? assetRegistry?.getByGuid(guids[0]!) : undefined;
             return asset?.header.type === "Class" && isNewClassParentAllowed(classIdFromClassAsset(asset), assetRegistry?.list() ?? []);
+          })(),
+          canAssignSkeleton: (() => {
+            const asset = guids.length === 1 && folders.length === 0 ? assetRegistry?.getByGuid(guids[0]!) : undefined;
+            return asset?.header.type === "Model" && canAssignSkeleton(asset.header.payload);
           })(),
           canRetarget: canRetargetSelectedAssets(
             guids.flatMap((guid) => {

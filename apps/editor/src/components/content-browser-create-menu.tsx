@@ -13,10 +13,13 @@ import {
   SaveIcon,
   SparklesIcon,
   TableIcon,
+  WorkflowIcon,
+  ChartScatterIcon,
 } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
 import {
   newAssetGuid,
+  normalizeModelPayload,
   normalizeTilesetPayload,
   type AssetRegistry,
   type ImportResult,
@@ -88,7 +91,9 @@ export type ContentBrowserCreateItem = {
     | "create-data-definition"
     | "create-data-tree"
     | "create-linked-save-game"
-    | "create-render-target-texture";
+    | "create-render-target-texture"
+    | "create-animation-graph"
+    | "create-blend-space";
   label: string;
   icon: ReactNode;
   onSelect: () => void;
@@ -426,6 +431,36 @@ export function contentBrowserCreateMenuItems(deps: ContentBrowserCreateMenuDeps
         if (!target) return [];
         return [await writeBeside(registry, target, "RenderTargetTexture", target.header.name, (guid, name) =>
           buildRenderTargetTextureAssetResult(target.header.guid, guid, name))];
+      }),
+    },
+    {
+      id: "create-animation-graph",
+      label: "Create Animation Graph",
+      icon: <WorkflowIcon />,
+      onSelect: () => run(async (registry) => {
+        // A 3D Animation Graph on the Skeleton, or on the Model's Skeleton (none for a Model without one).
+        const source = [...targets("Skeleton"), ...targets("Model")][0];
+        if (!source) return [];
+        const skeletonGuid = source.header.type === "Skeleton"
+          ? source.header.guid
+          : normalizeModelPayload(source.header.payload ?? {}).skeletonGuid;
+        const base = source.header.type === "Skeleton" ? source.header.name.replace(/_Skeleton$/, "") : source.header.name;
+        return [await createProjectAssetBeside(registry, source, "AnimationGraph3D", base, { skeletonGuid })];
+      }),
+    },
+    {
+      id: "create-blend-space",
+      label: "Create Blend Space",
+      icon: <ChartScatterIcon />,
+      onSelect: () => run(async (registry) => {
+        // A Blend Space on the Skeleton, or on the Model's Skeleton (none for a Model without one).
+        const source = [...targets("Skeleton"), ...targets("Model")][0];
+        if (!source) return [];
+        const skeletonGuid = source.header.type === "Skeleton"
+          ? source.header.guid
+          : normalizeModelPayload(source.header.payload ?? {}).skeletonGuid;
+        const base = source.header.type === "Skeleton" ? source.header.name.replace(/_Skeleton$/, "") : source.header.name;
+        return [await createProjectAssetBeside(registry, source, "BlendSpace", `${base} Locomotion`, { skeletonGuid })];
       }),
     },
   ];

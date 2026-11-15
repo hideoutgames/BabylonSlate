@@ -386,7 +386,8 @@ export function applySpriteVisibility(mesh: AbstractMesh, visibility: number): v
   const material = mesh.material;
   const blended = material?.needAlphaBlendingForMesh(mesh);
   mesh.visibility = visibility;
-  // The draw moves between the opaque and transparent lists; no shader changes.
+  // The draw moves between the opaque and transparent lists; no shader changes. Not scoped to this mesh: in FT_2D Play a
+  // whole probe after each such scoped one still requested an Effect (`verifyScopedReadinessProbes`).
   if (material && blended !== material.needAlphaBlendingForMesh(mesh)) markSceneReadinessDirty(mesh.getScene(), "blendChange");
 }
 

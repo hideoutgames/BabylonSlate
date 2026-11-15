@@ -13,6 +13,7 @@
   },
   "include": [
     "src/env.d.ts",
+    "src/react-bootstrap-icons.d.ts",
     "../../e2e/**/*.ts",
     "../../playwright.config.ts",
     "../../playwright.webkit.config.ts"

@@ -15,7 +15,13 @@ export type PrimitivePinType =
   | { kind: "transform" }
   | { kind: "color" }
   | { kind: "resolvingWildcard"; group?: string }
-  | { kind: "boxedWildcard" };
+  | { kind: "boxedWildcard" }
+  /**
+   * An Animation Graph pose (3D) or Sprite Animation frame (2D). Pose nodes pass them as structure the evaluator
+   * reads, never as code values: one output feeds exactly one input.
+   */
+  | { kind: "pose" }
+  | { kind: "frame" };
 
 export type PinType =
   | PrimitivePinType
@@ -48,6 +54,8 @@ export const TRANSFORM: PinType = { kind: "transform" };
 export const COLOR: PinType = { kind: "color" };
 export const RESOLVING_WILDCARD: PinType = { kind: "resolvingWildcard" };
 export const BOXED_WILDCARD: PinType = { kind: "boxedWildcard" };
+export const POSE: PinType = { kind: "pose" };
+export const FRAME: PinType = { kind: "frame" };
 
 export function objectRef(classId: string): PinType {
   return { kind: "objectRef", classId };
@@ -231,6 +239,8 @@ export function defaultValueLiteral(type: PinType): string {
     case "delegate":
     case "exec":
     case "resolvingWildcard":
+    case "pose":
+    case "frame":
       return "null";
     case "structRef":
       return type.guid === "engine:TagContainer" ? "{ Tags: [] }" : "{}";

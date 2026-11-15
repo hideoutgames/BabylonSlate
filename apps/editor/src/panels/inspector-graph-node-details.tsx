@@ -7,7 +7,6 @@ import {
   MultilineTextField,
   ParameterListEditor,
   NamedListEditor,
-  NamePromptDialog,
   PinListEditor,
   PropertyGrid,
   formatEventMemberName,
@@ -42,10 +41,9 @@ import {
   patchFlowSwitchCases,
   javaScriptPinsFromRows,
 } from "../lib/graph-inspector";
-import { canRenameCustomEvent, customEventRenameError, patchClassMember, renameCustomEvent } from "../lib/class-members";
+import { canRenameCustomEvent, patchClassMember } from "../lib/class-members";
 import { filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { dataGraphAssetCreateOptions, dataGraphAssetPickPatch, isDataGraphNode, patchDataGraphNode, patchInspectedGraphNode } from "../lib/data-graph";
-import { classIdForGraphPath } from "../services/script-compiler";
 import {
   MATERIAL_DOCUMENT_KINDS,
   TIMELINE_CLIP_DOCUMENT_KINDS,
@@ -53,6 +51,7 @@ import {
 } from "../lib/use-open-documents-of-kinds";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { timelineProxyNodeTarget, timelineScriptAssets } from "../lib/timeline-script-catalog";
+import { ANIM_POSE_CLIP_PICK, animGraphPlaysAsset, type AnimClipPickGraph } from "../lib/anim-pose-inspector";
 import {
   committedPinRowIds,
   memberPinsFromRows,
@@ -86,8 +85,6 @@ export interface GraphNodeDetailsProps {
   hydratedInspectGraph: SerializedGraph | null;
   selectedNode: SerializedGraph["nodes"][number];
   activeFunctionId: string | null;
-  /** The inspected document's path; a renamed event's Calls are scoped to its Class. */
-  docPath: string | undefined;
   /** The graph's host class id, so a function signature edit reaches only its own Calls. */
   classId?: string;
   /** The focused diagnostic's line in an Execute JavaScript body. */
@@ -96,8 +93,8 @@ export interface GraphNodeDetailsProps {
   persistGraph: (next: SerializedGraph) => void;
   selectedJsPin: string | null;
   selectJsPin: Dispatch<SetStateAction<string | null>>;
-  renameEventOpen: boolean;
-  setRenameEventOpen: Dispatch<SetStateAction<boolean>>;
+  /** Rename Event: the selected custom event's inline rename in the Class panel. */
+  onRenameEvent: (nodeId: string) => void;
   classPinPick: ClassPinPick | null;
   setClassPinPick: Dispatch<SetStateAction<ClassPinPick | null>>;
   assetPinPick: AssetPinPick | null;
@@ -108,6 +105,8 @@ export interface GraphNodeDetailsProps {
   setCommandRowIds: Dispatch<SetStateAction<CommandRowIds | null>>;
   /** Event Dispatchers a Delegate type can take its signature from. */
   delegateSignatures?: readonly DelegateSignatureEntry[];
+  /** In an Animation Graph's state graph: the graph, so a clip row offers only the assets it can play. */
+  animClipGraph?: AnimClipPickGraph | null;
 }
 
 /** The selected graph node's property rows, pin defaults and pin pickers. */
@@ -117,15 +116,13 @@ export function GraphNodeDetails({
   hydratedInspectGraph,
   selectedNode,
   activeFunctionId,
-  docPath,
   classId,
   focusBodyLine,
   catalogs,
   persistGraph,
   selectedJsPin,
   selectJsPin,
-  renameEventOpen,
-  setRenameEventOpen,
+  onRenameEvent,
   classPinPick,
   setClassPinPick,
   assetPinPick,
@@ -135,6 +132,7 @@ export function GraphNodeDetails({
   commandRowIds,
   setCommandRowIds,
   delegateSignatures = [],
+  animClipGraph = null,
 }: GraphNodeDetailsProps) {
   const { dataAssets, objectClassEntries, typeAssets } = catalogs;
   const { assetRegistry, registryEpoch } = useRegistryState();
@@ -407,21 +405,10 @@ export function GraphNodeDetails({
         {isCustomEvent ? (
           <>
           {canRenameCustomEvent(graph, selectedNode.id) ? (
-            <Button variant="outline" size="sm" onClick={() => setRenameEventOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => onRenameEvent(selectedNode.id)}>
               Rename Event
             </Button>
           ) : null}
-          <NamePromptDialog
-            key={selectedNode.id}
-            open={renameEventOpen}
-            onOpenChange={setRenameEventOpen}
-            title="Rename Event"
-            label="Event Name"
-            confirmLabel="Rename"
-            initialValue={formatEventMemberName(String(selectedNode.data.name ?? selectedNode.data.title ?? ""))}
-            validate={(name) => customEventRenameError(graph, selectedNode.id, name)}
-            onSubmit={(name) => persistGraph(renameCustomEvent(graph, selectedNode.id, name, docPath ? classIdForGraphPath(docPath) : undefined))}
-          />
           {eventSignatureFrom ? (
             <div className="text-xs text-muted-foreground" data-testid="inspector-event-signature-from">
               Signature From: {eventSignatureFrom}
@@ -497,6 +484,7 @@ export function GraphNodeDetails({
         setAssetPinPick={setAssetPinPick}
         pickClass={nodeRows.pickClass}
         pickAsset={nodeRows.pickAsset}
+        animClipGraph={animClipGraph}
       />
     </>
   );
@@ -524,6 +512,7 @@ function GraphPinPickers({
   setAssetPinPick,
   pickClass,
   pickAsset,
+  animClipGraph,
 }: {
   node: SerializedGraph["nodes"][number];
   catalogs: InspectorCatalogs;
@@ -533,6 +522,7 @@ function GraphPinPickers({
   setAssetPinPick: Dispatch<SetStateAction<AssetPinPick | null>>;
   pickClass: (pinId: string, classId: string) => void;
   pickAsset: (pinId: string, guid: string | null) => void;
+  animClipGraph?: AnimClipPickGraph | null;
 }) {
   const { editorGraph, pickerAssets } = catalogs;
   const { assetRegistry } = useRegistryState();
@@ -575,7 +565,12 @@ function GraphPinPickers({
                 assetRegistry?.list() ?? [],
                 pickerMaterialDocuments,
                 { nodeType: node.type },
-              )
+              ).filter((entry) => {
+                // A clip row offers only what its Animation Graph can play: on its Skeleton, or 2D frames.
+                if (assetPinPick.pinId !== ANIM_POSE_CLIP_PICK || !animClipGraph) return true;
+                const asset = assetRegistry?.getByGuid(entry.guid);
+                return asset ? animGraphPlaysAsset(asset.header, animClipGraph) : false;
+              })
             : []
         }
         allowedTypes={assetPinPick?.allowedTypes}

@@ -666,7 +666,7 @@ function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: Reado
   };
 }
 
-const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph"]);
+const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph3D", "AnimationGraph2D"]);
 /** Assets that may embed a script (SceneScript, SceneLayerScript). */
 const EMBEDDED_SCRIPT_OWNER_TYPES = new Set(["Scene", "SceneLayer"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);

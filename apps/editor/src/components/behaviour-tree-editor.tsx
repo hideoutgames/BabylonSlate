@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -70,7 +71,7 @@ import {
   type Vector3Value,
 } from "@haptic/editor-kit";
 import { BT_DEBUG_GRAPH_ID } from "@haptic/bridge";
-import { GraphEditor, treeNodeTypes, type PaletteNode } from "@haptic/graph-ui";
+import { GraphEditor, GraphKeybindsContext, breakpointMenuItems, treeNodeTypes, type PaletteNode } from "@haptic/graph-ui";
 import { defaultJsValue } from "@haptic/scripting";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyTitle } from "@haptic/ui/components/empty";
@@ -89,8 +90,6 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
-import { useKeybindChord } from "../context/keybind-context";
-import { breakpointMenuItems } from "../lib/breakpoint-menu";
 import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
 import { sessionReportNodeTitle } from "../lib/session-report-locations";
 import { useBehaviourTreeRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
@@ -416,20 +415,26 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
   // Breakpoints use the session's terms: the tree's guid and its graph id. Every node, the root
   // included, runs, so any can have one.
   const breakpointStore = useBreakpointStore();
-  const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
+  const graphKeybinds = useContext(GraphKeybindsContext);
   const breakpointLabel = useCallback((nodeId: string) => ({
     className: treeName,
     graphName: "Behaviour Tree",
     nodeTitle: sessionReportNodeTitle("BehaviourTree", latest.current.doc, nodeId) ?? nodeId,
   }), [treeName]);
+  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
   const breakpoints = useMemo(
     () => breakpointStore && treeGuid
-      ? breakpointStore.graphView(treeGuid, BT_DEBUG_GRAPH_ID, breakpointLabel, () => true)
+      ? breakpointStore.graphView(treeGuid, BT_DEBUG_GRAPH_ID, breakpointLabel, {
+        canBreak: () => true,
+        edit: (nodeId) => editBreakpoint({
+          location: { assetGuid: treeGuid, graphId: BT_DEBUG_GRAPH_ID, nodeId },
+          nodeTitle: breakpointLabel(nodeId).nodeTitle,
+          pins: null,
+        }),
+      })
       : undefined,
-    [breakpointLabel, breakpointStore, treeGuid],
+    [breakpointLabel, breakpointStore, editBreakpoint, treeGuid],
   );
-
-  const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
 
   const nodeMenu = useCallback(
     (nodeId: string): NestedMenuItem[] => [
@@ -475,25 +480,17 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           if (selectedId === nodeId) setSelectedId(doc.rootId);
         },
       },
-      ...(breakpointStore && treeGuid
-        ? [
-            { type: "separator" as const, id: "breakpoint-separator" },
-            ...breakpointMenuItems(
-              breakpointStore,
-              { assetGuid: treeGuid, graphId: BT_DEBUG_GRAPH_ID, nodeId },
-              () => breakpointLabel(nodeId),
-              toggleBreakpointChord,
-              () => editBreakpoint({
-                location: { assetGuid: treeGuid, graphId: BT_DEBUG_GRAPH_ID, nodeId },
-                nodeTitle: breakpointLabel(nodeId).nodeTitle,
-                pins: null,
-              }),
-            ),
-          ]
+      // On a node of the canvas selection, the breakpoint items act on the whole group.
+      ...(breakpoints
+        ? (() => {
+            const selection = canvasSelection.current;
+            const items = breakpointMenuItems(breakpoints, selection.includes(nodeId) ? selection : [nodeId], nodeId, graphKeybinds);
+            return items.length > 0 ? [{ type: "separator" as const, id: "breakpoint-separator" }, ...items] : [];
+          })()
         : []),
     ],
     // The root is the only document fact baked into the items; the tree node menu builds them when it opens.
-    [breakpointLabel, breakpointStore, editBreakpoint, rootId, setAttachmentCatalog, setSelectedId, toggleBreakpointChord, treeGuid],
+    [breakpoints, graphKeybinds, rootId, setAttachmentCatalog, setSelectedId],
   );
 
   const attachmentMenu = useCallback(

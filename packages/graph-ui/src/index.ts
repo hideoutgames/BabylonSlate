@@ -20,7 +20,9 @@ export type {
 } from "./run-trace";
 export { RUN_FLASH_MS } from "./run-flash";
 export {
+  breakpointMenuItems,
   canBreakOnNode,
+  nodeCanBreak,
   type GraphBreakpoints,
   type GraphBreakpointState,
 } from "./graph-breakpoints";

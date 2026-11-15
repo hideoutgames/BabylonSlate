@@ -287,7 +287,7 @@ describe("projectAddComponentItems", () => {
       asset({ guid: "fx", name: "Fire", type: "ParticleSystem" }),
       asset({ guid: "spr", name: "HeroSprite", type: "Sprite" }),
       asset({ guid: "map", name: "Dungeon", type: "Tilemap" }),
-      asset({ guid: "anim", name: "Locomotion", type: "AnimationGraph" }),
+      asset({ guid: "anim", name: "Locomotion", type: "AnimationGraph3D" }),
       asset({ guid: "bt", name: "Guard", type: "BehaviourTree" }),
     ]);
     expect(

@@ -16,6 +16,7 @@ import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrow
 import { shadowDebugOff } from "./shadow-debug";
 import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetProbeReady } from "./readiness-scope";
+import { noteReadinessBlocker } from "./readiness-blockers";
 import { isRevealPending, noteRevealPipelines } from "./reveal-pending";
 import { lookUpPipelines, registerPipelineWarmPasses, warmRequestedPipelines } from "./variant-pipeline-warmup";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
@@ -175,6 +176,9 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
         if (colour && depthReady(mesh)) return true;
         // The scan stops here. A parallel-compile driver links this mesh's depth pre-pass, which an unready colour
         // variant holds back, and the next meshes' variants meanwhile.
+        // An unready colour variant named itself (`isMeshFrameReady`).
+        if (colour) noteReadinessBlocker(() =>
+          `mesh "${mesh.name}" (Material "${(mesh.material ?? scene.defaultMaterial).name}"): its depth pre-pass variant in "${this.name}"`);
         requestCompilesAhead(engine, readinessScanMeshes(this._renderer, this._frameGraph.scene), mesh, this.requestedAhead,
           (other) => probeAhead(other, rate, preWarm), colour ? undefined : depthReady);
         return false;

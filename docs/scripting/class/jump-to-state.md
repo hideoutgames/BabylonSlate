@@ -23,4 +23,5 @@ Switches an Animation Graph to a named state, skipping its transitions.
 ## Notes
 
 - The jump happens on the next animation update, and the state starts from the beginning of its clip.
+- It switches the graph's State Machine with no blend.
 - Does nothing if no state matches. Only available in Actor class graphs.

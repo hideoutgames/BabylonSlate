@@ -40,7 +40,7 @@ describe("serializedGraphFromDocument", () => {
     doc.variables = [
       { id: "var-moving", name: "moving", typeId: "bool", defaultValue: false },
     ];
-    const graph = serializedGraphFromDocument("anim-graph", doc);
+    const graph = serializedGraphFromDocument("anim-graph-3d", doc);
     expect(graph?.nodes.some((node) => node.type === "anim.event.initialize")).toBe(
       true,
     );
@@ -374,7 +374,7 @@ describe("collectClassGraphsForPalette", () => {
       assets: [],
       openDocuments: [
         {
-          ref: { kind: "anim-graph", path: "assets/Loco.anim.hasset" },
+          ref: { kind: "anim-graph-3d", path: "assets/Loco.anim3d.hasset" },
           content: createDefaultAnimGraph(),
         },
       ],
@@ -529,7 +529,7 @@ describe("commitLogicGraph", () => {
     expect(serializedGraphFromDocument("scene-layer", commit.scene)).toEqual({ nodes: [], edges: [], members: [] });
   });
 
-  it("writes Animation Object graphs without dropping states", () => {
+  it("writes Animation Object graphs without dropping State Machines", () => {
     const doc = createDefaultAnimGraph();
     const next: SerializedGraph = {
       nodes: [
@@ -543,10 +543,10 @@ describe("commitLogicGraph", () => {
       edges: [],
       members: [{ id: "var-speed", kind: "variable", name: "speed", typeId: "float" }],
     };
-    const commit = commitLogicGraph("anim-graph", doc, next);
-    expect(commit.kind).toBe("anim-graph");
-    if (commit.kind !== "anim-graph") return;
-    expect(commit.payload.states).toEqual(doc.states);
+    const commit = commitLogicGraph("anim-graph-3d", doc, next);
+    expect(commit.kind).toBe("asset-payload");
+    if (commit.kind !== "asset-payload") return;
+    expect(commit.payload.stateMachine).toEqual(doc.stateMachine);
     expect(commit.payload.animationObject).toEqual({
       nodes: next.nodes,
       edges: next.edges,
@@ -558,13 +558,13 @@ describe("commitLogicGraph", () => {
     const initial = createDefaultAnimGraph() as unknown as Record<string, unknown>;
     let current = initial;
     const scrub = (value: number) => {
-      const graph = serializedGraphFromDocument("anim-graph", current)!;
+      const graph = serializedGraphFromDocument("anim-graph-3d", current)!;
       const [first, ...rest] = graph.nodes;
-      const commit = commitLogicGraph("anim-graph", current, {
+      const commit = commitLogicGraph("anim-graph-3d", current, {
         ...graph,
         nodes: [{ ...first!, data: { ...first!.data, "default:rate": value } }, ...rest],
       });
-      if (commit.kind !== "anim-graph") throw new Error("expected an Animation Object commit");
+      if (commit.kind !== "asset-payload") throw new Error("expected an Animation Object commit");
       current = stack.apply(current, new SetAssetDocumentCommand(current, commit.payload, commit.mergeKey)).doc;
     };
     scrub(0.5);

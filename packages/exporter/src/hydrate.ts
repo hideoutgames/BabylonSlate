@@ -1,6 +1,6 @@
 import type { CameraShakeCatalogEntry, CurveAssetCatalogEntry, DataAssetCatalogEntry, GlobalParameterCatalog, TimelineClipAssetCatalogEntry } from "@haptic/core";
 import { CAMERA_SHAKE_ASSET_TYPE, CURVE_ASSET_TYPES, GLOBAL_PARAMETER_COLLECTION_ASSET_TYPE, normalizeCameraShakePayload, curveKindForAssetType, normalizeGlobalParameterCollection, isTimelineClipAssetType, normalizeCurveAssetPayload, timelineClipAssetCatalogEntry } from "@haptic/core";
-import { normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
+import { isAnimGraphAssetType, normalizeWaterDefinition, type WaterDefinition } from "@haptic/core";
 import { normalizeRenderTargetPayload, normalizeRenderTargetTexturePayload, type RenderTargetPayload, type RenderTargetTexturePayload } from "@haptic/core";
 import {
   parseAnimGraphDocument,
@@ -16,6 +16,8 @@ import {
   parseSpritePayload,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
+  normalizeBlendSpacePayload,
+  normalizeSpriteBlendSpacePayload,
   retargetAnimationLoadsFromAnimations,
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
@@ -29,7 +31,11 @@ import {
   parseSpriteAnimationPayload,
   refreshStaleTilemaps,
   spriteAnimationDurationMs,
+  animationClipEvents,
+  spriteAnimationClipEvents,
   type AnimationPayload,
+  type BlendSpacePayload,
+  type SpriteBlendSpacePayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
@@ -68,9 +74,9 @@ import type { GameAssetIndexEntry } from "./types";
 const decoder = new TextDecoder();
 const JSON_CONTENT_TYPES = new Set([
   "RenderTarget", "RenderTargetTexture", "Sprite", "SpriteAnimation", "Water",
-  "Tilemap", "Tileset", "AnimationGraph", "BehaviourTree", "Blackboard",
+  "Tilemap", "Tileset", "AnimationGraph3D", "AnimationGraph2D", "BehaviourTree", "Blackboard",
   "Material", "MaterialInstance", "MaterialFunction", "AudioMixer", "AudioChannel",
-  "SoundAttenuation", "Animation", "Audio",
+  "SoundAttenuation", "Animation", "BlendSpace", "SpriteBlendSpace", "Audio",
   "DataDefinition", "DataTree", "Structure", "Enum", "FloatCurve", "VectorCurve", "ColorCurve",
   "GlobalParameterCollection", "TimelineClip2D", "TimelineClip3D", "CameraShake",
 ]);
@@ -191,7 +197,8 @@ function normalizeEntry(entry: GameAssetIndexEntry, parsed: unknown): unknown {
     case "Water": return normalizeWaterDefinition(parsed);
     case "Tilemap": return normalizeTilemapPayload(parsed);
     case "Tileset": return normalizeTilesetPayload(parsed);
-    case "AnimationGraph": return parseAnimGraphDocument(parsed);
+    case "AnimationGraph3D": return parseAnimGraphDocument(parsed, "3d");
+    case "AnimationGraph2D": return parseAnimGraphDocument(parsed, "2d");
     case "BehaviourTree": return parseBehaviourTreeDocument(parsed);
     case "Blackboard": return parseBlackboardDocument(parsed);
     case "Material": return normalizeMaterialDocument(parsed, name ?? "Material");
@@ -202,6 +209,8 @@ function normalizeEntry(entry: GameAssetIndexEntry, parsed: unknown): unknown {
     case "SoundAttenuation": return normalizeSoundAttenuationPayload(parsed);
     case "Audio": return normalizeAudioPayload(parsed);
     case "Animation": return normalizeAnimationPayload(parsed);
+    case "BlendSpace": return normalizeBlendSpacePayload(parsed);
+    case "SpriteBlendSpace": return normalizeSpriteBlendSpacePayload(parsed);
   }
   return isParticleAssetType(type) ? parsed : null;
 }
@@ -270,6 +279,8 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   const particleAssets: Array<{ guid: string; type: string; name?: string; payload: unknown }> = [];
   const animationPayloads = new Map<string, AnimationPayload>();
   const animationNames = new Map<string, string>();
+  const blendSpaces = new Map<string, { name: string; payload: BlendSpacePayload }>();
+  const spriteBlendSpaces = new Map<string, { name: string; payload: SpriteBlendSpacePayload }>();
 
   for (const entry of game.manifest.assets ?? []) {
     if (!JSON_CONTENT_TYPES.has(entry.type) && !isParticleAssetType(entry.type)) continue;
@@ -295,7 +306,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     else if (entry.type === "Water") waterPayloads.set(entry.guid, value as WaterDefinition);
     else if (entry.type === "Tilemap") tilemapPayloads.set(entry.guid, value as TilemapPayload);
     else if (entry.type === "Tileset") tilesetPayloads.set(entry.guid, value as TilesetPayload);
-    else if (entry.type === "AnimationGraph") animGraphs.push({ guid: entry.guid, document: value as AnimGraphDocument });
+    else if (isAnimGraphAssetType(entry.type)) animGraphs.push({ guid: entry.guid, document: value as AnimGraphDocument });
     else if (entry.type === "BehaviourTree") behaviourTrees.push({ guid: entry.guid, document: value });
     else if (entry.type === "Blackboard") blackboards.push({ guid: entry.guid, document: value });
     else if (entry.type === "Material") materialDocuments.set(entry.guid, value as MaterialDocument);
@@ -309,7 +320,8 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     else if (entry.type === "Animation") {
       animationPayloads.set(entry.guid, value as AnimationPayload);
       if (entry.name?.trim()) animationNames.set(entry.guid, entry.name.trim());
-    }
+    } else if (entry.type === "BlendSpace") blendSpaces.set(entry.guid, { name, payload: value as BlendSpacePayload });
+    else if (entry.type === "SpriteBlendSpace") spriteBlendSpaces.set(entry.guid, { name, payload: value as SpriteBlendSpacePayload });
   }
 
   const startup = game.manifest.startupSceneGuid;
@@ -339,7 +351,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
   });
 
   const animations = [...animationPayloads].map(([guid, payload]) => ({ guid, payload }));
-  const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(animations);
+  // A Model plays the Animations retargeted onto it and every other Model's Animation on its Skeleton.
+  const retargetAnimationLoads = retargetAnimationLoadsFromAnimations(
+    animations,
+    new Map([...game.modelPayloads].map(([guid, payload]) => [guid, payload.skeletonGuid])),
+  );
   const clipCatalog: AnimClipCatalogEntry[] = [
     ...[...animationPayloads.entries()].map(([guid, payload]) => ({
       guid,
@@ -349,12 +365,29 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       ...(payload.durationMs !== undefined ? { durationMs: payload.durationMs } : {}),
       ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
       ...(payload.modelGuid ? { modelGuid: payload.modelGuid } : {}),
+      ...((events) => (events.length > 0 ? { events } : {}))(animationClipEvents(payload.events)),
     })),
     ...[...sizedSpriteAnimations.entries()].map(([guid, payload]) => ({
       guid,
       type: "SpriteAnimation",
       name: guid,
       durationMs: spriteAnimationDurationMs(payload),
+      frameCount: payload.frames.length,
+      ...((events) => (events.length > 0 ? { events } : {}))(spriteAnimationClipEvents(payload)),
+    })),
+    // A Blend Space Player plays its samples from these; their Animations are in the closure as its dependencies.
+    ...[...blendSpaces.entries()].map(([guid, { name, payload }]) => ({
+      guid,
+      type: "BlendSpace",
+      name,
+      ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
+      blendSpace: { axes: payload.axes, samples: payload.samples, eventMode: payload.eventMode },
+    })),
+    ...[...spriteBlendSpaces.entries()].map(([guid, { name, payload }]) => ({
+      guid,
+      type: "SpriteBlendSpace",
+      name,
+      blendSpace: { axes: payload.axes, samples: payload.samples, hysteresis: payload.hysteresis, keepTime: payload.keepTime },
     })),
   ];
   const resolvedAnimGraphs = animGraphs.map((entry) => ({

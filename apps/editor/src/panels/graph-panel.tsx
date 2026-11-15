@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { LazyGlslCodePreview } from "../components/lazy-code-editors";
 import {
-  canBreakOnNode,
   canvasNodeTitle,
   GraphEditor,
   GRAPH_DEFAULT_ZOOM,
@@ -12,9 +11,11 @@ import {
   type GraphPinDrop,
   type PaletteNode,
 } from "@haptic/graph-ui";
-import { formatEventMemberName, NamePromptDialog, PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
-import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene } from "@haptic/core";
+import { PanelFrame, walkAncestry, type NestedMenuItem } from "@haptic/editor-kit";
+import { isEditorGraphHost, type GraphClassMemberPin, type SerializedGraph, type SerializedScene, isAnimGraphDocumentKind } from "@haptic/core";
 import { variableTypeFromPinType, type PinType } from "@haptic/scripting";
+import { parseAnimGraphDocument } from "@haptic/anim-graph";
+import { animGraphEventEntries } from "../lib/anim-graph-events";
 import { nextCopyName } from "@haptic/assets";
 import {
   Empty,
@@ -32,12 +33,11 @@ import { GraphPinDefaultHostContext } from "../context/graph-pin-defaults-provid
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useBreakpointStore } from "../context/breakpoints-context";
-import { breakpointMenuItems } from "../lib/breakpoint-menu";
 import { watchablePins, watchPinMenuItems } from "../lib/watch-menu";
 import { useWatchStore } from "../context/watch-store-context";
 import { conditionPins } from "../lib/breakpoint-settings";
 import { useBreakpointSettingsEditor } from "../lib/use-breakpoint-settings-editor";
-import { useKeybindChord } from "../context/keybind-context";
+import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useAppSettings } from "../context/app-settings-context";
@@ -50,21 +50,21 @@ import {
   addClassMember,
   adoptBoundEventSignatures,
   canRenameCustomEvent,
-  customEventRenameError,
   dispatcherEventNodeData,
   dispatcherEventPins,
   freeDispatcherEventName,
   functionLibraryShowsEventGraphEmpty,
-  renameCustomEvent,
 } from "../lib/class-members";
 import { createEventCandidates, createEventPickData } from "../lib/create-event-members";
 import { CreateEventMemberPicker } from "../components/create-event-member-picker";
+import { useCustomEventRename } from "./use-custom-event-rename";
 import { CREATE_EVENT_NODE_TYPE_ID, isDispatcherNodeType } from "@haptic/scripting-nodes";
 import {
   classMemberSymbolsFromGraphs,
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
+  newCustomEventPaletteNode,
   ScriptPaletteCache,
   scriptPaletteInjectorKey,
   scriptPaletteNodes,
@@ -76,11 +76,8 @@ import { classIdForGraphPath, functionGraphExportName } from "../services/script
 import { logicGraphHostClass } from "../lib/embedded-script";
 import { ownedActorsOfScene, ownedGetDiagnostics, ownedTimelineClipDispatcherSymbols, ownedTimelineClipsOfScene, refreshOwnedGetNodes } from "../lib/owned-actor-gets";
 import { refreshTimelineClipNodes, timelineGraphDiagnostics, timelineScriptClassIds, timelineScriptSymbols } from "../lib/timeline-script-catalog";
-import { useAnimObjectGraphRunTrace, useClassGraphRunTrace, useGraphDebugStore } from "../context/graph-debug-context";
-import { useSimulationControls } from "../context/simulation-controls-context";
-import { GraphSteppingBar } from "../components/graph-stepping-bar";
+import { useAnimObjectGraphRunTrace, useClassGraphRunTrace } from "../context/graph-debug-context";
 import { useExtensionMenuItems } from "../components/use-extension-menu-items";
-import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
@@ -131,8 +128,8 @@ export function GraphPanel(
   const { documentId } = useDocumentWorkspace();
   const documentActions = useDocumentActions();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const { activeDocumentId, animEditorMode, sceneMode } = useActiveDocumentState();
-  const { focusedNodeId, openSessionSource } = usePlay();
+  const { activeDocumentId, sceneMode } = useActiveDocumentState();
+  const { focusedNodeId } = usePlay();
   const {
     selectedNodeIds,
     setSelectedNodeIds,
@@ -151,7 +148,6 @@ export function GraphPanel(
   const { settings: appSettings } = useAppSettings();
   const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [renameEventId, setRenameEventId] = useState<string | null>(null);
   const paletteCacheRef = useRef(new ScriptPaletteCache());
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
@@ -212,22 +208,10 @@ export function GraphPanel(
   const classRunTrace = useClassGraphRunTrace(doc?.ref.kind === "graph" ? doc.ref.path : undefined, classId, runGraphId);
   // An Animation Graph's Animation Object graph is compiled like a Class graph, under its own id.
   const animObjectRunTrace = useAnimObjectGraphRunTrace(
-    doc?.ref.kind === "anim-graph" ? doc.ref.path : undefined,
+    isAnimGraphDocumentKind(doc?.ref.kind) ? doc.ref.path : undefined,
     indexed?.header.guid,
   );
   const runTrace = classRunTrace ?? animObjectRunTrace;
-  // While a debugged graph is paused, its canvas carries the stepping control.
-  const graphDebug = useGraphDebugStore();
-  const simulationControls = useSimulationControls();
-  const focusStep = useCallback((position: GraphDebugStepPosition) => {
-    void openSessionSource({
-      severity: "info", code: "editor.step", message: "Step",
-      assetGuid: position.assetGuid, graphId: position.graphId, nodeId: position.nodeId,
-    });
-  }, [openSessionSource]);
-  const steppingBar = runTrace && graphDebug && simulationControls?.paused
-    ? <GraphSteppingBar store={graphDebug} controls={simulationControls} onFocus={focusStep} />
-    : undefined;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
@@ -331,7 +315,6 @@ export function GraphPanel(
   // Pin watches use the same terms.
   const watchStore = useWatchStore();
   const watchAsset = watchStore && doc?.ref.kind === "graph" ? doc.ref.path : undefined;
-  const toggleBreakpointChord = useKeybindChord("graph.toggleBreakpoint");
   const graphName = activeFunctionId
     ? graphContent?.members?.find((member) => member.id === activeFunctionId)?.name ?? activeFunctionId
     : "Event Graph";
@@ -345,11 +328,22 @@ export function GraphPanel(
       nodeTitle: node ? canvasNodeTitle(node.data, node.type) : nodeId,
     };
   }, [breakpointAsset, classId, graphName]);
-  const breakpoints = useMemo(
-    () => breakpointStore && breakpointAsset ? breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel) : undefined,
-    [breakpointAsset, breakpointLabel, breakpointStore, runGraphId],
-  );
   const { edit: editBreakpoint, dialog: breakpointSettingsDialog } = useBreakpointSettingsEditor(breakpointStore);
+  // Edit Breakpoint… offers the node's condition pins as the graph has them now.
+  const breakpoints = useMemo(() => {
+    if (!breakpointStore || !breakpointAsset) return undefined;
+    const edit = (nodeId: string) => {
+      const { nodes, edges } = latestGraph.current;
+      const data = nodes.find((candidate) => candidate.id === nodeId)?.data;
+      editBreakpoint({
+        location: { assetGuid: breakpointAsset, graphId: runGraphId, nodeId },
+        nodeTitle: breakpointLabel(nodeId).nodeTitle,
+        pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
+          (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
+      });
+    };
+    return breakpointStore.graphView(breakpointAsset, runGraphId, breakpointLabel, { edit });
+  }, [breakpointAsset, breakpointLabel, breakpointStore, editBreakpoint, runGraphId]);
   // A function graph runs under its name, so renaming a function moves its breakpoints and watches with it.
   const functionRunIds = useMemo(() => new Map(
     Object.keys(graphContent?.functionGraphs ?? {}).map((id) => [id, functionGraphExportName({
@@ -447,8 +441,6 @@ export function GraphPanel(
         documentId,
         activeDocumentId,
         documentKind: doc?.ref.kind ?? "",
-        animEditorMode:
-          doc?.ref.kind === "anim-graph" ? animEditorMode : undefined,
         sceneMode,
       })
     ) {
@@ -531,7 +523,6 @@ export function GraphPanel(
     inputAssets,
     dataAssets,
     typeSchemas,
-    animEditorMode,
     sceneMode,
     focused,
     materialDomains,
@@ -540,6 +531,17 @@ export function GraphPanel(
     ownedTimelineClips,
     timelineAssets,
   ]);
+
+  // An Animation Object offers an event node for each Animation Event its graph can fire.
+  const animKind = doc?.ref.kind;
+  const animContent = isAnimGraphDocumentKind(animKind) ? doc?.content : undefined;
+  const animEvents = useMemo(() => {
+    void registryEpoch;
+    if (!animContent || !isAnimGraphDocumentKind(animKind)) return undefined;
+    const dimension = animKind === "anim-graph-2d" ? "2d" : "3d";
+    const parsed = parseAnimGraphDocument(animContent, dimension);
+    return parsed ? animGraphEventEntries(parsed, dimension, assetRegistry?.list() ?? []) : undefined;
+  }, [animContent, animKind, assetRegistry, registryEpoch]);
 
   const paletteInput = {
     saveGameDefinition,
@@ -564,7 +566,8 @@ export function GraphPanel(
     ownedTimelineClips,
     timelineAssets,
     animationGraphHost:
-      doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
+      isAnimGraphDocumentKind(doc?.ref.kind) ? ("object" as const) : undefined,
+    animEvents,
   };
   const paletteInputRef = useRef(paletteInput);
   paletteInputRef.current = paletteInput;
@@ -739,6 +742,25 @@ export function GraphPanel(
     graphId: runGraphId,
     node: extensionNodeRef.current,
   }), [doc?.ref.path, runGraphId]));
+  // Rename Event opens the event's inline rename in the Class panel.
+  const { start: renameEvent, dialog: renameEventDialog } = useCustomEventRename({
+    graph: graphContent,
+    documentKind: doc?.ref.kind,
+    classId,
+    commit: (next) => {
+      if (doc) applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
+    },
+  });
+  // Rename (F2) renames the one selected custom event, as the node menu's Rename Event does.
+  const renameChord = useKeybindChord("edit.rename");
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const renameTargetId = selectedNodeIds.length === 1 && graphContent && canRenameCustomEvent(graphContent, selectedNodeIds[0]!)
+    ? selectedNodeIds[0]!
+    : null;
+  useKeybindCommand("edit.rename", () => { if (renameTargetId) renameEvent(renameTargetId); }, {
+    enabled: renameTargetId !== null,
+    focusWithinRef: canvasRef,
+  });
   const contextMenuItemsForNode = useCallback(
     (nodeId: string) => {
       const withExtensions = (entries: NestedMenuItem[]) => {
@@ -747,7 +769,7 @@ export function GraphPanel(
         return [...entries, ...nodeExtensionItems];
       };
       const items: NestedMenuItem[] = graphContent && canRenameCustomEvent(graphContent, nodeId)
-        ? [{ id: "rename-event", label: "Rename Event", onSelect: () => setRenameEventId(nodeId) }]
+        ? [{ id: "rename-event", label: "Rename Event", shortcut: renameChord, onSelect: () => renameEvent(nodeId) }]
         : [];
       const { nodes, edges } = latestGraph.current;
       const node = nodes.find((candidate) => candidate.id === nodeId);
@@ -758,24 +780,10 @@ export function GraphPanel(
           label: { ...breakpointLabel(nodeId), className: classId ?? watchAsset, pinName: pin.name },
         })));
       }
-      if (!breakpointStore || !breakpointAsset || !canBreakOnNode(node?.data)) return withExtensions(items);
-      const location = { assetGuid: breakpointAsset, graphId: runGraphId, nodeId };
-      const edit = () => {
-        const { nodes, edges } = latestGraph.current;
-        const data = nodes.find((candidate) => candidate.id === nodeId)?.data;
-        editBreakpoint({
-          location,
-          nodeTitle: breakpointLabel(nodeId).nodeTitle,
-          pins: conditionPins(hasSerializedPins(data) ? data.__pins : [],
-            (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId)),
-        });
-      };
-      return withExtensions([
-        ...items,
-        ...breakpointMenuItems(breakpointStore, location, () => breakpointLabel(nodeId), toggleBreakpointChord, edit),
-      ]);
+      // The canvas adds the breakpoint items for the whole selection.
+      return withExtensions(items);
     },
-    [breakpointAsset, breakpointLabel, breakpointStore, classId, editBreakpoint, graphContent, nodeExtensionItems, runGraphId, toggleBreakpointChord, watchAsset, watchStore],
+    [breakpointLabel, classId, graphContent, nodeExtensionItems, renameChord, renameEvent, runGraphId, watchAsset, watchStore],
   );
 
   // In a function graph, a wire dropped on the Input or Output node's body adds a pin of its type.
@@ -797,6 +805,17 @@ export function GraphPanel(
       },
     };
   }, [activeFunctionId, documentActions, documentId]);
+
+  // Create New Custom Event…: a name free in the graph as it is now, then the
+  // inline rename in the Class panel, as for the Class panel's New Event.
+  const preparePaletteNode = useCallback(
+    (row: PaletteNode) => row.id === "flow.event.custom" ? newCustomEventPaletteNode(row, graphContentRef.current) : row,
+    [],
+  );
+  const onPaletteNodeAdded = useCallback(
+    (row: PaletteNode, nodeId: string) => { if (row.id === "flow.event.custom") renameEvent(nodeId); },
+    [renameEvent],
+  );
 
   const preparePaste = useCallback(
     (pasted: GraphPasteElements, current: GraphPasteElements) =>
@@ -847,12 +866,12 @@ export function GraphPanel(
         <ClassParticleSystemsContext.Provider value={classParticleSystems}>
         <ClassMaterialsContext.Provider value={classMaterials}>
         <GraphPinDefaultHostContext.Provider value={isEditorGraphHost({ parentClass, parentOf, assetType: indexed?.header.type })}>
+          <div ref={canvasRef} className="h-full min-h-0">
           <GraphEditor
             renderNodeBody={renderNodeBody}
             key={`${documentId}:${activeFunctionId ?? "event"}`}
             initialGraph={graph}
             runTrace={runTrace}
-            overlay={steppingBar}
             breakpoints={breakpoints}
             describeNode={describeClassGraphNode}
             commitPositionsOnDragEnd
@@ -876,6 +895,8 @@ export function GraphPanel(
             onEmptyCanvasClick={functionMember ? () => setSelectedMemberId(functionMember.id) : undefined}
             contextMenuItemsForNode={contextMenuItemsForNode}
             preparePaste={preparePaste}
+            preparePaletteNode={preparePaletteNode}
+            onPaletteNodeAdded={onPaletteNodeAdded}
             onChange={(next) => {
               if (!doc) return;
               const edited = applyDataGraphAssetPicks(graph, next, dataAssets);
@@ -900,27 +921,12 @@ export function GraphPanel(
               applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, merged));
             }}
           />
+          </div>
         </GraphPinDefaultHostContext.Provider>
         </ClassMaterialsContext.Provider>
         </ClassParticleSystemsContext.Provider>
       )}
-      <NamePromptDialog
-        open={renameEventId !== null}
-        onOpenChange={(open) => { if (!open) setRenameEventId(null); }}
-        title="Rename Event"
-        label="Event Name"
-        confirmLabel="Rename"
-        initialValue={(() => {
-          const node = graphContent?.nodes.find((entry) => entry.id === renameEventId);
-          return formatEventMemberName(String(node?.data.name ?? node?.data.title ?? ""));
-        })()}
-        validate={(name) => graphContent && renameEventId ? customEventRenameError(graphContent, renameEventId, name) : null}
-        onSubmit={(name) => {
-          if (!doc || !graphContent || !renameEventId) return;
-          const next = renameCustomEvent(graphContent, renameEventId, name, classId);
-          applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
-        }}
-      />
+      {renameEventDialog}
       {breakpointSettingsDialog}
     </PanelFrame>
   );

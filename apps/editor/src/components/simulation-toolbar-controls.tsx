@@ -1,25 +1,92 @@
 import { ToolbarOverflowItem } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
-import { CircleDotIcon, GamepadIcon, LocateFixedIcon, MousePointer2Icon, PauseIcon, PlayIcon, SkipForwardIcon, SquareIcon } from "lucide-react";
+import {
+  GamepadIcon,
+  LocateFixedIcon,
+  MousePointer2Icon,
+  OctagonPauseIcon,
+  PauseIcon,
+  PlayIcon,
+  SkipForwardIcon,
+  SquareIcon,
+  StepBackIcon,
+  StepForwardIcon,
+} from "lucide-react";
+import { breakpointStopText, type BreakpointStop } from "../lib/breakpoint-stop";
 import { TOOLBAR_OVERFLOW_PRIORITY } from "../lib/toolbar-overflow-priority";
 import {
   SIMULATION_CONTROL_ATTRIBUTE,
   type SimulationControls,
 } from "../context/simulation-controls-context";
+import type { GraphDebugStepPosition, GraphDebugStore } from "../services/graph-debug-store";
+import { useGraphStepping } from "../lib/use-graph-stepping";
+import { GraphSteppingBar } from "./graph-stepping-bar";
 
 const controlProps = { [SIMULATION_CONTROL_ATTRIBUTE]: "" };
 
-/** "Stopped At …": where a breakpoint stopped the session; choosing it opens the node again. */
-function BreakpointStopItem({ stoppedAt, onOpenStop }: { stoppedAt: string; onOpenStop?: () => void }) {
+/**
+ * The debugging island left of the session controls while the game is paused: the asset a breakpoint
+ * stopped in, named (choosing it opens the node again), the stepping control over the followed object's
+ * recorded visits, and Next Frame, which runs one frame and stays paused.
+ */
+export function DebugStepToolbarControls({
+  controls,
+  stopping,
+  stop,
+  onOpenStop,
+  graphDebug,
+  onFocusStep,
+}: {
+  controls: SimulationControls;
+  stopping: boolean;
+  /** Where a breakpoint stopped the session; it stays named until the session resumes. */
+  stop?: BreakpointStop | null;
+  onOpenStop?: () => void;
+  /** The graph debugger, whose recorded visits the stepping control walks; absent without one. */
+  graphDebug?: GraphDebugStore | null;
+  /** Opens the node of the visit stepped to. */
+  onFocusStep: (position: GraphDebugStepPosition) => void;
+}) {
+  const stepDisabled = controls.stepPending || controls.pausePending || stopping;
+  return (
+    <>
+      {stop ? <BreakpointStopButton stop={stop} onOpenStop={onOpenStop} /> : null}
+      {graphDebug ? <SteppingItem store={graphDebug} controls={controls} onFocus={onFocusStep} /> : null}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="chrome-icon-button"
+              aria-label="Next Frame"
+              disabled={stepDisabled}
+              onClick={() => controls.step()}
+              data-testid="simulation-step"
+              {...controlProps}
+            />
+          }
+        >
+          <SkipForwardIcon />
+        </TooltipTrigger>
+        <TooltipContent>Run One Frame</TooltipContent>
+      </Tooltip>
+    </>
+  );
+}
+
+/** The asset a breakpoint stopped in, by name and cut short with an ellipsis; choosing it opens the node. */
+function BreakpointStopButton({ stop, onOpenStop }: { stop: BreakpointStop; onOpenStop?: () => void }) {
+  const where = `Stopped At ${breakpointStopText(stop)}`;
   return (
     <ToolbarOverflowItem
       id="breakpoint-stop"
       priority={TOOLBAR_OVERFLOW_PRIORITY.breakpointStop}
       items={[{
         id: "breakpoint-stop",
-        label: `Stopped At ${stoppedAt}`,
-        icon: <CircleDotIcon />,
+        label: `Open ${stop.className}`,
+        icon: <OctagonPauseIcon />,
         onSelect: () => onOpenStop?.(),
       }]}
     >
@@ -29,38 +96,60 @@ function BreakpointStopItem({ stoppedAt, onOpenStop }: { stoppedAt: string; onOp
             <Button
               size="sm"
               variant="ghost"
-              className="chrome-action-button min-w-0 max-w-72"
-              aria-label={`Stopped At ${stoppedAt}`}
+              className="chrome-action-button min-w-0 max-w-40"
+              aria-label={where}
               onClick={() => onOpenStop?.()}
               data-testid="simulation-breakpoint-stop"
               {...controlProps}
             />
           }
         >
-          <CircleDotIcon data-icon="inline-start" className="text-destructive" />
-          <span className="truncate">{stoppedAt}</span>
+          <OctagonPauseIcon data-icon="inline-start" className="text-destructive" />
+          <span className="truncate">{stop.className}</span>
         </TooltipTrigger>
-        <TooltipContent>Stopped At {stoppedAt}</TooltipContent>
+        <TooltipContent>{where}</TooltipContent>
       </Tooltip>
+    </ToolbarOverflowItem>
+  );
+}
+
+function SteppingItem({ store, controls, onFocus }: {
+  store: GraphDebugStore;
+  controls: SimulationControls;
+  onFocus: (position: GraphDebugStepPosition) => void;
+}) {
+  const stepping = useGraphStepping(store, controls, onFocus);
+  return (
+    <ToolbarOverflowItem
+      id="graph-stepping"
+      priority={TOOLBAR_OVERFLOW_PRIORITY.stepping}
+      items={[
+        { id: "graph-step-back", label: "Step Back", icon: <StepBackIcon />, disabled: !stepping.canStepBack, onSelect: stepping.stepBack },
+        {
+          id: "graph-step-forward",
+          label: stepping.forwardInRecord ? "Step Forward" : "Step Forward Into The Next Tick",
+          icon: <StepForwardIcon />,
+          disabled: controls.stepPending,
+          onSelect: stepping.stepForward,
+        },
+      ]}
+    >
+      <GraphSteppingBar stepping={stepping} controls={controls} />
     </ToolbarOverflowItem>
   );
 }
 
 /**
  * Editor Play stopped at a breakpoint or an error, its view hidden behind the editor: Resume returns
- * to the game and carries on, Stop ends Play. The Debug menu stays beside them.
+ * to the game and carries on, Stop ends Play. Stepping sits in its own island beside them
+ * (`DebugStepToolbarControls`).
  */
 export function PlayBreakToolbarControls({
   controls,
   stopping,
   onStop,
-  stoppedAt,
-  onOpenStop,
 }: {
   controls: SimulationControls;
-  /** Where a breakpoint stopped Play, named; absent for an error. */
-  stoppedAt?: string | null;
-  onOpenStop?: () => void;
   stopping: boolean;
   onStop: () => void;
 }) {
@@ -86,7 +175,6 @@ export function PlayBreakToolbarControls({
         </TooltipTrigger>
         <TooltipContent>Return To The Game</TooltipContent>
       </Tooltip>
-      {stoppedAt ? <BreakpointStopItem stoppedAt={stoppedAt} onOpenStop={onOpenStop} /> : null}
       <Tooltip>
         <TooltipTrigger
           render={
@@ -112,9 +200,9 @@ export function PlayBreakToolbarControls({
 }
 
 /**
- * The running Simulation in the global toolbar's Play island: Pause, Step while
- * paused, a red Stop in place of Simulate, a Game / Edit input toggle and, away
- * from its Scene, Return To Scene.
+ * The running Simulation in the global toolbar's Play island: Pause, a red Stop in
+ * place of Simulate, a Game / Edit input toggle and, away from its Scene, Return To
+ * Scene. Stepping while paused sits in its own island (`DebugStepToolbarControls`).
  */
 export function SimulationToolbarControls({
   controls,
@@ -122,15 +210,9 @@ export function SimulationToolbarControls({
   phone,
   onStop,
   onReturnToScene,
-  stoppedAt,
-  onOpenStop,
 }: {
   /** Null until the Simulation's overlay is ready. */
   controls: SimulationControls | null;
-  /** Where a breakpoint stopped the Simulation, named, while it stays there. */
-  stoppedAt?: string | null;
-  /** Opens the node the Simulation stopped at again. */
-  onOpenStop?: () => void;
   stopping: boolean;
   phone: boolean;
   onStop: () => void;
@@ -164,40 +246,6 @@ export function SimulationToolbarControls({
         </TooltipTrigger>
         <TooltipContent>{paused ? "Resume" : "Pause"}</TooltipContent>
       </Tooltip>
-      {paused && controls ? (
-        <ToolbarOverflowItem
-          id="simulation-step"
-          priority={TOOLBAR_OVERFLOW_PRIORITY.simulationStep}
-          items={[{
-            id: "simulation-step",
-            label: "Step",
-            icon: <SkipForwardIcon />,
-            disabled: controls.stepPending || controls.pausePending || stopping,
-            onSelect: () => controls.step(),
-          }]}
-        >
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="chrome-icon-button"
-                aria-label="Step"
-                disabled={controls.stepPending || controls.pausePending || stopping}
-                onClick={() => controls.step()}
-                data-testid="simulation-step"
-                {...controlProps}
-              />
-            }
-          >
-            <SkipForwardIcon />
-          </TooltipTrigger>
-          <TooltipContent>Step One Tick</TooltipContent>
-        </Tooltip>
-        </ToolbarOverflowItem>
-      ) : null}
-      {paused && stoppedAt ? <BreakpointStopItem stoppedAt={stoppedAt} onOpenStop={onOpenStop} /> : null}
       <Tooltip>
         <TooltipTrigger
           render={

@@ -8,7 +8,9 @@ import {
 } from "react";
 import {
   ArrowUpDownIcon,
+  CheckCheckIcon,
   ChevronDownIcon,
+  CircleCheckIcon,
   FolderOpenIcon,
   Grid2x2Icon,
   Grid3x3Icon,
@@ -16,6 +18,7 @@ import {
   ListIcon,
   LoaderCircleIcon,
   PlusIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import {
@@ -79,8 +82,11 @@ import {
 import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { HomepageAccount } from "./homepage-account";
+import { HomepageDiscordBadge } from "./homepage-discord-badge";
+import { HomepageUpdateBadge } from "./homepage-update-badge";
 import { ReleaseNews } from "./release-news";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
+import { HomepageDeleteProjectsDialog } from "./homepage-delete-projects-dialog";
 import { HomepageGallery } from "./homepage-gallery";
 import { HomepageProjectCard } from "./homepage-project-card";
 import { HomepageWelcome } from "./homepage-welcome";
@@ -222,6 +228,8 @@ export function Homepage({
   const [operation, setOperation] = useState<string | null>(null);
   const busyRef = useRef(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  /** The signed-in account, null for a guest, undefined until sign-in settles. */
+  const [accountId, setAccountId] = useState<string | null>();
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -229,6 +237,14 @@ export function Homepage({
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
+  /** Selection mode: cards toggle their selection instead of opening. */
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  /** The selection as listed in the Delete dialog; fixed while it is open. */
+  const [deleteTargets, setDeleteTargets] = useState<ListedProject[]>([]);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState("");
   // Shown as the Name placeholder; used when the field is left empty.
   const [suggestedName, setSuggestedName] = useState("");
@@ -260,6 +276,45 @@ export function Homepage({
       ),
     [projects, search, sort],
   );
+  const selectedProjects = projects.filter((project) =>
+    selectedIds.has(project.id),
+  );
+  const allVisibleSelected =
+    visibleProjects.length > 0 &&
+    visibleProjects.every((project) => selectedIds.has(project.id));
+  const endSelection = () => {
+    setSelecting(false);
+    setSelectedIds(new Set());
+  };
+  /** Outside selection mode, enters it with this project selected. */
+  const toggleSelected = (id: string) => {
+    if (!selecting) {
+      setSelecting(true);
+      setSelectedIds(new Set([id]));
+      return;
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () =>
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const project of visibleProjects) {
+        if (allVisibleSelected) next.delete(project.id);
+        else next.add(project.id);
+      }
+      return next;
+    });
+  // An emptied library hides the toolbar, and with it Cancel.
+  useEffect(() => {
+    if (projects.length === 0) {
+      setSelecting(false);
+      setSelectedIds(new Set());
+    }
+  }, [projects.length]);
   const allTemplates = homepageTemplates(templates, { debugMode });
   const templateCount = allTemplates.length;
   /** The empty library offers the built-in starters directly. */
@@ -325,6 +380,7 @@ export function Homepage({
   const changeView = (next: string) => {
     setView(next);
     setSearch("");
+    endSelection();
   };
 
   return (
@@ -360,11 +416,16 @@ export function Homepage({
             <span className="homepage-navigation-count">{templateCount}</span>
           </ToggleGroupItem>
         </ToggleGroup>
+        <div className="homepage-sidebar-badges">
+          <HomepageUpdateBadge />
+          <HomepageDiscordBadge accountId={accountId} />
+        </div>
         <div className="homepage-sidebar-end">
           <div className="homepage-sidebar-account">
             <HomepageAccount
               disabled={busy}
               onOpenChange={setAccountOpen}
+              onAccountChange={setAccountId}
               onEngineSettings={() => setSettingsOpen(true)}
               onChangelog={() => setChangelogOpen(true)}
             />
@@ -382,7 +443,9 @@ export function Homepage({
               </p>
             ) : (
               <p className="homepage-status-summary">
-                {view === "projects"
+                {selecting
+                  ? `${selectedProjects.length} Selected`
+                  : view === "projects"
                   ? `${projects.length} ${projects.length === 1 ? "Project" : "Projects"}`
                   : `${templateCount} ${templateCount === 1 ? "Template" : "Templates"}`}
                 <span aria-hidden="true">·</span>
@@ -593,6 +656,59 @@ export function Homepage({
                         </DropdownMenuGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    {selecting && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={
+                            allVisibleSelected ? "Deselect All" : "Select All"
+                          }
+                          data-testid="homepage-project-select-all"
+                          disabled={busy || visibleProjects.length === 0}
+                          onClick={toggleSelectAll}
+                        >
+                          <CheckCheckIcon data-icon="inline-start" />
+                          <span className="homepage-optional-label">
+                            {allVisibleSelected ? "Deselect All" : "Select All"}
+                          </span>
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Delete Selected Projects"
+                          data-testid="homepage-project-delete-selected"
+                          disabled={busy || selectedProjects.length === 0}
+                          onClick={() => {
+                            setDeleteTargets(selectedProjects);
+                            setDeleteOpen(true);
+                          }}
+                        >
+                          <Trash2Icon data-icon="inline-start" />
+                          <span className="homepage-optional-label">Delete</span>
+                        </Button>
+                      </>
+                    )}
+                    {/* Last in the row, so Cancel takes Select's place. */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      aria-label={selecting ? "Cancel Selection" : "Select Projects"}
+                      data-testid="homepage-project-select-mode"
+                      disabled={busy}
+                      onClick={() =>
+                        selecting ? endSelection() : setSelecting(true)
+                      }
+                    >
+                      {selecting ? (
+                        <XIcon data-icon="inline-start" />
+                      ) : (
+                        <CircleCheckIcon data-icon="inline-start" />
+                      )}
+                      <span className="homepage-optional-label">
+                        {selecting ? "Cancel" : "Select"}
+                      </span>
+                    </Button>
                   </div>
                 )}
                 <HomepageGallery
@@ -606,6 +722,9 @@ export function Homepage({
                         layout={layout}
                         busy={busy}
                         deleting={removeDeletesProject(project.tier)}
+                        selecting={selecting}
+                        selected={selectedIds.has(project.id)}
+                        onToggleSelected={() => toggleSelected(project.id)}
                         onOpen={() =>
                           void run(() =>
                             launch(() => onOpenProject(project), project.label),
@@ -736,19 +855,41 @@ export function Homepage({
       <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
         <AlertDialogContent
           className="homepage-theme"
-          variant={deleting ? "destructive" : "default"}
+          variant={deleting ? "destructive" : "warning"}
           data-testid="homepage-remove-dialog"
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {deleting ? "Delete Project?" : "Remove Project?"}
+            <AlertDialogTitle className="break-words">
+              {removeTarget
+                ? `${deleting ? "Delete" : "Remove"} ${removeTarget.label}?`
+                : null}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {deleting
                 ? "This permanently deletes the project."
-                : "Project files stay on this device."}
+                : "This only takes the project off this list. Nothing is deleted."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {!deleting && (
+            <ul
+              className="flex flex-col divide-y rounded-md border text-xs text-muted-foreground"
+              aria-label="Remove or Delete"
+              data-testid="homepage-remove-compare"
+            >
+              <li className="flex flex-col gap-0.5 px-2.5 py-1.5">
+                <span className="font-medium text-foreground">
+                  Remove From List
+                </span>
+                The folder and its files stay where they are. To list the
+                project again, choose Open and pick its folder.
+              </li>
+              <li className="flex flex-col gap-0.5 px-2.5 py-1.5">
+                <span className="font-medium text-foreground">Delete</span>
+                Erases a project's files for good. Haptic only deletes projects
+                in its own storage, never a folder you chose.
+              </li>
+            </ul>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="homepage-remove-cancel">
               Cancel
@@ -767,11 +908,23 @@ export function Homepage({
                 setRemoveOpen(false);
               }}
             >
-              {deleting ? "Delete" : "Remove"}
+              {deleting ? "Delete" : "Remove From List"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <HomepageDeleteProjectsDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        projects={deleteTargets}
+        onConfirm={(targets) =>
+          void run(async () => {
+            // One at a time: a failure stops here, and the projects not yet deleted stay selected.
+            for (const project of targets) await onRemoveFromList(project);
+            endSelection();
+          }, targets.length === 1 ? "Deleting Project" : "Deleting Projects")
+        }
+      />
       <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !transition.active && !accountOpen && !settingsOpen && !createOpen && !busy} />
       {settingsOpen && (
         <Suspense fallback={null}>

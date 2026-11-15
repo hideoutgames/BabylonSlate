@@ -1405,11 +1405,14 @@ describe("connectEndAction", () => {
     ).toBe("none");
   });
 
-  it("opens Add Node from a far drop in zone-add-node mode and never breaks wires", () => {
+  it("opens Add Node from a far drop in zone-add-node mode; any other release breaks wires, as in the default mode", () => {
     expect(connectEndAction(far, "zone-add-node")).toBe("add-node");
-    expect(connectEndAction(near, "zone-add-node")).toBe("none");
+    expect(connectEndAction(near, "zone-add-node")).toBe("break");
     expect(
       connectEndAction({ ...far, pointerOverNode: true }, "zone-add-node"),
+    ).toBe("break");
+    expect(
+      connectEndAction({ ...near, pointerOverSourceHandle: true }, "zone-add-node"),
     ).toBe("none");
     expect(
       connectEndAction({ ...far, hasTargetHandle: true }, "zone-add-node"),

@@ -14,6 +14,8 @@ import {
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   createDocumentRef,
+  SOURCE_CONTROL_ID,
+  SOURCE_CONTROL_REF,
 } from "@haptic/core";
 import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -39,6 +41,8 @@ const state = vi.hoisted(() => ({
   simulationUnavailableReason: null as string | null,
   sessionState: { generation: 0, mode: null as "simulate" | null, lifecycle: "idle", quarantined: false, error: null },
   stopSession: vi.fn(),
+  setActiveDocument: vi.fn(),
+  closeDocument: vi.fn(),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -51,6 +55,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   registryEpoch: state.registry?.generation ?? 0,
   graphsNeedCompile: true,
   collectPlayPreviewScripts: async () => ({ bundles: [], diagnostics: state.compileDiagnostics }),
+  setActiveDocument: state.setActiveDocument,
+  closeDocument: state.closeDocument,
 })));
 vi.mock("../context/play-context", () => ({
   usePlay: () => ({
@@ -123,6 +129,57 @@ afterEach(() => {
   state.simulationUnavailableReason = null;
   state.sessionState = { generation: 0, mode: null, lifecycle: "idle", quarantined: false, error: null };
   state.stopSession.mockClear();
+  state.setActiveDocument.mockClear();
+  state.closeDocument.mockClear();
+});
+
+describe("chrome Source Control tab", () => {
+  const scene = () => openDocument("first", createDocumentRef("data-tree", "assets/Weapons.datatree.hasset"));
+
+  it("pins Source Control at the right end of the tabs, left of Open Documents, with no way to close it", () => {
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), scene(), openDocument(SOURCE_CONTROL_ID, SOURCE_CONTROL_REF)];
+    render(<Chrome />);
+    const bar = screen.getByTestId("document-tab-bar");
+    const children = [...bar.children].map((child) => child.getAttribute("data-testid") ?? child.getAttribute("aria-label"));
+    expect(children).toEqual(["document-tab-pinned", "document-tab-scroll", "document-tab-pinned-end", "document-switcher"]);
+    const tab = within(screen.getByTestId("document-tab-pinned-end")).getByTestId("document-tab");
+    expect(tab.getAttribute("data-document-kind")).toBe("source-control");
+    expect(tab.textContent).toBe("Source Control");
+    expect(tab.querySelector("svg.lucide-git-branch")).toBeTruthy();
+    expect(within(tab).queryByTestId("document-tab-close")).toBeNull();
+    expect(within(screen.getByTestId("document-tab-scroll")).queryByText("Source Control")).toBeNull();
+    fireEvent.click(within(tab).getByRole("button"));
+    expect(state.setActiveDocument).toHaveBeenCalledWith(SOURCE_CONTROL_ID);
+  });
+
+  it("never offers to close Source Control from Open Documents", () => {
+    state.activeId = SOURCE_CONTROL_ID;
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument(SOURCE_CONTROL_ID, SOURCE_CONTROL_REF)];
+    render(<Chrome onCloseAllDocuments={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Documents" }));
+    expect(screen.getByRole("menuitemradio", { name: /Source Control/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Close Source Control/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Close Open Tab(s)" }).getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("puts a Source Control button beside the Content Browser button in the phone layout", () => {
+    state.phone = true;
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument(SOURCE_CONTROL_ID, SOURCE_CONTROL_REF)];
+    render(<Chrome />);
+    const button = screen.getByRole("button", { name: "Source Control" });
+    expect(button.previousElementSibling?.getAttribute("aria-label")).toBe("Content Browser");
+    fireEvent.click(button);
+    expect(state.setActiveDocument).toHaveBeenCalledWith(SOURCE_CONTROL_ID);
+  });
+
+  it.each([false, true])("shows no Source Control tab or button while the mode is Off (phone=%s)", (phone) => {
+    state.phone = phone;
+    state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), scene()];
+    render(<Chrome />);
+    expect(screen.queryByTestId("document-tab-pinned-end")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Source Control" })).toBeNull();
+    expect(screen.queryByText("Source Control")).toBeNull();
+  });
 });
 
 describe("chrome Play", () => {
@@ -265,14 +322,14 @@ describe("chrome graph debugger", () => {
 
   it.each([
     ["behaviour-tree", { kind: "behaviourTree", assetGuid: "asset-guid" }],
-    ["anim-graph", { kind: "animationGraph", assetGuid: "asset-guid" }],
+    ["anim-graph-3d", { kind: "animationGraph", assetGuid: "asset-guid" }],
   ] as const)("aims the debugger at the focused %s asset's components, by the asset's guid", async (kind, target) => {
     await createRegistry();
     simulate();
     state.activeId = "asset";
     state.documents = [openDocument(CONTENT_BROWSER_ID, CONTENT_BROWSER_REF), openDocument("asset", createDocumentRef(kind, "assets/Guard.hasset"))];
     vi.spyOn(state.registry!, "getByPath").mockReturnValue({
-      header: { guid: "asset-guid", type: kind === "anim-graph" ? "AnimationGraph" : "BehaviourTree" },
+      header: { guid: "asset-guid", type: kind === "anim-graph-3d" ? "AnimationGraph3D" : "BehaviourTree" },
     } as unknown as ReturnType<AssetRegistry["getByPath"]>);
     render(<DebugChrome />);
     expect(store!.getSnapshot().target).toEqual(target);

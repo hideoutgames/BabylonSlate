@@ -1,5 +1,11 @@
 import { sniffSourceImageSize } from "./image-size";
 import {
+  animationEventActionGuids,
+  normalizeSpriteAnimationFrameEvents,
+  type AnimationClipEvent,
+  type SpriteAnimationFrameEventPayload,
+} from "./animation-events";
+import {
   DEFAULT_SPRITE_COLLISION,
   DEFAULT_SPRITE_PIVOT,
   parseSpriteCollision,
@@ -52,6 +58,8 @@ export interface SpriteAnimationFrame {
   height?: number;
   /** Set by loaders for a sheet cell: the cell's UVs (GL, v up); absent shows the whole Texture. */
   uv?: TileUv;
+  /** Animation Events that fire as the frame starts; absent when there are none. */
+  events?: SpriteAnimationFrameEventPayload[];
 }
 
 export interface SpriteAnimationPayload {
@@ -133,6 +141,8 @@ function parseSpriteAnimationFrame(
   }
   const uv = parseUv(source.uv);
   if (uv) frame.uv = uv;
+  const events = normalizeSpriteAnimationFrameEvents(source.events);
+  if (events.length > 0) frame.events = events;
   return frame;
 }
 
@@ -302,6 +312,36 @@ export function spriteAnimationFrameAt(
   return payload.frames[payload.frames.length - 1]!;
 }
 
+/**
+ * A frame as a Flip Frame node shows it: its pivot and collision box reflected across the frame, so the mirrored
+ * art and its collider stay on the actor origin. Unflipped frames return as they are.
+ */
+export function flipSpriteAnimationFrame<T extends Pick<SpriteAnimationFrame, "pivot" | "collision" | "uv">>(
+  frame: T,
+  flipX: boolean | undefined,
+  flipY: boolean | undefined,
+): T {
+  if (!flipX && !flipY) return frame;
+  const { pivot, collision } = frame;
+  const uv = frame.uv ?? { u0: 0, v0: 0, u1: 1, v1: 1 };
+  return {
+    ...frame,
+    pivot: { x: flipX ? 1 - pivot.x : pivot.x, y: flipY ? 1 - pivot.y : pivot.y },
+    collision: {
+      ...collision,
+      x: flipX ? 1 - collision.x - collision.width : collision.x,
+      y: flipY ? 1 - collision.y - collision.height : collision.y,
+    },
+    // Swapped edges sample the region mirrored.
+    uv: {
+      u0: flipX ? uv.u1 : uv.u0,
+      u1: flipX ? uv.u0 : uv.u1,
+      v0: flipY ? uv.v1 : uv.v0,
+      v1: flipY ? uv.v0 : uv.v1,
+    },
+  };
+}
+
 export function spriteAnimationFrameStartMs(
   payload: SpriteAnimationPayload,
   index: number,
@@ -369,9 +409,13 @@ export function spriteAnimationSpriteGuids(payload: SpriteAnimationPayload): str
   return guids;
 }
 
-/** Assets a Sprite Animation references: its Textures, then its Sprites. */
+/** Assets a Sprite Animation references: its Textures, its Sprites, then what its frame events act with. */
 export function spriteAnimationDependencyGuids(payload: SpriteAnimationPayload): string[] {
-  return [...spriteAnimationTextureGuids(payload), ...spriteAnimationSpriteGuids(payload)];
+  const guids = [...spriteAnimationTextureGuids(payload), ...spriteAnimationSpriteGuids(payload)];
+  for (const guid of animationEventActionGuids(payload.frames.flatMap((frame) => frame.events ?? []))) {
+    if (!guids.includes(guid)) guids.push(guid);
+  }
+  return guids;
 }
 
 /**
@@ -402,4 +446,19 @@ export function hydrateSpriteAnimations(
     next.set(guid, resolveSpriteAnimation(payload, { sprite: (spriteGuid) => sources.sprites.get(spriteGuid), textureSize }));
   }
   return next;
+}
+
+/** A Sprite Animation's named frame events as its players fire them: each at its frame's start. */
+export function spriteAnimationClipEvents(payload: SpriteAnimationPayload): AnimationClipEvent[] {
+  return payload.frames.flatMap((frame, index) =>
+    (frame.events ?? [])
+      .filter((event) => event.name.length > 0)
+      .map((event) => ({
+        name: event.name,
+        timeMs: spriteAnimationFrameStartMs(payload, index),
+        durationMs: 0,
+        triggerWeight: event.triggerWeight,
+        action: event.action,
+      })),
+  );
 }

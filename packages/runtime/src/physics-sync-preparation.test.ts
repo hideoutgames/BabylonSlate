@@ -78,7 +78,6 @@ function install(
         materialSlots: [],
         simpleColliders: [],
         autoLod: true,
-        clipNames: [],
         skeletonGuid: null,
         importScale: 1,
       },

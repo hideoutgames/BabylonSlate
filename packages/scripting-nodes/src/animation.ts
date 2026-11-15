@@ -71,6 +71,21 @@ export const animationNodes: NodeDefinition[] = [
     codegen: () => ({ deltaSeconds: "ctx.deltaSeconds" }),
   },
   {
+    // One per Animation Event name (`eventName`), in the Animation Object only. It runs when this graph fires the
+    // event: a single event through Then, a window (`window`) through Begin and End.
+    id: "anim.event.notify",
+    title: "Animation Event",
+    category: "animation",
+    pure: true,
+    pins: (properties) =>
+      properties.window === true
+        ? [pin("begin", "Begin", "out", EXEC), pin("end", "End", "out", EXEC)]
+        : [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* gated entry compiled by emitInputEventEntry */
+    },
+  },
+  {
     id: "anim.rule.enterState",
     title: "Enter State",
     category: "animation",

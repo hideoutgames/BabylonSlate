@@ -323,7 +323,6 @@ describe("loadGameFromFiles", () => {
     const packedModel = encodePackedModelAsset(
       {
         importScale: 4,
-        clipNames: ["Walk"],
         materialSlots: [],
         skeletonGuid: null,
       },

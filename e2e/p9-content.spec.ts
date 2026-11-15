@@ -37,7 +37,7 @@ async function showContentBrowser(page: Page): Promise<void> {
 }
 
 function animStateMachine(page: Page) {
-  return page.getByTestId("anim-dock-surface-state-machine");
+  return page.getByTestId("document-workspace-anim-graph");
 }
 
 async function dispatchPreviewWheel(
@@ -308,20 +308,20 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("sprite-animation-play")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-editor")).toBeVisible();
 
-    await createContentBrowserAsset(page, "AnimationGraph", "Loco");
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
     await page
-      .locator('[data-asset-path="assets/Loco.anim.hasset"]')
+      .locator('[data-asset-path="assets/Loco.anim3d.hasset"]')
       .dblclick();
     await expect(
       page.getByTestId("document-workspace-anim-graph"),
     ).toBeVisible();
-    await expect(page.getByTestId("anim-editor-mode-bar")).toBeVisible();
-    await expect(
-      page.getByTestId("anim-editor-mode-state-machine"),
-    ).toHaveAttribute("aria-pressed", "true");
-    await expect(
-      page.getByTestId("anim-dock-surface-state-machine"),
-    ).toHaveAttribute("data-active", "true");
+    // The Graph shows first; the Animation Object script is a window tabbed beside it.
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    const workspace = page.getByTestId("document-workspace-anim-graph");
+    await workspace.locator(".dv-tab", { hasText: "Animation Object" }).click();
+    await expect(workspace.getByTestId("anim-object-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-editor")).toBeHidden();
+    await workspace.locator(".dv-tab", { hasText: "Graph" }).first().click();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
     await expect(
       animStateMachine(page).getByTestId("anim-graph-parameters"),
@@ -335,6 +335,114 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await expect(page.getByTestId("material-graph-editor")).toBeVisible();
     await expect(page.getByTestId("material-preview-canvas")).toBeVisible();
+  });
+
+  test("an Animation Graph wire selects from a click beside it and stays selected after its rule closes", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await page.getByTestId("anim-graph-add-state").click();
+    const added = page.getByTestId("anim-state-node-state-1");
+    await expect(added).toBeVisible();
+
+    // Drag a transition from Idle's right side onto the new state.
+    const from = (await page.locator('.react-flow__node[data-id="idle"] .react-flow__handle[data-handleid="right-out"]').boundingBox())!;
+    const to = (await added.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + 10, to.y + to.height / 2, { steps: 12 });
+    await page.mouse.up();
+    const wire = page.locator(".react-flow__edge").first();
+    await expect(wire).toHaveCount(1);
+
+    // 8px to either side of the 1.25px wire (50% zoom), a third of the way along: the hit band takes both, not the canvas.
+    for (const offset of [8, -8]) {
+      // Selecting a state clears the wire (two canvas clicks this close together would open Add Node).
+      await page.getByTestId("anim-state-node-idle").click();
+      await expect(wire).not.toHaveClass(/\bselected\b/);
+      const beside = await wire.locator(".react-flow__edge-path").evaluate((path: SVGPathElement, offset) => {
+        const length = path.getTotalLength();
+        const at = path.getPointAtLength(length * 0.3);
+        const ahead = path.getPointAtLength(length * 0.3 + 1);
+        const matrix = path.getScreenCTM()!;
+        const screen = (x: number, y: number) => ({ x: matrix.a * x + matrix.c * y + matrix.e, y: matrix.b * x + matrix.d * y + matrix.f });
+        const a = screen(at.x, at.y);
+        const b = screen(ahead.x, ahead.y);
+        const norm = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        return { x: a.x - ((b.y - a.y) / norm) * offset, y: a.y + ((b.x - a.x) / norm) * offset };
+      }, offset);
+      await page.mouse.click(beside.x, beside.y);
+      await expect(wire).toHaveClass(/\bselected\b/);
+    }
+    const card = animStateMachine(page).locator('[data-testid^="anim-graph-transition-"][data-testid$="-toggle"]');
+    await expect(card).toHaveText("Idle To State");
+
+    // Back To State Machine returns with the rule's transition selected and its wire highlighted.
+    await animStateMachine(page).locator('[data-testid^="anim-graph-open-rule-"]').first().click();
+    await expect(page.getByTestId("anim-rule-title")).toHaveText("Idle To State");
+    await page.getByRole("button", { name: "Back To State Machine" }).click();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await expect(page.locator(".react-flow__edge").first()).toHaveClass(/\bselected\b/);
+    await expect(card).toHaveText("Idle To State");
+  });
+
+  test("double-clicking an Animation Graph state opens its state graph in its own tab beside the Graph", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await page.getByTestId("anim-state-node-idle").dblclick();
+    const pose = page.getByTestId("anim-pose-graph");
+    await expect(pose).toBeVisible();
+    await expect(pose).toHaveAttribute("data-state-id", "idle");
+    // One Sequence Player wired into the protected Output Pose.
+    await expect(pose.locator('.react-flow__node[data-id="output"] .anim-pose-output-node')).toBeVisible();
+    await expect(pose.locator('.react-flow__node[data-id="player"]')).toBeVisible();
+    await expect(pose.locator(".react-flow__edge")).toHaveCount(1);
+
+    // The tab is named after the state and marked as one; the Graph tab still holds the State Machine.
+    const stateTab = page.locator(".dv-tab").filter({ hasText: /^Idle$/ });
+    await expect(stateTab).toHaveCount(1);
+    await expect(stateTab.locator('[data-tab-icon="state"]')).toHaveCount(1);
+    await page.locator(".dv-tab").filter({ hasText: /^Graph$/ }).click();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-breadcrumbs")).toHaveCount(0);
+    // Opening the state again brings its tab forward rather than adding another.
+    await page.getByTestId("anim-state-node-idle").dblclick();
+    await expect(pose).toBeVisible();
+    await expect(stateTab).toHaveCount(1);
+  });
+
+  test("double-clicking an Animation Graph transition's wire opens its rule", async ({ page }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "AnimationGraph3D", "Loco");
+    await page.locator('[data-asset-path="assets/Loco.anim3d.hasset"]').dblclick();
+    await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+    await page.getByTestId("anim-graph-add-state").click();
+    const added = page.getByTestId("anim-state-node-state-1");
+    await expect(added).toBeVisible();
+    const from = (await page.locator('.react-flow__node[data-id="idle"] .react-flow__handle[data-handleid="right-out"]').boundingBox())!;
+    const to = (await added.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+    await page.mouse.up();
+    const wire = page.locator(".react-flow__edge");
+    await expect(wire).toHaveCount(1);
+    // Double-click a third of the way along the wire.
+    const point = await wire.locator(".react-flow__edge-path").evaluate((path: SVGPathElement) => {
+      const at = path.getPointAtLength(path.getTotalLength() * 0.3);
+      const matrix = path.getScreenCTM()!;
+      return { x: matrix.a * at.x + matrix.c * at.y + matrix.e, y: matrix.b * at.x + matrix.d * at.y + matrix.f };
+    });
+    await page.mouse.dblclick(point.x, point.y);
+    await expect(page.getByTestId("anim-rule-graph")).toBeVisible();
+    await expect(page.getByTestId("anim-rule-title")).toHaveText("Idle To State");
   });
 
   test("Material preview compiles the authored graph and follows the primitive picker", async ({

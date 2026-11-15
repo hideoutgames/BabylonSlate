@@ -15,6 +15,7 @@ import { isEngineDefaultMaterial } from "./default-material";
 import { syncSceneLighting } from "./scene-lighting";
 import { isEnvironmentLightingReady } from "./environment-lighting";
 import { isRenderTargetProbeReady, outsideReadinessProbeScope } from "./readiness-scope";
+import { noteReadinessBlocker } from "./readiness-blockers";
 import { withSceneReadinessState } from "./scene-readiness-signal";
 import { createHeldThreadBudget, createStallDeadline, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch } from "./driver-compile";
@@ -332,6 +333,30 @@ function failedRequest(): Effect | undefined {
   return failed;
 }
 
+/** The Effects the probed mesh requested and where each stands, for a reader of the probe's diagnostics. */
+function describeRequests(): string {
+  if (!meshRequests.size) return "it requested no Effect";
+  const states: string[] = [];
+  for (const effect of meshRequests) {
+    const name = typeof effect.name === "string" ? effect.name : effect.name.fragmentElement ?? effect.name.fragment ?? effect.name.fragmentSource?.slice(0, 40) ?? "inline";
+    const error = effect.getCompilationError();
+    // Whether Babylon has the Effect's sources yet: its program exists only once they are processed.
+    const linking = Boolean((effect.getPipelineContext() as { program?: unknown } | null)?.program);
+    states.push(`${name} #${effectSerial(effect)} ${effect.isReady() ? "ready" : effect.isDisposed ? "disposed"
+      : error ? `failed (${error.slice(0, 160)})` : linking ? "linking" : "processing its sources"}`);
+  }
+  return states.join(", ");
+}
+
+/** A number per Effect object, in the order a failed probe first described them: tells one Effect that stays unready from a new one each probe. */
+const effectSerials = new WeakMap<Effect, number>();
+let nextEffectSerial = 1;
+function effectSerial(effect: Effect): number {
+  let serial = effectSerials.get(effect);
+  if (serial === undefined) effectSerials.set(effect, (serial = nextEffectSerial++));
+  return serial;
+}
+
 function reportFailure(effect: Effect, message: string): void {
   if (reportedFailures.has(effect)) return;
   reportedFailures.add(effect);
@@ -454,7 +479,10 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       } else if (isRevealPending(mesh)) noteVariantSwap();
       return true;
     }
-    if (!meshReady) return false;
+    if (!meshReady) {
+      noteReadinessBlocker(() => `mesh "${mesh.name}" (Material "${(mesh.material ?? scene.defaultMaterial).name}"): ${describeRequests()}`);
+      return false;
+    }
     // A strict probe (a new run, before its first steady frame) found a hidden mesh ready: it is revealed with the
     // round when every other pass agrees. Otherwise only a tolerant round could reveal it, and none follows.
     if (isRevealPending(mesh)) noteRevealProbe(mesh, true);
@@ -468,6 +496,8 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
         if (swapFailed(material)) continue;
         noteVariantSwap();
         requestPipelineWarm(mesh);
+        if (!variantSwapsTolerated())
+          noteReadinessBlocker(() => `mesh "${mesh.name}" (Material "${material.name}"): its new variant is compiling (${describeRequests()})`);
         return variantSwapsTolerated();
       }
     }
@@ -535,16 +565,24 @@ export function isSceneFrameReady(
     const admitted = admittedSceneMeshes(scene);
     const meshes = admitted ?? scene.meshes;
     const pendingData = admitted !== undefined ? hasParentPendingData(scene) : scene.getWaitingItemsCount() > 0;
-    let ready = !pendingData && isEnvironmentLightingReady(scene);
+    // Each `unready` names what holds the probe, for a reader of its diagnostics (`noteReadinessBlocker`).
+    const unready = (describe: () => string): false => {
+      noteReadinessBlocker(describe);
+      return false;
+    };
+    let ready = true;
+    if (pendingData) ready = unready(() => "scene data still loading");
+    else if (!isEnvironmentLightingReady(scene)) ready = unready(() => "environment lighting");
     const textures = admittedSceneTextures(scene, meshes);
     if (textures) {
       for (const texture of textures) {
         if (texture.loadingError) throw new Error(texture.errorObject?.message ?? `Texture ${texture.name} failed to load.`);
-        if (!texture.isRenderTarget && !texture.isReady()) ready = false;
+        if (!texture.isRenderTarget && !texture.isReady()) ready = unready(() => `texture "${texture.name}"`);
       }
-    } else if (!isSceneTextureWorkReady(scene)) ready = false;
+    } else if (!isSceneTextureWorkReady(scene)) ready = unready(() => pendingSceneTextures(scene)[0] ?? "scene textures");
     scene.prePassRenderer?.update();
-    if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady()) ready = false;
+    if (scene.useOrderIndependentTransparency && scene.depthPeelingRenderer && !scene.depthPeelingRenderer.isReady())
+      ready = unready(() => "depth peeling renderer");
     const renderTargets = new Set([...scene.customRenderTargets, ...targets]);
     const materials = new Set<Material>();
     for (const mesh of meshes) {
@@ -554,7 +592,7 @@ export function isSceneFrameReady(
       const instanced = mesh.hasThinInstances || mesh.getClassName() === "InstancedMesh" ||
         mesh.getClassName() === "InstancedLinesMesh" || Boolean(engine.getCaps().instancedArrays && mesh instanceof Mesh && mesh.instances.length);
       for (const step of scene._isReadyForMeshStage) {
-        if (!step.action(mesh, instanced)) ready = false;
+        if (!step.action(mesh, instanced)) ready = unready(() => `mesh "${mesh.name}" (a scene component's mesh stage)`);
       }
       const material = mesh.material ?? scene.defaultMaterial;
       if (material._storeEffectOnSubMeshes) {
@@ -571,23 +609,25 @@ export function isSceneFrameReady(
       }
     }
     if (admitted) {
-      for (const mesh of meshes) if (mesh instanceof Mesh && mesh.geometry?.delayLoadState === 2) ready = false;
+      for (const mesh of meshes)
+        if (mesh instanceof Mesh && mesh.geometry?.delayLoadState === 2) ready = unready(() => `geometry of mesh "${mesh.name}"`);
     } else {
-      for (const geometry of scene.geometries) if (geometry.delayLoadState === 2) ready = false;
+      for (const geometry of scene.geometries) if (geometry.delayLoadState === 2) ready = unready(() => `geometry "${geometry.id}"`);
     }
     const cameras = scene.activeCameras?.length ? scene.activeCameras : scene.activeCamera ? [scene.activeCamera] : [];
     for (const camera of cameras) {
-      if (!camera.isReady(true)) ready = false;
+      if (!camera.isReady(true)) ready = unready(() => `camera "${camera.name}"`);
       if (camera.outputRenderTarget) renderTargets.add(camera.outputRenderTarget);
     }
-    for (const particle of admittedSceneParticles(scene) ?? scene.particleSystems) if (!particle.isReady()) ready = false;
+    for (const particle of admittedSceneParticles(scene) ?? scene.particleSystems)
+      if (!particle.isReady()) ready = unready(() => `particle system "${particle.name}"`);
     if (scene.proceduralTexturesEnabled) {
-      for (const texture of scene.proceduralTextures ?? []) if (!texture.isReady()) ready = false;
+      for (const texture of scene.proceduralTextures ?? []) if (!texture.isReady()) ready = unready(() => `procedural texture "${texture.name}"`);
     }
-    for (const layer of scene.layers ?? []) if (!layer.isReady()) ready = false;
-    for (const layer of scene.effectLayers ?? []) if (!layer.isLayerReady()) ready = false;
+    for (const layer of scene.layers ?? []) if (!layer.isReady()) ready = unready(() => `layer "${layer.name}"`);
+    for (const layer of scene.effectLayers ?? []) if (!layer.isLayerReady()) ready = unready(() => `effect layer "${layer.name}"`);
     for (const check of (scene as unknown as SceneReadinessInternals)._isReadyChecks) {
-      if (!check.isReady()) ready = false;
+      if (!check.isReady()) ready = unready(() => "a scene readiness check");
     }
     // A shadow map waits for its casters without holding a tolerant probe (`deferCasterChecks`).
     const shadowMaps = probedShadowMaps;
@@ -605,7 +645,7 @@ export function isSceneFrameReady(
       const owner = target.getScene() ?? scene;
       if (withSceneReadinessState(owner, () => isRenderTargetProbeReady(target))) continue;
       if (variantSwapsTolerated() && shadowMaps.has(target)) noteVariantSwap();
-      else ready = false;
+      else ready = unready(() => `render target "${target.name}"`);
     }
     shadowMaps.clear();
     return ready;

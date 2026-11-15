@@ -13,6 +13,9 @@ import {
   type SerializedGraph,
   type SerializedScene,
   type WaterDefinition,
+  isAnimGraphAssetType,
+  isAnimGraphDocumentKind,
+  type AnimGraphDocumentKind,
 } from "@haptic/core";
 import {
   decodeSourceToRgba,
@@ -26,7 +29,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@haptic/assets";
-import { parseAnimGraphDocument } from "@haptic/anim-graph";
+import { animPoseGraphs, parseAnimGraphDocument } from "@haptic/anim-graph";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { embeddedScriptHost } from "../lib/embedded-script";
@@ -105,7 +108,7 @@ import {
 } from "./script-compiler";
 
 /** Class graphs, Animation Graphs and the typed asset catalogs their compilation reads. */
-export const GRAPH_SIGNATURE_KINDS = ["graph", "anim-graph", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
+export const GRAPH_SIGNATURE_KINDS = ["graph", "anim-graph-3d", "anim-graph-2d", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
 
 /** How a Play compile differs from the default editor compile. */
 export type PlayScriptCompileOptions = {
@@ -179,16 +182,17 @@ function openAnimGraphSignatureSlices(
   openDocuments: readonly OpenDocument[],
 ): Array<{ path: string; content: SerializedGraph }> {
   return openDocuments
-    .filter((doc) => doc.ref.kind === "anim-graph" && doc.content)
+    .filter((doc) => isAnimGraphDocumentKind(doc.ref.kind) && doc.content)
     .flatMap((doc) => {
       const parsed = parseAnimGraphDocument(doc.content);
       if (!parsed) return [];
       return [
         { path: `${doc.ref.path}#animation-object`, content: parsed.animationObject },
-        ...parsed.transitions.map((transition) => ({
+        ...parsed.stateMachine.transitions.map((transition) => ({
           path: `${doc.ref.path}#rule-${transition.id}:${transition.fromStateId}>${transition.toStateId}`,
           content: transition.ruleGraph,
         })),
+        ...animPoseGraphs(parsed).map(({ key, graph }) => ({ path: `${doc.ref.path}#pose-${key}`, content: graph })),
       ];
     });
 }
@@ -258,7 +262,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         };
       });
     const animGraphs = openDocuments
-      .filter((doc) => doc.ref.kind === "anim-graph" && doc.content)
+      .filter((doc) => isAnimGraphDocumentKind(doc.ref.kind) && doc.content)
       .map((doc) => ({
         guid: assets.find((entry) => entry.path === doc.ref.path)?.header.guid ?? doc.ref.path,
         path: doc.ref.path,
@@ -289,7 +293,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
 
   /** A closed document's content: from `stored` when the caller read it already, else read now. */
   const closedDocumentContent = async (
-    kind: "graph" | "scene" | "scene-layer" | "anim-graph",
+    kind: "graph" | "scene" | "scene-layer" | AnimGraphDocumentKind,
     path: string,
     guid: string | undefined,
     stored: ReadonlyMap<string, StoredPlayDocument> | undefined,
@@ -391,13 +395,14 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
   const loadProjectAnimGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false,
     stored?: ReadonlyMap<string, StoredPlayDocument>) => {
     const assets = (projectService.registry?.list() ?? []).filter(
-      (asset) => asset.header.type === "AnimationGraph" && (!requiredGuids || requiredGuids.has(asset.header.guid)),
+      (asset) => isAnimGraphAssetType(asset.header.type) && (!requiredGuids || requiredGuids.has(asset.header.guid)),
     );
     const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
     const entries: PlayAnimGraphEntry[] = [];
     for (const asset of assets) {
+      const kind: AnimGraphDocumentKind = asset.header.type === "AnimationGraph2D" ? "anim-graph-2d" : "anim-graph-3d";
       const openDoc = open.get(
-        documentId({ kind: "anim-graph", path: asset.path }),
+        documentId({ kind, path: asset.path }),
       );
       if (openDoc?.content) {
         entries.push({ guid: asset.header.guid, document: openDoc.content });
@@ -406,7 +411,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       try {
         entries.push({
           guid: asset.header.guid,
-          document: await closedDocumentContent("anim-graph", asset.path, asset.header.guid, stored),
+          document: await closedDocumentContent(kind, asset.path, asset.header.guid, stored),
         });
       } catch (error) {
         reportLoadFailure("Animation Graph", asset.path, error, strict);
@@ -577,7 +582,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
 
   const loadPlayAssetContent = async (
     kind:
-      | "anim-graph"
+      | AnimGraphDocumentKind
       | "behaviour-tree"
       | "blackboard"
       | "sprite"
@@ -847,12 +852,15 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const bytes = new Map<string, Uint8Array>();
     const animationRows = workingAssetSources(assets.filter((asset) =>
       asset.header.type === "Animation" && (!requiredGuids || requiredGuids.has(asset.header.guid))));
+    const modelSkeletons = new Map(assets.filter((asset) => asset.header.type === "Model")
+      .map((asset) => [asset.header.guid, normalizeModelPayload(asset.header.payload ?? {}).skeletonGuid] as const));
     const models = [...new Set(modelGuidsForPlayRetarget(
       [
         ...modelAssetGuidsFromScene(scene),
         ...extraScenes.flatMap((entry) => modelAssetGuidsFromScene(entry)),
       ],
       animationRows,
+      modelSkeletons,
     ))].flatMap((guid) => { const asset = byGuid.get(guid); return asset ? [{ guid, asset }] : []; });
     const sources = await mapBounded(models, COLLECTOR_READS, ({ asset }) => readAssetChunk(asset.path, "source"));
     for (const [index, { guid }] of models.entries()) {

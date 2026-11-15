@@ -8,6 +8,7 @@ import {
   GRAPH_MIN_ZOOM,
   GRAPH_ZOOM_ON_DOUBLE_CLICK,
   GraphEditor,
+  type GraphNodeDrag,
 } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
 import { isAssignable, type PinType } from "@haptic/scripting";
@@ -181,6 +182,32 @@ describe("toolbar Add Node placement", () => {
     expect(latest.nodes).toEqual([
       expect.objectContaining({ data: expect.objectContaining({ name: "On Hit", title: "Event On Hit" }) }),
     ]);
+  });
+
+  it("places the host's rewrite of an Add Node row and reports the placed node", () => {
+    let latest: GraphDocument = { nodes: [], edges: [] };
+    const added = vi.fn();
+    const row = { id: "flow.event.custom", title: "Create New Custom Event…", category: "flow", defaultData: { name: "Stale" } };
+    const { getByTestId } = render(
+      <GraphEditor
+        initialGraph={latest}
+        sessionViewport={viewport}
+        paletteNodes={[row]}
+        preparePaletteNode={(picked) => ({ ...picked, nodeTitle: "Event NewEvent_1", defaultData: { name: "NewEvent_1" } })}
+        onPaletteNodeAdded={added}
+        onChange={(graph) => { latest = graph; }}
+      />,
+    );
+    stubGraphBounds(getByTestId("graph-editor"), canvas);
+
+    fireEvent.click(getByTestId("graph-add-node"));
+    fireEvent.click(getByTestId("node-palette-item-flow.event.custom"));
+
+    expect(latest.nodes).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ name: "NewEvent_1", title: "Event NewEvent_1" }) }),
+    ]);
+    expect(added).toHaveBeenCalledTimes(1);
+    expect(added).toHaveBeenCalledWith(expect.objectContaining({ id: "flow.event.custom", defaultData: { name: "NewEvent_1" } }), latest.nodes[0]!.id);
   });
 
   it("treats an existing node as its measured size, not the larger estimate", () => {
@@ -1227,6 +1254,36 @@ describe("GraphEditor", () => {
       expect((onChange.mock.calls.at(-1)?.[0] as GraphDocument).edges).toHaveLength(1);
     });
 
+    it("drops the chosen pin when something else is tapped or Escape is pressed, but keeps it through a drag", () => {
+      const onChange = vi.fn();
+      const { container } = renderTapToConnect(
+        <GraphEditor initialGraph={threeLogs()} onChange={onChange} />,
+      );
+      const body = (nodeId: string) => container.querySelector(`[data-id="${nodeId}"] [data-node-role]`)!;
+      const tap = (target: Element, moveBy = 0) => {
+        dispatchPointerEvent(target, "pointerdown", { clientX: 10, clientY: 10 });
+        dispatchPointerEvent(target, "pointerup", { clientX: 10 + moveBy, clientY: 10 });
+      };
+
+      // A tap on another node drops it: the output tap then chooses a pin instead of connecting.
+      fireEvent.click(pin(container, "log-b", "execIn"));
+      tap(body("log-c"));
+      fireEvent.click(pin(container, "log-a", "execOut"));
+      expect(onChange).not.toHaveBeenCalled();
+
+      // Escape drops the output chosen just now: the input tap then chooses a pin too.
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      fireEvent.click(pin(container, "log-c", "execIn"));
+      expect(onChange).not.toHaveBeenCalled();
+
+      // A press that moves (a pan or a drag) keeps the chosen input, so the other side still connects.
+      tap(body("log-b"), 40);
+      fireEvent.click(pin(container, "log-a", "execOut"));
+      expect((onChange.mock.calls.at(-1)?.[0] as GraphDocument).edges).toEqual([
+        expect.objectContaining({ source: "log-a", target: "log-c" }),
+      ]);
+    });
+
     it("ignores pin taps while Tap To Connect Pins is off", () => {
       const onChange = vi.fn();
       const { container } = render(
@@ -2226,7 +2283,56 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("does not open Add Node or break wires on a near pin drag in zone-add-node mode", () => {
+  it("lets the host build a wire dragged from an input onto another node's body, from the dragged node", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const connectDraggedToNode = vi.fn((drag: GraphNodeDrag) => ({
+        source: drag.fromNodeId,
+        target: drag.toNodeId,
+        sourceHandle: "execOut",
+        targetHandle: "execIn",
+      }));
+      const { container } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              { id: "log-a", type: "debug.log", position: { x: 0, y: 0 }, data: { message: "A", __pins: debugLogPins } },
+              { id: "log-b", type: "debug.log", position: { x: 280, y: 0 }, data: { message: "B", __pins: debugLogPins } },
+            ],
+            edges: [],
+          }}
+          connectEndMode="zone-add-node"
+          connectionMode="loose"
+          connectDraggedToNode={connectDraggedToNode}
+          onChange={onChange}
+        />,
+      );
+      const flow = container.querySelector(".react-flow");
+      mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
+      const input = container.querySelector('[data-id="log-a"] [data-handleid="execIn"][data-handlepos="left"]');
+      const body = container.querySelector('.react-flow__node[data-id="log-b"]');
+      expect(input).not.toBeNull();
+      expect(body).not.toBeNull();
+      mockHandleRect(input!, { left: 0, top: 0, width: 44, height: 44 });
+      mockHandleRect(body!, { left: 280, top: 0, width: 200, height: 120 });
+      onChange.mockClear();
+      act(() => {
+        dragHandle(input!, { x: 22, y: 22 }, { x: 380, y: 100 });
+      });
+      expect(connectDraggedToNode).toHaveBeenCalledWith(
+        expect.objectContaining({ fromNodeId: "log-a", fromHandleId: "execIn", toNodeId: "log-b", toHandleId: null }),
+      );
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({ source: "log-a", sourceHandle: "execOut", target: "log-b", targetHandle: "execIn" }),
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("breaks the dragged pin's wires without opening Add Node on a near release in zone-add-node mode", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
       const onChange = vi.fn();
@@ -2244,7 +2350,37 @@ describe("GraphEditor", () => {
         dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
       });
       expect(queryByTestId("node-palette-body")).toBeNull();
-      expect(onChange).not.toHaveBeenCalled();
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("lets the host choose which wires a pin break removes", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const edgeBreaksAtPin = vi.fn(
+        (edge: { source: string; target: string }, nodeId: string) => edge.source === nodeId && edge.target === "log-b",
+      );
+      const { container } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+          edgeBreaksAtPin={edgeBreaksAtPin}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
+      });
+      expect(edgeBreaksAtPin).toHaveBeenCalledWith(expect.objectContaining({ target: "log-c" }), "log-a", "execOut");
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([expect.objectContaining({ source: "log-a", target: "log-c" })]);
     } finally {
       restoreLayout();
     }
@@ -5676,6 +5812,65 @@ describe("GraphEditor", () => {
         restoreLayout();
       }
     });
+
+    it("selects the host's wire in place of the node selection, and a canvas click still clears it", async () => {
+      const restoreLayout = stubMeasuredGraphLayout();
+      try {
+        const onEdgeSelectionChange = vi.fn();
+        const view = (selectedEdgeId?: string) => (
+          <GraphEditor
+            initialGraph={transitionGraph()}
+            edgeTypes={animGraphEdgeTypes}
+            selectedEdgeId={selectedEdgeId}
+            onEdgeSelectionChange={onEdgeSelectionChange}
+          />
+        );
+        const { container, rerender } = render(view());
+        const node = () => container.querySelector('.react-flow__node[data-id="log-a"]')!;
+        const wire = () => container.querySelector('.react-flow__edge[data-id="e:log-a:execOut:log-b:execIn"]');
+        await waitFor(() => expect(wire()).not.toBeNull());
+        fireEvent.click(node());
+        await waitFor(() => expect(node().className).toMatch(/selected/));
+        rerender(view("e:log-a:execOut:log-b:execIn"));
+        await waitFor(() => expect(wire()!.classList.contains("selected")).toBe(true));
+        expect(node().className).not.toMatch(/selected/);
+        await waitFor(() => {
+          expect(onEdgeSelectionChange).toHaveBeenLastCalledWith(["e:log-a:execOut:log-b:execIn"]);
+        });
+        // The host has not heard of the click yet when the canvas re-renders; its stale choice must not reselect the wire.
+        fireEvent.click(container.querySelector(".react-flow__pane")!);
+        await waitFor(() => expect(onEdgeSelectionChange).toHaveBeenLastCalledWith([]));
+        expect(wire()!.classList.contains("selected")).toBe(false);
+      } finally {
+        restoreLayout();
+      }
+    });
+  });
+
+  it("gives a transition wire a hit band of one width on screen at every zoom", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({ ...edge, type: "animTransitionBoth" }));
+      const { container } = render(
+        <GraphEditor initialGraph={graph} edgeTypes={animGraphEdgeTypes} defaultZoom={0.5} />,
+      );
+      const hit = await waitFor(() => {
+        const found = container.querySelector<SVGPathElement>('[data-testid="anim-transition-hit-e:log-a:execOut:log-b:execIn"]');
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      // The stylesheet divides the band's screen width by this zoom.
+      await waitFor(() => expect(hit.style.getPropertyValue("--anim-transition-zoom")).toBe("0.5"));
+      const edge = hit.closest(".react-flow__edge")!;
+      // Both arrowheads are the wire's own marker, so they follow its selection colour.
+      const path = edge.querySelector(".react-flow__edge-path")!;
+      const marker = edge.querySelector("marker.anim-transition-arrow")!;
+      expect(path.getAttribute("marker-end")).toBe(`url(#${marker.id})`);
+      expect(path.getAttribute("marker-start")).toBe(`url(#${marker.id})`);
+    } finally {
+      restoreLayout();
+    }
   });
 });
 

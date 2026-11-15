@@ -100,6 +100,56 @@ describe("node breakpoints", () => {
     } finally { scenario.stop(); }
   });
 
+  it("keep the frame an unfollowed object stopped in, and send it once the editor follows that object", async () => {
+    const scenario = await startGraphScenario({
+      scripts: [heroScript()],
+      actors: heroes,
+      runtime: { breakpoints: [at("logB")] },
+    });
+    const traces = () => scenario.commands.filter((command) => command.type === "executionTrace");
+    const target = { kind: "class" as const, classId: "Hero" };
+    try {
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toEqual([expect.objectContaining({ nodeId: "logB", instanceId: "hero-1" })]);
+      // Nothing was followed while the tick ran, yet following the stopped object shows that tick's path and steps.
+      scenario.runtime.applyDebugObserve(target, "hero-1");
+      expect(traces()).toEqual([expect.objectContaining({
+        target, instanceId: "hero-1",
+        graphs: [expect.objectContaining({
+          assetGuid: "Hero.class", graphId: "event-graph", nodes: ["tick", "logA", "logB"],
+          edges: ["tick.execOut->logA.execIn", "logA.execOut->logB.execIn"],
+        })],
+        steps: [
+          [0, "tick", null, []],
+          [0, "logA", "tick.execOut->logA.execIn", []],
+          [0, "logB", "logA.execOut->logB.execIn", []],
+        ],
+      })]);
+      // It is sent once; another object's run that tick was not kept.
+      scenario.runtime.applyDebugObserve(target, "hero-2");
+      scenario.runtime.applyDebugObserve(target, "hero-1");
+      expect(traces()).toHaveLength(1);
+    } finally { scenario.stop(); }
+  });
+
+  it("drop a kept stop frame once the next tick ends", async () => {
+    const scenario = await startGraphScenario({
+      scripts: [heroScript()],
+      actors: heroes.slice(0, 1),
+      runtime: { breakpoints: [at("logA")] },
+    });
+    const traces = () => scenario.commands.filter((command) => command.type === "executionTrace");
+    try {
+      await scenario.tick();
+      expect(pauses(scenario.commands)).toHaveLength(1);
+      scenario.runtime.applyBreakpoints([]);
+      scenario.runtime.resume();
+      await scenario.tick();
+      scenario.runtime.applyDebugObserve({ kind: "class", classId: "Hero" }, "hero-1");
+      expect(traces()).toEqual([]);
+    } finally { scenario.stop(); }
+  });
+
   it("never stop a release export", async () => {
     const scenario = await startGraphScenario({
       scripts: [heroScript({ instrumentExecutionTrace: true, stripDevelopmentOnly: true })],

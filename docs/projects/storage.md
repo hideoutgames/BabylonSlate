@@ -58,6 +58,15 @@ Deleting can't be undone: the project does not go to the Trash or Recently Delet
 
 On iPad, iPhone and desktop you can also delete a project's folder yourself in the Files app or your file manager. Its card leaves the project list when you return to Haptic. A project in a folder you chose yourself keeps its card, because Haptic can't check that folder until you open it.
 
+### Delete several projects
+
+1. Choose **Select** beside **Sort** and **View**, or **Select Project** in a card's **Project Actions** menu.
+2. Tap each project to delete, or choose **Select All**.
+3. Choose **Delete**.
+4. Check the list, type **delete my projects** and choose **Delete**.
+
+The dialog lists every project it deletes. Selected projects in a folder you chose are listed under **Can't Be Deleted** and stay as they are; use **Remove From List** on their cards instead.
+
 ## Game saves
 
 Saves made while you play in the editor are stored by the app, separately from the project folder. They are not included in project backups. See [Save Games](../scripting/save-games.md).

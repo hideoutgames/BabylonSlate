@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { MAX_IPC_BYTES } from "./packaged-security";
 
 /** One image sent as the only part of a multipart body; see `NativeHttpImageUpload`. */
 export type DesktopHttpImageUpload = {
@@ -12,8 +13,11 @@ export type DesktopHttpRequest = {
   method?: string;
   url: string;
   headers?: Record<string, string>;
-  body?: string;
+  /** Text, or bytes (Git packs, LFS objects) as an exact `ArrayBuffer`. */
+  body?: string | ArrayBuffer;
   upload?: DesktopHttpImageUpload;
+  /** `binary` answers `bodyBytes` instead of `bodyText`. */
+  responseType?: "text" | "binary";
 };
 
 /** Writes the upload as one `multipart/form-data` part under a fresh boundary. */
@@ -33,39 +37,67 @@ function encodeMultipartImage(upload: DesktopHttpImageUpload) {
   };
 }
 
-/** LFS lock pages and account JSON are small; larger bodies never reach the renderer. */
+/** LFS lock pages and account JSON are small; larger text never reaches the renderer. */
 const MAX_DESKTOP_HTTP_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 function responseTooLarge(): Error {
   return new Error("Response body is too large");
 }
 
-async function boundedText(response: Response, limit: number): Promise<string> {
+/** The body's chunks, refused past `limit` bytes, declared or streamed. */
+async function boundedChunks(response: Response, limit: number, chunk: (value: Uint8Array) => void): Promise<void> {
   if (Number(response.headers.get("content-length")) > limit) {
     await response.body?.cancel();
     throw responseTooLarge();
   }
-  if (!response.body) return "";
+  if (!response.body) return;
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
   let received = 0;
-  let text = "";
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) return text + decoder.decode();
+    if (done) return;
     received += value.byteLength;
     if (received > limit) {
       await reader.cancel();
       throw responseTooLarge();
     }
-    text += decoder.decode(value, { stream: true });
+    chunk(value);
   }
 }
 
+async function boundedText(response: Response, limit: number): Promise<string> {
+  const decoder = new TextDecoder();
+  let text = "";
+  await boundedChunks(response, limit, (value) => {
+    text += decoder.decode(value, { stream: true });
+  });
+  return text + decoder.decode();
+}
+
+async function boundedBytes(response: Response, limit: number): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  await boundedChunks(response, limit, (value) => {
+    chunks.push(value);
+    length += value.byteLength;
+  });
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const value of chunks) {
+    bytes.set(value, offset);
+    offset += value.byteLength;
+  }
+  return bytes;
+}
+
+/**
+ * `limits.text` bounds a text answer; `limits.binary` a `binary` one (Git packs
+ * and LFS objects), which IPC then carries whole.
+ */
 export async function fetchDesktopHttp(
   request: DesktopHttpRequest,
   fetchRequest: (url: string, init: RequestInit) => Promise<Response>,
-  maxResponseBytes = MAX_DESKTOP_HTTP_RESPONSE_BYTES,
+  limits: { text: number; binary: number } = { text: MAX_DESKTOP_HTTP_RESPONSE_BYTES, binary: MAX_IPC_BYTES },
 ) {
   const multipart = request.upload ? encodeMultipartImage(request.upload) : null;
   const response = await fetchRequest(request.url, {
@@ -83,9 +115,9 @@ export async function fetchDesktopHttp(
     redirect: "error",
     credentials: "omit",
   });
-  return {
-    status: response.status,
-    bodyText: await boundedText(response, maxResponseBytes),
-    headers: Object.fromEntries(response.headers.entries()),
-  };
+  const headers = Object.fromEntries(response.headers.entries());
+  if (request.responseType === "binary") {
+    return { status: response.status, bodyText: "", bodyBytes: await boundedBytes(response, limits.binary), headers };
+  }
+  return { status: response.status, bodyText: await boundedText(response, limits.text), headers };
 }

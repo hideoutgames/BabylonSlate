@@ -18,6 +18,8 @@ import {
   DropdownMenuSeparator,
 } from "@haptic/ui/components/dropdown-menu";
 import { HomepageAccountCenter } from "./homepage-account-center";
+import { HAPTIC_DISCORD_URL } from "./homepage-discord-badge";
+import { DiscordIcon } from "../lib/discord-icon";
 import {
   unconfiguredBilling,
   type AccountDetails,
@@ -151,28 +153,33 @@ export function HomepageProfileMenu({
               <ChevronRightIcon className="homepage-profile-menu-chevron" />
             </DropdownMenuItem>
           </DropdownMenuGroup>
-          {(onEngineSettings || onChangelog) && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                {onEngineSettings && (
-                  <DropdownMenuItem
-                    data-testid="engine-settings"
-                    onClick={onEngineSettings}
-                  >
-                    <Settings2Icon />
-                    Engine Settings
-                  </DropdownMenuItem>
-                )}
-                {onChangelog && (
-                  <DropdownMenuItem onClick={onChangelog}>
-                    <NewspaperIcon />
-                    Changelog
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuGroup>
-            </>
-          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            {onEngineSettings && (
+              <DropdownMenuItem
+                data-testid="engine-settings"
+                onClick={onEngineSettings}
+              >
+                <Settings2Icon />
+                Engine Settings
+              </DropdownMenuItem>
+            )}
+            {onChangelog && (
+              <DropdownMenuItem onClick={onChangelog}>
+                <NewspaperIcon />
+                Changelog
+              </DropdownMenuItem>
+            )}
+            {/* The sidebar's Discord badge folds away on phones; this stays on every layout. */}
+            <DropdownMenuItem
+              onClick={() =>
+                window.open(HAPTIC_DISCORD_URL, "_blank", "noopener,noreferrer")
+              }
+            >
+              <DiscordIcon />
+              Discord Server
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
           {(onSignIn || onSignOut) && (
             <>
               <DropdownMenuSeparator />

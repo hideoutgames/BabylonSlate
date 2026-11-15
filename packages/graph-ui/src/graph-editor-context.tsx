@@ -30,7 +30,7 @@ export type GraphEditorContextValue = {
     nodeId: string,
     attachmentId: string,
   ) => NestedMenuItem[];
-  onEdgeDoubleClick?: (edgeId: string) => void;
+  onEdgeDoubleClick?: (edgeId: string, point: { x: number; y: number }) => void;
   connectionLineKind?: "default" | "animTransition";
   /** What the running owner of the graph reports; nodes with a live status read theirs from it. */
   runTrace?: GraphRunTrace;

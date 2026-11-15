@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { allowsEditorPermission, allowsGamePermission, externalOpenUrl, gameExternalUrl, gameFile, insidePreviewFrame, isBillingFrameUrl, isGameUrl, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, validateIpcArguments } from "./packaged-security";
+import { allowsEditorPermission, allowsGamePermission, externalOpenUrl, gameExternalUrl, gameFile, insidePreviewFrame, isBillingFrameUrl, isGameUrl, knownProjectFolder, rendererFile, isEditorSender, isPreviewFrameUrl, MAX_IPC_BYTES, validateIpcArguments } from "./packaged-security";
 
 describe("packaged renderer boundary", () => {
   it("resolves encoded asset filenames without treating filename characters as URL delimiters", () => {
@@ -93,6 +93,14 @@ describe("packaged renderer boundary", () => {
     expect(externalOpenUrl("https://apps.apple.com/account/subscriptions")).toBe("https://apps.apple.com/account/subscriptions");
     expect(externalOpenUrl("https://play.google.com/store/account/subscriptions")).toBe("https://play.google.com/store/account/subscriptions");
     expect(externalOpenUrl("mailto:hello@example.com?subject=Hi%20there")).toBe("mailto:hello@example.com?subject=Hi%20there");
+    // Source Control device sign-in opens exactly these two pages.
+    expect(externalOpenUrl("https://github.com/login/device")).toBe("https://github.com/login/device");
+    expect(externalOpenUrl("https://gitlab.com/oauth/device")).toBe("https://gitlab.com/oauth/device");
+    for (const url of [
+      "https://github.com/", "https://github.com/login", "https://github.com/login/device/select_account", "https://github.com/login/device?next=/evil",
+      "https://github.com/evil/repo", "https://gist.github.com/login/device", "https://github.com.evil.example/login/device", "http://github.com/login/device",
+      "https://gitlab.com/oauth/device/extra", "https://gitlab.example.com/oauth/device", "https://gitlab.com/oauth/authorize", "https://user@gitlab.com/oauth/device",
+    ]) expect(externalOpenUrl(url)).toBeNull();
     for (const url of [
       // Preview runs project scripts, so arbitrary sites and lookalikes stay denied.
       "https://example.com/", "https://haptic.no.evil.example/", "https://evil.apps.apple.com/", "https://play.google.com.evil.example/", "https://evilhaptic.no/", "https://user:pass@haptic.no/",
@@ -147,7 +155,27 @@ describe("packaged renderer boundary", () => {
       { ...request, upload: { ...upload, contentType: "text/html" } }, { ...request, upload: { ...upload, contentType: "image/svg+xml" } },
       { ...request, upload: { ...upload, base64: "" } }, { ...request, upload: { ...upload, base64: "not base64!" } },
       { ...request, upload: { ...upload, base64: "A".repeat(14 * 1024 * 1024 + 1) } },
+      { ...request, body: new ArrayBuffer(4) },
     ]) expect(() => validateIpcArguments("lfs:fetch", [bad])).toThrow();
+  });
+  // Git smart HTTP and LFS transfers: packs and objects as bytes, binary answers, no other shapes.
+  it("accepts a bounded byte body for a POST or PUT and a binary answer through native HTTP", () => {
+    const pack = { url: "https://github.com/org/game.git/git-receive-pack", method: "POST", headers: { "Content-Type": "application/x-git-receive-pack-request" }, body: new ArrayBuffer(16), responseType: "binary", disableRedirects: true };
+    const object = { url: "https://lfs.example.com/objects/abc", method: "PUT", headers: { Authorization: "RemoteAuth token" }, body: new ArrayBuffer(0), disableRedirects: true };
+    for (const good of [pack, object, { url: pack.url, method: "GET", headers: {}, responseType: "binary" }, { ...pack, responseType: "text" }]) {
+      expect(() => validateIpcArguments("lfs:fetch", [good])).not.toThrow();
+    }
+    for (const bad of [
+      { ...pack, method: "GET" }, { ...pack, method: undefined }, { ...object, method: "DELETE" },
+      { ...pack, body: new Uint8Array(16) }, { ...pack, body: [1, 2, 3] }, { ...pack, body: { byteLength: 1 } },
+      { ...pack, body: { byteLength: MAX_IPC_BYTES + 1 } },
+      { ...pack, responseType: "arraybuffer" }, { ...pack, responseType: true }, { ...pack, disableRedirects: "yes" },
+      { ...pack, url: "http://github.com/org/game.git/git-receive-pack" },
+    ]) expect(() => validateIpcArguments("lfs:fetch", [bad])).toThrow();
+    // An oversized buffer is refused before any network work.
+    const oversized = new ArrayBuffer(0);
+    Object.defineProperty(oversized, "byteLength", { value: MAX_IPC_BYTES + 1 });
+    expect(() => validateIpcArguments("lfs:fetch", [{ ...pack, body: oversized }])).toThrow();
   });
   it("validates positioned reads before native allocation", () => {
     expect(() => validateIpcArguments("project:readBinaryRange", ["asset.hasset", 12, 24, "revision"])).not.toThrow();

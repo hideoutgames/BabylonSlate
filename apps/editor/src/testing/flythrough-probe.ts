@@ -647,6 +647,8 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       delta("graph.outlineChecks", work?.outlineReadinessChecks, lastWork?.outlineReadinessChecks);
       delta("graph.builds", work?.graphBuilds, lastWork?.graphBuilds);
       delta("graph.shadowAdmissions", work?.shadowAdmissions, lastWork?.shadowAdmissions);
+      delta("graph.scopedChecks", work?.scopedReadinessProbes, lastWork?.scopedReadinessProbes);
+      delta("graph.scopedMismatches", work?.scopedReadinessMismatches, lastWork?.scopedReadinessMismatches);
       delta("view.held", presentation?.held, lastPresentation?.held);
       delta("view.drawn", presentation?.drawn, lastPresentation?.drawn);
       delta("view.copied", presentation?.copied, lastPresentation?.copied);

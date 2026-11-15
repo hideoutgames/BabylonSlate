@@ -100,6 +100,8 @@ export type SceneRenderCoordinatorOptions = {
   occlusion?: boolean;
   /** A game's world view: its strict outline mask and a depth-only geometry pass start from the scene's depth (`ForwardSceneFrameGraphOptions.seedsFromSceneDepth`). */
   seedsFromSceneDepth?: boolean;
+  /** A Scene Layer's view: its strict probes ask only the meshes the changes named (`ForwardSceneFrameGraphOptions.scopedStrictProbes`). */
+  scopedStrictProbes?: boolean;
 };
 
 /** Scene-owned graph lifetime; the host still owns scheduling and presentation. */
@@ -142,7 +144,7 @@ export class SceneRenderCoordinator {
     this.deferPipelines = options.deferPipelines === true;
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
       ? { auxiliary: { objects: options.auxiliary.objects, screenEffects: options.auxiliary.screenEffects } }
-      : { occlusion: options.occlusion === true, seedsFromSceneDepth: options.seedsFromSceneDepth === true });
+      : { occlusion: options.occlusion === true, seedsFromSceneDepth: options.seedsFromSceneDepth === true, scopedStrictProbes: options.scopedStrictProbes === true });
     this.detachReadinessDirty = onSceneReadinessDirty(scene, (reason, scope) =>
       this.graph.markReadinessDirty(reason, scope),
     );

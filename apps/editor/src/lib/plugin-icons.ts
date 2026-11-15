@@ -37,10 +37,8 @@ import {
   WrenchIcon,
   ZapIcon,
   type LucideIcon,
-  type LucideProps,
 } from "lucide-react";
-import SiDiscord from "@icons-pack/react-simple-icons/icons/SiDiscord";
-import { createElement, forwardRef } from "react";
+import { DiscordIcon } from "./discord-icon";
 
 /** Static Lucide imports keep plugin metadata from loading the whole icon library. */
 export const PLUGIN_ICON_OPTIONS: ReadonlyArray<{
@@ -90,16 +88,6 @@ export const PLUGIN_ICON_OPTIONS: ReadonlyArray<{
   { key: "Wrench", label: "Wrench", icon: WrenchIcon },
   { key: "Zap", label: "Zap", icon: ZapIcon },
 ];
-
-/**
- * Discord's mark from Simple Icons, filled with its `--platform-discord` token (Discord's blurple) wherever it shows.
- * Lucide props that do not apply to a filled mark are dropped.
- */
-const LUCIDE_ONLY_PROPS = new Set(["color", "strokeWidth", "absoluteStrokeWidth"]);
-const DiscordIcon = forwardRef<SVGSVGElement, LucideProps>(function DiscordIcon({ size, style, ...props }, ref) {
-  const svgProps = Object.fromEntries(Object.entries(props).filter(([key]) => !LUCIDE_ONLY_PROPS.has(key)));
-  return createElement(SiDiscord, { ...svgProps, ref, size: size ?? 24, color: "currentColor", style: { ...style, color: "var(--platform-discord)" } });
-}) as LucideIcon;
 
 /** Brand marks for bundled extensions. Extensions can name them, but the icon picker does not offer them. */
 const BRAND_ICONS: ReadonlyMap<string, LucideIcon> = new Map([["Discord", DiscordIcon]]);

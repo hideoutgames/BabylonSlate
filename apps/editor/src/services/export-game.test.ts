@@ -59,8 +59,8 @@ describe("collectAndExportGame", () => {
       ...createDefaultScene(),
       actors: [createActor("hero", "Hero", { components: [mesh] })],
     };
-    const model = { skeletonGuid: "hero-skeleton", materialSlots: [], clipNames: [] };
-    const skeleton = { modelGuid: "hero-model", kind: "hierarchy", boneNames: ["Root"] };
+    const model = { skeletonGuid: "hero-skeleton", materialSlots: [] };
+    const skeleton = { modelGuid: "hero-model", kind: "hierarchy", bones: [{ name: "Root", parent: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }] };
     const documents: Array<{ guid: string; type: string; payload: Record<string, unknown> }> = [
       { guid: "scene", type: "Scene", payload: scene },
       { guid: "hero-model", type: "Model", payload: model },
@@ -101,7 +101,7 @@ describe("collectAndExportGame", () => {
     expect(exportedSkeleton.requiredDependencies).toEqual(["hero-model"]);
     expect(exportedSkeleton.encoding).toBe("json");
     expect(JSON.parse(new TextDecoder().decode(result.value.files.get(exportedSkeleton.path!))))
-      .toEqual({ modelGuid: "hero-model", kind: "hierarchy", boneNames: ["Root"] });
+      .toEqual(skeleton);
   });
 
   it("fails once the game reaches an asset stored in an unsupported format", async () => {
@@ -886,7 +886,7 @@ describe("collectAndExportGame", () => {
       ],
     };
     const doc = createDefaultAnimGraph();
-    doc.transitions.push({
+    doc.stateMachine.transitions.push({
       id: "idle-to-idle",
       fromStateId: "idle",
       toStateId: "idle",
@@ -924,9 +924,9 @@ describe("collectAndExportGame", () => {
         asset({ guid: "class-1", type: "Class", name: "TagActor", parentClass: "Actor" }),
         asset({
           guid: "graph-1",
-          type: "AnimationGraph",
+          type: "AnimationGraph3D",
           name: "Loco",
-          path: "assets/Loco.anim.hasset",
+          path: "assets/Loco.anim3d.hasset",
         }),
       ],
       plugins: [],

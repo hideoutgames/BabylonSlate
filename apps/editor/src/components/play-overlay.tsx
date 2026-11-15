@@ -413,7 +413,7 @@ function PlayOverlayView({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
-  /** The breakpoint the session stopped at, until it resumes. */
+  /** The breakpoint the session stopped at, until it resumes or stops elsewhere. */
   const [stoppedAt, setStoppedAt] = useState<SessionPauseCause | null>(null);
   /** Editor Play stopped at a breakpoint or an error: its view hides until Resume. */
   const [playBreak, setPlayBreak] = useState<SessionPauseCause | null>(null);
@@ -541,8 +541,7 @@ function PlayOverlayView({
     if (!session || closedRef.current || !userPausedRef.current) return;
     setStepPending(true);
     setControlError(null);
-    // The tick runs past the stop; a breakpoint it hits stops it again.
-    setStoppedAt(null);
+    // The stop stays named while stepping on from it; a breakpoint the tick hits replaces it.
     void session.stepPaused().then((result) => {
       if (sessionRef.current !== session) return;
       if (!result.success) { setControlError(result.reason ?? "Step could not reach a completed runtime boundary."); return; }
@@ -966,9 +965,9 @@ function PlayOverlayView({
             if (!cause) return;
             if (cause.code === BREAKPOINT_PAUSE_CODE) {
               setStoppedAt(cause);
-              // The graph shows the object that stopped: its path and values from its next tick on.
+              // The graph shows the object that stopped, from the frame it stopped in (the runtime sends that frame).
               if (cause.instanceId) graphDebug?.follow(cause.instanceId);
-            }
+            } else setStoppedAt(null);
             // Play hides its view and shows the editor at the stop; the session stays, paused.
             if (!simulating) setPlayBreak(cause);
             // The runtime paused itself on an error or at a breakpoint: take the user pause through

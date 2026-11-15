@@ -758,6 +758,30 @@ it("counts a failed strict readiness check once for each pending reason, until o
   }
 });
 
+it("names what a failed strict readiness check found unready, once a reader asked", async () => {
+  const { scene, camera } = host();
+  const mesh = MeshBuilder.CreateBox("box", {}, scene);
+  const material = new StandardMaterial("stubbed", scene);
+  mesh.material = material;
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.diagnostics().readinessBlockers).toEqual([]);
+    const probe = vi.spyOn(material, "isReadyForSubMesh").mockReturnValue(false);
+    graph.markReadinessDirty("materialParameters");
+    expect(graph.sceneStrictlyReady(camera)).toBe(false);
+    probe.mockRestore();
+    const failed = graph.diagnostics().readinessBlockers;
+    expect(failed[0]).toBe('mesh "box" (Material "stubbed"): it requested no Effect');
+    // The check that passes afterwards leaves the last failure's names for the reader.
+    await vi.waitFor(() => expect(graph.sceneStrictlyReady(camera)).toBe(true));
+    expect(graph.diagnostics().readinessBlockers).toEqual(failed);
+  } finally {
+    graph.dispose();
+  }
+});
+
 it("counts a strict readiness check run only for a pending variant swap as a swap recheck", async () => {
   const { scene, camera } = host();
   const mesh = MeshBuilder.CreateBox("box", {}, scene);
@@ -977,6 +1001,44 @@ it("asks only the meshes a change named in a steady frame, and every mesh otherw
     expect(graph.sceneStrictlyReady(camera)).toBe(true);
     expect(askedKept).toHaveBeenCalled();
     expect(scoped()).toBe(settled + 1);
+  } finally {
+    graph.dispose();
+  }
+});
+
+it("limits a strict probe to the meshes a change named, for a view that asked for it (a Scene Layer)", async () => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  const keptMaterial = kept.material = new StandardMaterial("kept", scene);
+  const changed = MeshBuilder.CreateBox("changed", {}, scene);
+  const changedMaterial = changed.material = new StandardMaterial("changed", scene);
+  const graph = new ForwardSceneFrameGraph(scene, { scopedStrictProbes: true });
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const askedKept = vi.spyOn(keptMaterial, "isReadyForSubMesh");
+    let ready = true;
+    const own = changedMaterial.isReadyForSubMesh.bind(changedMaterial);
+    const askedChanged = vi.spyOn(changedMaterial, "isReadyForSubMesh").mockImplementation((...args) => ready && own(...args));
+    // A visual whose style starts to blend: its meshes are asked, no other.
+    graph.markReadinessDirty("layerStyle", [changed]);
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(askedChanged).toHaveBeenCalled();
+    expect(askedKept).not.toHaveBeenCalled();
+    expect(graph.diagnostics().scopedReadinessProbes).toBe(1);
+    // A named mesh that is not ready holds the view, as in any strict probe, until it is.
+    ready = false;
+    graph.markReadinessDirty("layerStyle", [changed]);
+    expect(graph.sceneStrictlyReady(camera)).toBe(false);
+    expect(askedKept).not.toHaveBeenCalled();
+    ready = true;
+    await vi.waitFor(() => expect(graph.sceneStrictlyReady(camera)).toBe(true));
+    // A change that can touch any mesh asks them all.
+    askedKept.mockClear();
+    graph.markReadinessDirty("renderSettings");
+    expect(graph.sceneStrictlyReady(camera)).toBe(true);
+    expect(askedKept).toHaveBeenCalled();
   } finally {
     graph.dispose();
   }

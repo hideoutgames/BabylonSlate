@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type RefObject } from "react";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, type ProjectDocument } from "@haptic/core";
+import type { ProjectDocument } from "@haptic/core";
 import {
-  createNativeHttp,
-  createSecretStore,
   getHostPlatform,
   isTestModeEnabled,
   type createAppSettingsStore,
 } from "@haptic/vfs";
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
+import type { DocumentService } from "../services/document-service";
 import type { ProjectService } from "../services/project-service";
 import {
   readGitPrefill,
@@ -19,26 +18,30 @@ import type { DocumentActions, SourceControlState } from "./document-context-typ
 export interface SourceControlSyncDeps {
   sourceControlRef: RefObject<SourceControlService>;
   projectService: ProjectService;
+  documentService: DocumentService;
   settingsStore: ReturnType<typeof createAppSettingsStore>;
   projectDocument: ProjectDocument | null;
+  /** Re-renders the document tabs after the Source Control tab appears or goes. */
+  bump: () => void;
   /** The external-change rescan; coming back to the app runs it once lock polling resumes. */
   runForegroundRescanRef: RefObject<() => Promise<void>>;
 }
 
 /**
  * Keeps `SourceControlService` configured for the open project, mirrors
- * whether source control is on into ProjectService and Homepage recents, and
- * pauses lock polling while the app is hidden or a game covers the editor.
+ * whether source control is on into ProjectService, Homepage recents and the
+ * pinned Source Control tab, and pauses lock polling while the app is hidden
+ * or a game covers the editor.
  */
 export function useSourceControlSync({
   sourceControlRef,
   projectService,
+  documentService,
   settingsStore,
   projectDocument,
+  bump,
   runForegroundRescanRef,
 }: SourceControlSyncDeps) {
-  const secretStore = useMemo(() => createSecretStore(), []);
-  const nativeHttp = useMemo(() => createNativeHttp(), []);
   const [sourceControlTick, setSourceControlTick] = useState(0);
 
   useEffect(() => {
@@ -47,49 +50,47 @@ export function useSourceControlSync({
     });
   }, [sourceControlRef]);
 
+  const settings = projectDocument?.settings.sourceControl ?? null;
   useEffect(() => {
     if (!projectDocument) {
       sourceControlRef.current.dispose();
       return;
     }
+    // Mode Off returns before loading credentials, HTTP or timers.
     void sourceControlRef.current.configure({
-      settings:
-        projectDocument.settings.sourceControl ??
-        DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS,
-      projectGuid: projectService.guid,
+      settings: projectDocument.settings.sourceControl,
+      projectKey: projectService.guid,
       platform: getHostPlatform(),
       testMode: isTestModeEnabled(),
-      secretStore,
-      nativeHttp,
+      storage: projectService.storagePort,
+      isPathDirty: (path) => documentService.getOpenDocumentsOrdered().some((doc) => doc.dirty && doc.ref.path === path),
     });
-  }, [
-    nativeHttp,
-    projectDocument,
-    projectService.guid,
-    secretStore,
-    sourceControlRef,
-  ]);
+  }, [documentService, projectDocument, projectService, projectService.guid, settings, sourceControlRef]);
 
-  const sourceControlEnabled = projectDocument
-    ? projectDocument.settings.sourceControl?.enabled === true
-    : null;
+  // The pinned tab follows the service, which is active only on a host with source control.
+  const tabShown = projectDocument !== null && sourceControlRef.current.active;
+  useEffect(() => {
+    if (documentService.setSourceControlTab(tabShown)) bump();
+  }, [bump, documentService, tabShown]);
+
+  const sourceControlActive = settings ? settings.mode !== "off" : null;
   // Not via the debounced project save: turning source control on must stop
   // the texture alignment pass's queued re-encodes at once.
   useEffect(() => {
-    if (sourceControlEnabled !== null) projectService.setSourceControlEnabled(sourceControlEnabled);
-  }, [projectService, sourceControlEnabled]);
+    if (sourceControlActive !== null) projectService.setSourceControlEnabled(sourceControlActive);
+  }, [projectService, sourceControlActive]);
   useEffect(() => {
-    if (sourceControlEnabled === null) return;
+    if (sourceControlActive === null) return;
     const folder = projectService.storagePort.getCurrentFolder();
     if (!folder) return;
     void settingsStore.update((settings) => {
       settings.recents = settings.recents.map((recent) =>
-        recent.id === folder.id && recent.sourceControl !== sourceControlEnabled
-          ? { ...recent, sourceControl: sourceControlEnabled }
+        recent.id === folder.id && recent.sourceControl !== sourceControlActive
+          ? { ...recent, sourceControl: sourceControlActive }
           : recent,
       );
     });
-  }, [projectService, settingsStore, sourceControlEnabled]);
+  }, [projectService, settingsStore, sourceControlActive]);
 
   // Lock polling and the foreground rescan wait while the app is hidden or a game covers the editor.
   useEffect(() => {

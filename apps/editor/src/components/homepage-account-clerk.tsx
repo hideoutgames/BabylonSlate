@@ -6,6 +6,7 @@ import {
   useClerk,
   useUser,
 } from "@clerk/react";
+import { HomepageAccountReport } from "./homepage-account-report";
 import { HomepageClerkProvider } from "./homepage-account-provider";
 import { HomepageProfileMenu } from "./homepage-profile-menu";
 import { useSubscriptionBilling } from "../services/subscription-billing";
@@ -23,9 +24,10 @@ type Props = {
   onChangelog?: () => void;
   onOpenChange: (open: boolean) => void;
   onOverlayChange: (open: boolean) => void;
+  onAccountChange?: (accountId: string | null) => void;
 };
 
-function AccountButton({ onOverlayChange, ...props }: Props) {
+function AccountButton({ onOverlayChange, onAccountChange, ...props }: Props) {
   const { isSignedIn, user } = useUser();
   const clerk = useClerk();
   const guestBilling = useSubscriptionBilling(undefined);
@@ -40,22 +42,31 @@ function AccountButton({ onOverlayChange, ...props }: Props) {
       onOverlayChange(false);
     };
   }, [onOverlayChange]);
-  if (!isSignedIn || !user)
-    return (
-      <HomepageProfileMenu
-        {...props}
-        billing={guestBilling}
-        onSignIn={() => clerk.openSignIn()}
-        onSignUp={() => clerk.openSignUp()}
+  const signedIn = Boolean(isSignedIn && user);
+  return (
+    <>
+      <HomepageAccountReport
+        accountId={signedIn && user ? user.id : null}
+        onAccountChange={onAccountChange}
       />
-    );
-  return <SignedInAccount {...props} user={user} />;
+      {signedIn && user ? (
+        <SignedInAccount {...props} user={user} />
+      ) : (
+        <HomepageProfileMenu
+          {...props}
+          billing={guestBilling}
+          onSignIn={() => clerk.openSignIn()}
+          onSignUp={() => clerk.openSignUp()}
+        />
+      )}
+    </>
+  );
 }
 
 function SignedInAccount({
   user,
   ...props
-}: Omit<Props, "onOverlayChange"> & {
+}: Omit<Props, "onOverlayChange" | "onAccountChange"> & {
   user: NonNullable<ReturnType<typeof useUser>["user"]>;
 }) {
   const clerk = useClerk();
@@ -91,7 +102,13 @@ export default function HomepageClerkAccount({
   return (
     <HomepageClerkProvider publishableKey={publishableKey}>
       <ClerkLoading>{fallback}</ClerkLoading>
-      <ClerkFailed>{fallback}</ClerkFailed>
+      <ClerkFailed>
+        {fallback}
+        <HomepageAccountReport
+          accountId={null}
+          onAccountChange={props.onAccountChange}
+        />
+      </ClerkFailed>
       <ClerkLoaded>
         <AccountButton {...props} />
       </ClerkLoaded>

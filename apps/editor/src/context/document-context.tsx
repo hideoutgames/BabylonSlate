@@ -265,8 +265,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   /** Plugins, search index or Show Plugin Content changed: advance `registryEpoch`. */
   const bumpRegistry = useCallback(() => setRegistryTick((v) => v + 1), [setRegistryTick]);
   const {
-    animEditorModes,
-    setAnimEditorModes,
     focusedLayoutIds,
     dockWindowTick,
     captureLayoutForId,
@@ -276,14 +274,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     forgetDockLayouts,
     registerDockviewApi,
     unregisterDockviewApi,
-    setAnimEditorMode,
     setSceneMode,
     activateDockPanel,
     toggleDockWindow,
     isDockWindowOpen,
     getOpenDockWindowCount,
     toggleLayoutFocus,
-  } = useDocumentDockLayouts({ documentService, projectService, sourceControlRef, settingsStore, bump });
+  } = useDocumentDockLayouts({ documentService, projectService, settingsStore, bump });
   useEffect(() => attachEditGestureBoundaries(() => {
     const id = documentService.getState().activeDocumentId;
     if (id) editSessionRef.current.getStack(id).endGesture();
@@ -325,8 +322,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const { sourceControlState, actions: sourceControlActions } = useSourceControlSync({
     sourceControlRef,
     projectService,
+    documentService,
     settingsStore,
     projectDocument,
+    bump,
     runForegroundRescanRef,
   });
 
@@ -543,7 +542,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setSceneDocumentLoad,
     cancelSceneDocumentLoad,
     resetDockLayouts,
-    setAnimEditorModes,
     captureAllLayouts,
     setLastCompiledSignature,
     playContent,
@@ -794,7 +792,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       unregisterDockviewApi,
       captureLayoutForId,
-      setAnimEditorMode,
       setSceneMode,
       activateDockPanel,
       toggleDockWindow,
@@ -855,7 +852,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       unregisterDockviewApi,
       captureLayoutForId,
-      setAnimEditorMode,
       setSceneMode,
       activateDockPanel,
       toggleDockWindow,
@@ -892,7 +888,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   } = useDocumentStateSlices({
     documentService,
     editSessionRef,
-    animEditorModes,
     focusedLayoutIds,
   });
   const graphSignatureRevision = documentKindsRevision(

@@ -67,7 +67,7 @@ describe("asset file suffix helpers", () => {
     expect(assetFileSuffix("walk.spriteanim.hasset")).toBe(
       ".spriteanim.hasset",
     );
-    expect(assetFileSuffix("loco.anim.hasset")).toBe(".anim.hasset");
+    expect(assetFileSuffix("loco.anim3d.hasset")).toBe(".anim3d.hasset");
     expect(assetFileSuffix("ground.tileset.hasset")).toBe(".tileset.hasset");
     expect(assetFileSuffix("overworld.tilemap.hasset")).toBe(
       ".tilemap.hasset",

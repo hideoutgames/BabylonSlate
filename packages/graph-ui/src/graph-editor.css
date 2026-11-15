@@ -131,6 +131,27 @@
   box-shadow: var(--surface-shadow);
 }
 
+/* An Animation Graph's Output Pose or Output Frame: a state card (grey border; the selection outline when selected) with
+   its input inside, before the title. */
+.anim-pose-output-node {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 160px;
+  padding: 10px 24px 10px 4px;
+}
+
+.anim-pose-output-pin {
+  flex-shrink: 0;
+}
+
+/* A State Alias plays nothing: a dashed card that only sends transitions. */
+.anim-alias-node {
+  min-height: 64px;
+  border-style: dashed;
+  background: var(--panel-header, var(--graph-node));
+}
+
 .anim-state-node-selected {
   border-color: var(--graph-state-selected);
   box-shadow: 0 0 0 1px var(--graph-state-selected);
@@ -311,9 +332,33 @@
 }
 
 
-.anim-graph-canvas .react-flow__arrowhead polyline {
-  stroke: var(--graph-link) !important;
-  fill: var(--graph-link) !important;
+/* Transition arrowheads are the wire's own markers, so they follow its hover and selection colour. */
+.anim-transition-arrow polyline {
+  stroke: var(--graph-link);
+  fill: var(--graph-link);
+}
+
+.react-flow__edge:hover .anim-transition-arrow polyline {
+  stroke: var(--foreground);
+  fill: var(--foreground);
+}
+
+.react-flow__edge.selected .anim-transition-arrow polyline {
+  stroke: var(--graph-state-selected);
+  fill: var(--graph-state-selected);
+}
+
+/*
+ * A hit band of the same width on screen at every zoom: 20px with a mouse, a touch target on touch.
+ * It needs a stroke paint: Chromium hit-tests an unpainted stroke only on some wires (level ones missed clicks on one side).
+ */
+.anim-transition-hit {
+  stroke: transparent;
+  stroke-width: calc(var(--anim-transition-hit, 20px) / var(--anim-transition-zoom, 1));
+}
+
+:where(.touch-ui) .anim-transition-hit {
+  --anim-transition-hit: var(--touch-target, 44px);
 }
 
 .anim-transition-badge {
@@ -350,13 +395,32 @@
   background: var(--graph-state-selected);
 }
 
-/* A breakpoint rings the badge, so selection and hover still show; hollow-looking while disabled. */
+/* A breakpoint rings the badge in the breakpoint red, so selection and hover still show; faint while disabled. */
 .anim-transition-badge[data-breakpoint] {
-  box-shadow: 0 0 0 2px var(--graph-canvas), 0 0 0 4px var(--destructive);
+  box-shadow: 0 0 0 2px var(--graph-canvas), 0 0 0 4px var(--node-event);
 }
 
 .anim-transition-badge[data-breakpoint="disabled"] {
-  box-shadow: 0 0 0 2px var(--graph-canvas), 0 0 0 4px color-mix(in oklch, var(--destructive) 45%, transparent);
+  box-shadow: 0 0 0 2px var(--graph-canvas), 0 0 0 4px color-mix(in oklch, var(--node-event) 45%, transparent);
+}
+
+/*
+ * A node's breakpoint tab: the Event header red with a white stop sign, striped while disabled. A tab
+ * outside its node is set off from the header by a canvas-coloured edge.
+ */
+.graph-breakpoint-tab {
+  color: var(--node-title-foreground);
+  background: var(--node-event);
+  box-shadow: 0 0 0 2px var(--graph-canvas);
+  transition: opacity 120ms ease-out;
+}
+
+.graph-breakpoint-tab[data-breakpoint="disabled"] {
+  background: repeating-linear-gradient(135deg, var(--node-event) 0 3px, transparent 3px 7px);
+}
+
+.graph-breakpoint-tab-inset {
+  box-shadow: none;
 }
 
 :where(.touch-ui) .anim-transition-badge::before {
@@ -429,6 +493,10 @@
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge-path {
   stroke: color-mix(in oklch, var(--selection) var(--run-flash), var(--graph-link)) !important;
   stroke-width: calc(2.5px * var(--graph-pin-scale, 1)) !important;
+}
+
+.anim-graph-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--foreground) !important;
 }
 
 :is(.bt-graph-canvas, .anim-graph-canvas) .react-flow__edge.selected .react-flow__edge-path {

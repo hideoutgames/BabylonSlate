@@ -3,11 +3,9 @@ import {
   documentKindForAssetType,
   type DocumentRef,
 } from "@haptic/core";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
 import type { SessionReportEntry } from "@haptic/runtime";
 import type { Diagnostic } from "@haptic/scripting";
 import type { SessionReportAsset } from "../lib/session-report-locations";
-import type { AnimEditorMode } from "../shell/anim-document-layout";
 import type { SceneMode } from "../shell/scene-document-layout";
 
 /**
@@ -80,7 +78,6 @@ export interface SessionReportNavigationHost {
   openDocument(ref: DocumentRef): Promise<void>;
   isDocumentOpen(id: string): boolean;
   setActiveDocument(id: string): void;
-  setAnimEditorMode(id: string, mode: AnimEditorMode): void;
   setSceneMode(id: string, mode: SceneMode): void;
   requestDocumentFocus(id: string): void;
   log(line: string): void;
@@ -152,12 +149,8 @@ export async function navigateToSessionReportEntry(
   if (!host.isDocumentOpen(id)) return fail(`${document.label} was not opened.`);
   // A tab change that raced the open would leave the new tab in the background.
   host.setActiveDocument(id);
-  if (document.kind === "anim-graph" && entry.graphId === "animation-object") {
-    host.setAnimEditorMode(id, "animationObject");
-  } else if (document.kind === "anim-graph" && entry.graphId === ANIM_STATE_MACHINE_DEBUG_GRAPH_ID) {
-    // A state or transition breakpoint.
-    host.setAnimEditorMode(id, "stateMachine");
-  } else if ((document.kind === "scene" || document.kind === "scene-layer") && nav.focusedNodeId) {
+  // An Animation Graph's Graph or Animation Object panel brings itself forward for the node it holds.
+  if ((document.kind === "scene" || document.kind === "scene-layer") && nav.focusedNodeId) {
     // A node of a Scene's script shows in Script mode.
     host.setSceneMode(id, "script");
   }

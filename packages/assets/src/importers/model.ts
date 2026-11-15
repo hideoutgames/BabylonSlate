@@ -8,6 +8,7 @@ import { MATERIAL_PAYLOAD_VERSION } from "../migration";
 import { cookGeneratedCollisionFromGltf } from "../simple-collision";
 import { normalizeModelPayload, DEFAULT_MODEL_IMPORT_SCALE } from "../model-payload";
 import { normalizeSkeletonPayload } from "../skeleton-payload";
+import { findMatchingSkeleton } from "../skeleton-match";
 import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
@@ -78,6 +79,7 @@ export async function importModel(
     ingested.bytes,
     browse,
     options.modelImportScale,
+    options.skeletons,
   );
 }
 
@@ -93,6 +95,7 @@ function importFromBrowse(
   bytes: Uint8Array,
   browse: GlbBrowseParse,
   modelImportScale?: number,
+  skeletons: ImportOptions["skeletons"] = [],
 ): ImportResult[] {
   const results: ImportResult[] = [];
   const imageGuids: string[] = [];
@@ -135,7 +138,8 @@ function importFromBrowse(
 
   const materialGuids: string[] = [];
   const emptyMaterialSlots = new Set<number>();
-  if (browse.materials.length === 0) {
+  // The default Material fills a mesh's missing one; a file with nothing to draw (an animation library) gets none.
+  if (browse.materials.length === 0 && browse.hasMeshes) {
     const textureGuid = imageGuids[0];
     const materialName = uniqueImportName(`${name}_Material`, usedNames);
     const materialGuid = newAssetGuid();
@@ -180,8 +184,30 @@ function importFromBrowse(
   }
 
   const modelGuid = newAssetGuid();
-  const skeletonGuid = browse.rigKind === "none" ? null : newAssetGuid();
-  if (skeletonGuid) {
+  // A skinned rig, or an animation library, joins a Skeleton with the same bones; a rigid node hierarchy keeps its own.
+  const shareable = browse.rigKind === "skin" || (browse.rigKind === "hierarchy" && !browse.hasMeshes);
+  const match = shareable ? findMatchingSkeleton(skeletons, browse.bones) : null;
+  let skeletonGuid: string | null = null;
+  if (match) {
+    skeletonGuid = match.skeleton.guid;
+    const kind = browse.rigKind === "skin" ? "skin" : match.skeleton.payload.kind;
+    // Extra bones, rest the Skeleton only had a pose for, or a first skinned Model on a Skeleton made from animation
+    // libraries update the shared Skeleton.
+    if (match.changed || kind !== match.skeleton.payload.kind) {
+      results.push({
+        type: "Skeleton",
+        name: match.skeleton.name,
+        guid: match.skeleton.guid,
+        attachToGuid: match.skeleton.guid,
+        version: 1,
+        dependencies: [],
+        parentClass: null,
+        payload: { kind, bones: match.bones },
+        chunks: [],
+      });
+    }
+  } else if (browse.rigKind !== "none") {
+    skeletonGuid = newAssetGuid();
     results.push({
       type: "Skeleton",
       name: uniqueImportName(`${name}_Skeleton`, usedNames),
@@ -193,7 +219,7 @@ function importFromBrowse(
         ...normalizeSkeletonPayload({
           modelGuid,
           kind: browse.rigKind,
-          boneNames: browse.boneNames,
+          bones: browse.bones,
         }),
       },
       chunks: [],
@@ -256,7 +282,6 @@ function importFromBrowse(
     parentClass: null,
     payload: {
       ...normalizeModelPayload({
-        clipNames: animations.map((animation) => animation.name),
         materialSlots: materialGuids.map((guid, index) => ({
           index,
           name: slotNames[index],

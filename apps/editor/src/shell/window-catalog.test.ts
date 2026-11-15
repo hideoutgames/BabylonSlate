@@ -117,67 +117,45 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("camera-shake")).toBe("camera-shake-preview");
   });
 
-  it("omits the Locks window when source control is off", () => {
-    for (const kind of [
-      "scene",
-      "graph",
-      "enum",
-      "structure",
-      "script-interface",
-      "sprite",
-      "sprite-animation",
-      "tileset",
-      "tilemap",
-      "plugin-settings",
-      "anim-graph",
-      "behaviour-tree",
-      "audio-mixer",
-      "audio-channel",
-      "sound-attenuation",
-      "camera-shake",
-      "particle-emitter",
-      "particle-graph",
-      "particle-system",
-      "model",
-      "skeleton",
-      "animation",
-      "audio",
-      "skybox-creator",
-    ] as const) {
-      expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
-        false,
-      );
+  it("opens a Blend Space on its Grid, with Animations on the left and Preview above the Inspector on the right", () => {
+    const windows = listDockWindows("blend-space");
+    expect(windows.map((entry) => [entry.id, entry.title])).toEqual([
+      ["blend-space-grid", "Grid"],
+      ["blend-space-animations", "Animations"],
+      ["blend-space-details", "Inspector"],
+      ["blend-space-preview", "Preview"],
+    ]);
+    expect(windows[1]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-grid", direction: "left" } });
+    expect(windows[2]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-grid", direction: "right" } });
+    expect(windows[3]).toMatchObject({ defaultPosition: { referencePanelId: "blend-space-details", direction: "above" } });
+    expect(primaryDockPanel("blend-space")).toBe("blend-space-grid");
+    // A Sprite Blend Space opens in the same windows.
+    expect(listDockWindows("sprite-blend-space").map((entry) => entry.id)).toEqual(windows.map((entry) => entry.id));
+    expect(primaryDockPanel("sprite-blend-space")).toBe("blend-space-grid");
+  });
+
+  // Locks lives only in the pinned Source Control document; no asset document lists it, whatever its options.
+  it("lists Locks in no asset document", () => {
+    const kinds = [
+      "scene", "scene-layer", "graph", "prefab", "enum", "structure", "data-definition", "data-tree", "float-curve",
+      "global-parameter-collection", "timeline", "timeline-clip-2d", "script-interface", "sprite", "sprite-animation",
+      "tileset", "tilemap", "material", "material-function", "material-instance", "plugin-settings", "anim-graph-3d",
+      "anim-graph-2d", "blend-space", "behaviour-tree", "audio", "save-game", "input-action", "audio-mixer",
+      "audio-channel", "sound-attenuation", "camera-shake", "particle-emitter", "particle-graph", "particle-system",
+      "water", "render-target", "model", "skeleton", "animation", "skybox-creator", "trace", "texture", "font",
+      "blackboard", "extension-asset",
+    ] as const;
+    for (const kind of kinds) {
+      for (const options of [{}, { actorPrefab: false }, { sceneMode: "script" as const }, { sceneMode: "timeline" as const }]) {
+        expect(listDockWindows(kind, options).filter((entry) => entry.component === "locks")).toEqual([]);
+      }
     }
   });
 
-  it("appends Locks below each kind's primary panel when source control is on", () => {
-    const scene = listDockWindows("scene", { sourceControl: true });
-    expect(scene.map((entry) => entry.id)).toContain("locks");
-    expect(scene.find((entry) => entry.id === "locks")).toEqual({
-      id: "locks",
-      component: "locks",
-      title: "Locks",
-      defaultPosition: {
-        referencePanelId: "viewport",
-        direction: "below",
-        initialHeight: 180,
-      },
-    });
-    expect(
-      listDockWindows("graph", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("graph");
-    expect(
-      listDockWindows("sprite", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("sprite-preview");
-    expect(
-      listDockWindows("sprite-animation", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("sprite-animation-preview");
+  it("holds only the Locks window in the pinned Source Control document", () => {
+    expect(isDockviewDocumentKind("source-control")).toBe(true);
+    expect(listDockWindows("source-control")).toEqual([{ id: "locks", component: "locks", title: "Locks" }]);
+    expect(primaryDockPanel("source-control")).toBe("locks");
   });
 });
 
@@ -240,44 +218,49 @@ describe("material dock catalog", () => {
     expect(primaryDockPanel("extension-asset")).toBe("extension-asset-details");
   });
 
-  it("anchors Locks under the material graph when source control is on", () => {
-    expect(
-      listDockWindows("material", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("material-graph");
-  });
 });
 
-describe("particle graph dock catalog", () => {
-  it("anchors Locks under the Graph when source control is on", () => {
-    expect(
-      listDockWindows("particle-graph", { sourceControl: true }).find(
-        (entry) => entry.id === "locks",
-      )?.defaultPosition?.referencePanelId,
-    ).toBe("particle-graph-canvas");
-  });
-});
 
 describe("animation graph and behaviour tree dock catalogs", () => {
-  it("defaults Animation Graph catalogs to State Machine", () => {
-    expect(listDockWindows("anim-graph").map((entry) => entry.id)).toEqual(
-      listDockWindows("anim-graph", { animEditorMode: "stateMachine" }).map(
-        (entry) => entry.id,
-      ),
-    );
-    expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
+  it("puts the Animation Object canvas in a window tabbed beside the Graph", () => {
+    expect(listDockWindows("anim-graph-3d").map((entry) => entry.id)).toEqual([
+      "anim-graph-graph",
+      "anim-object-graph",
+      "anim-graph-variables",
+      "anim-graph-details",
+      "anim-graph-compiler-results",
+      "anim-graph-preview",
+      "anim-graph-preview-values",
+    ]);
+    expect(listDockWindows("anim-graph-3d").find((entry) => entry.id === "anim-object-graph")).toMatchObject({
+      title: "Animation Object",
+      defaultPosition: { referencePanelId: "anim-graph-graph", direction: "within" },
+    });
   });
 
-  it("anchors Animation Graph side docks to the graph", () => {
-    for (const entry of listDockWindows("anim-graph")) {
-      if (!entry.defaultPosition) continue;
-      expect(entry.defaultPosition.referencePanelId).toBe("anim-graph-graph");
+  it("anchors Animation Graph side docks to the graph, the Preview above the Inspector and Preview Values under Variables, in both graph types", () => {
+    const sideColumns: Record<string, string> = {
+      "anim-graph-preview": "anim-graph-details",
+      "anim-graph-preview-values": "anim-graph-variables",
+    };
+    for (const kind of ["anim-graph-3d", "anim-graph-2d"] as const) {
+      for (const entry of listDockWindows(kind)) {
+        if (!entry.defaultPosition) continue;
+        expect(entry.defaultPosition.referencePanelId).toBe(sideColumns[entry.id] ?? "anim-graph-graph");
+      }
+      expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview")).toMatchObject({
+        title: "Preview",
+        defaultPosition: { direction: "above" },
+      });
+      expect(listDockWindows(kind).find((entry) => entry.id === "anim-graph-preview-values")).toMatchObject({
+        title: "Preview Values",
+        defaultPosition: { direction: "below" },
+      });
     }
   });
 
   it("focuses the graph as the primary panel", () => {
-    expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
+    expect(primaryDockPanel("anim-graph-3d")).toBe("anim-graph-graph");
     expect(primaryDockPanel("behaviour-tree")).toBe("behaviour-tree-graph");
   });
 });

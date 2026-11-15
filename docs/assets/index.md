@@ -41,6 +41,7 @@ Assets are the building blocks of a project: Scenes, Classes, Materials, sounds,
 | Asset | Description |
 | --- | --- |
 | [Sprite](sprite.md) | A 2D image built from a Texture, with a pivot and optional collision. |
+| [Sprite Blend Space](sprite-blend-space.md) | Sprite Animations placed on one or two axes, such as Direction; the one nearest the input plays. |
 | [Tileset](tileset.md) | Tile definitions and collision for painting Tilemaps. |
 | [Tilemap](tilemap.md) | A painted 2D tile map made of layers, using one or more Tilesets. |
 
@@ -48,7 +49,8 @@ Assets are the building blocks of a project: Scenes, Classes, Materials, sounds,
 
 | Asset | Description |
 | --- | --- |
-| [Animation Graph](animation-graph.md) | A state machine that plays Animation or Sprite Animation clips. |
+| [Animation Graph](animation-graph.md) | A state machine that plays clips: Animations on one Skeleton (3D) or Sprite Animations (2D). |
+| [Blend Space](blend-space.md) | Animations on one Skeleton placed on one or two axes, blended by where the input falls among them. |
 | [Sprite Animation](sprite-animation.md) | A 2D clip of Texture or Sprite frames, or sprite sheet cells, played by an Animation Graph. |
 | [Timeline](timeline.md) | Groups Timeline Clips from Scenes, Scene Layers and Timeline Clip assets. |
 | [Timeline Clip](timeline-clip.md) | A 2D or 3D Timeline Clip in its own file, animating Proxies that each instance binds to real objects. |

@@ -85,7 +85,7 @@ function inertExtensionService(): DocumentsValue["extensionService"] {
   return service as unknown as DocumentsValue["extensionService"];
 }
 
-const KINDS: readonly DocumentKind[] = ["content-browser", ...ASSET_DOCUMENT_KINDS];
+const KINDS: readonly DocumentKind[] = ["content-browser", "source-control", ...ASSET_DOCUMENT_KINDS];
 
 /** One revision per `openDocuments` array: replacing the array advances every kind. */
 function revisionsFollowingDocuments(): (documents: unknown) => DocumentRevisions {
@@ -236,8 +236,6 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     registerDockviewApi: noop,
     unregisterDockviewApi: noop,
     captureLayoutForId: noop,
-    animEditorMode: "stateMachine",
-    setAnimEditorMode: noop,
     sceneMode: "design",
     setSceneMode: noop,
     activateDockPanel: noop,

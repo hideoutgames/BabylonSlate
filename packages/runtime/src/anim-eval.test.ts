@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
-import {
-  animRuleScriptClassId,
-  createDefaultAnimGraph,
-  createDefaultTransitionRuleGraph,
-} from "@haptic/anim-graph";
+import { animRuleScriptClassId, createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -21,6 +17,7 @@ import {
   type NodeRegistry,
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
+import { addClipState, addTransition, setStateClip } from "./anim-graph-test-fixtures";
 import { createInProcessRuntime } from "./driver";
 import type { CompiledScript } from "./script-host";
 
@@ -38,7 +35,7 @@ function ruleNode(
 /** Compiled rule for `graph-1` that holds the transition until the bool variable `moving` is true. */
 function movingRuleScript(transitionId: string): CompiledScript {
   const registry = createDefaultNodeRegistry();
-  const assetGuid = `assets/Hero.anim.hasset#${transitionId}`;
+  const assetGuid = `assets/Hero.anim3d.hasset#${transitionId}`;
   const compiled = compileTransitionRuleGraph(
     {
       id: transitionId,
@@ -98,6 +95,7 @@ describe("runtime AnimationGraph evaluation", () => {
   it("emits animState from AnimationGraphComponent each tick", () => {
     const commands: CommandMessage[] = [];
     const graph = createDefaultAnimGraph("Hero");
+    setStateClip(graph, "idle", { assetGuid: "hero-idle", clipName: "Idle" });
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,
@@ -143,39 +141,12 @@ describe("runtime AnimationGraph evaluation", () => {
     "clears the %s Sprite Animation collider when the graph leaves a sprite clip",
     async (owner) => {
       const graph = createDefaultAnimGraph();
-      graph.clips[0] = {
-        id: "idle-clip",
-        kind: "sprite",
-        assetGuid: "walk-anim",
-        clipName: "",
-        durationMs: 100,
-      };
-      graph.states.push({
-        id: "run",
-        name: "Run",
-        clipId: "run-clip",
-        speed: 1,
-        loop: true,
-        position: { x: 300, y: 80 },
-      });
-      graph.clips.push({
-        id: "run-clip",
-        kind: "animation",
-        assetGuid: "hero-model",
-        clipName: "Run",
-        durationMs: 400,
-      });
+      setStateClip(graph, "idle", { assetGuid: "walk-anim", durationMs: 100 }, "2d");
+      addClipState(graph, "run", "Run", { assetGuid: "hero-model", clipName: "Run", durationMs: 400 });
       graph.variables = [
         { id: "var-moving", name: "moving", typeId: "bool", defaultValue: false },
       ];
-      graph.transitions.push({
-        id: "idle-to-run",
-        fromStateId: "idle",
-        toStateId: "run",
-        blendSeconds: 0,
-        priority: 0,
-        ruleGraph: createDefaultTransitionRuleGraph(),
-      });
+      addTransition(graph, "idle-to-run", "idle", "run");
 
       const sprite = createDefaultSpritePayload();
       sprite.pixelsPerUnit = 100;

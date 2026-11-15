@@ -742,7 +742,7 @@ describe("loadExportDocuments", () => {
             version: 1,
             mode: "thin",
             dependencies: [],
-            payload: { importScale: 1, clipNames: [] },
+            payload: { importScale: 1 },
             chunks: [
               {
                 id: "source",
@@ -759,7 +759,6 @@ describe("loadExportDocuments", () => {
         kinds.push(kind);
         return {
           importScale: 4,
-          clipNames: ["Walk"],
           materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
           skeletonGuid: "skel-1",
         };
@@ -773,7 +772,6 @@ describe("loadExportDocuments", () => {
     expect(decodePackedModelAsset(packed!)).toEqual({
       payload: {
         importScale: 4,
-        clipNames: ["Walk"],
         materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
         skeletonGuid: "skel-1",
         simpleColliders: [],

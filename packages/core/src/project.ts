@@ -269,12 +269,21 @@ function normalizeSaveGameSettings(value?: Partial<SaveGameProjectSettings>): Sa
   };
 }
 
+/**
+ * Who syncs the project's files: nobody (`off`), Haptic (`integrated`) or
+ * another Git app, with Haptic taking Git LFS locks only (`manual`).
+ */
+export type SourceControlMode = "off" | "integrated" | "manual";
+
+export const SOURCE_CONTROL_MODES: readonly SourceControlMode[] = ["off", "integrated", "manual"];
+
 export interface SourceControlProjectSettings {
-  enabled: boolean;
+  mode: SourceControlMode;
   repositoryUrl: string;
   branch: string;
   autoLockOnEdit: boolean;
-  pollIntervalMs: number;
+  /** Integrated only: release the pushed paths' locks after a push. */
+  releaseLocksAfterPush: boolean;
 }
 
 export interface PluginEnableOverride {
@@ -542,16 +551,15 @@ export function resolveActorDefaults(
 }
 
 
-const DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS = 60_000;
 const DEFAULT_SOURCE_CONTROL_BRANCH = "main";
 
 export const DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS: SourceControlProjectSettings =
   {
-    enabled: false,
+    mode: "off",
     repositoryUrl: "",
     branch: DEFAULT_SOURCE_CONTROL_BRANCH,
     autoLockOnEdit: true,
-    pollIntervalMs: DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS,
+    releaseLocksAfterPush: true,
   };
 
 export const DEFAULT_PLAY_FRAME_CAP = 60;
@@ -907,23 +915,19 @@ function normalizeAudioSettings(
 function normalizeSourceControl(
   value: Partial<SourceControlProjectSettings> | undefined,
 ): SourceControlProjectSettings {
-  const poll =
-    typeof value?.pollIntervalMs === "number" &&
-    Number.isFinite(value.pollIntervalMs) &&
-    value.pollIntervalMs >= 1_000
-      ? Math.round(value.pollIntervalMs)
-      : DEFAULT_SOURCE_CONTROL_POLL_INTERVAL_MS;
   const branch =
     typeof value?.branch === "string" && value.branch.trim() !== ""
       ? value.branch.trim()
       : DEFAULT_SOURCE_CONTROL_BRANCH;
   return {
-    enabled: value?.enabled === true,
+    mode: SOURCE_CONTROL_MODES.includes(value?.mode as SourceControlMode)
+      ? (value!.mode as SourceControlMode)
+      : "off",
     repositoryUrl:
       typeof value?.repositoryUrl === "string" ? value.repositoryUrl.trim() : "",
     branch,
     autoLockOnEdit: value?.autoLockOnEdit !== false,
-    pollIntervalMs: poll,
+    releaseLocksAfterPush: value?.releaseLocksAfterPush !== false,
   };
 }
 

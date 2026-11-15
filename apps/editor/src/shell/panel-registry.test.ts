@@ -30,7 +30,8 @@ const KINDS = Object.keys({
   "material-function": true,
   "material-instance": true,
   "plugin-settings": true,
-  "anim-graph": true,
+  "anim-graph-3d": true,
+  "anim-graph-2d": true,
   "behaviour-tree": true,
   audio: true,
   "save-game": true,
@@ -49,6 +50,8 @@ const KINDS = Object.keys({
   model: true,
   skeleton: true,
   animation: true,
+  "blend-space": true,
+  "sprite-blend-space": true,
   "skybox-creator": true,
   trace: true,
   texture: true,
@@ -58,14 +61,12 @@ const KINDS = Object.keys({
   "timeline-clip-2d": true,
   "timeline-clip-3d": true,
   "extension-asset": true,
+  "source-control": true,
 } satisfies Record<DockviewDocumentKind, true>) as DockviewDocumentKind[];
 
 const OPTION_VARIANTS: DockWindowOptions[] = [
   {},
   { actorPrefab: false },
-  { sourceControl: true },
-  { animEditorMode: "stateMachine" },
-  { animEditorMode: "animationObject" },
   ...SCENE_MODES.map((sceneMode) => ({ sceneMode })),
 ];
 
