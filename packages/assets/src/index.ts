@@ -58,6 +58,7 @@ export * from "./importers";
 export * from "./migrate-on-load";
 export * from "./migration";
 export * from "./payload-loader";
+export { STORAGE_MOVE_BACKUP_PREFIX } from "./storage-move";
 export * from "./plugin-host";
 export * from "./plugin-package";
 export * from "./plugin-settings";

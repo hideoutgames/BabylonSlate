@@ -162,6 +162,21 @@ describe("Remove Unused Files", () => {
     expect(await storage.exists(`assets/.blobs/${lost.sha}`)).toBe(true);
   });
 
+  it("keeps the blobs a rename's backup references, and every blob of a root holding a backup that is no readable asset", async () => {
+    // A case-only rename whose restore failed leaves the original only in its backup, beside the asset.
+    const lost = await texture("Lost", 3);
+    const crate = await texture("Crate", 4);
+    const loose = await texture("Loose", 5);
+    const { service, storage } = await integratedSync({ files: (await seed()).files });
+    await storage.writeBinary(`assets/.blobs/${lost.sha}`, lost.blob);
+    await storage.writeBinary("assets/Characters/.haptic-move-0c5a1e7f", lost.bytes);
+    await storage.writeBinary(`assets/.blobs/${loose.sha}`, loose.blob);
+    await storage.writeBinary(`plugins/Props/assets/.blobs/${crate.sha}`, crate.blob);
+    await storage.writeText("plugins/Props/assets/.haptic-move-9d2b4c11", "half a backup");
+
+    expect(await service.findUnusedFiles()).toEqual({ paths: [`assets/.blobs/${loose.sha}`], bytes: BLOB_BYTES });
+  });
+
   it("keeps every blob of a content root that holds an asset whose header cannot be read", async () => {
     const lost = await texture("Lost", 3);
     const { service, storage } = await integratedSync({ files: (await seed()).files });

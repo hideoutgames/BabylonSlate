@@ -1,5 +1,5 @@
 import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
-import { readAssetCatalog } from "@haptic/assets";
+import { readAssetCatalog, STORAGE_MOVE_BACKUP_PREFIX } from "@haptic/assets";
 import { throwIfCancelled } from "@haptic/source-control";
 import { assetBlobFolder } from "../lib/source-control-changes";
 import type { UnusedFiles } from "./source-control-sync";
@@ -14,7 +14,12 @@ interface Kept {
   wholeFolders: Set<string>;
 }
 
-/** Every `.hasset` in the project folder (`.git` and blob folders left out), from directory listings. */
+/**
+ * Every `.hasset` in the project folder (`.git` and blob folders left out),
+ * from directory listings, with the backups a move or rename keeps beside its
+ * file (`STORAGE_MOVE_BACKUP_PREFIX`): one whose restore failed holds the
+ * only copy of the original asset.
+ */
 async function assetFiles(storage: ProjectStorage, signal: AbortSignal): Promise<string[]> {
   const out: string[] = [];
   const walk = async (dir: string) => {
@@ -23,7 +28,7 @@ async function assetFiles(storage: ProjectStorage, signal: AbortSignal): Promise
       const path = dir ? `${dir}/${entry.name}` : entry.name;
       if (entry.isDir) {
         if (path !== ".git" && entry.name !== ".blobs") await walk(path);
-      } else if (entry.name.endsWith(".hasset")) {
+      } else if (entry.name.endsWith(".hasset") || entry.name.startsWith(STORAGE_MOVE_BACKUP_PREFIX)) {
         out.push(path);
       }
     }
