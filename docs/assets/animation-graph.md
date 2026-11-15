@@ -106,6 +106,14 @@ Variables can be Bool, Int, Float, String, Tag or Tag Container. Rule and state 
 
 Give looping players the same **Sync Group** name, in the state's or the player's **Inspector**, to keep them in step: a Sequence Player, a Sprite Animation Player or a Blend Space Player. Every member plays at the group's point of its cycle, and the most heavily weighted member sets the pace, so a 1 s walk and a 0.5 s run stay in step. A state entered with a blend picks up the group's point instead of starting over, so Walk → Run keeps the stride. Players that do not loop ignore their group.
 
+## Layers and cached poses
+
+A 3D state graph can play different clips on different parts of the body, reuse a pose, and adjust single bones:
+
+- [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) plays each Blend Pose on the bones of its branches only, such as an attack on the spine and arms over a run on the legs. Pick each branch's bone in the **Inspector**.
+- A pose output connects to one input. To use a pose in more than one place, or in more than one state, save it with [Save Cached Pose](../scripting/animation/save-cached-pose.md) and read it with [Use Cached Pose](../scripting/animation/use-cached-pose.md) nodes. A cached pose plays once a frame however many nodes use it, and keeps its time as the State Machine moves between states that use it.
+- [Transform Bone](../scripting/animation/transform-bone.md) changes one bone after the clips blend, such as turning the head toward a target.
+
 ## Animation events
 
 [Animations](animation.md#animation-events) and [Sprite Animation frames](sprite-animation.md#animation-events) carry named Animation Events, and states can name their own (**Enter Event**, **Exit Event**, **Fully Blended Event**). The graph fires an event when a clip it plays passes the event's time: once each time the clip passes it, including when a looping clip wraps round. A window fires its begin and its end; its end also fires when the clip stops playing first, so the two always pair.
@@ -128,7 +136,7 @@ To stop the game when the graph enters a state, choose **Add Breakpoint** from t
 - Add an [Animation Graph component](../components/animation-graph.md) to an actor to run the graph.
 - Change variables and states from scripts with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md) and [Jump To State](../scripting/class/jump-to-state.md), and read the active state with [Get Current State](../scripting/class/get-current-state.md).
 - A 3D graph blends its clips bone by bone, by weight. Where the weights add up to less than full, the rest pose takes the remainder, so blending a clip toward [Rest Pose](../scripting/animation/rest-pose.md) fades it out smoothly. Bones that no playing clip moves stay in their rest pose.
-- A graph has exactly one State Machine, so it cannot layer a second set of states, such as upper-body gestures, over another.
+- A graph has exactly one State Machine, so it cannot run a second set of states, such as upper-body gestures, beside another. Layer clips within a state with [Layered Blend Per Bone](../scripting/animation/layered-blend-per-bone.md) instead.
 
 ## Related
 

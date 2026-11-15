@@ -192,7 +192,8 @@ export type ClassEventOptions = {
    */
   animationGraphHost?: "object" | "rule" | "pose";
   /** A state graph's dimension (3D poses or 2D frames). */
-  animPose?: { dimension: "3d" | "2d" };
+  /** A state graph's dimension, and (3D) the cached poses saved in its Animation Graph. */
+  animPose?: { dimension: "3d" | "2d"; cachedPoses?: readonly string[] };
   /** The class's own graph: its interface members (Tickable Object) add events. */
   graph?: SerializedGraph;
 };
@@ -366,8 +367,12 @@ function isAnimCatalogNodeAllowed(
     const pose = options?.animPose ?? { dimension: "3d" };
     // A state graph reads its state's facts.
     if (nodeId.startsWith("anim.state.")) return true;
+    // Skeletal controls change bones of a 3D pose.
+    if (nodeId.startsWith("anim.control.")) return pose.dimension === "3d";
     const prefix = pose.dimension === "3d" ? "anim.pose." : "anim.frame.";
     if (!nodeId.startsWith(prefix)) return false;
+    // Use Cached Pose comes one per saved name (`cachedPoseUsePaletteNodes`), never as a bare node.
+    if (nodeId === "anim.pose.useCachedPose") return false;
     // Each state graph has its one protected output.
     return nodeId !== `${prefix}output`;
   }

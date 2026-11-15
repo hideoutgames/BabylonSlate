@@ -8,6 +8,7 @@ import { engineParentOf, formatEventTitle, walkAncestry } from "@haptic/editor-k
 import { isPureAnimGraphHost } from "../lib/class-event-catalog";
 import { ANIM_NOTIFY_EVENT_TYPE, EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeType, isTouchEventNodeType, type NodeRegistry } from "@haptic/scripting";
 import { animEventNodeTitle } from "../lib/anim-graph-events";
+import { ANIM_POSE_USE_CACHED_TYPE, cachedPoseNodeTitle } from "@haptic/anim-graph";
 import { sceneAssetClassId } from "@haptic/object-model";
 import type { PaletteNode } from "@haptic/graph-ui";
 import { classLineageIncludesAny, isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
@@ -421,6 +422,18 @@ function animEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPalet
   });
 }
 
+/** A state graph's Use Cached Pose <Name> rows, one per cached pose its Animation Graph saves. */
+function cachedPoseUsePaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
+  if (options?.animationGraphHost !== "pose" || options.animPose?.dimension !== "3d") return [];
+  const def = nodeRegistry.get(ANIM_POSE_USE_CACHED_TYPE);
+  if (!def) return [];
+  return (options.animPose.cachedPoses ?? []).map((name) => {
+    const title = cachedPoseNodeTitle(ANIM_POSE_USE_CACHED_TYPE, name);
+    const defaultData = { name, title };
+    return { id: `${ANIM_POSE_USE_CACHED_TYPE}:${name}`, nodeType: ANIM_POSE_USE_CACHED_TYPE, title, category: def.category, pins: def.pins(defaultData), defaultData, pure: true };
+  });
+}
+
 function inputEventPaletteNodes(nodeRegistry: NodeRegistry, options?: ScriptPaletteOptions): PaletteNode[] {
   if (options?.activeFunctionId || options?.animationGraphHost || !nativeEventStubs(options).some((node) => node.eventType === "flow.event.tick")) return [];
   return (options?.inputAssets ?? []).flatMap((asset) => {
@@ -484,6 +497,7 @@ function scriptPaletteInjectorNodes(
   if (isPureAnimGraphHost(options?.animationGraphHost)) {
     return markOutOfContext(
       [
+        ...cachedPoseUsePaletteNodes(nodeRegistry, options),
         ...variableAccessPaletteNodes(nodeRegistry, options),
         ...structPaletteNodes(nodeRegistry, options),
         ...dataPaletteNodes(nodeRegistry, options),

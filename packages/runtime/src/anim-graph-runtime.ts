@@ -401,6 +401,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         justFinished: next.facts.justFinished,
         justLooped: next.facts.justLooped,
         layers: next.layers,
+        ...(next.layerBlends ? { layerBlends: next.layerBlends } : {}),
+        ...(next.boneModifiers ? { boneModifiers: next.boneModifiers } : {}),
         // The graph ran all the same; render poses the actor only while it can be seen.
         ...(tickMode === "whenVisible" ? { whenVisible: true } : {}),
       });

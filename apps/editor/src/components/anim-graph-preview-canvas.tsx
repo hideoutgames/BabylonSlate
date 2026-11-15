@@ -62,6 +62,8 @@ function animStateCommand(state: AnimEvalState) {
     justFinished: state.facts.justFinished,
     justLooped: state.facts.justLooped,
     layers: state.layers,
+    ...(state.layerBlends ? { layerBlends: state.layerBlends } : {}),
+    ...(state.boneModifiers ? { boneModifiers: state.boneModifiers } : {}),
   };
 }
 
