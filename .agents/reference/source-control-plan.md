@@ -1,10 +1,10 @@
 # Source Control Plan
 
-Deferred design for the rest of built-in Git: history and branches. [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Manual mode's Git LFS locks, device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes window, commit, pull with whole-file conflicts, push with lock verify and release, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers, Revert Asset, Compare in Pull Conflicts). Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
+What remains of built-in Git before Integrated mode ships: the iPad benchmark and the native streaming path it decides, and one picker follow-up. [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Manual mode's Git LFS locks, device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes and History windows, commit, pull with whole-file conflicts, push with lock verify and release, branches, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers, Revert Asset and Revert To This Version, Compare in Pull Conflicts). Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
 
 ## Scope
 
-- In: Git over HTTPS with Git LFS in the iOS, Android and desktop apps; GitHub and GitLab sign-in; cloning and publishing from the project browser; a pinned Source Control tab (changes, asset diffs, commit, pull, push, branches, history, revert) and status bar controls; Git LFS locks in every mode; other Git hosts by URL and token.
+- In: Git over HTTPS with Git LFS in the iOS, Android and desktop apps; GitHub and GitLab sign-in; cloning and publishing from the project browser; a pinned Source Control tab (changes, history, asset diffs, commit, pull, push, branches, revert) and status bar controls; Git LFS locks in every mode; other Git hosts by URL and token.
 - Out for now:
   - The web build: GitHub's Git and LFS endpoints send no CORS headers, and it stays out unless a proxy is accepted.
   - SSH transport: SSH remotes map to their HTTPS host, as `lfsEndpointFromRepoUrl` already does.
@@ -30,32 +30,18 @@ Deferred design for the rest of built-in Git: history and branches. [architectur
 - A host without the locking API (Bitbucket Cloud documents none; Azure Repos is unconfirmed) still syncs in Integrated mode; its locking is reported as unsupported, as in Manual.
 - GitHub and GitLab are supported and tested by hand; other hosts work through the standards and are not tested by Haptic. CI covers the protocols against a local Git HTTP server and a fake LFS server, with no host accounts or tokens.
 
-## Editor
-
-- Branch switch asks to save or discard dirty documents first, is confirmed and is not undoable (like a pull), and passes its changed paths to the external-change reload flow (`applyPulledChanges`).
-- Per-asset history in the Source Control tab; its **Revert To This Version** runs the built Revert flow (`requestRevert` with a commit ref).
-
 ## UI
 
-Approved layouts. Everything keeps the editor's compact density, tokens and Lucide icons; assets show their usual type visuals; settings rows carry no explanatory text ([row descriptions](../rules/row-descriptions.md)).
-
-- **Source Control tab** (built with **Changes**, **Locks**, **Actors** and **Diff**). Its windows still to build:
-  - **History**, tabbed with **Changes** and **Locks**.
-  - **Changes** gains a branch picker in place of its branch label.
-- **Status bar** menu (built with **Commit…**, **Pull**, **Push**, **Refresh**, **Open Source Control**) gains **Switch Branch**, **New Branch…** and **Open History**; the phone's More Tools gains the same.
-- **History** window: the selected asset's commits (**This Asset** / **All Assets**), uncommitted changes first; the selected commit's message, author, time and short id (with copy), **Compare With Working Copy** (`openDiff` with a commit base), **Revert To This Version** and its assets; **Load Older History** at the end of a shallow clone (`SyncPort.log` with `deepen`). The Base and Compare pickers then take their commit list from it rather than the last 20 commits of the asset.
+- The toolbar's **Base** and **Compare** pickers list the asset's last 20 commits (`commitsOf`), read when a menu opens. They should take their commit list from History's loaded pages for the same asset, so a commit History reached past the first 20 can be picked too, and both read the log once.
 
 ## Engine integration points
 
 What exists today and what each part must change. Check these against the code before building; they are a starting map, not a contract.
 
-- **Package:** `packages/source-control` holds the Git core (`SyncPort`, subpath `./git`; `FakeSync`, subpath `./fake-sync`) with `log` ready for history (diffs use `readFile` and `readLfsObject`); branch listing and switching need new `SyncPort` calls (and contract cases for both implementations).
 - **Native HTTP:** `NativeHttp` (`packages/vfs/src/native-http-port.ts`) carries GET, POST and PUT with text or byte bodies and binary answers, whole ([binary HTTP](architecture/source-control.md#binary-http)). A streaming file transfer in the native plugins and the desktop IPC (`lfs:fetch`) waits for step 1's results.
-- **Source Control tab:** the `source-control` DockView document (`INTEGRATED_SOURCE_CONTROL_WINDOWS` in `apps/editor/src/shell/window-catalog.ts`, panels in `shell/asset-panels/source-control.ts`); History joins that catalog, following the [DockView asset editor tabs rule](../rules/dockview-editor-tabs.md).
-- **Sync service:** `apps/editor/src/services/source-control-sync.ts` gains branch switch (through the Pull flow's unsaved-document and reload steps) and history reads.
 - **Docs:** `docs/projects/source-control.md` and `docs/editor/settings.md` change with each step.
 
 ## Order
 
 1. The owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships. Run it against a repository with a few thousand assets ([benchmark](architecture/source-control.md#benchmark)); the unchanged status must read no files.
-2. Branches and history: the **History** window (with **Revert To This Version**), the Changes branch picker, **Switch Branch**, **New Branch…** and **Open History** in the status bar menu and More Tools.
+2. The Base and Compare pickers take their commits from History ([UI](#ui)).

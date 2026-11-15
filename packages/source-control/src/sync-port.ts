@@ -41,8 +41,8 @@ export interface SyncPort {
    * An LFS object's bytes by its `.blobs/<sha256>` path and size, as a
    * `.hasset` chunk entry names them, so no commit is read: the working
    * copy's file when it has that size (an object never changes under its
-   * name), otherwise downloaded and checked. Never written: a blob nothing
-   * references would go out with the next commit. One the server lacks is
+   * name), otherwise downloaded and checked. Never written: the working copy
+   * would keep a file no asset of it uses. One the server lacks is
    * `lfs` / `lfs-object-missing`.
    */
   readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;

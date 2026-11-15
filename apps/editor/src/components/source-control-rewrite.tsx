@@ -22,6 +22,8 @@ export type RewriteStart =
  * `path` limits the documents to one asset's (Revert); otherwise every
  * unsaved document and Project Settings count.
  */
+// The hook and the progress it drives belong together.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useRewriteFlow<Step extends { kind: string }>({ path, reason, onDone }: {
   path?: string;
   /** Why documents are read-only; Play and Simulation name it when they refuse to start. */

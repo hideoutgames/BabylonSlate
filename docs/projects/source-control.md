@@ -76,9 +76,9 @@ If Publish stops before it finishes (the app closes, or the host can't be reache
 
 ### The Changes window
 
-In Integrated mode the **Source Control** tab opens on **Changes**, with **Locks** beside it and the **Actors** and **Diff** windows to the right. The tab shows how many assets have uncommitted changes.
+In Integrated mode the **Source Control** tab opens on **Changes**, with **History** and **Locks** beside it and the **Actors** and **Diff** windows to the right. The tab shows how many assets have uncommitted changes.
 
-- The top row shows the branch, **Refresh**, and **Pull** and **Push** with the number of commits each would bring in or send.
+- The top row shows the branch you are on (choose it to switch branches or start a **New Branch…**, see [Branches](#branches)), **Refresh**, and **Pull** and **Push** with the number of commits each would bring in or send.
 - The status line says how many commits there are to pull and to push, and when Haptic last checked.
 - **Changes** lists each changed asset with its type, folder and **A** (added), **M** (modified) or **D** (deleted). A lock icon marks assets you have locked. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
 - **Incoming** lists the newest commits waiting to be pulled, with their author and age.
@@ -92,6 +92,8 @@ Haptic reads changes after you save (while a game covers the editor, once you ar
 2. Type a **Commit Message**.
 3. Keep **Push After Commit** on to send the commit at once, or turn it off to commit only on this device.
 4. Choose **Commit N Assets**.
+
+Each asset goes with the large data it uses. Large data no asset in the commit uses, such as what an edit you reverted had added, stays on your device and is never committed or pushed.
 
 **Push** sends your commits. Before it does, Haptic checks the locks on what it sends and refuses if someone else has locked one of those assets, naming who. With **Release Locks After Push** on, a push then releases your locks on the assets it sent, except any you have changed again or have unsaved edits in. Haptic then checks the host for new commits; if that check fails (**Could Not Check For Changes**), the push still went through.
 
@@ -108,6 +110,20 @@ If the host has moved on since your last pull, the push is refused: pull first.
 
 Open documents whose files the pull changed reload before you can edit again, as after any change on disk (the whole project reloads when project settings or many assets changed). An asset you kept stays as an uncommitted change, ready to commit and push.
 
+### Branches
+
+The branch you are on belongs to your copy of the project on this device: switching it changes nothing for your teammates and is not a change to commit. The project's **Default Branch** (in **Project Settings > Source Control**) stays as it is.
+
+**Switch a branch:** choose the branch in **Changes**, **Switch Branch** in the status bar menu, or **Switch Branch** in **More Tools**. The menu lists the branches on this device, with yours checked, then the other branches on the host.
+
+1. If documents have unsaved changes, choose **Save All** or **Discard** first.
+2. Confirm. Files that differ on the other branch are replaced with its versions, and this cannot be undone. Uncommitted changes to other files stay as they are.
+3. **Switching To** covers the editor until the other branch's files are loaded; documents are read-only meanwhile, as during a pull.
+
+If an asset the other branch has a different version of has uncommitted changes, Haptic doesn't switch and names the assets: commit or revert them first. A branch you haven't used on this device yet is downloaded first, without its older history.
+
+**Start a branch:** choose **New Branch…**, enter a name and choose **Create Branch**. The branch starts at your last commit and becomes your branch at once, with your uncommitted changes kept. Your next push creates it on the host; until then there is nothing to pull, and **Push** counts only the commits the host doesn't have on any branch. Names that are already taken, here or on the host, are refused as you type.
+
 ### Compare versions
 
 Choosing a change opens its asset in **Actors** and **Diff**, comparing the last commit (**Base**) with your working copy (**Compare**). While the diff is shown, the toolbar holds the **Base** and **Compare** pickers: choose **Working Copy**, the branch's last commit, the branch on the host as last checked, or one of the recent commits that changed the asset.
@@ -121,6 +137,17 @@ Choosing a change opens its asset in **Actors** and **Diff**, comparing the last
 
 Haptic reads the base version from the project's history, so a diff needs no network unless a large file the base used is no longer in your copy; it then downloads it from the host without adding it to your changes. While a game covers the editor, the diff waits.
 
+### History
+
+**History** lists commits, newest first, with their message, author and age:
+
+- **This Asset** shows the commits that changed the asset you last compared, or the one you were editing when you chose **Open History**. **All Assets** shows every commit on your branch.
+- **Uncommitted Changes** comes first while there are any; choose it to list them, and an asset to see its diff.
+- Choose a commit to see its full message, author, time and short id (**Copy Commit Id** copies the full one), and the assets it changed: choose one to see what that commit did to it.
+- **Compare With Working Copy** opens the asset's diff from that commit to your working copy.
+- **Revert To This Version** puts the asset back as that commit has it, as [Revert Asset](#revert-an-asset) does.
+- **Load Older History** reads more commits. A cloned project starts with only its latest commit, so older history is downloaded from the host the first time you ask for it.
+
 ### Revert an asset
 
 **Revert Asset** in **Diff** puts the base version of the asset back in your working copy, with the large files it uses (an asset the base didn't have is removed). If the asset has unsaved edits, choose **Save All** or **Discard** first. Reverting replaces the file and cannot be undone. Documents are read-only while it runs, and the reverted asset reloads as after a pull. **Revert Asset** is unavailable when **Base** is the working copy.
@@ -131,7 +158,7 @@ A repository needs a Git LFS rule for the data Haptic stores beside assets. If a
 
 ### The status bar
 
-In Integrated mode the status bar starts with the branch. Its menu holds **Commit…**, **Pull**, **Push**, **Refresh** and **Open Source Control**. Next to it, **N Changes** opens the Changes window, and **Pull N** and **Push N** appear when there is something to pull or push. While a pull, push or publish runs, its progress takes their place. When a commit, pull or push fails, its reason (such as **Could Not Push**) appears there too and opens the Changes window, which says what went wrong. On the right, a small **Saved** shows that everything is saved; save problems such as **Auto-Save Failed — Use Save All** show there instead.
+In Integrated mode the status bar starts with the branch. Its menu holds **Commit…**, **Pull**, **Push**, **Refresh**, **Switch Branch**, **New Branch…**, **Open Source Control** and **Open History**. Next to it, **N Changes** opens the Changes window, and **Pull N** and **Push N** appear when there is something to pull or push. While a pull, push, publish or branch switch runs, its progress takes their place. When a commit, pull or push fails, its reason (such as **Could Not Push**) appears there too and opens the Changes window, which says what went wrong. On the right, a small **Saved** shows that everything is saved; save problems such as **Auto-Save Failed — Use Save All** show there instead.
 
 In the phone layout, which has no status bar, **More Tools** holds the same actions; when one fails, the Changes window opens to say why.
 
@@ -158,7 +185,7 @@ Keep the project in a folder that is a Git working copy whose top folder is the 
 | Publish | **Publish Project…**, while Mode is Off. |
 | Git App | Desktop, Integrated mode: **Use Haptic's Git Here** for a folder Haptic doesn't sync yet, or **Stop Using Haptic's Git Here** for one it does. Applies to this device only. |
 | Repository | The repository's HTTPS or SSH address. Signed in to GitHub or GitLab, choose it from your repositories; **Use Typed URL** in the list takes an address on another host. Haptic always talks to the host over HTTPS; for an SSH address it uses the same host on the standard HTTPS port. In Integrated mode it shows the repository the project was cloned from or published to, and can't be changed here. |
-| Branch | The branch the locks belong to and, in Integrated mode, the branch Haptic syncs. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it shows the project's branch and can't be changed here. |
+| Branch | The branch the locks belong to. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it is the **Default Branch**, the team's branch, and can't be changed here; the branch you are on is your own, switched from the Source Control tab ([Branches](#branches)). |
 | Account | Who you are signed in as on the repository's host, or **Not Signed In** with **Sign In**. |
 | Auto-Lock On First Edit | Lock a file the first time you edit it in this session. On by default. |
 | Release Locks After Push | Integrated mode: release your locks on the assets a push sent. On by default. |
@@ -180,7 +207,7 @@ Haptic checks locks every minute while it is in the foreground.
 
 While a project's mode is not Off, the **Source Control** tab sits at the right end of the document tabs, beside **Open Documents**. It can't be closed. In the phone layout, which has no tabs, a **Source Control** button beside the **Content Browser** button opens it.
 
-In Integrated mode it holds **Changes**, **Locks**, **Actors** and **Diff** ([Compare versions](#compare-versions)); in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age.
+In Integrated mode it holds **Changes**, **History**, **Locks**, **Actors** and **Diff** ([Compare versions](#compare-versions), [History](#history)); in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age.
 
 | Control | Description |
 | --- | --- |
