@@ -10,7 +10,7 @@ Source Control is available in the iPad, iPhone, Android and desktop apps, not o
 | Integrated | Haptic | Clones, commits, pulls and pushes the project, stores large asset data with Git LFS, and locks files. |
 | Manual | Your Git app, such as Working Copy on iPad or a desktop Git client | Locks files only. |
 
-Only one Git app may work in a project folder at a time. Integrated projects come from **Clone** or **Publish**; a folder another Git app syncs stays in Manual mode.
+Only one Git app may work in a project folder at a time. Integrated projects come from **Clone** or **Publish**; a folder another Git app syncs stays in Manual mode. On desktop, Haptic asks once before it runs Git in a folder it didn't clone or publish there (see [On desktop: an existing Git folder](#on-desktop-an-existing-git-folder)).
 
 ## Link your accounts
 
@@ -70,7 +70,7 @@ The dialog sums up what Publish does: the repository it creates, the Git LFS set
 
 On iPad, iPhone and Android, only a project in Haptic's own storage can be published. On desktop, any project folder can.
 
-If Publish stops before it finishes (the app closes, or the host can't be reached), the project stays Off. On iPad, iPhone and Android you can publish it again; give the repository a new name if the first attempt already created one. On desktop the folder now has Git, so choose **Integrated** under **Mode** and push instead.
+If Publish stops before it finishes (the app closes, or the host can't be reached), the project stays Off. On iPad, iPhone and Android you can publish it again under the same name: if the first attempt already created the repository and nothing was pushed to it yet, Haptic publishes into it. Haptic never publishes into a repository that already has commits; choose another name for that. On desktop the folder now has Git, so choose **Integrated** under **Mode** and push instead.
 
 ## Integrated mode
 
@@ -121,6 +121,10 @@ In the phone layout, which has no status bar, **More Tools** holds the same acti
 
 On desktop, a project folder that is already a Git working copy can switch to **Integrated** in **Project Settings > Source Control**. Haptic first warns that no other Git app may use the folder at the same time, then takes the repository and branch from the folder's Git settings. On iPad, iPhone and Android, such a folder stays in Manual mode.
 
+The mode is part of the project, so it reaches your teammates when you commit it. On desktop, Haptic doesn't start running Git in a folder just because the project says Integrated: until you agree, **Project Settings > Source Control** and the **Changes** window say **Haptic Does Not Run Git In This Folder Yet**. Choose **Use Haptic's Git Here** to see the same warning, then accept to let Haptic sync this folder. **Cancel** changes nothing, and Haptic doesn't ask again by itself. Your answer belongs to this folder on this device: Haptic keeps it in the folder's own Git settings, never in the project, so it isn't committed and stays when you reinstall Haptic. Folders Haptic cloned or published on this device don't ask.
+
+To give the folder back to another Git app, choose **Stop Using Haptic's Git Here** in **Project Settings > Source Control**. Haptic stops syncing the folder on this device; the project stays Integrated for your teammates.
+
 ## Manual mode
 
 Keep the project in a folder that is a Git working copy whose top folder is the project folder (see [Where Projects Live](storage.md)). The repository must use Git LFS, on a host with LFS file locking, such as GitHub, GitLab or Gitea.
@@ -134,6 +138,7 @@ Keep the project in a folder that is a Git working copy whose top folder is the 
 | --- | --- |
 | Mode | **Off**, **Integrated** or **Manual**. Integrated is offered for a project that already uses it and, on desktop, for a folder that is a Git working copy. |
 | Publish | **Publish Project…**, while Mode is Off. |
+| Git App | Desktop, Integrated mode: **Use Haptic's Git Here** for a folder Haptic doesn't sync yet, or **Stop Using Haptic's Git Here** for one it does. Applies to this device only. |
 | Repository | The repository's HTTPS or SSH address. Signed in to GitHub or GitLab, choose it from your repositories; **Use Typed URL** in the list takes an address on another host. Haptic always talks to the host over HTTPS; for an SSH address it uses the same host on the standard HTTPS port. In Integrated mode it shows the repository the project was cloned from or published to, and can't be changed here. |
 | Branch | The branch the locks belong to and, in Integrated mode, the branch Haptic syncs. Default `main`. Signed in to the repository's host, choose it from the host's branches. In Integrated mode it shows the project's branch and can't be changed here. |
 | Account | Who you are signed in as on the repository's host, or **Not Signed In** with **Sign In**. |
