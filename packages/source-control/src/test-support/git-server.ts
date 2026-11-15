@@ -201,10 +201,15 @@ export class GitTestServer {
     });
     const output: Buffer[] = [];
     child.stdout.on("data", (chunk: Buffer) => output.push(chunk));
-    child.stdin.end(input);
     await new Promise((resolve, reject) => {
+      // http-backend may answer and exit before reading the whole body; the write
+      // then fails with EPIPE, which only means the backend is done with it.
+      child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+        if (error.code !== "EPIPE") reject(error);
+      });
       child.on("error", reject);
       child.on("close", resolve);
+      child.stdin.end(input);
     });
     const raw = Buffer.concat(output);
     const split = raw.indexOf("\r\n\r\n");
