@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { ArrowRightIcon, ChevronDownIcon } from "lucide-react";
 import type { CommitInfo } from "@haptic/source-control";
 import { TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, useTouchUi, WindowedList } from "@haptic/editor-kit";
@@ -26,10 +26,18 @@ function RefPicker({ title, value, onChange, path, testId }: { title: string; va
   const sync = useIntegratedSync();
   const snapshot = useIntegratedSyncState();
   const touch = useTouchUi();
+  const [open, setOpen] = useState(false);
   // History's list of the asset: read once (when History or a menu first asks), paged by either.
   const history = sync.commitHistory;
   const list = useSyncExternalStore(history.subscribe, () => history.list(path));
   const commits = list?.commits ?? [];
+  // While the menu is open (it is not modal), read the list again once it is gone: a commit, pull or
+  // switch moved the branch or its commit, or other assets' reads pushed it out of the few kept.
+  const missing = list === null;
+  const { active, branch, head } = snapshot;
+  useEffect(() => {
+    if (open && active && missing) history.load(path);
+  }, [active, branch, head, history, missing, open, path]);
   const item = (ref: DiffRef, label: string, disabled = false) => (
     <DropdownMenuItem key={ref.kind === "commit" ? ref.id : ref.kind} disabled={disabled} onClick={() => onChange(ref)} data-testid={`${testId}-${ref.kind === "commit" ? ref.id : ref.kind}`}>
       <span className="truncate">{label}</span>
@@ -37,7 +45,7 @@ function RefPicker({ title, value, onChange, path, testId }: { title: string; va
   );
   const commitItem = (commit: CommitInfo) => item({ kind: "commit", id: commit.id }, commitLabel(commit));
   return (
-    <DropdownMenu modal={false} onOpenChange={(open) => { if (open) history.load(path); }}>
+    <DropdownMenu modal={false} open={open} onOpenChange={(next) => setOpen(next)}>
       <DropdownMenuTrigger render={<Button variant="outline" size="sm" data-testid={testId} />}>
         <span className="text-muted-foreground">{title}</span>
         <span className="max-w-40 truncate">{refLabel(value, snapshot)}</span>

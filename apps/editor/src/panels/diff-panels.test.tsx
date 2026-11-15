@@ -538,6 +538,41 @@ describe("Source Control diff windows", () => {
     expect(diffService!.getSnapshot().target?.compare).toEqual({ kind: "commit", id: byMessage("Rock 0") });
   });
 
+  it("reads the asset's commits again while a picker's menu stays open across a commit", async () => {
+    const ROCK = "assets/Rock.texture.hasset";
+    const sync = await integratedSync();
+    state.sync = sync.service;
+    sync.remote.commit({ [ROCK]: "R1" }, "Rock 1");
+    await sync.service.pull();
+    const first = sync.service.getSnapshot().head!;
+    let actions: SourceControlActions | null = null;
+    function Actions() {
+      actions = useSourceControlActions();
+      return null;
+    }
+    render(
+      <SourceControlActionsProvider>
+        <Actions />
+        <SourceControlDiffPickers />
+      </SourceControlActionsProvider>,
+    );
+    act(() => actions!.openDiff({ path: ROCK, name: "Rock", type: "Texture" }));
+    fireEvent.click(await screen.findByTestId("diff-base"));
+    expect(await screen.findByTestId(`diff-base-${first}`)).toBeTruthy();
+
+    // The menu is not modal: a commit moves HEAD while it stays open.
+    await sync.storage.writeText(ROCK, "R2");
+    await sync.service.refreshStatus();
+    await act(async () => {
+      await sync.service.commit({ rowIds: new Set([ROCK]), message: "Rock 2", push: false });
+    });
+    const second = sync.service.getSnapshot().head!;
+    expect(second).not.toBe(first);
+    expect(await screen.findByTestId(`diff-base-${second}`)).toBeTruthy();
+    expect(screen.getByTestId(`diff-base-${first}`)).toBeTruthy();
+    expect(screen.queryByText("Reading History…")).toBeNull();
+  });
+
   it("shows why a version cannot be compared", async () => {
     await forest();
     renderTab();
