@@ -223,11 +223,13 @@ export class RenderScheduler {
       const tolerance = Math.min(1, minDelta * 0.05);
       if (now + tolerance < this.nextRenderAt) return false;
     }
-    // Half rate keeps the full-rate cadence (`nextRenderAt`) and skips every other slot, so the first activity draws
-    // at the next full-rate slot instead of waiting for a half-rate one.
+    // Half rate keeps the full-rate cadence (`nextRenderAt`) and skips the slot after each frame, so the first activity
+    // draws at the next full-rate slot instead of waiting for a half-rate one. A quarter-slot tolerance absorbs callback
+    // jitter and a frame that began after its admission check, while still skipping the in-between callback of a
+    // display faster than the cap.
     if (this.lastRenderAt !== null && this.isHalfRate(now)) {
-      const halfDelta = 2000 / this.frameCap;
-      if (now + Math.min(1, halfDelta * 0.05) < this.lastRenderAt + halfDelta) return false;
+      const minDelta = 1000 / this.frameCap;
+      if (now + minDelta / 4 < this.lastRenderAt + 2 * minDelta) return false;
     }
     return true;
   }

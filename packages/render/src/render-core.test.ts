@@ -317,6 +317,29 @@ describe("render scheduler: Half Rate When Idle", () => {
     expect(scheduler.gateState(3000)).toMatchObject({ idleHalfRate: true, halfRate: true, frameCap: 60 });
   });
 
+  it("keeps half the cap with jittered callbacks, frames that begin after their check, and a faster display", () => {
+    const scheduler = editorView(60, true);
+    let drawn = 0;
+    // 60 Hz callbacks up to 1.5 ms late; each frame begins 2 ms after its admission check.
+    for (let vsync = 0; vsync < 300; vsync += 1) {
+      const now = vsync * VSYNC + [0, 1.5, 0.4][vsync % 3]!;
+      if (!scheduler.shouldRender(now)) continue;
+      scheduler.noteRendered(now + 2);
+      if (now >= 1990) drawn += 1;
+    }
+    expect(drawn).toBe(90);
+    // A 120 Hz display under a 60 FPS cap.
+    const fast = editorView(60, true);
+    let fastDrawn = 0;
+    for (let tick = 0; tick < 600; tick += 1) {
+      const now = tick * (1000 / 120);
+      if (!fast.shouldRender(now)) continue;
+      fast.noteRendered(now);
+      if (now >= 1995) fastDrawn += 1;
+    }
+    expect(fastDrawn).toBe(90);
+  });
+
   it("never halves with the setting off", () => {
     const scheduler = editorView(60, false);
     expect(drive(scheduler, 0, 3000)).toHaveLength(180);
