@@ -122,14 +122,6 @@ describe("runtime scalability session", () => {
     expect(result.message).toContain("clamped");
     expect(settings.requested.render.quality?.water).toMatchObject({ reflections: "planar", fftSize: 128, meshDensity: 1.5, preset: "custom" });
   });
-  it("requires restart for backend changes and does not partially apply their transaction", () => {
-    const { settings, transactions } = session();
-    expect(settings.request({ kind: "patch", render: { gpuBackend: "webgpu", mode: "pbr" }, frameCap: 50 }).status).toBe("restartRequired");
-    expect(settings.requested.render.gpuBackend).toBe("webgl2");
-    expect(settings.requested.render.mode).toBe("cel");
-    expect(settings.requested.frameCap).toBe(30);
-    expect(transactions).toHaveLength(0);
-  });
   it("keeps overrides across scenes, while unoverridden scene fields follow their owner", () => {
     const { settings } = session();
     settings.request({ kind: "patch", render: { shadows: { enabled: false } }, frameCap: 20 });

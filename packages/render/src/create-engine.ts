@@ -41,7 +41,6 @@ import { normalizeRenderProjectSettings, normalizePlayFrameCap, pixelatedExtend,
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
-import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { submitPresentedFrame } from "./presented-frame";
 import { samplePresentedImage, type PresentedImageSample } from "./presented-image";
 import { stubWebGlDraws } from "./webgl-draw-stub";
@@ -2179,13 +2178,12 @@ function initializeEngine(
           JSON.stringify(quality.resolution) !== JSON.stringify(requestedResolution);
         const water = sceneWaterQualityDeviceClamp(scene);
         quality.water = { ...quality.water, ...water.quality };
-        const pipeline = sceneRenderingPipeline(scene);
-        const limits = [...pipeline.limits, ...water.limits,
+        const limits = [...water.limits,
           ...(pixelatedFullResolution ? ["Upscaling Pixelated draws at full resolution: Resolution Scale and Dynamic Resolution do not apply."] : [])];
         return { revision: transaction.revision, status: transaction.clamped || limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
-          message: limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."), pipeline,
+          message: limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."),
           effective: { frameCap: transaction.settings.frameCap, render: { ...transaction.settings.render,
-            ...pipeline.effective, quality, shadows, cel: state.cel, mode: state.mode,
+            quality, shadows, cel: state.cel, mode: state.mode,
             environmentLighting: state.environmentLighting, effects: state.effects } } };
       },
       publish: (acknowledgement) => {
@@ -2269,7 +2267,7 @@ function initializeEngine(
       sceneGeneration: loadGeneration, sceneLoadId: worldLoadId, sceneAssetGuid: worldSceneAssetGuid ?? lastSceneAssetGuid, viewId: scene.uniqueId,
       width: sceneViewRenderSize(scene, scene.activeCamera?.outputRenderTarget).width,
       height: sceneViewRenderSize(scene, scene.activeCamera?.outputRenderTarget).height,
-      backend: engine.isWebGPU ? "webgpu" : "webGLVersion" in engine && engine.webGLVersion === 2 ? "webgl2"
+      backend: "webGLVersion" in engine && engine.webGLVersion === 2 ? "webgl2"
         : "webGLVersion" in engine && engine.webGLVersion === 1 ? "webgl1" : "unknown",
     } }) : null;
     try {

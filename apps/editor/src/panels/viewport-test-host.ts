@@ -11,7 +11,6 @@ import {
   selectionGizmoRoots,
   setDirectViewPresentationEnabled,
   setPlanarFootprintCulling,
-  whenSubmittedWorkDone,
   type EngineHandle,
 } from "@haptic/render";
 import { subscribeAppSettings } from "../context/app-settings-context";
@@ -52,21 +51,13 @@ export type ViewportTestHost = {
     measureRenderingBaseline: (durationMs: number) => Promise<Record<string, unknown>>;
     /** Direct presentation of a sole view (default on); off copies into the view canvas, for A/B runs. */
     setDirectViewPresentation: (enabled: boolean) => void;
-    /** Destroys the project Engine's WebGPU device, as a real loss would; false on WebGL2 or without a view. */
-    destroyGraphicsDevice: () => boolean;
-    /**
-     * Hold (or resume) this viewport's frames: no step draws or presents (scene loading still may), though a
-     * resize still resizes the Engine. Holding resolves once the GPU finished the submitted work, so a
-     * screenshot shows what stays on screen.
-     */
-    holdViewportFrames: (hold: boolean) => Promise<void>;
-    webgpuPreviewsProof: (
-      options?: import("../testing/webgpu-previews-proof").ViewportProofOptions,
+    viewportProof: (
+      options?: import("../testing/viewport-proof").ViewportProofOptions,
     ) => Promise<
-      import("../testing/webgpu-previews-proof").ViewportProofResult
+      import("../testing/viewport-proof").ViewportProofResult
     >;
     engineSceneDiagnostics: () => Promise<
-      import("../testing/webgpu-previews-proof").EngineSceneDiagnostics | null
+      import("../testing/viewport-proof").EngineSceneDiagnostics | null
     >;
     /** Fly the editor camera along a path and record per-frame render events (perf routes only). */
     flyThrough: (
@@ -102,15 +93,14 @@ export function installViewportTestHost({
     viewportFrameCap = settings.viewportFrameCap;
   });
   const measurements = new Set<() => void>();
-  let releaseFrameHold: (() => void) | null = null;
 
     host.__hapticViewportTest = {
-    webgpuPreviewsProof: async (options) => {
+    viewportProof: async (options) => {
       if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Preview proof requires a test build.");
       const handle = engineRef.current;
       const canvas = canvasRef.current;
       if (!handle || !canvas) throw new Error("No active viewport for the preview proof");
-      return (await import("../testing/webgpu-previews-proof")).recordViewportProof(handle, canvas, options);
+      return (await import("../testing/viewport-proof")).recordViewportProof(handle, canvas, options);
     },
     engineSceneDiagnostics: async () => {
       if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Scene diagnostics require a test build.");
@@ -120,7 +110,7 @@ export function installViewportTestHost({
       // session engine rather than engineRef.
       const engine = ensureSharedEngine();
       if (!engine) return null;
-      return (await import("../testing/webgpu-previews-proof")).collectEngineSceneDiagnostics(engine, engineRef.current?.scene ?? null);
+      return (await import("../testing/viewport-proof")).collectEngineSceneDiagnostics(engine, engineRef.current?.scene ?? null);
     },
     flyThrough: async (options) => {
       if (import.meta.env.VITE_TEST_MODE !== "true") throw new Error("Fly-through requires a test build.");
@@ -280,27 +270,6 @@ export function installViewportTestHost({
     setRenderSettings: (settings) => engineRef.current?.setRenderSettings(settings),
     setDirectViewPresentation: (enabled) => setDirectViewPresentationEnabled(enabled),
     engineCount: () => EngineStore.Instances.length,
-    destroyGraphicsDevice: () => {
-      // Play and Preview Build release this viewport; the project Engine is then the session's.
-      const engine = engineRef.current?.engine ?? ensureSharedEngine();
-      // Pinned Babylon 9.29 owning-device boundary.
-      const device = engine?.isWebGPU ? (engine as unknown as { _device?: { destroy(): void } })._device : undefined;
-      if (!device) return false;
-      device.destroy();
-      return true;
-    },
-    holdViewportFrames: async (hold) => {
-      const handle = engineRef.current;
-      if (!handle) throw new Error("No active viewport to hold.");
-      if (!hold) {
-        releaseFrameHold?.();
-        releaseFrameHold = null;
-        return;
-      }
-      // An obstruction lease composes with the resize guard and modal obstruction, which set their own gates.
-      releaseFrameHold ??= handle.scheduler.acquireObstruction();
-      await whenSubmittedWorkDone(handle.engine);
-    },
     setShadowCaptureView: (position, target, fov) => {
       const handle = engineRef.current;
       const camera = handle?.editor?.camera.camera;
@@ -318,7 +287,6 @@ export function installViewportTestHost({
       const caps = handle.engine.getCaps();
       return {
         userAgent: navigator.userAgent,
-        backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
         engineCount: EngineStore.Instances.length,
         webGLVersion: "webGLVersion" in handle.engine ? handle.engine.webGLVersion : null,
         glInfo: "getGlInfo" in handle.engine && typeof handle.engine.getGlInfo === "function" ? handle.engine.getGlInfo() : null,
@@ -450,7 +418,6 @@ export function installViewportTestHost({
   return () => {
     for (const cancel of measurements) cancel();
     unsubscribeSettings();
-    releaseFrameHold?.();
     delete host.__hapticViewportTest;
   };
 }

@@ -9,7 +9,6 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { engineAdapterInfo } from "./render-diagnostics";
 import { sceneRenderingSettings } from "./render-settings";
-import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
@@ -85,7 +84,6 @@ export function captureShadowDiagnostics(
   const engine = scene.getEngine();
   const controller = findSceneShadowController(scene);
   const state = sceneRenderingSettings(scene);
-  const pipeline = sceneRenderingPipeline(scene);
   const camera = scene.activeCamera;
   const canvas = engine.getRenderingCanvas();
   const renderSize = camera?.outputRenderTarget?.getSize();
@@ -102,25 +100,17 @@ export function captureShadowDiagnostics(
       capturedAfterViewDraw: "caller-responsibility",
     },
     backend: {
-      requested: pipeline.requested.gpuBackend,
       actual:
         engine instanceof NullEngine
           ? "null"
-          : engine.isWebGPU
-            ? "webgpu"
-            : (engine as { webGLVersion?: number }).webGLVersion === 1
-              ? "webgl1"
-              : "webgl2",
+          : (engine as { webGLVersion?: number }).webGLVersion === 1
+            ? "webgl1"
+            : "webgl2",
       adapter: engineAdapterInfo(engine),
       ndcHalfZRange: engine.isNDCHalfZRange,
       reverseDepthBuffer: engine.useReverseDepthBuffer,
     },
     surfaceMode: state.mode,
-    pipeline: {
-      requested: { ...pipeline.requested },
-      effective: { ...pipeline.effective },
-      limits: pipeline.limits.slice(0, 32).map((value) => value.slice(0, 512)),
-    },
     viewport: {
       cssWidth: finite(canvas?.clientWidth),
       cssHeight: finite(canvas?.clientHeight),

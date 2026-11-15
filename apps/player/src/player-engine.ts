@@ -1,16 +1,7 @@
-import { normalizeRenderingPipeline } from "@haptic/core";
 import { packedContentFromGame } from "@haptic/exporter";
-import {
-  createBackendEngineSession,
-  webGpuMaterialCompatibilityReason,
-  type BackendEngineSession,
-} from "@haptic/render";
+import { createEngineSession } from "@haptic/render";
 import { startPlayer, type PlayerBootHandle, type PlayerBootOptions } from "./boot";
 import { playerDecoderPaths } from "./decoder-paths";
-
-export type PlayerBackendHandle = PlayerBootHandle & {
-  backend: Pick<BackendEngineSession, "requestedBackend" | "effectiveBackend" | "fallbackReason">;
-};
 
 /**
  * Longest wait for the view's native release before its Engine goes anyway.
@@ -20,17 +11,12 @@ export type PlayerBackendHandle = PlayerBootHandle & {
 const VIEW_RELEASE_DEADLINE_MS = 5_000;
 
 /** One private graphics context for this player, released after its runtime/views. */
-export async function startPlayerWithBackend(
+export async function startPlayerWithEngine(
   options: Omit<PlayerBootOptions, "sharedEngine" | "content" | "onStopped"> & { signal?: AbortSignal; onStopped?: () => void },
-): Promise<PlayerBackendHandle> {
+): Promise<PlayerBootHandle> {
   options.signal?.throwIfAborted();
   const content = packedContentFromGame(options.game);
-  const requestedBackend = normalizeRenderingPipeline(options.game.manifest.render).gpuBackend;
-  const owner = await createBackendEngineSession({
-    requestedBackend,
-    webGpuCompatibilityReason: requestedBackend === "webgpu"
-      ? webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions)
-      : undefined,
+  const owner = await createEngineSession({
     signal: options.signal,
     createCanvas: () => {
       const canvas = document.createElement("canvas");
@@ -45,15 +31,15 @@ export async function startPlayerWithBackend(
   let releaseFailure: unknown;
   // Stop has already returned its diagnostics, so a late failure is posted on its own.
   const reportDeferredFailure = (error: unknown) => {
-    const message = `Graphics backend cleanup failed: ${error instanceof Error ? error.message : String(error)}`;
+    const message = `Graphics engine cleanup failed: ${error instanceof Error ? error.message : String(error)}`;
     console.error(`[player] ${message}`);
     try { options.onDiagnostic?.([{ severity: "error", code: "player.cleanup.failed", message }]); }
-    catch (reportError) { console.error("[player] Graphics backend cleanup could not be reported.", reportError); }
+    catch (reportError) { console.error("[player] Graphics engine cleanup could not be reported.", reportError); }
   };
   // The view releases its Scene on this Engine once native work settles; the
-  // Engine goes after that release, confirmed or quarantined. WebGPU destroys
-  // released textures and buffers only at the end of a frame, and the view
-  // stopped the only render loop, so empty frames keep that drain going.
+  // Engine goes after that release, confirmed or quarantined. Babylon finishes
+  // deferred releases only at the end of a frame, and the view stopped the only
+  // render loop, so empty frames keep that drain going.
   const disposeAfterView = (viewReleased: Promise<void>) => {
     const { engine } = owner;
     const drain = () => {};
@@ -78,28 +64,15 @@ export async function startPlayerWithBackend(
     }
     try { options.onStopped?.(); } catch (error) { errors.push(error); }
     if (errors.length) {
-      releaseFailure = errors.length === 1 ? errors[0] : new AggregateError(errors, "Player backend cleanup failed.");
+      releaseFailure = errors.length === 1 ? errors[0] : new AggregateError(errors, "Player engine cleanup failed.");
       throw releaseFailure;
     }
   };
   let player: PlayerBootHandle;
   try {
     options.signal?.throwIfAborted();
-    if (owner.fallbackReason) options.onDiagnostic?.([{
-      severity: "warning",
-      code: "render.backend.fallback",
-      message: owner.fallbackReason,
-    }]);
-    options.signal?.throwIfAborted();
     owner.engine.inputElement = options.canvas;
     player = startPlayer({ ...options, content, sharedEngine: owner.engine, onStopped: releaseOwner });
-    // A lost WebGPU device is never restored in place: the game stops drawing.
-    void owner.deviceLost?.then((loss) => {
-      if (released) return;
-      const message = `Rendering stopped because the graphics device was lost (${loss.reason}): ${loss.message}. Reload to restart the game.`;
-      console.error(`[player] ${message}`);
-      options.onDiagnostic?.([{ severity: "error", code: "render.device.lost", message }]);
-    }).catch((error: unknown) => { console.error("[player] The lost graphics device could not be reported.", error); });
   } catch (error) {
     const failures: unknown[] = [error];
     try { releaseOwner(); }
@@ -112,11 +85,6 @@ export async function startPlayerWithBackend(
   let result: ReturnType<PlayerBootHandle["stop"]> = { diagnostics: [] };
   return {
     ...player,
-    backend: {
-      requestedBackend: owner.requestedBackend,
-      effectiveBackend: owner.effectiveBackend,
-      ...(owner.fallbackReason ? { fallbackReason: owner.fallbackReason } : {}),
-    },
     stop() {
       if (stopped) return result;
       stopped = true;

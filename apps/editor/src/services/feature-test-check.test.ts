@@ -72,8 +72,8 @@ function fakeEditor(
       ready: () => (behavior(id).open ?? "ready") === "ready",
       failed: () => behavior(id).open === "failed",
       phase: () => behavior(id).open === "failed" ? "Loading Models" : null,
-      error: () => behavior(id).open === "failed" ? new Error("Scene construction failed.", { cause: new Error("WebGPU device lost") }) : undefined,
-      gpu: () => ({ api: "webgpu", vendor: "apple", renderer: "apple-a16", version: null }),
+      error: () => behavior(id).open === "failed" ? new Error("Scene construction failed.", { cause: new Error("Graphics context lost") }) : undefined,
+      gpu: () => ({ vendor: "apple", renderer: "apple-a16", version: null }),
     } : null,
     startPlay: async () => {
       playScene = active;
@@ -96,7 +96,6 @@ function fakeEditor(
                 ...(rendererWork ? { rendererWork } : {}),
               }))(presentation(now, commands)),
               cpuMs: 4, gpuMs: null, width: 100, height: 100, scalingLevel: 1,
-              pipeline: { effective: { gpuBackend: "webgl2" } },
               // One shader first drawn per command run so far.
               firstDraws: { draws: commands.length, loadCompiled: 0, frames: commands.length, stalls: 0, mostInFrame: 1, worstFrameMs: 20, longFrames: 0, longest: [] },
             } as unknown as RenderDiagnostics)
@@ -328,7 +327,7 @@ describe("runFeatureTestCheck", () => {
     const broken = report.scenes[1].editor;
     expect(broken.gpu?.renderer).toBe("apple-a16");
     expect(broken.error?.[0]).toBe("Error: Scene construction failed.");
-    expect(broken.error).toContain("  Error: WebGPU device lost");
+    expect(broken.error).toContain("  Error: Graphics context lost");
     expect(report.scenes.map((entry) => entry.play.status)).toEqual(["not-started", "not-started"]);
     expect(editor.started).toEqual([]);
   });

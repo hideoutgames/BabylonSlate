@@ -1068,7 +1068,6 @@ function applyRenderSettings(settings: ProjectSettings, lut: string | null): Pro
     ...settings,
     render: {
       ...render,
-      gpuBackend: "webgl2",
       mode: "pbr",
       cel: normalizeCelShadingSettings(render.cel),
       shadows: { ...shadows, enabled: true },

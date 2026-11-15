@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { runHapticScreenShadowsProof } from "../apps/editor/src/testing/haptic-screen-shadows-proof";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type Proof = typeof runHapticScreenShadowsProof;
 type Result = Awaited<ReturnType<Proof>>;
@@ -30,72 +30,70 @@ function share(drawn: number[], open: number[], pixel: number) {
   return value;
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`Screen-Space Shadows darken the sun's contact shadows the map misses and nothing else, on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(240_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (["error", "warning"].includes(message.type()) &&
-        /shader|WGSL|WebGPU uncaptured|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
-    });
-    await page.goto("/?test=1&hapticScreenShadowsProof=1");
-    await page.waitForFunction(() => typeof (window as unknown as { __hapticScreenShadowsProof?: unknown }).__hapticScreenShadowsProof === "function");
-    const result = await page.evaluate((backend) =>
-      (window as unknown as { __hapticScreenShadowsProof: Proof }).__hapticScreenShadowsProof(backend), backend);
-    const { mask, fade } = result;
-    const count = result.width * result.height;
-    const pixels = Array.from({ length: count }, (_, pixel) => pixel);
-    const off = capture(result, "off").pixels, high = capture(result, "high again").pixels;
-    const unshadowed = capture(result, "high, sun unshadowed").pixels;
-    const lit = (pixel: number) => mask.surface[pixel] === "floor" || mask.surface[pixel] === "ramp";
-    const near = (pixel: number) => mask.distance[pixel]! < fade.start;
-    // Contact pixels the coarse map leaves (mostly) lit.
-    const missed = pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.contact[pixel] && share(off, unshadowed, pixel) > 0.6);
-    const darkened = missed.filter((pixel) => share(high, unshadowed, pixel) < share(off, unshadowed, pixel) - 0.15);
-    const changed = (set: number[]) => set.filter((pixel) => difference(off, high, pixel) > 2);
-    const open = pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.open[pixel]);
-    const ramp = open.filter((pixel) => mask.surface[pixel] === "ramp");
-    const beyond = pixels.filter((pixel) => mask.surface[pixel] === "floor" && mask.distance[pixel]! > fade.end);
-    // Floor seen through the glass, away from any contact shadow: the blended glass reads no screen shadows.
-    const glass = pixels.filter((pixel) => mask.surface[pixel] === "glass" && !mask.contact[pixel]);
-    const cel = pixels.filter((pixel) => difference(capture(result, "cel off").pixels, capture(result, "cel high").pixels, pixel) > 0);
-    const report = {
-      reads: result.captures.map((entry) => [entry.name, entry.screenShadows]),
-      contact: pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.contact[pixel]).length,
-      missed: missed.length, darkened: darkened.length,
-      open: open.length, openChanged: changed(open).length, ramp: ramp.length, rampChanged: changed(ramp).length,
-      beyond: beyond.length, beyondChanged: changed(beyond).length, glass: glass.length, glassChanged: changed(glass).length,
-      celChanged: cel.length, lightCompiles: result.lightCompiles,
-      // The view's tasks at each capture: the march runs between the geometry pass and the objects only while planned.
-      planned: result.planned,
-    };
-    await testInfo.attach(`haptic-screen-shadows-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
-    console.log(JSON.stringify(report));
-    expect(errors).toEqual([]);
-    // The surface's program can read them wherever the device draws their pass, at any level: with them off it draws the
-    // same program with the read off (the pixels below), so a tier that turns them on or off links nothing. CEL never reads.
-    expect(report.reads).toEqual([["off", true], ["high", true], ["high, sun unshadowed", true], ["high again", true], ["cel off", false], ["cel high", false]]);
-    // Most contact pixels the map misses darken.
-    expect(report.missed).toBeGreaterThan(20);
-    expect(report.darkened / report.missed).toBeGreaterThan(0.5);
-    // Open floor and the ramp facing the sun, floor beyond the fade, floor behind the glass and CEL are unchanged.
-    expect(report.open).toBeGreaterThan(1000);
-    expect(report.openChanged / report.open).toBeLessThan(0.01);
-    expect(report.ramp).toBeGreaterThan(50);
-    expect(report.rampChanged).toBe(0);
-    expect(report.beyond).toBeGreaterThan(30);
-    expect(report.beyondChanged).toBe(0);
-    expect(report.glass).toBeGreaterThan(30);
-    expect(report.glassChanged).toBe(0);
-    expect(report.celChanged).toBe(0);
-    expect(result.planned.map(([name, level, tasks]) => [name, level, tasks.includes("Screen shadows")])).toEqual([
-      ["off", null, false], ["high", "high", true], ["high, sun unshadowed", "high", true], ["high again", "high", true],
-      ["cel off", null, false], ["cel high", null, false],
-    ]);
-    const tasks = result.planned[1]![2];
-    expect(tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1)).toEqual(["Spatial Geometry", "Screen shadows", "Forward objects"]);
-    // Light steps compile nothing.
-    expect(report.lightCompiles).toEqual([]);
+test("Screen-Space Shadows darken the sun's contact shadows the map misses and nothing else", async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()) &&
+      /shader|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&hapticScreenShadowsProof=1");
+  await page.waitForFunction(() => typeof (window as unknown as { __hapticScreenShadowsProof?: unknown }).__hapticScreenShadowsProof === "function");
+  const result = await page.evaluate(() =>
+    (window as unknown as { __hapticScreenShadowsProof: Proof }).__hapticScreenShadowsProof());
+  const { mask, fade } = result;
+  const count = result.width * result.height;
+  const pixels = Array.from({ length: count }, (_, pixel) => pixel);
+  const off = capture(result, "off").pixels, high = capture(result, "high again").pixels;
+  const unshadowed = capture(result, "high, sun unshadowed").pixels;
+  const lit = (pixel: number) => mask.surface[pixel] === "floor" || mask.surface[pixel] === "ramp";
+  const near = (pixel: number) => mask.distance[pixel]! < fade.start;
+  // Contact pixels the coarse map leaves (mostly) lit.
+  const missed = pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.contact[pixel] && share(off, unshadowed, pixel) > 0.6);
+  const darkened = missed.filter((pixel) => share(high, unshadowed, pixel) < share(off, unshadowed, pixel) - 0.15);
+  const changed = (set: number[]) => set.filter((pixel) => difference(off, high, pixel) > 2);
+  const open = pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.open[pixel]);
+  const ramp = open.filter((pixel) => mask.surface[pixel] === "ramp");
+  const beyond = pixels.filter((pixel) => mask.surface[pixel] === "floor" && mask.distance[pixel]! > fade.end);
+  // Floor seen through the glass, away from any contact shadow: the blended glass reads no screen shadows.
+  const glass = pixels.filter((pixel) => mask.surface[pixel] === "glass" && !mask.contact[pixel]);
+  const cel = pixels.filter((pixel) => difference(capture(result, "cel off").pixels, capture(result, "cel high").pixels, pixel) > 0);
+  const report = {
+    reads: result.captures.map((entry) => [entry.name, entry.screenShadows]),
+    contact: pixels.filter((pixel) => lit(pixel) && near(pixel) && mask.contact[pixel]).length,
+    missed: missed.length, darkened: darkened.length,
+    open: open.length, openChanged: changed(open).length, ramp: ramp.length, rampChanged: changed(ramp).length,
+    beyond: beyond.length, beyondChanged: changed(beyond).length, glass: glass.length, glassChanged: changed(glass).length,
+    celChanged: cel.length, lightCompiles: result.lightCompiles,
+    // The view's tasks at each capture: the march runs between the geometry pass and the objects only while planned.
+    planned: result.planned,
+  };
+  await testInfo.attach("haptic-screen-shadows", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+  console.log(JSON.stringify(report));
+  expect(errors).toEqual([]);
+  // The surface's program can read them wherever the device draws their pass, at any level: with them off it draws the
+  // same program with the read off (the pixels below), so a tier that turns them on or off links nothing. CEL never reads.
+  expect(report.reads).toEqual([["off", true], ["high", true], ["high, sun unshadowed", true], ["high again", true], ["cel off", false], ["cel high", false]]);
+  // Most contact pixels the map misses darken.
+  expect(report.missed).toBeGreaterThan(20);
+  expect(report.darkened / report.missed).toBeGreaterThan(0.5);
+  // Open floor and the ramp facing the sun, floor beyond the fade, floor behind the glass and CEL are unchanged.
+  expect(report.open).toBeGreaterThan(1000);
+  expect(report.openChanged / report.open).toBeLessThan(0.01);
+  expect(report.ramp).toBeGreaterThan(50);
+  expect(report.rampChanged).toBe(0);
+  expect(report.beyond).toBeGreaterThan(30);
+  expect(report.beyondChanged).toBe(0);
+  expect(report.glass).toBeGreaterThan(30);
+  expect(report.glassChanged).toBe(0);
+  expect(report.celChanged).toBe(0);
+  expect(result.planned.map(([name, level, tasks]) => [name, level, tasks.includes("Screen shadows")])).toEqual([
+    ["off", null, false], ["high", "high", true], ["high, sun unshadowed", "high", true], ["high again", "high", true],
+    ["cel off", null, false], ["cel high", null, false],
+  ]);
+  const tasks = result.planned[1]![2];
+  expect(tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1)).toEqual(["Spatial Geometry", "Screen shadows", "Forward objects"]);
+  // Light steps compile nothing.
+  expect(report.lightCompiles).toEqual([]);
+});

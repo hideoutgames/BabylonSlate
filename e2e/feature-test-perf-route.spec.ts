@@ -295,7 +295,7 @@ async function samplePlay(page: Page, durationMs: number) {
     visibility: sample.visibility,
     // Half-second readings over the window: one frame's value says little where passes draw on alternate frames.
     frameCpu: distribution(sample.readings.flatMap((reading) => (typeof reading.cpuMs === "number" ? [reading.cpuMs] : []))),
-    // The Engine's GPU frame time from timer queries (null without them: WebGPU, or a view sharing its Engine's frame).
+    // The Engine's GPU frame time from timer queries (null without them: a view sharing its Engine's frame).
     frameGpu: distribution(sample.readings.flatMap((reading) => (typeof reading.gpuMs === "number" ? [reading.gpuMs] : []))),
     frameDraws: { median: draws.medianMs, max: draws.longestMs },
     drawsPerPass: passMedians(sample.readings.map((reading) => reading.drawPasses)),
@@ -318,7 +318,6 @@ async function samplePlay(page: Page, durationMs: number) {
       height: rendering.height ?? null,
       scalingLevel: rendering.scalingLevel ?? null,
       resources: rendering.resources ?? null,
-      pipeline: rendering.pipeline ?? null,
     },
   };
 }

@@ -12,7 +12,7 @@ import {
 
 const identity: PerformanceIdentity = {
   sessionId: "session-1", mode: "play", sourceSha: "source", buildId: "test",
-  sceneId: "world", backend: "webgl2",
+  sceneId: "world",
   runtimeHost: "worker", quality: "Low", frameCap: 60, dynamicResolution: false,
   enabledDiagnostics: ["performance"], gpuTiming: "unavailable",
 };

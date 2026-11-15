@@ -46,7 +46,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { clampWaterQualityToDevice, type WaterQualityDeviceClamp } from "./water-quality-device";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "gpuBackend" | "effects" | "water">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "effects" | "water">
 >;
 type SceneRendering = {
   mode: RenderMode;

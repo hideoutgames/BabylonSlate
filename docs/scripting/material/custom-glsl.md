@@ -19,5 +19,5 @@ Runs your own GLSL function body, with the inputs and outputs you define in the 
 ## Notes
 
 - Return the primary output, and assign any additional outputs by name before returning.
-- GLSL and WebGL only: it does not run on WebGPU, and changes compile when you press **Render**.
+- Changes compile when you press **Render**.
 - Using derivatives such as dFdx, or discard, limits the node to the fragment stage.

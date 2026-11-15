@@ -422,10 +422,9 @@ function pad(text: string, width: number): string {
   return text.length >= width ? `${text} ` : text.padEnd(width);
 }
 
-/** A live preserveDrawingBuffer value (`presentation.preserve`) as on, off, n/a (WebGPU) or unknown. */
+/** A live preserveDrawingBuffer value (`presentation.preserve`) as on, off or unknown. */
 function preserveText(value: string | undefined): string {
   if (value === undefined) return "unknown";
-  if (value === "n/a") return "n/a (WebGPU)";
   return value === "true" ? "on" : value === "false" ? "off" : value;
 }
 
@@ -704,7 +703,6 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   // Play reports its adapter; an editor-only failure still names the viewport's.
   const adapter = report.scenes.map((scene) => scene.play.snapshot?.rendering?.adapter).find(Boolean)
     ?? report.scenes.map((scene) => scene.editor.gpu).find(Boolean);
-  const pipeline = report.scenes.map((scene) => scene.play.snapshot?.rendering?.pipeline.effective).find(Boolean);
   const breakdown = report.mode === "breakdown" ? report.breakdown : undefined;
   const verdicts = report.mode === "breakdown" ? report.scenes.map((scene) => breakdownVerdicts(scene, reportMethod(report))) : [];
   const flags = [
@@ -720,7 +718,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     ...(breakdown?.warmMinutes !== null && breakdown?.warmMinutes !== undefined
       ? [`WARM DEVICE: previous run ended ${breakdown.warmMinutes} min ago`] : []),
     ...formatDiagnosticEnvironment(environment),
-    `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}${pipeline ? ` · ${pipeline.gpuBackend}` : ""}`,
+    `GPU: ${adapter ? `${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}`,
   ];
   const sweeps = report.scenes.map((scene) => scene.play.benchmark).filter((sweep) => sweep.length);
   if (report.mode === "benchmark") {

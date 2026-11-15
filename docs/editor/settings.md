@@ -122,7 +122,7 @@ Haptic is built with open-source software. To read the licences, open **Manage A
 | Gameplay | Save Games | Default save definition, slot and profile; preview saves |
 | Gameplay | Physics | Collision layers and presets |
 | Gameplay | Focus Navigation | Keyboard and gamepad focus for Scene Layers |
-| Graphics & Audio | Rendering | GPU backend and render mode, scalability, shadows, environment, post-processing, resolution, water and Play preview |
+| Graphics & Audio | Rendering | Render mode, scalability, shadows, environment, post-processing, resolution, water and Play preview |
 | Graphics & Audio | Textures | Retry failed texture compression |
 | Graphics & Audio | Fonts | Default font and fallbacks |
 | Graphics & Audio | Audio | Audio Mixer, occlusion and reverb |

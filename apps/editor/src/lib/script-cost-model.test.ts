@@ -12,7 +12,7 @@ const NEVER_RAN: PerformanceScriptEntry = { assetGuid: "Idle.class", classId: "I
 /** Two ticks: Door's Event Tick and Open in the first, Event Tick alone in the second; Hero begins play in the first. */
 function recording() {
   const recorder = new PerformanceRecorder({ now: () => 0 });
-  recorder.start({ sessionId: "session", mode: "play", sourceSha: null, buildId: null, sceneId: "scene", backend: "webgl2",
+  recorder.start({ sessionId: "session", mode: "play", sourceSha: null, buildId: null, sceneId: "scene",
     runtimeHost: "worker", quality: "low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: [], gpuTiming: "unavailable" });
   for (const tickId of [1, 2]) recorder.recordTick({ tickId, elapsedMs: tickId * 16, scriptMs: 4, physicsMs: 0, publishMs: 0, otherMs: 0,
     gameInstanceMs: 0, sceneSubsystemsMs: 0, actorsMs: 4, componentsMs: 0, objectsMs: 0, postPhysicsMs: 0, sceneSystemsMs: 0, garbageCollectionMs: 0 });

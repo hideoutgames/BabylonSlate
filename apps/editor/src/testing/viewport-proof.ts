@@ -1,7 +1,7 @@
 /**
- * Test-build-only editor-host proof for the WebGPU viewport/preview
- * investigation. Records presented viewport frames plus live Scene internals
- * on the shared Engine; the e2e spec drives the real editor documents.
+ * Test-build-only editor-host proof of the viewport and the previews. Records
+ * presented viewport frames plus live Scene internals on the shared Engine;
+ * the e2e specs drive the real editor documents.
  */
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
@@ -73,7 +73,6 @@ export interface ViewportProofSubjectResult {
 }
 
 export interface ViewportProofResult {
-  backend: string;
   requestedFrames: number;
   presentedFrames: number;
   elapsedMs: number;
@@ -234,7 +233,6 @@ export function recordViewportProof(
         };
       });
       return {
-        backend: engine.isWebGPU ? "webgpu" : "webgl2",
         requestedFrames: requested,
         presentedFrames: frames.length,
         elapsedMs: performance.now() - started,
@@ -335,7 +333,6 @@ export function recordViewportProof(
 }
 
 export interface EngineSceneDiagnostics {
-  backend: string;
   scenes: {
     kind: "world" | "preview" | "other";
     cameras: string[];
@@ -371,7 +368,6 @@ export function collectEngineSceneDiagnostics(
   worldScene: Scene | null,
 ): EngineSceneDiagnostics {
   return {
-    backend: engine.isWebGPU ? "webgpu" : "webgl2",
     scenes: engine.scenes.map((scene) => {
       const cameras = scene.cameras.map((camera) => camera.name);
       const preview = cameras.includes("materialPreviewCamera");

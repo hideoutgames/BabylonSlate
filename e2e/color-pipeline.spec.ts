@@ -7,9 +7,9 @@ import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
 import { setPreviewScene } from "./preview-parity";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 const MAT_HOT = "00000000-0000-4000-8000-000000000042";
 const MAT_EDGE = "00000000-0000-4000-8000-000000000043";
 const MAT_WALL = "00000000-0000-4000-8000-000000000044";
@@ -239,7 +239,7 @@ test("editor viewport applies project bloom through Post Processing settings", a
   page.on("console", (message) => {
     if (
       ["warning", "error"].includes(message.type()) &&
-      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR:\s*0:|context lost/i.test(
+      /shader|VALIDATE_STATUS|ERROR:\s*0:|context lost/i.test(
         message.text(),
       )
     )

@@ -4,7 +4,6 @@
  * FrameGraph.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -13,11 +12,10 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody, type WaterReflectionMode } from "@haptic/core";
-import { compileMaterialPlan, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings, updateSceneWater } from "@haptic/render";
+import { compileMaterialPlan, createWaterMesh, setSceneRenderSettings, updateSceneWater } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { retainWaterPlanarReflections } from "../../../../packages/render/src/water-planar-reflection";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 /** Unlit water that shows only what Water Reflection mirrors. */
 async function reflectionMaterial(scene: Scene): Promise<{ material: Material; dispose: () => void }> {
@@ -35,15 +33,12 @@ async function reflectionMaterial(scene: Scene): Promise<{ material: Material; d
   return { material: compiled.material, dispose: compiled.dispose };
 }
 
-export async function runWaterReflectionProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runWaterReflectionProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const scene = new Scene(engine);
   const release = retainWaterPlanarReflections(scene);
   try {
@@ -73,7 +68,7 @@ export async function runWaterReflectionProof(backend: "webgl2" | "webgpu" = "we
         try { graph.render(camera, false); } finally { engine.endFrame(); }
       }
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     const water = { ...createDefaultWaterDefinition(), objectReflections: true };
     const body = normalizeWaterBody({ width: 30, length: 30, resolution: 16 });

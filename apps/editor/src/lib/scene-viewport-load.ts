@@ -1,5 +1,4 @@
 import {
-  resolveRenderingPipeline,
   resolveShadowSettings,
   type ShadowOverrides,
   resolveCelShadingSettings,
@@ -25,7 +24,6 @@ export function sceneViewportRenderSettingsKey(
 ): string {
   return JSON.stringify({
     ...project,
-    ...resolveRenderingPipeline(project).requested,
     mode: project.mode ?? "pbr",
     // The Scene's Post Processing overrides change the plan as the project's effects do.
     effects: resolveRenderEffectsSettings(project.effects, effectsOverrides),

@@ -1278,7 +1278,6 @@ function initializePlayer(
           const frameCap = handle.scheduler.gateState().frameCap;
           return { sessionId: diagnosticSessionId, mode: "preview" as const,
             sourceSha: null, buildId: null, sceneId: hostSceneGuid ?? startup,
-            backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
             runtimeHost: worker ? "worker" as const : "in-process" as const,
             quality: JSON.stringify(render), frameCap: Number.isFinite(frameCap) ? frameCap : null,
             dynamicResolution: render.quality?.resolution?.dynamic === true,

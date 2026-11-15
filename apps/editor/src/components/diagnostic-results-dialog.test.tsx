@@ -14,7 +14,7 @@ afterEach(cleanup);
 function recording(frames = 3, slow: readonly number[] = [], memory = false) {
   let now = 0;
   const recorder = new PerformanceRecorder({ now: () => now });
-  recorder.start({ sessionId: "session", mode: "play", sourceSha: "source", buildId: null, sceneId: "scene", backend: "webgl2",
+  recorder.start({ sessionId: "session", mode: "play", sourceSha: "source", buildId: null, sceneId: "scene",
     runtimeHost: "worker", quality: "low", frameCap: 60, dynamicResolution: false, enabledDiagnostics: [], gpuTiming: "unavailable" });
   for (let index = 0; index < frames; index++) {
     now += slow.includes(index) ? 40 : frames === 3 ? 20 : 10;

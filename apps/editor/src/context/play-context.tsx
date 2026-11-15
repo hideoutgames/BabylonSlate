@@ -16,7 +16,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { setNearestTextures, webGpuMaterialCompatibilityReason } from "@haptic/render";
+import { setNearestTextures } from "@haptic/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
   DEFAULT_LOOP_COUNT,
@@ -24,7 +24,6 @@ import {
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   engineCommandBus,
   nearestTextureFiltering,
-  normalizeRenderingPipeline,
   type ExtensionGameLibrary,
 } from "@haptic/core";
 import type { SessionReportEntry } from "@haptic/runtime";
@@ -105,7 +104,6 @@ import type { PlayPreparePhase } from "../components/play-prepare-dialog";
 import { playRegistryViews } from "../lib/play-registry-views";
 import { useAppSettings } from "./app-settings-context";
 import { ProjectRenderingDialog } from "../components/project-rendering-dialog";
-import { RenderingFallbackNotice } from "../components/rendering-fallback-notice";
 import {
   OutputLogContext,
   PlayContext,
@@ -355,7 +353,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   // slices above still re-render this provider whenever they change.
   const sceneDocuments = useOpenDocumentsOfKinds(PLAY_SCENE_KINDS);
   const projectOpen = projectDocument != null;
-  const requestedBackend = normalizeRenderingPipeline(projectDocument?.settings.render).gpuBackend;
   const { setDiagnostics, focusDiagnostic, setFocusDiagnostic } = useValidation();
   // First indexed asset per path; rebuilt only when the registry reports a change.
   const guidByPath = useMemo(() => {
@@ -589,11 +586,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
   } = useProjectRendering({
     projectOpen,
     projectGuid,
-    requestedBackend,
     sessionOwner,
     sessionState,
     appendLog,
-    simulationRef,
   });
 
   // Nearest Texture Filtering is the shared Engine's: every editor view and overlay Play draws with it.
@@ -913,17 +908,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) { prepared.release(); throw new DOMException("Session changed during Play preparation", "AbortError"); }
         playSourceSetsRef.current.add(prepared);
         initialPlaySourceRef.current = prepared;
-        const { game, content } = prepared;
-        if (requestedBackend === "webgpu") {
-          const reason = webGpuMaterialCompatibilityReason(content.materialDocuments, content.materialFunctions);
-          if (reason) {
-            await current(projectEngine.sync({ projectGuid: playRequestInputsRef.current.projectGuid!, backend: requestedBackend,
-              prepare: async (signal) => { signal.throwIfAborted(); return reason; },
-            }, true));
-            sourceSignal.throwIfAborted();
-            registerSharedEngine(projectEngine.getSnapshot().session?.engine ?? null);
-          }
-        }
+        const { game } = prepared;
         const scene = game.scenes.get(effectiveGuid);
         if (!scene) throw new Error(`Scene ${effectiveGuid} did not produce a document.`);
         preloadPrewarmedGameWorkerPhysics(playPhysicsFromSceneSettings(scene.settings).physicsWorld, editorHavokWasmUrl());
@@ -1009,9 +994,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       requestPreviewBuild,
       appSettings.debuggerDefaults,
       releasePlaySources,
-      requestedBackend,
-      projectEngine,
-      registerSharedEngine,
       setDiagnostics,
       loadSaveGameDefinition,
       playContentActions,
@@ -1317,7 +1299,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             onRetry={() => { void retryRendering(); }}
             onDismiss={() => setRenderingFailureDismissed(true)} />
         ) : null}
-        {projectOpen ? <RenderingFallbackNotice state={projectEngineState} /> : null}
         {previewPhase || previewPreparationError ? (
           <PreparingPreviewDialog
             open

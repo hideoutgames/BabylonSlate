@@ -9,7 +9,6 @@
  * translucent Material three times brighter than white, whose coverage rises.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -21,12 +20,11 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
-  compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, createWaterRemovalMesh, setSceneRenderSettings,
+  compileMaterialPlan, configureEditorRenderingGroups, createWaterMesh, createWaterRemovalMesh, setSceneRenderSettings,
   setSceneWaterTime, updateSceneWater,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialDocument } from "@haptic/shader-graph";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const MATERIALS = ["opaque", "translucent", "waves", "lit"] as const;
 
@@ -91,15 +89,12 @@ function windowDocument(): MaterialDocument {
   return doc;
 }
 
-export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runWaterCutProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const scene = new Scene(engine);
   try {
     // One depth buffer across rendering groups, as the editor's scenes keep it: the water's scene copy needs it.
@@ -131,7 +126,7 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
         try { graph.render(camera, false); } finally { engine.endFrame(); }
       }
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     const centre = new Vector3(1.5, 0, 0);
     const captures: { material: string; cut: boolean; pixels: number[] }[] = [];
@@ -151,7 +146,7 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
       water.dispose();
       compiled.dispose();
     }
-    // The water starter, lit by HapticLightingBlock: every water node compiles and draws on this backend, and in the
+    // The water starter, lit by HapticLightingBlock: every water node compiles and draws, and in the
     // scene effects' geometry pass, which it leaves its normal and reflectivity out of. Medium, the default tier, skips
     // Real-Time Reflections.
     setSceneRenderSettings(scene, {
@@ -237,8 +232,8 @@ export async function runWaterCutProof(backend: "webgl2" | "webgpu" = "webgl2") 
     const glintPixels = await draw(2);
     glintWater.dispose();
     glint.dispose();
-    // The removal volume's centre across the screen, by the view the draws used (columns read the same on either
-    // backend's row order).
+    // The removal volume's centre across the screen, by the view the draws used (columns read the same in either row
+    // order).
     const holeX = Vector3.Project(centre, Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(canvas.width, canvas.height)).x;
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     // Water's depth pre-pass draws its own program, which discards removed water and returns before the look.

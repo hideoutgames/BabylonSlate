@@ -9,32 +9,27 @@ import {
   waitForTextureEncodes,
   type FeatureTestSceneName,
 } from "./feature-test-project";
-import { saveAllIfEnabled } from "./save-all";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 /**
  * FeatureTest cold-load route for shader compile work. Opt-in: HAPTIC_PERF_LOAD=1, through
  * playwright.perf.config.ts only.
  *
- * Creates the Feature Test starter, optionally switches the project backend, then opens each scene in
- * HAPTIC_PERF_SCENES once and records the scene-ready time and what the GPU API was asked to build while it
- * loaded: WebGL program links, WebGPU shader modules and render pipelines, each counted in total, by exact
- * source and by normalized source (define lines sorted apart from the body, SHADER_NAME dropped), which
+ * Creates the Feature Test starter, then opens each scene in HAPTIC_PERF_SCENES once and records the
+ * scene-ready time and what WebGL was asked to build while it loaded: program links, counted in total, by
+ * exact source and by normalized source (define lines sorted apart from the body, SHADER_NAME dropped), which
  * also finds sources that differ only in define order or name. Every Babylon Effect the Engine creates is
  * recorded with its cache key kind (named shader, inline source, or a shadow-depth token), defines, render
- * pass, creation stack, cache hits and release, and the GPU objects it built; the report groups Effects
+ * pass, creation stack, cache hits and release, and the programs it linked; the report groups Effects
  * that built the same source, says why they missed the cache, and lists which define changes recompiled
  * one material. Everything is captured
  * from page-level hooks installed before the editor boots; no editor code is touched. Counts are
- * hardware-independent; times compare only on one machine, backend and build. Never asserts timings.
+ * hardware-independent; times compare only on one machine and build. Never asserts timings.
  *
- * Env: HAPTIC_PERF_SCENES (comma list, default main), HAPTIC_PERF_BACKEND (webgl2|webgpu, default the project's
- *      WebGL2), HAPTIC_RENDER_NATIVE_GPU=1 (keep the project's launch arguments: perf-gpu), HAPTIC_PERF_SETTLE_MS
- *      (default 8000: how long after ready the settled window keeps counting), HAPTIC_PERF_LABEL, HAPTIC_PERF_OUT
- *      (extra report path).
+ * Env: HAPTIC_PERF_SCENES (comma list, default main), HAPTIC_RENDER_NATIVE_GPU=1 (keep the project's launch
+ *      arguments: perf-gpu), HAPTIC_PERF_SETTLE_MS (default 8000: how long after ready the settled window keeps
+ *      counting), HAPTIC_PERF_LABEL, HAPTIC_PERF_OUT (extra report path).
  */
 const ENABLED = process.env.HAPTIC_PERF_LOAD === "1";
-const BACKEND = process.env.HAPTIC_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.HAPTIC_PERF_BACKEND === "webgl2" ? "webgl2" : null;
 const NATIVE_GPU = process.env.HAPTIC_RENDER_NATIVE_GPU === "1";
 const SETTLE_MS = Number(process.env.HAPTIC_PERF_SETTLE_MS ?? 8_000);
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main")
@@ -44,11 +39,11 @@ const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main")
 
 if (!NATIVE_GPU)
   test.use({
-    launchOptions: { args: [...(BACKEND === "webgpu" ? SOFTWARE_WEBGPU_ARGS : []), "--enable-precise-memory-info"] },
+    launchOptions: { args: ["--enable-precise-memory-info"] },
   });
 
 type Counters = Record<string, number>;
-/** One GPU object build: [time, kind, raw source key, normalized key, body key, water, Effect id or -1, scene ready, phase]. */
+/** One program link: [time, kind, raw source key, normalized key, body key, water, Effect id or -1, scene ready, phase]. */
 type Creation = [number, string, string, string, string, number, number, number, string];
 interface EffectRow {
   id: number;
@@ -73,8 +68,6 @@ interface EffectRow {
   norm: string | null;
   body: string | null;
   links: number;
-  modules: number;
-  pipelines: number;
 }
 interface Owners {
   owners: Record<number, { count: number; first: string[] }>;
@@ -107,7 +100,7 @@ async function installHooks(page: Page): Promise<void> {
       for (let index = 0; index < text.length; index++) { h ^= text.charCodeAt(index); h = Math.imul(h, 16777619); }
       return `${(h >>> 0).toString(36)}-${text.length}`;
     };
-    // GLSL keeps `#define X` lines, WGSL gets them as `//#define X` comments; SHADER_NAME embeds a per-build name.
+    // A define line is `#define X`, also behind `//`; SHADER_NAME embeds a per-build name.
     const DEFINE_LINE = /^\s*(?:\/\/)?\s*#define\s+(.*)$/;
     const identity = (code: string) => {
       const defines: string[] = [];
@@ -132,14 +125,14 @@ async function installHooks(page: Page): Promise<void> {
     type EffectRow = {
       id: number; t: number; phase: string; ready: boolean; kind: string; label: string; key: string; base: string;
       defines: string; pass: number; frame: number; stack: string; hits: number; releasedAt: number | null;
-      afterRelease: boolean; src: string | null; norm: string | null; body: string | null; links: number; modules: number; pipelines: number;
+      afterRelease: boolean; src: string | null; norm: string | null; body: string | null; links: number;
     };
     type AnyRecord = Record<string, unknown>;
     const effects: EffectRow[] = [];
     const rows = new Map<number, EffectRow>();
     const releasedKeys = new Set<string>();
     const engines: AnyRecord[] = [];
-    // The Effect whose program is being built: its constructor (createEffect), its prepare, or a draw's pipeline.
+    // The Effect whose program is being built: its constructor (createEffect) or its prepare.
     let current: EffectRow | null = null;
     let creating: EffectRow | null = null;
     const methodNames = (stack: string) => {
@@ -192,29 +185,11 @@ async function installHooks(page: Page): Promise<void> {
         }
       };
     };
-    const hookPipelineCache = (engine: AnyRecord) => {
-      const cache = engine._cacheRenderPipeline as AnyRecord | undefined;
-      if (!cache || cache.__ftLoadHooked) return;
-      cache.__ftLoadHooked = true;
-      const create = cache._createRenderPipeline as (this: unknown, ...args: unknown[]) => unknown;
-      if (typeof create !== "function") return;
-      cache._createRenderPipeline = function (this: unknown, ...args: unknown[]) {
-        const effect = args[0] as AnyRecord | undefined;
-        const previous = current;
-        current = (effect && rows.get(effect.uniqueId as number)) || null;
-        try {
-          return create.apply(this, args);
-        } finally {
-          current = previous;
-        }
-      };
-    };
     const hookEngine = (engine: AnyRecord) => {
       if (engines.includes(engine)) return;
       engines.push(engine);
       const createEffect = engine.createEffect as (this: unknown, ...args: unknown[]) => AnyRecord | null;
       engine.createEffect = function (this: unknown, ...args: unknown[]) {
-        hookPipelineCache(engine);
         const baseName = args[0] as string | AnyRecord;
         const options = args[1] as AnyRecord | undefined;
         const named = typeof baseName === "string";
@@ -227,7 +202,7 @@ async function installHooks(page: Page): Promise<void> {
         const row: EffectRow = {
           id: -1, t: performance.now(), phase: phase(), ready: sceneReady, kind, label, key: "", base, defines,
           pass: Number(engine.currentRenderPassId ?? -1), frame: Number(engine.frameId ?? -1), stack: "", hits: 0,
-          releasedAt: null, afterRelease: false, src: null, norm: null, body: null, links: 0, modules: 0, pipelines: 0,
+          releasedAt: null, afterRelease: false, src: null, norm: null, body: null, links: 0,
         };
         const outer = creating;
         creating = row;
@@ -286,11 +261,7 @@ async function installHooks(page: Page): Promise<void> {
         if (!seen.has(id)) { seen.add(id); bump(`${kind}.${suffix}`); if (water && suffix === "unique") bump(`${kind}.waterUnique`); }
       }
       const owner = current ?? creating;
-      if (owner) {
-        if (kind === "gl.link") owner.links += 1;
-        else if (kind === "gpu.shaderModule") owner.modules += 1;
-        else owner.pipelines += 1;
-      }
+      if (owner) owner.links += 1;
       if (creations.length < 20000)
         creations.push([performance.now(), kind, ids.raw, ids.norm, ids.body, water ? 1 : 0, owner ? owner.id : -1, sceneReady ? 1 : 0, phase()]);
       return owner;
@@ -336,40 +307,6 @@ async function installHooks(page: Page): Promise<void> {
         remember(record("gl.link", join(parts.map(identity)), parts.some((part) => part.includes("vSlateWater"))));
         return linkProgram.call(this, program);
       };
-    }
-
-    // WebGPU: shader modules by source, pipelines by descriptor with modules replaced by their source keys.
-    const Device = (globalThis as unknown as { GPUDevice?: { prototype: Record<string, unknown> } }).GPUDevice;
-    if (Device) {
-      const proto = Device.prototype;
-      const modules = new WeakMap<object, { raw: string; norm: string; body: string; water: boolean }>();
-      const createShaderModule = proto.createShaderModule as (descriptor: { code: string }) => object;
-      proto.createShaderModule = function (this: unknown, descriptor: { code: string }) {
-        const module = createShaderModule.call(this, descriptor);
-        const water = descriptor.code.includes("vSlateWater");
-        const ids = identity(descriptor.code);
-        modules.set(module, { ...ids, water });
-        remember(record("gpu.shaderModule", ids, water));
-        return module;
-      };
-      for (const method of ["createRenderPipeline", "createRenderPipelineAsync"] as const) {
-        const original = proto[method] as (descriptor: object) => unknown;
-        proto[method] = function (this: unknown, descriptor: object) {
-          let water = false;
-          const keyed = (field: "raw" | "norm" | "body") => hash(JSON.stringify(descriptor, (name, value: unknown) => {
-            if (name === "label") return undefined;
-            if (value && typeof value === "object" && modules.has(value)) {
-              const info = modules.get(value)!;
-              water = water || info.water;
-              return `module:${info[field]}`;
-            }
-            return value;
-          }));
-          remember(record(method === "createRenderPipeline" ? "gpu.pipeline" : "gpu.pipelineAsync",
-            { raw: keyed("raw"), norm: keyed("norm"), body: keyed("body") }, water));
-          return original.call(this, descriptor);
-        };
-      }
     }
 
     // Scene readiness, as the viewport panel publishes it.
@@ -462,7 +399,7 @@ function delta(from: Snapshot, to: Snapshot): Counters {
   return out;
 }
 
-/** The GPU objects built in a window: total, distinct by exact and normalized source, and per kind. */
+/** The programs linked in a window: total, distinct by exact and normalized source, and per kind. */
 function creationWindow(from: Snapshot, to: Snapshot) {
   const rows = to.creations.slice(from.creations.length);
   const kinds = [...new Set(rows.map((row) => row[1]))];
@@ -510,7 +447,7 @@ function effectWindow(from: Snapshot, to: Snapshot, owned: Owners, withRows = tr
     return {
       id: row.id, ms: at(row.t), kind: row.kind, label: row.label, material: build ? owned.buildIds[Number(build[1])] ?? null : null,
       pass: owned.passNames[row.pass] ?? row.pass, ready: row.ready, hits: row.hits, released: row.releasedAt === null ? null : at(row.releasedAt),
-      afterRelease: row.afterRelease, links: row.links, modules: row.modules, pipelines: row.pipelines,
+      afterRelease: row.afterRelease, links: row.links,
       owners: owner?.count ?? 0, firstOwners: owner?.first ?? [], stack: row.stack,
     };
   };
@@ -536,13 +473,13 @@ function effectWindow(from: Snapshot, to: Snapshot, owned: Owners, withRows = tr
   };
   const exact = groupBy("src");
   const normalized = groupBy("norm").filter((group) => new Set(group.map((row) => row.src)).size > 1);
-  const reasons: Record<string, { groups: number; extraEffects: number; extraLinks: number; extraModules: number; extraPipelines: number }> = {};
+  const reasons: Record<string, { groups: number; extraEffects: number; extraLinks: number }> = {};
   for (const group of exact) {
-    const entry = (reasons[reason(group)] ??= { groups: 0, extraEffects: 0, extraLinks: 0, extraModules: 0, extraPipelines: 0 });
+    const entry = (reasons[reason(group)] ??= { groups: 0, extraEffects: 0, extraLinks: 0 });
     entry.groups += 1;
     entry.extraEffects += group.length - 1;
     const [, ...rest] = [...group].sort((a, b) => a.t - b.t);
-    for (const row of rest) { entry.extraLinks += row.links; entry.extraModules += row.modules; entry.extraPipelines += row.pipelines; }
+    for (const row of rest) entry.extraLinks += row.links;
   }
   // Define changes inside one shader identity, oldest Effect first.
   const identities = new Map<string, EffectRow[]>();
@@ -608,53 +545,29 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
   const createToInteractiveMs = await createFeatureTestProject(page);
   await waitForTextureEncodes(page);
   const afterCreate = await take(page);
-  const backendNow = () =>
-    page.evaluate(() => (globalThis as unknown as { __hapticViewportTest?: { renderingBaseline: () => { backend: string } | null } })
-      .__hapticViewportTest?.renderingBaseline()?.backend ?? null);
-  const switchStarted = Date.now();
-  await setPhase(page, "backend");
-  if (BACKEND) {
-    await page.getByTestId("settings-menu").click();
-    await page.getByTestId("project-settings").click();
-    await page.getByTestId("settings-modal-category-rendering").click();
-    await page.getByTestId("project-gpu-backend").click();
-    await page.getByRole("option", { name: BACKEND === "webgpu" ? "WebGPU" : "WebGL2", exact: true }).click();
-    await page.getByRole("button", { name: "Done", exact: true }).click();
-    await saveAllIfEnabled(page, 300_000);
-  }
-  const backendSwitchMs = BACKEND ? Date.now() - switchStarted : null;
-  const afterSwitch = await take(page);
 
-  const adapter = await page.evaluate(async () => {
+  const adapter = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     const gl = canvas.getContext("webgl2");
     const info = gl?.getExtension("WEBGL_debug_renderer_info");
     const webgl = gl && info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : null;
     gl?.getExtension("WEBGL_lose_context")?.loseContext();
-    let webgpu: Record<string, unknown> | null = null;
-    try {
-      const gpu = (navigator as unknown as { gpu?: { requestAdapter: () => Promise<{ info?: Record<string, unknown> } | null> } }).gpu;
-      const found = await gpu?.requestAdapter();
-      if (found?.info) webgpu = { vendor: found.info.vendor, architecture: found.info.architecture, description: found.info.description, device: found.info.device };
-    } catch { /* WebGPU unavailable. */ }
-    return { webgl, webgpu };
+    return { webgl };
   });
 
   const scenes: Record<string, unknown> = {};
   const report = () => ({
     qualification:
-      "Cold scene load on this machine's adapter; counts are hardware-independent, times compare only on the same machine, backend and build. No timing assertion.",
+      "Cold scene load on this machine's adapter; counts are hardware-independent, times compare only on the same machine and build. No timing assertion.",
     label: process.env.HAPTIC_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
     adapter,
-    env: { SCENES, BACKEND, NATIVE_GPU, SETTLE_MS },
+    env: { SCENES, NATIVE_GPU, SETTLE_MS },
     createToInteractiveMs,
-    backendSwitchMs,
-    // No scene is open after project creation, so these windows hold only the project's own start-up work.
+    // No scene is open after project creation, so this window holds only the project's own start-up work.
     startup: {
       create: { counters: delta(hooksStart, afterCreate), gpu: creationWindow(hooksStart, afterCreate) },
-      backendSwitch: { counters: delta(afterCreate, afterSwitch), gpu: creationWindow(afterCreate, afterSwitch) },
     },
     scenes,
     pageErrors,
@@ -676,14 +589,12 @@ test("FeatureTest cold-load route", async ({ page }, testInfo) => {
     const ready = await take(page);
     const readyOwners = await owners(page);
     await setPhase(page, `settle:${scene}`);
-    if (BACKEND) await expect.poll(backendNow, { timeout: 120_000 }).toBe(BACKEND);
     await page.waitForTimeout(SETTLE_MS);
     const settled = await take(page);
     const settledOwners = await owners(page);
     scenes[scene] = {
       sceneReadyMs: readyMs,
       loadRetries,
-      backend: await backendNow(),
       liveScenes: settledOwners.scenes,
       load: { counters: delta(before, ready), gpu: creationWindow(before, ready), effects: effectWindow(before, ready, readyOwners) },
       settled: { afterMs: SETTLE_MS, counters: delta(ready, settled), gpu: creationWindow(ready, settled), effects: effectWindow(ready, settled, settledOwners) },

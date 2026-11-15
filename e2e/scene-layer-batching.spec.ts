@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import type { runSceneLayerBatchingProof } from "../apps/editor/src/testing/scene-layer-batching-proof";
 import { encodeRgbaPng } from "../packages/render/src/png-encode";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type Proof = typeof runSceneLayerBatchingProof;
 
@@ -21,31 +21,31 @@ function differences(a: number[], b: number[], width: number) {
   return { count, first };
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) for (const images of ["filtered", "nearest"] as const) {
+for (const images of ["filtered", "nearest"] as const) {
   const title = images === "nearest"
-    ? `a batched Scene Layer HUD whose images share a page draws the same image as its meshes one by one, in fewer draws than from their own textures, on ${backend}`
-    : `a batched Scene Layer HUD draws the same image as its meshes one by one, in fewer draws, on ${backend}`;
+    ? "a batched Scene Layer HUD whose images share a page draws the same image as its meshes one by one, in fewer draws than from their own textures"
+    : "a batched Scene Layer HUD draws the same image as its meshes one by one, in fewer draws";
   test(title, async ({ page }, testInfo) => {
     test.setTimeout(180_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if (["error", "warning"].includes(message.type()) &&
-        /shader|WGSL|WebGPU uncaptured|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error/i.test(message.text()))
+        /shader|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error/i.test(message.text()))
         errors.push(message.text());
     });
     await page.goto("/?test=1&sceneLayerBatchingProof=1");
     await page.waitForFunction(() => typeof (window as unknown as { __sceneLayerBatchingProof?: unknown }).__sceneLayerBatchingProof === "function");
-    const result = await page.evaluate(([backend, images]) =>
-      (window as unknown as { __sceneLayerBatchingProof: Proof }).__sceneLayerBatchingProof(backend, images), [backend, images] as const);
+    const result = await page.evaluate((images) =>
+      (window as unknown as { __sceneLayerBatchingProof: Proof }).__sceneLayerBatchingProof(images), images);
     const report = result.cases.map(({ name, batched, unbatched, pages, ownTextures }) => ({
       name, draws: { batched: batched.draws, ownTextures, unbatched: unbatched.draws }, pages, differences: differences(unbatched.pixels, batched.pixels, result.width),
       drawn: unbatched.pixels.filter((value, index) => index % 4 === 0 && value > 40).length,
     }));
-    await testInfo.attach(`scene-layer-batching-${backend}-${images}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+    await testInfo.attach(`scene-layer-batching-${images}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
     for (const { name, batched, unbatched } of result.cases) {
       for (const [label, image] of [["batched", batched], ["unbatched", unbatched]] as const) {
-        await testInfo.attach(`${backend}-${images}-${name}-${label}.png`, {
+        await testInfo.attach(`${images}-${name}-${label}.png`, {
           body: Buffer.from(encodeRgbaPng(result.width, result.height, new Uint8Array(image.pixels))), contentType: "image/png",
         });
       }

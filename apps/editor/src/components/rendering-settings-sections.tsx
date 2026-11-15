@@ -20,7 +20,6 @@ import { EnvironmentLightingFields, ENVIRONMENT_LIGHTING_SEARCH_TEXT } from "./e
 import { PlayPreviewSettingsFields } from "./play-preview-settings-fields";
 import { RenderEffectsFields, RENDER_EFFECTS_SEARCH_TEXT } from "./render-effects-fields";
 import { projectEffectsScope, sceneEffectsScope } from "./render-effects-scope";
-import { RenderPipelineFields } from "./render-pipeline-fields";
 import { RenderQualityFields } from "./render-quality-fields";
 import { ShadowSettingsFields, SHADOW_SETTINGS_SEARCH_TEXT } from "./shadow-settings-fields";
 import { ProjectLutControl, RenderModeField, ResolutionFields } from "./rendering-project-fields";
@@ -75,13 +74,7 @@ export const RENDERING_SETTINGS_SECTIONS: readonly RenderingSettingsSection[] = 
   {
     id: "pipeline",
     title: "Pipeline",
-    project: (context) => (
-      <>
-        <RenderPipelineFields hideTitle scope="project" project={context.render}
-          onChange={(pipeline) => context.setRender({ ...context.render, ...pipeline })} />
-        <RenderModeField {...context} />
-      </>
-    ),
+    project: (context) => <RenderModeField {...context} />,
   },
   {
     id: "scalability",

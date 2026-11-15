@@ -9,7 +9,7 @@ import { recastHostedWasmVitePlugin } from "../editor/vite-recast-wasm";
 import { bundledPackagesReport } from "./vite-bundled-packages";
 import { createPlatformModules, platformModuleGroup, platformModules } from "./vite-platform-modules";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
-import { isWebGpuOnlyModule, webGpuChunkGuard } from "./vite-webgpu-chunk";
+import { leaveOutUnusedBabylonModules } from "./vite-unused-babylon-modules";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -73,7 +73,7 @@ function writePlayerFileList(): Plugin {
   };
 }
 
-/** Wasm runtimes the player page imports only on demand; everything else is in `player.js` or `player-webgpu.js`. */
+/** Wasm runtimes the player page imports only on demand; everything else is in `player.js`. */
 const PAGE_ON_DEMAND_RUNTIME = /node_modules[\\/](@dimforge[\\/]rapier2d[^\\/]*|@babylonjs[\\/]havok|@recast-navigation[\\/]wasm)[\\/]/;
 
 export default defineConfig({
@@ -86,7 +86,7 @@ export default defineConfig({
     previewDiagnosticsEntry(rootDir),
     bundledPackages.main,
     writePlayerFileList(),
-    webGpuChunkGuard(),
+    leaveOutUnusedBabylonModules(),
     platformModules(platformModuleState, { writeList: true }),
   ],
   build: {
@@ -95,11 +95,8 @@ export default defineConfig({
     rolldownOptions: {
       output: {
         format: "es",
-        // Two player bundles. `player.js` holds every module a WebGL2 game runs, Babylon's lazily
-        // imported shaders and loaders included. `player-webgpu.js` holds the WebGPU engine and every
-        // WGSL shader, which only a WebGPU game loads (`isWebGpuOnlyModule`; `webGpuChunkGuard` fails
-        // the build if `player.js` would still import any of it). Main is matched first, so a module
-        // that WebGL2 code imports statically stays in `player.js` with everything it imports.
+        // One player bundle. `player.js` holds every module a game runs, Babylon's lazily imported
+        // shaders and loaders included; the ones no game runs are left out (`leaveOutUnusedBabylonModules`).
         // The wasm runtimes the page itself loads on demand (Rapier 2D, Havok and Recast for the
         // in-process fallback and navigation debug) stay separate files, so a game that never needs
         // them never downloads them. Their names keep `rapier` / `havok`, which
@@ -110,9 +107,8 @@ export default defineConfig({
             platformModuleGroup(platformModuleState),
             {
               name: "main",
-              test: (id: string) => !PAGE_ON_DEMAND_RUNTIME.test(id) && !isWebGpuOnlyModule(id) && !platformModuleState.conditions.has(id),
+              test: (id: string) => !PAGE_ON_DEMAND_RUNTIME.test(id) && !platformModuleState.conditions.has(id),
             },
-            { name: "webgpu", test: isWebGpuOnlyModule },
           ],
         },
         entryFileNames: "player.js",

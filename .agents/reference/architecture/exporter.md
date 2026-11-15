@@ -28,7 +28,7 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 | App Icon: source read and canvas render; ICO, ICNS, page branding; Windows executable | [`apps/editor/src/lib/app-icon.ts`](../../../apps/editor/src/lib/app-icon.ts); [`app-icon.ts`](../../../packages/exporter/src/app-icon.ts); [`native-windows.ts`](../../../packages/exporter/src/native-windows.ts) |
 | Player host URLs | [`apps/editor/src/lib/player-host-url.ts`](../../../apps/editor/src/lib/player-host-url.ts) |
 | Editor Preview Build flow: prepare, iframe handoff, close, diagnostics report | `usePreviewBuild` ([`apps/editor/src/context/use-preview-build.ts`](../../../apps/editor/src/context/use-preview-build.ts)), called by `PlayProvider` |
-| Player boot, backend, worker host | [`apps/player/src/`](../../../apps/player/src/) `boot.ts`, `player-backend.ts`, `worker-host.ts` |
+| Player boot, Engine, worker host | [`apps/player/src/`](../../../apps/player/src/) `boot.ts`, `player-engine.ts`, `worker-host.ts` |
 
 ## Closure
 
@@ -45,14 +45,14 @@ Export Game and Preview Build: the headless `@haptic/exporter` closure and packe
 ```
 index.html          # player CSS inlined; <title> is the project name; itch requires it at the zip root
 icon.png            # the App Icon at 256 px, linked as the page's favicon; only with an App Icon
-player.js           # every module a WebGL2 game runs; workers and the page's on-demand code stay separate files
+player.js           # every module a game runs; workers and the page's on-demand code stay separate files
 game.json           # catalog: required dependencies, paths, byte lengths, SHA-256
 assets/data-<n>.bin # one per asset or sidecar
 coi-serviceworker.js, havok/ (3D), assets/rapier-*.js and rapier/ (2D or physics SceneLayers), assets/recast-*.js, recast/, ktx2/, draco/, meshopt/
-player-webgpu.js, player-rapier.js, player-HavokPhysics_es.js, player-recast-navigation.wasm.js
+player-rapier.js, player-HavokPhysics_es.js, player-recast-navigation.wasm.js
 ```
 
-- `player.js` holds every page module a WebGL2 game runs, Babylon's lazily imported GLSL shaders and loaders included (`codeSplitting.groups` in `apps/player/vite.config.ts`), so an export stays a handful of files under the itch cap. `player-webgpu.js` holds Babylon's WebGPU engine and every WGSL shader, which only a WebGPU game loads (`isWebGpuOnlyModule` in [`apps/player/vite-webgpu-chunk.ts`](../../../apps/player/vite-webgpu-chunk.ts); [render.md](render.md#babylon-modules-and-registrations)); `webGpuChunkGuard` fails the build when `player.js` statically imports another file or holds a WebGPU-only module, so a WebGL2 device never fetches it. Every export ships it. The wasm runtimes the page loads on demand also stay `player-<name>.js` beside it: Rapier 2D and Havok for the in-process runtime (used when the game worker cannot start) and Recast for the navigation debug overlay. Their names keep `rapier` / `havok` so `selectPlayerRuntimeFiles` drops the engine a game does not use.
+- `player.js` holds every page module a game runs, Babylon's lazily imported GLSL shaders and loaders included (`codeSplitting.groups` in `apps/player/vite.config.ts`), so an export stays a handful of files under the itch cap. Babylon also imports its WebGPU engine and WGSL shaders lazily; no game runs them, so `leaveOutUnusedBabylonModules` ([`apps/player/vite-unused-babylon-modules.ts`](../../../apps/player/vite-unused-babylon-modules.ts)) resolves those lazy imports to an empty module and they ship in no export. The wasm runtimes the page loads on demand also stay `player-<name>.js` beside it: Rapier 2D and Havok for the in-process runtime (used when the game worker cannot start) and Recast for the navigation debug overlay. Their names keep `rapier` / `havok` so `selectPlayerRuntimeFiles` drops the engine a game does not use.
 
 - Sidecars use typed ids: `navmesh:<sceneGuid>` (`NavMesh`), `audioReverb:<sceneGuid>`, `font-facetype:`, `font-msdf:`, `font-msdf-png:`, area emission. Packed Audio is a **BSAU** envelope, packed Model a **BSMO** envelope (payload incl. `importScale`, `materialSlots`, `autoLod` + GLB).
 - `selectPlayerRuntimeFiles` keeps Havok for 3D, Rapier for 2D, and Rapier in 3D only when a reached SceneLayer enables physics (an unreadable layer keeps it).

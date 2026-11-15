@@ -14,12 +14,11 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings, type ShadowSettings } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { shadowAtlasTexture, shadowTileSize } from "../../../../packages/render/src/shadow-atlas";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 160;
 /** An 8-bit sRGB channel in linear light. */
@@ -29,16 +28,13 @@ const linear = (value: number) => {
 };
 const HEIGHT = 120;
 
-export async function runShadowFilterProof(backend: "webgl2" | "webgpu") {
+export async function runShadowFilterProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
-  const order = readbackChannelOrder(engine.isWebGPU);
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0, 0, 0, 1);
@@ -89,7 +85,7 @@ export async function runShadowFilterProof(backend: "webgl2" | "webgpu") {
         try { rendered = graph.render(camera, false).rendered !== false; } finally { engine.endFrame(); }
         if (rendered) {
           const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-          return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+          return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
         }
         if (performance.now() > deadline) throw new Error("The view did not present");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));

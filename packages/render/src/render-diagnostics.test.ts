@@ -31,7 +31,6 @@ describe("render diagnostics qualification fields", () => {
 
     const diagnostics = createRenderDiagnostics(scene, () => 1)();
 
-    expect(diagnostics.adapter.api).toBe("webgpu");
     expect(diagnostics.gpuMs).toBeNull();
     expect(diagnostics.gpuStatus).toBe("unsupported");
     expect(capture).not.toHaveBeenCalled();
@@ -62,9 +61,7 @@ describe("render diagnostics qualification fields", () => {
 
     const diagnostics = createRenderDiagnostics(scene, () => 1.5)();
 
-    // NullEngine exposes neither getInfo nor getGlInfo: the API is still named
-    // and the strings stay null rather than fabricated.
-    expect(diagnostics.adapter.api).toBe("webgl2");
+    // NullEngine exposes neither getInfo nor getGlInfo: the strings stay null rather than fabricated.
     expect(diagnostics.adapter.vendor).toBeNull();
     expect(diagnostics.adapter.renderer).toBeNull();
     expect(diagnostics.adapter.version).toBeNull();

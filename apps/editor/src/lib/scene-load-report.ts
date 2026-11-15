@@ -54,7 +54,7 @@ export interface SceneLoadReportInput {
   rendering?: boolean;
   elapsedMs: number | null;
   error?: unknown;
-  gpu?: { api: string; vendor: string | null; renderer: string | null; version: string | null } | null;
+  gpu?: { vendor: string | null; renderer: string | null; version: string | null } | null;
   /** Further `Label: value` lines the surface knows, such as render settings or Play state. */
   details?: string[];
 }
@@ -77,7 +77,7 @@ export function formatSceneLoadReport(
     `Status: ${status} · ${input.surface}${input.scene ? ` · ${input.scene}` : ""}`,
     `Phase: ${input.phase}${input.progress === null ? "" : ` (${Math.round(input.progress)}%)`}${input.elapsedMs === null ? "" : ` · ${(input.elapsedMs / 1000).toFixed(1)} s since loading started`}`,
     ...formatDiagnosticEnvironment(environment),
-    `GPU: ${input.gpu ? `${input.gpu.api} · ${input.gpu.vendor ?? "?"} · ${input.gpu.renderer ?? "?"}${input.gpu.version ? ` · ${input.gpu.version}` : ""}` : "unknown (no engine)"}`,
+    `GPU: ${input.gpu ? `${input.gpu.vendor ?? "?"} · ${input.gpu.renderer ?? "?"}${input.gpu.version ? ` · ${input.gpu.version}` : ""}` : "unknown (no engine)"}`,
     ...(input.details ?? []),
   ];
   if (input.error !== undefined) lines.push("Error:", ...describeError(input.error).map((line) => `  ${line}`));

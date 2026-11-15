@@ -30,7 +30,7 @@ function fixture() {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
-  // Every shipped Engine (WebGL2, WebGPU) draws cascades; the sun's atlas map is one.
+  // The shipped WebGL2 Engine draws cascades; the sun's atlas map is one.
   engine._features.supportCSM = true;
   const scene = new Scene(engine);
   scene.activeCamera = new UniversalCamera(
@@ -45,7 +45,6 @@ describe("opt-in shadow evidence capture", () => {
   it("records admitted dimensions and current projection without changing the authored request or redrawing", () => {
     const scene = fixture();
     updateSceneRenderingSettings(scene, {
-      gpuBackend: "webgpu",
       shadows: normalizeShadowSettings({
         mapSize: 1024,
         cascades: 1,
@@ -73,10 +72,7 @@ describe("opt-in shadow evidence capture", () => {
 
     const evidence = captureShadowDiagnostics(scene, { host: "unit-test" });
 
-    expect(evidence.backend).toMatchObject({
-      requested: "webgpu",
-      actual: "null",
-    });
+    expect(evidence.backend).toMatchObject({ actual: "null" });
     expect(evidence.requestedShadows).toMatchObject({
       mapSize: 1024,
       cascades: 1,

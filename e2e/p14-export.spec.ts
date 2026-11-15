@@ -82,8 +82,6 @@ test.describe("P14 export smoke", () => {
       files.set(path, bytes);
     }
     expect(files.size).toBe(artifact.fileCount);
-    // Every export ships the WebGPU code as a file of its own, which this WebGL2 game never fetches (below).
-    expect(files.has("player-webgpu.js")).toBe(true);
 
     for (const honorRange of [true, false]) {
       const server = await serveExportFiles(files, { honorRange });
@@ -133,7 +131,6 @@ test.describe("P14 export smoke", () => {
         expect(server.requests.filter(request => request.path === startupPath)).toEqual([
           { path: startupPath, status: 200, range: null, bytes: unzipped[startupPath]!.byteLength },
         ]);
-        expect(server.requests.filter(request => request.path === "player-webgpu.js")).toEqual([]);
       } finally {
         await server.close();
       }

@@ -21,7 +21,7 @@ export interface PlayProbe {
   samplePresentedImage(): Promise<PresentedImageSample | null>;
   /**
    * Turns the game view's draws, clears and uniform uploads into no-ops (`true`) or back, so a frame's CPU time without
-   * them can be measured; whether it did (false on WebGPU and once Play stopped).
+   * them can be measured; whether it did (false once Play stopped).
    */
   stubWebGlDraws(on: boolean): boolean;
   /** Error and warning lines the session logged, oldest first. */
@@ -38,7 +38,7 @@ export interface ViewportProbe {
   /** The load failure, when one was caught. */
   error(): unknown;
   /** Graphics API and adapter of this viewport's Engine; null without one. */
-  gpu(): { api: string; vendor: string | null; renderer: string | null; version: string | null } | null;
+  gpu(): { vendor: string | null; renderer: string | null; version: string | null } | null;
 }
 
 /** Latest registration wins; unregistering an older one leaves the newer intact. */

@@ -18,7 +18,6 @@ import {
   applyTilemapAlbedoTextures,
   bindParticleMaterial,
   compileMaterialPlan,
-  createAppWebGpuEngine,
   createBabylonParticleSystem,
   createSpriteQuad,
   createText2DMesh,
@@ -31,7 +30,6 @@ import {
 import { createDefaultMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { sceneRenderingSettings, setSceneEffectsAssets } from "@haptic/render/render-settings";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 64;
 const HEIGHT = 32;
@@ -56,14 +54,12 @@ async function lutPng(map: (r: number, g: number, b: number) => [number, number,
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-async function createProofEngine(backend: "webgl2" | "webgpu", width = WIDTH, height = HEIGHT) {
+function createProofEngine(width = WIDTH, height = HEIGHT) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(width, height);
   return { canvas, engine };
 }
@@ -96,7 +92,7 @@ async function presentPixels(
     }
   }
   const pixels = await engine.readPixels(0, 0, engine.getRenderWidth(), engine.getRenderHeight());
-  return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
+  return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
 }
 
 /** Release the graph and scene, then flush the engine's deferred work. */
@@ -110,8 +106,8 @@ async function disposeProofScene(engine: AbstractEngine, graph: ForwardSceneFram
 }
 
 /** Real LUT assets through the scene effects asset context. */
-export async function runColorGradingProof(backend: "webgl2" | "webgpu") {
-  const { canvas, engine } = await createProofEngine(backend);
+export async function runColorGradingProof() {
+  const { canvas, engine } = createProofEngine();
   const textureBytes = new Map([
     ["identity", await lutPng((r, g, b) => [r, g, b])],
     ["invert", await lutPng((r, g, b) => [1 - r, 1 - g, 1 - b])],
@@ -207,8 +203,8 @@ function centerVisual(root: AbstractMesh, x: number, y: number) {
  * and a Text-domain Material glyph, each a display mid gray. The band between
  * the rows shows the clear color. `points` are bottom-up pixel centers.
  */
-export async function runDisplayColorProof(backend: "webgl2" | "webgpu") {
-  const { canvas, engine } = await createProofEngine(backend, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+export async function runDisplayColorProof() {
+  const { canvas, engine } = createProofEngine(DISPLAY_WIDTH, DISPLAY_HEIGHT);
   const captures: Record<string, number[]> = {};
   const points: Record<string, [number, number]> = {};
   const halfWidth = DISPLAY_WIDTH / DISPLAY_PIXELS_PER_UNIT / 2;

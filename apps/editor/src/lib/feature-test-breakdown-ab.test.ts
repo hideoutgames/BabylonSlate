@@ -95,7 +95,6 @@ describe("the Breakdown's preserveDrawingBuffer A/B", () => {
   it.each([
     ["the first pass was cancelled", pass(firstInfo, [scene(1, "true")], { cancelled: true }), PROJECT, "the first was cancelled"],
     ["it measured no baseline", pass(firstInfo, []), PROJECT, "the first measured no baseline"],
-    ["WebGPU has no such attribute", pass(firstInfo, [scene(1, "n/a")]), PROJECT, "WebGPU has no preserveDrawingBuffer"],
     ["the project cannot be found to reopen", pass(firstInfo, [scene(1, "true")]), null, "the open project was not found in the project list, to reopen after a reload"],
   ])("runs one pass when %s, and leaves the setting alone", (_case, first, project, reason) => {
     const plan = planSecondPass(first, { project, scenes: SCENES }, deps);

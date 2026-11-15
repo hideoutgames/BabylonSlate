@@ -13,7 +13,7 @@ import {
   createDefaultWaterDefinition, normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeWaterBody, type AntiAliasingMode,
 } from "@haptic/core";
 import {
-  builtInWaterMaterial, compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh,
+  builtInWaterMaterial, compileMaterialPlan, configureEditorRenderingGroups, createWaterMesh,
   setSceneRenderSettings, setSceneWaterTime,
 } from "@haptic/render";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
@@ -21,7 +21,6 @@ import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene"
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { allowSceneScreenShadows, sceneMultisampleCount } from "../../../../packages/render/src/render-settings";
 import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 96;
 const HEIGHT = 64;
@@ -34,14 +33,12 @@ export type AntiAliasingCapture = { label: string; samples: number; tasks: strin
  * Anti-Aliasing mode, directly (no post effects) and through a settings chain (a vignette): two consecutive frames each;
  * a sprite's quad whose UVs map a frame of a nearest-sampled atlas, and an alpha-tested tile of one, at Off and 4x.
  */
-export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
+export async function runAntiAliasingProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
   const captures: AntiAliasingCapture[] = [];
   // WebGL errors (a refused blit raises INVALID_OPERATION without logging).
@@ -144,7 +141,7 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
         await graph.prepare(camera);
       }
       const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     try {
       for (const [label, mode, chain, subject] of [
@@ -163,7 +160,7 @@ export async function runAntiAliasingProof(backend: "webgl2" | "webgpu") {
       }
     } finally {
       graph.dispose();
-      // WebGPU destroys disposed targets at the end of its next frame, which the release waits for from a microtask on.
+      // The release waits, from a microtask on, for the frame after the disposal.
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
       engine.beginFrame();
       engine.endFrame();
@@ -198,14 +195,12 @@ async function matte(scene: Scene, name: string, color: Color3, roughness = 1) {
  * Occlusion and Real-Time Reflections on, drawn by a world view at MSAA Off and 4x. MSAA changes only edge pixels when
  * every reader's depth matches the resolved colour; a halo shows as changed pixels beside the silhouettes.
  */
-export async function runAntiAliasingHaloProof(backend: "webgl2" | "webgpu") {
+export async function runAntiAliasingHaloProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
   const captures: { label: string; samples: number; pixels: number[] }[] = [];
   try {
@@ -237,7 +232,7 @@ export async function runAntiAliasingHaloProof(backend: "webgl2" | "webgpu") {
     const graph = new ForwardSceneFrameGraph(scene);
     const read = async () => {
       const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), readbackChannelOrder(engine.isWebGPU));
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     try {
       for (const antiAliasing of ["off", "msaa4"] as const) {

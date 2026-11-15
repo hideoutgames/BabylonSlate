@@ -1,8 +1,6 @@
-import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
 import type { FramePressureSample } from "./hardware-scaling";
-import type { ResolvedRenderingPipeline } from "@haptic/core";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
@@ -187,14 +185,12 @@ export type RenderDiagnostics = {
   readbackMs: number | null;
   shadowLights: ReturnType<typeof shadowLightDiagnostics>;
   qualityLimits: string[];
-  pipeline: ResolvedRenderingPipeline;
   /**
-   * Graphics API and adapter identity reported by the Engine itself, so a
-   * diagnostics capture always names the real adapter and cannot be mistaken
-   * for device qualification.
+   * Adapter identity reported by the Engine itself, so a diagnostics capture
+   * always names the real adapter and cannot be mistaken for device
+   * qualification.
    */
   adapter: {
-    api: "webgpu" | "webgl2";
     vendor: string | null;
     renderer: string | null;
     version: string | null;
@@ -240,11 +236,9 @@ export function createRenderDiagnostics(
     const shadows = findSceneShadowController(scene);
     const metrics = shadows?.metrics() ?? { passes: 0, bytes: 0 };
     const state = sceneRenderingSettings(scene);
-    const pipeline = sceneRenderingPipeline(scene);
     const { sample, gpuAttribution } = pressure();
     return {
       cpuMs: cpuMs(),
-      pipeline,
       readbackMs: readbackMs(),
       shadowDrawCalls: shadows?.shadowDrawCalls() ?? 0,
       shadowTriangles: shadows?.shadowTriangles() ?? 0,
@@ -266,7 +260,6 @@ export function createRenderDiagnostics(
       shadowMapBytes: metrics.bytes,
       shadowLights: state.lightsDebug ? shadowLightDiagnostics(scene, shadows) : [],
       qualityLimits: [
-        ...pipeline.limits,
         ...sceneLightingLimits(scene),
         ...effectiveShadowSettings(
           state.shadows,
@@ -308,7 +301,6 @@ export function engineAdapterInfo(engine: AbstractEngine) {
   };
   const info = infoEngine.getInfo?.() ?? infoEngine.getGlInfo?.();
   return {
-    api: (engine.isWebGPU ? "webgpu" : "webgl2") as "webgpu" | "webgl2",
     vendor: info?.vendor ?? null,
     renderer: info?.renderer ?? null,
     version: info?.version ?? null,

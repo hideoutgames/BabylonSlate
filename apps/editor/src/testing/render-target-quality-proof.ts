@@ -16,7 +16,7 @@ import {
   normalizeShadowSettings, normalizeWaterBody, type RenderTargetCaptureQuality,
 } from "@haptic/core";
 import {
-  applyAuthoredLightProperties, builtInWaterMaterial, compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine,
+  applyAuthoredLightProperties, builtInWaterMaterial, compileMaterialPlan, configureEditorRenderingGroups,
   createWaterMesh, RenderTargetCaptures, setSceneWaterTime,
 } from "@haptic/render";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
@@ -28,7 +28,6 @@ import {
 import { monitorMaterial } from "../lib/feature-test/rendering";
 
 const QUALITIES: readonly RenderTargetCaptureQuality[] = ["fast", "highQuality", "fullQuality"];
-type Backend = "webgl2" | "webgpu";
 
 /** A rough graph Material of one colour, drawn with the light block. */
 async function matte(scene: Scene, name: string, color: Color3): Promise<Material> {
@@ -60,13 +59,11 @@ async function compileDocument(scene: Scene, doc: MaterialDocument, textures: Re
  * Quality with the view's exact lens, all rendered by the production
  * scene view (captures run inside its frame). Numeric primitives only.
  */
-async function lakeHost(backend: Backend, size: number, boxes = 0) {
+async function lakeHost(size: number, boxes = 0) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(size, size);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
@@ -128,7 +125,7 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
   const dispose = async () => {
     captures.dispose();
     view.dispose();
-    // WebGPU frees leases after its end-of-frame destruction drain: keep frames coming.
+    // Frames keep coming until both releases settle.
     let settled = false;
     const released = Promise.all([view.whenReleased(), captures.whenReleased()]).finally(() => { settled = true; });
     while (!settled) {
@@ -137,7 +134,8 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
       await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     await released;
-    // The light block's lookup tables are the Scene's until it goes, at WebGPU's next end-of-frame drain.
+    // The light block's lookup tables are the Scene's until it goes: a frame runs after the disposal, before the
+    // retained bytes are read.
     scene.dispose();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     engine.beginFrame();
@@ -150,17 +148,9 @@ async function lakeHost(backend: Backend, size: number, boxes = 0) {
   return { engine, scene, view, captures, outputs, configure, frame, settle, dispose };
 }
 
-async function readView(engine: AbstractEngine, backend: Backend, size: number): Promise<number[]> {
+async function readView(engine: AbstractEngine, size: number): Promise<number[]> {
   const pixels = await engine.readPixels(0, 0, size, size);
-  const values = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
-  if (backend === "webgl2") return values;
-  // Babylon returns the canvas attachment's native channel order on WebGPU,
-  // top row first; render-target readback is bottom row first on both backends.
-  if ((engine.getCreationOptions() as { swapChainFormat?: string }).swapChainFormat === "bgra8unorm")
-    for (let index = 0; index < values.length; index += 4) [values[index], values[index + 2]] = [values[index + 2]!, values[index]!];
-  const rows: number[] = [];
-  for (let row = size - 1; row >= 0; row--) rows.push(...values.slice(row * size * 4, (row + 1) * size * 4));
-  return rows;
+  return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
 }
 
 async function readCapture(texture: BaseTexture, size: number): Promise<number[]> {
@@ -181,9 +171,9 @@ function meanError(a: readonly number[], b: readonly number[]): number {
  * How closely each capture matches the scene view's own image of the same
  * lens, with and without a settings effect chain (an identity vignette).
  */
-export async function runRenderTargetQualityProof(backend: Backend) {
+export async function runRenderTargetQualityProof() {
   const size = 96;
-  const host = await lakeHost(backend, size);
+  const host = await lakeHost(size);
   try {
     const cases: Record<string, Record<RenderTargetCaptureQuality, number> & { waterCopy: boolean }> = {};
     for (const [label, effects] of [["plain", DEFAULT_RENDER_EFFECTS], ["chain", { ...DEFAULT_RENDER_EFFECTS, vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: true, weight: 0 } }]] as const) {
@@ -194,7 +184,7 @@ export async function runRenderTargetQualityProof(backend: Backend) {
       await host.settle(() => host.captures.diagnostics().every((entry) => entry.published), label);
       // Two more frames, so the published images are from the settled scene.
       host.frame(); host.frame();
-      const reference = await readView(host.engine, backend, size);
+      const reference = await readView(host.engine, size);
       const errors = Object.fromEntries(await Promise.all(QUALITIES.map(async (quality) =>
         [quality, meanError(reference, await readCapture(host.outputs[quality], size))] as const)));
       cases[label] = {
@@ -203,7 +193,6 @@ export async function runRenderTargetQualityProof(backend: Backend) {
       };
     }
     return {
-      effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
       cases,
       mainCameraPreserved: host.scene.activeCamera?.name === "Main Camera",
       retainedBytes: await host.dispose(),
@@ -224,14 +213,12 @@ const MONITOR_SUBJECT = new Color3(0.9, 0.35, 0.05);
  * Quality's image carries them already, so the scene view applies them a second time. Mean RGB error (0–255) over a
  * patch of each.
  */
-export async function runRenderTargetMonitorProof(backend: Backend) {
+export async function runRenderTargetMonitorProof() {
   const size = 96;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(size, size);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.1, 0.1, 0.12, 1);
@@ -324,12 +311,11 @@ export async function runRenderTargetMonitorProof(backend: Backend) {
       monitor.material = monitors[quality]!;
       await settle(() => captures.diagnostics().some((entry) => entry.quality === quality && entry.published), quality);
       frame(); frame();
-      const pixels = await readView(engine, backend, size);
+      const pixels = await readView(engine, size);
       const subjectPatch = patch(pixels, size / 2 - offset), monitorPatch = patch(pixels, size / 2 + offset);
       cases[quality] = { monitorError: meanError(subjectPatch, monitorPatch), subject: subjectPatch.slice(0, 3), monitor: monitorPatch.slice(0, 3) };
     }
     return {
-      effectiveBackend: engine.isWebGPU ? "webgpu" : "webgl2",
       cases,
       retainedBytes: await dispose(),
     };
@@ -354,13 +340,11 @@ const SHADOW_FAR_VIEW = new Vector3(0, 7, -214);
  * Materials drawn with the light block, shadows in its atlas. Numeric
  * primitives only.
  */
-async function shadowHost(backend: Backend, size: number) {
+async function shadowHost(size: number) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(size, size);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.55, 0.7, 0.9, 1);
@@ -422,7 +406,7 @@ async function shadowHost(backend: Backend, size: number) {
     await released;
     // The scene view's own shadow maps are charged until the scene goes.
     scene.dispose();
-    // The light block's lookup tables go at WebGPU's next end-of-frame drain.
+    // A frame runs after the disposal, on a later task, before the retained bytes are read.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     engine.beginFrame();
     engine.endFrame();
@@ -441,14 +425,14 @@ async function shadowHost(backend: Backend, size: number) {
  * single-map (Low) sun shadows, in the light block's atlas. `shadowContrast` is how much the reference
  * changes without sun shadows, so a match cannot come from shadows missing in both.
  */
-export async function runRenderTargetShadowProof(backend: Backend) {
+export async function runRenderTargetShadowProof() {
   const size = 96;
   const cases: Record<string, { fullQuality: number; shadowContrast: number }> = {};
   const shadowSettings = [
     ["cascaded", normalizeShadowSettings({ cascades: 2, distance: 50, mapSize: 1024 })],
     ["low", normalizeShadowSettings({ profile: "low" })],
   ] as const;
-  const host = await shadowHost(backend, size);
+  const host = await shadowHost(size);
   try {
     for (const [label, shadows] of shadowSettings) {
       updateSceneRenderingSettings(host.scene, { shadows });
@@ -463,18 +447,17 @@ export async function runRenderTargetShadowProof(backend: Backend) {
       host.camera.position.copyFrom(SHADOW_LENS.position);
       await host.settle(() => true, `${label} view at the capture pose`);
       host.frame(); host.frame();
-      const reference = await readView(host.engine, backend, size);
+      const reference = await readView(host.engine, size);
       applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: false });
       await host.settle(() => true, `${label} view without sun shadows`);
       host.frame(); host.frame();
-      const unshadowed = await readView(host.engine, backend, size);
+      const unshadowed = await readView(host.engine, size);
       applyAuthoredLightProperties(host.sun, { intensity: host.sunIntensity, color: [1, 1, 1], castShadows: true });
       cases[label] = {
         fullQuality: meanError(reference, capture), shadowContrast: meanError(reference, unshadowed),
       };
     }
     return {
-      effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
       cases,
       mainCameraPreserved: host.scene.activeCamera === host.camera,
       retainedBytes: await host.dispose(),
@@ -490,9 +473,9 @@ export async function runRenderTargetShadowProof(backend: Backend) {
  * the same lens, each frame waited to GPU completion. The
  * difference from the baseline is the capture's cost on this device.
  */
-export async function runRenderTargetQualityCost(backend: Backend, options: { size?: number; frames?: number; boxes?: number } = {}) {
+export async function runRenderTargetQualityCost(options: { size?: number; frames?: number; boxes?: number } = {}) {
   const size = options.size ?? 256, frames = options.frames ?? 90;
-  const host = await lakeHost(backend, size, options.boxes ?? 200);
+  const host = await lakeHost(size, options.boxes ?? 200);
   const timed = async (label: string) => {
     for (let warm = 0; warm < 20; warm++) { host.frame(); await host.engine.readPixels(0, 0, 1, 1); }
     const samples: number[] = [];
@@ -517,7 +500,6 @@ export async function runRenderTargetQualityCost(backend: Backend, options: { si
       results.push(await timed(quality));
     }
     return {
-      effectiveBackend: host.engine.isWebGPU ? "webgpu" : "webgl2",
       size, frames,
       results: results.map((entry) => ({ ...entry, captureMs: entry.medianMs - baseline.medianMs })),
       retainedBytes: await host.dispose(),

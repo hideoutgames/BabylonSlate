@@ -834,7 +834,7 @@ describe("SettingsModal project authoring", () => {
     expect(lastProjectRender.current).toMatchObject({ customResolution: true, blackBars: true, upscaling: "pixelated" });
   });
 
-  it("stages independent pipeline preferences until Done", async () => {
+  it("stages the pipeline preference until Done", async () => {
     showRenderingSections("pipeline");
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
     fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
@@ -845,14 +845,13 @@ describe("SettingsModal project authoring", () => {
       fireEvent.click(option);
       await waitFor(() => expect(screen.getByTestId(id).textContent).toContain(name));
     };
-    await select("project-gpu-backend", "WebGPU");
     await select("setting-render-mode", "CEL");
     expect(lastProjectRender.current).toBeNull();
     // Unrelated provider rerenders must not commit or discard the active draft.
     view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" />);
-    expect(screen.getByTestId("project-gpu-backend").textContent).toContain("WebGPU");
+    expect(screen.getByTestId("setting-render-mode").textContent).toContain("CEL");
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(lastProjectRender.current).toMatchObject({ gpuBackend: "webgpu", mode: "cel" });
+    expect(lastProjectRender.current).toMatchObject({ mode: "cel" });
   });
 
   it("shows CEL controls only in CEL and retains their values when returning from PBR", async () => {

@@ -4,9 +4,9 @@
  * joystick and WASD keys move it (a pose change plus a camera invalidation per
  * animation frame while a continuous render lease is held), and records, per
  * rendered frame, the discrete events camera motion can trigger: new Effects
- * and shader programs or WebGPU pipelines, bind groups, buffers, texture
- * uploads, material and define invalidations, readiness probes, held frames,
- * shadow generator churn, enabled-light changes and visible-set churn.
+ * and shader programs, buffers, texture uploads, material and define
+ * invalidations, readiness probes, held frames, shadow generator churn,
+ * enabled-light changes and visible-set churn.
  *
  * Counts are hardware-independent; timings on software adapters are not
  * device performance. The e2e route (`e2e/feature-test-flythrough-route.spec.ts`)
@@ -99,7 +99,6 @@ export interface FlyLogEntry {
 }
 
 export interface FlyThroughResult {
-  backend: "webgpu" | "webgl2";
   adapter: unknown;
   caps: Record<string, unknown>;
   pathLength: number;
@@ -111,7 +110,6 @@ export interface FlyThroughResult {
   lights: Array<Record<string, unknown>>;
   qualityLimitsBefore: string[];
   qualityLimitsAfter: string[];
-  pipeline: unknown;
   /** Counter totals over the whole run, including frames outside passes. */
   totals: Record<string, number>;
   instrumented: string[];
@@ -165,25 +163,6 @@ const GL_METHODS: Array<[string, string]> = [
   ["getError", "gl.getError"],
   ["clientWaitSync", "gl.clientWaitSync"],
   ["finish", "gl.finish"],
-];
-
-const GPU_DEVICE_METHODS: Array<[string, string]> = [
-  ["createRenderPipeline", "gpu.pipeline"],
-  ["createRenderPipelineAsync", "gpu.pipelineAsync"],
-  ["createComputePipeline", "gpu.computePipeline"],
-  ["createShaderModule", "gpu.shaderModule"],
-  ["createBindGroup", "gpu.bindGroup"],
-  ["createBindGroupLayout", "gpu.bindGroupLayout"],
-  ["createPipelineLayout", "gpu.pipelineLayout"],
-  ["createBuffer", "gpu.buffer"],
-  ["createTexture", "gpu.texture"],
-  ["createSampler", "gpu.sampler"],
-];
-
-const GPU_QUEUE_METHODS: Array<[string, string]> = [
-  ["writeTexture", "gpu.writeTexture"],
-  ["copyExternalImageToTexture", "gpu.copyExternalImage"],
-  ["writeBuffer", "gpu.writeBuffer"],
 ];
 
 function wrapMethod(
@@ -418,43 +397,15 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       return original.apply(this, args);
     })) instrumented.push("engine._releaseEffect");
 
-    // Backend object creation and uploads.
+    // GL object creation and uploads.
     const gl = internals._gl as Record<string, unknown> | undefined;
-    if (gl && !engine.isWebGPU) {
+    if (gl) {
       for (const [method, key] of GL_METHODS)
         if (wrapMethod(gl, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
           bump(key);
           return original.apply(this, args);
         })) instrumented.push(`gl.${method}`);
     }
-    const device = internals._device as Record<string, unknown> | undefined;
-    if (device && engine.isWebGPU) {
-      for (const [method, key] of GPU_DEVICE_METHODS)
-        if (wrapMethod(device, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
-          bump(key);
-          return original.apply(this, args);
-        })) instrumented.push(`device.${method}`);
-      const queue = device.queue as Record<string, unknown> | undefined;
-      if (queue)
-        for (const [method, key] of GPU_QUEUE_METHODS)
-          if (wrapMethod(queue, method, restores, (original) => function (this: unknown, ...args: unknown[]) {
-            bump(key);
-            return original.apply(this, args);
-          })) instrumented.push(`queue.${method}`);
-    }
-    const pipelineCache = internals._cacheRenderPipeline as Record<string, unknown> | undefined;
-    const pipelineStats = pipelineCache?.constructor as { NumCacheMiss?: number } | undefined;
-    const bindGroupStats = (internals._cacheBindGroups as Record<string, unknown> | undefined)?.constructor as
-      | { NumBindGroupsCreatedTotal?: number }
-      | undefined;
-    if (pipelineCache && wrapMethod(pipelineCache, "_createRenderPipeline", restores, (original) => function (this: unknown, ...args: unknown[]) {
-      const effect = args[0] as { name?: unknown; uniqueId?: number } | undefined;
-      const base = effectBaseName(effect?.name);
-      record("pipeline", `${base} #${effect?.uniqueId ?? "?"} topology ${String(args[1])} samples ${String(args[2])}`, true, base.replace(/\d+/g, "#"));
-      return original.apply(this, args);
-    })) instrumented.push("cacheRenderPipeline._createRenderPipeline");
-    let lastPipelineMiss = pipelineStats?.NumCacheMiss ?? 0;
-    let lastBindGroups = bindGroupStats?.NumBindGroupsCreatedTotal ?? 0;
 
     // Materials: material-level invalidations by flag, submesh define marks, readiness.
     if (wrapMethod(Material.prototype, "markAsDirty", restores, (original) => function (this: Material, ...args: unknown[]) {
@@ -634,12 +585,6 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       }
       lastRendered = rendered;
       const cpuMs = end - frameBegin;
-      const missNow = pipelineStats?.NumCacheMiss ?? 0;
-      delta("babylon.pipelineMiss", missNow, lastPipelineMiss);
-      lastPipelineMiss = missNow;
-      const groupsNow = bindGroupStats?.NumBindGroupsCreatedTotal ?? 0;
-      delta("babylon.bindGroupsCreated", groupsNow, lastBindGroups);
-      lastBindGroups = groupsNow;
       const state = diagnostics();
       const work = state.rendererWork;
       const presentation = state.presentation;
@@ -789,7 +734,6 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
     });
     const final = diagnostics();
     return {
-      backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
       adapter: final.adapter,
       caps: capsSummary,
       pathLength: round2(path.length),
@@ -801,7 +745,6 @@ export async function runFlyThrough(handle: EngineHandle, options: FlyThroughOpt
       lights,
       qualityLimitsBefore: initial.qualityLimits,
       qualityLimitsAfter: final.qualityLimits,
-      pipeline: final.pipeline,
       totals,
       instrumented,
     };

@@ -17,7 +17,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings, type ScreenShadowsQuality } from "@haptic/core";
 import {
-  applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, createPrimitiveMesh, setSceneRenderSettings,
+  applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
@@ -28,7 +28,6 @@ import { setActorMeshMaterial } from "../../../../packages/render/src/pooled-vis
 import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
 import { applyWorldVisualGroup } from "../../../../packages/render/src/sorting";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 160;
 const HEIGHT = 120;
@@ -56,10 +55,9 @@ const COMBINATIONS: Flags[] = [
 
 async function drawCases(engine: AbstractEngine, host: ShadowParticipationHost, screenShadows: ScreenShadowsQuality): Promise<ShadowParticipationCase[]> {
   const pooled = host !== "unpooled";
-  const order = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   try {
@@ -129,7 +127,7 @@ async function drawCases(engine: AbstractEngine, host: ShadowParticipationHost, 
     const umbra: boolean[] = [];
     for (const mesh of scene.meshes) mesh.computeWorldMatrix(true);
     for (let row = 0; row < HEIGHT; row++) {
-      const y = engine.isWebGPU ? row + 0.5 : HEIGHT - row - 0.5;
+      const y = HEIGHT - row - 0.5;
       for (let column = 0; column < WIDTH; column++) {
         const ray = scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera);
         const hit = scene.pickWithRay(ray, (mesh) => partOf(mesh, plane) || partOf(mesh, cube));
@@ -181,8 +179,7 @@ async function drawCases(engine: AbstractEngine, host: ShadowParticipationHost, 
         cases.push({ host, screenShadows, target, flags, ...count });
       }
     graph.dispose();
-    // WebGPU destroys disposed targets (a world view's multisampled ones) at the end of its next frame, which the
-    // release waits for from a microtask on.
+    // A frame runs after the disposal, on a later task, before the release is awaited.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     scene.getEngine().beginFrame();
     scene.getEngine().endFrame();
@@ -193,14 +190,12 @@ async function drawCases(engine: AbstractEngine, host: ShadowParticipationHost, 
   }
 }
 
-export async function runShadowParticipationProof(backend: "webgl2" | "webgpu") {
+export async function runShadowParticipationProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
   try {
     const cases: ShadowParticipationCase[] = [];
