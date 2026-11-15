@@ -16,6 +16,8 @@ type MovementState = {
   jumpRequested: boolean;
   /** A script wrote `velocity` since the last step; a steered Rigid Body takes it instead of its own. */
   velocityWritten: boolean;
+  /** Root motion's horizontal velocity for the next step, which stands in for steering. */
+  rootMotion: { x: number; z: number } | null;
   unavailable: boolean;
   placement: Placement;
 };
@@ -75,7 +77,7 @@ export class MovementWorldSync {
     let state = this.states.get(component);
     if (!state) {
       state = { input: zero(), addedInput: zero(), velocity: zero(), grounded: false,
-        moving: false, sinceGround: Infinity, jumpRemaining: 0, jumpRequested: false, velocityWritten: false, unavailable: false,
+        moving: false, sinceGround: Infinity, jumpRemaining: 0, jumpRequested: false, velocityWritten: false, rootMotion: null, unavailable: false,
         placement: { actor: null, revision: -1, listed: false, ahead: NO_MOTORS } };
       this.states.set(component, state);
       this.publish(component, state);
@@ -121,6 +123,17 @@ export class MovementWorldSync {
     }
     this.publish(component, state);
     return {};
+  }
+
+  /**
+   * Root motion for the actor's next Movement step: its horizontal velocity is `velocity` instead of what its input
+   * steers, so the character controller still collides and falls. False when the actor has no Movement motor.
+   */
+  applyRootMotion(actor: Actor, velocity: { x: number; z: number }): boolean {
+    const drive = this.host.physics(actor)?.movementDrive(actor);
+    if (!drive || drive.component.getVariable("enabled") === false || !this.host.eligible(actor)) return false;
+    this.state(drive.component).rootMotion = { x: finite(velocity.x), z: finite(velocity.z) };
+    return true;
   }
 
   /**
@@ -222,6 +235,11 @@ export class MovementWorldSync {
     const is2D = physics.getBackend().kind === "2d";
     state.velocityWritten = false;
     this.steer(state, state.velocity, props, is2D, state.grounded, dt);
+    if (state.rootMotion) {
+      state.velocity.x = state.rootMotion.x;
+      state.velocity.z = is2D ? 0 : state.rootMotion.z;
+      state.rootMotion = null;
+    }
 
     let jumped = false;
     if (state.jumpRequested && (state.grounded || state.sinceGround <= props.coyoteTime) && props.jumpSpeed > 0) {
@@ -268,6 +286,11 @@ export class MovementWorldSync {
     let supported = ground !== null && read.x * ground.x + read.y * ground.y + read.z * ground.z <= LEAVING_GROUND_SPEED;
     const target = { ...read };
     this.steer(state, target, props, is2D, supported, dt);
+    if (state.rootMotion) {
+      target.x = state.rootMotion.x;
+      target.z = is2D ? 0 : state.rootMotion.z;
+      state.rootMotion = null;
+    }
 
     let jumped = false, vertical = written;
     if (state.jumpRequested && (supported || state.sinceGround <= props.coyoteTime) && props.jumpSpeed > 0) {

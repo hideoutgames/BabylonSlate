@@ -29,6 +29,7 @@ import {
   type AnimPoseDimension,
 } from "./pose-graph";
 import type { AnimSlotEvent, AnimSlotRequest, AnimSlotState } from "./slots";
+import type { AnimClipRootMotion, AnimRootMotionDelta } from "./root-motion";
 import {
   parseAnimStateEvents,
   type AnimClipEvent,
@@ -200,6 +201,8 @@ export interface AnimClipLayer {
   additive?: boolean;
   /** An additive Animation's base pose when it is not the rest pose (`AnimClipAdditive`, resolved). */
   additiveBase?: AnimAdditiveBase;
+  /** The clip's root motion bone: render holds it in place across the ground, as the actor moves instead. */
+  rootMotionBone?: string;
 }
 
 /** An Animation's additive settings as the clip catalog carries them. */
@@ -247,6 +250,8 @@ export interface AnimEvalState extends AnimMachineEvalState {
   boneModifiers?: AnimBoneModifier[];
   /** Each Look At's target as it eases toward the one it is given (its Interpolation Time), by `graphKey#nodeId`. */
   lookAtTargets?: Record<string, number[]>;
+  /** The root motion the clips made this tick, in the actor's axes; absent when they moved nothing. */
+  rootMotion?: AnimRootMotionDelta;
   /** Slot animations playing, by slot name; absent when none. */
   slots?: Record<string, AnimSlotState>;
   /** What happened to slot plays this tick (blend out, completed, interrupted), in order; absent when nothing. */
@@ -511,6 +516,8 @@ export interface AnimClipCatalogEntry {
   events?: readonly AnimClipEvent[];
   /** An additive Animation's settings; absent for one that is not additive. */
   additive?: AnimClipAdditive;
+  /** An Animation's root motion, in the actor's units; absent when it plays in place. */
+  rootMotion?: AnimClipRootMotion;
   /** A Blend Space's or Sprite Blend Space's axes and samples, which a Blend Space Player plays. */
   blendSpace?: {
     axes: ReadonlyArray<{ min: number; max: number; wrap: boolean; smoothingSeconds: number }>;
@@ -1142,12 +1149,14 @@ function resolvePoseGraphClips(
     const frameCount = sprite && typeof entry.frameCount === "number" && entry.frameCount > 0 ? entry.frameCount : undefined;
     const events = entry.events && entry.events.length > 0 ? entry.events : undefined;
     const additive = sprite ? undefined : resolvedClipAdditive(entry, byGuid);
+    const rootMotion = sprite ? undefined : entry.rootMotion;
     if (
       node.data.clipName === clipName &&
       node.data.durationMs === durationMs &&
       node.data.frameCount === frameCount &&
       JSON.stringify(node.data.events ?? null) === JSON.stringify(events ?? null) &&
-      JSON.stringify(node.data.additive ?? null) === JSON.stringify(additive ?? null)
+      JSON.stringify(node.data.additive ?? null) === JSON.stringify(additive ?? null) &&
+      JSON.stringify(node.data.rootMotion ?? null) === JSON.stringify(rootMotion ?? null)
     ) return node;
     changed = true;
     const data: Record<string, unknown> = { ...node.data, clipName };
@@ -1155,6 +1164,7 @@ function resolvePoseGraphClips(
     if (frameCount !== undefined) data.frameCount = frameCount; else delete data.frameCount;
     if (events) data.events = events; else delete data.events;
     if (additive) data.additive = additive; else delete data.additive;
+    if (rootMotion) data.rootMotion = rootMotion; else delete data.rootMotion;
     return { ...node, data };
   });
   return changed ? { ...graph, nodes } : graph;
@@ -1208,6 +1218,7 @@ function resolvedBlendSpace(nodeType: string, assetGuid: unknown, byGuid: Readon
         rateScale: sample.rateScale,
         ...(clip.events && clip.events.length > 0 ? { events: clip.events } : {}),
         ...((additive) => (additive ? { additive } : {}))(clipType === "Animation" ? resolvedClipAdditive(clip, byGuid) : undefined),
+        ...(clipType === "Animation" && clip.rootMotion ? { rootMotion: clip.rootMotion } : {}),
       }];
     }),
   };

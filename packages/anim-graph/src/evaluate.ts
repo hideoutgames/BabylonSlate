@@ -77,6 +77,13 @@ import {
   type BlendSpaceNodeSample,
   type PoseGraphIndex,
 } from "./pose-graph";
+import {
+  animRootMotionDelta,
+  parseAnimClipRootMotion,
+  sumAnimRootMotion,
+  type AnimClipRootMotion,
+  type AnimRootMotionDelta,
+} from "./root-motion";
 import { advanceAnimSlots, slotClock, type AnimSlotPlayback, type AnimSlotState } from "./slots";
 import {
   animClipEventSpan,
@@ -140,9 +147,13 @@ interface PoseVisit {
   pending: Pending[];
   sources: Array<{ key: string; weight: number }>;
   modifiers: AnimBoneModifier[];
+  /** The root motion its clips made this tick, each by its weight. */
+  motion: RootMotionPart[];
 }
 
-const EMPTY_VISIT: PoseVisit = { layers: [], pending: [], sources: [], modifiers: [] };
+type RootMotionPart = AnimRootMotionDelta & { weight: number };
+
+const EMPTY_VISIT: PoseVisit = { layers: [], pending: [], sources: [], modifiers: [], motion: [] };
 
 function scaleVisit(visit: PoseVisit, weight: number): PoseVisit {
   if (weight === 1) return visit;
@@ -151,6 +162,7 @@ function scaleVisit(visit: PoseVisit, weight: number): PoseVisit {
     pending: visit.pending.map((item) => ("restart" in item ? item : { ...item, weight: item.weight * weight })),
     sources: visit.sources.map((source) => ({ ...source, weight: source.weight * weight })),
     modifiers: weight > 0 ? visit.modifiers.map((modifier) => ({ ...modifier, alpha: modifier.alpha * weight })) : [],
+    motion: visit.motion.map((part) => ({ ...part, weight: part.weight * weight })),
   };
 }
 
@@ -671,6 +683,30 @@ function twoBoneIkModifier(node: GraphNode, data: AnimPoseData | undefined, alph
   };
 }
 
+/** A clip's root motion bone, as a layer names it for render to hold in place across the ground. */
+function rootMotionBoneOf(value: unknown): { rootMotionBone?: string } {
+  const bone = value && typeof value === "object" ? (value as { bone?: unknown }).bone : undefined;
+  return typeof bone === "string" && bone ? { rootMotionBone: bone } : {};
+}
+
+/** Whether layers under `masks` play on a Layered Blend Per Bone's branch only, which root motion leaves out. */
+function maskedToBranch(masks: readonly AnimLayerMaskRef[] | undefined): boolean {
+  return !!masks && masks.some((mask) => mask.input >= 0);
+}
+
+/** A clip's root motion over its sweep, by `weight`: none in an additive context or on a branch alone. */
+function addRootMotion(
+  motion: RootMotionPart[],
+  rootMotion: AnimClipRootMotion | undefined,
+  sweep: AnimClipSweep,
+  weight: number,
+  masks: readonly AnimLayerMaskRef[] | undefined,
+  additive: boolean,
+): void {
+  if (!rootMotion || additive || !(weight > 0) || maskedToBranch(masks)) return;
+  motion.push({ ...animRootMotionDelta(rootMotion, sweep), weight });
+}
+
 /** Each Spring Bones node's settings, kept per node object (graphs are replaced, never mutated). */
 const springSettings = new WeakMap<GraphNode, AnimSpringBoneSettings>();
 
@@ -729,6 +765,7 @@ function visitPoseGraph(
   const pending: Pending[] = [];
   const sources: PoseVisit["sources"] = [];
   const modifiers: AnimBoneModifier[] = [];
+  const motion: RootMotionPart[] = [];
   const visited = new Set<string>();
   const visit = (
     node: GraphNode | undefined,
@@ -756,6 +793,7 @@ function visitPoseGraph(
         ...(base?.base === "clip"
           ? { additiveBase: { clipAssetGuid: base.clipAssetGuid, clipName: base.clipName, normalisedTime: base.normalisedTime } }
           : {}),
+        ...(layer.rootMotionBone ? {} : rootMotionBoneOf(node.data.rootMotion)),
       });
     };
     if (isPoseOutputType(node.type)) {
@@ -779,12 +817,14 @@ function visitPoseGraph(
         // A player starting over counts an event exactly at its start.
         if (!kept) pending.push({ restart: key });
         sources.push({ key, weight });
-        sweepEvents(pending, poseClipEvents(node), animClipSweep(previous, clock, timing.loop, !kept), timing.durationMs, {
+        const sweep = animClipSweep(previous, clock, timing.loop, !kept);
+        sweepEvents(pending, poseClipEvents(node), sweep, timing.durationMs, {
           clipAssetGuid: clip.assetGuid,
           stateId,
           weight,
           source: key,
         });
+        addRootMotion(motion, parseAnimClipRootMotion(node.data.rootMotion), sweep, weight, masks, additive);
       }
       return;
     }
@@ -848,7 +888,9 @@ function visitPoseGraph(
       tick.samples.forEach((sample, position) => {
         const sampleWeight = tick.weights[position] ?? 0;
         if (sampleWeight <= BLEND_SPACE_MIN_WEIGHT || weight <= 0) return;
+        addRootMotion(motion, sample.rootMotion, sweep, weight * sampleWeight, masks, additive);
         const base = sample.additive;
+        const rootBone = rootMotionBoneOf(sample.rootMotion);
         layers.push({
           stateId,
           clipAssetGuid: sample.animationGuid,
@@ -861,6 +903,7 @@ function visitPoseGraph(
           ...(base?.base === "clip"
             ? { additiveBase: { clipAssetGuid: base.clipAssetGuid, clipName: base.clipName, normalisedTime: base.normalisedTime } }
             : {}),
+          ...rootBone,
         });
       });
       return;
@@ -890,6 +933,7 @@ function visitPoseGraph(
         clipName: playback.clip.clipName,
         clipKind: playback.clip.clipKind,
         normalisedTime: slotClock(playback).normalised,
+        ...rootMotionBoneOf(playback.clip.rootMotion),
       });
       if (node.type === ANIM_FRAME_SLOT_TYPE) {
         // Frames cannot blend: the slot's newest play shows alone while it has any weight.
@@ -952,8 +996,9 @@ function visitPoseGraph(
         });
       }
       for (const source of cached.sources) sources.push({ key: source.key, weight: source.weight * weight });
-      // Bone changes set bones of the whole pose: an additive input has none.
+      // Bone changes and root motion belong to the whole pose: an additive input has none.
       if (additive) return;
+      if (!maskedToBranch(masks)) for (const part of cached.motion) motion.push({ ...part, weight: part.weight * weight });
       for (const modifier of cached.modifiers) {
         const nested = masks && modifier.masks ? [...masks, ...modifier.masks] : masks ?? modifier.masks;
         modifiers.push({ ...modifier, alpha: modifier.alpha * weight, ...(nested ? { masks: nested } : {}) });
@@ -1009,7 +1054,7 @@ function visitPoseGraph(
     // rest pose.
   };
   visit(start ?? index.output, 1, false, false);
-  return { layers, pending, sources, modifiers };
+  return { layers, pending, sources, modifiers, motion };
 }
 
 function firstPoseInput(index: PoseGraphIndex, node: GraphNode): GraphNode | undefined {
@@ -1115,12 +1160,12 @@ function evaluateMachine(
   machine: AnimStateMachine,
   previous: AnimMachineEvalState | null,
   dtSeconds: number,
-): { state: AnimMachineEvalState; layers: AnimClipLayer[]; pending: Pending[]; sources: PoseVisit["sources"]; modifiers: AnimBoneModifier[] } {
+): { state: AnimMachineEvalState; layers: AnimClipLayer[]; pending: Pending[]; sources: PoseVisit["sources"]; modifiers: AnimBoneModifier[]; motion: RootMotionPart[] } {
   const { states, outgoing: outgoingByState } = machineIndex(machine);
   const entryStateId = states.has(machine.entryStateId) ? machine.entryStateId : machine.states[0]?.id;
   let stateId = previous?.stateId ?? entryStateId;
   if (stateId === undefined || !states.has(stateId)) stateId = entryStateId;
-  if (stateId === undefined) return { state: idleMachineState(machine.entryStateId), layers: [], pending: [], sources: [], modifiers: [] };
+  if (stateId === undefined) return { state: idleMachineState(machine.entryStateId), layers: [], pending: [], sources: [], modifiers: [], motion: [] };
   const current = states.get(stateId)!;
   // A jump leaves the target with a negative time, which enters it fresh.
   const sameState = previous !== null && previous.stateId === stateId && previous.timeMs >= 0;
@@ -1263,7 +1308,7 @@ function evaluateMachine(
     blendSeconds,
     loopCount: nextClock.loopCount,
   };
-  return { state, layers, pending, sources, modifiers: [...from.modifiers, ...to.modifiers] };
+  return { state, layers, pending, sources, modifiers: [...from.modifiers, ...to.modifiers], motion: [...from.motion, ...to.motion] };
 }
 
 /**
@@ -1362,20 +1407,23 @@ export function evaluateAnimGraph(
     previousSyncGroups: previous?.syncGroups ?? {},
     syncGroups: new Map(),
   };
-  const { state, layers, pending, sources, modifiers } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
+  const { state, layers, pending, sources, modifiers, motion } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
   // A slot animation's clip events fire at its weight, under the state playing.
   for (const sweep of slotTick.sweeps) {
     const { playback } = sweep;
     const source = `slot:${sweep.slot}#${playback.id}`;
     if (sweep.fresh) pending.push({ restart: source });
     sources.push({ key: source, weight: playback.weight });
+    const clipSweep = animClipSweep(sweep.previous, sweep.next, playback.loopCount !== 1, sweep.fresh);
     sweepEvents(
       pending,
       playback.clip.events ?? [],
-      animClipSweep(sweep.previous, sweep.next, playback.loopCount !== 1, sweep.fresh),
+      clipSweep,
       playback.clip.durationMs,
       { clipAssetGuid: playback.clip.assetGuid, stateId: state.stateId, weight: playback.weight, source },
     );
+    // A slot's root motion moves the actor at its weight, as the pose under it gives way.
+    addRootMotion(motion, playback.clip.rootMotion, clipSweep, playback.weight, undefined, false);
   }
   const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
   if (Object.keys(slotTick.slots).length > 0) result.slots = slotTick.slots;
@@ -1383,6 +1431,8 @@ export function evaluateAnimGraph(
   if (ctx.layerBlends.length > 0) result.layerBlends = ctx.layerBlends;
   if (modifiers.length > 0) result.boneModifiers = modifiers;
   if (Object.keys(ctx.lookAtTargets).length > 0) result.lookAtTargets = ctx.lookAtTargets;
+  const rootMotion = sumAnimRootMotion(motion);
+  if (rootMotion) result.rootMotion = rootMotion;
   const playing = new Map<string, number>();
   for (const source of sources) playing.set(source.key, Math.max(playing.get(source.key) ?? 0, source.weight));
   const { fired, open } = fireEvents(resolveCachedPoseEvents(ctx, pending), playing, previous?.openWindows);

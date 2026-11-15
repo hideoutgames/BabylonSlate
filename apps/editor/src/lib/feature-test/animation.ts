@@ -10,7 +10,8 @@ import {
   type AnimState,
   type AnimTransition,
 } from "@haptic/anim-graph";
-import { normalizeAnimationPayload, normalizeSkeletonPayload, type BlendSpacePayload } from "@haptic/assets";
+import { extractAnimationRootMotion, normalizeAnimationPayload, normalizeSkeletonPayload, type BlendSpacePayload } from "@haptic/assets";
+import { KAYKIT_FILES } from "./engine-content-files";
 import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import {
   createDefaultScene,
@@ -82,6 +83,10 @@ const FEATURE_TEST_ANIMATION_NAMES = {
   velociraptorGraph: "FT_AnimVelociraptor",
   /** The Velociraptor's Class: runs in a circle round where it is placed. */
   velociraptor: "FT_AnimVelociraptorActor",
+  /** Rig_Medium graph: Death_A looping, which moves its actor by root motion. */
+  rootMotionGraph: "FT_AnimRootMotion",
+  /** Rogue Hooded on the root motion graph; its Tick returns it to its start once it has drifted away. */
+  rootMotion: "FT_AnimRootMotionActor",
 } as const;
 
 /** The skinned characters' scene. */
@@ -90,7 +95,7 @@ const SCENES_FOLDER = "Scenes";
 const ANIMATION_SCENE_CAMERA = { position: [0, 2.2, -7] as Vec3, target: [0, 1, 0] as Vec3 };
 
 /** KayKit clip names (Rig_Medium General and Movement Basic, Rig_Large Movement Basic). */
-const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A", flinch: "Hit_B", throw: "Throw" } as const;
+const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A", flinch: "Hit_B", throw: "Throw", fall: "Death_A" } as const;
 
 /** The adventurers' slot: their Classes play Throw on it, the upper body while moving, the whole body at idle. */
 const ADVENTURER_SLOT = "UpperBody";
@@ -154,7 +159,14 @@ interface AnimationRefs {
   locomotor: PlacedClass;
   doorGraph: string;
   /** The KayKit characters' Classes. */
-  characters: { knight: PlacedClass; rogue: PlacedClass; largeMannequin: PlacedClass; reacher: PlacedClass; velociraptor: PlacedClass };
+  characters: {
+    knight: PlacedClass;
+    rogue: PlacedClass;
+    largeMannequin: PlacedClass;
+    reacher: PlacedClass;
+    velociraptor: PlacedClass;
+    rootMotion: PlacedClass;
+  };
 }
 
 const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
@@ -169,6 +181,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   await authorAdventurerFootsteps(ctx);
   await authorAdventurerGripSocket(ctx);
   await authorAdventurerFlinch(ctx);
+  await authorFallRootMotion(ctx);
   const mannequinRun = await saveSpeedBlendSpace(
     ctx,
     NAMES.mannequinBlendSpace,
@@ -195,6 +208,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   const largeGraph = await saveGraph(ctx, largeMannequinGraphDocument(ctx));
   const reacherGraph = await saveGraph(ctx, reacherGraphDocument(ctx));
   const velociraptorGraph = await saveGraph(ctx, velociraptorGraphDocument(ctx));
+  const rootMotionGraph = await saveGraph(ctx, rootMotionGraphDocument(ctx));
   const characters = {
     knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph, throwAttack),
     rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph, throwAttack),
@@ -206,6 +220,7 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
     ),
     reacher: await saveModelActor(ctx, NAMES.reacher, requireRef(kaykit.knight, "the KayKit Knight Model"), reacherGraph),
     velociraptor: await saveVelociraptor(ctx, velociraptorGraph),
+    rootMotion: await saveRootMotionActor(ctx, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), rootMotionGraph),
   };
   refsByContext.set(ctx, { locomotor, doorGraph, characters });
 }
@@ -313,6 +328,10 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
     classId: refs.characters.velociraptor.ref.classId,
   }));
   add(caption("ft-animscene-caption-springs", "Spring Bones Caption", [VELOCIRAPTOR_RUN.center[0], 0.05, 1.1], "Spring Bones", font, 0.35));
+  // Falls back by root motion, again and again, until its Class returns it.
+  add(actor("ft-animscene-root-motion", "Root Motion Rogue", tf(ROOT_MOTION_START, facing),
+    instanceComponents("ft-animscene-root-motion", refs.characters.rootMotion.components), { classId: refs.characters.rootMotion.ref.classId }));
+  add(caption("ft-animscene-caption-root-motion", "Root Motion Caption", [ROOT_MOTION_START[0], 0.05, -1.6], "Root Motion", font, 0.35));
   add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-2.4, 0.05, -1.6], "Shared Skeleton", font, 0.35));
   add(caption("ft-animscene-caption-large", "Rig_Large Caption", [1.2, 0.05, -1.6], "Rig_Large", font, 0.35));
   add(caption("ft-animscene-caption-ik", "IK Caption", [REACHER.x, 0.05, -1.6], "Look At and IK", font, 0.35));
@@ -450,6 +469,20 @@ async function authorAdventurerGripSocket(ctx: FeatureTestContext): Promise<void
 }
 
 /** The adventurers' Hit_B Animation, made additive to its first frame: their Idle adds it over Idle_A as a flinch. */
+/**
+ * Death_A moves its hips back across the ground as the character falls: the Animation gets root motion on its hips,
+ * sampled from the Rig_Medium General file it came from, so its actor moves back instead of the bone.
+ */
+async function authorFallRootMotion(ctx: FeatureTestContext): Promise<void> {
+  const guid = ctx.assets.kaykit.mediumAnimations[KAYKIT_CLIPS.fall];
+  const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+  if (!asset) throw new Error(`FeatureTest needs the KayKit "${KAYKIT_CLIPS.fall}" Animation.`);
+  const payload = normalizeAnimationPayload(asset.header.payload);
+  const rootMotion = extractAnimationRootMotion(await ctx.host.loadBytes(KAYKIT_FILES.rigMediumGeneral), payload.clipName, "hips");
+  if (!rootMotion) throw new Error(`FeatureTest could not sample root motion from "${KAYKIT_CLIPS.fall}".`);
+  await ctx.host.saveDocument("animation", asset.path, { ...payload, rootMotion });
+}
+
 async function authorAdventurerFlinch(ctx: FeatureTestContext): Promise<void> {
   const guid = ctx.assets.kaykit.mediumAnimations[KAYKIT_CLIPS.flinch];
   const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
@@ -835,6 +868,65 @@ function reacherGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
     transitions: [],
     variables: [LOOK_TARGET, REACH_TARGET],
   });
+}
+
+/** Where the Root Motion Rogue starts, and how far it drifts before its Class returns it. */
+const ROOT_MOTION_START: Vec3 = [-5, 0, 2.6];
+const ROOT_MOTION_RANGE = 1.2;
+
+/** Rig_Medium: one Fall state, Death_A looping, which moves its actor back by root motion each pass. */
+function rootMotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  return stateMachineGraph("3d", {
+    name: NAMES.rootMotionGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    entryStateId: "fall",
+    states: [playerState("3d", "fall", "Fall", 80, 80, kaykitClip(ctx, ctx.assets.kaykit.mediumAnimations, KAYKIT_CLIPS.fall))],
+    transitions: [],
+    variables: [],
+  });
+}
+
+/**
+ * The Root Motion Rogue's Class: Begin Play keeps where it was placed as Origin; each Tick, once root motion has carried
+ * it further than the range from Origin, it prints a line and returns there.
+ */
+async function saveRootMotionActor(ctx: FeatureTestContext, modelGuid: string, graphGuid: string): Promise<PlacedClass> {
+  const origin = varMember("ft-anim-var-root-origin", "Origin", "vec3", { x: 0, y: 0, z: 0 }, { category: "Root Motion" });
+  const components: SerializedComponent[] = [
+    meshComp("prefab-mesh", "box", { assetGuid: modelGuid }),
+    comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
+  ];
+  const graph = classGraph({
+    members: [origin],
+    components,
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, -200),
+      gNode("placed", "transform.getLocation", 0, -80),
+      setVar("set-origin", origin, 240, -200),
+      gNode("tick", "flow.event.tick", 0, 80),
+      gNode("here", "transform.getLocation", 0, 240),
+      getVar("get-origin", origin, 0, 360),
+      gNode("away", "vector.distance3", 240, 280),
+      gNode("far", "math.greater", 440, 280, { "default:b": ROOT_MOTION_RANGE }),
+      gNode("check", "flow.branch", 640, 80),
+      printString("report", 880, 80, `${NAMES.rootMotion} moved back ${ROOT_MOTION_RANGE} m by root motion`),
+      gNode("return", "transform.setLocation", 1160, 80),
+    ],
+    edges: [
+      gExec("begin", "set-origin"),
+      gWire("placed", "out", "set-origin", "value"),
+      gExec("tick", "check"),
+      gWire("here", "out", "away", "a"),
+      gWire("get-origin", "value", "away", "b"),
+      gWire("away", "out", "far", "a"),
+      gWire("far", "out", "check", "condition"),
+      gExec("check", "report", "true"),
+      gExec("report", "return"),
+      gWire("get-origin", "value", "return", "location"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.rootMotion, parentClass: "Actor", graph });
+  return { ref, components };
 }
 
 /** Where the Velociraptor runs: round its placed center, at this radius (m) and turn rate (rad/s). */

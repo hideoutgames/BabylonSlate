@@ -396,8 +396,9 @@ describe("FeatureTest starter", () => {
     expect(Math.max(0, ...syncGroupMembers.values())).toBeGreaterThan(1);
     // A State Alias with a transition is showcased.
     expect(aliasTransitions).toBeGreaterThan(0);
-    // An additive Animation is showcased (Apply Additive adds it).
+    // An additive Animation is showcased (Apply Additive adds it), and one with root motion.
     expect(clipCatalog.some((entry) => entry.type === "Animation" && entry.additive)).toBe(true);
+    expect(clipCatalog.find((entry) => entry.type === "Animation" && entry.rootMotion)?.rootMotion?.bone).toBe("hips");
     // Per-bone layering, cached poses, additive poses and a skeletal control are showcased.
     expect([...poseNodeTypes]).toEqual(expect.arrayContaining([
       "anim.pose.layeredBlendPerBone",
@@ -447,6 +448,8 @@ describe("FeatureTest starter", () => {
       "FT_AnimKnight finished Throw on UpperBody",
       // Set Anim Graph Variable takes a Vector for the reacher's Two Bone IK.
       "FT_Animation script set IK Reacher's ReachTarget",
+      // Death_A's root motion moves its actor back until its Class returns it.
+      "FT_AnimRootMotionActor moved back 1.2 m by root motion",
     ],
     FT_2D: [
       "FT_2DRobotGraph heard Step",

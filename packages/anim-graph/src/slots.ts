@@ -1,4 +1,5 @@
 import type { AnimClipEvent } from "./events";
+import type { AnimClipRootMotion } from "./root-motion";
 
 /**
  * Slots: named places in state graphs (Slot nodes) where scripts play one-shot Animations (Play Slot Animation). A
@@ -16,6 +17,8 @@ export interface AnimSlotClip {
   clipKind: "animation" | "sprite";
   durationMs: number;
   events?: AnimClipEvent[];
+  /** An Animation's root motion, which moves the actor while it plays. */
+  rootMotion?: AnimClipRootMotion;
 }
 
 /** One play of a slot animation. Plain data, so trace frames record it. */
