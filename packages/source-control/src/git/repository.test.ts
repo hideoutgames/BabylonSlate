@@ -1,5 +1,6 @@
 import type { ProjectStorage } from "@haptic/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as git from "isomorphic-git";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { lfsPointerText } from "../lfs-pointer";
 import { GITATTRIBUTES_LFS_RULE, isSyncError, type SyncError } from "../sync-port";
 import {
@@ -15,6 +16,12 @@ import {
 } from "../test-support/git-server";
 import { fixedCredential } from "../credentials";
 import { cloneRepository, initRepository, type GitRepository } from "./repository";
+
+// isomorphic-git as it is, with its commit reads counted.
+vi.mock("isomorphic-git", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("isomorphic-git")>();
+  return { ...actual, readCommit: vi.fn(actual.readCommit) };
+});
 
 const AUTHOR = { name: "Device", email: "device@example.com" };
 const NOW = Date.UTC(2026, 10, 15, 12, 0, 0);
@@ -264,6 +271,20 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     await storage.remove(blobPath(texture));
     expect(await repository.readFile(blobPath(texture), first)).toEqual(texture);
     expect(await repository.readFile("assets/missing.hasset", first)).toBeNull();
+  });
+
+  it("reads each commit once when a fetch counts and lists the incoming ones", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    const repository = await clone();
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    server.seed({ "assets/a.hasset": "3" }, "Three");
+    const readCommit = vi.mocked(git.readCommit);
+    readCommit.mockClear();
+    const state = await repository.fetch();
+    expect(state.incoming.map((commit) => commit.message)).toEqual(["Three\n", "Two\n"]);
+    const reads = readCommit.mock.calls.map(([args]) => args.oid);
+    expect(reads.length).toBeGreaterThan(0);
+    expect(new Set(reads).size).toBe(reads.length);
   });
 
   it("deepens a shallow log on demand", async () => {

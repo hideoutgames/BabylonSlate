@@ -1,5 +1,5 @@
 import * as git from "isomorphic-git";
-import type { HttpClient as IsoHttpClient, WalkerEntry } from "isomorphic-git";
+import type { CommitObject, HttpClient as IsoHttpClient, WalkerEntry } from "isomorphic-git";
 import { isStorageNotFound, PROJECT_CREATION_MARKER, type ProjectStorage } from "@haptic/core";
 import { authorizedHttp, type CredentialSource } from "../credentials";
 import type { HttpClient } from "../http";
@@ -66,6 +66,8 @@ interface Op {
   git: { fs: StorageFs; dir: string; gitdir: string; cache: object };
   http: IsoHttpClient;
   lfs: LfsTransfer;
+  /** Commits read so far: the history walk's reads serve the incoming list too. */
+  commits: Map<string, CommitObject>;
 }
 
 interface Incoming {
@@ -400,6 +402,7 @@ export class GitRepository implements SyncPort {
         git: { fs, dir: WORKTREE, gitdir: GITDIR, cache: this.cache },
         http: gitHttp(authorizedHttp(this.credential, http, "basic"), transfer),
         lfs: new LfsTransfer({ repositoryUrl: this.repositoryUrl, branch: this.branch, http, credential: this.credential, counters: transfer }),
+        commits: new Map(),
       };
       try {
         return await work(op);
@@ -450,11 +453,12 @@ export class GitRepository implements SyncPort {
     }
   }
 
-  /** The newest of `oids` (at most `INCOMING_LIMIT`), newest first, as the log lists commits. */
+  /** The first `INCOMING_LIMIT` of `oids` (newest first, as `relate` lists them), as the log lists commits. */
   private async commitInfos(op: Op, oids: readonly string[]): Promise<CommitInfo[]> {
     const commits: CommitInfo[] = [];
-    for (const oid of oids) {
-      const { commit } = await git.readCommit({ ...op.git, oid });
+    for (const oid of oids.slice(0, INCOMING_LIMIT)) {
+      const commit = await this.readCommit(op, oid);
+      if (!commit) continue;
       commits.push({
         id: oid,
         message: commit.message,
@@ -463,13 +467,22 @@ export class GitRepository implements SyncPort {
         parents: commit.parent,
       });
     }
-    return commits.sort((a, b) => b.timestamp - a.timestamp).slice(0, INCOMING_LIMIT);
+    return commits;
   }
 
   private async commitNode(op: Op, oid: string): Promise<CommitNode | null> {
+    const commit = await this.readCommit(op, oid);
+    return commit ? { parents: commit.parent, timestamp: commit.committer.timestamp } : null;
+  }
+
+  /** A commit object, read once per operation; null when this (shallow) copy lacks it, which a deepen may change. */
+  private async readCommit(op: Op, oid: string): Promise<CommitObject | null> {
+    const known = op.commits.get(oid);
+    if (known) return known;
     try {
       const { commit } = await git.readCommit({ ...op.git, oid });
-      return { parents: commit.parent, timestamp: commit.committer.timestamp };
+      op.commits.set(oid, commit);
+      return commit;
     } catch (error) {
       if ((error as { code?: unknown }).code === "NotFoundError") return null;
       throw error;

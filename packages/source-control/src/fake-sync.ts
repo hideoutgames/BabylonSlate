@@ -210,10 +210,10 @@ export class FakeSync implements SyncPort {
       remote: this.tracking,
       ahead: relation?.ahead.length ?? 0,
       behind: incoming.length,
+      // `relate` lists them newest first.
       incoming: incoming
-        .map((id) => this.remote.get(id))
-        .sort((a, b) => b.sequence - a.sequence)
         .slice(0, INCOMING_LIMIT)
+        .map((id) => this.remote.get(id))
         .map((commit) => ({ id: commit.id, message: commit.message, author: commit.author, timestamp: commit.timestamp, parents: commit.parents })),
     };
   }
