@@ -1,6 +1,7 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { SOURCE_CONTROL_ID } from "@haptic/core";
 import { useActiveDocumentId, useDocumentActions, useIntegratedSync } from "../context/document-context";
+import { isAssetPath } from "../lib/source-control-changes";
 import { SourceControlDiffService, type DiffRef, type DiffState, type DiffTarget } from "../services/source-control-diff";
 
 /** The Pull flow (unsaved documents, confirmation, conflicts) loads when a pull is first asked for. */
@@ -36,15 +37,15 @@ export interface SourceControlActions {
   readonly commitRequest: number;
   /** Shows an asset's diff in the Source Control tab's Actors and Diff windows; History then follows that asset. */
   openDiff: (request: DiffRequest) => void;
-  /** Saves or discards the asset's unsaved edits, confirms, then writes `ref`'s version of it into the working copy. */
+  /** Saves or discards the asset's unsaved edits, confirms, then writes `ref`'s version of it into the working copy; only a `.hasset` (`isAssetPath`). */
   requestRevert: (request: RevertRequest) => void;
   /** Saves or discards unsaved documents, confirms, then checks out `branch` and reloads the files it changed. */
   requestSwitchBranch: (branch: string) => void;
   /** Asks for a name, then starts that branch at HEAD and checks it out. */
   requestNewBranch: () => void;
-  /** Brings the Source Control tab forward with History, on `path`'s history when one is given. */
+  /** Brings the Source Control tab forward with History, on `path`'s history when it is an asset. */
   openHistory: (path?: string) => void;
-  /** The asset whose history History shows (**This Asset**): the last one History opened on or a diff showed. */
+  /** The asset whose history History shows (**This Asset**): the last asset History opened on or a diff showed; never another file. */
   readonly historyPath: string | null;
 }
 
@@ -76,14 +77,18 @@ export function SourceControlActionsProvider({ children }: { children: ReactNode
   const openSourceControl = useCallback(() => showWindow("changes"), [showWindow]);
   const openDiff = useCallback((request: DiffRequest) => {
     diff.open(request);
-    setHistoryPath(request.path);
+    if (isAssetPath(request.path)) setHistoryPath(request.path);
     showWindow("diff");
   }, [diff, showWindow]);
   const openHistory = useCallback((path?: string) => {
-    if (path) setHistoryPath(path);
+    if (path && isAssetPath(path)) setHistoryPath(path);
     showWindow("history");
   }, [showWindow]);
-  const requestRevert = useCallback((request: RevertRequest) => setRevert((current) => ({ key: (current?.key ?? 0) + 1, request })), []);
+  const requestRevert = useCallback((request: RevertRequest) => {
+    // Only an asset: a reverted project.json would reload the whole project, unsaved documents included.
+    if (!isAssetPath(request.path)) return;
+    setRevert((current) => ({ key: (current?.key ?? 0) + 1, request }));
+  }, []);
   const requestSwitchBranch = useCallback((branch: string) => setSwitchTo((current) => ({ key: (current?.key ?? 0) + 1, branch })), []);
   const value = useMemo<SourceControlActions>(() => ({
     requestPull: () => setPullRequest((request) => request + 1),
@@ -146,8 +151,7 @@ export function useOpenHistory(): () => void {
   const { getOpenDocuments } = useDocumentActions();
   const activeId = useActiveDocumentId();
   return useCallback(() => {
-    const path = getOpenDocuments().find((doc) => doc.id === activeId)?.ref.path;
-    openHistory(path?.endsWith(".hasset") ? path : undefined);
+    openHistory(getOpenDocuments().find((doc) => doc.id === activeId)?.ref.path);
   }, [activeId, getOpenDocuments, openHistory]);
 }
 

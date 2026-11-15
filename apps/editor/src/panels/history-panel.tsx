@@ -18,7 +18,7 @@ import { cn } from "@haptic/ui/lib/utils";
 import { useIntegratedSync, useIntegratedSyncState, useRegistryState } from "../context/document-context";
 import { useSourceControlActions } from "../components/source-control-actions";
 import { IconActionButton } from "../components/icon-action-button";
-import { groupChanges, registryChangeLookup, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
+import { groupChanges, isAssetPath, registryChangeLookup, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { agoLabel, branchLabel } from "../lib/source-control-labels";
 import { shortId, WORKING_COPY } from "../services/source-control-diff";
 
@@ -235,8 +235,9 @@ export function HistoryPanelContents() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const lookup = useMemo(() => registryChangeLookup(assetRegistry), [assetRegistry]);
-  const asset = useMemo(() => (historyPath ? describe(historyPath, lookup) : null), [historyPath, lookup]);
-  const path = scope === "asset" ? historyPath : null;
+  // Compare and Revert act on an asset's `.hasset` only: never Project Settings or a folder marker.
+  const asset = useMemo(() => (historyPath && isAssetPath(historyPath) ? describe(historyPath, lookup) : null), [historyPath, lookup]);
+  const path = scope === "asset" && asset ? historyPath : null;
   const { active, branch, head } = snapshot;
   // A commit, pull or switch moves the branch or its commit: the pages are read again.
   const key = [path ?? "", branch, head ?? ""].join("\n");

@@ -17,6 +17,15 @@ export interface ChangedAssetInfo {
 export type ChangeLookup = (path: string) => ChangedAssetInfo | null;
 
 /**
+ * An asset's `.hasset`: the only files History follows (**This Asset**) and
+ * Revert writes. Project Settings and folder markers are plain files; a
+ * reverted `project.json` would reload the whole project.
+ */
+export function isAssetPath(path: string): boolean {
+  return path.endsWith(".hasset");
+}
+
+/**
  * The blob folder of the content root a path sits in, by its path alone (the
  * project's `assets/.blobs`, a plugin's or an extension's), or null outside
  * one: for versions and assets the registry does not index.

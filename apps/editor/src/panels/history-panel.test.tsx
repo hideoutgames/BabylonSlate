@@ -137,6 +137,42 @@ describe("History window", () => {
     expect(confirm.textContent).toContain(forest.id.slice(0, 7));
   });
 
+  it("keeps Project Settings and other files that are not assets out of This Asset and Revert", async () => {
+    await history();
+    expect(screen.getByTestId("history-title").textContent).toBe("Forest");
+    // The Changes window's Project Settings row opens its diff; History keeps the asset it showed.
+    act(() => seen.actions!.openDiff({ path: "project.json", name: "Project Settings", type: "Project" }));
+    expect(seen.actions!.historyPath).toBe(FOREST);
+    expect(screen.getByTestId("history-title").textContent).toBe("Forest");
+    act(() => seen.actions!.openHistory("project.json"));
+    expect(seen.actions!.historyPath).toBe(FOREST);
+
+    // Reverting project.json would reload the whole project: only assets are reverted.
+    act(() => seen.actions!.requestRevert({ path: "project.json", name: "Project Settings", ref: { kind: "head" } }));
+    await act(async () => {
+      await import("../components/source-control-revert-flow");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(screen.queryByTestId("source-control-revert-confirm")).toBeNull();
+  });
+
+  it("offers no This Asset before an asset was shown, when only a file that is not one was", async () => {
+    const sync = await integratedSync();
+    state.sync = sync.service;
+    render(
+      <SourceControlActionsProvider>
+        <HistoryPanelContents />
+        <Probe />
+      </SourceControlActionsProvider>,
+    );
+    act(() => seen.actions!.openDiff({ path: "project.json", name: "Project Settings", type: "Project" }));
+    act(() => seen.actions!.openHistory());
+    expect(screen.getByTestId("history-title").textContent).toBe("All Assets");
+    await waitFor(() => expect(rowIds().length).toBeGreaterThan(0));
+    expect((screen.getByTestId("history-scope-asset") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId("history-revert")).toBeNull();
+  });
+
   it("reads one page of the log, and the next only when asked", async () => {
     const sync = await integratedSync();
     state.sync = sync.service;
