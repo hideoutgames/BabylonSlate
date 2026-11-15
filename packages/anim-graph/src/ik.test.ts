@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@haptic/core";
 import {
   ANIM_CONTROL_LOOK_AT_TYPE,
+  ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
   ANIM_POSE_OUTPUT_NODE_ID,
   ANIM_POSE_SEQUENCE_PLAYER_TYPE,
@@ -78,6 +79,30 @@ describe("Two Bone IK", () => {
   it("reports a control that names no bone", () => {
     const diagnostics = validateAnimGraph(controlled(ANIM_CONTROL_TWO_BONE_IK_TYPE, {}), [], { dimension: "3d" });
     expect(diagnostics.filter((row) => row.code === "anim.missingBone").map((row) => row.message)).toEqual(["Two Bone IK changes no bone until it names one"]);
+  });
+});
+
+describe("Spring Bones", () => {
+  it("sends its Root Bone, cleaned settings and the tick's time step, at Alpha", () => {
+    const state = evaluateAnimGraph(controlled(ANIM_CONTROL_SPRING_BONES_TYPE, {
+      bone: "Tail1", stiffness: 2, gravity: [0, -9.8], excludeBones: ["Tail5", "", "Tail5"],
+      colliders: [{ kind: "capsule", bone: "Hips", length: 0.5 }, { kind: "sphere" }],
+      stiffnessCurve: [{ t: 1, value: 0.5 }, { t: 0, value: 1 }], "default:alpha": 0.5,
+    }), null, 1 / 60, {});
+    const change = state.boneModifiers?.[0];
+    expect(change).toMatchObject({ kind: "springBones", bone: "Tail1", alpha: 0.5, dtSeconds: 1 / 60 });
+    if (change?.kind !== "springBones") throw new Error("expected Spring Bones");
+    expect(change.settings).toMatchObject({
+      stiffness: 1, damping: 0.1, gravity: [0, -9.8, 0], excludeBones: ["Tail5"], tipLength: 0, planarConstraint: "none",
+      curves: { stiffness: [{ t: 0, value: 1 }, { t: 1, value: 0.5 }], damping: [] },
+    });
+    // A collider with no bone is dropped.
+    expect(change.settings.colliders).toEqual([{ kind: "capsule", bone: "Hips", offset: [0, 0, 0], radius: 0.1, length: 0.5, axis: "y" }]);
+  });
+
+  it("reports a Spring Bones with no Root Bone", () => {
+    const diagnostics = validateAnimGraph(controlled(ANIM_CONTROL_SPRING_BONES_TYPE, {}), [], { dimension: "3d" });
+    expect(diagnostics.find((row) => row.code === "anim.missingBone")?.message).toBe("Spring Bones changes no bone until it names one");
   });
 });
 

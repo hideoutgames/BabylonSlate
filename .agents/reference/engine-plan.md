@@ -391,7 +391,7 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
   - FT_World is GPU-bound.
   - The main and stress scenes are CPU-bound by their draw counts, far past the Medium draw-call warning.
 - Occlusion culling (`quality.geometry.occlusionCulling`) is on at every tier (André's call, 2026-11-03), ahead of an iPad A/B; Breakdown's FT_Occlusion steps measure it. Turn a tier off if the A/B shows it costs more than it saves there.
-- Animation Graph: Spring Bones; Root Motion and Foot Placement; Layered Blend Per Bone's mesh-space rotation blend and mesh-space additives for aim poses (both work in each bone's parent space today).
+- Animation Graph: Root Motion and Foot Placement; Layered Blend Per Bone's mesh-space rotation blend and mesh-space additives for aim poses (both work in each bone's parent space today).
 - Fewer material variants, decided separately and measured on its own: texture presence and similar defines as always-bound defaults.
 - Environment quality: `.hdr` import converted to a cube at import (a low-dynamic-range sky lights flatly). Reflection probes capture after edits, at load or on demand, never per frame (each capture is six scene renders of CPU draw work); static actors of streamed scenes are not yet captured.
 - Discord roles from subscriptions (not built). The free plan needs no database and no Discord sign-in scopes:

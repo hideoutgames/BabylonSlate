@@ -218,6 +218,8 @@ export async function scaffoldFeatureTest(host: StarterScaffoldHost, document: P
         loadOptional: content.loadOptionalEngineContent,
         generateNavMesh: generateFeatureTestNavMesh,
         modelImportScale: 1,
+        // The Content Browser's converter, on this thread: the starter imports one small FBX.
+        convertFbx: async (file) => (await import("@haptic/render/fbx-conversion")).convertFbxToGlb(file),
       },
     });
   } finally {

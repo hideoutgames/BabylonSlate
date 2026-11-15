@@ -7,7 +7,7 @@ import { Scene } from "@babylonjs/core/scene";
 import type { AnimLookAtChange, AnimTwoBoneIkChange } from "@haptic/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyPose, bindPoseClip, poseRigFor, type PoseClip, type PoseLayering } from "./anim-pose";
-import { attachIkTargetPreview } from "./ik-target-preview";
+import { attachSkeletalControlPreview } from "./skeletal-control-preview";
 
 let engine: NullEngine;
 let scene: Scene;
@@ -167,13 +167,13 @@ describe("Look At", () => {
 describe("IK target markers", () => {
   it("marks each target in the world, through the actor's placement for actor space, and hides the rest", () => {
     nodes.actor.position.set(0, 0, 3);
-    const markers = attachIkTargetPreview(nodes.actor, scene);
+    const markers = attachSkeletalControlPreview(nodes.actor, scene);
     markers.update([lookAt({ target: [1, 2, 0] }), ik({ effector: [0, 1, 0], effectorSpace: "world", jointTarget: [0, 0, 1] })]);
-    expect(markers.count).toBe(3);
+    expect(markers.targetCount).toBe(3);
     const shown = scene.meshes.filter((mesh) => mesh.name.startsWith("ik_target_") && mesh.isEnabled());
     expect(shown.map((mesh) => rounded(mesh.position))).toEqual([[1, 2, 3], [0, 1, 0], [0, 0, 4]]);
     markers.update([]);
-    expect(markers.count).toBe(0);
+    expect(markers.targetCount).toBe(0);
     expect(scene.meshes.some((mesh) => mesh.name.startsWith("ik_target_") && mesh.isEnabled())).toBe(false);
     markers.dispose();
   });

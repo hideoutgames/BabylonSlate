@@ -50,7 +50,7 @@ The **Preview** window plays the graph in the editor, without a Simulation. It r
 | Restart | Returns to the entry state at time 0. Preview Values are kept. |
 | Speed | 0.25× to 2×. |
 | Preview Model | 3D. The Model the Preview shows, from the Models on the graph's Skeleton, or with no Skeleton, the Models its Animations come from. The choice is saved with the graph and is used only in the editor. |
-| Bones | 3D. Shows the Skeleton's bones instead of the mesh, with a marker at each [Look At](../scripting/animation/look-at.md) target and [Two Bone IK](../scripting/animation/two-bone-ik.md) Effector (orange) and Joint Target (violet). |
+| Bones | 3D. Shows the Skeleton's bones instead of the mesh, with a marker at each [Look At](../scripting/animation/look-at.md) target and [Two Bone IK](../scripting/animation/two-bone-ik.md) Effector (orange) and Joint Target (violet), and each [Spring Bones](../scripting/animation/spring-bones.md) collider (see-through blue). |
 
 The bar ends with the playing state and its time. A 3D graph plays on a floor grid; drag to orbit. A 2D graph shows the current frame on a checkerboard, flipped as the state graph flips it.
 
@@ -123,6 +123,8 @@ Skeletal controls aim and place bones after the clips blend, toward points the g
 - [Two Bone IK](../scripting/animation/two-bone-ik.md) puts a hand or foot on a point by bending its arm or leg, such as a hand on a door handle.
 
 Give each target a Vector3 variable and set it from a script with [Set Anim Graph Variable](../scripting/class/set-anim-graph-variable.md), such as the location of the actor to look at, in **World Space**. Chain the controls one after another: each takes the pose the one before it made.
+
+[Spring Bones](../scripting/animation/spring-bones.md) make tails, hair, ears and capes trail the pose: the bones below its Root Bone follow the animation through springs, with gravity, wind and colliders, and swing as the actor moves and turns. They are only for looks.
 
 ## Slots
 

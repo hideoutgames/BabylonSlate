@@ -1,6 +1,10 @@
 import type { PropertyRow } from "@haptic/editor-kit";
 import { assetRowIdentity } from "@haptic/editor-kit";
 import {
+  ANIM_SPRING_DEFAULTS,
+  ANIM_SPRING_PLANAR_CONSTRAINTS,
+  ANIM_SPRING_PLANAR_LABELS,
+  normalizeAnimSpringBoneSettings,
   ANIM_BONE_AXES,
   ANIM_BONE_AXIS_LABELS,
   ANIM_BONE_MODIFY_MODE_LABELS,
@@ -16,6 +20,7 @@ import {
   ANIM_CONTROL_LOOK_AT_TYPE,
   ANIM_CONTROL_TRANSFORM_BONE_TYPE,
   ANIM_CONTROL_TWO_BONE_IK_TYPE,
+  ANIM_CONTROL_SPRING_BONES_TYPE,
   ANIM_POSE_LAYERED_BLEND_TYPE,
   isSkeletalControlType,
   ANIM_POSE_SAVE_CACHED_TYPE,
@@ -190,6 +195,72 @@ function twoBoneIkRows(data: Record<string, unknown>, onPatch: (patch: Record<st
   ];
 }
 
+/** A multiplier curve along a Spring Bones chain; its default leaves the setting as it is everywhere. */
+const FLAT_CHAIN_CURVE = [{ t: 0, value: 1 }, { t: 1, value: 1 }];
+
+/**
+ * Spring Bones' rows after its Root Bone: the spring, World Damping, forces, collision, limits, the curves along the
+ * chain, and its constraint and resets. Exclude Bones and the colliders are lists of their own
+ * (`SpringBonesLists`).
+ */
+function springBonesRows(data: Record<string, unknown>, onPatch: (patch: Record<string, unknown>) => void): PropertyRow[] {
+  const settings = normalizeAnimSpringBoneSettings(data);
+  const d = ANIM_SPRING_DEFAULTS;
+  const fraction = (key: "stiffness" | "damping" | "worldDampingLocation" | "worldDampingRotation", label: string, description?: string): PropertyRow => ({
+    kind: "number", id: key, label, min: 0, max: 1, value: settings[key], defaultValue: d[key], ...(description ? { description } : {}),
+    onChange: (value) => onPatch({ [key]: Math.min(1, Math.max(0, value)) }),
+  });
+  const distance = (key: "radius" | "teleportDistance" | "tipLength" | "windStrength", label: string, unit: string, description?: string): PropertyRow => ({
+    kind: "number", id: key, label, unit, min: 0, value: settings[key], defaultValue: d[key], ...(description ? { description } : {}),
+    onChange: (value) => onPatch({ [key]: Math.max(0, value) }),
+  });
+  const angle = (key: "limitDegrees" | "teleportDegrees", label: string, description?: string): PropertyRow => ({
+    kind: "number", id: key, label, unit: "°", min: 0, max: 180, value: settings[key], defaultValue: d[key], ...(description ? { description } : {}),
+    onChange: (value) => onPatch({ [key]: Math.min(180, Math.max(0, value)) }),
+  });
+  const vector = (key: "gravity" | "windDirection", label: string, description?: string): PropertyRow => ({
+    kind: "vector3", id: key, label, value: settings[key] as [number, number, number], defaultValue: d[key] as [number, number, number],
+    ...(description ? { description } : {}),
+    onChange: (value) => onPatch({ [key]: [value[0], value[1], value[2]] }),
+  });
+  const curve = (key: "stiffnessCurve" | "dampingCurve" | "radiusCurve" | "limitAngleCurve", label: string): PropertyRow => {
+    const keys = Array.isArray(data[key]) && (data[key] as unknown[]).length > 0
+      ? (settings.curves[key.replace("Curve", "") as keyof typeof settings.curves])
+      : FLAT_CHAIN_CURVE;
+    return {
+      kind: "curve", id: key, label, value: keys, defaultValue: FLAT_CHAIN_CURVE, valueMin: 0,
+      axisLabels: { start: "Root", end: "Tip" }, minKeys: 2, maxKeys: 8,
+      onChange: (next) => onPatch({ [key]: next.map((entry) => ({ t: entry.t, value: entry.value })) }),
+    };
+  };
+  return [
+    fraction("stiffness", "Stiffness", "How strongly each bone returns to its pose every 1/120 s."),
+    fraction("damping", "Damping"),
+    fraction("worldDampingLocation", "World Damping Location", "How much of the actor's movement the chain ignores; 0 lets it trail fully."),
+    fraction("worldDampingRotation", "World Damping Rotation", "How much of the actor's turning the chain ignores; 0 lets it swing fully."),
+    vector("gravity", "Gravity", "A world-space acceleration, such as 0, -9.8, 0."),
+    vector("windDirection", "Wind Direction"),
+    distance("windStrength", "Wind Strength", "m/s²"),
+    { kind: "number", id: "windSeed", label: "Wind Seed", value: settings.windSeed, defaultValue: d.windSeed, precision: 0, sensitivity: 0.1,
+      description: "Shapes the wind's gusts; chains with the same seed gust together.", onChange: (value) => onPatch({ windSeed: Math.round(value) }) },
+    distance("radius", "Radius", "m", "Each bone's collision radius against the colliders."),
+    angle("limitDegrees", "Limit Angle", "The furthest a bone turns from its pose; 0 is no limit."),
+    curve("stiffnessCurve", "Stiffness Curve"),
+    curve("dampingCurve", "Damping Curve"),
+    curve("radiusCurve", "Radius Curve"),
+    curve("limitAngleCurve", "Limit Angle Curve"),
+    {
+      kind: "enum", id: "planarConstraint", label: "Planar Constraint", value: settings.planarConstraint, defaultValue: "none",
+      options: ANIM_SPRING_PLANAR_CONSTRAINTS.map((value) => ({ value, label: ANIM_SPRING_PLANAR_LABELS[value] })),
+      description: "Keeps the chain from moving along one of the actor's axes.",
+      onChange: (planarConstraint) => onPatch({ planarConstraint }),
+    },
+    distance("teleportDistance", "Teleport Distance", "m", "A move of the actor further than this in one tick resets the chain to its pose; 0 never resets."),
+    angle("teleportDegrees", "Teleport Angle", "A turn of the actor further than this in one tick resets the chain; 0 never resets."),
+    distance("tipLength", "Tip Length", "m", "Adds a tip past each last bone, so that bone swings too."),
+  ];
+}
+
 /** Transform Bone's mode and space rows for one channel; the space shows only while the channel changes the bone. */
 function boneChannelRows(
   channel: "translation" | "rotation" | "scale",
@@ -290,8 +361,11 @@ export function animPoseNodePropertyRows(
     const bone = typeof data.bone === "string" ? data.bone : "";
     const bones = options.bones ?? [];
     const ik = typeId === ANIM_CONTROL_TWO_BONE_IK_TYPE;
-    const label = ik ? "End Bone" : "Bone";
-    const description = ik ? "The hand or foot that reaches the effector; its parent and grandparent turn." : undefined;
+    const springs = typeId === ANIM_CONTROL_SPRING_BONES_TYPE;
+    const label = ik ? "End Bone" : springs ? "Root Bone" : "Bone";
+    const description = ik
+      ? "The hand or foot that reaches the effector; its parent and grandparent turn."
+      : springs ? "Every bone below it simulates; it stays posed and turns to follow its children." : undefined;
     rows.push(bones.length > 0
       ? { kind: "enum", id: "bone", label, value: bone, options: nameOptions(bones, bone), verbatim: true, ...(description ? { description } : {}), onChange: (next) => onPatch({ bone: next }) }
       : { kind: "text", id: "bone", label, value: bone, ...(description ? { description } : {}), onChange: (next) => onPatch({ bone: next.trim() }) });
@@ -305,6 +379,7 @@ export function animPoseNodePropertyRows(
   }
   if (typeId === ANIM_CONTROL_LOOK_AT_TYPE) rows.push(...lookAtRows(data, onPatch));
   if (typeId === ANIM_CONTROL_TWO_BONE_IK_TYPE) rows.push(...twoBoneIkRows(data, onPatch));
+  if (typeId === ANIM_CONTROL_SPRING_BONES_TYPE) rows.push(...springBonesRows(data, onPatch));
   if (isPoseAssetNodeType(typeId)) {
     const { assetType, label } = poseAssetKind(typeId);
     const assetGuid = typeof data.assetGuid === "string" ? data.assetGuid : "";

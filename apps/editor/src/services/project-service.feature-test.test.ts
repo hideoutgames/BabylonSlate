@@ -172,6 +172,10 @@ describe("FeatureTest starter", () => {
       .map((payload) => payload.clipName);
     expect(clipsOn(medium)).toEqual(expect.arrayContaining(["Idle_A", "Interact", "PickUp", "Walking_A", "Running_A"]));
     expect(clipsOn(large)).toEqual(expect.arrayContaining(["Walking_A", "Running_A"]));
+    // The Velociraptor comes from FBX: a Model on its own Skeleton with the file's clips.
+    const raptor = skeletonOfModel("Velociraptor");
+    expect(raptor).toBeTruthy();
+    expect(clipsOn(raptor).map((clip) => clip.slice(clip.lastIndexOf("_") + 1))).toEqual(expect.arrayContaining(["Run", "Idle", "Walk"]));
   });
 
   it("paints a Tilemap with a terrain of every autotile style, current with its Tilesets", async () => {
@@ -402,6 +406,7 @@ describe("FeatureTest starter", () => {
       "anim.control.transformBone",
       "anim.control.lookAt",
       "anim.control.twoBoneIk",
+      "anim.control.springBones",
       "anim.pose.applyAdditive",
       "anim.pose.slot",
       "anim.frame.slot",

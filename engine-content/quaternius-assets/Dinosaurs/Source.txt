@@ -1,0 +1,6 @@
+Quaternius Animated LowPoly Dinosaurs (December 2018) subset, used by the Feature Test starter (CC0, see License.txt).
+
+Velociraptor.fbx = skinned Velociraptor with its Attack, Death, Idle, Jump, Run and Walk animations (binary FBX)
+
+Original author: Quaternius (https://quaternius.com). Copied unmodified from the FBX folder of the pack as the author
+distributes it (https://quaternius.itch.io/animated-lowpoly-dinosaurs).
