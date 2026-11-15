@@ -1,4 +1,4 @@
-import type { ProjectFolderHandle, ProjectStorage, SourceControlProjectSettings } from "@haptic/core";
+import { isStorageNotFound, type ProjectFolderHandle, type ProjectStorage, type SourceControlProjectSettings } from "@haptic/core";
 import {
   isSyncError,
   withLfsRule,
@@ -88,6 +88,10 @@ export interface SyncSnapshot {
   /** The project's mode is Integrated but this folder cannot run it. */
   readonly blocked: IntegratedBlocker | null;
   readonly branch: string;
+  /** The branch's commit (HEAD), null before the first commit. */
+  readonly head: string | null;
+  /** The remote branch's commit as last fetched, null when it has none. */
+  readonly remoteHead: string | null;
   /** Changed assets and files, as the Changes window lists them. */
   readonly rows: readonly ChangeRow[];
   readonly statusReady: boolean;
@@ -118,6 +122,8 @@ const IDLE: SyncSnapshot = {
   active: false,
   blocked: null,
   branch: "",
+  head: null,
+  remoteHead: null,
   rows: [],
   statusReady: false,
   ahead: 0,
@@ -347,7 +353,7 @@ export class SourceControlSyncService {
     this.dropHeldStatus();
     await this.run(null, "Could Not Read Changes", async ({ port, input, update }) => {
       const status = await port.status();
-      update({ branch: status.branch, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true });
+      update({ branch: status.branch, head: status.head, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true });
     });
   }
 
@@ -444,8 +450,60 @@ export class SourceControlSyncService {
   private async fetchFor(revision: number): Promise<void> {
     await this.run("fetch", "Could Not Check For Changes", async ({ port, signal, update }) => {
       const remote = await port.fetch({ signal });
-      update({ ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
+      update({ head: remote.local, remoteHead: remote.remote, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming, lastFetchAt: Date.now() });
     }, revision);
+  }
+
+  /**
+   * A file as `commit` holds it (null when it has none), for a diff's base.
+   * Not queued: the Git client runs one operation at a time on its own, and a
+   * read changes nothing. Rejects once the project is closed.
+   */
+  readFileAt(path: string, commit: string): Promise<Uint8Array | null> {
+    return this.openPort().readFile(path, commit);
+  }
+
+  /** A `.blobs` object a version references: the working copy's file, else downloaded; never written. */
+  readLfsObject(path: string, size: number, signal?: AbortSignal): Promise<Uint8Array> {
+    return this.openPort().readLfsObject(path, size, signal ? { signal } : {});
+  }
+
+  /**
+   * Writes the asset at `path` as `commit` holds it into the working copy,
+   * with the blobs it references (downloaded first when the copy lacks them;
+   * blobs are written before the asset), or removes it when `commit` has none.
+   * Queued with the other operations, so it never meets a pull. The caller
+   * holds the documents read-only and reloads the returned paths
+   * (`applyPulledChanges`). Rejects with what failed; nothing is written then
+   * unless the blobs were.
+   */
+  async revert(path: string, commit: string): Promise<string[]> {
+    const revision = this.revision;
+    let written: string[] = [];
+    const ran = await this.run(null, "Could Not Revert", async ({ port, storage, signal }) => {
+      const { restoreVersion } = await import("./source-control-restore");
+      written = await restoreVersion({ port, storage, path, commit, signal });
+    }, revision, { rethrow: true });
+    if (!ran) throw new Error("The project closed while reverting.");
+    await this.refreshStatus();
+    return written;
+  }
+
+  /** The working copy's file (null when it has none), from the project folder only. */
+  async readWorking(path: string): Promise<Uint8Array | null> {
+    const storage = this.storage;
+    if (!storage) throw new Error("The project's repository is not open.");
+    try {
+      return await storage.readBinary(path);
+    } catch (error) {
+      if (isStorageNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  private openPort(): SyncPort {
+    if (!this.port) throw new Error("The project's repository is not open.");
+    return this.port;
   }
 
   /**
@@ -548,7 +606,7 @@ export class SourceControlSyncService {
       const status = await port.status();
       const remote = await port.remoteState();
       rows = groupChanges(status.changes, input.lookup).rows;
-      update({ branch: status.branch, rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming });
+      update({ branch: status.branch, head: status.head, remoteHead: remote.remote, rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming });
     }, revision);
     return rows;
   }

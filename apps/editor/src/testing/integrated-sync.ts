@@ -18,12 +18,13 @@ export const INTEGRATED_LOOKUP: ChangeLookup = (path) =>
  * working copy in memory storage of a `FakeRemote` seeded with Forest and
  * Rock, so editor tests drive the same service the editor runs.
  */
-export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsRule?: boolean } = {}) {
+export async function integratedSync(options: { locks?: Partial<SyncLocks>; lfsRule?: boolean; files?: Record<string, string | Uint8Array> } = {}) {
   const remote = new FakeRemote();
   remote.commit({
     ...(options.lfsRule === false ? {} : { ".gitattributes": `${GITATTRIBUTES_LFS_RULE}\n` }),
     "assets/Forest.scene.hasset": "F",
     "assets/Rock.texture.hasset": "R",
+    ...options.files,
   }, "Seed");
   const storage = new MemoryStorageAdapter("documents");
   const folder = await storage.openDocumentsProject("Game");
