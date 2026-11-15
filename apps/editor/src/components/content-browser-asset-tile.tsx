@@ -192,7 +192,7 @@ export function ContentBrowserAssetTile({
             data-testid={`content-item-rename-${asset.path}`}
           />
           <CardDescription className="truncate text-[10px]">
-            {asset.header.type}
+            {typeVisual.classKind ?? asset.header.type}
           </CardDescription>
         </CardHeader>
       </Root>

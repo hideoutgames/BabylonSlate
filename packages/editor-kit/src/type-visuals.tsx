@@ -134,6 +134,8 @@ export type TypeVisual = {
   colorVar: string;
   icon: TypeVisualGlyph;
   iconKey: string;
+  /** What a Class asset reads as in the Content Browser (Actor, Object, Subsystem, ...); other types have none. */
+  classKind?: string;
 };
 
 /** Lucide's on-screen stroke in px: `absoluteStrokeWidth` holds it at `strokeWidth` px whatever the size. */
@@ -610,6 +612,31 @@ function familyFor(query: TypeVisualQuery, iconId: string | undefined): AssetVis
   return "unknown";
 }
 
+/** A Class's kind by its nearest engine base; a Class with none of these bases reads Object. */
+const CLASS_KIND_LABEL: Record<string, string> = {
+  Actor: "Actor",
+  Subsystem: "Subsystem",
+  GameInstance: "Game Instance",
+  ActorComponent: "Component",
+  FunctionLibrary: "Function Library",
+  EditorFunctionLibrary: "Editor Function Library",
+  DebugCommand: "Debug Command",
+  EditorUtilityObject: "Editor Utility Object",
+  BTTask: "Behaviour Tree Task",
+  BTDecorator: "Behaviour Tree Decorator",
+  BTService: "Behaviour Tree Service",
+  BTComposite: "Behaviour Tree Composite",
+};
+
+/** The kind label for a Class ancestry, most specific first. */
+function classKindLabel(ancestry: readonly string[]): string {
+  for (const id of ancestry) {
+    const label = CLASS_KIND_LABEL[id];
+    if (label) return label;
+  }
+  return "Object";
+}
+
 export function resolveTypeVisual(query: TypeVisualQuery = {}): TypeVisual {
   const iconId = iconIdFor(query);
   const family = familyFor(query, iconId);
@@ -618,6 +645,15 @@ export function resolveTypeVisual(query: TypeVisualQuery = {}): TypeVisual {
     colorVar: COLOR_BY_FAMILY[family],
     icon: iconId ? ICON_BY_ID[iconId]! : FileIcon,
     iconKey: iconId ?? "File",
+    ...(query.assetType === "Class"
+      ? {
+          classKind: classKindLabel(
+            query.ancestry?.length
+              ? query.ancestry
+              : walkAncestry(query.parentClass ?? query.classId ?? "Object", (id) => engineParentOf(id) ?? null),
+          ),
+        }
+      : {}),
   };
 }
 

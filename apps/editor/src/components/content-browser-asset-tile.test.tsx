@@ -14,6 +14,7 @@ import {
 } from "@haptic/editor-kit";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { ContentBrowserAssetTile } from "./content-browser-asset-tile";
+import { classParentLookup, visualForIndexedAsset } from "../lib/content-browser-helpers";
 
 function asset(): IndexedAsset {
   return {
@@ -68,6 +69,36 @@ describe("ContentBrowserAssetTile", () => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("labels a Class by its kind through project parents, and other assets by type", () => {
+    const classAsset = (guid: string, name: string, parentClass: string): IndexedAsset => {
+      const base = asset();
+      return { ...base, path: `assets/${name}.class.hasset`, header: { ...base.header, guid, type: "Class", name, parentClass } };
+    };
+    const enemy = classAsset("enemy-1", "EnemyBase", "Actor");
+    const goblin = classAsset("goblin-1", "Goblin", "EnemyBase");
+    const rules = classAsset("rules-1", "GameRules", "Object");
+    const parentOf = classParentLookup([enemy, goblin, rules]);
+    const subtitle = (item: IndexedAsset) => {
+      const { container } = render(
+        <ContentBrowserAssetTile
+          asset={item}
+          selected={false}
+          thumbnailUrl={null}
+          typeVisual={visualForIndexedAsset(item, parentOf)}
+          onOpen={vi.fn()}
+          onSelect={vi.fn()}
+          onLongPressMenu={vi.fn()}
+        />,
+      );
+      const text = container.querySelector('[data-slot="card-description"]')?.textContent;
+      cleanup();
+      return text;
+    };
+    expect(subtitle(goblin)).toBe("Actor");
+    expect(subtitle(rules)).toBe("Object");
+    expect(subtitle(asset())).toBe("Texture");
   });
 
   it("opens the context menu after a stationary long press while the pointer is down", async () => {

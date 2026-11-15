@@ -157,6 +157,36 @@ describe("resolveTypeVisual", () => {
   });
 });
 
+describe("Class kind labels", () => {
+  it.each([
+    [["MyHero", "Actor", "Object"], "Actor"],
+    [["MyLayerActor", "SceneLayerActor", "Actor", "Object"], "Actor"],
+    [["Inventory", "GameSubsystem", "Subsystem", "Object"], "Subsystem"],
+    [["Weather", "SceneSubsystem", "Subsystem", "Object"], "Subsystem"],
+    [["MyGame", "GameInstance", "Object"], "Game Instance"],
+    [["Health", "ActorComponent", "Object"], "Component"],
+    [["MathHelpers", "FunctionLibrary", "Object"], "Function Library"],
+    [["Tools", "EditorFunctionLibrary", "FunctionLibrary", "Object"], "Editor Function Library"],
+    [["Cheat", "DebugCommand", "Object"], "Debug Command"],
+    [["Importer", "EditorUtilityObject", "Object"], "Editor Utility Object"],
+    [["Patrol", "BTTask", "Object"], "Behaviour Tree Task"],
+    [["IsHungry", "BTDecorator", "Object"], "Behaviour Tree Decorator"],
+    [["Scan", "BTService", "Object"], "Behaviour Tree Service"],
+    [["Random", "BTComposite", "Object"], "Behaviour Tree Composite"],
+    [["GameRules", "Object"], "Object"],
+    [["Orphan"], "Object"],
+  ] as const)("labels a Class with ancestry %j as %s", (ancestry, label) => {
+    expect(resolveTypeVisual({ assetType: "Class", ancestry: [...ancestry] }).classKind).toBe(label);
+  });
+
+  it("walks engine parents when only the parent class is known, and labels only Class assets", () => {
+    expect(resolveTypeVisual({ assetType: "Class", parentClass: "SceneStreamingActor" }).classKind).toBe("Actor");
+    expect(resolveTypeVisual({ assetType: "Class" }).classKind).toBe("Object");
+    expect(resolveTypeVisual({ assetType: "Texture" }).classKind).toBeUndefined();
+    expect(resolveTypeVisual({ classId: "Actor" }).classKind).toBeUndefined();
+  });
+});
+
 describe("walkAncestry", () => {
   it("walks parent links from most specific to root", () => {
     const parents = new Map<string, string | null>([
