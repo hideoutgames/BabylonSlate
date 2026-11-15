@@ -52,6 +52,7 @@ import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
+import { mirrorDiagnostics } from "./mirrors";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
@@ -365,8 +366,10 @@ export class ForwardSceneFrameGraph {
   diagnostics() {
     this.measureWork = true;
     const shadowJournal = findSceneShadowController(this.scene)?.journalDiagnostics();
+    const mirrors = mirrorDiagnostics(this.scene);
     return {
       ...(shadowJournal ? { shadowJournal } : {}),
+      ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
