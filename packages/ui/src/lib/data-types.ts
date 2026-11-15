@@ -59,7 +59,6 @@ export const NODE_ROLE_COLOR_VAR = {
   pure: "var(--node-pure)",
   flow: "var(--node-flow)",
   variable: "var(--node-variable)",
-  "variable-set": "var(--node-variable-set)",
   latent: "var(--node-latent)",
   debug: "var(--node-debug)",
   "bt-root": "var(--node-bt-root)",

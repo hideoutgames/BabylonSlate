@@ -19,6 +19,7 @@
     "@haptic/scripting": "workspace:*",
     "@haptic/ui": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
+    "@tabler/icons-react": "3.50.0",
     "@xyflow/react": "^12.11.2",
     "lucide-react": "^0.552.0",
     "react": "^19.0.0",

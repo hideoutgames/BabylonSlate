@@ -293,6 +293,40 @@ describe("NodePalette", () => {
     expect(onAddNode).toHaveBeenCalledWith(begin);
   });
 
+  it("leads each row with its kind icon in a chip of the node's header colour", () => {
+    const delay: PaletteNode = { id: "timers.delay", title: "Delay", category: "Timers", latent: true };
+    const setHealth: PaletteNode = {
+      id: "variables.set:Self:Health",
+      nodeType: "variables.set",
+      title: "Set Health",
+      category: "Variables",
+    };
+    const moveTo: PaletteNode = {
+      id: "MoveTo",
+      nodeType: "bt.node",
+      title: "Move To",
+      category: "Tasks",
+      defaultData: { kind: "task" },
+    };
+    const { getByTestId } = render(
+      <NodePalette open onOpenChange={() => {}} paletteNodes={[begin, delay, setHealth, moveTo]} onAddNode={() => {}} />,
+    );
+    const chip = (id: string) => {
+      const icon = getByTestId(`node-palette-item-${id}`).querySelector("[data-node-kind]")!;
+      return { kind: icon.getAttribute("data-node-kind"), colour: icon.parentElement!.className };
+    };
+    expect(chip("flow.event.beginPlay")).toEqual({ kind: "event", colour: expect.stringContaining(nodeRoleClass("event")) });
+    expect(chip("timers.delay")).toEqual({ kind: "latent", colour: expect.stringContaining(nodeRoleClass("latent")) });
+    expect(chip("variables.set:Self:Health")).toEqual({
+      kind: "variable",
+      colour: expect.stringContaining(nodeRoleClass("variable")),
+    });
+    // Without its kind a Behaviour Tree row would take the function colour.
+    expect(chip("MoveTo")).toEqual({ kind: "bt-task", colour: expect.stringContaining(nodeRoleClass("bt-task")) });
+    // The kind is decoration in the list: the row's name stays its title.
+    expect(getByTestId("node-palette-item-timers.delay").querySelector('[role="img"]')).toBeNull();
+  });
+
   it("marks Particle Graph entries with their stage colour", () => {
     const particle = (direction: "in" | "out"): SerializedPin => ({
       id: "particle",

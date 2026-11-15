@@ -10,7 +10,8 @@ import {
   filterPaletteForPin,
   type PinCompatibilityRule,
 } from "./graph-connect";
-import { nodeRoleClass, nodeVisualRole } from "./node-theme";
+import { nodeKind, nodeRoleClass, nodeVisualRole, type NodeKindInput } from "./node-theme";
+import { NodeKindIcon } from "./node-icons";
 
 export interface NodePaletteProps {
   open: boolean;
@@ -100,28 +101,33 @@ function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
     .map((entry) => entry.node);
 }
 
-function NodeRoleMark({ node }: { node: PaletteNode }) {
+function paletteVisualInput(node: PaletteNode): NodeKindInput {
+  const data = node.defaultData;
+  return {
+    nodeType: node.nodeType ?? node.id,
+    title: node.title,
+    category: node.category,
+    pure: node.pure,
+    material: data?.__material === true,
+    latent: node.latent,
+    particleRole: typeof data?.__particleRole === "string" ? data.__particleRole : undefined,
+    btKind: typeof data?.kind === "string" ? data.kind : undefined,
+  };
+}
+
+/** The row's kind icon in a chip of the node's header colour, so the list matches the canvas. */
+function NodeKindChip({ node }: { node: PaletteNode }) {
+  const input = paletteVisualInput(node);
   return (
     <span
-      className={cn(
-        "size-2.5 shrink-0 rounded-sm",
-        nodeRoleClass(
-          nodeVisualRole({
-            nodeType: node.nodeType ?? node.id,
-            title: node.title,
-            category: node.category,
-            pure: node.pure,
-            material: node.defaultData?.__material === true,
-            latent: node.latent,
-            particleRole:
-              typeof node.defaultData?.__particleRole === "string"
-                ? node.defaultData.__particleRole
-                : undefined,
-          }),
-        ),
-      )}
       aria-hidden="true"
-    />
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-sm text-node-title",
+        nodeRoleClass(nodeVisualRole(input)),
+      )}
+    >
+      <NodeKindIcon kind={nodeKind(input)} className="size-3" decorative />
+    </span>
   );
 }
 
@@ -184,7 +190,7 @@ export function NodePalette({
       filterItems={filterItems}
       rankedSearch
       flat={pinFiltered}
-      renderLeading={(node) => <NodeRoleMark node={node} />}
+      renderLeading={(node) => <NodeKindChip node={node} />}
       headerAccessory={
         <label className="node-palette-context flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none">
           <Checkbox

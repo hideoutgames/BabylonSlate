@@ -163,14 +163,22 @@
   border-color: var(--graph-state-entry);
 }
 
+/* The kind icon, then the title, centred; the title ellipsizes. */
 .anim-state-node-title {
+  display: flex;
   max-width: 100%;
-  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-size: 14px;
   font-weight: 600;
-  text-align: center;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.anim-state-node-title > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .anim-state-node-clip {
