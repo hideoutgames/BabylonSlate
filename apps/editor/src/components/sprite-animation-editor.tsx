@@ -433,6 +433,7 @@ export function SpriteAnimationPreview({
               view={views[index]}
               pixels={framePixels(views[index], resolved.frames[index])}
               durationMs={entry.durationMsOverride ? entry.durationMs : undefined}
+              eventNames={(entry.events ?? []).map((event) => event.name || "Event")}
               selected={index === selectedFrameIndex}
               onSelect={() => seekToFrame(index)}
             />
@@ -449,6 +450,7 @@ function SpriteAnimationFrameThumb({
   view,
   pixels,
   durationMs,
+  eventNames = [],
   selected,
   onSelect,
 }: {
@@ -457,6 +459,8 @@ function SpriteAnimationFrameThumb({
   view: SpriteAnimationFrameView | undefined;
   pixels: { width: number; height: number } | null;
   durationMs?: number;
+  /** The frame's Animation Events, marked on the thumb. */
+  eventNames?: readonly string[];
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -492,6 +496,14 @@ function SpriteAnimationFrameThumb({
         <span className="absolute right-0.5 top-0.5 rounded-sm bg-background/85 px-1 text-[10px] leading-tight tabular-nums text-muted-foreground">
           {durationMs}
         </span>
+      ) : null}
+      {eventNames.length > 0 ? (
+        // The frame fires Animation Events as it starts: a marker naming them.
+        <span
+          className="absolute bottom-0.5 right-0.5 size-2 rotate-45 rounded-[1px] bg-primary ring-1 ring-background"
+          title={eventNames.join(", ")}
+          data-testid={`sprite-animation-frame-${index}-events`}
+        />
       ) : null}
     </Button>
   );

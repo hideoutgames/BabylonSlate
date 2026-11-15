@@ -31,7 +31,10 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOptionalAnimationEditing } from "../context/animation-editing-context";
 import { AnimationEventsEditor } from "./animation-events-editor";
+import { AnimEventFlashes } from "./anim-event-flashes";
+import { useClockEventFlashes } from "../lib/anim-event-flashes";
 import { AnimationPreviewCanvas, type AnimationPreviewClip } from "./animation-preview-canvas";
 import { IconActionButton } from "./icon-action-button";
 import { PlaybackScrubber, PlaybackSpeedSelect } from "./playback-controls";
@@ -204,9 +207,14 @@ export function AnimationPreview({
   const [bonesOnly, setBonesOnly] = useState(false);
   const [clip, setClip] = useState<AnimationPreviewClip | null>(null);
   const durationMs = previewDurationMs(payload, clip);
-  const [clock] = useState(() => new AnimationPreviewClock(durationMs));
+  // In the Animation editor the Timeline scrubs this clock too.
+  const editing = useOptionalAnimationEditing();
+  const [ownClock] = useState(() => new AnimationPreviewClock(durationMs));
+  const clock = editing?.clock ?? ownClock;
   useEffect(() => clock.setDuration(durationMs), [clock, durationMs]);
   usePreviewPlayback(clock, active);
+  // The clip's Animation Events flash their names as playback passes them.
+  const flashes = useClockEventFlashes(clock, payload.events ?? [], durationMs);
   const frameCount = clip?.frames ?? 1;
   if (sourceError) {
     return (
@@ -248,7 +256,8 @@ export function AnimationPreview({
           Show Bones
         </Toggle>
       </AnimationPreviewTransport>
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
+        <AnimEventFlashes flashes={flashes} data-testid="animation-preview-events" />
         <AnimationPreviewCanvas
           sourceBytes={sourceBytes}
           materialSlots={materialSlots}
@@ -287,6 +296,8 @@ export function AnimationEditor({
 }) {
   const animation = normalizeAnimationPayload(payload);
   const { assetRegistry } = useRegistryState();
+  // In the Animation editor, events selected on the Timeline open here and Add Event uses its playhead.
+  const editing = useOptionalAnimationEditing();
   const assets = assetRegistry?.list() ?? [];
   const model = assets.find((asset) => asset.header.guid === animation.modelGuid);
   const skeleton = animation.skeletonGuid
@@ -354,6 +365,8 @@ export function AnimationEditor({
         events={animation.events ?? []}
         timed
         bones
+        newEventTimeMs={editing?.clock.get() ?? 0}
+        selectedIds={editing?.selectedEventIds}
         mergeKeyPrefix="animation:event"
         onChange={
           onChange

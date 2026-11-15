@@ -288,6 +288,23 @@ describe("SpriteAnimation editor", () => {
     expect(position.textContent).toBe("Frame 1/1 · 0/100 ms");
   });
 
+  it("marks the frames that fire Animation Events on the frame strip", () => {
+    const frame = (events?: unknown[]) => ({
+      textureGuid: "a",
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      collision: { x: 0, y: 0, width: 1, height: 1 },
+      ...(events ? { events } : {}),
+    });
+    render(
+      <SpriteAnimationPreview
+        payload={{ frames: [frame(), frame([{ id: "e", name: "Step" }])] } as unknown as Record<string, unknown>}
+      />,
+    );
+    expect(screen.queryByTestId("sprite-animation-frame-0-events")).toBeNull();
+    expect(screen.getByTestId("sprite-animation-frame-1-events").getAttribute("title")).toBe("Step");
+  });
+
   it("pauses and seeks when the frame strip is clicked", () => {
     const payload = {
       frames: [

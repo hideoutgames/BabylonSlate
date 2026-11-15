@@ -13,6 +13,8 @@ import { useAnimPreviewModel } from "../lib/use-anim-preview-model";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { AnimPreview3DView, AnimPreviewModelControls } from "./anim-preview-model-controls";
 import { AnimSpriteFrameView } from "./anim-sprite-frame-view";
+import { AnimEventFlashes } from "./anim-event-flashes";
+import { useFiredEventFlashes } from "../lib/anim-event-flashes";
 import { useBlendSpaceDocument, type BlendSpaceEditorPayload } from "./blend-space-editor";
 import { PlaybackSpeedSelect } from "./playback-controls";
 
@@ -83,6 +85,7 @@ function usePreviewSession(dimension: AnimGraphDimension, payload: BlendSpaceEdi
 function BlendSpacePreview3D({ api }: { api: IDockviewPanelProps["api"] }) {
   const { payload, commit } = useBlendSpaceDocument();
   const session = usePreviewSession("3d", payload, api);
+  const flashes = useFiredEventFlashes(session.subscribe, session.firedEvents);
   const [showBones, setShowBones] = useState(false);
   const animationGuids = useMemo(() => [...new Set(payload.samples.map((sample) => sample.animationGuid))], [payload.samples]);
   const preview = useAnimPreviewModel({
@@ -101,14 +104,17 @@ function BlendSpacePreview3D({ api }: { api: IDockviewPanelProps["api"] }) {
           testIdPrefix="blend-space-preview"
         />
       </BlendSpacePreviewTransport>
-      <AnimPreview3DView
-        preview={preview}
-        showBones={showBones}
-        getState={session.getState}
-        subscribe={session.subscribe}
-        emptyText={payload.skeletonGuid ? "No Model is on the Blend Space's Skeleton." : "Set the Blend Space's Skeleton to preview it."}
-        data-testid="blend-space-preview-3d"
-      />
+<div className="relative flex min-h-0 flex-1 flex-col">
+              <AnimPreview3DView
+          preview={preview}
+          showBones={showBones}
+          getState={session.getState}
+          subscribe={session.subscribe}
+          emptyText={payload.skeletonGuid ? "No Model is on the Blend Space's Skeleton." : "Set the Blend Space's Skeleton to preview it."}
+          data-testid="blend-space-preview-3d"
+        />
+        <AnimEventFlashes flashes={flashes} data-testid="blend-space-preview-events" />
+      </div>
     </div>
   );
 }
@@ -117,10 +123,14 @@ function BlendSpacePreview2D({ api }: { api: IDockviewPanelProps["api"] }) {
   const { payload } = useBlendSpaceDocument();
   const session = usePreviewSession("2d", payload, api);
   const spriteAnimationGuids = useMemo(() => payload.samples.map((sample) => sample.animationGuid), [payload.samples]);
+  const flashes = useFiredEventFlashes(session.subscribe, session.firedEvents);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BlendSpacePreviewTransport session={session} />
-      <SpriteFrame session={session} spriteAnimationGuids={spriteAnimationGuids} />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <SpriteFrame session={session} spriteAnimationGuids={spriteAnimationGuids} />
+        <AnimEventFlashes flashes={flashes} data-testid="blend-space-preview-events" />
+      </div>
     </div>
   );
 }

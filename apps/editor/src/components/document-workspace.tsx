@@ -38,6 +38,7 @@ import { AnimGraphPreviewProvider } from "../context/anim-graph-preview-context"
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { SpriteAnimationEditingProvider } from "../context/sprite-animation-editing-context";
 import { BlendSpaceEditingProvider } from "../context/blend-space-editing-context";
+import { AnimationEditingProvider } from "../context/animation-editing-context";
 import { SkeletonEditingProvider } from "../context/skeleton-editing-context";
 import { TracePlaybackProvider } from "../context/trace-playback-context";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
@@ -667,7 +668,10 @@ export function DocumentWorkspace() {
                   : doc.ref.kind === "skeleton"
                     // The bone the Inspector selects is the one the Preview highlights.
                     ? <SkeletonEditingProvider>{shell}</SkeletonEditingProvider>
-                    : shell}
+                    : doc.ref.kind === "animation"
+                      // The Preview, Timeline and Inspector share the playhead and the selected events.
+                      ? <AnimationEditingProvider>{shell}</AnimationEditingProvider>
+                      : shell}
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );

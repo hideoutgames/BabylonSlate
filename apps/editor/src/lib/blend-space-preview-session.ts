@@ -107,6 +107,9 @@ export class BlendSpacePreviewSession {
 
   getState = (): AnimEvalState | null => this.snapshot.state;
 
+  /** The Animation Events the latest evaluation fired, which the Preview flashes. */
+  firedEvents = (): AnimEvalState["events"] => this.snapshot.state?.events;
+
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

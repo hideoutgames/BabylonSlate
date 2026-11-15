@@ -8,9 +8,10 @@ Animations are not created from **New Asset**. Importing a GLB or glTF model cre
 
 ## Editor
 
-Double-tap the asset to open it. The window has **Preview** and an **Inspector**.
+Double-tap the asset to open it. The window has **Preview**, a **Timeline** below it and an **Inspector**.
 
 - **Preview** plays the clip on its model at its **Duration**, drawn with the Model's slot Materials. Turn on **Show Bones** to see the bones instead of the mesh. A clip from a file with no mesh (an animation-only file) always shows its bones. If the Model's file is missing, it shows **No Mesh**; if its file cannot be read, it shows **Failed to Read Mesh** with the reason.
+- **Timeline** shows the clip's [Animation Events](#animation-events) along one pass: single events on the **Events** row, and each window on a row of its own from its begin to its end. Drag the ruler to scrub the Preview. **Add Event** and **Add Window** place a new one at the playhead. Drag a key to move it; drag a window's end key alone to change its Duration. Selected keys open their events in the Inspector.
 - The **Inspector** shows the clip's details and its **Events**. Of the details, only **Duration** can be changed.
 
 **Preview controls**
@@ -39,7 +40,7 @@ The bar under the Preview shows the frame and the time in ms, out of the Duratio
 
 Animation Events are named moments in the clip, such as a footstep or the window in which a sword swing can hit. An [Animation Graph](animation-graph.md#animation-events) playing the clip fires them, and each name runs its own event node in the graph's Animation Object.
 
-In the **Inspector**, tap **Add Event** under **Events**, then set:
+Add one on the **Timeline**, or tap **Add Event** under **Events** in the **Inspector**; both place it at the Preview's playhead. Then set:
 
 | Setting | Description |
 | --- | --- |
@@ -49,7 +50,7 @@ In the **Inspector**, tap **Add Event** under **Events**, then set:
 | Trigger Weight | The weight, 0 to 1, the clip must play at for the event to fire. At the default 0.5, a clip fading out of a blend does not fire it. |
 | Action | What the event does on its own, without a script: **None**, **Play Sound** (a **Sound** from the actor at a **Volume**) or **Spawn Particle System** (a **Particle System** at a **Bone**, following it, or at the actor when Bone is empty). A window acts as it begins. |
 
-Tap **Remove Event** on an event's card to delete it.
+Tap **Remove Event** on an event's card to delete it. While the Preview plays, each event's name flashes over it as playback passes it.
 
 ## Shared Skeletons
 
