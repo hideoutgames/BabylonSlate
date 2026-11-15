@@ -118,7 +118,8 @@ test("FeatureTest heap route", async ({ page }, testInfo) => {
   test.setTimeout(20 * 60_000 + SCENES.length * (2 * WINDOW_MS + WARMUP_MS + SETTLE_MS + 15 * 60_000));
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  await seedEngineSettings(page);
+  // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
+  await seedEngineSettings(page, (settings) => { settings.viewportIdleHalfRate = false; });
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("HeapProfiler.enable");
   await createFeatureTestProject(page);

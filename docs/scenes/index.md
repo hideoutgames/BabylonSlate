@@ -34,7 +34,7 @@ See [Touch Gestures](../start/gestures.md) for the full list.
 | **Viewport Settings** | **Joystick**, **Pivot Around Center**, **Grid Settings** and **Camera Speed**. |
 | **2D** / **3D** | One switch: tap anywhere on it to flip the scene between 2D and 3D (<kbd>Alt</kbd>+<kbd>V</kbd>). The active side is highlighted. |
 
-**Show FPS** (off by default) shows the frames the viewport draws per second under the toolbar, at the right, as a whole number that updates four times a second. It is green from 55, yellow from 25, orange from 15 and red below 15. It is an editor preference: it applies to every viewport and stays on until you turn it off. The viewport draws no faster than **Viewport Frame Cap (FPS)** in [Engine Settings](../editor/settings.md) (default 60).
+**Show FPS** (off by default) shows the frames the viewport draws per second under the toolbar, at the right, as a whole number that updates four times a second. It is green from 55, yellow from 25, orange from 15 and red below 15. It is an editor preference: it applies to every viewport and stays on until you turn it off. The viewport draws no faster than **Viewport Frame Cap (FPS)** in [Engine Settings](../editor/settings.md) (default 60), and at half that while it sits idle when **Half Rate When Idle** is on (the default).
 
 **Grid Settings** holds **Grid Size** (visible cell spacing), **Grid Snap** (move increment), **Rotation Snap** and **Scale Snap**. From **Viewport Settings** it opens beside the menu; from **Snap Grid** it opens as a small popup under the button. Changes apply when you press Enter or close it by tapping outside. New scenes use 1, 1, 15 and 0.25.
 

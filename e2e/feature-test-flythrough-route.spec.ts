@@ -435,6 +435,8 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await seedEngineSettings(page, (settings) => {
+    // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
+    settings.viewportIdleHalfRate = false;
     if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
     if (process.env.HAPTIC_PERF_SCALING) settings.hardwareScalingLevel = number("HAPTIC_PERF_SCALING", 1, 0.25);
     if (PLAY_SCENES.length) settings.debuggerDefaults.overlayConsole = true;

@@ -309,6 +309,7 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
     ]],
     ["frameRate", "Frame Rate", [
       ["Viewport Frame Cap", "setting-frame-cap"],
+      ["Half Rate When Idle", "setting-viewport-idle-half-rate"],
       ["Camera Preview Frame Rate", "setting-camera-preview-frame-rate"],
     ]],
     ["cameraPlacement", "Camera And Placement", [
