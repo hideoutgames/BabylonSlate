@@ -31,10 +31,11 @@ async function previewPixels(surface: Locator) {
       for (let index = 0; index < data.length; index += 4) {
         const [r, g, b] = [data[index]!, data[index + 1]!, data[index + 2]!];
         if (r > 70 && g > 30 && r > g * 1.12 && g > b * 1.1) model++;
-        // Bones are a shaded steel slate: green over red and blue over green, both clearly, unlike the
-        // Mannequin's neutral dark greys and tan, and darker than the preview sky (its blue stays at 224
-        // and above) and its clouds.
-        if (g >= r + 12 && b >= g + 20 && b < 200) bones++;
+        // Bones are shaded neutral greys: no channel more than 8 from another, unlike the preview sky
+        // and its floor grid (blue over red) and the Mannequin's tan (hidden while bones show), and
+        // darker than the clouds and the white joints.
+        const brightest = Math.max(r, g, b);
+        if (brightest - Math.min(r, g, b) <= 8 && brightest >= 60 && brightest <= 215) bones++;
       }
       return { model, bones };
     },
