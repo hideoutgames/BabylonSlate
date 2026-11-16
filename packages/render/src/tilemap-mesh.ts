@@ -11,50 +11,115 @@ import {
   decodeTileGid,
   tilemapCellKey,
   tilesetAnimationFrame,
+  tilesetAnimationFrameDurationMs,
   tilesetTileUv,
   type TilemapChunk,
   type TilemapChunkVertexData,
   type TilemapLayer,
   type TilemapPayload,
   type TilesetPayload,
+  type TilesetTile,
 } from "@haptic/assets";
 import { DEFAULT_SORTING_LAYERS } from "@haptic/core";
 import { markOwnerNotifiedGeometry } from "./geometry-revision";
 import { applyComponentSorting } from "./sorting";
 import { setTilemapPivotNode, tilemapChunkParent } from "./tilemap-chunk-parent";
 
+/** The animated tiles of a chunk that show the same Tileset tile: they always share one frame and one UV rectangle. */
+type AnimatedTileGroup = {
+  tileset: TilesetPayload;
+  tile: TilesetTile;
+  /** Where each of the group's quads starts in the chunk's UV buffer. */
+  uvOffsets: number[];
+  frame: number;
+};
 type AnimatedChunk = {
   mesh: Mesh;
   /** Typed so an upload does not convert the whole array each frame change. */
   uvs: Float32Array;
-  tiles: TilemapChunkVertexData["animatedTiles"];
-  frames: number[];
+  groups: AnimatedTileGroup[];
+  /** The animation time the groups' frames were last resolved at; `Infinity` until the first update. */
+  resolvedAtMs: number;
+  /** No group's frame changes while the time stays in [`resolvedAtMs`, `nextFrameMs`). */
+  nextFrameMs: number;
 };
 const animatedChunks = new WeakMap<Scene, Set<AnimatedChunk>>();
-/** Chunks whose layer parallax moves them; a parallax of 1 always stays at 0. */
-const parallaxChunks = new WeakMap<Scene, Set<Mesh>>();
+type ParallaxState = {
+  /** Chunks whose layer parallax moves them; a parallax of 1 always stays at 0. */
+  chunks: Set<Mesh>;
+  /** The camera position and each chunk parent's world matrix the chunks were last placed for. */
+  cameraX: number;
+  cameraY: number;
+  parentWorlds: Map<Node, Matrix>;
+  /** A chunk joined or left since the last placement. */
+  stale: boolean;
+};
+const parallaxStates = new WeakMap<Scene, ParallaxState>();
 
-/** Seek only animated UVs. Static geometry, collision and atlas materials stay intact. */
+/**
+ * A frame boundary is `step × duration`, and both that product and the
+ * `time / duration` the frame is read from round, so a time within one part in
+ * 10¹² below a boundary may already read the next frame. Ending the skipped
+ * span this far early keeps every skipped update one that would change nothing.
+ */
+const FRAME_BOUNDARY_MARGIN = 1 - 1e-12;
+
+/**
+ * Seek only animated UVs. Static geometry, collision and atlas materials stay intact.
+ *
+ * A tile's frame is a function of `floor(time / frameDuration)` alone, so a
+ * chunk is skipped while the time stays at or after the time it was last
+ * resolved at and before its earliest next frame boundary (a paused game
+ * repeats the same time). Time going backwards, and a new chunk, resolve again.
+ * Tileset payloads are immutable: a changed Tileset rebuilds the chunk.
+ */
 export function updateSceneTilemapAnimations(scene: Scene, elapsedMs: number): void {
   const chunks = animatedChunks.get(scene);
   if (!chunks) return;
+  // As `tilesetAnimationFrame` reads the time.
+  const time = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
   for (const chunk of chunks) {
+    if (time >= chunk.resolvedAtMs && time < chunk.nextFrameMs) continue;
     let changed = false;
-    for (let index = 0; index < chunk.tiles.length; index++) {
-      const tile = chunk.tiles[index]!;
-      const frame = tilesetAnimationFrame(tile.tileset, tile.tile, elapsedMs);
-      if (frame === chunk.frames[index]) continue;
-      const uv = tilesetTileUv(tile.tileset, frame);
+    let nextFrameMs = Infinity;
+    for (const group of chunk.groups) {
+      const duration = tilesetAnimationFrameDurationMs(group.tile);
+      const boundary = (Math.floor(time / duration) + 1) * duration * FRAME_BOUNDARY_MARGIN;
+      if (boundary < nextFrameMs) nextFrameMs = boundary;
+      const frame = tilesetAnimationFrame(group.tileset, group.tile, time);
+      if (frame === group.frame) continue;
+      const uv = tilesetTileUv(group.tileset, frame);
       if (!uv) continue;
-      chunk.frames[index] = frame;
+      group.frame = frame;
       const uvs = chunk.uvs;
-      const at = tile.uvOffset;
-      uvs[at] = uv.u0; uvs[at + 1] = uv.v0; uvs[at + 2] = uv.u1; uvs[at + 3] = uv.v0;
-      uvs[at + 4] = uv.u1; uvs[at + 5] = uv.v1; uvs[at + 6] = uv.u0; uvs[at + 7] = uv.v1;
+      for (const at of group.uvOffsets) {
+        uvs[at] = uv.u0; uvs[at + 1] = uv.v0; uvs[at + 2] = uv.u1; uvs[at + 3] = uv.v0;
+        uvs[at + 4] = uv.u1; uvs[at + 5] = uv.v1; uvs[at + 6] = uv.u0; uvs[at + 7] = uv.v1;
+      }
       changed = true;
     }
+    chunk.resolvedAtMs = time;
+    chunk.nextFrameMs = nextFrameMs;
     if (changed) chunk.mesh.updateVerticesData(VertexBuffer.UVKind, chunk.uvs);
   }
+}
+
+/** Groups a chunk's animated tiles by the Tileset tile they show, each at its frame for time 0 (as the chunk is built). */
+function animatedTileGroups(tiles: TilemapChunkVertexData["animatedTiles"]): AnimatedTileGroup[] {
+  const groups: AnimatedTileGroup[] = [];
+  const byTile = new Map<TilesetTile, AnimatedTileGroup[]>();
+  for (const { tileset, tile, uvOffset } of tiles) {
+    let sameTile = byTile.get(tile);
+    if (!sameTile) byTile.set(tile, sameTile = []);
+    let group = sameTile.find((candidate) => candidate.tileset === tileset);
+    if (!group) {
+      group = { tileset, tile, uvOffsets: [], frame: tilesetAnimationFrame(tileset, tile, 0) };
+      sameTile.push(group);
+      groups.push(group);
+    }
+    group.uvOffsets.push(uvOffset);
+  }
+  return groups;
 }
 
 /** Atlas materials belong to tilemap draws, not their actor's mesh material slots. */
@@ -228,30 +293,62 @@ export function worldTileSize(
 const scratchParallaxOffset = new Vector3();
 const scratchParallaxInverse = new Matrix();
 
-/** Offset this Scene's parallax chunks so each layer tracks the Play camera. */
+/**
+ * Offset this Scene's parallax chunks so each layer tracks the Play camera.
+ *
+ * A chunk's offset depends only on the camera position, its layer's parallax
+ * and its parent's world matrix, so nothing is written while the camera
+ * position and every chunk parent's world matrix equal the ones last placed
+ * for and no chunk joined or left; otherwise one offset is computed per run of
+ * chunks sharing a parent and a layer.
+ */
 export function updateSceneTilemapParallax(
   scene: Scene,
   camera: { x: number; y: number },
 ): void {
-  const chunks = parallaxChunks.get(scene);
-  if (!chunks) return;
+  const state = parallaxStates.get(scene);
+  if (!state || state.chunks.size === 0) return;
+  if (!state.stale && camera.x === state.cameraX && camera.y === state.cameraY) {
+    let moved = false;
+    for (const [parent, world] of state.parentWorlds) {
+      if (parent.computeWorldMatrix(true).equals(world)) continue;
+      moved = true;
+      break;
+    }
+    if (!moved) return;
+  }
+  if (state.stale) state.parentWorlds.clear();
+  state.stale = false;
+  state.cameraX = camera.x;
+  state.cameraY = camera.y;
   let inverted: Node | null = null;
-  for (const chunk of chunks) {
+  let placedParent: Node | null | undefined;
+  let placedParallax: { x: number; y: number } | undefined;
+  for (const chunk of state.chunks) {
     const parallax = chunk.metadata?.tilemapParallax as
       | { x: number; y: number }
       | undefined;
     if (!parallax) continue;
-    // Parallax 1 stays world-locked; 0 tracks the camera. The offset is a
-    // world displacement, so undo the tilemap root's rotation and scale; its
-    // translation stays the layer's authored placement.
-    scratchParallaxOffset.set(camera.x * (1 - parallax.x), camera.y * (1 - parallax.y), 0);
     const parent = chunk.parent;
-    if (parent) {
-      if (parent !== inverted) {
-        parent.computeWorldMatrix(true).invertToRef(scratchParallaxInverse);
-        inverted = parent;
+    // A layer hands every chunk the same parallax object, so its chunks under one parent share the offset.
+    if (parent !== placedParent || parallax !== placedParallax) {
+      // Parallax 1 stays world-locked; 0 tracks the camera. The offset is a
+      // world displacement, so undo the tilemap root's rotation and scale; its
+      // translation stays the layer's authored placement.
+      scratchParallaxOffset.set(camera.x * (1 - parallax.x), camera.y * (1 - parallax.y), 0);
+      if (parent) {
+        if (parent !== inverted) {
+          const world = parent.computeWorldMatrix(true);
+          world.invertToRef(scratchParallaxInverse);
+          inverted = parent;
+          const placedFor = state.parentWorlds.get(parent);
+          if (placedFor) placedFor.copyFrom(world);
+          else state.parentWorlds.set(parent, world.clone());
+        }
+        Vector3.TransformNormalToRef(scratchParallaxOffset, scratchParallaxInverse, scratchParallaxOffset);
       }
-      Vector3.TransformNormalToRef(scratchParallaxOffset, scratchParallaxInverse, scratchParallaxOffset);
+      placedParent = parent;
+      placedParallax = parallax;
     }
     chunk.position.copyFrom(scratchParallaxOffset);
   }
@@ -288,20 +385,25 @@ function appendChunkMesh(
       animatedChunks.set(scene, chunks);
     }
     const chunk: AnimatedChunk = {
-      mesh, uvs: new Float32Array(data.uvs), tiles: data.animatedTiles,
-      frames: data.animatedTiles.map((tile) => tilesetAnimationFrame(tile.tileset, tile.tile, 0)),
+      mesh, uvs: new Float32Array(data.uvs), groups: animatedTileGroups(data.animatedTiles),
+      resolvedAtMs: Infinity, nextFrameMs: 0,
     };
     chunks.add(chunk);
     mesh.onDisposeObservable.addOnce(() => chunks.delete(chunk));
   }
   if (parallax.x !== 1 || parallax.y !== 1) {
-    let chunks = parallaxChunks.get(scene);
-    if (!chunks) {
-      chunks = new Set();
-      parallaxChunks.set(scene, chunks);
+    let state = parallaxStates.get(scene);
+    if (!state) {
+      state = { chunks: new Set(), cameraX: 0, cameraY: 0, parentWorlds: new Map(), stale: true };
+      parallaxStates.set(scene, state);
     }
-    chunks.add(mesh);
-    mesh.onDisposeObservable.addOnce(() => chunks.delete(mesh));
+    const joined = state;
+    joined.chunks.add(mesh);
+    joined.stale = true;
+    mesh.onDisposeObservable.addOnce(() => {
+      joined.chunks.delete(mesh);
+      joined.stale = true;
+    });
   }
   mesh.parent = parent;
   mesh.metadata = { ...(mesh.metadata ?? {}), tilemapParallax: parallax, tilemapLayer: sorting };
