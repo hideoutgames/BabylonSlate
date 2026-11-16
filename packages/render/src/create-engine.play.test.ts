@@ -4939,7 +4939,7 @@ describe("Play createEngine view", () => {
     const backend = new FakeAudioPlaybackBackend();
     // The Fake keeps the reused pose row by reference; record each placement.
     const placed: number[] = [];
-    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); });
+    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); return true; });
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
@@ -4983,12 +4983,12 @@ describe("Play createEngine view", () => {
     expect(placed.at(-1)).toBe(10);
   });
 
-  it("places a spatial voice and moves the listener once per applied snapshot", async () => {
+  it("places a moved spatial voice once per applied snapshot and does not rewrite a still listener", async () => {
     const { createDefaultAudioPayload } = await import("@haptic/assets");
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const placed: number[] = [];
-    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); });
+    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); return true; });
     const listenerMoves = vi.spyOn(backend, "setListenerPose");
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
@@ -5030,7 +5030,8 @@ describe("Play createEngine view", () => {
     const movesBefore = listenerMoves.mock.calls.length;
     presentSlotAt(2, 12);
     expect(placed.slice(placedBefore)).toEqual([12]);
-    expect(listenerMoves.mock.calls.length - movesBefore).toBe(1);
+    // The camera, and so the listener, held its pose between the two snapshots.
+    expect(listenerMoves.mock.calls.length - movesBefore).toBe(0);
   });
 
   it("poses only the actors voices emit from, and places a voice starting on another actor at once", async () => {
@@ -5038,7 +5039,7 @@ describe("Play createEngine view", () => {
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
     const placed: number[] = [];
-    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); });
+    vi.spyOn(backend, "setVoicePose").mockImplementation((_voiceId, pose) => { placed.push(pose.x); return true; });
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
     const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {

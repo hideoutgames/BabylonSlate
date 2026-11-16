@@ -107,6 +107,25 @@ describe("Babylon audio backend lifecycle", () => {
     backend.dispose();
   });
 
+  it("reports whether a pose, rate, muffle, listener or reverb write had something to land on", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    // No engine and no voice yet: nothing is held, so the service must offer the value again.
+    expect(backend.setReverbProfile({ wet: 0.5, decay: 0.4, damping: 0.5 })).toBe(false);
+    expect(backend.setListenerPose({ x: 1, y: 2, z: 3 })).toBe(false);
+    expect(backend.setVoiceMuffle(request.voiceId, 0.5)).toBe(false);
+    expect(backend.setVoicePlaybackRate(request.voiceId, 2)).toBe(false);
+    expect(backend.setVoicePose(request.voiceId, { x: 1, y: 2, z: 3 })).toBe(false);
+    await backend.play(request);
+    const sound = await (audio.createSound.mock.results[0]!.value as Promise<ReturnType<typeof audio.sound> & { playbackRate?: number }>);
+    expect(backend.setVoicePlaybackRate(request.voiceId, 2)).toBe(true);
+    expect(sound.playbackRate).toBe(2);
+    expect(backend.setVoiceMuffle(request.voiceId, 0.5)).toBe(true);
+    expect(sound.volume).toBeCloseTo(0.5);
+    expect(backend.setReverbProfile({ wet: 0.5, decay: 0.4, damping: 0.5 })).toBe(true);
+    expect(backend.setVoiceMuffle("other", 0.5)).toBe(false);
+    backend.dispose();
+  });
+
   it("does not start a sound when Stop arrives during native sound creation", async () => {
     let finish!: (sound: ReturnType<typeof audio.sound>) => void;
     audio.createSound.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));

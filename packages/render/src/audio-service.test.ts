@@ -1808,14 +1808,14 @@ class CountingBackend extends FakeAudioPlaybackBackend {
   poseWrites = 0;
   muffleWrites = 0;
 
-  override setVoicePose(voiceId: string, pose: AudioPose): void {
+  override setVoicePose(voiceId: string, pose: AudioPose): boolean {
     this.poseWrites += 1;
-    super.setVoicePose(voiceId, { ...pose });
+    return super.setVoicePose(voiceId, { ...pose });
   }
 
-  override setVoiceMuffle(voiceId: string, factor: number): void {
+  override setVoiceMuffle(voiceId: string, factor: number): boolean {
     this.muffleWrites += 1;
-    super.setVoiceMuffle(voiceId, factor);
+    return super.setVoiceMuffle(voiceId, factor);
   }
 }
 
@@ -1931,8 +1931,9 @@ describe("AudioService spatial refresh per applied snapshot", () => {
     expect(observed.map((entry) => entry.distance)).toEqual([
       expect.closeTo(4, 5), expect.closeTo(1.25, 5), expect.closeTo(3.1, 5), expect.closeTo(3.6, 5),
     ]);
+    // The emitter moves every frame; the muffle is written when it changes (0 before the first pose, then 1, 0, 1).
     expect(combinedBackend.poseWrites - writesBefore.pose).toBe(frames.length);
-    expect(combinedBackend.muffleWrites - writesBefore.muffle).toBe(frames.length);
+    expect(combinedBackend.muffleWrites - writesBefore.muffle).toBe(3);
     combined.dispose();
     baseline.dispose();
   });
@@ -1943,6 +1944,244 @@ describe("AudioService spatial refresh per applied snapshot", () => {
     service.syncSnapshot([{ slotId: 1, position: { x: 9, y: 0, z: 0 } }], { x: 2, y: 3, z: 4 });
     expect(backend.listener).toEqual({ x: 2, y: 3, z: 4 });
     expect(backend.poseWrites).toBe(0);
+    service.dispose();
+  });
+});
+
+/**
+ * Records every pose, muffle, rate, listener and reverb write, counting those whose arguments equal the previous
+ * call's for the same target. While `landing` is false it takes nothing, as a backend without the voice or engine.
+ */
+class RepeatCountingBackend extends FakeAudioPlaybackBackend {
+  landing = true;
+  writes = 0;
+  repeats = 0;
+  private readonly last = new Map<string, string>();
+
+  private record(target: string, value: unknown): void {
+    const text = JSON.stringify(value);
+    this.writes += 1;
+    if (this.last.get(target) === text) this.repeats += 1;
+    this.last.set(target, text);
+  }
+
+  override setVoicePose(voiceId: string, pose: AudioPose): boolean {
+    this.record(`pose:${voiceId}`, pose);
+    return this.landing && super.setVoicePose(voiceId, { ...pose });
+  }
+
+  override setVoiceMuffle(voiceId: string, factor: number): boolean {
+    this.record(`muffle:${voiceId}`, factor);
+    return this.landing && super.setVoiceMuffle(voiceId, factor);
+  }
+
+  override setVoicePlaybackRate(voiceId: string, rate: number): boolean {
+    this.record(`rate:${voiceId}`, rate);
+    return this.landing && super.setVoicePlaybackRate(voiceId, rate);
+  }
+
+  override setListenerPose(pose: AudioPose): boolean {
+    this.record("listener", pose);
+    return this.landing && super.setListenerPose({ ...pose });
+  }
+
+  override setReverbProfile(profile: { wet: number; decay: number; damping: number }): boolean {
+    this.record("reverb", profile);
+    return this.landing && super.setReverbProfile(profile);
+  }
+}
+
+describe("AudioService writes of unchanged values", () => {
+  /** What a session is set to; `apply` brings a service to it, whatever the service held before. */
+  type Scene = {
+    listener: AudioPose;
+    emitter: { x: number; y: number; z: number };
+    /** Occupied voxels (2 units wide along x from 0) and the wet level of the probe at x = 8 (the other is 0.2 at x = 0). */
+    walls: number;
+    farWet: number;
+    settings: { occlusionEnabled: boolean; reverbWetScale: number };
+    bedPlaying: boolean;
+  };
+  const initial: Scene = {
+    listener: { x: 5, y: 1, z: 1 },
+    emitter: { x: 1, y: 1, z: 1 },
+    walls: 0b0000_0110,
+    farWet: 0.8,
+    settings: { occlusionEnabled: true, reverbWetScale: 1 },
+    bedPlaying: true,
+  };
+
+  /** A muffled spatial voice ("v1", on slot 1) and a non-spatial reverb-send voice ("bed"). */
+  async function start(backend: FakeAudioPlaybackBackend, clock: { now: number }) {
+    const service = new AudioService({ backend, now: () => clock.now });
+    service.setLibrary(library({
+      channels: {
+        walls: { parentChannelGuid: null, effects: [{ kind: "environmentReverb", enabled: false }, { kind: "muffleThroughWalls", enabled: true }] },
+        room: { parentChannelGuid: null, effects: [{ kind: "environmentReverb", enabled: true }] },
+      },
+      audio: {
+        jump: { volume: 1, audioChannelGuid: "walls", soundAttenuationGuid: "near" },
+        bed: { volume: 1, audioChannelGuid: "room", soundAttenuationGuid: null },
+      },
+      attenuations: {
+        near: {
+          innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1, spatialisation: "equalPower", cone: null,
+          doppler: { enabled: true, factor: 1 },
+        },
+      },
+    }));
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setSourceBytes("bed", new Uint8Array([2]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({ type: "playSound", assetGuid: "jump", volume: 1, frameId: 1, voiceId: "v1", emitterActorGuid: "speaker" });
+    service.handleCommand({ type: "playSound", assetGuid: "bed", volume: 1, frameId: 1, voiceId: "bed" });
+    await service.flush();
+    return service;
+  }
+
+  const field = (scene: Scene) => encodeAudioReverbChunk({
+    dryFallback: false,
+    geometryHash: `walls-${scene.walls}-${scene.farWet}`,
+    probes: [
+      { x: 0, y: 0, z: 0, volume: 1, openness: 0, decay: 0.5, damping: 0.5, wet: 0.2 },
+      { x: 8, y: 0, z: 0, volume: 1, openness: 0, decay: 0.9, damping: 0.1, wet: scene.farWet },
+    ],
+    occupancy: {
+      originX: 0, originY: 0, originZ: 0, voxelX: 2, voxelY: 2, voxelZ: 2, sizeX: 4, sizeY: 1, sizeZ: 1,
+      bits: new Uint8Array([scene.walls]),
+    },
+  });
+
+  /** The emitter's pose row is one object rewritten for every snapshot, as the host's is. */
+  const row = { slotId: 1, position: { x: 0, y: 0, z: 0 } };
+  async function apply(service: AudioService, scene: Scene, previous: Scene | null, clock: { now: number }) {
+    if (!previous || previous.walls !== scene.walls || previous.farWet !== scene.farWet) service.setReverbField(field(scene));
+    if (!previous || previous.settings !== scene.settings) service.setProjectAudioSettings(scene.settings);
+    if ((previous?.bedPlaying ?? true) && !scene.bedPlaying) {
+      service.handleCommand({ type: "stopSound", voiceId: "bed" });
+      await service.flush();
+    }
+    clock.now += 16;
+    Object.assign(row.position, scene.emitter);
+    service.syncSnapshot([row], { ...scene.listener });
+  }
+
+  const heard = (backend: FakeAudioPlaybackBackend) => ({
+    listener: { ...backend.listener },
+    pose: { ...backend.poses.get("v1") },
+    muffles: [backend.muffles.get("v1"), backend.muffles.get("bed")],
+    reverb: [backend.wet, backend.decay, backend.damping],
+  });
+
+  it("sends the backend nothing while the listener, emitters, reverb field, settings and voices stay as they are", async () => {
+    const clock = { now: 0 };
+    const backend = new RepeatCountingBackend();
+    const service = await start(backend, clock);
+    await apply(service, initial, null, clock);
+    // Two walls between the emitter at x = 1 and the listener at x = 5.
+    expect(heard(backend).muffles).toEqual([1, 0]);
+    const settled = backend.writes;
+    for (let snapshot = 0; snapshot < 30; snapshot++) await apply(service, initial, initial, clock);
+    // Listener-only refreshes (between snapshots) of the same pose send nothing either.
+    for (let refresh = 0; refresh < 5; refresh++) service.syncListener({ ...initial.listener });
+    expect(backend.writes - settled).toBe(0);
+    expect(backend.repeats).toBe(0);
+    service.dispose();
+  });
+
+  it("leaves the backend as a new session at the same state would, after each kind of change", async () => {
+    const clock = { now: 0 };
+    const backend = new RepeatCountingBackend();
+    const service = await start(backend, clock);
+    let scene = initial;
+    await apply(service, scene, null, clock);
+    const changes: Array<[string, Partial<Scene>]> = [
+      ["listener moves to one wall away", { listener: { x: 3, y: 1, z: 1 } }],
+      ["listener turns in place", { listener: { x: 3, y: 1, z: 1, qx: 0, qy: 1, qz: 0, qw: 0 } }],
+      ["emitter moves behind both walls", { emitter: { x: 6.5, y: 1, z: 1 } }],
+      ["emitter returns", { emitter: { x: 1, y: 1, z: 1 } }],
+      ["a wall is removed", { walls: 0b0000_0010 }],
+      ["the far probe gets wetter", { farWet: 1 }],
+      ["occlusion is switched off", { settings: { occlusionEnabled: false, reverbWetScale: 1 } }],
+      ["occlusion returns and reverb is scaled down", { settings: { occlusionEnabled: true, reverbWetScale: 0.5 } }],
+      ["the reverb-send voice stops", { bedPlaying: false }],
+      ["listener moves away again", { listener: { x: 5, y: 1, z: 1 } }],
+    ];
+    const muffles: unknown[] = [];
+    const wets: number[] = [];
+    for (const [label, change] of changes) {
+      const next = { ...scene, ...change };
+      await apply(service, next, scene, clock);
+      // Held for a few more snapshots, so skipped refreshes are part of what is compared.
+      for (let held = 0; held < 3; held++) await apply(service, next, next, clock);
+      scene = next;
+      const freshBackend = new FakeAudioPlaybackBackend();
+      const fresh = await start(freshBackend, { now: 0 });
+      await apply(fresh, scene, null, { now: 0 });
+      expect(heard(backend), label).toEqual(heard(freshBackend));
+      muffles.push(backend.muffles.get("v1"));
+      wets.push(backend.wet);
+      fresh.dispose();
+    }
+    // Hand-derived for the emitter voice: walls between it and the listener, the listener's own voxel included
+    // (x = 3 is inside the first wall); one wall is 0.5, two saturate at 1.
+    expect(muffles).toEqual([0.5, 0.5, 1, 0.5, 0.5, 0.5, 0, 0.5, 0.5, 0.5]);
+    // No voice sends to the reverb once the bed stops.
+    expect(wets.slice(-2)).toEqual([0, 0]);
+    expect(wets[5]).toBeGreaterThan(wets[4]!);
+    expect(wets[7]).toBeCloseTo(wets[6]! / 2, 10);
+    expect(backend.repeats).toBe(0);
+    service.dispose();
+  });
+
+  it("sends a pitch change and a Doppler shift once each, and nothing for a still Doppler voice", async () => {
+    const clock = { now: 0 };
+    const backend = new RepeatCountingBackend();
+    const service = await start(backend, clock);
+    await apply(service, initial, null, clock);
+    await apply(service, initial, initial, clock);
+    expect(backend.playbackRates.get("v1")).toBe(1);
+    service.handleCommand({ type: "setVoicePitch", voiceId: "v1", pitch: 2 });
+    await service.flush();
+    expect(backend.playbackRates.get("v1")).toBe(2);
+    // The emitter approaches the listener at 1 unit per 16 ms, then stops.
+    const approaching = { ...initial, emitter: { x: 2, y: 1, z: 1 } };
+    await apply(service, approaching, initial, clock);
+    expect(backend.playbackRates.get("v1")).toBeCloseTo(2 * (1 + (1 / 0.016) / AUDIO_SPEED_OF_SOUND), 3);
+    await apply(service, approaching, approaching, clock);
+    expect(backend.playbackRates.get("v1")).toBe(2);
+    const settled = backend.writes;
+    await apply(service, approaching, approaching, clock);
+    expect(backend.writes - settled).toBe(0);
+    expect(backend.repeats).toBe(0);
+    service.dispose();
+  });
+
+  it("sends an unchanged value again until the backend has taken it", async () => {
+    const clock = { now: 0 };
+    const backend = new RepeatCountingBackend();
+    const service = await start(backend, clock);
+    // The backend has no engine or sound to write to yet: every refresh offers the same values again.
+    backend.landing = false;
+    await apply(service, initial, null, clock);
+    const offered = backend.writes;
+    await apply(service, initial, initial, clock);
+    expect(backend.writes - offered).toBeGreaterThanOrEqual(4);
+    expect(backend.poses.has("v1")).toBe(false);
+    // Once it takes them, they arrive, and are not sent again.
+    backend.landing = true;
+    await apply(service, initial, initial, clock);
+    expect(heard(backend)).toEqual({
+      listener: { x: 5, y: 1, z: 1 },
+      pose: { x: 1, y: 1, z: 1 },
+      muffles: [1, 0],
+      reverb: [backend.wet, backend.decay, backend.damping],
+    });
+    expect(backend.wet).toBeGreaterThan(0.2);
+    const taken = backend.writes;
+    await apply(service, initial, initial, clock);
+    expect(backend.writes - taken).toBe(0);
     service.dispose();
   });
 });
