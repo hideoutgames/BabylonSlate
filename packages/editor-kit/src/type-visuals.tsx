@@ -1,25 +1,47 @@
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
+import { EqualizerIcon } from "@phosphor-icons/react/dist/csr/Equalizer";
+import { FloppyDiskIcon } from "@phosphor-icons/react/dist/csr/FloppyDisk";
+import { PuzzlePieceIcon } from "@phosphor-icons/react/dist/csr/PuzzlePiece";
+import {
+  IconAdjustmentsAlt,
+  IconCube3dSphere,
+  IconDatabase,
+  IconEaseInOutControlPoints,
+  IconFileMusic,
+  IconKeyframes,
+  IconListDetails,
+  IconMovie,
+  IconPackage,
+  IconPhoto,
+  IconPhotoVideo,
+  IconSphere,
+  IconSphere2,
+  IconTimelineEvent,
+} from "@tabler/icons-react";
 import {
   ActivityIcon,
   AnchorIcon,
-  ChartScatterIcon,
+  AtomIcon,
   ApertureIcon,
   ArrowDownUpIcon,
   BoxIcon,
-  BoxesIcon,
   BracesIcon,
   CableIcon,
   CameraIcon,
+  CaseSensitiveIcon,
+  ChartScatterIcon,
   CircleDashedIcon,
   ClapperboardIcon,
+  ClipboardListIcon,
   CloudIcon,
+  CloudSunIcon,
   Columns3Icon,
-  ChartGanttIcon,
+  CompassIcon,
   CylinderIcon,
-  DatabaseIcon,
+  EraserIcon,
+  FileAxis3dIcon,
   FileBoxIcon,
   FileBracesCornerIcon,
-  FileAxis3dIcon,
   FileCogIcon,
   FileIcon,
   FileJsonIcon,
@@ -28,10 +50,12 @@ import {
   FileStackIcon,
   FileTerminalIcon,
   FilmIcon,
+  FlameIcon,
   FlipHorizontal2Icon,
   FocusIcon,
-  Grid3x3Icon,
   Gamepad2Icon,
+  Grid3x3Icon,
+  HazeIcon,
   ImageIcon,
   ImagePlayIcon,
   ImagesIcon,
@@ -42,31 +66,30 @@ import {
   LinkIcon,
   ListIcon,
   ListTreeIcon,
-  MapIcon,
+  MapPinnedIcon,
   MountainIcon,
   MousePointerClickIcon,
-  NavigationIcon,
+  MoveIcon,
   NetworkIcon,
-  PackageIcon,
   PaintbrushIcon,
   PersonStandingIcon,
   PlugIcon,
-  PuzzleIcon,
+  RectangleHorizontalIcon,
   Rows3Icon,
   SaveIcon,
   SpaceIcon,
   SparklesIcon,
   SplineIcon,
   SquareDashedIcon,
+  SquareFunctionIcon,
   TreesIcon,
   TypeIcon,
   VibrateIcon,
   Volume2Icon,
-  WindIcon,
   WavesIcon,
   WaypointsIcon,
-  EraserIcon,
   WorkflowIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { ENGINE_COMPONENT_CLASS_IDS } from "@haptic/core";
 import { cn } from "@haptic/ui/lib/utils";
@@ -79,6 +102,8 @@ export type AssetVisualFamily =
   | "renderTarget"
   | "sprite"
   | "material"
+  | "materialInstance"
+  | "visualEffects"
   | "model"
   | "audio"
   | "font"
@@ -90,12 +115,76 @@ export type AssetVisualFamily =
   | "folder"
   | "unknown";
 
+/** The props `TypeVisualIcon` passes. Lucide icons take them as they are; Tabler and Phosphor icons go through `tablerGlyph` / `phosphorGlyph`. */
+export type TypeVisualGlyphProps = {
+  size?: number;
+  color?: string;
+  strokeWidth?: number;
+  absoluteStrokeWidth?: boolean;
+  className?: string;
+  "aria-hidden"?: boolean;
+  "data-testid"?: string;
+  "data-type-family"?: string;
+  "data-type-icon"?: string;
+};
+
+export type TypeVisualGlyph = ComponentType<TypeVisualGlyphProps> | LucideIcon;
+
 export type TypeVisual = {
   family: AssetVisualFamily;
   colorVar: string;
-  icon: LucideIcon;
+  icon: TypeVisualGlyph;
   iconKey: string;
+  /** What a Class asset reads as in the Content Browser (Actor, Object, Subsystem, ...); other types have none. */
+  classKind?: string;
 };
+
+/** Lucide's on-screen stroke in px: `absoluteStrokeWidth` holds it at `strokeWidth` px whatever the size. */
+function lucideStrokePx({ size = 24, strokeWidth = 2, absoluteStrokeWidth }: TypeVisualGlyphProps): number {
+  return absoluteStrokeWidth ? strokeWidth : (strokeWidth * size) / 24;
+}
+
+/** A Tabler icon (Lucide's 24-unit grid and 2-unit stroke), stroked as Lucide strokes the same props. */
+function tablerGlyph(Icon: typeof IconPhoto): TypeVisualGlyph {
+  return function TablerTypeGlyph({ size = 24, strokeWidth = 2, absoluteStrokeWidth, ...rest }: TypeVisualGlyphProps) {
+    return <Icon size={size} stroke={absoluteStrokeWidth ? (strokeWidth * 24) / size : strokeWidth} {...rest} />;
+  };
+}
+
+/** Phosphor weights by stroke width, in units of its 256-unit grid. */
+const PHOSPHOR_WEIGHTS = [
+  ["light", 12],
+  ["regular", 16],
+  ["bold", 24],
+] as const;
+
+/** A Phosphor icon in the weight whose stroke is closest to Lucide's at that size (bold in chrome, light on tiles). */
+function phosphorGlyph(Icon: typeof EqualizerIcon): TypeVisualGlyph {
+  return function PhosphorTypeGlyph({ size = 24, strokeWidth, absoluteStrokeWidth, ...rest }: TypeVisualGlyphProps) {
+    const target = lucideStrokePx({ size, strokeWidth, absoluteStrokeWidth });
+    const off = (units: number) => Math.abs((units * size) / 256 - target);
+    const [weight] = PHOSPHOR_WEIGHTS.reduce((best, entry) => (off(entry[1]) < off(best[1]) ? entry : best));
+    return <Icon size={size} weight={weight} {...rest} />;
+  };
+}
+
+const MIXER_GLYPH = tablerGlyph(IconAdjustmentsAlt);
+const PHOTO_GLYPH = tablerGlyph(IconPhoto);
+const SPHERE_GLYPH = tablerGlyph(IconSphere);
+const SPHERE_2_GLYPH = tablerGlyph(IconSphere2);
+const MODEL_GLYPH = tablerGlyph(IconCube3dSphere);
+const PACKAGE_GLYPH = tablerGlyph(IconPackage);
+const MOVIE_GLYPH = tablerGlyph(IconMovie);
+const KEYFRAMES_GLYPH = tablerGlyph(IconKeyframes);
+const PHOTO_VIDEO_GLYPH = tablerGlyph(IconPhotoVideo);
+const FILE_MUSIC_GLYPH = tablerGlyph(IconFileMusic);
+const LIST_DETAILS_GLYPH = tablerGlyph(IconListDetails);
+const TIMELINE_EVENT_GLYPH = tablerGlyph(IconTimelineEvent);
+const DATABASE_GLYPH = tablerGlyph(IconDatabase);
+const CURVE_GLYPH = tablerGlyph(IconEaseInOutControlPoints);
+const EQUALIZER_GLYPH = phosphorGlyph(EqualizerIcon);
+const PUZZLE_GLYPH = phosphorGlyph(PuzzlePieceIcon);
+const FLOPPY_GLYPH = phosphorGlyph(FloppyDiskIcon);
 
 export type TypeVisualQuery = {
   assetType?: string;
@@ -230,9 +319,9 @@ const ENGINE_PARENT: Record<string, string | null> = {
   "2DPanelComponent": "ActorComponent",
 };
 
-const ICON_BY_ID: Record<string, LucideIcon> = {
+const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   Object: OBJECT_ICON,
-  MaterialObject: PaintbrushIcon,
+  MaterialObject: SPHERE_GLYPH,
   GameInstance: FileSlidersIcon,
   GameSubsystem: FileStackIcon,
   SceneSubsystem: FileAxis3dIcon,
@@ -252,8 +341,8 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   SceneStreamingActor: LayersIcon,
   AnimationGraphComponent: WorkflowIcon,
   BehaviourTreeComponent: ListTreeIcon,
-  NavAgentComponent: NavigationIcon,
-  NavMeshComponent: MapIcon,
+  NavAgentComponent: CompassIcon,
+  NavMeshComponent: MapPinnedIcon,
   NavMeshBlockerComponent: BoxIcon,
   BlockingVolumeComponent: SquareDashedIcon,
   "2DAnchorComponent": AnchorIcon,
@@ -300,15 +389,15 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   SplineComponent: WaypointsIcon,
   SaveGameComponent: SaveIcon,
   LightComponent: LightbulbIcon,
-  AreaRectLightComponent: LightbulbIcon,
+  AreaRectLightComponent: RectangleHorizontalIcon,
   FogVolumeComponent: CloudIcon,
   MirrorComponent: FlipHorizontal2Icon,
   ReflectionProbeComponent: ApertureIcon,
   OutlineComponent: SquareDashedIcon,
   DeformerComponent: BoxIcon,
-  HemisphericFillLightComponent: LightbulbIcon,
+  HemisphericFillLightComponent: HazeIcon,
   Light2DComponent: LightbulbIcon,
-  SkyboxComponent: CloudIcon,
+  SkyboxComponent: CloudSunIcon,
   Text3DComponent: TypeIcon,
   SceneStreamingComponent: LayersIcon,
   AudioComponent: Volume2Icon,
@@ -321,66 +410,66 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   WaterRemovalVolumeComponent: EraserIcon,
   WaterBuoyancyComponent: AnchorIcon,
   RigidBodyComponent: CylinderIcon,
-  MovementComponent: NavigationIcon,
-  ColliderComponent: CircleDashedIcon,
+  MovementComponent: MoveIcon,
+  ColliderComponent: SquareDashedIcon,
   PhysicsConstraintComponent: LinkIcon,
   RagdollComponent: PersonStandingIcon,
   Scene: LayersIcon,
   Graph: FileJsonIcon,
-  Texture: ImageIcon,
+  Texture: PHOTO_GLYPH,
   RenderTarget: CameraIcon,
   RenderTargetTexture: ImageIcon,
-  Material: PaintbrushIcon,
-  MaterialInstance: PaintbrushIcon,
-  MaterialFunction: PaintbrushIcon,
-  Model: BoxesIcon,
-  Audio: Volume2Icon,
-  AudioMixer: Volume2Icon,
-  InputAction: MousePointerClickIcon,
-  InputAxis: NavigationIcon,
-  AudioChannel: Volume2Icon,
+  Material: SPHERE_GLYPH,
+  MaterialInstance: SPHERE_2_GLYPH,
+  MaterialFunction: SquareFunctionIcon,
+  Model: MODEL_GLYPH,
+  Audio: FILE_MUSIC_GLYPH,
+  AudioMixer: MIXER_GLYPH,
+  InputAction: Gamepad2Icon,
+  InputAxis: MoveIcon,
+  AudioChannel: EQUALIZER_GLYPH,
   SoundAttenuation: Volume2Icon,
   CameraShake: VibrateIcon,
-  ParticleEmitter: WindIcon,
+  ParticleEmitter: FlameIcon,
   ParticleGraph: NetworkIcon,
-  ParticleSystem: SparklesIcon,
+  ParticleSystem: AtomIcon,
   Water: WavesIcon,
-  SkyboxCreator: CloudIcon,
-  Trace: ActivityIcon,
-  Font: TypeIcon,
-  Animation: FilmIcon,
+  SkyboxCreator: CloudSunIcon,
+  Trace: TIMELINE_EVENT_GLYPH,
+  Font: CaseSensitiveIcon,
+  Animation: MOVIE_GLYPH,
   Skeleton: PersonStandingIcon,
   AnimationGraph3D: WorkflowIcon,
   AnimationGraph2D: WorkflowIcon,
   BlendSpace: ChartScatterIcon,
   SpriteBlendSpace: ChartScatterIcon,
-  SpriteAnimation: FilmIcon,
-  // Tracks over time, so it reads apart from the Film icon of animations and clips.
-  Timeline: ChartGanttIcon,
+  SpriteAnimation: PHOTO_VIDEO_GLYPH,
+  // Keyframes over time, so it reads apart from the animation and clip glyphs.
+  Timeline: KEYFRAMES_GLYPH,
   TimelineClip2D: ImagePlayIcon,
   TimelineClip3D: ClapperboardIcon,
-  BehaviourTree: ListTreeIcon,
-  Blackboard: ListIcon,
-  SaveGame: SaveIcon,
+  BehaviourTree: NetworkIcon,
+  Blackboard: ClipboardListIcon,
+  SaveGame: FLOPPY_GLYPH,
   Sprite: ImagesIcon,
   Tileset: LayoutGridIcon,
   Tilemap: Grid3x3Icon,
   Class: OBJECT_ICON,
-  Prefab: PackageIcon,
-  Enum: ListIcon,
+  Prefab: PACKAGE_GLYPH,
+  Enum: LIST_DETAILS_GLYPH,
   Structure: BracesIcon,
   DataDefinition: FileBoxIcon,
-  DataTree: DatabaseIcon,
-  FloatCurve: SplineIcon,
-  VectorCurve: SplineIcon,
-  ColorCurve: SplineIcon,
+  DataTree: DATABASE_GLYPH,
+  FloatCurve: CURVE_GLYPH,
+  VectorCurve: CURVE_GLYPH,
+  ColorCurve: CURVE_GLYPH,
   GlobalParameterCollection: FileSlidersIcon,
-  FloatCurveObject: SplineIcon,
-  VectorCurveObject: SplineIcon,
-  ColorCurveObject: SplineIcon,
+  FloatCurveObject: CURVE_GLYPH,
+  VectorCurveObject: CURVE_GLYPH,
+  ColorCurveObject: CURVE_GLYPH,
   TimelineClip: FilmIcon,
   ScriptInterface: PlugIcon,
-  PluginSettings: PuzzleIcon,
+  PluginSettings: PUZZLE_GLYPH,
 };
 
 const COMPONENT_CLASS_IDS = new Set<string>(ENGINE_COMPONENT_CLASS_IDS);
@@ -393,7 +482,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   RenderTarget: "renderTarget",
   RenderTargetTexture: "renderTarget",
   Material: "material",
-  MaterialInstance: "material",
+  MaterialInstance: "materialInstance",
   MaterialFunction: "material",
   Model: "model",
   Audio: "class",
@@ -402,9 +491,9 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   InputAxis: "struct",
   AudioChannel: "struct",
   SoundAttenuation: "class",
-  ParticleEmitter: "material",
-  ParticleGraph: "material",
-  ParticleSystem: "material",
+  ParticleEmitter: "visualEffects",
+  ParticleGraph: "visualEffects",
+  ParticleSystem: "visualEffects",
   Water: "material",
   SkyboxCreator: "material",
   Trace: "class",
@@ -448,6 +537,8 @@ const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   renderTarget: assetColorVar("renderTarget"),
   sprite: assetColorVar("sprite"),
   material: assetColorVar("material"),
+  materialInstance: assetColorVar("materialInstance"),
+  visualEffects: assetColorVar("visualEffects"),
   model: assetColorVar("model"),
   audio: assetColorVar("audio"),
   font: assetColorVar("font"),
@@ -522,6 +613,31 @@ function familyFor(query: TypeVisualQuery, iconId: string | undefined): AssetVis
   return "unknown";
 }
 
+/** A Class's kind by its nearest engine base; a Class with none of these bases reads Object. */
+const CLASS_KIND_LABEL: Record<string, string> = {
+  Actor: "Actor",
+  Subsystem: "Subsystem",
+  GameInstance: "Game Instance",
+  ActorComponent: "Component",
+  FunctionLibrary: "Function Library",
+  EditorFunctionLibrary: "Editor Function Library",
+  DebugCommand: "Debug Command",
+  EditorUtilityObject: "Editor Utility Object",
+  BTTask: "Behaviour Tree Task",
+  BTDecorator: "Behaviour Tree Decorator",
+  BTService: "Behaviour Tree Service",
+  BTComposite: "Behaviour Tree Composite",
+};
+
+/** The kind label for a Class ancestry, most specific first. */
+function classKindLabel(ancestry: readonly string[]): string {
+  for (const id of ancestry) {
+    const label = CLASS_KIND_LABEL[id];
+    if (label) return label;
+  }
+  return "Object";
+}
+
 export function resolveTypeVisual(query: TypeVisualQuery = {}): TypeVisual {
   const iconId = iconIdFor(query);
   const family = familyFor(query, iconId);
@@ -530,6 +646,15 @@ export function resolveTypeVisual(query: TypeVisualQuery = {}): TypeVisual {
     colorVar: COLOR_BY_FAMILY[family],
     icon: iconId ? ICON_BY_ID[iconId]! : FileIcon,
     iconKey: iconId ?? "File",
+    ...(query.assetType === "Class"
+      ? {
+          classKind: classKindLabel(
+            query.ancestry?.length
+              ? query.ancestry
+              : walkAncestry(query.parentClass ?? query.classId ?? "Object", (id) => engineParentOf(id) ?? null),
+          ),
+        }
+      : {}),
   };
 }
 

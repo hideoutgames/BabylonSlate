@@ -6,13 +6,12 @@ import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Material
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 
 /**
  * The vertex attributes a draw batch's mesh carries its members' world matrices in: the first three rows, a row each.
- * The fourth of an affine matrix is (0, 0, 0, 1), and WebGPU guarantees a draw only eight vertex buffers.
+ * The fourth of an affine matrix is (0, 0, 0, 1), so three attributes carry the whole matrix.
  */
 export const DRAW_BATCH_WORLD_KINDS = ["batchWorld0", "batchWorld1", "batchWorld2"] as const;
 
@@ -86,7 +85,7 @@ export function isDrawBatchTextMaterial(material: Material): boolean {
  * own vertices and, per vertex, the rows of the member's world matrix as its own draw uploads them
  * (`DRAW_BATCH_WORLD_KINDS`). Under `HAPTIC_BATCH` the matrix is built from those, so the vertex stage transforms each
  * vertex with the same expression on the same 32-bit values as the member's draw, whatever its pose. Every other draw
- * passes `world` through, and declares none of the attributes: WebGPU draws only with a buffer for each one declared.
+ * passes `world` through, and declares none of the attributes, which only a batch's mesh has buffers for.
  */
 export class DrawBatchWorldBlock extends NodeMaterialBlock {
   constructor(name: string) {
@@ -105,17 +104,15 @@ export class DrawBatchWorldBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state.sharedData.blocksWithDefines.push(this);
-    const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     for (const kind of DRAW_BATCH_WORLD_KINDS) {
       if (state.attributes.includes(kind)) continue;
       state.attributes.push(kind);
-      state._attributeDeclaration += `#ifdef HAPTIC_BATCH\nattribute ${wgsl ? `${kind}: vec4f` : `vec4 ${kind}`};\n#endif\n`;
+      state._attributeDeclaration += `#ifdef HAPTIC_BATCH\nattribute vec4 ${kind};\n#endif\n`;
     }
-    const [x, y, z] = DRAW_BATCH_WORLD_KINDS.map((kind) => `${wgsl ? "vertexInputs." : ""}${kind}`);
-    const vec4 = wgsl ? "vec4f" : "vec4";
+    const [x, y, z] = DRAW_BATCH_WORLD_KINDS;
     // Column by column, from the rows.
-    const columns = ["x", "y", "z", "w"].map((part) => `${vec4}(${x}.${part}, ${y}.${part}, ${z}.${part}, ${part === "w" ? "1.0" : "0.0"})`).join(", ");
-    state.compilationString += `#ifdef HAPTIC_BATCH\n${state._declareOutput(this.output)} = ${wgsl ? "mat4x4f" : "mat4"}(${columns});\n#else\n` +
+    const columns = ["x", "y", "z", "w"].map((part) => `vec4(${x}.${part}, ${y}.${part}, ${z}.${part}, ${part === "w" ? "1.0" : "0.0"})`).join(", ");
+    state.compilationString += `#ifdef HAPTIC_BATCH\n${state._declareOutput(this.output)} = mat4(${columns});\n#else\n` +
       `${state._declareOutput(this.output)} = ${this.world.associatedVariableName};\n#endif\n`;
     return this;
   }
@@ -137,20 +134,18 @@ export function drawBatchWorld(name: string, instances: InstancesBlock, blocks: 
  * the expression of the value as it binds it. Returns a local that holds the value, for the block's code to use.
  */
 export function drawBatchValue(state: NodeMaterialBuildState, kind: string, bound: string): string {
-  const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
   const vertex = state._vertexState;
   const varying = `v_${kind}`;
   if (!vertex.attributes.includes(kind)) {
     vertex.attributes.push(kind);
-    vertex._attributeDeclaration += `#ifdef HAPTIC_BATCH\nattribute ${wgsl ? `${kind}: vec4f` : `vec4 ${kind}`};\n#endif\n`;
+    vertex._attributeDeclaration += `#ifdef HAPTIC_BATCH\nattribute vec4 ${kind};\n#endif\n`;
     state._emitVaryingFromString(varying, Types.Vector4, "HAPTIC_BATCH");
-    // GLSL `varying vec4 v;` and WGSL `varying v: vec4f;`, which Babylon's processors turn into `flat in/out` and
-    // `@interpolate(flat)`.
-    const declaration = new RegExp(`(^|\\n)varying (\\w+ ${varying};|${varying}:)`, "g");
+    // The declaration is `varying vec4 v;`, which Babylon's processor turns into `flat in/out`.
+    const declaration = new RegExp(`(^|\\n)varying (\\w+ ${varying};)`, "g");
     const shared = state.sharedData;
     shared.varyingDeclaration = shared.varyingDeclaration.replace(declaration, "$1flat varying $2");
     shared.varyingDeclarationFragment = shared.varyingDeclarationFragment.replace(declaration, "$1flat varying $2");
-    vertex.compilationString += `#ifdef HAPTIC_BATCH\n${wgsl ? "vertexOutputs." : ""}${varying} = ${wgsl ? "vertexInputs." : ""}${kind};\n#endif\n`;
+    vertex.compilationString += `#ifdef HAPTIC_BATCH\n${varying} = ${kind};\n#endif\n`;
   }
   const local = state._getFreeVariableName(`${kind}Value`);
   const declared = state._declareLocalVar(local, Types.Vector4);

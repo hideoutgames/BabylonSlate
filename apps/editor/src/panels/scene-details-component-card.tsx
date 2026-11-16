@@ -275,6 +275,7 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
           {showExtras && component.classId === "RagdollComponent" ? (
             <RagdollBoneNamesEditor
               boneNames={component.properties.boneNames as string[] | undefined}
+              components={actor.components}
               onChange={(boneNames) => updateActor((entry) => ({
                 ...entry,
                 components: entry.components.map((candidate) => candidate.id === component.id

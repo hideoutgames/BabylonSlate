@@ -9,7 +9,7 @@ import type { BridgeHostMessage, BridgeWorkerMessage } from "@haptic/bridge";
 import type { AbstractEngine } from "@babylonjs/core";
 import { loadGameFromFiles } from "./artifact";
 import { startPlayer, type PlayerBootHandle } from "./boot";
-import { startPlayerWithBackend } from "./player-backend";
+import { startPlayerWithEngine } from "./player-engine";
 import { createPlayerWorkerHost } from "./worker-host";
 import * as inputs from "@haptic/input/dom";
 const attachInputCapture = inputs.attachInputCapture;
@@ -114,18 +114,16 @@ async function fixture(withWater = false, saveGame?: SaveGameConfiguration, with
 
 async function backendFixture() {
   const value = await fixture();
-  const owner: rendering.BackendEngineSession = {
+  const owner: rendering.EngineSession = {
     engine: { runRenderLoop: vi.fn(), stopRenderLoop: vi.fn() } as unknown as AbstractEngine,
-    requestedBackend: "webgl2",
-    effectiveBackend: "webgl2",
     dispose: vi.fn(() => { expect(value.handle.dispose).toHaveBeenCalledOnce(); }),
   };
-  vi.spyOn(rendering, "createBackendEngineSession").mockResolvedValue(owner);
+  vi.spyOn(rendering, "createEngineSession").mockResolvedValue(owner);
   return { ...value, owner };
 }
 
 /** The Engine goes once its view's Scene release settles, after Stop returns. */
-async function expectEngineReleased(owner: rendering.BackendEngineSession) {
+async function expectEngineReleased(owner: rendering.EngineSession) {
   await vi.waitFor(() => expect(owner.dispose).toHaveBeenCalledOnce());
   expect(vi.mocked(owner.dispose).mock.results[0]?.type).toBe("return");
 }
@@ -237,7 +235,7 @@ describe("player startup and Stop ownership", () => {
     const commands: Array<{ type: string } & Record<string, unknown>> = [];
     const session = startPlayer({ game, canvas, previewDiagnostics: true, onConsoleEvent: (command) => commands.push(command) });
     sessions.push(session);
-    vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!(true);
+    vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!(true);
     expect(TestWorker.instances[0]!.messages.some(entry => entry.channel === "control" && entry.payload.type === "sessionBoundary")).toBe(true);
     session.stop();
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -262,7 +260,7 @@ describe("player startup and Stop ownership", () => {
     acknowledge([]);
     await Promise.resolve();
     await vi.waitFor(() => expect(rendering.createEngine).toHaveBeenCalled());
-    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!;
+    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!;
     hold(true);
     expect(boundary().action).toEqual({ kind: "pause", reason: "rendering", paused: true });
     acknowledge(["rendering"]);
@@ -283,7 +281,7 @@ describe("player startup and Stop ownership", () => {
     await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
     expect(rendering.createEngine).toHaveBeenCalled();
     const pauses = () => worker.messages.flatMap(entry => entry.channel === "control" && entry.payload.type === "setPaused" ? [entry.payload] : []);
-    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onPipelineHold!;
+    const hold = vi.mocked(rendering.createEngine).mock.calls.at(-1)![1]!.onCompileHold!;
     hold(true);
     expect(pauses().at(-1)).toEqual({ type: "setPaused", paused: true, reason: "rendering" });
     hold(false);
@@ -372,7 +370,7 @@ describe("player startup and Stop ownership", () => {
   it.each(["error", "messageerror"] as const)("reports an asynchronous worker %s and releases the player", async (kind) => {
     const { game, canvas, handle, owner } = await backendFixture();
     const onDiagnostic = vi.fn();
-    const session = await startPlayerWithBackend({ game, canvas, onDiagnostic });
+    const session = await startPlayerWithEngine({ game, canvas, onDiagnostic });
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     if (kind === "error") worker.onerror?.(new ErrorEvent("error", { message: "Worker module could not load" }));
@@ -391,7 +389,7 @@ describe("player startup and Stop ownership", () => {
   it("reports every worker diagnostic but retains a bounded list that keeps the first and newest", async () => {
     const { game, canvas } = await backendFixture();
     const onDiagnostic = vi.fn();
-    const session = await startPlayerWithBackend({ game, canvas, onDiagnostic });
+    const session = await startPlayerWithEngine({ game, canvas, onDiagnostic });
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     const total = 5000;
@@ -413,7 +411,7 @@ describe("player startup and Stop ownership", () => {
       settle = outcome === "confirmed" ? resolve : () => reject(new Error("Native release timed out"));
     }));
     const onStopped = vi.fn();
-    const session = await startPlayerWithBackend({ game, canvas, onStopped });
+    const session = await startPlayerWithEngine({ game, canvas, onStopped });
     sessions.push(session);
     session.stop();
     expect(handle.dispose).toHaveBeenCalledOnce();
@@ -697,7 +695,7 @@ describe("player startup and Stop ownership", () => {
   it("stops before the worker's first loading token and detaches late commands and input", async () => {
     const { game, canvas, handle, input, owner } = await backendFixture();
     const onStopped = vi.fn();
-    const session = await startPlayerWithBackend({ game, canvas, onStopped });
+    const session = await startPlayerWithEngine({ game, canvas, onStopped });
     sessions.push(session);
     expect(rendering.createEngine).toHaveBeenCalledWith(
       canvas,
@@ -727,7 +725,7 @@ describe("player startup and Stop ownership", () => {
 
   it("releases the backend when host Stop interrupts a held load even when an inner cleanup fails", async () => {
     const { game, canvas, root, handle, input, owner } = await backendFixture();
-    const session = await startPlayerWithBackend({ game, canvas });
+    const session = await startPlayerWithEngine({ game, canvas });
     sessions.push(session);
     const releaseInput = input().dispose;
     const failedDispose = vi.spyOn(input(), "dispose").mockImplementation(() => { releaseInput(); throw new Error("Input disposal failed"); });
@@ -750,7 +748,7 @@ describe("player startup and Stop ownership", () => {
 
   it("reports loading on the player root without a dialog and clears it when the scene is ready", async () => {
     const { game, canvas, root, handle } = await backendFixture();
-    const session = await startPlayerWithBackend({ game, canvas });
+    const session = await startPlayerWithEngine({ game, canvas });
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     worker.command({ channel: "command", payload: { type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 } });
@@ -804,7 +802,7 @@ describe("player startup and Stop ownership", () => {
   it("rolls back the acquired scene when later startup setup throws", async () => {
     const { game, canvas, handle, owner } = await backendFixture();
     vi.spyOn(inputs, "attachInputCapture").mockImplementation(() => { throw new Error("Input setup failed"); });
-    await expect(startPlayerWithBackend({ game, canvas })).rejects.toThrow("Input setup failed");
+    await expect(startPlayerWithEngine({ game, canvas })).rejects.toThrow("Input setup failed");
     expect(TestWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
     expect(handle.dispose).toHaveBeenCalledOnce();
     await expectEngineReleased(owner);
@@ -832,7 +830,7 @@ describe("player startup and Stop ownership", () => {
 
   it("unwinds a loading failure even when the worker transport can no longer accept Stop", async () => {
     const { game, canvas, handle, owner } = await backendFixture();
-    const session = await startPlayerWithBackend({ game, canvas });
+    const session = await startPlayerWithEngine({ game, canvas });
     sessions.push(session);
     const worker = TestWorker.instances[0]!;
     worker.command({ channel: "command", payload: { type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 1 } });

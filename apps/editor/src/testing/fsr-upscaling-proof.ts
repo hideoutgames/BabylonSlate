@@ -6,21 +6,19 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderEffectsSettings } from "@haptic/core";
-import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 
 const WIDTH = 128;
 const HEIGHT = 64;
 
 /** FSR 1 through the production FrameGraph chain, against a full-size frame. */
-export async function runFsrUpscalingProof(backend: "webgl2" | "webgpu") {
+export async function runFsrUpscalingProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0, 0, 0, 1);
@@ -77,7 +75,6 @@ export async function runFsrUpscalingProof(backend: "webgl2" | "webgpu") {
     }
     const pixelCount = WIDTH * HEIGHT;
     return {
-      effectiveBackend: engine.isWebGPU ? "webgpu" : (engine as Engine).webGLVersion === 2 ? "webgl2" : "webgl1",
       meanError: error / pixelCount,
       differingFraction: differing / pixelCount,
       coverageRatio: covered / Math.max(1, referenceCovered),

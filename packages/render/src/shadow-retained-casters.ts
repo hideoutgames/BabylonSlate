@@ -44,8 +44,8 @@ import { isSmoothNormalShadowCaster } from "./shadow-bias";
  * metric chunks, its fragment shader, the generator's own defines), and the cull state and normal matrix are chosen as
  * Babylon's draw of the caster chooses them, so a retained caster writes the depth Babylon's draw of it would.
  *
- * Everything else keeps Babylon's path: skinned, morphed and cut-out casters, thin instances, levels of detail, a
- * Material with its own depth variant, and every caster on WebGPU.
+ * Everything else keeps Babylon's path: skinned, morphed and cut-out casters, thin instances, levels of detail and a
+ * Material with its own depth variant.
  */
 
 const VERTEX = "hapticRetainedShadow";
@@ -276,10 +276,10 @@ export class RetainedShadowCasters {
   private calls = 0;
   private drawn = 0;
 
-  /** Null where retained draws cannot work: WebGPU (Babylon's path stays), or an engine without WebGL2. */
+  /** Null where retained draws cannot work (Babylon's path stays): an engine without WebGL2. */
   static create(scene: Scene, state: (mesh: AbstractMesh) => RetainedCasterState | undefined): RetainedShadowCasters | null {
     const engine = scene.getEngine() as ThinEngine;
-    if (engine.isWebGPU || engine.webGLVersion < 2 || !engine._gl) return null;
+    if (engine.webGLVersion < 2 || !engine._gl) return null;
     return new RetainedShadowCasters(scene, state);
   }
 

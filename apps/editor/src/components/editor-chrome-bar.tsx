@@ -1,6 +1,7 @@
 import { useBreakpointStop } from "../lib/breakpoint-stop";
 import type { GraphDebugStepPosition } from "../services/graph-debug-store";
 import { SceneModeSelect } from "./scene-mode-select";
+import { SourceControlDiffPickers } from "./source-control-diff-pickers";
 import {
   DndContext,
   KeyboardSensor,
@@ -89,11 +90,14 @@ import {
   useActiveDocumentState,
   useCompileState,
   useDocumentActions,
+  useIntegratedSyncState,
   useOpenDocumentTabs,
   useProjectState,
   useRegistryState,
   useSaveState,
 } from "../context/document-context";
+import { Badge } from "@haptic/ui/components/badge";
+import { SourceControlPhoneTools } from "./source-control-phone-tools";
 import { usePlay } from "../context/play-context";
 import { useSimulationControls } from "../context/simulation-controls-context";
 import { useGraphDebugStore } from "../context/graph-debug-context";
@@ -108,6 +112,7 @@ import { SettingsModal } from "./settings-modal";
 import { PackagingDialog } from "./packaging-dialog";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { useIsFeatureTestProject } from "../lib/use-is-feature-test-project";
+import { gitBenchmarkAvailable } from "../lib/git-benchmark-hook";
 import { useAppSettings, useDebugMode } from "../context/app-settings-context";
 import { IconActionButton } from "./icon-action-button";
 import { ActionFeedbackButton } from "./action-feedback-button";
@@ -136,6 +141,10 @@ import "../shell/editor-chrome.css";
 // Only a Feature Test project in Debug Mode mounts the check, so other projects never load it or its report.
 const FeatureTestCheckDialog = lazy(() =>
   import("./feature-test-check-dialog").then((module) => ({ default: module.FeatureTestCheckDialog })),
+);
+// Mounted on its first open; the runner and the Git core load only when it runs.
+const GitBenchmarkDialog = lazy(() =>
+  import("./git-benchmark-dialog").then((module) => ({ default: module.GitBenchmarkDialog })),
 );
 
 function kindIcon(ref: DocumentRef, resolveVisual: DocumentTypeVisualResolver) {
@@ -221,18 +230,31 @@ function SortableDocumentTab({
   );
 }
 
+/** Integrated mode's uncommitted change count on the pinned Source Control tab; only it re-renders with the sync. */
+function SourceControlTabCount() {
+  const sync = useIntegratedSyncState();
+  if (!sync.active || sync.rows.length === 0) return null;
+  return (
+    <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums" data-testid="source-control-tab-count">
+      {sync.rows.length}
+    </Badge>
+  );
+}
+
 function PinnedDocumentTab({
   doc,
   icon,
   active,
   onSelect,
   onClose,
+  badge,
 }: {
   doc: OpenDocument;
   icon: ReactNode;
   active: boolean;
   onSelect: () => void;
   onClose?: () => void;
+  badge?: ReactNode;
 }) {
   return (
     <div
@@ -258,6 +280,7 @@ function PinnedDocumentTab({
           {doc.ref.label}
           {doc.dirty ? " *" : ""}
         </span>
+        {badge}
       </Button>
       {onClose ? (
         <Button
@@ -391,6 +414,11 @@ export function EditorChromeBar({
   const featureTestProject = useIsFeatureTestProject();
   const debugMode = useDebugMode();
   const featureTestCheck = featureTestProject && debugMode;
+  const gitBenchmark = debugMode && gitBenchmarkAvailable();
+  const [gitBenchmarkOpen, setGitBenchmarkOpen] = useState(false);
+  // Kept mounted after its first open, so a running benchmark and its result survive closing the dialog.
+  const [gitBenchmarkOpened, setGitBenchmarkOpened] = useState(false);
+  if (gitBenchmarkOpen && !gitBenchmarkOpened) setGitBenchmarkOpened(true);
   const phone = usePhoneLayout();
   const touch = useTouchUi();
   // Keeps its lazy class lookup until the registry changes, not per edit.
@@ -567,6 +595,10 @@ export function EditorChromeBar({
         onRunFeatureTestCheck={featureTestCheck ? () => {
           setToolsOpen(false);
           setFeatureTestCheckOpen(true);
+        } : undefined}
+        onRunGitBenchmark={gitBenchmark ? () => {
+          setToolsOpen(false);
+          setGitBenchmarkOpen(true);
         } : undefined}
         listRecentTraces={listRecentTraces}
         recentTraceLimit={appSettings.tracesKept}
@@ -954,6 +986,7 @@ export function EditorChromeBar({
                   icon={kindIcon(sourceControlDoc.ref, resolveDocumentVisual)}
                   active={activeDocumentId === SOURCE_CONTROL_ID}
                   onSelect={() => setActiveDocument(SOURCE_CONTROL_ID)}
+                  badge={<SourceControlTabCount />}
                 />
               </div>
             ) : null}
@@ -1053,6 +1086,11 @@ export function EditorChromeBar({
           {activeKind === "scene" || activeKind === "scene-layer" ? (
             <ToolbarOverflowItem id="scene-mode">
               <SceneModeSelect kind={activeKind} disabled={playing || preparing} />
+            </ToolbarOverflowItem>
+          ) : null}
+          {activeKind === "source-control" ? (
+            <ToolbarOverflowItem id="diff-versions">
+              <SourceControlDiffPickers />
             </ToolbarOverflowItem>
           ) : null}
           {activeKind === "graph" ? (
@@ -1265,6 +1303,7 @@ export function EditorChromeBar({
                 <div className="editor-tools-sheet-actions">
                   {debugMenu}
                   {utilityTools}
+                  <SourceControlPhoneTools onAction={() => setToolsOpen(false)} />
                 </div>
               </SheetContent>
             </Sheet>
@@ -1278,6 +1317,11 @@ export function EditorChromeBar({
       {featureTestCheck ? (
         <Suspense fallback={null}>
           <FeatureTestCheckDialog open={featureTestCheckOpen} onOpenChange={setFeatureTestCheckOpen} />
+        </Suspense>
+      ) : null}
+      {gitBenchmark && gitBenchmarkOpened ? (
+        <Suspense fallback={null}>
+          <GitBenchmarkDialog open={gitBenchmarkOpen} onOpenChange={setGitBenchmarkOpen} />
         </Suspense>
       ) : null}
       {openedSettings.project ? (

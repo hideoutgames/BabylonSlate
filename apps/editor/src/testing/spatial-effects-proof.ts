@@ -22,7 +22,6 @@ import {
 } from "@haptic/core";
 import {
   applyAuthoredLightProperties,
-  createAppWebGpuEngine,
   MaterialLibrary,
   setSceneRenderSettings,
 } from "@haptic/render";
@@ -32,7 +31,6 @@ import { managedRenderReservations } from "@haptic/render/managed-render-resourc
 import { removeFogVolumes, upsertFogVolumes } from "@haptic/render/fog-volumes";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 async function captureFogVolumes(
   scene: Scene,
@@ -302,7 +300,7 @@ function crossesOccluder(from: Vector3, to: Vector3): boolean {
 }
 
 /**
- * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): how far the camera's ray travels through the
+ * Per pixel, in readPixels' rows (bottom-up): how far the camera's ray travels through the
  * fog light's cone where the occluder blocks the light (`shadowed`), in metres, up to the march's distance or the
  * first surface, and through it in the march step past that surface
  * (`shadowedBeyond`: the march's samples lie a step apart, so its last one may lie up to a step beyond the surface).
@@ -314,7 +312,7 @@ function beamLengths(scene: Scene, camera: FreeCamera, engine: AbstractEngine, m
   const shadowedBeyond: number[] = [];
   const step = 0.01;
   for (let row = 0; row < height; row++) {
-    const y = engine.isWebGPU ? row + 0.5 : height - row - 0.5;
+    const y = height - row - 0.5;
     for (let column = 0; column < width; column++) {
       const ray = scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera);
       const hit = scene.pickWithRay(ray);
@@ -351,7 +349,6 @@ export interface SpatialEffectsProofOptions {
 }
 
 export async function runSpatialEffectsProof(
-  backend: "webgl2" | "webgpu",
   kind: "combined" | "fogVolumes" | "ambientOcclusion" | "reflections" | "volumetricShadows",
   options: SpatialEffectsProofOptions = {},
 ) {
@@ -359,13 +356,10 @@ export async function runSpatialEffectsProof(
   canvas.width = 96;
   canvas.height = 72;
   document.getElementById("root")!.append(canvas);
-  const engine =
-    backend === "webgpu"
-      ? await createAppWebGpuEngine(canvas)
-      : new Engine(canvas, false, {
-          preserveDrawingBuffer: true,
-          stencil: true,
-        });
+  const engine = new Engine(canvas, false, {
+    preserveDrawingBuffer: true,
+    stencil: true,
+  });
   engine.setSize(96, 72);
   try {
     const captureScene = async () => {
@@ -537,9 +531,8 @@ export async function runSpatialEffectsProof(
           canvas.width,
           canvas.height,
         );
-        return toRgbaPixels(
+        return Array.from(
           new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
-          readbackChannelOrder(engine.isWebGPU),
         );
       };
       try {
@@ -611,8 +604,8 @@ export async function runSpatialEffectsProof(
         await graph.whenReleased();
         library.dispose();
         scene.dispose();
-        // This fixture owns the entire engine. Drain queued WebGPU destruction
-        // after CPU teardown, just as the host's next frame or Engine.dispose does.
+        // This fixture owns the entire engine. A frame runs after CPU teardown,
+        // as the host's next frame would.
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
         engine.beginFrame();
         engine.endFrame();

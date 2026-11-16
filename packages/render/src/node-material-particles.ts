@@ -5,9 +5,6 @@ import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem";
 import { BaseParticleSystem } from "@babylonjs/core/Particles/baseParticleSystem";
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
-// Custom effects bypass GPUParticleSystem's default effect initializer, which
-// normally imports its WGSL vertex shader before requesting compilation; the
-// WebGPU Engine's code registers it as it loads (webgpu-registrations).
 
 type NativeParticleBinder = (
   system: IParticleSystem, blend: number,
@@ -114,7 +111,7 @@ export function prepareNodeMaterialParticleBindings(material: NodeMaterial): voi
     boundMaterials.set(system, material);
     // DrawWrapper.dispose delays the Effect, but destroys its draw context
     // immediately. A define change occurs inside onBind, before the current
-    // WebGPU draw consumes that context: retire the whole wrapper after frame.
+    // draw consumes that context: retire the whole wrapper after frame.
     if (previous && previous.wrapper !== wrapper) {
       const retired = previous.wrapper;
       const engine = material.getScene().getEngine();

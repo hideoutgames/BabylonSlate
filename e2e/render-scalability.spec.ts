@@ -149,8 +149,7 @@ test("scalability updates budgets, persists Custom and preserves independent set
   await page.getByLabel("Texture Budget (MiB)", { exact: true }).press("Tab");
   await expect(value(page, "Textures Quality")).toHaveText("Custom");
   await commitRendering(page);
-  // The backend is a project setting only: Scene Details has no Rendering
-  // override section and no per-Scene backend control.
+  // Scene Details has no Rendering override section.
   await expect(page.getByTestId("scene-render-pipeline")).toHaveCount(0);
   await expect(page.getByTestId("save-all-project")).toBeEnabled();
   await saveAllIfEnabled(page, 30_000);

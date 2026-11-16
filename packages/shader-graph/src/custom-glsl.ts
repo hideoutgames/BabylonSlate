@@ -40,7 +40,7 @@ export function customGlslDefinition(node: MaterialGraphNode, base: MaterialNode
   const code = glslWithoutComments(String(node.properties.body ?? ""));
   return {
     ...base,
-    ...(DERIVATIVE.test(code) ? { requires: ["customGlsl", "derivatives"] as const } : {}),
+    ...(DERIVATIVE.test(code) ? { requires: ["derivatives"] as const } : {}),
     inputs: pins.inputs.map((pin) => ({ ...pin, type: { kind: pin.type }, ...(pin.type === "texture" ? {} : { defaultValue: Array(componentCount(pin.type)).fill(0) as number[] }) })),
     outputs: pins.outputs.map((pin) => ({ ...pin, type: { kind: pin.type } })),
     // Derivatives and discard cannot be evaluated by the vertex shader.

@@ -7,7 +7,10 @@ import {
   INT,
   STRING,
   BOXED_WILDCARD,
+  ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+  enumRef,
   objectRef,
+  assetRef,
 } from "@haptic/scripting";
 import { subject } from "./self-pin";
 
@@ -193,6 +196,98 @@ export const animationNodes: NodeDefinition[] = [
       ctx.emit(
         `ctx.jumpAnimGraphState(${ctx.input("target")}, ${ctx.input("state")});`,
       );
+    },
+  },
+  {
+    id: "anim.actor.playSlotAnimation",
+    title: "Play Slot Animation",
+    category: "animation",
+    latent: true,
+    description: "Plays an Animation (3D) or Sprite Animation (2D) once on a slot of the graph, over what the slot shows. On Blend Out runs as it starts blending out, On Completed once it has played through.",
+    searchAliases: ["montage", "one shot", "play animation"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("onBlendOut", "On Blend Out", "out", EXEC),
+      pin("onCompleted", "On Completed", "out", EXEC),
+      subject(pin("target", "Target", "in", objectRef("AnimationGraphComponent"))),
+      pin("animation", "Animation", "in", assetRef("Animation")),
+      pin("slotName", "Slot Name", "in", STRING, "data", true, "DefaultSlot"),
+      pin("blendInTime", "Blend In Time", "in", FLOAT, "data", true, 0.25),
+      pin("blendOutTime", "Blend Out Time", "in", FLOAT, "data", true, 0.25),
+      pin("playRate", "Play Rate", "in", FLOAT, "data", true, 1),
+      pin("loopCount", "Loop Count", "in", INT, "data", true, 1),
+      pin("startTime", "Start Time", "in", FLOAT, "data", true, 0),
+    ],
+    codegen: (ctx) => {
+      const handle = `__slotPlay_${ctx.node.id.replace(/[^A-Za-z0-9_$]/g, "_")}`;
+      const args = ["target", "animation", "slotName", "blendInTime", "blendOutTime", "playRate", "loopCount", "startTime"]
+        .map((name) => ctx.input(name)).join(", ");
+      ctx.emit(`const ${handle} = ctx.playSlotAnimation(${args});`);
+      // Each output runs as the play reaches it: its blend out, then its end (only when it played through).
+      ctx.runOutputIf?.(`(yield ctx.waitSlotAnimation(${handle}, "blendOut"))`, "onBlendOut");
+      ctx.runOutputIf?.(`(yield ctx.waitSlotAnimation(${handle}, "completed"))`, "onCompleted");
+    },
+  },
+  {
+    id: "anim.actor.stopSlotAnimation",
+    title: "Stop Slot Animation",
+    category: "animation",
+    description: "Blends a slot's Animation out over Blend Out Time; its Play Slot Animation runs On Blend Out but not On Completed.",
+    searchAliases: ["stop montage"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      subject(pin("target", "Target", "in", objectRef("AnimationGraphComponent"))),
+      pin("slotName", "Slot Name", "in", STRING, "data", true, "DefaultSlot"),
+      pin("blendOutTime", "Blend Out Time", "in", FLOAT, "data", true, 0.25),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.stopSlotAnimation(${ctx.input("target")}, ${ctx.input("slotName")}, ${ctx.input("blendOutTime")});`);
+    },
+  },
+  {
+    id: "anim.actor.isSlotActive",
+    title: "Is Slot Active",
+    category: "animation",
+    description: "Whether a slot is playing an Animation, blending out included.",
+    pure: true,
+    searchAliases: ["is playing slot animation", "montage is playing"],
+    pins: () => [
+      subject(pin("target", "Target", "in", objectRef("AnimationGraphComponent"))),
+      pin("slotName", "Slot Name", "in", STRING, "data", true, "DefaultSlot"),
+      pin("value", "value", "out", BOOL),
+    ],
+    codegen: (ctx) => ({
+      value: `ctx.isSlotActive(${ctx.input("target")}, ${ctx.input("slotName")})`,
+    }),
+  },
+  {
+    id: "anim.actor.getTickMode",
+    title: "Get Animation Tick Mode",
+    category: "animation",
+    pure: true,
+    searchAliases: ["visibility based tick", "update when visible", "pause animation"],
+    pins: () => [
+      subject(pin("target", "Target", "in", objectRef("AnimationGraphComponent"))),
+      pin("tickMode", "Tick Mode", "out", enumRef(ENGINE_ANIMATION_TICK_MODE_ENUM_ID)),
+    ],
+    codegen: (ctx) => ({
+      tickMode: `ctx.getAnimGraphTickMode(${ctx.input("target")})`,
+    }),
+  },
+  {
+    id: "anim.actor.setTickMode",
+    title: "Set Animation Tick Mode",
+    category: "animation",
+    searchAliases: ["visibility based tick", "update when visible", "pause animation", "stop animation"],
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      subject(pin("target", "Target", "in", objectRef("AnimationGraphComponent"))),
+      pin("tickMode", "Tick Mode", "in", enumRef(ENGINE_ANIMATION_TICK_MODE_ENUM_ID), "data", true, "Always"),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.setAnimGraphTickMode(${ctx.input("target")}, ${ctx.input("tickMode")});`);
     },
   },
 ];

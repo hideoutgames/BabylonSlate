@@ -30,7 +30,7 @@ import { prepareAssetThumbnailInput, prepareThumbnailMaterialSources } from "../
 import { blockingSceneLoadOpen, subscribeBlockingSceneLoads, whenNoBlockingSceneLoad } from "../lib/blocking-scene-loads";
 import { whenEditorAwake } from "../lib/editor-quiet";
 import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
-import { generateTileAssetThumbnail } from "../lib/tile-asset-thumbnails";
+import { generateTileAssetThumbnail, isTileThumbnailType } from "../lib/tile-asset-thumbnails";
 
 /**
  * Interruptions a retry survives. Its next run starts over, so a steady trickle
@@ -234,8 +234,8 @@ export function ModelThumbnailCaptureHost() {
         const png = await generateThumbnailBytes(pixels, DEFAULT_THUMBNAIL_MAX_EDGE);
         return finish(png ? { outcome: "captured", png } : { outcome: "failed" });
       }
-      if (job.type === "Tileset" || job.type === "Tilemap") {
-        // Drawn in 2D from the saved tiles: no Engine needed.
+      if (job.type && isTileThumbnailType(job.type)) {
+        // Drawn in 2D from the saved Texture or tiles: no Engine needed.
         const asset = assetRegistry?.getByGuid(job.guid);
         if (!asset || !assetRegistry) return "none";
         const png = await generateTileAssetThumbnail({

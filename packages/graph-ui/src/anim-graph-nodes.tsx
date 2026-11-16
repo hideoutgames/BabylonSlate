@@ -15,6 +15,7 @@ import { cn } from "@haptic/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { animTransitionPath } from "./anim-transition-path";
 import { useNodeBreakpoint } from "./graph-breakpoints";
+import { NodeKindIcon } from "./node-icons";
 import { NodeBreakpointTab } from "./graph-nodes";
 import { useNodeMenu } from "./use-node-menu";
 
@@ -111,7 +112,10 @@ function AnimAliasNode({ id, data, selected }: NodeProps<Node<AnimStateData>>) {
       {...nodeMenu.bind}
     >
       <AnimStateHandles id={id} />
-      <div className="anim-state-node-title">{typeof data.title === "string" ? data.title : "State Alias"}</div>
+      <div className="anim-state-node-title">
+        <NodeKindIcon kind="state-alias" className="size-4" />
+        <span>{typeof data.title === "string" ? data.title : "State Alias"}</span>
+      </div>
       <div className="anim-state-node-clip" data-testid={`anim-alias-node-covers-${id}`}>
         <span className="truncate">{covers}</span>
       </div>
@@ -142,7 +146,10 @@ function AnimStateNode({
     >
       <NodeBreakpointTab nodeId={id} data={data} placement="inset" />
       <AnimStateHandles id={id} />
-      <div className="anim-state-node-title">{title}</div>
+      <div className="anim-state-node-title">
+        <NodeKindIcon kind="state" className="size-4" />
+        <span>{title}</span>
+      </div>
       {typeof data.clipLabel === "string" ? (
         <div
           className={cn(

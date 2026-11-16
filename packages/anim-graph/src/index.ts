@@ -9,6 +9,7 @@ export {
   animGraphDimension,
   animPoseGraphKey,
   animPoseGraphs,
+  animCachedPoseNames,
   animPoseScriptClassId,
   createDefaultAnimGraph,
   createDefaultAnimationObjectGraph,
@@ -30,6 +31,7 @@ export {
   animRuleScriptClassId,
   type AnimClipKind,
   type AnimClipLayer,
+  type AnimClipAdditive,
   type AnimClipCatalogEntry,
   type AnimDiagnostic,
   type AnimEvalState,
@@ -74,3 +76,6 @@ export {
   type AnimGraphPin,
   type AnimStateSide,
 } from "./serialize";
+
+export * from "./slots";
+export * from "./root-motion";

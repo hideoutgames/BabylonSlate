@@ -10,7 +10,7 @@ export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
 export type { MaterialParameterValue } from "@haptic/core";
 
 export type GameSessionMode = "play" | "simulate" | "preview";
-/** `rendering`: the view holds its last image while WebGPU render pipelines it needs compile. */
+/** `rendering`: the view holds its last image while shaders it needs compile. */
 export type SessionPauseReason = "user" | "lifecycle" | "loading" | "rendering";
 /**
  * What a Simulation paused on: the diagnostic that first came from its node (`pauseOnErrors`), or a
@@ -1059,7 +1059,21 @@ export type CommandMessage =
         /** A sprite layer mirrored by Flip Frame. */
         flipX?: boolean;
         flipY?: boolean;
+        /** The Layered Blend Per Bone inputs the layer plays under, outermost first. */
+        masks?: import("@haptic/core").AnimLayerMaskRef[];
+        /** Under an Apply Additive's Additive input: the clip adds its change from its base pose to the pose beneath. */
+        additive?: boolean;
+        /** An additive clip's base pose when it is not the rest pose. */
+        additiveBase?: import("@haptic/core").AnimAdditiveBase;
+        /** A root motion clip's root bone, which render holds in place across the ground. */
+        rootMotionBone?: string;
       }>;
+      /** The Layered Blend Per Bone nodes the layers' `masks` index. */
+      layerBlends?: import("@haptic/core").AnimLayerBlend[];
+      /** Skeletal control changes, applied in order after the layers blend. */
+      boneModifiers?: import("@haptic/core").AnimBoneModifier[];
+      /** Animation Tick Mode When Visible: render poses the actor only while a camera (or a shadow) can see it. */
+      whenVisible?: boolean;
     }
   /**
    * The followed Behaviour Tree's live state: sent when it changes, and once as the follow starts.

@@ -36,8 +36,8 @@ function stubbedCalls(context: Context): string[] {
 }
 
 /**
- * Turns `engine`'s draws, clears and uniform uploads into no-ops (`on`) or back; whether it did. False on WebGPU, on
- * an Engine without a context, and when it already is as asked.
+ * Turns `engine`'s draws, clears and uniform uploads into no-ops (`on`) or back; whether it did. False on an
+ * Engine without a context and when it already is as asked.
  */
 export function stubWebGlDraws(engine: AbstractEngine, on: boolean): boolean {
   const restore = stubs.get(engine);
@@ -49,7 +49,7 @@ export function stubWebGlDraws(engine: AbstractEngine, on: boolean): boolean {
   }
   const target = engine as unknown as StubEngine;
   const context = target._gl;
-  if (restore || engine.isWebGPU || !context) return false;
+  if (restore || !context) return false;
   const names = stubbedCalls(context);
   // Own properties shadow the prototype's methods, which deleting them brings back.
   for (const name of names) context[name] = noop;

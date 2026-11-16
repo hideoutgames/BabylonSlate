@@ -305,6 +305,7 @@ export class NodeStorageAdapter implements ProjectStorage {
         isDir: s.isDirectory(),
         size: s.isFile() ? s.size : null,
         mtime: s.mtimeMs,
+        ...(e.isSymbolicLink() ? { link: true } : {}),
       });
     }
     return out;

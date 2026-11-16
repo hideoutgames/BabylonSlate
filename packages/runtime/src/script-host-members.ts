@@ -45,6 +45,9 @@ import {
   type MaterialParameterValue,
   type RandomStream,
   type SaveGameValue,
+  ANIMATION_TICK_MODE_LABELS,
+  ANIMATION_TICK_MODE_PROPERTY,
+  parseAnimationTickMode,
 } from "@haptic/core";
 import { Actor, type ActorComponent, CurveObject, EngineObject, MaterialObject, PostProcessMaterialObject, Scene, SceneLayer, TimelineClipInstance, TimelineClipObject, TimelineObject } from "@haptic/object-model";
 import { timelineClipState } from "./timeline-runtime";
@@ -584,6 +587,25 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
       services.animGraphControl?.(target)?.getCurrentState() ?? null,
     jumpAnimGraphState: (target, state) => {
       services.animGraphControl?.(target)?.jumpToState(String(state ?? ""));
+    },
+    playSlotAnimation: (target, animation, slotName, blendInTime, blendOutTime, playRate, loopCount, startTime) =>
+      services.animGraphControl?.(target)?.playSlotAnimation({
+        animation: typeof animation === "string" ? animation : "",
+        slot: String(slotName ?? ""),
+        blendInSeconds: Number(blendInTime ?? 0.25),
+        blendOutSeconds: Number(blendOutTime ?? 0.25),
+        playRate: Number(playRate ?? 1),
+        loopCount: Number(loopCount ?? 1),
+        startSeconds: Number(startTime ?? 0),
+      }) ?? 0,
+    stopSlotAnimation: (target, slotName, blendOutTime) => {
+      services.animGraphControl?.(target)?.stopSlotAnimation(String(slotName ?? ""), Number(blendOutTime ?? 0.25));
+    },
+    isSlotActive: (target, slotName) => services.animGraphControl?.(target)?.isSlotActive(String(slotName ?? "")) ?? false,
+    getAnimGraphTickMode: (target) =>
+      ANIMATION_TICK_MODE_LABELS[parseAnimationTickMode(animationGraphComponentOf(target)?.getVariable(ANIMATION_TICK_MODE_PROPERTY))],
+    setAnimGraphTickMode: (target, tickMode) => {
+      animationGraphComponentOf(target)?.setVariable(ANIMATION_TICK_MODE_PROPERTY, parseAnimationTickMode(tickMode));
     },
     setChannelVolume: (channelGuid, volume) => {
       services.setChannelVolume?.(

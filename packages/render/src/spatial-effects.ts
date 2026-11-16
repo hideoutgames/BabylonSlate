@@ -11,7 +11,6 @@ import { ThinSSRBlurPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlu
 import { ThinSSRBlurCombinerPostProcess } from "@babylonjs/core/PostProcesses/thinSSRBlurCombinerPostProcess";
 // The stages' vertex shader, from the shader store.
 import "@babylonjs/core/Shaders/postprocess.vertex";
-// The WGSL twin registers with the WebGPU Engine's code (webgpu-registrations).
 import type { SceneEffectsPlan } from "./scene-effects";
 import {
   sceneRenderingSettings,
@@ -196,11 +195,11 @@ function volumetricMarchIdle(
  * `fragment`'s key in the shader store, which holds it from its first use: its source's FNV-1a hash and length, so a
  * source always has the same key and Babylon's compiled Effect of a key is always that source's.
  */
-function storedFragment(fragment: string, wgsl: boolean): string {
+function storedFragment(fragment: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < fragment.length; index++) hash = Math.imul(hash ^ fragment.charCodeAt(index), 0x01000193);
   const key = `hapticSpatialStage${(hash >>> 0).toString(16)}x${fragment.length}`;
-  ShaderStore.GetShadersStore(wgsl ? ShaderLanguage.WGSL : ShaderLanguage.GLSL)[`${key}FragmentShader`] ??= fragment;
+  ShaderStore.GetShadersStore(ShaderLanguage.GLSL)[`${key}FragmentShader`] ??= fragment;
   return key;
 }
 
@@ -220,16 +219,15 @@ export function customWrapper(
   failure?: EffectCompileFailure,
   uniformBuffers: string[] = [],
 ): EffectWrapper {
-  const wgsl = scene.getEngine().isWebGPU;
   const wrapper = new EffectWrapper({
     name,
     engine: scene.getEngine(),
     useAsPostProcess: true,
-    shaderLanguage: wgsl ? 1 : 0,
+    shaderLanguage: 0,
     useShaderStore: true,
     // The store's own post-process vertex shader.
     vertexShader: undefined,
-    fragmentShader: storedFragment(fragment, wgsl),
+    fragmentShader: storedFragment(fragment),
     uniforms,
     samplers,
     uniformBuffers,
@@ -281,7 +279,7 @@ export function createSpatialStages(
         customWrapper(
           scene,
           "Scene Ambient Occlusion",
-          ambientOcclusionShader(engine.isWebGPU, occlusion.samples),
+          ambientOcclusionShader(occlusion.samples),
           ["aoProjection", "aoInverseProjection", "aoView", "aoSettings", "aoCamera", "aoTexelSize"],
           ["depthSampler", "normalSampler"],
           failure,
@@ -321,7 +319,7 @@ export function createSpatialStages(
           customWrapper(
             scene,
             `Scene Ambient Occlusion Blur ${axis}`,
-            ambientOcclusionBlurShader(engine.isWebGPU),
+            ambientOcclusionBlurShader(),
             ["aoBlurStep"],
             ["depthSampler"],
             failure,
@@ -339,7 +337,7 @@ export function createSpatialStages(
         customWrapper(
           scene,
           "Scene Ambient Occlusion Compose",
-          ambientOcclusionCompositeShader(engine.isWebGPU, plan.sceneLinear),
+          ambientOcclusionCompositeShader(plan.sceneLinear),
           ["aoTexelSize"],
           ["mainSampler", "depthSampler"],
           failure,
@@ -451,7 +449,6 @@ export function createSpatialStages(
           scene,
           "Scene Volumetric Lighting",
           volumetricShader(
-            engine.isWebGPU,
             slotCount,
             volume.steps,
             localVolumes,
@@ -516,7 +513,7 @@ export function createSpatialStages(
         customWrapper(
           scene,
           "Scene Volumetric Compose",
-          volumetricCompositeShader(engine.isWebGPU, plan.sceneLinear),
+          volumetricCompositeShader(plan.sceneLinear),
           ["fogTexelSize", "cameraFar"],
           ["mainSampler", "depthSampler"],
           failure,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   authorizedHttp,
+  commitAuthorFor,
   CredentialOriginError,
   CredentialStore,
   credentialUsername,
@@ -26,6 +27,17 @@ describe("credential usernames", () => {
       token: "glpat-1",
       kind: "gitlab-token",
     });
+  });
+});
+
+describe("commit authors", () => {
+  it("commits as the host's no-reply address for a signed-in account, and without an email otherwise", () => {
+    expect(commitAuthorFor({ ...GITHUB, accountId: "583231" })).toEqual({ name: "ada", email: "583231+ada@users.noreply.github.com" });
+    expect(commitAuthorFor({ origin: "https://gitlab.com", username: "oauth2", token: "t", kind: "gitlab", account: "bea", accountId: "77" }))
+      .toEqual({ name: "bea", email: "77-bea@users.noreply.gitlab.com" });
+    expect(commitAuthorFor(GITHUB)).toEqual({ name: "ada", email: "" });
+    expect(commitAuthorFor(tokenCredential("https://git.example.com", "t", "gitlab-token"))).toEqual({ name: "Haptic", email: "" });
+    expect(commitAuthorFor(null)).toEqual({ name: "Haptic", email: "" });
   });
 });
 

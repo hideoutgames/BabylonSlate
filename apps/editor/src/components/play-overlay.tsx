@@ -12,7 +12,10 @@ import {
 } from "../context/simulation-controls-context";
 import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
-import { captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyScopedReadinessProbes } from "@haptic/render";
+import {
+  captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
+  verifyMirrorContentPolls, verifyScopedReadinessProbes,
+} from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { clipText } from "../lib/diagnostic-info";
@@ -1250,6 +1253,12 @@ function PlayOverlayView({
         spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
         /** Follows every scoped readiness probe with a probe of every mesh, which must agree (`rendererWork.scopedReadinessMismatches`). */
         verifyScopedReadinessProbes: (enabled: boolean) => void;
+        /** Checks every Scene Layer pass that kept its draw batches' work against the full path (`layerWork[].batching.mismatches`). */
+        verifyRetainedOverlayBatches: (enabled: boolean) => void;
+        /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
+        verifyRenderChangeJournal: (enabled: boolean) => void;
+        /** Has Mirror surfaces also ask what changed on every render, as before a moved view skipped it (`rendererWork.mirrorPolls.mismatches`). */
+        verifyMirrorContentPolls: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1272,6 +1281,9 @@ function PlayOverlayView({
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
       verifyScopedReadinessProbes,
+      verifyRetainedOverlayBatches,
+      verifyRenderChangeJournal,
+      verifyMirrorContentPolls,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
@@ -1319,7 +1331,7 @@ function PlayOverlayView({
       gpu: rendering?.adapter ?? null,
       details: [
         `Play: ${session ? `${session.runtimeMode} runtime · tick ${session.lastTickIndex()} · models loaded ${session.modelLoadCount()}` : "session not started"}`,
-        ...(rendering ? [`Render: ${rendering.pipeline.effective.gpuBackend} · ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
+        ...(rendering ? [`Render: ${rendering.width}x${rendering.height} · draws ${rendering.drawCalls} · meshes ${rendering.resources.meshes} · textures ${rendering.resources.textures}${rendering.qualityLimits.length ? ` · limits ${clipText(rendering.qualityLimits.join("; "), 200)}` : ""}`] : []),
         ...(rendering?.worldLoad ? [worldLoadLine(rendering.worldLoad)] : []),
         ...(rendering?.textureMemory ? [textureMemoryLine(rendering.textureMemory)] : []),
         ...(() => { const memory = latestHostMemoryStats(); return memory ? [hostMemoryLine(memory.stats, performance.now() - memory.at)] : []; })(),

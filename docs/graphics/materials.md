@@ -65,10 +65,6 @@ A Material Function is a reusable subgraph. Define its pins with [Function Input
 
 The [Custom GLSL](../scripting/material/custom-glsl.md) node runs your own GLSL function body. Define typed inputs and outputs in the Inspector, return the first output and assign any extra outputs by name. Texture inputs arrive as samplers you can read with `texture2D`.
 
-::: warning
-Custom GLSL does not run on the WebGPU backend. Projects that use it should keep **GPU Backend** on WebGL2.
-:::
-
 Use **Render** after editing Custom GLSL. If compilation fails, the last working Material stays in use and the error appears in Compiler Results.
 
 To turn existing fragment GLSL into an editable node graph, enable the Experimental **GLSL to Material** extension. See [Extensions](../projects/extensions.md).

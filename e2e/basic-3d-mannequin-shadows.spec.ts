@@ -3,11 +3,11 @@ import { expect, test } from "@playwright/test";
 import { normalizeEnvironmentLightingSettings, normalizeRenderingQuality } from "../packages/core/src/index";
 import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/render/src/index";
 import { openMainScene, waitForEditorInteractive } from "./open-test-project";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 import { captureMannequinLuminance as luminance, captureMannequinPixels as capture, mannequinContactCoverage, mannequinShadowEdgeError, mannequinShadowMetrics, mannequinShadowPixels, mannequinShadowSamples, type MannequinGeometry } from "./mannequin-shadow-pixels";
 
 if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
-  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+  test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type Viewport = {
   shadowDiagnostics(): ShadowDiagnostics | null;
@@ -19,9 +19,9 @@ type Viewport = {
 };
 declare global { interface Window { __hapticViewportTest: Viewport } }
 
-// The default WebGL2 PBR High editor view. The hosts spec adds CEL; webgpu-backend.spec.ts covers WebGPU shadows.
-const variant = { backend: "webgl2", mode: "pbr", profile: "high" } as const;
-test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} keeps shadows with collider helpers visible`, async ({ page }, testInfo) => {
+// The default PBR High editor view. The hosts spec adds CEL.
+const variant = { mode: "pbr", profile: "high" } as const;
+test(`Basic 3D mannequin ${variant.mode} ${variant.profile} keeps shadows with collider helpers visible`, async ({ page }, testInfo) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -43,7 +43,6 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
   await expect.poll(() => page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()?.models.filter(mesh => ["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"].includes(mesh.name ?? "")).length), { timeout: 30_000 }).toBe(6);
   const initial = (await page.evaluate(() => window.__hapticViewportTest.shadowDiagnostics()))!;
   const settings: RenderShadingSettings = {
-    gpuBackend: variant.backend,
     mode: variant.mode, shadows: initial.requestedShadows,
     quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }),
     // The edge metric reads a shadowed pixel's remaining light as error; the template's Skybox lighting
@@ -120,8 +119,7 @@ test(`Basic 3D mannequin ${variant.backend} ${variant.mode} ${variant.profile} k
     geometry: geometry.map(({ name, vertices, indices }) => ({ name, vertices, indices })),
   }, null, 2), contentType: "application/json" });
   expect(errors).toEqual([]);
-  expect(state.backend.actual).toBe(variant.backend);
-  expect(state.backend.requested).toBe(variant.backend);
+  expect(state.backend.actual).toBe("webgl2");
   expect(state.surfaceMode).toBe(variant.mode);
   expect(state.requestedShadows).toEqual(settings.shadows);
   expect(state.lights.find(light => light.generator)!.generator!.mapSize).toBe(2048);

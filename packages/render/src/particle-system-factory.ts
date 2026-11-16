@@ -12,8 +12,7 @@ import type { IParticleSystem } from "@babylonjs/core/Particles/IParticleSystem"
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import type { Scene } from "@babylonjs/core/scene";
-// GPUParticleSystem looks its WebGL2 and WebGPU simulation up by class name. The WebGPU one, with the compute
-// extension it needs, registers as the WebGPU Engine's code loads (webgpu-registrations).
+// GPUParticleSystem looks its WebGL2 simulation up by class name.
 import "@babylonjs/core/Particles/webgl2ParticleSystem";
 import type {
   BasicEmitterPlan,
@@ -35,13 +34,13 @@ import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-dea
 
 export function gpuParticlesSupported(engine: AbstractEngine, requested = true): boolean {
   const caps = engine.getCaps();
-  return requested && (caps.supportTransformFeedbacks === true || caps.supportComputeShaders === true);
+  return requested && caps.supportTransformFeedbacks === true;
 }
 
-/** The simulation Babylon picks for a GPU system on this engine (compute first), or the CPU fallback. */
+/** The simulation Babylon runs a GPU system with on this engine, or the CPU fallback. */
 export function particleSimBackend(engine: AbstractEngine, requested = true): ParticleSimBackend {
   if (!gpuParticlesSupported(engine, requested)) return "cpu";
-  return engine.getCaps().supportComputeShaders ? "compute" : "transformFeedback";
+  return "transformFeedback";
 }
 
 /**
@@ -405,7 +404,7 @@ function adoptLoadedParticleShaders(system: IParticleSystem): void {
   if (!(system instanceof ParticleSystem)) return;
   const internals = system as unknown as { _shadersLoaded?: boolean };
   if (internals._shadersLoaded !== false) return;
-  const store = ShaderStore.GetShadersStore(system.shaderLanguage === ShaderLanguage.WGSL ? ShaderLanguage.WGSL : ShaderLanguage.GLSL);
+  const store = ShaderStore.GetShadersStore(ShaderLanguage.GLSL);
   if (store.particlesVertexShader && store.particlesPixelShader) internals._shadersLoaded = true;
 }
 

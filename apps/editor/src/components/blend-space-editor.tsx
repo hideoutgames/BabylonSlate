@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { blendSpaceTriangles, blendSpaceWeights, nearestBlendSpaceSample, type AnimGraphDimension } from "@haptic/anim-graph";
 import {
@@ -17,6 +17,8 @@ import {
   PropertySectionTitle,
   assetRowIdentity,
   type PropertyRow,
+  doubleTapWindowMs,
+  useAssetOpen,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
@@ -414,7 +416,7 @@ export function BlendSpaceGridPanel(_props: IDockviewPanelProps) {
 
 /**
  * What samples can play (Animations on the Blend Space's Skeleton, or Sprite Animations): drag one onto the Grid, or
- * add it at the preview point.
+ * add it at the preview point. Double-click (double-tap) one to open it.
  */
 export function BlendSpaceAnimationsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -422,6 +424,17 @@ export function BlendSpaceAnimationsPanel(_props: IDockviewPanelProps) {
   const { previewPoint, setSelectedSample } = useBlendSpaceEditing();
   const animations = useSampleAssets(dimension, payload.skeletonGuid ?? null);
   const point = blendSpacePreviewPoint(payload, previewPoint);
+  const assetOpen = useAssetOpen();
+  const lastClick = useRef<{ guid: string; at: number } | null>(null);
+  const onRowClick = (guid: string, event: ReactMouseEvent) => {
+    // Add At Preview Point is its own action.
+    if ((event.target as Element).closest("button")) return;
+    const now = event.timeStamp;
+    const previous = lastClick.current;
+    const second = event.detail === 2 || (previous?.guid === guid && now - previous.at <= doubleTapWindowMs());
+    lastClick.current = second ? null : { guid, at: now };
+    if (second) assetOpen?.openAsset(guid);
+  };
   return (
     <PanelFrame data-testid="blend-space-animations-panel">
       {animations.length === 0 ? (
@@ -448,6 +461,7 @@ export function BlendSpaceAnimationsPanel(_props: IDockviewPanelProps) {
                 draggable
                 className="flex min-h-[var(--chrome-row,28px)] cursor-grab items-center gap-1 rounded-md px-1 text-sm hover:bg-accent"
                 data-testid={`blend-space-animation-${animation.guid}`}
+                onClick={(event) => onRowClick(animation.guid, event)}
                 onDragStart={(event) => {
                   event.dataTransfer.setData(BLEND_SPACE_ANIMATION_DRAG, animation.guid);
                   event.dataTransfer.effectAllowed = "copy";

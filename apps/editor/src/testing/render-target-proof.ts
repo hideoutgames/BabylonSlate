@@ -12,7 +12,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultRenderTargetCaptureProperties, type RenderTargetMode } from "@haptic/core";
-import { createAppWebGpuEngine, disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setMeshLatticeDeformer } from "@haptic/render";
+import { disposeMeshLatticeDeformer, MaterialLibrary, RenderTargetCaptures, setMeshLatticeDeformer } from "@haptic/render";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { managedRenderReservations } from "@haptic/render/managed-render-resources";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
@@ -24,7 +24,7 @@ import { createDepthTextureTarget } from "../../../../packages/render/src/depth-
  * shows each on its own side whatever their draw order. Returns a pixel left and right of the crossing and whether a
  * depth renderbuffer sits beside the texture.
  */
-async function drawDepthTextureTarget(engine: Engine | Awaited<ReturnType<typeof createAppWebGpuEngine>>) {
+async function drawDepthTextureTarget(engine: Engine) {
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0, 0, 0, 1);
@@ -64,11 +64,11 @@ async function drawDepthTextureTarget(engine: Engine | Awaited<ReturnType<typeof
 }
 
 /** Real capture shaders and texture sampling, with numeric primitive fixtures. */
-export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
+export async function runRenderTargetProof() {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 32;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { preserveDrawingBuffer: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true });
   const scene = new Scene(engine);
   const captures = new RenderTargetCaptures(scene);
   const materialScene = new Scene(engine);
@@ -120,10 +120,6 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
       if (!acquired.material.isReadyForSubMesh(screen, screen.subMeshes![0]!)) throw new Error("Material sampler did not become ready.");
       const pixels = await engine.readPixels(16, 16, 1, 1);
       const pixel = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
-      // Babylon returns the canvas attachment's native channel order on WebGPU.
-      const canvasFormat = (engine.getCreationOptions() as { swapChainFormat?: string }).swapChainFormat;
-      if (backend === "webgpu" && canvasFormat === "bgra8unorm")
-        [pixel[0], pixel[2]] = [pixel[2]!, pixel[0]!];
       results.push({ mode, pixel });
     };
     const capture = async (mode: RenderTargetMode, onlyActors = false, label: string = mode) => {
@@ -246,8 +242,7 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     // A monitor inside its own capture must sample the completed image while
     // the next one is drawn: the pass draws its scene colour target, and the
     // output it is then stored in keeps one texture. Repeated captures exercise
-    // frozen NodeMaterial bindings on both GPU backends, including after the
-    // image changes.
+    // frozen NodeMaterial bindings, including after the image changes.
     plane.material = material;
     await capture("SceneColor", false, "Feedback Seed");
     const feedback = library.acquire(scene, "feedback-sampler", graph);
@@ -293,7 +288,8 @@ export async function runRenderTargetProof(backend: "webgl2" | "webgpu") {
     captures.clear();
     captures.dispose();
     const mainCameraPreserved = scene.activeCamera === main;
-    // The light block's lookup tables are the Scenes' until they go, at WebGPU's next end-of-frame drain.
+    // The light block's lookup tables are the Scenes' until they go: a frame runs after the disposal, before the
+    // retained bytes are read.
     materialScene.dispose();
     scene.dispose();
     await new Promise<void>((resolve) => setTimeout(resolve, 0));

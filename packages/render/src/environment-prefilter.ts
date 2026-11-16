@@ -72,7 +72,7 @@ export interface FilteredEnvironmentTarget {
  */
 export function createFilteredEnvironmentTarget(engine: AbstractEngine, faceSize: number): FilteredEnvironmentTarget | null {
   const caps = engine.getCaps();
-  if (!engine._features.allowTexturePrefiltering || (!engine.isWebGPU && !caps.textureLOD)) return null;
+  if (!engine._features.allowTexturePrefiltering || !caps.textureLOD) return null;
   const type = caps.textureHalfFloatRender
     ? Constants.TEXTURETYPE_HALF_FLOAT
     : caps.textureFloatRender ? Constants.TEXTURETYPE_FLOAT : null;
@@ -89,7 +89,7 @@ export function createFilteredEnvironmentTarget(engine: AbstractEngine, faceSize
       type,
       // Pinned 9.29: WebGL cube targets ignore createMipMaps and allocate mips only by generating them.
       createMipMaps: true,
-      generateMipMaps: !engine.isWebGPU,
+      generateMipMaps: true,
       generateDepthBuffer: false,
       generateStencilBuffer: false,
       samplingMode: Constants.TEXTURE_TRILINEAR_SAMPLINGMODE,
@@ -175,7 +175,6 @@ export async function filterEnvironment(
   const { target, size } = into;
   const defines = [`#define NUM_SAMPLES ${FILTER_SAMPLES}u`];
   if (source.gammaSpace) defines.push("#define GAMMA_INPUT");
-  const wgsl = engine.isWebGPU;
   const effect = new EffectWrapper({
     engine,
     name: "hdrFiltering",
@@ -185,10 +184,9 @@ export async function filterEnvironment(
     uniformNames: ["vSampleDirections", "vWeights", "up", "right", "front", "vFilteringInfo", "hdrScale", "alphaG"],
     useShaderStore: true,
     defines,
-    shaderLanguage: wgsl ? 1 : 0,
+    shaderLanguage: 0,
     extraInitializationsAsync: async () => {
-      if (wgsl) await Promise.all([import("@babylonjs/core/ShadersWGSL/hdrFiltering.vertex"), import("@babylonjs/core/ShadersWGSL/hdrFiltering.fragment")]);
-      else await Promise.all([import("@babylonjs/core/Shaders/hdrFiltering.vertex"), import("@babylonjs/core/Shaders/hdrFiltering.fragment")]);
+      await Promise.all([import("@babylonjs/core/Shaders/hdrFiltering.vertex"), import("@babylonjs/core/Shaders/hdrFiltering.fragment")]);
     },
   });
   let renderer: EffectRenderer | undefined;

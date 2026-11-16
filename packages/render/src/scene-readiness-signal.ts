@@ -76,12 +76,12 @@ export type SceneReadinessDirtyReason =
   // The Scene renderer's own Babylon observables and checks.
   | "meshAdded" | "meshRemoved" | "materialAdded" | "materialRemoved" | "lightAdded" | "lightRemoved" | "lightEnabled"
   | "textureAdded" | "textureRemoved" | "cameraAdded" | "cameraRemoved" | "activeCamera" | "skeletonAdded"
-  | "skeletonRemoved" | "membership" | "meshMaterial" | "outline" | "shadowRestale" | "prepare" | "invalidate" | "output"
+  | "skeletonRemoved" | "membership" | "meshMaterial" | "drawable" | "meshVisibility" | "outline" | "shadowRestale" | "prepare" | "invalidate" | "output"
   // Project-owned changes (`markSceneReadinessDirty`).
   | "shadowCasters" | "shadowMap" | "particleBind" | "particleCancel" | "particlePreparation" | "particlePrepared"
   | "layerStyle" | "instanceRekey" | "renderSettings" | "environmentLighting" | "reflectionProbes" | "materialLibrary"
   | "materialParameters" | "materialInstance" | "meshAssets" | "blendChange" | "lattice" | "sceneLighting"
-  | "streamAdmission" | "spawnWarm"
+  | "streamAdmission"
   | "other";
 
 /**
@@ -99,7 +99,24 @@ const readinessDirtyListeners = new WeakMap<Scene, Set<ReadinessDirtyListener>>(
  * cover mark the scene's cached strict readiness result stale.
  */
 export function markSceneReadinessDirty(scene: Scene, reason: SceneReadinessDirtyReason = "other", scope?: SceneReadinessScope): void {
+  if (!scope || scope.length > 0) noteSceneReadinessChange(scene);
   for (const listener of readinessDirtyListeners.get(scene) ?? []) listener(reason, scope);
+}
+
+const readinessRevisions = new WeakMap<Scene, number>();
+
+/**
+ * Counts what staled the readiness of `scene`'s meshes: the marks above and what its own view's graph hears from
+ * Babylon's observables (a mesh, Material, light or texture added or removed, a mesh's Material changed), which it notes
+ * here. A mark that names no mesh (a particle system's Material) does not count. An owner outside the graph (a
+ * reflection pass) that found its meshes ready keeps that answer while the count stands.
+ */
+export function sceneReadinessRevision(scene: Scene): number {
+  return readinessRevisions.get(scene) ?? 0;
+}
+
+export function noteSceneReadinessChange(scene: Scene): void {
+  readinessRevisions.set(scene, (readinessRevisions.get(scene) ?? 0) + 1);
 }
 
 /** Subscribe to strict-readiness invalidations; returns an unsubscribe. */

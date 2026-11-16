@@ -16,8 +16,9 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { Scene } from "@babylonjs/core/scene";
 import type { LayerCameraState } from "@haptic/core";
-import { createAppWebGpuEngine } from "@haptic/render";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
+// The engine-wide registrations a shipped Engine loads before it exists (multiple render targets among them).
+import "../../../../packages/render/src/babylon-registrations";
 import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { sceneImagePages, setSceneDrawBatching, setSceneImagePages } from "../../../../packages/render/src/overlay-draw-batcher";
@@ -25,7 +26,6 @@ import { SceneLayerCompositor } from "../../../../packages/render/src/scene-laye
 import { buildSceneLayerHud } from "../../../../packages/render/src/scene-layer-hud-fixture";
 import { createSpriteQuad, setSpriteQuadUvs } from "../../../../packages/render/src/sprite-quad";
 import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 960;
 const HEIGHT = 540;
@@ -84,16 +84,13 @@ function pastTheirImages(scene: Scene): void {
   });
 }
 
-export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu", images: "filtered" | "nearest" = "filtered") {
+export async function runSceneLayerBatchingProof(images: "filtered" | "nearest" = "filtered") {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
-  const order = readbackChannelOrder(engine.isWebGPU);
   const compositor = new SceneLayerCompositor({ engine });
   try {
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
@@ -149,7 +146,7 @@ export async function runSceneLayerBatchingProof(backend: "webgl2" | "webgpu", i
         const draws = drawCalls() - before;
         if (presented && ++ready >= 4) {
           const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-          return { pixels: toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order), draws };
+          return { pixels: Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)), draws };
         }
         if (performance.now() > deadline) throw new Error("The layer did not present");
         await new Promise<void>((resolve) => setTimeout(resolve, 16));

@@ -132,11 +132,22 @@ export type DockWindowOptions = {
   /** Actor-lineage class documents get Prefab + Components. Default true. */
   actorPrefab?: boolean;
   sceneMode?: SceneMode;
+  /** The pinned Source Control document in Integrated mode: Changes beside Locks. */
+  sourceControlIntegrated?: boolean;
 };
 
 /** Locks lives only in the pinned Source Control document. */
 const SOURCE_CONTROL_WINDOWS: DockWindowDefinition[] = [
   { id: "locks", component: "locks", title: "Locks" },
+];
+
+/** Integrated mode: Changes, tabbed with History and Locks; the chosen asset's Actors (its tree of items) and Diff to the right. */
+const INTEGRATED_SOURCE_CONTROL_WINDOWS: DockWindowDefinition[] = [
+  { id: "changes", component: "changes", title: "Changes" },
+  { id: "history", component: "history", title: "History", defaultPosition: { referencePanelId: "changes", direction: "within" } },
+  { id: "locks", component: "locks", title: "Locks", defaultPosition: { referencePanelId: "changes", direction: "within" } },
+  { id: "diff-actors", component: "diff-actors", title: "Actors", defaultPosition: { referencePanelId: "changes", direction: "right", initialWidthRatio: 0.7 } },
+  { id: "diff", component: "diff", title: "Diff", defaultPosition: { referencePanelId: "diff-actors", direction: "right", initialWidthRatio: 0.5 } },
 ];
 
 const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
@@ -202,6 +213,7 @@ export function primaryDockPanel(
   if ((kind === "scene" || kind === "scene-layer") && options?.sceneMode === "script") {
     return "graph";
   }
+  if (kind === "source-control" && options?.sourceControlIntegrated) return "changes";
   return DOCK_PRIMARY_PANEL[kind];
 }
 
@@ -1224,7 +1236,7 @@ export function listDockWindows(
     if (kind === "scene" && options?.sceneMode === "foliage") return FOLIAGE_WINDOWS;
     return SCENE_WINDOWS;
   }
-  if (kind === "source-control") return SOURCE_CONTROL_WINDOWS;
+  if (kind === "source-control") return options?.sourceControlIntegrated ? INTEGRATED_SOURCE_CONTROL_WINDOWS : SOURCE_CONTROL_WINDOWS;
   if (kind === "prefab") return PREFAB_WINDOWS;
   if (kind === "save-game") return SAVE_GAME_WINDOWS;
   if (kind === "input-action" || kind === "input-axis") return INPUT_WINDOWS;

@@ -26,7 +26,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 | OPFS | Web | Projects in `project-v2-<SHA-256 hex of JSON id>`; binding/deletion serialize with Web Locks, and a bound project holds a per-project session lock (one tab per project, below); writes never recreate a deleted project folder; `readdir` skips `*.crswap`; range revisions combine `lastModified`, size and a write counter that tells same-millisecond rewrites apart, drawn from one never-reused sequence so a successful `remove` or `deleteProject` can drop a removed path's counter (a failed one keeps it, so unchanged bytes keep their revision); required for browser writes (no temporary in-memory saves). Libraries/derived data bind with `{ library: true }`. |
 | Documents | iPad / Android default | `Directory.Documents` (iOS) or app-private `Directory.Data` (Android) under `BabylonSlate/projects/`; no picker. Android projects excluded from cloud backup. |
 | Scoped / external | iPad / Android opt-in | Security-scoped bookmarks (`NSFileCoordinator`) / SAF tree URIs; root-confined paths; revoked access → **Reconnect Project Folder**. iOS resolves each bookmark once per session and holds its access: every resolution issues a sandbox extension and iOS caps them per process, so resolving per operation exhausted them and failed later folders until relaunch. SAF overwrites stage a sibling then rename. |
-| Node | Electron main, tools | Root-confined through real paths; writes stage `.haptic-<uuid>.tmp`, flush and rename (no truncated files). |
+| Node | Electron main, tools | Root-confined through real paths; writes stage `.haptic-<uuid>.tmp`, flush and rename (no truncated files). Symbolic links inside the project are followed (one leaving it, or leading back up the listed path, is left out of `readdir`), and `readdir` marks them `DirEntry.link`, the only adapter that does: Remove Unused Files removes nothing while one may alias a blob folder. |
 | Electron | Desktop renderer | `ElectronStorageAdapter` over `project:*` IPC; one main-process Node adapter per editor document; project ids are `node:` paths under `userData/projects`. |
 | HTTP catalog | Bundled engine plugins | `HttpCatalogStorageAdapter` over content-addressed immutable parts; never downloads archives; works without HTTP Range. |
 | Read-only wrapper / Memory | Engine plugins / tests | Writes throw / in-memory tree. |
@@ -43,7 +43,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 
 ## Project creation
 
-- Scaffold only into an empty folder (ignoring `.haptic-creating`, `.DS_Store`, `Thumbs.db`, `desktop.ini`); never overwrite. `.haptic-creating` marks an app-owned partial scaffold that a retry may clear.
+- Scaffold only into an empty folder (ignoring `.haptic-creating`, `.DS_Store`, `Thumbs.db`, `desktop.ini`); never overwrite. `.haptic-creating` (`PROJECT_CREATION_MARKER` in `@haptic/core`, which Publish's summary and the Git core's clone also skip) marks an app-owned partial scaffold that a retry may clear.
 - Persist the recent-project entry before the editor becomes interactive. Project identity for the browser lives in `project.json` metadata (`name`, optional `appearance`; uploaded images ≤ 96 KiB data URL).
 
 ## Write performance decision

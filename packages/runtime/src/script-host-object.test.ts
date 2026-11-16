@@ -106,6 +106,21 @@ describe("ScriptHost Object receivers", () => {
     expect(second.getVariable("flag")).toBe("wired");
   });
 
+  it("gets and sets the Tick Mode of the wired AnimationGraphComponent by member name", () => {
+    const actor = new Actor({ classId: "Hero" });
+    const graph = new ActorComponent({ classId: "AnimationGraphComponent" });
+    actor.attachComponent(graph);
+    const ctx = new ScriptHost(stubServices()).createContext(actor, 0, 0);
+    expect(ctx.getAnimGraphTickMode(graph)).toBe("Always");
+    ctx.setAnimGraphTickMode(graph, "When Visible");
+    expect(graph.getVariable("tickMode")).toBe("whenVisible");
+    expect(ctx.getAnimGraphTickMode(graph)).toBe("When Visible");
+    ctx.setAnimGraphTickMode(graph, "Never");
+    ctx.setAnimGraphTickMode(actor, "Always");
+    expect(ctx.getAnimGraphTickMode(graph)).toBe("Never");
+    expect(ctx.getAnimGraphTickMode(actor)).toBe("Always");
+  });
+
   it("jumps and reads current state only on the wired AnimationGraphComponent", () => {
     const actor = new Actor({ classId: "Hero" });
     const first = new ActorComponent({ classId: "AnimationGraphComponent" });
@@ -121,6 +136,9 @@ describe("ScriptHost Object receivers", () => {
           return {
             getVariable: () => undefined,
             setVariable: () => {},
+            playSlotAnimation: () => 0,
+            stopSlotAnimation: () => {},
+            isSlotActive: () => false,
             getCurrentState: () => {
               queried.push(target);
               return target === second

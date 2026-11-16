@@ -170,6 +170,24 @@ describe("a document save over damaged or changing storage", () => {
     expect(await service.loadDocument("graph", path)).toMatchObject({ properties: { label: bigLabel("y") } });
   });
 
+  it("writes an earlier version's document blob again when a save goes back to it after the blob was removed", async () => {
+    // Remove Unused Files removes the blob of a version no header references any more; an Undo back to that
+    // version saves it from memory, so nothing an open document or its Undo history holds needs the old file.
+    const { service, storage } = await scaffolded();
+    const first = { ...content, properties: { label: bigLabel("z") } };
+    await service.saveDocument("graph", path, first, { parentClass: "Actor" });
+    const entry = readAssetDocumentHeader(await storage.readBinary(path)).chunks.find((chunk) => chunk.id === "document")!;
+    const blob = `${BLOBS_DIR}/${entry.sha256}`;
+    const written = await storage.readBinary(blob);
+    await service.saveDocument("graph", path, { ...content, properties: { label: bigLabel("y") } }, { parentClass: "Actor" });
+    await storage.remove(blob);
+
+    await service.saveDocument("graph", path, { ...first }, { parentClass: "Actor" });
+
+    expect(await storage.readBinary(blob)).toEqual(written);
+    expect(await service.loadDocument("graph", path)).toMatchObject({ properties: { label: bigLabel("z") } });
+  });
+
   it("refuses a save whose carried blob was deleted after the carry confirmed it", async () => {
     const { service, storage } = await scaffolded();
     await writeTexture(storage);

@@ -539,6 +539,9 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         delay(seconds) {
           return services.delay(seconds, this.#owner);
         },
+        waitSlotAnimation(handle, phase) {
+          return services.waitSlotAnimation?.(handle, phase, this.#owner) ?? false;
+        },
         delayOneTick() {
           if (!services.delayOneTick) throw new Error("This host cannot delay by one tick");
           return services.delayOneTick(this.#owner);

@@ -23,7 +23,7 @@ function form(body: string | Uint8Array | undefined) {
 }
 
 describe("device sign-in", () => {
-  it("asks GitHub for a code with the repo scope and opens GitHub's own device page", async () => {
+  it("asks GitHub for a code with the repo and read:org scopes and opens GitHub's own device page", async () => {
     const host = new FakeGitHost();
     host.interval = 5;
     const { clock } = fakeClock();
@@ -40,7 +40,7 @@ describe("device sign-in", () => {
     const [request] = host.requests;
     expect(request?.url).toBe("https://github.com/login/device/code");
     expect(request?.headers.Accept).toBe("application/json");
-    expect(form(request?.body)).toEqual({ client_id: "client-1", scope: "repo" });
+    expect(form(request?.body)).toEqual({ client_id: "client-1", scope: "repo read:org" });
   });
 
   it("asks gitlab.com for api and write_repository", async () => {
@@ -66,6 +66,7 @@ describe("device sign-in", () => {
       token: "fake-github-token",
       kind: "github",
       account: "ada",
+      accountId: "1001",
     });
     expect(waits).toEqual([5_000, 5_000, 10_000, 10_000]);
     const polls = host.requests.filter((request) => request.url === "https://github.com/login/oauth/access_token");
@@ -87,7 +88,7 @@ describe("device sign-in", () => {
     const code = await requestDeviceCode("gitlab", "client-2", host.http, clock);
     if (!isOk(code)) throw new Error("no code");
     const result = await completeDeviceSignIn(code.value, "client-2", host.http, clock);
-    expect(isOk(result) && result.value).toMatchObject({ origin: "https://gitlab.com", username: "oauth2", kind: "gitlab", account: "test-user" });
+    expect(isOk(result) && result.value).toMatchObject({ origin: "https://gitlab.com", username: "oauth2", kind: "gitlab", account: "test-user", accountId: "1001" });
     expect(host.requests.at(-1)?.url).toBe("https://gitlab.com/api/v4/user");
   });
 

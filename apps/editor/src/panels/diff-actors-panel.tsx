@@ -1,0 +1,175 @@
+import type { DockviewPanelApi, IDockviewPanelProps } from "dockview-react";
+import { useCallback, useMemo, useState } from "react";
+import { BoxIcon, FileIcon, FolderIcon, ListTreeIcon, SquareFunctionIcon, VariableIcon, WorkflowIcon } from "lucide-react";
+import type { AssetDiff, DiffStatus, GraphDiff, GraphMemberGroupId, SceneDiff } from "@haptic/assets/asset-diff";
+import { PanelFrame, SearchInput, TreeView, type TreeViewNode } from "@haptic/editor-kit";
+import { useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
+import { DiffCountBadges, DiffPlaceholder, StatusLetter, useDiffWindowShown } from "./diff-common";
+import { ASSET_ITEM, hasDiff, nodeSummary, STATUS_TONE } from "./diff-status";
+
+/** One row of the tree before collapse and search: its parent and whether it changed. */
+interface ItemRow {
+  id: string;
+  label: string;
+  depth: number;
+  parent: string | null;
+  status: DiffStatus;
+  /** Some row below it changed: shown at full strength though it did not. */
+  changedBelow: boolean;
+  hasChildren: boolean;
+  icon: "asset" | "folder" | "actor" | "graph" | "node" | "variable" | "function" | "group";
+  /** A one-line summary after the name: `Max Walk Speed: 600 → 750`, `Float · 1.5`. */
+  preview?: string;
+}
+
+const ICONS = {
+  asset: FileIcon,
+  folder: FolderIcon,
+  actor: BoxIcon,
+  graph: WorkflowIcon,
+  node: BoxIcon,
+  variable: VariableIcon,
+  function: SquareFunctionIcon,
+  group: ListTreeIcon,
+} as const;
+
+function sceneRows(view: SceneDiff): ItemRow[] {
+  const rows: ItemRow[] = view.rows.map((row) => ({ ...row, label: row.name, icon: row.kind }));
+  if (view.script) rows.push({ id: "script", label: "Scene Script", depth: 0, parent: null, status: "changed", changedBelow: false, hasChildren: false, icon: "graph" });
+  return rows;
+}
+
+/** A member group's icon: functions and events as functions, anything holding a value as a variable. */
+const MEMBER_ICON: Record<GraphMemberGroupId, ItemRow["icon"]> = {
+  variables: "variable",
+  parameters: "variable",
+  inputs: "variable",
+  outputs: "variable",
+  functions: "function",
+  others: "function",
+};
+
+/** Each graph that changed with its nodes, then the members the document declares (Variables, Parameters, Functions…). */
+function graphRows(view: GraphDiff): ItemRow[] {
+  const rows: ItemRow[] = [];
+  for (const section of view.sections) {
+    if (section.status === "unchanged") continue;
+    rows.push({ id: section.id, label: section.title, depth: 0, parent: null, status: section.status, changedBelow: false, hasChildren: section.nodes.length > 0, icon: "graph" });
+    for (const node of section.nodes) {
+      rows.push({ id: `${section.id}/${node.id}`, label: node.title, depth: 1, parent: section.id, status: node.status, changedBelow: false, hasChildren: false, icon: "node", preview: nodeSummary(node) });
+    }
+  }
+  for (const group of view.memberGroups) {
+    rows.push({ id: `group:${group.id}`, label: group.title, depth: 0, parent: null, status: "unchanged", changedBelow: true, hasChildren: true, icon: "group" });
+    for (const member of group.members) rows.push({ id: `member:${member.id}`, label: member.name, depth: 1, parent: `group:${group.id}`, status: member.status, changedBelow: false, hasChildren: false, icon: MEMBER_ICON[group.id], preview: member.summary });
+  }
+  return rows;
+}
+
+/** The groups of an asset's other fields. */
+function groupRows(diff: AssetDiff): ItemRow[] {
+  if (diff.view.kind !== "properties") return [];
+  return diff.view.groups.map((group) => ({ id: `group:${group.id}`, label: group.title, depth: 0, parent: null, status: group.status, changedBelow: false, hasChildren: false, icon: "group" }));
+}
+
+/** The asset itself first (its header, chunks and document-level fields), then the items of its view. */
+function itemRows(diff: AssetDiff): ItemRow[] {
+  const asset: ItemRow = { id: ASSET_ITEM, label: diff.name, depth: 0, parent: null, status: diff.status, changedBelow: false, hasChildren: false, icon: "asset" };
+  if (diff.view.kind === "scene") return [asset, ...sceneRows(diff.view)];
+  if (diff.view.kind === "graph") return [asset, ...graphRows(diff.view)];
+  return [asset, ...groupRows(diff)];
+}
+
+/** Rows to show: matches of `query` with their ancestors, or everything not under a collapsed row. */
+function visibleRows(rows: readonly ItemRow[], query: string, collapsed: ReadonlySet<string>): ItemRow[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const needle = query.trim().toLowerCase();
+  if (needle) {
+    const keep = new Set<string>();
+    for (const row of rows) {
+      if (!row.label.toLowerCase().includes(needle)) continue;
+      for (let at: ItemRow | undefined = row; at && !keep.has(at.id); at = at.parent ? byId.get(at.parent) : undefined) keep.add(at.id);
+    }
+    return rows.filter((row) => keep.has(row.id));
+  }
+  const hidden = (row: ItemRow): boolean => {
+    for (let parent = row.parent; parent; parent = byId.get(parent)?.parent ?? null) if (collapsed.has(parent)) return true;
+    return false;
+  };
+  return rows.filter((row) => !hidden(row));
+}
+
+/**
+ * The Source Control tab's Actors window: the chosen asset's items, each
+ * marked and tinted by what changed, unchanged ones muted, with search and
+ * the Added, Removed and Changed counts. Scenes list their folders and
+ * actors; graphs their changed graphs and nodes, then their members by
+ * group (Variables, Parameters, Inputs, Outputs, Functions);
+ * other assets their groups of fields. Choosing one shows it in Diff.
+ */
+export function DiffActorsContents({ api }: { api?: DockviewPanelApi } = {}) {
+  useDiffWindowShown(api);
+  const diffService = useSourceControlDiff();
+  const state = useSourceControlDiffState();
+  const [query, setQuery] = useState("");
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const rows = useMemo(() => (state.diff ? itemRows(state.diff) : []), [state.diff]);
+  const shown = useMemo(() => visibleRows(rows, query, collapsed), [collapsed, query, rows]);
+  const nodes = useMemo((): TreeViewNode[] => shown.map((row) => {
+    const Icon = ICONS[row.icon];
+    const changed = row.status !== "unchanged";
+    return {
+      id: row.id,
+      label: row.label,
+      depth: row.depth,
+      hasChildren: row.hasChildren,
+      expanded: !collapsed.has(row.id) || query.trim() !== "",
+      icon: <Icon aria-hidden="true" />,
+      trailing: changed ? <StatusLetter status={row.status} /> : undefined,
+      ...(row.preview ? { preview: <span className="truncate text-xs text-muted-foreground">{row.preview}</span> } : {}),
+      muted: !changed && !row.changedBelow,
+      ...(changed ? { tone: STATUS_TONE[row.status as Exclude<DiffStatus, "unchanged">] } : {}),
+      draggable: false,
+    };
+  }), [collapsed, query, shown]);
+  const toggle = useCallback((id: string) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const select = useCallback((id: string) => diffService.select(id), [diffService]);
+
+  if (!hasDiff(state)) return <DiffPlaceholder state={state} testId="diff-actors-panel" />;
+  const view = state.diff!.view;
+  const counts = view.kind === "scene" || view.kind === "graph" ? view.counts : null;
+  const searchLabel = view.kind === "scene" ? "Search Actors" : "Search";
+
+  return (
+    <PanelFrame data-testid="diff-actors-panel">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex shrink-0 flex-col gap-1.5 p-2">
+          {counts ? <DiffCountBadges counts={counts} /> : null}
+          <SearchInput value={query} onChange={setQuery} placeholder={searchLabel} aria-label={searchLabel} data-testid="diff-actors-search" />
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <TreeView
+            nodes={nodes}
+            selectedId={state.selection}
+            onSelect={select}
+            onToggleExpanded={toggle}
+            emptyLabel={query.trim() ? "No Matches." : "Nothing Changed."}
+            aria-label="Changed Items"
+            data-testid="diff-actors-tree"
+          />
+        </div>
+      </div>
+    </PanelFrame>
+  );
+}
+
+export function DiffActorsPanel({ api }: IDockviewPanelProps) {
+  return <DiffActorsContents api={api} />;
+}

@@ -30,6 +30,7 @@ import {
   decorateTransitionRuleGraph,
   persistTransitionRuleGraph,
   validateAnimGraph,
+  animCachedPoseNames,
   type AnimClipCatalogEntry,
   type AnimGraphDimension,
   type AnimGraphDocument,
@@ -116,6 +117,8 @@ const VARIABLE_TYPES = [
   "int",
   "float",
   "string",
+  "vec3",
+  "rotator",
   "tag",
   "tagContainer",
 ] as const;
@@ -446,7 +449,8 @@ function AnimGraphVariablesList({ containerApi }: { containerApi: IDockviewPanel
                   <Trash2Icon />
                 </IconActionButton>
               </div>
-              {variable.typeId === "tag" || (variable.typeId === "struct" && variable.typeClassId === "engine:TagContainer") ? (
+              {variable.typeId === "tag" || variable.typeId === "vec3" || variable.typeId === "rotator" ||
+                (variable.typeId === "struct" && variable.typeClassId === "engine:TagContainer") ? (
                 <PropertyGrid
                   rows={variableDefaultPropertyRows(variable.typeId, variable.defaultValue, (defaultValue) => {
                     commit(commitAnimGraphVariables(doc, doc.variables.map((row) =>
@@ -962,10 +966,11 @@ export function AnimStateGraphPanel(props: IDockviewPanelProps<Partial<AnimState
     if (!stateGraph) return null;
     return hydrateSerializedGraphForEditor({ ...stateGraph, members }, defaultNodeRegistry(), { ...typeCatalog.schemas, dataAssets });
   }, [stateGraph, members, typeCatalog.schemas, dataAssets]);
+  const cachedPoses = useMemo(() => animCachedPoseNames(machine), [machine]);
   const posePaletteInput = {
     parentClass: "Object",
     animationGraphHost: "pose" as const,
-    animPose: { dimension },
+    animPose: { dimension, cachedPoses },
     graph: { nodes: [], edges: [], members },
     structures: typeCatalog.types.structures,
     dataDefinitions: typeCatalog.types.dataDefinitions,

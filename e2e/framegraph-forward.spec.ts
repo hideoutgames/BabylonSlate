@@ -1,26 +1,25 @@
 import { expect, test } from "@playwright/test";
 import type { runFrameGraphForwardProof } from "../apps/editor/src/testing/framegraph-forward-proof";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
-// CI runs the WebGL2 backbuffer proof (renderer-qualification coverage matrix).
-for (const backend of ["webgl2"] as const) {
+// CI runs the backbuffer proof (renderer-qualification coverage matrix).
 for (const output of ["backbuffer"] as const) {
-test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backend} ${output}`, async ({
+test(`Forward FrameGraph preserves surface pixels and scene ownership on ${output}`, async ({
   page,
 }, testInfo) => {
   test.setTimeout(90_000);
   const errors: string[] = [];
   const externalRequests: string[] = [];
-  await page.route(/https:\/\/cdn\.babylonjs\.com\/.*(?:glslang|twgsl)/, async (route) => {
+  await page.route(/https:\/\/cdn\.babylonjs\.com\/.*glslang/, async (route) => {
     externalRequests.push(route.request().url());
     await route.abort();
   });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type()) &&
-      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
+      /shader|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
   });
   await page.goto("/?test=1&framegraphForwardProof=1");
   await page.waitForFunction(
@@ -29,12 +28,12 @@ test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backe
         window as unknown as { __hapticFrameGraphForwardProof?: unknown }
       ).__hapticFrameGraphForwardProof === "function",
   );
-  const result = await page.evaluate(({ backend, output }) =>
+  const result = await page.evaluate((output) =>
     (
       window as unknown as {
         __hapticFrameGraphForwardProof: typeof runFrameGraphForwardProof;
       }
-    ).__hapticFrameGraphForwardProof(backend, output), { backend, output },
+    ).__hapticFrameGraphForwardProof(output), output,
   );
   await testInfo.attach("framegraph-forward-proof", {
     body: JSON.stringify(result),
@@ -42,7 +41,6 @@ test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backe
   });
   expect(errors).toEqual([]);
   expect(externalRequests).toEqual([]);
-  expect(result.backend).toBe(backend);
   expect(result.output).toBe(output);
   expect(result.webGLVersion).toBe(2);
   expect(result.captures).toHaveLength(12);
@@ -85,5 +83,4 @@ test(`Forward FrameGraph preserves surface pixels and scene ownership on ${backe
     expect(entry.siblingAfter, entry.mode).toEqual(entry.siblingBefore);
   }
 });
-}
 }

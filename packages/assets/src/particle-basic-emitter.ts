@@ -484,7 +484,10 @@ function resolveParticleEmitterCapacity(
   return Math.min(authored, PARTICLE_CPU_CAPACITY_BUDGET);
 }
 
-/** Which simulation the owning engine runs: CPU fallback, WebGL2 transform feedback or WebGPU compute. */
+/**
+ * Which simulation a plan is resolved for: the CPU fallback, WebGL2 transform feedback, or `compute`, a GPU simulation
+ * without transform feedback's hemisphere correction.
+ */
 export type ParticleSimBackend = "cpu" | "transformFeedback" | "compute";
 export type BasicPlanRange = { min: number; max: number };
 export type BasicPlanFactorKey = { t: number; factor: number };
@@ -582,8 +585,8 @@ function curveKeys(value: ParticleScalarValue): ParticleScalarKey[] | null {
 
 /**
  * Pure Basic → native mapping. On WebGL2 transform feedback Babylon does not normalize
- * the hemisphere direction, so Speed is divided by the radius there to match WebGPU
- * compute and the CPU (exact for surface spawns with a small randomizer).
+ * the hemisphere direction, so Speed is divided by the radius there to match the CPU
+ * (exact for surface spawns with a small randomizer).
  */
 export function resolveBasicEmitterPlan(
   payload: ParticleEmitterPayload,

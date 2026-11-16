@@ -8,15 +8,6 @@ import {
 } from "./scene-viewport-load";
 import { onEncodeQueuePause } from "../services/encode-queue-pause";
 
-it("retains the requested project backend through the loading key", () => {
-  const original = sceneViewportRenderSettingsKey({});
-  for (const gpuBackend of ["auto", "webgpu"] as const) {
-    const key = sceneViewportRenderSettingsKey({ gpuBackend });
-    expect(key).not.toBe(original);
-    expect(sceneViewportRenderSettings(key).gpuBackend).toBe(gpuBackend);
-  }
-});
-
 it("reloads effective CEL changes while ignoring inactive and inherited-equivalent edits", () => {
   const project = { mode: "cel" as const, cel: normalizeCelShadingSettings({}) };
   const initial = sceneViewportRenderSettingsKey(project);

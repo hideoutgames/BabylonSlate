@@ -21,7 +21,7 @@ import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
-import type { CreateProjectOptions } from "../lib/create-project";
+import type { CreateProjectOptions, CreateProjectOutcome } from "../lib/create-project";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -36,10 +36,13 @@ import type { SourceControlService } from "../services/source-control-service";
 import { loadSelectedTemplateFiles } from "../services/template-service";
 import type {
   AppRoute,
+  CloneProjectRequest,
   CloseProjectResult,
   DocumentActions,
   DocumentContextValue,
 } from "./document-context-types";
+import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
+import { isTestModeEnabled } from "@haptic/vfs";
 
 /**
  * Opening or closing a project resets every subsystem, so this lists what
@@ -52,6 +55,8 @@ export interface ProjectLifecycleDeps {
   documentTransitions: DocumentTransitionGate;
   editSessionRef: RefObject<EditSession>;
   sourceControlRef: RefObject<SourceControlService>;
+  /** Stopped and settled before the folder is released. */
+  sourceControlSync: SourceControlSyncService;
   journalBuffer: JournalBuffer;
   ensureDerived: () => Promise<ProjectStorage>;
   editing: DocumentEditingService;
@@ -65,6 +70,8 @@ export interface ProjectLifecycleDeps {
   setMigrationPending: (pending: MigrationPending[]) => void;
   setRecoveryAvailable: (available: boolean) => void;
   setDocumentOpenError: (error: string | null) => void;
+  /** A Remote New Project's notice belongs to the project it opened. */
+  setPublishNotice: (notice: DocumentContextValue["publishNotice"]) => void;
   // The Loading Document slot.
   sceneDocumentLoad: { ref: DocumentRef; failed: boolean; error?: unknown } | null;
   sceneDocumentLoadRef: RefObject<AbortController | null>;
@@ -109,6 +116,7 @@ export function useProjectLifecycle({
   documentTransitions,
   editSessionRef,
   sourceControlRef,
+  sourceControlSync,
   journalBuffer,
   ensureDerived,
   editing,
@@ -120,6 +128,7 @@ export function useProjectLifecycle({
   setMigrationPending,
   setRecoveryAvailable,
   setDocumentOpenError,
+  setPublishNotice,
   sceneDocumentLoad,
   sceneDocumentLoadRef,
   setSceneDocumentLoad,
@@ -251,12 +260,14 @@ export function useProjectLifecycle({
   }, [attachEnginePlugins, enterEditor, projectService, documentTransitions, setNeedsReconnect]);
 
   const createEmptyProject = useCallback(
-    async (name: string, options?: CreateProjectOptions) => {
-      if (!await documentTransitions.check({ kind: "replace-project" })) return;
+    async (name: string, options?: CreateProjectOptions): Promise<CreateProjectOutcome> => {
+      if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
       await attachEnginePlugins(true);
-      const { document, layouts, migrationPending: pending } =
+      const { document, layouts, migrationPending: pending, created } =
         await projectService.createEmptyProject(name, options);
+      options?.onPhase?.("opening");
       await enterEditor(document, layouts, pending);
+      return created ? "created" : "opened";
     },
     [attachEnginePlugins, enterEditor, projectService, documentTransitions],
   );
@@ -266,12 +277,12 @@ export function useProjectLifecycle({
       templateId: string,
       name: string,
       options?: CreateProjectOptions,
-    ) => {
+    ): Promise<CreateProjectOutcome> => {
       const template = templatesRef.current.find((t) => t.id === templateId);
       if (!template) {
         throw new Error(`Unknown template: ${templateId}`);
       }
-      if (!await documentTransitions.check({ kind: "replace-project" })) return;
+      if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
       await attachEnginePlugins(true);
       const { document, layouts, migrationPending: pending } =
         await projectService.createFromTemplate({
@@ -280,9 +291,33 @@ export function useProjectLifecycle({
           pickFolder: options?.pickFolder,
           appearance: options?.appearance,
         });
+      options?.onPhase?.("opening");
       await enterEditor(document, layouts, pending);
+      return "created";
     },
     [attachEnginePlugins, enterEditor, projectService, documentTransitions, templatesRef],
+  );
+
+  const cloneProject = useCallback(
+    async (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => {
+      // The Git client loads with the first clone, never with the Homepage.
+      const { cloneIntoFolder } = await import("../services/source-control-sync-port");
+      const testMode = isTestModeEnabled();
+      try {
+        return await projectService.cloneProject({
+          name: request.name,
+          repositoryUrl: request.repositoryUrl,
+          branch: request.branch,
+          signal,
+          clone: async (storage, folderId) => {
+            await cloneIntoFolder({ storage, folderId, repositoryUrl: request.repositoryUrl, branch: request.branch, testMode, transfer, signal });
+          },
+        });
+      } finally {
+        await refreshProjectList();
+      }
+    },
+    [projectService, refreshProjectList],
   );
 
   const openListedProject = useCallback(
@@ -355,6 +390,11 @@ export function useProjectLifecycle({
         await journalBuffer.clearAfterFlush(guid, () => truncateJournal(derived, guid));
       }
       emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.shutdown);
+      // Inside the write queue, so a pull ahead in it finishes first. Every
+      // project open starts from Home after this close, so it also guards a
+      // switch: no Git operation of this project outlives its folder.
+      sourceControlSync.stop();
+      await sourceControlSync.settled();
       await projectService.closeProject();
     });
     sourceControlRef.current.dispose();
@@ -371,6 +411,7 @@ export function useProjectLifecycle({
     setRoute("home");
     resetExternalChanges();
     setDocumentOpenError(null);
+    setPublishNotice(null);
     await refreshProjectList();
     bump();
     return { outcome: "closed" };
@@ -396,11 +437,13 @@ export function useProjectLifecycle({
     resetExternalChanges,
     setAutoSaveStatus,
     setDocumentOpenError,
+    setPublishNotice,
     setLastCompiledSignature,
     setMigrationPending,
     setRecoveryAvailable,
     setRoute,
     sourceControlRef,
+    sourceControlSync,
   ]);
 
   const forceCloseProject = useCallback(
@@ -441,9 +484,8 @@ export function useProjectLifecycle({
     (): Pick<
       DocumentActions,
       | "openProject"
-      | "createEmptyProject"
-      | "createFromTemplate"
       | "openListedProject"
+      | "cloneProject"
       | "reconnectProject"
       | "closeProject"
       | "releaseSessionsForProjectClose"
@@ -452,9 +494,8 @@ export function useProjectLifecycle({
       | "keepRecovery"
     > => ({
       openProject,
-      createEmptyProject,
-      createFromTemplate,
       openListedProject,
+      cloneProject,
       reconnectProject,
       closeProject,
       releaseSessionsForProjectClose,
@@ -464,9 +505,8 @@ export function useProjectLifecycle({
     }),
     [
       openProject,
-      createEmptyProject,
-      createFromTemplate,
       openListedProject,
+      cloneProject,
       reconnectProject,
       closeProject,
       releaseSessionsForProjectClose,
@@ -476,5 +516,11 @@ export function useProjectLifecycle({
     ],
   );
 
-  return { actions };
+  // The provider adds a Remote New Project's Publish after these open the project.
+  const create = useMemo(
+    () => ({ createEmptyProject, createFromTemplate }),
+    [createEmptyProject, createFromTemplate],
+  );
+
+  return { actions, create };
 }

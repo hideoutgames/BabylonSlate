@@ -53,8 +53,8 @@ export function beginShadowAllocationValidation(
   engine: AbstractEngine,
   reusable: object | null = null,
 ): (generator: ShadowGenerator) => void {
-  // Pinned WebGL adapter: AbstractEngine also supports NullEngine and WebGPU,
-  // neither of which owns a WebGL context or WebGL attachment handles.
+  // Pinned WebGL adapter: AbstractEngine also supports NullEngine,
+  // which owns no WebGL context or WebGL attachment handles.
   const gl = (engine as AbstractEngine & { _gl?: ShadowGl })._gl;
   if (!gl) return () => {};
   const reusing = reusable !== null && validatedTargets.has(reusable);

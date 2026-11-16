@@ -1,5 +1,4 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import { pruneWebGpuCachesNow } from "./webgpu-on-demand";
 
 /**
  * End frames to run once the release settles: `DrawWrapper.dispose(false)`
@@ -18,9 +17,8 @@ const SETTLE_DEADLINE_MS = 1_000;
 
 /**
  * Keep empty frames coming after a client stops until its release settles,
- * then a few more. Babylon finishes deferred work only at an end frame: WebGPU
- * buffer and texture destruction, deferred Effect disposal and frame-gated
- * managed-lease releases. With no other client rendering, a closed Scene would
+ * then a few more. Babylon finishes deferred work only at an end frame:
+ * deferred Effect disposal and frame-gated managed-lease releases. With no other client rendering, a closed Scene would
  * otherwise stay allocated until the next client's first frame, so switching
  * scenes would peak at the old and the new one together. The loop's own
  * function draws nothing, and it is the only loop this removes: a client that
@@ -38,11 +36,7 @@ export function drainEngineAfterRelease(engine: AbstractEngine, released: Promis
     engine.onEndFrameObservable.remove(counter);
     engine.onDisposeObservable.remove(disposed);
     engine.stopRenderLoop(frame);
-    if (!engine.isDisposed) pruneWebGpuCachesNow(engine);
   };
-  // An Effect disposal queued through SetImmediate registers its own end-frame
-  // observer after this counter, so in the last settle frame it can land after
-  // the final prune; its ids wait for the next drain or the threshold prune.
   const counter = engine.onEndFrameObservable.add(() => {
     if (settledFrames >= 0 && ++settledFrames >= SETTLE_FRAMES) stop();
   });

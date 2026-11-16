@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  animationAssetGuids,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   retargetAnimationLoadsFromAnimations,
@@ -43,6 +44,20 @@ describe("normalizeAnimationPayload", () => {
       sourceAnimationGuid: null,
     });
     expect(normalizeAnimationPayload({ clipName: "Idle", durationMs: 0 }).durationMs).toBeUndefined();
+  });
+});
+
+describe("additive Animations", () => {
+  it("keeps a known base, with a base Animation and time only for an Animation base, and drops anything else", () => {
+    expect(normalizeAnimationPayload({ additive: { base: "firstFrame", animationGuid: "x" } }).additive).toEqual({ base: "firstFrame" });
+    expect(normalizeAnimationPayload({ additive: { base: "animation", animationGuid: " idle ", timeMs: -5 } }).additive)
+      .toEqual({ base: "animation", animationGuid: "idle", timeMs: 0 });
+    expect(normalizeAnimationPayload({ additive: { base: "meshSpace" } })).not.toHaveProperty("additive");
+    expect(normalizeAnimationPayload({})).not.toHaveProperty("additive");
+  });
+
+  it("depends on its base Animation, so the base loads with it", () => {
+    expect(animationAssetGuids({ skeletonGuid: "rig", additive: { base: "animation", animationGuid: "idle" } })).toEqual(["idle", "rig"]);
   });
 });
 

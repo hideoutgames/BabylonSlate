@@ -16,6 +16,7 @@ import { EditorChromeBar } from "../components/editor-chrome-bar";
 import { EditorStatusBar } from "../components/editor-status-bar";
 import { DocumentWorkspace } from "../components/document-workspace";
 import { ExternalChangeDialogs } from "../components/external-change-dialogs";
+import { SourceControlActionsProvider } from "../components/source-control-actions";
 import {
   useDocumentActions,
   useActiveDocumentId,
@@ -579,12 +580,14 @@ function UnsavedChangesGuard() {
 function EditorLayout() {
   return (
     <div className="safe-frame flex h-full min-h-0 flex-col overflow-clip bg-background text-foreground">
-      <EditorChromeAndPrompts />
-      <RecoveryBanner />
-      <main className="flex min-h-0 flex-1 flex-col">
-        {profileRegion("document-workspace", <DocumentWorkspace />)}
-      </main>
-      {profileRegion("editor-status-bar", <EditorStatusBar />)}
+      <SourceControlActionsProvider>
+        <EditorChromeAndPrompts />
+        <RecoveryBanner />
+        <main className="flex min-h-0 flex-1 flex-col">
+          {profileRegion("document-workspace", <DocumentWorkspace />)}
+        </main>
+        {profileRegion("editor-status-bar", <EditorStatusBar />)}
+      </SourceControlActionsProvider>
       <UnsavedChangesGuard />
     </div>
   );

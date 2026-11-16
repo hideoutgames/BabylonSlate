@@ -290,7 +290,7 @@ describe("ContentBrowserNewAssetMenu", () => {
     );
     const menu = screen.getByTestId("new-asset-type-menu");
     const labels = [...menu.querySelectorAll("[data-slot='dropdown-menu-label']")].map((node) => node.textContent);
-    expect(labels).toEqual(expect.arrayContaining(["New Asset", "World", "Scripting", "Rendering", "AI"]));
+    expect(labels).toEqual(expect.arrayContaining(["New Asset", "World", "Scripting", "Rendering", "Visual Effects", "AI"]));
 
     const query = screen.getByTestId("new-asset-type-menu-query");
     fireEvent.change(query, { target: { value: "InputAction" } });
@@ -298,6 +298,10 @@ describe("ContentBrowserNewAssetMenu", () => {
     expect(screen.queryByTestId("search-item-InputAxis")).toBeNull();
 
     fireEvent.change(query, { target: { value: "basic particle" } });
+    // Particle assets sit under Visual Effects, not Rendering.
+    const matched = [...menu.querySelectorAll("[data-slot='dropdown-menu-label']")].map((node) => node.textContent);
+    expect(matched).toContain("Visual Effects");
+    expect(matched).not.toContain("Rendering");
     fireEvent.click(screen.getByTestId("search-item-ParticleEmitter"));
     expect(onSelect).toHaveBeenCalledWith("ParticleEmitter");
     expect(onOpenChange).toHaveBeenCalledWith(false);

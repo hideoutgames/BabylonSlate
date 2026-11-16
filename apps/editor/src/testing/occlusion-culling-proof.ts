@@ -14,28 +14,24 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import {
-  applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings,
+  applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { allowSceneOcclusionCulling } from "../../../../packages/render/src/view-occlusion";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
-export async function runOcclusionCullingProof(backend: "webgl2" | "webgpu") {
+export async function runOcclusionCullingProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 192;
   canvas.height = 108;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(canvas.width, canvas.height);
-  const order = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   try {

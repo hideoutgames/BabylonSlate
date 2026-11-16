@@ -3,7 +3,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 /**
  * GPU-busy time per frame, measured without timer queries and independently of display pacing: the Feature Test
  * Check's Breakdown turns it on (`gpubusy on`) while it samples. At the end of each Engine frame (after every view's
- * draws and presentation copy) a marker is submitted, a WebGL2 fence or a WebGPU `onSubmittedWorkDone`, and its
+ * draws and presentation copy) a marker is submitted, a WebGL2 fence, and its
  * completion is timestamped. A frame's busy time is its completion minus the later of its submission and the previous
  * frame's completion: the GPU runs frames in order, so when it is still busy with the previous frame the next one starts
  * there. Off, it does nothing.
@@ -11,15 +11,14 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
  * Resolution: WebGL2 fences are polled without blocking (`clientWaitSync` with a zero timeout) from a zero-delay timer
  * while one is outstanding, so a completion is stamped up to one poll late. Browsers clamp nested timers to about 4 ms,
  * which bounds each frame's error; the error does not accumulate (completion times are absolute), so medians over many
- * frames are stable and comparable between steps. `stats().pollMs` reports the mean poll gap actually seen. WebGPU
- * stamps when the promise settles, a microtask after the queue drains.
+ * frames are stable and comparable between steps. `stats().pollMs` reports the mean poll gap actually seen.
  */
 export interface GpuBusyStats {
   /** Frames whose completion was observed. */
   frames: number;
   medianMs: number;
   p95Ms: number;
-  /** Mean gap between fence polls (WebGL2), the per-frame timing resolution; 0 on WebGPU. */
+  /** Mean gap between fence polls, the per-frame timing resolution. */
   pollMs: number;
   /** Frames not measured because too many markers were outstanding. */
   skipped: number;
@@ -41,7 +40,7 @@ export interface FenceContext {
  * A submitted frame marker: reports, without blocking, whether the GPU has finished the work submitted before it (true),
  * not yet (false), or cannot tell (null, a lost context). Shared with the frame loop's backpressure (`frame-backpressure.ts`).
  */
-export type FrameMarker = { submitted: number; done: () => boolean | null; dispose: () => void; settledAt?: number };
+export type FrameMarker = { submitted: number; done: () => boolean | null; dispose: () => void };
 type Marker = FrameMarker;
 
 /** Markers in flight at once; a frame submitted with this many outstanding is skipped rather than queued. */
@@ -118,10 +117,9 @@ export class GpuBusyProbe {
       marker.dispose();
       // A failed wait (a lost context) measures nothing.
       if (done === null) continue;
-      const completed = marker.settledAt ?? now;
       const started = Math.max(marker.submitted, this.lastCompletion);
-      this.lastCompletion = completed;
-      if (this.count < MAX_FRAMES) this.busy[this.count++] = Math.max(0, completed - started);
+      this.lastCompletion = now;
+      if (this.count < MAX_FRAMES) this.busy[this.count++] = Math.max(0, now - started);
     }
     if (this.outstanding.length) this.requestPoll();
     else this.lastPoll = 0;
@@ -172,29 +170,8 @@ function fenceFrameMarker(gl: FenceContext, submitted: number): FrameMarker | nu
   };
 }
 
-/** A WebGPU marker: `queue.onSubmittedWorkDone`, stamped when it settles (`onSettled` then runs); never awaited. */
-function queueFrameMarker(
-  queue: { onSubmittedWorkDone(): Promise<unknown> }, submitted: number, now: () => number, onSettled?: () => void,
-): FrameMarker {
-  const marker: FrameMarker = { submitted, done: () => (marker.settledAt === undefined ? false : true), dispose: () => {} };
-  void queue.onSubmittedWorkDone().then(() => {
-    marker.settledAt = now();
-    onSettled?.();
-  }, () => {
-    marker.settledAt = now();
-    marker.done = () => null;
-    onSettled?.();
-  });
-  return marker;
-}
-
-/** The Engine's marker source (WebGL2 fences or the WebGPU queue), or null where it has neither. */
-export function engineFrameMarkers(engine: AbstractEngine, now: () => number = () => performance.now(),
-  onSettled?: () => void): ((submitted: number) => FrameMarker | null) | null {
-  if (engine.isWebGPU) {
-    const queue = (engine as unknown as { _device?: { queue?: { onSubmittedWorkDone(): Promise<unknown> } } })._device?.queue;
-    return queue && typeof queue.onSubmittedWorkDone === "function" ? (submitted) => queueFrameMarker(queue, submitted, now, onSettled) : null;
-  }
+/** The Engine's marker source (WebGL2 fences), or null where it has none. */
+export function engineFrameMarkers(engine: AbstractEngine): ((submitted: number) => FrameMarker | null) | null {
   const gl = (engine as unknown as { _gl?: WebGL2RenderingContext })._gl;
   const version = (engine as unknown as { webGLVersion?: number }).webGLVersion;
   return gl && version === 2 && typeof gl.fenceSync === "function" ? (submitted) => fenceFrameMarker(gl, submitted) : null;
@@ -205,30 +182,15 @@ export function createFenceGpuBusyProbe(gl: FenceContext, now?: () => number, sc
   return new GpuBusyProbe((submitted) => fenceFrameMarker(gl, submitted), now, schedule);
 }
 
-/** A probe whose markers are WebGPU `queue.onSubmittedWorkDone` promises, stamped when they settle. */
-export function createQueueGpuBusyProbe(
-  queue: { onSubmittedWorkDone(): Promise<unknown> }, now: () => number = () => performance.now(),
-  schedule?: (callback: () => void) => void,
-): GpuBusyProbe {
-  let probe: GpuBusyProbe | null = null;
-  probe = new GpuBusyProbe((submitted) => queueFrameMarker(queue, submitted, now, () => probe?.poll()), now, schedule ?? (() => {}));
-  return probe;
-}
-
 const probes = new WeakMap<AbstractEngine, GpuBusyProbe | null>();
 
 /** The Engine's probe (one per Engine: GPU work is Engine-wide), installed at its frame end; null without fences. */
 export function engineGpuBusyProbe(engine: AbstractEngine): GpuBusyProbe | null {
   if (probes.has(engine)) return probes.get(engine)!;
   let probe: GpuBusyProbe | null = null;
-  if (engine.isWebGPU) {
-    const queue = (engine as unknown as { _device?: { queue?: { onSubmittedWorkDone(): Promise<unknown> } } })._device?.queue;
-    if (queue && typeof queue.onSubmittedWorkDone === "function") probe = createQueueGpuBusyProbe(queue);
-  } else {
-    const gl = (engine as unknown as { _gl?: WebGL2RenderingContext; webGLVersion?: number })._gl;
-    const version = (engine as unknown as { webGLVersion?: number }).webGLVersion;
-    if (gl && version === 2 && typeof gl.fenceSync === "function") probe = createFenceGpuBusyProbe(gl);
-  }
+  const gl = (engine as unknown as { _gl?: WebGL2RenderingContext; webGLVersion?: number })._gl;
+  const version = (engine as unknown as { webGLVersion?: number }).webGLVersion;
+  if (gl && version === 2 && typeof gl.fenceSync === "function") probe = createFenceGpuBusyProbe(gl);
   probes.set(engine, probe);
   if (probe) {
     const observer = engine.onEndFrameObservable.add(() => probe!.frameEnd());

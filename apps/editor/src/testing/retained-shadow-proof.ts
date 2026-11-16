@@ -25,7 +25,6 @@ import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/sh
 import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
 import { setRetainedShadowCasters, type RetainedShadowDiagnostics } from "../../../../packages/render/src/shadow-retained-casters";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 200;
 const HEIGHT = 150;
@@ -41,10 +40,9 @@ type Run = {
 };
 
 async function drawRun(engine: AbstractEngine, retain: boolean): Promise<Run> {
-  const order = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   try {

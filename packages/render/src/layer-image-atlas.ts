@@ -40,20 +40,11 @@ const PAGE_EDGE = 1024;
 /** The longest side of an image the page takes. */
 const CELL_EDGE = 256;
 const SHADER = "hapticLayerImageAtlas";
-for (const wgsl of [false, true]) {
-  const store = ShaderStore.GetShadersStore(wgsl ? 1 : 0);
-  store[`${SHADER}VertexShader`] = wgsl
-    ? "attribute position: vec2f;\n@vertex\nfn main(input: VertexInputs) -> FragmentInputs {\nvertexOutputs.position = vec4f(vertexInputs.position, 0.0, 1.0);\n}"
-    : "attribute vec2 position;\nvoid main(void) {\ngl_Position = vec4(position, 0.0, 1.0);\n}";
+{
+  const store = ShaderStore.GetShadersStore(0);
+  store[`${SHADER}VertexShader`] = "attribute vec2 position;\nvoid main(void) {\ngl_Position = vec4(position, 0.0, 1.0);\n}";
   // atlasCell: the cell's first texel on the page.
-  store[`${SHADER}PixelShader`] = wgsl
-    ? `var atlasSource: texture_2d<f32>;
-uniform atlasCell: vec4f;
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-fragmentOutputs.color = textureLoad(atlasSource, vec2i(floor(fragmentInputs.position.xy - uniforms.atlasCell.xy)), 0);
-}`
-    : `uniform sampler2D atlasSource;
+  store[`${SHADER}PixelShader`] = `uniform sampler2D atlasSource;
 uniform vec4 atlasCell;
 void main(void) {
 gl_FragColor = texelFetch(atlasSource, ivec2(floor(gl_FragCoord.xy - atlasCell.xy)), 0);
@@ -168,6 +159,11 @@ export class LayerImageAtlas {
   private readonly beforeRender: Nullable<Observer<Scene>>;
   private readonly restored: Nullable<Observer<AbstractEngine>>;
   private disposed = false;
+  /**
+   * Counts what changes the cells `cell` gives out: an image drawn there, taken off or laid out again, a restored
+   * context's redraw, the page made. A reader keeps the answers it got while the count stands.
+   */
+  revision = 0;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -247,6 +243,7 @@ export class LayerImageAtlas {
     if (slot || !shelves.hasFreed) return slot;
     // Freed slots too small for this image: lay the page out again, tallest first, and draw every cell where it is now.
     const images = [...this.images.values()].sort((a, b) => b.cells[0].height - a.cells[0].height);
+    this.revision += 1;
     shelves.reset();
     this.pending.length = 0;
     for (const image of images) {
@@ -270,7 +267,7 @@ export class LayerImageAtlas {
     const caps = engine.getCaps();
     this.unavailable = true;
     // The copy reads texels by index, which WebGL1 cannot.
-    if (!engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion! < 2) return false;
+    if ((engine as { webGLVersion?: number }).webGLVersion! < 2) return false;
     const edge = Math.min(PAGE_EDGE, caps.maxTextureSize);
     const options = { width: edge, height: edge, format: Constants.TEXTUREFORMAT_RGBA, type: Constants.TEXTURETYPE_UNSIGNED_BYTE };
     const bytes = renderTargetAllocationBytes(options);
@@ -289,6 +286,7 @@ export class LayerImageAtlas {
       return false;
     }
     this.unavailable = false;
+    this.revision += 1;
     const wrap = (hasAlpha: boolean) => {
       // Each wrapper holds a reference of its own, so the wrappers and the target release independently.
       target.texture!.incrementReferences();
@@ -304,7 +302,7 @@ export class LayerImageAtlas {
     this.shelves = new Shelves(edge, edge);
     this.renderer = new EffectRenderer(engine);
     this.effect = new EffectWrapper({
-      engine, name: SHADER, vertexShader: SHADER, fragmentShader: SHADER, useShaderStore: true, shaderLanguage: engine.isWebGPU ? 1 : 0,
+      engine, name: SHADER, vertexShader: SHADER, fragmentShader: SHADER, useShaderStore: true, shaderLanguage: 0,
       uniformNames: ["atlasCell"], samplerNames: ["atlasSource"],
     });
     return true;
@@ -314,12 +312,14 @@ export class LayerImageAtlas {
   private remove(image: Image, release = true): void {
     image.texture.onDisposeObservable.remove(image.disposal);
     this.images.delete(image.texture);
+    this.revision += 1;
     const queued = this.pending.indexOf(image);
     if (queued >= 0) this.pending.splice(queued, 1);
     if (release) this.shelves?.release(image.slot);
   }
 
   private redrawAll(): void {
+    this.revision += 1;
     this.pending.length = 0;
     for (const image of this.images.values()) {
       image.drawn = false;
@@ -362,6 +362,7 @@ export class LayerImageAtlas {
         effect.effect.setFloat4("atlasCell", cell.x, cell.y, 0, 0);
         renderer.draw();
         image.drawn = true;
+        this.revision += 1;
       }
       pending.length = kept;
       engine.unBindFramebuffer(target, true);

@@ -6,13 +6,6 @@ import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import type { Scene } from "@babylonjs/core/scene";
 import { joinPooledPrimitiveGroup } from "./pooled-primitive-visual";
 import { prewarmMeshMaterials } from "./scene-perf";
-import { hideForPipelineWarmup } from "./reveal-pending";
-import { markSceneReadinessDirty } from "./scene-readiness-signal";
-import { pipelinesWarmed } from "./variant-pipeline-warmup";
-import { pipelinesDeferred } from "./webgpu-pipeline-deferral";
-
-/** Where pipelines are deferred, staged meshes whose pipelines are not warm yet go after this long all the same. */
-const SPAWNABLE_PIPELINE_WARM_MS = 10_000;
 
 /**
  * Compiles what Play may spawn, before it does, against the Scene's current lighting: each Material on a staged box
@@ -23,15 +16,10 @@ const SPAWNABLE_PIPELINE_WARM_MS = 10_000;
  * on the spawned mesh's own attributes (skinning, morph targets, instances) and the lights that reach it, and what it
  * misses is hidden per mesh until it compiles (`isRevealPending`).
  *
- * Where pipelines are deferred (WebGPU) a variant also needs its render pipeline for the pass it draws in, which only
- * a draw in that pass creates. The staged meshes then stay, hidden from every pass (`hideForPipelineWarmup`), until
- * the world view's warm draws have created their pipelines (`variant-pipeline-warmup.ts`), and go afterwards, or after
- * `SPAWNABLE_PIPELINE_WARM_MS` (a scene no world view probes keeps them that long).
- *
- * Elsewhere (WebGL2) a compiled program still holds iPad WebKit at its first draw. With `keepForFirstDraw` (a Play load,
- * whose starting-state draw runs behind its loading screen without view culling) the staged meshes stay,
- * shown and casting no shadow, so that draw is their first: the returned release disposes them, and the caller calls it
- * once that draw is done, or the load ends. Without it, or where pipelines are deferred, the result is null.
+ * A compiled program still holds iPad WebKit at its first draw. With `keepForFirstDraw` (a Play load, whose
+ * starting-state draw runs behind its loading screen without view culling) the staged meshes stay, shown and casting no
+ * shadow, so that draw is their first: the returned release disposes them, and the caller calls it once that draw is
+ * done, or the load ends. Without it the result is null.
  */
 export async function warmSpawnables(
   scene: Scene,
@@ -78,8 +66,7 @@ export async function warmSpawnables(
       disposals.push(() => instance.dispose());
     }
     await prewarmMeshMaterials(scene, staged, assertCurrent);
-    if (pipelinesDeferred(scene.getEngine())) keepForPipelineWarmup(scene, staged, disposals.splice(0));
-    else if (options.keepForFirstDraw && staged.length) return keepForFirstDraw(staged, disposals.splice(0));
+    if (options.keepForFirstDraw && staged.length) return keepForFirstDraw(staged, disposals.splice(0));
     return null;
   } finally {
     for (const dispose of disposals.splice(0)) dispose();
@@ -92,27 +79,4 @@ function keepForFirstDraw(staged: readonly AbstractMesh[], disposals: (() => voi
   return () => {
     for (const dispose of disposals.splice(0)) dispose();
   };
-}
-
-/** Leaves the staged meshes to the view's warm draws, and disposes them once every one's pipelines are warm. */
-function keepForPipelineWarmup(scene: Scene, staged: readonly AbstractMesh[], disposals: (() => void)[]): void {
-  for (const mesh of staged) {
-    // Babylon draws only an enabled, visible mesh; hidden, no pass shows it.
-    hideForPipelineWarmup(mesh);
-    mesh.isVisible = true;
-  }
-  const engine = scene.getEngine();
-  const since = performance.now();
-  const release = () => {
-    engine.onEndFrameObservable.remove(watch);
-    scene.onDisposeObservable.remove(disposed);
-    for (const dispose of disposals.splice(0)) dispose();
-  };
-  const watch = engine.onEndFrameObservable.add(() => {
-    if (staged.every((mesh) => mesh.isDisposed() || pipelinesWarmed(mesh)) || performance.now() - since >= SPAWNABLE_PIPELINE_WARM_MS)
-      release();
-    // A settled view probes no more: ask it to, so its next steady frame warms them.
-    else markSceneReadinessDirty(scene, "spawnWarm");
-  });
-  const disposed = scene.onDisposeObservable.addOnce(release);
 }

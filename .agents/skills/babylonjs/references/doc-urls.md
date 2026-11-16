@@ -14,8 +14,6 @@ Pages on `https://doc.babylonjs.com` that this repository's engine work uses. Ea
 - Shader code in Babylon.js: https://doc.babylonjs.com/features/featuresDeepDive/materials/shaders/shaderCodeInBjs
 - Material plugins: https://doc.babylonjs.com/features/featuresDeepDive/materials/using/materialPlugins
 - KTX2 compression: https://doc.babylonjs.com/features/featuresDeepDive/materials/using/ktx2Compression
-- WebGPU: https://doc.babylonjs.com/setup/support/webGPU
-- WGSL: https://doc.babylonjs.com/setup/support/webGPU/webGPUWGSL
 
 ## Rendering
 

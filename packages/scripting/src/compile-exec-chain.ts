@@ -226,15 +226,25 @@ export function emitExecChain(
 
     let continuation: string | undefined;
     let runs: string | undefined;
-    const flow: { branch?: { expression: string; truePin: string; falsePin: string } } = {};
+    const flow: { branch?: { expression: string; truePin: string; falsePin: string }; ranOutputs?: boolean } = {};
     if (def.pure) {
       ensurePure(s, node);
     } else {
       runs = emitStatementNode(s, node, def, {
         continuation: (expression) => { continuation = expression; },
         branch: (expression, truePin, falsePin) => { flow.branch = { expression, truePin, falsePin }; },
+        // An output run between the node's statements, as it reaches it (a latent node's later outputs).
+        runOutput: (expression, pinId) => {
+          flow.ranOutputs = true;
+          const anchor = { column: 1, assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId: node.id };
+          emitBody(s, `  if (${expression}) {`, anchor);
+          emitAlong(s, execSuccessorEdges(s.index, node.id, pinId), visited);
+          emitBody(s, "  }", anchor);
+        },
       }).condition;
     }
+    // The node ran its outputs itself.
+    if (flow.ranOutputs) break;
 
     if (flow.branch) {
       const branch = flow.branch;

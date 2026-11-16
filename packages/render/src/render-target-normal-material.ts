@@ -20,7 +20,7 @@ import { applyLatticeDeformerPlumbing } from "./lattice-deformer-block";
  * Their shaders evaluate only the selected output and an optional native mask. */
 function createGeometryMaterial(scene: Scene, depth: boolean, source?: Material): NodeMaterial {
   const material = new NodeMaterial(depth ? "renderTarget:depth" : "renderTarget:worldNormal", scene, {
-    shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+    shaderLanguage: ShaderLanguage.GLSL,
   });
   // Fragment alpha is data, not a request to blend or disable depth writes.
   material.transparencyMode = Material.MATERIAL_OPAQUE;

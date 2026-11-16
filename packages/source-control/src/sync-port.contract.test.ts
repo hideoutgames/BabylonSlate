@@ -5,7 +5,7 @@ import type { ProjectStorage } from "@haptic/core";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeRemote, FakeSync } from "./fake-sync";
-import { cloneRepository } from "./git/repository";
+import { cloneRepository, initRepository } from "./git/repository";
 import {
   GITATTRIBUTES_LFS_RULE,
   isSyncError,
@@ -21,11 +21,23 @@ import { blobBytes, blobPath, GitTestServer, REPOSITORY_URL } from "./test-suppo
 
 type Changes = Record<string, string | Uint8Array | null>;
 
+interface CopyOptions {
+  signal?: AbortSignal;
+  /** Called before each working tree write (not `.git`), as checkout makes them. */
+  onWorkingWrite?: (path: string) => void;
+}
+
 interface Fixture {
-  /** Commits `changes` to the remote's main as a teammate; resolves to the new head. */
-  teammate(changes: Changes, message?: string): Promise<string>;
+  /** Commits `changes` to the remote's `branch` (main; a new branch starts from main) as a teammate; resolves to the new head. */
+  teammate(changes: Changes, message?: string, branch?: string): Promise<string>;
   /** A new working copy of main, in its own project folder. */
-  copy(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
+  copy(options?: CopyOptions): Promise<{ port: SyncPort; storage: ProjectStorage }>;
+  /** A new working copy with no commits in an empty project folder, as Publish starts one. */
+  init(): Promise<{ port: SyncPort; storage: ProjectStorage }>;
+  /** Deletes the remote's `branch`, as a teammate would. */
+  deleteBranch(branch: string): Promise<void>;
+  /** The LFS object the server stores under `oid`, if any. */
+  stored(oid: string): Uint8Array | undefined;
   dispose(): Promise<void>;
 }
 
@@ -34,21 +46,62 @@ const AUTHOR = { name: "Device", email: "device@example.com" };
 const RULE = `${GITATTRIBUTES_LFS_RULE}\n`;
 const encode = (value: string) => new TextEncoder().encode(value);
 const text = (bytes: Uint8Array | null) => (bytes ? new TextDecoder().decode(bytes) : null);
+/** A test asset naming the LFS objects it needs, as a `.hasset` chunk table does. */
+const uses = (...blobs: Uint8Array[]) => `uses:${blobs.map((bytes) => blobPath(bytes).slice("assets/.blobs/".length)).join(",")}`;
+/** What a committed test asset needs (`uses`); a file that is no such asset needs nothing. */
+const references = (_path: string, bytes: Uint8Array): string[] => {
+  const value = text(bytes)!;
+  return value.startsWith("uses:") ? value.slice("uses:".length).split(",").filter(Boolean) : [];
+};
+
+/** `storage` calling `onWrite` before each working tree write. */
+function watched(storage: ProjectStorage, onWrite: ((path: string) => void) | undefined): ProjectStorage {
+  if (!onWrite) return storage;
+  return new Proxy(storage, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown;
+      if (typeof value !== "function") return value;
+      if (property !== "writeBinary" && property !== "writeText") return (value as (...args: unknown[]) => unknown).bind(target);
+      return (path: string, ...rest: unknown[]) => {
+        if (path !== ".git" && !path.startsWith(".git/")) onWrite(path);
+        return (value as (...args: unknown[]) => unknown).call(target, path, ...rest);
+      };
+    },
+  });
+}
 
 async function gitFixture(): Promise<Fixture> {
   const server = await GitTestServer.start();
   return {
-    async teammate(changes, message = "Teammate") {
+    async teammate(changes, message = "Teammate", branch = "main") {
       const teammate = server.teammate();
+      if (branch !== "main") teammate.checkout(branch);
       teammate.write(Object.fromEntries(Object.entries(changes).filter((entry): entry is [string, string | Uint8Array] => entry[1] !== null)));
       teammate.remove(...Object.keys(changes).filter((path) => changes[path] === null));
-      return teammate.commitAndPush(message);
+      return teammate.commitAndPush(message, branch);
     },
-    async copy() {
-      const storage = await server.storage();
-      const port = await cloneRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW });
+    async copy(options = {}) {
+      const storage = watched(await server.storage(), options.onWorkingWrite);
+      const port = await cloneRepository({
+        storage,
+        http: server.http,
+        credential: server.credential(),
+        repositoryUrl: REPOSITORY_URL,
+        branch: "main",
+        now: () => NOW,
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
       return { port, storage };
     },
+    async init() {
+      const storage = await server.storage();
+      const port = await initRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW });
+      return { port, storage };
+    },
+    async deleteBranch(branch) {
+      server.git(server.bare, "branch", "-D", branch);
+    },
+    stored: (oid) => server.objects.get(oid),
     dispose: () => server.stop(),
   };
 }
@@ -58,15 +111,26 @@ async function fakeFixture(): Promise<Fixture> {
   const remote = new FakeRemote({ now: () => NOW });
   let copies = 0;
   return {
-    async teammate(changes, message) {
-      return remote.commit(changes, message);
+    async teammate(changes, message, branch) {
+      return remote.commit(changes, message, branch);
     },
-    async copy() {
+    async copy(options = {}) {
+      copies += 1;
+      const node = new NodeStorageAdapter(root);
+      await node.openDocumentsProject(`copy-${copies}`);
+      const storage = watched(node, options.onWorkingWrite);
+      return { port: await FakeSync.clone({ storage, remote, branch: "main", now: () => NOW, ...(options.signal ? { signal: options.signal } : {}) }), storage };
+    },
+    async init() {
       copies += 1;
       const storage = new NodeStorageAdapter(root);
       await storage.openDocumentsProject(`copy-${copies}`);
-      return { port: await FakeSync.clone({ storage, remote, branch: "main", now: () => NOW }), storage };
+      return { port: FakeSync.init({ storage, remote, branch: "main", now: () => NOW }), storage };
     },
+    async deleteBranch(branch) {
+      remote.branches.delete(branch);
+    },
+    stored: (oid) => remote.lfsObjects.get(oid),
     async dispose() {
       rmSync(root, { recursive: true, force: true });
     },
@@ -140,6 +204,30 @@ describe.each([
     expect(await port.push()).toMatchObject({ uploaded: 1 });
   });
 
+  it("reads an LFS object from the working copy, else from the server, and never writes it", async () => {
+    const pushed = blobBytes(5, 3000);
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(pushed)]: pushed });
+    const { port, storage } = await fixture.copy();
+    // Only in this working copy: the server never had it.
+    const local = blobBytes(6, 2500);
+    await storage.writeBinary(blobPath(local), local);
+    expect(await port.readLfsObject(blobPath(local), local.byteLength)).toEqual(local);
+
+    await storage.remove(blobPath(pushed));
+    expect(await port.readLfsObject(blobPath(pushed), pushed.byteLength)).toEqual(pushed);
+    expect(await storage.exists(blobPath(pushed))).toBe(false);
+    expect((await port.status()).changes).toEqual([
+      { path: blobPath(local), kind: "added" },
+      { path: blobPath(pushed), kind: "deleted" },
+    ].sort((a, b) => a.path.localeCompare(b.path)));
+
+    const missing = blobBytes(7, 1000);
+    expect(await rejection(port.readLfsObject(blobPath(missing), missing.byteLength))).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    const cancelled = new AbortController();
+    cancelled.abort();
+    expect((await rejection(port.readLfsObject(blobPath(pushed), pushed.byteLength, { signal: cancelled.signal }))).kind).toBe("cancelled");
+  });
+
   it("counts the commits on each side after a fetch", async () => {
     await fixture.teammate({ "assets/a.hasset": "A" });
     const { port, storage } = await fixture.copy();
@@ -147,7 +235,90 @@ describe.each([
     const remote = await fixture.teammate({ "assets/b.hasset": "B2" }, "Two");
     await storage.writeBinary("assets/a.hasset", encode("A2"));
     const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
-    expect(await port.fetch()).toEqual({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    const state = await port.fetch();
+    expect(state).toMatchObject({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    // Only the remote's commits, newest first.
+    expect(state.incoming.map((entry) => [entry.id === remote, entry.message.trim(), entry.author.name])).toEqual([
+      [true, "Two", "Teammate"],
+      [false, "One", "Teammate"],
+    ]);
+  });
+
+  it("reads the counts as last fetched without asking the remote", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
+    const remote = await fixture.teammate({ "assets/b.hasset": "B" }, "Later");
+    // The teammate's commit is not known until a fetch.
+    expect(await port.remoteState()).toMatchObject({ local: commit, ahead: 1, behind: 0, incoming: [] });
+    await port.fetch();
+    const state = await port.remoteState();
+    expect(state).toMatchObject({ local: commit, remote, ahead: 1, behind: 1 });
+    expect(state.incoming.map((entry) => entry.message.trim())).toEqual(["Later"]);
+  });
+
+  it("ends a clone cancelled during checkout as cancelled", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+    const controller = new AbortController();
+    const error = await rejection(fixture.copy({ signal: controller.signal, onWorkingWrite: () => controller.abort() }));
+    expect(error.kind).toBe("cancelled");
+  });
+
+  it("changes nothing when a fetch, pull or push is cancelled", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    const remote = await fixture.teammate({ "assets/b.hasset": "B" }, "Teammate");
+    const cancelled = new AbortController();
+    cancelled.abort();
+    const { signal } = cancelled;
+    expect((await rejection(port.fetch({ signal }))).kind).toBe("cancelled");
+    expect(await port.remoteState()).toMatchObject({ behind: 0 });
+    expect((await rejection(port.pull({ author: AUTHOR, signal }))).kind).toBe("cancelled");
+    expect(await storage.exists("assets/b.hasset")).toBe(false);
+    await port.pull({ author: AUTHOR });
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
+    expect((await rejection(port.push({ signal }))).kind).toBe("cancelled");
+    expect(await port.fetch()).toMatchObject({ local: commit, remote, ahead: 1 });
+  });
+
+  it("lists the paths a push would change", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+    const { port, storage } = await fixture.copy();
+    expect(await port.outgoing()).toEqual([]);
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await storage.remove("assets/b.hasset");
+    await storage.writeBinary("assets/d.hasset", encode("D"));
+    await storage.writeBinary("assets/c.hasset", encode("C2"));
+    await port.commit({ paths: ["assets/a.hasset", "assets/b.hasset", "assets/d.hasset"], message: "Mine", author: AUTHOR });
+    // The uncommitted edit of c is not part of a push.
+    expect(await port.outgoing()).toEqual(["assets/a.hasset", "assets/b.hasset", "assets/d.hasset"]);
+    await port.push();
+    expect(await port.outgoing()).toEqual([]);
+  });
+
+  it("publishes a new working copy: the first push creates the branch another copy clones", async () => {
+    const { port, storage } = await fixture.init();
+    expect(await port.status()).toMatchObject({ head: null, changes: [] });
+    const texture = blobBytes(3, 4096);
+    await storage.writeBinary(".gitattributes", encode(RULE));
+    await storage.writeBinary(".gitignore", encode(withIgnoreEntries("")));
+    await storage.writeBinary("project.json", encode("{}"));
+    await storage.writeBinary(blobPath(texture), texture);
+    await storage.writeBinary("layout.json", encode("{}"));
+    const { changes } = await port.status();
+    expect(changes.map((change) => change.path)).toEqual([".gitattributes", ".gitignore", blobPath(texture), "project.json"]);
+    const { commit } = await port.commit({ paths: changes.map((change) => change.path), message: "Publish", author: AUTHOR });
+    // Before the first push (Publish's push failed): the commit counts as ahead from local refs alone, so Push offers it.
+    expect(await port.remoteState()).toMatchObject({ local: commit, remote: null, ahead: 1, behind: 0, incoming: [] });
+    expect(await port.outgoing()).toEqual([".gitattributes", ".gitignore", blobPath(texture), "project.json"]);
+    expect(await port.push()).toEqual({ head: commit, uploaded: 1 });
+    expect(await port.fetch()).toMatchObject({ local: commit, remote: commit, ahead: 0, behind: 0, incoming: [] });
+    const other = await fixture.copy();
+    expect(await other.storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(text(await other.storage.readBinary("project.json"))).toBe("{}");
+    expect(await other.storage.exists("layout.json")).toBe(false);
   });
 
   it("fast-forwards to the remote's files", async () => {
@@ -202,6 +373,12 @@ describe.each([
     const deep = await port.log({ limit: 3, deepen: true });
     expect(deep.commits.map((commit) => commit.message.trim())).toEqual(["Three", "Two", "One"]);
     expect((await port.log({ limit: 10, deepen: true })).hasMore).toBe(false);
+    // Pages: the next one leaves out what the first listed.
+    const first = await port.log({ limit: 2 });
+    expect(first).toMatchObject({ hasMore: true, shallow: false });
+    const next = await port.log({ limit: 2, skip: first.commits.length });
+    expect(next.commits.map((commit) => commit.message.trim())).toEqual(["One"]);
+    expect(next).toMatchObject({ hasMore: false, shallow: false });
 
     await storage.writeBinary("assets/a.hasset", encode("4"));
     const { commit: a4 } = await port.commit({ paths: ["assets/a.hasset"], message: "A4", author: AUTHOR });
@@ -212,6 +389,270 @@ describe.each([
     const ofB = (await port.log({ limit: 10, path: "assets/b.hasset" })).commits.map((commit) => commit.id);
     expect(ofB[0]).toBe(b2);
     expect(ofB).not.toContain(a4);
+  });
+
+  it("lists the files a commit changed against its parent", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B" });
+    const { port, storage } = await fixture.copy();
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await storage.remove("assets/b.hasset");
+    await storage.writeBinary("assets/c.hasset", encode("C"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"], message: "Mine", author: AUTHOR });
+    expect(await port.commitChanges(commit)).toEqual([
+      { path: "assets/a.hasset", kind: "modified" },
+      { path: "assets/b.hasset", kind: "deleted" },
+      { path: "assets/c.hasset", kind: "added" },
+    ]);
+  });
+
+  it("starts a branch at HEAD that the next push creates on the remote, where another copy lists it and switches to it", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A" });
+    await fixture.teammate({ "assets/art.hasset": "Art" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    expect(await port.localBranches()).toEqual(["main"]);
+    expect(await port.remoteBranches()).toEqual(["art", "main"]);
+
+    expect(await rejection(port.createBranch("bad name"))).toMatchObject({ kind: "conflict", code: "invalid-branch-name" });
+    expect(await rejection(port.createBranch("main"))).toMatchObject({ kind: "conflict", code: "branch-exists" });
+    const { head } = await port.status();
+    await port.createBranch("feature");
+    expect(await port.localBranches()).toEqual(["feature", "main"]);
+    expect(await port.status()).toEqual({ branch: "feature", head, changes: [] });
+    // Not on the remote yet: nothing to pull, nothing new to push, and fetching it is no failure.
+    expect(await port.fetch()).toMatchObject({ branch: "feature", local: head, remote: null, ahead: 0, behind: 0 });
+
+    await storage.writeBinary("assets/a.hasset", encode("A-feature"));
+    const { commit } = await port.commit({ paths: ["assets/a.hasset"], message: "Feature", author: AUTHOR });
+    expect(await port.remoteState()).toMatchObject({ local: commit, remote: null, ahead: 1, behind: 0 });
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+    await port.push();
+    expect(await port.fetch()).toMatchObject({ local: commit, remote: commit, ahead: 0, behind: 0 });
+    expect(await port.remoteBranches()).toEqual(["art", "feature", "main"]);
+
+    const other = await fixture.copy();
+    expect(await other.port.switchBranch("feature")).toEqual({ head: commit, changedPaths: ["assets/a.hasset"] });
+    expect(text(await other.storage.readBinary("assets/a.hasset"))).toBe("A-feature");
+    expect(await other.port.status()).toEqual({ branch: "feature", head: commit, changes: [] });
+    expect(await other.port.localBranches()).toEqual(["feature", "main"]);
+    expect((await other.port.log({ limit: 1 })).commits[0]!.id).toBe(commit);
+    // It tracks the remote branch: a teammate's commit there comes in with a pull.
+    const later = await fixture.teammate({ "assets/b.hasset": "B" }, "Later", "feature");
+    expect(await other.port.pull({ author: AUTHOR })).toMatchObject({ kind: "fast-forward", head: later, changedPaths: ["assets/b.hasset"] });
+    expect(await other.port.switchBranch("feature")).toEqual({ head: later, changedPaths: [] });
+    expect(await rejection(other.port.switchBranch("missing"))).toMatchObject({ kind: "not-found" });
+  });
+
+  it("switches branches, keeping uncommitted changes the switch does not touch and refusing ones it would overwrite", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/e.hasset": "E" });
+    const art = await fixture.teammate({ "assets/a.hasset": "A-art", "assets/b.hasset": null, "assets/c.hasset": "C" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    const main = (await port.status()).head;
+    await storage.writeBinary("assets/e.hasset", encode("E-mine"));
+
+    // A file the branches hold differently: refused, and nothing changes.
+    await storage.writeBinary("assets/a.hasset", encode("A-mine"));
+    expect(await rejection(port.switchBranch("art"))).toMatchObject({ kind: "conflict", code: "uncommitted-changes", paths: ["assets/a.hasset"] });
+    // As is a file only the other branch has, which would be written over.
+    await storage.writeBinary("assets/a.hasset", encode("A"));
+    await storage.writeBinary("assets/c.hasset", encode("C-mine"));
+    expect(await rejection(port.switchBranch("art"))).toMatchObject({ code: "uncommitted-changes", paths: ["assets/c.hasset"] });
+    expect(await port.status()).toMatchObject({ branch: "main", head: main });
+    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A");
+    await storage.remove("assets/c.hasset");
+
+    expect(await port.switchBranch("art")).toEqual({ head: art, changedPaths: ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"] });
+    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-art");
+    expect(await storage.exists("assets/b.hasset")).toBe(false);
+    expect(text(await storage.readBinary("assets/c.hasset"))).toBe("C");
+    // The edit to e, which both branches hold alike, came along.
+    expect(await port.status()).toEqual({ branch: "art", head: art, changes: [{ path: "assets/e.hasset", kind: "modified" }] });
+
+    expect(await port.switchBranch("main")).toEqual({ head: main, changedPaths: ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"] });
+    expect(text(await storage.readBinary("assets/b.hasset"))).toBe("B");
+    expect(await storage.exists("assets/c.hasset")).toBe(false);
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [{ path: "assets/e.hasset", kind: "modified" }] });
+  });
+
+  it("keeps a blob only an unpushed branch holds through a switch away and back, and pushes it from the working copy", async () => {
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    const main = (await port.status()).head;
+    await port.createBranch("feature");
+    const texture = blobBytes(9, 4096);
+    await storage.writeBinary(blobPath(texture), texture);
+    await storage.writeBinary("assets/t.hasset", encode("T"));
+    const { commit } = await port.commit({ paths: [blobPath(texture), "assets/t.hasset"], message: "Texture", author: AUTHOR });
+
+    // main lacks it: the switch drops it from the index and keeps the file, its only copy.
+    expect(await port.switchBranch("main")).toEqual({ head: main, changedPaths: ["assets/t.hasset"] });
+    expect(await storage.exists("assets/t.hasset")).toBe(false);
+    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [{ path: blobPath(texture), kind: "added" }] });
+
+    // The file is the object the branch names, so switching back takes it as it is.
+    expect(await port.switchBranch("feature")).toEqual({ head: commit, changedPaths: ["assets/t.hasset"] });
+    expect(await port.status()).toEqual({ branch: "feature", head: commit, changes: [] });
+    expect(await port.push()).toEqual({ head: commit, uploaded: 1 });
+    expect(fixture.stored(blobPath(texture).slice(-64))).toEqual(texture);
+    const other = await fixture.copy();
+    await other.port.switchBranch("feature");
+    expect(await other.storage.readBinary(blobPath(texture))).toEqual(texture);
+  });
+
+  it("keeps a blob file the remote removed on a pull, untracked", async () => {
+    const texture = blobBytes(10, 2048);
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(texture)]: texture });
+    const { port, storage } = await fixture.copy();
+    const remote = await fixture.teammate({ [blobPath(texture)]: null, "assets/a.hasset": "A2" });
+    expect(await port.pull({ author: AUTHOR })).toEqual({ kind: "fast-forward", head: remote, changedPaths: ["assets/a.hasset"] });
+    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(await port.status()).toEqual({ branch: "main", head: remote, changes: [{ path: blobPath(texture), kind: "added" }] });
+  });
+
+  it("offers for removal only untracked blob files that no unpushed commit holds", async () => {
+    const tracked = blobBytes(20, 2048);
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(tracked)]: tracked });
+    const { port, storage } = await fixture.copy();
+    expect(await port.removableLfsObjects({ references })).toEqual([]);
+    const loose = blobBytes(21, 1024);
+    const plugin = blobBytes(22, 1024);
+    await storage.writeBinary(blobPath(loose), loose);
+    await storage.writeBinary(blobPath(plugin, "plugins/Props/assets"), plugin);
+    // Other untracked files are not blobs; a tracked blob file is never offered, even unreferenced.
+    await storage.writeBinary("assets/b.hasset", encode("B"));
+    expect(await port.removableLfsObjects({ references })).toEqual([blobPath(loose), blobPath(plugin, "plugins/Props/assets")].sort());
+    const cancelled = new AbortController();
+    cancelled.abort();
+    expect((await rejection(port.removableLfsObjects({ signal: cancelled.signal, references }))).kind).toBe("cancelled");
+  });
+
+  it("keeps blob files an unpushed commit of any local branch holds, the checked-out branch's older commits too, until they are pushed", async () => {
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+
+    // Another branch's commit not pushed yet: its object exists only in this working copy.
+    await port.createBranch("feature");
+    const art = blobBytes(23, 3000);
+    await storage.writeBinary(blobPath(art), art);
+    await storage.writeBinary("assets/t.hasset", encode("T"));
+    await port.commit({ paths: [blobPath(art), "assets/t.hasset"], message: "Art", author: AUTHOR });
+    await port.switchBranch("main");
+    expect(await port.status()).toMatchObject({ changes: [{ path: blobPath(art), kind: "added" }] });
+    expect(await port.removableLfsObjects({ references })).toEqual([]);
+
+    // On the checked-out branch: one commit adds a blob, a later one removes it; the file comes back untracked.
+    const old = blobBytes(24, 2500);
+    await storage.writeBinary(blobPath(old), old);
+    await port.commit({ paths: [blobPath(old)], message: "Old", author: AUTHOR });
+    await storage.remove(blobPath(old));
+    await port.commit({ paths: [blobPath(old)], message: "Drop old", author: AUTHOR });
+    await storage.writeBinary(blobPath(old), old);
+    expect((await port.status()).changes).toEqual([blobPath(art), blobPath(old)].sort().map((path) => ({ path, kind: "added" })));
+    expect(await port.removableLfsObjects({ references })).toEqual([]);
+    // The push uploads it from that file.
+    expect(await port.push()).toMatchObject({ uploaded: 1 });
+
+    // Pushed: the server holds a copy to download again, so the working file may go.
+    expect(await port.removableLfsObjects({ references })).toEqual([blobPath(old)]);
+    await port.switchBranch("feature");
+    await port.push();
+    await port.switchBranch("main");
+    expect(await port.removableLfsObjects({ references })).toEqual([blobPath(art), blobPath(old)].sort());
+  });
+
+  it("keeps blob files a committed asset names while its commit lacks them, reading every version local history holds", async () => {
+    const theirs = blobBytes(25, 1500);
+    const mine = blobBytes(26, 1600);
+    const pushed = blobBytes(27, 1700);
+    const loose = blobBytes(28, 1800);
+    // A teammate's commit names an object it never committed: in a shallow copy, the oldest commit here.
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": uses(theirs) });
+    const { port, storage } = await fixture.copy();
+    for (const bytes of [theirs, mine, pushed, loose]) await storage.writeBinary(blobPath(bytes), bytes);
+    // Another Git app commits an asset without its blob; one committed with its blob, then dropped, is on the server.
+    await storage.writeBinary("assets/b.hasset", encode(uses(mine)));
+    await storage.writeBinary("assets/c.hasset", encode(uses(pushed)));
+    await port.commit({ paths: ["assets/b.hasset", "assets/c.hasset", blobPath(pushed)], message: "B and C", author: AUTHOR });
+    await port.push();
+    // Every asset is edited since and the dropped blob removed from the tree: no header on disk names any of them.
+    for (const path of ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"]) await storage.writeBinary(path, encode("edited"));
+    await storage.remove(blobPath(pushed));
+    await port.commit({ paths: ["assets/a.hasset", "assets/b.hasset", "assets/c.hasset", blobPath(pushed)], message: "Edit", author: AUTHOR });
+    await port.push();
+    await storage.writeBinary(blobPath(pushed), pushed);
+    const all = [theirs, mine, pushed, loose].map((bytes) => blobPath(bytes)).sort();
+    expect((await port.status()).changes).toEqual(all.map((path) => ({ path, kind: "added" })));
+
+    expect(await port.removableLfsObjects({ references })).toEqual([blobPath(pushed), blobPath(loose)].sort());
+    // Read through `references` only: the same history naming nothing keeps nothing.
+    expect(await port.removableLfsObjects({ references: () => [] })).toEqual(all);
+    // A copy in another root's folder: the commit naming the object held it in its own, so the server has it.
+    await storage.writeBinary(blobPath(pushed, "plugins/Props/assets"), pushed);
+    expect(await port.removableLfsObjects({ references })).toEqual([blobPath(pushed), blobPath(loose), blobPath(pushed, "plugins/Props/assets")].sort());
+  });
+
+  it("never makes up an LFS object the working copy lost and the server never had", async () => {
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const { port, storage } = await fixture.copy();
+    const main = (await port.status()).head;
+    await port.createBranch("feature");
+    const texture = blobBytes(11, 3000);
+    await storage.writeBinary(blobPath(texture), texture);
+    await storage.writeBinary("assets/t.hasset", encode("T"));
+    await port.commit({ paths: [blobPath(texture), "assets/t.hasset"], message: "Texture", author: AUTHOR });
+    await storage.remove(blobPath(texture));
+
+    expect(await rejection(port.push())).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    expect(fixture.stored(blobPath(texture).slice(-64))).toBeUndefined();
+    await port.switchBranch("main");
+    // Nothing is written when an object the branch needs is nowhere.
+    expect(await rejection(port.switchBranch("feature"))).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [] });
+    expect(await storage.exists("assets/t.hasset")).toBe(false);
+  });
+
+  it("measures a new branch's push against the remote's branches as they are now", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
+    await fixture.teammate({ "assets/b.hasset": "B-art" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    await port.switchBranch("art");
+    await port.createBranch("feature");
+    await storage.writeBinary("assets/a.hasset", encode("A-feature"));
+    await port.commit({ paths: ["assets/a.hasset"], message: "Feature", author: AUTHOR });
+
+    // art moved on: the commits feature started from are still on the remote, so only its own work goes.
+    await fixture.teammate({ "assets/c.hasset": "C-art" }, "More art", "art");
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+    // art deleted: a push sends the art commits too, so their paths count (and their locks).
+    await fixture.deleteBranch("art");
+    expect(await port.outgoing()).toEqual(["assets/a.hasset", "assets/b.hasset"]);
+  });
+
+  it("lists only the branch's own work when the remote moved on since the last fetch", async () => {
+    await fixture.teammate({ "assets/a.hasset": "A", "assets/b.hasset": "B" });
+    const { port, storage } = await fixture.copy();
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await port.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
+    await fixture.teammate({ "assets/b.hasset": "B2" });
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+    await port.fetch();
+    expect(await port.outgoing()).toEqual(["assets/a.hasset"]);
+  });
+
+  it("names a branch's commit without switching: this copy's, else the remote's after fetching it, and none for a branch neither has", async () => {
+    const main = await fixture.teammate({ "project.json": "main settings", "assets/a.hasset": "A" });
+    const art = await fixture.teammate({ "project.json": "art settings" }, "Art", "art");
+    const { port, storage } = await fixture.copy();
+    expect(await port.branchCommit("main")).toBe(main);
+    expect(await port.branchCommit("art")).toBe(art);
+    expect(text(await port.readFile("project.json", art))).toBe("art settings");
+    expect(await port.branchCommit("missing")).toBeNull();
+    // Nothing was checked out or written.
+    expect(await port.status()).toEqual({ branch: "main", head: main, changes: [] });
+    expect(text(await storage.readBinary("project.json"))).toBe("main settings");
+    expect(await port.localBranches()).toEqual(["main"]);
+    // The switch after it checks out that commit.
+    expect(await port.switchBranch("art")).toEqual({ head: art, changedPaths: ["project.json"] });
   });
 
   it("refuses to push over commits it has not pulled", async () => {

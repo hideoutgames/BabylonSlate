@@ -7,7 +7,7 @@
  *
  * SwiftShader links inside the call, so "still compiling" is injected: every Effect created after `hold` reports not
  * ready until `release`, exactly as a parallel-compile driver reports a link in flight. The view is a
- * `SceneRenderCoordinator` with `deferPipelines` on a world Scene, drawing steady frames (`render(false)`), as Play and
+ * `SceneRenderCoordinator` with `compileHolds` on a world Scene, drawing steady frames (`render(false)`), as Play and
  * the editor do.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -33,7 +33,6 @@ import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/va
 import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
 import { isRevealPending } from "../../../../packages/render/src/reveal-pending";
 import { warmSpawnables } from "../../../../packages/render/src/spawnable-warm";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 /** A graph Material of one base colour; `variant` changes its document's settings, so it compiles its own program. */
 async function graphMaterial(scene: Scene, name: string, color: number[], variant: (doc: MaterialDocument) => void = () => undefined) {
@@ -82,11 +81,10 @@ async function worldView() {
     box.receiveShadows = true;
     return floor;
   });
-  const coordinator = new SceneRenderCoordinator(scene, { deferPipelines: true });
-  const order = readbackChannelOrder(false);
+  const coordinator = new SceneRenderCoordinator(scene, { compileHolds: true });
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   /** One frame: a steady frame (`steady`), or one that validates its presentation (strict, as loading draws). */
   const reasons = new Set<string>();

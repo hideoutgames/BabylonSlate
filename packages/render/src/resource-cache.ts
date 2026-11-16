@@ -690,8 +690,8 @@ export class ResourceCache {
     // Blob input, an image, whose loader fetches the URL and never reads a buffer) loads from the entry's Blob.
     const fromBuffer = !options.isCube && raw !== null && ktx2.mimeType !== undefined;
     const blobUrl = this.uploadUrl(entry, uploadKey, fromBuffer ? null : bytes);
-    // Babylon 9.29 uploads a block-compressed KTX2 without invertY (WebGPU
-    // passes false, WebGL2 sets no UNPACK_FLIP_Y) and, unlike KTX1 and .basis,
+    // Babylon 9.29 uploads a block-compressed KTX2 without invertY (it sets
+    // no UNPACK_FLIP_Y) and, unlike KTX1 and .basis,
     // sets no _invertVScale for it. Upload a 2D KTX2 unflipped whatever the
     // request, and flip V on the wrapper instead, so it reads the same way up
     // as its PNG whether the decoder picks a block format or RGBA. Upload keys

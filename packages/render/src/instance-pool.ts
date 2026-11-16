@@ -12,6 +12,7 @@ import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { markInstanceSource } from "./instance-source";
 import { refreshInstanceParameters } from "./instance-parameters";
 import { hasDrawn } from "./reveal-pending";
+import { noteRenderChange } from "./render-change-journal";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { handOverNode } from "./node-handover";
 
@@ -129,7 +130,7 @@ interface InstanceGroup {
   readonly key: InstanceGroupKey;
   readonly source: Mesh;
   readonly members: Set<InstancedMesh>;
-  /** Some member has drawn: the group's variants and pipelines exist. */
+  /** Some member has drawn: the group's variants exist. */
   drawn: boolean;
   release: (() => void) | undefined;
 }
@@ -417,7 +418,11 @@ export function setMeshShadowFlags(mesh: AbstractMesh, receives: boolean, casts:
       pooled.pool.update(pooled.member, { receiveShadows: receives, castShadows: casts });
     return;
   }
-  mesh.receiveShadows = receives;
+  if (mesh.receiveShadows !== receives) {
+    mesh.receiveShadows = receives;
+    // No Babylon write point the render change journal hears: a draw batch binds it for its members.
+    noteRenderChange(mesh);
+  }
   if (casts) nonCasters.delete(mesh);
   else nonCasters.add(mesh);
 }

@@ -25,31 +25,27 @@ import {
   type RenderMode,
   type ShadowSettings,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { isAtlasShadow, type AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
 import { setRetainedShadowCasters } from "../../../../packages/render/src/shadow-retained-casters";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 /** `passes`: the light's map passes the capture's frame drew, and `originMoved` whether the render origin moved, where counted. */
 type Capture = { name: string; atlas: boolean; pixels: number[]; passes?: number; originMoved?: boolean };
 
-export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") {
+export async function runHapticContactShadowProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 120;
   canvas.height = 80;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    // With the floating render origin, as the app's Engines.
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  // With the floating render origin, as the app's Engines.
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   try {
@@ -171,7 +167,7 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
       captures.push(await unshadowed(light, `${name} unshadowed`));
       setAuthoredLightEnabled(light, false);
       captures.push({ name: `${name} unlit`, atlas: false, pixels: await draw() });
-      blocked[name] = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, toLight, covered);
+      blocked[name] = floorShadowMask(scene, camera, canvas, meshes, toLight, covered);
     };
     // The spot lights nothing past its cone's outer angle, where its shadow's view ends: the spot's mask covers its cone.
     const withinCone = (point: Vector3) =>
@@ -217,7 +213,7 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
     Object.defineProperty(cascades, "farCasterMinTexels", { configurable: true, writable: true, value: threshold });
     const farCasters = {
       threshold, listedKept, listedAll, firstCascadeEnd: cascades.cascadeEnds[0]!, kept: kept.pixels, all,
-      depths: floorDepths(scene, camera, canvas, engine.isWebGPU, floor),
+      depths: floorDepths(scene, camera, canvas, floor),
     };
     graph.dispose();
     return { width: canvas.width, height: canvas.height, captures, blocked, farCasters };
@@ -229,11 +225,11 @@ export async function runHapticContactShadowProof(backend: "webgl2" | "webgpu") 
 }
 
 /** Per pixel, in readPixels' rows (as `floorShadowMask`), the camera's view depth of the floor seen there, or -1. */
-function floorDepths(scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, floor: AbstractMesh): number[] {
+function floorDepths(scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, floor: AbstractMesh): number[] {
   const forward = camera.getDirection(Vector3.Forward());
   const depths: number[] = [];
   for (let row = 0; row < canvas.height; row++) {
-    const y = topDown ? row + 0.5 : canvas.height - row - 0.5;
+    const y = canvas.height - row - 0.5;
     for (let column = 0; column < canvas.width; column++) {
       const hit = scene.pickWithRay(scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera), (mesh) => mesh === floor);
       depths.push(hit?.pickedPoint ? Vector3.Dot(hit.pickedPoint.subtract(camera.position), forward) : -1);
@@ -243,18 +239,18 @@ function floorDepths(scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement
 }
 
 /**
- * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's swap chain texture's top-down): 1 where the box or the
+ * Per pixel, in readPixels' rows (bottom-up): 1 where the box or the
  * ball blocks the floor's view of a light (`toLight`: from a floor point to the light), 0 where nothing does, -1 off
  * the floor or off the floor the light's shadow covers (`covered`).
  */
 export function floorShadowMask(
-  scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, meshes: AbstractMesh[],
+  scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, meshes: AbstractMesh[],
   toLight: (point: Vector3) => Vector3, covered: (point: Vector3) => boolean = () => true,
 ): number[] {
   const [floor, ...casters] = meshes;
   const mask: number[] = [];
   for (let row = 0; row < canvas.height; row++) {
-    const y = topDown ? row + 0.5 : canvas.height - row - 0.5;
+    const y = canvas.height - row - 0.5;
     for (let column = 0; column < canvas.width; column++) {
       const hit = scene.pickWithRay(scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera), (mesh) => meshes.includes(mesh));
       if (hit?.pickedMesh !== floor || !hit.pickedPoint || !covered(hit.pickedPoint)) {

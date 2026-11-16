@@ -542,6 +542,7 @@ describe("parseGlbForBrowse", () => {
       payload: {
         modelGuid: "hero-model",
         kind: "skin" as const,
+        sockets: [],
         bones: bones.map((name, index) => ({
           name,
           parent: index === 0 ? null : bones[index - 1]!,

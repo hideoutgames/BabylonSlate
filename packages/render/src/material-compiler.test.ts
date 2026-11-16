@@ -34,8 +34,6 @@ import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from 
 import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 import { blockAdapterFor } from "./material-block-registry";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
-// The WGSL fog cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
-import "./webgpu-registrations";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { sceneInstancePool, setMeshShadowFlags } from "./instance-pool";
 import { isDisposedGpuTexture, isDisposedNodeMaterial } from "./gpu-resource-live";
@@ -265,20 +263,6 @@ describe("material compiler", () => {
     const literals = values.filter((block) => block !== parameter[0]);
     expect(literals.length).toBeGreaterThan(0);
     expect(literals.every((block) => block.isConstant)).toBe(true);
-  });
-
-  it.each(["pbr", "unlit"] as const)("builds %s fog in WGSL by the one rule every surface fogs by", async (shadingModel) => {
-    const scene = host();
-    vi.spyOn(scene.getEngine(), "isWebGPU", "get").mockReturnValue(true);
-    const doc = createDefaultMaterialDocument();
-    doc.shadingModel = shadingModel;
-    const result = compileMaterialPlan(planFor(doc), { scene, name: "fogged" });
-    if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
-    disposers.push(() => result.dispose());
-    expect(await result.ready).toEqual([]);
-    // Babylon PBR's rule: the fog factor in linear space, toward the scene's linear fog colour.
-    expect(result.material.compiledShaders).toContain("return toLinearSpace(CalcFogFactor(viewPosition, uniforms.sceneFogInfo));");
-    expect(result.material.compiledShaders).toMatch(/\(1\.0 - fogKeep\w*\) \* uniforms\.sceneFogColor\.rgb;/);
   });
 
   it.each(["pbr", "unlit"] as const)("compiles live scene fog into %s surfaces", async (shadingModel) => {
@@ -2562,20 +2546,19 @@ describe("material compiler", () => {
   });
 });
 
-it("gates optional vertex streams behind defines so WebGPU meshes without them still draw", async () => {
+it("gates optional vertex streams behind defines so meshes without them still draw", async () => {
   const scene = host();
   const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
     scene,
-    name: "webgpu-attrs",
+    name: "optional-attrs",
   });
   expect(result.ok).toBe(true);
   if (!result.ok) return;
   disposers.push(() => result.material.dispose());
   expect(await result.ready).toEqual([]);
   const vertex = result.material.compiledShaders;
-  // WebGPU draw validation rejects attributes no buffer supplies, and the
-  // vertex-buffer limit is 8; these streams must fall back to constants when a
-  // mesh does not provide them, like the existing tangent/uv2 fallbacks.
+  // These streams must fall back to constants when a mesh does not provide
+  // them, like the existing tangent/uv2 fallbacks.
   for (const attribute of ["matricesIndices", "matricesWeights"]) {
     expect(vertex).toMatch(
       new RegExp(`#if NUM_BONE_INFLUENCERS > 0\\nattribute vec4 ${attribute};`),

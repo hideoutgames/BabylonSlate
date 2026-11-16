@@ -19,7 +19,6 @@ async function thumbnailProjectFiles() {
   const files = await minimalProjectFiles();
   const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
   project.guid = PROJECT_GUID;
-  project.settings.render = { ...project.settings.render, gpuBackend: "webgl2" };
   files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const material = createDefaultMaterialDocument("ThumbnailRed");
   material.shadingModel = "unlit";

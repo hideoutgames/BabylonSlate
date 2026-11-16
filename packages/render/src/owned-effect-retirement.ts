@@ -14,7 +14,7 @@ export interface OwnedEffectRetirement {
 function isLinking(effect: Effect | null | undefined): effect is Effect {
   if (!effect || effect.isDisposed) return false;
   const engine = effect.getEngine();
-  if (engine.isDisposed || engine.isWebGPU) return false;
+  if (engine.isDisposed) return false;
   const pipeline = effect.getPipelineContext();
   return Boolean(pipeline?.isAsync && (pipeline as { program?: unknown }).program) &&
     !effect.isReady() && !(effect.getCompilationError() && effect.allFallbacksProcessed());
@@ -107,7 +107,7 @@ export function retireOwnedEffect(
   };
   const pipeline = effect?.getPipelineContext();
   const pending = effect && !effect.isDisposed && !engine!.isDisposed &&
-    !engine!.isWebGPU && effect._refCount === 1 &&
+    effect._refCount === 1 &&
     pipeline?.isAsync && Boolean((pipeline as { program?: unknown }).program) &&
     !effect.isReady() && !(effect.getCompilationError() && effect.allFallbacksProcessed());
   if (engine && !engine.isDisposed) {

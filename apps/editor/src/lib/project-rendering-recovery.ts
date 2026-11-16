@@ -18,37 +18,6 @@ export class RenderingRetryError extends Error {
   }
 }
 
-/**
- * Stop Play or Simulate as soon as the project Engine's device is lost: the game
- * cannot draw again, and it holds the lost Engine until it releases. Preview
- * Build renders on its own Engine and keeps running. Simulate's Keep Changes
- * captures the final Scene from the lost Engine, which cannot succeed, so its
- * changes are discarded first instead of leaving Stop waiting on a capture.
- */
-export function stopGameOnDeviceLoss<Result extends GameSessionStopResult>(
-  projectEngine: Pick<ProjectEngineController, "getSnapshot" | "subscribe">,
-  sessionOwner: GameSessionOwner<Result>,
-  options: {
-    simulation?: () => { readonly keepChanges: boolean; discardChanges(reason?: string | null): void } | null;
-    log?: (line: string) => void;
-  } = {},
-): () => void {
-  let handled: unknown = null;
-  return projectEngine.subscribe(() => {
-    const state = projectEngine.getSnapshot();
-    if (!state.deviceLost || state === handled) return;
-    handled = state;
-    const { mode } = sessionOwner.getSnapshot();
-    if (mode !== "play" && mode !== "simulate") return;
-    const simulation = mode === "simulate" ? options.simulation?.() : null;
-    if (simulation?.keepChanges) {
-      simulation.discardChanges("The graphics device was lost, so the final Scene could not be captured.");
-      options.log?.("Simulation changes were discarded because the graphics device was lost.");
-    }
-    void sessionOwner.stop();
-  });
-}
-
 /** Resolves true once the session has left `stopping`, or false after `ms`. */
 function stopSettled<Result extends GameSessionStopResult>(owner: GameSessionOwner<Result>, ms: number): Promise<boolean> {
   return new Promise((resolve) => {

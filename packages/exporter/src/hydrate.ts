@@ -32,6 +32,9 @@ import {
   refreshStaleTilemaps,
   spriteAnimationDurationMs,
   animationClipEvents,
+  normalizeAnimationAdditive,
+  normalizeAnimationRootMotion,
+  scaledAnimationRootMotion,
   spriteAnimationClipEvents,
   type AnimationPayload,
   type BlendSpacePayload,
@@ -366,6 +369,11 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
       ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
       ...(payload.modelGuid ? { modelGuid: payload.modelGuid } : {}),
       ...((events) => (events.length > 0 ? { events } : {}))(animationClipEvents(payload.events)),
+      ...((additive) => (additive ? { additive } : {}))(normalizeAnimationAdditive(payload.additive)),
+      // Root motion travels in its source Model's units.
+      ...((rootMotion) => (rootMotion
+        ? { rootMotion: scaledAnimationRootMotion(rootMotion, game.modelPayloads.get(payload.modelGuid)?.importScale ?? 1) }
+        : {}))(normalizeAnimationRootMotion(payload.rootMotion)),
     })),
     ...[...sizedSpriteAnimations.entries()].map(([guid, payload]) => ({
       guid,

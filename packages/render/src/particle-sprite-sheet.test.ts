@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import "@babylonjs/core/Shaders/particles.vertex";
-import "@babylonjs/core/ShadersWGSL/particles.vertex";
 import type { ParticleSpriteSheetSettings } from "@haptic/particle-graph";
 import { animatedSpriteCell } from "./particle-sprite-sheet";
 
@@ -29,11 +28,9 @@ describe("animatedSpriteCell", () => {
 describe("patched particle vertex shader", () => {
   // Babylon maps a sheet as if its texture were not flipped on upload; Haptic's Textures are
   // (invertY), so the patch flips V after the sheet maths: cell 0 at the top left, cells upright.
-  it("flips V after the animation sheet maths in GLSL and WGSL", () => {
+  it("flips V after the animation sheet maths", () => {
     const glsl = ShaderStore.ShadersStore.particlesVertexShader!;
-    const wgsl = ShaderStore.ShadersStoreWGSL.particlesVertexShader!;
     expect(glsl).toContain("vUV=(uvOffset+vec2(columnOffset,rowOffset))*uvScale;vUV.y=1.0-vUV.y;");
-    expect(wgsl).toContain("vertexOutputs.vUV=(uvOffset+ vec2f(columnOffset,rowOffset))*uvScale;vertexOutputs.vUV.y=1.0-vertexOutputs.vUV.y;");
     // Without a sheet the particle UV is untouched.
     expect(glsl).toContain("#else\nvUV=offset;");
   });

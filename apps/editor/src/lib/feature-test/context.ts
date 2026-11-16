@@ -63,6 +63,8 @@ export interface FeatureTestHost {
   generateNavMesh(input: NavMeshGenerateInput): Promise<Uint8Array>;
   /** Pinned so the workload does not follow the user's Engine Settings import scale. */
   readonly modelImportScale: number;
+  /** An FBX file as the GLB the Content Browser's FBX import makes of it. */
+  convertFbx(file: { name: string; bytes: Uint8Array }): Promise<Uint8Array>;
 }
 
 type FeatureTestMaterialKey =
@@ -142,6 +144,8 @@ export interface FeatureTestAssets {
     mediumAnimations: Record<string, string>;
     largeAnimations: Record<string, string>;
   };
+  /** The Quaternius Velociraptor, imported from FBX: its Model, Skeleton and Animations by short clip name (`Run`). */
+  velociraptor: { model: string; skeleton: string; animations: Record<string, string> };
   fonts: {
     /** Facetype Font built from the engine's bundled ASCII glyph outlines. */
     facetype: string;
@@ -367,6 +371,7 @@ function emptyAssets(): FeatureTestAssets {
       mediumAnimations: {},
       largeAnimations: {},
     },
+    velociraptor: { model: "", skeleton: "", animations: {} },
     fonts: { facetype: "", onest: "", arkPixel: "" },
     audio: { loop: null, oneShot: null, mixer: null, channel: null, attenuation: null },
     materials: {},

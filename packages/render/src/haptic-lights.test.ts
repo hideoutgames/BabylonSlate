@@ -134,7 +134,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(material.attachedBlocks.find((block) => block instanceof HapticLightingBlock)).toBe(lighting);
   });
 
-  it("binds every texture a program declares, as WebGPU needs: the split-sum table in both modes, the cube only where declared", async () => {
+  it("binds every texture a program declares: the split-sum table in both modes, the cube only where declared", async () => {
     const { scene } = host();
     const { mesh, material } = await litBox(scene);
     // Only a lit program declares the cube, and it does whether or not the Scene has an environment.
@@ -261,7 +261,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const bound: string[] = [];
     vi.spyOn(effect, "bindUniformBuffer").mockImplementation((_buffer, name) => { bound.push(name); });
     // The first draw binds everything. Babylon skips the next one's bindings, as it shares the Material and the
-    // Effect: on WebGPU that draw's own context would keep the buffers it bound last, which the blocks have left.
+    // Effect.
     material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
     bound.length = 0;
     material.bindForSubMesh(second.computeWorldMatrix(true), second, second.subMeshes[0]!);

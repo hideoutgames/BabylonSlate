@@ -41,30 +41,19 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { SharedOutlineOwner } from "./shared-outline";
 import { createGizmoHost } from "./gizmo-host";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
-import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
-import { registerPipelineWarmPasses, withPipelineWarmupRound } from "./variant-pipeline-warmup";
+import { registerFirstDrawPasses, withFirstDrawRound } from "./variant-first-draws";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { setOutlineContribution } from "./test-support/shared-outline-contributions";
-
-// NullEngine is not WebGPU, so the deferral itself never engages; its scopes are the seam here.
-vi.mock("./webgpu-pipeline-deferral", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./webgpu-pipeline-deferral")>();
-  return { ...actual, beginPipelineDeferral: vi.fn(actual.beginPipelineDeferral), pipelinesDeferred: vi.fn(actual.pipelinesDeferred) };
-});
-const { beginPipelineDeferral: actualBeginPipelineDeferral, pipelinesDeferred: actualPipelinesDeferred } =
-  await vi.importActual<typeof import("./webgpu-pipeline-deferral")>("./webgpu-pipeline-deferral");
 
 const engines: NullEngine[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
-  vi.mocked(beginPipelineDeferral).mockImplementation(actualBeginPipelineDeferral);
-  vi.mocked(pipelinesDeferred).mockImplementation(actualPipelinesDeferred);
   for (const engine of engines.splice(0)) engine.dispose();
 });
 
-function host(deferPipelines = false) {
+function host(compileHolds = false) {
   const options = new NullEngineOptions();
   options.renderWidth = 80;
   options.renderHeight = 64;
@@ -73,88 +62,9 @@ function host(deferPipelines = false) {
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 0, -4), scene);
   scene.activeCamera = camera;
-  const renderer = new SceneRenderCoordinator(scene, { deferPipelines });
+  const renderer = new SceneRenderCoordinator(scene, { compileHolds });
   return { options, engine, scene, camera, renderer };
 }
-
-describe("deferred WebGPU pipelines", () => {
-  /** Every scope the view opens from now on skips `skipped` draws and waits while `waiting` says so. */
-  const scopes = (skipped: () => number, waiting: () => boolean) =>
-    vi.mocked(beginPipelineDeferral).mockImplementation(() => ({ close: skipped, waiting, warmed: () => false }));
-
-  it("holds the last image, drawing nothing more, until the pipelines a frame skipped exist", async () => {
-    const { scene, renderer } = host(true);
-    await renderer.prepare();
-    const draws = vi.spyOn(scene, "render");
-    let waiting = true;
-    scopes(() => 2, () => waiting);
-    expect(renderer.render()).toMatchObject({ rendered: false, readyForPresentation: false, reason: "Render pipelines are compiling." });
-    expect(renderer.holdingForPipelines).toBe(true);
-    expect(renderer.render().rendered).toBe(false);
-    expect(draws).toHaveBeenCalledTimes(1);
-    waiting = false;
-    scopes(() => 0, () => false);
-    expect(renderer.render()).toMatchObject({ rendered: true, readyForPresentation: true });
-    expect(renderer.holdingForPipelines).toBe(false);
-    expect(draws).toHaveBeenCalledTimes(2);
-    renderer.dispose();
-  });
-
-  it("starts no new deferrals once a hold outlasts its cap, until a frame draws or needs preparation", async () => {
-    const { renderer } = host(true);
-    await renderer.prepare();
-    let now = 1_000;
-    vi.spyOn(performance, "now").mockImplementation(() => now);
-    let skipped = 1;
-    const begin = scopes(() => skipped, () => false);
-    const starts = () => (begin.mock.calls.at(-1)?.[2] as { startsDeferrals?: boolean } | undefined)?.startsDeferrals;
-    renderer.render();
-    expect(starts()).toBe(true);
-    now += PIPELINE_DEFERRAL_HOLD_CAP_MS;
-    renderer.render();
-    expect(starts()).toBe(false);
-    // A drawn frame ends the run of held frames.
-    skipped = 0;
-    expect(renderer.render().rendered).toBe(true);
-    skipped = 1;
-    renderer.render();
-    expect(starts()).toBe(true);
-    // So does a frame that skipped nothing because the graph needed preparation.
-    now += PIPELINE_DEFERRAL_HOLD_CAP_MS;
-    skipped = 0;
-    vi.spyOn(ForwardSceneFrameGraph.prototype, "render")
-      .mockReturnValueOnce({ path: "frameGraph", reason: "FrameGraph preparation is required.", rendered: false });
-    expect(renderer.render()).toMatchObject({ rendered: false, reason: "FrameGraph preparation is required." });
-    expect(starts()).toBe(false);
-    expect(renderer.holdingForPipelines).toBe(false);
-    skipped = 1;
-    renderer.render();
-    expect(starts()).toBe(true);
-    renderer.dispose();
-  });
-
-  it("ends a hold on invalidation: a switched scene's first frame neither waits for the old pipelines nor inherits an expired cap", async () => {
-    const { renderer } = host(true);
-    await renderer.prepare();
-    let now = 1_000;
-    vi.spyOn(performance, "now").mockImplementation(() => now);
-    const begin = scopes(() => 1, () => true);
-    const starts = () => (begin.mock.calls.at(-1)?.[2] as { startsDeferrals?: boolean } | undefined)?.startsDeferrals;
-    renderer.render();
-    expect(renderer.holdingForPipelines).toBe(true);
-    now += PIPELINE_DEFERRAL_HOLD_CAP_MS;
-    renderer.invalidate();
-    expect(renderer.holdingForPipelines).toBe(false);
-    await renderer.prepare();
-    // The old scene's pipelines are still pending, yet the new scene's first frame opens its own scope.
-    const frames = begin.mock.calls.length;
-    scopes(() => 0, () => false);
-    expect(renderer.render()).toMatchObject({ rendered: true });
-    expect(begin).toHaveBeenCalledTimes(frames + 1);
-    expect(starts()).toBe(true);
-    renderer.dispose();
-  });
-});
 
 describe("effects the driver is still compiling", () => {
   type Link = { ready: boolean; linked: boolean; error: string };
@@ -196,14 +106,14 @@ describe("effects the driver is still compiling", () => {
     expect(renderer.render().rendered).toBe(true);
     set({ ready: false });
     expect(renderer.render()).toMatchObject({ rendered: false, reason: "Scene is not ready to render." });
-    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.holdingForCompiles).toBe(true);
     // The picture is still frozen: the game does not resume before something draws.
     set({ linked: true });
     expect(renderer.render().rendered).toBe(false);
-    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.holdingForCompiles).toBe(true);
     set({ ready: true });
     expect(renderer.render()).toMatchObject({ rendered: true });
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
     renderer.dispose();
   });
 
@@ -212,10 +122,10 @@ describe("effects the driver is still compiling", () => {
     // The scene's probe passes yet requests the Effect, so only the graph is left to prepare.
     waitingScene(engine, scene, { eager: true });
     expect(renderer.render()).toMatchObject({ rendered: false, reason: "FrameGraph preparation is required." });
-    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.holdingForCompiles).toBe(true);
     await renderer.prepare();
     expect(renderer.render().rendered).toBe(true);
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
     renderer.dispose();
   });
 
@@ -230,7 +140,7 @@ describe("effects the driver is still compiling", () => {
     await renderer.prepare();
     set({ ready: false, linked });
     expect(renderer.render().rendered).toBe(false);
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
     renderer.dispose();
   });
 
@@ -240,13 +150,13 @@ describe("effects the driver is still compiling", () => {
     await renderer.prepare();
     set({ ready: false });
     renderer.render();
-    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.holdingForCompiles).toBe(true);
     // Once the scene is ready the graph can still refuse a draw, as for a paused redraw: waiting for the effects cannot end that.
     set({ ready: true });
     vi.spyOn(ForwardSceneFrameGraph.prototype, "render")
       .mockReturnValueOnce({ path: "frameGraph", reason: "Paused redraw is unavailable.", rendered: false });
     expect(renderer.render()).toMatchObject({ rendered: false, reason: "Paused redraw is unavailable." });
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
     renderer.dispose();
   });
 
@@ -255,11 +165,11 @@ describe("effects the driver is still compiling", () => {
     waitingScene(engine, scene, { eager: true });
     vi.spyOn(ForwardSceneFrameGraph.prototype, "prepare").mockRejectedValue(new Error("Scene cannot render: unsupported."));
     expect(renderer.render().rendered).toBe(false);
-    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.holdingForCompiles).toBe(true);
     // A preparation that cannot finish latches its failure, which `isReady` rethrows.
     await vi.waitFor(() => expect(() => renderer.isReady()).toThrow("unsupported"));
     expect(renderer.render().rendered).toBe(false);
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
     renderer.dispose();
   });
 
@@ -272,7 +182,7 @@ describe("effects the driver is still compiling", () => {
     vi.spyOn(ForwardSceneFrameGraph.prototype, "prepare").mockRejectedValue(new Error("Scene cannot render: unsupported."));
     set({ ready: false });
     expect(renderer.render().rendered).toBe(false);
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
     renderer.dispose();
   });
 
@@ -282,14 +192,14 @@ describe("effects the driver is still compiling", () => {
     await renderer.prepare();
     set({ ready: false });
     renderer.render();
-    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.holdingForCompiles).toBe(true);
     renderer.invalidate();
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
     // The effect still compiles: the next unready frame holds again.
     renderer.render();
-    expect(renderer.holdingForPipelines).toBe(true);
+    expect(renderer.holdingForCompiles).toBe(true);
     renderer.dispose();
-    expect(renderer.holdingForPipelines).toBe(false);
+    expect(renderer.holdingForCompiles).toBe(false);
   });
 
   describe("when the effects never finish", () => {
@@ -301,7 +211,7 @@ describe("effects the driver is still compiling", () => {
       vi.spyOn(performance, "now").mockImplementation(() => now);
       set({ ready: false });
       renderer.render();
-      expect(renderer.holdingForPipelines).toBe(true);
+      expect(renderer.holdingForCompiles).toBe(true);
       return { renderer, set, advance: (ms: number) => { now += ms; markSceneReadinessDirty(scene); } };
     }
 
@@ -309,17 +219,17 @@ describe("effects the driver is still compiling", () => {
       const { renderer, set } = await holdingView();
       set({ error: "Uniform limit exceeded." });
       expect(renderer.render()).toMatchObject({ rendered: false, reason: "Scene is not ready to render." });
-      expect(renderer.holdingForPipelines).toBe(false);
+      expect(renderer.holdingForCompiles).toBe(false);
       // The same wait starts no second hold, even when the scene keeps requesting compiles.
       set({ error: "" });
       expect(renderer.render().rendered).toBe(false);
-      expect(renderer.holdingForPipelines).toBe(false);
+      expect(renderer.holdingForCompiles).toBe(false);
       // A frame that draws ends the wait: a later one holds again.
       set({ ready: true });
       expect(renderer.render().rendered).toBe(true);
       set({ ready: false });
       expect(renderer.render().rendered).toBe(false);
-      expect(renderer.holdingForPipelines).toBe(true);
+      expect(renderer.holdingForCompiles).toBe(true);
       renderer.dispose();
     });
 
@@ -329,10 +239,10 @@ describe("effects the driver is still compiling", () => {
       set({ linked: true });
       advance(COMPILE_HOLD_STALL_MS - 1);
       renderer.render();
-      expect(renderer.holdingForPipelines).toBe(true);
+      expect(renderer.holdingForCompiles).toBe(true);
       advance(1);
       expect(renderer.render().rendered).toBe(false);
-      expect(renderer.holdingForPipelines).toBe(false);
+      expect(renderer.holdingForCompiles).toBe(false);
       renderer.dispose();
     });
 
@@ -340,10 +250,10 @@ describe("effects the driver is still compiling", () => {
       const { renderer, advance } = await holdingView();
       advance(SCENE_DRIVER_COMPILE_TIMEOUT_MS - 1);
       renderer.render();
-      expect(renderer.holdingForPipelines).toBe(true);
+      expect(renderer.holdingForCompiles).toBe(true);
       advance(1);
       expect(renderer.render().rendered).toBe(false);
-      expect(renderer.holdingForPipelines).toBe(false);
+      expect(renderer.holdingForCompiles).toBe(false);
       renderer.dispose();
     });
   });
@@ -1133,10 +1043,7 @@ it("draws unvalidated frames without acknowledging them and re-probes a scene ch
   renderer.dispose();
 });
 
-// Where pipelines are deferred (WebGPU) the probe that first sees a joined mesh runs before the shadow controller lists
-// it as a caster, so a spawn whose pipelines exist is revealed in that frame; the admission's probe follows.
-it.each([[false, 1], [true, 2]] as const)("probes in the frame a mesh joins a Scene that casts shadows, with pipelines deferred %s: %i time(s)", async (deferred, probes) => {
-  vi.mocked(pipelinesDeferred).mockReturnValue(deferred);
+it("probes once in the frame a mesh joins a Scene that casts shadows", async () => {
   const { scene, engine, renderer } = host();
   Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
   engine._features.supportCSM = true;
@@ -1153,9 +1060,9 @@ it.each([[false, 1], [true, 2]] as const)("probes in the frame a mesh joins a Sc
   const added = MeshBuilder.CreateBox("added", {}, scene);
   expect(renderer.render(false)).toMatchObject({ rendered: true });
   expect(controller.generator(sun)?.getShadowMap()?.renderList).toContain(added);
-  expect(renderer.strictReadinessChecks).toBe(checks + probes);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
   expect(renderer.render(false)).toMatchObject({ rendered: true });
-  expect(renderer.strictReadinessChecks).toBe(checks + probes);
+  expect(renderer.strictReadinessChecks).toBe(checks + 1);
   renderer.dispose();
 });
 
@@ -1187,7 +1094,7 @@ it.each(["isReady", "render"] as const)("probes a Scene that is not ready once f
 it.each(["isReady", "render"] as const)("applies a new shadow profile while %s is waiting for shaders", async (probe) => {
   const { scene, engine, renderer } = host();
   Object.assign(engine.getCaps(), { maxTextureSize: 4096, textureHalfFloatRender: true, textureHalfFloatLinearFiltering: true });
-  // The sun's atlas map is cascaded, as every WebGL2 and WebGPU Engine supports.
+  // The sun's atlas map is cascaded, as every WebGL2 Engine supports.
   engine._features.supportCSM = true;
   const sun = new DirectionalLight("sun", new Vector3(0, -1, 1), scene);
   const controller = sceneShadowController(scene);
@@ -1482,8 +1389,8 @@ it("admits a cold variant in each steady frame, also when no readiness round run
   await renderer.prepare();
   expect(renderer.render(false).rendered).toBe(true);
   const pass = engine.createRenderPassId("Forward objects");
-  registerPipelineWarmPasses(engine, [pass]);
-  const variant = withPipelineWarmupRound(engine, true, () => engine.createEffect(
+  registerFirstDrawPasses(engine, [pass]);
+  const variant = withFirstDrawRound(engine, true, () => engine.createEffect(
     { vertexSource: "void main() { gl_Position = vec4(0.0); }", fragmentSource: "void main() { gl_FragColor = vec4(1.0); }" },
     ["position"], [], [], "#define WATER_DETAIL_1",
   ));

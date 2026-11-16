@@ -5,7 +5,6 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -22,15 +21,12 @@ import type { WaterField } from "./water-field";
 import { placeholderField, waterGridOffset } from "./water-material";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 import { builtInWaterMaterial } from "./water-template";
-// The WGSL cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
-import "./webgpu-registrations";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
-function host(webgpu = false): Scene {
+function host(): Scene {
   const engine = new NullEngine(), scene = new Scene(engine);
-  if (webgpu) vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   return scene;
 }
@@ -112,14 +108,14 @@ function definedOnly(source: string, defines: string): string {
 const march = (source: string) => /swMarch\((vec3 )?swOrigin[\s\S]*?\n\}/.exec(source)?.[0] ?? "";
 
 describe("Water material nodes", () => {
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("compile together with Water Waves in language %s, every prefix bound", async (language) => {
-    const wgsl = language === ShaderLanguage.WGSL, result = compile(host(wgsl), allNodes());
+  it("compile together with Water Waves, every prefix bound", async () => {
+    const result = compile(host(), allNodes());
     expect(await result.ready).toEqual([]);
     const source = result.material.compiledShaders, [, fragment = ""] = source.split("// Fragment shader");
     expect(source).not.toMatch(/\b[UAOS]\.slate|\bIN\.|\bU\.\w/);
     // GLSL rejects a sampler declared twice in one stage.
     const [vertex = ""] = source.split("// Fragment shader");
-    const declarations = (stage: string, name: string) => stage.split(wgsl ? `var ${name}: texture_` : ` ${name};`).length - 1;
+    const declarations = (stage: string, name: string) => stage.split(` ${name};`).length - 1;
     for (const name of ["slateWaterFftSampler", "slateWaterFoamSampler", "slateWaterFieldSampler", "slateWaterContactSampler", "slateWaterSceneSampler", "slateWaterNodeEnvSampler", "slateWaterNodePlanarSampler"]) {
       expect(declarations(fragment, name), name).toBe(1);
     }
@@ -129,76 +125,66 @@ describe("Water material nodes", () => {
     for (const helper of ["swnFieldAt", "swnContactAt", "swSceneDepth", "swMarch", "swnEnvTap", "swnNoise", "swPlanarTexel"]) expect(fragment, helper).toContain(helper);
     // The march takes one sample per copy texel the ray crosses on screen, at most its steps, and the fades known before
     // it (grazing ripples, fog that leaves nothing of the water) gate it.
-    expect(march(fragment)).toMatch(/swSteps = clamp\(ceil\(length\(\(swN1 - swN0\) \* swEnd \* 0\.5 \/ swSceneTexelUv\(\)\)\), 1\.0, f(32|loat)\(SLATE_WATER_SSR_STEPS\)\);/);
-    expect(march(fragment)).toMatch(/if \(f(32|loat)\(swI\) > swSteps\) \{ break; \}\s+(let|float) swU = swEnd \* f(32|loat)\(swI\) \/ swSteps;/);
-    expect(fragment).toMatch(/swnObjFade(: f32)? = [^;]*fwidth\(swnObjR\)[^;]*\* step\(0\.001, swnAirKeep\);/);
+    expect(march(fragment)).toMatch(/swSteps = clamp\(ceil\(length\(\(swN1 - swN0\) \* swEnd \* 0\.5 \/ swSceneTexelUv\(\)\)\), 1\.0, float\(SLATE_WATER_SSR_STEPS\)\);/);
+    expect(march(fragment)).toMatch(/if \(float\(swI\) > swSteps\) \{ break; \}\s+float swU = swEnd \* float\(swI\) \/ swSteps;/);
+    expect(fragment).toMatch(/swnObjFade = [^;]*fwidth\(swnObjR\)[^;]*\* step\(0\.001, swnAirKeep\);/);
     expect(fragment).toMatch(/swnObj\.a = swnObj\.a \* swnObjFade;/);
     // The terrain and contact fields read the water mesh's data, the copy only with the pass's copy, the cube only with a cube.
-    const sampler = (name: string) => wgsl ? `var ${name}: texture_` : ` ${name};`;
+    const sampler = (name: string) => ` ${name};`;
     for (const [name, define] of [["slateWaterFieldSampler", "SLATE_WATER_SURFACE"], ["slateWaterSceneSampler", "SLATE_WATER_NODE_COPY"], ["slateWaterNodeEnvSampler", "SLATE_WATER_NODE_ENV"], ["slateWaterNodePlanarSampler", "SLATE_WATER_NODE_PLANAR"]] as const) {
       expect(fragment).toMatch(new RegExp(`#ifdef ${define}\\s+[^#]*${sampler(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     }
-    if (wgsl) {
-      expect(fragment).not.toMatch(/^\s*(float|vec[234]) \w+ =/m);
-      expect(fragment).toContain("fragmentInputs.position.xy");
-      expect(fragment).toContain("fn swMarch(swOrigin: vec3f, swRay: vec3f, swVP: mat4x4f, swV: mat4x4f, swEyeP: vec3f) -> vec4f {");
-      expect(march(fragment)).not.toMatch(/scene\.(view|vEyePosition)/);
-    } else {
-      expect(fragment).toContain("gl_FragCoord.xy");
-      expect(fragment).toContain("vec4 swMarch(vec3 swOrigin, vec3 swRay, mat4 swVP, mat4 swV, vec3 swEyeP) {");
-      expect(march(fragment)).not.toMatch(/\bvEyePosition\b|\(view \*/);
-      // The march runs only where the fades that need no hit leave something of it.
-      expect(fragment).toMatch(/< 0\.5 && swnObjFade > 0\.0\) \{\s*swnObj = swMarch\(/);
-    }
+    expect(fragment).toContain("gl_FragCoord.xy");
+    expect(fragment).toContain("vec4 swMarch(vec3 swOrigin, vec3 swRay, mat4 swVP, mat4 swV, vec3 swEyeP) {");
+    expect(march(fragment)).not.toMatch(/\bvEyePosition\b|\(view \*/);
+    // The march runs only where the fades that need no hit leave something of it.
+    expect(fragment).toMatch(/< 0\.5 && swnObjFade > 0\.0\) \{\s*swnObj = swMarch\(/);
   });
 
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])(
-    "build the starter water Material in language %s, displacing and shading every kind of water body", async (language) => {
-      const scene = host(language === ShaderLanguage.WGSL), doc = createWaterMaterialDocument("Sea");
-      const plan = lowerMaterialDocument(doc);
-      expect(plan.ok && plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-      const result = compile(scene, doc);
-      expect(await result.ready).toEqual([]);
-      // Its Opacity fades at the body's edges, and its refraction falls back beside silhouettes, as built-in water's.
-      const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
-      expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
-      // Its shoreline under the waves comes from four terrain taps, whose slope softens gentle shores, as built-in water's.
-      expect(fragment).toMatch(/if \((uniforms\.)?slateWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
-      expect(fragment).toMatch(/swShoreSlope = mix\(length\(swTerrainSlope\), 1\.0, swFineClamped\);/);
-      expect(fragment).toMatch(/smoothstep\(0\.35, 1\.0, swShoreSlope\)/);
-      // Beside the silhouette of something in front of the water, Water Scene Color and Water Depth Fade both take the copy
-      // texel behind the water, from the four neighbour depths the fragment loads once.
-      expect(fragment.match(/swCopyBehind\(swnUv, swnWaterZ, swnSceneZ\)/g)).toHaveLength(2);
-      // It lets nothing through over open sky, nor one copy texel in from it: a multisampled silhouette's resolved colour
-      // there holds the background while its depth is the surface's (dark dashes along a submerged landscape's border).
-      expect(fragment).toMatch(/swnOpenSky = step\([\d.]+, max\(swnSceneZ, swnNearSky\)\);/);
-      // Its lighting takes Water Reflection's normal: the half vector toward the reflected ray, lifted above the horizon
-      // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
-      expect(fragment).toMatch(/\w+ = swnH;/);
-      expect(fragment).toMatch(/swnRLiftA(: f32)? = 60\.0 \* \(0\.03 - swnR\.y\)/);
-      // What it refracts was fogged by what lies below: it comes undone of the Material's own fog, by the same factor.
-      expect(fragment).toMatch(/swnFogKeep(: f32)? = max\(sceneFogKeep\([^;]*\), 0\.01\);/);
-      expect(fragment).toMatch(/= \(\w+ - (uniforms\.)?sceneFogColor\.rgb \* \(1\.0 - swnFogKeep\)\) \/ swnFogKeep;/);
-      // Its Roughness is built-in water's slope-variance roughness, which drops away under the haze.
-      expect(fragment).toMatch(/\w+ = swnShade;/);
-      expect(fragment).toMatch(/swnShadeVar(: f32)? = \(max\([^;]*\* \(1\.0 - 0\.97 \* swHaze\);/);
-      expect(fragment).toMatch(/swnAirKeep = max\(sceneFogKeep\(/);
-      // Every fog term is the one rule surfaces fog by: Babylon PBR's linear-space factor.
-      expect(fragment).toMatch(/sceneFogKeep\((vec3 )?viewPosition[^)]*\)[^{]*\{ return toLinearSpace\(CalcFogFactor\(viewPosition, (uniforms\.)?sceneFogInfo\)\); \}/);
-      // It is seen from below too, as built-in water is.
-      expect(result.material.backFaceCulling).toBe(false);
-      // NullEngine has no lit WGSL includes to draw a mesh with.
-      if (language === ShaderLanguage.WGSL) return;
-      for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
-        const body = createWaterMesh(scene, kind, normalizeWaterBody({ resolution: 8 }, kind), createDefaultWaterDefinition(), result.material);
-        expect(await definesFor(result.material, body), kind).toMatch(/^#define SLATE_WATER_GPU_WAVES$/m);
-        // It shows what lies below through the scene copy, which only a translucent Material can read.
-        expect(result.material.needAlphaBlendingForMesh(body), kind).toBe(true);
-        // A graph that reads terrain and contacts (its foam and depth) has the water mesh build them.
-        expect(meshWaterNodeSurface(body)?.contacts ?? null, kind).not.toBeNull();
-        body.dispose();
-      }
-    });
+  it("build the starter water Material, displacing and shading every kind of water body", async () => {
+    const scene = host(), doc = createWaterMaterialDocument("Sea");
+    const plan = lowerMaterialDocument(doc);
+    expect(plan.ok && plan.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    const result = compile(scene, doc);
+    expect(await result.ready).toEqual([]);
+    // Its Opacity fades at the body's edges, and its refraction falls back beside silhouettes, as built-in water's.
+    const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
+    expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
+    // Its shoreline under the waves comes from four terrain taps, whose slope softens gentle shores, as built-in water's.
+    expect(fragment).toMatch(/if \(slateWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
+    expect(fragment).toMatch(/swShoreSlope = mix\(length\(swTerrainSlope\), 1\.0, swFineClamped\);/);
+    expect(fragment).toMatch(/smoothstep\(0\.35, 1\.0, swShoreSlope\)/);
+    // Beside the silhouette of something in front of the water, Water Scene Color and Water Depth Fade both take the copy
+    // texel behind the water, from the four neighbour depths the fragment loads once.
+    expect(fragment.match(/swCopyBehind\(swnUv, swnWaterZ, swnSceneZ\)/g)).toHaveLength(2);
+    // It lets nothing through over open sky, nor one copy texel in from it: a multisampled silhouette's resolved colour
+    // there holds the background while its depth is the surface's (dark dashes along a submerged landscape's border).
+    expect(fragment).toMatch(/swnOpenSky = step\([\d.]+, max\(swnSceneZ, swnNearSky\)\);/);
+    // Its lighting takes Water Reflection's normal: the half vector toward the reflected ray, lifted above the horizon
+    // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
+    expect(fragment).toMatch(/\w+ = swnH;/);
+    expect(fragment).toMatch(/swnRLiftA = 60\.0 \* \(0\.03 - swnR\.y\)/);
+    // What it refracts was fogged by what lies below: it comes undone of the Material's own fog, by the same factor.
+    expect(fragment).toMatch(/swnFogKeep = max\(sceneFogKeep\([^;]*\), 0\.01\);/);
+    expect(fragment).toMatch(/= \(\w+ - sceneFogColor\.rgb \* \(1\.0 - swnFogKeep\)\) \/ swnFogKeep;/);
+    // Its Roughness is built-in water's slope-variance roughness, which drops away under the haze.
+    expect(fragment).toMatch(/\w+ = swnShade;/);
+    expect(fragment).toMatch(/swnShadeVar = \(max\([^;]*\* \(1\.0 - 0\.97 \* swHaze\);/);
+    expect(fragment).toMatch(/swnAirKeep = max\(sceneFogKeep\(/);
+    // Every fog term is the one rule surfaces fog by: Babylon PBR's linear-space factor.
+    expect(fragment).toMatch(/sceneFogKeep\(vec3 viewPosition[^)]*\)[^{]*\{ return toLinearSpace\(CalcFogFactor\(viewPosition, sceneFogInfo\)\); \}/);
+    // It is seen from below too, as built-in water is.
+    expect(result.material.backFaceCulling).toBe(false);
+    for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
+      const body = createWaterMesh(scene, kind, normalizeWaterBody({ resolution: 8 }, kind), createDefaultWaterDefinition(), result.material);
+      expect(await definesFor(result.material, body), kind).toMatch(/^#define SLATE_WATER_GPU_WAVES$/m);
+      // It shows what lies below through the scene copy, which only a translucent Material can read.
+      expect(result.material.needAlphaBlendingForMesh(body), kind).toBe(true);
+      // A graph that reads terrain and contacts (its foam and depth) has the water mesh build them.
+      expect(meshWaterNodeSurface(body)?.contacts ?? null, kind).not.toBeNull();
+      body.dispose();
+    }
+  });
 
   it("give Water Colors the asset's own colours beside a Water Waves node", async () => {
     const scene = host(), water = { ...createDefaultWaterDefinition(), foamColor: [0.9, 0.5, 0.1] as [number, number, number] };
@@ -325,7 +311,7 @@ describe("Water material nodes", () => {
     const planar = /^#define SLATE_WATER_NODE_PLANAR$/m;
     expect(await definesFor(result.material, lake)).toMatch(planar);
     for (const mesh of [river, dull]) expect(await definesFor(result.material, mesh), mesh.name).not.toMatch(planar);
-    // No view drew a mirror: the planar uniform selects the march, and the sampler is still bound, as WebGPU needs.
+    // No view drew a mirror: the planar uniform selects the march, and the sampler is still bound.
     const effect = await programFor(result.material, lake), vectors = new Map<string, number[]>(), textures: string[] = [];
     vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { vectors.set(name, [x, y, z, w]); return effect; });
     vi.spyOn(effect, "setTexture").mockImplementation((name) => { textures.push(name); });
@@ -478,31 +464,30 @@ describe("Water Shading Detail", () => {
 describe("Water Cut", () => {
   const stages = (source: string) => { const [vertex = "", fragment = ""] = source.split("// Fragment shader"); return { vertex, fragment }; };
 
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("is only in a Surface Material's water variant, and discards removed water last in language %s", async (language) => {
-    const wgsl = language === ShaderLanguage.WGSL, result = compile(host(wgsl), createDefaultMaterialDocument("Plain"));
+  it("is only in a Surface Material's water variant, and discards removed water last", async () => {
+    const result = compile(host(), createDefaultMaterialDocument("Plain"));
     expect(await result.ready).toEqual([]);
     // The base Material carries none of the cut: no removal code, uniforms or water defines.
     const base = result.material.compiledShaders;
     expect(base).not.toMatch(/swRemoval|slateWater|DEPTHPREPASS|SLATE_WATER_EFFECTS_GEOMETRY/);
     const source = (await waterVariantOf(result)).compiledShaders, { vertex, fragment } = stages(source);
     expect(source).not.toMatch(/\bU\.\w|\bIN\.|\b[AO]\.slate/);
-    expect(fragment.split(wgsl ? "fn swRemoval(" : "float swRemoval(").length - 1).toBe(1);
-    for (let i = 0; i < 4; i++) expect(fragment).toContain(wgsl ? `uniform slateWaterRemoval${i}: mat4x4f;` : `uniform mat4 slateWaterRemoval${i};`);
-    if (wgsl) expect(fragment).not.toMatch(/^\s*(float|vec[234]|bool) \w+ =/m);
+    expect(fragment.split("float swRemoval(").length - 1).toBe(1);
+    for (let i = 0; i < 4; i++) expect(fragment).toContain(`uniform mat4 slateWaterRemoval${i};`);
     // The depth pre-pass leaves at once; the colour pass discards only after the output is written.
-    const prePass = new RegExp(`#ifdef DEPTHPREPASS\\s+if \\((\\w+)\\) \\{ discard; \\}\\s+return${wgsl ? " fragmentOutputs" : ""};`).exec(fragment);
+    const prePass = new RegExp("#ifdef DEPTHPREPASS\\s+if \\((\\w+)\\) \\{ discard; \\}\\s+return;").exec(fragment);
     expect(prePass).not.toBeNull();
-    const written = Math.max(-1, ...[...fragment.matchAll(wgsl ? /fragmentOutputs\.color\s*=/g : /gl_FragColor\s*=/g)].map((match) => match.index));
+    const written = Math.max(-1, ...[...fragment.matchAll(/gl_FragColor\s*=/g)].map((match) => match.index));
     expect(written).toBeGreaterThan(-1);
     expect(fragment.lastIndexOf(`if (${prePass![1]}) { discard; }`)).toBeGreaterThan(written);
     // Only a graph with Water Waves has a GPU path, so only it carries the blend cull.
-    expect(vertex).not.toContain(wgsl ? "vertexOutputs.position.z" : "gl_Position.z");
+    expect(vertex).not.toContain("gl_Position.z");
   });
 
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("culls a blending GPU-path surface's deep vertices and reads the geometry's waterline with Water Waves in language %s", async (language) => {
-    const wgsl = language === ShaderLanguage.WGSL, result = compile(host(wgsl), allNodes());
+  it("culls a blending GPU-path surface's deep vertices and reads the geometry's waterline with Water Waves", async () => {
+    const result = compile(host(), allNodes());
     expect(await result.ready).toEqual([]);
-    const { vertex, fragment } = stages((await waterVariantOf(result)).compiledShaders), clip = wgsl ? "vertexOutputs.position" : "gl_Position";
+    const { vertex, fragment } = stages((await waterVariantOf(result)).compiledShaders), clip = "gl_Position";
     const cull = vertex.lastIndexOf(`${clip}.z = 2.0 * ${clip}.w;`);
     expect(cull).toBeGreaterThan(vertex.lastIndexOf(`${clip} =`));
     expect(vertex.slice(0, cull)).toMatch(/#if defined\(SLATE_WATER_GPU_WAVES\) && defined\(SLATE_WATER_BLEND\)\s+if \(min\([^#]*\)\) \{\s+$/);
@@ -536,15 +521,15 @@ describe("Water Cut", () => {
     }
   });
 
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("writes no normal or reflectivity in the scene effects' geometry pass, after the output's, in language %s", async (language) => {
-    const wgsl = language === ShaderLanguage.WGSL, result = compile(host(wgsl), createDefaultMaterialDocument("Plain"));
+  it("writes no normal or reflectivity in the scene effects' geometry pass, after the output's", async () => {
+    const result = compile(host(), createDefaultMaterialDocument("Plain"));
     expect(await result.ready).toEqual([]);
-    const { fragment } = stages((await waterVariantOf(result)).compiledShaders), target = wgsl ? "fragmentOutputs.fragData0" : "gl_FragData[0]";
+    const { fragment } = stages((await waterVariantOf(result)).compiledShaders), target = "gl_FragData[0]";
     const exempt = fragment.lastIndexOf("#ifdef SLATE_WATER_EFFECTS_GEOMETRY");
     expect(exempt).toBeGreaterThan(fragment.lastIndexOf("* 0.5 + 0.5, 1.0);"));
     const after = fragment.slice(exempt);
-    expect(after).toContain(`PREPASS_WORLD_NORMAL_INDEX == 0\n${target} = ${wgsl ? "vec4f" : "vec4"}(0.5, 0.5, 0.5, 1.0);`);
-    expect(after).toContain(`PREPASS_REFLECTIVITY_INDEX == 0\n${target} = ${wgsl ? "vec4f" : "vec4"}(0.0, 0.0, 0.0, 1.0);`);
+    expect(after).toContain(`PREPASS_WORLD_NORMAL_INDEX == 0\n${target} = vec4(0.5, 0.5, 0.5, 1.0);`);
+    expect(after).toContain(`PREPASS_REFLECTIVITY_INDEX == 0\n${target} = vec4(0.0, 0.0, 0.0, 1.0);`);
   });
 
   it("compiles the scene effects' geometry pass as its own variant, for water only", async () => {
@@ -573,11 +558,10 @@ describe("Water Cut", () => {
     }
   });
 
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("raises a translucent Material's coverage for its brightest light before the fog, off in Scene Linear, in language %s", async (language) => {
-    const wgsl = language === ShaderLanguage.WGSL;
+  it("raises a translucent Material's coverage for its brightest light before the fog, off in Scene Linear", async () => {
     const translucent = createDefaultMaterialDocument("Glass");
     translucent.blendMode = "translucent";
-    const result = compile(host(wgsl), translucent);
+    const result = compile(host(), translucent);
     expect(await result.ready).toEqual([]);
     expect(result.material.compiledShaders).not.toContain("swnBright");
     const { fragment } = stages((await waterVariantOf(result)).compiledShaders);
@@ -587,7 +571,7 @@ describe("Water Cut", () => {
     // The Scene Fog block mixes what the raise leaves.
     expect(fragment.lastIndexOf("= sceneFogKeep(")).toBeGreaterThan(raise);
     // An opaque Material covers everything already.
-    const opaque = compile(host(wgsl), createDefaultMaterialDocument("Stone"));
+    const opaque = compile(host(), createDefaultMaterialDocument("Stone"));
     expect(await opaque.ready).toEqual([]);
     expect((await waterVariantOf(opaque)).compiledShaders).not.toContain("swnBright");
   });
@@ -736,8 +720,8 @@ describe("Water ownership", () => {
     return { global, ocean };
   };
 
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("cuts a Global Water and an Ocean along their seam per pixel, a river and its lake per vertex, in language %s", async (language) => {
-    const scene = host(language === ShaderLanguage.WGSL);
+  it("cuts a Global Water and an Ocean along their seam per pixel, a river and its lake per vertex", async () => {
+    const scene = host();
     overlook(scene);
     const { global, ocean } = sea(scene);
     for (const mesh of [global, ocean]) {
@@ -827,8 +811,8 @@ describe("Water debug switches", () => {
     expect(await definesFor(surface.material, rock)).not.toMatch(/^#define HAPTIC_UNLIT$/m);
   });
 
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("filters water's shadows with four taps and no Contact Hardening in language %s, other surfaces at their view's quality", async (language) => {
-    const scene = host(language === ShaderLanguage.WGSL);
+  it("filters water's shadows with four taps and no Contact Hardening, other surfaces at their view's quality", async () => {
+    const scene = host();
     overlook(scene);
     const { result, lake } = starter(scene);
     const surface = compile(scene, createDefaultMaterialDocument("Rock"));
@@ -841,7 +825,7 @@ describe("Water debug switches", () => {
     expect(lit.defines).not.toMatch(/^#define HAPTIC_SHADOW_NARROW$/m);
     // The 5 × 5 and 7 × 7 kernels (their weights' sums 144 and 2704) and Contact Hardening's call stay in the rock's
     // shadow filter and are compiled out of water's.
-    const filter = (effect: Effect) => /(fn |float )hapticShadow\([\s\S]*?\n\}/.exec(definedOnly(effect.fragmentSourceCode, effect.defines))?.[0] ?? "";
+    const filter = (effect: Effect) => /float hapticShadow\([\s\S]*?\n\}/.exec(definedOnly(effect.fragmentSourceCode, effect.defines))?.[0] ?? "";
     const kernels = (effect: Effect) => ["/ 144.0", "lit /= 2704.0", "hapticContactLit("].map((term) => filter(effect).includes(term));
     expect(kernels(lit)).toEqual([true, true, true]);
     expect(kernels(water)).toEqual([false, false, false]);
@@ -884,15 +868,15 @@ describe("Water debug switches", () => {
 });
 
 describe("Water distance detail", () => {
-  it.each([false, true])("skips a finer wave layer's spectrum taps once a pixel spans its longest wave, and the contact tap off its field (WebGPU %s)", async (webgpu) => {
-    const scene = host(webgpu);
+  it("skips a finer wave layer's spectrum taps once a pixel spans its longest wave, and the contact tap off its field", async () => {
+    const scene = host();
     overlook(scene);
     const result = compile(scene, createWaterMaterialDocument("Sea"));
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
     expect(await result.ready).toEqual([]);
     const fragment = (await programFor(result.material, lake)).fragmentSourceCode;
     // The first layer always samples; every finer one only inside its fade, with the gradients of its own uv.
-    expect(fragment).toMatch(/swnSa0 *(: *vec4f)? *= *swSpecTap\(swnSu0/);
+    expect(fragment).toMatch(/swnSa0 *= *swSpecTap\(swnSu0/);
     for (const c of [1, 2]) {
       const branch = new RegExp(`if \\(swnSr${c} > 0\\.0\\) \\{([\\s\\S]*?)\\n\\}`).exec(fragment)?.[1] ?? "";
       for (const layer of [2 * c, 2 * c + 1]) {

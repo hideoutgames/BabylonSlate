@@ -283,6 +283,8 @@ describe("SourceControlService", () => {
         isPathDirty: (path) => path === "assets/dirty.hasset",
       });
       service.pausePolling();
+      // Manual mode has no Git client here: the remote branch compared is always the default one.
+      service.setCheckedOutBranch("feature");
       for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/changed.hasset", "assets/new.hasset"]) await service.autoLock(path);
       await service.refresh();
       expect(service.canReleasePushed).toBe(true);
@@ -887,5 +889,306 @@ describe("SourceControlService", () => {
     expect(service.enabled).toBe(true);
     expect(service.lockForPath("assets/hero.scene.hasset")?.ours).toBe(true);
     expect(service.lockStateForPath("assets/hero.scene.hasset")).toBe("mine");
+  });
+});
+
+describe("SourceControlService lock ref", () => {
+  /** A Git LFS host that records each request's `ref.name` (by endpoint) and answers with no locks. */
+  function recordingHost() {
+    const refs: Array<[string, string]> = [];
+    const http: HttpClient = async (request) => {
+      const body = JSON.parse(String(request.body ?? "{}")) as { path?: string; ref?: { name?: string } };
+      const endpoint = request.url.endsWith("/verify") ? "verify" : request.url.endsWith("/unlock") ? "unlock" : "create";
+      refs.push([endpoint, body.ref?.name ?? ""]);
+      if (endpoint === "create") {
+        return { status: 201, bodyText: JSON.stringify({ lock: { id: `${body.path}-lock`, path: body.path, locked_at: "", owner: { name: "ada" } } }) };
+      }
+      return { status: 200, bodyText: '{"ours":[],"theirs":[]}' };
+    };
+    return { refs, http };
+  }
+
+  it("sends the checked-out branch in Integrated mode for every lock request, and a push's own branch for its check", async () => {
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      await service.autoLock("assets/a.hasset");
+      await service.releasePath("assets/a.hasset");
+      await service.locksBlockingPush(["assets/a.hasset"], "hotfix");
+      expect(refs).toEqual([
+        ["verify", "refs/heads/feature"],
+        // Once for the move: this device's own locks on the branch it left.
+        ["verify", "refs/heads/main"],
+        ["create", "refs/heads/feature"],
+        ["unlock", "refs/heads/feature"],
+        ["verify", "refs/heads/hotfix"],
+      ]);
+
+      // The branch not known (an open that failed or has not finished): checks list the team's default
+      // branch, never an empty ref, while lock changes wait for the branch.
+      refs.length = 0;
+      service.setCheckedOutBranch("");
+      await service.refresh();
+      expect(refs).toEqual([["verify", "refs/heads/main"], ["verify", "refs/heads/feature"]]);
+    } finally { service.dispose(); }
+  });
+
+  it("checks the locks again when the checked-out branch moves, and only then", async () => {
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http),
+      });
+      await vi.waitFor(() => expect(refs).toEqual([["verify", "refs/heads/main"]]));
+      service.setCheckedOutBranch("main");
+      service.setCheckedOutBranch("feature");
+      // The new branch, and once the branch left for this device's own locks there.
+      await vi.waitFor(() => expect(refs).toEqual([["verify", "refs/heads/main"], ["verify", "refs/heads/feature"], ["verify", "refs/heads/main"]]));
+      service.setCheckedOutBranch("feature");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(refs).toHaveLength(3);
+    } finally { service.dispose(); }
+  });
+
+  it("holds lock changes in Integrated mode until the checked-out branch is known, and locks on it once it is", async () => {
+    // Before the Git client opens, or after it could not: HEAD may be another branch than the default.
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    const changes = () => refs.filter(([endpoint]) => endpoint !== "verify");
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      await service.autoLock("assets/a.hasset");
+      await expect(service.transferLock("assets/a.hasset", "assets/b.hasset")).resolves.toBeUndefined();
+      expect(changes()).toEqual([]);
+
+      // Edits made meanwhile lock once the branch is known.
+      service.setCheckedOutBranch("feature");
+      await vi.waitFor(() => expect(changes()).toEqual([["create", "refs/heads/feature"]]));
+      expect(service.lockForPath("assets/a.hasset")?.ours).toBe(true);
+
+      // A release while the branch is unknown says why it waits, and sends nothing.
+      service.setCheckedOutBranch("");
+      await service.releasePath("assets/a.hasset");
+      expect(service.operationError).toMatch(/checked-out branch/);
+      await expect(service.transferLock("assets/a.hasset", "assets/c.hasset")).rejects.toThrow(/checked-out branch/);
+      expect(changes()).toEqual([["create", "refs/heads/feature"]]);
+
+      // A folder Haptic does not run Git in (another Git app owns HEAD) locks on the default branch, as Manual mode does.
+      service.setCheckedOutBranch(null);
+      await service.autoLock("assets/d.hasset");
+      expect(changes()).toEqual([["create", "refs/heads/feature"], ["create", "refs/heads/main"]]);
+    } finally { service.dispose(); }
+  });
+
+  /** A Git LFS host that scopes locks by ref, recording each request's endpoint and ref. */
+  function scopedHost() {
+    const requests: Array<[string, string]> = [];
+    const byRef = new Map<string, Map<string, string>>();
+    let next = 1;
+    const listed = (id: string, path: string) => ({ id, path, locked_at: "", owner: { name: "ada" } });
+    const http: HttpClient = async (request) => {
+      const body = JSON.parse(String(request.body ?? "{}")) as { path?: string; ref?: { name?: string } };
+      const ref = body.ref?.name ?? "";
+      const locks = byRef.get(ref) ?? new Map<string, string>();
+      byRef.set(ref, locks);
+      if (request.url.endsWith("/verify")) {
+        requests.push(["verify", ref]);
+        return { status: 200, bodyText: JSON.stringify({ ours: [...locks].map(([path, id]) => listed(id, path)), theirs: [] }) };
+      }
+      const unlock = /\/locks\/([^/]+)\/unlock$/.exec(request.url);
+      if (unlock) {
+        requests.push(["unlock", ref]);
+        const id = decodeURIComponent(unlock[1]!);
+        const path = [...locks].find(([, held]) => held === id)?.[0];
+        if (path === undefined) return { status: 404, bodyText: '{"message":"Lock not found"}' };
+        locks.delete(path);
+        return { status: 200, bodyText: JSON.stringify({ lock: listed(id, path) }) };
+      }
+      requests.push(["create", ref]);
+      const id = `lock-${next++}`;
+      locks.set(body.path!, id);
+      return { status: 201, bodyText: JSON.stringify({ lock: listed(id, body.path!) }) };
+    };
+    const held = (branch: string) => [...(byRef.get(`refs/heads/${branch}`) ?? new Map()).keys()].sort();
+    return { requests, http, held };
+  }
+
+  it("keeps own locks on the branch it moved from listed and releasable, released after a push of their paths, checking that branch once", async () => {
+    const host = scopedHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    const HERO = "assets/hero.scene.hasset";
+    const ROCK = "assets/rock.hasset";
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(host.http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("main");
+      await service.autoLock(HERO);
+      await service.autoLock(ROCK);
+
+      // A new branch is checked out: its own locks are listed, and those on main stay in view.
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      expect(service.locks.map((lock) => [lock.path, lock.ours, lock.branch])).toEqual([[HERO, true, "main"], [ROCK, true, "main"]]);
+      expect(service.heldCount).toBe(2);
+      // Main is checked once for the move, not on every check.
+      await service.refresh();
+      expect(host.requests.filter(([endpoint]) => endpoint === "verify")).toEqual([
+        ["verify", "refs/heads/feature"],
+        ["verify", "refs/heads/main"],
+        ["verify", "refs/heads/feature"],
+      ]);
+
+      // Release Locks After Push: Hero was pushed from feature; its lock is on main.
+      await service.releaseOwnLocks([HERO]);
+      expect(host.held("main")).toEqual([ROCK]);
+      // Release in the Locks window, on the lock's own branch.
+      await service.release(service.locks.find((lock) => lock.path === ROCK)!.id);
+      expect(host.held("main")).toEqual([]);
+      expect(host.requests.filter(([endpoint]) => endpoint === "unlock")).toEqual([["unlock", "refs/heads/main"], ["unlock", "refs/heads/main"]]);
+      expect([service.locks, service.heldCount, service.operationError]).toEqual([[], 0, null]);
+    } finally { service.dispose(); }
+  });
+
+  it("holds an edit made before the branch is known even when the default branch lists it as locked, and locks it on the branch", async () => {
+    const host = scopedHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    const HERO = "assets/hero.scene.hasset";
+    try {
+      await service.configure({
+        settings: { ...manual, mode: "integrated", branch: "main" },
+        projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(host.http),
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      // An earlier session locked Hero on main; checks list main's locks while the branch is not known.
+      service.setCheckedOutBranch("main");
+      await service.autoLock(HERO);
+      service.setCheckedOutBranch("");
+      await service.refresh();
+      expect(service.lockForPath(HERO)?.ours).toBe(true);
+
+      await service.autoLock(HERO);
+      service.setCheckedOutBranch("feature");
+      await vi.waitFor(() => expect(host.held("feature")).toEqual([HERO]));
+    } finally { service.dispose(); }
+  });
+
+  it("lists a lock once after a branch move on a host that does not scope locks by ref", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: { ...manual, mode: "integrated", branch: "main" }, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("main");
+      await service.autoLock("assets/a.hasset");
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      expect(service.locks.map((lock) => [lock.path, lock.branch])).toEqual([["assets/a.hasset", undefined]]);
+      expect(service.heldCount).toBe(1);
+    } finally { service.dispose(); }
+  });
+
+  it("keeps the default branch in Manual mode, where another Git app owns the working copy", async () => {
+    const { refs, http } = recordingHost();
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(http) });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      service.setCheckedOutBranch("feature");
+      await service.refresh();
+      await service.autoLock("assets/a.hasset");
+      expect(refs).toEqual([["verify", "refs/heads/main"], ["create", "refs/heads/main"]]);
+    } finally { service.dispose(); }
+  });
+});
+
+describe("SourceControlService around an Integrated push", () => {
+  const integrated = { ...manual, mode: "integrated" as const };
+
+  it("names the locks someone else holds on what a push sends, from a fresh verify", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({ settings: integrated, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedIn(), fake });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      // Taken after the last poll: only a fresh verify sees them.
+      fake.addTheirs("assets/rock.hasset", "Sam");
+      fake.addTheirs("assets/other.hasset", "Kim");
+      const holders = await service.locksBlockingPush(["assets/rock.hasset", "assets/mine.hasset"], "main");
+      expect(holders.map((lock) => [lock.path, lock.ownerName])).toEqual([["assets/rock.hasset", "Sam"]]);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it("never blocks a push on a host without the locking API, and rejects when the check fails", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    const other = "https://code.example.com";
+    try {
+      await service.configure({
+        settings: { ...integrated, repositoryUrl: `${other}/team/game.git` },
+        projectKey: "proj",
+        platform: "electron",
+        testMode: true,
+        hosts: await signedIn(null, { ...GITHUB, origin: other, kind: "token" }),
+        fake,
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      fake.addTheirs("assets/rock.hasset", "Sam");
+      const verify = vi.spyOn(fake, "verify").mockResolvedValueOnce(err({ kind: "http", message: "Bad Gateway", status: 502 }));
+      await expect(service.locksBlockingPush(["assets/rock.hasset"], "main")).rejects.toThrow("Bad Gateway");
+      verify.mockResolvedValueOnce(err({ kind: "unsupported", message: "Not Found", status: 404 }));
+      expect(await service.locksBlockingPush(["assets/rock.hasset"], "main")).toEqual([]);
+      expect(service.lockingUnsupported).toBe(true);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  it("releases own locks on pushed paths, keeping documents with unsaved edits locked", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider();
+    try {
+      await service.configure({
+        settings: integrated,
+        projectKey: "proj",
+        platform: "electron",
+        testMode: true,
+        hosts: await signedIn(),
+        fake,
+        isPathDirty: (path) => path === "assets/dirty.hasset",
+      });
+      await vi.waitFor(() => expect(service.enabled).toBe(true));
+      // The sync's open names the checked-out branch.
+      service.setCheckedOutBranch("main");
+      for (const path of ["assets/pushed.hasset", "assets/dirty.hasset", "assets/unpushed.hasset"]) await service.autoLock(path);
+      await service.releaseOwnLocks(["assets/pushed.hasset", "assets/dirty.hasset"]);
+      expect(fake.snapshot().map((lock) => lock.path).sort()).toEqual(["assets/dirty.hasset", "assets/unpushed.hasset"]);
+      expect(service.lockStateForPath("assets/pushed.hasset")).toBeNull();
+    } finally {
+      service.dispose();
+    }
   });
 });

@@ -74,6 +74,14 @@ export function isSidewaysDragOut(dx: number, dy: number): boolean {
   return Math.abs(dx) > Math.abs(dy);
 }
 
+export type TreeRowTone = "success" | "warning" | "destructive";
+
+const TREE_TONE_CLASS: Record<TreeRowTone, string> = {
+  success: "text-(--success)",
+  warning: "text-(--warning)",
+  destructive: "text-destructive",
+};
+
 export interface TreeViewNode {
   id: string;
   label: string;
@@ -87,6 +95,8 @@ export interface TreeViewNode {
   /** Optional type cue, rendered between the disclosure and the label. */
   icon?: ReactNode;
   muted?: boolean;
+  /** Tints the label with a status colour: an added (`success`), changed (`warning`) or removed (`destructive`) item. */
+  tone?: TreeRowTone;
   /** Double-click / double-tap on the label (or F2) requests an inline rename. */
   renamable?: boolean;
   /** Text the rename input edits when it differs from `label` (for example without a folder path). */
@@ -973,7 +983,9 @@ export function TreeView({
                       node.renamable ? "shrink" : "flex-1",
                       selected ? "font-medium" : "font-normal",
                       node.muted ? "text-muted-foreground" : "",
+                      node.tone ? TREE_TONE_CLASS[node.tone] : "",
                     )}
+                    data-tone={node.tone}
                   >
                     {node.label}
                   </span>

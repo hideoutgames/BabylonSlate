@@ -46,6 +46,8 @@ import { DocumentTransitionGate } from "../services/document-transition-gate";
 import {
   SourceControlService,
 } from "../services/source-control-service";
+import { SourceControlSyncService } from "../services/source-control-sync";
+import { publishCreatedProject, type CreateProjectOptions, type CreateProjectOutcome } from "../lib/create-project";
 import { documentContentIdentity } from "../lib/document-content-identity";
 import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import {
@@ -81,6 +83,7 @@ import {
   RegistryStateContext,
   SaveStateContext,
   SourceControlStateContext,
+  SourceControlSyncContext,
   ThumbnailVersionsContext,
 } from "./document-context-hooks";
 import { useDocumentDockLayouts } from "./use-document-dock-layouts";
@@ -120,6 +123,8 @@ export {
   useDocumentDirty,
   useDocumentKindsRevision,
   useEditorShellState,
+  useIntegratedSync,
+  useIntegratedSyncState,
   useOpenDocument,
   useOpenDocumentTabs,
   useProjectState,
@@ -164,11 +169,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setSceneDocumentLoad(null);
   }, []);
   const sourceControlRef = useRef(new SourceControlService());
+  const sourceControlSync = useRef(new SourceControlSyncService()).current;
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
   const [undoHistoryNotice, setUndoHistoryNotice] = useState<DocumentContextValue["undoHistoryNotice"]>(null);
   const dismissUndoHistoryNotice = useCallback(() => setUndoHistoryNotice(null), []);
+  const [publishNotice, setPublishNotice] = useState<DocumentContextValue["publishNotice"]>(null);
+  const dismissPublishNotice = useCallback(() => setPublishNotice(null), []);
   const noteUndoHistoryCleared = useCallback((id: string) => {
     setUndoHistoryNotice((current) => ({ documentId: id, sequence: (current?.sequence ?? 0) + 1 }));
   }, []);
@@ -301,12 +309,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }), [documentService]);
   /** Set once `closeDocumentsForPaths` exists; reload closes tabs whose file is gone. */
   const closeDocumentsForPathsRef = useRef<(paths: Iterable<string>) => void>(() => {});
+  /** The registry epoch a remount that only re-read the files reached; it needs no Integrated status of its own. */
+  const rereadEpochRef = useRef<number | null>(null);
+  const noteRegistryReread = useCallback(() => {
+    rereadEpochRef.current = projectService.registryGeneration + registryTickRef.current;
+  }, [projectService]);
   // Effects after the history-reopen subscription, before source control's.
   const {
     externalChangePrompt,
     captureMtimeSnapshot,
     runForegroundRescanRef,
     resetExternalChanges,
+    applyPulledChanges,
     actions: externalChangeActions,
   } = useExternalChanges({
     projectService,
@@ -317,10 +331,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setProjectDocument,
     bump,
     closeDocumentsForPathsRef,
+    noteRegistryReread,
   });
+  // Asset writes that are not saves (a new asset, an import, a move or delete,
+  // a Texture encode) advance the registry: Integrated status follows them too.
+  // A remount that only re-read the files (the foreground rescan, a pull's
+  // reload) marks the epoch it reached: the foreground refresh or the pull
+  // reads the status itself. Any other advance, later writes included, notes.
+  useEffect(() => {
+    if (registryEpoch !== rereadEpochRef.current) sourceControlSync.noteSaved();
+  }, [registryEpoch, sourceControlSync]);
+  /** Every editor save ends here: the change snapshot is recaptured and Integrated status runs once the burst settles. */
+  const afterEditorSave = useCallback(async () => {
+    await captureMtimeSnapshot();
+    sourceControlSync.noteSaved();
+  }, [captureMtimeSnapshot, sourceControlSync]);
   // Effects after the own-write snapshot update, before the journal flush on hide.
-  const { sourceControlState, actions: sourceControlActions } = useSourceControlSync({
+  const { sourceControlState, syncInputFor, actions: sourceControlActions } = useSourceControlSync({
     sourceControlRef,
+    sourceControlSync,
     projectService,
     documentService,
     settingsStore,
@@ -445,7 +474,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     journalBuffer,
     ensureDerived,
     captureAllLayouts,
-    captureMtimeSnapshot,
+    captureMtimeSnapshot: afterEditorSave,
     playContent,
     setLastCompiledSignature,
     setMigrationPending,
@@ -513,19 +542,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     moveDockLayouts,
     captureAllLayouts,
     collectGraphTypeSchemas,
-    captureMtimeSnapshot,
+    captureMtimeSnapshot: afterEditorSave,
     enqueueProjectWrite,
     cancelDebouncedSave,
     scheduleDebouncedSave,
     saveProjectNow,
   });
   // Effects after the deferred auto-save, before the open Texture Usage effect.
-  const { actions: lifecycleActions } = useProjectLifecycle({
+  const { actions: lifecycleActions, create: createLifecycle } = useProjectLifecycle({
     projectService,
     documentService,
     documentTransitions,
     editSessionRef,
     sourceControlRef,
+    sourceControlSync,
     journalBuffer,
     ensureDerived,
     editing,
@@ -537,6 +567,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setMigrationPending,
     setRecoveryAvailable,
     setDocumentOpenError,
+    setPublishNotice,
     sceneDocumentLoad,
     sceneDocumentLoadRef,
     setSceneDocumentLoad,
@@ -568,6 +599,57 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bumpRegistry,
     scheduleDebouncedSave,
   });
+
+  const withProjectWrites = useCallback(<T,>(work: () => Promise<T>) => {
+    cancelDebouncedSave();
+    return enqueueProjectWrite(async () => {
+      cancelDebouncedSave();
+      return work();
+    });
+  }, [cancelDebouncedSave, enqueueProjectWrite]);
+
+  const publishToNewRepository = useCallback<DocumentContextValue["publishToNewRepository"]>(async (repository) => {
+    const opened = projectDocumentRef.current;
+    if (!opened) throw new Error("Open a project first.");
+    const publish = await import("../services/source-control-publish");
+    return publish.publishToNewRepository({
+      api: await publish.hostApiForOrigin(repository.origin, isTestModeEnabled()),
+      repository,
+      sync: sourceControlSync,
+      input: syncInputFor(opened.settings.sourceControl),
+      saveSettings: async (sourceControl) => {
+        const live = projectDocumentRef.current ?? opened;
+        const next = { ...live, settings: { ...live.settings, sourceControl } };
+        setProjectDocument(next);
+        await saveProjectNow(next);
+      },
+    });
+  }, [projectDocumentRef, saveProjectNow, setProjectDocument, sourceControlSync, syncInputFor]);
+
+  /** A Remote New Project, once it has opened: Publish, and the editor's notice when it stays Local. */
+  const publishNewProject = useCallback(async (outcome: CreateProjectOutcome, options: CreateProjectOptions | undefined) => {
+    const message = await publishCreatedProject(outcome, options, publishToNewRepository);
+    if (message) setPublishNotice({ message });
+  }, [publishToNewRepository]);
+
+  const createEmptyProject = useCallback<DocumentActions["createEmptyProject"]>(async (name, options) => {
+    await publishNewProject(await createLifecycle.createEmptyProject(name, options), options);
+  }, [createLifecycle, publishNewProject]);
+
+  const createFromTemplate = useCallback<DocumentActions["createFromTemplate"]>(async (templateId, name, options) => {
+    await publishNewProject(await createLifecycle.createFromTemplate(templateId, name, options), options);
+  }, [createLifecycle, publishNewProject]);
+
+  const setSourceControlAdoption = useCallback<DocumentContextValue["setSourceControlAdoption"]>(async (adopted) => {
+    const opened = projectDocumentRef.current;
+    if (!opened) return;
+    await sourceControlSync.setAdopted(syncInputFor(opened.settings.sourceControl), adopted);
+  }, [projectDocumentRef, sourceControlSync, syncInputFor]);
+
+  const summarizeProjectForPublish = useCallback(async () => {
+    const { summarizeProject } = await import("../services/source-control-publish");
+    return summarizeProject(projectService.storagePort);
+  }, [projectService]);
 
   const updateProjectVersion = useCallback((version: string) => {
     if (documentService.getAuthoringLock().readOnly) return;
@@ -713,6 +795,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         projectService,
         documentService,
         sourceControl: sourceControlRef.current,
+        sourceControlSync,
         journalBuffer,
         ensureDerived,
         bump,
@@ -729,6 +812,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       uninstall?.();
     };
   }, [
+    sourceControlSync,
     cancelDebouncedSave,
     applyGraphChange,
     reparentClassDocument,
@@ -766,7 +850,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ...fileOperationActions,
       ...lifecycleActions,
       ...projectAssetActions,
+      createEmptyProject,
+      createFromTemplate,
       lockAuthoring,
+      withProjectWrites,
+      applyPulledChanges,
+      publishToNewRepository,
+      dismissPublishNotice,
+      summarizeProjectForPublish,
+      setSourceControlAdoption,
       beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,
@@ -826,7 +918,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       fileOperationActions,
       lifecycleActions,
       projectAssetActions,
+      createEmptyProject,
+      createFromTemplate,
       lockAuthoring,
+      withProjectWrites,
+      applyPulledChanges,
+      publishToNewRepository,
+      dismissPublishNotice,
+      summarizeProjectForPublish,
+      setSourceControlAdoption,
       beginSimulationDocument,
       getAuthoringLock,
       subscribeAuthoringLock,
@@ -954,9 +1054,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pendingExclusiveScene,
       externalChangePrompt,
       undoHistoryNotice,
+      publishNotice,
       thumbnailsEnabled,
     }),
-    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, thumbnailsEnabled],
+    [listedProjects, needsReconnect, recoveryAvailable, migrationPending, migrationPromptRequest, templates, homepageReady, pendingExclusiveScene, externalChangePrompt, undoHistoryNotice, publishNotice, thumbnailsEnabled],
   );
 
   return (
@@ -971,6 +1072,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                     <EditorShellStateContext.Provider value={editorShellState}>
                       <ThumbnailVersionsContext.Provider value={thumbnailVersions}>
                         <SourceControlStateContext.Provider value={sourceControlState}>
+                          <SourceControlSyncContext.Provider value={sourceControlSync}>
                             <DockWindowTickContext.Provider value={dockWindowTick}>
                               {children}
                             </DockWindowTickContext.Provider>
@@ -993,6 +1095,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
                               testId="document-open-error"
                               dismissTestId="document-open-error-dismiss"
                             />
+                          </SourceControlSyncContext.Provider>
                         </SourceControlStateContext.Provider>
                       </ThumbnailVersionsContext.Provider>
                     </EditorShellStateContext.Provider>

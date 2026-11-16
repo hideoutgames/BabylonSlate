@@ -6,12 +6,28 @@
  * project folder is the repository root.
  */
 export interface SyncPort {
+  /** The checked-out branch: the working copy's own (Git's HEAD), never a project setting. */
+  readonly branch: string;
   /** Uncommitted changes against HEAD, from stat data: unchanged files are never read. */
   status(): Promise<SyncStatus>;
   /** Commits exactly `paths` (changed or deleted) on the current branch. */
   commit(input: CommitInput): Promise<CommitResult>;
-  /** Fetches the branch and counts commits on each side. */
-  fetch(): Promise<RemoteState>;
+  /** Fetches the branch, counts commits on each side and lists the newest incoming ones. */
+  fetch(options?: TransferOptions): Promise<RemoteState>;
+  /**
+   * The counts and incoming commits against the remote branch as last fetched,
+   * from local refs only: what a pull, push or commit leaves, with no network.
+   */
+  remoteState(): Promise<RemoteState>;
+  /**
+   * Paths a push would change, sorted: what the branch changed since it left
+   * what the remote holds (its remote branch, or before its first push every
+   * remote branch this copy tracks; every committed path when there is none).
+   * Reads the remote's ref advertisement first and brings every
+   * remote-tracking branch up to it (a deleted one goes, a moved one is
+   * fetched), so no stale tip hides paths, and the locks on them.
+   */
+  outgoing(options?: TransferOptions): Promise<string[]>;
   /**
    * Fetches, then integrates the remote branch: fast-forward, or a merge commit
    * when both sides have commits. Paths changed on both sides (the working
@@ -21,11 +37,94 @@ export interface SyncPort {
    */
   pull(input: PullInput): Promise<PullResult>;
   /** Uploads the LFS objects the server lacks, then updates the remote branch. */
-  push(): Promise<PushResult>;
+  push(options?: TransferOptions): Promise<PushResult>;
   /** A file's bytes at a commit (an LFS object's own bytes), or null when the commit has no such file. */
   readFile(path: string, commit: string): Promise<Uint8Array | null>;
-  /** The branch's commits, newest first; `deepen` fetches older history once when a shallow clone ends early. */
+  /**
+   * An LFS object's bytes by its `.blobs/<sha256>` path and size, as a
+   * `.hasset` chunk entry names them, so no commit is read: the working
+   * copy's file when it has that size (an object never changes under its
+   * name), otherwise downloaded and checked. Never written: the working copy
+   * would keep a file no asset of it uses. One the server lacks is
+   * `lfs` / `lfs-object-missing`.
+   */
+  readLfsObject(path: string, size: number, options?: TransferOptions): Promise<Uint8Array>;
+  /**
+   * The working tree's `.blobs` files Git can do without, sorted: untracked
+   * (neither HEAD nor the index holds them) and held by no commit of any
+   * local branch that the remote-tracking branches lack, the checked-out
+   * branch's older ones included (an unpushed commit's objects exist only
+   * here, and a push uploads them from these files; a pushed one's can be
+   * downloaded again). Pushed means a remote-tracking ref as last fetched
+   * reaches it: a push uploads the objects before it moves the remote branch,
+   * and a stale ref only keeps more. Nor may a committed `.hasset` name its
+   * object while that commit holds none of that name in the candidates'
+   * folders (another Git app committed the asset without its blob, or
+   * `.blobs` was ignored): no server has it then, and only this file lets
+   * that version be diffed or reverted. Every
+   * `.hasset` version local history holds is read once (each commit's files
+   * against its first parent; all of a commit whose parent this shallow copy
+   * lacks), and `references` names what it needs. From stats and Git objects:
+   * no working file is read and nothing is fetched.
+   */
+  removableLfsObjects(options: RemovableLfsOptions): Promise<string[]>;
+  /** The branch's commits, newest first; `deepen` fetches older history once when the page ends at this shallow copy's boundary. */
   log(options: LogOptions): Promise<LogPage>;
+  /**
+   * The files `commit` changed against its first parent (every file of a root
+   * commit), sorted; null when this shallow copy lacks the parent.
+   */
+  commitChanges(commit: string): Promise<FileChange[] | null>;
+  /** The working copy's branches, sorted. Reads no network. */
+  localBranches(): Promise<string[]>;
+  /**
+   * The remote's branches, sorted, from its Git ref advertisement: one
+   * request and no host REST API, so every Git host lists them.
+   */
+  remoteBranches(options?: TransferOptions): Promise<string[]>;
+  /**
+   * Starts `name` at HEAD and checks it out; no working file changes. The
+   * next push creates it on the remote and makes that its upstream. Refuses
+   * an invalid name (`conflict` / `invalid-branch-name`), a local branch of
+   * that name (`conflict` / `branch-exists`) and a copy with no commit yet.
+   */
+  createBranch(name: string): Promise<void>;
+  /**
+   * The commit `name` points at without checking it out: this copy's branch,
+   * else the remote's, fetched as `switchBranch` fetches it (so `readFile`
+   * can read it); null when neither has it. Nothing in the working tree changes.
+   */
+  branchCommit(name: string, options?: TransferOptions): Promise<string | null>;
+  /**
+   * Checks out `name`: a local branch, or the remote's (fetched first, as
+   * shallow as a clone). Files that differ between the branches take the
+   * other branch's version; uncommitted changes to other files stay, and so
+   * does a `.blobs` file the other branch lacks, untracked (it may be the
+   * only copy of an object a commit not pushed yet holds). Refuses
+   * (`conflict` / `uncommitted-changes`, with the paths) when one of those
+   * files has an uncommitted change the switch would overwrite; then nothing
+   * changes. The current branch is a no-op.
+   */
+  switchBranch(name: string, options?: TransferOptions): Promise<SwitchResult>;
+}
+
+/**
+ * An operation that talks to the remote. Once `signal` aborts, no further
+ * request is sent and no further working file is written, and the operation
+ * rejects with a `cancelled` `SyncError`; a request already sent still
+ * finishes (native HTTP cannot stop one).
+ */
+export interface TransferOptions {
+  signal?: AbortSignal;
+}
+
+export interface RemovableLfsOptions extends TransferOptions {
+  /**
+   * The LFS objects (their `.blobs` names) a committed `.hasset` at `path`
+   * needs, from its bytes (the asset's chunk table); none for a file that is
+   * no readable asset, which no version of it can load anyway.
+   */
+  references: (path: string, bytes: Uint8Array) => readonly string[];
 }
 
 export type ChangeKind = "added" | "modified" | "deleted";
@@ -66,13 +165,18 @@ export interface RemoteState {
   ahead: number;
   /** Remote commits not yet pulled. */
   behind: number;
+  /** The newest of those commits, newest first, at most {@link INCOMING_LIMIT}. */
+  incoming: CommitInfo[];
 }
+
+/** Incoming commits a fetch lists; `behind` still counts them all. */
+export const INCOMING_LIMIT = 50;
 
 /** Per conflicting path: keep the working tree's file, or take the remote's. */
 export type PullChoice = "mine" | "theirs";
 export type PullChoices = Readonly<Record<string, PullChoice>>;
 
-export interface PullInput {
+export interface PullInput extends TransferOptions {
   /** Signs the merge commit when both sides have commits. */
   author: CommitAuthor;
   choices?: PullChoices;
@@ -101,10 +205,21 @@ export interface PushResult {
   uploaded: number;
 }
 
-export interface LogOptions {
+export interface SwitchResult {
+  /** The branch's commit, null for a branch with none. */
+  head: string | null;
+  /** Working tree files the switch wrote or removed, for the external-change reload. */
+  changedPaths: string[];
+}
+
+/** `signal` cancels a deepen's download. */
+export interface LogOptions extends TransferOptions {
   limit: number;
+  /** Commits to leave out first: the ones earlier pages listed. */
+  skip?: number;
   /** Only commits that change this path. */
   path?: string;
+  /** Fetch older history once when the page ends at this shallow copy's boundary (writes `.git`). */
   deepen?: boolean;
 }
 
@@ -121,15 +236,25 @@ export interface LogPage {
   commits: CommitInfo[];
   /** False only when the branch's first commit was reached. */
   hasMore: boolean;
+  /** The page ended where the branch's history reaches this shallow copy's boundary: older commits come with `deepen`. */
+  shallow: boolean;
+}
+
+/** Git's branch name rules (`git check-ref-format --branch`), so both clients and the editor refuse the same names. */
+// eslint-disable-next-line no-control-regex -- Git refuses control characters in ref names.
+const BAD_REF = /(^|[/.])([/.]|$)|^@$|@\{|[\x00-\x20\x7f~^:?*[\\]|\.lock(\/|$)/;
+
+export function isValidBranchName(name: string): boolean {
+  return name !== "" && !name.startsWith("-") && !BAD_REF.test(name);
 }
 
 /**
  * `auth`: no or refused credential. `network`: the host could not be reached.
  * `conflict`: the remote moved (push) or histories cannot be joined.
  * `not-found`: repository, branch or object missing. `lfs`: an LFS transfer or
- * rule failed.
+ * rule failed. `cancelled`: the operation's signal aborted.
  */
-export type SyncErrorKind = "auth" | "network" | "conflict" | "not-found" | "lfs";
+export type SyncErrorKind = "auth" | "network" | "conflict" | "not-found" | "lfs" | "cancelled";
 
 /** What exactly failed, where the kind alone does not say. */
 export type SyncErrorCode =
@@ -138,24 +263,48 @@ export type SyncErrorCode =
   | "missing-lfs-rule"
   | "lfs-object-missing"
   | "lfs-object-corrupt"
-  | "not-empty";
+  | "not-empty"
+  | "repository-exists"
+  | "uncommitted-changes"
+  | "branch-exists"
+  | "invalid-branch-name"
+  | "detached-head";
 
 export class SyncError extends Error {
   readonly kind: SyncErrorKind;
   readonly code?: SyncErrorCode;
   readonly status?: number;
+  /** The files a refusal is about (`uncommitted-changes`), sorted. */
+  readonly paths?: readonly string[];
 
-  constructor(kind: SyncErrorKind, message: string, options: { code?: SyncErrorCode; status?: number; cause?: unknown } = {}) {
+  constructor(kind: SyncErrorKind, message: string, options: { code?: SyncErrorCode; status?: number; paths?: readonly string[]; cause?: unknown } = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "SyncError";
     this.kind = kind;
     if (options.code) this.code = options.code;
     if (options.status !== undefined) this.status = options.status;
+    if (options.paths) this.paths = options.paths;
   }
+}
+
+/** A switch refused because `paths` (sorted) have uncommitted changes it would overwrite. */
+export function uncommittedChangesError(branch: string, paths: readonly string[]): SyncError {
+  const named = paths.slice(0, 3).join(", ") + (paths.length > 3 ? ` and ${paths.length - 3} more` : "");
+  return new SyncError("conflict", `Commit or revert your changes to ${named} before switching to ${branch}.`, { code: "uncommitted-changes", paths });
 }
 
 export function isSyncError(error: unknown): error is SyncError {
   return error instanceof SyncError;
+}
+
+/** What an operation whose signal aborted rejects with. */
+export function cancelledError(): SyncError {
+  return new SyncError("cancelled", "Cancelled.");
+}
+
+/** Rejects the operation once `signal` has aborted. */
+export function throwIfCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw cancelledError();
 }
 
 /** The `.gitattributes` line Publish writes: `.blobs` files are LFS objects. */

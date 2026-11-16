@@ -1,7 +1,6 @@
 import { normalizeAppIdentity, type AppIdentity } from "./app-identity";
 import { normalizeCollisionPresets, type CollisionPreset } from "./collision-presets";
 import { applyProjectQualityPatch, normalizeRenderingQuality, qualityPresetPatch, type RenderingQuality } from "./render-quality";
-import { normalizeRenderingPipeline, type GpuBackend } from "./rendering-pipeline";
 import { lookAtRotation } from "./euler";
 import { normalizeCelShadingSettings, type CelShadingSettings, type RenderMode } from "./cel-shading";
 import { normalizeShadowSettings, type ShadowSettings } from "./shadows";
@@ -31,6 +30,8 @@ import {
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
+/** Marks an app-owned project folder whose scaffold or clone has not finished; a retry may clear it. */
+export const PROJECT_CREATION_MARKER = ".haptic-creating";
 export const MAIN_CLASS_FILE = "assets/main.class.hasset";
 export const MAIN_SCENE_FILE = "assets/main.scene.hasset";
 
@@ -105,8 +106,6 @@ export interface AudioProjectSettings {
 }
 
 export interface RenderProjectSettings {
-  /** Missing legacy values normalize to WebGL2; owned by the project Engine. */
-  gpuBackend?: GpuBackend;
   quality?: RenderingQuality;
   shadows?: ShadowSettings;
   mode?: RenderMode;
@@ -151,7 +150,6 @@ export const DEFAULT_RENDER_HEIGHT = 1080;
 
 /** Missing field on existing projects — keep fill / Follow System. */
 export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
-  ...normalizeRenderingPipeline(undefined),
   quality: normalizeRenderingQuality(undefined),
   shadows: normalizeShadowSettings(undefined),
   mode: "pbr",
@@ -702,7 +700,6 @@ export function normalizeRenderProjectSettings(input: unknown): RenderProjectSet
     ? input as Partial<RenderProjectSettings>
     : undefined;
   return {
-    ...normalizeRenderingPipeline(value),
     mode: value?.mode === "cel" ? "cel" : "pbr",
     cel: normalizeCelShadingSettings(value?.cel),
     environmentLighting: normalizeEnvironmentLightingSettings(value?.environmentLighting),

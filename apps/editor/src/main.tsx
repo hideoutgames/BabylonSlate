@@ -110,13 +110,6 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
       });
     },
   );
-} else if (
-  import.meta.env.VITE_TEST_MODE === "true" &&
-  new URLSearchParams(location.search).has("webgpuProof")
-) {
-  void import("./testing/webgpu-proof").then(({ runWebGpuProof }) => {
-    Object.assign(window, { __hapticWebGpuProof: runWebGpuProof });
-  });
 } else {
   const mount = () =>
     createRoot(document.getElementById("root")!).render(

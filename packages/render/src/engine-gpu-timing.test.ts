@@ -1,6 +1,6 @@
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { acquireEngineGpuTiming, observeEngineGpuTiming, readEngineGpuTiming, type EngineGpuTimingSample } from "./engine-gpu-timing";
+import { acquireEngineGpuTiming, observeEngineGpuTiming, type EngineGpuTimingSample } from "./engine-gpu-timing";
 
 const engines: NullEngine[] = [];
 afterEach(() => { for (const engine of engines.splice(0)) engine.dispose(); vi.restoreAllMocks(); });
@@ -78,7 +78,7 @@ describe("shared GPU timing ownership", () => {
     expect(samples.map(sample => sample.durationMs)).toEqual([2, 5, 7]);
   });
 
-  it("detaches on a consumer error and never starts unsupported WebGPU collection", () => {
+  it("detaches on a consumer error", () => {
     const { engine, capture, ready } = fixture();
     const onError = vi.fn();
     const profile = observeEngineGpuTiming(engine, () => { throw new Error("Collector failed"); }, { onError });
@@ -87,11 +87,6 @@ describe("shared GPU timing ownership", () => {
     expect(capture).toHaveBeenLastCalledWith(false);
     expect(engine.onEndFrameObservable.hasObservers()).toBe(false);
     profile.release();
-    Object.defineProperty(engine, "isWebGPU", { value: true });
-    capture.mockClear();
-    expect(observeEngineGpuTiming(engine, () => {})).toMatchObject({ status: "unavailable", reason: expect.stringContaining("WebGPU") });
-    expect(readEngineGpuTiming(engine)).toBeNull();
-    expect(capture).not.toHaveBeenCalled();
   });
 
   it("restores the prior switch if query activation fails", () => {

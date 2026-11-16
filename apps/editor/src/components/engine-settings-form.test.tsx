@@ -340,6 +340,22 @@ describe("EngineSettingsForm assets", () => {
     fireEvent.click(toggle);
     expect(onChange).toHaveBeenCalledWith({ viewportOcclusionCulling: false });
   });
+
+  it("shows Half Rate When Idle on by default beside the Viewport Frame Cap and reports turning it off", () => {
+    const onChange = vi.fn();
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={onChange}
+        categoryId="viewport"
+      />,
+    );
+    const toggle = getByTestId("setting-viewport-idle-half-rate");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(getByTestId("settings-section-frameRate").contains(toggle)).toBe(true);
+    fireEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith({ viewportIdleHalfRate: false });
+  });
 });
 
 describe("EngineSettingsForm focus", () => {

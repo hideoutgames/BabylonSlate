@@ -80,21 +80,6 @@ index e33593b25e62a6cb9f47cd552ee314d4b0805236..22f10c03a1f446614259761612624a31
          gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rtWrapper._MSAAFramebuffer);
          gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rtWrapper._framebuffer);
          for (let i = 0; i < count; i++) {
-diff --git a/Engines/WebGPU/webgpuCacheRenderPipeline.js b/Engines/WebGPU/webgpuCacheRenderPipeline.js
-index ad74e8e1285c4b11dd438bc3d17f44cf44043d88..935c8ebb843a0c58a473dc33c55d3f5ac16d0c00 100644
---- a/Engines/WebGPU/webgpuCacheRenderPipeline.js
-+++ b/Engines/WebGPU/webgpuCacheRenderPipeline.js
-@@ -955,7 +955,9 @@ export class WebGPUCacheRenderPipeline {
-                     stencilBack: this._stencilEnabled && depthStencilFormatHasStencil ? stencilBack : undefined,
-                     stencilReadMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilReadMask : 0xffffffff,
-                     stencilWriteMask: this._stencilEnabled && depthStencilFormatHasStencil ? this._stencilWriteMask : 0xffffffff,
--                    depthBias: this._depthBias,
-+                    // WebGPU requires a zero depth bias for non-triangle
-+                    // topologies (line/point draws fail pipeline creation).
-+                    depthBias: topologyIsTriangle ? this._depthBias : 0,
-                     depthBiasClamp: topologyIsTriangle ? this._depthBiasClamp : 0,
-                     depthBiasSlopeScale: topologyIsTriangle ? this._depthBiasSlopeScale : 0,
-                 },
 diff --git a/Engines/thinEngine.pure.d.ts b/Engines/thinEngine.pure.d.ts
 index 24b6329cb60c28f279e16018f9a3f5566d8c30b5..82cfaba9ce0c12d963c3b5074fe5149494fa0b33 100644
 --- a/Engines/thinEngine.pure.d.ts
@@ -252,17 +237,15 @@ index 07e060fe39fa225fb5a2a6c06080d09492431f6d..2c9b02901404b690586b06c7135b5436
              this._projectionMatrices[cascadeIndex].multiplyToRef(TmpMatrix, this._projectionMatrices[cascadeIndex]);
              this._viewMatrices[cascadeIndex].multiplyToRef(this._projectionMatrices[cascadeIndex], this._transformMatrices[cascadeIndex]);
 diff --git a/Materials/Node/Blocks/Input/inputBlock.pure.js b/Materials/Node/Blocks/Input/inputBlock.pure.js
-index af4f41adb3fc89a86ecc1ca868192ba4a754135b..5b9b5dc169279876b20f2359ab70007b6c5a1ea3 100644
+index af4f41adb3fc89a86ecc1ca868192ba4a754135b..26e3a6d543cfdaceb1e3ab85bbaf1e95edf3d361 100644
 --- a/Materials/Node/Blocks/Input/inputBlock.pure.js
 +++ b/Materials/Node/Blocks/Input/inputBlock.pure.js
-@@ -41,6 +41,21 @@ const attributeDefine = {
+@@ -41,6 +41,19 @@ const attributeDefine = {
      uv6: "UV6",
      uv7: "UV7",
      uv8: "UV8",
 +    // Haptic: gate optional vertex streams so meshes without them read a
-+    // zeroed private copy instead of a real attribute; WebGPU rejects draws
-+    // declaring attributes no buffer supplies, and each attribute consumes one
-+    // of the 8 guaranteed vertex buffer slots.
++    // zeroed private copy instead of a real attribute.
 +    color: "VERTEXCOLOR_NME",
 +    world0: "INSTANCES",
 +    world1: "INSTANCES",
@@ -277,41 +260,7 @@ index af4f41adb3fc89a86ecc1ca868192ba4a754135b..5b9b5dc169279876b20f2359ab70007b
  };
  /**
   * Block used to expose an input value
-@@ -540,26 +555,36 @@ export class InputBlock extends NodeMaterialBlock {
-             }
-             else {
-                 if (state.shaderLanguage === 1 /* ShaderLanguage.WGSL */) {
-+                    const defineName = attributeDefine[this.name];
-+                    const numericDefine = attributeNumericDefine[this.name];
-+                    const gated = !!(defineName || numericDefine);
-                     if (!alreadyDeclared) {
--                        const defineName = attributeDefine[this.name];
--                        if (defineName) {
--                            state._attributeDeclaration += this._emitDefine(defineName);
--                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
--                            state._attributeDeclaration += `#else\n`;
--                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${state._getShaderType(this.type)} = ${state._getShaderType(this.type)}(0.);\n`;
-+                        if (gated) {
-+                            const shaderType = state._getShaderType(this.type);
-+                            const defineStart = defineName ? this._emitDefine(defineName) : `#if ${numericDefine}\n`;
-+                            state._attributeDeclaration += defineStart;
-+                            state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${shaderType};\n`;
-                             state._attributeDeclaration += `#endif\n`;
-+                            // Haptic: the private copy is assigned from
-+                            // vertexInputs under the same guard, so consumers
-+                            // read a valid zero when the attribute is gated out.
-+                            state._attributeDeclaration += `var<private> ${this.declarationVariableName}: ${shaderType} = ${shaderType}(0.);\n`;
-+                            state.compilationString += defineStart;
-+                            state.compilationString += `${this.declarationVariableName} = vertexInputs.${this.declarationVariableName};\n`;
-+                            state.compilationString += `#endif\n`;
-                         }
-                         else {
-                             state._attributeDeclaration += `attribute ${this.declarationVariableName}: ${state._getShaderType(this.type)};\n`;
-                         }
-                     }
--                    this._prefix = `vertexInputs.`;
-+                    this._prefix = gated ? "" : `vertexInputs.`;
-                 }
+@@ -558,8 +571,9 @@ export class InputBlock extends NodeMaterialBlock {
                  else {
                      if (!alreadyDeclared) {
                          const defineName = attributeDefine[this.name];
@@ -354,7 +303,7 @@ index 677079dbbeaeeed37feb51fc976b9c2fb0f34423..c7823a5ea1f5a31047b5748814c0f044
                          this._createEffectForParticles(particleSystem, blendMode, onCompiled, onError, effect, defines, particleSystemDefinesJoined); // add the effect.onBindObservable observer
                          return;
 diff --git a/Materials/drawWrapper.js b/Materials/drawWrapper.js
-index df96b9251e1cf54537807d5ee4b5ac654020dba9..cb13d9fb2536d4dc4bd595a76ee00970101011d3 100644
+index df96b9251e1cf54537807d5ee4b5ac654020dba9..846b4c8f11aa8cee878e2d9e316de7d5f975e0fc 100644
 --- a/Materials/drawWrapper.js
 +++ b/Materials/drawWrapper.js
 @@ -1,4 +1,39 @@
@@ -366,7 +315,7 @@ index df96b9251e1cf54537807d5ee4b5ac654020dba9..cb13d9fb2536d4dc4bd595a76ee00970
 +function DisposeOnceLinked(effect) {
 +    const engine = effect.getEngine();
 +    const pipeline = effect.getPipelineContext();
-+    const linking = !effect.isDisposed && !engine.isDisposed && !engine.isWebGPU && effect._refCount === 1 &&
++    const linking = !effect.isDisposed && !engine.isDisposed && effect._refCount === 1 &&
 +        pipeline && pipeline.isAsync && pipeline.program && !effect.isReady() &&
 +        !(effect.getCompilationError() && effect.allFallbacksProcessed());
 +    if (!linking) {
@@ -597,23 +546,12 @@ index ba4dae8e545feb1331a9a9ff8bfd3523e040429f..11b3e464408ee6b1e66f0466f1e996f6
      /**
       * Gets associated (main) effect (possibly the effect override if defined)
 diff --git a/Misc/khronosTextureContainer2.js b/Misc/khronosTextureContainer2.js
-index c0900265932b6e5d8a98368cafc75c59b205ff11..9df60d570279e6e4349239b9a191a7896f644e0b 100644
+index c0900265932b6e5d8a98368cafc75c59b205ff11..79c83cbdd2b4d6155b1eeced895b88274b44f311 100644
 --- a/Misc/khronosTextureContainer2.js
 +++ b/Misc/khronosTextureContainer2.js
-@@ -227,7 +227,24 @@ export class KhronosTextureContainer2 {
-      * @internal
+@@ -228,6 +228,13 @@ export class KhronosTextureContainer2 {
       */
      async _uploadAsync(data, internalTexture, options) {
-+        // WebGPU rejects a block-compressed texture whose base size is not whole 4x4 blocks,
-+        // while WebGL2 uploads it. Decode such a Basis Universal KTX2 (vkFormat 0) to RGBA instead.
-+        // Decided from the bytes, so it also holds when a lost device rebuilds the texture.
-+        if (this._engine.isWebGPU && data.byteLength >= 28) {
-+            const header = new DataView(data.buffer, data.byteOffset, data.byteLength);
-+            if (header.getUint32(12, true) === 0 && ((header.getUint32(20, true) | header.getUint32(24, true)) & 3) !== 0) {
-+                options = options ?? {};
-+                options.forceRGBA = true;
-+            }
-+        }
          const decodedData = await this._decodeAsync(data, options);
 +        // A texture disposed while its data decoded has no hardware texture left, so binding it binds
 +        // nothing and the upload fails (WebGL: texImage2D with no texture bound). Skip it, as the
@@ -626,7 +564,7 @@ index c0900265932b6e5d8a98368cafc75c59b205ff11..9df60d570279e6e4349239b9a191a789
      }
      /**
 diff --git a/Misc/rgbdTextureTools.js b/Misc/rgbdTextureTools.js
-index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea4341b20a2f 100644
+index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..4bcf520c8dc6fcec6abb58f8cdd101d5ea0169ff 100644
 --- a/Misc/rgbdTextureTools.js
 +++ b/Misc/rgbdTextureTools.js
 @@ -1,3 +1,4 @@
@@ -634,7 +572,7 @@ index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea43
  
  import { PostProcess } from "../PostProcesses/postProcess.pure.js";
  import { ApplyPostProcess } from "./textureTools.js";
-@@ -11,84 +12,161 @@ export class RGBDTextureTools {
+@@ -11,84 +12,157 @@ export class RGBDTextureTools {
       */
      static ExpandRGBDTexture(texture) {
          const internalTexture = texture._texture;
@@ -735,8 +673,6 @@ index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea43
 +            const previousReadFramebuffer = gl && engine.webGLVersion > 1 ? gl.getParameter(gl.READ_FRAMEBUFFER_BINDING) : null;
 +            const previousGlViewport = gl ? gl.getParameter(gl.VIEWPORT) : null;
 +            const previousFramebufferCache = engine._currentFramebuffer;
-+            const previousAttachment = engine.isWebGPU ? { ...engine._rttRenderPassWrapper.colorAttachmentViewDescriptor } : null;
-+            const previousMrtAttachments = engine.isWebGPU ? engine._mrtAttachments?.slice() ?? [] : null;
 +            const errors = [];
 +            try {
 +                pass.onApply = (boundEffect) => {
@@ -755,12 +691,10 @@ index 4a3beadf2109e61112863c8d5393a91ba2eba2ec..ce977cda0f0faf7cad46c191b3deea43
 +                    engine._currentFramebuffer = previousFramebufferCache;
 +                    engine._currentRenderTarget = previousTarget;
 +                } else if (previousTarget) {
-+                    const baseLayer = previousAttachment?.baseArrayLayer ?? 0;
-+                    engine.bindFramebuffer(previousTarget, previousTarget.isCube ? baseLayer % 6 : 0, undefined, undefined, true,
-+                        previousAttachment?.baseMipLevel ?? 0, previousTarget.isCube ? Math.floor(baseLayer / 6) : baseLayer);
-+                    if (previousTarget.isMulti) engine.bindAttachments(previousMrtAttachments);
++                    // An engine without a GL context (NullEngine) keeps no attachment state to restore.
++                    engine.bindFramebuffer(previousTarget, 0, undefined, undefined, true, 0, 0);
++                    if (previousTarget.isMulti) engine.bindAttachments(null);
 +                } else {
-+                    // Do not start an empty WebGPU swapchain pass during decoding.
 +                    engine.restoreDefaultFramebuffer(true);
 +                }
 +                engine._viewport(previousViewport.x, previousViewport.y, previousViewport.z, previousViewport.w);
@@ -1185,19 +1119,6 @@ index 7b31cf7b7346a75ef2454e19770130d44c4e1fcd..8b56520e694ce9537726ffdc3edda905
 +float rowOffset=floor(cellIndex*particlesInfos.z);float columnOffset=cellIndex-rowOffset/particlesInfos.z;vec2 uvScale=particlesInfos.xy;vec2 uvOffset=vec2(offset.x ,1.0-offset.y);vUV=(uvOffset+vec2(columnOffset,rowOffset))*uvScale;vUV.y=1.0-vUV.y;
  #else
  vUV=offset;
- #endif
-diff --git a/ShadersWGSL/particles.vertex.js b/ShadersWGSL/particles.vertex.js
-index 8e91b98ffc2cbc95a50063dcd2baec0f18f74ef8..691e6ac3080a2f6c10989f0de63a00cb0afb9ae0 100644
---- a/ShadersWGSL/particles.vertex.js
-+++ b/ShadersWGSL/particles.vertex.js
-@@ -123,7 +123,7 @@ vertexOutputs.position=uniforms.projection*uniforms.view* vec4f(vPositionW,1.0);
- #endif
- vertexOutputs.vColor=vertexInputs.color;
- #ifdef ANIMATESHEET
--var rowOffset: f32=floor(vertexInputs.cellIndex*uniforms.particlesInfos.z);var columnOffset: f32=vertexInputs.cellIndex-rowOffset/uniforms.particlesInfos.z;var uvScale: vec2f=uniforms.particlesInfos.xy;var uvOffset: vec2f= vec2f(vertexInputs.offset.x ,1.0-vertexInputs.offset.y);vertexOutputs.vUV=(uvOffset+ vec2f(columnOffset,rowOffset))*uvScale;
-+var rowOffset: f32=floor(vertexInputs.cellIndex*uniforms.particlesInfos.z);var columnOffset: f32=vertexInputs.cellIndex-rowOffset/uniforms.particlesInfos.z;var uvScale: vec2f=uniforms.particlesInfos.xy;var uvOffset: vec2f= vec2f(vertexInputs.offset.x ,1.0-vertexInputs.offset.y);vertexOutputs.vUV=(uvOffset+ vec2f(columnOffset,rowOffset))*uvScale;vertexOutputs.vUV.y=1.0-vertexOutputs.vUV.y;
- #else
- vertexOutputs.vUV=vertexInputs.offset;
  #endif
 diff --git a/assetContainer.js b/assetContainer.js
 index 046984e478022e39c2405a1fa1d86c5326015e25..b516442421c03d91a13171478e349f6f821cf133 100644

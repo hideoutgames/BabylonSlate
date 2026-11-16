@@ -46,7 +46,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { clampWaterQualityToDevice, type WaterQualityDeviceClamp } from "./water-quality-device";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "gpuBackend" | "effects" | "water">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "effects" | "water">
 >;
 type SceneRendering = {
   mode: RenderMode;
@@ -119,7 +119,6 @@ type SceneRendering = {
   screenShadowsSupported: (() => boolean) | null;
   /** The device's MSAA limit (`readMultisampleLimit`). */
   maxSamples: number;
-  webGpu: boolean;
 };
 const scenes = new WeakMap<Scene, SceneRendering>();
 /** Scenes whose project quality resolves through another Scene (SceneLayers follow the world). */
@@ -188,7 +187,6 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       lightingDefines: "pbr|false",
       screenShadowsSupported: null,
       maxSamples: 1,
-      webGpu: false,
       listeners: new Set(),
     };
     scenes.set(scene, state);
@@ -267,7 +265,7 @@ function replanSceneEffects(state: SceneRendering): void {
     screenShadows: state.screenShadowsSupported?.() && state.shadows.enabled ? state.shadows.screenShadows : "off",
     fxaa: worldView(state) && state.antiAliasing === "fxaa",
   };
-  // The scene targets' sample count is baked into the prepared graph (and, on WebGPU, every pipeline drawn into them).
+  // The scene targets' sample count is baked into the prepared graph.
   const samples = multisampleCount(state);
   state.effectsKey = `${sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs)}${samples > 1 ? `:msaa${samples}` : ""}`;
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
@@ -287,15 +285,13 @@ function worldView(state: SceneRendering): boolean {
 /** The device's MSAA limit, read at each settings update and when the Scene becomes a world view's. */
 function readMultisampleLimit(scene: Scene, state: SceneRendering): void {
   state.maxSamples = scene.getEngine().getCaps().maxMSAASamples ?? 1;
-  state.webGpu = scene.getEngine().isWebGPU;
 }
 
 function multisampleCount(state: SceneRendering): number {
   if (!worldView(state)) return 1;
   const requested = antiAliasingSamples(state.antiAliasing);
   if (requested <= 1 || state.maxSamples <= 1) return 1;
-  // WebGPU multisamples at 4 only: MSAA 2x draws at 4 there.
-  return state.webGpu ? 4 : Math.min(requested, state.maxSamples);
+  return Math.min(requested, state.maxSamples);
 }
 
 /**

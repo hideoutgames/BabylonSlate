@@ -600,7 +600,7 @@ describe("ViewportPanel engine", () => {
     try {
       const view = renderViewport();
       await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("Scene Loading Failed"));
-      // A lost WebGPU device: the project Engine controller detaches every client.
+      // The project Engine is gone: its controller detaches every client.
       play.ensureSharedEngine.mockReturnValue(null as unknown as typeof liveEngine);
       play.sharedEngineGeneration = 2;
       view.rerender(

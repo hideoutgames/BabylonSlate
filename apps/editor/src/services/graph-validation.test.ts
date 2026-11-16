@@ -1485,6 +1485,13 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "anim.actor.getVariable")).toBe(true);
   });
 
+  it("offers the Animation Graph component nodes to Scene scripts, which reach placed actors' graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Scene" });
+    expect(nodes.some((node) => node.id === "anim.actor.playSlotAnimation")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.actor.isSlotActive")).toBe(true);
+    expect(nodes.some((node) => node.id === "anim.event.initialize")).toBe(false);
+  });
+
   it("shows Animation Object events and hides rule queries", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Object",

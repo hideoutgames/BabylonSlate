@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { AnimationEditor, AnimationPreview, AnimationPreviewPanel } from "./animation-editor";
@@ -209,5 +210,62 @@ describe("AnimationPreview playback", () => {
     flush(0);
     flush(50);
     expect(position()).toBe("Frame 1/1 · 0/1000 ms");
+  });
+});
+
+describe("AnimationEditor additive", () => {
+  const walk = { clipName: "Walk", modelGuid: "hero", skeletonGuid: "rig", durationMs: 1000 };
+  const written = (onChange: ReturnType<typeof vi.fn>) => onChange.mock.calls.at(-1)![0] as Record<string, unknown>;
+  const choose = (label: string) => {
+    fireEvent.click(screen.getByRole("combobox", { name: "Additive" }));
+    const option = screen.getByRole("option", { name: label });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+  };
+
+  it("makes an Animation additive relative to its first frame, and turns it off again", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<AnimationEditor payload={walk} onChange={onChange} />);
+    choose("Relative To First Frame");
+    expect(written(onChange).additive).toEqual({ base: "firstFrame" });
+    // Its base needs no more rows.
+    expect(screen.queryByTestId("property-additiveAnimation")).toBeNull();
+    rerender(<AnimationEditor payload={{ ...walk, additive: { base: "firstFrame" } }} onChange={onChange} />);
+    choose("None");
+    expect(written(onChange)).not.toHaveProperty("additive");
+  });
+
+  it("names its base Animation and edits the Base Time into it", () => {
+    const onChange = vi.fn();
+    documents.assets = [{ path: "assets/Idle.hasset", header: { guid: "idle", name: "Idle", type: "Animation", payload: { skeletonGuid: "rig" } } }];
+    render(<AnimationEditor payload={{ ...walk, additive: { base: "animation", animationGuid: "idle", timeMs: 0 } }} onChange={onChange} />);
+    expect(screen.getByTestId("property-additiveAnimation").textContent).toContain("Idle");
+    fireEvent.change(screen.getByTestId("property-additiveTimeMs"), { target: { value: "250" } });
+    expect(written(onChange).additive).toEqual({ base: "animation", animationGuid: "idle", timeMs: 250 });
+  });
+});
+
+describe("AnimationEditor root motion", () => {
+  const fall = { clipName: "Death_A", modelGuid: "general", skeletonGuid: "rig", durationMs: 800 };
+
+  it("samples the first bone that travels from the Animation's Model file, shows how far it moves, and turns it off", async () => {
+    const onChange = vi.fn();
+    documents.assets = [
+      { path: "assets/General.model.hasset", header: { guid: "general", name: "General", type: "Model", payload: {} } },
+      { path: "assets/Rig.skeleton.hasset", header: { guid: "rig", name: "Rig", type: "Skeleton", payload: { bones: [{ name: "root", parent: -1 }, { name: "hips", parent: 0 }] } } },
+    ];
+    const glb = new Uint8Array(readFileSync("engine-content/kaykit-assets/Adventurers/Rig_Medium_General.glb"));
+    documents.readAssetChunk.mockResolvedValue(glb);
+    const { rerender } = render(<AnimationEditor payload={fall} onChange={onChange} />);
+    fireEvent.click(within(screen.getByTestId("property-row-rootMotion")).getByRole("checkbox").parentElement!.querySelector("input")!);
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(documents.readAssetChunk).toHaveBeenCalledWith("assets/General.model.hasset", "source");
+    const written = onChange.mock.calls.at(-1)![0] as { rootMotion: { bone: string; track: { z: number[] } } };
+    // The root bone does not move in Death_A; the hips fall back.
+    expect(written.rootMotion.bone).toBe("hips");
+    rerender(<AnimationEditor payload={{ ...fall, rootMotion: written.rootMotion }} onChange={onChange} />);
+    expect(screen.getByTestId("property-row-rootMotionBone").textContent).toContain("Moves 0.45 m and turns 0° each pass");
+    fireEvent.click(within(screen.getByTestId("property-row-rootMotion")).getByRole("checkbox").parentElement!.querySelector("input")!);
+    await waitFor(() => expect(onChange.mock.calls.at(-1)![0]).not.toHaveProperty("rootMotion"));
   });
 });

@@ -251,8 +251,8 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     playMode: true,
     // The editor page loads the mesh decoders' and KTX2 transcoder's wasm in workers: Play keeps them there.
     workerDecoders: true,
-    // While the view holds for WebGPU render pipelines the game waits, as for a blocking load.
-    onPipelineHold: (held) => {
+    // While the view holds its image for shaders that are still compiling the game waits, as for a blocking load.
+    onCompileHold: (held) => {
       if (stopped || (!worker && !runtime)) return;
       void setPauseReason("rendering", held).catch((error: unknown) => options.onLog?.(String(error), "error"));
     },
@@ -795,7 +795,6 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       return { sessionId: diagnosticSessionId, mode: options.mode ?? "play", sourceSha: build?.sourceSha ?? null,
         buildId: build ? `${build.packageVersion}:${build.runNumber}.${build.runAttempt}` : null,
         sceneId: sceneLoads.currentSceneGuid() ?? options.sceneAssetGuid ?? "play-scene",
-        backend: handle.engine.isWebGPU ? "webgpu" : "webgl2",
         runtimeHost: runtimeMode, quality: JSON.stringify(render ?? {}), frameCap: Number.isFinite(frameCap) ? frameCap : null,
         dynamicResolution: render?.quality?.resolution?.dynamic === true,
         enabledDiagnostics: ["performance"], gpuTiming: "unavailable" };

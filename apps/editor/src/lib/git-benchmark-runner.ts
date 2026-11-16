@@ -2,12 +2,13 @@ import { parseRepositoryUrl } from "@haptic/source-control";
 import { runGitBenchmark, type GitBenchmarkResult } from "@haptic/source-control/git-benchmark";
 import { createNativeHttp, createStorage } from "@haptic/vfs";
 import { sourceControlAccounts } from "../services/source-control-accounts";
+import { GIT_BENCHMARK_DEFAULT_BLOB_MIB, GIT_BENCHMARK_DEFAULT_BLOBS } from "./git-benchmark-hook";
 
 export interface EditorGitBenchmarkOptions {
   /** A repository the signed-in account may push to; the benchmark pushes a new branch only. */
   repositoryUrl: string;
   branch?: string;
-  /** LFS objects and their size (default 3 of 32 MiB). */
+  /** LFS objects and their size (default `GIT_BENCHMARK_DEFAULT_BLOBS` of `GIT_BENCHMARK_DEFAULT_BLOB_MIB`). */
   blobs?: number;
   blobMiB?: number;
   depth?: number;
@@ -37,9 +38,10 @@ export async function runGitBenchmarkInEditor(options: EditorGitBenchmarkOptions
       branch: options.branch ?? "main",
       remoteBranch: `haptic-benchmark-${stamp}`,
       author: { name: "Haptic Benchmark", email: "benchmark@haptic.invalid" },
-      ...(options.blobs !== undefined || options.blobMiB !== undefined
-        ? { blobs: { count: options.blobs ?? 3, size: Math.round((options.blobMiB ?? 32) * 1024 * 1024) } }
-        : {}),
+      blobs: {
+        count: options.blobs ?? GIT_BENCHMARK_DEFAULT_BLOBS,
+        size: Math.round((options.blobMiB ?? GIT_BENCHMARK_DEFAULT_BLOB_MIB) * 1024 * 1024),
+      },
       ...(options.depth !== undefined ? { depth: options.depth } : {}),
     });
     console.info(`Git benchmark\n${JSON.stringify(result, null, 2)}`);

@@ -261,6 +261,13 @@ function flattenStructFieldRows(
   return rows;
 }
 
+/** Asset types that stand in for a pin's asset type: a Render Target Texture for a Texture, a Sprite Animation for an Animation (2D graphs play them). */
+const ASSET_PIN_STAND_INS: Readonly<Record<string, readonly string[]>> = {
+  Texture: ["RenderTargetTexture"],
+  Material: ["MaterialInstance"],
+  Animation: ["SpriteAnimation"],
+};
+
 /**
  * Content Browser types an asset pin's picker offers: the pin's asset type
  * plus the types that stand in for it. The empty asset type accepts any
@@ -269,7 +276,7 @@ function flattenStructFieldRows(
 export function assetPickerAllowedTypes(pinAssetType: string): string[] {
   const type = pinAssetType.trim();
   if (!type) return [];
-  return type === "Texture" ? [type, "RenderTargetTexture"] : type === "Material" ? [type, "MaterialInstance"] : [type];
+  return [type, ...(ASSET_PIN_STAND_INS[type] ?? [])];
 }
 
 /** Asset Variable Default picker kinds: the pre-cast Asset Type, or the catalog list. */

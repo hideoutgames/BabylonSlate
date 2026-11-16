@@ -16,18 +16,21 @@ import {
   DOCUMENT_CHUNK_ID,
   encodePackedAudioAsset,
   encodePackedModelAsset,
+  withSkeletonSockets,
   FONT_FACETYPE_CHUNK_ID,
   FONT_MSDF_CHUNK_ID,
   FONT_MSDF_PNG_CHUNK_ID,
   isKtx2BlockAligned,
   normalizeAudioPayload,
   normalizeModelPayload,
+  normalizeSkeletonPayload,
   PARTICLE_ASSET_TYPES,
   selectTextureChunk,
   shouldCompressTexture,
   textureEncodeBlockAlign,
   type HassetHeader,
   type IndexedAsset,
+  type SkeletonSocket,
 } from "@haptic/assets";
 import { NAVMESH_CHUNK_ID } from "@haptic/navigation/chunk";
 import { AudioReverbBakeUnsavedError } from "../lib/audio-reverb-bake";
@@ -232,6 +235,8 @@ async function bytesForAsset(
   document: unknown,
   snapshot: ExportDocumentSnapshot | null,
   readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
+  /** A Model's Skeleton's sockets, which the packed Model carries for the renderer. */
+  skeletonSockets: (skeletonGuid: string | null) => Promise<SkeletonSocket[] | undefined>,
 ): Promise<Uint8Array | null> {
   // A Timeline Clip asset ships its keys, events and proxies; its Editor Preview never leaves the editor.
   if (isTimelineClipAssetType(asset.header.type) && document) {
@@ -255,10 +260,8 @@ async function bytesForAsset(
   if (asset.header.type === "Model" && snapshot) {
     const source = snapshot.chunks.get("source");
     if (!source || source.byteLength === 0) return null;
-    return encodePackedModelAsset(
-      normalizeModelPayload(document ?? snapshot.header.payload),
-      source,
-    );
+    const model = normalizeModelPayload(document ?? snapshot.header.payload);
+    return encodePackedModelAsset(withSkeletonSockets(model, await skeletonSockets(model.skeletonGuid)), source);
   }
   if (asset.header.type === "Font" && snapshot) {
     const source = fontSourceChunkId(snapshot.header);
@@ -297,6 +300,21 @@ export async function loadExportDocuments(
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
   const audioReverbErrors = new Map<string, unknown>();
+  // Each Skeleton read once, for the Models on it.
+  const socketsBySkeleton = new Map<string, Promise<SkeletonSocket[] | undefined>>();
+  const skeletonSockets = (skeletonGuid: string | null) => {
+    if (!skeletonGuid) return Promise.resolve(undefined);
+    let sockets = socketsBySkeleton.get(skeletonGuid);
+    if (!sockets) {
+      const skeleton = loaders.assets.find((entry) => entry.header.guid === skeletonGuid && entry.header.type === "Skeleton");
+      const kind = skeleton ? documentKindForAssetType("Skeleton") : null;
+      sockets = skeleton && kind
+        ? loaders.loadDocument(kind, skeleton.path).then((payload) => normalizeSkeletonPayload(payload).sockets)
+        : Promise.resolve(undefined);
+      socketsBySkeleton.set(skeletonGuid, sockets);
+    }
+    return sockets;
+  };
   for (const asset of loaders.assets) {
     // Payloads are packed without migration. An unsupported format fails the
     // export once the game reaches the asset; an unreached one does not.
@@ -352,7 +370,7 @@ export async function loadExportDocuments(
       try {
         const payload = asset.header.type === "Texture"
           ? textureBytes
-          : await bytesForAsset(asset, document, snapshot, loaders.readAssetChunk);
+          : await bytesForAsset(asset, document, snapshot, loaders.readAssetChunk, skeletonSockets);
         if (payload) bytes.set(asset.header.guid, payload);
       } catch (error) {
         byteErrors.set(asset.header.guid, error);

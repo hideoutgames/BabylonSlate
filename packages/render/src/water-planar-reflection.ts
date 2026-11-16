@@ -35,6 +35,8 @@
  * geometry writes 1, so a shader can keep its sky/environment reflection where no geometry was reflected.
  */
 import { Camera } from "@babylonjs/core/Cameras/camera";
+import { reflectionDrewWhole } from "./reflection-pass-readiness";
+import { sceneReadinessRevision } from "./scene-readiness-signal";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
@@ -67,17 +69,15 @@ import { enterDrawPass, leaveDrawPass } from "./draw-passes";
 export interface WaterPlanarReflection {
   /**
    * The reflected opaque scene, CLAMP and bilinear: RGBA16F linear colour for Scene Linear views, otherwise 8-bit
-   * display-encoded colour (`gammaSpace`; stored BGRA on a bgra8unorm WebGPU swap chain, sampled as RGBA). Alpha
-   * is coverage (0 where nothing was reflected).
+   * display-encoded colour (`gammaSpace`). Alpha is coverage (0 where nothing was reflected).
    */
   readonly texture: ThinTexture;
   /**
    * Mirrored camera view × oblique projection, taking positions relative to the origin the water shader uses
    * (`slateWaterOrigin`: the view camera's position under floating origin, otherwise the world origin). A water
    * fragment at that relative position projects to clip position c, and the texel holding what it reflects is at
-   * uv = 0.5 + 0.5·c.xy/c.w on both backends (GLSL and WGSL alike: Babylon's WebGPU engine flips render-target rows
-   * to WebGL's layout). Clip depth follows the engine's NDC depth range and reverse depth; the water plane is the
-   * near plane.
+   * uv = 0.5 + 0.5·c.xy/c.w. Clip depth spans −1 to 1 and follows the engine's reverse depth; the water plane is
+   * the near plane.
    */
   readonly viewProjection: Matrix;
   /** World height of the reflecting rest plane. */
@@ -234,6 +234,7 @@ class WaterPlanarReflections {
     // The first draw waits for every reflected material; later draws skip any mesh that is not ready, and stay dirty
     // until a draw has drawn every one.
     let complete = false;
+    const revision = sceneReadinessRevision(this.scene);
     if (!target.ready) complete = target.ready = target.texture.isReadyForRendering();
     if (!target.ready) return;
     const engine = this.scene.getEngine();
@@ -244,7 +245,7 @@ class WaterPlanarReflections {
       leaveDrawPass(engine);
     }
     this.drew = true;
-    target.dirty = !(complete || target.texture.isReadyForRendering());
+    target.dirty = !reflectionDrewWhole(target.texture, revision, complete);
   };
   // Scratch, reused every frame.
   private readonly projection = new Matrix();
@@ -491,7 +492,7 @@ class WaterPlanarReflections {
     const engine = this.scene.getEngine();
     this.plane.d = -planeY;
     if (!this.math.mirror(camera.getViewMatrix(), camera.globalPosition, this.plane, this.projection,
-      engine.useReverseDepthBuffer, engine.isNDCHalfZRange, target.mirror.mirrorView, target.projection)) return false;
+      engine.useReverseDepthBuffer, target.mirror.mirrorView, target.projection)) return false;
     const eye = this.math.eye;
     const mirror = target.mirror;
     mirror.position.set(eye[0]!, eye[1]!, eye[2]!);

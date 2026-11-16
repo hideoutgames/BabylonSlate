@@ -14,7 +14,7 @@ import {
 
 /**
  * Shore and contact foam, for the Water Foam node and the Water Waves node's edge turbulence (`prefix` names the functions and the
- * caller's `<prefix>Hash` and `<prefix>Noise`), GLSL-shaped for `toWgsl`.
+ * caller's `<prefix>Hash` and `<prefix>Noise`).
  *
  * `<prefix>EdgeFoamCover(p, amount, crest, foot)` is foam as the open sea draws it, only denser: `crest` is how far the
  * body's turbulence lies past its Crest Foam threshold (the whitecaps are where it is positive), and `amount` (0 none,
@@ -192,14 +192,11 @@ export function planarLookupSource(position: string, eye: string, ray: string, o
 export const ifFft = (code: string, cascades: number) => `\n#if ${WATER_FFT_DEFINE} >= ${cascades}${code}\n#endif`;
 
 /**
- * The spectrum's tap at an explicit level, per language, for either stage: `swFftTapLod`, legal in any control flow and
- * in the vertex stage. The caller declares the sampler (one WebGL2 texture unit, one WebGPU binding visible to both
- * stages).
+ * The spectrum's tap at an explicit level, for either stage: `swFftTapLod`, legal in any control flow and in the vertex
+ * stage. The caller declares the sampler (one texture unit, shared by both stages).
  */
-export function fftHelpers(wgsl: boolean): string {
-  return wgsl ? `
-fn swFftTapLod(uv: vec2f, layer: f32, lod: f32) -> vec4f { return textureSampleLevel(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer), lod); }
-` : `
+export function fftHelpers(): string {
+  return `
 vec4 swFftTapLod(vec2 uv, float layer, float lod) { return textureLod(${WATER_FFT_SAMPLER}, vec3(uv, layer), lod); }
 `;
 }
@@ -223,7 +220,7 @@ export function fftTurnTensor(c: number, j: string): string {
 }
 
 /**
- * The screen-space march (`SLATE_WATER_SSR`), per language (loops do not pass `toWgsl`). The reflected ray runs from
+ * The screen-space march (`SLATE_WATER_SSR`). The reflected ray runs from
  * the eye-relative surface point until the march distance (`slateWaterScreen.w`), the screen edge or just short of
  * the eye; samples are evenly spaced on screen along it, with depth interpolated perspective-correctly (also exact for
  * orthographic views): one per copy texel the ray crosses, at most `SLATE_WATER_SSR_STEPS` (a far ray converging on the
@@ -246,81 +243,9 @@ export function fftTurnTensor(c: number, j: string): string {
  * meeting the water reflects no stair-stepped edge of the copy's texels along its waterline. Returns linear colour and
  * coverage.
  */
-export function marchSource(wgsl: boolean): string {
+export function marchSource(): string {
   const steps = SSR_STEPS, refine = SSR_REFINE_STEPS, base = f(SSR_THICKNESS[0]), slope = f(SSR_THICKNESS[1]);
-  return wgsl ? `
-fn swMarchAt(swC0w: f32, swC1w: f32, swU: f32) -> f32 { return swU * swC0w / max(swU * swC0w + (1.0 - swU) * swC1w, 0.000001); }
-fn swMarch(swOrigin: vec3f, swRay: vec3f) -> vec4f {
-  let swC0 = scene.viewProjection * vec4f(swOrigin, 1.0);
-  let swDir = scene.viewProjection * vec4f(swRay, 0.0);
-  let swLength = min(uniforms.slateWaterScreen.w, 0.9 * swC0.w / max(-swDir.w, 0.00001));
-  let swC1 = swC0 + swDir * swLength;
-  let swN0 = swC0.xy / swC0.w;
-  let swN1 = swC1.xy / swC1.w;
-  let swSpan = swN1 - swN0;
-  let swSide = mix(vec2f(-1.0), vec2f(1.0), step(vec2f(0.0), swSpan));
-  let swExit = (swSide - swN0) / (max(abs(swSpan), vec2f(0.00001)) * swSide);
-  let swEnd = clamp(min(swExit.x, swExit.y), 0.0, 1.0);
-  let swZ0 = (scene.view * vec4f(swOrigin, 1.0)).z;
-  let swForward = sign(swZ0);
-  let swD0 = swZ0 * swForward;
-  let swD1 = (scene.view * vec4f(swOrigin + swRay * swLength, 1.0)).z * swForward;
-  var swPrevU: f32 = 0.0;
-  var swPrevZ: f32 = swD0;
-  var swPrevScene: f32 = 65000.0;
-  var swA: f32 = 0.0;
-  var swB: f32 = -1.0;
-  var swDA: f32 = -1.0;
-  var swDB: f32 = 0.0;
-  let swSteps = clamp(ceil(length((swN1 - swN0) * swEnd * 0.5 / swSceneTexelUv())), 1.0, f32(${steps}));
-  for (var swI: i32 = 1; swI <= ${steps}; swI++) {
-    if (f32(swI) > swSteps) { break; }
-    let swU = swEnd * f32(swI) / swSteps;
-    let swRayZ = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swU));
-    let swSceneZ = swSceneDepth(mix(swN0, swN1, swU) * 0.5 + 0.5);
-    let swThick = ${base} + ${slope} * swRayZ;
-    if (swRayZ > swSceneZ) {
-      if (swSceneZ > swPrevZ - swThick) { swA = swPrevU; swB = swU; swDA = swPrevZ - swPrevScene; swDB = swRayZ - swSceneZ; break; }
-    } else if (swRayZ > swPrevScene && swPrevZ <= swPrevScene) {
-      let swProbeU = swMarchAt(swC1.w, swC0.w, clamp((swPrevScene - swD0) / max(swD1 - swD0, 0.000001), 0.0, 1.0));
-      let swProbeD = swPrevScene - swSceneDepth(mix(swN0, swN1, swProbeU) * 0.5 + 0.5);
-      if (abs(swProbeD) < swThick) { swA = swPrevU; swB = swProbeU; swDA = swPrevZ - swPrevScene; swDB = swProbeD; break; }
-    }
-    swPrevU = swU;
-    swPrevZ = swRayZ;
-    swPrevScene = swSceneZ;
-  }
-  if (swB < 0.0) { return vec4f(0.0); }
-  for (var swJ: i32 = 0; swJ < ${refine}; swJ++) {
-    let swM = 0.5 * (swA + swB);
-    let swMidD = mix(swD0, swD1, swMarchAt(swC0.w, swC1.w, swM)) - swSceneDepth(mix(swN0, swN1, swM) * 0.5 + 0.5);
-    if (swMidD > 0.0) { swB = swM; swDB = swMidD; } else { swA = swM; swDA = swMidD; }
-  }
-  let swCross = mix(swA, swB, clamp(swDA / min(swDA - swDB, -0.000001), 0.0, 1.0));
-  let swUv = mix(swN0, swN1, swCross) * 0.5 + 0.5;
-  let swS = swMarchAt(swC0.w, swC1.w, swCross);
-  let swRayZ = mix(swD0, swD1, swS);
-  let swThickHit = ${base} + ${slope} * swRayZ;
-  var swHit: vec4f = swSceneTexel(swUv);
-  let swTexel = swSceneTexelUv();
-  if (swTexel.x > uniforms.slateWaterScreen.x * 1.01) {
-    let swFar = swHit.a + swThickHit;
-    let swAway = vec2f(
-      step(swFar, swSceneDepth(swUv - vec2f(swTexel.x, 0.0))) - step(swFar, swSceneDepth(swUv + vec2f(swTexel.x, 0.0))),
-      step(swFar, swSceneDepth(swUv - vec2f(0.0, swTexel.y))) - step(swFar, swSceneDepth(swUv + vec2f(0.0, swTexel.y))));
-    if (dot(swAway, swAway) > 0.0) {
-      let swInner = swSceneTexel(swUv + swAway * swTexel);
-      if (abs(swInner.a - swHit.a) < swThickHit) { swHit = vec4f(swInner.rgb, swHit.a); }
-    }
-  }
-  let swEye = scene.vEyePosition.xyz;
-  let swPoint = swOrigin + swRay * (swLength * swS);
-  let swSceneY = swEye.y + (swPoint.y - swEye.y) * swHit.a / max(swRayZ, 0.000001);
-  let swEdge = min(swUv, vec2f(1.0) - swUv);
-  let swFade = smoothstep(0.0, 0.06, min(swEdge.x, swEdge.y)) * (1.0 - smoothstep(0.7, 1.0, swS)) * smoothstep(swOrigin.y - 0.05, swOrigin.y + 0.25, swSceneY)
-    * (1.0 - smoothstep(swThickHit * 0.5, swThickHit, abs(swRayZ - swHit.a)));
-  return vec4f(swHit.rgb, swFade);
-}` : `
+  return `
 float swMarchAt(float swC0w, float swC1w, float swU) { return swU * swC0w / max(swU * swC0w + (1.0 - swU) * swC1w, 0.000001); }
 vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   vec4 swC0 = viewProjection * vec4(swOrigin, 1.0);
@@ -410,13 +335,9 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
  * aliasing). Only called from the shader's top level (uniform control flow), as implicit derivatives require. The caller
  * declares the samplers.
  */
-export function spectrumHelpers(wgsl: boolean): string {
+export function spectrumHelpers(): string {
   // `swSpecTapGrad` reads with the uv's own screen gradients, the same filtering as `swSpecTap`, inside a branch.
-  return wgsl ? `
-fn swSpecTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer)); }
-fn swSpecTapGrad(uv: vec2f, layer: f32, dx: vec2f, dy: vec2f) -> vec4f { return textureSampleGrad(${WATER_FFT_SAMPLER}, ${WATER_FFT_SAMPLER}Sampler, uv, i32(layer), dx, dy); }
-fn swFoamTap(uv: vec2f, layer: f32) -> vec4f { return textureSample(${WATER_FOAM_SAMPLER}, ${WATER_FOAM_SAMPLER}Sampler, uv, i32(layer)); }
-` : `
+  return `
 vec4 swSpecTap(vec2 uv, float layer) { return texture(${WATER_FFT_SAMPLER}, vec3(uv, layer)); }
 vec4 swSpecTapGrad(vec2 uv, float layer, vec2 dx, vec2 dy) { return textureGrad(${WATER_FFT_SAMPLER}, vec3(uv, layer), dx, dy); }
 vec4 swFoamTap(vec2 uv, float layer) { return texture(${WATER_FOAM_SAMPLER}, vec3(uv, layer)); }

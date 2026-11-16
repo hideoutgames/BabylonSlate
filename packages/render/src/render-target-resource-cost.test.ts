@@ -31,7 +31,7 @@ function targetFor(
   const target = engine.createRenderTargetTexture(size, {
     generateDepthBuffer: false,
   });
-  // NullEngine omits the allocated format; the WebGL/WebGPU allocators set RGBA.
+  // NullEngine omits the allocated format; the WebGL allocator sets RGBA.
   target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
   return target;
 }
@@ -285,40 +285,6 @@ describe("managed render-target storage", () => {
     target.dispose();
     depthTarget.dispose();
     lease.release();
-  });
-
-  it("reserves lazy WebGPU depth MSAA and observes allocated mips without creating attachments", () => {
-    const engine = engineWithLimit(1000);
-    const target = targetFor(engine, { width: 4, height: 2 });
-    const depthTarget = targetFor(engine, { width: 4, height: 2 });
-    const depth = depthTarget.texture!;
-    depth.format = Constants.TEXTUREFORMAT_DEPTH32_FLOAT;
-    depth.incrementReferences();
-    target.setDepthStencilTexture(depth);
-    Object.defineProperty(engine, "isWebGPU", {
-      value: true,
-      configurable: true,
-    });
-    target._samples = 4;
-    Object.defineProperty(
-      target.texture!._hardwareTexture!,
-      "underlyingResource",
-      { value: { mipLevelCount: 3 } },
-    );
-    Object.defineProperty(depth._hardwareTexture!, "getMSAATexture", {
-      value: () => {
-        throw new Error("Accounting must not allocate.");
-      },
-    });
-    const resources = managedRenderTargetResources(target, {
-      colorCategory: "sceneColor",
-    });
-    expect(resources).toEqual([
-      { handle: target.texture, bytes: 172, category: "sceneColor" },
-      { handle: depth, bytes: 160, category: "depth" },
-    ]);
-    target.dispose();
-    depthTarget.dispose();
   });
 
   it("charges explicitly allocated mips even with generation disabled and keeps restoration siblings reserved", () => {

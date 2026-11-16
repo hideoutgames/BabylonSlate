@@ -13,16 +13,28 @@ import { readEngineDrawCalls, type DrawCallEngine } from "./draw-calls";
  * - `outlines`: `Shared outlines`
  * - `post`: post-process stages and a chain's output copy
  * - `layers`: Scene Layers composited over the world
- * - `other`: the rest (clears, a view's own output copy without a chain, editor overlays)
+ * - `cull`: the `Forward cull` task, with the view's occlusion filter that runs in it
+ * - `readiness`: the frame's readiness work around the graph's draw (membership sync, shadow admission, strict probes)
+ * - `particles`: CPU particle animation (each system's `animate`, which Babylon runs inside `Scene.render`)
+ * - `observers`: the Scene's before-render stage (camera updates and the `onBeforeRenderObservable` observers) outside
+ *   the owner passes they open (Mirror update checks, capture eligibility, glyph atlas uploads)
+ * - `other`: the rest (clears, a view's own output copy without a chain, editor overlays, animations, world matrices,
+ *   the frame graph's own overhead)
+ *
+ * `cull`, `readiness`, `particles` and `observers` exist for the time split (`drawPassMs`); they normally draw nothing.
  */
 export const DRAW_PASSES = [
-  "objects", "geometry", "shadows", "captures", "mirrors", "probes", "water", "outlines", "post", "layers", "other",
+  "objects", "geometry", "shadows", "captures", "mirrors", "probes", "water", "outlines", "post", "layers",
+  "cull", "readiness", "particles", "observers", "other",
 ] as const;
 export type DrawPass = (typeof DRAW_PASSES)[number];
 export type DrawPassCounts = Record<DrawPass, number>;
 
 export function emptyDrawPasses(): DrawPassCounts {
-  return { objects: 0, geometry: 0, shadows: 0, captures: 0, mirrors: 0, probes: 0, water: 0, outlines: 0, post: 0, layers: 0, other: 0 };
+  return {
+    objects: 0, geometry: 0, shadows: 0, captures: 0, mirrors: 0, probes: 0, water: 0, outlines: 0, post: 0, layers: 0,
+    cull: 0, readiness: 0, particles: 0, observers: 0, other: 0,
+  };
 }
 
 /** Nesting deeper than this counts to the deepest pass tracked. */

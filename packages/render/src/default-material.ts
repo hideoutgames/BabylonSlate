@@ -82,7 +82,7 @@ export function engineDefaultMaterialDocument(): MaterialDocument {
   node("sum", "vector.dot");
   wire("cell", "out", "sum", "a");
   wire("inPlane", "out", "sum", "b");
-  // fract(sum / 2) is 0 on even cells and 0.5 on odd ones, below zero too, in GLSL and WGSL alike.
+  // fract(sum / 2) is 0 on even cells and 0.5 on odd ones, below zero too.
   node("half", "math.multiply", { [materialPinDefaultPropertyKey("b")]: pin(0.5) });
   wire("sum", "out", "half", "a");
   node("fraction", "math.fract");

@@ -1,6 +1,6 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import type { GameSessionState } from "../apps/editor/src/services/game-session-owner";
-import type { EngineSceneDiagnostics } from "../apps/editor/src/testing/webgpu-previews-proof";
+import type { EngineSceneDiagnostics } from "../apps/editor/src/testing/viewport-proof";
 import { MAIN_SCENE_FILE, type SerializedScene } from "../packages/core/src/index";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, openTestProject } from "./open-test-project";
@@ -297,7 +297,7 @@ test("Simulation releases native scene owners across 20 sequential pause/edit/st
   const nativeCounts = () => page.evaluate(async () => {
     const diagnostics = await (globalThis as TestHost).__hapticViewportTest.engineSceneDiagnostics();
     if (!diagnostics) return null;
-    return { backend: diagnostics.backend, scenes: diagnostics.scenes.length,
+    return { scenes: diagnostics.scenes.length,
       meshes: diagnostics.scenes.reduce((sum, scene) => sum + scene.meshCount, 0),
       cameras: diagnostics.scenes.reduce((sum, scene) => sum + scene.cameras.length, 0),
       shadows: diagnostics.scenes.reduce((sum, scene) => sum + scene.shadowGeneratorCount, 0) };

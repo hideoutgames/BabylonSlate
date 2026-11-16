@@ -8,7 +8,7 @@ import type {
 
 const FRAME_REPORT_FILE_KIND = "haptic-frame";
 const STAGE_KINDS = new Set<string>(["frameGraph", "task", "overlay", "composition", "auxiliary"]);
-const BACKENDS = new Set<string>(["webgpu", "webgl2", "webgl1", "unknown"]);
+const BACKENDS = new Set<string>(["webgl2", "webgl1", "unknown"]);
 
 type Fields = Record<string, unknown>;
 const isRecord = (value: unknown): value is Fields => typeof value === "object" && value !== null && !Array.isArray(value);

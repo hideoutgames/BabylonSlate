@@ -60,11 +60,7 @@ it("draws again when ended, with every program's cached uniform values forgotten
   expect(stubWebGlDraws(engine, false)).toBe(false);
 });
 
-it("stubs nothing on WebGPU or on an Engine without a context", () => {
-  const webgpu = host();
-  Object.defineProperty(webgpu.engine, "isWebGPU", { value: true });
-  expect(stubWebGlDraws(webgpu.engine, true)).toBe(false);
-  expect(webgpu.made()).toEqual([...EVERY_CALL]);
+it("stubs nothing on an Engine without a context", () => {
   const headless = new NullEngine();
   engines.push(headless);
   expect(stubWebGlDraws(headless, true)).toBe(false);

@@ -20,7 +20,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
 import {
-  compileMaterialPlan, createAppWebGpuEngine, disposeMeshLatticeDeformer,
+  compileMaterialPlan, disposeMeshLatticeDeformer,
   setMeshLatticeDeformer, SharedOutlineOwner, SceneDeformerHost,
 } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
@@ -98,12 +98,11 @@ function transformReference(mesh: Mesh, inputShift: number, strength: number) {
   mesh.refreshBoundingInfo();
 }
 
-export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
+export async function runLatticeDeformerProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH; canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine); scene.clearColor = new Color4(0, 0, 0, 1);
   const camera = new FreeCamera("Lattice Camera", new Vector3(0, 0, -8), scene);
@@ -319,8 +318,7 @@ export async function runLatticeDeformerProof(backend: "webgl2" | "webgpu") {
 
     const geometryUnchanged = sourcePositions.every((value, i) => native.getVerticesData(VertexBuffer.PositionKind)![i] === value);
     for (const mesh of meshes) disposeMeshLatticeDeformer(mesh);
-    return { requestedBackend: backend, effectiveBackend: engine.isWebGPU ? "webgpu" : (engine as Engine).webGLVersion === 2 ? "webgl2" : "webgl1",
-      adapter: engine.getInfo(), cases, geometryUnchanged, reservationsAfterRelease: managedRenderReservations(engine) };
+    return { adapter: engine.getInfo(), cases, geometryUnchanged, reservationsAfterRelease: managedRenderReservations(engine) };
   } finally {
     detach(); await renderer.retire(); view.dispose();
     for (const mesh of meshes) disposeMeshLatticeDeformer(mesh);

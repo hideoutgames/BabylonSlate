@@ -1,12 +1,12 @@
 import type { MaterialDefines } from "@babylonjs/core/Materials/materialDefines";
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
-import type { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseOverlayVisualStyle, type OverlayVisualStyle } from "@haptic/core";
+import { noteRenderChange } from "./render-change-journal";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 type VisualStyleBinding = { style: OverlayVisualStyle; meshes: AbstractMesh[] };
@@ -39,6 +39,7 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
     for (const mesh of binding.meshes) {
       bindings.set(mesh, binding);
       enableOverlayVisualMaterial(mesh);
+      noteRenderChange(mesh);
     }
     root.onDisposeObservable.addOnce(() => {
       roots.delete(root);
@@ -52,6 +53,8 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
   if (style.opacity === held.opacity && style.tint[0] === held.tint[0] && style.tint[1] === held.tint[1] && style.tint[2] === held.tint[2] &&
     style.tint[3] === held.tint[3]) return;
   binding.style = style;
+  // Each of its meshes draws the new style: the render change journal hears of each.
+  for (const mesh of binding.meshes) noteRenderChange(mesh);
   // Only this component's own meshes blend differently now.
   if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene(), "layerStyle", binding.meshes);
 }
@@ -90,10 +93,8 @@ class OverlayVisualStylePlugin extends MaterialPluginBase {
       fragment: this._material.getScene().getEngine().supportsUniformBuffers ? undefined : "uniform vec4 slateOverlayTint;",
     };
   }
-  override getCustomCode(type: string, language?: ShaderLanguage) {
+  override getCustomCode(type: string) {
     if (type !== "fragment") return null;
-    const tint = `${language === 1 ? "uniforms." : ""}slateOverlayTint`;
-    const premultiply = language === 1 ? `color = vec4f(color.rgb * ${tint}.a, color.a);` : `color.rgb *= ${tint}.a;`;
-    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: `\n#ifdef SLATE_OVERLAY_STYLE\ncolor *= ${tint};\n#ifdef PREMULTIPLYALPHA\n${premultiply}\n#endif\n#endif\n` };
+    return { CUSTOM_FRAGMENT_BEFORE_FRAGCOLOR: "\n#ifdef SLATE_OVERLAY_STYLE\ncolor *= slateOverlayTint;\n#ifdef PREMULTIPLYALPHA\ncolor.rgb *= slateOverlayTint.a;\n#endif\n#endif\n" };
   }
 }

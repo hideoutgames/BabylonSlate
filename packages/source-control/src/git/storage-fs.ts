@@ -1,6 +1,6 @@
 import { isStorageNotFound, type FileStat, type ProjectStorage } from "@haptic/core";
 import { lfsObjectId, lfsPointerText, parseLfsPointer } from "../lfs-pointer";
-import { SyncError } from "../sync-port";
+import { SyncError, throwIfCancelled } from "../sync-port";
 
 /** The working tree root isomorphic-git is given; its paths map to project storage paths below it. */
 export const WORKTREE = "/";
@@ -52,6 +52,15 @@ function workingLfsObject(path: string): string | null {
   return isGitPath(path) ? null : lfsObjectId(path);
 }
 
+/** Repository state a fetch writes besides objects: the shallow list and refs. */
+function isGitMetadata(path: string): boolean {
+  return isGitPath(path) && !path.startsWith(".git/objects/");
+}
+
+function parentOf(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+}
+
 function statsOf(stat: FileStat): StorageStats {
   const isDir = stat.isDir;
   // A file without an mtime can never match the index, so its content decides.
@@ -81,13 +90,20 @@ function statsOf(stat: FileStat): StorageStats {
  *   and the stat size, so the object's bytes are never read or Git-hashed;
  * - writing a pointer to a `.blobs` path leaves the object's file in place
  *   (callers download missing objects first), so the index records the real
- *   file's stats against the pointer's id, as git-lfs leaves it.
+ *   file's stats against the pointer's id, as git-lfs leaves it;
+ * - removing a `.blobs` file keeps it: it may be the object's only copy (a
+ *   commit not pushed yet), so a checkout of a tree without it only drops its
+ *   index entry and leaves it untracked.
  * A directory listing answers the following stats of its entries, so a status
  * costs one storage call per directory. Use one instance per operation: the
- * listing cache does not see writes made outside it.
+ * listing cache does not see writes made outside it. Once the operation's
+ * signal aborts, every write and remove is refused (checkout stops).
  */
 export class StorageFs {
   readonly counters: StorageFsCounters = { workingReads: 0, pointerReads: 0, smudgedPointers: 0 };
+  private readonly signal: AbortSignal | undefined;
+  /** While a fetch runs: its `.git` writes outside `objects/` by path (null removes), written once it resolves. */
+  private held: Map<string, Uint8Array | null> | null = null;
   readonly promises: {
     readFile(path: string, options?: unknown): Promise<Uint8Array | string>;
     writeFile(path: string, data: Uint8Array | string, options?: unknown): Promise<void>;
@@ -103,18 +119,31 @@ export class StorageFs {
   private readonly storage: ProjectStorage;
   private readonly listed = new Map<string, FileStat>();
 
-  constructor(storage: ProjectStorage) {
+  constructor(storage: ProjectStorage, signal?: AbortSignal) {
     this.storage = storage;
+    this.signal = signal;
     // Every method is async, even with a bad argument: isomorphic-git calls `readFile()` bare and
     // treats an fs whose answer is not a promise as callback-style.
     this.promises = {
       readFile: async (path, options) => this.readFile(storagePath(path), options),
-      writeFile: async (path, data) => this.writeFile(storagePath(path), data),
-      unlink: async (path) => this.unlink(storagePath(path)),
+      writeFile: async (path, data) => {
+        throwIfCancelled(this.signal);
+        return this.writeFile(storagePath(path), data);
+      },
+      unlink: async (path) => {
+        throwIfCancelled(this.signal);
+        return this.unlink(storagePath(path));
+      },
       readdir: async (path) => this.readdir(storagePath(path)),
-      mkdir: async (path) => this.mkdir(storagePath(path)),
+      mkdir: async (path) => {
+        throwIfCancelled(this.signal);
+        return this.mkdir(storagePath(path));
+      },
       // One parameter: isomorphic-git takes a two-parameter rmdir for a recursive remove.
-      rmdir: async (path) => this.rmdir(storagePath(path)),
+      rmdir: async (path) => {
+        throwIfCancelled(this.signal);
+        return this.rmdir(storagePath(path));
+      },
       stat: async (path) => this.stat(storagePath(path)),
       lstat: async (path) => this.stat(storagePath(path)),
       readlink: async (path) => {
@@ -126,7 +155,42 @@ export class StorageFs {
     };
   }
 
+  /**
+   * Runs a fetch with its writes and removes in `.git` outside `objects/`
+   * held back until it resolves, then makes them. isomorphic-git writes the
+   * shallow list and refs before the pack, so a fetch cancelled or killed in
+   * between would leave them naming commits this copy never stored (every
+   * later history walk then fails). A fetch that fails makes none of them.
+   * One that resolved has stored its pack, so they are made even if the
+   * signal aborted meanwhile: the shallow list then matches the objects.
+   */
+  async objectsFirst<T>(fetch: () => Promise<T>): Promise<T> {
+    const held = new Map<string, Uint8Array | null>();
+    this.held = held;
+    let result: T;
+    try {
+      result = await fetch();
+    } finally {
+      this.held = null;
+    }
+    for (const [path, bytes] of held) {
+      this.listed.delete(path);
+      if (bytes === null) {
+        await this.storage.remove(path).catch((error: unknown) => {
+          if (!isStorageNotFound(error)) throw error;
+        });
+      } else {
+        await this.storage.mkdir(parentOf(path), true);
+        await this.storage.writeBinary(path, bytes);
+      }
+    }
+    return result;
+  }
+
   async stat(path: string): Promise<StorageStats> {
+    const held = this.held?.get(path);
+    if (held === null) throw fsError("ENOENT", path);
+    if (held) return statsOf({ isDir: false, size: held.byteLength, mtime: Date.now() });
     const listed = this.listed.get(path);
     if (listed) return statsOf(listed);
     try {
@@ -153,6 +217,9 @@ export class StorageFs {
   }
 
   private async readBytes(path: string): Promise<Uint8Array> {
+    const held = this.held?.get(path);
+    if (held === null) throw fsError("ENOENT", path);
+    if (held) return held;
     try {
       return await this.storage.readBinary(path);
     } catch (error) {
@@ -178,11 +245,20 @@ export class StorageFs {
       this.counters.smudgedPointers += 1;
       return;
     }
+    if (this.held && isGitMetadata(path)) {
+      this.held.set(path, bytes);
+      return;
+    }
     this.listed.delete(path);
     await this.storage.writeBinary(path, bytes);
   }
 
   private async unlink(path: string): Promise<void> {
+    if (workingLfsObject(path)) return;
+    if (this.held && isGitMetadata(path)) {
+      this.held.set(path, null);
+      return;
+    }
     this.listed.delete(path);
     try {
       await this.storage.remove(path);

@@ -10,7 +10,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { Lattice } from "@babylonjs/core/Meshes/lattice";
 import { LatticePluginMaterial } from "@babylonjs/core/Meshes/lattice.material";
-import { createAppWebGpuEngine, disposeMeshLatticeDeformer, setMeshLatticeDeformer } from "@haptic/render";
+import { disposeMeshLatticeDeformer, setMeshLatticeDeformer } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 
 export interface LatticeDeformerCostOptions {
@@ -47,10 +47,10 @@ class StockLatticeReferenceMaterial extends StandardMaterial {
 /**
  * Caller must opt in (the e2e host uses HAPTIC_PERF_LATTICE=1). Defaults are one
  * 16,384-vertex mesh, three cage sizes, five modes, two repeats, 10s warmup +
- * 30s measurement per case: about twenty minutes per backend. Smaller explicit
+ * 30s measurement per case: about twenty minutes. Smaller explicit
  * options are useful for harness smoke checks, not hardware qualification.
  */
-export async function runLatticeDeformerCost(backend: "webgl2" | "webgpu", options: LatticeDeformerCostOptions = {}) {
+export async function runLatticeDeformerCost(options: LatticeDeformerCostOptions = {}) {
   const vertexCounts = [...new Set(options.vertexCounts ?? [16384])];
   const resolutions = [...new Set(options.resolutions ?? [2, 3, 4])];
   if (!vertexCounts.length || vertexCounts.some((count) => count !== 16384 && count !== 65536)) throw new Error("Lattice cost accepts 16,384 or 65,536 vertices.");
@@ -64,11 +64,9 @@ export async function runLatticeDeformerCost(backend: "webgl2" | "webgpu", optio
   const progress = document.createElement("pre"); progress.dataset.testid = "lattice-deformer-cost-progress";
   const host = document.getElementById("root")!; host.append(canvas, progress);
   const started = performance.now();
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, { stencil: true });
+  const engine = new Engine(canvas, false, { stencil: true });
   engine.setSize(width, height);
-  // Pinned Babylon whole-frame WebGPU timestamps use an obsolete encoder API.
-  // A WebGPU timestamp-query capability alone does not make these timings valid.
-  const instrument = !engine.isWebGPU && engine.getCaps().timerQuery ? new EngineInstrumentation(engine) : null;
+  const instrument = engine.getCaps().timerQuery ? new EngineInstrumentation(engine) : null;
   if (instrument) instrument.captureGPUFrameTime = true;
   const nextFrame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
   const measurements: Array<{
@@ -126,7 +124,7 @@ export async function runLatticeDeformerCost(backend: "webgl2" | "webgpu", optio
             apply(0);
             if (lattice) plugin = new LatticePluginMaterial(lattice, material);
           }
-          progress.textContent = JSON.stringify({ backend, mode, vertexCount, resolution, repeat, phase: "warmup", completedCases: measurements.length });
+          progress.textContent = JSON.stringify({ mode, vertexCount, resolution, repeat, phase: "warmup", completedCases: measurements.length });
           renderer.invalidate(); await renderer.prepare();
           const draw = (time: number) => {
             const begin = performance.now();
@@ -142,7 +140,7 @@ export async function runLatticeDeformerCost(backend: "webgl2" | "webgpu", optio
           let warmupFrames = 0;
           const warmupStart = performance.now();
           do { draw(await nextFrame()); warmupFrames++; } while (performance.now() - warmupStart < warmupMs || warmupFrames < 3);
-          progress.textContent = JSON.stringify({ backend, mode, vertexCount, resolution, repeat, phase: "sampling", completedCases: measurements.length });
+          progress.textContent = JSON.stringify({ mode, vertexCount, resolution, repeat, phase: "sampling", completedCases: measurements.length });
           const cpu: number[] = [], updates: number[] = [], cadence: number[] = [], gpu: number[] = [];
           let previous = await nextFrame();
           let lastGpuCount = instrument?.gpuFrameTimeCounter.count ?? 0;
@@ -172,8 +170,6 @@ export async function runLatticeDeformerCost(backend: "webgl2" | "webgpu", optio
       }
     }
     const result = {
-      requestedBackend: backend,
-      effectiveBackend: engine.isWebGPU ? "webgpu" : engine instanceof Engine && engine.webGLVersion === 2 ? "webgl2" : "webgl1",
       adapter: engine.getInfo(), userAgent: navigator.userAgent, devicePixelRatio, elapsedMs: performance.now() - started,
       workload: { vertexCounts, resolutions, modes, warmupMs, sampleMs, repetitions, width, height, samples: 1, dynamicResolution: false,
         nominalDurationMs: vertexCounts.length * resolutions.length * modes.length * repetitions * (warmupMs + sampleMs),
@@ -181,14 +177,14 @@ export async function runLatticeDeformerCost(backend: "webgl2" | "webgpu", optio
       policy: {
         cpuSubmission: "Control updates plus synchronous Engine beginFrame, coordinator render and endFrame; no GPU wait",
         controlUpdate: "Subset of CPU submission, measured separately; unchanged cases do not call either update API",
-        gpu: "Fresh asynchronous nonzero whole-engine query results only; absent on unsupported backends including pinned WebGPU",
+        gpu: "Fresh asynchronous nonzero whole-engine query results only; absent without timer query support",
         frameInterval: "requestAnimationFrame intervals; vsync and main-thread scheduling affect them; not GPU headroom",
         baseline: "No material deformation plugin; stock cases use Babylon LatticePluginMaterial unchanged",
         adapted: "Production post-WPO path including normal correction, world/cage transforms and conservative bounds updates",
         limits: "Synthetic single-pass cost only. A16 hardware, skinned/morph/WPO models and multi-pass scene budgets require separate representative qualification.",
       }, measurements,
     };
-    progress.textContent = JSON.stringify({ backend, phase: "complete", completedCases: measurements.length, elapsedMs: result.elapsedMs });
+    progress.textContent = JSON.stringify({ phase: "complete", completedCases: measurements.length, elapsedMs: result.elapsedMs });
     return result;
   } finally {
     if (instrument) { instrument.captureGPUFrameTime = false; instrument.dispose(); }

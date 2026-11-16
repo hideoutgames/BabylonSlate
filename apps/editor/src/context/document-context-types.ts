@@ -12,6 +12,7 @@ import type {
   Result,
   SerializedGraph,
   SerializedScene,
+  StorageTier,
   WaterDefinition,
 } from "@haptic/core";
 import type {
@@ -42,12 +43,38 @@ import type { GitConfigPrefill } from "@haptic/source-control";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ListedProject, UpdateListedProjectOptions } from "../lib/listed-projects";
 import type { AssetThumbnailWriteIdentity } from "../lib/asset-thumbnail-revision";
-import type { DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
+import type { DocumentAuthoringLock, DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { PlayScriptCompileOptions } from "../services/play-content-service";
 import type { PluginImportResult, ProjectService } from "../services/project-service";
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import type { SourceControlService } from "../services/source-control-service";
+import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
+import type { NewRepositoryRequest, PublishOutcome } from "../services/source-control-publish";
+
+/**
+ * An editor operation's read-only lock on the documents (`lockAuthoring`) and
+ * the lock state it saw right after taking it: work done for that operation
+ * may still change documents while the lock state is exactly this one.
+ */
+export interface AuthoringHold {
+  readonly lock: DocumentAuthoringLock;
+  release(): void;
+}
+
+export interface CloneProjectRequest {
+  repositoryUrl: string;
+  branch: string;
+  /** The new project's name; its folder in app storage is named after it. */
+  name: string;
+}
+
+export interface PublishSummary {
+  assets: number;
+  bytes: number;
+  /** Bytes in `.blobs` files, which go through Git LFS. */
+  lfsBytes: number;
+}
 import type { DockviewSurface } from "../shell/dockview-surface";
 import type { SceneMode } from "../shell/scene-document-layout";
 
@@ -332,7 +359,54 @@ export interface DocumentContextValue {
   updateProjectVersion: (version: string) => void;
   updateProjectSettings: (settings: Partial<ProjectDocument["settings"]>) => void;
   sourceControl: SourceControlService;
+  /** Integrated mode's Git sync; one instance for the provider's lifetime, read through `useIntegratedSync()`. */
+  sourceControlSync: SourceControlSyncService;
   prefillSourceControlFromGit: () => Promise<GitConfigPrefill>;
+  /** The open project's folder for the source control mode rules: its storage tier and whether it has a readable `.git`. */
+  readSourceControlFolder: () => Promise<{ tier: StorageTier | null; hasGit: boolean }>;
+  /**
+   * Clone: the repository's branch into a new project in app storage, with
+   * Integrated mode and the repository and branch filled in; open the
+   * returned folder as a listed project. `transfer` reports bytes; `signal`
+   * cancels, which removes the folder and rejects with a `cancelled` `SyncError`.
+   */
+  cloneProject: (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => Promise<ProjectFolderHandle>;
+  /**
+   * Publish: creates the empty repository on the host and publishes the open
+   * project to it (`.gitattributes` and `.gitignore`, Integrated mode, the
+   * first commit and push). Project Settings' Publish and a Remote New
+   * Project share it. Resolves with how far it got; rejects only without an
+   * open project.
+   */
+  publishToNewRepository: (repository: NewRepositoryRequest) => Promise<PublishOutcome>;
+  /**
+   * Why a Remote New Project opened without a repository (it stayed Local),
+   * shown above the documents until dismissed or the project closes.
+   */
+  publishNotice: { message: string } | null;
+  dismissPublishNotice: () => void;
+  /** What Publish would push: assets, bytes, and the share stored through Git LFS. */
+  summarizeProjectForPublish: () => Promise<PublishSummary>;
+  /**
+   * Records on this device whether Haptic may run Git in the open project's
+   * desktop working copy (the one-Git-app warning's answer, kept in its
+   * `.git/config`), then, in Integrated mode, opens or closes the Git client
+   * to match. `project.json` is untouched. Rejects when it cannot be written.
+   */
+  setSourceControlAdoption: (adopted: boolean) => Promise<void>;
+  /**
+   * Runs `work` in the project write queue with the debounced save cancelled,
+   * so no editor save races a pull writing project files.
+   */
+  withProjectWrites: <T>(work: () => Promise<T>) => Promise<T>;
+  /**
+   * A pull wrote `paths` while `hold` kept the documents read-only: rescans
+   * the registry and classifies the changes as the foreground rescan does,
+   * reloads the whole project or the clean changed documents without asking,
+   * releasing `hold` in the same step, and leaves changed documents with
+   * unsaved edits to the external-change prompt. Releases `hold` in any case.
+   */
+  applyPulledChanges: (paths: readonly string[], hold: AuthoringHold) => Promise<void>;
   externalChangePrompt: ExternalChangeClassification | null;
   confirmExternalChangeReloadProject: () => Promise<void>;
   confirmExternalChangeReloadDocs: (paths: string[]) => Promise<void>;
@@ -535,6 +609,7 @@ export type EditorShellState = Pick<
   | "pendingExclusiveScene"
   | "externalChangePrompt"
   | "undoHistoryNotice"
+  | "publishNotice"
   | "thumbnailsEnabled"
 >;
 /** `useSourceControl()`: a new object whenever source control state changes. */

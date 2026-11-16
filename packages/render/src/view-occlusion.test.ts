@@ -253,7 +253,7 @@ describe("ViewOcclusion", () => {
     expect(names(filter([copy, hidden]))).toEqual(["wall-instance"]);
   });
 
-  it("keeps a mesh whose colour pass Effect has not drawn yet on WebGL2, so its first draw does not wait for it to come into view", () => {
+  it("keeps a mesh whose colour pass Effect has not drawn yet, so its first draw does not wait for it to come into view", () => {
     /** Filters after a frame, with the hidden box's colour pass Effect one its Engine never drew with. */
     const withFreshEffect = ({ scene, hidden, meshes, occlusion, camera }: ReturnType<typeof view>) => {
       scene.render();
@@ -270,7 +270,7 @@ describe("ViewOcclusion", () => {
     expect(withFreshEffect(tracked)).toContain("hidden");
     // Once its Effect has drawn, it is culled.
     expect(names(tracked.filter())).not.toContain("hidden");
-    // WebGPU: draws are not tracked (a warm draw creates a pipeline whatever the cull lists), so the rule never applies.
+    // An Engine whose draws are not tracked: the rule never applies.
     expect(withFreshEffect(view())).not.toContain("hidden");
   });
 

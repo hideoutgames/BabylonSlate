@@ -5,7 +5,7 @@ import {
   createDefaultTransitionRuleGraph,
   type AnimGraphDocument,
 } from "@haptic/anim-graph";
-import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID } from "@haptic/bridge";
+import { ANIM_STATE_MACHINE_DEBUG_GRAPH_ID, type CommandMessage } from "@haptic/bridge";
 import { Actor, ActorComponent, ClassRegistry, World } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { ScriptBreakpoints, type BreakpointHit } from "./script-breakpoints";
@@ -22,6 +22,8 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
   const setSpriteClip = vi.fn();
   const playEventSound = vi.fn();
   const spawnEventParticles = vi.fn();
+  const applyRootMotion = vi.fn();
+  const emitted: CommandMessage[] = [];
   const runtime = new AnimGraphRuntime({
     world: () => world,
     stopped: () => false,
@@ -33,15 +35,41 @@ function setup(document: AnimGraphDocument, count = 1, breakpoints = new ScriptB
     setSpriteClip,
     breakpoints: () => breakpoints,
     frameTrace: () => null,
-    emit: () => {},
+    emit: (command) => emitted.push(command),
     playEventSound,
     spawnEventParticles,
+    applyRootMotion,
   });
   runtime.register("graph", document);
-  return { actors, gate, invokeAnimEvent, playEventSound, runtime, setSpriteClip, spawnEventParticles };
+  return { actors, applyRootMotion, emitted, gate, invokeAnimEvent, playEventSound, runtime, setSpriteClip, spawnEventParticles };
 }
 
 describe("AnimGraphRuntime", () => {
+  it("moves each actor by its graph's root motion every tick", () => {
+    const document = createDefaultAnimGraph();
+    const idle = document.stateMachine.states[0]!;
+    idle.stateGraph.nodes = idle.stateGraph.nodes.map((node) =>
+      node.id === "player"
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              assetGuid: "walk",
+              durationMs: 1000,
+              rootMotion: { bone: "hips", track: { durationMs: 1000, stepMs: 500, x: [0, 0, 0], z: [0, 1, 2], yaw: [0, 0, 0] } },
+            },
+          }
+        : node);
+    const { actors, applyRootMotion, emitted, runtime } = setup(document);
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    expect(applyRootMotion).toHaveBeenLastCalledWith(actors[0], expect.objectContaining({ x: 0, yaw: 0 }), 0.1);
+    expect(applyRootMotion.mock.lastCall?.[1].z).toBeCloseTo(0.2, 9);
+    // Render holds the bone in place.
+    const state = [...emitted].reverse().find((command: CommandMessage) => command.type === "animState");
+    expect(state?.type === "animState" ? state.layers?.[0]?.rootMotionBone : undefined).toBe("hips");
+  });
+
   it("runs each fired Animation Event in the graph's Animation Object, after its own action", () => {
     const document = createDefaultAnimGraph();
     const idle = document.stateMachine.states[0]!;
@@ -75,6 +103,27 @@ describe("AnimGraphRuntime", () => {
     invokeAnimEvent.mockClear();
     runtime.tick(0.1);
     expect(invokeAnimEvent.mock.calls.filter(([, event]) => event === "onAnimNotify")).toEqual([]);
+  });
+
+  it("follows its Tick Mode: Never stops the graph where it is, When Visible runs it and asks render to pose only in view", () => {
+    const document = createDefaultAnimGraph();
+    document.stateMachine.states[0]!.events = { enter: "Idle Started" };
+    const { actors, emitted, invokeAnimEvent, runtime } = setup(document);
+    const component = actors[0]!.components[0]!;
+    const notifies = () => invokeAnimEvent.mock.calls.filter(([, event]) => event === "onAnimNotify").length;
+    component.setVariable("tickMode", "never");
+    runtime.tick(0.1);
+    expect(emitted).toEqual([]);
+    expect(notifies()).toBe(0);
+    expect(invokeAnimEvent).not.toHaveBeenCalled();
+    component.setVariable("tickMode", "whenVisible");
+    runtime.tick(0.1);
+    expect(notifies()).toBe(1);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({ type: "animState", slotId: 0, normalisedTime: expect.any(Number), whenVisible: true });
+    component.setVariable("tickMode", "always");
+    runtime.tick(0.1);
+    expect(emitted[1]).not.toHaveProperty("whenVisible");
   });
 
   it("stops on a state when the graph starts in it, jumps to it or enters it, and on a transition it takes", () => {
@@ -179,5 +228,74 @@ describe("AnimGraphRuntime", () => {
     expect(setSpriteClip).toHaveBeenLastCalledWith(actors[0], {
       assetGuid: "walk", clipName: "", normalisedTime: expect.closeTo(0.25), stateId: "idle", flipX: true,
     });
+  });
+});
+
+describe("AnimGraphRuntime slots", () => {
+  /** The default graph with its player wired through a Slot into the output. */
+  function slottedGraph(): AnimGraphDocument {
+    const document = createDefaultAnimGraph();
+    const graph = document.stateMachine.states[0]!.stateGraph;
+    graph.nodes.push({ id: "slot", type: "anim.pose.slot", position: { x: 0, y: 0 }, data: {} });
+    graph.edges = [
+      { id: "player->slot", source: "player", sourceHandle: "pose", target: "slot", targetHandle: "source" },
+      { id: "slot->output", source: "slot", sourceHandle: "pose", target: ANIM_POSE_OUTPUT_NODE_ID, targetHandle: "pose" },
+    ];
+    return document;
+  }
+  const catalog = [{ guid: "swing", type: "Animation", name: "Swing", clipName: "swing", durationMs: 300 }];
+  /** Records a wait's answer as it settles: at once for a plain answer, else inside the tick that settles it. */
+  const settle = (wait: PromiseLike<boolean> | boolean, record: (value: boolean) => void) => {
+    if (typeof wait === "boolean") record(wait);
+    else wait.then(record);
+  };
+  const request = { animation: "swing", slot: "", blendInSeconds: 0, blendOutSeconds: 0.1, playRate: 1, loopCount: 1, startSeconds: 0 };
+
+  it("plays a slot Animation through the Slot node, and resolves its blend out, then its completion", () => {
+    const { actors, emitted, runtime } = setup(slottedGraph());
+    runtime.replaceAnimClipCatalog(catalog);
+    const control = runtime.control(actors[0]!.components[0]!)!;
+    const handle = control.playSlotAnimation(request);
+    expect(handle).toBeGreaterThan(0);
+    // Queued, it already counts as active.
+    expect(control.isSlotActive("DefaultSlot")).toBe(true);
+    const order: string[] = [];
+    settle(runtime.waitSlot(handle, "blendOut"), (value) => order.push(`blendOut:${value}`));
+    runtime.tick(0.1);
+    const layers = (emitted.at(-1) as Extract<CommandMessage, { type: "animState" }>).layers ?? [];
+    expect(layers.map((layer) => [layer.clipAssetGuid, layer.weight])).toEqual([["swing", 1]]);
+    runtime.tick(0.1);
+    expect(order).toEqual(["blendOut:true"]);
+    settle(runtime.waitSlot(handle, "completed"), (value) => order.push(`completed:${value}`));
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    expect(order).toEqual(["blendOut:true", "completed:true"]);
+    expect(control.isSlotActive("DefaultSlot")).toBe(false);
+  });
+
+  it("answers false for a stopped play's completion, and for an Animation it cannot play", () => {
+    const { actors, runtime } = setup(slottedGraph());
+    runtime.replaceAnimClipCatalog(catalog);
+    const control = runtime.control(actors[0]!.components[0]!)!;
+    expect(control.playSlotAnimation({ ...request, animation: "missing" })).toBe(0);
+    expect(runtime.waitSlot(0, "completed")).toBe(false);
+    const handle = control.playSlotAnimation({ ...request, loopCount: 0 });
+    runtime.tick(0.1);
+    const results: boolean[] = [];
+    settle(runtime.waitSlot(handle, "completed"), (value) => results.push(value));
+    control.stopSlotAnimation("DefaultSlot", 0);
+    runtime.tick(0.1);
+    expect(results).toEqual([false]);
+  });
+
+  it("ends a destroyed actor's plays, so their waits answer false", () => {
+    const { actors, runtime } = setup(slottedGraph());
+    runtime.replaceAnimClipCatalog(catalog);
+    const handle = runtime.control(actors[0]!.components[0]!)!.playSlotAnimation({ ...request, loopCount: 0 });
+    runtime.tick(0.1);
+    const results: boolean[] = [];
+    settle(runtime.waitSlot(handle, "completed"), (value) => results.push(value));
+    runtime.retireActor(actors[0]!);
+    expect(results).toEqual([false]);
   });
 });

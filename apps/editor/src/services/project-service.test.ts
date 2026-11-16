@@ -4,6 +4,8 @@ import { createMemoryOpfsRoot, opfsProjectFolder } from "../../../../packages/vf
 import { createEmptyProject, isProjectOpenElsewhere, MAIN_SCENE_FILE, PROJECT_FILE, SourceRevisionChangedError, type SerializedScene, type ProjectStorage } from "@haptic/core";
 import { MemoryStorageAdapter, OpfsStorageAdapter, pickImportFiles } from "@haptic/vfs";
 import { encodeAssetDocument, encodeHasset, decodeHasset } from "@haptic/assets";
+import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
+import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
@@ -19,6 +21,11 @@ afterEach(() => vi.unstubAllGlobals());
 vi.mock("@haptic/vfs", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@haptic/vfs")>();
   return { ...mod, pickImportFiles: vi.fn(mod.pickImportFiles) };
+});
+
+vi.mock("@haptic/assets/import-worker-client", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@haptic/assets/import-worker-client")>();
+  return { ...mod, convertHdrEnvironmentOffMainThread: vi.fn(mod.convertHdrEnvironmentOffMainThread) };
 });
 
 vi.mock("../lib/kenney-mannequin", async (importOriginal) => {
@@ -111,6 +118,131 @@ describe("ProjectService lifecycle", () => {
     expect(JSON.parse(await storage.readText(PROJECT_FILE)).metadata.version).toBe("2.0");
     expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe("Saved baseline");
     lease.release();
+    await service.closeProject();
+  });
+
+  it("runs work as the project's only writer: after admitted saves finish, refusing every other writer, writing through its own storage", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Alone", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    await storage.writeText("assets/.blobs/loose", "x");
+    let proceed!: () => void;
+    let wroteScene!: () => void;
+    const firstWrite = new Promise<void>(resolve => { wroteScene = resolve; });
+    const paused = new Promise<void>(resolve => { proceed = resolve; });
+    const saving = service.withBaselineSave(async writer => {
+      await writer.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Saved first" });
+      wroteScene();
+      await paused;
+    });
+    await firstWrite;
+    const steps: string[] = [];
+    let kept: ProjectStorage | null = null;
+    const alone = service.withExclusiveWrites("Removing unused files", async (own) => {
+      steps.push("work");
+      kept = own;
+      await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/Removing unused files/);
+      await expect(service.storagePort.remove("assets/.blobs/loose")).rejects.toThrow(/Removing unused files/);
+      await own.remove("assets/.blobs/loose");
+      return "done";
+    });
+    // A save admitted before it ends first; new writers are refused meanwhile.
+    await expect(service.saveDocument("scene", MAIN_SCENE_FILE, scene)).rejects.toThrow(/Removing unused files/);
+    expect(steps).toEqual([]);
+    proceed();
+    await saving;
+    expect(await alone).toBe("done");
+    expect(await storage.exists("assets/.blobs/loose")).toBe(false);
+    expect((await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene).name).toBe("Saved first");
+    // Its storage writes nothing once it ended, and writers are admitted again.
+    await expect(kept!.writeText("assets/.blobs/late", "x")).rejects.toThrow();
+    expect(await storage.exists("assets/.blobs/late")).toBe(false);
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    await service.closeProject();
+  });
+
+  it("refuses to run as the only writer while another operation holds project writes, and stops waiting when aborted", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Held", { kind: "2d" });
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    const work = vi.fn(async () => "ran");
+
+    const simulation = service.lockAuthoringWrites("Read-only during Simulation Play");
+    await expect(service.withExclusiveWrites("Removing unused files", work)).rejects.toThrow(/Simulation/);
+    simulation.release();
+    expect(work).not.toHaveBeenCalled();
+
+    // Waiting for an admitted save: an abort ends the wait, runs nothing and admits writers again.
+    let proceed!: () => void;
+    const paused = new Promise<void>(resolve => { proceed = resolve; });
+    let started!: () => void;
+    const saveStarted = new Promise<void>(resolve => { started = resolve; });
+    const saving = service.withBaselineSave(async () => {
+      started();
+      await paused;
+    });
+    await saveStarted;
+    const controller = new AbortController();
+    const waiting = service.withExclusiveWrites("Removing unused files", work, controller.signal);
+    controller.abort();
+    await expect(waiting).rejects.toThrow();
+    expect(work).not.toHaveBeenCalled();
+    proceed();
+    await saving;
+    await service.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "After" });
+    await service.closeProject();
+  });
+
+  it("waits for a Face Size conversion to write its Texture before running as the only writer", async () => {
+    // The conversion writes the cube's blob, then the header naming it: removing unused files in between
+    // could take a blob the conversion found already stored, and the header would name a missing file.
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Sky", { kind: "2d" });
+    const [sky] = await service.registry!.importFile("project", "", "Sky.hdr", buildRadianceHdrFixture({ width: 64, height: 32, color: () => [1, 1, 1] }), { hdrFaceSize: 128 });
+    const guid = sky!.header.guid;
+    const converting = () => {
+      let started!: () => void;
+      let finish!: () => void;
+      const running = new Promise<void>((resolve) => { started = resolve; });
+      const release = new Promise<void>((resolve) => { finish = resolve; });
+      const convert = async () => {
+        started();
+        await release;
+        return buildFloatDdsCubeFixture({ size: 4, halfFloat: true });
+      };
+      return { running, finish, convert };
+    };
+    const steps: string[] = [];
+    const alone = () => service.withExclusiveWrites("Removing unused files", async () => { steps.push("work"); });
+
+    // Texture Details' Face Size, through the project service.
+    const details = converting();
+    vi.mocked(convertHdrEnvironmentOffMainThread).mockImplementationOnce(details.convert);
+    const reconverted = service.reconvertHdrEnvironment(guid, 512);
+    await details.running;
+    const first = alone();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(steps).toEqual([]);
+    details.finish();
+    expect(await reconverted).toBe(true);
+    await first;
+    expect(steps).toEqual(["work"]);
+
+    // The same through the registry editor tools are handed.
+    const tools = converting();
+    const viaRegistry = service.registry!.reconvertHdrEnvironment(guid, 256, tools.convert);
+    await tools.running;
+    const second = alone();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(steps).toEqual(["work"]);
+    tools.finish();
+    expect(await viaRegistry).toBe(true);
+    await second;
+    expect(steps).toEqual(["work", "work"]);
+    expect(service.registry!.getByGuid(guid)!.header.payload).toMatchObject({ hdrFaceSize: 256 });
     await service.closeProject();
   });
 
@@ -508,6 +640,100 @@ describe("project round-trip", () => {
     expect(exists).toBe(true);
   });
 
+  it("leaves project.json untouched, updatedAt included, when a save changes nothing", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    const { document, layouts } = await service.createEmptyProject("Unchanged", { kind: "2d" });
+    await service.saveProject(document, layouts);
+    const before = await storage.readText(PROJECT_FILE);
+    const writes = vi.spyOn(storage, "writeText");
+    await service.saveProject(document, layouts);
+    expect(writes.mock.calls.map(([path]) => path)).not.toContain(PROJECT_FILE);
+    expect(await storage.readText(PROJECT_FILE)).toBe(before);
+    // A real change is written with a new stamp.
+    await service.saveProject({ ...document, metadata: { ...document.metadata, version: "2.0" } }, layouts);
+    expect(JSON.parse(await storage.readText(PROJECT_FILE)).metadata.version).toBe("2.0");
+  });
+
+  describe("Clone", () => {
+    const REPOSITORY = "https://github.com/team/game.git";
+    const manifest = (sourceControl?: object) => JSON.stringify({
+      ...createEmptyProject("Cloned"),
+      guid: "cloned-guid",
+      kind: "project",
+      ...(sourceControl ? { settings: { ...createEmptyProject("Cloned").settings, sourceControl } } : {}),
+    }, null, 2);
+
+    it("clones into a new folder and switches the project to Integrated with the repository and branch", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      const handle = await service.cloneProject({
+        name: "Cloned Game",
+        repositoryUrl: REPOSITORY,
+        branch: "develop",
+        clone: async (folder) => folder.writeText(PROJECT_FILE, manifest()),
+      });
+      expect(storage.getCurrentFolder()).toBeNull();
+      await storage.openKnownFolder(handle);
+      expect(JSON.parse(await storage.readText(PROJECT_FILE)).settings.sourceControl).toMatchObject({ mode: "integrated", repositoryUrl: REPOSITORY, branch: "develop" });
+      expect(await storage.exists(".haptic-creating")).toBe(false);
+    });
+
+    it("leaves a project.json that already names the repository as it is, whichever branch was cloned", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      const text = manifest({ mode: "integrated", repositoryUrl: "git@github.com:team/game.git", branch: "main", autoLockOnEdit: true, releaseLocksAfterPush: true });
+      // The branch in project.json is the team's default; the clone's own branch is its working copy's, so cloning another writes nothing.
+      for (const branch of ["main", "art"]) {
+        const handle = await service.cloneProject({ name: `Same ${branch}`, repositoryUrl: REPOSITORY, branch, clone: async (folder) => folder.writeText(PROJECT_FILE, text) });
+        await storage.openKnownFolder(handle);
+        expect(await storage.readText(PROJECT_FILE)).toBe(text);
+        await storage.releaseFolder();
+      }
+    });
+
+    it("refuses a branch without project.json and removes the folder", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      await expect(service.cloneProject({
+        name: "Empty",
+        repositoryUrl: REPOSITORY,
+        branch: "main",
+        clone: async (folder) => folder.writeText("README.md", "Not a game"),
+      })).rejects.toThrow("main has no Haptic project: project.json is missing.");
+      expect((await storage.listProjects()).map((project) => project.name)).not.toContain("Empty");
+    });
+
+    it("removes the folder of a clone cancelled after its files arrived, and keeps it unlisted", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      const controller = new AbortController();
+      const error = await service.cloneProject({
+        name: "Cancelled",
+        repositoryUrl: REPOSITORY,
+        branch: "main",
+        signal: controller.signal,
+        clone: async (folder) => {
+          await folder.writeText(PROJECT_FILE, manifest());
+          // Cancel is pressed while the clone finishes.
+          controller.abort();
+        },
+      }).then(() => null, (reason: unknown) => reason);
+      expect(error).toMatchObject({ kind: "cancelled" });
+      expect((await storage.listProjects()).map((project) => project.name)).not.toContain("Cancelled");
+    });
+
+    it("refuses a name another project has", async () => {
+      const storage = new MemoryStorageAdapter("documents");
+      const service = new ProjectService(storage);
+      await service.createEmptyProject("Taken", { kind: "2d" });
+      await service.closeProject();
+      const clone = vi.fn(async () => {});
+      await expect(service.cloneProject({ name: "Taken", repositoryUrl: REPOSITORY, branch: "main", clone })).rejects.toThrow("A project with this name already exists.");
+      expect(clone).not.toHaveBeenCalled();
+    });
+  });
+
   it("creates a project folder without a .hproject suffix", async () => {
     localStorage.clear();
     const storage = new OpfsStorageAdapter();
@@ -717,6 +943,18 @@ describe("project round-trip", () => {
     await storage.openDocumentsProject("Kept");
     expect(await storage.readText("notes.txt")).toBe("x");
     expect(await storage.exists(PROJECT_FILE)).toBe(false);
+  });
+
+  it("opens, without creating anything, a picked folder that already holds a project", async () => {
+    const storage = new MemoryStorageAdapter("external");
+    const service = new ProjectService(storage);
+    const first = await service.createEmptyProject("Picked", { pickFolder: true, kind: "2d" });
+    expect(first.created).toBe(true);
+    await service.closeProject();
+    // The same folder again: a Remote New Project must not publish what it opened.
+    const again = await service.createEmptyProject("Another", { pickFolder: true, kind: "2d" });
+    expect(again.created).toBe(false);
+    expect(again.document.metadata.name).toBe("Picked");
   });
 
   it("never scaffolds over a folder that has content but no project.json", async () => {

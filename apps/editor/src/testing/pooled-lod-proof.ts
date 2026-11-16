@@ -13,7 +13,7 @@ import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { encodeUvSphereGlb } from "../../../../packages/render/src/glb-test-fixtures";
@@ -23,19 +23,16 @@ import { attachModelLods, generateModelLods } from "../../../../packages/render/
 import { poolModelLeaves } from "../../../../packages/render/src/pooled-model-leaves";
 import { setDrawnMaterial } from "../../../../packages/render/src/pooled-visuals";
 import { RENDERING_GROUP } from "../../../../packages/render/src/sorting";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 160;
 const HEIGHT = 90;
 
-export async function runPooledLodProof(backend: "webgl2" | "webgpu") {
+export async function runPooledLodProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine);
   try {
@@ -88,7 +85,7 @@ export async function runPooledLodProof(backend: "webgl2" | "webgpu") {
       if (presented < 10) await new Promise<void>((resolve) => setTimeout(resolve, 16));
     }
     const read = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-    const pixels = toRgbaPixels(new Uint8Array(read.buffer, read.byteOffset, read.byteLength), readbackChannelOrder(engine.isWebGPU));
+    const pixels = Array.from(new Uint8Array(read.buffer, read.byteOffset, read.byteLength));
     const brightness = (mesh: InstancedMesh | undefined) => {
       if (!mesh) return -1;
       const screen = Vector3.Project(mesh.getBoundingInfo().boundingSphere.centerWorld, Matrix.Identity(), scene.getTransformMatrix(),

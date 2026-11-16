@@ -1,8 +1,6 @@
-import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
 import type { FramePressureSample } from "./hardware-scaling";
-import type { ResolvedRenderingPipeline } from "@haptic/core";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
@@ -18,7 +16,7 @@ import type { FirstDrawStats, ProgramInventory } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { DrawPassCounts } from "./draw-passes";
-import type { OverlayBatchStats } from "./overlay-draw-batcher";
+import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
@@ -27,11 +25,11 @@ import { deviceTextureLimits } from "./device-profile";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
-  /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere and on WebGPU. */
+  /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere. */
   firstDraws?: FirstDrawStats | null;
   /**
    * The programs the view's Engine holds now, every view's among them: how many, how many it never drew, and the drawn
-   * ones by the pass that first drew each (`programInventory`); null on WebGPU.
+   * ones by the pass that first drew each (`programInventory`); null for an Engine whose draws are not tracked.
    */
   programs?: ProgramInventory | null;
   /**
@@ -71,7 +69,7 @@ export type RenderDiagnostics = {
     attempted: number; drawn: number; copied: number; held: number;
     /**
      * `held` by why the world view held each frame (`held-frames.ts`): its draw's `reason` ("Scene is not ready to
-     * render.", "Render pipelines are compiling.", a FrameGraph reason) or a `HELD_FRAME_LABELS` label; at most
+     * render.", a FrameGraph reason) or a `HELD_FRAME_LABELS` label; at most
      * `MAX_HELD_FRAME_REASONS` keys, later reasons under "other".
      */
     heldReasons: Record<string, number>;
@@ -100,17 +98,40 @@ export type RenderDiagnostics = {
     /** Scoped checks a check of every mesh disagreed with, counted only while that verification is on. */
     scopedReadinessMismatches: number;
     /**
+     * Why the first of them disagreed (at most eight): whether the check of every mesh failed, compiled an Effect or
+     * asked for one, after which marked reasons and how many scoped meshes, and the first Effects it asked for.
+     */
+    scopedReadinessMismatchCauses?: string[];
+    /**
      * What the last strict check that failed since the first reading found unready, in the order it met them (at most
      * `MAX_READINESS_BLOCKERS`): a graph task, a mesh and its Material, a texture, a render target. Empty before one fails.
      */
     readinessBlockers: string[];
+    /**
+     * The shadow caster walks of the Scene, counted since its shadows began (`ShadowJournalDiagnostics`): how many
+     * casters the change journal's walks visited of those they held, and what a full walk still found changed after
+     * one (`heals`, every 32nd frame; `mismatches`, every frame while `verifyRenderChangeJournal` is on). Absent
+     * without shadows.
+     */
+    shadowJournal?: {
+      walks: number; casters: number; visited: number; moved: number; polledSources: number; polledMaterials: number;
+      sourceChanges: number; cacheChecks: number; bufferChecks: number; localVisited: number; localScans: number;
+      cascadeSkips: number; prepared: number; prepareScans: number; fullWalks: number; heals: number; mismatches: number; missedKinds: string[];
+    };
+    /**
+     * The Scene's Mirror surfaces (`MirrorDiagnostics`): renders in which a visible surface's view had moved since its
+     * draw, so it did not ask what its pass draws changed (`skipped`), and while `verifyMirrorContentPolls` is on, renders
+     * an ask on every render would have decided otherwise (`mismatches`). Absent without Mirrors.
+     */
+    mirrorPolls?: { skipped: number; mismatches: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
    * for the world, with the layer's mesh count. A layer whose strict checks grow with every frame has something
-   * marking its readiness each frame. Empty where the view composites no layer.
+   * marking its readiness each frame. Empty where the view composites no layer. `batching` is how its draw batcher kept
+   * its work between frames, and what its verifier found (`OverlayBatchWork`); null where the layer does not batch.
    */
-  layerWork?: Array<{ layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]> }>;
+  layerWork?: Array<{ layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]>; batching?: OverlayBatchWork | null }>;
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;
     pendingPresentations: number;
@@ -164,20 +185,18 @@ export type RenderDiagnostics = {
   /**
    * Shadow casters drawn from one shared buffer instead of one Babylon draw each: how many are retained, and since the
    * Scene's first map the draw calls made (`calls`) for the caster draws they stood for (`drawn`). Null where no
-   * caster can be retained (WebGPU).
+   * caster can be retained.
    */
   shadowRetained: RetainedShadowDiagnostics | null;
   readbackMs: number | null;
   shadowLights: ReturnType<typeof shadowLightDiagnostics>;
   qualityLimits: string[];
-  pipeline: ResolvedRenderingPipeline;
   /**
-   * Graphics API and adapter identity reported by the Engine itself, so a
-   * diagnostics capture always names the real adapter and cannot be mistaken
-   * for device qualification.
+   * Adapter identity reported by the Engine itself, so a diagnostics capture
+   * always names the real adapter and cannot be mistaken for device
+   * qualification.
    */
   adapter: {
-    api: "webgpu" | "webgl2";
     vendor: string | null;
     renderer: string | null;
     version: string | null;
@@ -223,11 +242,9 @@ export function createRenderDiagnostics(
     const shadows = findSceneShadowController(scene);
     const metrics = shadows?.metrics() ?? { passes: 0, bytes: 0 };
     const state = sceneRenderingSettings(scene);
-    const pipeline = sceneRenderingPipeline(scene);
     const { sample, gpuAttribution } = pressure();
     return {
       cpuMs: cpuMs(),
-      pipeline,
       readbackMs: readbackMs(),
       shadowDrawCalls: shadows?.shadowDrawCalls() ?? 0,
       shadowTriangles: shadows?.shadowTriangles() ?? 0,
@@ -249,7 +266,6 @@ export function createRenderDiagnostics(
       shadowMapBytes: metrics.bytes,
       shadowLights: state.lightsDebug ? shadowLightDiagnostics(scene, shadows) : [],
       qualityLimits: [
-        ...pipeline.limits,
         ...sceneLightingLimits(scene),
         ...effectiveShadowSettings(
           state.shadows,
@@ -291,7 +307,6 @@ export function engineAdapterInfo(engine: AbstractEngine) {
   };
   const info = infoEngine.getInfo?.() ?? infoEngine.getGlInfo?.();
   return {
-    api: (engine.isWebGPU ? "webgpu" : "webgl2") as "webgpu" | "webgl2",
     vendor: info?.vendor ?? null,
     renderer: info?.renderer ?? null,
     version: info?.version ?? null,

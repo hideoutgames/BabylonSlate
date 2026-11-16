@@ -10,14 +10,14 @@ import type { SharedOutlineView } from "./shared-outline";
 import { flushSceneCables } from "./cable-mesh";
 import { cullSceneByWhatShows } from "./cull-accuracy";
 import { DriverCompileWatch, pendingDriverEffects } from "./driver-compile";
-import { beginPipelineDeferral, PIPELINE_DEFERRAL_HOLD_CAP_MS, type PipelineDeferral } from "./webgpu-pipeline-deferral";
 import { whenPresentationFenceClear } from "./presented-frame";
 import { flushDynamicRuntimeMeshes } from "./dynamic-runtime-mesh";
 import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
 import { sceneOutputScale } from "./scene-output-scale";
 import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
-import { admitSteadyFirstDraws } from "./variant-pipeline-warmup";
+import { admitSteadyFirstDraws } from "./variant-first-draws";
+import { withDrawPass } from "./draw-passes";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,
 } from "./stall-deadline";
@@ -39,9 +39,9 @@ const PREPARATION_TOTAL_TIMEOUT_MS = 60_000;
 const AUXILIARY_RETRY_MS = 1_000;
 /**
  * A compile hold ends this long after none of the view's own effects was pending and no preparation was
- * running: what it waited for failed or went away, and nothing is left to wait for (the analogue of
- * `PIPELINE_DEFERRAL_STALL_MS`). It also ends `SCENE_DRIVER_COMPILE_TIMEOUT_MS` after it began, for a link
- * that hangs. The image stays held either way; only the owner's game stops waiting.
+ * running: what it waited for failed or went away, and nothing is left to wait for. It also ends
+ * `SCENE_DRIVER_COMPILE_TIMEOUT_MS` after it began, for a link that hangs. The image stays held either way; only the
+ * owner's game stops waiting.
  */
 export const COMPILE_HOLD_STALL_MS = 10_000;
 
@@ -73,29 +73,22 @@ export type SceneRenderCoordinatorOptions = {
    */
   auxiliary?: { camera: Camera; objects: FrameGraphObjectList; screenEffects?: boolean };
   /**
-   * WebGPU: a draw in one of the graph's object passes whose render pipeline is
-   * not cached creates it asynchronously and is skipped (`beginPipelineDeferral`),
-   * and the frame is reported not rendered, so the owner keeps its last image
-   * until the pipelines exist. After `PIPELINE_DEFERRAL_HOLD_CAP_MS` of such
-   * frames in a row, new misses compile synchronously again. Only for a view
-   * that draws every frame and presents only rendered frames: the world view
-   * and its High and Full Quality captures, never previews or thumbnails. An auxiliary
-   * view defers only while its owner's frame does. A steady frame (one that
-   * tolerates variant swaps) instead leaves such a draw out of a geometry pass
-   * that has drawn a complete frame, and still draws: its pipeline arrives
-   * without holding the view.
-   *
-   * On any backend, such a view also reports `holdingForPipelines` while its
-   * frames wait for effects its own readiness probes requested and the driver
-   * still links in the background, once one frame found them pending, until a
-   * frame draws. The view keeps its image until then (a deferral can end by
-   * compiling synchronously; strict readiness has no such way to present), but
-   * the report ends when none of those effects is pending any more for
+   * A view that draws every frame and presents only rendered frames (the world
+   * view, never a preview, a thumbnail or an auxiliary view) reports
+   * `holdingForCompiles` while its frames wait for effects its own readiness
+   * probes requested and the driver still links in the background, once one
+   * frame found them pending, until a frame draws. The view keeps its image
+   * until then (strict readiness presents only a ready frame), but the report
+   * ends when none of those effects is pending any more for
    * `COMPILE_HOLD_STALL_MS`, as soon as one fails, and at
    * `SCENE_DRIVER_COMPILE_TIMEOUT_MS`, so the owner's game never waits for
    * something that will not come.
+   *
+   * Its steady frames also keep drawing a Material's previous Effect while its
+   * changed variant compiles, where the scene binds previous Effects
+   * (`sceneBindsPreviousEffects`).
    */
-  deferPipelines?: boolean;
+  compileHolds?: boolean;
   /** A world view: culls its camera's list by occlusion while the scene does (`ForwardSceneFrameGraphOptions.occlusion`). */
   occlusion?: boolean;
   /** A game's world view: its strict outline mask and a depth-only geometry pass start from the scene's depth (`ForwardSceneFrameGraphOptions.seedsFromSceneDepth`). */
@@ -119,21 +112,15 @@ export class SceneRenderCoordinator {
   /** Views may draw planar water reflections; previews and thumbnails never retain one. */
   private readonly releaseWaterPlanarReflections: () => void;
   private readonly auxiliaryCamera: Camera | undefined;
-  private readonly deferPipelines: boolean;
+  private readonly compileHolds: boolean;
   /** Counts `supersedeRequestedPreparation`: a preparation the view asked for itself ends when it has changed. */
   private requestsSuperseded = 0;
   /** The pending preparation the view asked for itself, if it is the one running. */
   private requested: { generation: number } | undefined;
-  /** The last drawn frame's deferral, while it skipped draws. */
-  private deferral: PipelineDeferral | undefined;
-  /** When the current run of frames held for deferred pipelines began. */
-  private deferredSince: number | undefined;
   /** The last frame waited for effects the driver is still compiling and every frame since has not drawn. */
   private compileHold: CompileHold | undefined;
   /** The run ended without a drawn frame (a stall, a failed link, the ceiling): it holds the image but no longer the game. */
   private compileHoldReleased = false;
-  private readonly ownsPass = (renderPassId: number) => this.graph.ownsObjectPass(renderPassId);
-  private readonly omitsGeometryPass = (renderPassId: number) => this.graph.omitsGeometryPass(renderPassId);
   private failedAt = 0;
   private warnedFailure: string | undefined;
 
@@ -141,7 +128,7 @@ export class SceneRenderCoordinator {
     this.scene = scene;
     cullSceneByWhatShows(scene);
     this.auxiliaryCamera = options.auxiliary?.camera;
-    this.deferPipelines = options.deferPipelines === true;
+    this.compileHolds = options.compileHolds === true;
     this.graph = new ForwardSceneFrameGraph(scene, options.auxiliary
       ? { auxiliary: { objects: options.auxiliary.objects, screenEffects: options.auxiliary.screenEffects } }
       : { occlusion: options.occlusion === true, seedsFromSceneDepth: options.seedsFromSceneDepth === true, scopedStrictProbes: options.scopedStrictProbes === true });
@@ -226,10 +213,7 @@ export class SceneRenderCoordinator {
   invalidate(): void {
     this.generation += 1;
     this.failure = undefined;
-    // A rebuilt graph or switched scene starts a new run of frames: it neither
-    // waits for the old frame's pipelines nor inherits its hold's elapsed cap.
-    this.deferral = undefined;
-    this.deferredSince = undefined;
+    // A rebuilt graph or switched scene starts a new run of frames.
     this.compileHold = undefined;
     this.compileHoldReleased = false;
     // A new run (a switched scene loading) asks strictly again until it draws steady frames.
@@ -385,12 +369,12 @@ export class SceneRenderCoordinator {
   }
 
   /**
-   * The view is holding its last image for GPU work: WebGPU render pipelines its
-   * last frame skipped, or effects the driver is still compiling that its last
-   * frame waited for (`deferPipelines` views only). The owner's game waits too.
+   * The view is holding its last image for effects the driver is still compiling
+   * that its last frame waited for (`compileHolds` views only). The owner's game
+   * waits too.
    */
-  get holdingForPipelines(): boolean {
-    return this.deferral !== undefined || this.compileHold !== undefined;
+  get holdingForCompiles(): boolean {
+    return this.compileHold !== undefined;
   }
 
   /** True while strict readiness must be re-probed after an invalidation. */
@@ -444,13 +428,16 @@ export class SceneRenderCoordinator {
     if (tolerate) {
       this.graph.recheckVariantSwaps();
       // Its cold variants are admitted whether or not a readiness round runs in this frame (`admitSteadyFirstDraws`).
-      if (this.graph.warmsVariants) admitSteadyFirstDraws(this.scene.getEngine());
+      if (this.graph.warmsVariants) {
+        const engine = this.scene.getEngine();
+        withDrawPass(engine, "readiness", () => admitSteadyFirstDraws(engine), false);
+      }
     }
-    return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation, tolerate));
+    return probeVariantSwaps(tolerate, () => this.renderFrame(validatePresentation));
   }
 
   private renderFrame(
-    validatePresentation: boolean, steady: boolean,
+    validatePresentation: boolean,
   ): ForwardSceneGraphResult & { rendered: boolean; readyForPresentation: boolean; reason?: string } {
     this.refreshOutline();
     // Re-derived every frame: a frame that draws, throws, or cannot draw for any
@@ -462,9 +449,8 @@ export class SceneRenderCoordinator {
       return { path: "frameGraph", reason: "Scene is not ready to render.", rendered: false, readyForPresentation: false };
     flushSceneLatticeDeformers(this.scene);
     // A validated frame of a view that draws steady frames (a frame report's) refuses a pending swap, yet only a
-    // tolerant round admits the new variant (WebGPU: once its warm draws found its pipeline, or unused for
-    // `UNUSED_WARM_MS`), and such frames repeat until one draws. It first probes as a steady frame does, so the swap
-    // completes and the strict probe below sees the new variant.
+    // tolerant round admits the new variant, and such frames repeat until one draws. It first probes as a steady frame
+    // does, so the swap completes and the strict probe below sees the new variant.
     if (validatePresentation && this.graph.warmsVariants && this.toleratesVariantSwaps()) {
       this.graph.recheckVariantSwaps();
       probeVariantSwaps(true, () => this.graph.sceneStrictlyReady(camera));
@@ -479,41 +465,13 @@ export class SceneRenderCoordinator {
     flushDynamicRuntimeMeshes(this.scene);
     const status = this.graph.readiness(camera);
     if (!status.ready) this.requestPreparation();
-    // Like a scene that is not ready yet, a frame that skipped draws for
-    // pipelines still compiling draws nothing until they exist.
-    if (this.deferral?.waiting())
-      return { path: "frameGraph", reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
     // Draw on readiness's admission; graph preparation or invalidation re-admits.
-    // An auxiliary view defers only inside its owner's deferring frame, which then holds too.
-    // A steady frame leaves a draw whose pipeline is still being created out of a geometry pass that has drawn a
-    // complete frame, instead of holding: a few frames of spatial-effect artefacts on that mesh. A geometry pass yet to
-    // draw one (a new graph, an effect switched on, an invalidation, a Fog Volume first in view) can miss every
-    // mesh's pipeline at once, so it holds as before; so do validated presentations (loading, a frame report) and
-    // auxiliary views, whose captures publish what they draw.
-    const deferral = this.deferPipelines
-      ? beginPipelineDeferral(this.scene.getEngine(), this.ownsPass, {
-        startsDeferrals: this.deferredSince === undefined || performance.now() - this.deferredSince < PIPELINE_DEFERRAL_HOLD_CAP_MS,
-        nested: this.auxiliaryCamera !== undefined,
-        omits: steady ? this.omitsGeometryPass : undefined,
-      })
-      : undefined;
-    let result: ReturnType<ForwardSceneFrameGraph["render"]>;
-    try {
-      result = this.graph.render(camera, true, true);
-    } finally {
-      // Skipped draws (nested captures' included) leave this frame incomplete.
-      this.deferral = deferral?.close() ? deferral : undefined;
-      if (this.deferral) this.deferredSince ??= performance.now();
-      else this.deferredSince = undefined;
-    }
-    if (this.deferral)
-      return { ...result, reason: "Render pipelines are compiling.", rendered: false, readyForPresentation: false };
-    if (deferral && result.rendered !== false) this.graph.noteCompleteFrame();
+    const result = this.graph.render(camera, true, true);
     // A graph that is still preparing or probing its passes' variants holds the
     // image as an unready scene does; a skipped draw for any other reason does not.
     if (result.rendered === false && !status.ready) this.compileHold = this.holdsForCompiles(holding, status);
     if (result.rendered !== false) this.compileHoldReleased = false;
-    // From its first steady frame, the view's new variants wait for their pipelines where those are deferred.
+    // From its first steady frame, the view's readiness rounds make the Effects they request first cold.
     if (result.rendered !== false && variantSwapsTolerated()) this.graph.warmsVariants = true;
     if (result.rendered !== false && this.editorOverlay) {
       const capture = activeRenderFrameCapture(this.scene.getEngine());
@@ -541,7 +499,7 @@ export class SceneRenderCoordinator {
 
   /** Whether the view's steady frames draw a Material's previous Effect while its changed variant compiles. */
   private toleratesVariantSwaps(): boolean {
-    return this.deferPipelines && !this.auxiliaryCamera && sceneBindsPreviousEffects(this.scene);
+    return this.compileHolds && !this.auxiliaryCamera && sceneBindsPreviousEffects(this.scene);
   }
 
   /** The view's camera: an auxiliary view's own, otherwise the scene's active camera. */
@@ -623,7 +581,7 @@ export class SceneRenderCoordinator {
    * inside the call never leave a pending effect to wait for.
    */
   private holdsForCompiles(holding: CompileHold | undefined, status: ForwardSceneGraphReadiness): CompileHold | undefined {
-    if (!this.deferPipelines || this.auxiliaryCamera || this.compileHoldReleased || this.failure !== undefined ||
+    if (!this.compileHolds || this.auxiliaryCamera || this.compileHoldReleased || this.failure !== undefined ||
       status.reason !== undefined) return undefined;
     const now = performance.now();
     const own = this.graph.requestedEffects;

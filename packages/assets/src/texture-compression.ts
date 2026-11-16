@@ -72,8 +72,8 @@ export function clampDimension(
 }
 
 /**
- * Compressed GPU block edge. WebGPU rejects ASTC 4x4 / BC7 textures whose
- * base width or height is not a multiple of it, which invalidates the frame.
+ * Compressed GPU block edge. ASTC 4x4 / BC7 store texels in 4x4 blocks, so a
+ * texture whose base width and height are multiples of it holds whole blocks.
  */
 export const TEXTURE_BLOCK_EDGE = 4;
 
@@ -90,7 +90,7 @@ export function textureEncodeBlockAlign(
 
 /**
  * Block alignment an encode is padded to. Compressed encodes round up to the
- * 4-texel grid so WebGPU keeps them block-compressed, except atlases
+ * 4-texel grid so they hold whole ASTC 4x4 / BC7 blocks, except atlases
  * (Tileset, Sprite and Sprite Animation textures), whose tile and frame
  * rects must not be resampled. Particle always aligns. A known clamped size
  * already on the grid needs none; an unknown size pads, which is a no-op

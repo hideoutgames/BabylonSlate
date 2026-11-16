@@ -20,12 +20,11 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderEffectsSettings, type RenderMode } from "@haptic/core";
-import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { applyOverlayVisualStyle, enableOverlayVisualMaterial } from "../../../../packages/render/src/overlay-visual-style";
 import { atlasImageProcessing, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../../../../packages/render/src/unlit-material";
 import { msdfReferenceMaterial } from "./msdf-reference";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 import { StandardFogPlugin } from "./standard-reference";
 
 const WIDTH = 96;
@@ -266,14 +265,12 @@ function gradientTexture(scene: Scene): DynamicTexture {
   return texture;
 }
 
-export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runUnlitParityProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine);
   try {
@@ -313,7 +310,6 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
       return { entry, mesh, standard };
     });
     const graph = new ForwardSceneFrameGraph(scene);
-    const order = readbackChannelOrder(engine.isWebGPU);
     const draw = async (): Promise<number[]> => {
       const deadline = performance.now() + 20_000;
       await graph.prepare(camera);
@@ -333,7 +329,7 @@ export async function runUnlitParityProof(backend: "webgl2" | "webgpu" = "webgl2
         }
       }
       const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-      return Array.from(toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order));
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     const results: { mode: string; fog: string; standard: number[]; unlit: number[] }[] = [];
     for (const mode of MODES) {

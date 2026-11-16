@@ -15,11 +15,10 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderEffectsSettings, parseLight2DProperties } from "@haptic/core";
-import { createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { add2DLight, add2DOccluder } from "../../../../packages/render/src/lights-2d";
 import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../../../../packages/render/src/unlit-material";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 96;
 const HEIGHT = 48;
@@ -29,14 +28,12 @@ const SPRITE: UnlitMaterialKey = { textured: true, backFaceCulling: true, fog: t
 const column = (x: number) => Math.round((x + 8) / 16 * WIDTH);
 const row = (y: number) => Math.round((y + 4) / 8 * HEIGHT);
 
-export async function runSurfaceLightingProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runSurfaceLightingProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine);
   try {
@@ -86,7 +83,7 @@ export async function runSurfaceLightingProof(backend: "webgl2" | "webgpu" = "we
       }
     }
     const raw = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-    const pixels = toRgbaPixels(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength), readbackChannelOrder(engine.isWebGPU));
+    const pixels = Array.from(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength));
     const red = (x: number, y = 0) => pixels[(row(y) * WIDTH + column(x)) * 4]!;
     graph.dispose();
     await graph.whenReleased();

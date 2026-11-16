@@ -71,7 +71,7 @@ Stage timings include nested passes and waits for the graphics driver. They are 
 | Setting | Description |
 | --- | --- |
 | Recording Duration (Seconds) | How long a recording runs, from 1 to 60. Default 10. |
-| GPU Timing | Also measures GPU frame time where the browser supports it. Off by default. Not available with WebGPU. |
+| GPU Timing | Also measures GPU frame time where the browser supports it. Off by default. |
 | Profile Retained Data Budget (MiB) | Under **Advanced**. The most timing data a recording keeps, from 4 to 64. Default 16. |
 
 Changes apply to the next recording.

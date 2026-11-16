@@ -19,13 +19,10 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import { Scene } from "@babylonjs/core/scene";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
-import { WebGPUCacheRenderPipeline } from "@babylonjs/core/Engines/WebGPU/webgpuCacheRenderPipeline";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { HapticLightingBlock } from "./haptic-lighting-block";
-// Render pipeline counts come from the WebGPU code, which a WebGPU Engine loads first.
-import "./webgpu-registrations";
 import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import {
@@ -61,7 +58,7 @@ import {
   sessionTrail,
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
-import { createEngine, PIPELINE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { createEngine, COMPILE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
 import { AUTHORED_CAMERA_PREFIX } from "./scene-illumination";
 import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";
@@ -79,7 +76,6 @@ import { prewarmMaterial, waterVariantBase } from "./material-compiler";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
 import { OwnedPostProcess } from "./owned-post-process";
 import { markSceneReadinessDirty, prewarmSceneMaterials, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_FIRST_FRAME_TIMEOUT_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./scene-perf";
-import { SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS } from "./stall-deadline";
 import { installTimerClock } from "./virtual-clock-test-fixtures";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { isSceneGameTimePaused } from "./scene-game-time";
@@ -808,7 +804,7 @@ describe("Play createEngine view", () => {
   }
 
   it("presents a load's first frame while earlier frames fill the GPU queue, and holds steady frames behind it", async () => {
-    // GPU markers that never finish: frames queued before the load (software GL compiling their pipelines) keep the
+    // GPU markers that never finish: frames queued before the load (software GL compiling their programs) keep the
     // Engine at its frames-in-flight limit. Before the fix the load's frame waited behind them until its deadline.
     const markers = vi.spyOn(gpuBusyProbe, "engineFrameMarkers").mockReturnValue((submitted) => ({ submitted, done: () => false, dispose: () => {} }));
     handles.push({ dispose: () => markers.mockRestore() });
@@ -836,12 +832,12 @@ describe("Play createEngine view", () => {
     expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 1 });
   });
 
-  it("pauses Play's game time but keeps drawing while the world view holds for render pipelines", async () => {
+  it("pauses Play's game time but keeps drawing while the world view holds for compiling effects", async () => {
     const engine = sharedEngine();
     const clock = frozenClock();
     const holds: boolean[] = [];
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onCompileHold: (held) => holds.push(held) });
     handles.push(handle);
     await handle.prewarmSceneMaterials();
     void handle.presentFirstFrame().catch(() => {});
@@ -851,14 +847,14 @@ describe("Play createEngine view", () => {
       renderViews(engine);
       engine.onEndFrameObservable.notifyObservers(engine);
     };
-    // NullEngine never defers a pipeline; the world view's hold is the seam. A failing assertion must not leak the spy.
-    const holding = vi.spyOn(SceneRenderCoordinator.prototype, "holdingForPipelines", "get").mockReturnValue(true);
+    // NullEngine links inside the call, so nothing stays pending; the world view's hold is the seam. A failing assertion must not leak the spy.
+    const holding = vi.spyOn(SceneRenderCoordinator.prototype, "holdingForCompiles", "get").mockReturnValue(true);
     handles.push({ dispose: () => holding.mockRestore() });
     frame();
     // A brief hold costs no stop.
     expect(holds).toEqual([]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
-    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+    clock.advance(COMPILE_HOLD_PAUSE_DELAY_MS);
     frame();
     expect(holds).toEqual([true]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(true);
@@ -866,7 +862,7 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
     const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
     expect(isSceneGameTimePaused(layerScene)).toBe(true);
-    // The frame that finds the pipelines ready must still draw.
+    // The frame that finds the effects ready must still draw.
     expect(handle.scheduler.shouldRender(Number.MAX_SAFE_INTEGER)).toBe(true);
     holding.mockReturnValue(false);
     frame();
@@ -893,7 +889,7 @@ describe("Play createEngine view", () => {
     // The driver boundary, under the Engine's own `createEffect` wrappers (Play installs them as it is created).
     vi.spyOn(engine, "createEffect").mockImplementation(((name: unknown, ...rest: unknown[]) =>
       name === "lit-variant" ? effect : create(name, ...rest)) as unknown as typeof engine.createEffect);
-    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onPipelineHold: (held) => holds.push(held) });
+    const handle = createEngine(canvas, { sharedEngine: engine, playMode: true, onCompileHold: (held) => holds.push(held) });
     handles.push(handle);
     let requested = false;
     handle.scene.addIsReadyCheck({ isReady: () => {
@@ -922,7 +918,7 @@ describe("Play createEngine view", () => {
       const presented = handle.presentFirstFrame();
       if (whileCompiling) {
         frame();
-        clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+        clock.advance(COMPILE_HOLD_PAUSE_DELAY_MS);
         frame();
         expect(holds).toEqual([]);
         set({ ready: true, linked: true });
@@ -970,7 +966,7 @@ describe("Play createEngine view", () => {
     frame();
     expect(holds).toEqual([]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
-    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+    clock.advance(COMPILE_HOLD_PAUSE_DELAY_MS);
     frame();
     expect(holds).toEqual([true]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(true);
@@ -1079,7 +1075,7 @@ describe("Play createEngine view", () => {
     await presentFirstFrame();
     set({ ready: false, linked: false });
     frame();
-    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS - 1);
+    clock.advance(COMPILE_HOLD_PAUSE_DELAY_MS - 1);
     frame();
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
     set({ ready: true, linked: true });
@@ -1087,7 +1083,7 @@ describe("Play createEngine view", () => {
     // The next hold is brief on its own, however long ago the last one began.
     set({ ready: false, linked: false });
     frame();
-    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS - 1);
+    clock.advance(COMPILE_HOLD_PAUSE_DELAY_MS - 1);
     frame();
     expect(holds).toEqual([]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(false);
@@ -1100,7 +1096,7 @@ describe("Play createEngine view", () => {
     Object.assign(canvas, { ownerDocument: { pointerLockElement: canvas, exitPointerLock } });
     set({ ready: false, linked: false });
     frame();
-    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+    clock.advance(COMPILE_HOLD_PAUSE_DELAY_MS);
     frame();
     expect(holds).toEqual([true]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(true);
@@ -1116,7 +1112,7 @@ describe("Play createEngine view", () => {
     await presentFirstFrame();
     set({ ready: false, linked: false });
     frame();
-    clock.advance(PIPELINE_HOLD_PAUSE_DELAY_MS);
+    clock.advance(COMPILE_HOLD_PAUSE_DELAY_MS);
     frame();
     expect(holds).toEqual([true]);
     handle.dispose();
@@ -1617,7 +1613,7 @@ describe("Play createEngine view", () => {
       if (nextWidth === width && nextHeight === height) return false;
       expect(handle.scene.frameGraph).toBeNull();
       width = nextWidth; height = nextHeight;
-      // Pinned WebGPU attachment recreation emits beginFrame synchronously.
+      // A resize that emits beginFrame synchronously.
       // Keep the real registered-view admission and graph ownership around it.
       engine.onBeginFrameObservable.notifyObservers(engine);
       return true;
@@ -1706,7 +1702,7 @@ describe("Play createEngine view", () => {
     vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => {
       hardwareScaling = level;
       if (restoring) {
-        // WebGPU resizing can synchronously re-enter native view admission.
+        // A resize that synchronously re-enters native view admission.
         expect(engine.views.every((view) => !view.enabled)).toBe(true);
         engine.onBeginFrameObservable.notifyObservers(engine);
       }
@@ -1859,38 +1855,6 @@ describe("Play createEngine view", () => {
         expect(state).toBe("failed");
         expect(cancel).toHaveBeenCalledOnce();
       }
-    } finally {
-      handle.dispose();
-      await frame;
-      submission.mockRestore();
-      vi.useRealTimers();
-    }
-  });
-
-  // WebGPU builds each render pipeline a draw created in the GPU queue, inside that draw's submitted-work wait.
-  it("gives a validated first draw longer to complete for each render pipeline it created", async () => {
-    const engine = sharedEngine();
-    const { handle } = playHandle(engine);
-    await handle.prewarmSceneMaterials();
-    handle.setPaused(true);
-    const pipelines = 30;
-    const cancel = vi.fn();
-    const submission = vi.spyOn(presentation, "submitPresentedFrame").mockImplementation((_engine, draw) => {
-      draw();
-      WebGPUCacheRenderPipeline.NumCacheMiss += pipelines;
-      return { completed: new Promise<void>(() => {}), cancel, fenceWaiting: () => false };
-    });
-    vi.useFakeTimers();
-    let state = "pending";
-    const frame = handle.presentFirstFrame().then(() => { state = "ready"; }, (error) => { state = "failed"; return error as Error; });
-    try {
-      renderViews(engine);
-      engine.onEndFrameObservable.notifyObservers(engine);
-      await vi.advanceTimersByTimeAsync(SCENE_DRIVER_COMPILE_TIMEOUT_MS + 5_000);
-      expect(state).toBe("pending");
-      await vi.advanceTimersByTimeAsync(pipelines * SCENE_PIPELINE_COMPLETION_ALLOWANCE_MS);
-      expect(await frame).toMatchObject({ message: expect.stringContaining(`render pipelines created: ${pipelines}.`) });
-      expect(state).toBe("failed");
     } finally {
       handle.dispose();
       await frame;
@@ -3719,25 +3683,6 @@ describe("Play createEngine view", () => {
     await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
     expect(retireTextures).toHaveBeenCalledOnce();
     expect(engine.isDisposed).toBe(false);
-  });
-
-  it("confirms an outlined Play view's release without another frame once its WebGPU device is lost", async () => {
-    const engine = sharedEngine();
-    const { handle } = playHandle(engine);
-    handle.applyCommand({ type: "setActorOutlines", slotId: 4, actorId: "hero",
-      outlines: outlineBindings("hero", [{ id: "ink", classId: "OutlineComponent", properties: { color: [1, 0, 0], width: 3 } }]) });
-    handle.applyCommand({ type: "assignMesh", slotId: 4, actorGuid: "hero", meshAssetGuid: null, meshKind: "box" });
-    await handle.prewarmSceneMaterials();
-    // Leases taken by the prepared graph now wait for a WebGPU end frame.
-    Object.defineProperty(engine, "isWebGPU", { get: () => true });
-    const frames = vi.spyOn(engine, "endFrame");
-    // What `watchWebGpuDevice` does on a lost device; the Engine never draws again.
-    (engine as unknown as { _contextWasLost: boolean })._contextWasLost = true;
-    engine.onContextLostObservable.notifyObservers(engine);
-    handle.dispose();
-    await handle.whenReleased();
-    await vi.waitFor(() => { expect(handle.scene.isDisposed).toBe(true); });
-    expect(frames).not.toHaveBeenCalled();
   });
 
   it("keeps shared Scene and MaterialLibrary owners until a held native release confirms", async () => {

@@ -13,7 +13,7 @@ Plays a Particle System attached to an actor, or one of its bones, without an ac
 | In | Exec |  |
 | System | Particle System | The Particle System to play. |
 | Attach To | Actor Reference | The actor the effect follows. |
-| Bone | String | A bone of that actor's model to follow. Leave it empty to follow the actor. |
+| Bone | String | A bone or [socket](../../assets/skeleton.md#sockets) of that actor's model to follow, typed or picked with the list button. Leave it empty to follow the actor. |
 | Location Offset | Vector | The effect's position relative to the actor or bone. |
 | Rotation Offset | Rotator | The effect's rotation relative to the actor or bone. |
 | Auto Destroy | Boolean | Removes the effect when it finishes or is stopped. Default on. |

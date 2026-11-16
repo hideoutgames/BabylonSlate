@@ -28,7 +28,7 @@ import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraph
 import type { Light } from "@babylonjs/core/Lights/light";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
-import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
@@ -44,20 +44,22 @@ import { ViewOcclusion, type ViewOcclusionDiagnostics } from "./view-occlusion";
 import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelper.functions";
 import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessState } from "./scene-perf";
+import { noteSceneReadinessChange } from "./scene-readiness-signal";
 import type { SceneReadinessScope } from "./scene-readiness-signal";
-import { verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
+import { lastProbedMesh, verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
+import { journalFollows, openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
 import { collectReadinessBlockers, noteReadinessBlocker } from "./readiness-blockers";
 import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { findSceneShadowController } from "./shadow-controller";
+import { mirrorDiagnostics } from "./mirrors";
 import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
-import { drawsInPass, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { isRevealPending, revealRound } from "./reveal-pending";
-import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
+import { withFirstDrawRound } from "./variant-first-draws";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -67,7 +69,8 @@ import {
 } from "./managed-render-resources";
 import { managedRenderTextureResource, renderTargetAllocationBytes } from "./render-target-resource-cost";
 import { drawSceneAuxiliaryViews } from "./scene-auxiliary-views";
-import { observeTaskDrawPass, type DrawPass } from "./draw-passes";
+import { enterDrawPass, leaveDrawPass, observeTaskDrawPass, type DrawPass } from "./draw-passes";
+import { timeParticleAnimation } from "./particle-animation-pass";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import {
   ManagedShadowObjectRendererTask,
@@ -173,15 +176,41 @@ function compiledEffectCount(engine: object): number {
   return Object.keys((engine as { _compiledEffects?: object })._compiledEffects ?? {}).length;
 }
 
-/** Runs `run` and returns how many times it asked the Engine for an Effect, one it already holds included. */
-function countEffectRequests(engine: object, run: () => void): number {
+/** Scoped-probe disagreements described at most (`rendererWork.scopedReadinessMismatchCauses`). */
+const MAX_SCOPED_MISMATCH_CAUSES = 8;
+/** Effects named per described disagreement. */
+const MAX_NAMED_REQUESTS = 3;
+
+/**
+ * An Effect as a disagreement names it: the mesh whose check asked for it and its Material, the shader name, whether
+ * it is ready, and the start of its defines.
+ */
+function describeRequestedEffect(effect: unknown): string {
+  const mesh = lastProbedMesh();
+  const asker = mesh ? `${mesh.name} [${mesh.material?.name ?? "no material"}] ` : "";
+  const { name, defines, isReady } = effect as { name?: unknown; defines?: unknown; isReady?: () => boolean };
+  const shader = typeof name === "string" ? name
+    : name && typeof name === "object"
+      ? String((name as Record<string, unknown>).fragmentElement ?? (name as Record<string, unknown>).fragment ?? (name as Record<string, unknown>).vertex ?? "?")
+      : "?";
+  const ready = typeof isReady === "function" ? isReady.call(effect) : false;
+  return `${asker}${shader} (${ready ? "ready" : "pending"}; ${typeof defines === "string" ? defines.replace(/#define /g, "").replace(/\s+/g, " ").slice(0, 160) : ""})`;
+}
+
+/**
+ * Runs `run` and returns how many times it asked the Engine for an Effect, one it already holds included. `named`
+ * receives the first of them as `describeRequestedEffect` gives them.
+ */
+function countEffectRequests(engine: object, run: () => void, named?: string[]): number {
   const target = engine as { createEffect(...args: unknown[]): unknown };
   const own = Object.prototype.hasOwnProperty.call(target, "createEffect");
   const create = target.createEffect;
   let count = 0;
   const counting = function (this: unknown, ...args: unknown[]) {
     count += 1;
-    return create.apply(this, args);
+    const effect = create.apply(this, args);
+    if (named && named.length < MAX_NAMED_REQUESTS) named.push(describeRequestedEffect(effect));
+    return effect;
   };
   target.createEffect = counting;
   try {
@@ -218,7 +247,18 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   /** A world view's occlusion culling, and the colour pass whose first draws keep a mesh in the list. */
   occlusion: { view: ViewOcclusion; colourPass: () => number } | null = null;
 
+  /** The whole cull is the `cull` pass: Babylon's frustum cull, the hidden-mesh and occlusion filters, the world list. */
   override _execute(): void {
+    const engine = this.camera.getEngine();
+    enterDrawPass(engine, "cull");
+    try {
+      this.cullFrame();
+    } finally {
+      leaveDrawPass(engine);
+    }
+  }
+
+  private cullFrame(): void {
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
     settlePlayViewCulling(this.camera.getScene());
     const target = this.camera.outputRenderTarget?.renderTarget;
@@ -295,10 +335,6 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 export class ForwardSceneFrameGraph {
   private measureWork = false;
   private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, readinessProbeMs: 0 };
-  /** Geometry render pass ids that drew in a complete frame of the prepared graph (`noteCompleteFrame`). */
-  private readonly drawnGeometryPasses = new Set<number>();
-  /** Each geometry render pass id's `drawsInPass` count at the last complete frame. */
-  private readonly geometryDraws = new Map<number, number>();
   /** Effects this graph's readiness probes requested and that were not ready when their probe ended. */
   readonly requestedEffects = new Set<Effect>();
 
@@ -316,6 +352,8 @@ export class ForwardSceneFrameGraph {
   private scopedProbes = 0;
   /** Scoped probes a whole probe disagreed with, counted while verifying (`verifyScopedReadinessProbes`). */
   private scopedMismatches = 0;
+  /** Why the first of them disagreed (`wholeProbeAgrees`); at most `MAX_SCOPED_MISMATCH_CAUSES`. */
+  private readonly scopedMismatchCauses: string[] = [];
   /** What the strict probe running names as unready (`collectReadinessBlockers`), while measuring. */
   private readonly probeBlockers: string[] = [];
   /** What the last strict probe that failed named; kept until the next one fails. */
@@ -323,11 +361,16 @@ export class ForwardSceneFrameGraph {
 
   diagnostics() {
     this.measureWork = true;
+    const shadowJournal = findSceneShadowController(this.scene)?.journalDiagnostics();
+    const mirrors = mirrorDiagnostics(this.scene);
     return {
+      ...(shadowJournal ? { shadowJournal } : {}),
+      ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
-      scopedReadinessMismatches: this.scopedMismatches, readinessBlockers: [...this.failedBlockers],
+      scopedReadinessMismatches: this.scopedMismatches, scopedReadinessMismatchCauses: [...this.scopedMismatchCauses],
+      readinessBlockers: [...this.failedBlockers],
     };
   }
   private graph: FrameGraph | undefined;
@@ -390,6 +433,26 @@ export class ForwardSceneFrameGraph {
   private unscopedMark = true;
   private readonly scopedMeshes = new Set<AbstractMesh>();
   /**
+   * Meshes no pass draws now (disabled, invisible or without geometry: `followDrawable`), each with the count of passing
+   * whole probes when this view found it so. A probe passes over them, so one that passed while a mesh was undrawn
+   * leaves its variants unasked: the frame it becomes drawable asks it (`followDrawable`).
+   */
+  private readonly undrawn = new WeakMap<AbstractMesh, number>();
+  /** Undrawn meshes whose writes the render change journal does not hear (`journalFollows`): polled each frame. */
+  private readonly polledUndrawn = new Set<AbstractMesh>();
+  /** Undrawn meshes a passing scoped probe named: they must be asked when they become drawable. */
+  private readonly passedOver = new WeakSet<AbstractMesh>();
+  /** Whether each mesh this view follows had a visibility below 1 when last read (`followDrawable`). */
+  private readonly translucent = new WeakMap<AbstractMesh, boolean>();
+  private wholeProbesPassed = 0;
+  /** The last passing probe was limited to `scopedMeshes` (`isReady`); any other passing probe counts as whole. */
+  private scopedProbePassed = false;
+  /** The enabled, visibility and geometry writes of the Scene's meshes (`followDrawable`). */
+  private readonly drawableChanges: RenderChangeReader;
+  private readonly visitDrawableChange = (node: unknown): void => {
+    if (node instanceof AbstractMesh) this.followDrawable(node);
+  };
+  /**
    * The last passing probe tolerated a mesh drawing its previous Effect while its new variant compiles. Steady frames
    * probe again each frame until every swap is drawn (`recheckVariantSwaps`); a probe that tolerates none re-probes.
    */
@@ -433,14 +496,24 @@ export class ForwardSceneFrameGraph {
   private graphRender: Scene["customRenderFunction"];
   // Scene.render already updates the selected camera. The pinned graph
   // function would update every scene camera a second time if passed true.
+  // The before-render stage (camera updates, then every onBeforeRenderObservable observer) is the `observers` pass; it
+  // ends where Babylon starts its render targets (`beforeRenderTargets`).
   private readonly pinnedGraphRender = (_update: boolean, ignoreAnimations: boolean) => {
-    this.graphRender!.call(this.scene, false, ignoreAnimations);
+    enterDrawPass(this.scene.getEngine(), "observers");
+    this.observersOpen = true;
+    try {
+      this.graphRender!.call(this.scene, false, ignoreAnimations);
+    } finally {
+      this.closeObservers();
+    }
     this.endDraw();
   };
+  private observersOpen = false;
   private readonly readinessDetach: (() => void)[] = [];
   private readonly meshMaterialObservers = new Map<AbstractMesh, Observer<AbstractMesh>>();
   private readonly lightEnabledObservers = new Map<Light, Observer<boolean>>();
   private readonly beforeRender: Observer<Scene> | null;
+  private readonly beforeRenderTargets: Observer<Scene> | null;
   private readonly onDispose: Observer<Scene>;
   private readonly scene: Scene;
 
@@ -457,8 +530,10 @@ export class ForwardSceneFrameGraph {
       const observer = observable.add(notify);
       this.readinessDetach.push(() => observable.remove(observer));
     };
+    this.drawableChanges = openRenderChangeReader(scene, RenderChange.Enabled | RenderChange.Visibility | RenderChange.Geometry);
     watch(scene.onNewMeshAddedObservable, (mesh) => {
       this.watchMesh(mesh);
+      this.followDrawable(mesh);
       // Babylon announces an added mesh on a later task: a frame drawn before then found it by the Scene's mesh count
       // and marked it, and its probe has run.
       if (this.foundBeforeAnnounced.delete(mesh)) return;
@@ -467,6 +542,8 @@ export class ForwardSceneFrameGraph {
     });
     watch(scene.onMeshRemovedObservable, (mesh) => {
       this.unwatchMesh(mesh);
+      this.undrawn.delete(mesh);
+      this.polledUndrawn.delete(mesh);
       this.knownMeshes.delete(mesh);
       this.foundBeforeAnnounced.delete(mesh);
       this.removedMeshes += 1;
@@ -497,6 +574,7 @@ export class ForwardSceneFrameGraph {
     for (const mesh of scene.meshes) {
       this.watchMesh(mesh);
       this.knownMeshes.add(mesh);
+      this.followDrawable(mesh);
     }
     for (const system of scene.particleSystems) this.knownParticleSystems.add(system);
     for (const light of scene.lights) this.watchLight(light);
@@ -510,7 +588,19 @@ export class ForwardSceneFrameGraph {
       -1,
       true,
     );
+    // Right after the last before-render observer and before Babylon animates particles: ends the `observers` pass and
+    // brackets the particle systems it finds (an observer may have spawned them).
+    this.beforeRenderTargets = this.auxiliary ? null : scene.onBeforeRenderTargetsRenderObservable.add(() => {
+      this.closeObservers();
+      timeParticleAnimation(scene);
+    }, -1, true);
     this.onDispose = scene.onDisposeObservable.add(() => this.dispose());
+  }
+
+  private closeObservers(): void {
+    if (!this.observersOpen) return;
+    this.observersOpen = false;
+    leaveDrawPass(this.scene.getEngine());
   }
 
   attachPostProcess(options: AttachPostProcessStackOptions, invalidate: () => void): AttachedPostProcessStack {
@@ -593,7 +683,10 @@ export class ForwardSceneFrameGraph {
   /**
    * Counts each task's draws to its pass (`RenderDiagnostics.drawPasses`): the shadow maps, the geometry pass and Screen
    * Shadows, the outline, the post-process stages (and their output copy), the object passes, the water scene copy's
-   * own tasks; clears, culling and a chainless output copy are `other`.
+   * own tasks; clears and a chainless output copy are `other`. `Forward cull` brackets itself (`cull`, with the occlusion
+   * filter that runs after Babylon's cull, which a task observer would end before), and the readiness work around the
+   * draw, the before-render stage and particle animation are bracketed outside the graph (`readiness`, `observers`,
+   * `particles`).
    */
   private observeDrawPasses(): void {
     const engine = this.scene.getEngine();
@@ -619,56 +712,6 @@ export class ForwardSceneFrameGraph {
   /** Prepared graph task names in record order, for diagnostics and tests. */
   taskNames(): string[] {
     return this.graph?.tasks.map((task) => task.name) ?? [];
-  }
-
-  /**
-   * Whether `renderPassId` is one of the prepared graph's object passes (opaque,
-   * transparent, geometry), their blended depth pre-passes or the shared
-   * outline masks, which all draw every frame. Shadow maps, which may draw
-   * once, and post-process draws under the camera's pass are not.
-   */
-  ownsObjectPass(renderPassId: number): boolean {
-    for (const task of this.graph?.tasks ?? []) {
-      const owner = task as { objectRenderer?: { renderPassIds?: readonly number[] }; ownsRenderPass?: (id: number) => boolean };
-      if (owner.objectRenderer?.renderPassIds?.includes(renderPassId) || owner.ownsRenderPass?.(renderPassId)) return true;
-    }
-    return false;
-  }
-
-  /** The prepared graph's geometry tasks (the spatial effects' and the authored post-process chain's geometry buffers). */
-  private *geometryTasks(): Generator<LogicalGeometryTask> {
-    for (const task of this.graph?.tasks ?? []) if (task instanceof LogicalGeometryTask) yield task;
-  }
-
-  /**
-   * The view drew a complete frame (no draw skipped). A geometry pass that ran
-   * and drew something since the last one (`drawsInPass`) has drawn the meshes
-   * it saw; one its spatial stages left idle is forgotten, since its next draws
-   * can all be new.
-   */
-  noteCompleteFrame(): void {
-    const engine = this.scene.getEngine();
-    for (const task of this.geometryTasks()) {
-      for (const id of task.objectRenderer.renderPassIds) {
-        const draws = drawsInPass(engine, id);
-        const drew = draws !== (this.geometryDraws.get(id) ?? 0);
-        this.geometryDraws.set(id, draws);
-        if (task.disabled) this.drawnGeometryPasses.delete(id);
-        else if (drew) this.drawnGeometryPasses.add(id);
-      }
-    }
-  }
-
-  /**
-   * Whether `renderPassId` is a geometry pass that drew something in a
-   * complete frame since the graph was prepared or invalidated, and has not
-   * been idle since (`noteCompleteFrame`): a frame may then present it without
-   * a draw for a few frames. Before that, its draws (a new graph, an effect
-   * switched on, a Fog Volume coming into view, a first view of anything)
-   * can miss every mesh's pipeline at once.
-   */
-  omitsGeometryPass(renderPassId: number): boolean {
-    return this.drawnGeometryPasses.has(renderPassId);
   }
 
   /** Actual mask/compose drawing passes, separately from clear records. */
@@ -748,8 +791,6 @@ export class ForwardSceneFrameGraph {
   invalidate(): void {
     this.failure = undefined;
     this.failedOutput = undefined;
-    // A new run (a scene switch, a changed Material library) can give every mesh new geometry variants.
-    this.drawnGeometryPasses.clear();
     this.markReadinessDirty("invalidate");
   }
 
@@ -798,6 +839,9 @@ export class ForwardSceneFrameGraph {
     }
     this.readinessDirtyFlag = true;
     this.readinessRevision += 1;
+    // Owners outside the graph follow the Scene's count (`sceneReadinessRevision`): what the Scene's own view hears, of
+    // changes a mesh draws with. An auxiliary view hears the same Scene and marks for its own preparations besides.
+    if (!this.auxiliary && (!scope || scope.length > 0)) noteSceneReadinessChange(this.scene);
     // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.
     for (const task of this.graph?.tasks ?? [])
       if (task instanceof ManagedShadowObjectRendererTask || task instanceof LogicalGeometryTask) task.forgetCompilesAhead();
@@ -811,6 +855,11 @@ export class ForwardSceneFrameGraph {
 
   /** A graph-level probe passed: it covers the outline task along with every other task. */
   private markGraphProbed(): void {
+    // What the probe passed over stays unasked until it becomes drawable: a scoped probe the undrawn meshes it named,
+    // any other every undrawn mesh.
+    if (!this.scopedProbePassed) this.wholeProbesPassed += 1;
+    else for (const mesh of this.scopedMeshes) if (this.undrawn.has(mesh)) this.passedOver.add(mesh);
+    this.scopedProbePassed = false;
     this.readinessDirtyFlag = false;
     this.unscopedMark = false;
     this.scopedMeshes.clear();
@@ -841,7 +890,10 @@ export class ForwardSceneFrameGraph {
    * the readiness-relevant collection sizes each frame so a membership change
    * still invalidates the cache before the very next render.
    */
-  private syncMembership(): void {
+  private syncMembership(afterDraw = false): void {
+    // What draws is read as the next probe will find it: a mesh shown only for the draw (a Fog Volume's pass, enabled
+    // while it renders) is never drawable to a probe, and marking it at the draw's end would hold every frame.
+    if (!afterDraw) this.syncDrawable();
     const outlineRevision = this.outlineView?.revision ?? -1;
     if (outlineRevision !== this.observedOutlineRevision) {
       this.observedOutlineRevision = outlineRevision;
@@ -884,11 +936,57 @@ export class ForwardSceneFrameGraph {
         if (this.knownMeshes.has(mesh)) continue;
         this.knownMeshes.add(mesh);
         this.foundBeforeAnnounced.add(mesh);
+        // A Material it is given before Babylon announces it marks too.
+        this.watchMesh(mesh);
+        this.followDrawable(mesh);
         found.push(mesh);
       }
       this.markReadinessDirty("membership", anyMesh ? undefined : found);
     }
     this.membershipRecorded = true;
+  }
+
+  /**
+   * Reads the meshes whose enabled state, visibility or geometry changed since the last frame (the render change
+   * journal's writes), and those it cannot hear that are undrawn. Runs before every probe, not at a draw's end, so
+   * what a probe found drawable is what it asked. A frame that shows or hides nothing marks nothing.
+   */
+  private syncDrawable(): void {
+    if (!this.drawableChanges.drain(this.visitDrawableChange)) {
+      // Fell too far behind: the changes it lost may have made any undrawn mesh drawable.
+      for (const mesh of this.scene.meshes) this.followDrawable(mesh);
+      this.markReadinessDirty("drawable");
+    }
+    for (const mesh of this.polledUndrawn) this.followDrawable(mesh);
+  }
+
+  /**
+   * Follows whether any pass can draw `mesh` (Babylon's object renderers pass over a disabled or invisible mesh and
+   * one without geometry). A mesh that becomes drawable after a passing probe passed over it marks itself: the next
+   * frame asks its variants before it draws, as the probe that consumed its earlier mark could not.
+   */
+  private followDrawable(mesh: AbstractMesh): void {
+    // Editor guides and Play helpers are shown and hidden as selection changes, without a probe
+    // (render.md, Editor selection): they are editor chrome, never a game's visuals.
+    if (isEditorHelperMesh(mesh)) return;
+    // Babylon blends a mesh whose visibility is below 1 (`needAlphaBlendingForMesh`): crossing it changes its variant,
+    // as a glyph revealed from 0 or a fade that ends does.
+    const translucent = mesh.visibility < 1;
+    const wasTranslucent = this.translucent.get(mesh);
+    this.translucent.set(mesh, translucent);
+    if (wasTranslucent !== undefined && wasTranslucent !== translucent) this.markReadinessDirty("meshVisibility", [mesh]);
+    const since = this.undrawn.get(mesh);
+    if (!mesh.isEnabled() || !mesh.isVisible || !mesh.subMeshes?.length) {
+      if (since !== undefined) return;
+      this.undrawn.set(mesh, this.wholeProbesPassed);
+      if (!journalFollows(mesh)) this.polledUndrawn.add(mesh);
+      return;
+    }
+    if (since === undefined) return;
+    this.undrawn.delete(mesh);
+    this.polledUndrawn.delete(mesh);
+    const passedOver = this.passedOver.delete(mesh);
+    if (passedOver || since < this.wholeProbesPassed) this.markReadinessDirty("drawable", [mesh]);
   }
 
   /** Whether the Scene holds a particle system this graph has not seen; every one it holds counts as seen afterwards. */
@@ -919,15 +1017,22 @@ export class ForwardSceneFrameGraph {
    * scene-level probe gates preparation.
    */
   sceneStrictlyReady(camera: Camera): boolean {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    try {
+      return this.probeSceneStrictly(camera);
+    } finally {
+      leaveDrawPass(engine);
+    }
+  }
+
+  private probeSceneStrictly(camera: Camera): boolean {
     if (this.unavailable(camera)) return false;
     this.syncMembership();
     if (this.swapsStillPending()) return false;
     // What admission stales (a caster that joined or left, a light capacity that changed) is staled before the probe:
     // `readiness` admits right after it, and would otherwise probe every mesh a second time in the same frame.
-    // Not where pipelines are deferred (WebGPU): there a spawn whose pipelines exist is revealed by the probe that
-    // first sees it, in its first frame, and only then does the admission list it in the drawn shadow maps, which
-    // its reveal would otherwise ask for theirs and wait a frame for (`casterPipelinesWarm`).
-    if (this.readinessDirtyFlag && !pipelinesDeferred(this.scene.getEngine())) this.syncShadowAdmission(camera);
+    if (this.readinessDirtyFlag) this.syncShadowAdmission(camera);
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
@@ -953,6 +1058,7 @@ export class ForwardSceneFrameGraph {
     } else {
       this.strictChecks += 1;
       this.noteStrictProbe();
+      this.scopedProbePassed = false;
       // Built-in water is left out: which variant it draws depends on the plan the next preparation makes from the
       // current demand, and that preparation's own probe compiles it under the pass that draws it.
       // An auxiliary view draws only inside the scene view's ready frames, and
@@ -1068,6 +1174,16 @@ export class ForwardSceneFrameGraph {
    * would find. The graph is admitted and its need of a preparation reported, without probing every mesh again.
    */
   readiness(camera: Camera, probe = true): ForwardSceneGraphReadiness {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    try {
+      return this.admitReadiness(camera, probe);
+    } finally {
+      leaveDrawPass(engine);
+    }
+  }
+
+  private admitReadiness(camera: Camera, probe: boolean): ForwardSceneGraphReadiness {
     this.admittedCamera = undefined;
     const unavailable = this.unavailable(camera);
     if (unavailable) return { path: "frameGraph", reason: unavailable, ready: false };
@@ -1094,10 +1210,8 @@ export class ForwardSceneFrameGraph {
     return { path: "frameGraph", ready: true };
   }
 
-  /** Render one scene frame, or skip it with the reason it cannot draw yet.
-   * reuseAdmission is for a caller that invokes readiness() immediately before
-   * with no scene work between; any invalidation or strict probe re-admits. */
-  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: false; reason?: string } {
+  /** What `render` does before it draws (its `readiness` pass): the frame's skip, or undefined once it may draw. */
+  private admitFrame(camera: Camera, reuseAdmission: boolean): (ForwardSceneGraphResult & { rendered?: false; reason?: string }) | undefined {
     const admitted = this.admittedCamera;
     this.admittedCamera = undefined;
     // An auxiliary view steps no animation or particles, so a paused scene can draw it.
@@ -1107,7 +1221,6 @@ export class ForwardSceneFrameGraph {
     if (!reuseAdmission || admitted !== camera || this.admittedRevision !== this.readinessRevision ||
       this.admittedChecks !== this.strictChecks)
       this.syncShadowAdmission(camera);
-    const engine = this.scene.getEngine();
     this.refreshFailure(camera);
     const outputCurrent = this.outputMatches(this.output(camera));
     const reason =
@@ -1124,11 +1237,28 @@ export class ForwardSceneFrameGraph {
     if (!this.auxiliary) this.setActiveCamera(camera);
     if (reason) return { path: "frameGraph", reason, rendered: false };
 
-    const graph = this.graph!;
     this.restaleChangedShadows();
     this.assignCamera(camera);
     this.syncSceneInputs();
     if (!this.probeDirty()) return { path: "frameGraph", reason: "FrameGraph is not ready.", rendered: false };
+    return undefined;
+  }
+
+  /** Render one scene frame, or skip it with the reason it cannot draw yet.
+   * reuseAdmission is for a caller that invokes readiness() immediately before
+   * with no scene work between; any invalidation or strict probe re-admits. */
+  render(camera: Camera, updateCameras = true, reuseAdmission = false): ForwardSceneGraphResult & { rendered?: false; reason?: string } {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    let skipped: ForwardSceneGraphResult & { rendered?: false; reason?: string } | undefined;
+    try {
+      skipped = this.admitFrame(camera, reuseAdmission);
+    } finally {
+      leaveDrawPass(engine);
+    }
+    if (skipped) return skipped;
+
+    const graph = this.graph!;
     const previousCamera = this.scene.activeCamera;
     const cameras = this.scene.activeCameras;
     const ubo = this.scene.getSceneUniformBuffer();
@@ -1167,7 +1297,7 @@ export class ForwardSceneFrameGraph {
         else renderSceneWithGameTime(this.scene, updateCameras);
       }
       // What Scene.render's after-render observers changed stales the next frame's probe, not this frame.
-      this.syncMembership();
+      this.syncMembershipTimed();
       // A Scene.render that never ran the graph's render function has no draw end: the whole call is the window.
       const drawn = this.drawnRevision ?? this.readinessRevision;
       return { path: "frameGraph", ...(revision === drawn ? {} : { rendered: false }) };
@@ -1194,8 +1324,19 @@ export class ForwardSceneFrameGraph {
    * or during the draw holds the frame.
    */
   private endDraw(): void {
-    this.syncMembership();
+    this.syncMembershipTimed();
     this.drawnRevision = this.readinessRevision;
+  }
+
+  /** `syncMembership` after the draw, as part of the frame's `readiness` pass. */
+  private syncMembershipTimed(): void {
+    const engine = this.scene.getEngine();
+    enterDrawPass(engine, "readiness");
+    try {
+      this.syncMembership(true);
+    } finally {
+      leaveDrawPass(engine);
+    }
   }
 
   /** Releases only this coordinator's tasks and graph, never the scene/Engine. */
@@ -1211,6 +1352,8 @@ export class ForwardSceneFrameGraph {
     this.releasePostProcessOwner();
     for (const detach of this.readinessDetach) detach();
     this.readinessDetach.length = 0;
+    this.drawableChanges.dispose();
+    this.polledUndrawn.clear();
     for (const [mesh, observer] of this.meshMaterialObservers)
       mesh.onMaterialChangedObservable.remove(observer);
     this.meshMaterialObservers.clear();
@@ -1218,6 +1361,7 @@ export class ForwardSceneFrameGraph {
       light.onEnabledStateChangedObservable.remove(observer);
     this.lightEnabledObservers.clear();
     this.scene.onBeforeRenderObservable.remove(this.beforeRender);
+    this.scene.onBeforeRenderTargetsRenderObservable.remove(this.beforeRenderTargets);
     this.scene.onDisposeObservable.remove(this.onDispose);
     if (!this.pending) this.releaseGraph();
   }
@@ -1394,7 +1538,7 @@ export class ForwardSceneFrameGraph {
         const engine = scene.getEngine();
         /** Whether the view's own multisampled colour presents by one blit to the backbuffer (`MultisamplePresentTask`). */
         const presentsByBlit = (own: { samples: number; colorType: number }, laterReaders: boolean) => presentsMultisampleByBlit({
-          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
+          webGl2: (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
           backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
           laterReaders,
         });
@@ -1466,7 +1610,7 @@ export class ForwardSceneFrameGraph {
         // Alpha-tested draws turn alpha-to-coverage on for themselves (`alpha-to-coverage.ts`); nothing after the pass keeps it.
         guardAlphaToCoverageBlending(scene.getEngine());
         this.objects.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
-        this.objects.warmsPipelines = !this.auxiliary;
+        this.objects.spreadsFirstDraws = !this.auxiliary;
         // The strict outline mask reads the scene's depth after this pass where a chain or the view's own pair holds
         // it as a texture (the backbuffer's cannot be read): resolved by sample where the pass is multisampled.
         const outlineDepth = this.outlineTask && this.seedsFromSceneDepth
@@ -1776,16 +1920,17 @@ export class ForwardSceneFrameGraph {
   }
 
   /**
-   * Set by the view once it draws steady frames: its readiness rounds then make the Effects they request first wait
-   * for their pipelines where those are deferred (`variant-pipeline-warmup.ts`), strict ones included.
+   * Set by the view once it draws steady frames: its readiness rounds then make the Effects they request first cold
+   * (`variant-first-draws.ts`), strict ones included.
    */
   warmsVariants = false;
 
   /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    const round = () => this.timedProbe(() => withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
+    const round = () => this.timedProbe(() => withFirstDrawRound(this.scene.getEngine(), this.warmsVariants,
       () => revealRound(() => this.collectingEffects(() => this.probeReady()))));
     const scope = this.probeScope();
+    this.scopedProbePassed = false;
     if (!scope) return round();
     if (this.measureWork) this.scopedProbes += 1;
     if (!withReadinessProbeScope(scope, round)) return false;
@@ -1795,6 +1940,7 @@ export class ForwardSceneFrameGraph {
       return false;
     }
     if (verifiesScopedReadinessProbes() && !this.wholeProbeAgrees(round)) this.scopedMismatches += 1;
+    this.scopedProbePassed = true;
     return true;
   }
 
@@ -1802,15 +1948,26 @@ export class ForwardSceneFrameGraph {
    * Verification: a probe of every mesh right after a scoped one that passed must pass too and ask the Engine for no
    * Effect. One it creates is a variant the scoped probe left uncompiled; one it asks for again is a mesh outside the
    * scope whose variant changed. A scoped probe that found a swap pending left a variant unadopted, which every probe
-   * asks for again: then only a new Effect counts.
+   * asks for again: then only a new Effect counts. The first disagreements say which of the three it was, with the
+   * reasons marked for the scoped probe and the Effects the whole probe asked for (`scopedReadinessMismatchCauses`).
    */
   private wholeProbeAgrees(round: () => boolean): boolean {
     const engine = this.scene.getEngine();
     const swapped = this.probeSwapped;
     const effects = compiledEffectCount(engine);
+    const describes = this.scopedMismatchCauses.length < MAX_SCOPED_MISMATCH_CAUSES;
+    const reasons = describes ? [...this.markedReasons].join("+") : "";
+    const scoped = describes ? this.scopedMeshes.size : 0;
+    const named: string[] | undefined = describes ? [] : undefined;
     let passed = false;
-    const requests = countEffectRequests(engine, () => { passed = round(); });
-    return passed && compiledEffectCount(engine) === effects && (swapped || requests === 0);
+    const requests = countEffectRequests(engine, () => { passed = round(); }, named);
+    const compiled = compiledEffectCount(engine) - effects;
+    const agrees = passed && compiled === 0 && (swapped || requests === 0);
+    if (!agrees && named) {
+      const what = !passed ? "the whole probe failed" : compiled ? `the whole probe compiled ${compiled}` : `the whole probe asked for ${requests}`;
+      this.scopedMismatchCauses.push(`${what} after ${reasons || "no reason"} (${scoped} scoped)${named.length ? `: ${named.join("; ")}` : ""}`);
+    }
+    return agrees;
   }
 
   /**
@@ -2030,8 +2187,6 @@ export class ForwardSceneFrameGraph {
 
   private releaseGraphResources(): void {
     this.admittedCamera = undefined;
-    this.drawnGeometryPasses.clear();
-    this.geometryDraws.clear();
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
@@ -2053,7 +2208,7 @@ export class ForwardSceneFrameGraph {
       if (water) this.postProcessRetirement.add(water);
       void water?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
       if (ownScene) {
-        // The graph disposed the targets; WebGPU destroys them at the end of its frame.
+        // The graph disposed the targets.
         const released = releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), ownScene.lease);
         this.postProcessRetirement.add({ whenDisposed: () => released, whenReleased: () => released });
       }

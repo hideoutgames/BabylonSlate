@@ -82,14 +82,13 @@ describe("hproject codec", () => {
       createEmptyProjectFiles({ guid: "rendering", name: "Rendering" }),
     );
     const snapshot = createEmptyProject("Rendering", {
-      render: { gpuBackend: "webgpu", mode: "cel" },
+      render: { mode: "cel" },
     });
     const manifest = decodeProjectZip(await exportProjectZip(source, snapshot)).find(
       (file) => file.path === "project.json",
     )!;
     const reopened = JSON.parse(new TextDecoder().decode(manifest.data));
     expect(normalizeProjectSettings(reopened.settings).render).toMatchObject({
-      gpuBackend: "webgpu",
       mode: "cel",
     });
   });

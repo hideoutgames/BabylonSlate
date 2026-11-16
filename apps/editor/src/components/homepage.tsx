@@ -11,6 +11,7 @@ import {
   CheckCheckIcon,
   ChevronDownIcon,
   CircleCheckIcon,
+  FolderGit2Icon,
   FolderOpenIcon,
   Grid2x2Icon,
   Grid3x3Icon,
@@ -31,8 +32,11 @@ import {
 import { SearchInput } from "@haptic/editor-kit";
 import {
   getHostPlatform,
+  isTestModeEnabled,
   pickImportFiles,
+  type NewProjectHosting,
 } from "@haptic/vfs";
+import { isSourceControlHost } from "@haptic/source-control";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import {
   AlertDialog,
@@ -77,7 +81,9 @@ import {
   isBuiltInStarterKind,
   randomProjectName,
   normalizeProjectFolderName,
+  remoteNeedsAppStorage,
   type CreateProjectOptions,
+  type LaunchPhase,
 } from "../lib/create-project";
 import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
@@ -97,8 +103,11 @@ import {
   recordTemplateUse,
 } from "./homepage-template-browser";
 import { importTemplateArchive } from "../services/template-service";
-import { useDebugMode } from "../context/app-settings-context";
+import { getAppSettingsSnapshot, updateAppSettings, useDebugMode } from "../context/app-settings-context";
 import { useLauncherTransition } from "./launcher-transition";
+import type { CloneProjectRequest } from "../context/document-context-types";
+import type { TransferMonitor } from "../services/source-control-sync";
+import type { NewRepositoryRequest } from "../services/source-control-publish";
 import homepageStyles from "./homepage.css?inline";
 
 const SettingsModal = lazy(() =>
@@ -106,6 +115,8 @@ const SettingsModal = lazy(() =>
     default: module.SettingsModal,
   })),
 );
+// Clone (host APIs, the Git client) loads when it is opened.
+const CloneProjectDialog = lazy(() => import("./clone-project-dialog"));
 
 const PROJECT_LAYOUT_OPTIONS = [
   { value: "large", label: "Large Cards", icon: Grid2x2Icon },
@@ -136,6 +147,8 @@ interface HomepageProps {
   ) => Promise<void>;
   onOpenExternal: (source?: "folder" | "zip") => Promise<void>;
   onOpenProject: (handle: ProjectFolderHandle) => Promise<void>;
+  /** Clone Project; the clone then opens like a listed project. */
+  onCloneProject?: (request: CloneProjectRequest, transfer: TransferMonitor, signal: AbortSignal) => Promise<ProjectFolderHandle>;
   onUpdateProject: (
     handle: ProjectFolderHandle,
     details: UpdateListedProjectOptions,
@@ -157,6 +170,7 @@ export function Homepage({
   onCreateFromTemplate,
   onOpenExternal,
   onOpenProject,
+  onCloneProject,
   onUpdateProject,
   onRemoveFromList,
   onReconnect,
@@ -190,8 +204,12 @@ export function Homepage({
       cancelled = true;
     };
   }, [dataReady, projects.length, transition.ready]);
-  const launch = async (action: () => Promise<void>, label = "Haptic") => {
-    transition.begin(label);
+  const launch = async (
+    action: () => Promise<void>,
+    label = "Haptic",
+    phase: LaunchPhase = "opening",
+  ) => {
+    transition.begin(label, phase);
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
@@ -233,6 +251,7 @@ export function Homepage({
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
   const [chooseTemplate, setChooseTemplate] = useState(true);
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
@@ -258,6 +277,20 @@ export function Homepage({
   const [pixelArt, setPixelArt] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
   const hostPlatform = getHostPlatform();
+  /** Clone and New Project's Remote need source control on this host (none on production web). */
+  const sourceControlAvailable = isSourceControlHost(hostPlatform, isTestModeEnabled());
+  const canClone = onCloneProject !== undefined && sourceControlAvailable;
+  const [hosting, setHosting] = useState<NewProjectHosting>("local");
+  const [rememberedOrigin, setRememberedOrigin] = useState("");
+  /** Remote: the repository the fields describe, null while one is missing. */
+  const [repository, setRepository] = useState<NewRepositoryRequest | null>(null);
+  const changeHosting = (next: NewProjectHosting) => {
+    setHosting(next);
+    // The Remote fields report again when they mount.
+    setRepository(null);
+    // A chosen folder on iOS and Android cannot hold a Remote project.
+    if (next === "remote" && remoteNeedsAppStorage(hostPlatform)) setPickFolder(false);
+  };
   const createName = name.trim() || suggestedName;
   const nameIssue = editTarget
     ? name.trim()
@@ -357,6 +390,11 @@ export function Homepage({
     setBlackBars(false);
     setPixelArt(false);
     setPickFolder(false);
+    // The last choice on this device, read as the dialog opens (settings hydrate after the Homepage mounts).
+    const remembered = getAppSettingsSnapshot().settings.newProjectHosting;
+    setHosting(sourceControlAvailable ? remembered.hosting : "local");
+    setRememberedOrigin(remembered.origin);
+    setRepository(null);
     setError(null);
     setCreateOpen(true);
   };
@@ -501,6 +539,19 @@ export function Homepage({
                 <span className="homepage-optional-label">Open</span>
               </Button>
             )}
+            {canClone ? (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Clone Project"
+                data-testid="clone-project"
+                disabled={busy}
+                onClick={() => setCloneOpen(true)}
+              >
+                <FolderGit2Icon data-icon="inline-start" />
+                <span className="homepage-optional-label">Clone</span>
+              </Button>
+            ) : null}
             <Button
               size="sm"
               className="homepage-new"
@@ -803,6 +854,11 @@ export function Homepage({
         onHeightChange={setHeight}
         blackBars={blackBars}
         onBlackBarsChange={setBlackBars}
+        hosting={editTarget || !sourceControlAvailable ? null : hosting}
+        onHostingChange={changeHosting}
+        rememberedOrigin={rememberedOrigin}
+        remoteReady={repository !== null}
+        onRepositoryChange={setRepository}
         pixelArt={pixelArt}
         onPixelArtChange={(enabled) => {
           setPixelArt(enabled);
@@ -821,6 +877,16 @@ export function Homepage({
                   appearance,
                 });
               else {
+                const remote = sourceControlAvailable && hosting === "remote";
+                // Only a Remote choice publishes, never a request left from before.
+                const newRepository = remote ? repository : null;
+                if (remote && !newRepository) return;
+                if (sourceControlAvailable) {
+                  // Remembered on this device for the next New Project; a failed save only loses the default.
+                  void updateAppSettings((settings) => {
+                    settings.newProjectHosting = { hosting, origin: newRepository?.origin ?? settings.newProjectHosting.origin };
+                  }).catch(() => undefined);
+                }
                 await launch(async () => {
                   const options: CreateProjectOptions = {
                     appearance,
@@ -828,7 +894,11 @@ export function Homepage({
                     renderHeight: height,
                     blackBars,
                     pixelArt,
-                    ...(hostPlatform === "web" ? {} : { pickFolder }),
+                    onPhase: transition.setPhase,
+                    ...(newRepository ? { repository: newRepository } : {}),
+                    ...(hostPlatform === "web"
+                      ? {}
+                      : { pickFolder: pickFolder && !(remote && remoteNeedsAppStorage(hostPlatform)) }),
                   };
                   const folderName = normalizeProjectFolderName(createName);
                   if (!folderName) return;
@@ -844,7 +914,7 @@ export function Homepage({
                       options,
                     );
                   recordTemplateUse(templateId);
-                }, createName);
+                }, createName, "creating");
               }
               setCreateOpen(false);
             },
@@ -925,6 +995,20 @@ export function Homepage({
           }, targets.length === 1 ? "Deleting Project" : "Deleting Projects")
         }
       />
+      {cloneOpen && onCloneProject ? (
+        <Suspense fallback={null}>
+          <CloneProjectDialog
+            open
+            onOpenChange={setCloneOpen}
+            existingNames={projects.map((project) => project.name)}
+            onClone={async (request, transfer, signal) => {
+              const handle = await onCloneProject(request, transfer, signal);
+              setCloneOpen(false);
+              await run(() => launch(() => onOpenProject(handle), request.name));
+            }}
+          />
+        </Suspense>
+      ) : null}
       <ReleaseNews open={changelogOpen} onOpenChange={setChangelogOpen} ready={dataReady && !transition.active && !accountOpen && !settingsOpen && !createOpen && !busy} />
       {settingsOpen && (
         <Suspense fallback={null}>

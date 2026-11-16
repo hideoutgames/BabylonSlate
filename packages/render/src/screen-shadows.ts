@@ -46,18 +46,18 @@ export const SCREEN_SHADOW_LEVELS: Record<Exclude<ScreenShadowsQuality, "off">, 
 const MAX_STEPS = 16;
 
 /**
- * The march (GLSL or WGSL). Uniforms: `ssProjection`, `ssInverseProjection` (the camera's projection, which the geometry pass
+ * The march. Uniforms: `ssProjection`, `ssInverseProjection` (the camera's projection, which the geometry pass
  * drew with), `ssSun` (the view-space direction toward the sun; w 0 writes lit: no shadowed
  * sun, an orthographic view), `ssMarch` (steps, pixel cap, world cap; w unused), `ssFade` (fade start and end, the
  * render height times the projection's y scale), `ssTexel`, `ssCascadeEnds` and `ssCascadeCaps` (`screenShadowThicknessCaps`;
- * an unused cascade ends at -1). Derivatives come first: WGSL takes them in uniform control flow.
+ * an unused cascade ends at -1). Derivatives come first, ahead of every early return.
  */
-function screenShadowsShader(wgsl: boolean): string {
-  const { v2, v3, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax(wgsl);
+function screenShadowsShader(): string {
+  const { v2, v3, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax();
   const lit = (eye: string) => output(`${v4}(1.0, ${eye}, 0.0, 1.0)`);
-  const header = `${wgsl ? "varying vUV: vec2f;" : "varying vec2 vUV;"}
+  const header = `varying vec2 vUV;
 ${texture("depthSampler")}
-${field(wgsl ? "mat4x4f" : "mat4", "ssProjection")}${field(wgsl ? "mat4x4f" : "mat4", "ssInverseProjection")}
+${field("mat4", "ssProjection")}${field("mat4", "ssInverseProjection")}
 ${field(v4, "ssSun")}${field(v4, "ssMarch")}${field(v4, "ssFade")}${field(v2, "ssTexel")}${field(v4, "ssCascadeEnds")}${field(v4, "ssCascadeCaps")}
 `;
   const body = `
@@ -65,8 +65,8 @@ ${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
 ${decl(v4, "unprojected", `${u("ssInverseProjection")} * ${v4}(${uv} * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
 ${decl(v3, "viewPoint", "unprojected.xyz / unprojected.w")}
 ${decl(v3, "P", "viewPoint * (depth / max(abs(viewPoint.z), 0.000001))")}
-${decl(v3, "dx", wgsl ? "dpdx(P)" : "dFdx(P)")}
-${decl(v3, "dy", wgsl ? "dpdy(P)" : "dFdy(P)")}
+${decl(v3, "dx", "dFdx(P)")}
+${decl(v3, "dy", "dFdy(P)")}
 ${decl(f, "eye", "length(P)")}
 if (${u("ssSun")}.w < 0.5 || depth < 0.000001 || eye >= ${u("ssFade")}.y) { ${lit("eye")} }
 ${decl(v3, "N", "cross(dx, dy)")}
@@ -152,7 +152,7 @@ export function screenShadowsForPass(scene: Scene, renderPassId: number): ThinTe
   return texture?.getInternalTexture() ? texture : null;
 }
 
-/** A lit 1 × 1 texture every program declaring the screen shadows binds where its pass has none (WebGPU binds every declared texture). */
+/** A lit 1 × 1 texture every program declaring the screen shadows binds where its pass has none. */
 export function screenShadowsPlaceholder(scene: Scene): ThinTexture {
   let texture = placeholders.get(scene);
   if (!texture) {
@@ -218,7 +218,7 @@ export class ScreenShadowsGraph {
   ) {
     const scene = graph.scene;
     this.scene = scene;
-    const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(scene.getEngine().isWebGPU),
+    const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(),
       ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
       size: { width, height },

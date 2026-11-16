@@ -1,3 +1,4 @@
+import { normalizeAnimationRootMotion, type AnimationRootMotion } from "./animation-root-motion";
 import { animationEventActionGuids, normalizeAnimationEvents, type AnimationEventPayload } from "./animation-events";
 
 export interface AnimationPayload {
@@ -11,6 +12,32 @@ export interface AnimationPayload {
   sourceAnimationGuid?: string | null;
   /** Animation Events, by time; absent when there are none. */
   events?: AnimationEventPayload[];
+  /** Present when the Animation is additive: a change from a base pose that Apply Additive adds to another pose. */
+  additive?: AnimationAdditive;
+  /** Present when the Animation drives its actor by root motion: the root bone and its sampled travel and turn. */
+  rootMotion?: AnimationRootMotion;
+}
+
+/** What an additive Animation is a change from: the Skeleton's rest pose, its own first frame, or another Animation's pose. */
+export const ANIMATION_ADDITIVE_BASES = ["restPose", "firstFrame", "animation"] as const;
+export type AnimationAdditiveBase = (typeof ANIMATION_ADDITIVE_BASES)[number];
+
+export interface AnimationAdditive {
+  base: AnimationAdditiveBase;
+  /** `animation` base: the Animation whose pose the change is from, at `timeMs` into its Duration. */
+  animationGuid?: string;
+  timeMs?: number;
+}
+
+/** An Animation's additive settings as stored, cleaned; undefined when it is not additive. */
+export function normalizeAnimationAdditive(value: unknown): AnimationAdditive | undefined {
+  const record = asRecord(value);
+  const base = ANIMATION_ADDITIVE_BASES.find((entry) => entry === record.base);
+  if (!base) return undefined;
+  if (base !== "animation") return { base };
+  const animationGuid = trimmed(record.animationGuid);
+  const timeMs = typeof record.timeMs === "number" && Number.isFinite(record.timeMs) && record.timeMs > 0 ? record.timeMs : 0;
+  return { base, ...(animationGuid ? { animationGuid } : {}), timeMs };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -49,6 +76,10 @@ export function normalizeAnimationPayload(value: unknown): AnimationPayload {
   if (clipDurationMs !== undefined) payload.clipDurationMs = clipDurationMs;
   const events = normalizeAnimationEvents(record.events);
   if (events.length > 0) payload.events = events;
+  const additive = normalizeAnimationAdditive(record.additive);
+  if (additive) payload.additive = additive;
+  const rootMotion = normalizeAnimationRootMotion(record.rootMotion);
+  if (rootMotion) payload.rootMotion = rootMotion;
   return payload;
 }
 
@@ -59,6 +90,8 @@ export function animationAssetGuids(payload: unknown): string[] {
   if (animation.skeletonGuid) guids.add(animation.skeletonGuid);
   if (animation.sourceAnimationGuid) guids.add(animation.sourceAnimationGuid);
   for (const guid of animationEventActionGuids(animation.events ?? [])) guids.add(guid);
+  // An additive Animation's base Animation loads with it, so its pose is there to take the change from.
+  if (animation.additive?.animationGuid) guids.add(animation.additive.animationGuid);
   return [...guids].sort();
 }
 

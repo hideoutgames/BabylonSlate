@@ -10,6 +10,7 @@ import { isPlayEngineCommandType, readSnapshotHeader, snapshotFloatCount, SNAPSH
 import { readActorSlot } from "@haptic/bridge/read-actor-slot";
 import { createInProcessRuntime } from "@haptic/test-kit";
 import { identityTransform } from "@haptic/core";
+import { normalizeModelPayload } from "@haptic/assets";
 import { createTestEngine } from "./test-support/test-engine";
 import * as snapshot from "./snapshot-apply";
 import * as attachments from "./bone-attachment";
@@ -227,6 +228,31 @@ describe("render bone attachment", () => {
     hand.position.x = 3;
     apply();
     expect(child.getAbsolutePosition().x).toBeCloseTo(15);
+  });
+
+  it("attaches to a socket on the target's Model: its bone, offset in the bone's space", () => {
+    const { scene, binding, target, child, targetSlot, childSlot, attach, apply } = fixture();
+    const hand = new TransformNode("Hand", scene);
+    hand.parent = target;
+    hand.position.set(1, 2, 0);
+    hand.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.PI / 2);
+    targetSlot.position.x = 10;
+    childSlot.position.x = 10;
+    binding.meshAssetGuids.set(2, "hero");
+    binding.modelPayloads = new Map([["hero", {
+      ...normalizeModelPayload({}),
+      sockets: [{ name: "Grip", bone: "Hand", position: [0, 0, 1], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }],
+    }]]);
+    attach("Grip");
+    apply();
+    // The hand turns a quarter about Y, so the socket's +Z offset points along world +X.
+    expect(child.getAbsolutePosition().x).toBeCloseTo(12);
+    expect(child.getAbsolutePosition().y).toBeCloseTo(2);
+    expect(child.getAbsolutePosition().z).toBeCloseTo(0);
+    // A bone name still attaches to the bone itself.
+    attach("Hand");
+    apply();
+    expect(child.getAbsolutePosition().x).toBeCloseTo(11);
   });
 
   it("waits for model loading, survives replacement, and clears stale bindings on detach and target retirement", () => {

@@ -79,7 +79,7 @@ export interface RenderFrameReport extends RenderFrameReportDraft {
     viewId: number;
     width: number;
     height: number;
-    backend: "webgpu" | "webgl2" | "webgl1" | "unknown";
+    backend: "webgl2" | "webgl1" | "unknown";
   };
 }
 

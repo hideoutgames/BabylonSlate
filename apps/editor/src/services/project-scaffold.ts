@@ -3,6 +3,7 @@ import {
   createEmptyLayouts,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
+  PROJECT_CREATION_MARKER,
   type ProjectDocument,
   type ProjectFolderHandle,
   type ProjectStorage,
@@ -16,7 +17,6 @@ import type { ProjectService } from "./project-service";
 
 export type OwnedFolder = { handle: ProjectFolderHandle; createdHere: boolean };
 
-const PROJECT_CREATION_MARKER = ".haptic-creating";
 /** Entries that do not make a folder "non-empty": our own marker and OS file-browser metadata. */
 const IGNORED_PROJECT_FOLDER_ENTRIES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db", "desktop.ini"]);
 
@@ -218,6 +218,8 @@ export async function scaffoldFeatureTest(host: StarterScaffoldHost, document: P
         loadOptional: content.loadOptionalEngineContent,
         generateNavMesh: generateFeatureTestNavMesh,
         modelImportScale: 1,
+        // The Content Browser's converter, on this thread: the starter imports one small FBX.
+        convertFbx: async (file) => (await import("@haptic/render/fbx-conversion")).convertFbxToGlb(file),
       },
     });
   } finally {

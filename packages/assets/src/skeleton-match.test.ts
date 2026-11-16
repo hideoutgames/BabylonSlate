@@ -77,7 +77,7 @@ describe("matchSkeletonBones", () => {
 describe("findMatchingSkeleton", () => {
   it("prefers the same bones over a Skeleton the rig would join or extend", () => {
     const skeleton = (guid: string, bones: SkeletonBone[]): { guid: string; payload: SkeletonPayload } =>
-      ({ guid, payload: { modelGuid: "", kind: "skin", bones } });
+      ({ guid, payload: { modelGuid: "", kind: "skin", bones, sockets: [] } });
     const candidates = [skeleton("larger", [...BIPED, bone("head", "spine", [0, 0.25, 0])]), skeleton("same", BIPED)];
     expect(findMatchingSkeleton(candidates, BIPED)?.skeleton.guid).toBe("same");
     expect(findMatchingSkeleton([candidates[0]!], BIPED)?.relation).toBe("subset");

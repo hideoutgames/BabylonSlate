@@ -8,9 +8,9 @@ export interface CommitNode {
 export interface Relation {
   /** The newest commit both sides reach, or null when none was found. */
   base: string | null;
-  /** Commits only the local side reaches. */
+  /** Commits only the local side reaches, newest first (commit time; ties in walk order). */
   ahead: string[];
-  /** Commits only the remote side reaches. */
+  /** Commits only the remote side reaches, newest first (commit time; ties in walk order). */
   behind: string[];
   /** The walk reached a commit whose parents this shallow copy lacks. */
   truncated: boolean;
@@ -21,16 +21,18 @@ const REMOTE = 2;
 const BOTH = LOCAL | REMOTE;
 
 /**
- * Splits two commits' history into what only each side reaches and their
+ * Splits two sides' history into what only each side reaches and their
  * merge base, newest first (as `git rev-list --left-right` paints it): the
  * walk stops once every commit still queued is reached by both sides, so it
- * reads only the commits since the fork. `remote` may be null (nothing pushed
- * yet): then every local commit is ahead. `shallow` commits' parents are not
- * followed.
+ * reads only the commits since the fork. The remote side is one or more
+ * commits: a branch's remote branch, or before its first push every remote
+ * branch this copy fetched (as git-lfs counts a new branch's objects); with
+ * none (nothing pushed yet) every local commit is ahead. `shallow` commits'
+ * parents are not followed.
  */
 export async function relate(
   local: string,
-  remote: string | null,
+  remotes: readonly string[],
   read: (oid: string) => Promise<CommitNode | null>,
   shallow: ReadonlySet<string>,
 ): Promise<Relation> {
@@ -58,7 +60,7 @@ export async function relate(
   const time = (oid: string) => nodes.get(oid)?.timestamp ?? 0;
 
   await enqueue(local, LOCAL);
-  if (remote) await enqueue(remote, REMOTE);
+  for (const remote of remotes) await enqueue(remote, REMOTE);
   while (queue.some((oid) => marks.get(oid) !== BOTH)) {
     queue.sort((a, b) => time(b) - time(a));
     const oid = queue.shift()!;
@@ -74,6 +76,8 @@ export async function relate(
     queue.sort((a, b) => time(b) - time(a));
     base = queue.find((oid) => marks.get(oid) === BOTH) ?? null;
   }
-  const only = (side: number) => [...marks].filter(([oid, flags]) => flags === side && nodes.get(oid)).map(([oid]) => oid);
+  // Sorting is stable: commits of one second keep the walk's order, which reaches newer ones first.
+  const only = (side: number) =>
+    [...marks].filter(([oid, flags]) => flags === side && nodes.get(oid)).map(([oid]) => oid).sort((a, b) => time(b) - time(a));
   return { base, ahead: only(LOCAL), behind: only(REMOTE), truncated };
 }

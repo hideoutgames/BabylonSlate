@@ -1,5 +1,6 @@
 import type { ProjectStorage } from "@haptic/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as git from "isomorphic-git";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { lfsPointerText } from "../lfs-pointer";
 import { GITATTRIBUTES_LFS_RULE, isSyncError, type SyncError } from "../sync-port";
 import {
@@ -14,7 +15,14 @@ import {
   STORAGE_ORIGIN,
 } from "../test-support/git-server";
 import { fixedCredential } from "../credentials";
-import { cloneRepository, type GitRepository } from "./repository";
+import { readAdoption, setAdoption } from "./adoption";
+import { cloneRepository, initRepository, openRepository, type GitRepository } from "./repository";
+
+// isomorphic-git as it is, with its commit reads counted.
+vi.mock("isomorphic-git", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("isomorphic-git")>();
+  return { ...actual, readCommit: vi.fn(actual.readCommit) };
+});
 
 const AUTHOR = { name: "Device", email: "device@example.com" };
 const NOW = Date.UTC(2026, 10, 15, 12, 0, 0);
@@ -168,7 +176,9 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     await storage.writeBinary("assets/a.hasset", encode("A2"));
     const { commit } = await repository.commit({ paths: ["assets/a.hasset"], message: "Mine", author: AUTHOR });
 
-    expect(await repository.fetch()).toEqual({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    const state = await repository.fetch();
+    expect(state).toMatchObject({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
+    expect(state.incoming.map((entry) => entry.message.trim())).toEqual(["Two", "One"]);
   });
 
   it("fast-forwards, writing incoming files and downloading only LFS objects that are missing", async () => {
@@ -264,15 +274,152 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await repository.readFile("assets/missing.hasset", first)).toBeNull();
   });
 
+  it("reads each commit once when a fetch counts and lists the incoming ones", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    const repository = await clone();
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    server.seed({ "assets/a.hasset": "3" }, "Three");
+    const readCommit = vi.mocked(git.readCommit);
+    readCommit.mockClear();
+    const state = await repository.fetch();
+    expect(state.incoming.map((commit) => commit.message)).toEqual(["Three\n", "Two\n"]);
+    const reads = readCommit.mock.calls.map(([args]) => args.oid);
+    expect(reads.length).toBeGreaterThan(0);
+    expect(new Set(reads).size).toBe(reads.length);
+  });
+
   it("deepens a shallow log on demand", async () => {
     server.seed({ "assets/a.hasset": "1" }, "One");
     server.seed({ "assets/a.hasset": "2" }, "Two");
     server.seed({ "assets/a.hasset": "3" }, "Three");
     const repository = await clone();
-    expect(await repository.log({ limit: 3 })).toMatchObject({ commits: [{ message: "Three\n" }], hasMore: true });
-    const page = await repository.log({ limit: 3, deepen: true });
-    expect(page.commits.map((commit) => commit.message)).toEqual(["Three\n", "Two\n", "One\n"]);
-    expect((await repository.log({ limit: 10, deepen: true })).hasMore).toBe(false);
+    // The clone's one commit ends the history it has; its parent is not here, so neither are its changes.
+    const shallow = await repository.log({ limit: 3 });
+    expect(shallow).toMatchObject({ commits: [{ message: "Three\n" }], hasMore: true, shallow: true });
+    expect(await repository.commitChanges(shallow.commits[0]!.id)).toBeNull();
+    // The next page deepens: the clone's commit is left out, the older ones come.
+    const older = await repository.log({ limit: 3, skip: 1, deepen: true });
+    expect(older.commits.map((commit) => commit.message)).toEqual(["Two\n", "One\n"]);
+    expect(older).toMatchObject({ hasMore: false, shallow: false });
+    expect(await repository.commitChanges(shallow.commits[0]!.id)).toEqual([{ path: "assets/a.hasset", kind: "modified" }]);
+  });
+
+  it("leaves the history as it was when a deepen is cancelled mid-fetch, so the next one deepens it", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    server.seed({ "assets/a.hasset": "3" }, "Three");
+    const controller = new AbortController();
+    let armed = false;
+    // Cancels at the deepen's first write into .git, letting that one write through as storage already had it.
+    const storage = new Proxy(await server.storage(), {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (typeof value !== "function") return value;
+        if (property !== "writeBinary" && property !== "writeText") return (value as (...args: unknown[]) => unknown).bind(target);
+        return (path: string, ...rest: unknown[]) => {
+          if (armed && path.startsWith(".git/")) controller.abort();
+          return (value as (...args: unknown[]) => unknown).call(target, path, ...rest);
+        };
+      },
+    });
+    const repository = await clone(storage);
+    armed = true;
+    expect((await rejection(repository.log({ limit: 3, skip: 1, deepen: true, signal: controller.signal }))).kind).toBe("cancelled");
+    armed = false;
+
+    expect(await repository.log({ limit: 3 })).toMatchObject({ commits: [{ message: "Three\n" }], hasMore: true, shallow: true });
+    expect((await repository.fetch()).behind).toBe(0);
+    const older = await repository.log({ limit: 3, skip: 1, deepen: true });
+    expect(older.commits.map((commit) => commit.message)).toEqual(["Two\n", "One\n"]);
+    expect(server.git(folder(storage), "log", "--format=%s").trim().split("\n")).toEqual(["Three", "Two", "One"]);
+  });
+
+  it("keeps the history readable when a deepen is cancelled once its pack is stored, through later fetches", async () => {
+    for (const message of ["One", "Two", "Three", "Four", "Five"]) server.seed({ "assets/a.hasset": message }, message);
+    const controller = new AbortController();
+    let armed = false;
+    // Cancels while the pack's index is written, letting that write through: the fetch itself then succeeds.
+    const storage = new Proxy(await server.storage(), {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver) as unknown;
+        if (typeof value !== "function") return value;
+        if (property !== "writeBinary" && property !== "writeText") return (value as (...args: unknown[]) => unknown).bind(target);
+        return (path: string, ...rest: unknown[]) => {
+          if (armed && path.endsWith(".idx")) controller.abort();
+          return (value as (...args: unknown[]) => unknown).call(target, path, ...rest);
+        };
+      },
+    });
+    const repository = await clone(storage);
+    armed = true;
+    await repository.log({ limit: 2, skip: 1, deepen: true, signal: controller.signal }).catch(() => undefined);
+    armed = false;
+
+    await repository.fetch();
+    const page = await repository.log({ limit: 5 });
+    expect(page.commits[0]?.message).toBe("Five\n");
+    expect(page.shallow).toBe(true);
+    const older = await repository.log({ limit: 5, deepen: true });
+    expect(older.commits.map((commit) => commit.message.trim())).toEqual(["Five", "Four", "Three", "Two", "One"]);
+  });
+
+  it("offers older history only when the branch's own history stops at the shallow boundary", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    const teammate = server.teammate();
+    teammate.checkout("art");
+    teammate.write({ "assets/b.hasset": "B" });
+    teammate.commitAndPush("Art", "art");
+    teammate.write({ "assets/b.hasset": "B2" });
+    const art = teammate.commitAndPush("More art", "art");
+    const storage = await server.storage();
+    const repository = await clone(storage, { depth: 10 });
+    // Switching to a branch only the remote has fetches it one commit deep: the copy is shallow from then on.
+    await repository.switchBranch("art");
+    expect(await repository.log({ limit: 50 })).toMatchObject({ commits: [{ id: art }], hasMore: true, shallow: true });
+    await repository.switchBranch("main");
+    expect((await storage.readText(".git/shallow")).trim()).toBe(art);
+
+    server.requests.length = 0;
+    for (const options of [{ limit: 50 }, { limit: 50, deepen: true }, { limit: 50, path: "assets/a.hasset", deepen: true }]) {
+      const page = await repository.log(options);
+      expect(page.commits.map((commit) => commit.message.trim())).toEqual(["Two", "One"]);
+      expect(page).toMatchObject({ hasMore: false, shallow: false });
+    }
+    expect(server.requests.filter((request) => request.origin === GIT_ORIGIN)).toEqual([]);
+  });
+
+  it("leaves no shallow boundary at a branch fetched one deep whose parent it already holds", async () => {
+    server.seed({ "assets/a.hasset": "1" }, "One");
+    server.seed({ "assets/a.hasset": "2" }, "Two");
+    const teammate = server.teammate();
+    teammate.checkout("art");
+    teammate.write({ "assets/b.hasset": "B" });
+    teammate.commitAndPush("Art", "art");
+    const storage = await server.storage();
+    const repository = await clone(storage, { depth: 10 });
+    await repository.switchBranch("art");
+    expect(await storage.exists(".git/shallow")).toBe(false);
+    expect(await repository.log({ limit: 50 })).toMatchObject({ commits: [{ message: "Art\n" }, { message: "Two\n" }, { message: "One\n" }], hasMore: false, shallow: false });
+  });
+
+  it("opens on the branch the working copy's HEAD names, and refuses a detached HEAD", async () => {
+    server.seed({ "assets/a.hasset": "A" });
+    const storage = await server.storage();
+    const repository = await clone(storage);
+    await repository.createBranch("feature");
+    const options = { storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, now: () => NOW };
+    expect((await (await openRepository(options)).status()).branch).toBe("feature");
+    expect(server.git(folder(storage), "symbolic-ref", "HEAD").trim()).toBe("refs/heads/feature");
+
+    // Its first push makes the remote branch its upstream, as other Git apps read it.
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await repository.commit({ paths: ["assets/a.hasset"], message: "Feature", author: AUTHOR });
+    await repository.push();
+    expect(server.git(folder(storage), "config", "--get", "branch.feature.merge").trim()).toBe("refs/heads/feature");
+
+    server.git(folder(storage), "checkout", "--quiet", "--detach");
+    expect(await rejection(openRepository(options))).toMatchObject({ kind: "conflict", code: "detached-head" });
   });
 
   it("types refused credentials, missing repositories and unreachable hosts", async () => {
@@ -285,5 +432,61 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     const storage = await server.storage();
     await storage.writeBinary("project.json", encode("{}"));
     expect((await rejection(clone(storage))).code).toBe("not-empty");
+  });
+
+  it("starts Publish's working copy afresh over the .git an interrupted Publish left, only when asked", async () => {
+    const storage = await server.storage();
+    const options = { storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main", now: () => NOW };
+    await storage.writeBinary("project.json", encode("{}"));
+    // The interrupted Publish: a working copy and its first commit, never pushed.
+    const interrupted = await initRepository(options);
+    await interrupted.commit({ paths: ["project.json"], message: "Publish project", author: AUTHOR });
+    expect((await rejection(initRepository(options))).code).toBe("repository-exists");
+    const fresh = await initRepository({ ...options, replace: true });
+    expect(await fresh.status()).toEqual({ branch: "main", head: null, changes: [{ path: "project.json", kind: "added" }] });
+    const { commit } = await fresh.commit({ paths: ["project.json"], message: "Publish project", author: AUTHOR });
+    expect(await fresh.push()).toEqual({ head: commit, uploaded: 0 });
+  });
+
+  describe("adoption (Haptic runs Git in this working copy)", () => {
+    it("is recorded in the Git config of every copy Clone and Publish make, as any Git reads it", async () => {
+      server.seed({ "assets/a.hasset": "A" });
+      const cloned = await server.storage();
+      await clone(cloned);
+      const published = await server.storage();
+      await published.writeBinary("project.json", encode("{}"));
+      await initRepository({ storage: published, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, branch: "main" });
+
+      for (const storage of [cloned, published]) {
+        expect(await readAdoption(storage)).toBe(true);
+        expect(server.git(folder(storage), "config", "--get", "haptic.integrated").trim()).toBe("true");
+      }
+    });
+
+    it("reads a working copy another Git app made as not adopted, and records or clears the answer, keeping the rest of its config", async () => {
+      const storage = await server.storage();
+      const dir = folder(storage);
+      server.git(dir, "init", "--quiet", "--initial-branch=main");
+      server.git(dir, "remote", "add", "origin", REPOSITORY_URL);
+      expect(await readAdoption(storage)).toBe(false);
+
+      await setAdoption(storage, true);
+      expect(await readAdoption(storage)).toBe(true);
+      expect(server.git(dir, "config", "--get", "haptic.integrated").trim()).toBe("true");
+      await setAdoption(storage, false);
+      expect(await readAdoption(storage)).toBe(false);
+      expect(() => server.git(dir, "config", "--get", "haptic.integrated")).toThrow();
+      expect(server.git(dir, "config", "--get", "remote.origin.url").trim()).toBe(REPOSITORY_URL);
+
+      // Git's own spellings of true count, and so does an entry another Git app wrote.
+      server.git(dir, "config", "haptic.integrated", "yes");
+      expect(await readAdoption(storage)).toBe(true);
+      server.git(dir, "config", "haptic.integrated", "false");
+      expect(await readAdoption(storage)).toBe(false);
+    });
+
+    it("reads a folder without .git as not adopted", async () => {
+      expect(await readAdoption(await server.storage())).toBe(false);
+    });
   });
 });

@@ -1,5 +1,4 @@
 import type { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { Effect } from "@babylonjs/core/Materials/effect";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
@@ -154,7 +153,7 @@ export function gridMacroOffsets(
 
 const glslFloat = (value: number) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 
-function gridShaderConstants(language: "glsl" | "wgsl"): string {
+function gridShaderConstants(): string {
   const style = GRID_LEVEL_STYLE;
   const entries: Array<[string, number]> = [
     ["LOG_HIDDEN_PX", Math.log(style.hiddenPx)],
@@ -171,94 +170,13 @@ function gridShaderConstants(language: "glsl" | "wgsl"): string {
     ["LN10", Math.LN10],
   ];
   return entries
-    .map(([name, value]) =>
-      language === "glsl"
-        ? `const float ${name} = ${glslFloat(value)};`
-        : `const ${name}: f32 = ${glslFloat(value)};`,
-    )
+    .map(([name, value]) => `const float ${name} = ${glslFloat(value)};`)
     .join("\n");
 }
 
 function ensureGridShaders(): void {
   const vertexKey = `${GRID_SHADER_NAME}VertexShader`;
   const fragmentKey = `${GRID_SHADER_NAME}FragmentShader`;
-  ShaderStore.ShadersStoreWGSL[vertexKey] = `
-attribute position: vec3f;
-uniform worldViewProjection: mat4x4f;
-uniform gridExtent: f32;
-varying vGridPosition: vec2f;
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  vertexOutputs.vGridPosition = vertexInputs.position.xy * uniforms.gridExtent;
-  vertexOutputs.position = uniforms.worldViewProjection * vec4f(vertexInputs.position, 1.0);
-}
-`;
-  ShaderStore.ShadersStoreWGSL[fragmentKey] = `
-varying vGridPosition: vec2f;
-uniform majorColor: vec3f;
-uniform minorColor: vec3f;
-uniform axisColorU: vec3f;
-uniform axisColorV: vec3f;
-uniform spacing: f32;
-uniform subdivisions: f32;
-uniform logSubdivisions: f32;
-uniform macroOffsets0: vec4f;
-uniform macroOffsets1: vec4f;
-uniform axisOrigin: vec2f;
-uniform fadeCenter: vec2f;
-uniform fadeStart: f32;
-uniform fadeEnd: f32;
-uniform gridVisible: f32;
-uniform distanceThinning: f32;
-${gridShaderConstants("wgsl")}
-fn over(acc: vec4f, color: vec3f, alpha: f32) -> vec4f {
-  return vec4f(color * alpha + acc.rgb * (1.0 - alpha), alpha + acc.a * (1.0 - alpha));
-}
-fn gridLevel(levels: vec3f, uv: vec2f, cellPx: vec2f, logCell: vec2f, thin: f32) -> vec3f {
-  let presence = smoothstep(vec2f(LOG_HIDDEN_PX), vec2f(LOG_PRESENT_PX), logCell);
-  let emphasis = smoothstep(vec2f(LOG_PRESENT_PX), vec2f(LOG_MAJOR_PX), logCell);
-  let width = mix(vec2f(MINOR_WIDTH), vec2f(MAJOR_WIDTH), emphasis) * thin;
-  let distPx = abs(fract(uv - 0.5) - 0.5) * cellPx;
-  let alpha = max(1.0 - distPx, vec2f(0.0)) * width * presence * mix(vec2f(MINOR_ALPHA), vec2f(MAJOR_ALPHA), emphasis);
-  let levelAlpha = max(alpha.x, alpha.y);
-  let share = alpha * (levelAlpha / max(alpha.x + alpha.y, 0.00001));
-  return vec3f(levelAlpha, dot(share, emphasis), share.x) + levels * (1.0 - levelAlpha);
-}
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let p = fragmentInputs.vGridPosition;
-  let dx = dpdx(p);
-  let dy = dpdy(p);
-  let unitsPerPx = max(vec2f(length(vec2f(dx.x, dy.x)), length(vec2f(dx.y, dy.y))), vec2f(0.0000001));
-  let major = max(uniforms.spacing, 0.0001);
-  let eyeDistance = length(p - uniforms.fadeCenter);
-  let thin = 1.0 - uniforms.distanceThinning * FAR_THINNING * smoothstep(0.0, uniforms.fadeEnd, eyeDistance);
-  let majorPx = vec2f(major) / unitsPerPx;
-  let logMajorPx = log(majorPx);
-  var levels = vec3f(0.0);
-  if (uniforms.subdivisions > 1.5) {
-    let minor = major / uniforms.subdivisions;
-    levels = gridLevel(levels, p / minor, vec2f(minor) / unitsPerPx, logMajorPx - uniforms.logSubdivisions, thin);
-  }
-  levels = gridLevel(levels, p / major, majorPx, logMajorPx, thin);
-  levels = gridLevel(levels, p / (major * 10.0) + uniforms.macroOffsets0.xy, vec2f(major * 10.0) / unitsPerPx, logMajorPx + LN10, thin);
-  levels = gridLevel(levels, p / (major * 100.0) + uniforms.macroOffsets0.zw, vec2f(major * 100.0) / unitsPerPx, logMajorPx + 2.0 * LN10, thin);
-  levels = gridLevel(levels, p / (major * 1000.0) + uniforms.macroOffsets1.xy, vec2f(major * 1000.0) / unitsPerPx, logMajorPx + 3.0 * LN10, thin);
-  levels = gridLevel(levels, p / (major * 10000.0) + uniforms.macroOffsets1.zw, vec2f(major * 10000.0) / unitsPerPx, logMajorPx + 4.0 * LN10, thin);
-  let lineColor = (1.0 - AXIS_TINT) * (uniforms.minorColor * levels.x + (uniforms.majorColor - uniforms.minorColor) * levels.y)
-    + AXIS_TINT * (uniforms.axisColorV * levels.z + uniforms.axisColorU * (levels.x - levels.z));
-  var acc = vec4f(lineColor, levels.x);
-  let axisWidth = max(AXIS_WIDTH * thin, 1.0);
-  let axisPx = abs(p - uniforms.axisOrigin) / unitsPerPx;
-  let axisCover = clamp(vec2f(axisWidth * 0.5 + 0.5) - axisPx, vec2f(0.0), vec2f(1.0)) * AXIS_ALPHA;
-  acc = over(acc, uniforms.axisColorV, axisCover.x);
-  acc = over(acc, uniforms.axisColorU, axisCover.y);
-  let fade = 1.0 - smoothstep(uniforms.fadeStart, uniforms.fadeEnd, eyeDistance);
-  let alpha = acc.a * fade * uniforms.gridVisible;
-  if (alpha < 0.003) { discard; }
-  fragmentOutputs.color = vec4f(acc.rgb / max(acc.a, 0.00001), alpha);
-}
-`;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
 uniform mat4 worldViewProjection;
@@ -290,7 +208,7 @@ uniform float fadeStart;
 uniform float fadeEnd;
 uniform float gridVisible;
 uniform float distanceThinning;
-${gridShaderConstants("glsl")}
+${gridShaderConstants()}
 
 vec4 over(vec4 acc, vec3 color, float alpha) {
   return vec4(color * alpha + acc.rgb * (1.0 - alpha), alpha + acc.a * (1.0 - alpha));
@@ -356,32 +274,6 @@ void main() {
 function ensureBoundsShaders(): void {
   const vertexKey = `${BOUNDS_SHADER_NAME}VertexShader`;
   const fragmentKey = `${BOUNDS_SHADER_NAME}FragmentShader`;
-  ShaderStore.ShadersStoreWGSL[vertexKey] = `
-attribute position: vec3f;
-uniform worldViewProjection: mat4x4f;
-varying vBoundsPosition: vec2f;
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  vertexOutputs.vBoundsPosition = vertexInputs.position.xy;
-  vertexOutputs.position = uniforms.worldViewProjection * vec4f(vertexInputs.position, 1.0);
-}
-`;
-  ShaderStore.ShadersStoreWGSL[fragmentKey] = `
-varying vBoundsPosition: vec2f;
-uniform lineColor: vec3f;
-uniform lineWidth: f32;
-uniform boundsVisible: f32;
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let coord = fragmentInputs.vBoundsPosition;
-  let deriv = fwidth(coord);
-  let distX = (0.5 - abs(coord.x)) / max(deriv.x, 0.00000001);
-  let distY = (0.5 - abs(coord.y)) / max(deriv.y, 0.00000001);
-  let dist = min(distX, distY);
-  if (uniforms.boundsVisible < 0.5 || dist < 0.0 || dist >= uniforms.lineWidth) { discard; }
-  fragmentOutputs.color = vec4f(uniforms.lineColor, 1.0);
-}
-`;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
 uniform mat4 worldViewProjection;
@@ -470,7 +362,7 @@ export function createEditorGrid(
     scene,
     { vertex: GRID_SHADER_NAME, fragment: GRID_SHADER_NAME },
     {
-      shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      shaderLanguage: ShaderLanguage.GLSL,
       attributes: ["position"],
       uniforms: [
         "worldViewProjection",
@@ -542,7 +434,7 @@ export function createEditorGrid(
     scene,
     { vertex: BOUNDS_SHADER_NAME, fragment: BOUNDS_SHADER_NAME },
     {
-      shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      shaderLanguage: ShaderLanguage.GLSL,
       attributes: ["position"],
       uniforms: [
         "worldViewProjection",

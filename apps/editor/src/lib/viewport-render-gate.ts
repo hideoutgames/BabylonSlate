@@ -19,6 +19,7 @@ type ViewportRenderTarget = {
   setVisible: (value: boolean) => void;
   setObstructed: (value: boolean) => void;
   setFrameCap: (fps: number) => void;
+  setIdleHalfRate: (enabled: boolean) => void;
 };
 
 type LiveEngineSettingsTarget = {
@@ -26,7 +27,7 @@ type LiveEngineSettingsTarget = {
     setLevel: (level: number) => void;
     setSettingsLevel?: (level: number) => void;
   };
-  scheduler?: { setFrameCap: (fps: number) => void };
+  scheduler?: { setFrameCap: (fps: number) => void; setIdleHalfRate: (enabled: boolean) => void };
   setLocalQualityOverrides?: (overrides: QualityOverrides) => void;
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;
@@ -36,6 +37,7 @@ type LiveEngineSettingsTarget = {
 
 export type LiveEngineSettings = {
   viewportFrameCap?: number;
+  viewportIdleHalfRate?: boolean;
   renderingOverridesEnabled?: boolean;
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
@@ -58,12 +60,18 @@ export function localRenderingQualityOverrides(settings: LiveEngineSettings): Qu
   };
 }
 
-/** Apply local Engine Settings that must take effect without writing a scene. */
+/**
+ * Apply local Engine Settings that must take effect without writing a scene. `applyFrameCap: false` (a Play view)
+ * leaves the view's pacing alone: neither the Viewport Frame Cap nor Half Rate When Idle applies to it.
+ */
 export function applyLiveEngineSettings(
   target: LiveEngineSettingsTarget,
   settings: LiveEngineSettings,
   options?: { applyFrameCap?: boolean },
 ): void {
+  if (options?.applyFrameCap !== false && typeof settings.viewportIdleHalfRate === "boolean") {
+    target.scheduler?.setIdleHalfRate(settings.viewportIdleHalfRate);
+  }
   if (
     options?.applyFrameCap !== false &&
     typeof settings.viewportFrameCap === "number" &&

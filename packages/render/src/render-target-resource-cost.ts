@@ -68,7 +68,7 @@ function pixelBytes(
               Constants.TEXTUREFORMAT_RGB_INTEGER,
               Constants.TEXTUREFORMAT_RGBA,
               Constants.TEXTUREFORMAT_RGBA_INTEGER,
-              // WebGPU swap-chain-matched colour (bgra8unorm).
+              // Four-channel colour in BGRA order.
               Constants.TEXTUREFORMAT_BGRA,
             ].includes(format)
           ? 4
@@ -89,7 +89,7 @@ function pixelBytes(
     case Constants.TEXTURETYPE_UNSIGNED_SHORT_4_4_4_4:
     case Constants.TEXTURETYPE_UNSIGNED_SHORT_5_5_5_1:
     case Constants.TEXTURETYPE_UNSIGNED_SHORT_5_6_5:
-      return 4; // May be expanded by WebGPU.
+      return 4; // Packed 16-bit types are charged four bytes.
     case Constants.TEXTURETYPE_UNSIGNED_INT_2_10_10_10_REV:
     case Constants.TEXTURETYPE_UNSIGNED_INT_10F_11F_11F_REV:
     case Constants.TEXTURETYPE_UNSIGNED_INT_5_9_9_9_REV:
@@ -145,17 +145,13 @@ function textureStorage(
 ): RenderTargetStorage {
   if (!texture.isReady || !texture._hardwareTexture)
     throw new Error("Managed render target has no ready texture allocation.");
+  // A texture created with createMipMaps but generation disabled reports no
+  // mip count: callers pass that creation option as `allocatedMipLevels`.
   const mipLevels = texture.generateMipMaps ? "full" : allocatedMipLevels;
-  // Native WebGPU exposes actual allocation mip counts, including createMipMaps
-  // with generation disabled. WebGL callers must preserve that creation option.
-  const resource = texture._hardwareTexture.underlyingResource as {
-    mipLevelCount?: number;
-  } | null;
-  const observedLevels = resource?.mipLevelCount;
   const levels =
     mipLevels === "full"
       ? "full"
-      : Math.max(mipLevels ?? 1, observedLevels ?? 1);
+      : Math.max(mipLevels ?? 1, 1);
   return {
     width: texture.width,
     height: texture.height,
@@ -224,14 +220,11 @@ export function managedRenderTargetResources(
     );
   }
   if (depth) {
-    const samples = depth.getEngine().isWebGPU
-      ? Math.max(positive(target.samples), positive(depth.samples))
-      : 1;
-    result.push(managedRenderTextureResource(depth, "depth", { samples }));
+    result.push(managedRenderTextureResource(depth, "depth", { samples: 1 }));
   }
   // Pinned WebGL 9.29: depth renderbuffers belong to the wrapper, separately
   // from its sampleable texture. Preserve their own identity when wrappers share
-  // an attachment. WebGPU stores depth as an InternalTexture above.
+  // an attachment.
   const glTarget = target as RenderTargetWrapper & {
     _depthStencilBuffer?: object | null;
   };

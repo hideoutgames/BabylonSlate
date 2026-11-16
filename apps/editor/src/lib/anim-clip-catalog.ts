@@ -2,6 +2,8 @@ import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
   animationClipEvents,
   normalizeAnimationPayload,
+  normalizeModelPayload,
+  scaledAnimationRootMotion,
   spriteAnimationClipEvents,
   normalizeBlendSpacePayload,
   normalizeSpriteBlendSpacePayload,
@@ -51,6 +53,11 @@ type CatalogAsset = {
 export function animClipCatalogFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): AnimClipCatalogEntry[] {
+  // Root motion travels in its source Model's units: each Animation's track scales by that Model's import scale.
+  const importScales = new Map<string, number>();
+  for (const asset of assets) {
+    if (asset.header.type === "Model") importScales.set(asset.header.guid, normalizeModelPayload(asset.header.payload).importScale);
+  }
   return assets.map((asset) => {
     const payload = asRecord(asset.header.payload);
     const durationMs =
@@ -75,6 +82,9 @@ export function animClipCatalogFromAssets(
         ? payload.frames.length
         : undefined;
     // The events a player of this clip fires: an Animation's, or a Sprite Animation's frame events at their frames.
+    const additive = asset.header.type === "Animation" ? normalizeAnimationPayload(payload).additive : undefined;
+    const sourceRootMotion = asset.header.type === "Animation" ? normalizeAnimationPayload(payload).rootMotion : undefined;
+    const rootMotion = sourceRootMotion ? scaledAnimationRootMotion(sourceRootMotion, importScales.get(modelGuid) ?? 1) : undefined;
     const events =
       asset.header.type === "Animation"
         ? animationClipEvents(normalizeAnimationPayload(payload).events)
@@ -93,6 +103,8 @@ export function animClipCatalogFromAssets(
       ...(skeletonGuid ? { skeletonGuid } : {}),
       ...(modelGuid ? { modelGuid } : {}),
       ...(events.length > 0 ? { events } : {}),
+      ...(additive ? { additive } : {}),
+      ...(rootMotion ? { rootMotion } : {}),
       ...(blendSpace
         ? {
             blendSpace: {

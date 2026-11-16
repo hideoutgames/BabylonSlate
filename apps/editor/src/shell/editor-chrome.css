@@ -423,6 +423,57 @@
   text-overflow: ellipsis;
 }
 
+/* Integrated mode: source control leads the status bar at its height. */
+.editor-status-source-control {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.editor-statusbar .editor-status-button {
+  height: 18px;
+  gap: 4px;
+  padding-inline: 6px;
+  color: inherit;
+  font-size: 11px;
+}
+
+.editor-statusbar .editor-status-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.editor-status-separator {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+
+.editor-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.editor-status-transfer,
+.editor-status-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.editor-status-transfer svg,
+.editor-status-saved svg {
+  width: 12px;
+  height: 12px;
+}
+
+.editor-status-progress {
+  width: 64px;
+}
+
 /* Content Browser panes match the gutters and panel surfaces of docked layouts. */
 .content-browser-panes {
   padding: 4px;

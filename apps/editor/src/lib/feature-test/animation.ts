@@ -1,5 +1,6 @@
 import {
   ANIM_EXIT_TIME_REACHED_TYPE,
+  ANIM_POSE_OUTPUT_NODE_ID,
   ANIM_RULE_ENTER_NODE_ID,
   animGraphMembersFromVariables,
   createDefaultTransitionRuleGraph,
@@ -9,7 +10,9 @@ import {
   type AnimState,
   type AnimTransition,
 } from "@haptic/anim-graph";
-import { normalizeAnimationPayload, type BlendSpacePayload } from "@haptic/assets";
+import { extractAnimationRootMotion, normalizeAnimationPayload, normalizeSkeletonPayload, type BlendSpacePayload } from "@haptic/assets";
+import { KAYKIT_FILES } from "./engine-content-files";
+import { OWNED_ACTOR_GET_NODE_ID, OWNED_COMPONENT_GET_NODE_ID, ownedGetNodeProperties } from "@haptic/scripting-nodes";
 import {
   createDefaultScene,
   lookAtRotation,
@@ -17,6 +20,10 @@ import {
   type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
+  ANIMATION_TICK_MODE_LABELS,
+  ANIMATION_TICK_MODE_PROPERTY,
+  ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+  type AnimationTickMode,
 } from "@haptic/core";
 import { animClipCatalogFromAssets } from "../anim-clip-catalog";
 import {
@@ -31,7 +38,7 @@ import {
   type FeatureTestContext,
   type Vec3,
 } from "./context";
-import { classGraph, gChain, gExec, getVar, gNode, gWire, setVar, varMember } from "./graph";
+import { classGraph, gChain, gExec, getVar, gNode, gWire, printString, setVar, varMember } from "./graph";
 import { animationObjectHearing, playerNode, playerState, poseGraph, stateMachineGraph, type FeatureTestClip } from "./anim-pose-graphs";
 import { stressPoint } from "./layout";
 
@@ -68,6 +75,22 @@ const FEATURE_TEST_ANIMATION_NAMES = {
   knight: "FT_AnimKnight",
   rogue: "FT_AnimRogue",
   largeMannequin: "FT_AnimLargeMannequinActor",
+  /** Rig_Medium graph: Idle with Look At on the head and Two Bone IK on the right arm, toward Vector variables. */
+  reacherGraph: "FT_AnimReacher",
+  /** The Knight Model on the reacher graph; FT_Animation's scene script sets its targets. */
+  reacher: "FT_AnimReacherActor",
+  /** The Velociraptor's graph: Run with Spring Bones on its tail. */
+  velociraptorGraph: "FT_AnimVelociraptor",
+  /** The Velociraptor's Class: runs in a circle round where it is placed. */
+  velociraptor: "FT_AnimVelociraptorActor",
+  /** Rig_Medium graph: Death_A looping, which moves its actor by root motion. */
+  rootMotionGraph: "FT_AnimRootMotion",
+  /** Rogue Hooded on the root motion graph; its Tick returns it to its start once it has drifted away. */
+  rootMotion: "FT_AnimRootMotionActor",
+  /** Rig_Medium graph: Idle_A with Foot Placement on both feet. */
+  footPlacementGraph: "FT_AnimFootPlacement",
+  /** The Knight Model on the Foot Placement graph, standing with one foot on a step. */
+  footPlacement: "FT_AnimFootPlacementActor",
 } as const;
 
 /** The skinned characters' scene. */
@@ -76,7 +99,12 @@ const SCENES_FOLDER = "Scenes";
 const ANIMATION_SCENE_CAMERA = { position: [0, 2.2, -7] as Vec3, target: [0, 1, 0] as Vec3 };
 
 /** KayKit clip names (Rig_Medium General and Movement Basic, Rig_Large Movement Basic). */
-const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A" } as const;
+const KAYKIT_CLIPS = { idle: "Idle_A", walk: "Walking_A", run: "Running_A", interact: "Interact", pickUp: "PickUp", hit: "Hit_A", flinch: "Hit_B", throw: "Throw", fall: "Death_A" } as const;
+
+/** The adventurers' slot: their Classes play Throw on it, the upper body while moving, the whole body at idle. */
+const ADVENTURER_SLOT = "UpperBody";
+/** Seconds the adventurers wait before each Throw. */
+const ADVENTURER_THROW_INTERVAL = 0.3;
 
 /**
  * Perf knob: the `FT_Stress` crowd is `columns × rows` (64) Locomotor
@@ -119,6 +147,11 @@ const LOCOMOTION_SYNC_GROUP = "Locomotion";
 
 const SPEED: AnimGraphVariable = { id: "ft-anim-var-speed", name: "Speed", typeId: "float", defaultValue: 0 };
 const CHEER: AnimGraphVariable = { id: "ft-anim-var-cheer", name: "Cheer", typeId: "bool", defaultValue: false };
+/** The adventurers' head turn while they move, a Rotator variable on Transform Bone's Rotation. */
+const HEAD_TURN: AnimGraphVariable = { id: "ft-anim-var-head-turn", name: "HeadTurn", typeId: "rotator", defaultValue: { pitch: 0, yaw: 25, roll: 0 } };
+/** The reacher's world-space targets, which FT_Animation's scene script sets: the Look Marker and the Reach Target. */
+const LOOK_TARGET: AnimGraphVariable = { id: "ft-anim-var-look-target", name: "LookTarget", typeId: "vec3", defaultValue: { x: 0, y: 1.3, z: -1 } };
+const REACH_TARGET: AnimGraphVariable = { id: "ft-anim-var-reach-target", name: "ReachTarget", typeId: "vec3", defaultValue: { x: 0, y: 1, z: -0.4 } };
 
 /** A Class plus the prefab components its scene instances copy. */
 interface PlacedClass {
@@ -130,7 +163,15 @@ interface AnimationRefs {
   locomotor: PlacedClass;
   doorGraph: string;
   /** The KayKit characters' Classes. */
-  characters: { knight: PlacedClass; rogue: PlacedClass; largeMannequin: PlacedClass };
+  characters: {
+    knight: PlacedClass;
+    rogue: PlacedClass;
+    largeMannequin: PlacedClass;
+    reacher: PlacedClass;
+    velociraptor: PlacedClass;
+    rootMotion: PlacedClass;
+    footPlacement: PlacedClass;
+  };
 }
 
 const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
@@ -143,6 +184,9 @@ const refsByContext = new WeakMap<FeatureTestContext, AnimationRefs>();
 export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promise<void> {
   await authorDoorOpenDuration(ctx);
   await authorAdventurerFootsteps(ctx);
+  await authorAdventurerGripSocket(ctx);
+  await authorAdventurerFlinch(ctx);
+  await authorFallRootMotion(ctx);
   const mannequinRun = await saveSpeedBlendSpace(
     ctx,
     NAMES.mannequinBlendSpace,
@@ -163,16 +207,27 @@ export async function buildFeatureTestAnimation(ctx: FeatureTestContext): Promis
   const locomotor = await saveLocomotor(ctx, NAMES.locomotor, mannequin, locomotionGraph);
   const kaykit = ctx.assets.kaykit;
   const adventurerGraph = await saveGraph(ctx, adventurerGraphDocument(ctx, adventurerMove));
+  const throwAttack = {
+    animationGuid: requireRef(kaykit.mediumAnimations[KAYKIT_CLIPS.throw], `the KayKit "${KAYKIT_CLIPS.throw}" Animation`),
+  };
   const largeGraph = await saveGraph(ctx, largeMannequinGraphDocument(ctx));
+  const reacherGraph = await saveGraph(ctx, reacherGraphDocument(ctx));
+  const velociraptorGraph = await saveGraph(ctx, velociraptorGraphDocument(ctx));
+  const rootMotionGraph = await saveGraph(ctx, rootMotionGraphDocument(ctx));
+  const footPlacementGraph = await saveGraph(ctx, footPlacementGraphDocument(ctx));
   const characters = {
-    knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph),
-    rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph),
+    knight: await saveLocomotor(ctx, NAMES.knight, requireRef(kaykit.knight, "the KayKit Knight Model"), adventurerGraph, throwAttack),
+    rogue: await saveLocomotor(ctx, NAMES.rogue, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), adventurerGraph, throwAttack),
     largeMannequin: await saveLocomotor(
       ctx,
       NAMES.largeMannequin,
       requireRef(kaykit.mannequinLarge, "the KayKit Mannequin Large Model"),
       largeGraph,
     ),
+    reacher: await saveModelActor(ctx, NAMES.reacher, requireRef(kaykit.knight, "the KayKit Knight Model"), reacherGraph),
+    velociraptor: await saveVelociraptor(ctx, velociraptorGraph),
+    rootMotion: await saveRootMotionActor(ctx, requireRef(kaykit.rogueHooded, "the KayKit Rogue Hooded Model"), rootMotionGraph),
+    footPlacement: await saveModelActor(ctx, NAMES.footPlacement, requireRef(kaykit.knight, "the KayKit Knight Model"), footPlacementGraph),
   };
   refsByContext.set(ctx, { locomotor, doorGraph, characters });
 }
@@ -198,7 +253,7 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
   const doorModel = requireRef(ctx.assets.models["cabin-door-rotate"], "the cabin-door-rotate Model");
   add(actor("ft-anim-door", "Swinging Door", tf(zone.at(7, 0, 0), { scale: [DOOR_SCALE, DOOR_SCALE, DOOR_SCALE] }), [
     meshComp("ft-anim-door-mesh", "box", { assetGuid: doorModel }),
-    comp("ft-anim-door-graph", "AnimationGraphComponent", { graphGuid: refs.doorGraph }),
+    comp("ft-anim-door-graph", "AnimationGraphComponent", { graphGuid: refs.doorGraph, [ANIMATION_TICK_MODE_PROPERTY]: "whenVisible" }),
   ]));
 
   const font = ctx.assets.fonts.facetype || null;
@@ -214,7 +269,8 @@ export async function placeFeatureTestAnimation(ctx: FeatureTestContext): Promis
       const phase = roundTo(((index % 16) * CYCLE_SECONDS) / 16, 100);
       const id = `ft-anim-stress-${index + 1}`;
       const position = stressPoint("animation", [x, 0, z]);
-      ctx.addActor(locomotorActor(refs.locomotor, id, `Crowd Mannequin ${index + 1}`, position, phase), {
+      // The crowd poses only what the camera sees.
+      ctx.addActor(locomotorActor(refs.locomotor, id, `Crowd Mannequin ${index + 1}`, position, phase, "whenVisible"), {
         scene: ctx.stressScene,
       });
     }
@@ -243,17 +299,135 @@ async function placeAnimationScene(ctx: FeatureTestContext, refs: AnimationRefs,
   ]));
   // Facing the camera: a half turn about Y.
   const facing = { rotationDeg: [0, 180, 0] as Vec3 };
-  const place = (placed: PlacedClass, id: string, name: string, x: number, phase: number) =>
-    add(actor(id, name, tf([x, 0, 0], facing), instanceComponents(id, placed.components), {
+  const place = (placed: PlacedClass, id: string, name: string, x: number, phase: number) => {
+    const placedActor = actor(id, name, tf([x, 0, 0], facing), instanceComponents(id, placed.components), {
       classId: placed.ref.classId,
       properties: { Phase: phase },
-    }));
-  place(refs.characters.knight, "ft-animscene-knight", "Knight", -2.5, 0);
-  place(refs.characters.rogue, "ft-animscene-rogue", "Rogue Hooded", 0, roundTo(CYCLE_SECONDS / 2, 100));
-  place(refs.characters.largeMannequin, "ft-animscene-large", "Mannequin Large", 2.5, roundTo(CYCLE_SECONDS / 4, 100));
-  add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-1.25, 0.05, -1.6], "Shared Skeleton", font, 0.35));
-  add(caption("ft-animscene-caption-large", "Rig_Large Caption", [2.5, 0.05, -1.6], "Rig_Large", font, 0.35));
+    });
+    add(placedActor);
+    return placedActor;
+  };
+  const knight = place(refs.characters.knight, "ft-animscene-knight", "Knight", -3.6, 0);
+  place(refs.characters.rogue, "ft-animscene-rogue", "Rogue Hooded", -1.2, roundTo(CYCLE_SECONDS / 2, 100));
+  place(refs.characters.largeMannequin, "ft-animscene-large", "Mannequin Large", 1.2, roundTo(CYCLE_SECONDS / 4, 100));
+  const reacher = actor(REACHER.id, "IK Reacher", tf([REACHER.x, 0, 0], facing), instanceComponents(REACHER.id, refs.characters.reacher.components), {
+    classId: refs.characters.reacher.ref.classId,
+  });
+  add(reacher);
+  // Held in the Knight's hand: the scene script attaches it to the Rig_Medium Skeleton's FT_Grip socket.
+  const prop = actor("ft-animscene-socket-prop", "Socket Prop", tf([-3.6, 1, 0], { scale: [0.1, 0.1, 0.1] }), [
+    meshComp("ft-animscene-socket-prop-mesh", "box"),
+  ]);
+  add(prop);
+  // The reacher's head follows the Look Marker, which the scene script sweeps in front of it; its right hand reaches
+  // the Reach Target.
+  const marker = actor("ft-animscene-look-marker", "Look Marker", tf(lookMarkerAt(0), { scale: [0.08, 0.08, 0.08] }), [
+    meshComp("ft-animscene-look-marker-mesh", "sphere"),
+  ]);
+  add(marker);
+  const reachTarget = actor("ft-animscene-reach-target", "Reach Target", tf(REACHER.reach, { scale: [0.06, 0.06, 0.06] }), [
+    meshComp("ft-animscene-reach-target-mesh", "box"),
+  ]);
+  add(reachTarget);
+  scene.script = animationSceneScript({ knight, prop, reacher, marker, reachTarget });
+  // Runs round its place behind the others; its tail's Spring Bones trail the turn.
+  add(actor("ft-animscene-velociraptor", "Velociraptor", tf(VELOCIRAPTOR_RUN.center), instanceComponents("ft-animscene-velociraptor", refs.characters.velociraptor.components), {
+    classId: refs.characters.velociraptor.ref.classId,
+  }));
+  add(caption("ft-animscene-caption-springs", "Spring Bones Caption", [VELOCIRAPTOR_RUN.center[0], 0.05, 1.1], "Spring Bones", font, 0.35));
+  // Falls back by root motion, again and again, until its Class returns it.
+  add(actor("ft-animscene-root-motion", "Root Motion Rogue", tf(ROOT_MOTION_START, facing),
+    instanceComponents("ft-animscene-root-motion", refs.characters.rootMotion.components), { classId: refs.characters.rootMotion.ref.classId }));
+  add(caption("ft-animscene-caption-root-motion", "Root Motion Caption", [ROOT_MOTION_START[0], 0.05, -1.6], "Root Motion", font, 0.35));
+  // Stands with its left foot on a step: Foot Placement lifts that foot onto it.
+  const [stepX, , stepZ] = FOOT_PLACEMENT.at;
+  add(actor("ft-animscene-foot-placement", "Foot Placement Knight", tf(FOOT_PLACEMENT.at, facing),
+    instanceComponents("ft-animscene-foot-placement", refs.characters.footPlacement.components), { classId: refs.characters.footPlacement.ref.classId }));
+  // Box primitives are 1.5 m; the step is 0.5 × 0.6 m and its top is Step Height up, under the Knight's left foot.
+  add(actor("ft-animscene-step", "Step", tf([stepX + 0.32, FOOT_PLACEMENT.stepHeight / 2, stepZ], {
+    scale: [0.4 / 1.5, FOOT_PLACEMENT.stepHeight / 1.5, 0.6 / 1.5],
+  }), [meshComp("ft-animscene-step-mesh", "box", { collision: "simple" })]));
+  add(caption("ft-animscene-caption-feet", "Foot Placement Caption", [stepX, 0.05, 1.1], "Foot Placement", font, 0.35));
+  add(caption("ft-animscene-caption-shared", "Shared Skeleton Caption", [-2.4, 0.05, -1.6], "Shared Skeleton", font, 0.35));
+  add(caption("ft-animscene-caption-large", "Rig_Large Caption", [1.2, 0.05, -1.6], "Rig_Large", font, 0.35));
+  add(caption("ft-animscene-caption-ik", "IK Caption", [REACHER.x, 0.05, -1.6], "Look At and IK", font, 0.35));
   await ctx.addSceneDocument({ kind: "scene", folder: SCENES_FOLDER, name: ANIMATION_SCENE, content: scene, order: SCENE_SAVE_ORDER.scene });
+}
+
+/** The IK Reacher: where it stands, facing the camera, and its Reach Target in front of its right hand. */
+const REACHER = { id: "ft-animscene-reacher", x: 3.6, reach: [3.25, 0.95, -0.35] as Vec3 };
+/** The Look Marker sweeps side to side in front of the reacher's head. */
+const LOOK_MARKER = { amplitude: 0.9, rate: 1.1, height: 1.3, depth: -1.1 };
+
+function lookMarkerAt(seconds: number): Vec3 {
+  return [REACHER.x + LOOK_MARKER.amplitude * Math.sin(LOOK_MARKER.rate * seconds), LOOK_MARKER.height, LOOK_MARKER.depth];
+}
+
+/**
+ * `FT_Animation`'s scene script. Begin Play: Attach To Bone puts the prop on the Knight's grip socket, and the reacher's
+ * ReachTarget variable takes the Reach Target's location. Tick: the Look Marker sweeps by game time, and the
+ * reacher's LookTarget variable follows it.
+ */
+function animationSceneScript(actors: {
+  knight: SerializedActor;
+  prop: SerializedActor;
+  reacher: SerializedActor;
+  marker: SerializedActor;
+  reachTarget: SerializedActor;
+}): SerializedGraph {
+  const { knight, prop, reacher, marker, reachTarget } = actors;
+  const owned = (entry: SerializedActor) => ownedGetNodeProperties({ actorId: entry.id, actorName: entry.name, actorClassId: entry.classId ?? "Actor" });
+  const graphComponent = reacher.components.find((component) => component.classId === "AnimationGraphComponent");
+  const reacherGraph = ownedGetNodeProperties({
+    actorId: reacher.id,
+    actorName: reacher.name,
+    actorClassId: reacher.classId ?? "Actor",
+    componentId: requireRef(graphComponent?.id, "the IK Reacher's Animation Graph component"),
+    componentName: "Animation Graph",
+    componentClassId: "AnimationGraphComponent",
+  });
+  return classGraph({
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("get-character", OWNED_ACTOR_GET_NODE_ID, 0, 180, owned(knight)),
+      gNode("get-prop", OWNED_ACTOR_GET_NODE_ID, 0, 300, owned(prop)),
+      gNode("attach", "actor.attachToBone", 300, 0, { "default:boneName": GRIP_SOCKET }),
+      printString("report", 600, 0, `FT_Animation script attached ${prop.name} to ${knight.name}'s ${GRIP_SOCKET}`),
+      gNode("reacher-graph", OWNED_COMPONENT_GET_NODE_ID, 600, 420, reacherGraph),
+      gNode("get-reach-target", OWNED_ACTOR_GET_NODE_ID, 600, 300, owned(reachTarget)),
+      gNode("reach-location", "transform.getLocation", 840, 300),
+      gNode("set-reach", "anim.actor.setVariable", 900, 0, { "default:name": REACH_TARGET.name }),
+      printString("reach-report", 1200, 0, `FT_Animation script set ${reacher.name}'s ${REACH_TARGET.name}`),
+      gNode("tick", "flow.event.tick", 0, 640),
+      gNode("time", "time.getGameTimeSeconds", 0, 800),
+      gNode("phase", "math.mul", 240, 800, { "default:b": LOOK_MARKER.rate }),
+      gNode("sine", "math.sin", 480, 800),
+      gNode("swing", "math.mul", 720, 800, { "default:b": LOOK_MARKER.amplitude }),
+      gNode("marker-x", "math.add", 960, 800, { "default:b": REACHER.x }),
+      gNode("marker-at", "vector.make3", 1200, 800, { "default:y": LOOK_MARKER.height, "default:z": LOOK_MARKER.depth }),
+      gNode("get-marker", OWNED_ACTOR_GET_NODE_ID, 1200, 960, owned(marker)),
+      gNode("move-marker", "transform.setLocation", 1440, 640),
+      gNode("set-look", "anim.actor.setVariable", 1740, 640, { "default:name": LOOK_TARGET.name }),
+    ],
+    edges: [
+      ...gChain("begin", "attach", "report", "set-reach", "reach-report"),
+      gWire("get-prop", "actor", "attach", "actor"),
+      gWire("get-character", "actor", "attach", "target"),
+      gWire("get-reach-target", "actor", "reach-location", "target"),
+      gWire("reacher-graph", "component", "set-reach", "target"),
+      gWire("reach-location", "out", "set-reach", "value"),
+      ...gChain("tick", "move-marker", "set-look"),
+      gWire("time", "seconds", "phase", "a"),
+      gWire("phase", "out", "sine", "in"),
+      gWire("sine", "out", "swing", "a"),
+      gWire("swing", "out", "marker-x", "a"),
+      gWire("marker-x", "out", "marker-at", "x"),
+      gWire("get-marker", "actor", "move-marker", "target"),
+      gWire("marker-at", "out", "move-marker", "location"),
+      gWire("reacher-graph", "component", "set-look", "target"),
+      gWire("marker-at", "out", "set-look", "value"),
+    ],
+  });
 }
 
 /**
@@ -286,6 +460,78 @@ async function authorAdventurerFootsteps(ctx: FeatureTestContext): Promise<void>
       ],
     });
   }
+}
+
+/** The KayKit Rig_Medium Skeleton's socket the `FT_Animation` Socket Prop attaches to. */
+const GRIP_SOCKET = "FT_Grip";
+
+/**
+ * A socket on the Rig_Medium Skeleton's right hand (its hand slot when the rig has one): every adventurer has it, and
+ * the `FT_Animation` scene script attaches the Socket Prop to the Knight's.
+ */
+async function authorAdventurerGripSocket(ctx: FeatureTestContext): Promise<void> {
+  const guid = ctx.assets.kaykit.mediumSkeleton;
+  const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+  if (!asset) return;
+  const skeleton = normalizeSkeletonPayload(asset.header.payload);
+  const names = skeleton.bones.map((bone) => bone.name);
+  const bone = names.find((name) => name.toLowerCase() === "handslot.r") ??
+    names.find((name) => /hand.*\.r$/i.test(name)) ?? names.find((name) => /hand/i.test(name)) ?? names[0];
+  if (!bone) return;
+  await ctx.host.saveDocument("skeleton", asset.path, {
+    ...skeleton,
+    sockets: [{ name: GRIP_SOCKET, bone, position: [0, 0.1, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }],
+  });
+}
+
+/** The adventurers' Hit_B Animation, made additive to its first frame: their Idle adds it over Idle_A as a flinch. */
+/**
+ * Death_A moves its hips back across the ground as the character falls: the Animation gets root motion on its hips,
+ * sampled from the Rig_Medium General file it came from, so its actor moves back instead of the bone.
+ */
+async function authorFallRootMotion(ctx: FeatureTestContext): Promise<void> {
+  const guid = ctx.assets.kaykit.mediumAnimations[KAYKIT_CLIPS.fall];
+  const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+  if (!asset) throw new Error(`FeatureTest needs the KayKit "${KAYKIT_CLIPS.fall}" Animation.`);
+  const payload = normalizeAnimationPayload(asset.header.payload);
+  const rootMotion = extractAnimationRootMotion(await ctx.host.loadBytes(KAYKIT_FILES.rigMediumGeneral), payload.clipName, "hips");
+  if (!rootMotion) throw new Error(`FeatureTest could not sample root motion from "${KAYKIT_CLIPS.fall}".`);
+  await ctx.host.saveDocument("animation", asset.path, { ...payload, rootMotion });
+}
+
+async function authorAdventurerFlinch(ctx: FeatureTestContext): Promise<void> {
+  const guid = ctx.assets.kaykit.mediumAnimations[KAYKIT_CLIPS.flinch];
+  const asset = guid ? ctx.registry.getByGuid(guid) : undefined;
+  if (!asset) throw new Error(`FeatureTest needs the KayKit "${KAYKIT_CLIPS.flinch}" Animation.`);
+  await ctx.host.saveDocument("animation", asset.path, {
+    ...normalizeAnimationPayload(asset.header.payload),
+    additive: { base: "firstFrame" },
+  });
+}
+
+/** How much of the additive flinch the adventurers' Idle adds. */
+const IDLE_FLINCH_ALPHA = 0.35;
+
+/**
+ * Idle: Idle_A with the additive Hit_B flinch added over it by Apply Additive, the state's time following Idle_A, all
+ * through the UpperBody Slot, so the Throw shows on the whole body at idle.
+ */
+function flinchIdleState(idle: FeatureTestClip, flinch: FeatureTestClip): AnimState {
+  return {
+    id: "idle",
+    name: "Idle",
+    position: { x: 80, y: 220 },
+    stateGraph: poseGraph("3d", "idle-slot", [
+      playerNode("3d", "player", 60, 40, idle),
+      playerNode("3d", "flinch", 60, 220, flinch),
+      gNode("flinch-over-idle", "anim.pose.applyAdditive", 500, 120, { "default:alpha": IDLE_FLINCH_ALPHA }),
+      gNode("idle-slot", "anim.pose.slot", 900, 120, { slotName: ADVENTURER_SLOT }),
+    ], [
+      gWire("player", "pose", "flinch-over-idle", "base"),
+      gWire("flinch", "pose", "flinch-over-idle", "additive"),
+      gWire("flinch-over-idle", "pose", "idle-slot", "source"),
+    ]),
+  };
 }
 
 /** Save the door's Open Animation with a Duration longer than its clip, as the Inspector's Duration field does. */
@@ -328,6 +574,65 @@ async function saveSpeedBlendSpace(
   };
   return (await ctx.createAsset("BlendSpace", FOLDER, name, { payload: payload as unknown as Record<string, unknown> })).guid;
 }
+
+/**
+ * The Rig_Medium bones the adventurers' Move state layers on (its spine, the upper body's branch, and its head), and
+ * the reacher's right wrist, whose arm Two Bone IK turns.
+ */
+function adventurerLayerBones(ctx: FeatureTestContext): { spine: string; head: string; wrist: string } {
+  const guid = requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton");
+  const names = normalizeSkeletonPayload(ctx.registry.getByGuid(guid)?.header.payload ?? {}).bones.map((bone) => bone.name);
+  const find = (exact: string, pattern: RegExp) =>
+    requireRef(names.find((name) => name.toLowerCase() === exact) ?? names.find((name) => pattern.test(name)), `the Rig_Medium ${exact} bone`);
+  return { spine: find("spine", /spine|chest/i), head: find("head", /head/i), wrist: find("wrist.r", /wrist.*r$|hand.*r$/i) };
+}
+
+/** The adventurers' upper-body layer's Blend Weight. */
+const UPPER_BODY_WEIGHT = 0.6;
+
+/**
+ * The adventurers' Move state: the Speed Blend Space saved as the Locomotion cached pose, played through Use Cached
+ * Pose as a Layered Blend Per Bone's Base Pose, with Interact on the upper body (the spine's branch, ramping in over
+ * two bones) through the UpperBody Slot, where the Throw their Classes play shows, and the head turned in its own
+ * axes by Transform Bone, by the HeadTurn Rotator variable.
+ */
+function layeredMoveState(x: number, y: number, blendSpaceGuid: string, interact: FeatureTestClip, bones: { spine: string; head: string }): AnimState {
+  const state = speedBlendSpaceState("move", "Move", x, y, blendSpaceGuid);
+  const locomotion = state.stateGraph.nodes.filter((node) => node.id !== ANIM_POSE_OUTPUT_NODE_ID);
+  const speedWires = state.stateGraph.edges.filter((edge) => edge.target !== ANIM_POSE_OUTPUT_NODE_ID);
+  return {
+    ...state,
+    stateGraph: poseGraph("3d", "look", [
+      ...locomotion.map((node) => ({ ...node, position: { x: node.position.x, y: node.position.y + 360 } })),
+      gNode("save-locomotion", "anim.pose.saveCachedPose", 500, 440, { name: ADVENTURER_CACHED_POSE }),
+      gNode("use-locomotion", "anim.pose.useCachedPose", 60, -120, { name: ADVENTURER_CACHED_POSE }),
+      playerNode("3d", "interact", -200, 40, interact),
+      gNode("upper-body-slot", "anim.pose.slot", 60, 40, { slotName: ADVENTURER_SLOT }),
+      gNode("upper-body", "anim.pose.layeredBlendPerBone", 500, 0, {
+        count: 1,
+        layers: [{ branches: [{ bone: bones.spine, blendDepth: 2 }] }],
+        "default:blendWeight0": UPPER_BODY_WEIGHT,
+      }),
+      gNode("look", "anim.control.transformBone", 900, 0, {
+        bone: bones.head,
+        rotationMode: "add",
+        rotationSpace: "bone",
+      }),
+      getVar("get-head-turn", animGraphMembersFromVariables([HEAD_TURN])[0]!, 640, 200),
+    ], [
+      ...speedWires,
+      gWire("locomotion", "pose", "save-locomotion", "pose"),
+      gWire("use-locomotion", "pose", "upper-body", "basePose"),
+      gWire("interact", "pose", "upper-body-slot", "source"),
+      gWire("upper-body-slot", "pose", "upper-body", "blendPose0"),
+      gWire("upper-body", "pose", "look", "sourcePose"),
+      gWire("get-head-turn", "value", "look", "rotation"),
+    ]),
+  };
+}
+
+/** The adventurers' cached pose: their Speed Blend Space. */
+const ADVENTURER_CACHED_POSE = "Locomotion";
 
 /** A state that plays `blendSpaceGuid` by the graph's Speed, in `syncGroup` when given. */
 function speedBlendSpaceState(id: string, name: string, x: number, y: number, blendSpaceGuid: string, syncGroup?: string): AnimState {
@@ -482,8 +787,9 @@ function moveState(walk: FeatureTestClip, run: FeatureTestClip, x: number): Anim
 }
 
 /**
- * Rig_Medium: Idle ⇄ Move on Speed. The Struck State Alias covers Idle and Move: while Cheer is set either one plays
- * Hit, then Interact → Pick Up by exit time, and Pick Up returns to Idle once it has played.
+ * Rig_Medium: Idle ⇄ Move on Speed; Idle adds the additive Hit_B flinch over Idle_A (`flinchIdleState`); Move layers Interact on the upper body over the Locomotion cached pose and turns
+ * the head (`layeredMoveState`). The Struck State Alias covers Idle and Move: while Cheer is set either one plays Hit,
+ * then Interact → Pick Up by exit time, and Pick Up returns to Idle once it has played.
  */
 function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string): AnimGraphDocument {
   const animations = ctx.assets.kaykit.mediumAnimations;
@@ -493,15 +799,16 @@ function adventurerGraphDocument(ctx: FeatureTestContext, moveBlendSpace: string
     skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
     entryStateId: "idle",
     states: [
-      playerState("3d", "idle", "Idle", 80, 220, clip(KAYKIT_CLIPS.idle)),
-      // Move fires Move Started as it starts; its Walk and Run samples fire Footstep and Stride (Highest Weight only).
-      { ...speedBlendSpaceState("move", "Move", 400, 220, moveBlendSpace), events: { enter: "Move Started" } },
+      flinchIdleState(clip(KAYKIT_CLIPS.idle), clip(KAYKIT_CLIPS.flinch)),
+      // Move fires Move Started as it starts; its Walk and Run samples fire Footstep and Stride (Highest Weight only)
+      // through the Locomotion cached pose.
+      { ...layeredMoveState(400, 220, moveBlendSpace, clip(KAYKIT_CLIPS.interact), adventurerLayerBones(ctx)), events: { enter: "Move Started" } },
       playerState("3d", "interact", "Interact", 80, 480, clip(KAYKIT_CLIPS.interact), { loop: false }),
       playerState("3d", "pick-up", "Pick Up", 400, 480, clip(KAYKIT_CLIPS.pickUp), { loop: false }),
       playerState("3d", "hit", "Hit", -240, 480, clip(KAYKIT_CLIPS.hit), { loop: false }),
     ],
     aliases: [{ id: "adventurer-struck", name: "Struck", position: { x: -240, y: 220 }, anyState: false, stateIds: ["idle", "move"] }],
-    variables: [SPEED, CHEER],
+    variables: [SPEED, CHEER, HEAD_TURN],
     // Idle → Move wins over Struck → Hit (lower priority number runs first). Non-looping states: Exit Time 1 passes
     // once the clip has finished.
     transitions: [
@@ -538,6 +845,244 @@ function largeMannequinGraphDocument(ctx: FeatureTestContext): AnimGraphDocument
 }
 
 /** An Animation's clip name and length as imported (Play re-resolves both from the catalog). */
+/**
+ * Rig_Medium: one Reach state, Idle with Look At turning the head toward LookTarget (eased, within 70°, its Y kept
+ * up) and Two Bone IK putting the right wrist on ReachTarget. Both targets are World Space Vector variables.
+ */
+function reacherGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  const animations = ctx.assets.kaykit.mediumAnimations;
+  const bones = adventurerLayerBones(ctx);
+  const [look, reach] = animGraphMembersFromVariables([LOOK_TARGET, REACH_TARGET]);
+  return stateMachineGraph("3d", {
+    name: NAMES.reacherGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    entryStateId: "reach",
+    states: [{
+      id: "reach",
+      name: "Reach",
+      position: { x: 80, y: 80 },
+      stateGraph: poseGraph("3d", "reach-ik", [
+        playerNode("3d", "idle", -240, 0, kaykitClip(ctx, animations, KAYKIT_CLIPS.idle)),
+        gNode("look-at", "anim.control.lookAt", 120, 0, {
+          bone: bones.head,
+          targetSpace: "world",
+          aimAxis: "z",
+          upAxis: "y",
+          limitDegrees: 70,
+          interpSeconds: 0.15,
+        }),
+        getVar("get-look-target", look!, -120, 200),
+        gNode("reach-ik", "anim.control.twoBoneIk", 480, 0, { bone: bones.wrist, effectorSpace: "world" }),
+        getVar("get-reach-target", reach!, 240, 200),
+      ], [
+        gWire("idle", "pose", "look-at", "sourcePose"),
+        gWire("get-look-target", "value", "look-at", "target"),
+        gWire("look-at", "pose", "reach-ik", "sourcePose"),
+        gWire("get-reach-target", "value", "reach-ik", "effector"),
+      ]),
+    }],
+    transitions: [],
+    variables: [LOOK_TARGET, REACH_TARGET],
+  });
+}
+
+/** Where the Foot Placement Knight stands, and how high the step under its left foot is. */
+const FOOT_PLACEMENT = { at: [5, 0, 2.6] as Vec3, stepHeight: 0.15 };
+
+/**
+ * Rig_Medium: one Stand state, Idle_A into Foot Placement on both feet (foot.l and foot.r, their legs bending), the
+ * hips dropping for a foot over lower ground, each foot turned to its ground.
+ */
+function footPlacementGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  return stateMachineGraph("3d", {
+    name: NAMES.footPlacementGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    entryStateId: "stand",
+    states: [{
+      id: "stand",
+      name: "Stand",
+      position: { x: 80, y: 80 },
+      stateGraph: poseGraph("3d", "feet", [
+        playerNode("3d", "idle", -200, 0, kaykitClip(ctx, ctx.assets.kaykit.mediumAnimations, KAYKIT_CLIPS.idle)),
+        gNode("feet", "anim.control.footPlacement", 160, 0, { feet: ["foot.l", "foot.r"], pelvisBone: "hips", traceUp: 0.5, traceDown: 0.5 }),
+      ], [gWire("idle", "pose", "feet", "sourcePose")]),
+    }],
+    transitions: [],
+    variables: [],
+  });
+}
+
+/** Where the Root Motion Rogue starts, and how far it drifts before its Class returns it. */
+const ROOT_MOTION_START: Vec3 = [-5, 0, 2.6];
+const ROOT_MOTION_RANGE = 1.2;
+
+/** Rig_Medium: one Fall state, Death_A looping, which moves its actor back by root motion each pass. */
+function rootMotionGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  return stateMachineGraph("3d", {
+    name: NAMES.rootMotionGraph,
+    skeletonGuid: requireRef(ctx.assets.kaykit.mediumSkeleton, "the KayKit Rig_Medium Skeleton"),
+    entryStateId: "fall",
+    states: [playerState("3d", "fall", "Fall", 80, 80, kaykitClip(ctx, ctx.assets.kaykit.mediumAnimations, KAYKIT_CLIPS.fall))],
+    transitions: [],
+    variables: [],
+  });
+}
+
+/**
+ * The Root Motion Rogue's Class: Begin Play keeps where it was placed as Origin; each Tick, once root motion has carried
+ * it further than the range from Origin, it prints a line and returns there.
+ */
+async function saveRootMotionActor(ctx: FeatureTestContext, modelGuid: string, graphGuid: string): Promise<PlacedClass> {
+  const origin = varMember("ft-anim-var-root-origin", "Origin", "vec3", { x: 0, y: 0, z: 0 }, { category: "Root Motion" });
+  const components: SerializedComponent[] = [
+    meshComp("prefab-mesh", "box", { assetGuid: modelGuid }),
+    comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
+  ];
+  const graph = classGraph({
+    members: [origin],
+    components,
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, -200),
+      gNode("placed", "transform.getLocation", 0, -80),
+      setVar("set-origin", origin, 240, -200),
+      gNode("tick", "flow.event.tick", 0, 80),
+      gNode("here", "transform.getLocation", 0, 240),
+      getVar("get-origin", origin, 0, 360),
+      gNode("away", "vector.distance3", 240, 280),
+      gNode("far", "math.greater", 440, 280, { "default:b": ROOT_MOTION_RANGE }),
+      gNode("check", "flow.branch", 640, 80),
+      printString("report", 880, 80, `${NAMES.rootMotion} moved back ${ROOT_MOTION_RANGE} m by root motion`),
+      gNode("return", "transform.setLocation", 1160, 80),
+    ],
+    edges: [
+      gExec("begin", "set-origin"),
+      gWire("placed", "out", "set-origin", "value"),
+      gExec("tick", "check"),
+      gWire("here", "out", "away", "a"),
+      gWire("get-origin", "value", "away", "b"),
+      gWire("away", "out", "far", "a"),
+      gWire("far", "out", "check", "condition"),
+      gExec("check", "report", "true"),
+      gExec("report", "return"),
+      gWire("get-origin", "value", "return", "location"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.rootMotion, parentClass: "Actor", graph });
+  return { ref, components };
+}
+
+/** Where the Velociraptor runs: round its placed center, at this radius (m) and turn rate (rad/s). */
+const VELOCIRAPTOR_RUN = { center: [0, 0, 3] as Vec3, radius: 1.6, rate: 1.5 };
+
+/**
+ * The Velociraptor (imported from FBX): one Run state, Run looping into Spring Bones on the tail (Tail1 and below):
+ * soft toward the tip, with gravity, a light seeded wind, World Damping low enough that turning swings it, a 50°
+ * limit, a short tip, and a sphere collider on the hips.
+ */
+function velociraptorGraphDocument(ctx: FeatureTestContext): AnimGraphDocument {
+  const raptor = ctx.assets.velociraptor;
+  const run = animationClip(ctx, requireRef(raptor.animations.Run, "the Velociraptor Run Animation"));
+  return stateMachineGraph("3d", {
+    name: NAMES.velociraptorGraph,
+    skeletonGuid: requireRef(raptor.skeleton, "the Velociraptor Skeleton"),
+    entryStateId: "run",
+    states: [{
+      id: "run",
+      name: "Run",
+      position: { x: 80, y: 80 },
+      stateGraph: poseGraph("3d", "tail-springs", [
+        playerNode("3d", "run", -200, 0, run),
+        gNode("tail-springs", "anim.control.springBones", 160, 0, {
+          bone: "Tail1",
+          stiffness: 0.08,
+          damping: 0.05,
+          worldDampingLocation: 0.3,
+          worldDampingRotation: 0.2,
+          gravity: [0, -4, 0],
+          windDirection: [1, 0, 0],
+          windStrength: 1.5,
+          windSeed: 7,
+          radius: 0.04,
+          limitDegrees: 50,
+          tipLength: 0.1,
+          stiffnessCurve: [{ t: 0, value: 1 }, { t: 1, value: 0.4 }],
+          colliders: [{ kind: "sphere", bone: "Hips", offset: [0, 0, 0], radius: 0.15 }],
+        }),
+      ], [gWire("run", "pose", "tail-springs", "sourcePose")]),
+    }],
+    transitions: [],
+    variables: [],
+  });
+}
+
+/**
+ * The Velociraptor's Class: Begin Play keeps where it was placed as Origin; Tick runs it round Origin by game time,
+ * facing the way it runs (its Model faces +Z, so its yaw is the angle plus 90°).
+ */
+async function saveVelociraptor(ctx: FeatureTestContext, graphGuid: string): Promise<PlacedClass> {
+  const origin = varMember("ft-anim-var-origin", "Origin", "vec3", { x: 0, y: 0, z: 0 }, { category: "Run" });
+  const components: SerializedComponent[] = [
+    meshComp("prefab-mesh", "box", { assetGuid: requireRef(ctx.assets.velociraptor.model, "the Velociraptor Model") }),
+    comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
+  ];
+  const { radius, rate } = VELOCIRAPTOR_RUN;
+  const graph = classGraph({
+    members: [origin],
+    components,
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, -200),
+      gNode("placed", "transform.getLocation", 0, -80),
+      setVar("set-origin", origin, 240, -200),
+      gNode("tick", "flow.event.tick", 0, 80),
+      gNode("time", "time.getGameTimeSeconds", 0, 240),
+      gNode("angle", "math.mul", 200, 240, { "default:b": rate }),
+      gNode("sine", "math.sin", 400, 200),
+      gNode("cosine", "math.cos", 400, 320),
+      gNode("x", "math.mul", 600, 200, { "default:b": radius }),
+      gNode("z", "math.mul", 600, 320, { "default:b": radius }),
+      gNode("offset", "vector.make3", 800, 240, { "default:y": 0 }),
+      getVar("get-origin", origin, 800, 400),
+      gNode("at", "vector.add3", 1000, 240),
+      gNode("move", "transform.setLocation", 1200, 80),
+      gNode("degrees", "math.mul", 400, 460, { "default:b": 180 / Math.PI }),
+      gNode("heading", "math.add", 600, 460, { "default:b": 90 }),
+      gNode("facing", "struct.makeRotator", 800, 520),
+      gNode("turn", "transform.setRotation", 1440, 80),
+    ],
+    edges: [
+      gExec("begin", "set-origin"),
+      gWire("placed", "out", "set-origin", "value"),
+      ...gChain("tick", "move", "turn"),
+      gWire("time", "seconds", "angle", "a"),
+      gWire("angle", "out", "sine", "in"),
+      gWire("angle", "out", "cosine", "in"),
+      gWire("sine", "out", "x", "a"),
+      gWire("cosine", "out", "z", "a"),
+      gWire("x", "out", "offset", "x"),
+      gWire("z", "out", "offset", "z"),
+      gWire("offset", "out", "at", "a"),
+      gWire("get-origin", "value", "at", "b"),
+      gWire("at", "out", "move", "location"),
+      gWire("angle", "out", "degrees", "a"),
+      gWire("degrees", "out", "heading", "a"),
+      gWire("heading", "out", "facing", "yaw"),
+      gWire("facing", "out", "turn", "rotation"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: FOLDER, name: NAMES.velociraptor, parentClass: "Actor", graph });
+  return { ref, components };
+}
+
+/** A Class with a Model and an Animation Graph and no script: a scene script drives its graph. */
+async function saveModelActor(ctx: FeatureTestContext, name: string, modelGuid: string, graphGuid: string): Promise<PlacedClass> {
+  const components: SerializedComponent[] = [
+    meshComp("prefab-mesh", "box", { assetGuid: modelGuid }),
+    comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
+  ];
+  const ref = await ctx.saveClass({ folder: FOLDER, name, parentClass: "Actor", graph: classGraph({ components }) });
+  return { ref, components };
+}
+
 function animationClip(ctx: FeatureTestContext, guid: string): FeatureTestClip {
   const asset = ctx.registry.getByGuid(guid);
   if (!asset || asset.header.type !== "Animation") throw new Error(`FeatureTest Animation ${guid} is missing.`);
@@ -625,18 +1170,36 @@ function ruleGraph(terms: readonly RuleTerm[]): SerializedGraph {
  * Set Anim Graph Variable Speed, then Cheer = Speed < 0.1. The graph component
  * is found by class (Get Component Ref), so instance component ids never matter.
  */
-async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: string, graphGuid: string): Promise<PlacedClass> {
+async function saveLocomotor(
+  ctx: FeatureTestContext,
+  name: string,
+  modelGuid: string,
+  graphGuid: string,
+  slotAttack?: { animationGuid: string },
+): Promise<PlacedClass> {
   const elapsed = varMember("ft-anim-var-elapsed", "Elapsed", "float", 0, { category: "Locomotion" });
   const phase = varMember("ft-anim-var-phase", "Phase", "float", 0, { category: "Locomotion" });
   const cycleRate = varMember("ft-anim-var-cycle-rate", "CycleRate", "float", CYCLE_RATE, { category: "Locomotion" });
+  // Begin Play hands it to the graph component: the FT_Stress crowd sets When Visible.
+  const tickMode = varMember("ft-anim-var-tick-mode", "TickMode", "enum", ANIMATION_TICK_MODE_LABELS.always, {
+    typeClassId: ENGINE_ANIMATION_TICK_MODE_ENUM_ID,
+    category: "Locomotion",
+  });
   const components: SerializedComponent[] = [
     meshComp("prefab-mesh", "box", { assetGuid: modelGuid }),
     comp("prefab-anim-graph", "AnimationGraphComponent", { graphGuid }),
   ];
   const graph = classGraph({
-    members: [elapsed, phase, cycleRate],
+    members: [elapsed, phase, cycleRate, tickMode],
     components,
     nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, -320),
+      getVar("get-tick-mode", tickMode, 0, -160),
+      gNode("tick-mode-graph", "component.getNamed", 240, -160, {
+        componentClassId: "AnimationGraphComponent",
+        implicitSelf: true,
+      }),
+      gNode("set-tick-mode", "anim.actor.setTickMode", 480, -320),
       gNode("tick", "flow.event.tick", 0, 0),
       getVar("get-elapsed", elapsed, 0, 160),
       gNode("advance", "math.add", 240, 120),
@@ -657,6 +1220,9 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
       gNode("set-cheer", "anim.actor.setVariable", 2140, 0, { "default:name": CHEER.name }),
     ],
     edges: [
+      gExec("begin", "set-tick-mode"),
+      gWire("tick-mode-graph", "out", "set-tick-mode", "target"),
+      gWire("get-tick-mode", "value", "set-tick-mode", "tickMode"),
       gExec("tick", "set-elapsed"),
       ...gChain("set-elapsed", "set-speed", "set-cheer"),
       gWire("get-elapsed", "value", "advance", "a"),
@@ -676,6 +1242,27 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
       gWire("calm", "out", "set-cheer", "value"),
     ],
   });
+  if (slotAttack) {
+    // After Begin Play, and again after each one ends: Throw on the graph's UpperBody slot.
+    graph.nodes.push(
+      gNode("attack-wait", "timers.delay", 720, -320, { "default:duration": ADVENTURER_THROW_INTERVAL }),
+      gNode("attack-graph", "component.getNamed", 720, -160, { componentClassId: "AnimationGraphComponent", implicitSelf: true }),
+      gNode("attack", "anim.actor.playSlotAnimation", 960, -320, {
+        "default:animation": slotAttack.animationGuid,
+        "default:slotName": ADVENTURER_SLOT,
+        "default:blendInTime": 0.15,
+        "default:blendOutTime": 0.2,
+      }),
+      printString("attack-done", 1240, -320, `${name} finished Throw on ${ADVENTURER_SLOT}`),
+    );
+    graph.edges.push(
+      gExec("set-tick-mode", "attack-wait"),
+      gExec("attack-wait", "attack"),
+      gWire("attack-graph", "out", "attack", "target"),
+      gExec("attack", "attack-done", "onCompleted"),
+      gExec("attack-done", "attack-wait"),
+    );
+  }
   const ref = await ctx.saveClass({ folder: FOLDER, name, parentClass: "Actor", graph });
   return { ref, components };
 }
@@ -683,11 +1270,18 @@ async function saveLocomotor(ctx: FeatureTestContext, name: string, modelGuid: s
 // ---------------------------------------------------------------------------
 // Actors
 
-/** Locomotor instance with a per-instance Phase (seconds) override. */
-function locomotorActor(placed: PlacedClass, id: string, name: string, position: Vec3, phase: number): SerializedActor {
+/** Locomotor instance with a per-instance Phase (seconds) override, and its Tick Mode when not Always. */
+function locomotorActor(
+  placed: PlacedClass,
+  id: string,
+  name: string,
+  position: Vec3,
+  phase: number,
+  tickMode?: AnimationTickMode,
+): SerializedActor {
   return actor(id, name, tf(position), instanceComponents(id, placed.components), {
     classId: placed.ref.classId,
-    properties: { Phase: phase },
+    properties: { Phase: phase, ...(tickMode ? { TickMode: ANIMATION_TICK_MODE_LABELS[tickMode] } : {}) },
   });
 }
 

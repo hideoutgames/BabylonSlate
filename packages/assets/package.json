@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./area-emission-client": "./src/area-emission-client.ts",
+    "./asset-diff": "./src/asset-diff.ts",
+    "./asset-diff-client": "./src/asset-diff-client.ts",
     "./import-worker-client": "./src/import-worker-client.ts"
   },
   "scripts": {
@@ -13,6 +15,7 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/assets"
   },
   "dependencies": {
+    "@haptic/behaviour-tree": "workspace:*",
     "@haptic/core": "workspace:*",
     "@haptic/object-model": "workspace:*",
     "@haptic/particle-graph": "workspace:*",

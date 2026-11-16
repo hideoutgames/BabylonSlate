@@ -9,7 +9,6 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { PointLight } from "@babylonjs/core/Lights/pointLight";
 import type { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
-import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Matrix, Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
@@ -146,7 +145,7 @@ export function shadowAtlasRenderTarget(scene: Scene): RenderTargetWrapper | nul
 
 /**
  * What the light block samples its shadows from: the atlas once a light has a tile, else a one-texel depth target of
- * the same kind, as WebGPU draws only with every declared texture bound. No light samples the stand-in.
+ * the same kind. No light samples the stand-in.
  */
 export function shadowAtlasTexture(scene: Scene): RenderTargetTexture {
   const atlas = atlases.get(scene)?.target;
@@ -158,15 +157,6 @@ export function shadowAtlasTexture(scene: Scene): RenderTargetTexture {
     disposeWithScene(scene, placeholder, () => placeholders.delete(scene));
   }
   return placeholder;
-}
-
-/**
- * On WebGPU a scissored clear draws Babylon's clear quad, whose pipeline lookup throws until its shader has compiled;
- * a tile waits for it rather than draw over depth it could not clear.
- */
-function tileClearsReady(engine: AbstractEngine): boolean {
-  const quad = (engine as { _clearQuad?: { _effect?: Effect } })._clearQuad;
-  return !quad?._effect || quad._effect.isReady();
 }
 
 /**
@@ -206,14 +196,6 @@ class AtlasTileTarget extends RenderTargetTexture {
 
   override getSize() {
     return { width: this.tiles[0]!.size, height: this.tiles[0]!.size };
-  }
-
-  override render(useCameraPostProcess?: boolean, dumpForDebug?: boolean): void {
-    if (!tileClearsReady(this.getScene()!.getEngine())) {
-      this.resetRefreshCounter();
-      return;
-    }
-    super.render(useCameraPostProcess, dumpForDebug);
   }
 
   override releaseInternalTexture(): void {
@@ -344,33 +326,6 @@ export function createPrivateShadowAtlas(scene: Scene, edge: number): PrivateSha
   } finally {
     entities._blockEntityCollection = blocked;
   }
-}
-
-/** The private atlases whose tile clear `prepareTileClear` has drawn. */
-const preparedClears = new WeakSet<RenderTargetTexture>();
-
-/**
- * On WebGPU a tile's scissored clear draws Babylon's clear quad, whose render pipeline for the atlas's format the first
- * such clear creates synchronously, blocking a frame. Draws one into `atlas` (the Scene atlas's format) once the quad's
- * shader has compiled, so the pipeline exists before the Scene atlas's first tile clears; true once it has (at once on
- * WebGL2, which clears without a pipeline).
- */
-export function prepareTileClear(atlas: PrivateShadowAtlas): boolean {
-  const target = atlas.target;
-  const engine = target.getScene()!.getEngine();
-  if (!engine.isWebGPU || preparedClears.has(target)) return true;
-  const renderTarget = target.renderTarget;
-  if (!renderTarget || !tileClearsReady(engine)) return false;
-  engine.bindFramebuffer(renderTarget);
-  engine.enableScissor(0, 0, 1, 1);
-  try {
-    engine.clear(null, false, true, false);
-  } finally {
-    engine.disableScissor();
-    engine.unBindFramebuffer(renderTarget);
-  }
-  preparedClears.add(target);
-  return true;
 }
 
 /** Runs `build` with the atlas maps it makes placed in `atlas` rather than the Scene's atlas. */
@@ -528,7 +483,7 @@ export class AtlasShadowGenerator extends ShadowGenerator implements AtlasShadow
   /** The planes of Babylon's perspective projection it draws with (`PerspectiveFovLHToRef`, depth not reversed). */
   private recordRange(): void {
     const m = (this as unknown as { _projectionMatrix: Matrix })._projectionMatrix.m;
-    const near = this._scene.getEngine().isNDCHalfZRange ? -m[14]! / m[10]! : -m[14]! / (m[10]! + 1);
+    const near = -m[14]! / (m[10]! + 1);
     const far = -m[14]! / (m[10]! - 1);
     // A view not yet computed (an identity projection) has none.
     if (Number.isFinite(near) && Number.isFinite(far) && far > near) this.range.set(near, far);

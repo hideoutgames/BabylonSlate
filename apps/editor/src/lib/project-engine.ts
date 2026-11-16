@@ -1,24 +1,18 @@
-import type { GpuBackend } from "@haptic/core";
-import { createBackendEngineSession, type BackendEngineSession } from "@haptic/render";
+import { createEngineSession, type EngineSession } from "@haptic/render";
 import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "./public-engine-assets";
 import { isUsableEngine } from "./shared-engine-generation";
 
-export type ProjectEngineSession = BackendEngineSession;
+export type ProjectEngineSession = EngineSession;
 export type ProjectEngineState = {
   phase: "idle" | "preparing" | "initializing" | "ready" | "failed";
   session: ProjectEngineSession | null;
   error?: unknown;
   retryable?: boolean;
-  /** Failed because the ready session's WebGPU device was lost; only Retry replaces it. */
-  deviceLost?: boolean;
-  /** Ready on WebGL2 because WebGPU failed to initialize (not a material compatibility switch). */
-  webGpuFallbackReason?: string;
 };
 export type ProjectEngineRequest = {
   projectGuid: string;
-  backend: GpuBackend;
-  /** Paint blocking UI, detach old clients, then inspect backend compatibility. */
-  prepare(signal: AbortSignal): Promise<string | undefined>;
+  /** Paint blocking UI and detach old clients. */
+  prepare(signal: AbortSignal): Promise<void>;
 };
 export type ProjectEngineController = {
   getSnapshot(): ProjectEngineState;
@@ -27,19 +21,11 @@ export type ProjectEngineController = {
   dispose(): void;
 };
 
-const DEVICE_LOST_MESSAGE = "Rendering stopped because the graphics device was lost, for example when the device ran out of graphics memory. Retry to restart rendering. Open documents and unsaved edits are kept.";
-
 /** Hidden constructor canvas + initialized Engine for one open project. */
-export async function createProjectEngineSession(
-  backend: GpuBackend,
-  signal: AbortSignal,
-  webGpuCompatibilityReason?: string,
-): Promise<ProjectEngineSession> {
+export async function createProjectEngineSession(signal: AbortSignal): Promise<ProjectEngineSession> {
   let constructorCanvas: HTMLCanvasElement | undefined;
-  const session = await createBackendEngineSession({
-    requestedBackend: backend,
+  const session = await createEngineSession({
     signal,
-    webGpuCompatibilityReason,
     // The editor's viewport, Play and other project views show this Engine's canvas itself while one is on screen.
     presentViewsDirectly: true,
     decoders: {
@@ -98,7 +84,7 @@ export function createProjectEngineController(): ProjectEngineController {
       return () => { listeners.delete(listener); };
     },
     sync(request, retry = false) {
-      const nextKey = request ? JSON.stringify([request.projectGuid, request.backend]) : null;
+      const nextKey = request ? request.projectGuid : null;
       if (!retry && key === nextKey &&
         (state.phase !== "ready" || isUsableEngine(state.session?.engine))) return tail;
       key = nextKey;
@@ -111,27 +97,18 @@ export function createProjectEngineController(): ProjectEngineController {
         if (signal.aborted) return;
         try {
           if (cleanupFailure) throw cleanupFailure;
-          const reason = request ? await request.prepare(signal) : undefined;
+          if (request) await request.prepare(signal);
           signal.throwIfAborted();
           drop();
           if (!request) return;
           publish({ phase: "initializing", session: null });
-          const session = await createProjectEngineSession(request.backend, signal, reason);
+          const session = await createProjectEngineSession(signal);
           owned = session;
           if (signal.aborted) {
             drop();
             return;
           }
-          const webGpuFallbackReason = request.backend === "webgpu" && !reason && session.effectiveBackend === "webgl2"
-            ? session.fallbackReason ?? "WebGPU is unavailable. Using WebGL2."
-            : undefined;
-          publish({ phase: "ready", session, ...(webGpuFallbackReason ? { webGpuFallbackReason } : {}) });
-          // A lost WebGPU device cannot recover in place: detach every client
-          // and offer Retry, which replaces the Engine.
-          void session.deviceLost?.then(() => {
-            if (owned !== session || state.session !== session) return;
-            publish({ phase: "failed", session: null, retryable: true, deviceLost: true, error: new Error(DEVICE_LOST_MESSAGE) });
-          });
+          publish({ phase: "ready", session });
         } catch (error) {
           if (error instanceof AggregateError) quarantine(error);
           if (!signal.aborted) publish({ phase: "failed", session: null,

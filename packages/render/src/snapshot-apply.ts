@@ -506,7 +506,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const overlay of binding.spriteOverlays?.values() ?? []) {
     overlay.dispose();
   }
-  for (const slotId of [...(binding.slotAnimationGroups?.keys() ?? [])]) {
+  for (const slotId of [...(binding.slotPoseClips?.keys() ?? [])]) {
     invalidateSlotAnimLoad(binding, slotId);
   }
   for (const light of binding.lights.values()) light.dispose();
@@ -523,7 +523,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   binding.seenSlots.clear();
   binding.despawnedSlots.clear();
   binding.spriteOverlays?.clear();
-  binding.slotAnimationGroups?.clear();
+  binding.slotPoseClips?.clear();
   binding.pendingAnimState?.clear();
   releaseAllRetainedMaterialOwners(binding);
   for (const key of binding.materialParameters.keys()) binding.releaseMaterialInstance?.(key);

@@ -15,30 +15,26 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import type { AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 import { floorShadowMask } from "./haptic-contact-shadow-proof";
 
 /** Per floor pixel: 1 drawn in shadow (under half the sun's light), 0 lit, -1 off the floor. */
 type Frame = { drawn: number[]; blocked: number[] };
 
-export async function runCascadeShimmerProof(backend: "webgl2" | "webgpu") {
+export async function runCascadeShimmerProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 160;
   canvas.height = 100;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   try {
@@ -105,7 +101,7 @@ export async function runCascadeShimmerProof(backend: "webgl2" | "webgpu") {
       setAuthoredLightEnabled(sun, false);
       const unlit = await draw();
       setAuthoredLightEnabled(sun, true);
-      const blocked = floorShadowMask(scene, camera, canvas, engine.isWebGPU, meshes, toSun);
+      const blocked = floorShadowMask(scene, camera, canvas, meshes, toSun);
       frames.push({
         blocked,
         drawn: blocked.map((kind, pixel) => {

@@ -62,6 +62,8 @@ export interface GraphNodeRowsEnv {
   updateNodeData: (patch: Record<string, unknown>) => void;
   onPickClass: (pick: ClassPinPick) => void;
   onPickAsset: (pick: AssetPinPick) => void;
+  /** In an Animation Graph state graph: its Skeleton's bones and its saved cached poses. */
+  animPose?: { bones: readonly string[]; cachedPoses: readonly string[] };
 }
 
 /**
@@ -131,6 +133,8 @@ export function graphNodeInspectorRows(node: GraphNode, env: GraphNodeRowsEnv) {
     animPose: animPoseNodePropertyRows(node.type, node.data, updateNodeData, {
       assetEntries: mapping.assetEntries,
       onPickClip: (assetType) => env.onPickAsset({ pinId: ANIM_POSE_CLIP_PICK, assetType, allowedTypes: [assetType] }),
+      bones: env.animPose?.bones,
+      cachedPoses: env.animPose?.cachedPoses,
     }),
   };
 

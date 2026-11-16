@@ -54,59 +54,23 @@ describe("scalability nodes", () => {
     expect(requests.map((request) => colorOf(request as never))).toEqual([[1, 2, 3]]);
   });
 
-  it("Get Effective Scalability reads the snapshot once for Requested GPU Backend", () => {
-    let reads = 0;
-    const logs: unknown[] = [];
-    runBeginPlay(
-      [["get", "scalability.getEffective"], ["log", "debug.log"]],
-      [["begin", "execOut", "log", "execIn"], ["get", "requestedBackend", "log", "message"]],
-      {
-        getScalability: () => {
-          reads += 1;
-          return { requested: { render: { gpuBackend: "webgpu" } }, effective: null, pipeline: null };
-        },
-        formatValue: (value: unknown) => value,
-        log: (_severity: string, _category: string, value: unknown) => logs.push(value),
-      },
-    );
-    expect({ reads, logs }).toEqual({ reads: 1, logs: ["webgpu"] });
-  });
-
-  it("Get Effective Scalability reports the backend of the confirmed settings that Ready uses", () => {
-    const logs: unknown[] = [];
-    runBeginPlay(
-      [["get", "scalability.getEffective"], ["log", "debug.log"]],
-      [["begin", "execOut", "log", "execIn"], ["get", "effectiveBackend", "log", "message"]],
-      {
-        getScalability: () => ({
-          requested: { render: { gpuBackend: "auto" } },
-          effective: { render: { gpuBackend: "webgl2" } },
-          pipeline: null,
-        }),
-        formatValue: (value: unknown) => value,
-        log: (_severity: string, _category: string, value: unknown) => logs.push(value),
-      },
-    );
-    expect(logs).toEqual(["webgl2"]);
-  });
-
   it("Get Effective Scalability reads one snapshot for every output a statement uses", () => {
     let reads = 0;
     const logs: unknown[] = [];
     runBeginPlay(
-      [["get", "scalability.getEffective"], ["concat", "string.concat"], ["log", "debug.log"], ["logReady", "debug.log"]],
+      [["get", "scalability.getEffective"], ["same", "color.nearlyEqual"], ["log", "debug.log"], ["logReady", "debug.log"]],
       [["begin", "execOut", "log", "execIn"], ["log", "execOut", "logReady", "execIn"],
-        ["get", "requestedBackend", "concat", "a"], ["get", "effectiveBackend", "concat", "b"],
-        ["concat", "out", "log", "message"], ["get", "ready", "logReady", "message"]],
+        ["get", "vignetteColor", "same", "a"], ["get", "outlineColor", "same", "b"],
+        ["same", "out", "log", "message"], ["get", "ready", "logReady", "message"]],
       {
         getScalability: () => {
           reads += 1;
-          return { requested: { render: { gpuBackend: "webgpu" } }, effective: { render: { gpuBackend: "webgl2" } }, pipeline: null };
+          return { requested: { render: {} }, effective: { render: { effects: { vignette: { color: [1, 0, 0] } }, cel: { outlineColor: [0.03, 0.03, 0.03] } } } };
         },
         formatValue: (value: unknown) => value,
         log: (_severity: string, _category: string, value: unknown) => logs.push(value),
       },
     );
-    expect({ reads, logs }).toEqual({ reads: 2, logs: ["webgpuwebgl2", true] });
+    expect({ reads, logs }).toEqual({ reads: 2, logs: [false, true] });
   });
 });

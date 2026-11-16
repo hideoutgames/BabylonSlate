@@ -211,14 +211,14 @@ const READINESS_REASON_WORDS: Record<SceneReadinessDirtyReason, string> = {
   lightEnabled: "light enabled change", textureAdded: "texture added", textureRemoved: "texture removed",
   cameraAdded: "camera added", cameraRemoved: "camera removed", activeCamera: "active camera",
   skeletonAdded: "skeleton added", skeletonRemoved: "skeleton removed", membership: "membership count",
-  meshMaterial: "mesh material change", outline: "outline", shadowRestale: "shadow set change",
+  meshMaterial: "mesh material change", drawable: "mesh became drawable", meshVisibility: "mesh visibility crossed 1", outline: "outline", shadowRestale: "shadow set change",
   prepare: "preparation", invalidate: "invalidation", output: "output change", shadowCasters: "shadow casters",
   shadowMap: "shadow map", particleBind: "particle bind", particleCancel: "particle cancel",
   particlePreparation: "particle preparation", particlePrepared: "particle prepared", layerStyle: "layer style",
   instanceRekey: "instance rekey", renderSettings: "render settings", environmentLighting: "environment lighting",
   reflectionProbes: "reflection probes", materialLibrary: "material library", materialParameters: "material parameters",
   materialInstance: "material instance", meshAssets: "mesh assets", blendChange: "blend change", lattice: "lattice",
-  sceneLighting: "scene lighting", streamAdmission: "stream admission", spawnWarm: "spawn warm-up", other: "other",
+  sceneLighting: "scene lighting", streamAdmission: "stream admission", other: "other",
 };
 
 /** The most readiness probe causes a report line lists. */
@@ -422,10 +422,9 @@ function pad(text: string, width: number): string {
   return text.length >= width ? `${text} ` : text.padEnd(width);
 }
 
-/** A live preserveDrawingBuffer value (`presentation.preserve`) as on, off, n/a (WebGPU) or unknown. */
+/** A live preserveDrawingBuffer value (`presentation.preserve`) as on, off or unknown. */
 function preserveText(value: string | undefined): string {
   if (value === undefined) return "unknown";
-  if (value === "n/a") return "n/a (WebGPU)";
   return value === "true" ? "on" : value === "false" ? "off" : value;
 }
 
@@ -704,7 +703,6 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   // Play reports its adapter; an editor-only failure still names the viewport's.
   const adapter = report.scenes.map((scene) => scene.play.snapshot?.rendering?.adapter).find(Boolean)
     ?? report.scenes.map((scene) => scene.editor.gpu).find(Boolean);
-  const pipeline = report.scenes.map((scene) => scene.play.snapshot?.rendering?.pipeline.effective).find(Boolean);
   const breakdown = report.mode === "breakdown" ? report.breakdown : undefined;
   const verdicts = report.mode === "breakdown" ? report.scenes.map((scene) => breakdownVerdicts(scene, reportMethod(report))) : [];
   const flags = [
@@ -720,7 +718,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
     ...(breakdown?.warmMinutes !== null && breakdown?.warmMinutes !== undefined
       ? [`WARM DEVICE: previous run ended ${breakdown.warmMinutes} min ago`] : []),
     ...formatDiagnosticEnvironment(environment),
-    `GPU: ${adapter ? `${adapter.api} · ${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}${pipeline ? ` · ${pipeline.gpuBackend}` : ""}`,
+    `GPU: ${adapter ? `${adapter.vendor ?? "?"} · ${adapter.renderer ?? "?"}` : "unknown (no viewport or Play engine reported one)"}`,
   ];
   const sweeps = report.scenes.map((scene) => scene.play.benchmark).filter((sweep) => sweep.length);
   if (report.mode === "benchmark") {

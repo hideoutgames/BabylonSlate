@@ -17,8 +17,7 @@ export function isRenderingContextLostError(error: unknown): boolean {
 }
 
 /**
- * Whether `engine`'s graphics context is lost now. Pinned Babylon 9.29 sets `_contextWasLost` while a context is lost; a
- * lost WebGPU Engine (`doNotHandleContextLost`) draws no further frame and is never restored.
+ * Whether `engine`'s graphics context is lost now. Pinned Babylon 9.29 sets `_contextWasLost` while a context is lost.
  */
 export function isEngineContextLost(engine: AbstractEngine): boolean {
   return (engine as unknown as { _contextWasLost?: boolean })._contextWasLost === true;

@@ -28,6 +28,7 @@ export function emitStatementNode(
   flow?: {
     continuation: (expression: string) => void;
     branch: (expression: string, truePin: string, falsePin: string) => void;
+    runOutput?: (expression: string, pinId: string) => void;
   },
 ): { ctx: CodegenContext; condition?: string } {
   const anchor = { column: 1, assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId: node.id };
@@ -42,7 +43,7 @@ export function emitStatementNode(
   for (const subject of subjects) {
     emitBody(s, `  ${reportDeadReference(subject, bound.get(subject.pin.id)!)}`, anchor);
   }
-  const ctx = makeCtx(s, node, flow?.continuation, flow?.branch, bound);
+  const ctx = makeCtx(s, node, flow?.continuation, flow?.branch, bound, flow?.runOutput);
   if (def.latent) s.isAsync = true;
   declareDataOuts(s, node, ctx);
   if (subjects.length === 0) {

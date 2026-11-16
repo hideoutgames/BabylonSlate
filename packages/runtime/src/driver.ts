@@ -519,6 +519,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     this.hasAnimatedTiles = hasAnimatedTiles(tilemaps, tilesets);
     this.behaviourTrees.replaceAudioAssets((options.audioAssetGuids ?? []).filter((guid) => guid));
     this.behaviourTrees.replaceAnimClipCatalog((options.animClipCatalog ?? []).filter((entry) => entry.guid));
+    this.animGraphs.replaceAnimClipCatalog(options.animClipCatalog ?? []);
     const registry = new ClassRegistry();
     const mappings = normalizeInputMappings(
       options.inputAssets !== undefined ? inputMappingsFromAssets(options.inputAssets) : createDefaultInputMappings(),
@@ -967,6 +968,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     for (const entry of content.sceneLayers ?? []) this.sceneLayerLibrary.set(entry.guid, entry.layer);
     this.navigation.replaceSceneNavMeshes(content.sceneNavmeshBytes ?? {});
     this.behaviourTrees.replaceAnimClipCatalog(content.animClipCatalog ?? []);
+    this.animGraphs.replaceAnimClipCatalog(content.animClipCatalog ?? []);
     this.behaviourTrees.replaceAudioAssets(content.audioAssetGuids ?? []);
     this.sourceRenderTargets.clear();
     for (const [guid, value] of Object.entries(content.renderTargets ?? {})) this.sourceRenderTargets.set(guid, value);

@@ -23,7 +23,7 @@ const PAGE = 512;
 
 /** A Scene with an atlas on a NullEngine that reads texels by index as WebGL2 does, and one frame's before-render work. */
 function host(webGLVersion = 2) {
-  // Adapted so a raw texture is ready once made, as on the real backends.
+  // Adapted so a raw texture is ready once made, as on a WebGL2 Engine.
   const engine = adaptNullEngineFrameGraph(new NullEngine({ renderWidth: 256, renderHeight: 256, textureSize: 64, deterministicLockstep: false, lockstepMaxSteps: 1 }));
   engines.push(engine);
   Object.defineProperty(engine, "webGLVersion", { get: () => webGLVersion });

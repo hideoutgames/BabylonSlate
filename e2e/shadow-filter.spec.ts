@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { runShadowFilterProof } from "../apps/editor/src/testing/shadow-filter-proof";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type Proof = typeof runShadowFilterProof;
 type Capture = Awaited<ReturnType<Proof>>["captures"][number];
@@ -34,44 +34,42 @@ function measure(capture: Capture, width: number, height: number) {
   return { rows: crossing.size, rise, fall, width: Math.min(...widths), stairs, pixelsPerTexel: capture.pixelsPerTexel };
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`a shadow edge across texels wider than pixels is smooth and monotonic, on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (["error", "warning"].includes(message.type()) &&
-        /shader|WGSL|WebGPU uncaptured|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
-    });
-    await page.goto("/?test=1&shadowFilterProof=1");
-    await page.waitForFunction(() => typeof (window as unknown as { __shadowFilterProof?: unknown }).__shadowFilterProof === "function");
-    const result = await page.evaluate((backend) =>
-      (window as unknown as { __shadowFilterProof: Proof }).__shadowFilterProof(backend), backend);
-    const report = Object.fromEntries(result.captures.map((capture) => [capture.quality, measure(capture, result.width, result.height)]));
-    await testInfo.attach(`shadow-filter-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
-    expect(errors).toEqual([]);
-    const { low, medium, high } = report as Record<"low" | "medium" | "high", ReturnType<typeof measure>>;
-    // Texels several pixels wide, and the edge crossing every row.
-    expect(high.pixelsPerTexel).toBeGreaterThan(3);
-    for (const entry of [low, medium, high]) expect(entry.rows).toBeGreaterThan(100);
-    // Medium (5 × 5 texels) and High (7 × 7): monotonic across the edge, no pixel-sized jump, a straight contour.
-    for (const entry of [medium, high]) {
-      expect(entry.fall).toBeLessThan(0.01);
-      expect(entry.rise).toBeLessThan(0.09);
-      expect(entry.stairs).toBeLessThan(0.1 * entry.pixelsPerTexel);
-    }
-    // Their ramps (10% to 90%) span several texels, High's the wider.
-    expect(medium.width).toBeGreaterThan(3 * medium.pixelsPerTexel);
-    expect(high.width).toBeGreaterThan(3.5 * high.pixelsPerTexel);
-    expect(high.width).toBeGreaterThan(medium.width);
-    // Low (3 × 3 texels) is the narrowest exact kernel, still monotonic with its contour bent well under a fifth of a
-    // texel; the single bilinear tap it replaced rose by more than 0.15 per pixel and stepped by over 0.3 of a texel.
-    expect(low.fall).toBeLessThan(0.01);
-    expect(low.rise).toBeLessThan(0.12);
-    expect(low.stairs).toBeLessThan(0.15 * low.pixelsPerTexel);
-    expect(low.width).toBeGreaterThan(1.5 * low.pixelsPerTexel);
-    expect(medium.width).toBeGreaterThan(low.width);
-    // Drawn into its depth texture alone: the atlas keeps no unused depth renderbuffer of its size.
-    expect(result.atlasDepthRenderbuffer).toBe(false);
+test("a shadow edge across texels wider than pixels is smooth and monotonic", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()) &&
+      /shader|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error/i.test(message.text())) errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&shadowFilterProof=1");
+  await page.waitForFunction(() => typeof (window as unknown as { __shadowFilterProof?: unknown }).__shadowFilterProof === "function");
+  const result = await page.evaluate(() =>
+    (window as unknown as { __shadowFilterProof: Proof }).__shadowFilterProof());
+  const report = Object.fromEntries(result.captures.map((capture) => [capture.quality, measure(capture, result.width, result.height)]));
+  await testInfo.attach("shadow-filter", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  const { low, medium, high } = report as Record<"low" | "medium" | "high", ReturnType<typeof measure>>;
+  // Texels several pixels wide, and the edge crossing every row.
+  expect(high.pixelsPerTexel).toBeGreaterThan(3);
+  for (const entry of [low, medium, high]) expect(entry.rows).toBeGreaterThan(100);
+  // Medium (5 × 5 texels) and High (7 × 7): monotonic across the edge, no pixel-sized jump, a straight contour.
+  for (const entry of [medium, high]) {
+    expect(entry.fall).toBeLessThan(0.01);
+    expect(entry.rise).toBeLessThan(0.09);
+    expect(entry.stairs).toBeLessThan(0.1 * entry.pixelsPerTexel);
+  }
+  // Their ramps (10% to 90%) span several texels, High's the wider.
+  expect(medium.width).toBeGreaterThan(3 * medium.pixelsPerTexel);
+  expect(high.width).toBeGreaterThan(3.5 * high.pixelsPerTexel);
+  expect(high.width).toBeGreaterThan(medium.width);
+  // Low (3 × 3 texels) is the narrowest exact kernel, still monotonic with its contour bent well under a fifth of a
+  // texel; the single bilinear tap it replaced rose by more than 0.15 per pixel and stepped by over 0.3 of a texel.
+  expect(low.fall).toBeLessThan(0.01);
+  expect(low.rise).toBeLessThan(0.12);
+  expect(low.stairs).toBeLessThan(0.15 * low.pixelsPerTexel);
+  expect(low.width).toBeGreaterThan(1.5 * low.pixelsPerTexel);
+  expect(medium.width).toBeGreaterThan(low.width);
+  // Drawn into its depth texture alone: the atlas keeps no unused depth renderbuffer of its size.
+  expect(result.atlasDepthRenderbuffer).toBe(false);
+});

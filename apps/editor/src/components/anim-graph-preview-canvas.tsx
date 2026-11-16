@@ -5,9 +5,11 @@ import type { AnimEvalState } from "@haptic/anim-graph";
 import type { ModelMaterialSlot, SkeletonKind } from "@haptic/assets";
 import {
   applyAnimStateToScene,
+  attachSkeletalControlPreview,
   attachMaterialPreviewGestures,
   attachSkeletonPreview,
   bindAnimationGroupByName,
+  bindGameplayAnimationGroup,
   createEditorGrid,
   createMaterialPreviewPresenter,
   createModelPreviewScene,
@@ -16,11 +18,11 @@ import {
   previewRigRoot,
   retargetAnimationGroupWithMeshProxy,
   setSceneRenderSettings,
-  wrapGameplayAnimationGroup,
   type EditorGrid,
+  type SkeletalControlPreviewHandle,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
-  type NamedSeekableGroup,
+  type PoseClip,
 } from "@haptic/render";
 import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
@@ -44,7 +46,7 @@ function animPreviewClipsKey(clips: readonly AnimPreviewClip[]): string {
     .join("|");
 }
 
-/** The evaluation as Play's `animState` command, which `applyAnimStateToScene` seeks the clips from. */
+/** The evaluation as Play's `animState` command, which `applyAnimStateToScene` poses the clips from. */
 function animStateCommand(state: AnimEvalState) {
   const heaviest = state.layers.reduce<AnimEvalState["layers"][number] | undefined>(
     (best, layer) => (!best || layer.weight > best.weight ? layer : best),
@@ -62,12 +64,15 @@ function animStateCommand(state: AnimEvalState) {
     justFinished: state.facts.justFinished,
     justLooped: state.facts.justLooped,
     layers: state.layers,
+    ...(state.layerBlends ? { layerBlends: state.layerBlends } : {}),
+    ...(state.boneModifiers ? { boneModifiers: state.boneModifiers } : {}),
   };
 }
 
 /**
  * The Animation Graph Preview's 3D view: the preview Model on a floor grid, playing the clip layers of each evaluation
- * the way Play seeks them, drawn on the project's shared Engine. Bones replace the mesh while `showBones` is on.
+ * the way Play seeks them, drawn on the project's shared Engine. Bones replace the mesh while `showBones` is on, with
+ * a marker at each Look At target and Two Bone IK effector and Joint Target, and each Spring Bones collider.
  */
 export function AnimGraphPreviewCanvas({
   modelBytes,
@@ -101,6 +106,9 @@ export function AnimGraphPreviewCanvas({
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
+  const markersRef = useRef<SkeletalControlPreviewHandle | null>(null);
+  const [markerCount, setMarkerCount] = useState(0);
+  const [colliderCount, setColliderCount] = useState(0);
   const clipsRef = useRef(clips);
   clipsRef.current = clips;
   const readRef = useRef(readModelBytes);
@@ -137,20 +145,19 @@ export function AnimGraphPreviewCanvas({
     let grid: EditorGrid | null = null;
     let loaded: Awaited<ReturnType<typeof loadModelPreviewSource>> = null;
     let unsubscribe: (() => void) | null = null;
-    const groups: Array<NamedSeekableGroup & { dispose(): void; retire(): void }> = [];
+    const clips: Array<PoseClip & { dispose(): void }> = [];
     // The Model's own clips go with the Model; clips bound from other files are this preview's to dispose.
-    const ownGroups = new Set<NamedSeekableGroup>();
+    const ownClips = new Set<PoseClip>();
     const raf = { id: 0 };
     const overlay = watchBlockingEditorOverlay();
     const dispose = () => {
       window.cancelAnimationFrame(raf.id);
       unsubscribe?.();
-      for (const group of groups) {
-        if (ownGroups.has(group)) group.retire();
-        else group.dispose();
+      for (const clip of clips) {
+        if (!ownClips.has(clip)) clip.dispose();
       }
-      groups.length = 0;
-      ownGroups.clear();
+      clips.length = 0;
+      ownClips.clear();
       gestures?.dispose();
       presenter?.dispose();
       grid?.dispose();
@@ -198,9 +205,9 @@ export function AnimGraphPreviewCanvas({
             }
           }
           if (!group) continue;
-          const wrapped = wrapGameplayAnimationGroup(group, clip.animationGuid);
-          if (clip.source.kind === "own") ownGroups.add(wrapped);
-          groups.push(wrapped);
+          const bound = bindGameplayAnimationGroup(group, clip.animationGuid);
+          if (clip.source.kind === "own") ownClips.add(bound);
+          clips.push(bound);
         }
         for (const source of sources.values()) {
           source.loaded.dispose();
@@ -220,10 +227,10 @@ export function AnimGraphPreviewCanvas({
         });
         hostRef.current = host;
         presenterRef.current = presenter;
-        setBoundClips(groups.length);
+        setBoundClips(clips.length);
         setGeneration((value) => value + 1);
-        // Each evaluation seeks the clips as Play does; the frame is redrawn once it lands.
-        const animHost = { getAnimationGroups: () => groups };
+        // Each evaluation poses the clips as Play does; the frame is redrawn once it lands.
+        const animHost = { getPoseClips: () => clips };
         let applied: AnimEvalState | null = null;
         let pending = true;
         unsubscribe = stateRef.current.subscribe(() => {
@@ -235,6 +242,12 @@ export function AnimGraphPreviewCanvas({
           if (pending && state && state !== applied) {
             applied = state;
             applyAnimStateToScene(animHost, animStateCommand(state));
+            const markers = markersRef.current;
+            if (markers) {
+              markers.update(state.boneModifiers ?? []);
+              setMarkerCount(markers.targetCount);
+              setColliderCount(markers.colliderCount);
+            }
             presenter?.present({ force: true });
           } else {
             grid?.sync();
@@ -254,6 +267,8 @@ export function AnimGraphPreviewCanvas({
       overlay.dispose();
       bonesRef.current?.dispose();
       bonesRef.current = null;
+      markersRef.current?.dispose();
+      markersRef.current = null;
       releaseMaterials();
       dispose();
     };
@@ -264,12 +279,22 @@ export function AnimGraphPreviewCanvas({
     const host = hostRef.current;
     bonesRef.current?.dispose();
     bonesRef.current = null;
+    markersRef.current?.dispose();
+    markersRef.current = null;
     setBonesAttached(false);
+    setMarkerCount(0);
+    setColliderCount(0);
     if (!host || !showBones || !skeletonKind) {
       presenterRef.current?.present({ force: true });
       return;
     }
-    bonesRef.current = attachSkeletonPreview(previewRigRoot(host), host.scene, skeletonKind);
+    const rig = previewRigRoot(host);
+    bonesRef.current = attachSkeletonPreview(rig, host.scene, skeletonKind);
+    const markers = attachSkeletalControlPreview(rig, host.scene);
+    markers.update(stateRef.current.getState()?.boneModifiers ?? []);
+    markersRef.current = markers;
+    setMarkerCount(markers.targetCount);
+    setColliderCount(markers.colliderCount);
     setBonesAttached(true);
     presenterRef.current?.present({ force: true });
   }, [generation, showBones, skeletonKind]);
@@ -280,6 +305,8 @@ export function AnimGraphPreviewCanvas({
       className="h-full w-full touch-none"
       data-testid="anim-preview-canvas"
       data-bones={bonesAttached ? "true" : "false"}
+      data-ik-targets={String(markerCount)}
+      data-spring-colliders={String(colliderCount)}
       data-clips={String(boundClips)}
     />
   );

@@ -7,7 +7,6 @@
  * the lake's rest plane: its distance and how far inside the lake's edge it lies (both -1 where it misses the lake).
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { RawCubeTexture } from "@babylonjs/core/Materials/Textures/rawCubeTexture";
@@ -18,11 +17,10 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import {
-  builtInWaterMaterial, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings,
+  builtInWaterMaterial, configureEditorRenderingGroups, createWaterMesh, setSceneRenderSettings,
   setSceneWaterTime, updateSceneWater,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 import { StandardFogPlugin } from "./standard-reference";
 
 const SCENARIOS = ["sun", "deep", "grazing", "glint", "fog", "environment"] as const;
@@ -43,15 +41,12 @@ function skyCube(scene: Scene): RawCubeTexture {
   return new RawCubeTexture(scene, [side, side, face(240, 110, 40), face(40, 45, 50), side, side], size);
 }
 
-export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runWaterTemplateProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 96;
   canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const scene = new Scene(engine);
   try {
     // One depth buffer across rendering groups, as the editor's scenes keep it: water's scene copy needs it.
@@ -92,17 +87,17 @@ export async function runWaterTemplateProof(backend: "webgl2" | "webgpu" = "webg
         try { graph.render(camera, false); } finally { engine.endFrame(); }
       }
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     /**
-     * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): the distance along the view ray to the
-     * lake's rest plane where it meets the lake in front of the pole, and how far inside the lake's edge, else -1.
+     * Per pixel, in readPixels' rows (bottom-up): the distance along the view ray to the lake's rest plane where it
+     * meets the lake in front of the pole, and how far inside the lake's edge, else -1.
      */
     const lakeHits = () => {
       const distances: number[] = [];
       const insets: number[] = [];
       for (let row = 0; row < canvas.height; row++) {
-        const y = engine.isWebGPU ? row + 0.5 : canvas.height - row - 0.5;
+        const y = canvas.height - row - 0.5;
         for (let column = 0; column < canvas.width; column++) {
           const ray = scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera);
           const distance = ray.direction.y < 0 ? -ray.origin.y / ray.direction.y : -1;

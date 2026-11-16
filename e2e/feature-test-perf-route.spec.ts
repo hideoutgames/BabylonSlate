@@ -21,6 +21,7 @@ import {
  *
  * Env: HAPTIC_PERF_SCENES (comma list of main|stress|world|lights|2d, default main,stress),
  *      HAPTIC_PERF_SAMPLE_MS (default 15000), HAPTIC_PERF_SAMPLES (default 2),
+ *      HAPTIC_PERF_EDITOR_SAMPLES (default HAPTIC_PERF_SAMPLES: the editor viewport's windows),
  *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, applied with the Play console),
  *      HAPTIC_PERF_FRAMECAP (Play console `framecap`), HAPTIC_PERF_VIEWPORT_CAP (Engine Settings),
@@ -30,11 +31,20 @@ import {
  *      HAPTIC_PERF_OUT (absolute path that also receives the JSON report),
  *      HAPTIC_PERF_PROFILE=1 (with HAPTIC_PERF_OUT: a CPU profile of each scene's Play windows beside the report),
  *      HAPTIC_PERF_VERIFY_SCOPED=1 (Play follows each scoped readiness probe with a whole one that must agree:
- *      `rendererWork.scopedReadinessMismatches`).
+ *      `rendererWork.scopedReadinessMismatches`),
+ *      HAPTIC_PERF_GPU_BUSY=1 (each Play window measures GPU-busy time per frame: `rendering.gpuBusy`),
+ *      HAPTIC_PERF_VERIFY_BATCHES=1 (Play checks each Scene Layer pass whose draw batches kept their work against the
+ *      full path: `layerWork[].batching.mismatches`),
+ *      HAPTIC_PERF_IDLE_HALF_RATE=1 (the editor viewport keeps Half Rate When Idle on; the route turns it off otherwise),
+ *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
+ *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`),
+ *      HAPTIC_PERF_VERIFY_MIRRORS=1 (Play's Mirror surfaces also ask what changed on every render, as before a moved
+ *      view skipped it, and count each render that would have decided otherwise: `rendererWork.mirrorPolls.mismatches`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
- * (`frameCpu`, `frameDraws`, `drawsPerPass`, `cpuMsPerPass`). `settingsHoldMs` is how long the view took to draw again
+ * (`frameCpu`, `frameDraws`, `drawsPerPass`, `cpuMsPerPass`) and, where the Engine has timer queries, the frame's GPU
+ * time (`frameGpu`). `settingsHoldMs` is how long the view took to draw again
  * after the console commands; `rendering.rendererWork.readinessBlockers` names what a failed readiness check waited for.
  *
  * Each Play also reports the WebGL programs linked from its click to its close (`programs`), keyed by their
@@ -48,6 +58,7 @@ const number = (name: string, fallback: number, min = 0) => {
 };
 const SAMPLE_MS = number("HAPTIC_PERF_SAMPLE_MS", 15_000, 1_000);
 const SAMPLES = number("HAPTIC_PERF_SAMPLES", 2, 1);
+const EDITOR_SAMPLES = number("HAPTIC_PERF_EDITOR_SAMPLES", SAMPLES, 0);
 const WARMUP_MS = number("HAPTIC_PERF_WARMUP_MS", 10_000);
 const SETTLE_MS = number("HAPTIC_PERF_SETTLE_MS", 5_000);
 const QUALITY = process.env.HAPTIC_PERF_QUALITY ?? null;
@@ -59,6 +70,16 @@ const PLAYS = number("HAPTIC_PERF_PLAYS", 1, 1);
 const PROFILE = process.env.HAPTIC_PERF_PROFILE === "1" && !!process.env.HAPTIC_PERF_OUT;
 /** Each scoped readiness probe in Play is followed by a whole one, which must agree (the measured frames carry its cost). */
 const VERIFY_SCOPED = process.env.HAPTIC_PERF_VERIFY_SCOPED === "1";
+/** Each Play window restarts the GPU-busy measurement (`gpubusy on`), so `rendering.gpuBusy` is that window's own. */
+const GPU_BUSY = process.env.HAPTIC_PERF_GPU_BUSY === "1";
+/** Each Scene Layer pass that keeps its batches' work is checked against the full path (the measured frames carry its cost). */
+const VERIFY_BATCHES = process.env.HAPTIC_PERF_VERIFY_BATCHES === "1";
+/** Leaves Engine Settings' Half Rate When Idle on, to measure the idle editor viewport as a user has it by default. */
+const IDLE_HALF_RATE = process.env.HAPTIC_PERF_IDLE_HALF_RATE === "1";
+/** Each shadow caster walk of the change journal in Play is followed by the full walk (the measured frames carry its cost). */
+const VERIFY_JOURNAL = process.env.HAPTIC_PERF_VERIFY_JOURNAL === "1";
+/** Mirror surfaces in Play also ask what changed on every render (the measured frames carry its cost). */
+const VERIFY_MIRRORS = process.env.HAPTIC_PERF_VERIFY_MIRRORS === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -74,6 +95,9 @@ type PlayHost = {
     liveObjectCounts: () => Record<string, number>;
     spawnableWarm: () => { materials: number; models: number; ms: number } | null;
     verifyScopedReadinessProbes: (enabled: boolean) => void;
+    verifyRetainedOverlayBatches: (enabled: boolean) => void;
+    verifyRenderChangeJournal: (enabled: boolean) => void;
+    verifyMirrorContentPolls: (enabled: boolean) => void;
   };
 };
 
@@ -233,7 +257,7 @@ async function samplePlay(page: Page, durationMs: number) {
       if (now - read >= 500) {
         read = now;
         const rendering = host.__hapticPlayTest?.rendering();
-        if (rendering) readings.push({ drawCalls: rendering.drawCalls, cpuMs: rendering.cpuMs, drawPasses: rendering.drawPasses, drawPassMs: rendering.drawPassMs });
+        if (rendering) readings.push({ drawCalls: rendering.drawCalls, cpuMs: rendering.cpuMs, gpuMs: rendering.gpuMs, drawPasses: rendering.drawPasses, drawPassMs: rendering.drawPassMs });
       }
       if (now - first >= ms) break;
     }
@@ -276,6 +300,8 @@ async function samplePlay(page: Page, durationMs: number) {
     visibility: sample.visibility,
     // Half-second readings over the window: one frame's value says little where passes draw on alternate frames.
     frameCpu: distribution(sample.readings.flatMap((reading) => (typeof reading.cpuMs === "number" ? [reading.cpuMs] : []))),
+    // The Engine's GPU frame time from timer queries (null without them: a view sharing its Engine's frame).
+    frameGpu: distribution(sample.readings.flatMap((reading) => (typeof reading.gpuMs === "number" ? [reading.gpuMs] : []))),
     frameDraws: { median: draws.medianMs, max: draws.longestMs },
     drawsPerPass: passMedians(sample.readings.map((reading) => reading.drawPasses)),
     cpuMsPerPass: passMedians(sample.readings.map((reading) => reading.drawPassMs)),
@@ -283,6 +309,8 @@ async function samplePlay(page: Page, durationMs: number) {
       drawCalls: rendering.drawCalls ?? null,
       cpuMs: rendering.cpuMs ?? null,
       gpuMs: rendering.gpuMs ?? null,
+      gpuBusy: rendering.gpuBusy ?? null,
+      frameBackpressure: rendering.frameBackpressure ?? null,
       settings: rendering.settings ?? null,
       rendererWork: rendering.rendererWork ?? null,
       layerWork: rendering.layerWork ?? null,
@@ -295,7 +323,6 @@ async function samplePlay(page: Page, durationMs: number) {
       height: rendering.height ?? null,
       scalingLevel: rendering.scalingLevel ?? null,
       resources: rendering.resources ?? null,
-      pipeline: rendering.pipeline ?? null,
     },
   };
 }
@@ -318,6 +345,9 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   // The share of the boot spent compiling what Play may spawn, before the first frame.
   const spawnableWarm = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.spawnableWarm() ?? null);
   if (VERIFY_SCOPED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyScopedReadinessProbes(true));
+  if (VERIFY_BATCHES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRetainedOverlayBatches(true));
+  if (VERIFY_JOURNAL) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRenderChangeJournal(true));
+  if (VERIFY_MIRRORS) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorContentPolls(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
@@ -335,6 +365,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   }
   const windows = [];
   for (let index = 0; index < SAMPLES; index += 1) {
+    if (GPU_BUSY) await runConsoleCommand(page, "gpubusy on");
     const since = await pageNow(page);
     const { result, busy } = await busyFraction(cdp, () => samplePlay(page, SAMPLE_MS));
     windows.push({ ...result, mainThreadBusy: busy, longTasks: await longTasksSince(page, since) });
@@ -399,6 +430,8 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await recordProgramLinks(page);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
+    // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
+    settings.viewportIdleHalfRate = IDLE_HALF_RATE;
     if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
   });
   const cdp = await page.context().newCDPSession(page);
@@ -417,7 +450,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       const { readyMs: sceneReadyMs, loadRetries } = await openFeatureTestScene(page, scene);
       await page.waitForTimeout(SETTLE_MS);
       const viewport = [];
-      for (let index = 0; index < SAMPLES; index += 1) {
+      for (let index = 0; index < EDITOR_SAMPLES; index += 1) {
         const { result, busy } = await busyFraction(cdp, () => measureViewport(page, SAMPLE_MS));
         viewport.push({ ...result, mainThreadBusy: busy });
       }
@@ -451,7 +484,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     browserVersion: page.context().browser()?.version() ?? null,
     viewportCss: page.viewportSize(),
     adapter,
-    env: { SCENES, SAMPLE_MS, SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS },
+    env: { SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,
     pageErrors,

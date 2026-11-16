@@ -5,6 +5,15 @@ import { hasDeformingShadowBounds } from "./shadow-mesh-policy";
 
 type Bounds = { min: Vector3; max: Vector3 };
 
+/** The caster walk's changes (`ShadowMapRefresh`), from which `prepare` reads only the casters that changed. */
+export interface CasterChanges {
+  changeCursor(): number;
+  forEachChangeSince(cursor: number, visit: (mesh: AbstractMesh, removed: boolean) => void): boolean;
+  stageCheck(): "verify" | "heal" | null;
+  noteStageMiss(kind: string, count?: number): void;
+  noteStage(counter: "prepared" | "prepareScans", count?: number): void;
+}
+
 /**
  * A Scene's shadow casters, asked which of them a map layer's planes hold. A hierarchy over the casters had to be
  * refitted for every one that moved: in a Scene of moving casters, more work than the queries it saved. Here a frame
@@ -21,6 +30,14 @@ export class ShadowCasterList {
   private boxes = new Float64Array(0);
   private states = new Uint8Array(0);
   private prepared = false;
+  /**
+   * Whether `boxes` and `states` hold what the last `prepare` read of every caster, those added since aside (`added`):
+   * the next `prepare` then reads only the casters the walk changed since `cursor` (`CasterChanges`).
+   */
+  private kept = false;
+  private cursor = 0;
+  private readonly added: AbstractMesh[] = [];
+  private readonly scratch = new Float64Array(6);
 
   add(mesh: AbstractMesh): void {
     if (this.places.has(mesh)) return;
@@ -29,35 +46,76 @@ export class ShadowCasterList {
     this.places.set(mesh, this.meshes.length);
     this.meshes.push(mesh);
     this.prepared = false;
+    this.added.push(mesh);
   }
 
   /**
-   * Reads every caster for the queries that follow, until `release`: call it once nothing moves, shows or hides a
+   * Reads the casters for the queries that follow, until `release`: call it once nothing moves, shows or hides a
    * caster any more (after the frame's caster walk, whose findings `walked` gives), and `release` when that ends (the
-   * Scene's render ends).
+   * Scene's render ends). With the walk's `changes`, it reads only the casters added since the last call and those the
+   * walk changed (moved, shown, hidden, changed) since then: a caster's box and whether it is shown change only so, and
+   * whether its bounds can be trusted only with a state change the walk reads. Every caster is read again when there
+   * is no kept read or the walk's log no longer holds what it needs, and in a frame whose walk also ran the full path
+   * (`stageCheck`), which counts each kept entry that read disagrees with and heals it.
    */
-  prepare(walked?: (mesh: AbstractMesh) => { readonly shown: boolean } | undefined): void {
+  prepare(walked?: (mesh: AbstractMesh) => { readonly shown: boolean } | undefined, changes?: CasterChanges): void {
     const meshes = this.meshes, count = meshes.length;
+    let kept = this.kept && !!changes;
     if (this.states.length < count) {
       const room = Math.max(64, 2 ** Math.ceil(Math.log2(count)));
-      this.boxes = new Float64Array(room * 6);
-      this.states = new Uint8Array(room);
+      const boxes = new Float64Array(room * 6), states = new Uint8Array(room);
+      boxes.set(this.boxes.subarray(0, Math.min(this.boxes.length, boxes.length)));
+      states.set(this.states.subarray(0, Math.min(this.states.length, states.length)));
+      this.boxes = boxes;
+      this.states = states;
     }
-    const boxes = this.boxes, states = this.states;
-    for (let index = 0; index < count; index += 1) {
-      const mesh = meshes[index]!;
-      // The walk already asked whether the caster is enabled and visible; one it has not seen is asked here.
-      const seen = walked?.(mesh);
-      if (seen ? !seen.shown || mesh.isDisposed() : !mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled()) {
-        states[index] = 0;
-        continue;
+    if (kept) {
+      let read = 0;
+      const readMesh = (mesh: AbstractMesh) => {
+        const place = this.places.get(mesh);
+        if (place === undefined) return;
+        this.read(place, walked);
+        read++;
+      };
+      kept = changes!.forEachChangeSince(this.cursor, (mesh) => readMesh(mesh));
+      if (kept) {
+        for (const mesh of this.added) readMesh(mesh);
+        changes!.noteStage("prepared", read);
       }
-      states[index] = hasDeformingShadowBounds(mesh) ? 2 : 1;
-      const box = mesh.getBoundingInfo().boundingBox, min = box.minimumWorld, max = box.maximumWorld, at = index * 6;
-      boxes[at] = min.x; boxes[at + 1] = min.y; boxes[at + 2] = min.z;
-      boxes[at + 3] = max.x; boxes[at + 4] = max.y; boxes[at + 5] = max.z;
     }
+    if (!kept) {
+      for (let index = 0; index < count; index += 1) this.read(index, walked);
+      changes?.noteStage("prepareScans");
+    } else if (changes!.stageCheck()) {
+      let misses = 0;
+      const states = this.states, boxes = this.boxes, box = this.scratch;
+      for (let index = 0; index < count; index += 1) {
+        const state = states[index]!;
+        box.set(boxes.subarray(index * 6, index * 6 + 6));
+        this.read(index, walked);
+        if (states[index] !== state || (state === 1 && !box.every((value, at) => value === boxes[index * 6 + at]))) misses++;
+      }
+      changes!.noteStageMiss("preparedCasters", misses);
+    }
+    this.added.length = 0;
+    if (changes) this.cursor = changes.changeCursor();
+    this.kept = !!changes;
     this.prepared = true;
+  }
+
+  /** Reads the caster at `index` into `boxes` and `states`. */
+  private read(index: number, walked?: (mesh: AbstractMesh) => { readonly shown: boolean } | undefined): void {
+    const mesh = this.meshes[index]!, states = this.states, boxes = this.boxes;
+    // The walk already asked whether the caster is enabled and visible; one it has not seen is asked here.
+    const seen = walked?.(mesh);
+    if (seen ? !seen.shown || mesh.isDisposed() : !mesh.isVisible || mesh.isDisposed() || !mesh.isEnabled()) {
+      states[index] = 0;
+      return;
+    }
+    states[index] = hasDeformingShadowBounds(mesh) ? 2 : 1;
+    const box = mesh.getBoundingInfo().boundingBox, min = box.minimumWorld, max = box.maximumWorld, at = index * 6;
+    boxes[at] = min.x; boxes[at + 1] = min.y; boxes[at + 2] = min.z;
+    boxes[at + 3] = max.x; boxes[at + 4] = max.y; boxes[at + 5] = max.z;
   }
 
   /** Ends what `prepare` read: the queries read the casters themselves again. */
@@ -72,6 +130,12 @@ export class ShadowCasterList {
     this.places.delete(mesh);
     this.prepared = false;
     if (last === mesh) return;
+    // The last caster takes the place, with what was read of it.
+    const from = this.meshes.length;
+    if (from < this.states.length) {
+      this.states[place] = this.states[from]!;
+      this.boxes.copyWithin(place * 6, from * 6, from * 6 + 6);
+    }
     this.meshes[place] = last;
     this.places.set(last, place);
   }
@@ -80,6 +144,8 @@ export class ShadowCasterList {
     this.meshes.length = 0;
     this.places.clear();
     this.prepared = false;
+    this.kept = false;
+    this.added.length = 0;
   }
 
   /** The box around every caster's world box, shown or hidden; undefined without casters. Reused between calls. */

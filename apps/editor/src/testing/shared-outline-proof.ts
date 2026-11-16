@@ -8,7 +8,7 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
-import { SharedOutlineOwner, beginEngineDrawCallFrame, createAppWebGpuEngine, readEngineDrawCalls, type SharedOutlineContribution } from "@haptic/render";
+import { SharedOutlineOwner, beginEngineDrawCallFrame, readEngineDrawCalls, type SharedOutlineContribution } from "@haptic/render";
 import { normalizeRenderingQuality } from "@haptic/core";
 import { allowSceneScreenShadows, updateSceneRenderingSettings } from "@haptic/render/render-settings";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
@@ -32,19 +32,18 @@ export interface SharedOutlineProofOptions {
   overSceneDepth?: boolean;
 }
 
-export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
+export async function runSharedOutlineProof(
   onProgress?: (progress: SharedOutlineProofProgress) => void | Promise<void>, options: SharedOutlineProofOptions = {}) {
   const canvas = document.createElement("canvas");
   const width = canvas.width = 240, height = canvas.height = 120;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
+  const engine = new Engine(canvas, false, {
     preserveDrawingBuffer: true, stencil: true, disableWebGL2Support: false,
   });
   engine.setSize(width, height);
-  const webGLVersion = engine instanceof Engine ? engine.webGLVersion : null;
-  const effectiveBackend = engine.isWebGPU ? "webgpu" : webGLVersion === 2 ? "webgl2" : "webgl1";
+  const webGLVersion = engine.webGLVersion;
   await onProgress?.({ stage: "engine-created", state: "metadata", data: {
-    backend, effectiveBackend, webGLVersion, babylonVersion: Engine.Version,
+    webGLVersion, babylonVersion: Engine.Version,
     adapter: engine.getInfo(), width: canvas.width, height: canvas.height,
     viewport: { width: innerWidth, height: innerHeight }, devicePixelRatio,
     renderScale: 1 / engine.getHardwareScalingLevel(), userAgent: navigator.userAgent,
@@ -125,7 +124,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
       } finally { engine.endFrame(); }
       if (frame < 2) await waitFrame();
     }
-    // Presented canvas copy handles WebGPU swapchain channel/row order.
+    // The presented canvas is read through a 2D copy, in its channel and row order.
     const captureWidth = canvas.width, captureHeight = canvas.height;
     const copy = document.createElement("canvas"); copy.width = captureWidth; copy.height = captureHeight;
     const context = copy.getContext("2d")!;
@@ -403,7 +402,7 @@ export async function runSharedOutlineProof(backend: "webgl2" | "webgpu",
     await capture("all-disabled-steady");
     const unpresentedRetirement = await retireWithoutDrawing();
     return {
-      backend, effectiveBackend, webGLVersion,
+      webGLVersion,
       babylonVersion: Engine.Version, adapter: engine.getInfo(),
       width: canvas.width, height: canvas.height, viewport: { width: innerWidth, height: innerHeight },
       devicePixelRatio, renderScale: 1 / engine.getHardwareScalingLevel(),

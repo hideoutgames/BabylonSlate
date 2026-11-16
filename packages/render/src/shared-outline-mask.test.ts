@@ -30,7 +30,7 @@ it("retains a live instance mask program across pruning and releases it with its
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   setOutlineContribution(view, "actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders(false);
+  registerSharedOutlineShaders();
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = [instance];
@@ -74,7 +74,7 @@ it("masks a Mirror surface with the built-in mirror material as opaque coverage"
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   setOutlineContribution(view, "actor", { kind: "component", targets: [{ key: "actor", meshes: [outlined] }],
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders(false);
+  registerSharedOutlineShaders();
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = [outlined, mirror];
@@ -103,7 +103,7 @@ it("revalidates coverage edited after a drawn mask pass for readiness and the ne
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   setOutlineContribution(view, "actor", { kind: "component", targets: [{ key: "actor", meshes: [instance] }],
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders(false);
+  registerSharedOutlineShaders();
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = [instance];
@@ -150,7 +150,7 @@ it("draws nearer by a small offset, added to the Material's own, only over a dep
   member.material = material;
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   setOutlineContribution(view, "member", { kind: "component", targets: [{ key: "member", meshes: [member] }], color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders(false);
+  registerSharedOutlineShaders();
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = [member];
@@ -201,7 +201,7 @@ it("releases the authored coverage variants of pruned and disposed mask programs
   const owner = SharedOutlineOwner.forScene(scene), view = owner.createView("test");
   setOutlineContribution(view, "actors", { kind: "component", targets: meshes.map((mesh) => ({ key: mesh.name, meshes: [mesh] })),
     color: [1, 0, 0], width: 1 });
-  registerSharedOutlineShaders(false);
+  registerSharedOutlineShaders();
   const objects = new ObjectRenderer("mask", scene);
   objects.activeCamera = camera;
   objects.renderList = meshes;

@@ -12,29 +12,26 @@ import {
 } from "./feature-test-project";
 import { clickPlayAndWaitForOverlay, runConsoleCommand } from "./play";
 import { saveAllIfEnabled } from "./save-all";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
 
 /**
  * FeatureTest fly-through route for camera-motion stutter. Opt-in:
  * HAPTIC_PERF_FLYTHROUGH=1, through playwright.perf.config.ts only.
  *
- * Creates the Feature Test starter, optionally switches the project backend,
- * then for each scene flies the editor camera along a fixed path at fly speed
- * (static warm-up, then the same path HAPTIC_FLY_PASSES times) and records every
- * rendered frame's discrete events: new Effects, shader programs or WebGPU
- * pipelines, bind groups, buffers, texture uploads, material and define
- * invalidations, readiness probes, held frames, shadow-map churn,
+ * Creates the Feature Test starter, then for each scene flies the editor
+ * camera along a fixed path at fly speed (static warm-up, then the same path
+ * HAPTIC_FLY_PASSES times) and records every rendered frame's discrete
+ * events: new Effects, shader programs, buffers, texture uploads, material
+ * and define invalidations, readiness probes, held frames, shadow-map churn,
  * enabled-light changes and visible-set churn. The report ranks spike frames
  * and the events they coincide with. Counts are hardware-independent; times
  * on software adapters are not device performance. Never asserts frame rates.
  *
  * Env: HAPTIC_PERF_SCENES (comma list of main|world|lights|stress|2d; default main,world),
- *      HAPTIC_PERF_BACKEND (webgl2|webgpu; default: the project's WebGL2),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra; default: the starter's High. Sets the project's Overall Quality in
  *        Project Settings, with Dynamic Resolution off so the workload stays fixed. High and Ultra allow the starter's
  *        scene-wide Volumetric Lighting, which Medium skips),
- *      HAPTIC_RENDER_NATIVE_GPU=1 keeps the project's launch arguments (perf-gpu); otherwise
- *        WebGPU runs use the software adapter and every run adds --enable-precise-memory-info,
+ *      HAPTIC_RENDER_NATIVE_GPU=1 keeps the project's launch arguments (perf-gpu); otherwise the run launches
+ *        with --enable-precise-memory-info alone,
  *      HAPTIC_FLY_SPEED (m/s, default 8, the editor's default fly speed), HAPTIC_FLY_PASSES (default 2),
  *      HAPTIC_FLY_WARMUP_MS (static hold before the first pass, default 5000), HAPTIC_PERF_SETTLE_MS (default 5000),
  *      HAPTIC_FLY_PATH (JSON array of [x, y, z] eye waypoints, applied to every selected scene),
@@ -54,7 +51,6 @@ const number = (name: string, fallback: number, min = 0) => {
   const value = Number(process.env[name]);
   return process.env[name] !== undefined && Number.isFinite(value) && value >= min ? value : fallback;
 };
-const BACKEND = process.env.HAPTIC_PERF_BACKEND === "webgpu" ? "webgpu" : process.env.HAPTIC_PERF_BACKEND === "webgl2" ? "webgl2" : null;
 const QUALITIES = ["low", "medium", "high", "ultra"] as const;
 const QUALITY = QUALITIES.find((level) => level === process.env.HAPTIC_PERF_QUALITY) ?? null;
 const NATIVE_GPU = process.env.HAPTIC_RENDER_NATIVE_GPU === "1";
@@ -95,14 +91,13 @@ function pathFor(scene: FeatureTestSceneName): FlyVec3[] | null {
 if (!NATIVE_GPU)
   test.use({
     launchOptions: {
-      args: [...(BACKEND === "webgpu" ? SOFTWARE_WEBGPU_ARGS : []), "--enable-precise-memory-info"],
+      args: ["--enable-precise-memory-info"],
     },
   });
 
 type ViewportHost = {
   __hapticViewportTest: {
     flyThrough: (options: FlyThroughOptions) => Promise<FlyThroughResult>;
-    renderingBaseline: () => { backend: string } | null;
   };
 };
 type PlayHost = {
@@ -113,15 +108,11 @@ type PlayHost = {
   };
 };
 
-/** Project Settings > Rendering: the GPU backend and the Overall Quality (with a fixed resolution) the run asks for. */
+/** Project Settings > Rendering: the Overall Quality (with a fixed resolution) the run asks for. */
 async function applyProjectRendering(page: Page): Promise<void> {
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
   await page.getByTestId("settings-modal-category-rendering").click();
-  if (BACKEND) {
-    await page.getByTestId("project-gpu-backend").click();
-    await page.getByRole("option", { name: BACKEND === "webgpu" ? "WebGPU" : "WebGL2", exact: true }).click();
-  }
   if (QUALITY) {
     const scalability = page.getByTestId("settings-modal").getByRole("button", { name: "Scalability", exact: true });
     if ((await scalability.getAttribute("aria-expanded")) !== "true") await scalability.click();
@@ -133,10 +124,6 @@ async function applyProjectRendering(page: Page): Promise<void> {
     await expect(dynamic).not.toBeChecked();
   }
   await page.getByRole("button", { name: "Done", exact: true }).click();
-}
-
-async function viewportBackend(page: Page): Promise<string | null> {
-  return page.evaluate(() => (globalThis as unknown as Partial<ViewportHost>).__hapticViewportTest?.renderingBaseline()?.backend ?? null);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,9 +169,8 @@ function annotate(result: FlyThroughResult): AnnotatedFrame[] {
 
 /** Counters that mark discrete work, as opposed to steady per-frame traffic. */
 const EVENT_KEYS = [
-  "effect.new", "gl.link", "gl.compile", "gpu.pipeline", "gpu.pipelineAsync", "gpu.shaderModule", "babylon.pipelineMiss",
-  "gpu.bindGroupLayout", "gpu.pipelineLayout", "gpu.texture", "gl.createTexture", "gpu.writeTexture", "gpu.copyExternalImage",
-  "gl.texUpload", "gpu.buffer", "gl.createBuffer", "mat.dirty.light", "mat.dirty.texture", "mat.dirty.attributes", "mat.dirty.misc",
+  "effect.new", "gl.link", "gl.compile", "gl.createTexture",
+  "gl.texUpload", "gl.createBuffer", "mat.dirty.light", "mat.dirty.texture", "mat.dirty.attributes", "mat.dirty.misc",
   "mat.markDirty", "defines.processed", "defines.light", "ready.false", "graph.strictChecks", "graph.builds", "view.held",
   "shadow.init", "shadow.dispose", "shadow.moved", "shadow.attached", "shadow.detached", "lights.changed", "heap.drop",
   "nodeMaterial.build", "defines.lightDisposed", "frameGraph.dispose", "frameGraph.buildAsync", "size.changed", "effect.release",
@@ -255,9 +241,9 @@ function correlate(frames: AnnotatedFrame[]) {
   return { spikes: spikes.length, quietSpikes: spikes.filter((frame) => !EVENT_KEYS.some((key) => (frame.c[key] ?? 0) > 0)).length, rows };
 }
 
-/** Effects and pipelines group by shader family (digits folded: node materials name effects by build id). */
+/** Effects group by shader family (digits folded: node materials name effects by build id). */
 function logGroupKey(entry: FlyThroughResult["log"][number]): string {
-  if (entry.kind === "effect" || entry.kind === "pipeline" || entry.kind === "nodeMaterial.build" || entry.kind === "effect.release")
+  if (entry.kind === "effect" || entry.kind === "nodeMaterial.build" || entry.kind === "effect.release")
     return entry.detail.split(" @ ")[0]!.split(" #")[0]!.replace(/\d+/g, "#");
   // Light-define marks group by caller, which identifies what moved the light set.
   if (entry.kind === "defines.light") return `${entry.detail} ${(entry.stack ?? "").split(" | ").slice(0, 8).join(" | ")}`;
@@ -386,10 +372,8 @@ async function flyScene(page: Page, cdp: CDPSession, scene: FeatureTestSceneName
     result,
     frames,
     summary: {
-      backend: result.backend,
       adapter: result.adapter,
       caps: result.caps,
-      pipeline: result.pipeline,
       pathLength: result.pathLength,
       speed: result.speed,
       lights: result.lights,
@@ -435,6 +419,8 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await seedEngineSettings(page, (settings) => {
+    // The route measures the editor viewport while it sits idle; full rate keeps runs comparable.
+    settings.viewportIdleHalfRate = false;
     if (process.env.HAPTIC_PERF_VIEWPORT_CAP) settings.viewportFrameCap = number("HAPTIC_PERF_VIEWPORT_CAP", 60, 10);
     if (process.env.HAPTIC_PERF_SCALING) settings.hardwareScalingLevel = number("HAPTIC_PERF_SCALING", 1, 0.25);
     if (PLAY_SCENES.length) settings.debuggerDefaults.overlayConsole = true;
@@ -442,9 +428,9 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const cdp = await page.context().newCDPSession(page);
   const createToInteractiveMs = await createFeatureTestProject(page);
   await waitForTextureEncodes(page);
-  if (BACKEND || QUALITY) {
+  if (QUALITY) {
     await applyProjectRendering(page);
-    // The backend and quality are project settings: save them now, before any scene changes.
+    // The quality is a project setting: save it now, before any scene changes.
     await saveAllIfEnabled(page, 300_000);
   }
 
@@ -452,11 +438,11 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
   const raw: Record<string, unknown> = {};
   const report = () => ({
     qualification:
-      "Per-frame event counts during a scripted editor fly-through. Counts are hardware-independent; times on software adapters are not device performance. Compare runs on the same machine, backend and build only. No frame-rate assertion.",
+      "Per-frame event counts during a scripted editor fly-through. Counts are hardware-independent; times on software adapters are not device performance. Compare runs on the same machine and build only. No frame-rate assertion.",
     label: process.env.HAPTIC_PERF_LABEL ?? null,
     browserProject: testInfo.project.name,
     browserVersion: page.context().browser()?.version() ?? null,
-    env: { SCENES, PLAY_SCENES, BACKEND, QUALITY, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
+    env: { SCENES, PLAY_SCENES, QUALITY, NATIVE_GPU, SPEED, PASSES, WARMUP_MS, SETTLE_MS, PROFILE,
       VIEWPORT_CAP: process.env.HAPTIC_PERF_VIEWPORT_CAP ?? null, SCALING: process.env.HAPTIC_PERF_SCALING ?? null },
     createToInteractiveMs,
     scenes,
@@ -475,12 +461,11 @@ test("FeatureTest fly-through route", async ({ page }, testInfo) => {
     // Save All would bake audio reverb on software GL for minutes, so edits a flight left behind are
     // discarded when the next scene opens.
     const { readyMs, loadRetries } = await openFeatureTestScene(page, scene, undefined, { discardUnsaved: true });
-    if (BACKEND) await expect.poll(() => viewportBackend(page), { timeout: 120_000 }).toBe(BACKEND);
     await page.waitForTimeout(SETTLE_MS);
     const { frames, summary, result } = await flyScene(page, cdp, scene, "editor");
     scenes[scene] = { sceneReadyMs: readyMs, loadRetries, ...summary };
     raw[scene] = { frames, log: result.log, longTasks: result.longTasks, totals: result.totals };
-    // Best effort: a screenshot of a directly presented WebGPU view can stall on a software adapter.
+    // Best effort: a screenshot of a directly presented view can stall on a software adapter.
     await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-flythrough-end.png`), timeout: 30_000 })
       .catch(() => undefined);
     if (PLAY_SCENES.includes(scene)) {

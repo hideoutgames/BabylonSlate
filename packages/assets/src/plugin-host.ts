@@ -3,7 +3,7 @@ import { DOCUMENT_CHUNK_ID } from "./asset-document";
 import { AccountedPayloadLoader, readAssetCatalog, validateAssetSourceLocator, type AssetCatalogRead } from "./payload-loader";
 import { createVfsBlobStore } from "./blob-store";
 import { ASSETS_DIR, PLUGINS_DIR } from "./hproject";
-import { pluginContentRoot } from "./content-root";
+import { contentRootBlobFolder, pluginContentRoot } from "./content-root";
 import {
   encodePluginSettingsDocument,
   normalizePluginSettings,
@@ -135,7 +135,7 @@ async function describePluginFolder(
   const { header, locator } = catalog;
   const settingsPath = locator.path;
   const body = header.chunks.find((chunk) => chunk.id === DOCUMENT_CHUNK_ID);
-  const blobs = createVfsBlobStore(storage, `${folderPath}/${ASSETS_DIR}/.blobs`);
+  const blobs = createVfsBlobStore(storage, contentRootBlobFolder({ pathPrefix: `${folderPath}/${ASSETS_DIR}` }));
   const payload = body
     ? JSON.parse(new TextDecoder().decode(await new AccountedPayloadLoader(storage, { blobs }).loadChunk(locator, body)))
     : header.payload;

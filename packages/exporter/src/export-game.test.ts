@@ -105,7 +105,6 @@ describe("exportGame", () => {
   it("normalizes the complete render contract at export and player read", async () => {
     const authored = {
       ...DEFAULT_RENDER_PROJECT_SETTINGS,
-      gpuBackend: "webgpu" as const,
       mode: "cel" as const,
       width: 1366,
       height: 768,
@@ -124,7 +123,7 @@ describe("exportGame", () => {
     expect(result.value.manifest.playFrameCap).toBe(60);
     expect(restored.playFrameCap).toBe(60);
     expect(restored.render).toMatchObject({
-      gpuBackend: "webgpu", mode: "cel", width: 1366, height: 768,
+      mode: "cel", width: 1366, height: 768,
       quality: { textures: { anisotropy: 8 }, resolution: { scale: 1 } },
     });
     expect(restored.render).not.toHaveProperty("editorProfile");
@@ -132,9 +131,9 @@ describe("exportGame", () => {
     authored.quality.textures.anisotropy = 1;
     expect(result.value.manifest.render.quality?.textures.anisotropy).toBe(8);
     const malformed = JSON.parse(json);
-    malformed.render = { gpuBackend: "webgpu", width: -1, height: "bad", mode: "cel" };
+    malformed.render = { width: -1, height: "bad", mode: "cel" };
     expect(parseGameManifest(JSON.stringify(malformed)).render).toMatchObject({
-      gpuBackend: "webgpu", width: 1920, height: 1080, mode: "cel",
+      width: 1920, height: 1080, mode: "cel",
       customResolution: false,
     });
     for (const value of ["30", 0, -1, 24]) {
@@ -208,7 +207,6 @@ describe("exportGame", () => {
       startupSceneGuid: "scene-1",
       renderSettings: {
         ...DEFAULT_RENDER_PROJECT_SETTINGS,
-        gpuBackend: "webgpu",
         mode: "cel",
         environmentLighting: { enabled: false, intensity: 2, rotationYDegrees: 45, celStrength: 0.5 },
         cel,
@@ -237,7 +235,6 @@ describe("exportGame", () => {
     expect(result.value.files.has("index.html")).toBe(true);
     expect(result.value.manifest.startupSceneGuid).toBe("scene-1");
     expect(result.value.manifest.render).toEqual({
-      gpuBackend: "webgpu",
       mode: "cel",
       environmentLighting: { enabled: false, intensity: 2, rotationYDegrees: 45, celStrength: 0.5 },
       cel,

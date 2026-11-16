@@ -20,7 +20,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, createPrimitiveMesh, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { encodeGlbJsonBin } from "../../../../packages/assets/src/importers/glb-parse";
@@ -29,7 +29,6 @@ import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls"
 import { loadModelContainer } from "../../../../packages/render/src/model-container";
 import { followsPose, setScenePoseBounds } from "../../../../packages/render/src/pose-bounds";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 240;
 const HEIGHT = 160;
@@ -124,7 +123,6 @@ async function matte(scene: Scene, name: string, color: [number, number, number]
 }
 
 async function drawRun(engine: AbstractEngine, follow: boolean): Promise<Run> {
-  const order = readbackChannelOrder(engine.isWebGPU);
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
@@ -184,7 +182,7 @@ async function drawRun(engine: AbstractEngine, follow: boolean): Promise<Run> {
         if (rendered) {
           frame += 1;
           const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-          image = toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+          image = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
         } else if (performance.now() > deadline) throw new Error("The view did not present");
         else await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
@@ -219,14 +217,12 @@ async function drawRun(engine: AbstractEngine, follow: boolean): Promise<Run> {
   }
 }
 
-export async function runPoseBoundsProof(backend: "webgl2" | "webgpu") {
+export async function runPoseBoundsProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
   try {
     const culled = await drawRun(engine, true);

@@ -110,7 +110,6 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
   ...category("rendering", [
     ["pipeline", "Pipeline", [
       ["Render Mode PBR CEL", "setting-render-mode"],
-      ["GPU Backend Auto WebGL2 WebGPU", "project-gpu-backend"],
     ]],
     ["scalability", "Scalability", [
       ["Overall Quality", "quality-all"],
@@ -309,6 +308,7 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
     ]],
     ["frameRate", "Frame Rate", [
       ["Viewport Frame Cap", "setting-frame-cap"],
+      ["Half Rate When Idle", "setting-viewport-idle-half-rate"],
       ["Camera Preview Frame Rate", "setting-camera-preview-frame-rate"],
     ]],
     ["cameraPlacement", "Camera And Placement", [

@@ -478,7 +478,7 @@ export class ReflectionProbes {
     const far = Math.max(this.scene.activeCamera?.maxZ ?? 1000, 1000);
     const engine = this.scene.getEngine();
     this.projection = Matrix.PerspectiveFovLH(Math.PI / 2, 1, engine.useReverseDepthBuffer ? far : NEAR,
-      engine.useReverseDepthBuffer ? NEAR : far, engine.isNDCHalfZRange);
+      engine.useReverseDepthBuffer ? NEAR : far);
     return center;
   }
 

@@ -5,7 +5,8 @@ import {
   type HassetHeader,
 } from "./hasset";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
-import type { ContentRoot } from "./content-root";
+import { contentRootBlobFolder, type ContentRoot } from "./content-root";
+import { BLOBS_DIR } from "./hproject";
 import type { EncodeJobGuard, EncodeJobResult, EncodeQueue } from "./encode-queue";
 import type { HdrEnvironmentConverter } from "./hdr-environment";
 import {
@@ -754,8 +755,8 @@ export class AssetRegistry {
    *
    * An encode on the grid for a Texture no atlas uses also drops older KTX2
    * chunks off the grid: the resolver binds a retained chunk whose id it
-   * prefers, or the first one when none matches, and WebGPU would decode it
-   * to RGBA. An atlas keeps them (its own-size encode, should a Particle
+   * prefers, or the first one when none matches, which could be one off the
+   * grid. An atlas keeps them (its own-size encode, should a Particle
    * Usage be switched back). Resolves false when nothing was written (the
    * Texture is gone or in a read-only root, or the job may not write the file
    * on disk now: `encodeJobMayWrite`).
@@ -884,8 +885,8 @@ export class AssetRegistry {
 
   private blobsOf(root: ContentRoot): BlobStore {
     const storage = this.storageOf(root);
-    const dir = `${root.pathPrefix}/.blobs`;
-    if (storage === this.storage && dir === "assets/.blobs") return this.blobs;
+    const dir = contentRootBlobFolder(root);
+    if (storage === this.storage && dir === BLOBS_DIR) return this.blobs;
     return createVfsBlobStore(storage, dir);
   }
 

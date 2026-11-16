@@ -21,8 +21,8 @@ export const CEL_UNIFORMS = [
 ];
 
 /** Display-space lighting deliberately avoids a PBR BRDF and tone mapping. */
-export function celFunctions(wgsl: boolean): string {
-  const source = `
+export function celFunctions(): string {
+  return `
 vec3 slateCelTextureToDisplay(vec3 color) {
   return mix(12.92 * color, 1.055 * pow(max(color, vec3(0.0)), vec3(1.0 / 2.4)) - vec3(0.055), step(vec3(0.0031308), color));
 }
@@ -78,21 +78,6 @@ vec3 slateCelSurfaceLight(vec3 color, float peak) {
   return mix(vec3(1.0 - slateCelBands.z), slateCelTint(color / max(strength, 0.00001)), slateCelBand(brightness));
 }
 `;
-  if (!wgsl) return source;
-  // This small shared source only uses scalar/vector declarations and functions.
-  return source
-    .replace(
-      /(float|vec3) (slateCel\w+)\(([^)]*)\)/g,
-      (_all, type: string, name: string, args: string) =>
-        `fn ${name}(${args.replace(/(float|vec3) (\w+)/g, (_arg, t: string, n: string) => `${n}: ${t === "float" ? "f32" : "vec3f"}`)}) -> ${type === "float" ? "f32" : "vec3f"}`,
-    )
-    .replace(/float (\w+) =/g, "var $1: f32 =")
-    .replace(/vec3 (\w+) =/g, "var $1: vec3f =")
-    .replace(/vec3\(/g, "vec3f(")
-    .replace(
-      /\b(slateCelBands|slateCelSpecular|slateCelLight|slateCelEnvironment(?:Rotation[012])?|slateCelIrradiance_(?:xx|yy|zz|xy|yz|zx|x|y|z))\b/g,
-      "uniforms.$1",
-    );
 }
 
 export function bindCelSettings(effect: Effect, scene: Scene): void {

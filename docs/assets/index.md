@@ -66,10 +66,15 @@ Assets are the building blocks of a project: Scenes, Classes, Materials, sounds,
 | [Render Target](render-target.md) | A scene capture's render mode and output resolution. |
 | [Render Target Texture](render-target-texture.md) | A live Render Target output that Materials can sample as a texture. |
 | [Water](water.md) | Shared water appearance and waves for oceans, lakes, rivers and puddles. |
+| [Skybox Creator](skybox-creator.md) | An editor tool that slices a Texture into six skybox faces. |
+
+## Visual effects
+
+| Asset | Description |
+| --- | --- |
 | [Basic Particle Emitter](particle-emitter.md) | A GPU emitter built from a stack of modules for spawn, shape, motion and colour. Its look comes from a particle Material. |
 | [Particle Graph](particle-graph.md) | A node-graph emitter for custom particle behaviour, simulated on the CPU. Its look comes from a particle Material. |
 | [Particle System](particle-system.md) | Plays up to 8 Basic Particle Emitters or Particle Graphs together on one actor. |
-| [Skybox Creator](skybox-creator.md) | An editor tool that slices a Texture into six skybox faces. |
 
 ## Audio
 

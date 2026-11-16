@@ -15,6 +15,7 @@ import { shownCompressionState, unfinishedTextureEncodePaths } from "../lib/text
 import type { DocumentService } from "../services/document-service";
 import type { ProjectService } from "../services/project-service";
 import type { SourceControlService } from "../services/source-control-service";
+import type { SourceControlSyncService, SyncSnapshot } from "../services/source-control-sync";
 import type { DocumentContextValue } from "./document-context-types";
 
 /** What the end-to-end test hooks read from `DocumentProvider`. */
@@ -31,12 +32,25 @@ export interface EditorTestHookDeps {
   runForegroundRescan: () => Promise<void>;
   applyGraphChange: DocumentContextValue["applyGraphChange"];
   applySceneChange: DocumentContextValue["applySceneChange"];
+  sourceControlSync: SourceControlSyncService;
+}
+
+/** `__hapticSourceControlSync`: Integrated mode's sync, and the in-memory remote behind a repository URL. */
+export interface SourceControlSyncTestHook {
+  service: SourceControlSyncService;
+  snapshot: () => SyncSnapshot;
+  /** Commits `changes` (null removes a file) to the repository's branch as a teammate pushing. */
+  teammateCommit: (repositoryUrl: string, changes: Record<string, string | null>, message?: string, branch?: string) => Promise<string>;
+  /** A file's text on the repository's branch, or null. */
+  remoteText: (repositoryUrl: string, path: string, branch?: string) => Promise<string | null>;
+  /** The message of the branch's newest commit on the remote, or null before the first push. */
+  remoteHeadMessage: (repositoryUrl: string, branch?: string) => Promise<string | null>;
 }
 
 /**
  * Test Mode only: installs `globalThis.__hapticTest`, the hooks end-to-end
- * tests drive the editor through, and `__hapticSourceControl`. Returns the
- * uninstall.
+ * tests drive the editor through, `__hapticSourceControl` and
+ * `__hapticSourceControlSync`. Returns the uninstall.
  */
 export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
   const {
@@ -52,6 +66,7 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
     runForegroundRescan,
     applyGraphChange,
     applySceneChange,
+    sourceControlSync,
   } = deps;
   const host = globalThis as {
     __hapticTest?: {
@@ -116,8 +131,30 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
       } | null;
     };
     __hapticSourceControl?: SourceControlService;
+    __hapticSourceControlSync?: SourceControlSyncTestHook;
   };
   host.__hapticSourceControl = sourceControl;
+  host.__hapticSourceControlSync = {
+    service: sourceControlSync,
+    snapshot: () => sourceControlSync.getSnapshot(),
+    teammateCommit: async (repositoryUrl, changes, message, branch = "main") => {
+      const { testRemote } = await import("../services/source-control-sync-port");
+      return (await testRemote(repositoryUrl)).commit(changes, message, branch);
+    },
+    remoteText: async (repositoryUrl, path, branch = "main") => {
+      const { testRemote } = await import("../services/source-control-sync-port");
+      const remote = await testRemote(repositoryUrl);
+      const head = remote.branches.get(branch);
+      const bytes = head ? remote.get(head).files.get(path) : undefined;
+      return bytes ? new TextDecoder().decode(bytes) : null;
+    },
+    remoteHeadMessage: async (repositoryUrl, branch = "main") => {
+      const { testRemote } = await import("../services/source-control-sync-port");
+      const remote = await testRemote(repositoryUrl);
+      const head = remote.branches.get(branch);
+      return head ? remote.get(head).message : null;
+    },
+  };
   host.__hapticTest = {
     assetLoading: () => ({ sources: projectService.assetLoadingService.snapshot(), storage: projectService.storagePort.getReadMetrics?.() ?? null, chunks: projectService.registry?.payloadLoader.snapshot() ?? null, requestedPayloadBytes: projectService.registry?.accountedPayloadBytes ?? 0 }),
     trimAssetSources: () => projectService.assetLoadingService.trim({ force: true }),
@@ -348,6 +385,7 @@ export function installEditorTestHooks(deps: EditorTestHookDeps): () => void {
   return () => {
     delete host.__hapticTest;
     delete host.__hapticSourceControl;
+    delete host.__hapticSourceControlSync;
     delete (globalThis as { __hapticTestGamepad?: unknown })
       .__hapticTestGamepad;
   };

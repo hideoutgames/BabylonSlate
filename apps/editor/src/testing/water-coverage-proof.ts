@@ -6,17 +6,15 @@
  * is a hole: a fragment no body keeps.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
-import { compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateSceneWater } from "@haptic/render";
+import { compileMaterialPlan, configureEditorRenderingGroups, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateSceneWater } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const SEA = -6;
 /** Camera positions and the point each looks at. */
@@ -52,15 +50,12 @@ async function colour(scene: Scene, name: string, rgb: readonly number[]) {
   return compiled;
 }
 
-export async function runWaterCoverageProof(backend: "webgl2" | "webgpu" = "webgl2", density: number = 1) {
+export async function runWaterCoverageProof(density: number = 1) {
   const canvas = document.createElement("canvas");
   canvas.width = 320;
   canvas.height = 180;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const scene = new Scene(engine);
   try {
     configureEditorRenderingGroups(scene);
@@ -102,7 +97,7 @@ export async function runWaterCoverageProof(backend: "webgl2" | "webgpu" = "webg
       engine.beginFrame();
       try { graph.render(camera, false); } finally { engine.endFrame(); }
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     // Rows above the water 800 m ahead may reach past the far clip; holes are counted below it (rows from the top).
     const views: { camera: readonly number[]; pixels: number[]; checkedFrom: number }[] = [];
@@ -121,7 +116,7 @@ export async function runWaterCoverageProof(backend: "webgl2" | "webgpu" = "webg
     }
     graph.dispose();
     green.dispose(); blue.dispose(); cyan.dispose();
-    return { width: canvas.width, height: canvas.height, flipped: !engine.isWebGPU, views };
+    return { width: canvas.width, height: canvas.height, flipped: true, views };
   } finally {
     scene.dispose();
     engine.dispose();

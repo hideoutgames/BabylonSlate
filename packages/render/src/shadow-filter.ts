@@ -1,7 +1,7 @@
 import { AtlasCascadedShadowGenerator, type AtlasShadowGenerator } from "./shadow-atlas";
 
 /**
- * The light block's shadow filter (`hapticShadowGlsl`/`hapticShadowWgsl`): Castaño's exact bilinear compare kernels,
+ * The light block's shadow filter (`hapticShadowGlsl`): Castaño's exact bilinear compare kernels,
  * which one a view takes, its texture fetches and how far it reads.
  */
 

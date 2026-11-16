@@ -2,14 +2,13 @@ import { expect, test, type Locator } from "@playwright/test";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { MATERIAL_PAYLOAD_VERSION } from "../packages/assets/src/migration";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { PROJECT_FILE } from "../packages/core/src/project";
 import { createDefaultWaterDefinition } from "../packages/core/src/water";
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
 import { openAssetFromBrowser, openMainScene } from "./open-test-project";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 async function centerColor(canvas: Locator): Promise<number[]> {
   return canvas.evaluate((node: HTMLCanvasElement) => {
@@ -21,60 +20,55 @@ async function centerColor(canvas: Locator): Promise<number[]> {
   });
 }
 
-for (const backend of ["webgl2"] as const) {
-  test(`Water presets and a custom Water Surface material render on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(120_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (["error", "warning"].includes(message.type()) && /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID/i.test(message.text())) errors.push(message.text());
-    });
-    const files = await minimalProjectFiles();
-    const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
-    project.settings.render.gpuBackend = backend;
-    files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
-    const materialGuid = "00000000-0000-4000-8000-000000000020";
-    const material = createDefaultMaterialDocument("Water Effect");
-    material.shadingModel = "unlit";
-    material.nodes = material.nodes.filter((node) => node.id === "output");
-    material.nodes[0]!.properties["default:baseColor"] = [0, 0, 0];
-    material.nodes.push(
-      { id: "water", type: "input.waterSurface", position: { x: 0, y: 0 }, properties: {} },
-      { id: "scale", type: "math.multiply", position: { x: 200, y: 0 }, properties: { "default:b": [0.08] } },
-      { id: "color", type: "vector.combine", position: { x: 400, y: 0 }, properties: { "default:y": [0.02], "default:z": [0.6] } },
-    );
-    material.edges = [
-      { id: "bank", sourceNodeId: "water", sourcePinId: "bankDistance", targetNodeId: "scale", targetPinId: "a" },
-      { id: "red", sourceNodeId: "scale", sourcePinId: "out", targetNodeId: "color", targetPinId: "x" },
-      { id: "surface", sourceNodeId: "color", sourcePinId: "xyz", targetNodeId: "output", targetPinId: "emissive" },
-    ];
-    files.set("assets/WaterEffect.material.hasset", await encodeAssetDocument({ guid: materialGuid, type: "Material", name: "Water Effect", version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown> }));
-    // Built-in water and a Custom Material each compile their own shader.
-    for (const [index, style] of ["realistic", "custom"].entries()) {
-      const definition = createDefaultWaterDefinition();
-      files.set(`assets/${style}.water.hasset`, await encodeAssetDocument({
-        guid: `00000000-0000-4000-8000-00000000001${index}`, type: "Water", name: style, version: 1,
-        payload: { ...definition, ...(style === "custom" ? { materialGuid } : {}) },
-      }, { dependencies: style === "custom" ? [materialGuid] : [] }));
-    }
-    await openMinimalTestProject(page, files);
-    await openMainScene(page);
-    for (const style of ["realistic", "custom"]) {
-      await openAssetFromBrowser(page, `assets/${style}.water.hasset`);
-      const canvas = page.getByTestId("water-preview-canvas").filter({ visible: true });
-      await expect(canvas).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId("water-details-panel").filter({ visible: true })).toBeVisible({ timeout: 30_000 });
-      try {
-        await expect.poll(async () => {
-          const [r, g, b] = await centerColor(canvas);
-          return style === "custom" ? Math.min(r! - g!, b! - g!) : Math.min(g! - r!, b! - r!);
-        }, { timeout: 20_000 }).toBeGreaterThan(8);
-      } finally {
-        await canvas.screenshot({ path: testInfo.outputPath(`${style}-${backend}.png`) });
-        await testInfo.attach(`${style}-shader-errors`, { body: JSON.stringify(errors), contentType: "application/json" });
-      }
-      await expect(page.getByText("Preview Failed", { exact: true })).toHaveCount(0);
-    }
-    expect(errors).toEqual([]);
+test("Water presets and a custom Water Surface material render", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()) && /shader|VALIDATE_STATUS|ERROR: 0:|GL_INVALID/i.test(message.text())) errors.push(message.text());
   });
-}
+  const files = await minimalProjectFiles();
+  const materialGuid = "00000000-0000-4000-8000-000000000020";
+  const material = createDefaultMaterialDocument("Water Effect");
+  material.shadingModel = "unlit";
+  material.nodes = material.nodes.filter((node) => node.id === "output");
+  material.nodes[0]!.properties["default:baseColor"] = [0, 0, 0];
+  material.nodes.push(
+    { id: "water", type: "input.waterSurface", position: { x: 0, y: 0 }, properties: {} },
+    { id: "scale", type: "math.multiply", position: { x: 200, y: 0 }, properties: { "default:b": [0.08] } },
+    { id: "color", type: "vector.combine", position: { x: 400, y: 0 }, properties: { "default:y": [0.02], "default:z": [0.6] } },
+  );
+  material.edges = [
+    { id: "bank", sourceNodeId: "water", sourcePinId: "bankDistance", targetNodeId: "scale", targetPinId: "a" },
+    { id: "red", sourceNodeId: "scale", sourcePinId: "out", targetNodeId: "color", targetPinId: "x" },
+    { id: "surface", sourceNodeId: "color", sourcePinId: "xyz", targetNodeId: "output", targetPinId: "emissive" },
+  ];
+  files.set("assets/WaterEffect.material.hasset", await encodeAssetDocument({ guid: materialGuid, type: "Material", name: "Water Effect", version: MATERIAL_PAYLOAD_VERSION, payload: material as unknown as Record<string, unknown> }));
+  // Built-in water and a Custom Material each compile their own shader.
+  for (const [index, style] of ["realistic", "custom"].entries()) {
+    const definition = createDefaultWaterDefinition();
+    files.set(`assets/${style}.water.hasset`, await encodeAssetDocument({
+      guid: `00000000-0000-4000-8000-00000000001${index}`, type: "Water", name: style, version: 1,
+      payload: { ...definition, ...(style === "custom" ? { materialGuid } : {}) },
+    }, { dependencies: style === "custom" ? [materialGuid] : [] }));
+  }
+  await openMinimalTestProject(page, files);
+  await openMainScene(page);
+  for (const style of ["realistic", "custom"]) {
+    await openAssetFromBrowser(page, `assets/${style}.water.hasset`);
+    const canvas = page.getByTestId("water-preview-canvas").filter({ visible: true });
+    await expect(canvas).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("water-details-panel").filter({ visible: true })).toBeVisible({ timeout: 30_000 });
+    try {
+      await expect.poll(async () => {
+        const [r, g, b] = await centerColor(canvas);
+        return style === "custom" ? Math.min(r! - g!, b! - g!) : Math.min(g! - r!, b! - r!);
+      }, { timeout: 20_000 }).toBeGreaterThan(8);
+    } finally {
+      await canvas.screenshot({ path: testInfo.outputPath(`${style}.png`) });
+      await testInfo.attach(`${style}-shader-errors`, { body: JSON.stringify(errors), contentType: "application/json" });
+    }
+    await expect(page.getByText("Preview Failed", { exact: true })).toHaveCount(0);
+  }
+  expect(errors).toEqual([]);
+});

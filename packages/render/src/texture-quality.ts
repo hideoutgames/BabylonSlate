@@ -10,7 +10,6 @@ import { PBRBaseMaterial } from "@babylonjs/core/Materials/PBR/pbrBaseMaterial";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Material } from "@babylonjs/core/Materials/material";
 import { MaterialPluginBase } from "@babylonjs/core/Materials/materialPluginBase";
-import type { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import type { UniformBuffer } from "@babylonjs/core/Materials/uniformBuffer";
 import type { Scene } from "@babylonjs/core/scene";
@@ -22,11 +21,8 @@ import { applyMaterialTextureAnisotropy, sceneRenderingSettings } from "./render
 /** Implicit material samples may bias mip choice; explicit LOD and shadow samples remain authored. */
 function textureLodSamplePattern(
   samplers: string,
-  wgsl: boolean,
 ): string {
-  return wgsl
-    ? `textureSample\\((` + samplers + `),\\s*(\\w+),\\s*([^()]+)\\)`
-    : `texture2D\\((` + samplers + `),\\s*([^()]+)\\)`;
+  return `texture2D\\((` + samplers + `),\\s*([^()]+)\\)`;
 }
 
 export class QualityTextureBlock extends TextureBlock {
@@ -87,28 +83,16 @@ export class QualityTextureBlock extends TextureBlock {
   ): this | undefined {
     const start = state.compilationString.length;
     const result = super._buildBlock(state);
-    // Babylon 9.29 selects the scalar WGSL helper for Color4 outputs. Keep
-    // conversion local to this block and preserve alpha with its vec4 helper.
-    if (state.shaderLanguage === 1) {
-      const generated = state.compilationString.slice(start).replaceAll(
-        `toLinearSpace(${this.rgba.associatedVariableName})`,
-        `toLinearSpaceVec4(${this.rgba.associatedVariableName})`,
-      );
-      state.compilationString = state.compilationString.slice(0, start) + generated;
-    }
     if (state.target !== NodeMaterialBlockTargets.Fragment) return result;
     state._emitUniformFromString(
       "slateTextureLodBias",
       NodeMaterialBlockConnectionPointTypes.Float,
     );
-    const wgsl = state.shaderLanguage === 1;
     const generated = state.compilationString
       .slice(start)
       .replace(
-        new RegExp(textureLodSamplePattern(this.samplerName, wgsl), "g"),
-        wgsl
-          ? "textureSampleBias($1,$2,$3,uniforms.slateTextureLodBias)"
-          : "texture2D($1,$2,slateTextureLodBias)",
+        new RegExp(textureLodSamplePattern(this.samplerName), "g"),
+        "texture2D($1,$2,slateTextureLodBias)",
       );
     state.compilationString =
       state.compilationString.slice(0, start) + generated;
@@ -137,13 +121,10 @@ export class TextureQualityPlugin extends MaterialPluginBase {
   override getUniforms() {
     return { ubo: [{ name: "slateTextureLodBias", size: 1, type: "float" }] };
   }
-  override getCustomCode(type: string, language?: ShaderLanguage) {
+  override getCustomCode(type: string) {
     if (type !== "fragment") return null;
-    const wgsl = language === 1;
     return {
-      ["!" + textureLodSamplePattern(MATERIAL_SAMPLERS, wgsl)]: wgsl
-        ? "textureSampleBias($1,$2,$3,uniforms.slateTextureLodBias)"
-        : "texture2D($1,$2,slateTextureLodBias)",
+      ["!" + textureLodSamplePattern(MATERIAL_SAMPLERS)]: "texture2D($1,$2,slateTextureLodBias)",
     };
   }
 }

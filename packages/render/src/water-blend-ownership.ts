@@ -76,7 +76,7 @@ export function blendOwnership(index: WaterBlendIndex, self: number, out: Float3
 
 /**
  * The cut's GLSL-shaped ownership (`swOwnership(p)`: at world X/Z `p`, the margin own share − the strongest other's, −1
- * where nobody has water), unrolled over the participants. `bind` translates it for WGSL.
+ * where nobody has water), unrolled over the participants. The Water Cut block binds its `U.` uniforms.
  */
 export function ownershipSource(): string {
   const n = WATER_OWNERSHIP_PARTICIPANTS, k = Array.from({ length: n }, (_, i) => i), c = "xyzw";

@@ -622,7 +622,7 @@ export function breakdownSaturation(samples: readonly FeatureTestBenchmarkSample
 
 /**
  * The live preserveDrawingBuffer of the first of `scenes` that measured a Breakdown baseline (`presentation.preserve`
- * in its settings fingerprint): "true", "false", "n/a" on WebGPU, or undefined when none recorded it.
+ * in its settings fingerprint): "true", "false", or undefined when none recorded it.
  */
 export function livePreserve(scenes: readonly FeatureTestCheckSceneResult[]): string | undefined {
   for (const scene of scenes) {
@@ -716,7 +716,7 @@ export interface FeatureTestBenchmarkSample {
   drawPasses?: Partial<Record<DrawPass, number>>;
   /** Each pass's median main-thread ms per frame while sampled (`RenderDiagnostics.drawPassMs`); absent where untimed. */
   drawPassMs?: Partial<Record<DrawPass, number>>;
-  /** The programs the Engine held as the sample ended (`RenderDiagnostics.programs`); absent on WebGPU. */
+  /** The programs the Engine held as the sample ended (`RenderDiagnostics.programs`); absent where the Engine reports none. */
   programs?: NonNullable<RenderDiagnostics["programs"]>;
   /**
    * Frames the view drew and held while sampled, over `ms` of the check's clock, and why it held them
@@ -800,7 +800,7 @@ export interface PlayCounters {
   /**
    * A frame's CPU time with its draws, clears and uniform uploads turned into no-ops (`PlayProbe.stubWebGlDraws`),
    * sampled right after `cpuMs`: what the engine's own JavaScript and state setting cost, so the rest of `cpuMs` is
-   * what the draws cost on this thread. Absent or null where the view cannot be stubbed (WebGPU).
+   * what the draws cost on this thread. Absent or null where the view cannot be stubbed.
    */
   cpuMsWithoutDraws?: CounterStats | null;
 }
@@ -855,7 +855,7 @@ export interface FeatureTestCheckSceneResult {
     counters?: PlayCounters | null;
     /** What Play presented while it was measured: frames drawn, held and skipped, context losses and image samples. */
     presentation: PlayPresentation | null;
-    /** Shaders first drawn after the scene presented, read when its commands finished (WebGL2 only). */
+    /** Shaders first drawn after the scene presented, read when its commands finished. */
     firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
     /**
      * The same, read before a Benchmark's, Breakdown's or Profile's sweep began: what ordinary Play first drew after
@@ -1408,6 +1408,7 @@ function rendererWorkSince(
     failedReadinessProbes: after.failedReadinessProbes - before.failedReadinessProbes,
     scopedReadinessProbes: after.scopedReadinessProbes - before.scopedReadinessProbes,
     scopedReadinessMismatches: after.scopedReadinessMismatches - before.scopedReadinessMismatches,
+    scopedReadinessMismatchCauses: after.scopedReadinessMismatchCauses?.slice(before.scopedReadinessMismatchCauses?.length ?? 0),
     // Only what failed in between: the last failure before it says nothing of this sample.
     readinessBlockers: after.failedReadinessProbes > before.failedReadinessProbes ? after.readinessBlockers : [],
   };
@@ -1510,7 +1511,7 @@ type DrawWait = { outcome: "steady" | "holding" | "stopped"; share: number | nul
 
 /**
  * Benchmark and Breakdown: waits, bounded by `ms`, until the Play view draws without holding frames
- * (shaders and WebGPU pipelines a profile asked for are ready). True when it
+ * (shaders a profile asked for are ready). True when it
  * did, or when the view reports no presentation counts to watch.
  */
 async function viewDrawsSteadily(play: PlayProbe, deps: FeatureTestCheckDeps, signal: AbortSignal, ms: number): Promise<boolean> {

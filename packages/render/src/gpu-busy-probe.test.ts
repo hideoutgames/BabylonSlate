@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFenceGpuBusyProbe, createQueueGpuBusyProbe, type FenceContext } from "./gpu-busy-probe";
+import { createFenceGpuBusyProbe, type FenceContext } from "./gpu-busy-probe";
 
 /** A WebGL2 fence API whose fences signal when the test says the GPU finished them. */
 function fakeGl() {
@@ -122,20 +122,5 @@ describe("GpuBusyProbe", () => {
     expect(probe.stats()!.frames).toBe(1);
     probe.start();
     expect(probe.stats()).toBeNull();
-  });
-});
-
-describe("WebGPU queue probe", () => {
-  it("times each frame from its submission to the queue draining", async () => {
-    let now = 0;
-    let finish: (() => void) | null = null;
-    const queue = { onSubmittedWorkDone: () => new Promise<void>((resolve) => { finish = resolve; }) };
-    const probe = createQueueGpuBusyProbe(queue, () => now);
-    probe.start();
-    now = 10; probe.frameEnd();
-    now = 24; finish!();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(probe.stats()).toMatchObject({ frames: 1, medianMs: 14 });
   });
 });

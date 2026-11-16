@@ -14,7 +14,6 @@ import "@babylonjs/core/Shaders/ShadersInclude/shadowMapVertexMetric";
 import "@babylonjs/core/Shaders/ShadersInclude/shadowMapFragmentExtraDeclaration";
 import "@babylonjs/core/Shaders/ShadersInclude/shadowMapFragmentSoftTransparentShadow";
 import "@babylonjs/core/Shaders/ShadersInclude/shadowMapFragment";
-// The WGSL twins register with the WebGPU Engine's code (webgpu-registrations).
 
 // ShadowDepthWrapper supplies these values from the native ShadowGenerator.
 // doNotInjectCode keeps the wrapper from registering them on our behalf.
@@ -45,7 +44,7 @@ class AuthoredShadowVertexOutput extends NodeMaterialBlock {
     state.compilationString += `${state._declareLocalVar(world, Types.Vector4)} = ${this.position.associatedVariableName};\n`;
     state.compilationString += `${state._declareLocalVar(normal, Types.Vector3)} = normalize(${this.normal.associatedVariableName});\n`;
     state.compilationString += state._emitCodeFromInclude("shadowMapVertexNormalBias", "", { replaceStrings: replacements });
-    state.compilationString += `${state.shaderLanguage === 1 ? "vertexOutputs.position" : "gl_Position"} = ${this.viewProjection.associatedVariableName} * ${world};\n`;
+    state.compilationString += `gl_Position = ${this.viewProjection.associatedVariableName} * ${world};\n`;
     state.compilationString += state._emitCodeFromInclude("shadowMapVertexMetric", "", { replaceStrings: replacements });
     return this;
   }
@@ -79,8 +78,7 @@ export class AuthoredShadowFragmentOutput extends NodeMaterialBlock {
       const sample = this.nativeOpacityMap.associatedVariableName;
       alpha = state._getFreeVariableName("nativeShadowAlpha");
       state._injectAtEnd += `${state._declareLocalVar(alpha, Types.Float)} = ${sample}.a;\n`;
-      const vector = state.shaderLanguage === 1 ? "vec3f" : "vec3";
-      state._injectAtEnd += `#if SM_SOFTTRANSPARENTSHADOW == 1 && defined(SLATE_NATIVE_OPACITY_RGB)\n${alpha} = dot(${sample}.rgb, ${vector}(0.3, 0.59, 0.11));\n#endif\n`;
+      state._injectAtEnd += `#if SM_SOFTTRANSPARENTSHADOW == 1 && defined(SLATE_NATIVE_OPACITY_RGB)\n${alpha} = dot(${sample}.rgb, vec3(0.3, 0.59, 0.11));\n#endif\n`;
       if (this.nativeAlphaCutoff.isConnected)
         state._injectAtEnd += `if (${alpha} < ${this.nativeAlphaCutoff.associatedVariableName}) { discard; }\n`;
     }

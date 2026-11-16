@@ -37,7 +37,6 @@ import {
 import {
   applyAuthoredLightProperties,
   compileMaterialPlan,
-  createAppWebGpuEngine,
   setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
@@ -50,7 +49,6 @@ import { retainFilteredEnvironment } from "../../../../packages/render/src/envir
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
 import { isAtlasShadow } from "../../../../packages/render/src/shadow-atlas";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Surface = { name: string; baseColor: readonly number[]; metallic: number; specular: number; roughness: number; environmentInfluence: number };
 const SURFACES: Surface[] = [
@@ -69,7 +67,7 @@ const MATTE: Surface = { name: "matte", baseColor: [0.8, 0.8, 0.8], metallic: 0,
 const BLACK: Surface = { ...MATTE, name: "black", baseColor: [0, 0, 0] };
 /**
  * A Material's base colour is authored in display space and lit decoded: Babylon's 2.2 power, or the exact sRGB curve on
- * an Engine with exact conversions (the app's WebGPU Engine).
+ * an Engine with exact conversions.
  */
 const linearBase = (surface: Surface, exact: boolean) => surface.baseColor.map((channel) =>
   !exact ? channel ** 2.2 : channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
@@ -214,18 +212,15 @@ function rectFormFactor(P: Vector3, N: Vector3, corners: Vector3[]): number {
   return Math.max((length * length - Vector3.Dot(form, N)) / (length + 1), 0);
 }
 
-export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runHapticLightProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 120;
   canvas.height = 80;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   const releases: (() => void)[] = [];
@@ -358,7 +353,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     };
 
     /**
-     * What each pixel shows (readPixels' rows: WebGL2's bottom-up, WebGPU's top-down): the mesh (0 floor, 1 box, 2
+     * What each pixel shows (readPixels' rows, bottom-up): the mesh (0 floor, 1 box, 2
      * ball, -1 none), a surface id (the floor 0, each box face its own, the ball 10) and, on the floor and the box,
      * the point and its flat normal.
      */
@@ -367,7 +362,7 @@ export async function runHapticLightProof(backend: "webgl2" | "webgpu" = "webgl2
     await draw();
     const geometry: { mesh: number; surface: number; point?: Vector3; normal?: Vector3 }[] = [];
     for (let row = 0; row < canvas.height; row++) {
-      const y = engine.isWebGPU ? row + 0.5 : canvas.height - row - 0.5;
+      const y = canvas.height - row - 0.5;
       for (let column = 0; column < canvas.width; column++) {
         const hit = scene.pickWithRay(scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera), (mesh) => meshes.includes(mesh));
         const mesh = hit?.pickedMesh ? meshes.indexOf(hit.pickedMesh) : -1;

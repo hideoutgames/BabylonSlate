@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { animGraphPlaysAsset, type AnimClipPickGraph } from "./anim-pose-inspector";
+import { animGraphPlaysAsset, animPoseNodePropertyRows, type AnimClipPickGraph } from "./anim-pose-inspector";
 
 const onRig: AnimClipPickGraph = { dimension: "3d", skeletonGuid: "rig" };
 const noSkeleton: AnimClipPickGraph = { dimension: "3d", skeletonGuid: null };
@@ -20,5 +20,76 @@ describe("animGraphPlaysAsset", () => {
     ["a Texture", { type: "Texture", payload: {} }, onRig, false],
   ])("%s plays: %s", (_label, asset, graph, expected) => {
     expect(animGraphPlaysAsset(asset, graph)).toBe(expected);
+  });
+});
+
+describe("Phase 5b pose node rows", () => {
+  const rowsOf = (typeId: string, data: Record<string, unknown>, extra: { bones?: string[]; cachedPoses?: string[] } = {}) => {
+    const patches: Array<Record<string, unknown>> = [];
+    const rows = animPoseNodePropertyRows(typeId, data, (patch) => patches.push(patch), {
+      assetEntries: [],
+      onPickClip: () => undefined,
+      ...extra,
+    });
+    return { rows, patches };
+  };
+
+  it("sets a Layered Blend Per Bone's blend inputs from 1 to 16", () => {
+    const { rows, patches } = rowsOf("anim.pose.layeredBlendPerBone", {});
+    const count = rows.find((row) => row.id === "count");
+    expect(count).toMatchObject({ label: "Blend Poses", value: 1, min: 1, max: 16 });
+    if (count?.kind === "number") count.onChange(40);
+    expect(patches).toEqual([{ count: 16 }]);
+  });
+
+  it("names a Slot's slot, DefaultSlot when blank", () => {
+    const { rows, patches } = rowsOf("anim.frame.slot", {});
+    expect(rows).toEqual([expect.objectContaining({ kind: "text", label: "Slot Name", value: "DefaultSlot" })]);
+    if (rows[0]?.kind === "text") rows[0].onChange("  ");
+    expect(patches).toEqual([{ slotName: "DefaultSlot" }]);
+  });
+
+  it("names a Save Cached Pose, and picks a Use Cached Pose's from the saved names, keeping a missing one", () => {
+    const save = rowsOf("anim.pose.saveCachedPose", { name: "Loco" });
+    expect(save.rows).toEqual([expect.objectContaining({ kind: "text", label: "Name", value: "Loco" })]);
+    const use = rowsOf("anim.pose.useCachedPose", { name: "Gone" }, { cachedPoses: ["Aim", "Loco"] });
+    expect(use.rows[0]).toMatchObject({ kind: "enum", label: "Cached Pose", value: "Gone", verbatim: true });
+    expect(use.rows[0]?.kind === "enum" ? use.rows[0].options.map((option) => option.value) : []).toEqual(["Gone", "Aim", "Loco"]);
+  });
+
+  it("picks a Transform Bone's bone from the Skeleton and shows a channel's space only while it changes the bone", () => {
+    const { rows, patches } = rowsOf("anim.control.transformBone", { bone: "head", rotationMode: "add" }, { bones: ["root", "head"] });
+    expect(rows.map((row) => row.label)).toEqual(["Bone", "Translation Mode", "Rotation Mode", "Rotation Space", "Scale Mode"]);
+    expect(rows[0]).toMatchObject({ kind: "enum", verbatim: true, value: "head" });
+    const space = rows.find((row) => row.id === "rotationSpace");
+    expect(space).toMatchObject({ value: "actor" });
+    if (space?.kind === "enum") space.onChange("bone");
+    expect(patches).toEqual([{ rotationSpace: "bone" }]);
+    // Without a Skeleton the bone is typed.
+    expect(rowsOf("anim.control.transformBone", {}).rows[0]).toMatchObject({ kind: "text", label: "Bone" });
+  });
+
+  it("shows Look At's target space, axes, limit and easing", () => {
+    const { rows, patches } = rowsOf("anim.control.lookAt", { bone: "head" }, { bones: ["root", "head"] });
+    expect(rows.map((row) => row.label)).toEqual(["Bone", "Target Space", "Aim Axis", "Up Axis", "Angle Limit", "Interpolation Time"]);
+    expect(rows.map((row) => "value" in row ? row.value : undefined)).toEqual(["head", "actor", "z", "none", 180, 0]);
+    const up = rows.find((row) => row.id === "upAxis");
+    if (up?.kind === "enum") up.onChange("y");
+    expect(patches).toEqual([{ upAxis: "y" }]);
+  });
+
+  it("shows Foot Placement's pelvis, traces and alignment, its Feet being a list of their own", () => {
+    const { rows, patches } = rowsOf("anim.control.footPlacement", { feet: ["foot.l"] }, { bones: ["hips", "foot.l"] });
+    expect(rows.map((row) => row.label)).toEqual(["Pelvis Bone", "Trace Up", "Trace Down", "Align To Ground"]);
+    const pelvis = rows.find((row) => row.id === "pelvisBone");
+    expect(pelvis).toMatchObject({ value: "" });
+    if (pelvis?.kind === "enum") pelvis.onChange("hips");
+    expect(patches).toEqual([{ pelvisBone: "hips" }]);
+  });
+
+  it("shows Two Bone IK's Joint Target Space only while it uses a Joint Target", () => {
+    const labels = (data: Record<string, unknown>) => rowsOf("anim.control.twoBoneIk", data, { bones: ["hand_r"] }).rows.map((row) => row.label);
+    expect(labels({})).toEqual(["End Bone", "Effector Space", "Use Joint Target", "Max Stretch", "Keep Effector Rotation"]);
+    expect(labels({ useJointTarget: true })).toEqual(["End Bone", "Effector Space", "Use Joint Target", "Joint Target Space", "Max Stretch", "Keep Effector Rotation"]);
   });
 });

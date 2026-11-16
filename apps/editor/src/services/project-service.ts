@@ -1,11 +1,11 @@
-import { isProjectOpenElsewhere, SourceRevisionChangedError } from "@haptic/core";
+import { isProjectOpenElsewhere, isStorageNotFound, SourceRevisionChangedError } from "@haptic/core";
 import { newGuid, normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@haptic/core";
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
-import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
+import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, resolveExtensionFieldValues, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
@@ -43,7 +43,7 @@ import {
   type ProjectAppearance,
   type RenderProjectSettings,
 } from "@haptic/core";
-import type { ProjectFolderHandle, ProjectStorage } from "@haptic/core";
+import type { ProjectFolderHandle, ProjectStorage, SourceControlProjectSettings } from "@haptic/core";
 import {
   AssetRegistry,
   createRegistryAssetLoadingService,
@@ -115,6 +115,8 @@ import {
   type CreateProjectOptions,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
+import { throwIfCancelled } from "@haptic/source-control";
+import { sameRepository } from "../lib/source-control-mode";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry, requireClassGraphPayload } from "./graph-validation";
 import { syncExtensionNodes } from "./extension-nodes";
 import {
@@ -178,6 +180,8 @@ export class ProjectService {
   private readonly writeAdmission = new ProjectWriteAdmission();
   private readonly storage: ProjectStorage;
   private readonly publicStorage: ProjectStorage;
+  /** The storage behind the admission guards, handed only to `withExclusiveWrites` work. */
+  private readonly unguardedStorage: ProjectStorage;
   private readonly registryViews = new WeakMap<AssetRegistry, AssetRegistry>();
   readonly extensions: EditorExtensionService;
   private projectGuid: string | null = null;
@@ -229,6 +233,7 @@ export class ProjectService {
     } = {},
   ) {
     this.migrations = options.migrations ?? defaultRegistry();
+    this.unguardedStorage = storage;
     storage = guardProjectStorage(storage, this.writeAdmission, true);
     this.storage = storage;
     this.publicStorage = guardProjectStorage(storage, this.writeAdmission);
@@ -329,7 +334,7 @@ export class ProjectService {
     }, options);
     return admitOwnerWrites(this, this.writeAdmission, [
       "retryTextureEncoding", "retryAllFailedTextureEncoding",
-      "prepareAreaEmission", "deleteListedProject", "openProject", "createEmptyProject",
+      "prepareAreaEmission", "reconvertHdrEnvironment", "deleteListedProject", "openProject", "createEmptyProject",
       "createFromTemplate", "openListedProject", "closeProject",
       "updateListedProject", "reconnect", "loadCurrentProject", "syncPlugins", "applyPluginOverrides",
       "createProjectPlugin", "deleteProjectPlugin", "importPlugin", "remountRegistry",
@@ -345,6 +350,17 @@ export class ProjectService {
   }
 
   get authoringWriteBlockedReason(): string | null { return this.writeAdmission.reason; }
+
+  /**
+   * Runs `work` as the project's only writer (Remove Unused Files): other
+   * writers are refused with `reason`, admitted ones (saves, imports, copies,
+   * encodes) finish first, and `work` writes through the storage it is given
+   * until it returns. Refused while another operation holds project writes
+   * (Simulation); `signal` ends the wait.
+   */
+  withExclusiveWrites<T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal?: AbortSignal): Promise<T> {
+    return withExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, work, signal);
+  }
 
   /** Save All owns one admission, even when it saves several documents after awaits. */
   withBaselineSave<T>(save: (writer: Pick<ProjectService, "saveDocument" | "saveProject"> & ProjectSceneWriter) => Promise<T>): Promise<T> {
@@ -659,10 +675,14 @@ export class ProjectService {
     return this.loadCurrentProject();
   }
 
+  /**
+   * A new project, opened. `created` is false only when the folder the user
+   * picked already held a project, which is opened as it is.
+   */
   async createEmptyProject(
     name?: string,
     options?: CreateProjectOptions,
-  ): Promise<ProjectLoadResult> {
+  ): Promise<ProjectLoadResult & { created: boolean }> {
     const projectName =
       name && name.trim()
         ? normalizeProjectFolderName(name)
@@ -672,19 +692,20 @@ export class ProjectService {
     if (options?.pickFolder) {
       await this.storage.pickProjectFolder();
       if (await this.storage.exists(PROJECT_FILE)) {
-        return this.loadCurrentProject();
+        return { ...(await this.loadCurrentProject()), created: false };
       }
       await assertEmptyProjectFolder(this.storage);
-      return this.scaffoldNewProject(projectName, options.kind, options);
+      return { ...(await this.scaffoldNewProject(projectName, options.kind, options)), created: true };
     }
     const owned = await openOwnedDocumentsProject(this.storage, projectName);
     if (await this.storage.exists(PROJECT_FILE) && !owned.createdHere) {
       throw new Error("Name already exists.");
     }
     await assertEmptyProjectFolder(this.storage);
-    return scaffoldOwnedProject(this.storage, owned, () =>
+    const result = await scaffoldOwnedProject(this.storage, owned, () =>
       this.scaffoldNewProject(projectName, options?.kind, options),
     );
+    return { ...result, created: true };
   }
 
   async createFromTemplate(options: {
@@ -747,6 +768,48 @@ export class ProjectService {
         return this.loadCurrentProject();
       },
     );
+  }
+
+  /**
+   * Clone: a new folder in app storage named after `name`, filled by `clone`
+   * (the repository's branch), with Integrated mode and the repository (the
+   * cloned branch as its default) written into its `project.json`, unless it
+   * already names the repository in Integrated mode.
+   * A failure or a cancel through `signal`, even one after the files arrived,
+   * removes the folder; a branch with no `project.json` is refused. The
+   * folder is released: open it as a listed project.
+   */
+  async cloneProject(options: {
+    name: string;
+    repositoryUrl: string;
+    branch: string;
+    signal?: AbortSignal;
+    clone: (storage: ProjectStorage, folderId: string) => Promise<void>;
+  }): Promise<ProjectFolderHandle> {
+    const projectName = normalizeProjectFolderName(options.name);
+    if (!projectName) throw new Error("Enter a project name.");
+    const owned = await openOwnedDocumentsProject(this.storage, projectName);
+    if (!owned.createdHere) {
+      await this.storage.releaseFolder();
+      throw new Error("A project with this name already exists.");
+    }
+    await scaffoldOwnedProject(this.storage, owned, async () => {
+      await options.clone(this.storage, owned.handle.id);
+      if (!(await this.storage.exists(PROJECT_FILE))) {
+        throw new Error(`${options.branch} has no Haptic project: project.json is missing.`);
+      }
+      const raw = JSON.parse(await this.storage.readText(PROJECT_FILE)) as { settings?: { sourceControl?: Partial<SourceControlProjectSettings> } };
+      const current = raw.settings?.sourceControl;
+      // Its branch is the team's default; the clone's own branch lives in its working copy, so another branch writes nothing.
+      if (!(current?.mode === "integrated" && sameRepository(current.repositoryUrl ?? "", options.repositoryUrl))) {
+        raw.settings = { ...raw.settings, sourceControl: { ...current, mode: "integrated", repositoryUrl: options.repositoryUrl, branch: options.branch } };
+        await this.storage.writeText(PROJECT_FILE, JSON.stringify(raw, null, 2));
+      }
+      // Cancel stays offered to the end: only a throw in here removes the folder.
+      throwIfCancelled(options.signal);
+    });
+    await this.storage.releaseFolder();
+    return owned.handle;
   }
 
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {
@@ -1958,24 +2021,28 @@ export class ProjectService {
     layouts: ProjectLayouts,
   ): Promise<void> {
     this.assertMigrationApproved(PROJECT_FILE);
-    const now = new Date().toISOString();
-    const updated: ProjectDocument = {
+    const guid = this.projectGuid ?? newGuid();
+    const text = (updatedAt: string) => JSON.stringify({
       ...document,
-      metadata: {
-        ...document.metadata,
-        updatedAt: now,
-      },
-    };
-
-    const payload = {
-      ...updated,
-      guid: this.projectGuid ?? newGuid(),
+      metadata: { ...document.metadata, updatedAt },
+      guid,
       kind: "project",
       version: this.migrations.currentVersion("Project"),
-    };
-    this.projectGuid = payload.guid as string;
-
-    await this.storage.writeText(PROJECT_FILE, JSON.stringify(payload, null, 2));
+    }, null, 2);
+    this.projectGuid = guid;
+    // A save that changes nothing leaves project.json as it is, `updatedAt`
+    // included: a committed file that every Save All rewrote would show as a
+    // change and conflict between teammates who both saved.
+    let stored: string | null = null;
+    try {
+      stored = await this.storage.readText(PROJECT_FILE);
+    } catch (error) {
+      if (!isStorageNotFound(error)) throw error;
+    }
+    const storedUpdatedAt = stored === null ? null : storedProjectUpdatedAt(stored);
+    if (stored === null || storedUpdatedAt === null || text(storedUpdatedAt) !== stored) {
+      await this.storage.writeText(PROJECT_FILE, text(new Date().toISOString()));
+    }
     await this.saveLayouts(layouts);
     this.noteMigrated(PROJECT_FILE);
   }
@@ -2061,4 +2128,14 @@ function normalizeProjectDocument(raw: Partial<ProjectDocument>): ProjectDocumen
 
 function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths)].sort();
+}
+
+/** `metadata.updatedAt` of a stored project.json, or null when it is not a manifest with one. */
+function storedProjectUpdatedAt(text: string): string | null {
+  try {
+    const raw = JSON.parse(text) as { metadata?: { updatedAt?: unknown } };
+    return typeof raw.metadata?.updatedAt === "string" ? raw.metadata.updatedAt : null;
+  } catch {
+    return null;
+  }
 }

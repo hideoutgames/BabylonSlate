@@ -1,4 +1,4 @@
-import { pin, enumRef, structRef, BOOL, FLOAT, INT, COLOR, STRING, EXEC, type NodeDefinition, type GraphPin, type CodegenContext } from "@haptic/scripting";
+import { pin, enumRef, structRef, BOOL, FLOAT, INT, COLOR, EXEC, type NodeDefinition, type GraphPin, type CodegenContext } from "@haptic/scripting";
 
 const result = () => pin("result", "Result", "out", structRef("engine:ScalabilityResult"));
 const exec = () => [pin("execIn", "Exec", "in", EXEC), pin("execOut", "Then", "out", EXEC)];
@@ -23,15 +23,11 @@ export const scalabilityNodes: NodeDefinition[] = [
   { id: "scalability.getEffective", title: "Get Effective Scalability", category: "scalability", pure: true,
     description: "Read requested and last renderer-confirmed settings. Ready is false before the first ready frame; pending or failed requests retain the previous effective values.",
     pins: () => [pin("settings", "Settings", "out", structRef("engine:ScalabilitySnapshot")), pin("ready", "Ready", "out", BOOL),
-      pin("requestedBackend", "Requested GPU Backend", "out", enumRef("engine:GpuBackend")), pin("effectiveBackend", "Effective GPU Backend", "out", enumRef("engine:GpuBackend")),
-      pin("fallbackReason", "Fallback Reason", "out", STRING), pin("vignetteColor", "Vignette Color", "out", COLOR), pin("outlineColor", "CEL Outline Color", "out", COLOR)],
+      pin("vignetteColor", "Vignette Color", "out", COLOR), pin("outlineColor", "CEL Outline Color", "out", COLOR)],
     // Every output of one statement reads the same snapshot.
     codegen: (ctx) => {
       const s = ctx.shared?.("ctx.getScalability()") ?? "ctx.getScalability()";
       return { settings: graphSnapshot(s), ready: `(${s}?.effective != null)`,
-        requestedBackend: `(${s}?.requested.render.gpuBackend ?? 'auto')`,
-        effectiveBackend: `(${s}?.effective?.render.gpuBackend ?? 'auto')`,
-        fallbackReason: `(${s}?.pipeline?.limits.join(' ' ) ?? '')`,
         vignetteColor: `((c) => ({ x: c?.[0] ?? 0, y: c?.[1] ?? 0, z: c?.[2] ?? 0, w: 1 }))(${s}?.effective?.render.effects?.vignette.color)`,
         outlineColor: `((c) => ({ x: c?.[0] ?? 0.03, y: c?.[1] ?? 0.03, z: c?.[2] ?? 0.03, w: 1 }))(${s}?.effective?.render.cel?.outlineColor)` };
     } },

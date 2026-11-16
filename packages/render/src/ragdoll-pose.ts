@@ -8,6 +8,7 @@ import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import type { RagdollBonePose } from "@haptic/core";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { MODEL_IMPORT_SCALE_NODE_NAME } from "./glb-anim";
+import { invalidatePoseRig } from "./anim-pose";
 
 type Capture = Extract<CommandMessage, { type: "captureRagdollPose" }>;
 export type RagdollCaptureResult = Extract<ControlMessage, { type: "ragdollPoseCaptured" }>;
@@ -195,6 +196,8 @@ export class RagdollPoseController {
       }
       refreshBones(session);
     }
+    // The ragdoll wrote the nodes; the slot's next pose writes all of them again.
+    invalidatePoseRig(this.binding.slotPoseClips?.get(slotId));
   }
 
   dispose(): void { for (const slotId of this.sessions.keys()) this.retire(slotId); }
@@ -272,11 +275,6 @@ export class RagdollPoseController {
           session.targets = targets;
           session.byName = new Map(targets.map((target) => [target.name, target]));
           session.byBone = new Map(targets.filter((target) => target.bone).map((target) => [target.bone!, target]));
-          // The preceding animation pass consumed queued weighted seeks. Preserve
-          // the evaluated pose of unselected bones instead of resetting to rest.
-          for (const group of this.binding.slotAnimationGroups?.get(slotId) ?? []) {
-            group.pause();
-          }
           this.reply({ type: "ragdollPoseCaptured", slotId, requestId: session.request.requestId, bones });
         }
         // An in-process reply may synchronously disable or destroy this actor.

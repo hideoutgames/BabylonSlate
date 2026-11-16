@@ -40,20 +40,22 @@ const LockRow = memo(function LockRow({
   onRelease: (id: string) => void;
   onForceUnlock: (lock: FileLock) => void;
 }) {
+  // An own lock of a branch the working copy moved off names that branch.
+  const key = lock.branch ? `${lock.branch}:${lock.path}` : lock.path;
   return (
     <li
       className="flex min-h-[var(--chrome-row,28px)] items-center gap-2 px-2 py-0.5 text-sm"
-      data-testid={`locks-row-${lock.path}`}
+      data-testid={`locks-row-${key}`}
       data-lock-ours={lock.ours ? "true" : "false"}
     >
       <div className="flex min-w-0 flex-1 flex-col">
         <SelectableText className="truncate">{lock.path}</SelectableText>
         <span className="truncate text-xs text-muted-foreground">
-          {lock.ownerName} · {age}
+          {lock.ownerName} · {age}{lock.branch ? ` · On ${lock.branch}` : ""}
         </span>
       </div>
       {pushed !== null ? (
-        <Badge variant={pushed ? "success" : "warning"} data-testid={`locks-pushed-${lock.path}`}>
+        <Badge variant={pushed ? "success" : "warning"} data-testid={`locks-pushed-${key}`}>
           {pushed ? "Pushed" : "Not Pushed"}
         </Badge>
       ) : null}
@@ -61,7 +63,7 @@ const LockRow = memo(function LockRow({
         <Button
           variant="outline"
           size="touch"
-          data-testid={`locks-release-${lock.path}`}
+          data-testid={`locks-release-${key}`}
           disabled={pending}
           onClick={() => onRelease(lock.id)}
         >
@@ -71,7 +73,7 @@ const LockRow = memo(function LockRow({
         <Button
           variant="outline"
           size="touch"
-          data-testid={`locks-force-unlock-${lock.path}`}
+          data-testid={`locks-force-unlock-${key}`}
           disabled={pending}
           onClick={() => onForceUnlock(lock)}
         >

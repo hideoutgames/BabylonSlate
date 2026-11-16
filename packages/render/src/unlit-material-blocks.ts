@@ -19,12 +19,14 @@ import { ALPHA_COVERAGE_UNIFORM, coverageClip, drawsAlphaCoverage } from "./alph
 import { geometryOutputWrite } from "./geometry-surface-output-block";
 import { DRAW_BATCH_COLOR_KIND, DRAW_BATCH_TEXEL_KIND, DRAW_BATCH_TINT_KIND, drawBatchValue } from "./draw-batch-world-block";
 import { overlayVisualStyle } from "./overlay-visual-style";
+import { noteRenderChange } from "./render-change-journal";
 
 /**
  * What one mesh draws with the unlit Material (`unlit-material.ts`). Bound per draw, so meshes with different textures,
- * colours and alpha share one program.
+ * colours and alpha share one program. Read-only: a change goes through `setUnlitBinding` or `updateUnlitBinding`,
+ * which tell the Scene's render change journal about every mesh drawing it.
  */
-export type UnlitBinding = {
+export type UnlitBinding = Readonly<{
   /** The texture the colour multiplies, or none (`UnlitMaterialKey.textured` instances read it). */
   texture: BaseTexture | null;
   /** Display-space colour, clamped to [0, 1] (Standard's clamped emissive). */
@@ -39,8 +41,8 @@ export type UnlitBinding = {
   /** Back faces flip the geometry pass's normal (Standard's `twoSidedLighting`). */
   twoSided: boolean;
   /** An MSDF glyph's outline (`UnlitMaterialKey.msdf`): its colour, and its width in distance-field units (0: none). */
-  msdf?: { strokeColor: readonly [number, number, number]; strokeWidth: number };
-};
+  msdf?: Readonly<{ strokeColor: readonly [number, number, number]; strokeWidth: number }>;
+}>;
 
 const bindings = new WeakMap<AbstractMesh, UnlitBinding>();
 const DEFAULT_BINDING: UnlitBinding = {
@@ -48,13 +50,53 @@ const DEFAULT_BINDING: UnlitBinding = {
 };
 
 const materialBindings = new WeakMap<object, UnlitBinding>();
+/** Who draws each binding: the meshes holding it as their own, and the Materials holding it for all their meshes. */
+const meshHolders = new WeakMap<UnlitBinding, Set<AbstractMesh>>();
+const materialHolders = new WeakMap<UnlitBinding, Set<object>>();
+
+/** Notes `mesh` in its Scene's render change journal, with its child meshes that draw its binding (`unlitBinding`). */
+function noteDrawers(mesh: AbstractMesh): void {
+  noteRenderChange(mesh);
+  for (const child of mesh.getChildMeshes(true)) if (!bindings.has(child)) noteRenderChange(child);
+}
+
+/** Notes every mesh drawing a Material that holds a binding of its own. */
+function noteMaterialDrawers(material: object): void {
+  const meshes = (material as { getBindedMeshes?: () => AbstractMesh[] }).getBindedMeshes?.() ?? [];
+  for (const mesh of meshes) noteRenderChange(mesh);
+}
 
 export function setUnlitBinding(mesh: AbstractMesh, binding: UnlitBinding): void {
+  const previous = bindings.get(mesh);
+  if (previous === binding) return;
+  if (previous) meshHolders.get(previous)?.delete(mesh);
+  else mesh.onDisposeObservable.addOnce(() => { const held = bindings.get(mesh); if (held) meshHolders.get(held)?.delete(mesh); });
   bindings.set(mesh, binding);
+  let holders = meshHolders.get(binding);
+  if (!holders) meshHolders.set(binding, (holders = new Set()));
+  holders.add(mesh);
+  noteDrawers(mesh);
 }
 /** Every mesh drawing `material` draws `binding` (`ownedUnlitMaterial`). */
 export function setMaterialUnlitBinding(material: object, binding: UnlitBinding): void {
+  const previous = materialBindings.get(material);
+  if (previous === binding) return;
+  if (previous) materialHolders.get(previous)?.delete(material);
   materialBindings.set(material, binding);
+  let holders = materialHolders.get(binding);
+  if (!holders) materialHolders.set(binding, (holders = new Set()));
+  holders.add(material);
+  noteMaterialDrawers(material);
+}
+
+/**
+ * Changes `binding` in place: every mesh drawing it (holding it, a child falling back to it, or drawing a Material that
+ * holds it) draws the new values from its next draw, and its Scene's render change journal hears of each.
+ */
+export function updateUnlitBinding(binding: UnlitBinding, changes: Partial<UnlitBinding>): void {
+  Object.assign(binding as { -readonly [K in keyof UnlitBinding]: UnlitBinding[K] }, changes);
+  for (const mesh of meshHolders.get(binding) ?? []) noteDrawers(mesh);
+  for (const material of materialHolders.get(binding) ?? []) noteMaterialDrawers(material);
 }
 /**
  * The binding `mesh` draws: its material's own (`ownedUnlitMaterial`), its own, or, for a pooled visual's leaf
@@ -161,8 +203,7 @@ export class UnlitUvBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state._emitUniformFromString(U.matrix, Types.Matrix);
-    const wgsl = state.shaderLanguage === 1;
-    state.compilationString += `${state._declareOutput(this.output)} = (${wgsl ? "uniforms." : ""}${U.matrix} * vec4${wgsl ? "f" : ""}(${this.uv.associatedVariableName}, 1.0, 0.0)).xy;\n`;
+    state.compilationString += `${state._declareOutput(this.output)} = (${U.matrix} * vec4(${this.uv.associatedVariableName}, 1.0, 0.0)).xy;\n`;
     return this;
   }
 }
@@ -175,11 +216,10 @@ RegisterClass("BABYLON.UnlitUvBlock", UnlitUvBlock);
  * neighbour, or a transparent texel's colour), a faint line along its bounding box.
  */
 function interpolateAtCentroid(state: NodeMaterialBuildState, input: NodeMaterialConnectionPoint): void {
-  const name = input.associatedVariableName.replace(/^fragmentInputs\./, "");
+  const name = input.associatedVariableName;
   if (!/^v_\w+$/.test(name)) return;
-  // GLSL `varying vec2 v_uv;` and WGSL `varying v_uv: vec2f;`, which Babylon's processors turn into `centroid in/out` and
-  // `@interpolate(perspective, centroid)`.
-  const declaration = new RegExp(`(^|\\n)varying (\\w+ ${name};|${name}:)`, "g");
+  // The declaration is `varying vec2 v_uv;`, which Babylon's processor turns into `centroid in/out`.
+  const declaration = new RegExp(`(^|\\n)varying (\\w+ ${name};)`, "g");
   const shared = state.sharedData;
   shared.varyingDeclaration = shared.varyingDeclaration.replace(declaration, "$1centroid varying $2");
   shared.varyingDeclarationFragment = shared.varyingDeclarationFragment.replace(declaration, "$1centroid varying $2");
@@ -237,19 +277,17 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
     // Per-mesh values: the compiler's frozen-material hook rebinds them when Babylon skips frozen forced bindings.
     state.sharedData.forcedBindableBlocks.push(this);
     state.sharedData.blockingBlocks.push(this);
-    const wgsl = state.shaderLanguage === 1;
-    const u = wgsl ? "uniforms." : "";
     const vec3 = state._getShaderType(Types.Vector3), vec4 = state._getShaderType(Types.Vector4);
     if (this.textured) state._emit2DSampler(U.sampler);
     state._emitUniformFromString(U.color, Types.Vector4);
     state._emitUniformFromString(U.alpha, Types.Vector4);
     // The mesh's colour and alpha: bound, or a draw batch's own per vertex.
-    const meshColor = drawBatchValue(state, DRAW_BATCH_COLOR_KIND, `${u}${U.color}`);
-    if (!wgsl) state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
+    const meshColor = drawBatchValue(state, DRAW_BATCH_COLOR_KIND, U.color);
+    state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
     const sample = state._getFreeVariableName("unlitSample");
     const position = this.worldPosition.associatedVariableName;
     // Standard's normal without a normal attribute (`default.fragment`); outside any branch, as derivatives need.
-    state.compilationString += `${state._declareOutput(this.faceNormal)} = normalize(cross(${wgsl ? "dpdx" : "dFdx"}(${position}.xyz), ${wgsl ? "dpdy" : "dFdy"}(${position}.xyz)));\n`;
+    state.compilationString += `${state._declareOutput(this.faceNormal)} = normalize(cross(dFdx(${position}.xyz), dFdy(${position}.xyz)));\n`;
     if (this.textured && this.uv.isConnected) interpolateAtCentroid(state, this.uv);
     const vec2 = state._getShaderType(Types.Vector2);
     let uv = this.uv.isConnected ? this.uv.associatedVariableName : `${vec2}(0.0)`;
@@ -260,23 +298,23 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
       // sampled texture (a page), whose origin the last two then are; they are negative where the image is the whole
       // texture, whose size is the sampler's.
       state._emitUniformFromString(U.texel, Types.Vector4);
-      const grid = drawBatchValue(state, DRAW_BATCH_TEXEL_KIND, `${u}${U.texel}`);
+      const grid = drawBatchValue(state, DRAW_BATCH_TEXEL_KIND, U.texel);
       const sampled = state._getFreeVariableName("unlitSampledSize"), size = state._getFreeVariableName("unlitGridSize");
       const texel = state._getFreeVariableName("unlitTexelIndex"), lookup = state._getFreeVariableName("unlitLookup");
-      const dimensions = wgsl ? `vec2f(textureDimensions(${U.sampler}, 0))` : `vec2(textureSize(${U.sampler}, 0))`;
+      const dimensions = `vec2(textureSize(${U.sampler}, 0))`;
       const whole = `${grid}.z < 0.0`;
       const centre = `(max(${grid}.zw, ${vec2}(0.0)) + ${texel} + ${vec2}(0.5)) / ${sampled}`;
       state.compilationString += `${state._declareLocalVar(sampled, Types.Vector2)} = ${dimensions};\n`
-        + `${state._declareLocalVar(size, Types.Vector2)} = ${wgsl ? `select(abs(${grid}.xy), ${sampled}, ${whole})` : `${whole} ? ${sampled} : abs(${grid}.xy)`};\n`
+        + `${state._declareLocalVar(size, Types.Vector2)} = ${whole} ? ${sampled} : abs(${grid}.xy);\n`
         + `${state._declareLocalVar(texel, Types.Vector2)} = floor(${uv} * ${size});\n`
         // Outside the image, as the texture's own sampler takes it: to the edge, or around where it repeats.
         + `${texel} = mix(clamp(${texel}, ${vec2}(0.0), ${size} - ${vec2}(1.0)), `
         + `${texel} - ${size} * floor(${texel} / ${size}), step(${grid}.xy, ${vec2}(-0.5)));\n`
-        + `${state._declareLocalVar(lookup, Types.Vector2)} = ${wgsl ? `select(${uv}, ${centre}, ${grid}.x != 0.0)` : `${grid}.x != 0.0 ? ${centre} : ${uv}`};\n`;
+        + `${state._declareLocalVar(lookup, Types.Vector2)} = ${grid}.x != 0.0 ? ${centre} : ${uv};\n`;
       uv = lookup;
     }
     state.compilationString += `${state._declareLocalVar(sample, Types.Vector4)} = ${this.textured
-      ? (wgsl ? `textureSample(${U.sampler}, ${U.sampler}Sampler, ${uv})` : `texture2D(${U.sampler}, ${uv})`)
+      ? `texture2D(${U.sampler}, ${uv})`
       : `${vec4}(1.0)`};\n`;
     const rgb = this.rgb.associatedVariableName, a = this.a.associatedVariableName;
     if (this.msdf) {
@@ -286,25 +324,25 @@ export class UnlitSurfaceBlock extends NodeMaterialBlock {
       const float = state._getShaderType(Types.Float);
       const distance = state._getFreeVariableName("msdfDistance"), pixel = state._getFreeVariableName("msdfPixel");
       const fill = state._getFreeVariableName("msdfFill"), outline = state._getFreeVariableName("msdfOutline");
-      const declare = (name: string) => wgsl ? `var ${name}: f32` : `${float} ${name}`;
+      const declare = (name: string) => `${float} ${name}`;
       state.compilationString += `${declare(distance)} = max(min(${sample}.r, ${sample}.g), min(max(${sample}.r, ${sample}.g), ${sample}.b));\n`;
       state.compilationString += `${declare(pixel)} = max(fwidth(${distance}) * 0.5, 0.0001);\n`;
       state.compilationString += `${declare(fill)} = clamp((${distance} - 0.5) / ${pixel} + 0.5, 0.0, 1.0);\n`;
       state.compilationString += `${declare(outline)} = ${fill};\n`;
-      state.compilationString += `if (${u}${U.msdf}.w > 0.0) { ${outline} = clamp((${distance} - 0.5 + ${u}${U.msdf}.w) / ${pixel} + 0.5, 0.0, 1.0); }\n`;
-      state.compilationString += `${state._declareOutput(this.rgb)} = mix(${u}${U.msdf}.rgb, ${meshColor}.rgb, ${fill});\n`;
+      state.compilationString += `if (${U.msdf}.w > 0.0) { ${outline} = clamp((${distance} - 0.5 + ${U.msdf}.w) / ${pixel} + 0.5, 0.0, 1.0); }\n`;
+      state.compilationString += `${state._declareOutput(this.rgb)} = mix(${U.msdf}.rgb, ${meshColor}.rgb, ${fill});\n`;
       state.compilationString += `${state._declareOutput(this.a)} = ${meshColor}.a * max(${fill}, ${outline});\n`;
     } else {
       state.compilationString += `${state._declareOutput(this.rgb)} = ${meshColor}.rgb * ${sample}.rgb;\n`;
-      state.compilationString += `${state._declareOutput(this.a)} = ${meshColor}.a * mix(1.0, ${sample}.a, ${u}${U.alpha}.z);\n`;
+      state.compilationString += `${state._declareOutput(this.a)} = ${meshColor}.a * mix(1.0, ${sample}.a, ${U.alpha}.z);\n`;
     }
     if (this.vertexColor.isConnected) {
       const color = this.vertexColor.associatedVariableName;
-      state.compilationString += `#ifdef VERTEXCOLOR_NME\n${rgb} *= ${color}.rgb;\n${a} *= mix(1.0, ${color}.a, ${u}${U.alpha}.w);\n#endif\n`;
+      state.compilationString += `#ifdef VERTEXCOLOR_NME\n${rgb} *= ${color}.rgb;\n${a} *= mix(1.0, ${color}.a, ${U.alpha}.w);\n#endif\n`;
     }
-    if (this.coverage) coverageClip(state, a, `${u}${U.alpha}.x`);
-    else state.compilationString += `if (${a} < ${u}${U.alpha}.x) { discard; }\n`;
-    state.compilationString += `if (${u}${U.alpha}.x > 0.0 && ${u}${U.alpha}.y < 0.5) { ${a} = 1.0; }\n`;
+    if (this.coverage) coverageClip(state, a, `${U.alpha}.x`);
+    else state.compilationString += `if (${a} < ${U.alpha}.x) { discard; }\n`;
+    state.compilationString += `if (${U.alpha}.x > 0.0 && ${U.alpha}.y < 0.5) { ${a} = 1.0; }\n`;
     state.compilationString += `${rgb} = max(${rgb}, ${vec3}(0.0));\n`;
     return this;
   }
@@ -331,12 +369,11 @@ export class UnlitFinishBlock extends NodeMaterialBlock {
     super._buildBlock(state);
     state._emitUniformFromString(U.finish, Types.Vector4);
     state._emitUniformFromString(U.tint, Types.Vector4);
-    const u = state.shaderLanguage === 1 ? "uniforms." : "";
     // The overlay style's tint: bound, or a draw batch's own per vertex.
-    const tint = drawBatchValue(state, DRAW_BATCH_TINT_KIND, `${u}${U.tint}`);
+    const tint = drawBatchValue(state, DRAW_BATCH_TINT_KIND, U.tint);
     const output = this.output.associatedVariableName;
     state.compilationString += `${state._declareOutput(this.output)} = ${this.input.associatedVariableName};\n`;
-    state.compilationString += `${output}.a *= ${u}${U.finish}.x;\n${output} *= ${tint};\n`;
+    state.compilationString += `${output}.a *= ${U.finish}.x;\n${output} *= ${tint};\n`;
     return this;
   }
 }
@@ -364,27 +401,24 @@ export class UnlitOutputBlock extends FragmentOutputBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state._emitUniformFromString(U.geometry, Types.Vector4);
-    const wgsl = state.shaderLanguage === 1;
-    const u = wgsl ? "uniforms." : "";
     const vec4 = state._getShaderType(Types.Vector4);
     const color = this.rgba.isConnected ? this.rgba.associatedVariableName : "";
     const info = state._getFreeVariableName("unlitGeometryInfo");
     const normal = state._getFreeVariableName("unlitGeometryNormal");
     const viewPosition = this.geometryViewPosition.associatedVariableName;
     const camera = this.geometryCamera.associatedVariableName;
-    const frontFacing = wgsl ? "fragmentInputs.frontFacing" : "gl_FrontFacing";
     state.compilationString += `#ifdef PREPASS\n`
-      + `${state._declareLocalVar(info, Types.Float)} = ${wgsl ? `select(0.0, 1.0, ${color}.a > 0.4)` : `${color}.a > 0.4 ? 1.0 : 0.0`};\n`
-      + `if (${u}${U.geometry}.x > 0.5) { ${info} = 1.0; }\n`
-      + `${state._declareLocalVar(normal, Types.Vector3)} = ${this.geometryNormal.associatedVariableName} * ${u}${U.geometry}.y;\n`
-      + `if (${u}${U.geometry}.z > 0.5 && !${frontFacing}) { ${normal} = -${normal}; }\n#endif\n`;
+      + `${state._declareLocalVar(info, Types.Float)} = ${color}.a > 0.4 ? 1.0 : 0.0;\n`
+      + `if (${U.geometry}.x > 0.5) { ${info} = 1.0; }\n`
+      + `${state._declareLocalVar(normal, Types.Vector3)} = ${this.geometryNormal.associatedVariableName} * ${U.geometry}.y;\n`
+      + `if (${U.geometry}.z > 0.5 && !gl_FrontFacing) { ${normal} = -${normal}; }\n#endif\n`;
     for (const [define, value] of [
-      ["PREPASS_OBJECT_ID", `encodeObjectId(${u}objectId) * ${info}`],
+      ["PREPASS_OBJECT_ID", `encodeObjectId(objectId) * ${info}`],
       ["PREPASS_DEPTH", `${vec4}(${viewPosition}.z, 0.0, 0.0, ${info})`],
       ["PREPASS_NORMALIZED_VIEW_DEPTH", `${vec4}((${viewPosition}.z - ${camera}.y) / (${camera}.z - ${camera}.y), 0.0, 0.0, ${info})`],
       ["PREPASS_WORLD_NORMAL", `${vec4}(${normal} * 0.5 + 0.5, ${info})`],
       ["PREPASS_REFLECTIVITY", `${vec4}(0.0, 0.0, 0.0, 1.0) * ${info}`],
-    ]) state.compilationString += geometryOutputWrite(wgsl, define!, value!);
+    ]) state.compilationString += geometryOutputWrite(define!, value!);
     return this;
   }
 }
