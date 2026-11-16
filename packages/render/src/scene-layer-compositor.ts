@@ -162,9 +162,7 @@ export class SceneLayerCompositor {
       zOrder: command.zOrder,
       scene,
       camera,
-      // A layer draws every frame: a visual that joins or changes how it draws is probed for itself, not with every
-      // other visual of the layer.
-      renderer: new SceneRenderCoordinator(scene, { scopedStrictProbes: true }),
+      renderer: layerRenderer(scene),
       designBounds: sceneLayerOrthoBounds(command.layerBounds),
       viewBounds: sceneLayerViewBounds(command.layerBounds, this.outputAspect()),
       cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
@@ -701,7 +699,7 @@ export class SceneLayerCompositor {
   private rebuildPostProcess(layer: LayerRecord, replaceRenderer = true): void {
     if (replaceRenderer) {
       this.releasePostProcess(layer, true);
-      layer.renderer = new SceneRenderCoordinator(layer.scene);
+      layer.renderer = layerRenderer(layer.scene);
     }
     const enabledStack = layer.parameters.effective(layer.postProcessStack).filter((entry) => entry.enabled);
     if (
@@ -843,6 +841,14 @@ type OverlayMeshMetadata = {
   overlayHasButton?: boolean;
   overlayButtonComponentId?: string;
 };
+
+/**
+ * A layer's renderer, the first and every one that replaces it. A layer draws every frame: a visual that joins or
+ * changes how it draws is probed for itself, not with every other visual of the layer.
+ */
+function layerRenderer(scene: Scene): SceneRenderCoordinator {
+  return new SceneRenderCoordinator(scene, { scopedStrictProbes: true });
+}
 
 function overlayMetadataOf(
   mesh: { metadata?: unknown } | null,
