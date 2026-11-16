@@ -52,6 +52,10 @@ Why LFS objects stream natively: the owner's A16 iPad (TestFlight build), agains
 
 The native file transfer (iOS, Android, desktop), objects made one at a time (natively on iOS and Android), the download into files and the per-stage record and memory peaks answer both.
 
+## Leftover staged files
+
+A native download stages its object as `.haptic-<uuid>.tmp` beside the target (`.blobs`) and renames it when it matches. When the system kills the app mid-download, the staged file stays. Listings hide it on every host, so it never reaches the Content Browser, Changes or a commit, but its space is not reclaimed: Remove Unused Files lists blob folders through the same filtered `readdir`. Reclaiming it needs either an unfiltered listing of blob folders in Remove Unused Files, or downloads staged in one project folder (such as `.git/lfs/incoming`) that `openRepository` empties, as it empties `.git/lfs/tmp`; the second changes the native transfer's request (iOS, Android and Electron).
+
 ## Order
 
 1. The owner reruns the Git benchmark on the A16 iPad with 3 × 256 MiB objects on the native path, in a build made from this change (a new TestFlight build: the native plugin code changed). From **Debug > Run Git Benchmark…** with Debug Mode on, against a repository the account can push to: set **LFS Objects** 3 and **Object Size** 256 MiB, keep the app in the foreground until it finishes, and copy the results from its dialog ([benchmark](architecture/source-control.md#benchmark)). The summary must say **LFS Transfer** native and the unchanged status must read no files; the peak memory per stage shows what each step cost. If the app closes, reopen the dialog: it names the stage the run stopped in. Delete the `haptic-benchmark-…` branch on the host afterwards.

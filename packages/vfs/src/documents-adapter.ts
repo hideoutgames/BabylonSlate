@@ -11,6 +11,7 @@ import { Directory, Filesystem } from "@capacitor/filesystem";
 import { getHostPlatform, type HostPlatform } from "./platform";
 import { projectFolderName, projectRelativePath } from "./project-path";
 import { isAppOwnedFolder } from "./library-folders";
+import { isStagedWrite } from "./staged-write";
 
 const PROJECTS_ROOT = "BabylonSlate/projects";
 
@@ -272,12 +273,14 @@ export class DocumentsStorageAdapter implements ProjectStorage {
         path: full,
         directory: this.directory,
       });
-      return files.map((f) => ({
-        name: f.name,
-        isDir: f.type === "directory",
-        size: f.type === "file" ? f.size : null,
-        mtime: f.mtime,
-      }));
+      return files
+        .filter((f) => !isStagedWrite(f.name))
+        .map((f) => ({
+          name: f.name,
+          isDir: f.type === "directory",
+          size: f.type === "file" ? f.size : null,
+          mtime: f.mtime,
+        }));
     } catch (error) {
       rethrowFilesystemError(error, path);
     }

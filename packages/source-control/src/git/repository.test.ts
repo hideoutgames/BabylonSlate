@@ -340,6 +340,16 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await rejection(openRepository(options))).toMatchObject({ kind: "conflict", code: "detached-head" });
   });
 
+  it("empties the LFS scratch folder a killed app left when it opens", async () => {
+    server.seed({ "assets/a.hasset": "A" });
+    const storage = await server.storage();
+    await clone(storage);
+    // An object downloaded for reading, left when the app was killed before it was read and removed.
+    await storage.writeBinary(`.git/lfs/tmp/${"c".repeat(64)}`, blobBytes(1, 4096));
+    await openRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, now: () => NOW });
+    expect(existsSync(join(folder(storage), ".git/lfs/tmp"))).toBe(false);
+  });
+
   it("types refused credentials, missing repositories and unreachable hosts", async () => {
     server.seed({ "assets/a.hasset": "A" });
     expect((await rejection(clone(undefined, { token: "wrong" }))).kind).toBe("auth");

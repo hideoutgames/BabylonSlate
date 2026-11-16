@@ -141,6 +141,9 @@ export async function openRepository(options: Omit<GitRepositoryOptions, "branch
   if (!branch) {
     throw new SyncError("conflict", "This working copy has no branch checked out. Check out a branch with the Git app that left it, then open the project again.", { code: "detached-head" });
   }
+  // Objects downloaded for reading are removed once read; one is left only when the app was killed first.
+  // Nothing reads the folder before an operation runs. A failure leaves it to the next open.
+  if (await options.storage.exists(LFS_SCRATCH).catch(() => false)) await options.storage.remove(LFS_SCRATCH).catch(() => undefined);
   return new GitRepository({ ...options, branch });
 }
 

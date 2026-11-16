@@ -1,10 +1,11 @@
-import { createHash, randomFillSync, randomUUID } from "node:crypto";
+import { createHash, randomFillSync } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { open, rename, stat, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { ProjectFolderHandle } from "@haptic/core";
 import type { NodeStorageAdapter } from "./node-adapter";
 import { projectRelativePath } from "./project-path";
+import { stagedWriteName } from "./staged-write";
 import {
   FILE_TRANSFER_PROGRESS_MS,
   FileTransferError,
@@ -247,7 +248,7 @@ async function download(
       exchange.request.abort();
       return { status: response.statusCode, bytes: 0, sha256: "" };
     }
-    const staged = join(dirname(file), `.haptic-${randomUUID()}.tmp`);
+    const staged = join(dirname(file), stagedWriteName());
     let handle: FileHandle | null = null;
     let committed = false;
     try {
@@ -305,7 +306,7 @@ async function download(
  */
 export async function writeRandomFile(directory: string, size: number): Promise<string> {
   if (!Number.isSafeInteger(size) || size < 0) throw new Error("Invalid size.");
-  const staged = join(directory, `.haptic-${randomUUID()}.tmp`);
+  const staged = join(directory, stagedWriteName());
   const handle = await open(staged, "wx");
   let committed = false;
   try {
