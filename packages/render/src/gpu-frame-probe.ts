@@ -35,7 +35,6 @@ export function structureHash(text: string): string {
 }
 
 const FRAMEBUFFER = 0x8d40;
-const READ_FRAMEBUFFER = 0x8ca8;
 const DRAW_FRAMEBUFFER = 0x8ca9;
 const SCISSOR_TEST = 0x0c11;
 const COLOR_BUFFER_BIT = 0x4000;
@@ -126,6 +125,9 @@ export class GlSignatureRecorder {
   private readonly counts = new Map<string, number>();
   /** The last frame's hash, while one has ended. */
   lastHash: string | null = null;
+  /** Fences submitted inside a pass that then went on (`fence`): each split one GPU render pass in two. */
+  fenceSplits = 0;
+  private fenced = false;
 
   /** The context's state as the recorder is installed. */
   seed(state: { drawTarget: object | null; viewport: Rect; scissor: Rect; scissorTest: boolean }): void {
@@ -143,9 +145,9 @@ export class GlSignatureRecorder {
     this.lastHash = null;
   }
 
+  /** `gl.bindFramebuffer`: only the draw binding moves passes; a read binding (a blit's or a read-back's source) does not. */
   bind(target: number, framebuffer: object | null): void {
     if (target === FRAMEBUFFER || target === DRAW_FRAMEBUFFER) this.drawTarget = framebuffer;
-    else if (target !== READ_FRAMEBUFFER) return;
   }
 
   viewport(x: number, y: number, width: number, height: number): void { this.viewportRect = [x, y, width, height]; }
@@ -186,8 +188,18 @@ export class GlSignatureRecorder {
     this.invalidates += 1;
   }
 
+  /**
+   * A fence and flush were submitted now. One between two passes costs nothing; one inside a pass ends the GPU's
+   * render pass (ANGLE ends its Metal encoder at a flush), so the work after it starts a second one that loads what
+   * the first stored. Counted once the next work lands on the same pass.
+   */
+  fence(): void {
+    if (this.inFrame && this.passes.length) this.fenced = true;
+  }
+
   beginFrame(): void {
     this.inFrame = true;
+    this.fenced = false;
     this.passes.length = 0;
     this.ids = new Map();
     this.clears = this.blits = this.invalidates = this.draws = this.texelsCleared = this.texelsCovered = 0;
@@ -242,7 +254,12 @@ export class GlSignatureRecorder {
   /** The pass work on the current draw framebuffer belongs to: the current one, or a new one. */
   private pass(): PassRecord {
     const current = this.passes[this.passes.length - 1];
-    if (current && (current.target === this.drawTarget || this.passes.length >= MAX_FRAME_PASSES)) return current;
+    const fenced = this.fenced;
+    this.fenced = false;
+    if (current && (current.target === this.drawTarget || this.passes.length >= MAX_FRAME_PASSES)) {
+      if (fenced && current.target === this.drawTarget) this.fenceSplits += 1;
+      return current;
+    }
     let id = this.ids.get(this.drawTarget);
     if (!id) {
       id = this.drawTarget === null ? "D" : `F${this.ids.size + (this.ids.has(null) ? 0 : 1)}`;
@@ -452,9 +469,15 @@ export interface SerialProbeHost {
   synthetic: { ready(): boolean; draw(): void } | null;
   /** The structure hash of the frame that just ended (`GlSignatureRecorder.lastHash`), where recorded. */
   frameHash?(): string | null;
+  /** Fences that have split a pass so far (`GlSignatureRecorder.fenceSplits`), where recorded. */
+  fenceSplits?(): number;
 }
 
-/** A stage's median over the probe's warm frames; censored when its fence had already signalled at the frame's first poll. */
+/**
+ * A stage's median over the probe's warm frames. Censored: its fence had already signalled at the frame's first poll
+ * (in most of the frames), so it finished while the frame was still being submitted and `ms` is an upper bound, the
+ * time from its fence's submission to that poll.
+ */
 export interface SerialStageResult {
   stage: FrameStage;
   ms: number;
@@ -478,6 +501,8 @@ export interface SerialProbeResult {
   syntheticColdMs: number | null;
   /** The structure hash of each frame measured, where the GL signature was recorded. */
   hashes: string[];
+  /** Stage fences that split a pass in two over the probe's frames (0 when every one fell between passes); null unrecorded. */
+  splits: number | null;
   /** Why it stopped early; null when it finished. */
   failed: string | null;
   /** How long the probe held rendering. */
@@ -490,6 +515,8 @@ export const SERIAL_PROBE_FRAMES = 8;
 export const SYNTHETIC_RUNS = 6;
 /** Longest a probe waits for any one fence, or for the synthetic program to compile. */
 const SERIAL_PROBE_TIMEOUT_MS = 3000;
+/** Longest a probe waits, from its start, for the view to draw its frames (a view that holds or stops drawing). */
+const SERIAL_PROBE_FRAMES_TIMEOUT_MS = 5000;
 
 interface StageFence { stage: FrameStage; submitted: number; fence: ProbeFence; done: number | null }
 interface ProbeFrame {
@@ -525,6 +552,7 @@ export class SerialFrameProbe {
   private syntheticSince = 0;
   private readonly syntheticMs: number[] = [];
   private started = 0;
+  private splitsBefore = 0;
   private runs = 0;
   private last: SerialProbeResult | null = null;
   private pollScheduled = false;
@@ -545,6 +573,7 @@ export class SerialFrameProbe {
     this.measured.length = 0;
     this.syntheticMs.length = 0;
     this.started = this.host.now();
+    this.splitsBefore = this.host.fenceSplits?.() ?? 0;
     this.drain = { fence, since: this.started };
     this.state = "draining";
     this.requestPoll();
@@ -560,6 +589,14 @@ export class SerialFrameProbe {
   get inFrame(): boolean { return this.state === "rendering"; }
 
   result(): SerialProbeResult | null { return this.last; }
+
+  /**
+   * Ends a probe whose view has not drawn its frames in time, with what it measured. The frame loop calls it as each
+   * Engine frame begins: between frames the probe polls nothing.
+   */
+  expire(): void {
+    if (this.state === "waiting" && this.host.now() - this.started > SERIAL_PROBE_FRAMES_TIMEOUT_MS) this.finish("the view drew too few frames");
+  }
 
   frameStarted(): void {
     if (this.state !== "waiting") return;
@@ -687,7 +724,8 @@ export class SerialFrameProbe {
 
   private finish(failed: string | null): void {
     this.runs += 1;
-    this.last = summariseSerialProbe(this.measured, this.syntheticMs, failed, this.runs, this.host.now() - this.started);
+    const splits = this.host.fenceSplits ? this.host.fenceSplits() - this.splitsBefore : null;
+    this.last = summariseSerialProbe(this.measured, this.syntheticMs, failed, this.runs, this.host.now() - this.started, splits);
     this.dispose();
   }
 
@@ -704,23 +742,29 @@ export class SerialFrameProbe {
   }
 }
 
-/** A frame's per-stage GPU time: each segment's completion minus the later of the previous one's and its own submission. */
+/**
+ * A frame's per-stage GPU time. The GPU runs the stages in order, so a stage starts at the later of its own submission
+ * and the end of the one before, and its time is its completion minus that. Completions are seen at polls, the first
+ * one after the frame's task: a stage whose fence had already signalled then is censored. It ended somewhere between
+ * its submission and that poll, so it reads as that whole span, an upper bound, and the stage after it is taken to have
+ * started no earlier than its own submission.
+ */
 function frameStages(frame: ProbeFrame): Map<FrameStage, { ms: number; censored: boolean }> {
   const stages = new Map<FrameStage, { ms: number; censored: boolean }>();
-  let previous = frame.start.done!;
+  let previous = frame.started;
   for (const entry of frame.stages) {
-    const ms = Math.max(0, entry.done! - Math.max(previous, entry.submitted));
     const censored = entry.done! <= (frame.firstPoll ?? -Infinity);
+    const ms = Math.max(0, entry.done! - Math.max(previous, entry.submitted));
     const total = stages.get(entry.stage);
     stages.set(entry.stage, { ms: (total?.ms ?? 0) + ms, censored: (total?.censored ?? false) || censored });
-    previous = entry.done!;
+    previous = censored ? entry.submitted : entry.done!;
   }
   return stages;
 }
 
 /** The result of a probe's frames and synthetic runs (`SerialProbeResult`). */
 export function summariseSerialProbe(
-  frames: readonly ProbeFrame[], synthetic: readonly number[], failed: string | null, id: number, ms: number,
+  frames: readonly ProbeFrame[], synthetic: readonly number[], failed: string | null, id: number, ms: number, splits: number | null = null,
 ): SerialProbeResult {
   const span = (frame: ProbeFrame) => frame.stages.length ? frame.stages[frame.stages.length - 1]!.done! - frame.started : null;
   const warm = frames.slice(1);
@@ -737,7 +781,7 @@ export function summariseSerialProbe(
     id, frames: frames.length, frameMs: median(values(span)), coldMs: frames[0] ? span(frames[0]) : null,
     cpuMs: median(values((frame) => frame.stages.length ? frame.stages[frame.stages.length - 1]!.submitted - frame.started : null)),
     stages, syntheticMs: median(synthetic.slice(1)), syntheticColdMs: synthetic[0] ?? null,
-    hashes: frames.flatMap((frame) => frame.hash ? [frame.hash] : []), failed, ms,
+    hashes: frames.flatMap((frame) => frame.hash ? [frame.hash] : []), splits, failed, ms,
   };
 }
 

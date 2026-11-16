@@ -1234,6 +1234,12 @@ export type CommandMessage =
   | { type: "resetRenderingDebug"; what: "graph" | "shadows" | "idle" }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
   | { type: "setGpuBusyProbeDebug"; enabled: boolean }
+  /**
+   * Debug: the Feature Test Check's GPU probes (the `gpuprobe` console command): start (restart) the passive window
+   * (GL call signature, shadow map counters, `requestAnimationFrame` rate), stop it, or run the serialised frames with
+   * stage fences and the synthetic load.
+   */
+  | { type: "setGpuProbeDebug"; action: "on" | "off" | "serial" }
   /** Debug: how many rendered frames the Engine may queue on the GPU (the `framesinflight` console command; default 2). */
   | { type: "setFramesInFlightDebug"; mode: "off" | 2 | 3 }
   /** Debug: store whether the next project Engine keeps its drawing buffer (the `preservebuffer` console command). */

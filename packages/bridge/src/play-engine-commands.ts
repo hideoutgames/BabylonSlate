@@ -48,6 +48,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setSceneLayersDebug",
   "resetRenderingDebug",
   "setGpuBusyProbeDebug",
+  "setGpuProbeDebug",
   "setFramesInFlightDebug",
   "setPreserveDrawingBufferDebug",
   "assignParticle",

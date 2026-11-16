@@ -66,6 +66,8 @@ export type ConsoleCommandHost = {
   resetRendering?(what: "graph" | "shadows" | "idle"): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */
   setGpuBusyProbe?(enabled: boolean): void;
+  /** `gpuprobe`: start (restart) or stop recording each frame's GL passes and shadow map draws, or run the serialised stage-fence frames. */
+  setGpuProbe?(action: "on" | "off" | "serial"): void;
   /** How many rendered frames the Engine may queue on the GPU; "off" lifts the limit (`framesinflight`). */
   setFramesInFlight?(mode: "off" | 2 | 3): void;
   /** Store whether the next project Engine keeps its drawing buffer (applies after an editor reload). */

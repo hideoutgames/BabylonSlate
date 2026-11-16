@@ -75,6 +75,23 @@ export function sunShadowAtlasEdge(
 type Atlas = { target: RenderTargetTexture; tiles: ShadowAtlasAllocator };
 const atlases = new WeakMap<Scene, Atlas>();
 const placeholders = new WeakMap<Scene, RenderTargetTexture>();
+const generations = new WeakMap<Scene, number>();
+
+/** What has been drawn into a Scene's atlas since it was first made: map passes, their tiles and the tiles' texels. */
+export interface ShadowAtlasDrawCounts { maps: number; tiles: number; texels: number }
+const drawCounts = new WeakMap<Scene, ShadowAtlasDrawCounts>();
+
+/** How many atlases the Scene has made: it grows each time the atlas's depth target is created. */
+export function shadowAtlasGeneration(scene: Scene): number {
+  return generations.get(scene) ?? 0;
+}
+
+/** The Scene's cumulative atlas draws (`ShadowAtlasDrawCounts`); a reader takes the difference between two reads. */
+export function shadowAtlasDrawCounts(scene: Scene): Readonly<ShadowAtlasDrawCounts> {
+  let counts = drawCounts.get(scene);
+  if (!counts) drawCounts.set(scene, counts = { maps: 0, tiles: 0, texels: 0 });
+  return counts;
+}
 
 /** Disposes `target` with the Scene; `forget` runs once it is disposed, by the Scene or otherwise. */
 function disposeWithScene(scene: Scene, target: RenderTargetTexture, forget: () => void): void {
@@ -117,6 +134,7 @@ function sceneAtlas(scene: Scene, edge: number): Atlas {
     const target = depthTarget("hapticShadowAtlas", edge, scene);
     atlas = { target, tiles: new ShadowAtlasAllocator(edge) };
     atlases.set(scene, atlas);
+    generations.set(scene, shadowAtlasGeneration(scene) + 1);
     disposeWithScene(scene, target, () => atlases.delete(scene));
   }
   return atlas;
@@ -276,6 +294,11 @@ function drawIntoTiles(map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShad
   map.onClearObservable.add((engine) => {
     cleared = true;
     const tile = map.tiles[pass]!;
+    if (atlases.get(scene)?.target === atlas) {
+      const counts = shadowAtlasDrawCounts(scene) as ShadowAtlasDrawCounts;
+      counts.tiles += 1;
+      counts.texels += tile.size * tile.size;
+    }
     engine.enableScissor(tile.x, tile.y, tile.size, tile.size);
     try {
       engine.clear(null, false, true, false);
@@ -288,6 +311,7 @@ function drawIntoTiles(map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShad
     if (cleared) {
       // Only the Scene's atlas is sampled by its surfaces; a private one (caster warm-up) is not.
       if (atlases.get(scene)?.target === atlas) {
+        (shadowAtlasDrawCounts(scene) as ShadowAtlasDrawCounts).maps += 1;
         const corrections = shadow instanceof AtlasCascadedShadowGenerator ? shadow.cascadeCorrections : undefined;
         for (let i = 0; i < views.length; i++) {
           views[i]!.view.copyFrom(shadow.drawnViews[i]!);

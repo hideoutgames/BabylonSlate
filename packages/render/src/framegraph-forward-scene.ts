@@ -9,6 +9,7 @@ import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Te
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
+import { FrameGraphFsr1UpscaleTask } from "./fsr1-tasks";
 import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, withoutIdleStages, type SceneEffectsPlan } from "./scene-effects";
 import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
@@ -743,7 +744,13 @@ export class ForwardSceneFrameGraph {
       if (task instanceof FrameGraphObjectRendererTask) return "objects";
       return water.has(task) ? "water" : "other";
     };
-    for (const task of this.graph!.tasks) observeTaskDrawPass(task, engine, pass(task));
+    // The frame's tail starts where the view's output is first written at its full size: the FSR upscale (its sharpening
+    // writes the output), else the task that writes the output (the chain's last stage, or the output copy).
+    const effectTasks = this.effectsGraph?.tasks ?? [];
+    const tail = effectTasks.find((task) => task instanceof FrameGraphFsr1UpscaleTask)
+      ?? this.outputCopy
+      ?? (this.effectsGraph?.rendersToOutput ? effectTasks.at(-1) : undefined);
+    for (const task of this.graph!.tasks) observeTaskDrawPass(task, engine, pass(task), task === tail);
   }
 
   /** Prepared graph task names in record order, for diagnostics and tests. */

@@ -48,6 +48,7 @@ export const DEBUG_COMMAND_NAMES = [
   "scenelayers",
   "renderreset",
   "gpubusy",
+  "gpuprobe",
   "framesinflight",
   "preservebuffer",
   "pause",
@@ -265,6 +266,19 @@ export function builtinCommands(): RegisteredCommand[] {
     },
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
       "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
+    {
+      name: "gpuprobe",
+      tier: "debug",
+      category: "engine",
+      description: "Probe what the GPU is given each frame: record every frame's passes, clears, blits and shadow map draws (on, restarting), stop and take the recorder off (off), or render a few frames one at a time with a fence after each stage and then a fixed synthetic load (serial)",
+      parameters: [{ name: "action", type: "enum", enumValues: ["on", "off", "serial"] }],
+      run(args, host) {
+        const action = args.action as "on" | "off" | "serial";
+        if (!host.setGpuProbe) return fail("gpuprobe is unavailable here");
+        host.setGpuProbe(action);
+        return ok(`gpuprobe ${action}`);
+      },
+    },
     {
       name: "framesinflight",
       tier: "debug",

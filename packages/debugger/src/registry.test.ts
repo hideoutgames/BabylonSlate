@@ -176,6 +176,17 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["reset:graph", "reset:shadows", "reset:idle"]);
   });
 
+  it("starts, stops and serialises the GPU probes by name, in debug registries only", () => {
+    const host = recordingHost();
+    host.setGpuProbe = (action) => host.calls.push(`probe:${action}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const action of ["on", "serial", "off"]) expect(debug.execute(`gpuprobe ${action}`, host)).toEqual({ success: true, output: `gpuprobe ${action}` });
+    expect(debug.execute("gpuprobe fences", host).success).toBe(false);
+    expect(release.execute("gpuprobe on", host).success).toBe(false);
+    expect(host.calls).toEqual(["probe:on", "probe:serial", "probe:off"]);
+  });
+
   it("hides Play's Scene Layers and shows them again, in debug registries only", () => {
     const host = recordingHost();
     host.setSceneLayers = (enabled) => host.calls.push(`layers:${enabled}`);

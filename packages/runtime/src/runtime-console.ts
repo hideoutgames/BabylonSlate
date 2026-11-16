@@ -176,6 +176,7 @@ export class RuntimeConsole {
       setSceneLayers: (enabled) => host.emit({ type: "setSceneLayersDebug", enabled: Boolean(enabled) }),
       resetRendering: (what) => host.emit({ type: "resetRenderingDebug", what }),
       setGpuBusyProbe: (enabled) => host.emit({ type: "setGpuBusyProbeDebug", enabled: Boolean(enabled) }),
+      setGpuProbe: (action) => host.emit({ type: "setGpuProbeDebug", action }),
       setFramesInFlight: (mode) => host.emit({ type: "setFramesInFlightDebug", mode }),
       setPreserveDrawingBuffer: (enabled) => host.emit({ type: "setPreserveDrawingBufferDebug", enabled: Boolean(enabled) }),
       setFrameCap: (fps) => {

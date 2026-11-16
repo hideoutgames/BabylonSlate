@@ -65,6 +65,8 @@ import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, programInventory, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
+import { engineGpuProbe, existingGpuProbe } from "./gpu-probe-engine";
+import { liveShadowAtlasEdge, shadowAtlasDrawCounts, shadowAtlasGeneration } from "./shadow-atlas";
 import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
 import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
@@ -793,6 +795,8 @@ function initializeEngine(
   let idleUntil = 0;
   const shouldRenderFrame = (now: number, loadingFrame?: boolean) => {
     if (now < idleUntil) return false;
+    // Debug (`gpuprobe serial`): the probe renders its frames one at a time, each after the GPU finished the last.
+    if (existingGpuProbe(engine)?.holding) return false;
     noteFrameDemand();
     return (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
       (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
@@ -1968,7 +1972,7 @@ function initializeEngine(
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}),
       backbuffer: { width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
-      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, gpuProbe: existingGpuProbe(engine)?.snapshot() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       layerWork: sceneLayerCompositor?.diagnostics() ?? [],
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
@@ -2242,6 +2246,7 @@ function initializeEngine(
       return;
     }
     frameWasLoading = loadingFrame;
+    existingGpuProbe(engine)?.frameStarted();
     stepViewBlend(frameStart);
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
@@ -2435,6 +2440,7 @@ function initializeEngine(
     presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
     publishDrawPassFrame(drawPasses);
+    existingGpuProbe(engine)?.frameDrawn();
     copyOverlayBatchStats(layerBatches.current, layerBatches.last);
     scheduler.noteRendered(frameStart, performance.now());
     // After `noteRendered`, so camera motion counts as activity (Half Rate When Idle) though the frame drew it.
@@ -3244,6 +3250,26 @@ function initializeEngine(
         // Measured per rendered frame: a capped, held or skipped Engine frame submitted nothing of its own.
         const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
+      }
+      if (command.type === "setGpuProbeDebug") {
+        if (command.action === "off") existingGpuProbe(engine)?.off();
+        else {
+          const probe = engineGpuProbe(engine);
+          // The shadow counters read the Scene of the view the command reached.
+          probe.setShadowSource(() => {
+            if (scene.isDisposed) return null;
+            const census = findSceneShadowController(scene)?.refreshCensus() ?? { maps: 0, continuous: 0 };
+            const drawn = shadowAtlasDrawCounts(scene);
+            return {
+              ...census, drawnMaps: drawn.maps, drawnTiles: drawn.tiles, drawnTexels: drawn.texels,
+              atlasEdge: liveShadowAtlasEdge(scene), atlasGeneration: shadowAtlasGeneration(scene),
+            };
+          });
+          if (command.action === "on") probe.on();
+          else probe.serial();
+          // The probe's frames render whatever else asks for none.
+          scheduler.invalidate("asset");
+        }
       }
       if (command.type === "setRenderTargetCapturesDebug") {
         renderTargetCaptures.setEveryFrameSuspended(!command.enabled);

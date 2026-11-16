@@ -35,7 +35,7 @@ import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, shadowAtlasBytes, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, shadowAtlasBytes, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { builtInWaterMaterial } from "./water-template";
 import { PlanarMirrorCamera } from "./planar-mirror";
@@ -1887,6 +1887,34 @@ describe("view sun shadow maps", () => {
     controller.sync();
     expect([high!.getShadowMap(), sun.getShadowGenerator(capture)]).toEqual([null, null]);
     expect(shadowAtlasBytes(scene)).toBe(0);
+  });
+  it("releases every map, a view's own included, and the atlas on a reset, and makes them again in a later frame", () => {
+    const { scene, controller, sun, capture } = atlasSun(1);
+    controller.attachView(capture);
+    const sceneMap = controller.generator(sun);
+    const viewMap = sun.getShadowGenerator(capture);
+    expect([sceneMap, viewMap].map((map) => map instanceof AtlasCascadedShadowGenerator)).toEqual([true, true]);
+    expect(controller.refreshCensus().maps).toBe(2);
+    // A sync with nothing asked keeps the atlas the first map made.
+    endFrame(scene);
+    controller.sync();
+    expect(shadowAtlasGeneration(scene)).toBe(1);
+    controller.resetAllocations();
+    controller.sync();
+    expect([controller.generator(sun), sun.getShadowGenerator(capture), shadowAtlasBytes(scene)]).toEqual([null, null, 0]);
+    expect(controller.refreshCensus().maps).toBe(0);
+    endFrame(scene);
+    controller.sync();
+    expect(shadowAtlasGeneration(scene)).toBe(2);
+    expect(controller.generator(sun)).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(controller.generator(sun)).not.toBe(sceneMap);
+    expect(sun.getShadowGenerator(capture)).toBeInstanceOf(AtlasCascadedShadowGenerator);
+    expect(controller.refreshCensus().maps).toBe(2);
+    // One reset, one new atlas: the syncs after it keep it.
+    endFrame(scene);
+    controller.sync();
+    expect(shadowAtlasGeneration(scene)).toBe(2);
+    expect(controller.generator(sun)).not.toBeNull();
   });
   it("mirrors each admitted sun map for an attached view, fitted to that view's camera, and shares local maps", async () => {
     const { scene, controller } = fixture();

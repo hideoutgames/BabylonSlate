@@ -16,6 +16,7 @@ import type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
 import type { FirstDrawStats, ProgramInventory } from "./first-draw-stats";
 import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
+import type { GpuProbeSnapshot } from "./gpu-probe-engine";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
 import type { LayerDrawableMeshWork } from "./layer-drawable-meshes";
@@ -63,6 +64,12 @@ export type RenderDiagnostics = {
    * not measured a frame or the Engine has no fences.
    */
   gpuBusy?: GpuBusyStats | null;
+  /**
+   * The GPU probes (`gpuprobe`, `gpu-frame-probe.ts`): the GL call signature, shadow map counters and
+   * `requestAnimationFrame` rate of the window since `gpuprobe on`, and the last `gpuprobe serial` result; null until
+   * a `gpuprobe` command reached the Engine.
+   */
+  gpuProbe?: GpuProbeSnapshot | null;
   /** The Engine frame loop's GPU backpressure (`frame-backpressure.ts`): its `framesinflight` mode, frames queued, renders skipped. */
   frameBackpressure?: FrameBackpressureStats | null;
   /** View-owned draw/copy counts. A held draw never replaces the visible bitmap.
