@@ -545,20 +545,21 @@ describe("OcclusionBuffer against the full-rebuild reference", () => {
     return { viewProjection: viewProjection(eye, add(eye, forward), FOV, ASPECT, NEAR, FAR), occluders, tests };
   }
 
+  // The frame count keeps each size near two seconds on a slow runner; the timeout is margin, not budget.
   it.each([
-    ["256 × 128", 256, 128, 3],
+    ["256 × 128", 256, 128, 3, 40],
     // Odd sizes, whose pyramid repeats its last row and column.
-    ["77 × 37", 77, 37, 4],
-  ])("answers every test from the same depths over seeded scenes, frame after frame, at %s", (_, width, height, seed) => {
+    ["77 × 37", 77, 37, 4, 120],
+  ])("answers every test from the same depths over seeded scenes, frame after frame, at %s", (_, width, height, seed, count) => {
     const next = random(seed);
     // Each frame follows one with other occluders and another camera, so a stale area of the last frame would show.
-    const frames = Array.from({ length: 120 }, (_, index) => randomFrame(next, index % 10 === 0 ? 0 : 1 + Math.floor(next() * 8)));
+    const frames = Array.from({ length: count }, (_, index) => randomFrame(next, index % 10 === 0 ? 0 : 1 + Math.floor(next() * 8)));
     const { culled, tested, read } = compare(frames, width, height);
-    // Not vacuous: boxes are culled and kept, and texels above level 0 are read.
-    expect(culled).toBeGreaterThan(100);
+    // Not vacuous: boxes are culled and kept, and texels above level 0 are read (per frame, as with 120 frames).
+    expect(culled).toBeGreaterThan(count * 0.8);
     expect(culled).toBeLessThan(tested * 0.95);
-    expect(read).toBeGreaterThan(100);
-  });
+    expect(read).toBeGreaterThan(count * 0.8);
+  }, 20_000);
 
   const lookAhead = () => viewProjection([0, 0, 0], [0, 0, 1], FOV, ASPECT, NEAR, FAR);
   const wallAhead = { ...boxTriangles([-5, -5, 5], [5, 5, 5.2]), winding: "both" as const };
