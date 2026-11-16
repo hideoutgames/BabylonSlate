@@ -102,6 +102,20 @@ function pinName(operation: ParticleOperation, pinId: string): string {
  * Every problem is returned as a node-anchored diagnostic; on failure nothing it
  * created stays in the scene.
  */
+/**
+ * Pins each port's `type` to what it resolves to once the graph is built. Babylon resolves an AutoDetect or BasedOnInput
+ * port's type by walking its connections on every read, and the built system's per-particle closures read it on every
+ * call (Math, Clamp, Gradient, `NodeParticleBuildState.adapt`). A realized graph is never rewired (a changed document is
+ * realized afresh), so the walk always gives the same answer: the pinned value is that answer, read once.
+ */
+export function pinPortTypes(blocks: readonly NodeParticleBlock[]): void {
+  for (const block of blocks) {
+    for (const ports of [block.inputs, block.outputs]) {
+      for (const port of ports) Object.defineProperty(port, "type", { value: port.type, writable: true, configurable: true });
+    }
+  }
+}
+
 export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizeParticleGraphOptions): RealizeParticleGraphResult {
   const { scene } = options;
   const set = new NodeParticleSystemSet(options.name);
@@ -229,6 +243,7 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     const system = systemBlock.createSystem(state);
     trace.building = null;
     state.emitErrors();
+    pinPortTypes(set.attachedBlocks);
     // Created only after a successful build, so a failed build never leaks it; the
     // system's default dispose (through the SystemBlock hook) releases it.
     system.particleTexture = createParticleReadinessTexture(scene);

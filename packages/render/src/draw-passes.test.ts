@@ -13,9 +13,11 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultRenderTargetCaptureProperties, normalizeShadowSettings } from "@haptic/core";
 import { beginEngineDrawCallFrame } from "./draw-calls";
+import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
+import { Observable } from "@babylonjs/core/Misc/observable";
 import {
-  beginDrawPassFrame, DrawPassFrame, emptyDrawPasses, endDrawPassFrame, enterDrawPass, leaveDrawPass, publishDrawPassFrame,
-  withDrawPass,
+  beginDrawPassFrame, DrawPassFrame, emptyDrawPasses, endDrawPassFrame, enterDrawPass, leaveDrawPass, observeTaskDrawPass,
+  publishDrawPassFrame, withDrawPass,
 } from "./draw-passes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { timeParticleAnimation } from "./particle-animation-pass";
@@ -161,6 +163,27 @@ describe("DrawPassFrame", () => {
     expect(Object.values(frame.lastMs).reduce((sum, ms) => sum + ms, 0)).toBe(33);
     // They draw nothing unless something does inside them.
     expect(frame.last).toEqual(emptyDrawPasses());
+  });
+
+  it("opens a task's pass before the task's own observers, and closes it before what runs after the task", () => {
+    const { engine } = counter();
+    let now = 100;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const task = { onBeforeTaskExecute: new Observable<unknown>(), onAfterTaskExecute: new Observable<unknown>() };
+    // The task's own preparation, added when the task was made (a shared outline's sync).
+    task.onBeforeTaskExecute.add(() => { now += 4; });
+    observeTaskDrawPass(task as unknown as FrameGraphTask, engine, "outlines");
+    // What the scene view draws after the task (its capture views), added later.
+    task.onAfterTaskExecute.add(() => { now += 2; });
+    const frame = new DrawPassFrame(engine);
+    frame.timePasses();
+    beginDrawPassFrame(frame);
+    task.onBeforeTaskExecute.notifyObservers(task);
+    now += 3;
+    task.onAfterTaskExecute.notifyObservers(task);
+    endDrawPassFrame(frame);
+    publishDrawPassFrame(frame);
+    expect(frame.lastMs).toMatchObject({ outlines: 7, other: 2 });
   });
 
   it("brackets each started particle system's animation once as `particles`, and only inside a frame", () => {
@@ -313,10 +336,12 @@ describe("draw passes of a Forward graph frame", () => {
     system.animate = (() => spend(13)) as typeof system.animate;
     scene.onBeforeRenderObservable.add(() => spend(3));
     scene.onBeforeRenderObservable.add(() => withDrawPass(engine, "mirrors", () => spend(5)));
-    // The cull task's own work, as Babylon runs it inside the task (its observers and passes).
+    // The cull task's own work: some before Babylon's task runs, and Babylon's frustum test inside the task's pass.
     const execute = (FrameGraphCullObjectsTask.prototype as unknown as { _execute(): void })._execute;
     vi.spyOn(FrameGraphCullObjectsTask.prototype as unknown as { _execute(): void }, "_execute")
-      .mockImplementation(function (this: FrameGraphCullObjectsTask) { spend(7); execute.call(this); });
+      .mockImplementation(function (this: FrameGraphCullObjectsTask) { spend(4); execute.call(this); });
+    const inFrustum = box.isInFrustum.bind(box);
+    vi.spyOn(box, "isInFrustum").mockImplementation((planes) => { spend(3); return inFrustum(planes); });
     vi.spyOn(graph as unknown as { syncShadowAdmission(): void }, "syncShadowAdmission").mockImplementation(() => spend(2));
     const frame = new DrawPassFrame(engine);
     frame.timePasses();

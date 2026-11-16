@@ -2,6 +2,8 @@ import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import { UpdateSizeBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateSizeBlock";
+import { NodeParticleConnectionPoint } from "@babylonjs/core/Particles/Node/nodeParticleBlockConnectionPoint";
+import type { Particle } from "@babylonjs/core/Particles/particle";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -578,5 +580,33 @@ describe("Particle Graph catalog", () => {
     system.start(0);
     expect(() => step(system, 20)).not.toThrow();
     expect(system.getActiveCount()).toBeGreaterThan(0);
+  });
+
+  it.each(types)("pins %s's port types to what Babylon resolves, and simulates exactly as unpinned ports do", (type) => {
+    const resolve = Object.getOwnPropertyDescriptor(NodeParticleConnectionPoint.prototype, "type")!.get!;
+    const simulate = (unpin: boolean) => {
+      const built_ = built(realize(planOf(graphWith(type))).result);
+      const ports = built_.set.attachedBlocks.flatMap((block) => [...block.inputs, ...block.outputs]);
+      for (const port of ports) {
+        expect(Object.hasOwn(port, "type")).toBe(true);
+        expect(port.type).toBe(resolve.call(port));
+        if (unpin) Reflect.deleteProperty(port, "type");
+      }
+      // The same random sequence for both runs.
+      let seed = 12345;
+      const random = vi.spyOn(Math, "random").mockImplementation(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
+      try {
+        built_.system.start(0);
+        step(built_.system, 20);
+      } finally {
+        random.mockRestore();
+      }
+      const particles = (built_.system as unknown as { _particles: Particle[] })._particles;
+      return particles.map((p) => [p.position.asArray(), p.direction.asArray(), p.color.asArray(), p.size, p.angle,
+        p.scale.asArray(), p.age, p.lifeTime, p.cellIndex]);
+    };
+    const pinned = simulate(false);
+    expect(pinned.length).toBeGreaterThan(0);
+    expect(pinned).toEqual(simulate(true));
   });
 });
