@@ -13,6 +13,7 @@ import { EditorSceneSync } from "./editor-scene-sync";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { GRID_MESH_NAME } from "./editor-grid";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { SHARED_OUTLINE_ATTRIBUTE, STRICT_SPLIT_CHECK_INTERVAL, verifySharedOutlineCulls } from "./shared-outline";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const dispose of cleanups.splice(0)) dispose(); });
@@ -340,5 +341,120 @@ describe("authored scene outline host", () => {
     expect(host.view.contributions.has("component:a:ink")).toBe(true);
     host.removeActor("a");
     expect(host.view.active).toBe(false);
+  });
+});
+
+/**
+ * Strict culls of successive frames: the outlined box at the origin seen from -10 on Z, `front` between them, `behind`
+ * past it, `beside` next to it on screen and a floor spanning the camera plane.
+ */
+describe("strict outline cull between frames", () => {
+  afterEach(() => verifySharedOutlineCulls(false));
+  function frame() {
+    const { scene, host } = setup();
+    const camera = new UniversalCamera("camera", new Vector3(0, 0, -10), scene);
+    camera.setTarget(Vector3.Zero());
+    const box = (name: string, x: number, z: number) => {
+      const mesh = MeshBuilder.CreateBox(name, {}, scene);
+      mesh.position.set(x, 0, z);
+      return mesh;
+    };
+    const outlined = box("outlined", 0, 0), front = box("front", 0, -5), behind = box("behind", 0, 10), beside = box("beside", 5, 0);
+    const floor = MeshBuilder.CreateGround("floor", { width: 40, height: 40 }, scene);
+    floor.position.y = -0.5;
+    for (const mesh of scene.meshes) mesh.computeWorldMatrix(true);
+    const move = (mesh: typeof outlined, x: number) => { mesh.position.x = x; mesh.computeWorldMatrix(true); };
+    const actors = [outlined, front, behind, beside, floor];
+    const publish = (inked: readonly string[]) => host.replaceActors(actors.map((mesh) =>
+      ({ id: mesh.name, meshes: [mesh], bindings: inked.includes(mesh.name) ? authored(mesh.name) : [] })));
+    publish(["outlined"]);
+    const cull = () => host.view.strictOccludersFor(camera, 512, 256).map((mesh) => mesh.name);
+    return { scene, host, outlined, front, behind, beside, move, publish, cull };
+  }
+
+  it("follows members outlined and no longer outlined", () => {
+    const { publish, cull } = frame();
+    expect(cull()).toEqual(["outlined", "front", "floor"]);
+    // Outlined, the box behind is a member, drawn whatever covers it, ahead of the occluders.
+    publish(["outlined", "behind"]);
+    expect(cull()).toEqual(["outlined", "behind", "front", "floor"]);
+    publish(["outlined"]);
+    expect(cull()).toEqual(["outlined", "front", "floor"]);
+  });
+
+  it("follows occluders that move into and out of view, hide or turn off", () => {
+    const { front, beside, move, cull } = frame();
+    move(beside, 0.5); move(front, 30);
+    expect(cull()).toEqual(["outlined", "beside", "floor"]);
+    move(front, 0);
+    expect(cull()).toEqual(["outlined", "front", "beside", "floor"]);
+    front.isVisible = false;
+    beside.setEnabled(false);
+    expect(cull()).toEqual(["outlined", "floor"]);
+  });
+
+  it("walks no occluder, and says no stroke shows, in a frame where no outlined member can show", () => {
+    const { host, outlined, move, cull } = frame();
+    move(outlined, 40);
+    expect(cull()).toEqual([]);
+    expect(host.view.strictStrokesShow).toBe(false);
+    move(outlined, 0);
+    expect(cull()).toEqual(["outlined", "front", "floor"]);
+    expect(host.view.strictStrokesShow).toBe(true);
+  });
+
+  it("strokes every actor with CEL outlines on", () => {
+    const { scene, host, cull } = frame();
+    setSceneRenderSettings(scene, { mode: "cel" });
+    host.refreshSettings();
+    expect(cull()).toEqual(["outlined", "front", "behind", "beside", "floor"]);
+    expect(host.view.strictStrokesShow).toBe(true);
+  });
+
+  it("keeps an unstroked instance of an outlined instance's source as a member, and walks occluders only for the stroke", () => {
+    const { scene, host } = setup();
+    const camera = new UniversalCamera("camera", new Vector3(0, 0, -10), scene);
+    camera.setTarget(Vector3.Zero());
+    const source = MeshBuilder.CreateBox("source", {}, scene);
+    source.position.y = 100;
+    // An instance starts at its source's position.
+    const inked = source.createInstance("inked"), plain = source.createInstance("plain");
+    inked.position.set(40, 0, 0); plain.position.set(0, 0, 0);
+    const front = MeshBuilder.CreateBox("front", {}, scene);
+    front.position.z = -5;
+    for (const mesh of scene.meshes) mesh.computeWorldMatrix(true);
+    host.replaceActors([
+      { id: "inked", meshes: [inked], bindings: authored("inked") },
+      { id: "plain", meshes: [plain], bindings: [] }, { id: "front", meshes: [front], bindings: [] },
+    ]);
+    const cull = () => host.view.strictOccludersFor(camera, 512, 256).map((mesh) => mesh.name);
+    // The plain instance carries its source's identity stream, so it is a member; it strokes nothing.
+    expect(cull()).toEqual(["plain"]);
+    expect(host.view.strictStrokesShow).toBe(false);
+    inked.position.x = 1; inked.computeWorldMatrix(true);
+    expect(cull()).toEqual(["inked", "plain", "front"]);
+    expect(host.view.strictStrokesShow).toBe(true);
+  });
+
+  it("heals a membership changed behind its back at the next periodic check, which the verifier counts until then", () => {
+    const { host, behind, cull } = frame();
+    verifySharedOutlineCulls(true);
+    expect(cull()).toEqual(["outlined", "front", "floor"]);
+    // An identity stream no publish or registration announced makes `behind` a member; the kept split says otherwise.
+    const streams = behind.instancedBuffers;
+    behind.instancedBuffers = { [SHARED_OUTLINE_ATTRIBUTE]: 0 };
+    try {
+      expect(cull()).toEqual(["outlined", "front", "floor"]);
+      expect(host.view.cullDiagnostics()).toEqual({ splitChecks: 0, healedSplits: 0, checks: 2, mismatches: 1 });
+      // The kept split is checked on the interval's cull after the one that made it, and replaced.
+      for (let index = 1; index < STRICT_SPLIT_CHECK_INTERVAL; index++) cull();
+      expect(host.view.cullDiagnostics()).toEqual({ splitChecks: 1, healedSplits: 1, checks: STRICT_SPLIT_CHECK_INTERVAL + 1,
+        mismatches: STRICT_SPLIT_CHECK_INTERVAL - 1 });
+      expect(cull()).toEqual(["outlined", "behind", "front", "floor"]);
+      expect(host.view.cullDiagnostics().mismatches).toBe(STRICT_SPLIT_CHECK_INTERVAL - 1);
+    } finally {
+      // A plain mesh has no instance storage for Babylon's disposal to release.
+      behind.instancedBuffers = streams;
+    }
   });
 });

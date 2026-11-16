@@ -389,6 +389,7 @@ export class ForwardSceneFrameGraph {
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
+      ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
