@@ -29,7 +29,7 @@ Headless runtime object graph: World, Actors, components, subsystems, tick order
 - Simulation code never calls `Math.random`; use the World RNG (`createSeededRng`, core).
 - Never iterate a `Map` for tick or snapshot order. Spawn/attach use arrays; subsystem lists sort with `compareClassIds` (code-unit order, never locale).
 - Mid-tick spawn/destroy enqueue and flush after the current phase, so a destroy never skips a sibling. `tick()` is not re-entrant. An ended World never ticks (`tick()` returns -1), refuses `createScene` and cancels queued spawns.
-- Code that edits `actor.components` in place must call `World.markStructureChanged()`: `componentOwners` (component-class owner lists) is cached on `structuralRevision`.
+- Code that edits `actor.components` in place must call `World.markStructureChanged()`: `componentOwners` (component-class owner lists) is cached on `structuralRevision`. The same index lists the actors of each class. Script class queries (Get All / Get Actor Of Class, Get First / Get All Components Of Type) answer from it through `script-class-queries.ts`: each target class is resolved to its matching class ids and their actors, in world order, once per `structuralRevision` and `ClassRegistry.revision` (which advances on every register and unregister), and `destroyed` is read live on each query. A script host without a world (`ScriptHostServices.getWorld` left out) walks `getActors()` instead.
 - `createActor` / `createComponent` / subsystem creation deep-copy class variable defaults (`hydrateClassVariableValue`); no two instances share an object value.
 - Play binds a per-frame `onTick` only where a script can run (scripted actor lineages, project component classes); engine component classes never get one.
 

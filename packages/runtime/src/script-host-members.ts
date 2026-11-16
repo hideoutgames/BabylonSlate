@@ -76,6 +76,7 @@ import {
   sceneLayerGuidOf,
   setActorLink,
 } from "./script-host-helpers";
+import { actorsOfClass as actorsOfClassIn } from "./script-class-queries";
 import type { ScriptMaterialOwnership } from "./script-material-ownership";
 import { scriptValuesEqual } from "./script-values-equal";
 import type { LatentFrameRoots } from "./latent-frame-roots";
@@ -220,12 +221,20 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
   };
   /**
    * The live world's actors of `classId` or a subclass, in world order: appended to `into`, or with
-   * no list the first one. Neighbouring actors are usually of one Class, so the answer for the last
-   * Class seen is reused instead of walking its ancestry again.
+   * no list the first one. A host with a world answers from its class index (`actorsOfClassIn`). One
+   * that only lists actors is walked: neighbouring actors are usually of one Class, so the answer for
+   * the last Class seen is reused instead of walking its ancestry again.
    */
   const actorsOfClass = (classId: unknown, into: Actor[] | null): Actor | null => {
     const target = String(classId ?? "");
     if (!target) return null;
+    const world = services.getWorld?.();
+    if (world) {
+      const matching = actorsOfClassIn(world, services.classRegistry, target);
+      if (!into) return matching[0] ?? null;
+      for (const actor of matching) into.push(actor);
+      return null;
+    }
     const actors = services.getActors?.() ?? [];
     const classes = services.classRegistry;
     let lastId = "";
@@ -508,10 +517,12 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getOwner: (actor) => readActorLink(services, actor, "ownerId"),
     executeConsoleCommand: (command) =>
       services.executeConsoleCommand(command),
-    getFirstComponentOfType: (classId) =>
-      componentsOfType(services, classId).next().value ?? null,
-    getAllComponentsOfType: (classId) =>
-      [...componentsOfType(services, classId)],
+    getFirstComponentOfType: (classId) => componentsOfType(services, classId, null),
+    getAllComponentsOfType: (classId) => {
+      const found: ActorComponent[] = [];
+      componentsOfType(services, classId, found);
+      return found;
+    },
     getSceneLoadingProgress: () =>
       clamp01(services.getSceneLoadingProgress?.() ?? 1),
     getTargetSceneName: (target) => services.getTargetSceneName?.(target) ?? "",
