@@ -254,9 +254,8 @@ export function Homepage({
   const [createOpen, setCreateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   // The mobile account gate checks the session again whenever the window
-  // regains focus and unmounts the Homepage meanwhile. WKWebView also sends
-  // that focus while the app stays in the foreground, when the web view takes
-  // first responder back, so the forms opened here hold the check.
+  // regains focus and unmounts the Homepage meanwhile, which would drop a
+  // form being filled in, so the forms opened here hold the check.
   const holdSessionCheck = useNativeHomepageAccount()?.profile.holdSessionCheck;
   const holdSessionCheckRef = useRef(holdSessionCheck);
   holdSessionCheckRef.current = holdSessionCheck;

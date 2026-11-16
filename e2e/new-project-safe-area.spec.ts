@@ -197,16 +197,29 @@ test.describe("New Project above the iOS keyboard", () => {
             pageScrolled: false,
           });
 
-        if (fieldTestId !== "create-project-name") return;
-        // Options, tapped while the keyboard is up, opens in place; the keyboard then closes.
         const dialog = page.getByTestId("create-project-dialog");
         const options = dialog.locator(".homepage-project-options");
-        await options.locator("summary").scrollIntoViewIfNeeded();
-        await options.locator("summary").tap();
+        if (fieldTestId === "create-project-name") {
+          // Options, tapped while the keyboard is up, opens in place; the keyboard then closes.
+          await options.locator("summary").scrollIntoViewIfNeeded();
+          await options.locator("summary").tap();
+        }
         await page.evaluate(() => (window as unknown as TestKeyboard).__testKeyboard.hide());
-        await expect(options).toHaveAttribute("open", "");
-        await expect(dialog).toBeVisible();
-        await expect(dialog.getByTestId("create-project-width")).toBeVisible();
+        // With the keyboard closed the frame fills the screen again and keeps Create above the bottom inset.
+        await expect
+          .poll(async () => {
+            const [frame, create] = await Promise.all([dialog.boundingBox(), dialog.getByTestId("create-project-submit").boundingBox()]);
+            if (!frame || !create) return null;
+            return {
+              fillsScreen: Math.abs(frame.y) <= 0.5 && Math.abs(frame.height - layout.viewport.height) <= 0.5,
+              createAboveInset: create.y + create.height <= layout.viewport.height - layout.safe.bottom + 0.5,
+            };
+          })
+          .toEqual({ fillsScreen: true, createAboveInset: true });
+        if (fieldTestId === "create-project-name") {
+          await expect(options).toHaveAttribute("open", "");
+          await expect(dialog.getByTestId("create-project-width")).toBeVisible();
+        }
       });
     }
   }

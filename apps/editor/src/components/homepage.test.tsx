@@ -438,8 +438,7 @@ describe("Slate project browser", () => {
   });
 
   // The iOS and Android apps check the account again whenever the window regains focus, unmounting the
-  // Homepage meanwhile. WKWebView also sends that focus while the app stays in the foreground, when the web
-  // view takes first responder back, so a check then would drop the form being filled in.
+  // Homepage meanwhile, so a check while a form is open would drop what is being filled in.
   it("keeps New Project, Clone and Engine Settings open through the mobile account's foreground check", async () => {
     getHostPlatform.mockReturnValue("ios");
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
