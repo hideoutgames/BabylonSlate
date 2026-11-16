@@ -24,6 +24,8 @@ type OverridableFunctionRow = {
   description: string;
   overwritten: boolean;
   pins: GraphClassMemberPin[];
+  /** An override of a Pure function is Pure. */
+  pure?: boolean;
   implementsInterface?: { assetGuid: string; methodName: string };
   overrides?: { classId: string; name: string };
 };
@@ -152,7 +154,9 @@ export function collectOverridableFunctionRows(options: {
           name: member.name,
           description: `Parent · ${ancestor}`,
           overwritten: taken.has(member.name),
-          pins: ensureFunctionExecPins(member.pins),
+          // A Pure parent may have no exec pins; its override keeps the same signature.
+          pins: member.pure === true ? member.pins ?? [] : ensureFunctionExecPins(member.pins),
+          ...(member.pure === true ? { pure: true } : {}),
           overrides: { classId: ancestor, name: member.name },
         });
       }
@@ -216,9 +220,10 @@ export function collectParentFunctionSignatures(options: {
   classId: string;
   name: string;
   pins: GraphClassMemberPin[];
+  pure?: boolean;
 }> {
   const parentOf = parentLookup(options.parentOf);
-  const rows: Array<{ classId: string; name: string; pins: GraphClassMemberPin[] }> = [];
+  const rows: Array<{ classId: string; name: string; pins: GraphClassMemberPin[]; pure?: boolean }> = [];
   if (!options.classId) return rows;
   for (const ancestor of walkAncestry(options.classId, parentOf)) {
     if (ancestor === options.classId) continue;
@@ -228,6 +233,7 @@ export function collectParentFunctionSignatures(options: {
         classId: ancestor,
         name: member.name,
         pins: member.pins ?? [],
+        ...(member.pure === true ? { pure: true } : {}),
       });
     }
   }

@@ -25,6 +25,7 @@ import {
   type LogicGraph,
   type TypeSchemas,
   diagnostic,
+  isLatentFunctionKey,
   readPinDefault,
 } from "@haptic/scripting";
 import {
@@ -56,7 +57,7 @@ import {
 } from "../lib/class-members";
 import type { SubsystemClassEntry } from "../lib/logic-graph-document";
 import { dataGraphDefinitionGuid, dataGraphMetadata, isDataGraphNode, type DataGraphAssetEntry } from "../lib/data-graph";
-import { parentLookup } from "./graph-class-symbols";
+import { editorLatentFunctions, parentLookup } from "./graph-class-symbols";
 import { defaultNodeRegistry, materializeLogicGraph } from "./graph-hydration";
 import {
   dataLiteralEntry,
@@ -67,6 +68,7 @@ import {
 export {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
+  editorLatentFunctions,
   knownClassIdSet,
   scriptPinCompatibility,
 } from "./graph-class-symbols";
@@ -410,11 +412,59 @@ export function validateSerializedGraph(
   }
   return [
     ...validateGraphs(graphs, ctx, { registry: defaultNodeRegistry() }),
+    ...pureLatentDiagnostics(content, options),
     ...hostLineageDiagnostics(graphs, options),
     ...dataGraphDiagnostics(graphs, options),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
     ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
   ];
+}
+
+/**
+ * A Pure function runs inside the expression that reads its outputs, so it
+ * cannot wait: every node in its graph that waits (directly, or as a Call of
+ * a function that does) is an error.
+ */
+function pureLatentDiagnostics(
+  content: SerializedGraph,
+  options: ValidateSerializedGraphOptions,
+): Diagnostic[] {
+  const pureFunctions = (content.members ?? []).filter(
+    (member) => member.kind === "function" && member.pure === true,
+  );
+  if (pureFunctions.length === 0) return [];
+  const registry = defaultNodeRegistry();
+  const classId = options.classId ?? "Object";
+  const parentOf = parentLookup(options.parentOf);
+  const latent = editorLatentFunctions(registry, {
+    classId,
+    graph: content,
+    otherClassGraphs: options.otherClassGraphs,
+    parentOf,
+  });
+  const out: Diagnostic[] = [];
+  for (const fn of pureFunctions) {
+    for (const node of content.functionGraphs?.[fn.id]?.nodes ?? []) {
+      const typeId = typeof node.data.__nodeType === "string" ? node.data.__nodeType : node.type;
+      const callClass = typeof node.data.classId === "string" && node.data.classId.trim()
+        ? node.data.classId.trim()
+        : classId;
+      const waits =
+        registry.get(typeId)?.latent === true ||
+        (typeId === "debug.executeJavaScript" && node.data.async === true) ||
+        (typeId === "functions.call" && node.data.pure !== true &&
+          isLatentFunctionKey(callClass, String(node.data.functionName ?? ""), latent, parentOf));
+      if (!waits) continue;
+      out.push(diagnostic({
+        code: "function.pure_latent",
+        message: `Pure function "${fn.name}" cannot wait. Remove this latent node or turn off Pure.`,
+        assetGuid: options.assetGuid,
+        graphId: fn.id,
+        nodeId: node.id,
+      }));
+    }
+  }
+  return out;
 }
 
 export function projectHasBlockingErrors(

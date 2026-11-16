@@ -91,6 +91,7 @@ export function headerMetaForSave(
           functionId?: string;
           assetGuid?: string;
           overridable?: boolean;
+          pure?: boolean;
           implementsInterface?: { assetGuid: string; methodName: string };
           overrides?: { classId: string; name: string };
           pins?: Array<{

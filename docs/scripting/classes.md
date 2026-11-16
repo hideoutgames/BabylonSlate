@@ -36,7 +36,7 @@ For components without any logic, a [Prefab](../assets/prefab.md) is lighter tha
 | Window | Contents |
 | --- | --- |
 | **Event Graph** | The class's events. Each function opens in its own tab beside it, marked with the function icon. |
-| **Class** | The class's **Functions**, **Variables**, **Events**, **Event Dispatchers** and **Interfaces**. Use **+** on a section to add one. Each entry shows its kind: a type colour for variables (a square for a Delegate), and an icon for functions, events, [Event Dispatchers](event-dispatchers.md) and interfaces. |
+| **Class** | The class's **Functions**, **Variables**, **Events**, **Event Dispatchers** and **Interfaces**. Use **+** on a section to add one. Each entry shows its kind: a type colour for variables (a square for a Delegate), and for functions, events, [Event Dispatchers](event-dispatchers.md) and interfaces the icon their nodes show left of the title, such as **E** for events, a gamepad for input events, a plain **ƒ** for Pure functions, a clock for functions that wait and a plug for interface implementations. |
 | **Inspector** | Settings of the selected node or class member. |
 | **Compiler Results** | Errors and warnings for this class. |
 | **Prefab** | Actor classes only: a preview of the components with gizmos. |

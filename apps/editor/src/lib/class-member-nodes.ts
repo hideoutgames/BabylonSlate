@@ -171,6 +171,80 @@ export function isObjectInstanceVariableType(
   return typeId === "object";
 }
 
+/**
+ * What a variable node's menu converts it to: a Get of a single object
+ * variable to its Validated Get, and a Validated Get back to a Get.
+ */
+export function variableGetConversion(
+  node: SerializedGraph["nodes"][number] | undefined,
+): "validatedGet" | "get" | null {
+  if (node?.type === "variables.getValidated") return "get";
+  if (
+    node?.type === "variables.get" &&
+    isObjectInstanceVariableType(
+      typeof node.data.typeId === "string" ? node.data.typeId : undefined,
+      typeof node.data.container === "string" ? node.data.container : undefined,
+    )
+  ) {
+    return "validatedGet";
+  }
+  return null;
+}
+
+/**
+ * Convert to Validated Get / Convert to Get on the node `nodeId` of the Event
+ * Graph, or of the function graph `functionId`. The node keeps its id,
+ * variable, Target and value wires. A Get that becomes a Validated Get gets
+ * unwired exec pins; a Validated Get that becomes a Get loses them, and what
+ * ran into it runs on to what followed Is Valid. Null when the node cannot
+ * convert.
+ */
+export function convertVariableGetNode(
+  graph: SerializedGraph,
+  nodeId: string,
+  functionId?: string | null,
+): SerializedGraph | null {
+  const slice = functionId ? graph.functionGraphs?.[functionId] : graph;
+  const node = slice?.nodes.find((entry) => entry.id === nodeId);
+  const to = variableGetConversion(node);
+  if (!slice || !node || !to) return null;
+  const type = to === "get" ? "variables.get" : "variables.getValidated";
+  const name = typeof node.data.variableName === "string" ? node.data.variableName : "";
+  const data: Record<string, unknown> = {
+    ...node.data,
+    title: `${to === "get" ? "Get" : "Validated Get"} ${name}`.trim(),
+    __nodeType: type,
+  };
+  // The canvas metadata of the old kind; hydration recomputes it for the new one.
+  for (const key of ["__pins", "__pure", "__latent", "__category"]) delete data[key];
+  let edges = slice.edges;
+  if (to === "get") {
+    const into = edges.filter((edge) => edge.target === nodeId && edge.targetHandle === "execIn");
+    const valid = edges.filter((edge) => edge.source === nodeId && edge.sourceHandle === "isValid");
+    const execOut = (edge: SerializedGraph["edges"][number]) =>
+      edge.source === nodeId && (edge.sourceHandle === "isValid" || edge.sourceHandle === "notValid");
+    edges = edges.filter((edge) => !into.includes(edge) && !execOut(edge));
+    const next = valid.length === 1 ? valid[0]! : undefined;
+    if (next) {
+      const taken = new Set(edges.map((edge) => edge.id));
+      for (const edge of into) {
+        let id = `${edge.id}-${next.target}`;
+        for (let n = 2; taken.has(id); n += 1) id = `${edge.id}-${next.target}-${n}`;
+        taken.add(id);
+        edges = [...edges, { ...edge, id, target: next.target, targetHandle: next.targetHandle }];
+      }
+    }
+  }
+  const converted = {
+    ...slice,
+    nodes: slice.nodes.map((entry) => (entry.id === nodeId ? { ...entry, type, data } : entry)),
+    edges,
+  };
+  return functionId
+    ? { ...graph, functionGraphs: { ...graph.functionGraphs, [functionId]: converted } }
+    : { ...graph, nodes: converted.nodes, edges: converted.edges };
+}
+
 export type GraphSpawnOptions = {
   position?: { x: number; y: number };
   functionId?: string | null;
@@ -294,7 +368,7 @@ export function addCallEventNode(
 /** Spawn a Call Function node bound to a class function. */
 export function addCallFunctionNode(
   graph: SerializedGraph,
-  member: Pick<GraphClassMember, "name" | "pins" | "runtime">,
+  member: Pick<GraphClassMember, "name" | "pins" | "runtime" | "pure">,
   options?: GraphSpawnOptions,
 ): SerializedGraph {
   const type = "functions.call";
@@ -307,6 +381,7 @@ export function addCallFunctionNode(
   };
   if (options?.classId) data.classId = options.classId;
   if (member.runtime) data.runtime = member.runtime;
+  if (member.pure === true) data.pure = true;
   return appendGraphNode(
     graph,
     {

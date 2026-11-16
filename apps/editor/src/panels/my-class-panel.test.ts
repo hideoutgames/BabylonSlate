@@ -583,3 +583,45 @@ describe("My Class members", () => {
     ]);
   });
 });
+
+describe("Class tree kind icons", () => {
+  const iconKind = (graph: SerializedGraph, rowId: string, options?: Parameters<typeof membersForGraph>[1]) => {
+    const row = blueprintTreeNodes(membersForGraph(graph, options), new Set()).find((entry) => entry.id === rowId);
+    const icon = row?.icon as { props?: { kind?: string } } | undefined;
+    return icon?.props?.kind;
+  };
+  const node = (id: string, type: string, data: Record<string, unknown> = {}) =>
+    ({ id, type, position: { x: 0, y: 0 }, data });
+
+  it("shows each member's node-header kind", () => {
+    const graph: SerializedGraph = {
+      nodes: [node("begin", "flow.event.beginPlay"), node("jump", "input.actionEvent", { title: "Event Jump" })],
+      edges: [],
+      members: [
+        { id: "fn", kind: "function", name: "Move", pins: [] },
+        { id: "pure", kind: "function", name: "Measure", pins: [], pure: true },
+        { id: "wait", kind: "function", name: "Wait", pins: [] },
+        { id: "impl", kind: "function", name: "Describe", pins: [], implementsInterface: { assetGuid: "i", methodName: "Describe" } },
+        { id: "dispatcher", kind: "dispatcher", name: "On Hit", pins: [] },
+        { id: "iface", kind: "interface", name: "Describable", assetGuid: "i" },
+      ],
+      functionGraphs: { wait: { nodes: [node("delay", "timers.delay")], edges: [] } },
+    };
+    expect(["begin", "jump", "fn", "pure", "wait", "impl", "dispatcher", "iface"].map((id) => iconKind(graph, id, { classId: "Hero" })))
+      .toEqual(["event", "input-event", "function", "pure", "latent", "interface", "dispatcher", "interface"]);
+  });
+
+  it("shows an inherited function's kind from the parent Class", () => {
+    const parent: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [{ id: "measure", kind: "function", name: "Measure", pins: [], pure: true }],
+    };
+    expect(iconKind({ nodes: [], edges: [] }, "native:function:Base:Measure", {
+      classId: "Hero",
+      parentClass: "Base",
+      parentOf: (id) => (id === "Hero" ? "Base" : null),
+      parentGraphs: { Base: parent },
+    })).toBe("pure");
+  });
+});

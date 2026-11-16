@@ -90,7 +90,7 @@ export function replaceSerializedGraphInDocument(
 type FunctionLibraryPaletteEntry = {
   classId: string;
   parentClass?: string | null;
-  functions: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
+  functions: Array<{ name: string; pins?: GraphClassMemberPin[]; pure?: boolean }>;
 };
 
 function functionsFromMembers(
@@ -101,6 +101,7 @@ function functionsFromMembers(
     .map((member) => ({
       name: member.name,
       pins: member.pins ?? [],
+      ...(member.pure === true ? { pure: true } : {}),
     }));
 }
 
@@ -117,6 +118,7 @@ function functionsFromHeaderPayload(
     functions.push({
       name,
       pins: normalizeHeaderPins((entry as { pins?: unknown }).pins),
+      ...((entry as { pure?: unknown }).pure === true ? { pure: true } : {}),
     });
   }
   return functions;
@@ -337,6 +339,7 @@ export function classGraphFromHeaderPayload(
       if ((entry as { overridable?: unknown }).overridable === true) {
         fn.overridable = true;
       }
+      if ((entry as { pure?: unknown }).pure === true) fn.pure = true;
       const implementsInterface = (entry as { implementsInterface?: unknown })
         .implementsInterface;
       if (

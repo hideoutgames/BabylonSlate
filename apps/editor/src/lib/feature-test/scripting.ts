@@ -635,11 +635,18 @@ function scaledMesh(
 // ---------------------------------------------------------------------------
 // Shared members (Callers keep the same ids and pins as the owning Class).
 
-const LIB_WAVE = fnMember("ft-script-fn-lib-wave", "Wave", [
-  { name: "Time", typeId: "float", direction: "in" },
-  { name: "Amplitude", typeId: "float", direction: "in" },
-  { name: "Value", typeId: "float", direction: "out" },
-]);
+/** Pure, without exec pins: its graph returns what its Output reads, and its Calls have no exec pins. */
+const LIB_WAVE: GraphClassMember = {
+  id: "ft-script-fn-lib-wave",
+  kind: "function",
+  name: "Wave",
+  pure: true,
+  pins: [
+    { name: "Time", typeId: "float", direction: "in" },
+    { name: "Amplitude", typeId: "float", direction: "in" },
+    { name: "Value", typeId: "float", direction: "out" },
+  ],
+};
 const SCORE = varMember("ft-game-var-score", "Score", "int", 0, { category: "Score" });
 const ADD_SCORE = fnMember("ft-game-fn-add-score", "AddScore", [{ name: "Amount", typeId: "int", direction: "in" }]);
 const GI_BOOTED = varMember("ft-game-var-booted", "Booted", "bool", false);
@@ -651,6 +658,10 @@ const GI_OBJECT_CLASS = varMember("ft-game-var-object-class", "ObjectClass", "cl
 /** Counted by `FT_ScriptTicker`'s Tick, so the Object Probe can see a collected object stop ticking. */
 const GI_OBJECT_TICKS = varMember("ft-game-var-object-ticks", "ObjectTicks", "float", 0);
 const DATA_OBJECT_NOTE = varMember("ft-script-var-note", "Note", "string", "FeatureTest Object");
+/** Pure with exec pins: its graph runs from Input to Output, and its Calls have no exec pins. */
+const DATA_OBJECT_DESCRIBE = fnMember("ft-script-fn-describe-object", "DescribeObject", [
+  { name: "Text", typeId: "string", direction: "out" },
+], { pure: true });
 const COMPUTE_WAVE = fnMember("ft-script-fn-compute-wave", "ComputeWave", WAVE_PINS, { overridable: true, category: "Spin" });
 
 function describeMember(id: string, interfaceGuid: string): GraphClassMember {
@@ -695,7 +706,7 @@ async function saveMathLibrary(ctx: FeatureTestContext): Promise<void> {
           gWire(inputId(LIB_WAVE), "Amplitude", "wave-scale", "b"),
           gWire("wave-scale", "out", outputId(LIB_WAVE), "Value"),
         ],
-      }),
+      }, false),
     },
   });
   await saveClass(ctx, CLASS.mathLib, "FunctionLibrary", graph);
@@ -730,9 +741,7 @@ async function saveScoreSubsystem(ctx: FeatureTestContext): Promise<void> {
 /** Object: a variable and a function; referenced as a Class variable by the Game Instance. */
 async function saveDataObject(ctx: FeatureTestContext): Promise<void> {
   const note = DATA_OBJECT_NOTE;
-  const describe = fnMember("ft-script-fn-describe-object", "DescribeObject", [
-    { name: "Text", typeId: "string", direction: "out" },
-  ]);
+  const describe = DATA_OBJECT_DESCRIBE;
   const graph = classGraph({
     members: [note, describe],
     functionGraphs: {
@@ -1013,14 +1022,12 @@ async function saveSpinner(ctx: FeatureTestContext, types: ScriptingTypes, mater
     ],
     functionGraphs: {
       [COMPUTE_WAVE.id]: fnGraph(COMPUTE_WAVE, {
-        nodes: [callStatic("wave-library", 400, 120, CLASS.mathLib, LIB_WAVE, { "default:Amplitude": 0.5 })],
+        nodes: [callStatic("wave-library", 400, 240, CLASS.mathLib, LIB_WAVE, { "default:Amplitude": 0.5, pure: true })],
         edges: [
-          gWire(inputId(COMPUTE_WAVE), "exec", "wave-library", "exec"),
-          gWire("wave-library", "then", outputId(COMPUTE_WAVE), "then"),
           gWire(inputId(COMPUTE_WAVE), "Time", "wave-library", "Time"),
           gWire("wave-library", "Value", outputId(COMPUTE_WAVE), "Value"),
         ],
-      }, false),
+      }),
       [describe.id]: fnGraph(describe, {
         nodes: [
           getVar("describe-config", config, 300, 240),
@@ -1358,7 +1365,11 @@ async function saveObjectProbe(ctx: FeatureTestContext, font: string, materialGu
       gNode("assert-stopped", "debug.assertEqual", 2840, 0, { "default:message": "A collected object kept ticking" }),
       getVar("get-kept", kept, 2840, 240),
       gNode("assert-kept", "debug.assertIsValid", 3080, 0, { "default:message": "A referenced object was collected" }),
-      getVarOn("get-note", DATA_OBJECT_NOTE, CLASS.dataObject, 3080, 240),
+      callOn("describe-kept", 3080, 240, CLASS.dataObject, DATA_OBJECT_DESCRIBE, { pure: true }),
+      gNode("assert-described", "debug.assertEqual", 3320, 0, {
+        "default:expected": DATA_OBJECT_NOTE.defaultValue,
+        "default:message": "A Pure Call of DescribeObject did not return the kept object's Note",
+      }),
       format("report-text", 3320, 240, "Objects: kept {note}, {ticks} ticks before Collect Garbage"),
       printText("report", 3560, 0, "ft-script-objects", undefined, 8),
       gNode(makeTicker.id, "flow.event.custom", 0, 600, { title: "Event Make Ticker", name: makeTicker.name, pins: makeTicker.pins }),
@@ -1371,7 +1382,8 @@ async function saveObjectProbe(ctx: FeatureTestContext, font: string, materialGu
     ],
     edges: [
       ...gChain("begin", "settle", "make-kept", "set-kept", "call-make-ticker", "ticking", "as-game-instance",
-        "assert-ticked", "call-drop-ticker", "collected", "set-at-collection", "after", "assert-stopped", "assert-kept", "report"),
+        "assert-ticked", "call-drop-ticker", "collected", "set-at-collection", "after", "assert-stopped", "assert-kept", "assert-described",
+        "report"),
       gWire("make-kept", "object", "set-kept", "value"),
       gWire("game-instance", "gameInstance", "as-game-instance", "object"),
       gWire("as-game-instance", "result", "get-ticks", "target"),
@@ -1381,8 +1393,9 @@ async function saveObjectProbe(ctx: FeatureTestContext, font: string, materialGu
       gWire("get-ticks", "value", "assert-stopped", "actual"),
       gWire("get-at-collection", "value", "assert-stopped", "expected"),
       gWire("get-kept", "value", "assert-kept", "object"),
-      gWire("get-kept", "value", "get-note", "target"),
-      gWire("get-note", "value", "report-text", fmtArg("note")),
+      gWire("get-kept", "value", "describe-kept", "target"),
+      gWire("describe-kept", "Text", "report-text", fmtArg("note")),
+      gWire("describe-kept", "Text", "assert-described", "actual"),
       gWire("get-at-collection", "value", "report-text", fmtArg("ticks")),
       gWire("report-text", "out", "report", "inString"),
       ...gChain(makeTicker.id, "make-ticker", "set-ticker"),

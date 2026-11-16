@@ -20,6 +20,7 @@ Select the function in the **Class** window, or click an empty part of its graph
 | --- | --- |
 | Name | The function's name, shown on its Call nodes. |
 | Overridable | Lets child classes replace this function. Off by default. |
+| Pure | Makes the function [Pure](#pure-functions): its Call nodes have no exec pins. Off by default. |
 | Category | Groups functions into folders in the **Class** window. |
 | Inputs | Values passed in. They appear as outputs of the **Input** node and as inputs of each Call node. Select an Integer, Float or Vector input to give it a **Unit**; the Call node's value field then shows it, such as 250 ms. Select any input to make it [Pass-By-Reference](#pass-by-reference). |
 | Outputs | Values returned. They appear as inputs of the **Output** node and as outputs of each Call node. |
@@ -36,6 +37,17 @@ You can also add a pin from the graph. Drag a wire from an output pin onto the b
 - To call a function on another object, drag from a pin that holds that object and choose the Call entry. The node gets a **Target** pin. A Call for a function of this class has a **Target** pin that shows **Self** and calls the running object while it is unconnected; connect another object of the class to call that one.
 - The caller continues once the function reaches its **Output** node. If the function contains a latent node such as [Delay](class/delay.md), its Call node becomes latent too and waits for it.
 - An output the function never sets returns its type's default value.
+
+## Pure functions
+
+Turn on **Pure** for a function that returns values, such as a calculation. Its Call nodes have no exec pins and show the pure **ƒ** icon, like [pure nodes](index.md). A Pure Call runs when a node that reads its outputs runs: once for each such node, however many of its outputs that node reads.
+
+- The function's own graph keeps its exec pins, so it can run any node between **Input** and **Output**, including other functions.
+- To make a function that only computes values, also remove the exec pins from **Inputs** and **Outputs**. The **Output** node then returns what it reads, without exec wires. A Pure function needs both exec pins or neither.
+- A function that is not Pure needs an exec input and an exec output. **Compiler Results** reports an error when one is missing.
+- A Pure function cannot wait. A latent node in it, such as [Delay](class/delay.md), or a Call of a function that waits, is reported in **Compiler Results**.
+- Turning **Pure** on removes the exec wires of this class's Call nodes; what ran into each Call now runs straight on to what followed it. Turning it off gives the Call nodes exec pins again, unconnected.
+- An override of a Pure function must be Pure too.
 
 ## Pass-By-Reference
 
@@ -61,7 +73,7 @@ Variables that only one function needs belong in **Local Variables**, which appe
 2. In the child class, tap **+** next to **Functions**. The menu lists the parent's overridable functions, marked with the parent's name.
 3. Pick one. The child gets a function with the same name, inputs and outputs, and its version runs instead of the parent's.
 
-If an override's inputs or outputs no longer match the parent, **Compiler Results** reports an error. The same menu lists the methods of the class's [Script Interfaces](interfaces.md).
+If an override's inputs, outputs or **Pure** setting no longer match the parent, **Compiler Results** reports an error. The same menu lists the methods of the class's [Script Interfaces](interfaces.md).
 
 ## Function libraries
 

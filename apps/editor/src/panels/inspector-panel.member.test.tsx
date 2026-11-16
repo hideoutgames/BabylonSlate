@@ -354,6 +354,13 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("property-overridable")).toBeTruthy();
   });
 
+  it("makes a selected function Pure", () => {
+    renderMemberInspector("fn-1");
+    fireEvent.click(screen.getByTestId("property-pure"));
+    const next = applyGraphChange.mock.calls.at(-1)?.[1];
+    expect(next?.members?.find((member) => member.id === "fn-1")?.pure).toBe(true);
+  });
+
   it.each([
     ["Input", "fn-heal-input", "in", "out"],
     ["Output", "fn-heal-output", "out", "in"],
@@ -439,6 +446,7 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("inspector-member-interface-impl")).toBeTruthy();
     expect(screen.queryByTestId("class-fn-in-add")).toBeNull();
     expect(screen.queryByTestId("property-overridable")).toBeNull();
+    expect(screen.queryByTestId("property-pure")).toBeNull();
   });
 
   it("shows ScriptInterface AssetPicker for a selected interface", () => {

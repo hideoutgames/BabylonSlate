@@ -12,23 +12,6 @@ export function DebuggerSettingsFields({ settings, onChange }: {
   const defaults = settings.debuggerDefaults;
   const update = (patch: Partial<typeof defaults>) => void onChange({ debuggerDefaults: { ...defaults, ...patch } });
   return <>
-    <SettingsSection id="diagnostics" title="Diagnostics">
-      <Field orientation="horizontal" className="settings-field">
-        <LabelHint hint="Shows developer diagnostics, such as the Feature Test starter and Copy Error when a scene fails to load. Copied reports include device and GPU details but no project files.">
-          <FieldLabel htmlFor="setting-debug-mode">Debug Mode</FieldLabel>
-        </LabelHint>
-        <Switch id="setting-debug-mode" data-testid="setting-debug-mode" checked={settings.debugMode}
-          onCheckedChange={(debugMode) => void onChange({ debugMode })} />
-      </Field>
-      <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!settings.debugMode || undefined}>
-        <LabelHint hint="Checks every WebGL call so Copy Error names the one that failed; rendering is much slower while it is on. Requires Debug Mode.">
-          <FieldLabel htmlFor="setting-trace-graphics-errors">Trace Graphics Errors</FieldLabel>
-        </LabelHint>
-        <Switch id="setting-trace-graphics-errors" data-testid="setting-trace-graphics-errors" disabled={!settings.debugMode}
-          checked={settings.debugMode && settings.traceGraphicsErrors}
-          onCheckedChange={(traceGraphicsErrors) => void onChange({ traceGraphicsErrors })} />
-      </Field>
-    </SettingsSection>
     <SettingsSection id="simulation" title="Simulation">
       <Field orientation="horizontal" className="settings-field">
         <LabelHint hint="On keeps the final scene of the next Simulation as one Undo step; off discards gameplay and live edits. Changes are never applied partially.">
@@ -93,6 +76,23 @@ export function DebuggerSettingsFields({ settings, onChange }: {
           className="min-h-[var(--chrome-row,28px)]" data-testid="setting-traces-kept"
           value={settings.tracesKept}
           onChange={(tracesKept) => void onChange({ tracesKept: Math.round(tracesKept) })} />
+      </Field>
+    </SettingsSection>
+    <SettingsSection id="diagnostics" title="Diagnostics">
+      <Field orientation="horizontal" className="settings-field">
+        <LabelHint hint="Shows developer diagnostics, such as the Feature Test starter and Copy Error when a scene fails to load. Copied reports include device and GPU details but no project files.">
+          <FieldLabel htmlFor="setting-debug-mode">Debug Mode</FieldLabel>
+        </LabelHint>
+        <Switch id="setting-debug-mode" data-testid="setting-debug-mode" checked={settings.debugMode}
+          onCheckedChange={(debugMode) => void onChange({ debugMode })} />
+      </Field>
+      <Field orientation="horizontal" className="settings-field settings-field-dependent" data-disabled={!settings.debugMode || undefined}>
+        <LabelHint hint="Checks every WebGL call so Copy Error names the one that failed; rendering is much slower while it is on. Requires Debug Mode.">
+          <FieldLabel htmlFor="setting-trace-graphics-errors">Trace Graphics Errors</FieldLabel>
+        </LabelHint>
+        <Switch id="setting-trace-graphics-errors" data-testid="setting-trace-graphics-errors" disabled={!settings.debugMode}
+          checked={settings.debugMode && settings.traceGraphicsErrors}
+          onCheckedChange={(traceGraphicsErrors) => void onChange({ traceGraphicsErrors })} />
       </Field>
     </SettingsSection>
   </>;

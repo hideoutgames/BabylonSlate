@@ -2330,3 +2330,52 @@ describe("validateGraphs", () => {
     ).toBe(false);
   });
 });
+
+describe("function exec pins", () => {
+  const EXEC_IN = { name: "exec", typeId: "exec", direction: "in" as const };
+  const EXEC_OUT = { name: "then", typeId: "exec", direction: "out" as const };
+  const VALUE = { name: "Value", typeId: "float", direction: "out" as const };
+  const endpoint = (id: string, typeId: string): GraphNode => ({ id, typeId, position: { x: 0, y: 0 }, pins: [], properties: {} });
+  const diagnose = (pins: Array<typeof EXEC_IN | typeof EXEC_OUT | typeof VALUE>, pure: boolean) =>
+    validateGraphs(
+      [
+        { id: "event", kind: "event", nodes: [], edges: [] },
+        { id: "fn-1", kind: "function", nodes: [endpoint("in", "flow.function.input"), endpoint("out", "flow.function.output")], edges: [] },
+      ],
+      {
+        assetGuid: "a",
+        classId: "Hero",
+        members: [{ id: "fn-1", name: "Measure", kind: "function", classId: "Hero", pins, ...(pure ? { pure: true } : {}) }],
+      },
+    )
+      .filter((d) => d.code.startsWith("function."))
+      .map((d) => [d.code, d.graphId, d.nodeId]);
+
+  it.each([
+    ["a function with both", [EXEC_IN, EXEC_OUT, VALUE], false, []],
+    ["a function without exec pins", [VALUE], false, [["function.missing_exec_pins", "fn-1", "in"]]],
+    ["a function without an exec output", [EXEC_IN, VALUE], false, [["function.missing_exec_pins", "fn-1", "out"]]],
+    ["a Pure function with both", [EXEC_IN, EXEC_OUT, VALUE], true, []],
+    ["a Pure function without exec pins", [VALUE], true, []],
+    ["a Pure function with only an exec input", [EXEC_IN, VALUE], true, [["function.pure_exec_pins", "fn-1", "out"]]],
+    ["a Pure function with only an exec output", [EXEC_OUT, VALUE], true, [["function.pure_exec_pins", "fn-1", "in"]]],
+  ])("reports %s as expected", (_label, pins, pure, expected) => {
+    expect(diagnose(pins, pure)).toEqual(expected);
+  });
+
+  it("requires an override to be Pure exactly when the function it overrides is", () => {
+    const pins = [EXEC_IN, EXEC_OUT, VALUE];
+    const overrideOf = (pure: boolean) =>
+      validateGraphs([{ id: "event", kind: "event", nodes: [], edges: [] }], {
+        assetGuid: "a",
+        classId: "Hero",
+        parentFunctionSignatures: [{ classId: "Base", name: "Measure", pins, pure: true }],
+        members: [{
+          id: "fn-1", name: "Measure", kind: "function", classId: "Hero", pins,
+          overrides: { classId: "Base", name: "Measure" }, ...(pure ? { pure: true } : {}),
+        }],
+      }).filter((d) => d.code === "member.override_signature").length;
+    expect(overrideOf(true)).toBe(0);
+    expect(overrideOf(false)).toBe(1);
+  });
+});

@@ -1,3 +1,4 @@
+import { isPureNode } from "./node-registry";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 import { tagCasesConstant, tagCasesOf, tagCasePinId } from "./tags";
 import { GATED_EVENT_TYPE_IDS } from "./compile-events";
@@ -227,7 +228,7 @@ export function emitExecChain(
     let continuation: string | undefined;
     let runs: string | undefined;
     const flow: { branch?: { expression: string; truePin: string; falsePin: string }; ranOutputs?: boolean } = {};
-    if (def.pure) {
+    if (isPureNode(def, node)) {
       ensurePure(s, node);
     } else {
       runs = emitStatementNode(s, node, def, {

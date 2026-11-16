@@ -27,6 +27,7 @@ export {
   type GraphBreakpointState,
 } from "./graph-breakpoints";
 export * from "./node-theme";
+export { NodeKindIcon } from "./node-icons";
 export { displayPinTypesForGraph, type PinDisplayLookup } from "./wildcard-display";
 export {
   BlueprintNodeShell,

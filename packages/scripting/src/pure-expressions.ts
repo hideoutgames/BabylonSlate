@@ -1,5 +1,5 @@
 import type { LogicGraph, GraphNode, GraphPin } from "./ir";
-import type { NodeRegistry } from "./node-registry";
+import { isPureNode, type NodeRegistry } from "./node-registry";
 
 /** Bound expression expansion without eagerly evaluating branches or service reads. */
 export function createPureExpressions(graph: LogicGraph, registry: NodeRegistry) {
@@ -11,7 +11,7 @@ export function createPureExpressions(graph: LogicGraph, registry: NodeRegistry)
     if (transparent.has(node.id)) return transparent.get(node.id)!;
     transparent.set(node.id, false);
     const definition = registry.get(node.typeId);
-    const result = definition?.pure === true && definition.referentiallyTransparent === true &&
+    const result = isPureNode(definition, node) && definition?.referentiallyTransparent === true &&
       node.pins.filter((pin) => pin.direction === "in" && pin.kind === "data").every((pin) => {
         const edge = incoming.get(`${node.id}:${pin.id}`);
         if (!edge) return true;

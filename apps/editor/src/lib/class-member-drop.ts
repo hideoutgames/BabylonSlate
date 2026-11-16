@@ -52,6 +52,8 @@ export type ClassMemberDropRow = {
   inherited?: boolean;
   inheritedFrom?: string;
   pins?: GraphClassMemberPin[];
+  /** Functions: a Pure function's Call has no exec pins. */
+  pure?: boolean;
   /** Variables: the type a row that is not declared on this graph carries. */
   typeId?: string;
   typeClassId?: string;

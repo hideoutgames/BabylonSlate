@@ -27,6 +27,8 @@ export type ClassMemberSymbol = {
   }>;
   implementsInterface?: { assetGuid: string; methodName: string };
   overrides?: { classId: string; name: string };
+  /** Functions: a Pure function's Calls have no exec pins. */
+  pure?: boolean;
   componentId?: string;
   propertyKey?: string;
   getOnly?: boolean;
@@ -51,6 +53,8 @@ export type InterfaceMethodContext = {
 export type ParentFunctionSignature = {
   classId: string;
   name: string;
+  /** An override is Pure exactly when the function it overrides is. */
+  pure?: boolean;
   pins: Array<{
     name: string;
     typeId: string;

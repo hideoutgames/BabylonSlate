@@ -25,3 +25,4 @@ Reads an object variable and runs **Is Valid** only if it holds an object that s
 
 - **Not Valid** runs when the variable is empty, when it holds an object that has been destroyed, or when **Target** is connected to an empty or destroyed reference, which also logs an error.
 - Works with single Object variables. For arrays, maps, classes and assets, use [**Get Variable**](get-variable.md).
+- Right-click the node and choose **Convert to Get** to turn it into a [**Get Variable**](get-variable.md) node. Its Value wires stay; what ran into **In** now runs on to the node that followed **Is Valid**, and the **Not Valid** wire is removed.

@@ -93,7 +93,7 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   functionLibraries?: Array<{
     classId: string;
     parentClass?: string | null;
-    functions: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
+    functions: Array<{ name: string; pins?: GraphClassMemberPin[]; pure?: boolean }>;
   }>;
   scriptInterfaces?: Array<{
     guid: string;
@@ -231,6 +231,8 @@ type FunctionRow = {
   description?: string;
   searchAliases?: readonly string[];
   pins: GraphClassMemberPin[];
+  /** A Pure function: its Call has no exec pins. */
+  pure?: boolean;
   runtime?: string;
   /** Stored literal defaults by input pin name for a newly placed node. */
   defaults?: Record<string, unknown>;
@@ -261,6 +263,7 @@ export function functionRows(graph?: SerializedGraph): FunctionRow[] {
     byName.set(member.name, {
       name: member.name,
       pins: member.pins ?? [],
+      ...(member.pure === true ? { pure: true } : {}),
     });
   }
   return [...byName.values()];
@@ -391,7 +394,7 @@ export function callFunctionPaletteNodes(
     for (const fn of library.functions) {
       pushRow(
         library.classId,
-        { name: fn.name, pins: fn.pins ?? [] },
+        { name: fn.name, pins: fn.pins ?? [], ...(fn.pure === true ? { pure: true } : {}) },
         true,
         true,
       );
@@ -405,6 +408,7 @@ export function callFunctionPaletteNodes(
       pins: fn.pins,
     };
     if (staticCall) defaultData.static = true;
+    if (fn.pure) defaultData.pure = true;
     if (fn.runtime) defaultData.runtime = fn.runtime;
     for (const [pinName, value] of Object.entries(fn.defaults ?? {})) {
       defaultData[`default:${pinName}`] = value;
@@ -417,10 +421,10 @@ export function callFunctionPaletteNodes(
       searchAliases: fn.searchAliases,
       category: def.category,
       pins: def.pins(defaultData),
-      pure: def.pure,
+      pure: fn.pure === true,
       latent:
-        def.latent === true ||
-        isLatentFunctionKey(classId, fn.name, latentFunctions, parentOf),
+        !fn.pure && (def.latent === true ||
+          isLatentFunctionKey(classId, fn.name, latentFunctions, parentOf)),
       defaultData,
     };
   });

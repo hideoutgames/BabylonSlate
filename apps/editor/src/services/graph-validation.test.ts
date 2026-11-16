@@ -4035,3 +4035,71 @@ describe("Create Object and Tickable Object", () => {
     ]);
   });
 });
+
+describe("Pure functions", () => {
+  const EXEC = [
+    { name: "exec", typeId: "exec", direction: "in" as const },
+    { name: "then", typeId: "exec", direction: "out" as const },
+  ];
+  const VALUE = { name: "Value", typeId: "float", direction: "out" as const };
+  const node = (id: string, type: string, data: Record<string, unknown> = {}) =>
+    ({ id, type, position: { x: 0, y: 0 }, data });
+
+  function heroGraph(measureBody: SerializedGraph["nodes"]): SerializedGraph {
+    return {
+      nodes: [],
+      edges: [],
+      members: [
+        { id: "measure", kind: "function", name: "Measure", pins: [...EXEC, VALUE], pure: true },
+        { id: "wait", kind: "function", name: "Wait", pins: EXEC },
+      ],
+      functionGraphs: {
+        measure: { nodes: measureBody, edges: [] },
+        wait: { nodes: [node("wait-delay", "timers.delay")], edges: [] },
+      },
+    };
+  }
+
+  const pureLatent = (graph: SerializedGraph) => {
+    const members = classMemberSymbolsFromGraphs({ Hero: graph });
+    return validateSerializedGraph(graph, { assetGuid: "hero", graphId: "main", classId: "Hero", members })
+      .filter((entry) => entry.code === "function.pure_latent")
+      .map((entry) => [entry.severity, entry.graphId, entry.nodeId]);
+  };
+
+  it("reports each node in a Pure function that waits, directly or through a Call", () => {
+    expect(pureLatent(heroGraph([
+      node("delay", "timers.delay"),
+      node("call-wait", "functions.call", { functionName: "Wait", pins: EXEC }),
+      node("log", "debug.log"),
+    ]))).toEqual([["error", "measure", "delay"], ["error", "measure", "call-wait"]]);
+  });
+
+  it("accepts a Pure function whose nodes run without waiting", () => {
+    expect(pureLatent(heroGraph([node("log", "debug.log")]))).toEqual([]);
+  });
+
+  it("offers a Pure function's Call without exec pins and as a pure, non-waiting node", () => {
+    const graph: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [{ id: "measure", kind: "function", name: "Measure", pins: [...EXEC, VALUE], pure: true }],
+      functionGraphs: { measure: { nodes: [node("delay", "timers.delay")], edges: [] } },
+    };
+    const entry = scriptPaletteNodes(registry, { parentClass: "Actor", classId: "Hero", graph })
+      .find((candidate) => candidate.id === "functions.call:Hero:Measure");
+    expect(entry?.pure).toBe(true);
+    expect(entry?.latent).toBe(false);
+    expect(entry?.defaultData?.pure).toBe(true);
+    expect(entry?.pins?.map((pin) => [pin.id, pin.direction])).toEqual([["target", "in"], ["Value", "out"]]);
+  });
+
+  it("hydrates a Pure function's Call as pure", () => {
+    const hydrated = hydrateSerializedGraphForEditor({
+      nodes: [node("call", "functions.call", { functionName: "Measure", implicitSelf: true, pure: true, pins: [...EXEC, VALUE] })],
+      edges: [],
+    }, registry, { classId: "Hero" });
+    expect(hydrated.nodes[0]?.data.__pure).toBe(true);
+    expect(hydrated.nodes[0]?.data.__latent).toBe(false);
+  });
+});
