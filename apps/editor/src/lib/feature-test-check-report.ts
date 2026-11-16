@@ -211,7 +211,7 @@ const READINESS_REASON_WORDS: Record<SceneReadinessDirtyReason, string> = {
   lightEnabled: "light enabled change", textureAdded: "texture added", textureRemoved: "texture removed",
   cameraAdded: "camera added", cameraRemoved: "camera removed", activeCamera: "active camera",
   skeletonAdded: "skeleton added", skeletonRemoved: "skeleton removed", membership: "membership count",
-  meshMaterial: "mesh material change", drawable: "mesh became drawable", meshVisibility: "mesh visibility crossed 1", outline: "outline", shadowRestale: "shadow set change",
+  meshMaterial: "mesh material change", drawable: "mesh became drawable", meshVisibility: "mesh visibility crossed 1", meshGeometry: "mesh sub-meshes rebuilt", outline: "outline", shadowRestale: "shadow set change",
   prepare: "preparation", invalidate: "invalidation", output: "output change", shadowCasters: "shadow casters",
   shadowMap: "shadow map", particleBind: "particle bind", particleCancel: "particle cancel",
   particlePreparation: "particle preparation", particlePrepared: "particle prepared", layerStyle: "layer style",

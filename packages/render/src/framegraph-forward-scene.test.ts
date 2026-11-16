@@ -1083,6 +1083,10 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
   const { scene, camera } = host();
   const kept = MeshBuilder.CreateBox("kept", {}, scene);
   const keptMaterial = kept.material = new StandardMaterial("kept", scene);
+  // A twin drawing the point-cloud variant from the start: the Engine holds it.
+  const twin = MeshBuilder.CreateBox("twin", {}, scene);
+  const twinMaterial = twin.material = new StandardMaterial("twin", scene);
+  twinMaterial.pointsCloud = true;
   const graph = new ForwardSceneFrameGraph(scene);
   verifyScopedReadinessProbes(true);
   try {
@@ -1093,13 +1097,20 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
     // A scoped mark for a change that touched no other mesh: the probe of every mesh agrees.
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
-    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 1, scopedReadinessMismatches: 0 });
-    // A mark that names too few meshes. The kept mesh's variant changed to one the Engine already holds: nothing new
-    // compiles, and only the probe of every mesh asks for it.
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 1, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0 });
+    // A dirty flag that changes no variant: the probe of every mesh asks again for the Effect the kept mesh already
+    // draws with in each pass. Idle, not a disagreement.
     keptMaterial.markAsDirty(Constants.MATERIAL_AllDirtyFlag);
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
-    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 2, scopedReadinessMismatches: 1 });
+    expect(graph.diagnostics().scopedReadinessIdleRequests).toBeGreaterThan(0);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 2, scopedReadinessMismatches: 0 });
+    // A mark that names too few meshes. The kept mesh's variant changed to one the Engine already holds (the twin's):
+    // nothing new compiles, and only the probe of every mesh asks for it.
+    keptMaterial.pointsCloud = true;
+    graph.markReadinessDirty("particleBind", []);
+    expect(steadyProbe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 3, scopedReadinessMismatches: 1 });
     // The disagreement says what the probe of every mesh did, after which mark, and names the Effect it asked for.
     expect(graph.diagnostics().scopedReadinessMismatchCauses).toHaveLength(1);
     expect(graph.diagnostics().scopedReadinessMismatchCauses[0]).toMatch(/^the whole probe asked for \d+ after particleBind \(0 scoped\): .+ \[.+\] \S+ \(ready; /);
@@ -1107,7 +1118,7 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
     vi.spyOn(keptMaterial, "isReadyForSubMesh").mockReturnValue(false);
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
-    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 3, scopedReadinessMismatches: 2 });
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 4, scopedReadinessMismatches: 2 });
     expect(graph.diagnostics().scopedReadinessMismatchCauses[1]).toMatch(/^the whole probe failed after particleBind \(0 scoped\)/);
   } finally {
     verifyScopedReadinessProbes(false);
@@ -1200,6 +1211,55 @@ it.each(UNDRAWN_VISUALS.flatMap((visual) => PROBING_VIEWS.map((view) => ({ ...vi
     }
   },
 );
+
+it.each(PROBING_VIEWS)("probes a mesh whose sub-meshes are rebuilt, as a redrawn text's are, and no vertex update, in $view", async ({ options, tolerant }) => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  kept.material = new StandardMaterial("kept", scene);
+  const text = MeshBuilder.CreatePlane("glyphs", { updatable: true }, scene);
+  const textMaterial = text.material = new StandardMaterial("glyphs", scene);
+  const graph = new ForwardSceneFrameGraph(scene, options);
+  verifyScopedReadinessProbes(true);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const probe = () => tolerant ? probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera)) : graph.sceneStrictlyReady(camera);
+    const checks = graph.strictReadinessChecks;
+    // Its vertices rewritten in place (a box resize's counter-scale): the sub-meshes it drew with stay.
+    text.updateVerticesData(VertexBuffer.PositionKind, text.getVerticesData(VertexBuffer.PositionKind)!);
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.strictReadinessChecks).toBe(checks);
+    // Redrawn with the same attributes: new vertex data with its indices gives it new sub-meshes, which hold no variant
+    // for any pass yet, though the variant they draw is the one the Engine holds. It adds no probe of its own...
+    const askedText = vi.spyOn(textMaterial, "isReadyForSubMesh");
+    for (let redraw = 0; redraw < 3; redraw += 1) {
+      VertexData.CreatePlane({ width: 2 + redraw }).applyToMesh(text);
+      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    }
+    expect(graph.strictReadinessChecks).toBe(checks);
+    // ...and the next probe, run for an unrelated change, asks it and agrees with a probe of every mesh.
+    askedText.mockClear();
+    graph.markReadinessDirty("layerStyle", [kept]);
+    expect(probe()).toBe(true);
+    expect(askedText).toHaveBeenCalled();
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessMismatches: 0 });
+    // Redrawn with other attributes (vertex colours), its variant can change: the next frame asks it before it draws.
+    const colored = VertexData.CreatePlane({ width: 2 });
+    colored.colors = new Array((colored.positions!.length / 3) * 4).fill(1);
+    colored.applyToMesh(text);
+    expect(graph.readinessDirty).toBe(true);
+    askedText.mockClear();
+    expect(probe()).toBe(true);
+    expect(askedText).toHaveBeenCalled();
+    graph.markReadinessDirty("layerStyle", [kept]);
+    expect(probe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessMismatches: 0 });
+  } finally {
+    verifyScopedReadinessProbes(false);
+    graph.dispose();
+  }
+});
 
 it("probes a mesh whose visibility crosses 1, as a revealed glyph's does, and no other fade step", async () => {
   const { scene, camera } = host();

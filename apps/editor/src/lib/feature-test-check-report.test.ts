@@ -57,7 +57,7 @@ describe("formatFeatureTestCheckReport", () => {
             ] },
           // 140 strict readiness checks over the 280 frames drawn while sampled, 4.2 s of them.
           work: { drawn: 280, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 140, readinessProbeMs: 4200, outlineReadinessChecks: 0,
-            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, readinessBlockers: [] } },
+            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0, readinessBlockers: [] } },
           commands: [{ line: "ft_stats", success: true, output: "FeatureTest score 0, spinners 4, spawned 0", ms: 1200 }], benchmark: [], logs: [] },
         session: { diagnostics: [], droppedDiagnostics: 0, runtimeMode: "worker", textures: { before: 30, after: 30, leak: false, quarantined: false } },
       }],
@@ -114,7 +114,7 @@ describe("formatFeatureTestCheckReport", () => {
           firstDrawsBeforeSweep: reading(3, { objects: 3 }), firstDraws: reading(40, { objects: 20, shadows: 12, post: 8 }),
           // No readiness check ran while Play was measured.
           work: { drawn: 300, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0,
-            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, readinessBlockers: [] } },
+            readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0, readinessBlockers: [] } },
           commands: [], benchmark: [], logs: [] },
         session: null,
       }],
@@ -137,7 +137,7 @@ describe("formatFeatureTestCheckReport", () => {
           work: { drawn: 400, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 40,
             readinessProbeMs: 800, outlineReadinessChecks: 0,
             readinessProbeReasons: { meshAdded: 20, particleBind: 12, shadowMap: 5, membership: 5, streamAdmission: 4, other: 2, outline: 1 },
-            readinessSwapRechecks: 9, failedReadinessProbes: 3, scopedReadinessProbes: 30, scopedReadinessMismatches: 2,
+            readinessSwapRechecks: 9, failedReadinessProbes: 3, scopedReadinessProbes: 30, scopedReadinessMismatches: 2, scopedReadinessIdleRequests: 0,
             readinessBlockers: ['mesh "crate" (Material "wood"): pbr #4 linking', 'task "Forward objects"', 'texture "sky"', 'render target "mirror"'] } },
           commands: [], benchmark: [], logs: [] },
         session: null,
@@ -453,7 +453,7 @@ describe("formatFeatureTestCheckReport", () => {
             sample("baseline 2", 83, 42, {
               work: {
                 graphBuilds: 1, strictReadinessChecks: 80, readinessProbeMs: 320, outlineReadinessChecks: 0, shadowAdmissions: 120, shadowAdmissionMs: 24,
-                readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, readinessBlockers: [],
+                readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0, readinessBlockers: [],
               },
               memory: { deviceAvailableBytes: 1024 * 1048576, appAvailableBytes: 2048 * 1048576 },
             }),

@@ -1310,7 +1310,7 @@ describe("Profile", () => {
     const work = {
       graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 0, readinessProbeMs: 0, outlineReadinessChecks: 0,
       // A check that failed before the rows were sampled: none fails while they are.
-      readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
+      readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0,
       readinessBlockers: ['mesh "loading"'],
     };
     const editor = fakeEditor({}, undefined, (now, commands) => {
@@ -1375,7 +1375,7 @@ describe("Profile", () => {
         drawn, held: 0,
         rendererWork: {
           graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: drawn, readinessProbeMs: drawn * 30, outlineReadinessChecks: 0,
-          readinessProbeReasons: { meshAdded: drawn, prepare: 3 }, readinessSwapRechecks: 0, failedReadinessProbes: drawn * 2, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
+          readinessProbeReasons: { meshAdded: drawn, prepare: 3 }, readinessSwapRechecks: 0, failedReadinessProbes: drawn * 2, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0,
           readinessBlockers: ['mesh "crate" (Material "wood"): pbr #1 linking'],
         },
       };
@@ -1393,7 +1393,7 @@ describe("Profile", () => {
       drawn: 20,
       work: {
         graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 20, readinessProbeMs: 600, outlineReadinessChecks: 0,
-        readinessProbeReasons: { meshAdded: 20 }, readinessSwapRechecks: 0, failedReadinessProbes: 40, scopedReadinessProbes: 0, scopedReadinessMismatches: 0,
+        readinessProbeReasons: { meshAdded: 20 }, readinessSwapRechecks: 0, failedReadinessProbes: 40, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0,
         readinessBlockers: ['mesh "crate" (Material "wood"): pbr #1 linking'],
       },
     });
