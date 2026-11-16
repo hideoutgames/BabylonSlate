@@ -22,6 +22,7 @@ import "@babylonjs/core/Rendering/outlineRenderer";
 import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { notePassListed } from "./pass-list-signal";
+import { captureActorListDiagnostics, verifyCaptureActorLists } from "./render-target-capture-state";
 import { DisplayConversion } from "./display-conversion";
 import { createStartingStateDraw } from "./starting-state-draw";
 import { managedRenderReservations, limitManagedRenderBytes } from "./managed-render-resources";
@@ -415,6 +416,83 @@ it("filtered captures follow replacement actor roots and exclude attached unsele
   previous.dispose();
   captures.request("capture"); captures.render();
   expect(draws[1]).toEqual([selected]);
+});
+
+describe("Capture Only Actors lists from the actors' meshes", () => {
+  function filtered() {
+    const context = host();
+    const { scene, captures, root, settings } = context;
+    const selected = new Mesh("Selected Actor", scene);
+    const other = new Mesh("Other Actor", scene);
+    captures.registerActor("selected", () => selected);
+    captures.registerActor("other", () => other);
+    captures.configure("capture", { ...settings, captureOnlyActors: true, actorIds: ["selected"] }, () => root);
+    const draw = () => { captures.request("capture"); captures.render(); return context.draws.at(-1); };
+    return { ...context, selected, other, draw };
+  }
+
+  it("follows meshes parented into and out of an actor, in Scene order", () => {
+    const { scene, selected, other, draw } = filtered();
+    const late = MeshBuilder.CreateBox("Moves In", {}, scene); late.parent = other;
+    const early = MeshBuilder.CreateBox("Stays", {}, scene); early.parent = selected;
+    expect(draw()).toEqual([early]);
+    late.parent = selected;
+    expect(draw()).toEqual([late, early]);
+    const grandchild = MeshBuilder.CreateBox("Grandchild", {}, scene); grandchild.parent = early;
+    expect(draw()).toEqual([late, early, grandchild]);
+    early.parent = other;
+    expect(draw()).toEqual([late]);
+  });
+
+  it("leaves out a mesh under the actor that another listed actor owns", () => {
+    const { scene, captures, selected, draw } = filtered();
+    const nested = MeshBuilder.CreateBox("Nested Actor", {}, scene); nested.parent = selected;
+    const part = MeshBuilder.CreateBox("Nested Part", {}, scene); part.parent = nested;
+    expect(draw()).toEqual([nested, part]);
+    captures.registerActor("nested", () => nested);
+    expect(draw()).toEqual([]);
+  });
+
+  it("lists a geometry-less emitter under the actor whose particles it emits", () => {
+    const { scene, selected, draw, particleDraws } = filtered();
+    const emitter = new Mesh("Emitter", scene); emitter.parent = selected;
+    const particles = new ParticleSystem("Particles", 8, scene); particles.emitter = emitter;
+    expect(draw()).toEqual([emitter]);
+    expect(particleDraws.at(-1)).toEqual([particles]);
+  });
+
+  it("makes every 120th list by the walk of every mesh, and every list while verifying", () => {
+    const { scene, selected, draw } = filtered();
+    const child = MeshBuilder.CreateBox("Child", {}, scene); child.parent = selected;
+    for (let index = 0; index < 119; index++) draw();
+    expect(captureActorListDiagnostics(scene)).toBeNull();
+    expect(draw()).toEqual([child]);
+    expect(captureActorListDiagnostics(scene)).toEqual({ checks: 1, mismatches: 0 });
+    verifyCaptureActorLists(true);
+    try {
+      draw(); draw();
+    } finally {
+      verifyCaptureActorLists(false);
+    }
+    expect(captureActorListDiagnostics(scene)).toEqual({ checks: 3, mismatches: 0 });
+    draw();
+    expect(captureActorListDiagnostics(scene)).toEqual({ checks: 3, mismatches: 0 });
+  });
+
+  it("draws the full walk's list when the actors' meshes miss one, and counts it", () => {
+    const { scene, selected, draw } = filtered();
+    const child = MeshBuilder.CreateBox("Child", {}, scene); child.parent = selected;
+    // Stands in for a mesh the descendants of the actors' roots would not reach.
+    vi.spyOn(Mesh.prototype, "getChildMeshes").mockReturnValue([]);
+    expect(draw()).toEqual([]);
+    verifyCaptureActorLists(true);
+    try {
+      expect(draw()).toEqual([child]);
+    } finally {
+      verifyCaptureActorLists(false);
+    }
+    expect(captureActorListDiagnostics(scene)).toEqual({ checks: 1, mismatches: 1 });
+  });
 });
 
 it("Scene Color particle selection follows emitter actor ownership", () => {
