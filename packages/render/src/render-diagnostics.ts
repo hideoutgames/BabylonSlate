@@ -98,6 +98,11 @@ export type RenderDiagnostics = {
     /** Scoped checks a check of every mesh disagreed with, counted only while that verification is on. */
     scopedReadinessMismatches: number;
     /**
+     * Requests those checks of every mesh made for the Effect the asking sub-mesh already draws with in that pass: a
+     * dirty flag that changed no variant, not a disagreement.
+     */
+    scopedReadinessIdleRequests: number;
+    /**
      * Why the first of them disagreed (at most eight): whether the check of every mesh failed, compiled an Effect or
      * asked for one, after which marked reasons and how many scoped meshes, and the first Effects it asked for.
      */

@@ -1083,6 +1083,10 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
   const { scene, camera } = host();
   const kept = MeshBuilder.CreateBox("kept", {}, scene);
   const keptMaterial = kept.material = new StandardMaterial("kept", scene);
+  // A twin drawing the point-cloud variant from the start: the Engine holds it.
+  const twin = MeshBuilder.CreateBox("twin", {}, scene);
+  const twinMaterial = twin.material = new StandardMaterial("twin", scene);
+  twinMaterial.pointsCloud = true;
   const graph = new ForwardSceneFrameGraph(scene);
   verifyScopedReadinessProbes(true);
   try {
@@ -1093,13 +1097,20 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
     // A scoped mark for a change that touched no other mesh: the probe of every mesh agrees.
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
-    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 1, scopedReadinessMismatches: 0 });
-    // A mark that names too few meshes. The kept mesh's variant changed to one the Engine already holds: nothing new
-    // compiles, and only the probe of every mesh asks for it.
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 1, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0 });
+    // A dirty flag that changes no variant: the probe of every mesh asks again for the Effect the kept mesh already
+    // draws with in each pass. Idle, not a disagreement.
     keptMaterial.markAsDirty(Constants.MATERIAL_AllDirtyFlag);
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
-    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 2, scopedReadinessMismatches: 1 });
+    expect(graph.diagnostics().scopedReadinessIdleRequests).toBeGreaterThan(0);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 2, scopedReadinessMismatches: 0 });
+    // A mark that names too few meshes. The kept mesh's variant changed to one the Engine already holds (the twin's):
+    // nothing new compiles, and only the probe of every mesh asks for it.
+    keptMaterial.pointsCloud = true;
+    graph.markReadinessDirty("particleBind", []);
+    expect(steadyProbe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 3, scopedReadinessMismatches: 1 });
     // The disagreement says what the probe of every mesh did, after which mark, and names the Effect it asked for.
     expect(graph.diagnostics().scopedReadinessMismatchCauses).toHaveLength(1);
     expect(graph.diagnostics().scopedReadinessMismatchCauses[0]).toMatch(/^the whole probe asked for \d+ after particleBind \(0 scoped\): .+ \[.+\] \S+ \(ready; /);
@@ -1107,7 +1118,7 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
     vi.spyOn(keptMaterial, "isReadyForSubMesh").mockReturnValue(false);
     graph.markReadinessDirty("particleBind", []);
     expect(steadyProbe()).toBe(true);
-    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 3, scopedReadinessMismatches: 2 });
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessProbes: 4, scopedReadinessMismatches: 2 });
     expect(graph.diagnostics().scopedReadinessMismatchCauses[1]).toMatch(/^the whole probe failed after particleBind \(0 scoped\)/);
   } finally {
     verifyScopedReadinessProbes(false);

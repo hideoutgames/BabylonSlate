@@ -199,18 +199,35 @@ function describeRequestedEffect(effect: unknown): string {
 }
 
 /**
- * Runs `run` and returns how many times it asked the Engine for an Effect, one it already holds included. `named`
- * receives the first of them as `describeRequestedEffect` gives them.
+ * Whether `effect` is the one the mesh whose check asked for it (`lastProbedMesh`) already draws with in the pass
+ * being probed: its only sub-mesh's draw wrapper for that pass holds it (Babylon sets the new Effect after the
+ * request). A request that cannot be told apart so (no mesh named, several sub-meshes, an Effect kept on the Material)
+ * is not idle.
  */
-function countEffectRequests(engine: object, run: () => void, named?: string[]): number {
+function drawsAlready(engine: object, effect: unknown): boolean {
+  const mesh = lastProbedMesh();
+  const subMeshes = mesh ? drawingMesh(mesh).subMeshes : undefined;
+  if (subMeshes?.length !== 1) return false;
+  const pass = (engine as { currentRenderPassId: number }).currentRenderPassId;
+  return subMeshes[0]!._getDrawWrapper(pass)?.effect === effect;
+}
+
+/**
+ * Runs `run` and counts how many times it asked the Engine for an Effect, one it already holds included, and how many
+ * of those asked for the Effect the asking sub-mesh already draws with in that pass (`drawsAlready`: idle, a dirty flag
+ * that changed no variant). `named` receives the first of the others as `describeRequestedEffect` gives them.
+ */
+function countEffectRequests(engine: object, run: () => void, named?: string[]): { requests: number; idle: number } {
   const target = engine as { createEffect(...args: unknown[]): unknown };
   const own = Object.prototype.hasOwnProperty.call(target, "createEffect");
   const create = target.createEffect;
   let count = 0;
+  let idle = 0;
   const counting = function (this: unknown, ...args: unknown[]) {
     count += 1;
     const effect = create.apply(this, args);
-    if (named && named.length < MAX_NAMED_REQUESTS) named.push(describeRequestedEffect(effect));
+    if (drawsAlready(engine, effect)) idle += 1;
+    else if (named && named.length < MAX_NAMED_REQUESTS) named.push(describeRequestedEffect(effect));
     return effect;
   };
   target.createEffect = counting;
@@ -223,7 +240,7 @@ function countEffectRequests(engine: object, run: () => void, named?: string[]):
       else delete (target as { createEffect?: unknown }).createEffect;
     }
   }
-  return count;
+  return { requests: count, idle };
 }
 /** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
 const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
@@ -353,6 +370,8 @@ export class ForwardSceneFrameGraph {
   private scopedProbes = 0;
   /** Scoped probes a whole probe disagreed with, counted while verifying (`verifyScopedReadinessProbes`). */
   private scopedMismatches = 0;
+  /** Requests the verifying whole probes made for the Effect a sub-mesh already draws with in that pass (`wholeProbeAgrees`). */
+  private scopedIdleRequests = 0;
   /** Why the first of them disagreed (`wholeProbeAgrees`); at most `MAX_SCOPED_MISMATCH_CAUSES`. */
   private readonly scopedMismatchCauses: string[] = [];
   /** What the strict probe running names as unready (`collectReadinessBlockers`), while measuring. */
@@ -370,7 +389,8 @@ export class ForwardSceneFrameGraph {
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
-      scopedReadinessMismatches: this.scopedMismatches, scopedReadinessMismatchCauses: [...this.scopedMismatchCauses],
+      scopedReadinessMismatches: this.scopedMismatches, scopedReadinessIdleRequests: this.scopedIdleRequests,
+      scopedReadinessMismatchCauses: [...this.scopedMismatchCauses],
       readinessBlockers: [...this.failedBlockers],
     };
   }
@@ -1972,9 +1992,12 @@ export class ForwardSceneFrameGraph {
   /**
    * Verification: a probe of every mesh right after a scoped one that passed must pass too and ask the Engine for no
    * Effect. One it creates is a variant the scoped probe left uncompiled; one it asks for again is a mesh outside the
-   * scope whose variant changed. A scoped probe that found a swap pending left a variant unadopted, which every probe
-   * asks for again: then only a new Effect counts. The first disagreements say which of the three it was, with the
-   * reasons marked for the scoped probe and the Effects the whole probe asked for (`scopedReadinessMismatchCauses`).
+   * scope whose variant changed, even to an Effect the Engine held. One that returns the Effect the asking sub-mesh
+   * already draws with in that pass changed no variant (a dirty flag the scoped probe left unread, as a scrolled texture
+   * matrix sets): it is counted as idle (`scopedReadinessIdleRequests`), not as a disagreement. A scoped probe that
+   * found a swap pending left a variant unadopted, which every probe asks for again: then only a new Effect counts. The
+   * first disagreements say which of the three it was, with the reasons marked for the scoped probe and the Effects the
+   * whole probe asked for (`scopedReadinessMismatchCauses`).
    */
   private wholeProbeAgrees(round: () => boolean): boolean {
     const engine = this.scene.getEngine();
@@ -1985,7 +2008,9 @@ export class ForwardSceneFrameGraph {
     const scoped = describes ? this.scopedMeshes.size : 0;
     const named: string[] | undefined = describes ? [] : undefined;
     let passed = false;
-    const requests = countEffectRequests(engine, () => { passed = round(); }, named);
+    const { requests: asked, idle } = countEffectRequests(engine, () => { passed = round(); }, named);
+    this.scopedIdleRequests += idle;
+    const requests = asked - idle;
     const compiled = compiledEffectCount(engine) - effects;
     const agrees = passed && compiled === 0 && (swapped || requests === 0);
     if (!agrees && named) {
