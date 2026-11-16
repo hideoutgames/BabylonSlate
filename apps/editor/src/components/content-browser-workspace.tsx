@@ -121,6 +121,8 @@ type ContentBrowserWorkspaceBodyProps = {
   integratedSync: ReturnType<typeof useIntegratedSync>;
   /** Integrated mode's added and modified assets, one map per change in the sync's rows. */
   changeStatuses: ContentBrowserChangeStatuses;
+  /** Show Changes, Show History and Revert for the Source Control submenu; null outside the editor route. */
+  sourceControlActions: ReturnType<typeof useOptionalSourceControlActions>;
   activeDocumentId: string | null;
   tabOrder: readonly string[];
   diagnostics: ReturnType<typeof useValidation>["diagnostics"];
@@ -136,6 +138,7 @@ function ContentBrowserWorkspaceBody({
   sourceControl,
   integratedSync,
   changeStatuses,
+  sourceControlActions,
   activeDocumentId,
   tabOrder,
   diagnostics,
@@ -694,7 +697,6 @@ function ContentBrowserWorkspaceBody({
     }
   }, [gridItems, gridRenamingTarget, scrollerRef]);
 
-  const sourceControlActions = useOptionalSourceControlActions();
   // A lock action reports its failure through the service, as the Locks window shows it.
   const runLockAction = useCallback(async (action: () => Promise<void>) => {
     await action();
@@ -1192,6 +1194,8 @@ export function ContentBrowserWorkspace({
     return snapshot.active ? snapshot.rows : NO_CHANGE_ROWS;
   });
   const changeStatuses = useMemo(() => assetChangeStatuses(changeRows), [changeRows]);
+  // Read here, so a hidden browser's memo still skips the renders a new actions value starts.
+  const sourceControlActions = useOptionalSourceControlActions();
   const activeDocumentId = useActiveDocumentId();
   const tabOrder = useTabOrder();
   const { diagnostics } = useValidation();
@@ -1206,6 +1210,7 @@ export function ContentBrowserWorkspace({
       sourceControl={sourceControl}
       integratedSync={integratedSync}
       changeStatuses={changeStatuses}
+      sourceControlActions={sourceControlActions}
       activeDocumentId={activeDocumentId}
       tabOrder={tabOrder}
       diagnostics={diagnostics}
