@@ -146,7 +146,7 @@ const INTEGRATED_SOURCE_CONTROL_WINDOWS: DockWindowDefinition[] = [
   { id: "changes", component: "changes", title: "Changes" },
   { id: "history", component: "history", title: "History", defaultPosition: { referencePanelId: "changes", direction: "within" } },
   { id: "locks", component: "locks", title: "Locks", defaultPosition: { referencePanelId: "changes", direction: "within" } },
-  { id: "diff-actors", component: "diff-actors", title: "Actors", defaultPosition: { referencePanelId: "changes", direction: "right", initialWidthRatio: 0.7 } },
+  { id: "diff-actors", component: "diff-actors", title: "Actors", defaultPosition: { referencePanelId: "changes", direction: "right", initialWidthRatio: 0.75 } },
   { id: "diff", component: "diff", title: "Diff", defaultPosition: { referencePanelId: "diff-actors", direction: "right", initialWidthRatio: 0.5 } },
 ];
 

@@ -104,7 +104,9 @@ describe("History window", () => {
     expect(details.textContent).toContain("The sun was too dim.");
     expect(details.textContent).toContain("ada");
     expect(details.textContent).toContain(forest!.id.slice(0, 7));
-    expect((await within(details).findByTestId("history-assets")).textContent).toContain("Forest");
+    const assets = await within(details).findByTestId("history-assets");
+    expect(assets.textContent).toContain("Forest");
+    expect(within(assets).getByRole("img", { name: "Modified" }).textContent).toBe("M");
 
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
@@ -121,6 +123,12 @@ describe("History window", () => {
     expect(screen.getByTestId("history-details").textContent).toContain("Brighten the forest");
     expect(screen.queryByTestId("history-compare")).toBeNull();
     expect(screen.queryByTestId("history-revert")).toBeNull();
+
+    // The first commit added its assets: each is marked with a plus, not a letter.
+    fireEvent.click(screen.getByTestId(`history-row-${seed!.id}`));
+    const seeded = await within(screen.getByTestId("history-details")).findByTestId("history-asset-assets/Forest.scene.hasset");
+    expect(within(seeded).getByRole("img", { name: "Added" }).querySelector(".lucide-plus")).not.toBeNull();
+    expect(seeded.textContent).not.toMatch(/A$/);
   });
 
   it("compares the asset at a commit with the working copy, and reverts it to that version after a confirmation", async () => {

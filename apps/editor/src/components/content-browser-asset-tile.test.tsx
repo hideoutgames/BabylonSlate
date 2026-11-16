@@ -223,25 +223,40 @@ describe("ContentBrowserAssetTile", () => {
     expect(slot?.getAttribute("data-lock-state")).toBeNull();
   });
 
-  it("marks our lock with data-lock-state mine", () => {
+  it("marks our lock with a filled lock badge named for us", () => {
     renderTile({ sourceControlEnabled: true, lockState: "mine" });
-    const slot = document.querySelector("[data-lock-slot]");
+    const slot = document.querySelector<HTMLElement>("[data-lock-slot]");
     expect(slot?.classList.contains("hidden")).toBe(false);
     expect(slot?.getAttribute("data-lock-state")).toBe("mine");
-    expect(slot?.querySelector("svg")).not.toBeNull();
+    expect(slot?.querySelector("svg")?.classList.contains("lucide-lock")).toBe(true);
     expect(slot?.getAttribute("aria-label")).toBe("Locked By You");
   });
 
-  it("shows the holder name for someone else's lock", () => {
+  it("marks someone else's lock with an outlined badge that names the holder", () => {
     renderTile({
       sourceControlEnabled: true,
       lockState: "theirs",
       lockOwnerName: "Bob",
     });
-    const slot = document.querySelector("[data-lock-slot]");
+    const slot = document.querySelector<HTMLElement>("[data-lock-slot]");
     expect(slot?.getAttribute("data-lock-state")).toBe("theirs");
-    expect(slot?.textContent).toContain("Bob");
     expect(slot?.getAttribute("aria-label")).toBe("Locked By Bob");
     expect(slot?.getAttribute("title")).toBe("Locked By Bob");
+    // A different glyph from our own lock, not only another colour.
+    expect(slot?.querySelector("svg")?.classList.contains("lucide-user-lock")).toBe(true);
+  });
+
+  it("marks an asset added since the last commit with a plus, and a modified one with M", () => {
+    const { unmount } = renderTile({ sourceControlEnabled: true, changeStatus: "added" });
+    const added = screen.getByRole("img", { name: "Added" });
+    expect(added.querySelector("svg")?.classList.contains("lucide-plus")).toBe(true);
+    unmount();
+    renderTile({ sourceControlEnabled: true, changeStatus: "modified" });
+    expect(screen.getByRole("img", { name: "Modified" }).textContent).toBe("M");
+  });
+
+  it("shows no change marker for an unchanged asset", () => {
+    renderTile({ sourceControlEnabled: true, changeStatus: null });
+    expect(screen.queryByRole("img", { name: /Added|Modified/ })).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { registerPlugin } from "@capacitor/core";
+import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
 export interface NativeDirEntry {
   name: string;
@@ -33,8 +33,42 @@ export interface NativeRangeOptions {
   expectedRevision?: string;
 }
 
+/**
+ * One streamed transfer between a URL and a file in app storage (`path`
+ * under `BabylonSlate/projects/` in `directory`, as `readDocumentsRange`
+ * names it): see `NativeFileTransferRequest`. `id` names it for
+ * `cancelTransfer` and its `transferProgress` events.
+ */
+export interface NativeTransferOptions {
+  id: string;
+  method: "GET" | "PUT";
+  url: string;
+  headers: Record<string, string>;
+  directory: string;
+  path: string;
+  expectedSize?: number;
+  expectedSha256?: string;
+}
+
+export interface NativeTransferResult {
+  status: number;
+  bytes: number;
+  sha256: string;
+}
+
+export interface NativeTransferProgress {
+  id: string;
+  bytes: number;
+}
+
 export interface BabylonSlateScopedStoragePlugin {
   readFileRange(options: NativeRangeOptions & { folder: string; readScope?: string }): Promise<NativeRangeRead>;
+  /** Streams a file to or from a URL natively; rejects `MISMATCH`, `CANCELLED` or `UNREACHABLE` (a refused path). */
+  transferFile(options: NativeTransferOptions): Promise<NativeTransferResult>;
+  /** Cancels the transfer `id` (a download's temporary file is removed); unknown ids are ignored. */
+  cancelTransfer(options: { id: string }): Promise<void>;
+  /** The Git benchmark's objects: `size` random bytes in a new file of the folder `path`, named by their SHA-256. */
+  writeRandomObject(options: { directory: string; path: string; size: number }): Promise<{ sha256: string }>;
   readDocumentsRange(options: NativeRangeOptions & { directory: string }): Promise<NativeRangeRead>;
   pickFolder(): Promise<{ folder: PickedFolder }>;
   openFolder(options: { id: string }): Promise<{ folder: PickedFolder }>;
@@ -78,6 +112,11 @@ export interface BabylonSlateScopedStoragePlugin {
   }): Promise<{ exists: boolean; isDirectory: boolean }>;
 }
 
+/** The plugin's events (Capacitor's own `addListener`, so not a plugin method of its own). */
+export interface BabylonSlateScopedStorageEvents {
+  addListener(event: "transferProgress", listener: (progress: NativeTransferProgress) => void): Promise<PluginListenerHandle>;
+}
+
 export const ScopedStorageErrorCode = {
   Stale: "STALE",
   AccessRevoked: "ACCESS_REVOKED",
@@ -85,6 +124,8 @@ export const ScopedStorageErrorCode = {
   RevisionChanged: "REVISION_CHANGED",
   Cancelled: "CANCELLED",
   Unreachable: "UNREACHABLE",
+  /** A transfer's body or file did not match its expected size and SHA-256. */
+  Mismatch: "MISMATCH",
 } as const;
 
 export type ScopedStorageErrorCode =
@@ -119,6 +160,6 @@ export function decodeBase64(base64: string): Uint8Array {
 }
 
 export const BabylonSlateScopedStorage =
-  registerPlugin<BabylonSlateScopedStoragePlugin>(
+  registerPlugin<BabylonSlateScopedStoragePlugin & BabylonSlateScopedStorageEvents>(
     "BabylonSlateScopedStorage",
   );

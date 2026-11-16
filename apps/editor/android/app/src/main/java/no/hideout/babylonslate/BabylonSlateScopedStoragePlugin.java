@@ -28,16 +28,29 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.CookieHandler;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadLocalRandom;
 
 @CapacitorPlugin(name = "BabylonSlateScopedStorage")
 public class BabylonSlateScopedStoragePlugin extends Plugin {
@@ -571,7 +584,332 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         getBridge().removeWebViewListener(readScopeLifecycle);
         readScopeLifecycleAttached = false;
         clearReadScopesAsync();
+        // Disconnecting does network I/O, which the main thread (where this runs) may not.
+        transferExecutor.execute(() -> {
+            for (Transfer transfer : transfers.values()) transfer.cancel();
+        });
         super.handleOnDestroy();
+    }
+
+    // Git LFS objects streamed between a URL and a file in app storage, so their bytes never cross the bridge.
+
+    /** One running transfer; `cancel` disconnects it from any thread, which fails its blocked I/O. */
+    private static final class Transfer {
+        volatile boolean cancelled;
+        volatile HttpURLConnection connection;
+        long lastProgress;
+
+        void cancel() {
+            cancelled = true;
+            HttpURLConnection current = connection;
+            if (current != null) current.disconnect();
+        }
+    }
+
+    /** A thread of `transferExecutor`, which `TransferCookieGate` tells apart. */
+    private static final class TransferThread extends Thread {
+        TransferThread(Runnable work) {
+            super(work, "BabylonSlate file transfer");
+        }
+    }
+
+    /**
+     * Capacitor makes its WebView cookie store the process's default cookie handler
+     * (`CapacitorCookies.load`), which `HttpURLConnection` applies to every request: it adds stored
+     * cookies and keeps any `Set-Cookie`. Transfers send and keep no cookie, as on iOS and the desktop,
+     * so this wrapper does nothing on a transfer thread and passes everything else through unchanged
+     * (sign-in and Git requests share the default). Installed before each connection, since Capacitor
+     * may install its handler again.
+     */
+    private static final class TransferCookieGate extends CookieHandler {
+        private final CookieHandler delegate;
+
+        private TransferCookieGate(CookieHandler delegate) {
+            this.delegate = delegate;
+        }
+
+        static synchronized void install() {
+            CookieHandler current = CookieHandler.getDefault();
+            if (!(current instanceof TransferCookieGate)) CookieHandler.setDefault(new TransferCookieGate(current));
+        }
+
+        private boolean passes() {
+            return delegate != null && !(Thread.currentThread() instanceof TransferThread);
+        }
+
+        @Override
+        public Map<String, List<String>> get(URI uri, Map<String, List<String>> requestHeaders) throws IOException {
+            return passes() ? delegate.get(uri, requestHeaders) : Collections.emptyMap();
+        }
+
+        @Override
+        public void put(URI uri, Map<String, List<String>> responseHeaders) throws IOException {
+            if (passes()) delegate.put(uri, responseHeaders);
+        }
+    }
+
+    /**
+     * Transfers run on their own threads: never Capacitor's task thread, which every plugin shares,
+     * and never under the read-scope lock `executeFileOperation` holds for the whole operation.
+     */
+    private final ExecutorService transferExecutor = Executors.newCachedThreadPool(TransferThread::new);
+    private final Map<String, Transfer> transfers = new ConcurrentHashMap<>();
+    private static final int TRANSFER_CHUNK = 1024 * 1024;
+    private static final long PROGRESS_INTERVAL_NANOS = 100_000_000L;
+
+    /**
+     * A file of a project in app storage (Capacitor Directory.Data), named as `readDocumentsRange`
+     * names one: never a chosen folder (Integrated mode never runs in one), never the project
+     * folder itself, inside filesDir after resolving links.
+     */
+    private File documentsFile(PluginCall call) throws Exception {
+        if (!"DATA".equals(call.getString("directory"))) throw new PluginFailure("Invalid Documents directory", "UNREACHABLE");
+        String path = path(call, false);
+        if (!path.startsWith("BabylonSlate/projects/") || path.split("/").length < 4) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
+        File root = getContext().getFilesDir().getCanonicalFile();
+        File target = new File(root, path).getCanonicalFile();
+        if (!target.getPath().startsWith(root.getPath() + File.separator)) throw new PluginFailure("Path escapes project root", "UNREACHABLE");
+        return target;
+    }
+
+    @PluginMethod
+    public void transferFile(PluginCall call) {
+        final String id = call.getString("id");
+        final String method = call.getString("method");
+        final File file;
+        final URL url;
+        final Map<String, String> headers = new HashMap<>();
+        final Long expectedSize;
+        final String expectedSha256;
+        try {
+            file = documentsFile(call);
+            if (id == null || id.isEmpty() || !("GET".equals(method) || "PUT".equals(method))) throw new PluginFailure("Invalid transfer request", "UNREACHABLE");
+            url = new URL(call.getString("url", ""));
+            if (!"https".equalsIgnoreCase(url.getProtocol()) || url.getUserInfo() != null) throw new PluginFailure("Files are transferred over HTTPS only", "UNREACHABLE");
+            JSObject given = call.getObject("headers", new JSObject());
+            for (Iterator<String> names = given.keys(); names.hasNext(); ) {
+                String name = names.next();
+                Object value = given.opt(name);
+                if (!(value instanceof String)) throw new PluginFailure("Header values must be text", "UNREACHABLE");
+                headers.put(name, (String) value);
+            }
+            Object rawSize = call.getData().opt("expectedSize");
+            if (rawSize instanceof Number) {
+                double size = ((Number) rawSize).doubleValue();
+                String sha256 = call.getString("expectedSha256");
+                if (size < 0 || size != Math.floor(size) || size > 9007199254740991d || sha256 == null || sha256.length() != 64) {
+                    throw new PluginFailure("Invalid expected object", "UNREACHABLE");
+                }
+                expectedSize = (long) size;
+                expectedSha256 = sha256;
+            } else {
+                expectedSize = null;
+                expectedSha256 = null;
+            }
+        } catch (PluginFailure failure) {
+            call.reject(failure.getMessage(), failure.code);
+            return;
+        } catch (Exception error) {
+            call.reject("Invalid transfer request", "UNREACHABLE", error);
+            return;
+        }
+        final Transfer transfer = new Transfer();
+        if (transfers.putIfAbsent(id, transfer) != null) {
+            call.reject("A transfer with this id is already running", "UNREACHABLE");
+            return;
+        }
+        transferExecutor.execute(() -> {
+            try {
+                call.resolve("PUT".equals(method)
+                    ? upload(id, transfer, url, headers, file, expectedSize, expectedSha256)
+                    : download(id, transfer, url, headers, file, expectedSize, expectedSha256));
+            } catch (PluginFailure failure) {
+                call.reject(failure.getMessage(), transfer.cancelled ? "CANCELLED" : failure.code);
+            } catch (Exception error) {
+                if (transfer.cancelled) call.reject("The transfer was cancelled", "CANCELLED", error);
+                else call.reject(error.getMessage() == null ? "The transfer failed" : error.getMessage(), "NETWORK", error);
+            } finally {
+                transfers.remove(id);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void cancelTransfer(PluginCall call) {
+        Transfer transfer = transfers.get(call.getString("id", ""));
+        if (transfer != null) {
+            // Marked now, so a transfer about to connect stops; disconnecting does network I/O, which
+            // Capacitor's shared plugin thread (where this runs) must not wait on.
+            transfer.cancelled = true;
+            transferExecutor.execute(transfer::cancel);
+        }
+        call.resolve();
+    }
+
+    /** The Git benchmark's objects: random bytes made and hashed here, so no object is built in JavaScript. */
+    @PluginMethod
+    public void writeRandomObject(PluginCall call) {
+        final File folder;
+        final long size;
+        try {
+            folder = documentsFile(call);
+            Object raw = call.getData().opt("size");
+            double value = raw instanceof Number ? ((Number) raw).doubleValue() : -1;
+            if (value < 0 || value != Math.floor(value) || value > 9007199254740991d) throw new PluginFailure("Invalid size", "UNREACHABLE");
+            size = (long) value;
+        } catch (PluginFailure failure) {
+            call.reject(failure.getMessage(), failure.code);
+            return;
+        } catch (Exception error) {
+            call.reject("Invalid request", "UNREACHABLE", error);
+            return;
+        }
+        transferExecutor.execute(() -> {
+            File staged = new File(folder, ".haptic-" + UUID.randomUUID() + ".tmp");
+            boolean committed = false;
+            try {
+                if (!folder.isDirectory()) throw new PluginFailure("The folder does not exist", "UNREACHABLE");
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                byte[] buffer = new byte[(int) Math.min(TRANSFER_CHUNK, Math.max(1, size))];
+                try (FileOutputStream output = new FileOutputStream(staged)) {
+                    for (long remaining = size; remaining > 0; ) {
+                        int count = (int) Math.min(buffer.length, remaining);
+                        ThreadLocalRandom.current().nextBytes(buffer);
+                        digest.update(buffer, 0, count);
+                        output.write(buffer, 0, count);
+                        remaining -= count;
+                    }
+                    output.getFD().sync();
+                }
+                String sha256 = hex(digest.digest());
+                if (!staged.renameTo(new File(folder, sha256))) throw new PluginFailure("Could not move the object into place", "UNREACHABLE");
+                committed = true;
+                JSObject result = new JSObject();
+                result.put("sha256", sha256);
+                call.resolve(result);
+            } catch (PluginFailure failure) {
+                call.reject(failure.getMessage(), failure.code);
+            } catch (Exception error) {
+                call.reject(error.getMessage() == null ? "Could not write the object" : error.getMessage(), "UNREACHABLE", error);
+            } finally {
+                if (!committed) staged.delete();
+            }
+        });
+    }
+
+    /** Never follows a redirect (a 3xx comes back as the status), no cache or cookie; the caller's headers, used once. */
+    private HttpURLConnection connect(Transfer transfer, URL url, String method, Map<String, String> headers) throws Exception {
+        TransferCookieGate.install();
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setUseCaches(false);
+        connection.setConnectTimeout(30_000);
+        connection.setReadTimeout(60_000);
+        connection.setRequestMethod(method);
+        for (Map.Entry<String, String> header : headers.entrySet()) connection.setRequestProperty(header.getKey(), header.getValue());
+        transfer.connection = connection;
+        if (transfer.cancelled) {
+            connection.disconnect();
+            throw new PluginFailure("The transfer was cancelled", "CANCELLED");
+        }
+        return connection;
+    }
+
+    /** Sends the file with its length (fixed-length streaming: no chunked framing, no buffering), only when it is the expected object. */
+    private JSObject upload(String id, Transfer transfer, URL url, Map<String, String> headers, File file, Long expectedSize, String expectedSha256) throws Exception {
+        if (!file.isFile()) throw new FileNotFoundException(file.getName());
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[TRANSFER_CHUNK];
+        long size = 0;
+        try (FileInputStream input = new FileInputStream(file)) {
+            for (int read; (read = input.read(buffer)) != -1; ) {
+                digest.update(buffer, 0, read);
+                size += read;
+            }
+        }
+        String sha256 = hex(digest.digest());
+        if (expectedSize != null && (size != expectedSize || !sha256.equals(expectedSha256))) {
+            throw new PluginFailure("The file is not the object its name says", "MISMATCH");
+        }
+        HttpURLConnection connection = connect(transfer, url, "PUT", headers);
+        try {
+            connection.setDoOutput(true);
+            connection.setFixedLengthStreamingMode(size);
+            long sent = 0;
+            try (FileInputStream input = new FileInputStream(file); OutputStream output = connection.getOutputStream()) {
+                for (int read; (read = input.read(buffer)) != -1; ) {
+                    output.write(buffer, 0, read);
+                    sent += read;
+                    progress(id, transfer, sent, false);
+                }
+            }
+            int status = connection.getResponseCode();
+            progress(id, transfer, sent, true);
+            return transferResult(status, size, sha256);
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    /** Streams the body beside the file, hashing it, and renames it over the file only when it is the expected object. */
+    private JSObject download(String id, Transfer transfer, URL url, Map<String, String> headers, File file, Long expectedSize, String expectedSha256) throws Exception {
+        File folder = file.getParentFile();
+        if (folder == null || !folder.isDirectory()) throw new PluginFailure("The file's folder does not exist", "UNREACHABLE");
+        HttpURLConnection connection = connect(transfer, url, "GET", headers);
+        File staged = new File(folder, ".haptic-" + UUID.randomUUID() + ".tmp");
+        boolean committed = false;
+        try {
+            int status = connection.getResponseCode();
+            if (status < 200 || status > 299) return transferResult(status, 0, "");
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[TRANSFER_CHUNK];
+            long received = 0;
+            try (InputStream input = connection.getInputStream(); FileOutputStream output = new FileOutputStream(staged)) {
+                for (int read; (read = input.read(buffer)) != -1; ) {
+                    digest.update(buffer, 0, read);
+                    output.write(buffer, 0, read);
+                    received += read;
+                    progress(id, transfer, received, false);
+                }
+                output.getFD().sync();
+            }
+            String sha256 = hex(digest.digest());
+            if (expectedSize != null && (received != expectedSize || !sha256.equals(expectedSha256))) {
+                throw new PluginFailure("The downloaded file arrived damaged", "MISMATCH");
+            }
+            if (transfer.cancelled) throw new PluginFailure("The transfer was cancelled", "CANCELLED");
+            if (!staged.renameTo(file)) throw new PluginFailure("Could not move the download into place", "UNREACHABLE");
+            committed = true;
+            progress(id, transfer, received, true);
+            return transferResult(status, received, sha256);
+        } finally {
+            if (!committed) staged.delete();
+            connection.disconnect();
+        }
+    }
+
+    private void progress(String id, Transfer transfer, long bytes, boolean last) {
+        long now = System.nanoTime();
+        if (!last && now - transfer.lastProgress < PROGRESS_INTERVAL_NANOS) return;
+        transfer.lastProgress = now;
+        JSObject event = new JSObject();
+        event.put("id", id);
+        event.put("bytes", bytes);
+        notifyListeners("transferProgress", event);
+    }
+
+    private static JSObject transferResult(int status, long bytes, String sha256) {
+        JSObject result = new JSObject();
+        result.put("status", status);
+        result.put("bytes", bytes);
+        result.put("sha256", sha256);
+        return result;
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder text = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) text.append(Character.forDigit((value >> 4) & 0xf, 16)).append(Character.forDigit(value & 0xf, 16));
+        return text.toString();
     }
 
     private FolderAccess folder(PluginCall call) throws PluginFailure {

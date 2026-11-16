@@ -103,6 +103,25 @@ describe("Revert Asset", () => {
     expect(service.getSnapshot().rows).toEqual([]);
   });
 
+  it("says it deletes an asset the version does not hold, and deletes it", async () => {
+    const { service, storage } = await edited();
+    const ADDED = "assets/Rock.scene.hasset";
+    await storage.writeBinary(ADDED, (await sceneAsset([sceneActor("r", "Rock")])).bytes);
+    await service.refreshStatus();
+    const onDone = vi.fn();
+    render(<SourceControlRevertFlow request={{ path: ADDED, name: "Rock", ref: { kind: "head" } }} onDone={onDone} />);
+    const confirm = await screen.findByTestId("source-control-revert-confirm");
+    expect(confirm.textContent).toContain("Delete Rock?");
+    expect(confirm.textContent).toContain(`Rock is not in main · ${service.getSnapshot().head!.slice(0, 7)}, so reverting deletes it. It cannot be undone.`);
+    expect(confirm.textContent).not.toContain("replaces");
+    expect(screen.getByTestId("source-control-revert-confirm-action").textContent).toBe("Delete");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-revert-confirm-action"));
+    });
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(await storage.exists(ADDED)).toBe(false);
+  });
+
   it("refuses while Play holds the documents, naming why, and writes nothing", async () => {
     const { storage } = await edited();
     state.lock = { readOnly: true, reason: "Read-only while playing", revision: 1 };
@@ -118,6 +137,7 @@ describe("Revert Asset", () => {
     const release = vi.fn();
     state.lockAuthoring.mockImplementation(() => release);
     render(<SourceControlRevertFlow request={{ path: PATH, name: "Forest", ref: { kind: "head" } }} onDone={() => {}} />);
+    await screen.findByTestId("source-control-revert-confirm");
     await act(async () => {
       fireEvent.click(screen.getByTestId("source-control-revert-confirm-action"));
     });

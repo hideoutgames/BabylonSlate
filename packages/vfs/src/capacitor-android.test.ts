@@ -170,6 +170,18 @@ describe("Capacitor 8 Android host", () => {
     expect(implemented).toEqual(methods);
   });
 
+  it("streams Git LFS transfers over HTTPS only on their own threads, with a known length and no redirect", () => {
+    const java = readFileSync(join(javaRoot, "BabylonSlateScopedStoragePlugin.java"), "utf8");
+    expect(java).toContain('"https".equalsIgnoreCase(url.getProtocol())');
+    expect(java).toContain("connection.setInstanceFollowRedirects(false)");
+    // S3-style stores refuse chunked uploads; fixed-length streaming also never buffers the body.
+    expect(java).toContain("connection.setFixedLengthStreamingMode(size)");
+    // Never Capacitor's shared task thread or the read-scope lock: a long transfer would stall every file operation.
+    expect(java).toMatch(/public void transferFile\(PluginCall call\)[\s\S]*?transferExecutor\.execute\(/);
+    expect(java).not.toMatch(/public void transferFile\(PluginCall call\)[\s\S]*?executeFileOperation\([\s\S]*?public void cancelTransfer/);
+    expect(java).toMatch(/private File documentsFile[\s\S]*?startsWith\("BabylonSlate\/projects\/"\)/);
+  });
+
   it("keeps tracked Android text sources free of credential material", () => {
     const files = filesIn(androidRoot);
     expect(files.length).toBeGreaterThan(0);

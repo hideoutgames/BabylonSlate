@@ -116,8 +116,8 @@ export class SourceControlDiffService {
   private loadedFor: string | null = null;
   /** The working files' stats when the loaded diff read them, and when that was. */
   private stamp: { key: string; at: number } | null = null;
-  /** The status rows last checked, so only a new status checks the files again. */
-  private rowsSeen: SyncSnapshot["rows"] | null = null;
+  /** The status read last checked, so only a new status checks the files again. */
+  private statusSeen = -1;
   private unsubscribe: (() => void) | null = null;
   /** Windows on screen that show the diff (Actors, Diff). */
   private viewers = 0;
@@ -281,8 +281,8 @@ export class SourceControlDiffService {
       return;
     }
     // A status ran: only a change to the asset's own files loads the working copy again.
-    if (showsWorkingCopy(target) && snapshot.rows !== this.rowsSeen) {
-      this.rowsSeen = snapshot.rows;
+    if (showsWorkingCopy(target) && snapshot.statusReads !== this.statusSeen) {
+      this.statusSeen = snapshot.statusReads;
       void this.reloadIfWorkingChanged(target);
     }
   }
@@ -314,7 +314,7 @@ export class SourceControlDiffService {
     this.running = controller;
     const snapshot = this.sync.getSnapshot();
     this.loadedFor = commitsShown(target, snapshot);
-    this.rowsSeen = snapshot.rows;
+    this.statusSeen = snapshot.statusReads;
     this.stamp = null;
     this.stale = false;
     this.set({ ...this.state, phase: "loading", error: null });

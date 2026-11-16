@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { err, ok } from "@haptic/core";
 import { FakeLockProvider, tokenCredential } from "@haptic/source-control";
 import { FakeGitHost } from "@haptic/source-control/fake-host";
@@ -63,8 +63,9 @@ describe("LocksPanelContents", () => {
       "Release All My Locks",
     );
     expect(screen.getByTestId("locks-release-all").textContent).toContain("(1)");
-    expect(screen.getByTestId("locks-row-assets/mine.hasset")).toBeTruthy();
-    expect(screen.getByTestId("locks-row-assets/theirs.hasset")).toBeTruthy();
+    // Each row leads with the Content Browser's badge: ours filled, theirs outlined and named for the holder.
+    expect(within(screen.getByTestId("locks-row-assets/mine.hasset")).getByRole("img", { name: "Locked By You" }).dataset.lockState).toBe("mine");
+    expect(within(screen.getByTestId("locks-row-assets/theirs.hasset")).getByRole("img", { name: "Locked By Bob" }).dataset.lockState).toBe("theirs");
     fireEvent.click(screen.getByTestId("locks-release-all"));
     expect(screen.getByTestId("locks-release-all-confirm")).toBeTruthy();
     expect(screen.getByText("Unpushed work becomes editable by others.")).toBeTruthy();

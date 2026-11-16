@@ -1,9 +1,9 @@
 import { checkStorageRevision, StorageReadCounter, validateStorageRange } from "./storage-range";
-import { randomUUID } from "node:crypto";
 import type { Dirent, Stats } from "node:fs";
 import { lstat, open, mkdir, readdir, readFile, readlink, realpath, rename, rm, stat, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { projectFolderName, projectRelativePath } from "./project-path";
+import { isStagedWrite, stagedWriteName } from "./staged-write";
 import { isStorageNotFound, StorageNotFoundError } from "@haptic/core";
 import type {
   DirEntry,
@@ -16,7 +16,6 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
 /** Staged writes are renamed over their file; listings hide one a crash left behind. */
-const STAGED_WRITE = /^\.haptic-[0-9a-f-]{36}\.tmp$/;
 
 function errorCode(error: unknown): unknown {
   return (error as { code?: unknown } | null)?.code;
@@ -182,6 +181,17 @@ export class NodeStorageAdapter implements ProjectStorage {
     throw new Error(`Too many symbolic links: ${path}`);
   }
 
+  /**
+   * The absolute file `path` names inside the project, confined as every
+   * operation here is (a link inside the project is followed, and may not
+   * lead out of it), for a host that streams the file itself.
+   */
+  async filePath(path: string): Promise<string> {
+    const { full } = await this.resolvePath(path);
+    // As `writeBinary`: a link inside the project keeps pointing at its (checked) target.
+    return realpath(full).catch(() => full);
+  }
+
   async readBinary(path: string): Promise<Uint8Array> {
     const { full } = await this.resolvePath(path);
     let buf: Buffer;
@@ -234,7 +244,7 @@ export class NodeStorageAdapter implements ProjectStorage {
     // A link inside the project keeps pointing at its (checked) target.
     const target = await realpath(full).catch(() => full);
     await mkdir(dirname(target), { recursive: true });
-    const staged = join(dirname(target), `.haptic-${randomUUID()}.tmp`);
+    const staged = join(dirname(target), stagedWriteName());
     try {
       const file = await open(staged, "wx");
       try {
@@ -279,7 +289,7 @@ export class NodeStorageAdapter implements ProjectStorage {
     const out: DirEntry[] = [];
     let ancestors: string[] | null = null;
     for (const e of entries) {
-      if (STAGED_WRITE.test(e.name)) continue;
+      if (isStagedWrite(e.name)) continue;
       const entryPath = join(full, e.name);
       let s: Stats;
       try {

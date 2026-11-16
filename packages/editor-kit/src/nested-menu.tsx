@@ -16,6 +16,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -97,6 +98,14 @@ export type NestedMenuItem =
       testId?: string;
       contentTestId?: string;
     }
+  | {
+      /** A line of text that is no action (who holds a lock); focus and taps pass over it. */
+      type: "label";
+      id: string;
+      label: string;
+      icon?: ReactNode;
+      testId?: string;
+    }
   | { type: "separator"; id: string };
 
 export interface NestedMenuProps {
@@ -116,11 +125,11 @@ function itemTestId(item: { id: string; testId?: string }): string {
   return item.testId ?? `context-menu-item-${item.id}`;
 }
 
-/** A submenu with nothing to choose shows disabled instead of opening empty. */
+/** A submenu with nothing to choose (only separators and labels) shows disabled instead of opening empty. */
 function itemDisabled(item: NestedMenuItem): boolean | undefined {
-  if (item.type === "separator") return undefined;
+  if (item.type === "separator" || item.type === "label") return undefined;
   if (item.type === "submenu")
-    return item.disabled || !item.items.some((child) => child.type !== "separator");
+    return item.disabled || !item.items.some((child) => child.type !== "separator" && child.type !== "label");
   return item.disabled;
 }
 
@@ -139,6 +148,18 @@ function NestedMenuItems({
       {items.map((item) => {
         if (item.type === "separator") {
           return <DropdownMenuSeparator key={item.id} />;
+        }
+        if (item.type === "label") {
+          return (
+            <DropdownMenuLabel
+              key={item.id}
+              className="flex items-center gap-1.5"
+              data-testid={itemTestId(item)}
+            >
+              {item.icon}
+              {item.label}
+            </DropdownMenuLabel>
+          );
         }
         if (item.type === "checkbox") {
           return (
@@ -326,6 +347,20 @@ function OverlayMenuItems({
         if (item.type === "separator") {
           return (
             <Separator key={item.id} className="context-menu-separator" />
+          );
+        }
+        if (item.type === "label") {
+          // A dimmed item to assistive tech, never a button: the arrow keys and focus skip it.
+          return (
+            <div
+              key={item.id}
+              role="menuitem"
+              aria-disabled="true"
+              className="context-menu-label"
+              data-testid={itemTestId(item)}
+            >
+              <OverlayItemContent showLeading={showLeading} leading={item.icon} label={item.label} />
+            </div>
           );
         }
         if (item.type === "checkbox") {

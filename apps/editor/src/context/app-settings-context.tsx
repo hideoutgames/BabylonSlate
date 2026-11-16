@@ -250,6 +250,16 @@ export function useDebugMode(): boolean {
 }
 
 /**
+ * The Git benchmark run this device has not seen end (its stage and start), or
+ * null: the one running now, or one the app did not survive. Re-renders only
+ * when it changes.
+ */
+export function useGitBenchmarkRun(): EngineSettings["gitBenchmarkRun"] {
+  const key = useSettingSelector((settings) => (settings.gitBenchmarkRun ? JSON.stringify(settings.gitBenchmarkRun) : ""));
+  return useMemo(() => (key ? (JSON.parse(key) as EngineSettings["gitBenchmarkRun"]) : null), [key]);
+}
+
+/**
  * One primitive setting, re-rendering only when it changes. Inside a provider
  * it subscribes to that provider's owner: a child's effects run before the
  * provider's, so the module's active owner is still the fallback when a

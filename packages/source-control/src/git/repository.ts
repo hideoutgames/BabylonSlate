@@ -2,7 +2,7 @@ import * as git from "isomorphic-git";
 import type { CommitObject, HttpClient as IsoHttpClient, WalkerEntry } from "isomorphic-git";
 import { isStorageNotFound, PROJECT_CREATION_MARKER, type ProjectStorage } from "@haptic/core";
 import { authorizedHttp, type CredentialSource } from "../credentials";
-import type { HttpClient } from "../http";
+import type { FileTransferClient, HttpClient } from "../http";
 import { parseRepositoryUrl, repositoryCloneUrl } from "../lfs-endpoint";
 import { gitBlobSha1, lfsObjectId, parseLfsPointer } from "../lfs-pointer";
 import { planPull } from "../pull-plan";
@@ -35,7 +35,7 @@ import {
 import { ADOPTION_CONFIG } from "./adoption";
 import { installBufferGlobal } from "./buffer-global";
 import { toSyncError } from "./errors";
-import { cancellableHttp, gitHttp, type TransferCounters } from "./git-http";
+import { cancellableFiles, cancellableHttp, gitHttp, type TransferCounters } from "./git-http";
 import { relate, type CommitNode, type Relation } from "./history";
 import { LfsTransfer, type LfsObject } from "./lfs-transfer";
 import { GITDIR, StorageFs, storagePath, WORKTREE, type StorageFsCounters } from "./storage-fs";
@@ -47,12 +47,24 @@ const DEEPEN_STEP = 50;
 const MAX_DEEPENS = 4;
 /** Markers a new project folder may hold before a clone. */
 const CLONE_IGNORES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db", "desktop.ini"]);
+/**
+ * Where a native transfer lands an object `readFile` or `readLfsObject`
+ * hands over (never the working tree, which would keep a file no asset
+ * uses): read, then removed. git-lfs's own temporary folder.
+ */
+const LFS_SCRATCH = ".git/lfs/tmp";
 
 export interface GitRepositoryOptions {
   /** Bound to the project folder, which is the repository root (`.git` beside `assets/`). */
   storage: ProjectStorage;
   /** Native HTTP; credentials are added only for the repository's origin. */
   http: HttpClient;
+  /**
+   * The host's native file transfer, bound to the same project folder: LFS
+   * objects then stream between the server and their working files, never
+   * entering JavaScript. Without one they cross whole through `http`.
+   */
+  files?: FileTransferClient;
   credential: CredentialSource;
   /** The configured remote (HTTPS, SSH or scp-style; Git always uses its HTTPS form). */
   repositoryUrl: string;
@@ -129,6 +141,9 @@ export async function openRepository(options: Omit<GitRepositoryOptions, "branch
   if (!branch) {
     throw new SyncError("conflict", "This working copy has no branch checked out. Check out a branch with the Git app that left it, then open the project again.", { code: "detached-head" });
   }
+  // Objects downloaded for reading are removed once read; one is left only when the app was killed first.
+  // Nothing reads the folder before an operation runs. A failure leaves it to the next open.
+  if (await options.storage.exists(LFS_SCRATCH).catch(() => false)) await options.storage.remove(LFS_SCRATCH).catch(() => undefined);
   return new GitRepository({ ...options, branch });
 }
 
@@ -171,6 +186,7 @@ export class GitRepository implements SyncPort {
   };
   private readonly storage: ProjectStorage;
   private readonly http: HttpClient;
+  private readonly files: FileTransferClient | null;
   private readonly credential: CredentialSource;
   private readonly repositoryUrl: string;
   private readonly url: string;
@@ -189,6 +205,7 @@ export class GitRepository implements SyncPort {
     this.current = options.branch;
     this.storage = options.storage;
     this.http = options.http;
+    this.files = options.files ?? null;
     this.credential = options.credential;
     this.now = options.now ?? Date.now;
   }
@@ -351,11 +368,12 @@ export class GitRepository implements SyncPort {
       const remote = await this.resolve(op, `refs/remotes/origin/${remoteBranch}`);
       const { ahead } = await this.relation(op, head, remote ? [remote] : await this.remoteHeads(op), remoteBranch === this.current && remote !== null);
       const objects = await this.introducedObjects(op, ahead);
+      // Uploads read the working file (there is no `.git/lfs` store), found by its stats, never read here.
       const uploaded = await op.lfs.upload([...objects.values()].map(({ object }) => object), async (object) => {
         const path = objects.get(object.oid)!.path;
         try {
-          const bytes = await this.storage.readBinary(path);
-          if (bytes.byteLength === object.size) return bytes;
+          const stat = await this.storage.stat(path);
+          if (!stat.isDir && stat.size === object.size) return path;
         } catch (error) {
           if (!isStorageNotFound(error)) throw error;
         }
@@ -393,7 +411,12 @@ export class GitRepository implements SyncPort {
     }, options.signal);
   }
 
-  /** An object's bytes: the working copy's file when it has the size (an object never changes under its name), else a download, never written. */
+  /**
+   * An object's bytes: the working copy's file when it has the size (an
+   * object never changes under its name), else a download, never written to
+   * the working tree (a native one lands in `LFS_SCRATCH` and is removed
+   * once read).
+   */
   private async lfsObject(op: Op, path: string, object: LfsObject): Promise<Uint8Array> {
     try {
       const local = await this.storage.readBinary(storagePath(path));
@@ -401,12 +424,18 @@ export class GitRepository implements SyncPort {
     } catch (error) {
       if (!isStorageNotFound(error)) throw error;
     }
-    let downloaded: Uint8Array | null = null;
-    await op.lfs.download([object], async (_object, bytes) => {
-      downloaded = bytes;
-    });
-    if (!downloaded) throw new SyncError("lfs", `The server has no LFS object ${object.oid}.`, { code: "lfs-object-missing" });
-    return downloaded;
+    return op.lfs.read(object, `${LFS_SCRATCH}/${object.oid}`);
+  }
+
+  /**
+   * Downloads the LFS objects `commit` holds at `paths` whose working files
+   * are missing or of another size into those files, as a clone, pull or
+   * switch does before its checkout (with a native file transfer, straight
+   * to the file); present files are never read. No index entry or other
+   * file changes: the Git benchmark's download step.
+   */
+  downloadLfsObjects(commit: string, paths: readonly string[], options: TransferOptions = {}): Promise<void> {
+    return this.run((op) => this.downloadMissing(op, commit, new Set(paths.map(storagePath))), options.signal);
   }
 
   removableLfsObjects({ signal, references }: RemovableLfsOptions): Promise<string[]> {
@@ -680,7 +709,15 @@ export class GitRepository implements SyncPort {
         fs,
         git: { fs, dir: WORKTREE, gitdir: GITDIR, cache: this.cache },
         http: gitHttp(authorizedHttp(this.credential, http, "basic"), transfer),
-        lfs: new LfsTransfer({ repositoryUrl: this.repositoryUrl, branch: this.current, http, credential: this.credential, counters: transfer }),
+        lfs: new LfsTransfer({
+          repositoryUrl: this.repositoryUrl,
+          branch: this.current,
+          http,
+          credential: this.credential,
+          storage: this.storage,
+          ...(this.files ? { files: cancellableFiles(this.files, signal) } : {}),
+          counters: transfer,
+        }),
         commits: new Map(),
       };
       try {
@@ -997,12 +1034,8 @@ export class GitRepository implements SyncPort {
       pathsByOid.set(object.oid, [...(pathsByOid.get(object.oid) ?? []), path]);
     }
     if (missing.length === 0) return;
-    await op.lfs.download(missing, async (object, bytes) => {
-      for (const path of pathsByOid.get(object.oid)!) {
-        await this.storage.mkdir(parentOf(path), true);
-        await this.storage.writeBinary(path, bytes);
-      }
-    });
+    for (const folder of new Set([...pathsByOid.values()].flat().map(parentOf))) await this.storage.mkdir(folder, true);
+    await op.lfs.download(missing, (object) => pathsByOid.get(object.oid)!);
   }
 
   /** LFS objects the given commits add, against their first parent (all of a root's), by oid. */

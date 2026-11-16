@@ -36,6 +36,9 @@ export type ContentBrowserTileLock = {
   ownerName?: string;
 };
 
+/** Integrated mode: what the working copy changed about an asset since the last commit, by asset path. */
+export type ContentBrowserChangeStatuses = ReadonlyMap<string, "added" | "modified">;
+
 export type ContentBrowserGridTilesProps = {
   items: readonly ContentBrowserGridItem[];
   firstIndex: number;
@@ -54,6 +57,8 @@ export type ContentBrowserGridTilesProps = {
   sourceControlEnabled: boolean;
   /** Locks of mounted assets, keyed by asset path. */
   locks: Readonly<Record<string, ContentBrowserTileLock>>;
+  /** Added and modified assets; one map per sync snapshot, read per mounted tile. */
+  changes: ContentBrowserChangeStatuses;
   /** The tile showing an inline rename. */
   renaming: ContentBrowserTileHit | null;
   actions: ContentBrowserGridActions;
@@ -79,6 +84,7 @@ export const ContentBrowserGridTiles = memo(function ContentBrowserGridTiles({
   folderIcons,
   sourceControlEnabled,
   locks,
+  changes,
   renaming,
   actions,
 }: ContentBrowserGridTilesProps) {
@@ -119,6 +125,7 @@ export const ContentBrowserGridTiles = memo(function ContentBrowserGridTiles({
         sourceControlEnabled={sourceControlEnabled}
         lockState={lock?.state ?? null}
         lockOwnerName={lock?.ownerName}
+        changeStatus={changes.get(asset.path) ?? null}
         renaming={renaming?.kind === "asset" && renaming.guid === guid}
         actions={actions}
       />,
@@ -194,6 +201,7 @@ const AssetGridCell = memo(function AssetGridCell({
   sourceControlEnabled,
   lockState,
   lockOwnerName,
+  changeStatus,
   renaming,
   actions,
 }: {
@@ -208,6 +216,7 @@ const AssetGridCell = memo(function AssetGridCell({
   sourceControlEnabled: boolean;
   lockState: "mine" | "theirs" | null;
   lockOwnerName: string | undefined;
+  changeStatus: "added" | "modified" | null;
   renaming: boolean;
   actions: ContentBrowserGridActions;
 }) {
@@ -241,6 +250,7 @@ const AssetGridCell = memo(function AssetGridCell({
         sourceControlEnabled={sourceControlEnabled}
         lockState={lockState}
         lockOwnerName={lockOwnerName}
+        changeStatus={changeStatus}
         onLongPressMenu={onLongPressMenu}
         renaming={renaming}
         onRenameDone={onRenameDone}

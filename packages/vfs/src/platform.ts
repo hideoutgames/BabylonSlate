@@ -137,6 +137,34 @@ export function getElectronFileBridge(): ElectronFileBridge | null {
   return host.haptic?.files ?? null;
 }
 
+/** A `files:transfer` request: the window's open project's file `path` to or from `url`; see `NativeFileTransferRequest`. */
+export interface ElectronFileTransferRequest {
+  id: string;
+  method: "GET" | "PUT";
+  url: string;
+  headers: Record<string, string>;
+  path: string;
+  expected?: { size: number; sha256: string };
+}
+
+/** `files:transfer` answers a failure as data, since a rejected invoke carries only its message. */
+export type ElectronFileTransferResult =
+  | { status: number; bytes: number; sha256: string }
+  | { error: string; errorCode?: "transfer-mismatch" | "transfer-cancelled" | "transfer-refused" };
+
+/** The desktop main process's file transfer, confined to the window's open project (`folderId` must be it). */
+export interface ElectronFileTransferBridge {
+  transfer(folderId: string, request: ElectronFileTransferRequest): Promise<ElectronFileTransferResult>;
+  cancel(id: string): Promise<void>;
+  /** Progress events of this window's transfers; returns the unsubscribe. */
+  onProgress(listener: (id: string, bytes: number) => void): () => void;
+}
+
+export function getElectronFileTransferBridge(): ElectronFileTransferBridge | null {
+  const host = globalThis as { haptic?: { fileTransfer?: ElectronFileTransferBridge } };
+  return host.haptic?.fileTransfer ?? null;
+}
+
 export function getElectronHttpBridge(): ElectronHttpBridge | null {
   const host = globalThis as {
     haptic?: { http?: ElectronHttpBridge };

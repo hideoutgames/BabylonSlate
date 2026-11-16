@@ -16,7 +16,7 @@ export type {
   VerifyOptions,
 } from "./types";
 export { isSourceControlHost, LOCK_POLL_INTERVAL_MS } from "./types";
-export type { HttpClient, HttpRequest, HttpResponse } from "./http";
+export type { FileTransferClient, FileTransferRequest, FileTransferResponse, HttpClient, HttpRequest, HttpResponse } from "./http";
 export {
   authorizedHttp,
   commitAuthorFor,

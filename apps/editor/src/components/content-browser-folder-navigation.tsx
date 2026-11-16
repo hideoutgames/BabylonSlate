@@ -13,6 +13,8 @@ import {
 import type { useKeybindings } from "../context/keybind-context";
 import { isFolderTreeRoot, type ContentBrowserTreeRow } from "../lib/content-browser-helpers";
 import { contentBrowserFolderOps, type ContentBrowserRoot } from "../lib/plugin-ui";
+import type { ContentBrowserChangeStatuses, ContentBrowserTileLock } from "./content-browser-grid-tiles";
+import { LockBadge, StatusMarker } from "./source-control-markers";
 
 /** True for a press on empty tree space: below the rows or beside them, not on a row. */
 function isEmptyTreeTarget(target: EventTarget | null): boolean {
@@ -33,6 +35,10 @@ interface ContentBrowserFolderNavigationProps {
   /** Plugin content root icons, keyed by root path. */
   pluginRootIcons: ReadonlyMap<string, LucideIcon | undefined>;
   typeVisualFor: (asset: IndexedAsset) => TypeVisual;
+  /** Locks of the asset rows, by path, as the tiles show them. */
+  locks: Readonly<Record<string, ContentBrowserTileLock>>;
+  /** Integrated mode's added and modified assets, as the tiles show them. */
+  changes: ContentBrowserChangeStatuses;
   treeSelectedId: string;
   treeSelectedIds: string[];
   onSelect: NonNullable<TreeViewProps["onSelect"]>;
@@ -59,6 +65,8 @@ export function ContentBrowserFolderNavigation({
   rootPrefixes,
   pluginRootIcons,
   typeVisualFor,
+  locks,
+  changes,
   treeSelectedId,
   treeSelectedIds,
   onSelect,
@@ -76,6 +84,8 @@ export function ContentBrowserFolderNavigation({
         const renamable =
           !isFolderTreeRoot(row.path, rootPrefixes) &&
           !contentBrowserFolderOps(row.path, browserRoots).readOnly;
+        const lock = asset ? locks[asset.path] : undefined;
+        const change = asset ? changes.get(asset.path) : undefined;
         return {
           id: row.id,
           label: row.label,
@@ -90,9 +100,20 @@ export function ContentBrowserFolderNavigation({
             ) : asset ? (
               <TypeVisualIcon visual={typeVisualFor(asset)} />
             ) : undefined,
+          // Part of the row's name, as on its tile: Forest Modified, Rock Locked By Bob.
+          ...(change || lock
+            ? {
+                preview: (
+                  <span className="flex items-center gap-1">
+                    {change ? <StatusMarker status={change} /> : null}
+                    {lock ? <LockBadge state={lock.state} ownerName={lock.ownerName} size="sm" /> : null}
+                  </span>
+                ),
+              }
+            : {}),
         };
       }),
-    [assetsByGuid, browserRoots, browserRows, pluginRootIcons, rootPrefixes, typeVisualFor],
+    [assetsByGuid, browserRoots, browserRows, changes, locks, pluginRootIcons, rootPrefixes, typeVisualFor],
   );
 
   const emptyMenuItems = useMemo(

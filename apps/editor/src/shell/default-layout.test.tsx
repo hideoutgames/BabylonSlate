@@ -49,6 +49,37 @@ describe("createDefaultLayoutForKind", () => {
     }
   });
 
+  /** The Integrated Source Control tab's default widths: the stacked Changes, History and Locks; Actors; Diff. */
+  async function sourceControlWidths(hidden: boolean): Promise<number[]> {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const api = createDockview(host, {
+      createComponent: () => ({ element: document.createElement("div"), init() {} }),
+    });
+    try {
+      // A tab built while another one is in front lays out at 0×0 first.
+      api.layout(hidden ? 0 : 1200, hidden ? 0 : 600);
+      createDefaultLayoutForKind(api, "source-control", { sourceControlIntegrated: true }, hidden ? 0 : 1200);
+      if (hidden) api.layout(1200, 600);
+      await Promise.resolve();
+      // Changes, History and Locks stay stacked as tabs of one group.
+      expect(api.getPanel("history")!.group).toBe(api.getPanel("changes")!.group);
+      expect(api.getPanel("locks")!.group).toBe(api.getPanel("changes")!.group);
+      return ["changes", "diff-actors", "diff"].map((id) => api.getPanel(id)!.api.width);
+    } finally {
+      api.dispose();
+      host.remove();
+    }
+  }
+
+  it("gives the Integrated Source Control tab's stacked windows, Actors and Diff a quarter, a quarter and half of the width", async () => {
+    expect(await sourceControlWidths(false)).toEqual([300, 300, 600]);
+  });
+
+  it("gives the Source Control tab the same widths when it was built behind another tab", async () => {
+    expect(await sourceControlWidths(true)).toEqual([300, 300, 600]);
+  });
+
   it("adds the Behaviour Tree graph before docks that split from it", () => {
     const panels = new Map<
       string,

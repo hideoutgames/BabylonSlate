@@ -1,3 +1,5 @@
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import type { ProjectStorage } from "@haptic/core";
 import * as git from "isomorphic-git";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +17,7 @@ import {
   STORAGE_ORIGIN,
 } from "../test-support/git-server";
 import { fixedCredential } from "../credentials";
+import type { FileTransferClient } from "../http";
 import { readAdoption, setAdoption } from "./adoption";
 import { cloneRepository, initRepository, openRepository, type GitRepository } from "./repository";
 
@@ -40,10 +43,12 @@ afterEach(async () => {
   await server.stop();
 });
 
-async function clone(storage?: ProjectStorage, options: { depth?: number; token?: string } = {}): Promise<GitRepository> {
+async function clone(storage?: ProjectStorage, options: { depth?: number; token?: string; files?: FileTransferClient; signal?: AbortSignal } = {}): Promise<GitRepository> {
   return cloneRepository({
     storage: storage ?? (await server.storage()),
     http: server.http,
+    ...(options.files ? { files: options.files } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
     credential: options.token ? fixedCredential({ ...CREDENTIAL, token: options.token }) : server.credential(),
     repositoryUrl: REPOSITORY_URL,
     branch: "main",
@@ -65,25 +70,6 @@ async function rejection(promise: Promise<unknown>): Promise<SyncError> {
 
 // Each test drives the system `git` and a CGI server, which take seconds rather than milliseconds.
 describe("GitRepository", { timeout: 60_000 }, () => {
-  it("clones shallow with LFS objects downloaded, and reads no unchanged file for status", async () => {
-    const texture = blobBytes(1, 300_000);
-    server.seed({ ".gitattributes": RULE, "project.json": "{}\n", "assets/a.hasset": "A" });
-    server.seed({ "assets/b.hasset": "B", [blobPath(texture)]: texture });
-    const { storage, reads } = countingStorage(await server.storage());
-    const repository = await clone(storage);
-
-    expect(text(await storage.readBinary("assets/b.hasset"))).toBe("B");
-    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
-    expect(server.git(server.bare, "rev-list", "--count", "main").trim()).toBe("2");
-    expect((await repository.log({ limit: 10 })).commits.map((commit) => commit.message.trim())).toEqual(["Seed"]);
-
-    reads.length = 0;
-    const status = await repository.status();
-    expect(status.changes).toEqual([]);
-    expect(reads.filter((path) => !path.startsWith(".git/"))).toEqual([]);
-    expect(repository.lastOperation.storage).toMatchObject({ workingReads: 0, pointerReads: 0 });
-  });
-
   it("lists changes and commits exactly the chosen paths, storing .blobs files as pointers without reading them", async () => {
     server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A", "assets/b.hasset": "B", "assets/c.hasset": "C" });
     const { storage, reads } = countingStorage(await server.storage());
@@ -128,31 +114,6 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect((await repository.status()).changes).toEqual([]);
   });
 
-  it("pushes after uploading only the LFS objects the server lacks, never sending the stored credential to the store", async () => {
-    const kept = blobBytes(4, 50_000);
-    server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(kept)]: kept });
-    const storage = await server.storage();
-    const repository = await clone(storage);
-    const added = blobBytes(5, 120_000);
-    await storage.writeBinary(blobPath(added), added);
-    // The same object under a plugin's content root: the server already has it.
-    await storage.writeBinary(blobPath(kept, "plugins/p/assets"), kept);
-    await storage.writeBinary("assets/a.hasset", encode("A2"));
-    const { commit } = await repository.commit({ paths: [blobPath(added), blobPath(kept, "plugins/p/assets"), "assets/a.hasset"], message: "Add", author: AUTHOR });
-    server.requests.length = 0;
-
-    expect(await repository.push()).toEqual({ head: commit, uploaded: 1 });
-    expect(server.git(server.bare, "rev-parse", "main").trim()).toBe(commit);
-    expect(server.objects.get(blobPath(added).slice(-64))).toEqual(added);
-    const toStore = server.requests.filter((request) => request.origin === STORAGE_ORIGIN);
-    expect(toStore.map((request) => `${request.method} ${request.path}`)).toEqual([`PUT /objects/${blobPath(added).slice(-64)}`]);
-    expect(toStore.every((request) => request.authorization === STORAGE_AUTHORIZATION)).toBe(true);
-    const toGit = server.requests.filter((request) => request.origin === GIT_ORIGIN);
-    expect(toGit.every((request) => request.authorization?.startsWith("Basic "))).toBe(true);
-    // Smart HTTP identifies as a Git client, not as the WebView native HTTP would otherwise name.
-    expect(toGit.filter((request) => !request.path.includes("/info/lfs/")).map((request) => request.userAgent?.split("@")[0])).toEqual(["git/isomorphic-git", "git/isomorphic-git"]);
-  });
-
   it("refuses a push when the remote moved, as a conflict", async () => {
     server.seed({ "assets/a.hasset": "A" });
     const storage = await server.storage();
@@ -179,34 +140,6 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     const state = await repository.fetch();
     expect(state).toMatchObject({ branch: "main", local: commit, remote, ahead: 1, behind: 2 });
     expect(state.incoming.map((entry) => entry.message.trim())).toEqual(["Two", "One"]);
-  });
-
-  it("fast-forwards, writing incoming files and downloading only LFS objects that are missing", async () => {
-    const kept = blobBytes(6, 40_000);
-    server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A", "assets/b.hasset": "B", [blobPath(kept)]: kept });
-    const storage = await server.storage();
-    const repository = await clone(storage);
-    const teammate = server.teammate();
-    const added = blobBytes(7, 90_000);
-    teammate.write({ "assets/a.hasset": "A2", "assets/new.hasset": "N", [blobPath(added)]: added, [blobPath(kept, "plugins/p/assets")]: kept });
-    teammate.remove("assets/b.hasset");
-    const remote = teammate.commitAndPush("Teammate");
-    // Already on this device (another content root holds the same object): never downloaded.
-    await storage.writeBinary(blobPath(kept, "plugins/p/assets"), kept);
-    server.requests.length = 0;
-
-    const result = await repository.pull({ author: AUTHOR });
-    expect(result).toEqual({
-      kind: "fast-forward",
-      head: remote,
-      changedPaths: [blobPath(added), "assets/a.hasset", "assets/b.hasset", "assets/new.hasset", blobPath(kept, "plugins/p/assets")],
-    });
-    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A2");
-    expect(await storage.exists("assets/b.hasset")).toBe(false);
-    expect(await storage.readBinary(blobPath(added))).toEqual(added);
-    expect(server.requests.filter((request) => request.origin === STORAGE_ORIGIN).map((request) => request.path)).toEqual([`/objects/${blobPath(added).slice(-64)}`]);
-    expect((await repository.status()).changes).toEqual([]);
-    expect(server.git(folder(storage), "rev-parse", "HEAD").trim()).toBe(remote);
   });
 
   it("returns whole-file conflicts, uncommitted edits included, and changes nothing until each has a choice", async () => {
@@ -257,21 +190,6 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await repository.pull({ author: AUTHOR, choices: { "assets/a.hasset": "mine" } })).toEqual({ kind: "fast-forward", head: remote, changedPaths: [] });
     expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A-mine");
     expect((await repository.status()).changes).toEqual([{ path: "assets/a.hasset", kind: "modified" }]);
-  });
-
-  it("reads a file as a commit holds it, and an LFS object's own bytes", async () => {
-    const texture = blobBytes(8, 10_000);
-    const first = server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(texture)]: texture });
-    const storage = await server.storage();
-    const repository = await clone(storage);
-    await storage.writeBinary("assets/a.hasset", encode("A2"));
-    await repository.commit({ paths: ["assets/a.hasset"], message: "Edit", author: AUTHOR });
-
-    expect(text(await repository.readFile("assets/a.hasset", first))).toBe("A");
-    expect(await repository.readFile(blobPath(texture), first)).toEqual(texture);
-    await storage.remove(blobPath(texture));
-    expect(await repository.readFile(blobPath(texture), first)).toEqual(texture);
-    expect(await repository.readFile("assets/missing.hasset", first)).toBeNull();
   });
 
   it("reads each commit once when a fetch counts and lists the incoming ones", async () => {
@@ -422,6 +340,16 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     expect(await rejection(openRepository(options))).toMatchObject({ kind: "conflict", code: "detached-head" });
   });
 
+  it("empties the LFS scratch folder a killed app left when it opens", async () => {
+    server.seed({ "assets/a.hasset": "A" });
+    const storage = await server.storage();
+    await clone(storage);
+    // An object downloaded for reading, left when the app was killed before it was read and removed.
+    await storage.writeBinary(`.git/lfs/tmp/${"c".repeat(64)}`, blobBytes(1, 4096));
+    await openRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, now: () => NOW });
+    expect(existsSync(join(folder(storage), ".git/lfs/tmp"))).toBe(false);
+  });
+
   it("types refused credentials, missing repositories and unreachable hosts", async () => {
     server.seed({ "assets/a.hasset": "A" });
     expect((await rejection(clone(undefined, { token: "wrong" }))).kind).toBe("auth");
@@ -488,5 +416,178 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     it("reads a folder without .git as not adopted", async () => {
       expect(await readAdoption(await server.storage())).toBe(false);
     });
+  });
+});
+
+/** Clones over the test server's native file transfer (Node streams, as the desktop main process runs them) unless `files` replaces it. */
+function cloneNative(storage: ProjectStorage, options: { signal?: AbortSignal; files?: FileTransferClient } = {}) {
+  return clone(storage, { ...options, files: options.files ?? server.files(storage) });
+}
+
+/** What went through JavaScript storage under `.blobs`. */
+/** LFS objects read or written through JavaScript storage (not the `.gitignore` lookups Git makes in every folder). */
+const blobIo = (paths: readonly string[]) => paths.filter((path) => /\.blobs\/[0-9a-f]{64}$/.test(path));
+
+/**
+ * LFS objects travel through native HTTP as whole bodies (the web build's
+ * path, and any host without a file transfer) or through the host's native
+ * file transfer. Both must give the same repository; the native one must
+ * move no object byte through JavaScript storage.
+ */
+describe.each(["whole-body", "native"] as const)("GitRepository's LFS objects over %s transfers", { timeout: 60_000 }, (transport) => {
+  const native = transport === "native";
+  const cloneOver = (storage: ProjectStorage) => (native ? cloneNative(storage) : clone(storage));
+
+  it("clones shallow with LFS objects downloaded, and reads no unchanged file for status", async () => {
+    const texture = blobBytes(1, 300_000);
+    server.seed({ ".gitattributes": RULE, "project.json": "{}\n", "assets/a.hasset": "A" });
+    server.seed({ "assets/b.hasset": "B", [blobPath(texture)]: texture });
+    const { storage, reads, writes } = countingStorage(await server.storage());
+    const repository = await cloneOver(storage);
+    expect(blobIo(writes)).toEqual(native ? [] : [blobPath(texture)]);
+    expect(repository.lastOperation.transfer.received).toBeGreaterThanOrEqual(300_000);
+
+    expect(text(await storage.readBinary("assets/b.hasset"))).toBe("B");
+    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(server.git(server.bare, "rev-list", "--count", "main").trim()).toBe("2");
+    expect((await repository.log({ limit: 10 })).commits.map((commit) => commit.message.trim())).toEqual(["Seed"]);
+
+    reads.length = 0;
+    const status = await repository.status();
+    expect(status.changes).toEqual([]);
+    expect(reads.filter((path) => !path.startsWith(".git/"))).toEqual([]);
+    expect(repository.lastOperation.storage).toMatchObject({ workingReads: 0, pointerReads: 0 });
+  });
+
+  it("pushes after uploading only the LFS objects the server lacks, never sending the stored credential to the store", async () => {
+    const kept = blobBytes(4, 50_000);
+    server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(kept)]: kept });
+    const { storage, reads } = countingStorage(await server.storage());
+    const repository = await cloneOver(storage);
+    const added = blobBytes(5, 120_000);
+    await storage.writeBinary(blobPath(added), added);
+    // The same object under a plugin's content root: the server already has it.
+    await storage.writeBinary(blobPath(kept, "plugins/p/assets"), kept);
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    const { commit } = await repository.commit({ paths: [blobPath(added), blobPath(kept, "plugins/p/assets"), "assets/a.hasset"], message: "Add", author: AUTHOR });
+    server.requests.length = 0;
+    reads.length = 0;
+
+    expect(await repository.push()).toEqual({ head: commit, uploaded: 1 });
+    expect(blobIo(reads)).toEqual(native ? [] : [blobPath(added)]);
+    expect(repository.lastOperation.transfer.sent).toBeGreaterThanOrEqual(120_000);
+    expect(server.git(server.bare, "rev-parse", "main").trim()).toBe(commit);
+    expect(server.objects.get(blobPath(added).slice(-64))).toEqual(added);
+    const toStore = server.requests.filter((request) => request.origin === STORAGE_ORIGIN);
+    expect(toStore.map((request) => `${request.method} ${request.path}`)).toEqual([`PUT /objects/${blobPath(added).slice(-64)}`]);
+    expect(toStore.every((request) => request.authorization === STORAGE_AUTHORIZATION)).toBe(true);
+    const toGit = server.requests.filter((request) => request.origin === GIT_ORIGIN);
+    expect(toGit.every((request) => request.authorization?.startsWith("Basic "))).toBe(true);
+    // Smart HTTP identifies as a Git client, not as the WebView native HTTP would otherwise name.
+    expect(toGit.filter((request) => !request.path.includes("/info/lfs/")).map((request) => request.userAgent?.split("@")[0])).toEqual(["git/isomorphic-git", "git/isomorphic-git"]);
+  });
+
+  it("fast-forwards, writing incoming files and downloading only LFS objects that are missing", async () => {
+    const kept = blobBytes(6, 40_000);
+    server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A", "assets/b.hasset": "B", [blobPath(kept)]: kept });
+    const { storage, writes } = countingStorage(await server.storage());
+    const repository = await cloneOver(storage);
+    const teammate = server.teammate();
+    const added = blobBytes(7, 90_000);
+    teammate.write({ "assets/a.hasset": "A2", "assets/new.hasset": "N", [blobPath(added)]: added, [blobPath(kept, "plugins/p/assets")]: kept });
+    teammate.remove("assets/b.hasset");
+    const remote = teammate.commitAndPush("Teammate");
+    // Already on this device (another content root holds the same object): never downloaded.
+    await storage.writeBinary(blobPath(kept, "plugins/p/assets"), kept);
+    server.requests.length = 0;
+    writes.length = 0;
+
+    const result = await repository.pull({ author: AUTHOR });
+    expect(result).toEqual({
+      kind: "fast-forward",
+      head: remote,
+      changedPaths: [blobPath(added), "assets/a.hasset", "assets/b.hasset", "assets/new.hasset", blobPath(kept, "plugins/p/assets")],
+    });
+    expect(blobIo(writes)).toEqual(native ? [] : [blobPath(added)]);
+    expect(text(await storage.readBinary("assets/a.hasset"))).toBe("A2");
+    expect(await storage.exists("assets/b.hasset")).toBe(false);
+    expect(await storage.readBinary(blobPath(added))).toEqual(added);
+    expect(server.requests.filter((request) => request.origin === STORAGE_ORIGIN).map((request) => request.path)).toEqual([`/objects/${blobPath(added).slice(-64)}`]);
+    expect((await repository.status()).changes).toEqual([]);
+    expect(server.git(folder(storage), "rev-parse", "HEAD").trim()).toBe(remote);
+  });
+
+  it("reads a file as a commit holds it, and an LFS object's own bytes, leaving nothing behind", async () => {
+    const texture = blobBytes(8, 10_000);
+    const first = server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(texture)]: texture });
+    const storage = await server.storage();
+    const repository = await cloneOver(storage);
+    await storage.writeBinary("assets/a.hasset", encode("A2"));
+    await repository.commit({ paths: ["assets/a.hasset"], message: "Edit", author: AUTHOR });
+
+    expect(text(await repository.readFile("assets/a.hasset", first))).toBe("A");
+    expect(await repository.readFile(blobPath(texture), first)).toEqual(texture);
+    await storage.remove(blobPath(texture));
+    expect(await repository.readFile(blobPath(texture), first)).toEqual(texture);
+    expect(await repository.readLfsObject(blobPath(texture), texture.byteLength)).toEqual(texture);
+    expect(await repository.readFile("assets/missing.hasset", first)).toBeNull();
+    // Never written to the working tree; a native download's scratch file is gone once read.
+    expect(await storage.exists(blobPath(texture))).toBe(false);
+    const scratch = join(folder(storage), ".git/lfs/tmp");
+    expect(existsSync(scratch) ? readdirSync(scratch) : []).toEqual([]);
+  });
+
+  it("downloads a commit's missing LFS objects into their files, as a checkout does", async () => {
+    const texture = blobBytes(9, 64_000);
+    const first = server.seed({ ".gitattributes": RULE, [blobPath(texture)]: texture });
+    const storage = await server.storage();
+    const repository = await cloneOver(storage);
+    await storage.remove(blobPath(texture));
+    server.requests.length = 0;
+
+    await repository.downloadLfsObjects(first, [blobPath(texture)]);
+    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect((await repository.status()).changes).toEqual([]);
+    // A present file of the object's size is never fetched again.
+    await repository.downloadLfsObjects(first, [blobPath(texture)]);
+    expect(server.requests.filter((request) => request.origin === STORAGE_ORIGIN)).toHaveLength(1);
+  });
+});
+
+describe("GitRepository's LFS objects over the native file transfer", { timeout: 60_000 }, () => {
+  it("leaves no object or temporary file when a clone is cancelled mid-download", async () => {
+    const texture = blobBytes(10, 4 * 1024 * 1024);
+    server.seed({ ".gitattributes": RULE, "project.json": "{}\n", [blobPath(texture)]: texture });
+    const storage = await server.storage();
+    const controller = new AbortController();
+    const files = server.files(storage);
+    let progressed = 0;
+    // Cancel once the first bytes are on disk, as Cancel in the Clone dialog would.
+    const cancelling: FileTransferClient = (request) => files({
+      ...request,
+      onProgress: (bytes) => {
+        progressed = bytes;
+        controller.abort();
+      },
+    });
+
+    const error = await rejection(cloneNative(storage, { files: cancelling, signal: controller.signal }));
+    expect(error.kind).toBe("cancelled");
+    expect(progressed).toBeGreaterThan(0);
+    // On disk: the adapter's listings hide staged `.haptic-*.tmp` files.
+    expect(readdirSync(join(folder(storage), "assets/.blobs"))).toEqual([]);
+  });
+
+  it("refuses an object that arrives damaged and keeps no file of it", async () => {
+    const texture = blobBytes(11, 20_000);
+    server.seed({ ".gitattributes": RULE, [blobPath(texture)]: texture });
+    // The store now holds other bytes under the object's name.
+    server.objects.set(blobPath(texture).slice(-64), blobBytes(12, 20_000));
+    const storage = await server.storage();
+
+    const error = await rejection(cloneNative(storage));
+    expect([error.kind, error.code]).toEqual(["lfs", "lfs-object-corrupt"]);
+    // On disk: the adapter's listings hide staged `.haptic-*.tmp` files.
+    expect(readdirSync(join(folder(storage), "assets/.blobs"))).toEqual([]);
   });
 });

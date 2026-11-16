@@ -4,7 +4,8 @@ import { BoxIcon, FileIcon, FolderIcon, ListTreeIcon, SquareFunctionIcon, Variab
 import type { AssetDiff, DiffStatus, GraphDiff, GraphMemberGroupId, SceneDiff } from "@haptic/assets/asset-diff";
 import { PanelFrame, SearchInput, TreeView, type TreeViewNode } from "@haptic/editor-kit";
 import { useSourceControlDiff, useSourceControlDiffState } from "../components/source-control-actions";
-import { DiffCountBadges, DiffPlaceholder, StatusLetter, useDiffWindowShown } from "./diff-common";
+import { StatusMarker } from "../components/source-control-markers";
+import { DiffCountBadges, DiffPlaceholder, useDiffWindowShown } from "./diff-common";
 import { ASSET_ITEM, hasDiff, nodeSummary, STATUS_TONE } from "./diff-status";
 
 /** One row of the tree before collapse and search: its parent and whether it changed. */
@@ -125,7 +126,7 @@ export function DiffActorsContents({ api }: { api?: DockviewPanelApi } = {}) {
       hasChildren: row.hasChildren,
       expanded: !collapsed.has(row.id) || query.trim() !== "",
       icon: <Icon aria-hidden="true" />,
-      trailing: changed ? <StatusLetter status={row.status} /> : undefined,
+      trailing: changed ? <StatusMarker status={row.status as Exclude<DiffStatus, "unchanged">} /> : undefined,
       ...(row.preview ? { preview: <span className="truncate text-xs text-muted-foreground">{row.preview}</span> } : {}),
       muted: !changed && !row.changedBelow,
       ...(changed ? { tone: STATUS_TONE[row.status as Exclude<DiffStatus, "unchanged">] } : {}),

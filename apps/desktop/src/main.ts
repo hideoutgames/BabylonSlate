@@ -22,6 +22,7 @@ import type { ProjectFolderHandle } from "@haptic/core";
 import { DesktopSecretStore, isMissingFile } from "./desktop-secret-store";
 import { DesktopAccountSecretStore } from "./desktop-account-secrets";
 import { fetchDesktopHttp, type DesktopHttpRequest } from "./desktop-http";
+import { DesktopFileTransfers, type DesktopTransferRequest } from "./desktop-file-transfer";
 import { desktopMemoryStats } from "./desktop-memory";
 import { createAuthBrowserSessions } from "./desktop-auth-browser";
 import { createDiscordPresence, DISCORD_PRESENCE_PATH, handleDiscordPresenceRequest, type DiscordPresence } from "./discord-presence";
@@ -53,6 +54,13 @@ const rendererRoot = join(app.getAppPath(), "renderer");
 const editorWindows = new Set<number>();
 /** Each editor document owns the project folder it opened. */
 const projectStorage = new Map<number, NodeStorageAdapter>();
+/**
+ * Git LFS objects streamed between the network and each document's project
+ * folder through Chromium's network stack (`net.request`: the session's
+ * proxy and certificates, no session cookies or credentials). Left
+ * non-chunked, an upload goes with its length, which Electron sets itself.
+ */
+const fileTransfers = new DesktopFileTransfers((options) => net.request({ ...options, useSessionCookies: false }));
 let updates: ReturnType<typeof createDesktopUpdates> | undefined;
 let saveGames: DesktopSaveGames | undefined;
 /** Each editor document's user library folders, keyed by allowlisted scope. */
@@ -121,6 +129,7 @@ function serialized(): <T>(task: () => Promise<T>) => Promise<T> {
 
 /** A gone document's project folder, library binds and save leases end with it. */
 function releaseOwner(owner: number): void {
+  fileTransfers.releaseOwner(owner);
   projectStorage.delete(owner);
   libraries?.releaseOwner(owner);
   void saveGames?.releaseOwner(owner);
@@ -316,6 +325,12 @@ async function registerIpc(): Promise<void> {
   handle("lfs:fetch", async (_event, request) => {
     return fetchDesktopHttp(request as DesktopHttpRequest, (url, init) => net.fetch(url, init));
   });
+  // Git LFS objects stream between the network and the window's open project here, never through IPC.
+  handle("files:transfer", (event, folderId, request) =>
+    fileTransfers.transfer(event.sender.id, projects(event), String(folderId), request as DesktopTransferRequest, (id, bytes) => {
+      if (!event.sender.isDestroyed()) event.sender.send("files:progress", id, bytes);
+    }));
+  handle("files:cancel", (event, id) => fileTransfers.cancel(event.sender.id, String(id)));
   // Arguments are validated: a provider sign-in page and the sign-in callback.
   handle("auth:open-browser", (_event, url) => authBrowser.open(authProviderUrl(String(url))!));
 

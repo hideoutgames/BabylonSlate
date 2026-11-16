@@ -302,6 +302,17 @@ export const engineSettingsSchema = z.object({
     })
     .catch({ hosting: "local", origin: "" })
     .default({ hosting: "local", origin: "" }),
+  /**
+   * The Debug menu Git benchmark run on this device that has not ended: the
+   * stage it entered last (written, and awaited, before each stage) and when
+   * it started. A run clears it when it ends, failed or not, so one found
+   * while no run is going is a run the app did not survive.
+   */
+  gitBenchmarkRun: z
+    .object({ stage: z.string(), startedAt: z.string() })
+    .nullable()
+    .catch(null)
+    .default(null),
   /** Project and Engine Settings sub-categories collapsed on this device, as `scope:category:section`; the rest start open. */
   collapsedSettingsSections: z.array(z.string()).catch([]).default([]),
   postProcessingEnabled: z.boolean().default(true),
