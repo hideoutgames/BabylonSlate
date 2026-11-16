@@ -66,6 +66,20 @@ export interface GroupedChanges {
   rows: readonly ChangeRow[];
 }
 
+/** Whether two row lists say the same: every row with the same fields, its paths in the same order. */
+export function sameChangeRows(a: readonly ChangeRow[], b: readonly ChangeRow[]): boolean {
+  if (a === b) return true;
+  return a.length === b.length && a.every((row, index) => sameRow(row, b[index]!));
+}
+
+function sameRow(a: ChangeRow, b: ChangeRow): boolean {
+  const keys = Object.keys(a) as (keyof ChangeRow)[];
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) =>
+    key === "paths" ? a.paths.length === b.paths.length && a.paths.every((path, index) => path === b.paths[index]) : a[key] === b[key],
+  );
+}
+
 /**
  * The Content Browser's change markers by `.hasset` path: each asset added
  * or modified since the last commit. A deleted asset has no tile (the

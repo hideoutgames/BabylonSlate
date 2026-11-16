@@ -105,6 +105,20 @@ describe("SourceControlSyncService", () => {
     expect(service.getSnapshot().active).toBe(false);
   });
 
+  it("keeps the rows a status reads again unchanged, so a save that changes no row re-renders no reader of them", async () => {
+    const { service, input, storage } = await setup();
+    await storage.writeText("assets/Forest.scene.hasset", "F2");
+    await service.configure(input("integrated"));
+    const rows = service.getSnapshot().rows;
+    expect(rows.map((row) => row.name)).toEqual(["Forest"]);
+    await storage.writeText("assets/Forest.scene.hasset", "F3");
+    await service.refreshStatus();
+    expect(service.getSnapshot().rows).toBe(rows);
+    await storage.writeText("assets/Rock.texture.hasset", "R2");
+    await service.refreshStatus();
+    expect(service.getSnapshot().rows.map((row) => row.name)).toEqual(["Forest", "Rock"]);
+  });
+
   it("refuses to run the Git client in a folder without .git on a device", async () => {
     const { service, factory, input } = await setup({ platform: "ios", testMode: false });
     await service.configure(input("integrated"));
