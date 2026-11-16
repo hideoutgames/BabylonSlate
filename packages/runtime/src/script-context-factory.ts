@@ -419,11 +419,11 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             writeParentId(services, object, value);
             return;
           }
-          const previous = object instanceof ActorComponent ? object.getVariable(name) : undefined;
-          object?.setVariable(name, value);
           if (object instanceof ActorComponent) {
-            host.applyComponentVariable(object, String(name ?? ""), value, previous);
+            host.writeComponentVariable(object, String(name ?? ""), value);
+            return;
           }
+          object?.setVariable(name, value);
         },
         async setMeshMaterialAsync(component, materialGuid) {
           const { self } = this;

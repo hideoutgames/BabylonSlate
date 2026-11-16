@@ -63,7 +63,7 @@ interface RenderCommandEmitterHost {
   uiControls(): Pick<UIControls2DRuntime, "payload">;
   painters(): Pick<Painter2DRuntime, "payload">;
   textAppear(): Pick<Text2DAppearRuntime, "progress">;
-  materialParameters(): Pick<RuntimeMaterialParameters, "captureOverrides">;
+  materialParameters(): Pick<RuntimeMaterialParameters, "captureOverrides" | "resend">;
   emit(command: CommandMessage): void;
   /** The outlines the actor's 2D body casts 2D light shadows with, in its body's frame (`RuntimePhysicsWorlds.occluders2D`). */
   occluders2D?(actor: Actor): Array<{ closed: boolean; points: number[] }>;
@@ -448,6 +448,9 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   ): void {
     for (const component of renderables) {
       if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") continue;
+      const material = component.getVariable("materialObject");
+      // The renderer may have rebuilt the slot and lost earlier writes, so the next write of each parameter is sent.
+      if (material instanceof MaterialObject) this.host.materialParameters().resend(material);
       const value = component.getVariable("materialGuid");
       const guid = typeof value === "string" && value.trim() ? value : null;
       if (guid) this.componentsWithMaterialAssignment.add(component);
@@ -466,7 +469,6 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
           ? { componentId: component.guid }
           : {}),
       });
-      const material = component.getVariable("materialObject");
       if (component.materialInstance?.materialGuid === guid && material instanceof MaterialObject) {
         for (const [parameterName, parameter] of Object.entries(this.host.materialParameters().captureOverrides(material) ?? {})) {
           this.host.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,

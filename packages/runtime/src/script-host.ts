@@ -32,6 +32,7 @@ import { createHostMembers } from "./script-host-members";
 import { DispatcherBindings } from "./script-dispatchers";
 import type { ScriptHostServices } from "./script-host-services";
 import { ScriptMaterialOwnership } from "./script-material-ownership";
+import { unchangedComponentWrite } from "./runtime-property-writes";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 import { isThenable } from "./tick-wait";
 
@@ -153,8 +154,10 @@ export class ScriptHost {
       materials: this.materials,
       dispatchers: this.dispatchers,
       canInvokeOwner,
-      applyComponentVariable: (component: ActorComponent, name: string, value: unknown, previous?: unknown) =>
-        this.applyComponentVariable(component, name, value, previous),
+      applyComponentVariable: (component: ActorComponent, name: string, value: unknown) =>
+        this.applyComponentVariable(component, name, value),
+      writeComponentVariable: (component: ActorComponent, name: string, value: unknown) =>
+        this.writeComponentVariable(component, name, value),
     };
     this.hostMembers = createHostMembers({ ...shared, frames: this.latentFrames, breakpoints: () => this.breakpoints });
     this.contextHost = {
@@ -906,6 +909,18 @@ export class ScriptHost {
     flowNamespace = "",
   ): ScriptContext {
     return new this.Context(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+  }
+
+  /**
+   * Set Variable on a component and Set Text: a write of the value the property already has changes
+   * nothing and sends nothing, as Set Visibility and the light setters do, so a graph that writes
+   * every tick costs nothing while the value holds.
+   */
+  private writeComponentVariable(component: ActorComponent, name: string, value: unknown): void {
+    const previous = component.getVariable(name);
+    if (unchangedComponentWrite(component, name, previous, value)) return;
+    component.setVariable(name, value);
+    this.applyComponentVariable(component, name, value, previous);
   }
 
   private applyComponentVariable(

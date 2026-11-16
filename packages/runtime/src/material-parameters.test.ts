@@ -86,6 +86,48 @@ describe("runtime material parameters", () => {
       expect(commands.some(command => command.type === "setMaterialParameter")).toBe(false);
     } finally { runtime.stop(); }
   });
+  it("sends a parameter write once while the value holds, and again after a change or a new assignment", async () => {
+    const commands: CommandMessage[] = [];
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat";
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
+      playScene: { name: "Materials", viewportMode: "3d", folders: [], settings: createDefaultSceneSettings(),
+        actors: [createActor("prop", "Prop", { classId: "Hero", components: [mesh] })] },
+      materialParameterCatalog: { mat: { domain: "surface", planHash: "mat", parameters: { Gain: { kind: "float", value: 1 }, Tint: { kind: "vec3", value: [1, 1, 1] } } } },
+      onCommand: command => commands.push(command) });
+    const write = (name: string, value: string) => `export function ${name}(ctx) {
+      const material = ctx.callComponentFunction(ctx.getComponentById(ctx.self, "mesh-1"), "getMaterialObject", {}).material;
+      ${value}
+      ctx.log("log", "Gain", String(ctx.getMaterialFloatParameter(material, "Gain").value)); }`;
+    try {
+      await runtime.loadScripts([{ classId: "Hero", parentClassId: "Actor", assetGuid: "hero", anchors: [],
+        source: [
+          write("gainDefault", 'ctx.setMaterialFloatParameter(material, "Gain", 1);'),
+          write("gainHalf", 'ctx.setMaterialFloatParameter(material, "Gain", 0.5);'),
+          write("tint", 'ctx.setMaterialVector3Parameter(material, "Tint", { x: 1, y: 0.5, z: 0 });'),
+          'export function reassign(ctx) { const mesh = ctx.getComponentById(ctx.self, "mesh-1"); ctx.setVariableOn(mesh, "visible", false); ctx.setVariableOn(mesh, "visible", true); }',
+        ].join("\n"),
+        entryPoints: ["gainDefault", "gainHalf", "tint", "reassign"].map((name) => ({ name, event: name, isAsync: false })) }]);
+      runtime.realizePlayWorld(); runtime.start();
+      const prop = runtime.getWorld().findActor("prop")!;
+      const sent = (event: string) => {
+        const from = commands.length;
+        runtime.invokeScriptEvent("Hero", event, prop);
+        return commands.slice(from).flatMap((command) => command.type === "setMaterialParameter" ? [[command.parameterName, command.parameter]] : []);
+      };
+      // The first write of the asset's default still sends it: the renderer makes the component's own instance then.
+      expect(sent("gainDefault")).toEqual([["Gain", { kind: "float", value: 1 }]]);
+      expect(sent("gainDefault")).toEqual([]);
+      expect(sent("gainHalf")).toEqual([["Gain", { kind: "float", value: 0.5 }]]);
+      expect(sent("gainHalf")).toEqual([]);
+      expect(sent("tint")).toEqual([["Tint", { kind: "vec3", value: [1, 0.5, 0] }]]);
+      expect(sent("tint")).toEqual([]);
+      // Assigning the material again (a re-sent actor) sends the next write even of a held value.
+      sent("reassign");
+      expect(sent("gainHalf")).toEqual([["Gain", { kind: "float", value: 0.5 }]]);
+      expect(commands.flatMap((command) => command.type === "log" && command.category === "Gain" ? [command.message] : [])).toEqual(["1", "1", "0.5", "0.5", "0.5", "0.5", "0.5"]);
+    } finally { runtime.stop(); }
+  });
   it("sets, reads and resets Vector2, Vector3 and Vector4 parameters, each through the members of its own width", async () => {
     const commands: CommandMessage[] = [];
     const mesh = createMeshComponent("mesh-1", "box");

@@ -1642,7 +1642,8 @@ describe("SceneLayer runtime compositor", () => {
         assetGuid: "refresh-overlay",
         classId: "SceneLayerActor",
         parentClassId: "Actor",
-        source: 'export function Refresh(ctx) { ctx.setVariableOn(ctx.getComponentById(ctx.self, "tex"), "hitTest", "passThrough"); }',
+        // The test marks components destroyed directly, so each Refresh writes a new value to re-send the actor: an unchanged write sends nothing.
+        source: 'export function Refresh(ctx) { const tex = ctx.getComponentById(ctx.self, "tex"); ctx.setVariableOn(tex, "refreshes", (ctx.getVariableFrom(tex, "refreshes") ?? 0) + 1); }',
         anchors: [],
         entryPoints: [{ name: "Refresh", event: "Refresh", isAsync: false }],
       }]);
