@@ -50,7 +50,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { capMirrorReflects, updateRateInterval, type MirrorProperties, type MirrorReflects } from "@haptic/core";
-import { dueAtUpdateRate, sceneHonoursUpdateRates, UpdateRatePhases } from "./update-rate-gate";
+import { dueAtUpdateRate, sceneHonoursUpdateRates, takeUpdateRatePhase, updateRateTick } from "./update-rate-gate";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { offsetReach } from "./mirror-offset-bound";
@@ -242,7 +242,6 @@ class SceneMirrors {
    */
   private culls = 0;
   private order = 0;
-  private readonly phases = new UpdateRatePhases();
   private drawing = false;
   private drawTarget: PlanarMirrorTargetState | null = null;
   private drawSurface: Surface | null = null;
@@ -304,7 +303,7 @@ class SceneMirrors {
   add(mesh: Mesh, properties: MirrorProperties): void {
     const interval = updateRateInterval(properties.updateRate);
     const surface: Surface = {
-      interval, phase: this.phases.take(interval), inView: false, due: false,
+      interval, phase: takeUpdateRatePhase(this.scene, interval), inView: false, due: false,
       mesh, properties, binding: createMirrorReflectionBinding(mesh, properties.tint, properties.reflects), plane: { nx: 0, ny: 0, nz: -1, d: 0 },
       target: null, ready: false, failed: false, content: new ReflectedContent(), dirty: true, drawnViewProjection: new Matrix(),
       drawnEmpty: false, culledAt: 0, culledInto: null, check: null, drawn: false, visible: false, order: this.order++, distance: 0,
@@ -370,7 +369,7 @@ class SceneMirrors {
     const tick = ++this.renders;
     this.culls++;
     this.sunShadows = reflectionShadowsEnabled(scene);
-    const rates = sceneHonoursUpdateRates(scene);
+    const rates = sceneHonoursUpdateRates(scene), frame = updateRateTick(scene);
     for (const surface of this.surfaces) {
       // Off, every surface gives its maps back now; a current one then draws again, unshadowed.
       if (!this.sunShadows) surface.target?.sunShadows.release();
@@ -392,7 +391,7 @@ class SceneMirrors {
         continue;
       }
       // Off its Update Rate's renders the surface keeps its last image without asking anything about it.
-      if (surface.visible && rates && this.skipsByRate(surface, tick, wasInView, drawnWidth, drawnHeight, type, maxSize)) {
+      if (surface.visible && rates && this.skipsByRate(surface, frame, wasInView, drawnWidth, drawnHeight, type, maxSize)) {
         surface.visible = false;
         this.rateSkips++;
         continue;

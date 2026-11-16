@@ -28,7 +28,7 @@ import {
   type RenderTargetCaptureProperties, type RenderTargetCaptureQuality, type RenderTargetPayload,
   type RenderTargetTexturePayload, type SerializedScene, type SerializedTransform, updateRateInterval,
 } from "@haptic/core";
-import { dueAtUpdateRate, sceneHonoursUpdateRates, UpdateRatePhases } from "./update-rate-gate";
+import { dueAtUpdateRate, sceneHonoursUpdateRates, takeUpdateRatePhase, updateRateTick } from "./update-rate-gate";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
@@ -274,9 +274,6 @@ export class RenderTargetCaptures {
   private disposed = false;
   /** Every-frame captures skip their draws while set (`setEveryFrameSuspended`); manual requests still draw. */
   private everyFrameSuspended = false;
-  /** This controller's renders (`render`), which Update Rates count, and the phases it handed out. */
-  private renders = 0;
-  private readonly phases = new UpdateRatePhases();
   /**
    * Which every-frame outputs something shows (`findShown`): per Render Target, the last Engine frame in which a mesh
    * that samples it is drawn, and how many captures' images lie between it and a view or reflection (0: seen directly).
@@ -373,7 +370,7 @@ export class RenderTargetCaptures {
     this.captures.set(actorId, {
       camera, settings, includeIds: new Set(settings.actorIds), root, local, fallback,
       requested: previous?.requested ?? false,
-      interval, phase: previous && previous.interval === interval ? previous.phase : this.phases.take(interval),
+      interval, phase: previous && previous.interval === interval ? previous.phase : takeUpdateRatePhase(this.scene, interval),
       due: !previous || previous.due || !sameCaptureSettings(previous.settings, settings), skipping: false,
     });
     camera.fov = settings.fieldOfView * Math.PI / 180;
@@ -443,7 +440,7 @@ export class RenderTargetCaptures {
     this.pendingViews.length = 0;
     if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
-    const tick = ++this.renders;
+    const tick = updateRateTick(this.scene);
     const rates = sceneHonoursUpdateRates(this.scene);
     for (const [actorId, capture] of this.captures) capture.skipping = rates && this.skipsByRate(actorId, capture, tick);
     this.findShown();

@@ -15,22 +15,30 @@ export function sceneHonoursUpdateRates(scene: Scene): boolean {
   return honouring.has(scene);
 }
 
-/** Whether a surface drawing every `interval`th render, offset by `phase`, is due at its owner's render `tick`. */
+/**
+ * The frame both owners count rates by: the Engine's, so a Mirror and a capture of one Scene share it and their phases
+ * stagger them against each other too.
+ */
+export function updateRateTick(scene: Scene): number {
+  return scene.getEngine().frameId;
+}
+
+/** Whether a surface drawing every `interval`th frame, offset by `phase`, is due at `tick`. */
 export function dueAtUpdateRate(tick: number, interval: number, phase: number): boolean {
   return interval <= 1 || (tick + phase) % interval === 0;
 }
 
-/**
- * Stable phases per interval, handed out in registration order: consecutive surfaces on the same rate draw on
- * different renders instead of all on one.
- */
-export class UpdateRatePhases {
-  private readonly taken = new Map<number, number>();
+const phases = new WeakMap<Scene, Map<number, number>>();
 
-  take(interval: number): number {
-    if (interval <= 1) return 0;
-    const count = this.taken.get(interval) ?? 0;
-    this.taken.set(interval, count + 1);
-    return count % interval;
-  }
+/**
+ * A stable phase for a new surface of `scene` at `interval`, handed out per interval in registration order across the
+ * Scene's Mirrors and captures: consecutive surfaces on the same rate draw on different frames instead of all on one.
+ */
+export function takeUpdateRatePhase(scene: Scene, interval: number): number {
+  if (interval <= 1) return 0;
+  let taken = phases.get(scene);
+  if (!taken) phases.set(scene, (taken = new Map()));
+  const count = taken.get(interval) ?? 0;
+  taken.set(interval, count + 1);
+  return count % interval;
 }

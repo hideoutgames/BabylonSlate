@@ -19,7 +19,8 @@ import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOr
 import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
 // Registers the scene's outline renderer, which the test enables.
 import "@babylonjs/core/Rendering/outlineRenderer";
-import { createDefaultRenderTargetCaptureProperties } from "@haptic/core";
+import { createDefaultRenderTargetCaptureProperties, parseMirrorProperties } from "@haptic/core";
+import { createMirrorSurfaceMesh } from "./mirrors";
 import { RenderTargetCaptures } from "./render-target-capture";
 import { notePassListed } from "./pass-list-signal";
 import { captureActorListDiagnostics, verifyCaptureActorLists } from "./render-target-capture-state";
@@ -1042,10 +1043,11 @@ describe("an every-frame capture draws only while something shows its output", (
 
 describe("Update Rate", () => {
   /** `shown()`'s capture and screen at `rate`, in a Play Scene unless `play` is false; counts the capture's own work. */
-  function rated(rate: string, play = true) {
+  function rated(rate: string, play = true, before?: (scene: Scene) => void) {
     const made = host();
     const { scene, engine, captures, root, settings } = made;
     if (play) setSceneHonoursUpdateRates(scene);
+    before?.(scene);
     const everyFrame = { ...settings, captureEveryFrame: true, updateRate: rate } as typeof settings;
     captures.configure("capture", everyFrame, () => root);
     const screen = MeshBuilder.CreatePlane("screen", { size: 1 }, scene);
@@ -1108,6 +1110,16 @@ describe("Update Rate", () => {
       turns.push(drawn());
     }
     expect(turns).toEqual([[2, 1], [2, 2], [3, 2], [3, 3]]);
+  });
+
+  it("takes its turn after a Mirror of the same Scene on the same rate, not on the Mirror's frames", () => {
+    const mirrorFirst = rated("every2ndFrame", true, (scene) => {
+      createMirrorSurfaceMesh(scene, "mirror", parseMirrorProperties({ updateRate: "every2ndFrame" }));
+    });
+    // The Mirror took phase 0 (the even frames): after its first image the capture draws on the odd ones.
+    expect([1, 2, 3, 4, 5].map(() => mirrorFirst.frame())).toEqual([1, 0, 1, 0, 1]);
+    const alone = rated("every2ndFrame");
+    expect([1, 2, 3, 4, 5].map(() => alone.frame())).toEqual([1, 1, 0, 1, 0]);
   });
 
   it("draws at once off its rate's renders for a changed setting, Quality or Render Target, but not for a move", () => {

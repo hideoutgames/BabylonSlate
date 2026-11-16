@@ -103,6 +103,25 @@ it("edits capture settings through typed controls and keeps actor filtering opt-
   expect(quality.options.map((option) => option.label)).toEqual(["Fast", "High Quality", "Full Quality"]);
   quality.onChange("fullQuality");
   expect(update).toHaveBeenCalledWith("quality", "fullQuality");
+  const rate = rows.find((row) => row.label === "Update Rate");
+  if (rate?.kind !== "enum") throw new Error("Missing capture Update Rate");
+  expect([rate.value, rate.disabled]).toEqual(["everyFrame", false]);
+  expect(rate.options.map((option) => option.label)).toEqual(["Every Frame", "Every 2nd Frame", "Every 4th Frame"]);
+  rate.onChange("every4thFrame");
+  expect(update).toHaveBeenCalledWith("updateRate", "every4thFrame");
+  // A capture that only draws when a script asks has no rate to keep.
+  const manual = rowsFor({ id: "capture", classId: "RenderTargetCaptureComponent",
+    properties: { ...defaultPropertiesFor("RenderTargetCaptureComponent"), captureEveryFrame: false } }).rows;
+  expect(manual.find((row) => row.label === "Update Rate")).toMatchObject({ kind: "enum", disabled: true });
+});
+
+it("edits a Mirror's Update Rate", () => {
+  const { rows, update } = rowsFor({ id: "mirror", classId: "MirrorComponent", properties: defaultPropertiesFor("MirrorComponent") });
+  const rate = rows.find((row) => row.label === "Update Rate");
+  if (rate?.kind !== "enum") throw new Error("Missing Mirror Update Rate");
+  expect(rate.value).toBe("everyFrame");
+  rate.onChange("every2ndFrame");
+  expect(update).toHaveBeenCalledWith("updateRate", "every2ndFrame");
 });
 
 it("edits Global Water Volume settings without exposing finite bounds", () => {

@@ -90,12 +90,12 @@ describe("render target graph runtime", () => {
     } finally { runtime.stop(); }
   });
 
-  it("sends each capture's authored quality, Fast when saved without one, and accepts only known qualities", async () => {
+  it("sends each capture's authored quality and Update Rate, the defaults when saved without, and accepts only known values", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true,
       playScene: { ...createDefaultScene(), actors: [
         createActor("full", "Full", { classId: "Monitor", components: [
-          { id: "lens", classId: "RenderTargetCaptureComponent", properties: { quality: "fullQuality" } },
+          { id: "lens", classId: "RenderTargetCaptureComponent", properties: { quality: "fullQuality", updateRate: "every4thFrame" } },
         ] }),
         createActor("legacy", "Legacy", { classId: "RenderTargetCapture", components: [
           { id: "legacy-lens", classId: "RenderTargetCaptureComponent", properties: { renderTargetGuid: null } },
@@ -112,15 +112,19 @@ describe("render target graph runtime", () => {
           ctx.setRenderTargetCaptureProperty(ctx.self, "quality", "Full Quality");
           ctx.setVariable("kept", ctx.getRenderTargetCaptureProperty(ctx.self, "quality"));
           ctx.setRenderTargetCaptureProperty(ctx.self, "quality", "fast");
+          ctx.setRenderTargetCaptureProperty(ctx.self, "updateRate", "Every 2nd Frame");
+          ctx.setVariable("rate", ctx.getRenderTargetCaptureProperty(ctx.self, "updateRate"));
+          ctx.setRenderTargetCaptureProperty(ctx.self, "updateRate", "every2ndFrame");
         }`,
       }]);
       runtime.realizePlayWorld();
-      expect(sent("full")).toMatchObject({ settings: { quality: "fullQuality" } });
-      expect(sent("legacy")).toMatchObject({ settings: { quality: "fast" } });
+      expect(sent("full")).toMatchObject({ settings: { quality: "fullQuality", updateRate: "every4thFrame" } });
+      expect(sent("legacy")).toMatchObject({ settings: { quality: "fast", updateRate: "everyFrame" } });
       const actor = runtime.getWorld().findActor("full")!;
       runtime.invokeScriptEvent("Monitor", "Update", actor);
       expect(actor.getVariable("kept")).toBe("fullQuality");
-      expect(sent("full")).toMatchObject({ settings: { quality: "fast" } });
+      expect(actor.getVariable("rate")).toBe("every4thFrame");
+      expect(sent("full")).toMatchObject({ settings: { quality: "fast", updateRate: "every2ndFrame" } });
     } finally { runtime.stop(); }
   });
 

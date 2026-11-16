@@ -792,15 +792,16 @@ describe("Update Rate", () => {
     return { ...view, surfaces, moving };
   }
 
-  /** Settles the owner's first eight renders with a still view: its next render is the 9th. */
+  /** Settles eight renders (Engine frames 0 to 7) with a still view: the next render is frame 8. */
   function settle(frame: () => string[]) {
     for (let i = 0; i < 7; i++) frame();
     expect(frame()).toEqual([]);
   }
 
   it.each([
-    ["every2ndFrame", [false, true, false, true, false, true, false, true]],
-    ["every4thFrame", [false, false, false, true, false, false, false, true]],
+    // Frames 8 to 15; the only surface of its rate has phase 0.
+    ["every2ndFrame", [true, false, true, false, true, false, true, false]],
+    ["every4thFrame", [true, false, false, false, true, false, false, false]],
   ])("draws a Mirror at %s only on its rate's renders in Play, and culls, asks and draws nothing on the others", (rate, due) => {
     const { scene, frame, moving } = ratedHost(rate, { mirror: new Vector3(0, 1, 3) });
     settle(frame);
@@ -832,30 +833,31 @@ describe("Update Rate", () => {
   it("staggers Mirrors on the same rate so they take turns instead of drawing on the same render", () => {
     const { frame, moving } = ratedHost("every2ndFrame", { left: new Vector3(-1.5, 1, 3), right: new Vector3(1.5, 1, 3) });
     settle(frame);
-    // The first registered takes the even renders, the second the odd ones.
+    // The first registered takes the even frames, the second the odd ones.
     for (let i = 0; i < 3; i++) {
-      expect(moving()).toEqual(["mirror:right"]);
       expect(moving()).toEqual(["mirror:left"]);
+      expect(moving()).toEqual(["mirror:right"]);
     }
   });
 
   it("draws at once off its rate's renders when it first draws, comes into view, needs another target or reflects otherwise", () => {
     const { scene, camera, surfaces, frame, moving } = ratedHost("every4thFrame", { mirror: new Vector3(0, 1, 3) });
     settle(frame);
-    // Renders 9 to 11 are off the first surface's phase.
+    // The first surface's phase falls on frames 8, 12 and 16. A new one (phase 1, due on 11 and 15) draws on frame 8 at once.
     const late = createMirrorSurfaceMesh(scene, "late", parseMirrorProperties({ width: 2, height: 2, updateRate: "every4thFrame" }));
     late.position.set(-2.5, 1, 5);
     expect(frame()).toEqual(["mirror:late"]);
-    // Out of view the surface asks nothing; the render it is back in view draws it from where the view moved meanwhile.
+    // Out of view a surface asks nothing; on frame 10 it is back in view and draws from where the view moved meanwhile.
     surfaces.mirror!.isVisible = false;
     late.isVisible = false;
     expect(frame()).toEqual([]);
     camera.position.x += 0.2;
     surfaces.mirror!.isVisible = true;
     expect(frame()).toEqual(["mirror:mirror"]);
-    expect(moving()).toEqual(["mirror:mirror"]); // Render 12, on its phase.
     expect(moving()).toEqual([]);
-    // A still view off its phase: a smaller view resizes its target, and a quality level that caps what it reflects.
+    expect(moving()).toEqual(["mirror:mirror"]); // Frame 12, on its phase.
+    // A still view off its phase (frames 13 and 15): a smaller view resizes its target, and a quality level that caps
+    // what it reflects.
     updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled: true, renderScale: 0.5, sharpness: 0.2 } } });
     expect(frame()).toEqual(["mirror:mirror"]);
     expect(frame()).toEqual([]);
@@ -865,10 +867,11 @@ describe("Update Rate", () => {
 
   it("leaves the budget to choose among due Mirrors, and keeps one it passed over due on the renders after", () => {
     const { scene, frame, moving } = ratedHost("every2ndFrame", {
-      // Phases by registration: a, c and e on the even renders, b and d on the odd ones.
+      // Phases by registration: a, c and e on the even frames, b and d on the odd ones.
       a: new Vector3(0, 1, 3), b: new Vector3(-3, 1, 9), c: new Vector3(-2, 1, 4), d: new Vector3(3, 1, 10), e: new Vector3(2, 1, 6),
     });
-    for (let i = 0; i < 9; i++) frame();
+    // Frames 0 to 10; the view starts moving on frame 11.
+    for (let i = 0; i < 10; i++) frame();
     expect(frame()).toEqual([]);
     expect(moving()).toEqual(["mirror:b", "mirror:d"]);
     // Three are due and two may draw: the nearest two do, the third keeps its image and stays due.
