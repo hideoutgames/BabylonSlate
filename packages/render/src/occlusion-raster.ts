@@ -185,18 +185,18 @@ export class OcclusionBuffer {
     // Depths are positive or Infinity (never NaN), so plain comparisons give Math.max's answer.
     // Only texels strictly inside the rectangle (so inside the buffer) can stay covered: each one at its edge has an
     // uncovered neighbour. Their neighbours all lie in the buffer.
+    // Each texel reads its three neighbours itself: a depth carried from one texel to the next would be a loop-carried
+    // double, which an optimising tier may box on every step.
     const from = left + 1, to = right - 1;
     for (let y = top; y <= bottom; y++) {
       const row = y * width;
-      let before = occluder[row + from - 1]!, centre = occluder[row + from]!;
       for (let x = from; x <= to; x++) {
-        const after = occluder[row + x + 1]!;
-        let depth = centre;
+        const at = row + x;
+        let depth = occluder[at]!;
+        const before = occluder[at - 1]!, after = occluder[at + 1]!;
         if (before > depth) depth = before;
         if (after > depth) depth = after;
-        rowMax[row + x] = depth;
-        before = centre;
-        centre = after;
+        rowMax[at] = depth;
       }
     }
     const first = top + 1, last = bottom - 1;

@@ -222,12 +222,13 @@ export function physicsParticipantActors(world: World): readonly Actor[] {
  */
 export class PhysicsCompositionScratch {
   readonly resolved = new Map<string, Transform>();
-  readonly resolving = new Set<Actor>();
+  /** The actors being resolved, outermost first (a stack: a set would regrow its storage as it empties and fills). */
+  readonly resolving: Actor[] = [];
   private readonly poses = new Map<string, Transform>();
 
   begin(): void {
     this.resolved.clear();
-    this.resolving.clear();
+    this.resolving.length = 0;
   }
 
   /** The pose object for `guid`; the caller overwrites all of it. */
@@ -264,13 +265,13 @@ function physicsTransformResolver(
   bodyPoses?: ReadonlyMap<string, PhysicsTransform>,
   scratch?: PhysicsCompositionScratch,
 ): (actor: Actor) => Transform {
-  const resolving = scratch?.resolving ?? new Set<Actor>();
+  const resolving = scratch?.resolving ?? [];
   const resolve = (actor: Actor): Transform => {
     const old = resolved.get(actor.guid);
     if (old) return old;
-    if (resolving.has(actor))
+    if (resolving.includes(actor))
       throw new Error("Physics hierarchy contains a parent cycle");
-    resolving.add(actor);
+    resolving.push(actor);
     const parentId = actorParentGuid(actor);
     const parent = parentId ? lookup(parentId) : undefined;
     let transform: Transform;
@@ -303,7 +304,8 @@ function physicsTransformResolver(
       transform.rotation.z = bodyPose.rotation.z;
       transform.rotation.w = bodyPose.rotation.w;
     }
-    resolving.delete(actor);
+    // Nested resolves have pushed and popped their own actors: the last one is this one.
+    resolving.pop();
     resolved.set(actor.guid, transform);
     return transform;
   };

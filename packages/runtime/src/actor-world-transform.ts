@@ -96,7 +96,7 @@ export function composeActorWorldTransforms(
   onShear?: (actor: Actor) => void,
 ): Map<string, Transform> {
   const resolved = new Map<string, Transform>();
-  composeInto(lookup, selected, new MapPoseStore(resolved), new Set(), onShear);
+  composeInto(lookup, selected, new MapPoseStore(resolved), [], onShear);
   return resolved;
 }
 
@@ -111,7 +111,7 @@ export function composeActorWorldTransformsInto(
   selected: Iterable<Actor>,
   resolved: Map<string, Transform>,
 ): boolean {
-  return composeInto(lookup, selected, new MapPoseStore(resolved), new Set());
+  return composeInto(lookup, selected, new MapPoseStore(resolved), []);
 }
 
 /**
@@ -125,7 +125,7 @@ export function composeActorWorldTransformsInto(
  */
 export class WorldTransformComposer {
   private readonly store = new ReusablePoseStore();
-  private readonly resolving = new Set<string>();
+  private readonly resolving: string[] = [];
 
   compose(
     lookup: (guid: string) => Actor | undefined,
@@ -133,7 +133,7 @@ export class WorldTransformComposer {
     onShear?: (actor: Actor) => void,
   ): ActorTransformMap {
     this.store.begin();
-    this.resolving.clear();
+    this.resolving.length = 0;
     composeInto(lookup, selected, this.store, this.resolving, onShear);
     return this.store.end();
   }
@@ -202,13 +202,16 @@ class ReusablePoseStore implements PoseStore {
   }
 
   end(): ActorTransformMap {
-    for (const [guid, entry] of this.entries) {
-      if (entry.pass === this.pass) continue;
-      this.entries.delete(guid);
-      this.poses.delete(guid);
-    }
+    // `forEach` rather than `for...of` over entries: no [guid, entry] pair per entry and pass.
+    this.entries.forEach(this.release);
     return this.poses;
   }
+
+  private readonly release = (entry: PoseEntry, guid: string): void => {
+    if (entry.pass === this.pass) return;
+    this.entries.delete(guid);
+    this.poses.delete(guid);
+  };
 
   resolved(guid: string): Transform | undefined {
     const entry = this.entries.get(guid);
@@ -246,7 +249,8 @@ function composeInto(
   lookup: (guid: string) => Actor | undefined,
   selected: Iterable<Actor>,
   store: PoseStore,
-  resolving: Set<string>,
+  /** The guids being resolved, outermost first: the ancestors of the actor resolving now. */
+  resolving: string[],
   onShear?: (actor: Actor) => void,
 ): boolean {
   let cyclic = false;
@@ -254,17 +258,17 @@ function composeInto(
   const resolve = (actor: Actor): Transform => {
     const cached = store.resolved(actor.guid);
     if (cached) return cached;
-    if (resolving.has(actor.guid)) {
+    if (resolving.includes(actor.guid)) {
       cyclic = true;
       return copyTransform(actor.transform);
     }
 
-    resolving.add(actor.guid);
+    resolving.push(actor.guid);
     const parentId = actorParentGuid(actor);
     const parent = parentId ? lookup(parentId) : undefined;
-    if (parent && resolving.has(parent.guid)) cyclic = true;
+    if (parent && resolving.includes(parent.guid)) cyclic = true;
     let world: Transform;
-    if (parent && !resolving.has(parent.guid)) {
+    if (parent && !resolving.includes(parent.guid)) {
       const parentWorld = resolve(parent);
       world = store.target(actor.guid);
       // Sheared actors' descendants compose through their exact world matrices.
@@ -276,7 +280,8 @@ function composeInto(
     } else {
       world = copyTransformInto(actor.transform, store.target(actor.guid));
     }
-    resolving.delete(actor.guid);
+    // Nested resolves have pushed and popped their own guids: the last one is this actor's.
+    resolving.pop();
     store.commit(actor.guid, world);
     return world;
   };

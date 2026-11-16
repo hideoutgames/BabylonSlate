@@ -272,8 +272,11 @@ function reconcileSnapshotVisuals(
   binding: SnapshotSceneBinding,
   snapshot: SampledSnapshot,
 ): void {
+  // `live` ends holding exactly the slots this pass found, as if cleared first: found slots are stamped with the pass and
+  // the others dropped after the loop (also when a slot throws). Nothing reads it during the loop.
   const live = binding.liveSlots;
-  live.clear();
+  const livePasses = (binding.liveSlotPasses ??= new Map());
+  const pass = (binding.liveSlotPass = (binding.liveSlotPass ?? 0) + 1);
   const seen = binding.seenSlots;
   const despawned = binding.despawnedSlots.size > 0 ? binding.despawnedSlots : null;
   const animationScenes = binding.tilemapAnimationScenes ??= new Set();
@@ -293,7 +296,8 @@ function reconcileSnapshotVisuals(
       binding.snapshotMeshes[i] = null;
       // The row of an actor a command despawned after this snapshot was taken (`despawnPlaySlot`).
       if (despawned?.has(actor.slotId)) continue;
-      live.add(actor.slotId);
+      livePasses.set(actor.slotId, pass);
+      if (!live.has(actor.slotId)) live.add(actor.slotId);
       const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
       const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
       if (wantsOverlay && !overlayScene) {
@@ -327,6 +331,11 @@ function reconcileSnapshotVisuals(
     }
     completed = true;
   } finally {
+    for (const slotId of live) {
+      if (livePasses.get(slotId) === pass) continue;
+      live.delete(slotId);
+      livePasses.delete(slotId);
+    }
     sweepWorldOverlayLeftovers(scene, binding, overlaySlots, movedOrHid || !completed);
   }
   for (const slotId of binding.meshes.keys()) {
@@ -519,6 +528,7 @@ export function disposeSnapshotBinding(binding: SnapshotSceneBinding): void {
   for (const camera of binding.cameras.values()) camera.dispose();
   binding.meshes.clear();
   binding.liveSlots.clear();
+  binding.liveSlotPasses?.clear();
   binding.snapshotMeshes.length = 0;
   binding.seenSlots.clear();
   binding.despawnedSlots.clear();

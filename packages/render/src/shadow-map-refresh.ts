@@ -276,7 +276,8 @@ function drawnIntoCascade(
   if (!minTexels) return reachesCascade(matrices, scales, center, radius);
   for (let cascade = 0; cascade < matrices.length; cascade++)
     if (reachesCascadeRectangle(matrices[cascade]!, scales, cascade, center, radius) &&
-      (cascade === 0 || castsIntoCascade(matrices[cascade]!, radius, sizes[cascade]!, minTexels))) return true;
+      // The cascade's axis scales are those `castsIntoCascade` takes the larger of (`cascadeTexelScale`).
+      (cascade === 0 || castsIntoCascade(Math.max(scales[2 * cascade]!, scales[2 * cascade + 1]!), radius, sizes[cascade]!, minTexels))) return true;
   return false;
 }
 

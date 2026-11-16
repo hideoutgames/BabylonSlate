@@ -65,6 +65,12 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   tilemapAnimationScenes?: Set<Scene>;
   /** Reused each apply — no per-frame Set allocation. */
   liveSlots: Set<number>;
+  /**
+   * Per live slot, the apply pass (`liveSlotPass`) that last found it: an apply keeps the slots it finds again in
+   * `liveSlots` and drops the rest, instead of clearing and refilling the set, whose storage would regrow every frame.
+   */
+  liveSlotPasses?: Map<number, number>;
+  liveSlotPass?: number;
   /** Reused structural-pass results, indexed by the current snapshot actor. */
   snapshotMeshes: Array<Mesh | null>;
   /** Slot ids observed in an applied snapshot; gates absence-retire so
