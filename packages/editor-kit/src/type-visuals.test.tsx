@@ -39,6 +39,16 @@ describe("resolveTypeVisual", () => {
     for (const assetType of ["Sprite", "SpriteAnimation", "AnimationGraph2D", "Tileset", "Tilemap"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-sprite)");
   });
 
+  it("gives particle assets the Visual Effects colour and Material Instances their own, apart from Materials", () => {
+    for (const assetType of ["ParticleEmitter", "ParticleGraph", "ParticleSystem"]) {
+      expect(resolveTypeVisual({ assetType }).colorVar, assetType).toBe("var(--asset-visual-effects)");
+    }
+    expect(resolveTypeVisual({ assetType: "MaterialInstance" }).colorVar).toBe("var(--asset-material-instance)");
+    for (const assetType of ["Material", "MaterialFunction", "Water", "SkyboxCreator"]) {
+      expect(resolveTypeVisual({ assetType }).colorVar, assetType).toBe("var(--asset-material)");
+    }
+  });
+
   it("recognizes Material Object references as objects with the material glyph", () => {
     expect(walkAncestry("MaterialObject", engineParentOf)).toEqual(["MaterialObject", "Object"]);
     const visual = resolveTypeVisual({ classId: "MaterialObject" });

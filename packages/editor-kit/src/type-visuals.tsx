@@ -105,6 +105,7 @@ export type AssetVisualFamily =
   | "sprite"
   | "material"
   | "materialInstance"
+  | "visualEffects"
   | "model"
   | "audio"
   | "font"
@@ -494,9 +495,9 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   InputAxis: "struct",
   AudioChannel: "struct",
   SoundAttenuation: "class",
-  ParticleEmitter: "material",
-  ParticleGraph: "material",
-  ParticleSystem: "material",
+  ParticleEmitter: "visualEffects",
+  ParticleGraph: "visualEffects",
+  ParticleSystem: "visualEffects",
   Water: "material",
   SkyboxCreator: "material",
   Trace: "class",
@@ -541,6 +542,7 @@ const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   sprite: assetColorVar("sprite"),
   material: assetColorVar("material"),
   materialInstance: assetColorVar("materialInstance"),
+  visualEffects: assetColorVar("visualEffects"),
   model: assetColorVar("model"),
   audio: assetColorVar("audio"),
   font: assetColorVar("font"),

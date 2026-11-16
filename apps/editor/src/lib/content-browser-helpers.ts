@@ -304,7 +304,12 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialInstance", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Water", "ParticleEmitter", "ParticleGraph", "ParticleSystem", "SkyboxCreator"],
+    types: ["Material", "MaterialInstance", "MaterialFunction", "RenderTarget", "RenderTargetTexture", "Water", "SkyboxCreator"],
+  },
+  {
+    id: "visualEffects",
+    label: "Visual Effects",
+    types: ["ParticleEmitter", "ParticleGraph", "ParticleSystem"],
   },
   {
     id: "audio",
