@@ -2,31 +2,166 @@ import { describe, expect, it } from "vitest";
 import {
   RIG_BONE_COLOR,
   RIG_BONE_VERTICES,
+  RIG_JOINT_BONE,
   RIG_JOINT_COLOR,
+  RIG_JOINT_HIDDEN,
+  RIG_JOINT_MARKER,
   RIG_JOINT_VERTICES,
+  RIG_LINE_COLOR,
   RIG_SELECTED_COLOR,
   rigPreviewLayout,
+  rigPreviewTopology,
   writeRigPreview,
+  type RigJointRest,
 } from "./rig-preview-geometry";
 
-/** A hip at the origin, a spine 1 m up, and a head 0.5 m above that; plus a second child of the hip. Drawn as a 4 m rig. */
-const JOINTS = new Float32Array([0, 0, 0, 0, 1, 0, 0, 1.5, 0, 0.4, -0.1, 0]);
-const PARENTS = [-1, 0, 1, 0];
+type Row = [name: string, parent: string | null, local: [number, number, number], deforms: boolean, underImportRoot?: boolean];
 
-function draw(options: { selected?: number; light?: [number, number, number]; joints?: Float32Array } = {}) {
-  const layout = rigPreviewLayout(PARENTS);
+/** Joints from rows naming their parents, as the rest pose has them. */
+function rig(rows: Row[]): { names: string[]; joints: RigJointRest[] } {
+  const names = rows.map(([name]) => name);
+  return {
+    names,
+    joints: rows.map(([, parent, local, deforms, underImportRoot = false]) => ({
+      parent: parent === null ? -1 : names.indexOf(parent),
+      local,
+      deforms,
+      underImportRoot,
+    })),
+  };
+}
+
+function describeTopology(rows: Row[], options: { connect: boolean; topMarkers?: boolean } = { connect: true }) {
+  const { names, joints } = rig(rows);
+  const topology = rigPreviewTopology(joints, options);
+  const kind = (name: string) => ["hidden", "marker", "bone"][topology.kinds[names.indexOf(name)]!];
+  const connectedTo = (name: string) => names[topology.connected[names.indexOf(name)]!] ?? null;
+  const lines = topology.lines.map(([parent, child]) => `${names[parent]}-${names[child]}`);
+  return { topology, kind, connectedTo, lines };
+}
+
+/** KayKit's Rig_Medium, one side, as its file has it: bones run along +Y; the root and hand slots deform nothing. */
+const KAYKIT: Row[] = [
+  ["root", null, [0, 0, 0], false],
+  ["hips", "root", [0, 0.406, 0], true],
+  ["upperleg.l", "hips", [0.171, 0.114, 0], true],
+  ["lowerleg.l", "upperleg.l", [0, 0.227, 0], true],
+  ["spine", "hips", [0, 0.192, 0], true],
+  ["chest", "spine", [0, 0.375, 0], true],
+  ["head", "chest", [0, 0.269, 0], true],
+  ["upperarm.l", "chest", [0.212, 0.134, 0], true],
+  ["hand.l", "upperarm.l", [0, 0.074, 0], true],
+  ["handslot.l", "hand.l", [0, 0.096, -0.058], false],
+];
+
+/** The Velociraptor from FBX: its armature object kept as a joint above the bones, and end markers past its leaves. */
+const RAPTOR: Row[] = [
+  ["Armature", null, [0, 0, 0], false, true],
+  ["root", "Armature", [0, -0.011, 0], true],
+  ["Body", "root", [-0.031, 4.25, 1.043], false],
+  ["BackFoot.R", "root", [0.966, 0.086, -1.16], true],
+  ["BackFoot.R_end", "BackFoot.R", [0, 1, 0], false],
+  ["Neck", "Body", [0, 0.719, -0.001], true],
+  ["Head", "Neck", [0, 0.773, 0], true],
+  ["Head_end", "Head", [0, 1.394, 0], false],
+];
+
+describe("rigPreviewTopology", () => {
+  it("runs each bone to the child on its +Y axis and joins every other child by a line", () => {
+    const { kind, connectedTo, lines } = describeTopology(KAYKIT);
+    expect(connectedTo("hips")).toBe("spine");
+    expect(connectedTo("chest")).toBe("head");
+    expect(connectedTo("upperleg.l")).toBe("lowerleg.l");
+    // The hand slot sits off the hand's axis: the hand's tail is guessed and the slot is joined by a line.
+    expect(connectedTo("hand.l")).toBeNull();
+    expect(connectedTo("head")).toBeNull();
+    expect(lines).toEqual(["root-hips", "hips-upperleg.l", "chest-upperarm.l", "hand.l-handslot.l"]);
+    // The root and the hand slot deform nothing: a ball each, no bone; no floor-to-hips bone.
+    expect(kind("root")).toBe("marker");
+    expect(kind("handslot.l")).toBe("marker");
+    expect(kind("head")).toBe("bone");
+  });
+
+  it("hides an armature object kept as a joint, and makes an end marker its bone's tail", () => {
+    const { kind, connectedTo, lines } = describeTopology(RAPTOR);
+    expect(kind("Armature")).toBe("hidden");
+    expect(kind("Head_end")).toBe("hidden");
+    expect(kind("BackFoot.R_end")).toBe("hidden");
+    expect(connectedTo("Head")).toBe("Head_end");
+    expect(connectedTo("BackFoot.R")).toBe("BackFoot.R_end");
+    // The root deforms: a bone of its own (no child on its axis), lines to the body and the foot; the body deforms
+    // nothing, a ball with a line on to the neck it heads.
+    expect(kind("root")).toBe("bone");
+    expect(connectedTo("root")).toBeNull();
+    expect(kind("Body")).toBe("marker");
+    expect(lines).toEqual(["root-Body", "root-BackFoot.R", "Body-Neck"]);
+  });
+
+  it("keeps a top joint that deforms nothing but sits under its own armature, and a deforming end joint", () => {
+    // KayKit's root is under its armature node, not the import's root; a leaf that deforms stays a joint with a bone.
+    const { kind } = describeTopology([
+      ["root", null, [0, 0, 0], false, false],
+      ["hips", "root", [0, 0.4, 0], true],
+      ["toes", "hips", [0, 0.2, 0], true],
+    ]);
+    expect(kind("root")).toBe("marker");
+    expect(kind("toes")).toBe("bone");
+  });
+
+  it("finds the bone axis the rig's children lie along", () => {
+    // A rig whose bones run along -X: its chain connects along it, and a guessed tail runs along it too.
+    const { topology, connectedTo } = describeTopology([
+      ["pelvis", null, [0, 0, 0], true],
+      ["spine", "pelvis", [-0.3, 0, 0], true],
+      ["neck", "spine", [-0.4, 0, 0], true],
+      ["thigh", "pelvis", [0.1, 0, 0.2], true],
+      ["calf", "thigh", [-0.5, 0, 0], true],
+    ]);
+    expect(topology.axis).toEqual([-1, 0, 0]);
+    expect(connectedTo("pelvis")).toBe("spine");
+    expect(connectedTo("thigh")).toBe("calf");
+  });
+
+  it("connects nothing on a rigid-part rig, and only bare hierarchies draw their top joint as a ball", () => {
+    const parts: Row[] = [
+      ["character", null, [0, 0, 0], false, true],
+      ["root", "character", [0, 0, 0], false],
+      ["torso", "root", [0, 0.7, 0], true],
+      ["head", "torso", [0, 1.2, 0], true],
+    ];
+    const rigid = describeTopology(parts, { connect: false });
+    expect(rigid.kind("character")).toBe("hidden");
+    expect(rigid.kind("root")).toBe("marker");
+    expect(rigid.connectedTo("torso")).toBeNull();
+    expect(rigid.lines).toEqual(["root-torso", "torso-head"]);
+    const bare: Row[] = [
+      ["Rig", null, [0, 0, 0], false, true],
+      ["root", "Rig", [0, 0, 0], true],
+      ["hips", "root", [0, 0.4, 0], true],
+    ];
+    expect(describeTopology(bare, { connect: true, topMarkers: true }).kind("root")).toBe("marker");
+    expect(describeTopology(bare, { connect: true }).kind("root")).toBe("bone");
+  });
+});
+
+/** A hip at the origin, a spine 1 m up running to a head 0.5 m above it, and a hand slot off the hip. A 4 m rig. */
+const JOINTS = new Float32Array([0, 0, 0, 0, 1, 0, 0, 1.5, 0, 0.4, -0.1, 0]);
+const ROWS: Row[] = [
+  ["hip", null, [0, 0, 0], true],
+  ["spine", "hip", [0, 1, 0], true],
+  ["head", "spine", [0, 0.5, 0], true],
+  ["slot", "hip", [0.4, -0.1, 0], false],
+];
+
+function draw(options: { selected?: number; light?: [number, number, number]; joints?: Float32Array; tails?: Float32Array } = {}) {
+  const topology = rigPreviewTopology(rig(ROWS).joints, { connect: true });
+  const layout = rigPreviewLayout(topology);
+  const joints = options.joints ?? JOINTS;
+  // Each bone ends at the child it runs to; the head's tail is given.
+  const tails = options.tails ?? new Float32Array([...joints.subarray(3, 6), ...joints.subarray(6, 9), 0, 2, 0, NaN, NaN, NaN]);
   const positions = new Float32Array(layout.vertexCount * 3);
   const colors = new Float32Array(layout.vertexCount * 4);
-  writeRigPreview({
-    joints: options.joints ?? JOINTS,
-    parents: PARENTS,
-    layout,
-    size: 4,
-    light: options.light ?? [0, 0, -1],
-    selected: options.selected ?? -1,
-    positions,
-    colors,
-  });
+  writeRigPreview({ joints, tails, layout, size: 4, light: options.light ?? [0, 0, -1], selected: options.selected ?? -1, positions, colors });
   return { layout, positions, colors };
 }
 
@@ -47,40 +182,37 @@ const hueOf = (color: readonly number[]) => {
 };
 
 describe("rigPreviewLayout", () => {
-  it("draws a bone for every joint with a parent and a ball for every joint", () => {
-    const layout = rigPreviewLayout([-1, 0, 1, 0, 9, 5]);
-    // Joint 4's parent is out of range and joint 5 names itself: neither draws a bone.
-    expect(layout.bones).toEqual([1, 2, 3]);
-    expect(layout.tails).toEqual([]);
-    expect(layout.vertexCount).toBe(3 * RIG_BONE_VERTICES + 6 * RIG_JOINT_VERTICES);
-  });
-
-  it("gives a tail bone only to childless joints that ask for one", () => {
-    // Joints 2 and 3 are childless; joint 0 heads two bones and gets no tail even when asked.
-    const layout = rigPreviewLayout(PARENTS, (joint) => joint !== 3);
-    expect(layout.tails).toEqual([2]);
+  it("draws a bone per bone joint, a line per line and a ball per drawn joint", () => {
+    const { layout } = draw();
+    expect(layout.bones).toEqual([0, 1, 2]);
+    expect(layout.lines).toEqual([[0, 3]]);
+    expect(layout.balls).toEqual([0, 1, 2, 3]);
     expect(layout.vertexCount).toBe(4 * RIG_BONE_VERTICES + 4 * RIG_JOINT_VERTICES);
+    expect([RIG_JOINT_HIDDEN, RIG_JOINT_MARKER, RIG_JOINT_BONE]).toEqual([0, 1, 2]);
   });
 });
 
 describe("writeRigPreview", () => {
-  it("runs each bone from its parent joint to its child, widest near the head", () => {
+  it("runs each bone from its joint to its tail, widest near the head", () => {
     const { positions } = draw();
-    // The first bone runs from the hip (0, 0, 0) to the spine (0, 1, 0): its triangles alternate head and tail.
+    // The hip's bone runs to the spine (0, 1, 0): its triangles alternate head and tail.
     const bone = Array.from({ length: RIG_BONE_VERTICES }, (_, index) => vertex(positions, index));
     expect(bone[0]).toEqual([0, 0, 0]);
     expect(bone[3]).toEqual([0, 1, 0]);
     // The ring sits 15% along the bone, 0.1 of its length out from the axis.
-    const ring = bone.filter((point, index) => index % 3 !== 0);
+    const ring = bone.filter((_, index) => index % 3 !== 0);
     for (const point of ring) {
       expect(point[1]).toBeCloseTo(0.15, 3);
       expect(Math.hypot(point[0]!, point[2]!)).toBeCloseTo(0.1, 3);
     }
+    // The head's bone runs to its given tail.
+    expect(vertex(positions, 2 * RIG_BONE_VERTICES)).toEqual([0, 1.5, 0]);
+    expect(vertex(positions, 2 * RIG_BONE_VERTICES + 3)).toEqual([0, 2, 0]);
   });
 
   it("keeps a short bone readable and a long one slender against the rig's size", () => {
-    const tiny = new Float32Array([0, 0, 0, 0, 0.01, 0, 0, 1.5, 0, 0.4, -0.1, 0]);
-    const { positions } = draw({ joints: tiny });
+    const joints = new Float32Array([0, 0, 0, 0, 0.01, 0, 0, 1.5, 0, 0.4, -0.1, 0]);
+    const { positions } = draw({ joints });
     // A 1 cm bone would be 1 mm wide; the minimum is 0.35% of the 4 m rig, 14 mm.
     const ringPoint = vertex(positions, 1);
     expect(Math.hypot(ringPoint[0]!, ringPoint[2]!)).toBeCloseTo(0.014, 4);
@@ -89,50 +221,48 @@ describe("writeRigPreview", () => {
     expect(Math.hypot(longRing[0]!, longRing[2]!)).toBeCloseTo(0.12, 3);
   });
 
-  it("collapses a zero-length bone instead of drawing a spike", () => {
-    const stacked = new Float32Array([0, 0, 0, 0, 0, 0, 0, 1.5, 0, 0.4, -0.1, 0]);
-    const { positions, colors } = draw({ joints: stacked });
-    for (let index = 0; index < RIG_BONE_VERTICES; index++) {
-      expect(vertex(positions, index)).toEqual([0, 0, 0]);
+  it("draws a line far thinner than any bone", () => {
+    const { positions } = draw();
+    // The hip-to-slot line: 0.12% of the 4 m rig wide, against at least 0.35% for a bone.
+    const first = 3 * RIG_BONE_VERTICES;
+    const head = vertex(positions, first);
+    const ring = [...positions.subarray((first + 1) * 3, (first + 1) * 3 + 3)];
+    const along = [0.4, -0.1, 0];
+    const length = Math.hypot(along[0]!, along[1]!);
+    const offset = ring.map((value, axis) => value - head[axis]! - (along[axis]! / length) * 0.15 * length);
+    expect(head).toEqual([0, 0, 0]);
+    expect(Math.hypot(...offset)).toBeCloseTo(0.0048, 4);
+  });
+
+  it("collapses a bone with no tail, or with its tail on its head, instead of drawing a spike", () => {
+    const tails = new Float32Array([0, 0, 0, NaN, NaN, NaN, 0, 2, 0, NaN, NaN, NaN]);
+    const { positions, colors } = draw({ tails });
+    for (let index = 0; index < 2 * RIG_BONE_VERTICES; index++) {
+      const joint = index < RIG_BONE_VERTICES ? [0, 0, 0] : [0, 1, 0];
+      expect(vertex(positions, index)).toEqual(joint);
       expect([...colors.subarray(index * 4, index * 4 + 3)]).toEqual([0, 0, 0]);
     }
   });
 
-  it("colours bones and joints, and the selected joint with the bones it heads in the selection colour", () => {
+  it("colours bones, lines and joints, and the selected joint with its bone in the selection colour", () => {
     const plain = draw();
-    const firstJoint = plain.layout.bones.length * RIG_BONE_VERTICES;
+    const firstBall = 4 * RIG_BONE_VERTICES;
     expect(hue(plain.colors, 0)).toEqual(hueOf(RIG_BONE_COLOR));
-    expect(hue(plain.colors, firstJoint)).toEqual(hueOf(RIG_JOINT_COLOR));
+    expect(hue(plain.colors, 3 * RIG_BONE_VERTICES)).toEqual(hueOf(RIG_LINE_COLOR));
+    expect(hue(plain.colors, firstBall)).toEqual(hueOf(RIG_JOINT_COLOR));
 
-    // Selecting the hip (joint 0) highlights its ball and both bones it heads, not the spine's bone.
-    const selected = draw({ selected: 0 });
-    const boneHues = plain.layout.bones.map((_, bone) => hue(selected.colors, bone * RIG_BONE_VERTICES));
-    expect(boneHues).toEqual([hueOf(RIG_SELECTED_COLOR), hueOf(RIG_BONE_COLOR), hueOf(RIG_SELECTED_COLOR)]);
-    expect(hue(selected.colors, firstJoint)).toEqual(hueOf(RIG_SELECTED_COLOR));
-    expect(hue(selected.colors, firstJoint + RIG_JOINT_VERTICES)).toEqual(hueOf(RIG_JOINT_COLOR));
-  });
-
-  it("draws a tail bone from a childless joint to its tail point, and collapses one with no point", () => {
-    const layout = rigPreviewLayout(PARENTS, () => true);
-    const positions = new Float32Array(layout.vertexCount * 3);
-    const colors = new Float32Array(layout.vertexCount * 4);
-    const tails = new Float32Array(PARENTS.length * 3).fill(Number.NaN);
-    tails.set([0, 2, 0], 2 * 3); // The head joint's tail, half a metre above it.
-    writeRigPreview({ joints: JOINTS, tails, parents: PARENTS, layout, size: 4, light: [0, 0, -1], selected: -1, positions, colors });
-    const first = layout.bones.length * RIG_BONE_VERTICES;
-    expect(layout.tails).toEqual([2, 3]);
-    expect(vertex(positions, first)).toEqual([0, 1.5, 0]);
-    expect(vertex(positions, first + 3)).toEqual([0, 2, 0]);
-    // Joint 3 has no tail point: its tail bone draws nothing.
-    for (let index = first + RIG_BONE_VERTICES; index < first + 2 * RIG_BONE_VERTICES; index++) {
-      expect(vertex(positions, index)).toEqual([0.4, -0.1, 0]);
-    }
+    // Selecting the spine (joint 1) highlights its ball and its own bone, not the hip's bone that runs to it.
+    const selected = draw({ selected: 1 });
+    expect([0, 1, 2].map((bone) => hue(selected.colors, bone * RIG_BONE_VERTICES)))
+      .toEqual([hueOf(RIG_BONE_COLOR), hueOf(RIG_SELECTED_COLOR), hueOf(RIG_BONE_COLOR)]);
+    expect(hue(selected.colors, firstBall + RIG_JOINT_VERTICES)).toEqual(hueOf(RIG_SELECTED_COLOR));
+    expect(hue(selected.colors, firstBall)).toEqual(hueOf(RIG_JOINT_COLOR));
   });
 
   it("shades faces turned to the light brighter than faces turned away", () => {
-    const { colors, layout } = draw({ light: [0, 0, -1] });
+    const { colors } = draw({ light: [0, 0, -1] });
     // The hip's ball: its faces' brightness spans the ambient floor to full light.
-    const first = layout.bones.length * RIG_BONE_VERTICES;
+    const first = 4 * RIG_BONE_VERTICES;
     const brightness = Array.from({ length: RIG_JOINT_VERTICES / 3 }, (_, face) =>
       colors[(first + face * 3) * 4 + 2]! / RIG_JOINT_COLOR[2]);
     expect(Math.min(...brightness)).toBeCloseTo(0.38, 2);
