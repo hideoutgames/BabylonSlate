@@ -165,6 +165,17 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["discard:true", "discard:false"]);
   });
 
+  it("resets one part of Play's rendering by name, in debug registries only", () => {
+    const host = recordingHost();
+    host.resetRendering = (what) => host.calls.push(`reset:${what}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const what of ["graph", "shadows", "idle"]) expect(debug.execute(`renderreset ${what}`, host)).toEqual({ success: true, output: `renderreset ${what}` });
+    expect(debug.execute("renderreset atlas", host).success).toBe(false);
+    expect(release.execute("renderreset graph", host).success).toBe(false);
+    expect(host.calls).toEqual(["reset:graph", "reset:shadows", "reset:idle"]);
+  });
+
   it("hides Play's Scene Layers and shows them again, in debug registries only", () => {
     const host = recordingHost();
     host.setSceneLayers = (enabled) => host.calls.push(`layers:${enabled}`);

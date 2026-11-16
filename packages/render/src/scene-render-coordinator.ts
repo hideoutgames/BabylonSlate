@@ -390,6 +390,12 @@ export class SceneRenderCoordinator {
 
   diagnostics() { return this.graph.diagnostics(); }
 
+  /** Debug (`renderreset graph`): builds the view's graph again with nothing changed, as a new run of frames. */
+  rebuildGraph(): void {
+    this.graph.rebuildGraph();
+    this.invalidate();
+  }
+
   /**
    * Loading owners require the prepared selected path, including after resize, drawing every requested variant: a
    * Material still drawing its previous Effect while a changed variant compiles is not ready here.

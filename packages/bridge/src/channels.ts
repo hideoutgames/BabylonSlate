@@ -1230,6 +1230,8 @@ export type CommandMessage =
   | { type: "setDiscardSamplesDebug"; enabled: boolean }
   /** Debug: composite Play's Scene Layers, or hide them all so the backbuffer is the world's size (the `scenelayers` console command). */
   | { type: "setSceneLayersDebug"; enabled: boolean }
+  /** Debug: rebuild the view's frame graph, reallocate its shadow maps, or render nothing for 3 s (the `renderreset` console command). */
+  | { type: "resetRenderingDebug"; what: "graph" | "shadows" | "idle" }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
   | { type: "setGpuBusyProbeDebug"; enabled: boolean }
   /** Debug: how many rendered frames the Engine may queue on the GPU (the `framesinflight` console command; default 2). */

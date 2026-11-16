@@ -16,6 +16,9 @@ import {
   meanFrameMs,
   profileComparison,
   profileDrift,
+  profileFrameState,
+  PROFILE_HOLD_WINDOWS,
+  PROFILE_SLOW_RATIO,
   profileRanking,
   profileStep,
   PROFILE_CONTROL_VIEW,
@@ -563,6 +566,7 @@ function profileNotes(samples: readonly FeatureTestBenchmarkSample[], sample: Fe
     sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
     comparison?.unsettled ? `UNSETTLED: its baselines differ by ${comparison.spread!.toFixed(1)} ms, more than its change` : "",
     comparison && comparison.after === null ? "one baseline" : "",
+    comparison?.straddles ? "STRADDLES A STATE CHANGE: its baselines are in different states" : "",
     beyond !== null ? `${beyond >= 0 ? "+" : ""}${beyond.toFixed(1)}ms beyond ${step!.includes}` : "",
     shadows ? shadowAtlasText(sample) : "",
     occlusionText(sample), workText(sample), memoryText(sample), reasons ? `held: ${reasons}` : "",
@@ -638,7 +642,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    "  Profile at the session's quality tier and frame cap, at fixed camera views (a short warm-up at the control view, then at each view a baseline before and after every step, A B A, the camera held between them; each sampled 5 s with gpubusy once no shader is first drawn or compiling):",
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 10 minutes: first a state probe at the control view (a minute held unchanged, reset actions, frames in flight and a 30 fps cap; below), then at fixed camera views (a short warm-up at the control view, then at each view a baseline before and after every step, A B A, the camera held between them; each sampled 5 s with gpubusy once no shader is first drawn or compiling):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,
@@ -646,6 +650,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
       ? `  Warm-up drift: first window ${drift.firstMs.toFixed(1)} ms, steady ${drift.steadyMs.toFixed(1)} ms (${drift.percent >= 0 ? "+" : ""}${drift.percent.toFixed(0)}%) over ${drift.windows} windows${drift.basis === "frame" ? " (mean frame)" : " (gpu busy)"}`
       : "  Warm-up drift: unmeasured (fewer than two windows)",
     ...driftLines(samples),
+    ...stateSequenceLines(samples),
     `  Instance pool: ${instancePoolText(profile?.instancePool ?? null)}`,
     `  Hold rate: ${holdRateText(profile?.holdRate ?? null)}`,
     profile?.endChanges
@@ -653,25 +658,70 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
       : "  Restored: not checked",
     "  Legend: step labels start with their view (light: few draws; heavy: many draws, no Mirror on screen, the control view; mirror: Mirrors and capture monitors on screen) · mean, p95 = frame time (it lands on whole display intervals: read gpu busy) · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · change = gpu busy against the baselines of its view around the step (a baseline's: against its view's first), or mean frame time where gpu busy is missing (marked *) · cpu change = the same in CPU cost · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory and what the app process may still allocate, as the sample ended · world / backbuffer = the world's render size @ its scaling level, and the backbuffer's size (Scene Layers and the output's upscale draw there) · atlas, maps = the shadow atlas edge and each map's size x tiles · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED, COMPILING and UNSETTLED (its two baselines differ by more than its change) mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
-    `    ${pad("Step", 28)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("change", 16)}${pad("cpu change", 16)}${pad("world / backbuffer", 26)}notes`,
+    `    ${pad("Step", 28)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("state", 6)}${pad("change", 16)}${pad("cpu change", 16)}${pad("world / backbuffer", 26)}notes`,
   ];
   for (const sample of samples) {
     const mean = meanFrameMs(sample.frames);
     const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
     const change = sample.warmup ? null : breakdownDelta(samples, sample);
     const cpu = profileComparison(samples, sample)?.cpu ?? (isBreakdownBaseline(sample) ? breakdownCpuDelta(samples, sample) : null);
-    lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
+    lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(profileFrameState(samples, sample) ?? "-", 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
   }
   lines.push(...drawPassTable(samples, "Step", 28), ...cpuPassTable(samples, "Step", 28));
-  lines.push("  Ranked by change in gpu busy at each view (baseline > step > baseline; * = mean frame time where gpu busy is missing):");
+  lines.push(...stateProbeLines(samples));
+  lines.push("  Ranked by change in gpu busy at each view, within one state (baseline > step > baseline; * = mean frame time where gpu busy is missing):");
   const ranking = profileRanking(samples);
   for (const group of ranking) {
     lines.push(`    ${group.view ?? "scene camera"}:`);
     group.steps.forEach((entry, index) => lines.push(
-      `      ${index + 1}. ${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : ""} (${abaText(entry)}) · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
+      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : ""} (${abaText(entry)}) · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
     ));
   }
   if (!ranking.length) lines.push("    none measured");
+  const straddling = samples.flatMap((sample) => profileComparison(samples, sample)?.straddles ? [sample.label] : []);
+  lines.push(`  Not ranked, straddling a state change: ${straddling.length ? straddling.join(", ") : "none"}`);
+  return lines;
+}
+
+/** Each view's rows in run order as F (FAST) and S (SLOW), unmeasured rows as -. */
+function stateSequenceLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
+  const views = [...new Set(samples.map((sample) => sample.view))];
+  return [
+    `  States (SLOW past ${PROFILE_SLOW_RATIO}x the best baseline of the view, in gpu busy; F FAST, S SLOW, every row in run order):`,
+    ...views.map((view) => `    ${view ?? "scene camera"}: ${samples.filter((sample) => sample.view === view)
+      .map((sample) => profileFrameState(samples, sample)?.[0] ?? "-").join(" ")}`),
+  ];
+}
+
+/** A row's frames by display intervals: `1:3 2:120 3:0 4:0 5+:0`. */
+function intervalsText(sample: FeatureTestBenchmarkSample): string {
+  const counts = sample.frames?.intervals;
+  return counts ? counts.map((count, index) => `${index === 4 ? "5+" : index + 1}:${count}`).join(" ") : "-";
+}
+
+/** The state probe: the hold windows one per line, then each reset action's state before and after. */
+function stateProbeLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
+  const hold = samples.filter((sample) => /^state hold \d+$/.test(sample.label));
+  if (!hold.length) return [];
+  const value = (sample: FeatureTestBenchmarkSample | undefined) =>
+    sample?.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)}` : meanFrameMs(sample?.frames ?? null)?.toFixed(1) ?? "-";
+  const lines = [
+    `  State probe, hold (${PROFILE_HOLD_WINDOWS} windows back to back at the control view, nothing changing): gpu busy · mean frame · cpu · frames by display intervals · readiness checks (ms) · graph builds · frames over 100 ms · renders skipped for frames in flight · deepest GPU queue · memory · state`,
+  ];
+  for (const sample of hold) {
+    const work = sample.work;
+    lines.push(`    ${pad(sample.label, 14)}${pad(value(sample), 6)}${pad(ms(meanFrameMs(sample.frames)), 8)}${pad(ms(sample.cpuMs), 8)}${pad(intervalsText(sample), 28)}${pad(work ? `${work.strictReadinessChecks} (${work.readinessProbeMs.toFixed(0)} ms)` : "-", 14)}${pad(work ? String(work.graphBuilds) : "-", 3)}${pad(String(sample.frames?.stalls ?? "-"), 3)}${pad(String(sample.framesInFlight?.skipped ?? "-"), 4)}${pad(sample.inFlightPeak === undefined ? "-" : String(sample.inFlightPeak), 3)}${pad(memoryText(sample) || "-", 34)}${profileFrameState(samples, sample) ?? "-"}`.trimEnd());
+  }
+  // Each reset: the baseline before it (the last row of the control view before), then its two baselines after.
+  const resets = samples.filter((sample) => /^state after .+ 1$/.test(sample.label));
+  if (resets.length) lines.push("  State probe, reset actions (gpu busy and state before > after 1 > after 2):");
+  for (const after of resets) {
+    const index = samples.indexOf(after);
+    const before = samples.slice(0, index).reverse().find((sample) => sample.view === after.view && (sample.warmup || isBreakdownBaseline(sample)) && sample.frames);
+    const second = samples[index + 1];
+    const text = (sample: FeatureTestBenchmarkSample | undefined) => sample ? `${value(sample)} ${profileFrameState(samples, sample) ?? "-"}` : "-";
+    lines.push(`    ${after.label.replace(/^state after (.+) 1$/, "$1")}: ${text(before)} > ${text(after)} > ${text(second)}`);
+  }
   return lines;
 }
 

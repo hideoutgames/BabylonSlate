@@ -831,6 +831,12 @@ export class ForwardSceneFrameGraph {
     this.markReadinessDirty("invalidate");
   }
 
+  /** Debug (`renderreset graph`): the next preparation builds the graph again, with nothing changed. */
+  rebuildGraph(): void {
+    this.postProcessRevision += 1;
+    if (!this.pending) this.releaseGraph();
+  }
+
   /** Steady-state frames skip the strict probe until a change marks it dirty. */
   get readinessDirty(): boolean {
     // Deferred entity observables may not have fired yet; membership diffs are

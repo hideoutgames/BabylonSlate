@@ -353,6 +353,8 @@ export function createEngine(
   }
 }
 
+/** How long `renderreset idle` renders nothing. */
+const RENDER_RESET_IDLE_MS = 3000;
 /** Snapshot slots before the game runtime installs its layout (`SnapshotSampler.installLayout`). */
 const INITIAL_SNAPSHOT_CAPACITY = 256;
 /** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
@@ -787,7 +789,10 @@ function initializeEngine(
     if (worldLoading || pendingPresentations.size > 0 || hasPendingOwners() || performanceFeed.active || frameReportFeed.active ||
       presentedImageRequests.length > 0) scheduler.noteActivity();
   };
+  /** Debug (`renderreset idle`): until then the view renders nothing, so the GPU idles with no resource changed. */
+  let idleUntil = 0;
   const shouldRenderFrame = (now: number, loadingFrame?: boolean) => {
+    if (now < idleUntil) return false;
     noteFrameDemand();
     return (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
       (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
@@ -3224,6 +3229,12 @@ function initializeEngine(
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
       if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
       if (command.type === "setDiscardSamplesDebug" && setDiscardSamples(engine, command.enabled)) scheduler.invalidate("asset");
+      if (command.type === "resetRenderingDebug") {
+        if (command.what === "graph") worldRenderer.rebuildGraph();
+        else if (command.what === "shadows") findSceneShadowController(scene)?.resetAllocations();
+        else idleUntil = performance.now() + RENDER_RESET_IDLE_MS;
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setSceneLayersDebug" && layersHidden === command.enabled) {
         layersHidden = !command.enabled;
         syncPlayComposition();

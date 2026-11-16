@@ -46,6 +46,7 @@ export const DEBUG_COMMAND_NAMES = [
   "shadowdebug",
   "discardsamples",
   "scenelayers",
+  "renderreset",
   "gpubusy",
   "framesinflight",
   "preservebuffer",
@@ -249,6 +250,19 @@ export function builtinCommands(): RegisteredCommand[] {
       "Discard multisampled colour and depth samples after a frame's last resolve of them (on), or keep them (off), to measure what storing them costs"),
     flagCommand("scenelayers", (host, enabled) => host.setSceneLayers?.(enabled),
       "Composite Play's Scene Layers (on) or hide them all (off), so the frame is drawn at the world's resolution alone, to measure what the layers and the device-resolution output cost"),
+    {
+      name: "renderreset",
+      tier: "debug",
+      category: "engine",
+      description: "Reset one part of the Play view's rendering with no setting changed, to see whether frame pacing follows it: rebuild its frame graph (graph), reallocate its shadow maps (shadows), or render nothing for 3 s (idle)",
+      parameters: [{ name: "what", type: "enum", enumValues: ["graph", "shadows", "idle"] }],
+      run(args, host) {
+        const what = args.what as "graph" | "shadows" | "idle";
+        if (!host.resetRendering) return fail("renderreset is unavailable here");
+        host.resetRendering(what);
+        return ok(`renderreset ${what}`);
+      },
+    },
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
       "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
     {

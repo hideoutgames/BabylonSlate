@@ -174,6 +174,7 @@ export class RuntimeConsole {
       setShadowDebug: (part, enabled) => host.emit({ type: "setShadowDebug", part, enabled: Boolean(enabled) }),
       setDiscardSamples: (enabled) => host.emit({ type: "setDiscardSamplesDebug", enabled: Boolean(enabled) }),
       setSceneLayers: (enabled) => host.emit({ type: "setSceneLayersDebug", enabled: Boolean(enabled) }),
+      resetRendering: (what) => host.emit({ type: "resetRenderingDebug", what }),
       setGpuBusyProbe: (enabled) => host.emit({ type: "setGpuBusyProbeDebug", enabled: Boolean(enabled) }),
       setFramesInFlight: (mode) => host.emit({ type: "setFramesInFlightDebug", mode }),
       setPreserveDrawingBuffer: (enabled) => host.emit({ type: "setPreserveDrawingBufferDebug", enabled: Boolean(enabled) }),

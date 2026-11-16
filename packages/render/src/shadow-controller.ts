@@ -983,6 +983,13 @@ export class SceneShadowController {
    * Switches one part of shadow drawing off or back on (`shadowdebug`); true when that changed it. Every map then
    * draws again, so a map that draws once shows the switch too.
    */
+  /**
+   * Debug (`renderreset shadows`): every scene map is released and allocated again at the next admission, as after a
+   * restored context; the atlas is made again once no tile is left in it (a view's own maps may still hold one).
+   */
+  resetAllocations(): void {
+    for (const entry of this.entries.values()) entry.resetAllocation = true;
+  }
   setDebug(part: ShadowDebugPart, enabled: boolean): boolean {
     if (!writeSceneShadowDebug(this.scene, part, enabled)) return false;
     this.forEachGenerator((generator) => generator.getShadowMap()?.resetRefreshCounter());
