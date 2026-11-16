@@ -9,13 +9,10 @@
  * is unlit. Pure: no Babylon.
  */
 
-/**
- * Steel-slate bones that read against the preview's sky and stay bluer than neutral greys, near-white joints, dimmer
- * slate lines, and amber for the selected joint and its bone.
- */
-export const RIG_BONE_COLOR: readonly [number, number, number] = [0.44, 0.56, 0.74];
-export const RIG_JOINT_COLOR: readonly [number, number, number] = [0.93, 0.95, 1];
-export const RIG_LINE_COLOR: readonly [number, number, number] = [0.33, 0.4, 0.5];
+/** Light grey bones, white joints, mid-grey lines, and amber for the selected joint and its bone. */
+export const RIG_BONE_COLOR: readonly [number, number, number] = [0.8, 0.8, 0.8];
+export const RIG_JOINT_COLOR: readonly [number, number, number] = [1, 1, 1];
+export const RIG_LINE_COLOR: readonly [number, number, number] = [0.42, 0.42, 0.42];
 export const RIG_SELECTED_COLOR: readonly [number, number, number] = [1, 0.7, 0.22];
 
 /** Shade of a face turned away from the light, and of one facing it. */
