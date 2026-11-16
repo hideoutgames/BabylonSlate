@@ -380,7 +380,7 @@ Listen-server multiplayer is designed and deferred; nothing is built. Its decisi
 
 ## Open work
 
-- Built-in Git: the owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships ([source-control-plan.md](source-control-plan.md#order)). Integrated mode itself (clone, publish, commit, pull, push, branches, history and LFS against real GitHub and GitLab, on iPad, Android and desktop) still needs a hand check on devices.
+- Built-in Git: the owner reruns the Git benchmark on the A16 iPad with 3 × 256 MiB LFS objects on the native file transfer before Integrated mode ships ([source-control-plan.md](source-control-plan.md#order)). Integrated mode itself (clone, publish, commit, pull, push, branches, history and LFS against real GitHub and GitLab, on iPad, Android and desktop) still needs a hand check on devices.
 - Source control sign-in needs registered apps and a hand check: create the GitHub OAuth App (Device Flow on) and the gitlab.com application, set `VITE_GITHUB_CLIENT_ID` and `VITE_GITLAB_CLIENT_ID` for distribution builds, and check with real sign-in tokens that each host accepts them with the stored username for Git, LFS transfer and LFS locks, and that GitLab's token refresh works against gitlab.com.
 - Hardware-only device checks: the Working Copy / `NSFileCoordinator` Swift plugin, cold-launch reopen on iPad for both storage tiers, Capacitor write timings, WKWebView `Error.stack` parsing, and Play holding 60 fps on the A16.
 - Water performance qualification: confirm the many-body CPU savings on the A16 iPad (Medium) and a budget Android phone (Low).

@@ -1,11 +1,11 @@
 # VFS And App Settings
 
-Storage port, platform adapters, app-owned libraries, Engine Settings storage, secrets and native HTTP.
+Storage port, platform adapters, app-owned libraries, Engine Settings storage, secrets, native HTTP and the native file transfer.
 
 ## Ownership and boundaries
 
 - Port: `ProjectStorage` in [`packages/core/src/storage-port.ts`](../../../packages/core/src/storage-port.ts). Adapters and factories: [`packages/vfs/src/`](../../../packages/vfs/src/) (`createStorage`, `createMountedProjectStorage`, `createReadOnlyProjectStorage`, `createTemplateStorage`, `createDerivedStorage`, `createAppSettingsStore`, `createSaveGameStorage`).
-- **The UI never imports Capacitor or Electron.** All project I/O goes through `createStorage()`; secrets and CORS-bypass HTTP stay in `vfs` so they never leak into `@haptic/source-control` or the editor.
+- **The UI never imports Capacitor or Electron.** All project I/O goes through `createStorage()`; secrets, CORS-bypass HTTP and the native file transfer stay in `vfs` so they never leak into `@haptic/source-control` or the editor.
 - Desktop main process and preload: [`apps/desktop/src/`](../../../apps/desktop/src/). Native plugins: `apps/editor/ios/App/App/`, `apps/editor/android/app/src/main/java/`.
 
 ## ProjectStorage contract
@@ -73,7 +73,13 @@ The Documents tier crosses the Capacitor bridge once per asset write as base64 d
 | Web | `UnavailableSecretStore` (`available: false`): Source Control hidden | none |
 
 - `nativeHttp`: `{ method (GET, POST, PUT), url, headers, body?, upload?, responseType?, disableRedirects? }` → `{ status, bodyText, bodyBytes?, headers? }`. `body` is text or bytes (Git packs, LFS objects); `responseType: "binary"` answers `bodyBytes`. Bytes cross whole, never streamed: CapacitorHttp as base64 `file` data and `arraybuffer` answers, with the platform quirks in [source-control.md](source-control.md#binary-http). `upload` is one base64 image (PNG, JPEG, GIF or WEBP) sent as a `multipart/form-data` POST instead of `body`; the transport owns the encoding and `Content-Type` (Capacitor `formData` entries, or Electron's main process), see [accounts](accounts.md#account-management). Account tokens on Electron use a separate `accountSecrets` bridge.
-- Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`, `.files` (`file:save`, see [Saving exported files](#saving-exported-files)), `.memory` (`memory:stats`: the calling renderer's, the GPU process's, the main process's and every app process's working set, read-only, no arguments).
+- Preload exposes `haptic.userData`, `.project`, `.library`, `.secrets`, `.accountSecrets`, `.saveGames`, `.http`, `.fileTransfer` (`files:transfer`, `files:cancel` and the `files:progress` events, [below](#native-file-transfer)), `.files` (`file:save`, see [Saving exported files](#saving-exported-files)), `.memory` (`memory:stats`: the calling renderer's, the GPU process's, the main process's and every app process's working set, read-only, no arguments).
+
+## Native file transfer
+
+- `NativeFileTransfer` ([`native-file-transfer-port.ts`](../../../packages/vfs/src/native-file-transfer-port.ts)), from `createNativeFileTransfer()` (null on the web): `transfer(folder, { method: GET | PUT, url, headers, path, expected?, signal?, onProgress? })` → `{ status, bytes, sha256 }` streams one file between an HTTPS URL and a project file, so its bytes never enter JavaScript (Git LFS objects, [source-control.md](source-control.md#native-file-transfer)). `folderFileTransfer(transfer, storage)` binds it to whichever folder a storage view has bound at each call.
+- **Contract:** headers are sent as given and kept nowhere; no redirect is followed, no cookie or cache used. A download is written to `.haptic-<uuid>.tmp` beside the file (whose folder must exist), hashed as it streams, and renamed over it only when it matches `expected`; a non-2xx status writes nothing (`bytes` 0). An upload is hashed in one pass first and sent with its length known, only when it matches. Failures callers act on are `FileTransferError` codes: `transfer-mismatch` (nothing committed or sent), `transfer-cancelled` (the signal aborted; the host cancelled its request and removed the staged file), `transfer-refused` (a folder or path the host does not transfer into); anything else is a plain error. Progress at most every `FILE_TRANSFER_PROGRESS_MS` (100 ms).
+- **Hosts:** iOS and Android through the storage plugin's `transferFile`, `cancelTransfer` (by the id the wrapper chooses) and `transferProgress` events ([`capacitor-file-transfer.ts`](../../../packages/vfs/src/capacitor-file-transfer.ts)): app storage only, named as `readDocumentsRange` names it, refusing chosen folders and the library folders; Electron through `files:transfer` to the main process ([`node-file-transfer.ts`](../../../packages/vfs/src/node-file-transfer.ts), `apps/desktop/src/desktop-file-transfer.ts`), confined to the window's open project through `NodeStorageAdapter.filePath`. `writeRandomObject` (iOS, Android and the Node module) writes the Git benchmark's random objects natively.
 
 ## Saving exported files
 
