@@ -555,7 +555,7 @@ describe("OcclusionBuffer against the full-rebuild reference", () => {
     const frames = Array.from({ length: 120 }, (_, index) => randomFrame(next, index % 10 === 0 ? 0 : 1 + Math.floor(next() * 8)));
     const { culled, tested, read } = compare(frames, width, height);
     // Not vacuous: boxes are culled and kept, and texels above level 0 are read.
-    expect(culled).toBeGreaterThan(tested * 0.05);
+    expect(culled).toBeGreaterThan(100);
     expect(culled).toBeLessThan(tested * 0.95);
     expect(read).toBeGreaterThan(100);
   });

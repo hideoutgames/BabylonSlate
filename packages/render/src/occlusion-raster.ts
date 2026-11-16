@@ -177,28 +177,32 @@ export class OcclusionBuffer {
 
   /** Erodes the occluder just rasterised into the buffer, nearer depth winning, and clears it for the next. */
   private mergeOccluder(): void {
-    const { width, height, occluder, rowMax } = this;
+    const { width, occluder, rowMax } = this;
     const base = this.levels[0]!;
     const top = this.occluderTop, bottom = this.occluderBottom, left = this.occluderLeft, right = this.occluderRight;
     // A separable 3 × 3 max: along each row, then down the columns. Outside the buffer and the written rectangle nothing
     // is known to occlude, and erosion only shrinks coverage, so texels outside the rectangle stay uncovered.
     // Depths are positive or Infinity (never NaN), so plain comparisons give Math.max's answer.
+    // Only texels strictly inside the rectangle (so inside the buffer) can stay covered: each one at its edge has an
+    // uncovered neighbour. Their neighbours all lie in the buffer.
+    const from = left + 1, to = right - 1;
     for (let y = top; y <= bottom; y++) {
       const row = y * width;
-      for (let x = left; x <= right; x++) {
-        let depth = occluder[row + x]!;
-        const before = x > 0 ? occluder[row + x - 1]! : Infinity;
-        const after = x + 1 < width ? occluder[row + x + 1]! : Infinity;
+      let before = occluder[row + from - 1]!, centre = occluder[row + from]!;
+      for (let x = from; x <= to; x++) {
+        const after = occluder[row + x + 1]!;
+        let depth = centre;
         if (before > depth) depth = before;
         if (after > depth) depth = after;
         rowMax[row + x] = depth;
+        before = centre;
+        centre = after;
       }
     }
-    // Only rows strictly inside the rectangle and the buffer can be covered.
-    const first = Math.max(top + 1, 1), last = Math.min(bottom - 1, height - 2);
+    const first = top + 1, last = bottom - 1;
     for (let y = first; y <= last; y++) {
       const row = y * width;
-      for (let x = left; x <= right; x++) {
+      for (let x = from; x <= to; x++) {
         let depth = rowMax[row + x]!;
         const above = rowMax[row - width + x]!, below = rowMax[row + width + x]!;
         if (above > depth) depth = above;
@@ -206,11 +210,11 @@ export class OcclusionBuffer {
         if (depth < base[row + x]!) base[row + x] = depth;
       }
     }
-    if (left <= right && first <= last) {
+    if (from <= to && first <= last) {
       if (this.writtenRight < this.writtenLeft) {
-        this.writtenLeft = left; this.writtenRight = right; this.writtenTop = first; this.writtenBottom = last;
+        this.writtenLeft = from; this.writtenRight = to; this.writtenTop = first; this.writtenBottom = last;
       } else {
-        this.writtenLeft = Math.min(this.writtenLeft, left); this.writtenRight = Math.max(this.writtenRight, right);
+        this.writtenLeft = Math.min(this.writtenLeft, from); this.writtenRight = Math.max(this.writtenRight, to);
         this.writtenTop = Math.min(this.writtenTop, first); this.writtenBottom = Math.max(this.writtenBottom, last);
       }
     }
