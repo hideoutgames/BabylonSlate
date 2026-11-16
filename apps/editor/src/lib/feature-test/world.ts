@@ -19,6 +19,8 @@ import {
   type SerializedTransform,
   type WaterDefinition,
   type WaterRiverSample,
+  type UpdateRate,
+  UPDATE_RATE_LABELS,
 } from "@haptic/core";
 import { newAssetFileName, type CreatableAssetType } from "../content-browser-helpers";
 import {
@@ -86,6 +88,8 @@ const LAKE_CAPTURES: ReadonlyArray<{ quality: RenderTargetCaptureQuality; slug: 
   { quality: "fullQuality", slug: "full-quality", asset: "FullQuality", x: 12 },
 ];
 const LAKE_CAPTURE_SIZE = 256;
+/** In Play the Lake capture redraws on every second frame and keeps its image between. */
+const LAKE_CAPTURE_UPDATE_RATE: UpdateRate = "every2ndFrame";
 /** Landscape-local z of the monitors, on the south shore in front of the world camera. */
 const LAKE_MONITOR_Z = -33;
 const LAKE_MONITOR_SIZE = 7;
@@ -472,6 +476,8 @@ function lakeCaptures(
         fieldOfView: 55,
         nearClip: 0.3,
         farClip: 120,
+        // The starter's Update Rate showcase, kept out of the main scene so its measured cost stays as it was.
+        updateRate: LAKE_CAPTURE_UPDATE_RATE,
       }),
     ], { classId: "RenderTargetCapture" }));
     // The plane's front faces local -Z: turn +Z away from the world camera.
@@ -486,7 +492,7 @@ function lakeCaptures(
       postMesh(`${id}-post`, 5 - LAKE_MONITOR_SIZE / 2, 0.4),
       { ...screen, transform: tf([0, 5, 0], { rotation: facing, scale: [LAKE_MONITOR_SIZE, LAKE_MONITOR_SIZE, 1] }) },
       comp(`${id}-caption`, "Text3DComponent", {
-        text: label, size: 1.2, color: [0.95, 0.95, 0.95], alignment: "center", fontAssetGuid: null,
+        text: `${label} (${UPDATE_RATE_LABELS[LAKE_CAPTURE_UPDATE_RATE]})`, size: 1.2, color: [0.95, 0.95, 0.95], alignment: "center", fontAssetGuid: null,
       }, tf([0, 5 + LAKE_MONITOR_SIZE / 2 + 0.9, 0], { rotation: facing })),
     ]));
   });

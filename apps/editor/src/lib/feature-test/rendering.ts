@@ -30,8 +30,6 @@ import {
   type SerializedComponent,
   type SerializedScene,
   type SkyboxFaces,
-  type UpdateRate,
-  UPDATE_RATE_LABELS,
 } from "@haptic/core";
 import { engineScriptApiFor } from "@haptic/object-model";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
@@ -77,14 +75,12 @@ const SCENES_FOLDER = "Scenes";
  * subjects at 256². Perf knob.
  */
 const CAPTURES = [
-  { key: "SceneColor", mode: "SceneColor", quality: "fast", size: 512, everyFrame: true, updateRate: "everyFrame", x: -9, y: 3 },
-  { key: "SceneColorHighQuality", mode: "SceneColor", quality: "highQuality", size: 256, everyFrame: true, updateRate: "everyFrame", x: -3, y: 3.5 },
-  // Update Rate: the depth monitor redraws on every second Play frame and keeps its image between.
-  { key: "DepthPass", mode: "DepthPass", quality: "fast", size: 256, everyFrame: true, updateRate: "every2ndFrame", x: 3, y: 4 },
-  { key: "WorldNormal", mode: "WorldNormal", quality: "fast", size: 256, everyFrame: false, updateRate: "everyFrame", x: 9, y: 3 },
+  { key: "SceneColor", mode: "SceneColor", quality: "fast", size: 512, everyFrame: true, x: -9, y: 3 },
+  { key: "SceneColorHighQuality", mode: "SceneColor", quality: "highQuality", size: 256, everyFrame: true, x: -3, y: 3.5 },
+  { key: "DepthPass", mode: "DepthPass", quality: "fast", size: 256, everyFrame: true, x: 3, y: 4 },
+  { key: "WorldNormal", mode: "WorldNormal", quality: "fast", size: 256, everyFrame: false, x: 9, y: 3 },
 ] as const satisfies ReadonlyArray<{
-  key: string; mode: RenderTargetMode; quality: RenderTargetCaptureQuality; size: number; everyFrame: boolean; updateRate: UpdateRate;
-  x: number; y: number;
+  key: string; mode: RenderTargetMode; quality: RenderTargetCaptureQuality; size: number; everyFrame: boolean; x: number; y: number;
 }>;
 type CaptureKey = (typeof CAPTURES)[number]["key"];
 
@@ -841,10 +837,7 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   // On the back wall, facing out of the booth: it draws live only what can move (a mannequin walking up to it) and
   // shows the booth's walls and the ball from the probe it stands in.
   add(actor("ft-render-probe-mirror", "Probe Booth Mirror", tf(boothAt(0, 1.5, 1.85)), [
-    // Update Rate: the booth Mirror redraws on every second Play frame; the Render Targets zone's two stay at Every Frame.
-    comp("ft-render-probe-mirror-surface", "MirrorComponent", {
-      ...parseMirrorProperties({ width: 2, height: 1.5, reflects: "movingActors", updateRate: "every2ndFrame" }),
-    }),
+    comp("ft-render-probe-mirror-surface", "MirrorComponent", { ...parseMirrorProperties({ width: 2, height: 1.5, reflects: "movingActors" }) }),
   ]));
 
   // The wall stands between the main camera and the cylinder, so only the x-ray outline shows through.
@@ -940,7 +933,7 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
   add(primitive(CAPTURE_SUBJECT_IDS[3], "Capture Backdrop", "box", zone.at(0, 1.5, -9), { scale: [4, 2, 0.2] }));
 
   const aim = zone.at(0, 0.75, -5);
-  for (const { key, mode, quality, everyFrame, updateRate, x, y } of CAPTURES) {
+  for (const { key, mode, quality, everyFrame, x, y } of CAPTURES) {
     const slug = key.replace(/[A-Z]/g, (letter, index: number) => `${index ? "-" : ""}${letter.toLowerCase()}`);
     const qualityLabel = RENDER_TARGET_CAPTURE_QUALITY_LABELS[quality];
     const label = quality === "fast" ? RENDER_TARGET_MODE_LABELS[mode] : `${RENDER_TARGET_MODE_LABELS[mode]} ${qualityLabel}`;
@@ -960,7 +953,6 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
           farClip: mode === "DepthPass" ? 20 : 30,
           // Fast and High Quality side by side; FT_World's lake capture is Full Quality.
           quality,
-          updateRate,
         }),
       ], { classId: "RenderTargetCapture" }));
     } else {
@@ -974,9 +966,7 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
       materialGuid: refs.targets[key].monitorMaterial, scale: [3, 3, 1], castShadows: false,
     }));
     const modeLabel = RENDER_TARGET_MODE_LABELS[mode];
-    const rate: UpdateRate = updateRate;
-    const caption = !everyFrame ? `${modeLabel} (Manual)` : mode === "SceneColor" ? `${modeLabel} (${qualityLabel})`
-      : rate !== "everyFrame" ? `${modeLabel} (${UPDATE_RATE_LABELS[rate]})` : modeLabel;
+    const caption = !everyFrame ? `${modeLabel} (Manual)` : mode === "SceneColor" ? `${modeLabel} (${qualityLabel})` : modeLabel;
     add(text3d(`${monitor}-caption`, `${label} Caption`, zone.at(x, 0.3, 6.2), caption, {
       size: 0.4, color: [0.9, 0.9, 0.9], fontAssetGuid: null,
     }));
