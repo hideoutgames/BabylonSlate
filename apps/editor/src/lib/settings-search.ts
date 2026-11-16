@@ -279,10 +279,6 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
     ]],
   ]),
   ...category("debugger", [
-    ["diagnostics", "Diagnostics", [
-      ["Debug Mode", "setting-debug-mode"],
-      ["Trace Graphics Errors", "setting-trace-graphics-errors"],
-    ]],
     ["simulation", "Simulation", [["Keep Simulation Changes", "setting-keep-simulation-changes"]]],
     ["session", "Session", [
       ["Pause On Errors", "setting-pause-simulation-on-errors"],
@@ -296,6 +292,10 @@ export const ENGINE_SETTING_FIELDS: SettingSearchField[] = [
     ["trace", "Trace", [
       ["Trace Memory Budget (MiB)", "setting-trace-budget-mib"],
       ["Traces Kept", "setting-traces-kept"],
+    ]],
+    ["diagnostics", "Diagnostics", [
+      ["Debug Mode", "setting-debug-mode"],
+      ["Trace Graphics Errors", "setting-trace-graphics-errors"],
     ]],
   ]),
   ...category("viewport", [
