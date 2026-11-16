@@ -447,13 +447,16 @@ export class ForwardSceneFrameGraph {
   private readonly translucent = new WeakMap<AbstractMesh, boolean>();
   /** The first sub-mesh of each mesh this view follows, when last read (`followDrawable`). */
   private readonly subMeshes = new WeakMap<AbstractMesh, SubMesh>();
+  /** The vertex attribute kinds each mesh this view follows drew with, when last read (`followDrawable`). */
+  private readonly vertexKinds = new WeakMap<AbstractMesh, string>();
   private wholeProbesPassed = 0;
   /** The last passing probe was limited to `scopedMeshes` (`isReady`); any other passing probe counts as whole. */
   private scopedProbePassed = false;
   /** The enabled, visibility and geometry writes of the Scene's meshes (`followDrawable`). */
   private readonly drawableChanges: RenderChangeReader;
   private readonly visitDrawableChange = (node: unknown): void => {
-    if (node instanceof AbstractMesh) this.followDrawable(node);
+    // Only the Scene's meshes: a draw batch's slot mesh, refilled as its batch changes, is in no probe's list.
+    if (node instanceof AbstractMesh && this.knownMeshes.has(node)) this.followDrawable(node);
   };
   /**
    * The last passing probe tolerated a mesh drawing its previous Effect while its new variant compiles. Steady frames
@@ -982,8 +985,21 @@ export class ForwardSceneFrameGraph {
     // no variant for any pass yet; vertex updates in place keep them.
     const subMesh = mesh.subMeshes?.[0];
     const drewWith = this.subMeshes.get(mesh);
-    if (subMesh) this.subMeshes.set(mesh, subMesh);
-    if (subMesh && drewWith && subMesh !== drewWith) this.markReadinessDirty("meshGeometry", [mesh]);
+    const kinds = (mesh as { getVerticesDataKinds?: () => string[] }).getVerticesDataKinds?.().sort().join() ?? "";
+    const drewKinds = this.vertexKinds.get(mesh);
+    if (subMesh) {
+      this.subMeshes.set(mesh, subMesh);
+      this.vertexKinds.set(mesh, kinds);
+    }
+    if (subMesh && drewWith && subMesh !== drewWith) {
+      // Other vertex attributes can change its variant: it is asked before it draws. The same ones draw the variant
+      // the Engine holds, so the next probe asks it with whatever runs it, and a text redrawn each frame probes nothing.
+      if (kinds !== drewKinds) this.markReadinessDirty("meshGeometry", [mesh]);
+      else {
+        this.scopedMeshes.add(mesh);
+        this.scopedMeshes.add(drawingMesh(mesh));
+      }
+    }
     const since = this.undrawn.get(mesh);
     if (!mesh.isEnabled() || !mesh.isVisible || !mesh.subMeshes?.length) {
       if (since !== undefined) return;
