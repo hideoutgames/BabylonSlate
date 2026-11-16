@@ -27,6 +27,7 @@ import { createParticleReadinessTexture } from "./particle-system-factory";
 import type { ParticleMeshShapeSource } from "./particle-mesh-shape";
 import type { ParticleSpawnSink } from "./particle-spawn";
 import type { ParticleNoiseSource } from "./particle-noise";
+import { ParticleUpdateQueueOwners } from "./particle-update-compiler";
 
 /** Render-side Particle Graph build problems, anchored to the graph node (and pin) when known. */
 export type ParticleGraphCompileCode =
@@ -61,6 +62,11 @@ export interface RealizeParticleGraphOptions {
   spawn?: (properties: Readonly<Record<string, unknown>>) => ParticleSpawnSink | null;
   /** What Global Parameter nodes read; the editor's defaults when omitted. */
   globalParameters?: GlobalParameterValueSource;
+  /**
+   * False keeps Babylon's own per-particle update closures instead of the compiled ones
+   * (`particle-update-compiler.ts`); tests compare the two. True when omitted.
+   */
+  compileUpdate?: boolean;
 }
 
 export type RealizeParticleGraphResult =
@@ -229,12 +235,13 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
   // Babylon's build throws carry no block reference: remember which block was building.
   const trace: { building: NodeParticleBlock | null } = { building: null };
   const traced: Buildable[] = [];
+  const queueOwners = new ParticleUpdateQueueOwners();
   for (const block of set.attachedBlocks) {
     const buildable = block as unknown as Buildable;
     const build = buildable._build.bind(block);
     buildable._build = (buildState) => {
       trace.building = block;
-      return build(buildState);
+      return queueOwners.track(block, () => build(buildState));
     };
     traced.push(buildable);
   }
@@ -244,6 +251,8 @@ export function realizeParticleGraph(plan: ParticleBuildPlan, options: RealizePa
     trace.building = null;
     state.emitErrors();
     pinPortTypes(set.attachedBlocks);
+    // After the pin: the compiled reads resolve each port's type once.
+    if (options.compileUpdate !== false) queueOwners.compile(system, state);
     // Created only after a successful build, so a failed build never leaks it; the
     // system's default dispose (through the SystemBlock hook) releases it.
     system.particleTexture = createParticleReadinessTexture(scene);

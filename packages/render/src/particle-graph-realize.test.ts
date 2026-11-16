@@ -1,4 +1,5 @@
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import { UpdateSizeBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateSizeBlock";
@@ -65,9 +66,10 @@ function planOf(doc: ParticleGraphDocument, settings: Partial<ParticleGraphSetti
 }
 
 function realize(plan: ParticleBuildPlan, space: ParticleSpace = "world", adapters?: Record<string, ParticleBlockAdapter>,
-  globalParameters?: GlobalParameterValueSource) {
+  globalParameters?: GlobalParameterValueSource, compileUpdate = true) {
   const { scene, emitter } = host();
-  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters, ...(globalParameters ? { globalParameters } : {}) });
+  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters, compileUpdate,
+    ...(globalParameters ? { globalParameters } : {}) });
   return { scene, emitter, result };
 }
 
@@ -608,5 +610,91 @@ describe("Particle Graph catalog", () => {
     const pinned = simulate(false);
     expect(pinned.length).toBeGreaterThan(0);
     expect(pinned).toEqual(simulate(true));
+  });
+
+  it.each(types)("simulates %s through its particles' deaths exactly as Babylon's own update closures do", (type) => {
+    const compiled = seededRun(built(realize(planOf(graphWith(type))).result).system, 150);
+    const babylon = seededRun(built(realize(planOf(graphWith(type)), "world", undefined, undefined, false).result).system, 150);
+    expect(babylon.deaths).toBeGreaterThan(0);
+    expect(compiled.particles.length).toBeGreaterThan(0);
+    expect(compiled).toEqual(babylon);
+  });
+});
+
+/**
+ * `frames` seeded 1/60 s steps from a fresh start: every live particle's state, the random generator's final state
+ * (a read made more or fewer times than Babylon makes it changes it) and how many particles died.
+ */
+function seededRun(system: ParticleSystem, frames: number, between?: { at: number; write: () => void }) {
+  let seed = 12345;
+  let deaths = 0;
+  const owner = system as unknown as { recycleParticle: (particle: Particle) => void };
+  const recycle = owner.recycleParticle;
+  owner.recycleParticle = (particle) => { deaths += 1; recycle(particle); };
+  const random = vi.spyOn(Math, "random").mockImplementation(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
+  try {
+    system.start(0);
+    for (let frame = 0; frame < frames; frame++) {
+      if (frame === between?.at) between.write();
+      step(system);
+    }
+  } finally {
+    random.mockRestore();
+  }
+  return {
+    particles: (system as unknown as { _particles: Particle[] })._particles.map((p) => [p.position.asArray(), p.direction.asArray(),
+      p.color.asArray(), p.size, p.angle, p.scale.asArray(), p.age, p.lifeTime, p.cellIndex]),
+    seed,
+    deaths,
+  };
+}
+
+describe("Particle Graph update compilation", () => {
+  type Queue = { process: { name: string }; nextItem: Queue | null };
+  const processNames = (system: ParticleSystem) => {
+    const names: string[] = [];
+    for (let item = (system as unknown as { _updateQueueStart: Queue | null })._updateQueueStart; item; item = item.nextItem) names.push(item.process.name);
+    return names;
+  };
+
+  it("replaces the processes of the update blocks it compiles and keeps Babylon's for the rest", () => {
+    // The default graph: Apply Velocity (Babylon's, kept) then Update Color (compiled).
+    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument())).result).system)).toEqual(["processPosition", ""]);
+    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument()), "world", undefined, undefined, false).result).system))
+      .toEqual(["processPosition", "processColor"]);
+  });
+
+  it("simulates a Local Space graph exactly as Babylon's own update closures do", () => {
+    const doc = withSpine([node("gravity", "force.gravity", { "default:acceleration": [0, -2, 0.5] })]);
+    const compiled = seededRun(built(realize(planOf(doc), "local").result).system, 150);
+    const babylon = seededRun(built(realize(planOf(doc), "local", undefined, undefined, false).result).system, 150);
+    expect(babylon.deaths).toBeGreaterThan(0);
+    expect(compiled).toEqual(babylon);
+  });
+
+  it("applies a parameter written while the system runs on the next step, as Babylon's closures do", () => {
+    const doc = withSpine([node("size", "update.size"), node("gravity", "force.gravity")], [
+      { id: "scale", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p-scale", valueType: "float" } },
+      node("double", "math.multiply", { "default:b": [2] }),
+      { id: "lift", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p-lift", valueType: "vec3" } },
+    ], [edge("scale", "out", "double", "a"), edge("double", "out", "size", "size"), edge("lift", "out", "gravity", "acceleration")]);
+    doc.parameters = [
+      { id: "p-scale", name: "Scale", type: "float", defaultValue: [0.25] },
+      { id: "p-lift", name: "Lift", type: "vec3", defaultValue: [0, 1, 0] },
+    ];
+    const run = (compileUpdate: boolean) => {
+      const { system, parameterBlocks } = built(realize(planOf(doc), "world", undefined, undefined, compileUpdate).result) as
+        Extract<RealizeParticleGraphResult, { ok: true }>;
+      return seededRun(system, 41, { at: 40, write: () => {
+        parameterBlocks.get("p-scale")![0]!.value = 1.5;
+        parameterBlocks.get("p-lift")![0]!.value = new Vector3(0, -3, 1);
+      } });
+    };
+    const compiled = run(true);
+    // The particles alive before the write took the new Scale on the step after it (those born on that step have not run
+    // the update yet).
+    expect(compiled.particles.length).toBeGreaterThan(0);
+    expect(compiled.particles.filter((particle) => particle[3] === 3).length).toBeGreaterThan(0);
+    expect(compiled).toEqual(run(false));
   });
 });
