@@ -534,15 +534,18 @@ function scriptPaletteInjectorNodes(
  * on one, must have wired. Under Context Sensitive, a dragged pin lists such a
  * row only when it connects to that Target (a Target reading Self while
  * unwired lists it from any pin), and the dragged object's members rank first.
+ * A required subject wins over one reading Self (Attach To Bone's `target`
+ * over its `actor`).
  */
 function withTargetPins(nodes: PaletteNode[]): PaletteNode[] {
   return nodes.map((node) => {
-    const target = node.pins?.find(
+    const subjects = (node.pins ?? []).filter(
       (pin) =>
         pin.direction === "in" &&
         pin.type.kind === "objectRef" &&
         (pin as SerializedPin & { subject?: boolean }).subject === true,
     );
+    const target = subjects.find((pin) => pin.selfWhenUnwired !== true) ?? subjects[0];
     return target ? { ...node, targetPinId: target.id } : node;
   });
 }

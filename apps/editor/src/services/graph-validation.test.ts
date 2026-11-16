@@ -3041,6 +3041,9 @@ describe("Add Node from a dragged pin", () => {
     expect(suggested(nodes, output({ kind: "resolvingWildcard" }))).not.toContain("light.setIntensity");
     // Destroy Actor's Actor input reads Self while unwired.
     expect(suggested(nodes, execOut)).toContain("actor.destroy");
+    // Attach To Bone's Actor reads Self, but its Target must be wired.
+    expect(suggested(nodes, execOut)).not.toContain("actor.attachToBone");
+    expect(suggested(nodes, output({ kind: "objectRef", classId: "Actor" }))).toContain("actor.attachToBone");
   });
 
   it("ranks the dragged object's own members first, then rows whose Target it reaches through a parent class", () => {
@@ -3063,7 +3066,8 @@ describe("Add Node from a dragged pin", () => {
     expect(ids).toContain("variables.get:target:MyDoor:Cable");
     expect(ids).toContain("variables.set:target:Door:Is Open");
     const getHealth = nodes.find((node) => node.id === "variables.get:target:MyDoor:Health")!;
-    expect(getHealth.defaultData).toMatchObject({ classId: "MyDoor", variableName: "Health", implicitSelf: false });
+    // The member id ties a placed node to renames and deletes of Health.
+    expect(getHealth.defaultData).toMatchObject({ classId: "MyDoor", variableId: "hp", variableName: "Health", implicitSelf: false });
     expect(getHealth.pins?.find((pin) => pin.id === "target")?.type).toEqual(objectRef("MyDoor"));
     // Without a dragged pin Context Sensitive hides them; a Float drag still sets Health on Self.
     expect(getHealth.outOfContext).toBe(true);
