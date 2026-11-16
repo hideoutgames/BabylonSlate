@@ -3,8 +3,9 @@ import { RenderingQualitySession, type QualityGroup } from "@haptic/core";
 import { createCommandRegistry, type ConsoleCommandHost } from "@haptic/debugger";
 import {
   FEATURE_TEST_BENCHMARK_PROFILES, FEATURE_TEST_BREAKDOWN_BASES, FEATURE_TEST_BREAKDOWN_METHODS, FEATURE_TEST_BREAKDOWN_SCENES,
-  featureTestBreakdownPlan, featureTestProfileSteps,
+  featureTestBreakdownPlan, featureTestProfileSequence, possessProfileView, PROFILE_CONTROL_VIEW,
 } from "./feature-test-check";
+import { FEATURE_TEST_MAIN_CAMERA } from "../lib/feature-test/layout";
 
 /** Every console line a Benchmark, Breakdown or Profile sends to Play, with where it comes from. */
 function measuredCommands(): { source: string; line: string }[] {
@@ -24,15 +25,17 @@ function measuredCommands(): { source: string; line: string }[] {
       }
     }
   }
-  // A Profile's steps and restores, for each state they toggle back to.
+  // A Profile's control view, its steps (each view's first baseline holds its camera) and restores, for each state
+  // they toggle back to, and the tour camera it ends on.
+  lines.push({ source: "profile warm-up", line: possessProfileView(PROFILE_CONTROL_VIEW) }, { source: "profile base", line: "quality resolution scale 0.75" });
   for (const state of [
-    { occlusion: true, framesInFlight: 2, postProcessing: true, captures: true },
-    { occlusion: false, framesInFlight: "off", postProcessing: false, captures: false },
-    { occlusion: true, framesInFlight: 3, postProcessing: true, captures: true },
-  ] as const) {
-    for (const step of featureTestProfileSteps(state))
+    { postProcessing: true, captures: true, discard: false, layers: true },
+    { postProcessing: false, captures: false, discard: true, layers: false },
+  ]) {
+    for (const step of featureTestProfileSequence(state))
       for (const line of [...step.commands, ...(step.restore ?? [])]) lines.push({ source: `profile ${step.label}`, line });
   }
+  lines.push({ source: "profile end", line: `possess "${FEATURE_TEST_MAIN_CAMERA.name}"` });
   return lines;
 }
 
@@ -51,7 +54,10 @@ describe("Feature Test measurement commands", () => {
     const registry = createCommandRegistry({ includeDebug: true });
     const commands = measuredCommands();
     expect(commands.some(({ line }) => line.startsWith("quality postprocessing antialiasing"))).toBe(true);
-    expect(commands.some(({ line }) => line === "framesinflight 3")).toBe(true);
+    expect(commands.some(({ line }) => line === "discardsamples on")).toBe(true);
+    expect(commands.some(({ line }) => line === "scenelayers off")).toBe(true);
+    expect(commands.some(({ line }) => line === "shadowdebug atlasfit off")).toBe(true);
+    expect(commands.some(({ line }) => line === 'possess "Profile Mirror Camera"')).toBe(true);
     for (const { source, line } of commands) {
       const session = new RenderingQualitySession();
       const result = registry.execute(line, host(session));

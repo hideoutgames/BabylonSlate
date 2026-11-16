@@ -12,6 +12,7 @@ import {
   type ShadowCost,
 } from "./shadow-admission";
 import { cascadeTileSizes, SHADOW_ATLAS_BYTES_PER_TEXEL, shadowAtlasEdge, shadowAtlasEdgeLimit, sunShadowAtlasEdge } from "./shadow-atlas";
+import { shadowDebugOff } from "./shadow-debug";
 import {
   admissionPasses,
   allocationRequestKey,
@@ -26,6 +27,12 @@ const SHADOW_MIN_RESIDENCY_MS = 250;
 /** A map holder ranks this much nearer (squared distance divided by it), so a slightly nearer light cannot take its map. */
 const SHADOW_INCUMBENT_DISTANCE_BONUS = 1.15;
 
+/**
+ * The largest atlas `shadowdebug atlasfit off` makes: 8192 (256 MiB of depth), never a 16384 one (1 GiB) for a level
+ * whose own atlas is already 8192, where the comparison would measure an allocation that may fail instead.
+ */
+const OVERSIZED_ATLAS_MAX_EDGE = 8192;
+
 /** The room a sync admits maps into: the shared ledger and the shadow atlas. */
 export type ShadowAdmissionBudget = {
   readonly bytes: number;
@@ -37,6 +44,11 @@ export type ShadowAdmissionBudget = {
   readonly atlasEdge: number;
   /** The largest edge the atlas may grow to for a planned sun's tiles (`shadowAtlasEdgeLimit`, `sunShadowAtlasEdge`). */
   readonly atlasEdgeLimit: number;
+  /**
+   * `shadowdebug atlasfit off`: the atlas is one power of two larger than its tiles ask for (within `atlasEdgeLimit`),
+   * with the same tiles, its growth exempt from the ledger as a sun's is; so a step measures the atlas's size alone.
+   */
+  readonly oversizedAtlas?: boolean;
 };
 /** What a sync admits by (`planShadowAdmission`). */
 export type ShadowAdmissionInput = {
@@ -102,6 +114,7 @@ export function readShadowAdmissionBudget(
     passes: passBudget,
     atlasEdge: shadowAtlasEdge(scene.getEngine(), settings.profile),
     atlasEdgeLimit: shadowAtlasEdgeLimit(scene.getEngine()),
+    ...(shadowDebugOff(scene, "atlasfit") ? { oversizedAtlas: true } : {}),
   };
 }
 
@@ -230,10 +243,13 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
   // A planned sun grows the atlas for its tiles at the size it asks for, or the one a failed allocation left it.
   const sun = planned.find((decision) => decision.entry.light instanceof DirectionalLight);
   const sunRecovery = sun && !sun.dropRecovery ? sun.entry.recovery : null;
-  const atlasEdge = sun
+  const fitted = sun
     ? sunShadowAtlasEdge(budget.atlasEdge, budget.atlasEdgeLimit, Math.min(settings.mapSize, sunRecovery?.mapSize ?? Infinity),
       settings.cascades, halved, firstScale)
     : budget.atlasEdge;
+  // `oversizedAtlas` allocates a larger atlas but plans every tile, and the room for it, in the fitted one: the same
+  // tiles go into the larger atlas (a Custom sun map whose first cascade tile the fitted edge halves keeps it whole there).
+  const atlasEdge = budget.oversizedAtlas ? Math.min(fitted * 2, budget.atlasEdgeLimit, OVERSIZED_ATLAS_MAX_EDGE) : fitted;
   // The atlas is allocated whole for its first tile; its growth past the level's edge brings its own room.
   if (planned.length > 0) {
     admitted.bytes += atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;
@@ -246,7 +262,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
   for (const decision of planned)
     if (!(decision.entry.light instanceof DirectionalLight))
       localTiles += admissionPasses(decision.entry.light, settings);
-  const localReserve = Math.min(localTiles * Math.min(settings.localMapSize, atlasEdge) ** 2, atlasEdge ** 2 / 2);
+  const localReserve = Math.min(localTiles * Math.min(settings.localMapSize, fitted) ** 2, fitted ** 2 / 2);
   // Admitted totals never exceed the planned ones, so every planned entry still
   // fits the local and pass budgets; only atlas space can reject it here.
   for (const decision of planned) {
@@ -258,7 +274,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
       : settings.localMapSize;
     // A recovery keyed to other settings no longer limits the map.
     const recovery = decision.dropRecovery ? null : entry.recovery;
-    let mapSize = Math.min(requestedSize, atlasEdge);
+    let mapSize = Math.min(requestedSize, fitted);
     if (recovery) mapSize = Math.min(mapSize, recovery.mapSize);
     if (
       entry.generator &&
@@ -275,9 +291,9 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
     // A tile per cascade or face; a sun's first cascade may take a larger tile and its last ones half-edge tiles
     // (`cascadeTileSizes`).
     const area = (size: number) => directional
-      ? cascadeTileSizes(size, passes, halved, firstScale, atlasEdge).reduce((sum, tile) => sum + tile ** 2, 0)
+      ? cascadeTileSizes(size, passes, halved, firstScale, fitted).reduce((sum, tile) => sum + tile ** 2, 0)
       : passes * size ** 2;
-    const room = atlasEdge ** 2 - atlasArea - (directional ? localReserve : 0);
+    const room = fitted ** 2 - atlasArea - (directional ? localReserve : 0);
     while (mapSize >= 256 && area(mapSize) > room) mapSize /= 2;
     if (mapSize < 256) {
       decision.reason = "shadow atlas space";

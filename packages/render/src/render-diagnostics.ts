@@ -3,6 +3,7 @@ import { managedRenderReservations } from "./managed-render-resources";
 import type { FramePressureSample } from "./hardware-scaling";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
+import { liveShadowAtlasEdge } from "./shadow-atlas";
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
 import { effectiveShadowSettings } from "@haptic/core";
 import { resolveSceneRenderingQuality, sceneEffectsQualityLimits, sceneRenderingSettings } from "./render-settings";
@@ -208,6 +209,11 @@ export type RenderDiagnostics = {
   height: number;
   /** Inverse render scale. Do not apply this again to the buffer dimensions. */
   scalingLevel: number;
+  /**
+   * The Engine's backbuffer: Play with Scene Layers composites them at the device's pixels there, while the world
+   * (`width` x `height`) draws at its own scale; absent where the view does not report it.
+   */
+  backbuffer?: { width: number; height: number };
   samples: number;
   shadowPasses: number;
   shadowMapBytes: number;
@@ -221,6 +227,11 @@ export type RenderDiagnostics = {
   shadowRetained: RetainedShadowDiagnostics | null;
   readbackMs: number | null;
   shadowLights: ReturnType<typeof shadowLightDiagnostics>;
+  /**
+   * The Scene's shadow atlas edge in texels (0 without one) and each map it holds, by map size and tiles (a sun's
+   * cascades, a point light's faces), largest first: what a shadow step changed.
+   */
+  shadowAtlas?: { edge: number; maps: { mapSize: number; passes: number }[] };
   qualityLimits: string[];
   /**
    * Adapter identity reported by the Engine itself, so a diagnostics capture
@@ -296,6 +307,13 @@ export function createRenderDiagnostics(
       shadowPasses: metrics.passes,
       shadowMapBytes: metrics.bytes,
       shadowLights: state.lightsDebug ? shadowLightDiagnostics(scene, shadows) : [],
+      shadowAtlas: {
+        edge: liveShadowAtlasEdge(scene),
+        maps: shadows
+          ? shadowLightDiagnostics(scene, shadows).filter((row) => row.mapSize > 0)
+            .map((row) => ({ mapSize: row.mapSize, passes: row.passes })).sort((a, b) => b.mapSize - a.mapSize || b.passes - a.passes)
+          : [],
+      },
       qualityLimits: [
         ...sceneLightingLimits(scene),
         ...effectiveShadowSettings(

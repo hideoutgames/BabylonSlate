@@ -34,6 +34,7 @@ import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
 import { shadowDebugFingerprint } from "./shadow-debug";
+import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -720,6 +721,11 @@ function initializeEngine(
   let worldLevel = options.hardwareScalingLevel ?? 1;
   let composited = false;
   /**
+   * Debug (`scenelayers off`): Play composites no Scene Layer, so the backbuffer is the world's size again and every
+   * pass that ran at the device's resolution for the layers (their draws, the upscale to the output) is gone.
+   */
+  let layersHidden = false;
+  /**
    * A Scene Layer's editor view draws at its canvas's device pixels and full
    * quality: its own level is 1 / the pixel ratio whatever the Engine-wide
    * level, and its scaling controller never writes the Engine's.
@@ -1195,6 +1201,10 @@ function initializeEngine(
       "shadows.debug": shadowDebugFingerprint(scene),
       // Engine-wide and kept across Play sessions, so a change that is not undone shows.
       "presentation.framesInFlight": String(frameBackpressure.mode),
+      // Engine-wide too: whether a frame's last multisampled resolve discards the samples (`discardsamples`).
+      "msaa.discard": discardsSamples(engine) ? "on" : "off",
+      // Whether Play composites its Scene Layers (`scenelayers`).
+      layers: layersHidden ? "hidden" : "shown",
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve":
         String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
@@ -1823,7 +1833,7 @@ function initializeEngine(
    * before it draws; any other view resizes now.
    */
   const syncPlayComposition = () => {
-    const next = (sceneLayerCompositor?.layers().length ?? 0) > 0;
+    const next = !layersHidden && (sceneLayerCompositor?.layers().length ?? 0) > 0;
     if (next === composited) return;
     composited = next;
     syncPlayOutput();
@@ -1947,7 +1957,8 @@ function initializeEngine(
     return { ...(readDiagnostics ??= createRenderDiagnostics(
       scene, () => lastRenderCpuMs, () => rttPresent?.readbackMs() ?? null,
       () => ({ sample: pressureSampled ? { ...lastPressureSample } : null, gpuAttribution: gpuAttribution() }),
-    ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}), firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
+    ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}),
+      backbuffer: { width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       layerWork: sceneLayerCompositor?.diagnostics() ?? [],
@@ -2359,7 +2370,7 @@ function initializeEngine(
       else engine.clear(scene.clearColor, true, true, true);
       joysticks.refresh();
       uiControls.refresh();
-      if (sceneLayerCompositor) {
+      if (sceneLayerCompositor && !layersHidden) {
         enterDrawPass(engine, "layers", true);
         try {
           const compositor = sceneLayerCompositor;
@@ -3209,6 +3220,12 @@ function initializeEngine(
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
       if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
+      if (command.type === "setDiscardSamplesDebug" && setDiscardSamples(engine, command.enabled)) scheduler.invalidate("asset");
+      if (command.type === "setSceneLayersDebug" && layersHidden === command.enabled) {
+        layersHidden = !command.enabled;
+        syncPlayComposition();
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setGpuBusyProbeDebug") {
         const probe = engineGpuBusyProbe(engine);
         if (command.enabled) probe?.start(); else probe?.stop();

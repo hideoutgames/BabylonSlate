@@ -14,10 +14,11 @@ import {
   isBreakdownBaseline,
   livePreserve,
   meanFrameMs,
-  profileDelta,
+  profileComparison,
+  profileDrift,
   profileRanking,
-  profileSavings,
   profileStep,
+  PROFILE_CONTROL_VIEW,
   PROFILE_HOLD_MARGIN,
   PROFILE_HOLD_WINDOW_MS,
   SATURATED_SHARE,
@@ -30,6 +31,7 @@ import {
   type FeatureTestCheckResources,
   type FeatureTestCheckSceneResult,
   type FeatureTestStoppedSession,
+  type ProfileComparison,
   type CounterStats,
   type FrameStats,
   type PlayCounters,
@@ -301,7 +303,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
   if (editor.error) lines.push("  Editor error:", ...editor.error.map((line) => `    ${line}`));
   const play = scene.play;
   if (play.status === "loaded") {
-    lines.push(`  Play: loaded in ${s(play.ms)} · ${frames(play.frames)}${play.runtimeFps !== null ? ` · runtime ${play.runtimeFps.toFixed(0)} fps` : ""}`);
+    lines.push(`  Play: loaded in ${s(play.ms)} · ${frames(play.frames)}${play.runtimeFps !== null ? ` · render loop ${play.runtimeFps.toFixed(0)} fps (last second)` : ""}${typeof play.ticksPerSecond === "number" ? ` · game ${play.ticksPerSecond.toFixed(0)} ticks/s` : ""}`);
     const snap = play.snapshot;
     if (snap) {
       const r = snap.rendering;
@@ -354,7 +356,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       ...verdicts.nonAdditive.map((text) => `  NON-ADDITIVE: ${text}; the changes do not add up, so do not sum them`),
       ...(verdicts.saturated ? [`  SATURATED: ${verdicts.saturated}; the GPU is saturated, so a change is not that feature's own cost`] : []),
       ...(verdicts.overCap ? [`  OVER CAP: ${verdicts.overCap}; the GPU may change speed there, so changes are not costs`] : []),
-      `  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines of the same camera around the step (a baseline's: against that camera's first; ${method === "add-one" ? "a step's is the feature's cost" : "a step's is what the feature saves"}), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed and occlusion culled/tested · occluder tris · culling ms; UNEXPECTED, NOT RESTORED, UNSETTLED and OVER mark a sample not to trust`,
+      `  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines of the same camera around the step (a baseline's: against that camera's first; ${method === "add-one" ? "a step's is the feature's cost" : "a step's is what the feature saves"}), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed and occlusion culled/tested · occluder tris · culling ms; UNEXPECTED, NOT RESTORED, COMPILING (shaders first drawn or compiling while sampled) and OVER mark a sample not to trust`,
       `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
       `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("gpu busy", 14)}${pad("change", 18)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
     for (const sample of play.benchmark) {
@@ -439,7 +441,7 @@ function settingNotes(
   const notes: string[] = [];
   const unsettled = sample.unsettled;
   if (unsettled && (unsettled.firstDraws > 0 || unsettled.compiling > 0))
-    notes.push(`UNSETTLED: ${unsettled.firstDraws} first drawn, ${unsettled.compiling} compiling`);
+    notes.push(`COMPILING: ${unsettled.firstDraws} first drawn, ${unsettled.compiling} compiling`);
   if (first?.settings && sample.settings && sample !== first) {
     const changes = settingsChanges(first.settings, sample.settings);
     const field = (change: string) => change.slice(0, change.indexOf("="));
@@ -533,16 +535,36 @@ function memoryText(sample: FeatureTestBenchmarkSample): string {
 /** Reasons a Profile row prints for its held frames. */
 const PROFILE_ROW_HELD_REASONS = 2;
 
+/** The shadow atlas and its maps as a row ended: `atlas 4096 · maps 2048x3, 1024x6` (map size x tiles). */
+function shadowAtlasText(sample: FeatureTestBenchmarkSample): string {
+  const atlas = sample.shadowAtlas;
+  if (!atlas) return "";
+  if (!atlas.edge) return "no shadow atlas";
+  return `atlas ${atlas.edge}${atlas.maps.length ? ` · maps ${atlas.maps.map((map) => `${map.mapSize}x${map.passes}`).join(", ")}` : ""}`;
+}
+
 /**
  * A Profile row's flags (`settingNotes`), `no setting changed` for a step whose setting already had its value, overlaps,
- * and why it held frames while sampled (its top reasons).
+ * UNSETTLED where its baselines differ by more than its own change, a shadow step's atlas and maps, its change beyond
+ * the step it includes, and why it held frames while sampled (its top reasons).
  */
-function profileNotes(sample: FeatureTestBenchmarkSample, first: FeatureTestBenchmarkSample | undefined): string {
+function profileNotes(samples: readonly FeatureTestBenchmarkSample[], sample: FeatureTestBenchmarkSample, first: FeatureTestBenchmarkSample | undefined): string {
   if (sample.skipped) return `no setting changed (${sample.skipped})`;
   const step = isBreakdownBaseline(sample) || sample.warmup ? undefined : profileStep(sample.label);
+  const comparison = profileComparison(samples, sample);
   const reasons = sample.presentation?.held ? heldReasonsText(sample.presentation.heldReasons, PROFILE_ROW_HELD_REASONS) : "";
+  const included = step?.includes
+    ? samples.find((entry) => entry.view === sample.view && entry.label === `${sample.view ? `${sample.view} ` : ""}${step.includes}`)
+    : undefined;
+  const part = included ? profileComparison(samples, included) : null;
+  const beyond = comparison && part && comparison.basis === part.basis ? comparison.change.ms - part.change.ms : null;
+  const shadows = step?.fields?.some((field) => field.startsWith("shadows")) || (isBreakdownBaseline(sample) && sample === first);
   return [
     sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
+    comparison?.unsettled ? `UNSETTLED: its baselines differ by ${comparison.spread!.toFixed(1)} ms, more than its change` : "",
+    comparison && comparison.after === null ? "one baseline" : "",
+    beyond !== null ? `${beyond >= 0 ? "+" : ""}${beyond.toFixed(1)}ms beyond ${step!.includes}` : "",
+    shadows ? shadowAtlasText(sample) : "",
     occlusionText(sample), workText(sample), memoryText(sample), reasons ? `held: ${reasons}` : "",
   ].filter(Boolean).join(" · ");
 }
@@ -569,7 +591,46 @@ function instancePoolText(pool: NonNullable<FeatureTestCheckSceneResult["play"][
   return `${pool.groups} groups · ${pool.pooled} pooled · ${pool.retained} retained empty`;
 }
 
-/** A Profile's section: settings, pool, restore check, the rows, their draws per pass, and the steps ranked by saving. */
+/** The resolution a Profile held for every row (`profileResolutionPin`). */
+function heldResolutionText(held: NonNullable<FeatureTestCheckSceneResult["play"]["profile"]>["resolution"] | null): string {
+  if (!held) return "not pinned";
+  const before = held.levelBefore === null ? "" : `; Play was at scaling level ${held.levelBefore.toFixed(2)} before`;
+  return `scale ${held.scale} (level ${(1 / held.scale).toFixed(2)}) for every row, ${held.floor ? "Dynamic Resolution's floor at this tier, where a GPU-bound device sits" : "the session's own scale"}, with Dynamic Resolution off${before}`;
+}
+
+/** Minutes and seconds into the sweep: `2:05`. */
+function clock(ms: number | null): string {
+  if (ms === null) return "?";
+  const seconds = Math.round(ms / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** The control view's visits (`profileDrift`), and its change from the first visit to the last in GPU busy and CPU. */
+function driftLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
+  const visits = profileDrift(samples);
+  if (!visits.length) return [`  Drift (${PROFILE_CONTROL_VIEW} view, revisited unchanged): no visit measured`];
+  const value = (ms: number | null) => (ms === null ? "-" : ms.toFixed(1));
+  const firstGpu = visits.find((visit) => visit.gpuMs !== null)?.gpuMs ?? null;
+  const lastGpu = visits.findLast((visit) => visit.gpuMs !== null)?.gpuMs ?? null;
+  const firstCpu = visits.find((visit) => visit.cpuMs !== null)?.cpuMs ?? null;
+  const lastCpu = visits.findLast((visit) => visit.cpuMs !== null)?.cpuMs ?? null;
+  const change = (from: number | null, to: number | null) =>
+    from === null || to === null || from === 0 ? "-" : `${to - from >= 0 ? "+" : ""}${(to - from).toFixed(1)}ms ${to - from >= 0 ? "+" : ""}${(((to - from) / from) * 100).toFixed(0)}%`;
+  return [
+    `  Drift (${PROFILE_CONTROL_VIEW} view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms): ${visits.map((visit) => `${visit.label} ${clock(visit.atMs)} ${value(visit.gpuMs)}/${value(visit.cpuMs)}`).join(" · ")}`,
+    `  Drift first to last visit: gpu busy ${change(firstGpu, lastGpu)} · cpu ${change(firstCpu, lastCpu)}; discount a step's change by the drift around it`,
+  ];
+}
+
+/** A comparison's A, B, A values in its basis: `30.1 > 25.0 > 30.5`. */
+function abaText(comparison: ProfileComparison): string {
+  return `${comparison.before.toFixed(1)} > ${comparison.step.toFixed(1)} > ${comparison.after === null ? "-" : comparison.after.toFixed(1)}`;
+}
+
+/**
+ * A Profile's section: settings, pool, restore check, drift, the rows, their draws per pass, and per view the steps
+ * ranked by their change in GPU busy.
+ */
 function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const samples = scene.play.benchmark;
   const profile = scene.play.profile;
@@ -577,37 +638,49 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    "  Profile at the session's quality tier and frame cap (a short warm-up, then a baseline before and after every step; each sampled 5 s with gpubusy once no shader is first drawn or compiling):",
+    "  Profile at the session's quality tier and frame cap, at fixed camera views (a short warm-up at the control view, then at each view a baseline before and after every step, A B A, the camera held between them; each sampled 5 s with gpubusy once no shader is first drawn or compiling):",
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
+    `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,
     drift
       ? `  Warm-up drift: first window ${drift.firstMs.toFixed(1)} ms, steady ${drift.steadyMs.toFixed(1)} ms (${drift.percent >= 0 ? "+" : ""}${drift.percent.toFixed(0)}%) over ${drift.windows} windows${drift.basis === "frame" ? " (mean frame)" : " (gpu busy)"}`
       : "  Warm-up drift: unmeasured (fewer than two windows)",
+    ...driftLines(samples),
     `  Instance pool: ${instancePoolText(profile?.instancePool ?? null)}`,
     `  Hold rate: ${holdRateText(profile?.holdRate ?? null)}`,
     profile?.endChanges
       ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
       : "  Restored: not checked",
-    "  Legend: mean, p95 = frame time · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory (it falls as the web content and GPU processes grow) and what the app process may still allocate, as the sample ended · frame, cpu change = against the baselines around the step (a baseline's: against the first) · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED and UNSETTLED mark a row not to trust",
+    "  Legend: step labels start with their view (light: few draws; heavy: many draws, no Mirror on screen, the control view; mirror: Mirrors and capture monitors on screen) · mean, p95 = frame time (it lands on whole display intervals: read gpu busy) · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · change = gpu busy against the baselines of its view around the step (a baseline's: against its view's first), or mean frame time where gpu busy is missing (marked *) · cpu change = the same in CPU cost · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory and what the app process may still allocate, as the sample ended · world / backbuffer = the world's render size @ its scaling level, and the backbuffer's size (Scene Layers and the output's upscale draw there) · atlas, maps = the shadow atlas edge and each map's size x tiles · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED, COMPILING and UNSETTLED (its two baselines differ by more than its change) mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy polled every ${timed.gpuBusy.pollMs.toFixed(1)} ms (each frame up to one poll late)` : "no gpu busy (no fences)"}`,
-    `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("frame change", 16)}${pad("cpu change", 16)}notes`,
+    `    ${pad("Step", 28)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("change", 16)}${pad("cpu change", 16)}${pad("world / backbuffer", 26)}notes`,
   ];
   for (const sample of samples) {
     const mean = meanFrameMs(sample.frames);
     const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
-    const change = profileDelta(samples, sample);
-    lines.push(`    ${pad(sample.label, 22)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(deltaText(change.frame), 16)}${pad(deltaText(change.cpu), 16)}${profileNotes(sample, first)}`.trimEnd());
+    const change = sample.warmup ? null : breakdownDelta(samples, sample);
+    const cpu = profileComparison(samples, sample)?.cpu ?? (isBreakdownBaseline(sample) ? breakdownCpuDelta(samples, sample) : null);
+    lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
   }
-  lines.push(...drawPassTable(samples, "Step", 22), ...cpuPassTable(samples, "Step", 22));
+  lines.push(...drawPassTable(samples, "Step", 28), ...cpuPassTable(samples, "Step", 28));
+  lines.push("  Ranked by change in gpu busy at each view (baseline > step > baseline; * = mean frame time where gpu busy is missing):");
   const ranking = profileRanking(samples);
-  lines.push("  Ranked by frame-time saving:");
-  ranking.forEach((entry, index) => lines.push(
-    `    ${index + 1}. ${entry.label}: frame ${deltaText(entry.frame)} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}`,
-  ));
+  for (const group of ranking) {
+    lines.push(`    ${group.view ?? "scene camera"}:`);
+    group.steps.forEach((entry, index) => lines.push(
+      `      ${index + 1}. ${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : ""} (${abaText(entry)}) · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
+    ));
+  }
   if (!ranking.length) lines.push("    none measured");
-  const savings = profileSavings(samples);
-  if (savings) lines.push(`  Steps that overlap no other save ${savings.savingsMs.toFixed(1)} ms of the first baseline's ${savings.frameMs.toFixed(1)} ms frame`);
   return lines;
+}
+
+/** A baseline's CPU cost against its view's first baseline. */
+function breakdownCpuDelta(samples: readonly FeatureTestBenchmarkSample[], sample: FeatureTestBenchmarkSample): BaselineDelta | null {
+  const firstOfView = samples.find((entry) => isBreakdownBaseline(entry) && entry.view === sample.view && entry.cpuMs !== null);
+  if (!firstOfView || firstOfView === sample || sample.cpuMs === null || firstOfView.cpuMs === null || firstOfView.cpuMs === 0) return null;
+  const msChange = sample.cpuMs - firstOfView.cpuMs;
+  return { ms: msChange, percent: (msChange / firstOfView.cpuMs) * 100 };
 }
 
 /** A counter's median over the sample, with its range when the samples differ. */
