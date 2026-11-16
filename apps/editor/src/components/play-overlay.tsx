@@ -14,7 +14,7 @@ import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
-  verifyCaptureActorLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes,
+  verifyCaptureActorLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1263,6 +1263,8 @@ function PlayOverlayView({
         verifyCaptureActorLists: (enabled: boolean) => void;
         /** Has each cropped Mirror cull also cull with the whole mirrored frustum and count what the crop left out within reach (`rendererWork.mirrorCrop.misses`). */
         verifyMirrorFootprintCrops: (enabled: boolean) => void;
+        /** Has each strict outline cull also cull the full way, which must agree (`rendererWork.outlineCull.mismatches`). */
+        verifySharedOutlineCulls: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1290,6 +1292,7 @@ function PlayOverlayView({
       verifyMirrorContentPolls,
       verifyCaptureActorLists,
       verifyMirrorFootprintCrops,
+      verifySharedOutlineCulls,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,

@@ -11,7 +11,9 @@ import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderLease,
 } from "./managed-render-resources";
-import { cullOutlineMembers, cullStrictOccluders, writesSceneDepth } from "./shared-outline-occluders";
+import {
+  cullOutlineMembers, cullPartitionedStrictOccluders, partitionStrictCandidates, writesSceneDepth, type StrictCandidates,
+} from "./shared-outline-occluders";
 
 export const SHARED_OUTLINE_ATTRIBUTE = "hapticOutlineIdentity";
 const SHARED_OUTLINE_MAX_ID = 65_535;
@@ -42,6 +44,20 @@ type SourceRecord = {
 type StyleRecord = { texture: RawTexture; data: Float32Array; lease: ManagedRenderLease };
 const owners = new WeakMap<Scene, SharedOutlineOwner>();
 
+/** Strict culls between two checks of a view's kept candidate split against one made afresh (`strictOccludersFor`). */
+export const STRICT_SPLIT_CHECK_INTERVAL = 240;
+
+let verifyingCulls = false;
+
+/**
+ * Debugging aid: each strict cull a view draws from its kept candidate split also culls the way it did before, splitting
+ * the candidates afresh and walking every occluder, and counts each list that differs; a cull that found no stroke to
+ * show counts when the full one lists a member that strokes (`SharedOutlineView.cullDiagnostics`, `mismatches`).
+ */
+export function verifySharedOutlineCulls(enabled: boolean): void {
+  verifyingCulls = enabled;
+}
+
 /** Scene identity ownership is deliberately separate from per-view styles. */
 export class SharedOutlineOwner {
   static forScene(scene: Scene): SharedOutlineOwner {
@@ -62,6 +78,8 @@ export class SharedOutlineOwner {
   private bufferBytes = 0;
   private disposed = false;
   meshRevision = 0;
+  /** Bumps whenever `reconcile` gives the meshes their identities again. */
+  identityRevision = 0;
   /** Bumps whenever an instance source gains or loses its identity stream, which dirties that source's attributes. */
   sourceRevision = 0;
   private readonly stopWatchingMeshes: () => void;
@@ -166,6 +184,7 @@ export class SharedOutlineOwner {
     }
     this.meshIdentity.clear();
     for (const [mesh, id] of next) this.meshIdentity.set(mesh, id);
+    this.identityRevision++;
     for (const source of kept) {
       source.instancedBuffers[SHARED_OUTLINE_ATTRIBUTE] = this.identityFor(source);
       for (const instance of source.instances)
@@ -342,6 +361,20 @@ export class SharedOutlineView {
   private readonly strictOccluders: AbstractMesh[] = [];
   /** This view's working list for the cull; see `cullStrictOccluders`. */
   private readonly strictOccluderScratch: AbstractMesh[] = [];
+  /**
+   * The strict candidates split by membership, and what that split read: the candidate list, this view's styles
+   * (`revision`), the owner's identities and identity streams. Membership changes only with those, so a frame's cull
+   * walks members and occluders apart without asking each candidate again; every `STRICT_SPLIT_CHECK_INTERVAL` culls
+   * the split is made afresh and replaces the kept one where they differ (`healedSplits`).
+   */
+  private strictSplit: { candidates: readonly AbstractMesh[]; revision: number; identities: number; sources: number;
+    members: AbstractMesh[]; others: AbstractMesh[] } | undefined;
+  private strictCullsSinceCheck = 0;
+  /** The last strict cull's `cullPartitionedStrictOccluders` outcome: whether a member that can show strokes. */
+  private readonly strictOutcome = { strokes: true };
+  private readonly cullWork = { splitChecks: 0, healedSplits: 0, checks: 0, mismatches: 0 };
+  /** Whether the last narrowed strict cull (`strictOccludersFor`) kept a member that strokes; true before the first. */
+  get strictStrokesShow(): boolean { return this.strictOutcome.strokes; }
   /** A through or selection group's members in view: the list Babylon observes and the cull's working list. */
   private readonly membersInView = new Map<SharedOutlineGroup, { out: AbstractMesh[]; scratch: AbstractMesh[] }>();
   private styleUploads = 0;
@@ -528,11 +561,54 @@ export class SharedOutlineView {
    * `overSceneDepth`: of the occluders, only those the scene's depth lacks now.
    */
   strictOccludersFor(camera: Camera, widthPx: number, heightPx: number, overSceneDepth = false): AbstractMesh[] {
-    const candidates = this.meshesForGroup("strict");
-    return cullStrictOccluders(candidates, (mesh) => this.isStrictMember(mesh), camera, widthPx, heightPx,
-      Math.ceil(this.maximumWidthForGroup("strict")) + 1, this.strictOccluders, this.strictOccluderScratch,
-      overSceneDepth ? lacksSceneDepth : undefined);
+    const split = this.strictCandidates();
+    const padding = Math.ceil(this.maximumWidthForGroup("strict")) + 1;
+    const occludes = overSceneDepth ? lacksSceneDepth : undefined;
+    const list = cullPartitionedStrictOccluders(split, camera, widthPx, heightPx, padding, this.strictOccluders,
+      this.strictOccluderScratch, occludes, this.strokesStrict, this.strictOutcome);
+    if (verifyingCulls) this.verifyStrictCull(list, camera, widthPx, heightPx, padding, occludes);
+    return list;
   }
+  private readonly isMemberStrict = (mesh: AbstractMesh) => this.isStrictMember(mesh);
+  /** Whether `mesh` draws a strict identity the composition strokes from: its own style, not only an identity stream. */
+  private readonly strokesStrict = (mesh: AbstractMesh) =>
+    (this.styles.get("strict")?.data[this.owner.identityFor(mesh) * 4 + 3] ?? 0) > 0;
+  /** The strict candidates split by membership: kept while what it read holds, checked afresh at an interval. */
+  private strictCandidates(): StrictCandidates {
+    const candidates = this.meshesForGroup("strict");
+    const kept = this.strictSplit;
+    if (kept && kept.candidates === candidates && kept.revision === this.revision &&
+      kept.identities === this.owner.identityRevision && kept.sources === this.owner.sourceRevision) {
+      if (++this.strictCullsSinceCheck < STRICT_SPLIT_CHECK_INTERVAL) return kept;
+      this.strictCullsSinceCheck = 0;
+      this.cullWork.splitChecks++;
+      const fresh = partitionStrictCandidates(candidates, this.isMemberStrict);
+      if (sameOrder(fresh.members, kept.members) && sameOrder(fresh.others, kept.others)) return kept;
+      this.cullWork.healedSplits++;
+      kept.members = fresh.members as AbstractMesh[]; kept.others = fresh.others as AbstractMesh[];
+      return kept;
+    }
+    const fresh = partitionStrictCandidates(candidates, this.isMemberStrict, kept?.members, kept?.others);
+    this.strictCullsSinceCheck = 0;
+    this.strictSplit = { candidates, revision: this.revision, identities: this.owner.identityRevision,
+      sources: this.owner.sourceRevision, members: fresh.members as AbstractMesh[], others: fresh.others as AbstractMesh[] };
+    return this.strictSplit;
+  }
+  /** `verifySharedOutlineCulls`: the strict cull made the way it was before the kept split and the stroke shortcut. */
+  private verifyStrictCull(list: readonly AbstractMesh[], camera: Camera, widthPx: number, heightPx: number, padding: number,
+    occludes: ((mesh: AbstractMesh) => boolean) | undefined): void {
+    const full = cullPartitionedStrictOccluders(partitionStrictCandidates(this.meshesForGroup("strict"), this.isMemberStrict),
+      camera, widthPx, heightPx, padding, [], [], occludes);
+    this.cullWork.checks++;
+    const differs = this.strictOutcome.strokes ? !sameOrder(full, list) : full.some(this.strokesStrict);
+    if (differs) this.cullWork.mismatches++;
+  }
+  /**
+   * The strict cull's work: checks of the kept candidate split against a fresh one and those that replaced it
+   * (`splitChecks`, `healedSplits`), and while `verifySharedOutlineCulls` is on, culls also made the full way
+   * (`checks`) and those that disagreed (`mismatches`, which must stay 0).
+   */
+  cullDiagnostics(): { splitChecks: number; healedSplits: number; checks: number; mismatches: number } { return { ...this.cullWork }; }
   /**
    * A through or selection group's members that can show in `camera`'s view this frame, strokes included; readiness
    * keeps using the full `meshesForGroup` list.
@@ -557,7 +633,7 @@ export class SharedOutlineView {
     if (this.isDisposed) return; this.isDisposed = true;
     this.contributions.clear(); this.meshLists.clear(); this.releaseStyles(); this.owner.removeView(this); this.revision++;
     // Neither list may keep the last frame's occluders, disposed ones included, reachable.
-    this.strictOccluders.length = 0; this.strictOccluderScratch.length = 0;
+    this.strictOccluders.length = 0; this.strictOccluderScratch.length = 0; this.strictSplit = undefined;
     this.membersInView.clear();
   }
 }
@@ -608,6 +684,12 @@ function sameTargets(a: SharedOutlineContribution, b: SharedOutlineContribution)
     a.targets.every((target, index) => target.key === b.targets[index]!.key && sameMeshes(target.meshes, b.targets[index]!.meshes));
 }
 /** Equal length and membership; a Set keeps unchanged whole-scene snapshots linear. */
+/** The same meshes in the same order. */
+function sameOrder(a: readonly AbstractMesh[], b: readonly AbstractMesh[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false;
+  return true;
+}
 function sameMeshes(a: readonly AbstractMesh[], b: readonly AbstractMesh[]): boolean {
   if (a.length !== b.length) return false;
   const members = new Set(b);

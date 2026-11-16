@@ -142,6 +142,13 @@ export type RenderDiagnostics = {
      * Absent without Mirrors.
      */
     mirrorCrop?: { checks: number; misses: number };
+    /**
+     * The view's strict outline cull (`SharedOutlineView.cullDiagnostics`): periodic checks of its kept candidate split
+     * against a fresh one and those that replaced it (`splitChecks`, `healedSplits`), and while
+     * `verifySharedOutlineCulls` is on, culls also made the full way (`checks`) and those that disagreed (`mismatches`,
+     * which must stay 0). Absent without an outline view.
+     */
+    outlineCull?: { splitChecks: number; healedSplits: number; checks: number; mismatches: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is

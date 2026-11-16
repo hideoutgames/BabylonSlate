@@ -63,10 +63,16 @@ function commit(fresh: readonly AbstractMesh[], out: AbstractMesh[]): AbstractMe
  * either leaves the scene's depth as it was.
  */
 export function writesSceneDepth(mesh: AbstractMesh): boolean {
-  const writes = (material: Material | null | undefined) => !material ||
-    (!material.disableDepthWrite && (!material.needAlphaBlendingForMesh(mesh) || material.needDepthPrePass || material.forceDepthWrite));
   const material = mesh.material ?? mesh.getScene().defaultMaterial;
-  return material instanceof MultiMaterial ? material.subMaterials.every(writes) : writes(material);
+  if (!(material instanceof MultiMaterial)) return writesDepthWith(material, mesh);
+  for (const part of material.subMaterials) if (!writesDepthWith(part, mesh)) return false;
+  return true;
+}
+
+/** Whether `material` draws `mesh` into the scene's depth (`writesSceneDepth`); no Material is the default's. */
+function writesDepthWith(material: Material | null | undefined, mesh: AbstractMesh): boolean {
+  return !material ||
+    (!material.disableDepthWrite && (!material.needAlphaBlendingForMesh(mesh) || material.needDepthPrePass || material.forceDepthWrite));
 }
 
 /**
@@ -89,6 +95,19 @@ export function cullOutlineMembers(
     if (!cannotShow(mesh, bounds, padX, padY)) fresh.push(mesh);
   }
   return commit(fresh, out);
+}
+
+/** The strict group's candidates split by membership, each part in the candidates' order (`partitionStrictCandidates`). */
+export type StrictCandidates = { readonly members: readonly AbstractMesh[]; readonly others: readonly AbstractMesh[] };
+
+/** Splits `candidates` into the strict group's members and the rest, in their order, into `members` and `others`. */
+export function partitionStrictCandidates(
+  candidates: readonly AbstractMesh[], isMember: (mesh: AbstractMesh) => boolean,
+  members: AbstractMesh[] = [], others: AbstractMesh[] = [],
+): StrictCandidates {
+  members.length = 0; others.length = 0;
+  for (const mesh of candidates) (isMember(mesh) ? members : others).push(mesh);
+  return { members, others };
 }
 
 /**
@@ -118,6 +137,29 @@ export function cullStrictOccluders(
   scratch: AbstractMesh[] = [],
   occludes?: (mesh: AbstractMesh) => boolean,
 ): AbstractMesh[] {
+  return cullPartitionedStrictOccluders(partitionStrictCandidates(candidates, isMember), camera, widthPx, heightPx, paddingPx,
+    out, scratch, occludes);
+}
+
+/**
+ * `cullStrictOccluders` over candidates already split by membership, which keeps the members' work to the members and
+ * the occluders' to the rest. With `strokes`, a frame in which no member that can show strokes (`strokes` false for
+ * each) walks no occluder: the list is the members that can show, and `outcome.strokes` is false, since such a mask
+ * holds no identity the composition draws a stroke from, whatever the occluders. Otherwise `outcome.strokes` is true and
+ * the list is `cullStrictOccluders`'s.
+ */
+export function cullPartitionedStrictOccluders(
+  candidates: StrictCandidates,
+  camera: Camera,
+  widthPx: number,
+  heightPx: number,
+  paddingPx: number,
+  out: AbstractMesh[] = [],
+  scratch: AbstractMesh[] = [],
+  occludes?: (mesh: AbstractMesh) => boolean,
+  strokes?: (mesh: AbstractMesh) => boolean,
+  outcome?: { strokes: boolean },
+): AbstractMesh[] {
   const fresh = scratch;
   fresh.length = 0;
   // getTransformationMatrix only multiplies the cached view and projection.
@@ -127,24 +169,27 @@ export function cullStrictOccluders(
   const handedness = camera.getScene().useRightHandedSystem ? -1 : 1;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, far = -Infinity;
   const padX = (2 * paddingPx) / Math.max(1, widthPx), padY = (2 * paddingPx) / Math.max(1, heightPx);
-  for (const mesh of candidates) {
+  let stroked = !strokes;
+  for (const mesh of candidates.members) {
     // A mesh a world view does not draw yet (`isRevealPending`) neither outlines nor occludes.
-    if (!isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible || isRevealPending(mesh)) continue;
+    if (!mesh.isEnabled() || !mesh.isVisible || isRevealPending(mesh)) continue;
     measure(mesh, viewProjection, view, handedness, bounds);
     if (cannotShow(mesh, bounds, padX, padY)) continue;
     fresh.push(mesh);
+    if (!stroked && strokes!(mesh)) stroked = true;
     if (!bounds.front) continue;
     far = Math.max(far, bounds.far);
     if (bounds.behind) { minX = minY = -Infinity; maxX = maxY = Infinity; continue; }
     minX = Math.min(minX, bounds.minX); maxX = Math.max(maxX, bounds.maxX);
     minY = Math.min(minY, bounds.minY); maxY = Math.max(maxY, bounds.maxY);
   }
-  if (far === -Infinity) return commit(fresh, out);
+  if (outcome) outcome.strokes = stroked;
+  if (!stroked || far === -Infinity) return commit(fresh, out);
   minX = Math.max(-1, minX - padX); maxX = Math.min(1, maxX + padX);
   minY = Math.max(-1, minY - padY); maxY = Math.min(1, maxY + padY);
   if (minX > maxX || minY > maxY) return commit(fresh, out);
-  for (const mesh of candidates) {
-    if (isMember(mesh) || !mesh.isEnabled() || !mesh.isVisible || isRevealPending(mesh)) continue;
+  for (const mesh of candidates.others) {
+    if (!mesh.isEnabled() || !mesh.isVisible || isRevealPending(mesh)) continue;
     if (occludes && !occludes(mesh)) continue;
     measure(mesh, viewProjection, view, handedness, bounds);
     if (!bounds.front || bounds.near >= far) continue;
