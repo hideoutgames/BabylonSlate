@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeShadowSettings, parseMirrorProperties } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
-import { createMirrorSurfaceMesh, mirrorDiagnostics, verifyMirrorContentPolls } from "./mirrors";
+import { createMirrorSurfaceMesh, mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops } from "./mirrors";
 import { ReflectedContent } from "./reflected-content";
 import { setPlanarFootprintCulling } from "./planar-mirror";
 import { isReflectionCamera } from "./reflection-camera";
@@ -280,6 +280,78 @@ it("draws and follows only what the surface's footprint can show, widened by a M
   surface.material = compiled.material;
   expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
   compiled.dispose();
+});
+
+/** The Feature Test's Ripple Mirror Material (`mirrorRippleMaterial` in the editor's rendering starter): two drifting noises × 0.012. */
+function rippleMaterialDocument(offsetScale = 0.012) {
+  const doc = createDefaultMaterialDocument("ripple");
+  doc.shadingModel = "unlit";
+  doc.nodes.push(
+    { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+    { id: "time", type: "input.time", position: { x: 0, y: 0 }, properties: {} },
+    { id: "split", type: "vector.split", position: { x: 0, y: 0 }, properties: {} },
+    { id: "u", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [6] } },
+    { id: "v", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [9] } },
+    { id: "drift", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [0.8] } },
+    { id: "coordsA", type: "vector.combine", position: { x: 0, y: 0 }, properties: {} },
+    { id: "coordsB", type: "vector.combine", position: { x: 0, y: 0 }, properties: {} },
+    { id: "noiseA", type: "noise.perlin", position: { x: 0, y: 0 }, properties: {} },
+    { id: "noiseB", type: "noise.perlin", position: { x: 0, y: 0 }, properties: {} },
+    { id: "rippleX", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [offsetScale] } },
+    { id: "rippleY", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [offsetScale] } },
+    { id: "offset", type: "vector.combine", position: { x: 0, y: 0 }, properties: {} },
+    { id: "reflection", type: "input.mirrorReflection", position: { x: 0, y: 0 }, properties: {} },
+    { id: "tint", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [0.75, 0.9, 1] } },
+  );
+  const wires: [string, string, string, string][] = [
+    ["uv", "uv", "split", "value"], ["split", "x", "u", "a"], ["split", "y", "v", "a"], ["time", "time", "drift", "a"],
+    ["u", "out", "coordsA", "x"], ["v", "out", "coordsA", "y"], ["drift", "out", "coordsA", "z"],
+    ["v", "out", "coordsB", "x"], ["u", "out", "coordsB", "y"], ["drift", "out", "coordsB", "z"],
+    ["coordsA", "xyz", "noiseA", "coordinates"], ["coordsB", "xyz", "noiseB", "coordinates"],
+    ["noiseA", "out", "rippleX", "a"], ["noiseB", "out", "rippleY", "a"],
+    ["rippleX", "out", "offset", "x"], ["rippleY", "out", "offset", "y"],
+    ["offset", "xy", "reflection", "offset"], ["reflection", "color", "tint", "a"], ["tint", "out", "output", "baseColor"],
+  ];
+  doc.edges = wires.map(([from, fromPin, to, toPin]) => ({
+    id: `${from}:${fromPin}:${to}:${toPin}`, sourceNodeId: from, sourcePinId: fromPin, targetNodeId: to, targetPinId: toPin,
+  }));
+  return doc;
+}
+
+it("crops a Mirror whose Offset a graph drives by the bound on that graph, and checks the crop when verifying", async () => {
+  const { scene, surface, passes, frame } = settledMirror();
+  const side = MeshBuilder.CreateBox("side", { size: 0.4 }, scene);
+  side.position.set(3, 1, 1.5);
+  const reflected = () => { scene.activeCamera!.position.y += 1e-3; frame(); return passes.at(-1)![0]!.meshes; };
+  // A mesh created since the last render is culled by the world matrix it was created with (at the origin) until one.
+  frame();
+  const use = async (doc: ReturnType<typeof createDefaultMaterialDocument>) => {
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error(JSON.stringify(lowered.diagnostics));
+    const compiled = compileMaterialPlan(lowered.plan, { scene, name: doc.name });
+    if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
+    expect(await compiled.ready).toEqual([]);
+    surface.material = compiled.material;
+    return compiled;
+  };
+  // The ripples reach at most 0.012 × the noise's bound: the side box stays beyond them.
+  const ripple = await use(rippleMaterialDocument());
+  verifyMirrorFootprintCrops(true);
+  try {
+    expect(reflected()).toEqual(["box"]);
+    expect(mirrorDiagnostics(scene)).toMatchObject({ cropChecks: 1, cropMisses: 0 });
+  } finally {
+    verifyMirrorFootprintCrops(false);
+  }
+  // Ripples ten times as strong reach it.
+  const strong = await use(rippleMaterialDocument(0.12));
+  expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
+  // An Offset driven through a node without a rule is not bounded: the whole mirrored frustum draws.
+  const doc = rippleMaterialDocument();
+  doc.nodes.find((node) => node.id === "rippleX")!.type = "math.divide";
+  const divided = await use(doc);
+  expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
+  ripple.dispose(); strong.dispose(); divided.dispose();
 });
 
 it("redraws a reflection on every render while a time-driven Material it reflects animates", async () => {
