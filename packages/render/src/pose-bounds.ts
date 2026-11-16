@@ -57,6 +57,13 @@ const scenes = new WeakMap<Scene, { entries: Set<Followed>; frame: number }>();
 /** Per geometry, the boxes taken for a skeleton of so many bones and a mesh of so many influences: actors share geometry. */
 const geometryBoxes = new WeakMap<Geometry, { bones: number; influences: number; vertices: number; boxes: Float32Array | null }>();
 const min = new Vector3(), max = new Vector3(), partMin = new Vector3(), partMax = new Vector3();
+/**
+ * The skeletons the current `updatePoseBounds` call has computed: one is computed once for every mesh it poses. The
+ * glTF loader gives each primitive its own mesh on one skeleton, and a skeleton whose bones are linked to nodes
+ * recomputes every bone, and uploads its matrices, on every `prepare` (copying the nodes marks it dirty). Nothing in
+ * the call writes a bone or a node: it reads vertex data and writes bounds.
+ */
+const prepared = new Set<Skeleton>();
 
 /** The vertex data of `kind` the CPU holds for `mesh`, or null. */
 function held(mesh: Mesh, kind: string): ArrayLike<number> | null {
@@ -195,6 +202,7 @@ export function updatePoseBounds(scene: Scene): void {
   const frame = scene.getEngine().frameId;
   if (state.frame === frame) return;
   state.frame = frame;
+  prepared.clear();
   for (const entry of state.entries) {
     const mesh = entry.mesh;
     if (mesh.skeleton !== entry.skeleton || posedOtherwise(mesh)) {
@@ -212,15 +220,22 @@ export function updatePoseBounds(scene: Scene): void {
     }
     // Nothing culls a hidden mesh; its instances draw on.
     if (!mesh.instances.length && (!mesh.isVisible || !mesh.isEnabled())) continue;
-    pose(entry);
+    pose(entry, prepared);
   }
+  prepared.clear();
 }
 
-/** Computes `entry`'s skeleton's matrices and, if they changed since its bounds were taken, takes them again. */
-function pose(entry: Followed): void {
-  // Whatever the render id: Babylon's own check would take last frame's matrices for this frame's, where no render
-  // came between.
-  entry.skeleton.prepare(true);
+/**
+ * Computes `entry`'s skeleton's matrices, unless `done` holds it, and, if they changed since its bounds were taken,
+ * takes them again.
+ */
+function pose(entry: Followed, done?: Set<Skeleton>): void {
+  if (!done?.has(entry.skeleton)) {
+    // Whatever the render id: Babylon's own check would take last frame's matrices for this frame's, where no render
+    // came between.
+    entry.skeleton.prepare(true);
+    done?.add(entry.skeleton);
+  }
   if (!entry.dirty) return;
   const matrices = entry.skeleton.getTransformMatrices(entry.mesh);
   if (!matrices || !join(entry.parts, matrices)) return;
