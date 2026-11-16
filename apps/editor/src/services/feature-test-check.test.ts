@@ -1336,7 +1336,12 @@ describe("Profile", () => {
     expect(rows.map((sample) => [sample.label, sample.view])).toEqual(featureTestProfileSequence(SESSION).filter((step) => !step.action).map((step) => [step.label, step.view]));
     expect(rows.filter((sample) => sample.skipped)).toEqual([]);
     expect(samples.every((sample, index) => index === 0 || sample.atMs! > samples[index - 1]!.atMs!)).toBe(true);
-    const commands = editor.commands;
+    // Every row's window is recorded by the GPU probes, which come off before its restore. This Engine reports none, so
+    // no serial probe is asked for.
+    expect(editor.commands.filter((line) => line.startsWith("gpuprobe"))).toEqual(samples.flatMap(() => ["gpuprobe on", "gpuprobe off"]));
+    expect(editor.commands.slice(editor.commands.indexOf("discardsamples on"), editor.commands.indexOf("discardsamples on") + 5))
+      .toEqual(["discardsamples on", "gpuprobe on", "gpubusy on", "gpuprobe off", "quality reset"]);
+    const commands = editor.commands.filter((line) => !line.startsWith("gpuprobe"));
     const at = (line: string) => commands.indexOf(line);
     // No tier and no frame cap: the session's own. High's Dynamic Resolution held at its floor, then the camera at the
     // control view, before the warm-up.
@@ -1410,6 +1415,55 @@ describe("Profile", () => {
     return { editor, deps, waits, timeouts: { commandMs: 0 } };
   };
 
+
+  it("probes every Profile row's GPU work: the window's counters on each, and serialised frames after each but the warm-up and the hold windows before the last", async () => {
+    const { editor, deps } = profileEditor({ tier: "high" });
+    // An Engine with GPU probes: each `gpuprobe serial` reports a new result, except the one after `silent`.
+    const silent = "heavy post off";
+    let asked = 0;
+    let answered = 0;
+    let silentRow = false;
+    const probing: FeatureTestCheckDeps = {
+      ...deps,
+      onProgress: (text) => { silentRow = text.endsWith(`measuring ${silent}`); },
+      play: () => {
+        const play = deps.play();
+        return play && { ...play, snapshot: () => {
+          const requests = editor.commands.filter((line) => line === "gpuprobe serial").length;
+          if (requests > asked) {
+            asked = requests;
+            if (!silentRow) answered = requests;
+          }
+          const snapshot = play.snapshot();
+          return { ...snapshot, rendering: { ...snapshot.rendering, gpuProbe: {
+            recording: true,
+            signature: { frames: 150, modal: "a1b2c3d4", modalShare: 1, distinct: 1, passes: 14, clears: 9, blits: 2, invalidates: 0, draws: 700, texelsCleared: 5e7, texelsCovered: 6e7, structures: [] },
+            shadows: { frames: 150, maps: 5, redrawn: 2, cached: 3, continuous: 2, tiles: 5, texels: 2e7, atlasEdge: 8192, generationFirst: 1, generationLast: 1 },
+            raf: { callbacks: 300, ms: 5000, perSecond: 60 },
+            serial: answered > 0 ? { id: answered, frames: 8, frameMs: 21, coldMs: 30, cpuMs: 8, stages: [], syntheticMs: 2, syntheticColdMs: 3, hashes: [], splits: 0, failed: null, ms: 400 } : null,
+            serialRunning: false,
+          } } as unknown as RenderDiagnostics };
+        } };
+      },
+    };
+    const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, signal: new AbortController().signal, deps: probing });
+    const samples = report.scenes[0]!.play.benchmark;
+    // Every row carries the window's probes.
+    expect(samples.every((sample) => sample.gpuProbe?.signature?.modal === "a1b2c3d4" && sample.gpuProbe.shadows?.atlasEdge === 8192 && sample.gpuProbe.raf?.perSecond === 60)).toBe(true);
+    // Serialised frames follow every row but the warm-up windows and hold windows 1 to 11, which run back to back.
+    const unprobed = samples.filter((sample) => !sample.gpuProbe?.serial).map((sample) => sample.label);
+    expect(unprobed).toEqual(["warm-up 1", "warm-up 2", ...Array.from({ length: 11 }, (_, index) => `state hold ${index + 1}`), silent]);
+    expect(editor.commands.filter((line) => line === "gpuprobe serial")).toHaveLength(samples.length - 13);
+    // Each result is its own row's: the id it was given grows row by row.
+    const ids = samples.flatMap((sample) => sample.gpuProbe?.serial ? [sample.gpuProbe.serial.id] : []);
+    expect(ids.every((id, index) => index === 0 || id > ids[index - 1]!)).toBe(true);
+    // The serial probe runs after the window and before the recorder comes off and the row is restored.
+    const post = editor.commands.indexOf("postprocessing off");
+    expect(editor.commands.slice(post, post + 6)).toEqual(["postprocessing off", "gpuprobe on", "gpubusy on", "gpuprobe serial", "gpuprobe off", "quality reset"]);
+    // A probe that never reports is said so on its row, and the Profile goes on.
+    expect(samples.find((sample) => sample.label === silent)!.failed).toEqual(["The serial GPU probe did not report within 6 s."]);
+    expect(samples.at(-1)!.label).toBe("heavy drift");
+  });
   it("completes every step on a view that steadily holds a frame in four, waiting against the rate its two warm-up windows measured", async () => {
     const { deps, waits, timeouts } = holdingView();
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, timeouts, signal: new AbortController().signal });

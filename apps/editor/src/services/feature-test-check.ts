@@ -630,7 +630,11 @@ export function breakdownDelta(
 export interface ProfileComparison {
   label: string;
   view: string | undefined;
-  basis: "gpu" | "frame";
+  /**
+   * What the change is in: `serial`, the serial probe's whole-frame GPU time (`SerialProbeResult.frameMs`), only where
+   * the step and both baselines around it have one; else `gpu`, GPU busy; else `frame`, mean frame time.
+   */
+  basis: ProfileBasis;
   before: number;
   step: number;
   after: number | null;
@@ -643,6 +647,13 @@ export interface ProfileComparison {
   state: ProfileFrameState | null;
   /** Its two baselines are in different states: the device changed cadence across it, so its change is not ranked. */
   straddles: boolean;
+}
+
+export type ProfileBasis = "serial" | "gpu" | "frame";
+
+/** A row's value in `basis`; null where it has none. */
+function profileValue(sample: FeatureTestBenchmarkSample, basis: ProfileBasis): number | null {
+  return basis === "serial" ? sample.gpuProbe?.serial?.frameMs ?? null : breakdownValue(sample, basis === "gpu");
 }
 
 /**
@@ -685,12 +696,14 @@ function baselinesAround(
 /** A measured Profile step's comparison with the baselines around it (`ProfileComparison`); null for baselines, warm-up windows and unmeasured steps. */
 export function profileComparison(samples: readonly FeatureTestBenchmarkSample[], sample: FeatureTestBenchmarkSample): ProfileComparison | null {
   if (sample.warmup || sample.skipped || isBreakdownBaseline(sample) || !samples.includes(sample)) return null;
-  for (const gpu of [true, false]) {
-    const value = (entry: FeatureTestBenchmarkSample) => breakdownValue(entry, gpu);
+  for (const basis of ["serial", "gpu", "frame"] as const) {
+    const value = (entry: FeatureTestBenchmarkSample) => profileValue(entry, basis);
     const step = value(sample);
     if (step === null) continue;
-    const { before, after } = baselinesAround(samples, sample, (entry) => value(entry) !== null);
+    // Serial: the measured baselines right around the step, and both must have a serial frame time.
+    const { before, after } = baselinesAround(samples, sample, (entry) => basis === "serial" ? entry.frames !== null : value(entry) !== null);
     if (!before) continue;
+    if (basis === "serial" && (value(before) === null || !after || value(after) === null)) continue;
     // Both baselines, or the one before alone where the sweep measured none after: never a gpu basis on one side only.
     const afterValue = after ? value(after) : null;
     const base = afterValue === null ? value(before)! : (value(before)! + afterValue) / 2;
@@ -700,7 +713,7 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
     const afterState = after ? profileFrameState(samples, after) : beforeState;
     const straddles = beforeState !== null && afterState !== null && beforeState !== afterState;
     return {
-      label: sample.label, view: sample.view, basis: gpu ? "gpu" : "frame", before: value(before)!, step, after: afterValue,
+      label: sample.label, view: sample.view, basis, before: value(before)!, step, after: afterValue,
       change: { ms, percent: (ms / base) * 100 }, spread,
       unsettled: spread !== null && spread > Math.max(Math.abs(ms), base * PROFILE_SETTLED_SPREAD),
       cpu: deltaAroundBaselines(samples, sample, (entry) => entry.cpuMs),
@@ -943,6 +956,23 @@ export interface FeatureTestBenchmarkSample {
   atMs?: number;
   /** The shadow atlas and its maps as the sample ended (`RenderDiagnostics.shadowAtlas`); absent where unreported. */
   shadowAtlas?: NonNullable<RenderDiagnostics["shadowAtlas"]>;
+  /** A Profile row's GPU probes (`SampledGpuProbe`); absent where the Engine has none. */
+  gpuProbe?: SampledGpuProbe;
+}
+
+type GpuProbeDiagnostics = NonNullable<RenderDiagnostics["gpuProbe"]>;
+
+/**
+ * A Profile row's GPU probes (`gpuprobe`, `RenderDiagnostics.gpuProbe`). Passive, over the sample window: the GL call
+ * signature, the shadow map counters and the `requestAnimationFrame` rate. Perturbing, right after the window and
+ * before the row's restore: `serial`, frames rendered one at a time with a fence after each stage, then the synthetic
+ * load; absent where it was not run (a hold window before the last) or did not finish.
+ */
+export interface SampledGpuProbe {
+  signature: GpuProbeDiagnostics["signature"];
+  shadows: GpuProbeDiagnostics["shadows"];
+  raf: GpuProbeDiagnostics["raf"];
+  serial?: NonNullable<GpuProbeDiagnostics["serial"]>;
 }
 
 /** The world renderer's work over a sample window: how much each `RenderDiagnostics.rendererWork` counter grew. */
@@ -1244,6 +1274,8 @@ export interface FeatureTestCheckTimeouts {
   breakdownWarmupMs: number;
   /** A Profile's warm-up window; it warms up for at most `PROFILE_WARMUP_WINDOWS` of them. */
   profileWarmupWindowMs: number;
+  /** Most a Profile row waits for its serial GPU probe (`gpuprobe serial`) to report. */
+  profileSerialMs: number;
 }
 
 const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
@@ -1261,6 +1293,7 @@ const DEFAULT_FEATURE_TEST_CHECK_TIMEOUTS: FeatureTestCheckTimeouts = {
   breakdownWarmupWindowMs: 10_000,
   breakdownWarmupMs: 90_000,
   profileWarmupWindowMs: 5_000,
+  profileSerialMs: 6_000,
 };
 
 /** A Profile warms up for at most this many windows (fewer when the first two agree within 3%): a short run on a tablet. */
@@ -1912,8 +1945,41 @@ async function benchmarkProfiles(
     `Shaders were still first drawn or compiling after ${seconds(settleBoundMs)}; this ${what}'s frames include them.`;
   // GPU-busy time per frame from fences, which display pacing does not quantise; restarted per sample.
   let gpuBusy = false;
-  /** Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. */
-  const measure = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => {
+  /**
+   * A Profile row's GPU probes: `gpuprobe on` records the window, `gpuprobe serial` then runs the perturbing probe, and
+   * `gpuprobe off` takes the recorder off the context again before the row's restore.
+   */
+  const probed = async <T extends FeatureTestBenchmarkSample>(serial: boolean, sampleWindow: () => Promise<T>): Promise<T> => {
+    if (!profileMode || !(await run("gpuprobe on")).success) return sampleWindow();
+    try {
+      const sample = await sampleWindow();
+      const probe = play.snapshot().rendering?.gpuProbe;
+      // An Engine that reports no probes has none to serialise either.
+      if (!probe) return sample;
+      sample.gpuProbe = { signature: probe.signature, shadows: probe.shadows, raf: probe.raf };
+      if (serial) {
+        const before = probe.serial?.id ?? 0;
+        if ((await run("gpuprobe serial")).success) {
+          const result = await waitFor(deps, signal, limits.profileSerialMs, () => {
+            const latest = play.snapshot().rendering?.gpuProbe?.serial;
+            return latest && latest.id !== before ? latest : null;
+          });
+          if (result) sample.gpuProbe.serial = { ...result };
+          else sample.failed.push(`The serial GPU probe did not report within ${seconds(limits.profileSerialMs)}.`);
+        }
+      }
+      return sample;
+    } finally {
+      if (!signal.aborted) await run("gpuprobe off");
+    }
+  };
+  /**
+   * Samples the view as it is now into a sample labelled `label`; `failed` collects what went wrong. A Profile row also
+   * carries its GPU probes; `serial` false leaves the perturbing one out (a hold window that another follows).
+   */
+  const measure = (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }, serial = true) =>
+    probed(serial, () => measureWindow(label, failed, sampleMs, settled));
+  const measureWindow = async (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) => {
     const firstDrawsBefore = play.snapshot().rendering?.firstDraws?.draws ?? 0;
     const skippedBefore = play.snapshot().rendering?.frameBackpressure?.skipped ?? 0;
     const depthsBefore = play.snapshot().rendering?.frameBackpressure?.inFlightCounts;
@@ -1993,7 +2059,10 @@ async function benchmarkProfiles(
           return;
         }
       }
-      await warmUp(sceneName, deps, { draws: waitForDraws, settle, unsettledNote }, measure, samples, mode === "profile"
+      // The warm-up windows run no serial probe: the hold windows follow them back to back.
+      const measureWarmup = (label: string, failed: string[], sampleMs: number, settled: { quiet: boolean; ms: number }) =>
+        measure(label, failed, sampleMs, settled, false);
+      await warmUp(sceneName, deps, { draws: waitForDraws, settle, unsettledNote }, measureWarmup, samples, mode === "profile"
         ? { windowMs: limits.profileWarmupWindowMs, windows: PROFILE_WARMUP_WINDOWS, ms: Number.POSITIVE_INFINITY }
         : { windowMs: limits.breakdownWarmupWindowMs, windows: Number.POSITIVE_INFINITY, ms: limits.breakdownWarmupMs });
     }
@@ -2035,7 +2104,8 @@ async function benchmarkProfiles(
         // Back to back, nothing changing: the first follows the warm-up, which already waited for the view.
         const holdFailed: string[] = [];
         await runAll(step.commands, holdFailed);
-        const sample = await measure(step.label, holdFailed, limits.playSampleMs, { quiet: true, ms: 0 });
+        // Only the last hold window is followed by the serial probe: the minute held unchanged stays unbroken.
+        const sample = await measure(step.label, holdFailed, limits.playSampleMs, { quiet: true, ms: 0 }, !steps[index + 1]?.hold);
         sample.baseline = true;
         if (step.view) sample.view = step.view;
         samples.push(sample);
