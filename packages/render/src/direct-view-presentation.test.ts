@@ -331,13 +331,63 @@ describe("direct view presentation", () => {
     const { engine, body, source, draw, view } = host();
     const a = view(undefined, { allowDirect: () => allowed });
     try {
-      // An Engine not declared for direct presentation (the exported player's): the Engine canvas stays parked and the view canvas gets the pixels.
+      // An Engine not declared for direct presentation (one a view created for itself): the Engine canvas stays parked and the view canvas gets the pixels.
       draw(0xff8040);
       expect([source.parentNode, a.target.pixel]).toEqual([body, 0xff8040]);
       allowed = true;
       draw(0x40a0ff);
       expect(source.parentNode).toBe(a.panel);
     } finally { a.release(); engine.dispose(); }
+  });
+
+  it("places a detached Engine canvas (the player's) over its view, and takes it out of the document when copying resumes", () => {
+    useFakeHeldImages();
+    const { engine, body, source, draw, view } = host();
+    body.removeChild(source); // the player's Engine canvas is never added to the page
+    const game = view();
+    try {
+      draw(0xff8040);
+      expect([source.parentNode, source.previousSibling, source.style.visibility, game.target.pixel]).toEqual([game.panel, game.target, "visible", 0]);
+      // A second shown view falls back to copying: the game canvas keeps the last direct frame, the Engine canvas leaves.
+      const other = view();
+      draw(0x40a0ff);
+      expect([source.parentNode, game.target.pixel, other.target.pixel]).toEqual([null, 0x40a0ff, 0x40a0ff]);
+      setRegisteredViewEnabled(other.view, false);
+      other.release();
+      draw(0x10ff10);
+      expect(source.parentNode).toBe(game.panel);
+    } finally { game.release(); engine.dispose(); }
+    expect(source.parentNode).toBeNull();
+  });
+
+  it("leaves a released view its last presented frame", () => {
+    useFakeHeldImages();
+    const { engine, body, source, draw, view } = host();
+    body.removeChild(source);
+    const game = view();
+    draw(0xff8040);
+    draw(0x0000ff, false); // the last frame before Stop was held
+    expect(game.target.pixel).toBe(0);
+    game.release();
+    expect([game.target.pixel, source.parentNode]).toEqual([0xff8040, null]);
+    engine.dispose();
+  });
+
+  it("scales the Engine canvas as the view canvas asks: pixelated stays pixelated", () => {
+    useFakeHeldImages();
+    const { engine, source, draw, view } = host();
+    const game = view();
+    try {
+      game.target.style.imageRendering = "pixelated"; // a locked resolution upscaled by whole multiples
+      draw(0xff8040);
+      expect(source.style.imageRendering).toBe("pixelated");
+      game.target.style.imageRendering = ""; // the game switched to smooth upscaling at runtime
+      draw(0x40a0ff);
+      expect(source.style.imageRendering).toBe("");
+      game.target.style.imageRendering = "pixelated";
+      draw(0x10ff10);
+      expect(source.style.imageRendering).toBe("pixelated");
+    } finally { game.release(); engine.dispose(); }
   });
 
   it("writes the presented image into a directly presented view canvas on request", () => {
