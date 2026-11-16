@@ -24,7 +24,7 @@ export function nativeProfileActions(
     onSession: (next: NativeClerkSession) => void;
     onDeleted: () => void;
     /** Only the mobile account gate hides the app during a foreground check. */
-    holdSessionCheck?: () => () => void;
+    holdSessionCheck?: (options?: { checkWhenReleased?: boolean }) => () => void;
   },
 ): NativeProfileActions {
   return {
