@@ -840,6 +840,8 @@ export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): 
     "post.volumetricLighting": String(post.volumetricLighting),
     "post.antiAliasing": post.antiAliasing,
     "resolution.scale": String(quality.resolution.scale),
+    // Whether the view's resolution may drop below the scale, to its `minScale`, while frames miss the target.
+    "resolution.dynamic": quality.resolution.dynamic ? `on ${quality.resolution.minScale}` : "off",
     "geometry.occlusion": String(quality.geometry.occlusionCulling),
     "geometry.mirrors": quality.geometry.mirrorReflections,
   };

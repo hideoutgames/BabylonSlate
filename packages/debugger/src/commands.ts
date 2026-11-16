@@ -44,6 +44,7 @@ export const DEBUG_COMMAND_NAMES = [
   "rendertargets",
   "waterdebug",
   "shadowdebug",
+  "discardsamples",
   "gpubusy",
   "framesinflight",
   "preservebuffer",
@@ -234,7 +235,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "shadowdebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), or the map passes themselves (passes)",
+      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), or the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles)",
       parameters: [{ name: "part", type: "enum", enumValues: [...SHADOW_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as ShadowDebugPart, enabled = Boolean(args.enabled);
@@ -243,6 +244,8 @@ export function builtinCommands(): RegisteredCommand[] {
         return ok(`shadowdebug ${part} ${enabled ? "on" : "off"}`);
       },
     },
+    flagCommand("discardsamples", (host, enabled) => host.setDiscardSamples?.(enabled),
+      "Discard multisampled colour and depth samples after a frame's last resolve of them (on), or keep them (off), to measure what storing them costs"),
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
       "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
     {

@@ -147,6 +147,33 @@ describe("Shadow admission into the shadow atlas", () => {
       .toEqual([["active", 2048], ["active", 2048], ["active", 2048], ["active", 512]]);
   });
 
+  it("puts the same tiles in an atlas one size larger with `shadowdebug atlasfit off`, its growth exempt, within the limit", () => {
+    // The break: a larger atlas that admits more or larger tiles, or charges its growth to the ledger.
+    const host = scene();
+    const sun = new DirectionalLight("sun", new Vector3(0, -1, 0), host);
+    const spots = [0, 1, 2, 3, 4].map((index) => new SpotLight(`spot ${index}`, new Vector3(index, 4, 0), Vector3.Down(), 1, 2, host));
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), host);
+    const run = (lights: (SpotLight | PointLight | DirectionalLight)[], edge: number, limit: number, localMapSize: number, oversizedAtlas: boolean) =>
+      planShadowAdmission({
+        entries: new Map(lights.map((light) => [light, entry(light)])),
+        settings: normalizeShadowSettings({ mapSize: 2048, cascades: 3, profile: "medium", maxLocalLights: 8, localMapSize }), camera: null,
+        previousCamera: null, at: 0, budget: { ...budget(edge, limit), oversizedAtlas }, measure: () => 0,
+      });
+    const shape = (result: ReturnType<typeof run>) => result.decisions.map(({ status, reason, mapSize }) => [status, reason, mapSize]);
+    // Medium's sun and a point light in its 4096 atlas, then in 8192: the same tiles; the growth brings its own room.
+    const fitted = run([sun, lamp], 4096, 8192, 1024, false);
+    const oversized = run([sun, lamp], 4096, 8192, 1024, true);
+    expect([fitted.atlasEdge, oversized.atlasEdge]).toEqual([4096, 8192]);
+    expect(shape(oversized)).toEqual(shape(fitted));
+    expect(shape(fitted)).toEqual([["active", null, 2048], ["active", null, 1024]]);
+    expect(oversized.admitted).toEqual({ ...fitted.admitted, bytes: 8192 ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL, exempt: (8192 ** 2 - 4096 ** 2) * SHADOW_ATLAS_BYTES_PER_TEXEL });
+    // Tiles the fitted atlas had no room for find none in the larger one either.
+    const crowded = run([...spots, lamp], 2048, 4096, 1024, true);
+    expect([crowded.atlasEdge, shape(crowded)]).toEqual([4096, shape(run([...spots, lamp], 2048, 4096, 1024, false))]);
+    // At the device's limit the atlas stays as it is.
+    expect(run([sun, lamp], 8192, 8192, 1024, true).atlasEdge).toBe(8192);
+  });
+
   it("caps a spot map at the atlas's edge", () => {
     const host = scene();
     const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, host);

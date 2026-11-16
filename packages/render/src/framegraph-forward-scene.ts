@@ -72,6 +72,7 @@ import { managedRenderTextureResource, renderTargetAllocationBytes } from "./ren
 import { drawSceneAuxiliaryViews } from "./scene-auxiliary-views";
 import { enterDrawPass, leaveDrawPass, observeTaskDrawPass, type DrawPass } from "./draw-passes";
 import { timeParticleAnimation } from "./particle-animation-pass";
+import { installSampleDiscard, markLastSampleWriters } from "./sample-discard";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import {
   ManagedShadowObjectRendererTask,
@@ -1795,6 +1796,10 @@ export class ForwardSceneFrameGraph {
         this.outlineTask?.reconcileResources();
         this.water?.reconcile();
         this.commitOwnSceneTargets();
+        // Which pass writes each multisampled target last, for `discardsamples` (read at each resolve, not here).
+        const textures = this.graph.textureManager;
+        installSampleDiscard(scene.getEngine());
+        markLastSampleWriters(this.graph.tasks, (handle) => (textures.getTextureFromHandle(handle)?.samples ?? 1) > 1);
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       const started = performance.now();

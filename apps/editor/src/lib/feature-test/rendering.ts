@@ -56,7 +56,7 @@ import {
   varMember,
   type GraphNode,
 } from "./graph";
-import { FEATURE_TEST_CAMERA_TOUR, FEATURE_TEST_MAIN_CAMERA, type FeatureTestZoneId } from "./layout";
+import { FEATURE_TEST_CAMERA_TOUR, FEATURE_TEST_MAIN_CAMERA, FEATURE_TEST_PROFILE_VIEWS, type FeatureTestZoneId } from "./layout";
 
 /**
  * Rendering area: lights and shadows, effects (fog volume, outline, lattice
@@ -151,6 +151,7 @@ export async function placeFeatureTestRendering(ctx: FeatureTestContext): Promis
   placeEffects(ctx, refs);
   placeRenderTargets(ctx, refs);
   placeLodLane(ctx);
+  placeProfileViews(ctx);
   ctx.patchSettings((settings) => applyRenderSettings(settings, ctx.assets.textures.colorGradingLut));
 }
 
@@ -970,6 +971,19 @@ function placeRenderTargets(ctx: FeatureTestContext, refs: RenderingRefs): void 
     add(text3d(`${monitor}-caption`, `${label} Caption`, zone.at(x, 0.3, 6.2), caption, {
       size: 0.4, color: [0.9, 0.9, 0.9], fontAssetGuid: null,
     }));
+  }
+}
+
+/**
+ * The Feature Test Check's fixed Profile views (`FEATURE_TEST_PROFILE_VIEWS`): static cameras, outside every zone, that
+ * its Profile possesses by name so a step and its baselines draw the same frame; `possess "Main Camera"` returns to
+ * the tour.
+ */
+function placeProfileViews(ctx: FeatureTestContext): void {
+  for (const view of Object.values(FEATURE_TEST_PROFILE_VIEWS)) {
+    ctx.addActor(actor(view.actorId, view.name, tf(view.position, { rotation: lookAtRotation(view.position, view.target) }), [
+      comp(`${view.actorId}-cam`, "CameraComponent", { fieldOfView: view.fieldOfView, nearClip: 0.1, farClip: 1000 }),
+    ]));
   }
 }
 

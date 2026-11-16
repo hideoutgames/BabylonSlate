@@ -1226,6 +1226,8 @@ export type CommandMessage =
   | { type: "setWaterDebug"; part: WaterDebugPart; enabled: boolean }
   /** Debug: switch one part of shadow drawing off or back on (the `shadowdebug` console command). */
   | { type: "setShadowDebug"; part: ShadowDebugPart; enabled: boolean }
+  /** Debug: discard multisampled samples after a frame's last resolve of them, or keep them (the `discardsamples` console command). */
+  | { type: "setDiscardSamplesDebug"; enabled: boolean }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
   | { type: "setGpuBusyProbeDebug"; enabled: boolean }
   /** Debug: how many rendered frames the Engine may queue on the GPU (the `framesinflight` console command; default 2). */

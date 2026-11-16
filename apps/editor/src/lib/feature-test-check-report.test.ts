@@ -242,7 +242,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("water reflections sky")).toMatch(/^ {4}water reflections sky 33 {3}30\.0ms {2}38ms {3}10\/80\/5\/5 {7}- {13}-10\.0ms -25%\* {5}14\.2ms {2}gpu {3}575 \(544-605\) water\.reflections=sky$/);
     expect(row("water detail low")).toContain("water.shadingDetail=low · UNEXPECTED: water.reflections=sky");
     expect(row("water detail medium")).toContain("vsync");
-    expect(row("water detail medium")).toContain("UNSETTLED: 3 first drawn, 1 compiling · no setting changed");
+    expect(row("water detail medium")).toContain("COMPILING: 3 first drawn, 1 compiling · no setting changed");
     expect(row("baseline 2")).toContain("+4.0ms +11%*");
     expect(row("baseline 2")).toContain("NOT RESTORED: post.enabled=false");
     expect(row("baseline 1")).toMatch(/\+0\.0ms \+0%\* +14\.2ms {2}gpu {3}575 \(544-605\)$/);
@@ -418,100 +418,68 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("water detail high")).toMatch(/water\.shadingDetail=high · fft 256x3 · OVER 30 ms/);
   });
 
-  it("reports a Profile: each row's changes in frame time and CPU cost, held share, draws per pass, the pool, the hold rate, the restore check and the ranking", () => {
-    const settings = { shadows: "high 2048", "shadows.screen": "off", "resolution.scale": "1", "post.enabled": "true" };
+  it("reports a Profile: rows at fixed views with their gpu busy change, the drift of the control view, and per view the steps ranked with their A B A values", () => {
+    const settings = { shadows: "high 2048", "shadows.screen": "medium", "resolution.scale": "1", "post.enabled": "true", "shadows.debug": "none" };
     const passes = { objects: 420, geometry: 40, shadows: 140, captures: 90, post: 12, other: 2 };
-    const sample = (label: string, meanMs: number, cpuMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
-      label, baseline: label.startsWith("baseline"),
-      frames: { frames: 100, durationMs: meanMs * 100, fps: 1000 / meanMs, medianMs: meanMs, meanMs, vsync: [1, 0, 0, 0], p95Ms: meanMs + 8, maxMs: meanMs + 20, stalls: 0 },
+    const sample = (label: string, gpu: number, cpuMs: number, extra: Partial<FeatureTestBenchmarkSample> = {}): FeatureTestBenchmarkSample => ({
+      label, baseline: / baseline | drift$/.test(` ${label}`), view: label.split(" ")[0],
+      frames: { frames: 100, durationMs: 5000, fps: 20, medianMs: 50, meanMs: 50, vsync: [0, 0, 1, 0], p95Ms: 58, maxMs: 70, stalls: 0 },
       runtimeFps: null, cpuMs, gpuMs: null, drawCalls: 704, draws: { median: 704, min: 704, max: 704, samples: 10 },
-      resolution: "1180x788@1.00", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes,
-      presentation: { drawn: 40, held: 0, ms: 5000, heldReasons: {} }, ...extra,
-    });
+      resolution: "885x591@1.33", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes,
+      gpuBusy: { medianMs: gpu, p95Ms: gpu + 6, frames: 100, pollMs: 6.4 },
+      presentation: { drawn: 40, held: 0, ms: 5000, heldReasons: {} },
+      shadowAtlas: { edge: 8192, maps: [{ mapSize: 2048, passes: 4 }, { mapSize: 2048, passes: 6 }] }, ...extra,
+    } as FeatureTestBenchmarkSample);
+    const medium = { ...settings, shadows: "medium 2048", "shadows.screen": "off" };
     const report: FeatureTestCheckReport = {
-      mode: "profile", startedAt: 0, durationMs: 270_000, cancelled: false, pageErrors: [],
+      mode: "profile", startedAt: 0, durationMs: 360_000, cancelled: false, pageErrors: [],
       scenes: [{
         name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
-        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
-          profile: {
-            instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 },
-            endChanges: ["presentation.framesInFlight=off"],
-            holdRate: { heldPerSecond: 2.36, share: 0.234 },
-          },
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: 22, ticksPerSecond: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
+          profile: { instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 }, endChanges: [], holdRate: { heldPerSecond: 2.36, share: 0.234 } },
           benchmark: [
-            { ...sample("warm-up 1", 90, 44, { drawPasses: undefined }), baseline: false, warmup: true },
-            { ...sample("warm-up 2", 84, 43, { drawPasses: undefined }), baseline: false, warmup: true },
-            sample("baseline 1", 80, 40),
-            sample("shadows off", 66, 31, {
-              settings: { ...settings, shadows: "off" }, drawPasses: { ...passes, shadows: 0, captures: 70 },
-              draws: { median: 544, min: 544, max: 544, samples: 10 },
-              // A quarter of the view's attempts held while sampled.
-              presentation: { drawn: 30, held: 10, ms: 5000, heldReasons: { "Scene is not ready to render.": 10 } },
+            { ...sample("heavy warm-up 1", 44, 11, { drawPasses: undefined, atMs: 0 }), label: "warm-up 1", baseline: false, warmup: true, view: "heavy" },
+            { ...sample("heavy warm-up 2", 42, 10, { drawPasses: undefined, atMs: 10_000 }), label: "warm-up 2", baseline: false, warmup: true, view: "heavy" },
+            sample("light baseline 1", 20, 6),
+            // Its two baselines differ by 4 ms, more than its own 3 ms change.
+            sample("light MSAA off", 19, 6, { settings: { ...settings, "post.antiAliasing": "off" } }),
+            sample("light baseline 2", 24, 6),
+            sample("heavy baseline 1", 40, 10, { atMs: 60_000 }),
+            sample("heavy shadows medium", 34, 9, { settings: medium, shadowAtlas: { edge: 4096, maps: [{ mapSize: 2048, passes: 3 }, { mapSize: 1024, passes: 6 }] } }),
+            sample("heavy baseline 2", 42, 11, { atMs: 80_000 }),
+            sample("heavy shadows medium big atlas", 36, 9, {
+              settings: { ...medium, "shadows.debug": "atlasfit" }, shadowAtlas: { edge: 8192, maps: [{ mapSize: 2048, passes: 3 }, { mapSize: 1024, passes: 6 }] },
             }),
-            // The world renderer's work while sampled: 40 frames drawn.
-            sample("baseline 2", 83, 42, {
-              work: {
-                graphBuilds: 1, strictReadinessChecks: 80, readinessProbeMs: 320, outlineReadinessChecks: 0, shadowAdmissions: 120, shadowAdmissionMs: 24,
-                readinessProbeReasons: {}, readinessSwapRechecks: 0, failedReadinessProbes: 0, scopedReadinessProbes: 0, scopedReadinessMismatches: 0, scopedReadinessIdleRequests: 0, readinessBlockers: [],
-              },
-              memory: { deviceAvailableBytes: 1024 * 1048576, appAvailableBytes: 2048 * 1048576 },
-            }),
-            sample("resolution 0.5", 70, 40, { settings: { ...settings, "resolution.scale": "0.5" } }),
-            sample("baseline 3", 80, 40, { settings: { ...settings, "post.enabled": "false" } }),
-            {
-              label: "screen shadows off", frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, failed: [],
-              baseline: false, skipped: "already shadows.screen off",
-            },
-            sample("MSAA off", 81, 40, {
-              presentation: {
-                drawn: 20, held: 20, ms: 5000,
-                heldReasons: { "Scene is not ready to render.": 4, "World presentation was not ready.": 15, "FrameGraph is not ready.": 1 },
-              },
-            }),
-            sample("baseline 4", 80, 40, { presentation: undefined }),
+            sample("heavy baseline 3", 40, 10, { atMs: 100_000 }),
+            sample("heavy drift", 46, 12, { atMs: 300_000 }),
           ] },
         session: null,
       }],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
-    const row = (label: string) => lines.filter((line) => line.startsWith(`    ${label} `));
+    const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
     expect(lines[0]).toMatch(/^Haptic Feature Test Check \(Profile\)/);
-    expect(lines[1]).toBe("Result: 1/1 scenes passed · NOT RESTORED · took 270.0 s");
-    expect(lines).toContain("  Settings: shadows high 2048 · shadows.screen off · resolution.scale 1 · post.enabled true");
-    expect(lines).toContain("  Instance pool: 18 groups · 410 pooled · 2 retained empty");
-    expect(lines).toContain("  NOT RESTORED at the end: presentation.framesInFlight=off");
-    expect(lines).toContain("  Warm-up drift: first window 90.0 ms, steady 84.0 ms (-7%) over 2 windows (mean frame)");
-    expect(lines).toContain("  Hold rate: the warm-up held 2.4 frames/s, 23% of attempts; each step waits for a 2 s window holding at most 38% (+15 points)");
-    // Against the baselines around it: (80 + 83) / 2 = 81.5 ms frame, (40 + 42) / 2 = 41 ms CPU.
-    expect(row("shadows off")[0]).toBe(
-      "    shadows off           15   66.0ms  74ms   31.0ms  -             gpu   544           25%   -15.5ms -19%    -10.0ms -24%    shadows=off · held: 10 Scene is not ready to render");
-    expect(row("resolution 0.5")[0]).toMatch(/-11\.5ms -14% {4}-1\.0ms -2% {6}resolution\.scale=0\.5 · overlaps$/);
-    // Per drawn frame, the counters that grew, and the window's graph builds; then the native memory as it ended.
-    expect(row("baseline 2")[0]).toMatch(
-      /\+3\.0ms \+4% {6}\+2\.0ms \+5% {6}work\/frame: 2\.0 readiness checks \(8\.0 ms\), 3\.0 shadow admissions \(0\.6 ms\) · 1 graph build · device free 1024 MB · app headroom 2048 MB$/);
-    expect(row("baseline 3")[0]).toMatch(/NOT RESTORED: post\.enabled=false$/);
-    expect(row("screen shadows off")[0]).toMatch(/ no setting changed \(already shadows\.screen off\)$/);
-    // Its held share and top two reasons, the rest counted; a row without counts shows none.
-    expect(row("MSAA off")[0]).toMatch(/ 50% {3}\+1\.0ms \+1% {6}\+0\.0ms \+0% {6}no setting changed · held: 15 World presentation was not ready; 4 Scene is not ready to render; \+1 more$/);
-    expect(row("baseline 4")[0]).toMatch(/ 704 {11}- {5}\+0\.0ms \+0% {6}\+0\.0ms \+0%$/);
-    expect(row("baseline 1")[0]).toMatch(/ 704 {11}0% {4}\+0\.0ms \+0% {6}\+0\.0ms \+0%$/);
-    expect(row("warm-up 1")[0]).toMatch(/ warm-up$/);
-    // Draws per pass: the passes some row drew in, each row as it sampled them (warm-up and skipped rows have none).
-    const table = lines.indexOf("  Draws per pass (median per frame):");
-    expect(lines.slice(table + 1, table + 4)).toEqual([
-      "    Step                  objects geometry shadows captures post   other",
-      "    baseline 1            420     40       140     90       12     2",
-      "    shadows off           420     40       0       70       12     2",
-    ]);
-    expect(row("screen shadows off")).toHaveLength(1);
-    const ranking = lines.indexOf("  Ranked by frame-time saving:");
-    expect(lines.slice(ranking + 1, ranking + 5)).toEqual([
-      "    1. shadows off: frame -15.5ms -19% · cpu -10.0ms -24%",
-      "    2. resolution 0.5: frame -11.5ms -14% · cpu -1.0ms -2% · overlaps",
-      "    3. MSAA off: frame +1.0ms +1% · cpu +0.0ms +0%",
-      // Resolution overlaps every pass's saving, and MSAA off saved nothing.
-      "  Steps that overlap no other save 15.5 ms of the first baseline's 80.0 ms frame",
+    // The render loop's own count and the game's tick rate, which the loop does not set.
+    expect(lines).toContain("  Play: loaded in 2.0 s · no frames sampled · render loop 22 fps (last second) · game 60 ticks/s");
+    expect(lines).toContain("  Restored: every setting as before the first step");
+    // The control view's visits, unchanged, at their times into the sweep, and its change over the run.
+    expect(lines).toContain("  Drift (heavy view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms): warm-up 1 0:00 44.0/11.0 · warm-up 2 0:10 42.0/10.0 · heavy baseline 1 1:00 40.0/10.0 · heavy baseline 2 1:20 42.0/11.0 · heavy baseline 3 1:40 40.0/10.0 · heavy drift 5:00 46.0/12.0");
+    expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9%; discount a step's change by the drift around it");
+    // Against (20 + 24) / 2 in gpu busy; the baselines' spread is past the change.
+    expect(row("light MSAA off")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}post\.antiAliasing=off · UNSETTLED: its baselines differ by 4\.0 ms, more than its change$/);
+    // A shadow step's atlas and maps; the big atlas's change beyond Medium's shadows is the atlas's size alone.
+    expect(row("heavy shadows medium")).toMatch(/-7\.0ms -17% .*shadows=medium 2048, shadows\.screen=off · overlaps · atlas 4096 · maps 2048x3, 1024x6$/);
+    expect(row("heavy shadows medium big atlas")).toMatch(/-5\.0ms -12% .*shadows\.debug=atlasfit · overlaps · \+2\.0ms beyond shadows medium · atlas 8192 · maps 2048x3, 1024x6$/);
+    // A baseline's change is against its view's first: drift.
+    expect(row("heavy drift")).toMatch(/\+6\.0ms \+15% {5}\+2\.0ms \+20%/);
+    const ranking = lines.indexOf("  Ranked by change in gpu busy at each view (baseline > step > baseline; * = mean frame time where gpu busy is missing):");
+    expect(lines.slice(ranking + 1, ranking + 6)).toEqual([
+      "    light:",
+      "      1. light MSAA off: -3.0ms -14% (20.0 > 19.0 > 24.0) · cpu +0.0ms +0% · UNSETTLED",
+      "    heavy:",
+      "      1. heavy shadows medium: -7.0ms -17% (40.0 > 34.0 > 42.0) · cpu -1.5ms -14% · overlaps",
+      "      2. heavy shadows medium big atlas: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",
     ]);
   });
 

@@ -3,6 +3,7 @@ import { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { backbufferColorTextureHandle, type FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { discardPresentedSamples } from "./sample-discard";
 
 /** What decides whether a multisampled world view presents by one blit instead of a resolve and a copy. */
 export interface MultisamplePresentInputs {
@@ -78,6 +79,8 @@ export class MultisamplePresentTask extends FrameGraphTask {
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
       gl.blitFramebuffer(0, 0, texture.width, texture.height, 0, 0, texture.width, texture.height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      // The objects pass left these samples unresolved for this blit, their last reader (`discardsamples`).
+      discardPresentedSamples(engine, gl);
       if (scissor) gl.enable(gl.SCISSOR_TEST);
       // Babylon tracks the bound framebuffer itself: put back what it believes is bound.
       gl.bindFramebuffer(gl.FRAMEBUFFER, engine._currentFramebuffer ?? null);

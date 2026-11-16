@@ -44,6 +44,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setRenderTargetCapturesDebug",
   "setWaterDebug",
   "setShadowDebug",
+  "setDiscardSamplesDebug",
   "setGpuBusyProbeDebug",
   "setFramesInFlightDebug",
   "setPreserveDrawingBufferDebug",

@@ -56,6 +56,30 @@ export const FEATURE_TEST_ZONES: Readonly<Record<FeatureTestZoneId, FeatureTestZ
 export const FEATURE_TEST_MAIN_CAMERA = {
   actorId: "ft-camera-main",
   componentId: "ft-camera-main-cam",
+  /** Its actor's name, which `possess` takes. */
+  name: "Main Camera",
+};
+
+/** A fixed Profile view of the main scene: a static camera the Feature Test Check possesses by name. */
+export interface FeatureTestProfileView {
+  actorId: string;
+  name: string;
+  position: [number, number, number];
+  target: [number, number, number];
+  /** Vertical field of view in degrees. */
+  fieldOfView: number;
+}
+
+/**
+ * The Feature Test Check's Profile views (`possess "<name>"`), each static so a step and its baselines see the same
+ * frame: `light`, a close look down at the Lights And Shadows zone (few draws, local and sun shadows); `heavy`, high
+ * over the left and middle of the zone grid toward the back row (many draws, with no Mirror on screen); `mirror`, the
+ * Render Targets zone with both Mirrors and the capture monitors on screen. Every-frame captures draw from any view.
+ */
+export const FEATURE_TEST_PROFILE_VIEWS: Readonly<Record<"light" | "heavy" | "mirror", FeatureTestProfileView>> = {
+  light: { actorId: "ft-profile-light-camera", name: "Profile Light Camera", position: [32, 9, -10], target: [32, 0, -1], fieldOfView: 60 },
+  heavy: { actorId: "ft-profile-heavy-camera", name: "Profile Heavy Camera", position: [-48, 22, -36], target: [-24, 0, 48], fieldOfView: 50 },
+  mirror: { actorId: "ft-profile-mirror-camera", name: "Profile Mirror Camera", position: [64, 3.5, -15], target: [64, 1.5, -3], fieldOfView: 60 },
 };
 
 /**

@@ -58,6 +58,8 @@ export type ConsoleCommandHost = {
   setWaterDebug?(part: WaterDebugPart, enabled: boolean): void;
   /** `shadowdebug`: switch one part of shadow drawing off or back on for the session, to measure what it costs. */
   setShadowDebug?(part: ShadowDebugPart, enabled: boolean): void;
+  /** `discardsamples`: discard multisampled samples after a frame's last resolve of them, to measure what storing them costs. */
+  setDiscardSamples?(enabled: boolean): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */
   setGpuBusyProbe?(enabled: boolean): void;
   /** How many rendered frames the Engine may queue on the GPU; "off" lifts the limit (`framesinflight`). */

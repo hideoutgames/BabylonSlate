@@ -34,6 +34,7 @@ import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
 import { shadowDebugFingerprint } from "./shadow-debug";
+import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
@@ -1195,6 +1196,8 @@ function initializeEngine(
       "shadows.debug": shadowDebugFingerprint(scene),
       // Engine-wide and kept across Play sessions, so a change that is not undone shows.
       "presentation.framesInFlight": String(frameBackpressure.mode),
+      // Engine-wide too: whether a frame's last multisampled resolve discards the samples (`discardsamples`).
+      "msaa.discard": discardsSamples(engine) ? "on" : "off",
       // The live context's attribute, not the stored setting: the setting applies to the next Engine.
       "presentation.preserve":
         String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
@@ -3209,6 +3212,7 @@ function initializeEngine(
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
       if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
+      if (command.type === "setDiscardSamplesDebug" && setDiscardSamples(engine, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "setGpuBusyProbeDebug") {
         const probe = engineGpuBusyProbe(engine);
         if (command.enabled) probe?.start(); else probe?.stop();
