@@ -12,20 +12,27 @@ import {
   type ElectronFileTransferBridge,
 } from "./platform";
 
+/** One per page: each holds the page's only progress listener on its bridge. */
+let pageTransfer: NativeFileTransfer | null | undefined;
+
 /**
  * The host's native file transfer: the storage plugin on iOS and Android,
  * the main process on desktop. Null on the web (and in an Electron shell
  * without the bridge), where transfers keep the whole-body `NativeHttp` path.
+ * Every caller shares the page's one instance.
  */
 export function createNativeFileTransfer(): NativeFileTransfer | null {
+  if (pageTransfer !== undefined) return pageTransfer;
   const platform = getHostPlatform();
-  if (platform === "ios") return capacitorFileTransfer("DOCUMENTS");
-  if (platform === "android") return capacitorFileTransfer("DATA");
-  if (platform === "electron") {
-    const bridge = getElectronFileTransferBridge();
-    return bridge ? electronFileTransfer(bridge) : null;
-  }
-  return null;
+  const bridge = platform === "electron" ? getElectronFileTransferBridge() : null;
+  pageTransfer = platform === "ios"
+    ? capacitorFileTransfer("DOCUMENTS")
+    : platform === "android"
+      ? capacitorFileTransfer("DATA")
+      : bridge
+        ? electronFileTransfer(bridge)
+        : null;
+  return pageTransfer;
 }
 
 /**

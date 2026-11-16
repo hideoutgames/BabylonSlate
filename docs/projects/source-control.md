@@ -108,7 +108,7 @@ Haptic reads changes after you save (while a game covers the editor, once you ar
 3. Keep **Push After Commit** on to send the commit at once, or turn it off to commit only on this device.
 4. Choose **Commit N Assets**.
 
-In the iPad, iPhone, Android and desktop apps, large asset data travels straight between the host and the project folder, without passing through the editor's memory. The status bar counts it as it moves.
+In the iPad, iPhone, Android and desktop apps, large asset data travels straight between the host and the project folder, without passing through the editor's memory. The status bar shows how much has been transferred.
 
 A commit takes each asset with the large data it uses. Large data that no asset in the commit uses, such as what an edit you reverted had added, stays on your device and out of the commit until you remove it ([Remove unused files](#remove-unused-files)).
 

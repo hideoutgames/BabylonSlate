@@ -580,7 +580,10 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         getBridge().removeWebViewListener(readScopeLifecycle);
         readScopeLifecycleAttached = false;
         clearReadScopesAsync();
-        for (Transfer transfer : transfers.values()) transfer.cancel();
+        // Disconnecting does network I/O, which the main thread (where this runs) may not.
+        transferExecutor.execute(() -> {
+            for (Transfer transfer : transfers.values()) transfer.cancel();
+        });
         super.handleOnDestroy();
     }
 
