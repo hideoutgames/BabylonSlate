@@ -31,6 +31,7 @@ import type {
   TimelineClipObject,
   TimelineObject,
   WorldInputProvider,
+  World,
 } from "@haptic/object-model";
 import type {
   ColliderShape,
@@ -138,6 +139,11 @@ export interface ScriptHostServices {
   classRegistry?: ClassRegistry;
   /** World actors in deterministic spawn order for class queries. */
   getActors?(): readonly Actor[];
+  /**
+   * The live world `getActors` lists, when the host runs one: class queries then answer from its component index
+   * instead of walking every actor and component. A host that only lists actors leaves it out.
+   */
+  getWorld?(): World;
   /** Live Scene instance for the active Play scene, if any. */
   getSceneReference?(owner?: EngineObject | null): Scene | null;
   /**
