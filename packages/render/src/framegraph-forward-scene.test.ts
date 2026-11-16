@@ -2054,6 +2054,7 @@ it.each([
   ["reflections", { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } }, false],
   ["Screen-Space Shadows", {}, true],
 ] as const)("keeps a geometry pass that also feeds %s before the objects with every mesh", async (_name, effects, screenShadows) => {
+  // No light here casts shadows: the march idles (the fog keeps the geometry pass running), yet stays planned.
   // Normals, reflectivity and caster marks come only from the meshes' own draws, and the objects read the shadows.
   const { graph, skipped } = await fogHost(effects, undefined, (scene) => {
     opaqueAndBlended(scene);
@@ -2063,7 +2064,7 @@ it.each([
   }, { seedsFromSceneDepth: true });
   const tasks = graph.taskNames();
   expect(tasks.indexOf("Spatial Geometry")).toBeLessThan(tasks.indexOf("Forward objects"));
-  expect(skipped()).toEqual([]);
+  expect(skipped()).toEqual(screenShadows ? ["Screen shadows"] : []);
   expect(spatialGeometry(graph).objectList.meshes.map((mesh) => mesh.name)).toEqual(["opaque", "blended"]);
   graph.dispose();
 });
@@ -2088,19 +2089,27 @@ async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFA
   controller.sync();
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
-  const objectsPass = (graph as unknown as { objects: FrameGraphObjectRendererTask }).objects.objectRenderer.renderPassId;
-  /** The frame's skipped tasks, and whether the objects' draws read the march's target (else the lit placeholder, read off). */
+  /**
+   * The first presented frame's skipped tasks, and whether the objects' draws read the march's target (else the lit
+   * placeholder, read off). A shadow map's change holds a frame or two for its casters' readiness.
+   */
   const frame = () => {
-    const captured = captureRenderFrame(engine, () => graph.render(camera));
-    expect(captured.value).toEqual({ path: "frameGraph" });
-    const skipped = captured.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
-    return { skipped: skipped.sort(), reads: screenShadowsForPass(scene, objectsPass) !== null };
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const captured = captureRenderFrame(engine, () => graph.render(camera));
+      if ((captured.value as { rendered?: boolean }).rendered === false) continue;
+      expect(captured.value).toEqual({ path: "frameGraph" });
+      const skipped = captured.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
+      // The objects pass of the graph now prepared (a projection change rebuilds it).
+      const objectsPass = (graph as unknown as { objects: FrameGraphObjectRendererTask }).objects.objectRenderer.renderPassId;
+      return { skipped: skipped.sort(), reads: screenShadowsForPass(scene, objectsPass) !== null };
+    }
+    throw new Error("The view presented no frame.");
   };
-  /** Casts or stops casting the sun's shadows; the view's readiness writes the light block the next frame draws with. */
-  const cast = (on: boolean) => {
+  /** Casts or stops casting the sun's shadows; the view's preparation writes the light block the next frame draws with. */
+  const cast = async (on: boolean) => {
     controller.register(sun, on);
     controller.sync();
-    graph.readiness(camera);
+    await graph.prepare(camera);
   };
   return { scene, camera, graph, frame, cast };
 }
@@ -2110,10 +2119,10 @@ it("idles Screen-Space Shadows and the geometry pass without a shadowed sun, rea
   const { scene, graph, frame, cast } = await screenShadowsHost(true);
   const builds = graph.diagnostics().graphBuilds;
   expect(frame()).toEqual({ skipped: [], reads: true });
-  cast(false);
+  await cast(false);
   expect(hapticShadowedSun(scene)).toBeNull();
   expect(frame()).toEqual({ skipped: SCREEN_SHADOW_TASKS, reads: false });
-  cast(true);
+  await cast(true);
   expect(frame()).toEqual({ skipped: [], reads: true });
   expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
