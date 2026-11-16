@@ -545,6 +545,8 @@ describe("OcclusionBuffer against the full-rebuild reference", () => {
     return { viewProjection: viewProjection(eye, add(eye, forward), FOV, ASPECT, NEAR, FAR), occluders, tests };
   }
 
+  // The reference rebuilds its whole pyramid every frame, so 120 frames at 256 × 128 take 6 to 9 seconds on a hosted
+  // runner: the timeout below is for that, not for the buffer under test.
   it.each([
     ["256 × 128", 256, 128, 3],
     // Odd sizes, whose pyramid repeats its last row and column.
@@ -558,7 +560,7 @@ describe("OcclusionBuffer against the full-rebuild reference", () => {
     expect(culled).toBeGreaterThan(100);
     expect(culled).toBeLessThan(tested * 0.95);
     expect(read).toBeGreaterThan(100);
-  });
+  }, 40_000);
 
   const lookAhead = () => viewProjection([0, 0, 0], [0, 0, 1], FOV, ASPECT, NEAR, FAR);
   const wallAhead = { ...boxTriangles([-5, -5, 5], [5, 5, 5.2]), winding: "both" as const };
