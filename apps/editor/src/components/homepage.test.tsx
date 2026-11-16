@@ -17,6 +17,7 @@ import { TooltipProvider } from "@haptic/ui/components/tooltip";
 import { BUILT_IN_STARTER_KINDS } from "../lib/create-project";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
+import { HomepageMobileAccountGate } from "./homepage-mobile-account-gate";
 import { AppSettingsProvider, getAppSettingsSnapshot } from "../context/app-settings-context";
 import { EditorThemeProvider } from "../context/theme-context";
 
@@ -31,8 +32,27 @@ vi.mock("@haptic/vfs", async (importOriginal) => {
 });
 
 vi.mock("./settings-modal", () => ({
-  SettingsModal: () => null,
+  SettingsModal: ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) =>
+    open ? (
+      <div role="dialog" aria-label="Engine Settings">
+        <button type="button" onClick={() => onOpenChange(false)}>
+          Close Engine Settings
+        </button>
+      </div>
+    ) : null,
 }));
+
+// The mobile account gate's native auth adapter (FAPI and secure storage have their own tests).
+const nativeAuth = vi.hoisted(() => ({ restoreSession: vi.fn() }));
+vi.mock("../services/native-clerk", () => ({
+  createNativeClerkClient: () => nativeAuth,
+}));
+const nativeSession = {
+  id: "session_ada",
+  userId: "user_ada",
+  email: "ada@example.test",
+  name: "Ada Lovelace",
+};
 
 const accountsState = vi.hoisted(() => ({ accounts: null as SourceControlAccounts | null }));
 
@@ -64,37 +84,47 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   cleanup();
   getHostPlatform.mockReturnValue("web");
   pickImportFiles.mockReset();
+  nativeAuth.restoreSession.mockReset();
 });
 
 const noop = async () => {};
 
 function renderHomepage(
   overrides: Partial<ComponentProps<typeof Homepage>> = {},
+  { mobileAccountGate = false } = {},
 ) {
+  const homepage = (
+    <Homepage
+      projects={[]}
+      templates={[]}
+      needsReconnect={false}
+      recoveryAvailable={false}
+      onCreateEmpty={noop}
+      onCreateFromTemplate={noop}
+      onOpenExternal={noop}
+      onOpenProject={noop}
+      onUpdateProject={noop}
+      onRemoveFromList={noop}
+      onReconnect={noop}
+      onRecover={noop}
+      onDismissRecovery={() => {}}
+      onSettingsChanged={noop}
+      {...overrides}
+    />
+  );
   return render(
     <TooltipProvider>
       <AppSettingsProvider>
         <EditorThemeProvider>
-          <Homepage
-            projects={[]}
-            templates={[]}
-            needsReconnect={false}
-            recoveryAvailable={false}
-            onCreateEmpty={noop}
-            onCreateFromTemplate={noop}
-            onOpenExternal={noop}
-            onOpenProject={noop}
-            onUpdateProject={noop}
-            onRemoveFromList={noop}
-            onReconnect={noop}
-            onRecover={noop}
-            onDismissRecovery={() => {}}
-            onSettingsChanged={noop}
-            {...overrides}
-          />
+          {mobileAccountGate ? (
+            <HomepageMobileAccountGate>{homepage}</HomepageMobileAccountGate>
+          ) : (
+            homepage
+          )}
         </EditorThemeProvider>
       </AppSettingsProvider>
     </TooltipProvider>,
@@ -405,6 +435,54 @@ describe("Slate project browser", () => {
       "value",
       "Orbit",
     );
+  });
+
+  // The iOS and Android apps check the account again whenever the window regains focus, unmounting the
+  // Homepage meanwhile. WKWebView also sends that focus while the app stays in the foreground, when the web
+  // view takes first responder back, so a check then would drop the form being filled in.
+  it("keeps New Project, Clone and Engine Settings open through the mobile account's foreground check", async () => {
+    getHostPlatform.mockReturnValue("ios");
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    nativeAuth.restoreSession.mockResolvedValue(nativeSession);
+    renderHomepage({ onCloneProject: vi.fn() }, { mobileAccountGate: true });
+
+    fireEvent.click(await screen.findByTestId("create-project"));
+    fireEvent.click(screen.getByTestId("create-project-blank"));
+    fireEvent.change(screen.getByTestId("create-project-name"), { target: { value: "Orbit" } });
+    fireEvent.click(screen.getByText("Options"));
+    fireEvent(window, new Event("focus"));
+    const create = screen.getByTestId("create-project-dialog");
+    expect(screen.getByTestId("create-project-name")).toHaveProperty("value", "Orbit");
+    expect(within(create).getByText("Options").closest("details")?.open).toBe(true);
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(create).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByTestId("create-project-dialog")).toBeNull());
+
+    fireEvent.click(screen.getByTestId("clone-project"));
+    const clone = await screen.findByTestId("clone-project-dialog");
+    fireEvent(window, new Event("focus"));
+    expect(screen.getByTestId("clone-project-dialog")).toBe(clone);
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(clone).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByTestId("clone-project-dialog")).toBeNull());
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: `${nativeSession.name}, ${nativeSession.email}`, expanded: false }),
+    );
+    fireEvent.click(await screen.findByTestId("engine-settings"));
+    const settings = await screen.findByRole("dialog", { name: "Engine Settings" });
+    fireEvent(window, new Event("focus"));
+    expect(screen.getByRole("dialog", { name: "Engine Settings" })).toBe(settings);
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(settings).getByRole("button", { name: "Close Engine Settings" }));
+
+    // With every form closed, the check runs again and hides the Homepage while it does.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Engine Settings" })).toBeNull());
+    fireEvent(window, new Event("focus"));
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("create-project")).toBeNull();
+    expect(await screen.findByTestId("create-project")).toBeTruthy();
   });
 
   it.each(["ios", "electron"])(

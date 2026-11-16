@@ -88,6 +88,7 @@ import {
 import { brandWordmarkSrc } from "../lib/branding";
 import { getBuildLabel } from "../lib/build-identity";
 import { HomepageAccount } from "./homepage-account";
+import { useNativeHomepageAccount } from "./homepage-account-context";
 import { HomepageDiscordBadge } from "./homepage-discord-badge";
 import { HomepageUpdateBadge } from "./homepage-update-badge";
 import { ReleaseNews } from "./release-news";
@@ -252,6 +253,17 @@ export function Homepage({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
+  // The mobile account gate checks the session again whenever the window
+  // regains focus and unmounts the Homepage meanwhile. WKWebView also sends
+  // that focus while the app stays in the foreground, when the web view takes
+  // first responder back, so the forms opened here hold the check.
+  const holdSessionCheck = useNativeHomepageAccount()?.profile.holdSessionCheck;
+  const holdSessionCheckRef = useRef(holdSessionCheck);
+  holdSessionCheckRef.current = holdSessionCheck;
+  const formOpen = createOpen || cloneOpen || settingsOpen;
+  useEffect(() => {
+    if (formOpen) return holdSessionCheckRef.current?.();
+  }, [formOpen]);
   const [chooseTemplate, setChooseTemplate] = useState(true);
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
