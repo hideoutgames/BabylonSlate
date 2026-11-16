@@ -1110,7 +1110,8 @@ function initializeEngine(
     if (info.clipKind === "animation" && (!clips || clips.length === 0)) return;
     warnMissingClip(info);
   }));
-  // Animation Tick Mode When Visible: an unseen actor's latest state waits, posed once a camera can see it.
+  // Each slot's latest animation state is posed before the next snapshot is applied and before each render, and an
+  // unseen When Visible actor's waits until a camera can see it.
   const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
   scene.onBeforeRenderObservable.add(() => animVisibility.flush());
   // Many actors place their feet each frame: they share one snapshot of the meshes' world bounds, dropped before each
@@ -2064,6 +2065,8 @@ function initializeEngine(
     }
   }
   function prepareSnapshot() {
+    // What a snapshot places from the pose (bone attachments, the lights and cameras they carry) reads the latest one.
+    animVisibility.flush();
     const sampled = snapshots.sample();
     if (!sampled) return null;
     const layoutGeneration = snapshots.layoutGeneration;
