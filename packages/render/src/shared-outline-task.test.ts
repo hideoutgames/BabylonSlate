@@ -104,6 +104,34 @@ it("seeds the strict mask from a scene depth of its own size: one depth copy, an
   expect([task.drawingPassCount, task.renderRecordCount]).toEqual([0, 0]);
 });
 
+it("draws none of its passes in a frame where no outlined member can show, and all of them otherwise", async () => {
+  const { scene, task } = await outlineGraph({ width: 16, height: 8 });
+  const internals = task as unknown as {
+    masks: { group: string; clearPass?: { disabled: boolean }; seedPass?: { disabled: boolean }; drawPass?: { disabled: boolean } }[];
+    composePass?: { disabled: boolean };
+  };
+  /** Which passes run: the strict group's clear, depth copy and mask, then the compose. */
+  const running = () => {
+    const strict = internals.masks.find((record) => record.group === "strict")!;
+    return [strict.clearPass, strict.seedPass, strict.drawPass, internals.composePass].map((pass) => !pass!.disabled);
+  };
+  const member = scene.getMeshByName("member")!;
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(running()).toEqual([true, true, true, true]);
+  // Far beside the view: no mask would hold an identity, so the compose would blend nothing.
+  member.position.x = 100; member.computeWorldMatrix(true);
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(running()).toEqual([false, false, false, false]);
+  // The frame without view culling draws everything, and so does a frame with the member back in view.
+  scene.skipFrustumClipping = true;
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(running()).toEqual([true, true, true, true]);
+  scene.skipFrustumClipping = false;
+  member.position.x = 0; member.computeWorldMatrix(true);
+  task.onBeforeTaskExecute.notifyObservers(task);
+  expect(running()).toEqual([true, true, true, true]);
+});
+
 it("keeps drawing its own occluders when the scene depth is not the mask's pixels", async () => {
   // An authored chain at half resolution: its depth is another size than the outline's target.
   const { camera, view, task } = await outlineGraph({ width: 8, height: 4 });
