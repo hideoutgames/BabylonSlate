@@ -149,11 +149,47 @@ describe("Simplex Perlin 3D", () => {
     return sum * 37.837227241611316;
   }
 
-  it("stays within the bound over a dense sample, which is the four-corner bound N·4·27/(343√14)", () => {
-    // The per-corner maximum of r(0.5 − r²)³ is at r² = 1/14.
-    let best = 0;
-    for (let r = 0; r <= Math.SQRT1_2; r += 1e-5) best = Math.max(best, r * (0.5 - r * r) ** 3);
-    expect(SIMPLEX_PERLIN_3D_BOUND).toBeCloseTo(4 * 37.837227241611316 * best, 6);
+  it("holds the bound: N · Σ f(|x0 − cᵢ|) over every x0, for each step outcome the shader can compute", () => {
+    // f(r) = r · max(0.5 − r², 0)³ bounds a corner's term over its unit gradient; |f′| ≤ 0.125 (at r = 0).
+    const f = (r2: number) => { const w = 0.5 - r2; return w > 0 ? Math.sqrt(r2) * w * w * w : 0; };
+    let slope = 0;
+    for (let r = 0; r <= Math.SQRT1_2; r += 1e-5) { const w = 0.5 - r * r; slope = Math.max(slope, Math.abs(w ** 3 - 6 * r * r * w * w)); }
+    expect(slope).toBeLessThanOrEqual(0.125);
+    const corners = (bits: number) => {
+      const g = [bits & 1, (bits >> 1) & 1, (bits >> 2) & 1];
+      const lz = [1 - g[2]!, 1 - g[0]!, 1 - g[1]!];
+      const pi1 = g.map((v, i) => Math.min(v, lz[i]!)), pi2 = g.map((v, i) => Math.max(v, lz[i]!));
+      return [[0, 0, 0], pi1.map((v) => v - 1 / 6), pi2.map((v) => v - 1 / 3), [0.5, 0.5, 0.5]];
+    };
+    const sum = (c: number[][], x: number, y: number, z: number) => {
+      let s = 0;
+      for (let i = 0; i < 4; i++) {
+        const k = c[i]!, dx = x - k[0]!, dy = y - k[1]!, dz = z - k[2]!;
+        s += f(dx * dx + dy * dy + dz * dz);
+      }
+      return s;
+    };
+    // Every term is 0 outside [−1.1, 1.6]³: the corners lie in [−1/3, 5/6]³ and a term reaches √0.5 from its corner.
+    const N = 37.837227241611316;
+    // g = 000 needs x < y < z < x. Every mixed g, on a grid of step h: the sum moves at most 4 · 0.125 · h√3/2 off it.
+    const h = 0.0075;
+    let mixed = 0;
+    for (let bits = 1; bits < 7; bits++) {
+      const c = corners(bits);
+      for (let x = -1.1; x <= 1.6 + h; x += h) for (let y = -1.1; y <= 1.6 + h; y += h) for (let z = -1.1; z <= 1.6 + h; z += h) {
+        const s = sum(c, x, y, z);
+        if (s > mixed) mixed = s;
+      }
+    }
+    expect(N * (mixed + 0.5 * h * Math.sqrt(3) / 2)).toBeLessThan(SIMPLEX_PERLIN_3D_BOUND);
+    // g = 111 needs x0's components equal: x0 = (t, t, t), with grid points h√3 apart along the line.
+    const step = 1e-4, diagonal = corners(7);
+    let equal = 0;
+    for (let t = -1.1; t <= 1.6 + step; t += step) equal = Math.max(equal, sum(diagonal, t, t, t));
+    expect(N * (equal + 0.5 * step * Math.sqrt(3) / 2)).toBeLessThan(SIMPLEX_PERLIN_3D_BOUND);
+  }, 60_000);
+
+  it("stays within the bound over a dense sample of the shader's own function", () => {
     const next = random(11);
     let largest = 0;
     for (let sample = 0; sample < 200_000; sample++) {
@@ -162,7 +198,7 @@ describe("Simplex Perlin 3D", () => {
       largest = Math.max(largest, Math.abs(n));
     }
     expect(largest).toBeLessThanOrEqual(SIMPLEX_PERLIN_3D_BOUND);
-    // The bound is loose (the sum of four corner maxima); the function itself stays near ±1.
+    // The function itself stays near ±1, inside the bound.
     expect(largest).toBeLessThan(1.1);
   });
 
