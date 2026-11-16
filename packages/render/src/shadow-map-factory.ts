@@ -16,7 +16,7 @@ import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_T
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
 import { readinessProbeListScope } from "./readiness-scope";
 import { shadowDebugOff } from "./shadow-debug";
-import { casterWithinShadowRange, deformsWithinBounds, hasDeformingShadowBounds } from "./shadow-mesh-policy";
+import { casterWithinShadowRange, deformsWithinBounds, drawsNoShadow, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowCasterList } from "./shadow-caster-list";
 import type { RetainedShadowCasters } from "./shadow-retained-casters";
@@ -51,6 +51,11 @@ export interface ShadowMapContext {
   readonly counters: ShadowDrawCounters;
   /** The casters a map draws without Babylon's per-caster work; null where that cannot work (`RetainedShadowCasters`). */
   readonly retained: RetainedShadowCasters | null;
+  /**
+   * When a layer's list is also built the full way and compared (`due`: the frame's walk ran the full path too,
+   * `ShadowMapRefresh.stageCheck`), and where disagreements are counted.
+   */
+  readonly listCheck?: { due(): "verify" | "heal" | null; miss(count: number): void };
 }
 
 /**
@@ -289,6 +294,7 @@ export function createShadowGenerator(
   const planes = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
   const upstream = planes.slice(1);
   const casters: AbstractMesh[] = [];
+  const fullList: AbstractMesh[] = [];
   if (map)
     map.getCustomRenderList = (layer) => {
       // Until this pass lists again, the shared buffer draws nothing into it.
@@ -311,7 +317,25 @@ export function createShadowGenerator(
       // A readiness probe that asks only some meshes lists only those: the others answer without being asked.
       const asked = readinessProbeListScope();
       if (asked) context.spatial.queryPlanesOf(asked, activePlanes, casters);
-      else context.spatial.queryPlanes(activePlanes, casters);
+      else {
+        context.spatial.queryPlanes(activePlanes, casters);
+        // A frame whose caster walk also ran the full path lists the full way too: every caster in the planes, read
+        // from the mesh, less those that draw nothing now. It must give the same casters in the same order; a
+        // disagreement is counted and the full list drawn.
+        if (context.listCheck?.due()) {
+          const full = context.spatial.queryPlanes(activePlanes, fullList, true);
+          let kept = 0;
+          for (const mesh of full) if (!drawsNoShadow(mesh)) full[kept++] = mesh;
+          full.length = kept;
+          let misses = Math.abs(full.length - casters.length);
+          for (let index = 0; index < Math.min(full.length, casters.length); index++) if (full[index] !== casters[index]) misses++;
+          if (misses) {
+            context.listCheck.miss(misses);
+            casters.length = 0;
+            for (const mesh of full) casters.push(mesh);
+          }
+        }
+      }
       // The index never plane-culls deforming casters: one whose bounds follow its pose is culled here, by them. A
       // local map ends at its light's range, so anything that cannot reach it draws nothing.
       // A mesh a world view does not draw yet casts nothing either.

@@ -36,6 +36,7 @@ import {
 import {
   authoredShadowParticipation,
   casterWithinShadowRange,
+  drawsNoShadow,
   neverCastsShadows,
   participatesInShadows,
   type ShadowParticipation,
@@ -144,6 +145,12 @@ function shadowLightRow(light: Light, entry?: Entry) {
 export class SceneShadowController {
   private readonly entries = new Map<Light, Entry>();
   private readonly meshes = new Set<AbstractMesh>();
+  /**
+   * The casters that may draw into a map: every caster but those that draw nothing now (`drawsNoShadow`, an actor's
+   * root), which count only in the cascades' caster bounds. The walk and every map layer's list read only these;
+   * `classifyCasters` reads every caster again before each walk.
+   */
+  private readonly drawing = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
   /** Scene meshes already queued once; a removal forgets the mesh so a re-add is queued again. */
   private readonly known = new WeakSet<AbstractMesh>();
@@ -212,6 +219,14 @@ export class SceneShadowController {
     this.maps = {
       scene, spatial: this.spatial, casters: this.meshes, slots: this.slots, counters: this.counters,
       retained: RetainedShadowCasters.create(scene, (mesh) => this.refresh.casterState(mesh)),
+      listCheck: {
+        due: () => this.refresh.stageCheck(),
+        miss: (count) => {
+          this.refresh.noteStageMiss("casterLists", count);
+          // Heal what the lists keep: each caster's flag from the frame's classification.
+          for (const mesh of this.meshes) this.spatial.setDraws(mesh, this.drawing.has(mesh));
+        },
+      },
     };
     this.views = new ShadowViewMaps(this.entries, this.maps);
     this.casterVariants = new ShadowCasterVariants(this.maps);
@@ -253,6 +268,7 @@ export class SceneShadowController {
       this.pending.delete(mesh);
       // Only casters own a spatial leaf or generator render-list membership.
       if (!this.meshes.delete(mesh)) return;
+      this.drawing.delete(mesh);
       this.spatial.remove(mesh);
       this.maps.retained?.release(mesh);
       this.forEachGenerator((generator) => generator.removeShadowCaster(mesh, false));
@@ -279,6 +295,7 @@ export class SceneShadowController {
       this.casterVariants.dispose();
       this.entries.clear();
       this.meshes.clear();
+      this.drawing.clear();
       this.pending.clear();
       this.refresh.dispose();
       this.spatial.dispose();
@@ -456,7 +473,8 @@ export class SceneShadowController {
    */
   refreshShadowMaps(): void {
     if (!this.holdsGenerator()) return;
-    this.refresh.syncCasters(this.scene, this.meshes);
+    this.classifyCasters();
+    this.refresh.syncCasters(this.scene, this.drawing);
     this.maps.retained?.beginFrame();
     // From the walk to the end of this Scene render no caster moves, shows or hides: the layers' lists read them once.
     this.spatial.prepare(this.casterWalked, this.refresh);
@@ -483,6 +501,21 @@ export class SceneShadowController {
           generator.shadowCastersBoundingInfo.reConstruct(casterBounds.min, casterBounds.max);
       }
     });
+  }
+  /**
+   * Reads whether each caster may draw (`drawsNoShadow`), before a walk: geometry applied or released, or a level of
+   * detail added, moves it in or out of `drawing` in the frame it happens. It reads every caster, so it keeps nothing
+   * that can go stale.
+   */
+  private classifyCasters(): void {
+    for (const mesh of this.meshes) this.classifyCaster(mesh);
+  }
+  private classifyCaster(mesh: AbstractMesh): void {
+    const draws = !drawsNoShadow(mesh);
+    if (draws === this.drawing.has(mesh)) return;
+    if (draws) this.drawing.add(mesh);
+    else this.drawing.delete(mesh);
+    this.spatial.setDraws(mesh, draws);
   }
   /** Authored request, independent of admission, visibility and global shadow enablement. */
   requestsShadow(light: Light): boolean {
@@ -558,6 +591,7 @@ export class SceneShadowController {
     const applied: AbstractMesh[] = [];
     const leaveCasters = (mesh: AbstractMesh) => {
       if (!this.meshes.delete(mesh)) return;
+      this.drawing.delete(mesh);
       applied.push(mesh);
       this.spatial.remove(mesh);
       this.maps.retained?.release(mesh);
@@ -592,6 +626,8 @@ export class SceneShadowController {
       if (!this.meshes.has(mesh)) applied.push(mesh);
       this.meshes.add(mesh);
       this.spatial.add(mesh);
+      this.classifyCaster(mesh);
+      this.spatial.setDraws(mesh, this.drawing.has(mesh));
       partitionShadowGeometry(mesh);
       this.forEachGenerator((generator) => generator.addShadowCaster(mesh, false));
     }
@@ -605,13 +641,15 @@ export class SceneShadowController {
     // allocation; kept snapshots make the late walk report only real changes.
     const holding = this.holdsGenerator();
     let castersCurrent = holding && mode === "full";
-    if (castersCurrent) this.refresh.syncCasters(scene, this.meshes);
-    else if (!holding) this.refresh.dropRemovedCasters(this.meshes);
+    if (castersCurrent || !holding) this.classifyCasters();
+    if (castersCurrent) this.refresh.syncCasters(scene, this.drawing);
+    else if (!holding) this.refresh.dropRemovedCasters(this.drawing);
     let casterBounds = castersCurrent ? this.spatial.bounds() : undefined;
     const currentCasters = () => {
       if (castersCurrent) return;
       castersCurrent = true;
-      this.refresh.syncCasters(scene, this.meshes);
+      this.classifyCasters();
+      this.refresh.syncCasters(scene, this.drawing);
       casterBounds = this.spatial.bounds();
     };
     const state = sceneRenderingSettings(scene);

@@ -161,8 +161,8 @@ describe("local shadow refresh", () => {
     // This is Babylon's real initial state, not an incomplete mesh stub.
     expect(pending.subMeshes).toBeUndefined();
     controller.setParticipation(pending, { castShadows: true });
-    expect(render()).toBe(6);
-    // Neither geometry nor parts draws nothing; the geometry it later gets is tracked.
+    // Neither geometry nor parts draws nothing: the map, which it cannot change, keeps its depth. The geometry it later
+    // gets is tracked.
     expect(render()).toBe(0);
 
     VertexData.CreateBox({}).applyToMesh(pending);
@@ -701,6 +701,150 @@ async function cascadedSun() {
   settle();
   return { scene, camera, sun, map, generator, material, near, distant, render, settle };
 }
+
+describe("casters that draw nothing", () => {
+  afterEach(() => verifyRenderChangeJournal(false));
+
+  /**
+   * The fixture with an actor's root (a plain mesh without geometry) casting beside the caster, after the map's first
+   * draw. `listed` redraws the map and gives every caster its faces listed (no retained buffer on NullEngine, so these
+   * are Babylon's own lists); `misses` the list and walk disagreements counted since its last call.
+   */
+  async function rooted() {
+    const scene = await fixture();
+    const root = new Mesh("actor root", scene.scene);
+    root.material = scene.material;
+    root.position.x = 1;
+    scene.controller.setParticipation(root, { castShadows: true });
+    expect(scene.render()).toBe(6);
+    expect(scene.render()).toBe(0);
+    const captured = new Set<AbstractMesh>();
+    const list = scene.map.getCustomRenderList!.bind(scene.map);
+    scene.map.getCustomRenderList = (...args) => {
+      const result = list(...args);
+      for (const mesh of result ?? []) captured.add(mesh);
+      return result;
+    };
+    const listed = () => {
+      captured.clear();
+      scene.map.resetRefreshCounter();
+      scene.scene.render();
+      return new Set(captured);
+    };
+    let last = scene.controller.journalDiagnostics();
+    const misses = () => {
+      const now = scene.controller.journalDiagnostics();
+      const step = now.mismatches - last.mismatches;
+      last = now;
+      return step;
+    };
+    return { ...scene, root, misses, listed };
+  }
+
+  it("lists a root in no layer, and redraws no map when it moves or shows, as it cannot change one", async () => {
+    verifyRenderChangeJournal(true);
+    const { root, mesh, render, listed, misses, controller } = await rooted();
+    const casters = listed();
+    expect(casters.has(root)).toBe(false);
+    expect(casters.has(mesh)).toBe(true);
+    root.position.y = 1;
+    expect(render()).toBe(0);
+    root.isVisible = false;
+    expect(render()).toBe(0);
+    root.isVisible = true;
+    expect(render()).toBe(0);
+    expect(misses()).toBe(0);
+    expect(controller.journalDiagnostics().missedKinds).toEqual([]);
+  });
+
+  it("lists a root in the frame it gains geometry, and leaves it out in the frame it loses it", async () => {
+    verifyRenderChangeJournal(true);
+    const { root, render, listed, misses } = await rooted();
+    VertexData.CreateBox({}).applyToMesh(root);
+    await root.material!.forceCompilationAsync(root);
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    expect(listed().has(root)).toBe(true);
+    root.geometry!.releaseForMesh(root);
+    expect(root.geometry).toBeNull();
+    // Its depth leaves the map.
+    expect(render()).toBe(6);
+    expect(render()).toBe(0);
+    expect(listed().has(root)).toBe(false);
+    expect(misses()).toBe(0);
+  });
+
+  it("lists a root's instance as before, and both once the root gains geometry", async () => {
+    verifyRenderChangeJournal(true);
+    const { root, listed, misses, controller } = await rooted();
+    const instance = root.createInstance("root instance");
+    instance.position.x = -1;
+    controller.setParticipation(instance, { castShadows: true });
+    let casters = listed();
+    expect(casters.has(root)).toBe(false);
+    expect(casters.has(instance)).toBe(true);
+    VertexData.CreateBox({}).applyToMesh(root);
+    await root.material!.forceCompilationAsync(root);
+    casters = listed();
+    expect(casters.has(root)).toBe(true);
+    expect(casters.has(instance)).toBe(true);
+    expect(misses()).toBe(0);
+  });
+
+  it("keeps a root out when only its child gains geometry or it moves under another node, and lists it with a level of detail", async () => {
+    verifyRenderChangeJournal(true);
+    const { scene, root, listed, misses, controller, material } = await rooted();
+    const child = new Mesh("root child", scene);
+    child.parent = root;
+    child.material = material;
+    controller.setParticipation(child, { castShadows: true });
+    VertexData.CreateBox({}).applyToMesh(child);
+    await material.forceCompilationAsync(child);
+    let casters = listed();
+    expect(casters.has(child)).toBe(true);
+    expect(casters.has(root)).toBe(false);
+    const holder = new TransformNode("holder", scene);
+    root.parent = holder;
+    holder.position.z = 1;
+    expect(listed().has(root)).toBe(false);
+    const level = MeshBuilder.CreateBox("root level", {}, scene);
+    level.material = material;
+    root.addLODLevel(1000, level);
+    casters = listed();
+    expect(casters.has(root)).toBe(true);
+    expect(misses()).toBe(0);
+  });
+
+  it("forgets a disposed root, and lists the casters that take a removed one's place as a full read does", async () => {
+    verifyRenderChangeJournal(true);
+    const { scene, root, mesh, render, listed, misses, controller, material } = await rooted();
+    const late = MeshBuilder.CreateBox("late caster", {}, scene);
+    late.material = material;
+    late.position.x = -1;
+    controller.setParticipation(late, { castShadows: true });
+    await material.forceCompilationAsync(late);
+    expect(render()).toBe(6);
+    root.dispose();
+    expect(render()).toBe(0);
+    // The last caster takes the removed one's place in the list.
+    mesh.dispose();
+    expect(render()).toBe(6);
+    expect(listed().has(late)).toBe(true);
+    expect(misses()).toBe(0);
+  });
+
+  it("counts a layer list that disagrees with the full read, draws the full one, and sets the kept flag right", async () => {
+    verifyRenderChangeJournal(true);
+    const { mesh, listed, misses, controller } = await rooted();
+    // Corrupt what the lists keep: the caster is marked as drawing nothing.
+    (controller as unknown as { spatial: { setDraws(mesh: AbstractMesh, draws: boolean): void } }).spatial.setDraws(mesh, false);
+    expect(listed().has(mesh)).toBe(true);
+    expect(misses()).toBeGreaterThan(0);
+    expect(controller.journalDiagnostics().missedKinds).toContain("casterLists");
+    verifyRenderChangeJournal(false);
+    expect(listed().has(mesh)).toBe(true);
+  });
+});
 
 describe("cascaded sun refresh", () => {
   it("keeps the cascades cached while nothing that shapes them changes", async () => {
