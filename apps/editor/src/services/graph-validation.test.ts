@@ -3,6 +3,7 @@ import type { SerializedGraph } from "@haptic/core";
 import { createText3DComponent } from "@haptic/core";
 import { arrayOf, objectRef } from "@haptic/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@haptic/scripting-nodes";
+import { engineParentOf } from "@haptic/editor-kit";
 import { filterPaletteForPin, type SerializedPin } from "@haptic/graph-ui";
 import { ownedTimelineClipDispatcherSymbols } from "../lib/owned-actor-gets";
 import { timelineScriptClassIds, timelineScriptSymbols, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
@@ -2995,6 +2996,98 @@ describe("scriptPaletteNodes", () => {
           pin.id === "value" && (pin.type as { kind?: string }).kind === "array",
       ),
     ).toBe(true);
+  });
+});
+
+describe("Add Node from a dragged pin", () => {
+  const parents: Record<string, string> = { Door: "Actor", MyDoor: "Door" };
+  const parentOf = (id: string) => parents[id] ?? engineParentOf(id) ?? null;
+  const rule = scriptPinCompatibility(classHierarchyFromParentOf(parentOf));
+  const output = (type: SerializedPin["type"]): SerializedPin => ({ id: "out", name: "Out", kind: "data", direction: "out", type });
+  const execOut: SerializedPin = { id: "execOut", name: "then", kind: "exec", direction: "out", type: { kind: "exec" } };
+  const cable = { id: "cable", classId: "CableComponent", properties: {} };
+  const myDoor = (components: Array<typeof cable> = []) =>
+    scriptPaletteNodes(registry, {
+      parentClass: "Door",
+      classId: "MyDoor",
+      parentOf,
+      graph: { nodes: [], edges: [], components, members: [{ id: "hp", kind: "variable", name: "Health", typeId: "float" }] },
+      otherClassGraphs: {
+        Door: { nodes: [], edges: [], members: [{ id: "open", kind: "variable", name: "Is Open", typeId: "bool" }] },
+      },
+    });
+  const suggested = (nodes: ReturnType<typeof myDoor>, pin: SerializedPin) =>
+    filterPaletteForPin(nodes, pin, rule).map((node) => node.id);
+
+  it.each([
+    ["another object's component", []],
+    ["a component the Class owns", [cable]],
+  ])("lists the members of %s only from a pin dragged into their Target", (_, components) => {
+    const nodes = myDoor(components);
+    const setMaterial = "variables.set:CableComponent:Material";
+    expect(nodes.map((node) => node.id)).toContain(setMaterial);
+    expect(suggested(nodes, output({ kind: "assetRef", assetType: "Material" }))).not.toContain(setMaterial);
+    expect(suggested(nodes, execOut)).not.toContain(setMaterial);
+    expect(suggested(nodes, output({ kind: "objectRef", classId: "CableComponent" }))).toContain(setMaterial);
+  });
+
+  it("lists engine nodes whose object input must be wired only from a pin dragged into it", () => {
+    const nodes = myDoor();
+    expect(nodes.map((node) => node.id)).toContain("light.setIntensity");
+    expect(suggested(nodes, output({ kind: "float" }))).not.toContain("light.setIntensity");
+    expect(suggested(nodes, execOut)).not.toContain("light.setIntensity");
+    expect(suggested(nodes, output({ kind: "objectRef", classId: "LightComponent" }))).toContain("light.setIntensity");
+    // An unresolved wildcard names no object, so it supplies no Target.
+    expect(suggested(nodes, output({ kind: "resolvingWildcard" }))).not.toContain("light.setIntensity");
+    // Destroy Actor's Actor input reads Self while unwired.
+    expect(suggested(nodes, execOut)).toContain("actor.destroy");
+    // Attach To Bone's Actor reads Self, but its Target must be wired.
+    expect(suggested(nodes, execOut)).not.toContain("actor.attachToBone");
+    expect(suggested(nodes, output({ kind: "objectRef", classId: "Actor" }))).toContain("actor.attachToBone");
+  });
+
+  it("ranks the dragged object's own members first, then rows whose Target it reaches through a parent class", () => {
+    const ids = suggested(myDoor(), output({ kind: "objectRef", classId: "CableComponent" }));
+    const own = ids.filter((id) => id.includes(":CableComponent:"));
+    expect(own).toContain("variables.set:CableComponent:Material");
+    expect(ids.slice(0, own.length)).toEqual(own);
+    // Set Visibility takes any Actor Component; Cast To takes no Target, so it follows.
+    const setVisibility = ids.indexOf("component.setVisibility");
+    expect(setVisibility).toBeGreaterThanOrEqual(own.length);
+    expect(setVisibility).toBeLessThan(ids.indexOf("casting.cast:CableComponent"));
+  });
+
+  it("offers the host's own and parent Classes' variables on a dragged reference, through a Target", () => {
+    const nodes = myDoor([cable]);
+    const ids = suggested(nodes, output({ kind: "objectRef", classId: "MyDoor" }));
+    expect(ids.slice(0, 2)).toEqual(
+      expect.arrayContaining(["variables.get:target:MyDoor:Health", "variables.set:target:MyDoor:Health"]),
+    );
+    expect(ids).toContain("variables.get:target:MyDoor:Cable");
+    expect(ids).toContain("variables.set:target:Door:Is Open");
+    const getHealth = nodes.find((node) => node.id === "variables.get:target:MyDoor:Health")!;
+    // The member id ties a placed node to renames and deletes of Health.
+    expect(getHealth.defaultData).toMatchObject({ classId: "MyDoor", variableId: "hp", variableName: "Health", implicitSelf: false });
+    expect(getHealth.pins?.find((pin) => pin.id === "target")?.type).toEqual(objectRef("MyDoor"));
+    // Without a dragged pin Context Sensitive hides them; a Float drag still sets Health on Self.
+    expect(getHealth.outOfContext).toBe(true);
+    const fromFloat = suggested(nodes, output({ kind: "float" }));
+    expect(fromFloat).toContain("variables.set:MyDoor:Health");
+    expect(fromFloat).not.toContain("variables.set:target:MyDoor:Health");
+  });
+
+  it("still offers a custom event and Create Event for a dispatcher from its dragged Event pin", () => {
+    const onDamaged = { id: "d", kind: "dispatcher" as const, name: "On Damaged", pins: [{ name: "Damage", typeId: "float", direction: "in" as const }] };
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Enemy",
+      parentOf,
+      graph: { nodes: [], edges: [], members: [onDamaged] },
+    });
+    const bindEvent = nodes.find((node) => node.id === "flow.dispatcher.bind:Enemy:On Damaged")!.pins!.find((pin) => pin.id === "event")!;
+    expect(suggested(nodes, bindEvent)).toEqual(
+      expect.arrayContaining(["flow.event.custom:for:Enemy:On Damaged", "flow.delegate.create:for:Enemy:On Damaged"]),
+    );
   });
 });
 

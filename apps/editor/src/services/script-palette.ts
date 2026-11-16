@@ -10,7 +10,7 @@ import { ANIM_NOTIFY_EVENT_TYPE, EXTENSION_NODE_TYPE_PREFIX, isEventEntryNodeTyp
 import { animEventNodeTitle } from "../lib/anim-graph-events";
 import { ANIM_POSE_USE_CACHED_TYPE, cachedPoseNodeTitle } from "@haptic/anim-graph";
 import { sceneAssetClassId } from "@haptic/object-model";
-import type { PaletteNode } from "@haptic/graph-ui";
+import type { PaletteNode, SerializedPin } from "@haptic/graph-ui";
 import { classLineageIncludesAny, isScriptCatalogNodeAllowed, nativeEventStubs } from "../lib/class-members";
 import { newCustomEventName } from "../lib/custom-event-names";
 import { extensionNodesFingerprint } from "./extension-nodes";
@@ -528,6 +528,28 @@ function scriptPaletteInjectorNodes(
   );
 }
 
+/**
+ * Names each row's Target (`targetPinId`): the object input marked as the
+ * node's subject, which a member of another object, or an engine node acting
+ * on one, must have wired. Under Context Sensitive, a dragged pin lists such a
+ * row only when it connects to that Target (a Target reading Self while
+ * unwired lists it from any pin), and the dragged object's members rank first.
+ * A required subject wins over one reading Self (Attach To Bone's `target`
+ * over its `actor`).
+ */
+function withTargetPins(nodes: PaletteNode[]): PaletteNode[] {
+  return nodes.map((node) => {
+    const subjects = (node.pins ?? []).filter(
+      (pin) =>
+        pin.direction === "in" &&
+        pin.type.kind === "objectRef" &&
+        (pin as SerializedPin & { subject?: boolean }).subject === true,
+    );
+    const target = subjects.find((pin) => pin.selfWhenUnwired !== true) ?? subjects[0];
+    return target ? { ...node, targetPinId: target.id } : node;
+  });
+}
+
 /** Palette rows for Class graphs (pins from the registry). */
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = defaultNodeRegistry(),
@@ -535,12 +557,12 @@ export function scriptPaletteNodes(
   build: ScriptPaletteBuildOptions = {},
 ): PaletteNode[] {
   if (build.injectors === false) {
-    return scriptPaletteCatalogNodes(nodeRegistry, options);
+    return withTargetPins(scriptPaletteCatalogNodes(nodeRegistry, options));
   }
-  const assemble = () => [
+  const assemble = () => withTargetPins([
     ...scriptPaletteCatalogNodes(nodeRegistry, options),
     ...scriptPaletteInjectorNodes(nodeRegistry, options),
-  ];
+  ]);
   if (build.cache) {
     return build.cache.getOrBuild(scriptPaletteInjectorKey(options), assemble);
   }

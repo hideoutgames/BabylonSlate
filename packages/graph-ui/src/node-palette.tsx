@@ -134,8 +134,9 @@ function NodeKindChip({ node }: { node: PaletteNode }) {
 /**
  * Unreal-style Add Node menu: a pointer-anchored popup with search, a
  * collapsible category tree, and Context Sensitive filtering. With a dragged
- * pin the list is pin-compatible rows; without one it hides `outOfContext`
- * rows (members reached only through a Target on another object).
+ * pin the list is pin-compatible rows, and a row whose Target must be wired
+ * only when the drag reaches that Target (`targetPinId`); without one it hides
+ * `outOfContext` rows (members reached only through a Target on another object).
  */
 export function NodePalette({
   open,

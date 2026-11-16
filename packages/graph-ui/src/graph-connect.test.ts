@@ -31,6 +31,7 @@ import {
   oppositeSideHandleId,
   orientConnectionByPins,
   finalizeOrientedConnection,
+  paletteConnectPin,
   pinWithDisplayType,
   type PinCompatibilityRule,
 } from "./graph-connect";
@@ -833,7 +834,7 @@ describe("filterPaletteForPin", () => {
     ).toEqual(["flow.branch", "logic.and", "debug.print"]);
   });
 
-  it("prefers members from the Object Class over inherited Target APIs and wildcards", () => {
+  it("ranks the Object Class's own members, then inherited Target rows, above Cast To and wildcards", () => {
     const hierarchy = {
       isSubclassOf(child: string, parent: string) {
         if (child === parent) return true;
@@ -902,6 +903,7 @@ describe("filterPaletteForPin", () => {
       title: "Call Get Actor Location",
       category: "functions",
       pins: [execIn, targetActor],
+      targetPinId: "target",
       defaultData: { classId: "Actor", functionName: "GetActorLocation" },
     };
     const heroCall: PaletteNode = {
@@ -910,6 +912,7 @@ describe("filterPaletteForPin", () => {
       title: "Call Jump",
       category: "functions",
       pins: [execIn, targetHero],
+      targetPinId: "target",
       defaultData: { classId: "Hero", functionName: "Jump" },
     };
     const heroGet: PaletteNode = {
@@ -918,6 +921,7 @@ describe("filterPaletteForPin", () => {
       title: "Get Health",
       category: "variables",
       pins: [targetHero],
+      targetPinId: "target",
       defaultData: { classId: "Hero", variableName: "Health" },
     };
     const castHero: PaletteNode = {
@@ -937,10 +941,57 @@ describe("filterPaletteForPin", () => {
     ).toEqual([
       "functions.call:Hero:Jump",
       "variables.get:Hero:Health",
-      "casting.cast:Hero",
       "functions.call:Actor:GetActorLocation",
+      "casting.cast:Hero",
       "debug.print",
     ]);
+  });
+
+  describe("rows with a Target", () => {
+    const hierarchy = {
+      isSubclassOf: (child: string, parent: string) => child === parent || parent === "Object",
+    };
+    const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType, { hierarchy });
+    const dataPin = (id: string, direction: "in" | "out", type: SerializedPin["type"], extra: Partial<SerializedPin> = {}): SerializedPin =>
+      ({ id, name: id, kind: "data", direction, type, ...extra });
+    const material = { kind: "assetRef", assetType: "Material" };
+    const cableOut = dataPin("out", "out", { kind: "objectRef", classId: "Cable" });
+    const materialOut = dataPin("out", "out", material);
+    // Set Material on a Cable: the Cable must be wired.
+    const setCableMaterial: PaletteNode = {
+      id: "variables.set:Cable:Material",
+      title: "Set Material",
+      category: "variables",
+      pins: [execIn, execOut, dataPin("target", "in", { kind: "objectRef", classId: "Cable" }), dataPin("value", "in", material)],
+      targetPinId: "target",
+    };
+    // A member of the graph's own class: its Target reads Self while unwired.
+    const setOwnMaterial: PaletteNode = {
+      id: "functions.call:Door:Paint",
+      title: "Call Paint",
+      category: "functions",
+      pins: [execIn, execOut, dataPin("target", "in", { kind: "objectRef", classId: "Door" }, { optional: true, selfWhenUnwired: true }), dataPin("value", "in", material)],
+      targetPinId: "target",
+    };
+
+    it("lists a row whose Target must be wired only from a pin that connects to that Target", () => {
+      const ids = (dragged: SerializedPin) =>
+        filterPaletteForPin([setCableMaterial, setOwnMaterial], dragged, assignable).map((node) => node.id);
+      expect(ids(materialOut)).toEqual(["functions.call:Door:Paint"]);
+      expect(ids(execOut)).toEqual(["functions.call:Door:Paint"]);
+      expect(ids(cableOut)).toEqual(["variables.set:Cable:Material"]);
+      // An unresolved wildcard names no object, so it never supplies a Target.
+      expect(ids(dataPin("out", "out", { kind: "resolvingWildcard" }))).toEqual(["functions.call:Door:Paint"]);
+    });
+
+    it("wires a new row to its Target when the drag reaches it, else to the first compatible pin", () => {
+      const anyObject = dataPin("other", "in", { kind: "objectRef", classId: "Object" });
+      const attach: PaletteNode = { ...setCableMaterial, pins: [anyObject, ...setCableMaterial.pins!] };
+      expect(paletteConnectPin(attach, cableOut, assignable)?.id).toBe("target");
+      expect(paletteConnectPin(attach, execOut, assignable)?.id).toBe("execIn");
+      expect(paletteConnectPin({ ...attach, targetPinId: undefined }, cableOut, assignable)?.id).toBe("other");
+    });
   });
 });
 

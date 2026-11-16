@@ -108,12 +108,12 @@ import {
   edgesAfterConnect,
   edgesTouchingNodes,
   edgeTouchesPin,
-  firstCompatiblePin,
   graphNodeIdAtClientPoint,
   isClientPointOverGraphNode,
   isClientPointOverHandle,
   nearestSnapConnectPin,
   finalizeOrientedConnection,
+  paletteConnectPin,
   pinRefusalReason,
   pinWithDisplayType,
   pinsAreCompatible,
@@ -2225,11 +2225,7 @@ function GraphEditorCanvas({
           connect.nodeId,
           pinDisplayTypesRef.current,
         );
-        const match = firstCompatiblePin(
-          paletteNode.pins,
-          dragged,
-          pinCompatibility,
-        );
+        const match = paletteConnectPin(paletteNode, dragged, pinCompatibility);
         if (match) {
           if (historyKey) getAddNodeHistory().record(historyKey, paletteNode.id);
           const sourceIsDragged = connect.pin.direction === "out";

@@ -628,7 +628,17 @@ export function variableAccessPaletteNodes(
           ["get", getDef],
           ["set", setDef],
         ];
-  for (const { classId, variable, implicitSelf, getOnly } of rows) {
+  // A reference to the host's own or a parent Class (Cast To, Get Owner)
+  // reaches its variables and components too, through a Target. These rows
+  // never show without a dragged pin under Context Sensitive.
+  const targetVariants = options?.classId && !options.animationGraphHost
+    ? rows.filter((row) => row.implicitSelf && row.variable.scope === "member")
+      .map((row) => ({ ...row, implicitSelf: false, targetVariant: true }))
+    : [];
+  for (const { classId, variable, implicitSelf, getOnly, targetVariant } of [
+    ...rows.map((row) => ({ ...row, targetVariant: false })),
+    ...targetVariants,
+  ]) {
     const kinds = [...accessKinds].filter(
       ([access]) => !(getOnly && access === "set"),
     );
@@ -676,7 +686,9 @@ export function variableAccessPaletteNodes(
         }
       }
       injected.push({
-        id: `${nodeType}:${classId}:${variable.name}`,
+        id: targetVariant
+          ? `${nodeType}:target:${classId}:${variable.name}`
+          : `${nodeType}:${classId}:${variable.name}`,
         nodeType,
         title,
         category: def.category,
@@ -684,6 +696,7 @@ export function variableAccessPaletteNodes(
         pure: def.pure,
         latent: def.latent,
         defaultData,
+        ...(targetVariant ? { outOfContext: true } : {}),
       });
     }
   }
