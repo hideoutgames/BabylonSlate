@@ -500,7 +500,7 @@ export class ShadowMapRefresh {
     if (this.reader && this.readerScene === scene) return { reader: this.reader, fresh: false };
     this.reader?.dispose();
     // Not transforms or geometry: asking every caster for its world matrix, and polling each source, already finds them.
-    this.reader = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material | RenderChange.Other);
+    this.reader = openRenderChangeReader(scene, RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material | RenderChange.Other | RenderChange.Style);
     this.readerScene = scene;
     return { reader: this.reader, fresh: true };
   }

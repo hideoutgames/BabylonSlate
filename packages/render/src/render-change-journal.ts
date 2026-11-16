@@ -23,6 +23,11 @@ export const RenderChange = {
   Geometry: 16,
   /** Haptic-owned state with no Babylon write point (`noteRenderChange`). */
   Other: 32,
+  /**
+   * An overlay visual's opacity or tint changed (`applyOverlayVisualStyle`): the values it draws with, never its
+   * program. A change that crosses full opacity, which changes how it blends, also marks the Scene's readiness.
+   */
+  Style: 64,
 } as const;
 
 /** Entries kept for the slowest reader; one further behind starts over (`drain` returns false). */
@@ -162,7 +167,7 @@ class Reader implements RenderChangeReader {
 
 /** Every kind of change. */
 const ALL_KINDS = RenderChange.Transform | RenderChange.Visibility | RenderChange.Enabled | RenderChange.Material |
-  RenderChange.Geometry | RenderChange.Other;
+  RenderChange.Geometry | RenderChange.Other | RenderChange.Style;
 
 /**
  * Opens a reader of `scene`'s changes of `kinds` (`RenderChange` bits; all by default). The Scene records a kind only
