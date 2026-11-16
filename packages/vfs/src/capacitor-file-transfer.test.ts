@@ -109,6 +109,43 @@ describe("capacitorFileTransfer", () => {
     expect(fake.calls).toHaveLength(1);
   });
 
+  it("honours a cancel that arrives while the first progress listener is still being added", async () => {
+    const fake = fakePlugin();
+    let added: () => void = () => {};
+    const adding = new Promise<void>((resolve) => (added = resolve));
+    fake.plugin.addListener.mockImplementationOnce(async () => {
+      await adding;
+      return { remove: async () => {} };
+    });
+    const transfer = capacitorFileTransfer("DOCUMENTS", fake.plugin);
+    const controller = new AbortController();
+    const pending = transfer.transfer(GAME, { method: "GET", url: "https://lfs.example/a", headers: {}, path: "assets/.blobs/a", signal: controller.signal, onProgress: () => {} });
+    await vi.waitFor(() => expect(fake.plugin.addListener).toHaveBeenCalledTimes(1));
+    controller.abort();
+    added();
+    const error = await pending.catch((reason: unknown) => reason);
+    expect(isFileTransferError(error, "transfer-cancelled")).toBe(true);
+    // Nothing started, so nothing runs to the end unasked.
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("adds the progress listener again after adding it failed once", async () => {
+    const fake = fakePlugin();
+    fake.plugin.addListener.mockRejectedValueOnce(new Error("bridge unavailable"));
+    const transfer = capacitorFileTransfer("DOCUMENTS", fake.plugin);
+    const failed = await transfer.transfer(GAME, { method: "GET", url: "https://lfs.example/a", headers: {}, path: "assets/.blobs/a", onProgress: () => {} }).catch((reason: unknown) => reason);
+    expect((failed as Error).message).toBe("bridge unavailable");
+
+    const heard: number[] = [];
+    const pending = transfer.transfer(GAME, { method: "GET", url: "https://lfs.example/b", headers: {}, path: "assets/.blobs/b", onProgress: (bytes) => heard.push(bytes) });
+    const call = await started(fake);
+    fake.progress({ id: call.id, bytes: 7 });
+    fake.settle(call.id, { status: 200, bytes: 7, sha256: SHA });
+    await pending;
+    expect(heard).toEqual([7]);
+    expect(fake.plugin.addListener).toHaveBeenCalledTimes(2);
+  });
+
   it("routes each progress event to its own transfer", async () => {
     const fake = fakePlugin();
     const transfer = capacitorFileTransfer("DOCUMENTS", fake.plugin);

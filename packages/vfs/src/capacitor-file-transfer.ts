@@ -53,8 +53,18 @@ function transferError(error: unknown): unknown {
 export function capacitorFileTransfer(directory: "DOCUMENTS" | "DATA", plugin: TransferPlugin = BabylonSlateScopedStorage): NativeFileTransfer {
   const progress = new Map<string, (bytes: number) => void>();
   let listening: Promise<PluginListenerHandle> | null = null;
-  const listen = () =>
-    (listening ??= plugin.addListener("transferProgress", (event: NativeTransferProgress) => progress.get(event.id)?.(event.bytes)));
+  /** One listener for the page's transfers; a failed attempt is forgotten, so the next transfer tries again. */
+  const listen = () => {
+    if (!listening) {
+      const attempt = plugin.addListener("transferProgress", (event: NativeTransferProgress) => progress.get(event.id)?.(event.bytes));
+      listening = attempt;
+      attempt.catch(() => {
+        if (listening === attempt) listening = null;
+      });
+    }
+    return listening;
+  };
+  const cancelledError = () => new FileTransferError("transfer-cancelled", "The transfer was cancelled.");
 
   const nativePath = (folder: ProjectFolderHandle, path: string): string => {
     if (folder.tier !== "documents" || !folder.id.startsWith("documents:")) {
@@ -73,15 +83,17 @@ export function capacitorFileTransfer(directory: "DOCUMENTS" | "DATA", plugin: T
     async transfer(folder: ProjectFolderHandle, request: NativeFileTransferRequest): Promise<NativeFileTransferResponse> {
       const path = nativePath(folder, request.path);
       const { signal } = request;
-      if (signal?.aborted) throw new FileTransferError("transfer-cancelled", "The transfer was cancelled.");
+      if (signal?.aborted) throw cancelledError();
       const id = newId();
-      if (request.onProgress) {
-        progress.set(id, request.onProgress);
-        await listen();
-      }
       const cancel = () => void plugin.cancelTransfer({ id }).catch(() => undefined);
       signal?.addEventListener("abort", cancel, { once: true });
       try {
+        if (request.onProgress) {
+          progress.set(id, request.onProgress);
+          await listen();
+          // A cancel while the listener was added finds no transfer yet: none starts.
+          if (signal?.aborted) throw cancelledError();
+        }
         return await plugin.transferFile({
           id,
           method: request.method,
