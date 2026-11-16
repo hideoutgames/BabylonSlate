@@ -483,6 +483,8 @@ export interface PoseRig {
   /** Transform Bone targets by name (null: none), and the bones changed, with their unanimated channels' rest. */
   readonly bones: Map<string, BoneNode | null>;
   readonly changed: Map<BoneNode, ChangedBone>;
+  /** Per node a change wrote: its translation, rotation and scale property indices (`nodePropertyIndices`). */
+  readonly nodeIndices: WeakMap<BoneNode, Int32Array>;
 }
 
 /** A bone a Transform Bone changed: the channels changed so far, their rest where no clip animates them, the last pose to change it. */
@@ -561,6 +563,7 @@ function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
     layerFactors: [],
     bones: new Map(),
     changed: new Map(),
+    nodeIndices: new WeakMap(),
   };
 }
 
@@ -620,6 +623,9 @@ export interface PoseAdditive {
   readonly reference: PoseClip | null;
   readonly frame: number;
 }
+
+/** A forced pose's layering: never a signature, so the pose after it poses again. */
+const FORCED_LAYERING = "\u0000forced";
 
 /** The layering as one string, so a pose whose clips and layering are unchanged writes nothing. */
 function layeringSignature(count: number, layering: PoseLayering | null | undefined): string {
@@ -706,10 +712,11 @@ export function applyPose(
   weights: ArrayLike<number>,
   layering?: PoseLayering | null,
 ): void {
-  // A change toward a world-space target follows the actor as it moves, and Spring Bones step each pose: both pose
-  // again every time.
-  if (layering?.modifiers.some(posesEveryTime)) rig.lastLayering = "";
-  if (samePose(rig, count, clips, frames, weights, layeringSignature(count, layering))) return;
+  // A change toward a world-space target follows the actor as it moves, and Spring Bones and Foot Placement step or
+  // trace each pose: these pose again every time, with no signature to compare (the next pose differs from it).
+  const forced = layering?.modifiers.some(posesEveryTime) ?? false;
+  if (forced) rig.lastLayering = "";
+  if (samePose(rig, count, clips, frames, weights, forced ? FORCED_LAYERING : layeringSignature(count, layering))) return;
   const { properties, stamps, weights: totals, blended, posed, quaternions, components, clipProperties } = rig;
   // Stamps mark the properties this pose blends; a wrapped counter clears them.
   rig.generation = (rig.generation + 1) >>> 0;
@@ -1057,18 +1064,20 @@ function boneNodeOf(rig: PoseRig, name: string): BoneNode | null {
 }
 
 const PATH_CHANNEL: Readonly<Record<string, number>> = { position: 0, rotationQuaternion: 1, scaling: 2 };
-const nodeIndices = new Int32Array(3);
 
-/** The rig's property indices of a node's translation, rotation and scale; -1 where no clip animates it. */
+/** The rig's property indices of a node's translation, rotation and scale; -1 where no clip animates it. Kept per rig. */
 function nodePropertyIndices(rig: PoseRig, node: BoneNode): Int32Array {
-  nodeIndices.fill(-1);
+  let indices = rig.nodeIndices.get(node);
+  if (indices) return indices;
+  indices = new Int32Array(3).fill(-1);
   for (let index = 0; index < rig.properties.length; index++) {
     const property = rig.properties[index]!;
     if (property.binding.target !== node || property.path.length !== 1) continue;
     const channel = PATH_CHANNEL[property.path[0]!];
-    if (channel !== undefined) nodeIndices[channel] = index;
+    if (channel !== undefined) indices[channel] = index;
   }
-  return nodeIndices;
+  rig.nodeIndices.set(node, indices);
+  return indices;
 }
 
 const CHANNEL_BITS = [WRITE_TRANSLATION, WRITE_ROTATION, WRITE_SCALE] as const;

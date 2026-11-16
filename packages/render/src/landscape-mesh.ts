@@ -1,3 +1,6 @@
+import { PickingInfo } from "@babylonjs/core/Collisions/pickingInfo";
+import type { Ray } from "@babylonjs/core/Culling/ray";
+import { Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
@@ -11,6 +14,8 @@ import { markSmoothNormalShadowCaster } from "./shadow-bias";
 const CHUNK_CELLS = 32;
 type Chunk = { mesh: Mesh; x: number; z: number; width: number; depth: number };
 const landscapes = new WeakMap<Mesh, { data: LandscapeProperties; chunks: Chunk[] }>();
+/** Each chunk mesh's chunk: its cells' place in the heightfield. */
+const chunkOf = new WeakMap<Mesh, Chunk>();
 /** Landscape roots in each scene, kept by creation and scene membership so per-frame readers never scan the scene. */
 const sceneRoots = new WeakMap<Scene, Mesh[]>();
 const NO_ROOTS: readonly Mesh[] = [];
@@ -88,6 +93,7 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
     const chunk = { mesh, x, z, width: Math.min(CHUNK_CELLS, data.subdivisions - x), depth: Math.min(CHUNK_CELLS, data.subdivisions - z) };
     chunkData(data, chunk).applyToMesh(mesh, true);
     chunkGeometries.set(mesh, mesh.geometry);
+    chunkOf.set(mesh, chunk);
     mesh.parent = root;
     mesh.renderingGroupId = RENDERING_GROUP.world;
     mesh.hasVertexAlpha = false;
@@ -104,6 +110,79 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
 /** The heightfield a landscape root currently renders, e.g. for water shorelines. */
 export function landscapeMeshData(root: Mesh): LandscapeProperties | null {
   return landscapes.get(root)?.data ?? null;
+}
+
+/** A trace crossing more cells than this tests the whole chunk instead. */
+const MAX_TRACE_CELLS = 64;
+/** What `intersectLandscapeChunk` reads of a chunk's geometry beyond its public API (Babylon 9.29 internals, as its picking reads them). */
+type PointsArray = { _generatePointsArray(): boolean; readonly _positions: Vector3[] | null };
+
+/**
+ * A ray's nearest hit on a landscape chunk, as `AbstractMesh.intersects` would answer it, testing only the cells the
+ * ray's segment crosses (and their neighbours) rather than every face. `ray` is in the chunk's own space, as
+ * `Scene.pickWithRay` passes it, and `world` is the chunk's world matrix; the hit answers in world units. The faces are
+ * tested with Babylon's own triangle test, in the order it tests them, so the hit is the one it would find. Undefined
+ * when `mesh` is not a landscape chunk drawing its own geometry with a triangle Material, or the segment crosses too
+ * many cells: test the whole mesh then.
+ */
+export function intersectLandscapeChunk(mesh: Mesh, ray: Ray, world: Matrix): PickingInfo | undefined {
+  const chunk = chunkOf.get(mesh);
+  const root = chunk ? (mesh.metadata as { landscapeRoot?: Mesh } | null)?.landscapeRoot : undefined;
+  const data = root ? landscapes.get(root)?.data : undefined;
+  const subMesh = mesh.subMeshes?.length === 1 ? mesh.subMeshes[0] : undefined;
+  const fillMode = subMesh?.getMaterial()?.fillMode;
+  if (!chunk || !data || !subMesh || !hasRevisionTrackedLandscapeGeometry(mesh) || (fillMode !== 0 && fillMode !== 1 && fillMode !== 2)) return undefined;
+  const info = new PickingInfo();
+  // Its bounds first, as `AbstractMesh.intersects` tests them.
+  const bounds = mesh.getBoundingInfo();
+  if (!ray.intersectsSphere(bounds.boundingSphere, 0) || !ray.intersectsBox(bounds.boundingBox, 0)) return info;
+  const points = mesh as unknown as PointsArray;
+  const indices = mesh.getIndices();
+  if (!points._generatePointsArray() || !points._positions || !indices) return undefined;
+  const dx = data.width / data.subdivisions;
+  const dz = data.depth / data.subdivisions;
+  const endX = ray.origin.x + ray.direction.x * ray.length;
+  const endZ = ray.origin.z + ray.direction.z * ray.length;
+  const cell = (value: number, half: number, size: number) => Math.floor((value + half) / size);
+  // Grid cells, padded by one so a hit on a cell's edge meets the face Babylon would test first.
+  const x0 = Math.max(chunk.x, cell(Math.min(ray.origin.x, endX), data.width / 2, dx) - 1);
+  const x1 = Math.min(chunk.x + chunk.width - 1, cell(Math.max(ray.origin.x, endX), data.width / 2, dx) + 1);
+  const z0 = Math.max(chunk.z, cell(Math.min(ray.origin.z, endZ), data.depth / 2, dz) - 1);
+  const z1 = Math.min(chunk.z + chunk.depth - 1, cell(Math.max(ray.origin.z, endZ), data.depth / 2, dz) + 1);
+  if (!Number.isFinite(x0 + x1 + z0 + z1)) return undefined;
+  if (x1 >= x0 && z1 >= z0 && (x1 - x0 + 1) * (z1 - z0 + 1) > MAX_TRACE_CELLS) return undefined;
+  const positions = points._positions;
+  let nearest: { bu: number | null; bv: number | null; distance: number; faceId: number } | null = null;
+  // Each cell's two faces, in face order (cells row by row, as `chunkData` writes them).
+  for (let z = z0; z <= z1; z++) {
+    for (let x = x0; x <= x1; x++) {
+      const first = 2 * ((z - chunk.z) * chunk.width + (x - chunk.x));
+      for (let face = first; face < first + 2; face++) {
+        const at = subMesh.indexStart + face * 3;
+        const p0 = positions[indices[at]!];
+        const p1 = positions[indices[at + 1]!];
+        const p2 = positions[indices[at + 2]!];
+        if (!p0 || !p1 || !p2) continue;
+        const hit = ray.intersectsTriangle(p0, p1, p2);
+        if (!hit || hit.distance < 0 || (nearest && !(hit.distance < nearest.distance))) continue;
+        nearest = { bu: hit.bu, bv: hit.bv, distance: hit.distance, faceId: face };
+      }
+    }
+  }
+  if (!nearest) return info;
+  // As `AbstractMesh.intersects` answers a hit.
+  const worldOrigin = Vector3.TransformCoordinates(ray.origin, world);
+  const pickedPoint = Vector3.TransformNormal(ray.direction.scale(nearest.distance), world).addInPlace(worldOrigin);
+  info.hit = true;
+  info.distance = Vector3.Distance(worldOrigin, pickedPoint);
+  info.pickedPoint = pickedPoint;
+  info.pickedMesh = mesh;
+  info.bu = nearest.bu || 0;
+  info.bv = nearest.bv || 0;
+  info.subMeshFaceId = nearest.faceId;
+  info.faceId = nearest.faceId + subMesh.indexStart / 3;
+  info.subMeshId = subMesh._id;
+  return info;
 }
 
 /**

@@ -213,6 +213,7 @@ import { observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
 import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { AnimVisibilityGate } from "./anim-visibility";
+import { shareFootPlacementBounds } from "./anim-foot-placement";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -1116,6 +1117,9 @@ function initializeEngine(
   // Animation Tick Mode When Visible: an unseen actor's latest state waits, posed once a camera can see it.
   const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
   scene.onBeforeRenderObservable.add(() => animVisibility.flush());
+  // Many actors place their feet each frame: they share one snapshot of the meshes' world bounds, dropped before each
+  // render (after the flush above).
+  shareFootPlacementBounds(scene);
   binding.slotVisualReady = (slotId, successor) => {
     // Move emitter nodes before recursive retirement of the old visual root.
     particleService?.bindSlot(slotId, successor);
