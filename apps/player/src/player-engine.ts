@@ -18,6 +18,8 @@ export async function startPlayerWithEngine(
   const content = packedContentFromGame(options.game);
   const owner = await createEngineSession({
     signal: options.signal,
+    // The game's view shows this Engine's canvas itself, placed over `#game`, instead of copying each frame into it.
+    presentViewsDirectly: true,
     createCanvas: () => {
       const canvas = document.createElement("canvas");
       canvas.width = options.canvas.width;
