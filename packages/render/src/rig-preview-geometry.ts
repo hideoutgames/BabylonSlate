@@ -1,16 +1,18 @@
 /**
- * Geometry of the rig preview's bones, as the Skeleton, Animation and Animation Graph previews draw them: an
- * octahedral bone from each joint to each of its children, widest near its head, and a ball at every joint. Every
- * triangle has its own three vertices so it shades flat; shading is a fixed amount of ambient plus a headlight term,
- * baked into vertex colours because the preview's surface is unlit. Pure: no Babylon.
+ * Geometry of the rig preview's bones, as the Skeleton, Animation and Animation Graph previews draw them, in the
+ * manner of Blender's armatures: one octahedral bone per joint, widest near its head, running to the child that
+ * continues it (else to a guessed tail), and a ball at every drawn joint. The thin line to each child a bone does not
+ * continue is the layout's `lines`, which the preview draws as screen-width lines (a world-width one breaks up when
+ * the rig is small on screen). Model files store joints, not bone tails, so `rigPreviewTopology` works out from the rest pose which child
+ * each joint continues and which joints draw no bone. Every triangle has its own three vertices so it shades flat;
+ * shading is a fixed amount of ambient plus a headlight term, baked into vertex colours because the preview's surface
+ * is unlit. Pure: no Babylon.
  */
 
-/**
- * Steel-slate bones that read against the preview's sky and stay bluer than neutral greys, near-white joints, and
- * amber for the selected joint and the bones it heads.
- */
-export const RIG_BONE_COLOR: readonly [number, number, number] = [0.44, 0.56, 0.74];
-export const RIG_JOINT_COLOR: readonly [number, number, number] = [0.93, 0.95, 1];
+/** Light grey bones, white joints, mid-grey lines, and amber for the selected joint and its bone. */
+export const RIG_BONE_COLOR: readonly [number, number, number] = [0.8, 0.8, 0.8];
+export const RIG_JOINT_COLOR: readonly [number, number, number] = [1, 1, 1];
+export const RIG_LINE_COLOR: readonly [number, number, number] = [0.42, 0.42, 0.42];
 export const RIG_SELECTED_COLOR: readonly [number, number, number] = [1, 0.7, 0.22];
 
 /** Shade of a face turned away from the light, and of one facing it. */
@@ -45,46 +47,165 @@ const ICOSAHEDRON_FACES = [
 export const RIG_BONE_VERTICES = 8 * 3;
 export const RIG_JOINT_VERTICES = ICOSAHEDRON_FACES.length * 3;
 
-export interface RigPreviewLayout {
-  /** The child joint of each drawn bone, in draw order; its parent is the bone's head. */
-  bones: number[];
-  /** Joints with no child that draw a bone to their own tail point, in draw order. */
-  tails: number[];
-  vertexCount: number;
+/** What a joint draws: nothing, a ball alone, or a bone and a ball. */
+export const RIG_JOINT_HIDDEN = 0;
+export const RIG_JOINT_MARKER = 1;
+export const RIG_JOINT_BONE = 2;
+
+/** A joint as its rest pose has it. */
+export interface RigJointRest {
+  /** Its parent joint, or -1. */
+  parent: number;
+  /** Its rest translation in its parent's frame. */
+  local: readonly [number, number, number];
+  /** Whether it moves anything: skinned vertices weighted to it, or (rigid-part rigs) a mesh part of its own. */
+  deforms: boolean;
+  /** Directly under the import's root: the armature object a converted FBX keeps as a joint. */
+  underImportRoot: boolean;
+}
+
+export interface RigPreviewTopology {
+  /** Per joint: `RIG_JOINT_HIDDEN`, `RIG_JOINT_MARKER` or `RIG_JOINT_BONE`. */
+  kinds: Uint8Array;
+  /** Per joint: the child its bone runs to, or -1 when its tail is guessed. */
+  connected: Int32Array;
+  /** Thin lines from a joint to a child its bone does not run to, as `[parent, child]` pairs. */
+  lines: Array<readonly [number, number]>;
+  /** The axis bones lie along in their own frames (Blender's +Y), along which a guessed tail runs. */
+  axis: readonly [number, number, number];
+}
+
+/** A translation's share off its axis below which it lies on that axis. */
+const ON_AXIS = 0.01;
+const AXES: ReadonlyArray<readonly [number, number, number]> = [
+  [0, 1, 0], [1, 0, 0], [0, 0, 1], [0, -1, 0], [-1, 0, 0], [0, 0, -1],
+];
+
+/** How far `local` runs along `axis`, when it lies on it (positive, nearly nothing off it); else 0. */
+function alongAxis(local: readonly number[], axis: readonly number[]): number {
+  const length = Math.hypot(local[0]!, local[1]!, local[2]!);
+  const along = local[0]! * axis[0]! + local[1]! * axis[1]! + local[2]! * axis[2]!;
+  if (!(length > 1e-9) || along <= 0) return 0;
+  const off = Math.sqrt(Math.max(0, length * length - along * along));
+  return off <= ON_AXIS * length ? along : 0;
 }
 
 /**
- * One bone per joint that has a parent, one tail bone per childless joint in `withTail` (a limb's end, so its
- * direction shows), then one ball per joint.
+ * Which joints draw what, from the rest pose. With `connect` (skinned rigs and bare joint hierarchies), the rig's bone
+ * axis is the joint axis most children lie along (Blender and FBX bones run along +Y), and a joint's bone runs to its
+ * nearest child on that axis; every other child gets a line. Without it (rigid-part rigs, whose node axes say nothing
+ * of their parts) every child gets a line. A joint that deforms nothing draws a ball alone; an armature object kept
+ * as a joint above the bones (no parent, under the import's root, deforming nothing) draws nothing; and a childless
+ * joint that deforms nothing and that its parent's bone runs to is that bone's tail (an exported end marker) and
+ * draws nothing either. With `topMarkers` (joint hierarchies with no weights to tell what deforms), the top joint
+ * draws a ball alone too.
  */
-export function rigPreviewLayout(
-  parents: readonly number[],
-  withTail: (joint: number) => boolean = () => false,
-): RigPreviewLayout {
-  const bones: number[] = [];
-  const hasChild = new Array<boolean>(parents.length).fill(false);
-  for (let joint = 0; joint < parents.length; joint++) {
-    const parent = parents[joint]!;
-    if (parent >= 0 && parent < parents.length && parent !== joint) {
-      bones.push(joint);
-      hasChild[parent] = true;
+export function rigPreviewTopology(
+  joints: readonly RigJointRest[],
+  options: { connect: boolean; topMarkers?: boolean },
+): RigPreviewTopology {
+  const count = joints.length;
+  const children: number[][] = Array.from({ length: count }, () => []);
+  joints.forEach((joint, index) => {
+    if (joint.parent >= 0 && joint.parent < count && joint.parent !== index) children[joint.parent]!.push(index);
+  });
+  const parentOf = (index: number) => {
+    const parent = joints[index]!.parent;
+    return parent >= 0 && parent < count && parent !== index ? parent : -1;
+  };
+  // The bone axis: the one most links lie along. Too few on any axis leaves every child a line.
+  let axis: readonly [number, number, number] = AXES[0]!;
+  let connect = options.connect;
+  if (connect) {
+    let best = -1;
+    let links = 0;
+    for (const candidate of AXES) {
+      let on = 0;
+      links = 0;
+      joints.forEach((joint, index) => {
+        if (parentOf(index) < 0) return;
+        links++;
+        if (alongAxis(joint.local, candidate) > 0) on++;
+      });
+      if (on > best) {
+        best = on;
+        axis = candidate;
+      }
+    }
+    connect = best > 0 && best >= links * 0.25;
+  }
+  const kinds = new Uint8Array(count);
+  joints.forEach((joint, index) => {
+    if (parentOf(index) < 0 && joint.underImportRoot && !joint.deforms && children[index]!.length > 0) kinds[index] = RIG_JOINT_HIDDEN;
+    else kinds[index] = joint.deforms ? RIG_JOINT_BONE : RIG_JOINT_MARKER;
+  });
+  if (options.topMarkers) {
+    // Without weights to tell, the top joint (a root bone at the floor, as a rule) is a ball.
+    joints.forEach((_, index) => {
+      const parent = parentOf(index);
+      if (kinds[index] === RIG_JOINT_BONE && (parent < 0 || kinds[parent] === RIG_JOINT_HIDDEN)) kinds[index] = RIG_JOINT_MARKER;
+    });
+  }
+  const connected = new Int32Array(count).fill(-1);
+  if (connect) {
+    for (let index = 0; index < count; index++) {
+      if (kinds[index] !== RIG_JOINT_BONE) continue;
+      let nearest = Infinity;
+      for (const child of children[index]!) {
+        const along = alongAxis(joints[child]!.local, axis);
+        if (along > 0 && along < nearest) {
+          nearest = along;
+          connected[index] = child;
+        }
+      }
     }
   }
-  const tails: number[] = [];
-  for (let joint = 0; joint < parents.length; joint++) if (!hasChild[joint] && withTail(joint)) tails.push(joint);
+  // An end marker is the tail of the bone that runs to it.
+  for (let index = 0; index < count; index++) {
+    const parent = parentOf(index);
+    if (parent >= 0 && !joints[index]!.deforms && children[index]!.length === 0 && connected[parent] === index) {
+      kinds[index] = RIG_JOINT_HIDDEN;
+    }
+  }
+  const lines: Array<readonly [number, number]> = [];
+  for (let index = 0; index < count; index++) {
+    const parent = parentOf(index);
+    if (parent < 0 || kinds[index] === RIG_JOINT_HIDDEN || kinds[parent] === RIG_JOINT_HIDDEN) continue;
+    if (connected[parent] !== index) lines.push([parent, index]);
+  }
+  return { kinds, connected, lines, axis };
+}
+
+export interface RigPreviewLayout {
+  /** The joints that draw a bone, in draw order. */
+  bones: number[];
+  lines: ReadonlyArray<readonly [number, number]>;
+  /** The joints that draw a ball, in draw order. */
+  balls: number[];
+  vertexCount: number;
+}
+
+/** The bones, then the balls a topology draws, the vertices they take, and its lines (drawn apart). */
+export function rigPreviewLayout(topology: RigPreviewTopology): RigPreviewLayout {
+  const bones: number[] = [];
+  const balls: number[] = [];
+  topology.kinds.forEach((kind, joint) => {
+    if (kind === RIG_JOINT_BONE) bones.push(joint);
+    if (kind !== RIG_JOINT_HIDDEN) balls.push(joint);
+  });
   return {
     bones,
-    tails,
-    vertexCount: (bones.length + tails.length) * RIG_BONE_VERTICES + parents.length * RIG_JOINT_VERTICES,
+    lines: topology.lines,
+    balls,
+    vertexCount: bones.length * RIG_BONE_VERTICES + balls.length * RIG_JOINT_VERTICES,
   };
 }
 
 export interface RigPreviewFrame {
   /** Joint positions, xyz per joint, in the space the preview mesh draws in. */
   joints: Float32Array;
-  /** Tail points, xyz per joint, read only for the layout's tail joints. */
-  tails?: Float32Array;
-  parents: readonly number[];
+  /** Each bone's tail point, xyz per joint, read only for the layout's bones; a non-finite one draws no bone. */
+  tails: Float32Array;
   layout: RigPreviewLayout;
   /** The rig's size: its rest bounds' diagonal. Sets the width limits so tiny or huge rigs stay readable. */
   size: number;
@@ -192,29 +313,20 @@ function distance(a: number[], b: number[]): number {
   return Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
 }
 
-/** Writes the frame's bones, tail bones and joint balls into `positions` (xyz) and `colors` (rgba). */
+/** Writes the frame's bones and joint balls into `positions` (xyz) and `colors` (rgba). */
 export function writeRigPreview(frame: RigPreviewFrame): void {
-  const { joints, parents, layout, selected, size } = frame;
+  const { joints, tails, layout, selected, size } = frame;
   const writer = new Writer(frame);
-  const jointWidth = new Float32Array(parents.length);
-  for (const tail of layout.bones) {
-    const head = parents[tail]!;
-    const from = jointAt(joints, head);
-    const to = jointAt(joints, tail);
-    const width = boneWidth(distance(from, to), size);
-    jointWidth[head] = Math.max(jointWidth[head]!, width);
-    jointWidth[tail] = Math.max(jointWidth[tail]!, width);
-    writeBone(writer, from, to, width, head === selected ? RIG_SELECTED_COLOR : RIG_BONE_COLOR);
-  }
-  for (const joint of layout.tails) {
+  const jointWidth = new Float32Array(joints.length / 3);
+  for (const joint of layout.bones) {
     const from = jointAt(joints, joint);
-    const to = frame.tails ? jointAt(frame.tails, joint) : from;
-    const finite = to.every(Number.isFinite);
-    const width = boneWidth(finite ? distance(from, to) : 0, size);
+    const tail = jointAt(tails, joint);
+    const to = tail.every(Number.isFinite) ? tail : from;
+    const width = boneWidth(distance(from, to), size);
     jointWidth[joint] = Math.max(jointWidth[joint]!, width);
-    writeBone(writer, from, finite ? to : from, width, joint === selected ? RIG_SELECTED_COLOR : RIG_BONE_COLOR);
+    writeBone(writer, from, to, width, joint === selected ? RIG_SELECTED_COLOR : RIG_BONE_COLOR);
   }
-  for (let joint = 0; joint < parents.length; joint++) {
+  for (const joint of layout.balls) {
     const center = jointAt(joints, joint);
     const width = jointWidth[joint]!;
     const radius = width > 0 ? width * JOINT_PER_WIDTH : frame.size * LONE_JOINT;
