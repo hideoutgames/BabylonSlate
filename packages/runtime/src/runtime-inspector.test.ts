@@ -85,7 +85,7 @@ describe("bounded runtime Inspector", () => {
   });
 
   it("validates reflected actor references and material instance values without touching sibling assets", async () => {
-    const { runtime, request, actor, component } = await fixture();
+    const { runtime, request, actor, component, commands } = await fixture();
     try {
       runtime.pause();
       expect((await request({ kind: "setProperty", target: actor, sequence: 1, property: "target",
@@ -101,6 +101,12 @@ describe("bounded runtime Inspector", () => {
       expect(details.payload).toMatchObject({ kind: "selection", properties: expect.arrayContaining([
         expect.objectContaining({ key: "material:Gain", value: { kind: "float", value: 0.2 } }),
       ]) });
+      // An Inspector edit always reaches the renderer, also when it repeats the value.
+      const sent = () => commands.filter((command) => command.type === "setMaterialParameter" && command.parameterName === "Gain").length;
+      const before = sent();
+      expect((await request({ kind: "setMaterialParameter", target: component, sequence: 3, materialGuid: "mat",
+        parameter: "Gain", value: { kind: "float", value: 0.2 } })).success).toBe(true);
+      expect(sent()).toBe(before + 1);
     } finally { runtime.stop(); }
   });
 

@@ -117,8 +117,11 @@ export class RuntimeMaterialParameters {
    * Whether a script write of `value` would send the renderer what it already has: the parameter
    * holds that value and was sent since the material's last assignment. A value only seeded from
    * the asset's default was never sent, so its first write still compiles the private instance.
+   * Textures always send.
    */
   unchanged(material: MaterialInstanceObject, name: string, value: MaterialParameterValue): boolean {
+    // The renderer takes a texture only once it has that texture, which the runtime cannot see.
+    if (value.kind === "texture") return false;
     const state = this.state(material);
     return !!state?.sent?.has(name) && same(value, state.values.get(name));
   }

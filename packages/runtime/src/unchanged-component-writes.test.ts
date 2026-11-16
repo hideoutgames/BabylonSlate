@@ -137,11 +137,11 @@ describe("unchanged component property writes", () => {
     expect(commands.filter((command) => command.type === "setActorOutlines").at(-1)).toMatchObject({ outlines: [{ id: "ink", color: [1, 0.2, 0.3] }] });
   });
 
-  it("still makes an equal Layer write Custom", async () => {
+  it.each(["layer", "mask", "overlapMask"])("still makes an equal %s write Custom", async (property) => {
     const { runtime } = await start({ actors: [createActor("hero", "Hero", { classId: "Hero", components: [
-      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }, collisionPreset: "solid", layer: 1 } },
+      { id: "col", classId: "ColliderComponent", properties: { shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }, collisionPreset: "solid", layer: 1, mask: 3, overlapMask: 0 } },
     ] })], physics: true, presets: true,
-    scripts: [tickScript("Hero", rewrite("col", ["layer"]))] });
+    scripts: [tickScript("Hero", rewrite("col", [property]))] });
     const actor = runtime.getWorld().findActor("hero")!;
     const collider = actor.components.find((component) => component.guid === "col")!;
     expect(collider.getVariable("collisionPreset")).toBe("solid");
@@ -200,6 +200,24 @@ describe("unchanged component property writes", () => {
     menu.setVariable("writes", true);
     runtime.tick();
     expect(viewport.getVariable("scrollY")).toBe(3);
+  });
+
+  it("still sends an equal post-process parameter write", async () => {
+    const commands: CommandMessage[] = [];
+    const scene = sceneOf([createActor("hero", "Hero", { classId: "Hero" })]);
+    scene.settings.postProcessStack = [{ id: "grade", materialGuid: "post", enabled: true }];
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: scene, playSceneGuid: "world",
+      materialParameterCatalog: { post: { domain: "postProcess", planHash: "post", parameters: { Gain: { kind: "float", value: 0.5 } } } },
+      onCommand: (command) => commands.push(command) });
+    runtimes.push(runtime);
+    await runtime.loadScripts([tickScript("Hero", ['ctx.setMaterialFloatParameter(ctx.getPostProcessEntry(ctx.getSceneReference(), "grade"), "Gain", 0.75);'])]);
+    await runtime.realizePlayWorld();
+    runtime.start();
+    runtime.getWorld().findActor("hero")!.setVariable("writes", true);
+    runtime.tick();
+    runtime.tick();
+    // The renderer drops a write while the Scene loads, so a held value is sent again.
+    expect(commands.filter((command) => command.type === "setPostProcessMaterialParameter")).toHaveLength(2);
   });
 
   it("applies the first changed write on a spawned actor and on its replacement", async () => {
