@@ -37,6 +37,7 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
+  materialNodePreviewDocument,
   renderActionEnabled,
   resolveMaterialInstance,
   type MaterialDiagnostic,
@@ -45,6 +46,7 @@ import {
   type MaterialFunctionDocument,
   type MaterialInstanceDocument,
   type MaterialLowerResult,
+  type MaterialNodePreviewTarget,
   type MaterialPreviewState,
 } from "@haptic/shader-graph";
 import type { MaterialParameterValue } from "@haptic/core";
@@ -97,8 +99,8 @@ export interface MaterialEditingValue {
   /** Domain of the previewed graph (a Material Instance previews its root's). */
   previewDomain: MaterialDomain | null;
   /**
-   * The previewed graph lowered once for this provider (null without a graph). Panels
-   * read it instead of lowering the same document again on every edit.
+   * The Material's graph lowered once for this provider (null without a graph), even while a node is
+   * previewed. Panels read it instead of lowering the same document again on every edit.
    */
   lowering: MaterialLowerResult | null;
   /** Set only for Material Instance documents. */
@@ -119,6 +121,9 @@ export interface MaterialEditingValue {
   requestRender: () => void;
   attachPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
   frameBudgetMs: number;
+  /** The node output the preview shows instead of the Material's output; null shows the output. */
+  previewNode: MaterialNodePreviewTarget | null;
+  setPreviewNode: (target: MaterialNodePreviewTarget | null) => void;
 }
 
 const MaterialEditingContext = createContext<MaterialEditingValue | null>(null);
@@ -230,7 +235,7 @@ export function MaterialEditingProvider({
   }, [documentId, instanceDocument, instanceSources]);
   // An instance compiles its root graph once; its own and inherited overrides
   // are uniform writes on that material, so value edits never recompile.
-  const document = useMemo<MaterialDocument | null>(() => {
+  const sourceDocument = useMemo<MaterialDocument | null>(() => {
     if (isFunctionDocument || content == null) return null;
     if (isInstanceDocument) {
       return instanceResolution?.ok
@@ -267,7 +272,7 @@ export function MaterialEditingProvider({
     functionDocumentsRef.current = next;
     return next;
   }, [openFunctionDocuments]);
-  const functionRoot = isFunctionDocument && content != null ? normalizeMaterialFunctionDocument(content) : document;
+  const functionRoot = isFunctionDocument && content != null ? normalizeMaterialFunctionDocument(content) : sourceDocument;
   const functionRootsKey = JSON.stringify(functionRoot ? materialDependencies(functionRoot).functions : []);
   const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
   const [loadedFunctions, setLoadedFunctions] = useState<{ assets: typeof functionAssets; roots: string } | null>(null);
@@ -307,6 +312,19 @@ export function MaterialEditingProvider({
   const functions = savedFunctions;
   functionsRef.current = functions;
   engineRef.current = sharedEngine;
+
+  // **Preview Node**: while set, the preview compiles the node's output alone (`materialNodePreviewDocument`).
+  // It is tab state, never saved or undone; a node or output that is gone clears it.
+  const [previewNode, setPreviewNode] = useState<MaterialNodePreviewTarget | null>(null);
+  const previewedDocument = useMemo(
+    () => previewNode && sourceDocument && !isInstanceDocument ? materialNodePreviewDocument(sourceDocument, previewNode, { functions }) : null,
+    [functions, isInstanceDocument, previewNode, sourceDocument],
+  );
+  useEffect(() => {
+    // Until the Material Functions load, a call's outputs are unknown, not gone.
+    if (previewNode && !previewedDocument && functionsReady) setPreviewNode(null);
+  }, [functionsReady, previewNode, previewedDocument]);
+  const document = previewedDocument ?? sourceDocument;
 
   useEffect(() => {
     setSharedEngine(hasContent ? play?.ensureSharedEngine() ?? null : null);
@@ -436,6 +454,11 @@ export function MaterialEditingProvider({
   const lowering = useMemo(
     () => (document ? lowerMaterialDocument(document, { functions }) : null),
     [document, functions],
+  );
+  // While a node is previewed, panels still describe the Material itself.
+  const materialLowering = useMemo(
+    () => (previewedDocument && sourceDocument ? lowerMaterialDocument(sourceDocument, { functions }) : lowering),
+    [functions, lowering, previewedDocument, sourceDocument],
   );
 
   // Static previews redraw only on change. A Particle or Text preview animates itself, and a
@@ -740,7 +763,7 @@ export function MaterialEditingProvider({
     () => ({
       functions,
       previewDomain: document?.domain ?? null,
-      lowering,
+      lowering: materialLowering,
       instance,
       previewState,
       compileDiagnostics,
@@ -754,6 +777,8 @@ export function MaterialEditingProvider({
       requestRender,
       attachPreviewCanvas: setCanvas,
       frameBudgetMs,
+      previewNode: previewedDocument ? previewNode : null,
+      setPreviewNode,
     }),
     [
       compileDiagnostics,
@@ -764,8 +789,10 @@ export function MaterialEditingProvider({
       frameBudgetMs,
       functions,
       instance,
-      lowering,
+      materialLowering,
+      previewNode,
       previewState,
+      previewedDocument,
       requestRender,
       selectedNodeId,
       selectedNodeIds,

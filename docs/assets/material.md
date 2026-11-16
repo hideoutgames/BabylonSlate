@@ -19,6 +19,18 @@ Double-tap a Material to open it.
 
 Simple graphs refresh the Preview as you edit. For expensive graphs, Custom GLSL and post-process Materials, choose **Render** in the toolbar. With no node selected, the Inspector also shows the graph's cost: operations and texture samples.
 
+## Preview a node
+
+To see what one node outputs, right-click or hold it in the graph and choose **Preview Node**. For a node with several outputs, such as a **Texture Sample**, pick the output from the **Preview Node** submenu.
+
+While a node is previewed:
+
+- The Preview shows that output alone, unlit, instead of the Material. A Float is grey, a Vector2 shows X as red and Y as green, and a Vector4 or RGBA output shows its first three channels.
+- An amber bar above the Preview reads **Previewing Node:** and the node's name, and an amber frame surrounds the shape. The node has an amber outline and a **Previewing** tag in the graph.
+- The Preview keeps following your edits to the graph. The Inspector's cost is still the whole Material's.
+
+To return to the Material, choose **Stop Previewing** in the bar, or **Stop Previewing Node** from the menu of the previewed node or the output node. Deleting the previewed node also stops it. Previewing a node does not change the Material: it is not saved and is not an undo step. Texture outputs cannot be previewed, and Material Functions, which have no Preview, do not offer **Preview Node**.
+
 ## Settings
 
 With no node selected, the **Inspector** shows these settings. Some apply to only some domains.

@@ -25,6 +25,7 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 | Lowering, plan hash, compile key | [`lower.ts`](../../../packages/shader-graph/src/lower.ts) |
 | Material Instances | [`material-instance.ts`](../../../packages/shader-graph/src/material-instance.ts) |
 | Preview state machine and cost class | [`preview-state.ts`](../../../packages/shader-graph/src/preview-state.ts) |
+| Preview Node document | [`node-preview.ts`](../../../packages/shader-graph/src/node-preview.ts) |
 | GLSL to Material | [`glsl-to-material.ts`](../../../packages/shader-graph/src/glsl-to-material.ts) |
 | Block realisation, compile, blend/readiness | [`material-compiler.ts`](../../../packages/render/src/material-compiler.ts), [`material-block-registry.ts`](../../../packages/render/src/material-block-registry.ts) |
 | Per-Scene cache, refcounts, parameters | [`material-library.ts`](../../../packages/render/src/material-library.ts) |
@@ -98,6 +99,7 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 - `classifyMaterialCost` auto-compiles while measured compile time stays within two frames of the frame budget (`AUTO_COMPILE_FRAME_ALLOWANCE`); Custom GLSL and post-process graphs are always manual. Timings are session-local, never stored.
 - **Render** (global toolbar, Material documents only) is disabled while compiling and for `MANUAL_RENDER_COOLDOWN_MS` (3 s) after a manual result. Position-only moves never recompile.
 - Particle materials preview on one plane with a white Particle Color default and no Multiply block. RenderTargetTexture samples preview as opaque black.
+- **Preview Node** ([`node-preview.ts`](../../../packages/shader-graph/src/node-preview.ts)): `MaterialEditingProvider.previewNode` is tab state (never saved, never an undo step). While set, the provider compiles `materialNodePreviewDocument` instead of the document: the target output alone into the output node's colour (Base Color, or Color outside Surface/Landscape) through a Split and Combine (Float grey, Vector2 blue 0, colour alpha 1), unlit and opaque, every other output-node input and `default:*` dropped. It goes through the same state machine, cost class and library as the Material. `materialNodePreviewOutputs` lists the numeric outputs (none for Texture outputs or output nodes); a target that stops resolving, once functions have loaded, clears the preview. `lowering` on the context stays the Material's own, so Details and cost describe the Material. Material documents only: Functions have no preview and Instances no graph. The graph tag and ring are `GraphEditor.previewedNode`; the Preview's banner and frame are `MaterialPreviewSurface.previewedNode`; titles come from `materialNodeTitle`, as on the canvas.
 
 ## Runtime
 
