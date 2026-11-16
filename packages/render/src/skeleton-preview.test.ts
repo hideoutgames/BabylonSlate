@@ -27,9 +27,15 @@ async function preview(bytes: Uint8Array, kind: "skin" | "hierarchy", importScal
   const root = previewRigRoot(host);
   const rig = attachSkeletonPreview(root, host.scene, kind);
   const overlay = root.getChildMeshes(true).find((mesh) => mesh.name.endsWith("_skeleton_overlay"))!;
+  const lines = root.getChildMeshes(true).find((mesh) => mesh.name.endsWith("_skeleton_lines_overlay"));
   const vertices = () => overlay.getVerticesData(VertexBuffer.PositionKind)!;
   const point = (index: number) => Vector3.FromArray(vertices(), index * 3);
-  return { host, root, rig, overlay, vertices, point, animationGroups: loaded!.animationGroups };
+  /** Each line's ends, from the line system the preview draws its lines with. */
+  const lineEnds = () => {
+    const data = lines?.getVerticesData(VertexBuffer.PositionKind) ?? [];
+    return Array.from({ length: data.length / 6 }, (_, line) => [Vector3.FromArray(data, line * 6), Vector3.FromArray(data, line * 6 + 3)]);
+  };
+  return { host, root, rig, overlay, vertices, point, lineEnds, animationGroups: loaded!.animationGroups };
 }
 
 /** The centre of each of the last `count` balls, in draw order. */
@@ -64,12 +70,16 @@ const read = (path: string) => new Uint8Array(readFileSync(path));
 
 describe("attachSkeletonPreview", () => {
   it("draws KayKit's rig a bone per joint, and keeps every joint on the skin as it walks", async () => {
-    const { root, vertices, point, host, animationGroups } = await preview(read("engine-content/kaykit-assets/Adventurers/Rig_Medium_MovementBasic.glb"), "skin");
+    const { root, vertices, point, lineEnds, host, animationGroups } = await preview(read("engine-content/kaykit-assets/Adventurers/Rig_Medium_MovementBasic.glb"), "skin");
     // 23 joints: the root and both hand slots deform nothing (balls alone); 20 bones; lines from the root to the
     // hips, the hips to both thighs, the chest to both upper arms and each hand to its slot.
-    expect(vertices().length / 3).toBe((20 + 7) * RIG_BONE_VERTICES + 23 * RIG_JOINT_VERTICES);
+    expect(vertices().length / 3).toBe(20 * RIG_BONE_VERTICES + 23 * RIG_JOINT_VERTICES);
+    expect(lineEnds()).toHaveLength(7);
     const rest = balls(vertices(), 23);
-    // The first bone is the hips' (the root draws none): it runs to the spine, the next joint up.
+    // The first line runs from the root, on the floor, up to the hips.
+    expect(Vector3.Distance(lineEnds()[0]![0]!, rest[0]!)).toBeLessThan(1e-5);
+    expect(Vector3.Distance(lineEnds()[0]![1]!, rest[1]!)).toBeLessThan(1e-5);
+    // The first bone is the hips' (the root draws none): it runs to the spine.
     expect(Vector3.Distance(point(3), rest[6]!)).toBeLessThan(1e-5);
     expect(Vector3.Distance(point(0), rest[1]!)).toBeLessThan(1e-5);
     // The fifth is the right toes' (no child): its tail runs along the toes' own axis, forward along the ground, half
@@ -103,12 +113,13 @@ describe("attachSkeletonPreview", () => {
 
   it("leaves out the Velociraptor's armature object and end markers, and selects a marker's bone for it", async () => {
     const raptor = await convertFbxToGlb({ name: "Velociraptor.fbx", bytes: read("engine-content/quaternius-assets/Dinosaurs/Velociraptor.fbx") });
-    const { rig, overlay, vertices } = await preview(raptor, "skin", 0.15);
+    const { rig, overlay, vertices, lineEnds } = await preview(raptor, "skin", 0.15);
     // 38 joints: the Armature and 8 end markers (both back feet and lower back legs, both front feet, the head and
     // the tail) draw nothing; the Body deforms nothing (a ball alone); 28 bones; lines from the root to the Body and
     // both back feet, and from the Body to its 6 children.
     expect(rig.boneCount).toBe(38);
-    expect(vertices().length / 3).toBe((28 + 9) * RIG_BONE_VERTICES + 29 * RIG_JOINT_VERTICES);
+    expect(vertices().length / 3).toBe(28 * RIG_BONE_VERTICES + 29 * RIG_JOINT_VERTICES);
+    expect(lineEnds()).toHaveLength(9);
     const colors = () => overlay.getVerticesData(VertexBuffer.ColorKind)!;
     const selectedFaces = () => {
       let count = 0;
@@ -161,14 +172,16 @@ describe("attachSkeletonPreview", () => {
     // The armature object draws nothing and the root (the top joint) a ball alone; the other 22 joints a bone each,
     // the hand slots too; lines from the root to the hips, the hips to both thighs, the chest to both upper arms and
     // each hand to its slot.
-    const rest = (22 + 7) * RIG_BONE_VERTICES + 23 * RIG_JOINT_VERTICES;
+    const rest = 22 * RIG_BONE_VERTICES + 23 * RIG_JOINT_VERTICES;
     expect(counts).toEqual([rest, rest]);
   });
 
   it("runs each rigid part's bone from its pivot through its part", async () => {
-    const { vertices, point } = await preview(read("engine-content/kenney-assets/Mannequin/mannequin.glb"), "hierarchy");
-    // The character node is the import's armature object (nothing), the root a ball; six parts draw a bone each.
-    expect(vertices().length / 3).toBe((6 + 6) * RIG_BONE_VERTICES + 7 * RIG_JOINT_VERTICES);
+    const { vertices, point, lineEnds } = await preview(read("engine-content/kenney-assets/Mannequin/mannequin.glb"), "hierarchy");
+    // The character node is the import's armature object (nothing), the root a ball; six parts draw a bone each,
+    // each joined to its parent by a line.
+    expect(vertices().length / 3).toBe(6 * RIG_BONE_VERTICES + 7 * RIG_JOINT_VERTICES);
+    expect(lineEnds()).toHaveLength(6);
     // The first part is a leg: from its hip pivot at 1 m down to the bottom of the leg, at the floor.
     expect(point(0).y).toBeCloseTo(1, 4);
     expect(point(3).y).toBeCloseTo(0, 4);

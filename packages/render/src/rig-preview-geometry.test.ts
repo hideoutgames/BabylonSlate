@@ -7,7 +7,6 @@ import {
   RIG_JOINT_HIDDEN,
   RIG_JOINT_MARKER,
   RIG_JOINT_VERTICES,
-  RIG_LINE_COLOR,
   RIG_SELECTED_COLOR,
   rigPreviewLayout,
   rigPreviewTopology,
@@ -182,12 +181,12 @@ const hueOf = (color: readonly number[]) => {
 };
 
 describe("rigPreviewLayout", () => {
-  it("draws a bone per bone joint, a line per line and a ball per drawn joint", () => {
+  it("draws a bone per bone joint and a ball per drawn joint, and leaves the lines to be drawn apart", () => {
     const { layout } = draw();
     expect(layout.bones).toEqual([0, 1, 2]);
     expect(layout.lines).toEqual([[0, 3]]);
     expect(layout.balls).toEqual([0, 1, 2, 3]);
-    expect(layout.vertexCount).toBe(4 * RIG_BONE_VERTICES + 4 * RIG_JOINT_VERTICES);
+    expect(layout.vertexCount).toBe(3 * RIG_BONE_VERTICES + 4 * RIG_JOINT_VERTICES);
     expect([RIG_JOINT_HIDDEN, RIG_JOINT_MARKER, RIG_JOINT_BONE]).toEqual([0, 1, 2]);
   });
 });
@@ -221,19 +220,6 @@ describe("writeRigPreview", () => {
     expect(Math.hypot(longRing[0]!, longRing[2]!)).toBeCloseTo(0.12, 3);
   });
 
-  it("draws a line far thinner than any bone", () => {
-    const { positions } = draw();
-    // The hip-to-slot line: 0.12% of the 4 m rig wide, against at least 0.35% for a bone.
-    const first = 3 * RIG_BONE_VERTICES;
-    const head = vertex(positions, first);
-    const ring = [...positions.subarray((first + 1) * 3, (first + 1) * 3 + 3)];
-    const along = [0.4, -0.1, 0];
-    const length = Math.hypot(along[0]!, along[1]!);
-    const offset = ring.map((value, axis) => value - head[axis]! - (along[axis]! / length) * 0.15 * length);
-    expect(head).toEqual([0, 0, 0]);
-    expect(Math.hypot(...offset)).toBeCloseTo(0.0048, 4);
-  });
-
   it("collapses a bone with no tail, or with its tail on its head, instead of drawing a spike", () => {
     const tails = new Float32Array([0, 0, 0, NaN, NaN, NaN, 0, 2, 0, NaN, NaN, NaN]);
     const { positions, colors } = draw({ tails });
@@ -244,11 +230,10 @@ describe("writeRigPreview", () => {
     }
   });
 
-  it("colours bones, lines and joints, and the selected joint with its bone in the selection colour", () => {
+  it("colours bones and joints, and the selected joint with its bone in the selection colour", () => {
     const plain = draw();
-    const firstBall = 4 * RIG_BONE_VERTICES;
+    const firstBall = 3 * RIG_BONE_VERTICES;
     expect(hue(plain.colors, 0)).toEqual(hueOf(RIG_BONE_COLOR));
-    expect(hue(plain.colors, 3 * RIG_BONE_VERTICES)).toEqual(hueOf(RIG_LINE_COLOR));
     expect(hue(plain.colors, firstBall)).toEqual(hueOf(RIG_JOINT_COLOR));
 
     // Selecting the spine (joint 1) highlights its ball and its own bone, not the hip's bone that runs to it.
@@ -262,7 +247,7 @@ describe("writeRigPreview", () => {
   it("shades faces turned to the light brighter than faces turned away", () => {
     const { colors } = draw({ light: [0, 0, -1] });
     // The hip's ball: its faces' brightness spans the ambient floor to full light.
-    const first = 4 * RIG_BONE_VERTICES;
+    const first = 3 * RIG_BONE_VERTICES;
     const brightness = Array.from({ length: RIG_JOINT_VERTICES / 3 }, (_, face) =>
       colors[(first + face * 3) * 4 + 2]! / RIG_JOINT_COLOR[2]);
     expect(Math.min(...brightness)).toBeCloseTo(0.38, 2);

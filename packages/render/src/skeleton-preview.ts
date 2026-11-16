@@ -1,8 +1,10 @@
 import type { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Axis } from "@babylonjs/core/Maths/math.axis";
+import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { CreateLineSystem } from "@babylonjs/core/Meshes/Builders/linesBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Node } from "@babylonjs/core/node";
@@ -10,6 +12,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
 import {
   RIG_JOINT_HIDDEN,
+  RIG_LINE_COLOR,
   rigPreviewLayout,
   rigPreviewTopology,
   writeRigPreview,
@@ -189,6 +192,20 @@ export function attachSkeletonPreview(
   const indices = layout.vertexCount > 65535 ? new Uint32Array(layout.vertexCount) : new Uint16Array(layout.vertexCount);
   for (let index = 0; index < indices.length; index++) indices[index] = index;
   overlay.setIndices(indices);
+  // A joint's line to each child its bone does not run to: a pixel wide however small the rig is on screen.
+  const linePositions = new Float32Array(layout.lines.length * 6);
+  const lines = layout.lines.length > 0
+    ? CreateLineSystem(`${root.name}_skeleton_lines_overlay`, {
+      lines: layout.lines.map(() => [Vector3.Zero(), Vector3.Zero()]),
+      updatable: true,
+    }, scene)
+    : null;
+  if (lines) {
+    lines.parent = root;
+    lines.isPickable = false;
+    lines.alwaysSelectAsActiveMesh = true;
+    lines.color = Color3.FromArray(RIG_LINE_COLOR);
+  }
   const inverseRoot = Matrix.Identity();
   const lightWorld = Vector3.Zero();
   const lightLocal = Vector3.Zero();
@@ -288,6 +305,14 @@ export function attachSkeletonPreview(
     overlay.updateVerticesData(VertexBuffer.PositionKind, positions, false, false);
     overlay.updateVerticesData(VertexBuffer.ColorKind, colors, false, false);
     overlay.refreshBoundingInfo();
+    if (lines) {
+      layout.lines.forEach(([parent, child], line) => {
+        linePositions.set(jointPositions.subarray(parent * 3, parent * 3 + 3), line * 6);
+        linePositions.set(jointPositions.subarray(child * 3, child * 3 + 3), line * 6 + 3);
+      });
+      lines.updateVerticesData(VertexBuffer.PositionKind, linePositions, false, false);
+      lines.refreshBoundingInfo();
+    }
   };
   update();
   const observer = scene.onBeforeRenderObservable.add(update);
@@ -305,6 +330,7 @@ export function attachSkeletonPreview(
       disposed = true;
       scene.onBeforeRenderObservable.remove(observer);
       overlay.dispose(false, true);
+      lines?.dispose();
       for (const [mesh, wasVisible] of visibility) {
         if (!mesh.isDisposed()) mesh.isVisible = wasVisible;
       }

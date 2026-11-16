@@ -1,8 +1,9 @@
 /**
  * Geometry of the rig preview's bones, as the Skeleton, Animation and Animation Graph previews draw them, in the
  * manner of Blender's armatures: one octahedral bone per joint, widest near its head, running to the child that
- * continues it (else to a guessed tail), a thin line to each child it does not continue, and a ball at every drawn
- * joint. Model files store joints, not bone tails, so `rigPreviewTopology` works out from the rest pose which child
+ * continues it (else to a guessed tail), and a ball at every drawn joint. The thin line to each child a bone does not
+ * continue is the layout's `lines`, which the preview draws as screen-width lines (a world-width one breaks up when
+ * the rig is small on screen). Model files store joints, not bone tails, so `rigPreviewTopology` works out from the rest pose which child
  * each joint continues and which joints draw no bone. Every triangle has its own three vertices so it shades flat;
  * shading is a fixed amount of ambient plus a headlight term, baked into vertex colours because the preview's surface
  * is unlit. Pure: no Babylon.
@@ -28,8 +29,6 @@ const MIN_WIDTH = 0.0035;
 const MAX_WIDTH = 0.03;
 const JOINT_PER_WIDTH = 0.8;
 const LONE_JOINT = 0.008;
-/** A line's half-width against the rig's size: about a pixel across where the rig fills a preview. */
-const LINE_WIDTH = 0.0012;
 
 const PHI = (1 + Math.sqrt(5)) / 2;
 const ICOSAHEDRON_VERTICES = [
@@ -189,7 +188,7 @@ export interface RigPreviewLayout {
   vertexCount: number;
 }
 
-/** The bones, then the lines, then the balls a topology draws, and the vertices they take. */
+/** The bones, then the balls a topology draws, the vertices they take, and its lines (drawn apart). */
 export function rigPreviewLayout(topology: RigPreviewTopology): RigPreviewLayout {
   const bones: number[] = [];
   const balls: number[] = [];
@@ -201,7 +200,7 @@ export function rigPreviewLayout(topology: RigPreviewTopology): RigPreviewLayout
     bones,
     lines: topology.lines,
     balls,
-    vertexCount: (bones.length + topology.lines.length) * RIG_BONE_VERTICES + balls.length * RIG_JOINT_VERTICES,
+    vertexCount: bones.length * RIG_BONE_VERTICES + balls.length * RIG_JOINT_VERTICES,
   };
 }
 
@@ -317,7 +316,7 @@ function distance(a: number[], b: number[]): number {
   return Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
 }
 
-/** Writes the frame's bones, lines and joint balls into `positions` (xyz) and `colors` (rgba). */
+/** Writes the frame's bones and joint balls into `positions` (xyz) and `colors` (rgba). */
 export function writeRigPreview(frame: RigPreviewFrame): void {
   const { joints, tails, layout, selected, size } = frame;
   const writer = new Writer(frame);
@@ -329,9 +328,6 @@ export function writeRigPreview(frame: RigPreviewFrame): void {
     const width = boneWidth(distance(from, to), size);
     jointWidth[joint] = Math.max(jointWidth[joint]!, width);
     writeBone(writer, from, to, width, joint === selected ? RIG_SELECTED_COLOR : RIG_BONE_COLOR);
-  }
-  for (const [parent, child] of layout.lines) {
-    writeBone(writer, jointAt(joints, parent), jointAt(joints, child), size * LINE_WIDTH, RIG_LINE_COLOR);
   }
   for (const joint of layout.balls) {
     const center = jointAt(joints, joint);
