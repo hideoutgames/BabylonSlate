@@ -17,7 +17,7 @@ export type { RenderShadingSettings } from "./render-settings";
 export { sceneWaterQuality, sceneWaterQualityRevision, sceneWaterQualityDeviceClamp } from "./render-settings";
 export { clampWaterQualityToDevice, type WaterQualityDeviceClamp, type WaterDeviceCapabilities, type WaterDeviceView } from "./water-quality-device";
 export { waterPlanarReflectionDiagnostics, waterPlanarReflectionForCamera, type WaterPlanarReflection, type WaterPlanarReflectionDiagnostics } from "./water-planar-reflection";
-export { mirrorDiagnostics, verifyMirrorContentPolls, type MirrorDiagnostics } from "./mirrors";
+export { mirrorDiagnostics, verifyMirrorContentPolls, verifyMirrorFootprintCrops, type MirrorDiagnostics } from "./mirrors";
 export { verifyCaptureActorLists } from "./render-target-capture-state";
 export { setPlanarFootprintCulling } from "./planar-mirror";
 export * from "./canvas-drawing-buffer";

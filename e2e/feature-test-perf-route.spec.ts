@@ -41,7 +41,9 @@ import {
  *      HAPTIC_PERF_VERIFY_MIRRORS=1 (Play's Mirror surfaces also ask what changed on every render, as before a moved
  *      view skipped it, and count each render that would have decided otherwise: `rendererWork.mirrorPolls.mismatches`),
  *      HAPTIC_PERF_VERIFY_CAPTURES=1 (Play's Capture Only Actors captures also list by the walk of every mesh, which
- *      must agree with the list from their actors' meshes: `rendererWork.captureActorLists.mismatches`).
+ *      must agree with the list from their actors' meshes: `rendererWork.captureActorLists.mismatches`),
+ *      HAPTIC_PERF_VERIFY_MIRROR_CROP=1 (each Mirror cull cropped to its surface's footprint also culls with the whole
+ *      mirrored frustum and counts the meshes the crop left out within the widened footprint: `rendererWork.mirrorCrop.misses`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -84,6 +86,8 @@ const VERIFY_JOURNAL = process.env.HAPTIC_PERF_VERIFY_JOURNAL === "1";
 const VERIFY_MIRRORS = process.env.HAPTIC_PERF_VERIFY_MIRRORS === "1";
 /** Capture Only Actors captures in Play also list by the walk of every mesh (the measured frames carry its cost). */
 const VERIFY_CAPTURES = process.env.HAPTIC_PERF_VERIFY_CAPTURES === "1";
+/** Each cropped Mirror cull in Play also culls uncropped (the measured frames carry its cost). */
+const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -103,6 +107,7 @@ type PlayHost = {
     verifyRenderChangeJournal: (enabled: boolean) => void;
     verifyMirrorContentPolls: (enabled: boolean) => void;
     verifyCaptureActorLists: (enabled: boolean) => void;
+    verifyMirrorFootprintCrops: (enabled: boolean) => void;
   };
 };
 
@@ -354,6 +359,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_JOURNAL) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRenderChangeJournal(true));
   if (VERIFY_MIRRORS) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorContentPolls(true));
   if (VERIFY_CAPTURES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyCaptureActorLists(true));
+  if (VERIFY_MIRROR_CROP) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorFootprintCrops(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.

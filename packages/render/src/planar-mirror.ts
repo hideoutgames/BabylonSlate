@@ -359,6 +359,7 @@ const MIN_W = 1e-6;
  */
 export function cropToFootprint(
   viewProjection: Matrix, corners: readonly Vector3[], marginX: number, marginY: number, out: Matrix,
+  rect?: Float64Array,
 ): boolean {
   const m = viewProjection.m;
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -389,12 +390,47 @@ export function cropToFootprint(
   minY = Math.max(-1, minY - marginY); maxY = Math.min(1, maxY + marginY);
   if (minX <= -1 && maxX >= 1 && minY <= -1 && maxY >= 1) return false;
   if (!(maxX > minX && maxY > minY)) return false;
+  if (rect) { rect[0] = minX; rect[1] = minY; rect[2] = maxX; rect[3] = maxY; }
   // Clip-space crop, row vectors: x′ = (x − cx·w)·sx, y′ = (y − cy·w)·sy.
   const sx = 2 / (maxX - minX), sy = 2 / (maxY - minY);
   const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
   Matrix.FromValuesToRef(sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, 1, 0, -cx * sx, -cy * sy, 0, 1, cropScratch);
   viewProjection.multiplyToRef(cropScratch, out);
   return true;
+}
+
+/**
+ * Writes into `rect` (min x, min y, max x, max y) the NDC bounds, through `viewProjection`, of the part of the convex
+ * hull of `points` in front of the eye (clip w above MIN_W): every segment between two points that crosses the eye plane
+ * adds its crossing. Empty (min above max) when no point is in front.
+ */
+export function projectHullInFront(viewProjection: Matrix, points: readonly Vector3[], rect: Float64Array): void {
+  const m = viewProjection.m;
+  rect[0] = rect[1] = Infinity;
+  rect[2] = rect[3] = -Infinity;
+  const include = (x: number, y: number, w: number) => {
+    const nx = x / w, ny = y / w;
+    if (nx < rect[0]!) rect[0] = nx;
+    if (ny < rect[1]!) rect[1] = ny;
+    if (nx > rect[2]!) rect[2] = nx;
+    if (ny > rect[3]!) rect[3] = ny;
+  };
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!;
+    const ax = a.x * m[0]! + a.y * m[4]! + a.z * m[8]! + m[12]!;
+    const ay = a.x * m[1]! + a.y * m[5]! + a.z * m[9]! + m[13]!;
+    const aw = a.x * m[3]! + a.y * m[7]! + a.z * m[11]! + m[15]!;
+    if (aw > MIN_W) include(ax, ay, aw);
+    for (let j = i + 1; j < points.length; j++) {
+      const b = points[j]!;
+      const bw = b.x * m[3]! + b.y * m[7]! + b.z * m[11]! + m[15]!;
+      if ((aw > MIN_W) === (bw > MIN_W)) continue;
+      const bx = b.x * m[0]! + b.y * m[4]! + b.z * m[8]! + m[12]!;
+      const by = b.x * m[1]! + b.y * m[5]! + b.z * m[9]! + m[13]!;
+      const t = (MIN_W - aw) / (bw - aw);
+      include(ax + (bx - ax) * t, ay + (by - ay) * t, MIN_W);
+    }
+  }
 }
 
 /**
@@ -415,6 +451,7 @@ export function drawsInsidePlanes(mesh: AbstractMesh, planes: Plane[]): boolean 
  */
 export function collectPlanarMirrorMeshes(
   scene: Scene, list: AbstractMesh[], layerMask: number, planes: Plane[], excluded: (mesh: AbstractMesh) => boolean,
+  note = true,
 ): void {
   const meshes = admittedSceneMeshes(scene) ?? scene.meshes;
   let count = 0;
@@ -437,7 +474,7 @@ export function collectPlanarMirrorMeshes(
   }
   list.length = count;
   // A capture whose image one of these shows keeps drawing while a reflection shows it.
-  notePassListed(scene, list);
+  if (note) notePassListed(scene, list);
 }
 
 const floatingOriginScenes = new WeakMap<Scene, () => Scene | undefined>();
