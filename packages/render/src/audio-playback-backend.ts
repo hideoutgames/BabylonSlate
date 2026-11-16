@@ -41,16 +41,21 @@ export interface AudioPlaybackBackend {
   play(request: AudioPlayRequest): Promise<void>;
   stop(voiceId: string): void;
   setVoiceGain(voiceId: string, gain: number): void;
-  setVoicePose(voiceId: string, pose: AudioPose): void;
-  setVoicePlaybackRate(voiceId: string, rate: number): void;
-  setListenerPose(pose: AudioPose): void;
+  /**
+   * The pose, playback-rate, listener, reverb and muffle setters return whether the backend now holds the value:
+   * false when it had nothing to write to yet (no engine, no such voice, no muffle route). The service resends a
+   * value only when it differs from the last one that landed, so a false result must leave the write retryable.
+   */
+  setVoicePose(voiceId: string, pose: AudioPose): boolean;
+  setVoicePlaybackRate(voiceId: string, rate: number): boolean;
+  setListenerPose(pose: AudioPose): boolean;
   setReverbWet(wet: number): void;
   setReverbProfile(profile: {
     wet: number;
     decay: number;
     damping: number;
-  }): void;
-  setVoiceMuffle(voiceId: string, factor: number): void;
+  }): boolean;
+  setVoiceMuffle(voiceId: string, factor: number): boolean;
   /** Pause or resume live voices without stopping them. */
   setPaused(paused: boolean): void;
   /**
@@ -111,16 +116,19 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
     this.gains.set(voiceId, gain);
   }
 
-  setVoicePose(voiceId: string, pose: AudioPose): void {
+  setVoicePose(voiceId: string, pose: AudioPose): boolean {
     this.poses.set(voiceId, pose);
+    return true;
   }
 
-  setVoicePlaybackRate(voiceId: string, rate: number): void {
+  setVoicePlaybackRate(voiceId: string, rate: number): boolean {
     this.playbackRates.set(voiceId, rate);
+    return true;
   }
 
-  setListenerPose(pose: AudioPose): void {
+  setListenerPose(pose: AudioPose): boolean {
     this.listener = pose;
+    return true;
   }
 
   setReverbWet(wet: number): void {
@@ -131,14 +139,16 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
     wet: number;
     decay: number;
     damping: number;
-  }): void {
+  }): boolean {
     this.wet = profile.wet;
     this.decay = profile.decay;
     this.damping = profile.damping;
+    return true;
   }
 
-  setVoiceMuffle(voiceId: string, factor: number): void {
+  setVoiceMuffle(voiceId: string, factor: number): boolean {
     this.muffles.set(voiceId, factor);
+    return true;
   }
 
   setPaused(paused: boolean): void {

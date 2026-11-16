@@ -19,6 +19,7 @@ import {
   type AudioMixerPayload,
   type AudioPayload,
   type AudioReverbField,
+  type AudioReverbOccupancy,
   type SoundAttenuationPayload,
 } from "@haptic/assets";
 import type { CommandMessage } from "@haptic/bridge";
@@ -109,7 +110,33 @@ type LiveVoice = {
   clipName: string | null;
   loop: boolean;
   releaseSource?: () => void;
+  /**
+   * The pose, muffle and playback rate the backend last took for this voice (null: none landed yet). A refresh
+   * resends one only when its value differs; every write of these goes through the `sendVoice…` methods.
+   */
+  sentPose: AudioPose | null;
+  sentMuffle: number | null;
+  sentRate: number | null;
+  /** The emitter, listener and occupancy grid the voice's last occlusion factor was traced for. */
+  occlusion: {
+    ex: number; ey: number; ez: number; lx: number; ly: number; lz: number;
+    occupancy: AudioReverbOccupancy | null | undefined; factor: number;
+  } | null;
 };
+
+/** Whether two poses hold the same position and (possibly absent) rotation. */
+function samePose(a: AudioPose, b: AudioPose): boolean {
+  return a.x === b.x && a.y === b.y && a.z === b.z &&
+    a.qx === b.qx && a.qy === b.qy && a.qz === b.qz && a.qw === b.qw;
+}
+
+/** `pose`'s values in `into` (a new pose without one): callers reuse their pose objects between snapshots. */
+function copyPose(pose: AudioPose, into: AudioPose | null): AudioPose {
+  const copy = into ?? { x: 0, y: 0, z: 0 };
+  copy.x = pose.x; copy.y = pose.y; copy.z = pose.z;
+  copy.qx = pose.qx; copy.qy = pose.qy; copy.qz = pose.qz; copy.qw = pose.qw;
+  return copy;
+}
 
 function emptyLibrary(): AudioLibrary {
   return {
@@ -211,6 +238,15 @@ export class AudioService {
   private voiceSeq = 0;
   private listener: AudioPose = { x: 0, y: 0, z: 0 };
   private reverbField: AudioReverbField | null = null;
+  /** The listener pose the backend last took (null: none landed yet), in a store reused between writes. */
+  private sentListener: AudioPose | null = null;
+  private readonly sentListenerStore: AudioPose = { x: 0, y: 0, z: 0 };
+  /** The reverb profile the backend last took, and the inputs the unscaled profile was last resolved from. */
+  private readonly sentReverb = { landed: false, wet: 0, decay: 0, damping: 0 };
+  private readonly reverbResolved = {
+    valid: false, anySend: false, field: null as AudioReverbField | null,
+    x: 0, y: 0, z: 0, wet: 0, decay: 0, damping: 0,
+  };
   private readonly now: () => number;
   private lastSnapshotAt: number | null = null;
   private readonly random: () => number;
@@ -502,7 +538,24 @@ export class AudioService {
 
   private applyListener(pose: AudioPose): void {
     this.listener = pose;
-    this.backend.setListenerPose(pose);
+    if (this.sentListener && samePose(this.sentListener, pose)) return;
+    const landed = this.backend.setListenerPose(pose);
+    this.sentListener = landed ? copyPose(pose, this.sentListener ?? this.sentListenerStore) : null;
+  }
+
+  private sendVoicePose(voice: LiveVoice, pose: AudioPose): void {
+    if (voice.sentPose && samePose(voice.sentPose, pose)) return;
+    voice.sentPose = this.backend.setVoicePose(voice.voiceId, pose) ? copyPose(pose, voice.sentPose) : null;
+  }
+
+  private sendVoiceMuffle(voice: LiveVoice, factor: number): void {
+    if (voice.sentMuffle === factor) return;
+    voice.sentMuffle = this.backend.setVoiceMuffle(voice.voiceId, factor) ? factor : null;
+  }
+
+  private sendVoiceRate(voice: LiveVoice, rate: number): void {
+    if (voice.sentRate === rate) return;
+    voice.sentRate = this.backend.setVoicePlaybackRate(voice.voiceId, rate) ? rate : null;
   }
 
   syncListener(pose: AudioPose): void {
@@ -615,6 +668,8 @@ export class AudioService {
     this.slotPoses.clear();
     this.emitterPoseSource = null;
     this.backend.dispose();
+    this.sentListener = null;
+    this.sentReverb.landed = false;
     this.cache.flushUnreferenced();
     if (this.ownedCache) this.cache.dispose();
     this.unlocked = false;
@@ -693,7 +748,7 @@ export class AudioService {
       if (!voice) return;
       voice.pitch = voice.assetPitch * clampPitchMultiplier(command.pitch);
       // A Doppler voice takes the new pitch with its next snapshot's rate.
-      this.backend.setVoicePlaybackRate(voice.voiceId, voice.pitch);
+      this.sendVoiceRate(voice, voice.pitch);
       return;
     }
     try {
@@ -900,6 +955,10 @@ export class AudioService {
       previousPose: null,
       clipName: clip.name.trim() === "" ? null : clip.name,
       loop: request.loop,
+      sentPose: null,
+      sentMuffle: null,
+      sentRate: null,
+      occlusion: null,
     });
     if (sourceOwner) sourceOwner.transferred = true;
     this.lastGain = resolved.gain;
@@ -907,7 +966,15 @@ export class AudioService {
       await this.backend.play(request);
       if (!this.isCurrent(generation)) return;
       this.onAssetReady?.(assetGuid);
-      this.backend.setVoicePlaybackRate(voiceId, pitch);
+      // The backend's sound exists from here: whatever an earlier refresh sent under this id is not on it.
+      const started = this.voices.get(voiceId);
+      if (started) {
+        started.sentPose = null;
+        started.sentMuffle = null;
+        started.sentRate = this.backend.setVoicePlaybackRate(voiceId, pitch) ? pitch : null;
+      } else {
+        this.backend.setVoicePlaybackRate(voiceId, pitch);
+      }
     } catch {
       if (!this.isCurrent(generation)) return;
       this.stopVoice(voiceId);
@@ -1002,7 +1069,7 @@ export class AudioService {
     if (fromSnapshot) this.lastSnapshotAt = now;
     for (const voice of this.voices.values()) {
       if (!voice.spatial) {
-        this.backend.setVoiceMuffle(voice.voiceId, 0);
+        this.sendVoiceMuffle(voice, 0);
         continue;
       }
       const slotId =
@@ -1013,18 +1080,18 @@ export class AudioService {
         voice.fixedPose ?? (slotId !== undefined ? this.slotPoses.get(slotId) : undefined);
       if (!pose) {
         this.lastDistance = null;
-        this.backend.setVoiceMuffle(voice.voiceId, 0);
+        this.sendVoiceMuffle(voice, 0);
         // A pose-less emitter holds its last position, so it stops shifting
         // pitch, and its next pose must not read as a jump from the stale one.
         if (voice.previousPose) {
           voice.previousPose = null;
           if (voice.spatial.doppler?.enabled) {
-            this.backend.setVoicePlaybackRate(voice.voiceId, voice.pitch);
+            this.sendVoiceRate(voice, voice.pitch);
           }
         }
         continue;
       }
-      this.backend.setVoicePose(voice.voiceId, pose);
+      this.sendVoicePose(voice, pose);
       this.refreshVoiceMuffle(voice, pose);
       const dx = pose.x - this.listener.x;
       const dy = pose.y - this.listener.y;
@@ -1041,33 +1108,51 @@ export class AudioService {
           dt,
           factor: doppler.factor,
         });
-        this.backend.setVoicePlaybackRate(
-          voice.voiceId,
-          voice.pitch * rate,
-        );
+        this.sendVoiceRate(voice, voice.pitch * rate);
       }
       if (fromSnapshot) {
-        voice.previousPose = { x: pose.x, y: pose.y, z: pose.z };
+        const previous = voice.previousPose ??= { x: 0, y: 0, z: 0 };
+        previous.x = pose.x; previous.y = pose.y; previous.z = pose.z;
       }
     }
     this.publishStats();
   }
 
+  /**
+   * The occlusion factor is a function of the emitter position, the listener position and the occupancy grid (a
+   * decoded field is never edited in place), so it is traced again only when one of them differs from the last trace.
+   */
   private refreshVoiceMuffle(voice: LiveVoice, pose: AudioPose): void {
     if (
       !this.projectAudio.occlusionEnabled ||
       !voice.muffleThroughWalls ||
       !voice.spatial
     ) {
-      this.backend.setVoiceMuffle(voice.voiceId, 0);
+      this.sendVoiceMuffle(voice, 0);
       return;
     }
-    this.backend.setVoiceMuffle(
-      voice.voiceId,
-      occlusionFactor(pose, this.listener, this.reverbField?.occupancy),
-    );
+    const listener = this.listener;
+    const occupancy = this.reverbField?.occupancy;
+    let traced = voice.occlusion;
+    if (
+      !traced || traced.occupancy !== occupancy ||
+      traced.ex !== pose.x || traced.ey !== pose.y || traced.ez !== pose.z ||
+      traced.lx !== listener.x || traced.ly !== listener.y || traced.lz !== listener.z
+    ) {
+      traced = voice.occlusion ??= { ex: 0, ey: 0, ez: 0, lx: 0, ly: 0, lz: 0, occupancy: null, factor: 0 };
+      traced.ex = pose.x; traced.ey = pose.y; traced.ez = pose.z;
+      traced.lx = listener.x; traced.ly = listener.y; traced.lz = listener.z;
+      traced.occupancy = occupancy;
+      traced.factor = occlusionFactor(pose, listener, occupancy);
+    }
+    this.sendVoiceMuffle(voice, traced.factor);
   }
 
+  /**
+   * The unscaled profile is a function of whether any voice sends to the reverb, the reverb field and the listener
+   * position, so it is interpolated again only when one of them changed; the backend is written only when the scaled
+   * profile differs from the one it last took.
+   */
   private refreshReverbWet(publish = true): void {
     let anySend = false;
     for (const voice of this.voices.values()) {
@@ -1076,20 +1161,31 @@ export class AudioService {
         break;
       }
     }
-    const profile =
-      !anySend || isDryAudioReverbFallback(this.reverbField)
-        ? { wet: 0, decay: 0.4, damping: 0.5 }
-        : interpolateAudioReverb(this.listener, this.reverbField?.probes ?? []);
-    const scaled = {
-      wet: scaleReverbAmount(profile.wet, this.projectAudio.reverbWetScale),
-      decay: scaleReverbAmount(profile.decay, this.projectAudio.reverbDecayScale),
-      damping: scaleReverbAmount(
-        profile.damping,
-        this.projectAudio.reverbDampingScale,
-      ),
-    };
-    this.wet = scaled.wet;
-    this.backend.setReverbProfile(scaled);
+    const listener = this.listener;
+    const resolved = this.reverbResolved;
+    if (
+      !resolved.valid || resolved.anySend !== anySend || resolved.field !== this.reverbField ||
+      resolved.x !== listener.x || resolved.y !== listener.y || resolved.z !== listener.z
+    ) {
+      const profile =
+        !anySend || isDryAudioReverbFallback(this.reverbField)
+          ? { wet: 0, decay: 0.4, damping: 0.5 }
+          : interpolateAudioReverb(listener, this.reverbField?.probes ?? []);
+      resolved.valid = true;
+      resolved.anySend = anySend;
+      resolved.field = this.reverbField;
+      resolved.x = listener.x; resolved.y = listener.y; resolved.z = listener.z;
+      resolved.wet = profile.wet; resolved.decay = profile.decay; resolved.damping = profile.damping;
+    }
+    const wet = scaleReverbAmount(resolved.wet, this.projectAudio.reverbWetScale);
+    const decay = scaleReverbAmount(resolved.decay, this.projectAudio.reverbDecayScale);
+    const damping = scaleReverbAmount(resolved.damping, this.projectAudio.reverbDampingScale);
+    this.wet = wet;
+    const sent = this.sentReverb;
+    if (!sent.landed || sent.wet !== wet || sent.decay !== decay || sent.damping !== damping) {
+      sent.wet = wet; sent.decay = decay; sent.damping = damping;
+      sent.landed = this.backend.setReverbProfile({ wet, decay, damping });
+    }
     if (publish) this.publishStats();
   }
 

@@ -49,6 +49,7 @@ Unit tests use `FakeAudioPlaybackBackend` (NullEngine cannot decode). Overlay Pl
 - Listener = `scene.activeCamera` after snapshot apply. No listener picker or second listener actor.
 - Distance falloff lives in AudioV2 `spatialMinDistance` / `spatialMaxDistance` (and `computeAttenuationGain` for tests). Never pre-multiply it into volume.
 - Doppler is applied as `playbackRate` from radial velocity × factor, composed with pitch; a listener-only refresh must not rewrite it.
+- `AudioService` sends the backend a listener pose, a voice's pose, muffle and playback rate, and the reverb profile only when the value differs from the last one the backend took; those backend setters return whether the write landed (false without an engine, the voice or a muffle route), and a write that did not land is offered again on the next refresh. A voice's occlusion factor is traced again only when its emitter position, the listener position or the occupancy grid changed, and the reverb profile is interpolated again only when the listener position, the reverb field or whether any voice sends to it changed. Every write of these values goes through the service's `sendVoice…` methods, `applyListener` and `refreshReverbWet`; a decoded reverb field is never edited in place.
 
 ## Reverb bake
 

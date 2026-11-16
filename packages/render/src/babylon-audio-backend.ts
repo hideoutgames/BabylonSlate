@@ -182,9 +182,9 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     this.applyVoiceLevel(voiceId);
   }
 
-  setVoicePose(voiceId: string, pose: AudioPose): void {
+  setVoicePose(voiceId: string, pose: AudioPose): boolean {
     const sound = this.voices.get(voiceId);
-    if (!sound) return;
+    if (!sound) return false;
     sound.spatial.position.set(pose.x, pose.y, pose.z);
     if (
       pose.qx !== undefined &&
@@ -194,16 +194,19 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     ) {
       sound.spatial.rotationQuaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
     }
+    return true;
   }
 
-  setVoicePlaybackRate(voiceId: string, rate: number): void {
+  setVoicePlaybackRate(voiceId: string, rate: number): boolean {
     const sound = this.voices.get(voiceId);
-    if (sound) sound.playbackRate = rate;
+    if (!sound) return false;
+    sound.playbackRate = rate;
+    return true;
   }
 
-  setListenerPose(pose: AudioPose): void {
+  setListenerPose(pose: AudioPose): boolean {
     const listener = this.engine?.listener;
-    if (!listener) return;
+    if (!listener) return false;
     listener.position.set(pose.x, pose.y, pose.z);
     if (
       pose.qx !== undefined &&
@@ -213,6 +216,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     ) {
       listener.rotationQuaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
     }
+    return true;
   }
 
   setReverbWet(wet: number): void {
@@ -223,25 +227,27 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     wet: number;
     decay: number;
     damping: number;
-  }): void {
+  }): boolean {
     if (this.reverbGraph) {
       this.reverbGraph.setProfile(profile);
-      return;
+      return true;
     }
-    if (this.reverbBus) this.reverbBus.volume = profile.wet;
+    if (!this.reverbBus) return false;
+    this.reverbBus.volume = profile.wet;
+    return true;
   }
 
-  setVoiceMuffle(voiceId: string, factor: number): void {
+  setVoiceMuffle(voiceId: string, factor: number): boolean {
     const sound = this.voices.get(voiceId);
     const level = this.voiceLevels.get(voiceId);
-    if (!sound || !level) return;
+    if (!sound || !level) return false;
     const amount = Number.isFinite(factor) ? Math.min(MAX_VOICE_MUFFLE, Math.max(0, factor)) : 0;
     if (amount > 0 && !this.muffleSends.has(voiceId)) {
       const out = webAudioPort(sound, "_outNode");
       const filter = this.ensureMuffleFilter();
       const context = this.audioContext;
       // Without the lowpass send, lowering the dry level would only make it quieter.
-      if (!out || !filter || !context) return;
+      if (!out || !filter || !context) return false;
       const send = context.createGain();
       send.gain.value = 0;
       out.connect(send);
@@ -250,6 +256,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     }
     level.muffle = this.muffleSends.has(voiceId) ? amount : 0;
     this.applyVoiceLevel(voiceId);
+    return true;
   }
 
   /**
