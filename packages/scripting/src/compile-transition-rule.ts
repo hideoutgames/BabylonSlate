@@ -1,3 +1,4 @@
+import { isPureNode } from "./node-registry";
 import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findPin } from "./ir";
 import { tagRuntimeSource } from "./tags";
@@ -27,7 +28,7 @@ function sinkExpression(s: CodegenState, node: GraphNode, pin: GraphPin): string
   const edge = s.index.incoming(node.id, pin.id);
   const source = edge && s.index.node(edge.sourceNodeId);
   const readable = source && findPin(source, edge.sourcePinId) && !s.shouldStrip(source) &&
-    s.options.registry.get(source.typeId)?.pure === true;
+    isPureNode(s.options.registry.get(source.typeId), source);
   return readable ? inputExpression(s, node, pin) : disconnectedPinLiteral(node, pin, s.options.registry, "true");
 }
 
@@ -47,7 +48,7 @@ export function compileTransitionRuleGraph(
   const s = createCodegenState(graph, { ...options, instrumentExecutionTrace: false, instrumentInfiniteLoops: false });
   graph = s.graph;
   for (const node of graph.nodes) {
-    if (options.registry.get(node.typeId)?.pure) ensurePure(s, node);
+    if (isPureNode(options.registry.get(node.typeId), node)) ensurePure(s, node);
   }
 
   const results: Record<string, string> = {};

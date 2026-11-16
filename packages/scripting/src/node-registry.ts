@@ -81,6 +81,11 @@ export type NodeDefinition = {
   /** Pure expression nodes return a map of output pin name → expression. */
   codegen: (ctx: CodegenContext) => void | Record<string, string>;
   pure?: boolean;
+  /**
+   * Purity set by the node's properties: a Call of a Pure function. The node
+   * is pure when `pure` is set or this returns true (`isPureNode`).
+   */
+  pureWhen?: (properties: Record<string, unknown>) => boolean;
   /** No observable reads/effects beyond inputs. Allows caching immutable outputs
    * only when every dependency is also referentially transparent. */
   referentiallyTransparent?: boolean;
@@ -112,6 +117,14 @@ export type NodeDefinition = {
    */
   structuredFlow?: StructuredFlowMeta;
 };
+
+/** Whether `node` compiles as a pure expression: its definition is `pure`, or `pureWhen` holds for its properties. */
+export function isPureNode(
+  def: Pick<NodeDefinition, "pure" | "pureWhen"> | undefined,
+  node: { properties: Record<string, unknown> },
+): boolean {
+  return def?.pure === true || def?.pureWhen?.(node.properties) === true;
+}
 
 export class NodeRegistry {
   private readonly defs = new Map<string, NodeDefinition>();

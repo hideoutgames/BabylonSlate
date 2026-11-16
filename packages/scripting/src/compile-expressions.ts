@@ -1,7 +1,7 @@
 import { instrumentJsLoops } from "@haptic/debugger";
 import type { GraphNode, GraphPin } from "./ir";
 import { findPin } from "./ir";
-import type { CodegenContext } from "./node-registry";
+import { isPureNode, type CodegenContext } from "./node-registry";
 import { defaultValueLiteral, pinTypeEquals } from "./types";
 import { byReferenceArgument, isByReferenceFunctionInput, isWritableVariableOutput } from "./variable-references";
 import { jsIdent, localVariableIdent } from "./compile-events";
@@ -36,7 +36,7 @@ function pinExpr(s: CodegenState, node: GraphNode, dataPin: GraphPin): string {
       return lit;
     }
     const srcDef = s.options.registry.get(srcNode.typeId);
-    if (srcDef?.pure) {
+    if (isPureNode(srcDef, srcNode)) {
       ensurePure(s, srcNode);
     } else {
       const slot = `_n_${jsIdent(srcNode.id)}_${jsIdent(srcPin.id)}`;
@@ -92,7 +92,7 @@ export function inputExpression(s: CodegenState, node: GraphNode, p: GraphPin): 
   if (!s.sharedInputNodes.has(node.id)) return expression;
   const edge = s.index.incoming(node.id, p.id);
   const source = edge && s.index.node(edge.sourceNodeId);
-  if (!source || s.shouldStrip(source) || !s.options.registry.get(source.typeId)?.pure) {
+  if (!source || s.shouldStrip(source) || !isPureNode(s.options.registry.get(source.typeId), source)) {
     return expression;
   }
   return memoExpression(s, `in:${node.id}:${p.id}`, expression);
@@ -114,7 +114,7 @@ function tracedPureOutput(s: CodegenState, node: GraphNode, p: GraphPin, express
  * inputs is what their sources produced, and an unwired input shows its literal on the node.
  */
 export function tracedRead(s: CodegenState, node: GraphNode, p: GraphPin, expression: string): string {
-  if ((!s.traceExecution && !s.checkBreakpoints) || s.options.registry.get(node.typeId)?.pure) return expression;
+  if ((!s.traceExecution && !s.checkBreakpoints) || isPureNode(s.options.registry.get(node.typeId), node)) return expression;
   const edge = s.index.incoming(node.id, p.id);
   if (!edge || !s.index.node(edge.sourceNodeId)) return expression;
   const ids = `${JSON.stringify(node.id)}, ${JSON.stringify(p.id)}`;
@@ -122,11 +122,16 @@ export function tracedRead(s: CodegenState, node: GraphNode, p: GraphPin, expres
   return s.traceExecution ? `__dv(__dbg, ${ids}, ${checked})` : checked;
 }
 
-/** `bound` names the variables that already hold a node's subject inputs. */
+/**
+ * `bound` names the variables that already hold a node's subject inputs.
+ * `boundArgs` gives a pure node's bound names their expressions: a shared
+ * value is memoized outside the guard that binds them.
+ */
 export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expression: string) => void,
   branch?: (expression: string, truePin: string, falsePin: string) => void,
   bound?: ReadonlyMap<string, string>,
-  runOutput?: (expression: string, pinId: string) => void): CodegenContext {
+  runOutput?: (expression: string, pinId: string) => void,
+  boundArgs?: ReadonlyMap<string, string>): CodegenContext {
   return {
     graph: s.graph,
     node,
@@ -142,7 +147,11 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
     shared(expression) {
       // With one wired output there is nothing to share.
       if (!s.sharedInputNodes.has(node.id)) return expression;
-      return memoExpression(s, `shared:${node.id}:${expression}`, expression);
+      // The memo is evaluated lazily, inside the guard, so it may read the subject again.
+      const unbound = boundArgs?.size
+        ? expression.replace(/\b__s\d+\b/g, (name) => boundArgs.get(name) ?? name)
+        : expression;
+      return memoExpression(s, `shared:${node.id}:${unbound}`, unbound);
     },
     continueIf(expression) { continuation?.(expression); },
     branch(expression, truePin, falsePin) { branch?.(expression, truePin, falsePin); },
@@ -187,7 +196,7 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
 export function ensurePure(s: CodegenState, node: GraphNode) {
   if (s.shouldStrip(node) || s.pureInProgress.has(node.id)) return;
   const def = s.options.registry.get(node.typeId);
-  if (!def?.pure) return;
+  if (!def || !isPureNode(def, node)) return;
   if (
     node.pins.some(
       (p) =>
@@ -206,7 +215,8 @@ export function ensurePure(s: CodegenState, node: GraphNode) {
     // Read in progress: a pure cycle through a subject input ends here.
     subjectArgs = subjects.map((subject) => inputExpression(s, node, subject.pin));
     const bound = new Map(subjects.map((subject, i) => [subject.pin.id, `__s${i}`] as const));
-    result = def.codegen(makeCtx(s, node, undefined, undefined, bound));
+    const boundArgs = new Map(subjectArgs.map((arg, i) => [`__s${i}`, arg] as const));
+    result = def.codegen(makeCtx(s, node, undefined, undefined, bound, undefined, boundArgs));
   } finally {
     s.pureInProgress.delete(node.id);
   }

@@ -141,6 +141,7 @@ export function classMemberSymbolsFromGraphs(
         }
         if (member.overrides) symbol.overrides = member.overrides;
         if (member.runtime) symbol.runtime = member.runtime;
+        if (member.pure === true) symbol.pure = true;
       }
       if (member.componentId) symbol.componentId = member.componentId;
       if (member.propertyKey) symbol.propertyKey = member.propertyKey;

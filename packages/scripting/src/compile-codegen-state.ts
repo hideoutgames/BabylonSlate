@@ -1,6 +1,6 @@
 import type { GraphNode, LogicGraph } from "./ir";
 import { findPin } from "./ir";
-import type { HoistBodyAnchor } from "./node-registry";
+import { isPureNode, type HoistBodyAnchor } from "./node-registry";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { createPureExpressions } from "./pure-expressions";
 import type { CompileAnchor, CompileOptions } from "./compile-types";
@@ -126,7 +126,7 @@ export function createCodegenState(
     sharedInputNodes: new Set(
       graph.nodes
         .filter((node) => {
-          if (!options.registry.get(node.typeId)?.pure) return false;
+          if (!isPureNode(options.registry.get(node.typeId), node)) return false;
           const wired = new Set(
             index.outgoing(node.id)
               .filter((edge) => findPin(node, edge.sourcePinId)?.kind === "data")
@@ -149,7 +149,7 @@ export function createCodegenState(
 function sharedPureOutputs(graph: LogicGraph, index: GraphIndex, options: CompileOptions): Set<string> {
   const shared = new Set<string>();
   for (const node of graph.nodes) {
-    if (!options.registry.get(node.typeId)?.pure) continue;
+    if (!isPureNode(options.registry.get(node.typeId), node)) continue;
     const readers = new Map<string, number>();
     for (const edge of index.outgoing(node.id)) {
       const pin = findPin(node, edge.sourcePinId);

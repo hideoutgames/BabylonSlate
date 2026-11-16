@@ -1,5 +1,8 @@
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
 
+/** A function graph's Output node, which returns the function's outputs. */
+const FUNCTION_OUTPUT_NODE_TYPE = "flow.function.output";
+
 function nodesById(graph: LogicGraph): Map<string, GraphNode> {
   const nodes = new Map<string, GraphNode>();
   for (const node of graph.nodes) {
@@ -23,7 +26,9 @@ function pinKind(
  * Catalog events, `flow.entry`, and exec-out-only nodes with no incoming
  * exec (function Input, input/BT/anim events). A node with an exec input is
  * a statement, never a trigger: Call Custom Event and Call Parent Event share
- * the `flow.event` prefix but run where they are wired.
+ * the `flow.event` prefix but run where they are wired. A graph with none of
+ * these runs from a function Output node without exec pins: the body of a
+ * Pure function whose signature has no exec pins returns what it reads.
  */
 export function entryNodes(graph: LogicGraph): GraphNode[] {
   const nodes = nodesById(graph);
@@ -32,7 +37,7 @@ export function entryNodes(graph: LogicGraph): GraphNode[] {
       .filter((e) => pinKind(nodes, e.sourceNodeId, e.sourcePinId) === "exec")
       .map((e) => e.targetNodeId),
   );
-  return graph.nodes.filter((n) => {
+  const entries = graph.nodes.filter((n) => {
     const hasExecIn = n.pins.some(
       (p) => p.kind === "exec" && p.direction === "in",
     );
@@ -45,6 +50,11 @@ export function entryNodes(graph: LogicGraph): GraphNode[] {
     );
     return hasExecOut && !hasIncoming.has(n.id);
   });
+  if (entries.length > 0) return entries;
+  const dataOnlyReturn = graph.nodes.find(
+    (n) => n.typeId === FUNCTION_OUTPUT_NODE_TYPE && !n.pins.some((p) => p.kind === "exec"),
+  );
+  return dataOnlyReturn ? [dataOnlyReturn] : [];
 }
 
 function isAnimRuleSink(node: GraphNode): boolean {

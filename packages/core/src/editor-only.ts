@@ -98,6 +98,7 @@ export type ClassHeaderFunction = {
   name: string;
   pins: ClassHeaderPin[];
   overridable?: boolean;
+  pure?: boolean;
   implementsInterface?: { assetGuid: string; methodName: string };
   overrides?: { classId: string; name: string };
   category?: string;
@@ -244,6 +245,7 @@ export function classHeaderMeta(graph: {
     pins?: ClassHeaderPin[];
     assetGuid?: string;
     overridable?: boolean;
+    pure?: boolean;
     implementsInterface?: { assetGuid: string; methodName: string };
     overrides?: { classId: string; name: string };
     category?: string;
@@ -267,6 +269,7 @@ export function classHeaderMeta(graph: {
         pins: headerPinsFromMember(member.pins),
       };
       if (member.overridable === true) fn.overridable = true;
+      if (member.pure === true) fn.pure = true;
       if (member.implementsInterface?.assetGuid && member.implementsInterface.methodName) {
         fn.implementsInterface = {
           assetGuid: member.implementsInterface.assetGuid,

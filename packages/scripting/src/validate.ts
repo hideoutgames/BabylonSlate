@@ -1,3 +1,4 @@
+import { isPureNode } from "./node-registry";
 import { formatEventTitle, humanizePropertyLabel } from "@haptic/core";
 import type { GraphEdge, GraphNode, GraphPin, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
@@ -59,7 +60,7 @@ function isPureEvalSource(
   node: GraphNode,
   registry: ValidateOptions["registry"],
 ): boolean {
-  return registry?.get(node.typeId)?.pure === true;
+  return isPureNode(registry?.get(node.typeId), node);
 }
 
 function buildAdjacency(
@@ -1097,7 +1098,7 @@ function validateInterfaceAndOverrides(
         entry.name === member.overrides.name,
     );
     if (!parent) continue;
-    if (!pinsMatch(member.pins, parent.pins)) {
+    if (!pinsMatch(member.pins, parent.pins) || (member.pure === true) !== (parent.pure === true)) {
       out.push(
         diagnostic({
           code: "member.override_signature",
@@ -1107,6 +1108,43 @@ function validateInterfaceAndOverrides(
         }),
       );
     }
+  }
+  return out;
+}
+
+/**
+ * A function runs from its exec input to its exec output. A Pure function's
+ * Calls have no exec pins, so its own graph may leave both out (it then
+ * returns what its Output node reads) or keep both to run statements; one
+ * without the other never reaches the Output node or never runs.
+ */
+function validateFunctionExecPins(
+  graphs: readonly LogicGraph[],
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  for (const member of ctx.members ?? []) {
+    if (member.kind !== "function" || (ctx.classId && member.classId !== ctx.classId)) continue;
+    const pins = member.pins ?? [];
+    const execIn = pins.some((pin) => pin.typeId === "exec" && pin.direction === "in");
+    const execOut = pins.some((pin) => pin.typeId === "exec" && pin.direction === "out");
+    if (execIn && execOut) continue;
+    const pure = member.pure === true;
+    if (pure && !execIn && !execOut) continue;
+    const graph = graphs.find((entry) => entry.id === member.id);
+    const endpoint = graph?.nodes.find((node) =>
+      node.typeId === (execIn ? "flow.function.output" : "flow.function.input"));
+    out.push(
+      diagnostic({
+        code: pure ? "function.pure_exec_pins" : "function.missing_exec_pins",
+        message: pure
+          ? `Pure function "${member.name}" needs both an exec input and an exec output, or neither`
+          : `Function "${member.name}" needs an exec input and an exec output; only a Pure function can leave them out`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph?.id ?? member.id,
+        ...(endpoint ? { nodeId: endpoint.id } : {}),
+      }),
+    );
   }
   return out;
 }
@@ -1528,6 +1566,7 @@ export function validateGraphs(
   }
   diagnostics.push(...validateMemberTypes(graphs, ctx));
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
+  diagnostics.push(...validateFunctionExecPins(graphs, ctx));
   diagnostics.push(...validateCustomEventNames(graphs, ctx));
   diagnostics.push(...validateDispatcherDeclarations(graphs, ctx));
   // Registered rules see every graph; their node diagnostics follow the same compiled-node filter.

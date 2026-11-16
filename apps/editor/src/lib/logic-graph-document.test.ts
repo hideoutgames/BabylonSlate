@@ -209,6 +209,21 @@ describe("collectClassGraphsForPalette", () => {
     ]);
   });
 
+  it("keeps a Pure function Pure through a closed Class header", () => {
+    const header = classHeaderMeta({
+      members: [
+        { id: "fn-1", kind: "function", name: "Measure", pure: true },
+        { id: "fn-2", kind: "function", name: "Move" },
+      ],
+    });
+    expect(
+      classGraphFromHeaderPayload(JSON.parse(JSON.stringify(header))).members,
+    ).toEqual([
+      { id: "fn-1", kind: "function", name: "Measure", pins: [], pure: true },
+      { id: "fn-2", kind: "function", name: "Move", pins: [] },
+    ]);
+  });
+
   it("keeps variable and input units through a closed Class header, only on number and vector types", () => {
     const header = classHeaderMeta({
       members: [

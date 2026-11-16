@@ -294,7 +294,7 @@ export function addCallEventNode(
 /** Spawn a Call Function node bound to a class function. */
 export function addCallFunctionNode(
   graph: SerializedGraph,
-  member: Pick<GraphClassMember, "name" | "pins" | "runtime">,
+  member: Pick<GraphClassMember, "name" | "pins" | "runtime" | "pure">,
   options?: GraphSpawnOptions,
 ): SerializedGraph {
   const type = "functions.call";
@@ -307,6 +307,7 @@ export function addCallFunctionNode(
   };
   if (options?.classId) data.classId = options.classId;
   if (member.runtime) data.runtime = member.runtime;
+  if (member.pure === true) data.pure = true;
   return appendGraphNode(
     graph,
     {

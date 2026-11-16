@@ -594,6 +594,14 @@ export function ClassMemberDetails({
                     onChange: (overridable: boolean) =>
                       commit({ overridable: overridable ? true : undefined }),
                   },
+                  {
+                    id: "pure",
+                    kind: "boolean" as const,
+                    label: "Pure",
+                    description: "Calls have no exec pins and run when a node reads their outputs.",
+                    value: member.pure === true,
+                    onChange: (pure: boolean) => commit({ pure: pure ? true : undefined }),
+                  },
                 ]),
             categoryRow,
           ]}

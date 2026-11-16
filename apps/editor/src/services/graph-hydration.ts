@@ -383,19 +383,19 @@ function withVisualMeta(
   typeId: string,
   callLatent = false,
 ): Record<string, unknown> {
+  const call = typeId === "functions.call";
+  // A Call of a Pure function is pure and never waits.
+  const pureCall = call && data.pure === true;
   const latent =
-    def?.latent === true || (typeId === "functions.call" && callLatent);
+    def?.latent === true || (call && callLatent && !pureCall);
   const next: Record<string, unknown> = {
     ...data,
     __nodeType:
       typeof data.__nodeType === "string" ? data.__nodeType : typeId,
     __category:
       typeof data.__category === "string" ? data.__category : def?.category,
-    __pure: data.__pure ?? def?.pure ?? false,
-    __latent:
-      typeId === "functions.call"
-        ? latent
-        : (data.__latent ?? def?.latent ?? false),
+    __pure: call ? pureCall : (data.__pure ?? def?.pure ?? false),
+    __latent: call ? latent : (data.__latent ?? def?.latent ?? false),
   };
   if (def?.editorOnly === true) {
     next.__editorOnly = true;

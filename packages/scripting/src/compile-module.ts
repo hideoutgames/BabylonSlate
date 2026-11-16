@@ -1,3 +1,4 @@
+import { isPureNode } from "./node-registry";
 import type { GraphNode, LogicGraph } from "./ir";
 import { tagRuntimeSource } from "./tags";
 import type {
@@ -90,7 +91,7 @@ export function compileEntry(
 
   for (const node of s.graph.nodes) {
     if (s.shouldStrip(node)) continue;
-    if (s.options.registry.get(node.typeId)?.pure) ensurePure(s, node);
+    if (isPureNode(s.options.registry.get(node.typeId), node)) ensurePure(s, node);
   }
   s.useEpoch = s.memoDecls.length > 0;
 

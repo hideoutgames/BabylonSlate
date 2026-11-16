@@ -23,5 +23,6 @@ Calls a function defined on a class and continues when it returns.
 
 - **Add Node** lists a Call entry for each function on this class, its parents and other classes; the function's inputs and outputs appear as extra pins.
 - If the function waits (for example it contains a [**Delay**](delay.md)), **Out** runs after it finishes.
+- A Call of a [Pure function](../functions.md#pure-functions) has no **In** or **Out**. It runs when a node that reads its outputs runs, once for each such node.
 - If the target is empty or invalid, nothing runs and the outputs return their defaults. An empty **Target** also logs an error.
 - A function of another class needs its **Target** connected.

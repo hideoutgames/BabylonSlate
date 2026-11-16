@@ -541,3 +541,94 @@ describe("functions.call", () => {
     expect(logged(undefined)).toEqual([0, ""]);
   });
 });
+
+describe("functions.call of a Pure function", () => {
+  const SIGNATURE = [
+    { name: "exec", typeId: "exec", direction: "in" },
+    { name: "Amount", typeId: "int", direction: "in" },
+    { name: "then", typeId: "exec", direction: "out" },
+    { name: "Low", typeId: "int", direction: "out" },
+    { name: "High", typeId: "int", direction: "out" },
+  ];
+
+  it("has no exec pins, though its function's signature has them", () => {
+    const def = createDefaultNodeRegistry().get("functions.call")!;
+    const pins = def.pins({ classId: "Guard", implicitSelf: false, pure: true, pins: SIGNATURE });
+    expect(pins.map((pin) => [pin.id, pin.direction, pin.type.kind])).toEqual([
+      ["target", "in", "objectRef"],
+      ["Amount", "in", "int"],
+      ["Low", "out", "int"],
+      ["High", "out", "int"],
+    ]);
+  });
+
+  it("runs once for each statement that reads it, whichever outputs the statement reads", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "range", "functions.call", {
+          classId: "Hero", functionName: "Range", implicitSelf: true, pure: true, pins: SIGNATURE, "default:Amount": 4,
+        }),
+        node(registry, "sum", "math.add_int"),
+        node(registry, "logSum", "debug.log"),
+        node(registry, "logLow", "debug.log"),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "logSum", targetPinId: "execIn" },
+        { id: "e2", sourceNodeId: "logSum", sourcePinId: "execOut", targetNodeId: "logLow", targetPinId: "execIn" },
+        { id: "e3", sourceNodeId: "range", sourcePinId: "Low", targetNodeId: "sum", targetPinId: "a" },
+        { id: "e4", sourceNodeId: "range", sourcePinId: "High", targetNodeId: "sum", targetPinId: "b" },
+        { id: "e5", sourceNodeId: "sum", sourcePinId: "out", targetNodeId: "logSum", targetPinId: "message" },
+        { id: "e6", sourceNodeId: "range", sourcePinId: "Low", targetNodeId: "logLow", targetPinId: "message" },
+      ],
+    };
+    // A Pure Call never waits, even for a function the host reports as latent.
+    const compiled = compileGraph(graph, { assetGuid: "a", registry, isLatentFunction: () => true });
+    expect(compiled.entryPoints[0]?.isAsync).toBe(false);
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => void;
+    const calls: unknown[] = [];
+    const logs: unknown[] = [];
+    let low = 1;
+    run({
+      self: "hero",
+      invokeFunction: (target: unknown, name: string, args: { Amount: number }) => {
+        calls.push([target, name, args.Amount]);
+        low += 1;
+        return { Low: low, High: low + args.Amount };
+      },
+      formatValue: (value: unknown) => value,
+      log: (_severity: string, _category: string, value: unknown) => logs.push(value),
+    });
+    expect(calls).toEqual([["hero", "Range", 4], ["hero", "Range", 4]]);
+    expect(logs).toEqual([2 + 6, 3]);
+  });
+});
+
+describe("a Pure function's graph without exec pins", () => {
+  it("returns what its Output node reads", () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [
+      { name: "Time", typeId: "float", direction: "in" },
+      { name: "Value", typeId: "float", direction: "out" },
+    ];
+    const graph: LogicGraph = {
+      id: "Double",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "twice", "math.mul", { "default:b": 2 }),
+        node(registry, "out", "flow.function.output", { pins }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "in", sourcePinId: "Time", targetNodeId: "twice", targetPinId: "a" },
+        { id: "e2", sourceNodeId: "twice", sourcePinId: "out", targetNodeId: "out", targetPinId: "Value" },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry, exportName: "Double" });
+    const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn Double;`)() as (context: unknown) => unknown;
+    expect(run({ args: { Time: 3 } })).toEqual({ Value: 6 });
+  });
+});

@@ -24,6 +24,7 @@ import {
 import {
   DISPATCHER_NODE_TYPE_IDS,
   OUTPUT_DELEGATE_PIN_ID,
+  functionCallNodes,
   type DispatcherNodeAction,
 } from "@haptic/scripting-nodes";
 import { delegateSignatureSource } from "@haptic/scripting";
@@ -113,6 +114,7 @@ function memberDefaults(
       pins: extras?.pins ?? DEFAULT_FUNCTION_PINS,
     };
     if (extras?.overridable === true) next.overridable = true;
+    if (extras?.pure === true) next.pure = true;
     if (extras?.implementsInterface) {
       next.implementsInterface = extras.implementsInterface;
     }
@@ -265,6 +267,68 @@ function syncFunctionGraphPins(
       },
     },
   };
+}
+
+const CALL_FUNCTION_DEFINITION = functionCallNodes.find((def) => def.id === "functions.call");
+
+type GraphSlice = Pick<SerializedGraph, "nodes" | "edges">;
+
+/**
+ * Rewires a Call that lost its exec pins: what ran into it runs straight on
+ * to what followed it. With several exec wires leaving it there is no single
+ * next step, so its exec wires are only removed.
+ */
+function bypassExecWires(
+  edges: SerializedGraph["edges"],
+  node: SerializedGraph["nodes"][number],
+): SerializedGraph["edges"] {
+  const pins = CALL_FUNCTION_DEFINITION?.pins(node.data) ?? [];
+  const execPin = (id: string | undefined, direction: "in" | "out") =>
+    pins.some((pin) => pin.id === id && pin.kind === "exec" && pin.direction === direction);
+  const into = edges.filter((edge) => edge.target === node.id && execPin(edge.targetHandle, "in"));
+  const from = edges.filter((edge) => edge.source === node.id && execPin(edge.sourceHandle, "out"));
+  const kept = edges.filter((edge) => !into.includes(edge) && !from.includes(edge));
+  const next = from.length === 1 ? from[0]! : undefined;
+  if (!next) return kept;
+  const taken = new Set(kept.map((edge) => edge.id));
+  for (const edge of into) {
+    let id = `${edge.id}-${next.target}`;
+    for (let n = 2; taken.has(id); n += 1) id = `${edge.id}-${next.target}-${n}`;
+    taken.add(id);
+    kept.push({ ...edge, id, target: next.target, targetHandle: next.targetHandle });
+  }
+  return kept;
+}
+
+/**
+ * A Pure toggle reaches this Class's own Calls of the function, in the Event
+ * Graph and every function graph. A Call that turns Pure loses its exec pins
+ * (`bypassExecWires`); one that stops being Pure gets unwired exec pins.
+ */
+function syncFunctionCallPurity(
+  graph: SerializedGraph,
+  member: GraphClassMember,
+  classId: string | undefined,
+): SerializedGraph {
+  const pure = member.pure === true;
+  const syncSlice = <T extends GraphSlice>(slice: T): T => {
+    let edges = slice.edges;
+    const nodes = slice.nodes.map((node) => {
+      if (!isOwnFunctionCall(node, member.name, classId)) return node;
+      if (pure) edges = bypassExecWires(edges, node);
+      const data: Record<string, unknown> = { ...node.data };
+      if (pure) data.pure = true;
+      else delete data.pure;
+      delete data.__pins;
+      delete data.__pure;
+      return { ...node, data };
+    });
+    return { ...slice, nodes, edges };
+  };
+  const functionGraphs = graph.functionGraphs
+    ? Object.fromEntries(Object.entries(graph.functionGraphs).map(([id, slice]) => [id, syncSlice(slice)]))
+    : undefined;
+  return { ...syncSlice(graph), ...(functionGraphs ? { functionGraphs } : {}) };
 }
 
 /** The open Class and its ancestry, so member edits can tell its own Call Function nodes from others. */
@@ -599,6 +663,7 @@ export function patchClassMember(
     if ("overridable" in patch && patch.overridable !== true) {
       delete next.overridable;
     }
+    if ("pure" in patch && patch.pure !== true) delete next.pure;
     // Soft is the absence of the property.
     if ("loading" in patch && patch.loading !== "hard") delete next.loading;
     if ("unit" in patch && !patch.unit) delete next.unit;
@@ -609,8 +674,11 @@ export function patchClassMember(
     }
     return next;
   });
-  const next = { ...graph, members };
-  const declared = next.members?.find((member) => member.id === memberId);
+  const patched = { ...graph, members };
+  const declared = patched.members?.find((member) => member.id === memberId);
+  const next = declared?.kind === "function" && (previous?.pure === true) !== (declared.pure === true)
+    ? syncFunctionCallPurity(patched, declared, classId)
+    : patched;
   if (declared?.kind === "variable") {
     return syncVariableAccessNodes(next, declared);
   }

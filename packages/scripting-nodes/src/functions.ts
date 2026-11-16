@@ -1,5 +1,6 @@
 import {
   BY_REFERENCE_ARGS_KEY,
+  defaultValueLiteral,
   jsIdent,
   pin,
   type NodeDefinition,
@@ -18,12 +19,18 @@ import {
   pinTypeForVariable,
 } from "./member-pins";
 
+/** A Call of a Pure function (`pure` copied from its member): no exec pins, evaluated where its outputs are read. */
+function isPureCall(properties: Record<string, unknown>): boolean {
+  return properties.pure === true;
+}
+
 export const functionCallNodes: NodeDefinition[] = [
   {
     id: "functions.call",
     title: "Call",
     category: "functions",
     declaredPinOrder: true,
+    pureWhen: isPureCall,
     pins: (properties) => {
       const classId =
         typeof properties.classId === "string" && properties.classId.trim()
@@ -38,12 +45,15 @@ export const functionCallNodes: NodeDefinition[] = [
         (row): row is MemberPinRow & { name: string } =>
           Boolean(row) && typeof row.name === "string" && row.name.length > 0,
       );
+      const pure = isPureCall(properties);
       const hasExec = rows.some((row) => row.typeId === "exec");
       // Signature order per side, so reordering in the Inspector moves pins
       // on the Call node too. Target follows any leading exec inputs.
       const sidePins = (direction: "in" | "out") =>
         rows
           .filter((row) => (row.direction === "out" ? "out" : "in") === direction)
+          // A Pure function's exec pins run its own graph; its Calls have none.
+          .filter((row) => !pure || row.typeId !== "exec")
           .map((row) => ({
             ...pin(
               memberArgPinId(row.name, CALL_PIN_IDS),
@@ -55,10 +65,10 @@ export const functionCallNodes: NodeDefinition[] = [
             // A Pass-By-Reference input takes a writable variable, as Assign Tag's Target does.
             ...(direction === "in" && isByReferenceRow(row) ? { reference: "required" as const } : {}),
           }));
-      const inputs = hasExec
+      const inputs = hasExec || pure
         ? sidePins("in")
         : [pin("execIn", "exec", "in", EXEC), ...sidePins("in")];
-      const outputs = hasExec
+      const outputs = hasExec || pure
         ? sidePins("out")
         : [pin("execOut", "then", "out", EXEC), ...sidePins("out")];
       let targetIndex = 0;
@@ -106,16 +116,24 @@ export const functionCallNodes: NodeDefinition[] = [
       }
       // The function reads and writes these through its Input node; the values above stay for callers that read args.
       if (references.length > 0) args.push(`${BY_REFERENCE_ARGS_KEY}: { ${references.join(", ")} }`);
-      const latent =
-        !runtime && ctx.isLatentFunction?.(classId, functionName) === true;
-      if (latent) ctx.requestAsync();
       const invoked = runtime
         ? `ctx.callComponentFunction(${targetExpr}, ${JSON.stringify(runtime)}, { ${args.join(", ")} })`
         : `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
-      const call = latent ? `(yield ${invoked})` : invoked;
       const outPins = ctx.node.pins.filter(
         (pinDef) => pinDef.direction === "out" && pinDef.kind === "data",
       );
+      // A Pure Call runs once per statement that reads it; its outputs read one result.
+      if (isPureCall(ctx.node.properties)) {
+        const result = ctx.shared?.(invoked) ?? invoked;
+        return Object.fromEntries(outPins.map((pinDef) => [
+          pinDef.name,
+          `((${result}) ?? {})[${JSON.stringify(pinDef.name)}] ?? ${defaultValueLiteral(pinDef.type)}`,
+        ]));
+      }
+      const latent =
+        !runtime && ctx.isLatentFunction?.(classId, functionName) === true;
+      if (latent) ctx.requestAsync();
+      const call = latent ? `(yield ${invoked})` : invoked;
       if (outPins.length === 0) {
         ctx.emit(`${call};`);
         return;

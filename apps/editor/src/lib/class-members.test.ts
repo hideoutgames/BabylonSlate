@@ -1319,3 +1319,50 @@ describe("droppedRowsNotice", () => {
     );
   });
 });
+
+describe("patchClassMember Pure", () => {
+  const node = (id: string, type: string, data: Record<string, unknown> = {}) =>
+    ({ id, type, position: { x: 0, y: 0 }, data });
+  const exec = (id: string, source: string, sourceHandle: string, target: string, targetHandle: string) =>
+    ({ id, source, sourceHandle, target, targetHandle });
+
+  function classWithCalls(): SerializedGraph {
+    let graph = addClassMember(emptyGraph(), "function", "Measure", () => "fn-1");
+    graph = addCallFunctionNode(graph, graph.members![0]!, { idFactory: () => "call" });
+    graph = addCallFunctionNode(graph, graph.members![0]!, {
+      idFactory: () => "foreign", classId: "Other", implicitSelf: false,
+    });
+    graph.functionGraphs = { "fn-2": { nodes: [node("inner", "functions.call", { functionName: "Measure", pins: [] })], edges: [] } };
+    graph.nodes.push(node("begin", "flow.event.beginPlay"), node("log", "debug.log"), node("other-log", "debug.log"));
+    graph.edges = [
+      exec("into", "begin", "execOut", "call", "exec"),
+      exec("on", "call", "then", "log", "execIn"),
+      exec("value", "call", "Value", "log", "message"),
+      exec("foreign-into", "other-log", "execOut", "foreign", "exec"),
+    ];
+    return graph;
+  }
+
+  it("makes this Class's Calls Pure and wires what ran into a Call on to what followed it", () => {
+    const graph = patchClassMember(classWithCalls(), "fn-1", { pure: true }, "Hero");
+    expect(graph.members?.[0]?.pure).toBe(true);
+    const data = (id: string) => graph.nodes.find((entry) => entry.id === id)?.data;
+    expect(data("call")?.pure).toBe(true);
+    expect(graph.functionGraphs?.["fn-2"]?.nodes[0]?.data.pure).toBe(true);
+    // Another Class's function of the same name keeps its exec pins and wires.
+    expect(data("foreign")?.pure).toBeUndefined();
+    expect(graph.edges.map((edge) => [edge.source, edge.sourceHandle, edge.target, edge.targetHandle])).toEqual([
+      ["call", "Value", "log", "message"],
+      ["other-log", "execOut", "foreign", "exec"],
+      ["begin", "execOut", "log", "execIn"],
+    ]);
+  });
+
+  it("gives Calls back unwired exec pins when Pure is turned off", () => {
+    const pure = patchClassMember(classWithCalls(), "fn-1", { pure: true }, "Hero");
+    const graph = patchClassMember(pure, "fn-1", { pure: undefined }, "Hero");
+    expect(graph.members?.[0]).not.toHaveProperty("pure");
+    expect(graph.nodes.find((entry) => entry.id === "call")?.data).not.toHaveProperty("pure");
+    expect(graph.edges).toEqual(pure.edges);
+  });
+});

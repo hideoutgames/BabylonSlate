@@ -407,6 +407,12 @@ export interface GraphClassMember {
   functionId?: string;
   /** User functions may be overridden by child classes. Default off. */
   overridable?: boolean;
+  /**
+   * Pure function: its Calls have no exec pins and run where their outputs are
+   * read. Its own graph keeps exec pins to run statements, or has none and
+   * returns what its Output node reads. Default off.
+   */
+  pure?: boolean;
   /** Function that implements a ScriptInterface method. */
   implementsInterface?: GraphClassMemberImplementsInterface;
   /** Function that overrides a parent-class function. */

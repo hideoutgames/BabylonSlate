@@ -23,11 +23,12 @@ import {
 } from "@haptic/editor-kit";
 import {
   classMemberCategoryPath,
+  type GraphClassMember,
   type GraphClassMemberKind,
   type SerializedGraph,
 } from "@haptic/core";
 import { isLockedEngineClassId } from "@haptic/object-model";
-import { isTouchEventNodeType } from "@haptic/scripting";
+import { isLatentFunctionKey, isTouchEventNodeType } from "@haptic/scripting";
 import { nextCopyName } from "@haptic/assets";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
@@ -65,8 +66,8 @@ import {
 } from "../lib/class-member-clipboard";
 import { MemberAccessChooser } from "../components/member-access-chooser";
 import { DispatcherActionChooser } from "../components/dispatcher-action-chooser";
-import { FolderIcon, PlugIcon, PlugZapIcon, PlusIcon, RadioTowerIcon, SquareFunctionIcon } from "lucide-react";
-import { GraphDropHint, type GraphDropHintState } from "@haptic/graph-ui";
+import { FolderIcon, PlusIcon } from "lucide-react";
+import { GraphDropHint, NodeKindIcon, nodeKind, type GraphDropHintState, type NodeKind } from "@haptic/graph-ui";
 import {
   useDocumentActions,
   useRegistryState,
@@ -78,7 +79,7 @@ import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { useWatchStore } from "../context/watch-store-context";
-import { defaultNodeRegistry } from "../services/graph-validation";
+import { defaultNodeRegistry, editorLatentFunctions } from "../services/graph-validation";
 import { embeddedScriptHost, logicGraphHostClass } from "../lib/embedded-script";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { IconActionButton } from "../components/icon-action-button";
@@ -119,6 +120,12 @@ export type MyClassMember = {
   functionId?: string;
   assetGuid?: string;
   pins?: import("@haptic/core").GraphClassMemberPin[];
+  /** Functions: Pure. */
+  pure?: boolean;
+  /** Functions: implements a Script Interface method. */
+  interfaceImplementation?: boolean;
+  /** Functions: waits (Delay or another latent node, directly or through a Call). */
+  latent?: boolean;
   componentId?: string;
   /** Class tree folder path; `|` separates subcategories. */
   category?: string;
@@ -140,6 +147,7 @@ function dropRowOf(member: MyClassMember): ClassMemberDropRow {
     inherited: member.inherited,
     inheritedFrom: member.inheritedFrom,
     pins: member.pins,
+    ...(member.pure ? { pure: true } : {}),
     typeId: member.typeId,
     typeClassId: member.typeClassId,
     componentId: member.componentId,
@@ -236,17 +244,20 @@ function memberIcon(member: MyClassMember) {
       <PinShapeGlyph shape={shape} connected outlined={false} color={color} size={12} data-testid={testId} />
     );
   }
-  // Kind icons match the graph's node markers: Plug Zap events, Radio Tower dispatchers, Plug interfaces.
-  if (member.kind === "function") {
-    return <SquareFunctionIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="function" />;
-  }
+  return <NodeKindIcon kind={memberNodeKind(member)} className="size-4" decorative />;
+}
+
+/** The kind a member's nodes show left of their titles, so its row shows the same icon. */
+function memberNodeKind(member: MyClassMember): NodeKind {
   if (member.kind === "event") {
-    return <PlugZapIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="event" />;
+    return member.eventType && nodeKind({ nodeType: member.eventType }) === "input-event" ? "input-event" : "event";
   }
-  if (member.kind === "dispatcher") {
-    return <RadioTowerIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="dispatcher" />;
+  if (member.kind === "function") {
+    if (member.interfaceImplementation) return "interface";
+    if (member.pure) return "pure";
+    return member.latent ? "latent" : "function";
   }
-  return <PlugIcon className="size-3.5 text-muted-foreground" aria-hidden data-member-icon="interface" />;
+  return member.kind === "dispatcher" ? "dispatcher" : "interface";
 }
 
 function inheritedMembers(
@@ -295,12 +306,22 @@ function inheritedMembers(
             : {}),
           ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
           ...(member.pins ? { pins: member.pins } : {}),
+          ...functionFlags(member),
           ...(member.category ? { category: member.category } : {}),
         });
       }
     }
   }
   return rows;
+}
+
+/** The function flags a Class tree row shows with its kind icon. */
+function functionFlags(member: GraphClassMember): Pick<MyClassMember, "pure" | "interfaceImplementation"> {
+  if (member.kind !== "function") return {};
+  return {
+    ...(member.pure === true ? { pure: true } : {}),
+    ...(member.implementsInterface ? { interfaceImplementation: true } : {}),
+  };
 }
 
 function isClassTreeEventNode(type: string): boolean {
@@ -332,6 +353,7 @@ export function membersForGraph(
       ...(member.functionId ? { functionId: member.functionId } : {}),
       ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
       ...(member.pins ? { pins: member.pins } : {}),
+      ...functionFlags(member),
       ...(member.category ? { category: member.category } : {}),
     }));
   const declaredKeys = new Set(
@@ -371,7 +393,29 @@ export function membersForGraph(
       ? { inherited: true, inheritedFrom: member.inheritedFrom }
       : {}),
   }));
-  return [...declared, ...componentRefs, ...events, ...inherited];
+  return withLatentFunctions([...declared, ...componentRefs, ...events, ...inherited], graph, options);
+}
+
+/** Marks the function rows whose Calls wait, as their Call nodes show it. */
+function withLatentFunctions(
+  members: MyClassMember[],
+  graph: SerializedGraph,
+  options: MembersForGraphOptions | undefined,
+): MyClassMember[] {
+  if (!members.some((member) => member.kind === "function" && !member.pure)) return members;
+  const classId = options?.classId ?? "Object";
+  const latent = editorLatentFunctions(defaultNodeRegistry(), {
+    classId,
+    graph,
+    otherClassGraphs: options?.parentGraphs,
+    parentOf: options?.parentOf,
+  });
+  if (latent.size === 0) return members;
+  return members.map((member) =>
+    member.kind === "function" && !member.pure &&
+      isLatentFunctionKey(member.inheritedFrom ?? classId, member.name, latent, options?.parentOf)
+      ? { ...member, latent: true }
+      : member);
 }
 
 type CategoryFolder = {
@@ -717,6 +761,7 @@ function ClassMembersView({
     selectAddedMember(
       addClassMember(graph, "function", name, undefined, {
         pins: row.pins,
+        ...(row.pure ? { pure: true } : {}),
         implementsInterface: row.implementsInterface,
         overrides: row.overrides,
       }),
