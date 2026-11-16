@@ -99,7 +99,8 @@ vi.mock("@haptic/render", () => ({
 const generateTileAssetThumbnail = vi.fn<(options: { asset: unknown; sortingLayers?: readonly string[] }) => Promise<Uint8Array | null>>(
   async () => new Uint8Array([137, 80, 78, 71]),
 );
-vi.mock("../lib/tile-asset-thumbnails", () => ({
+vi.mock("../lib/tile-asset-thumbnails", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tile-asset-thumbnails")>()),
   generateTileAssetThumbnail: (options: { asset: unknown; sortingLayers?: readonly string[] }) => generateTileAssetThumbnail(options),
 }));
 
@@ -185,7 +186,7 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(scopes[0]!.dispose).toHaveBeenCalledOnce();
   });
 
-  it.each(["Tileset", "Tilemap"] as const)("draws a saved %s without the shared Engine, and writes nothing when there is nothing to draw", async (type) => {
+  it.each(["Sprite", "Tileset", "Tilemap"] as const)("draws a saved %s without the shared Engine, and writes nothing when there is nothing to draw", async (type) => {
     sharedEngine.engine = null;
     sharedEngine.generation = 0;
     assets.set("tiles", { path: "assets/tiles.hasset", header: { type, payload: {} } });
