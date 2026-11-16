@@ -84,6 +84,10 @@ export class ShadowCasterVariants {
     if (shadowSettingsKey(settings) !== this.built) this.build(settings);
     this.request(this.context.casters);
   }
+  /** Whether its maps are built (`warm`): until then a sync's `follow` does nothing. */
+  isBuilt(): boolean {
+    return this.built !== null;
+  }
   /** A sync: builds the maps again for `settings` when they were built for others, or asks the casters still waiting. */
   follow(settings: ShadowSettings): void {
     if (this.built === null) return;

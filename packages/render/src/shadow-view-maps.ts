@@ -111,6 +111,10 @@ export class ShadowViewMaps {
     for (const view of this.views.values()) if (this.syncView(view, casterBounds)) changed = true;
     return changed;
   }
+  /** Whether no view has its own maps and the last sync mirrored with `settings`: a sync with them changes nothing. */
+  idleWith(settings: ShadowSettings): boolean {
+    return this.views.size === 0 && this.settings === settings;
+  }
   /**
    * Drops every view's mirrors of scene maps released or replaced since, before their replacements are built: their
    * tiles go back with the scene map's, and the atlas with its last tile. Whether any was dropped.

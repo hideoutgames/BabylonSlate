@@ -12,6 +12,13 @@ import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coor
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import * as scenePerf from "./scene-perf";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
+import { layerDrawableMeshes } from "./layer-drawable-meshes";
+import { sceneShadowController } from "./shadow-controller";
+import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 
 describe("SceneLayerCompositor", () => {
   const engines: NullEngine[] = [];
@@ -901,6 +908,117 @@ describe("SceneLayerCompositor", () => {
     expect(layer.camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
     expect(after.x).toBeCloseTo(before.x);
     expect(after.y).toBeCloseTo(before.y);
+  });
+
+  /** A prepared layer on a NullEngine that runs the real graph, with a hidden actor root, its drawn label and a disabled part. */
+  async function preparedHud() {
+    const engine = adaptNullEngineFrameGraph(new NullEngine({
+      renderWidth: 640, renderHeight: 360, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 1,
+    }));
+    engines.push(engine);
+    const compositor = new SceneLayerCompositor({ engine });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const quad = (name: string, x: number) => {
+      const mesh = MeshBuilder.CreatePlane(name, { size: 1 }, layer.scene);
+      applyOverlayUnlitMaterial(mesh);
+      mesh.position.x = x;
+      return mesh;
+    };
+    const root = new Mesh("actor-1", layer.scene);
+    root.isVisible = false;
+    const label = quad("label", -2);
+    label.parent = root;
+    const caret = quad("caret", 0);
+    caret.parent = root;
+    caret.setEnabled(false);
+    const icon = quad("icon", 2);
+    await compositor.prepare("hud", () => {});
+    return { engine, compositor, layer, scene: layer.scene, root, label, caret, icon, quad };
+  }
+
+  /** The meshes one compositor frame dispatched to its passes, by name in dispatch order. */
+  function dispatched(engine: NullEngine, compositor: SceneLayerCompositor): string[] {
+    const meshes: string[] = [];
+    const dispatch = RenderingManager.prototype.dispatch;
+    const spy = vi.spyOn(RenderingManager.prototype, "dispatch").mockImplementation(function (this: RenderingManager, subMesh, mesh, material) {
+      meshes.push((mesh ?? subMesh.getMesh()).name);
+      return dispatch.call(this, subMesh, mesh, material);
+    });
+    try {
+      engine.beginFrame();
+      compositor.render();
+      engine.endFrame();
+    } finally {
+      spy.mockRestore();
+    }
+    return meshes;
+  }
+
+  it("admits a layer's lights and shadows only on frames with something to admit", async () => {
+    const { engine, compositor, scene, icon } = await preparedHud();
+    // Play's visual factory gives every Scene with visuals a shadow controller, a layer's included.
+    const shadows = sceneShadowController(scene);
+    const admissions = () => compositor.diagnostics()[0]!.work.shadowAdmissions;
+    admissions();
+    dispatched(engine, compositor);
+    const steady = admissions();
+    dispatched(engine, compositor);
+    dispatched(engine, compositor);
+    expect(admissions()).toBe(steady);
+    // A mesh whose shadow participation changes is classified by the next admission.
+    shadows.setParticipation(icon, { castShadows: false, receiveShadows: true });
+    dispatched(engine, compositor);
+    expect(admissions()).toBeGreaterThan(steady);
+    const classified = admissions();
+    dispatched(engine, compositor);
+    expect(admissions()).toBe(classified);
+    const steadyAgain = admissions();
+    // A Material joining changes what the light block's next sync writes: that frame admits.
+    new StandardMaterial("joined", scene);
+    dispatched(engine, compositor);
+    expect(admissions()).toBeGreaterThan(steadyAgain);
+    const settled = admissions();
+    dispatched(engine, compositor);
+    expect(admissions()).toBe(settled);
+    // So does a light, on the frame it appears.
+    new HemisphericLight("sun", Vector3.Up(), scene);
+    dispatched(engine, compositor);
+    expect(admissions()).toBeGreaterThan(settled);
+    const lit = admissions();
+    dispatched(engine, compositor);
+    expect(admissions()).toBeGreaterThan(lit);
+  });
+
+  it.each<[string, (hud: Awaited<ReturnType<typeof preparedHud>>) => void, string[]]>([
+    ["nothing changes", () => {}, ["label", "icon"]],
+    ["a disabled part is enabled before the frame's draw", ({ scene, caret }) => {
+      scene.onBeforeRenderObservable.addOnce(() => caret.setEnabled(true));
+    }, ["label", "caret", "icon"]],
+    ["the hidden root gains a drawable child", ({ quad, root }) => { quad("badge", 4).parent = root; }, ["label", "icon", "badge"]],
+    ["a mesh is hidden", ({ label }) => { label.isVisible = false; }, ["icon"]],
+    ["a mesh is removed", ({ icon }) => icon.dispose(), ["label"]],
+    ["a text's geometry is redrawn", ({ label }) => {
+      MeshBuilder.CreatePlane("glyphs", { width: 3, height: 1 }, label.getScene()).geometry!.applyToMesh(label);
+      label.getScene().getMeshByName("glyphs")!.dispose();
+    }, ["label", "icon"]],
+    ["the layer's camera and output size change", ({ compositor, engine }) => {
+      compositor.setCamera("hud", { x: 3, y: 1, rotation: 20, zoom: 2 });
+      engine.setSize(320, 360);
+    }, ["label", "icon"]],
+  ])("draws what can draw on the frame %s", async (_name, change, expected) => {
+    const hud = await preparedHud();
+    dispatched(hud.engine, hud.compositor);
+    change(hud);
+    expect(dispatched(hud.engine, hud.compositor)).toEqual(expected);
+    expect(hud.compositor.diagnostics()[0]!.drawable).toMatchObject({ mismatches: 0 });
+  });
+
+  it("keeps a layer's drawable meshes from its creation until its Scene is released", async () => {
+    const { compositor, scene } = await preparedHud();
+    expect(layerDrawableMeshes(scene)?.map((mesh) => mesh.name)).toEqual(["label", "icon"]);
+    compositor.remove("hud");
+    await compositor.whenReleased();
+    expect(layerDrawableMeshes(scene)).toBeUndefined();
   });
 
   it("does not re-probe strict layer readiness on unchanged frames", async () => {
