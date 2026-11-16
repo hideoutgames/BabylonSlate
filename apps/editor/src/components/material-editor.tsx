@@ -19,6 +19,7 @@ import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
   selectedPickerIdentity,
+  type KeyChord,
   type NestedMenuItem,
   type PinListRow,
   type PropertyRow,
@@ -79,6 +80,7 @@ import {
   type MaterialDomain,
   type MaterialFunctionPin,
   type MaterialPreviewMesh,
+  type MaterialNodePreviewTarget,
   type MaterialPreviewSettings,
 } from "@haptic/shader-graph";
 import {
@@ -98,6 +100,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { useMaterialEditing } from "../context/material-editing-context";
 import { documentBatch, type DocumentBatch } from "../lib/document-batch";
 
@@ -310,35 +313,56 @@ function useMaterialConversionMenu<T extends MaterialGraphDocument>(document: T,
 }
 
 /**
+ * What the **Preview Node** key does with the one selected node: stop when that node is previewed, or
+ * when it is the output node while another node is; otherwise preview its first numeric output.
+ * Undefined when the key does nothing (a node with no numeric output, or the output node with nothing previewed).
+ */
+function previewNodeKeyResult(
+  document: MaterialDocument,
+  nodeId: string,
+  previewNode: MaterialNodePreviewTarget | null,
+  functions: Record<string, MaterialFunctionDocument>,
+): MaterialNodePreviewTarget | null | undefined {
+  const node = document.nodes.find((entry) => entry.id === nodeId);
+  if (!node) return undefined;
+  if (previewNode?.nodeId === nodeId) return null;
+  if (materialNodeDefinition(node.type)?.terminal) return previewNode ? null : undefined;
+  const first = materialNodePreviewOutputs(document, nodeId, { functions })[0];
+  return first ? { nodeId, pinId: first.pinId } : undefined;
+}
+
+/**
  * The node menu's **Preview Node**: an item for a node with one numeric output, a submenu of its outputs
  * for a node with several, and **Stop Previewing Node** on the previewed node and on the output node.
+ * `shortcut` is the key's chord, shown on the entry the key would run.
  */
-function usePreviewNodeMenu(document: MaterialDocument) {
+function usePreviewNodeMenu(document: MaterialDocument, shortcut: KeyChord | undefined) {
   const editing = useMaterialEditing();
   const { previewNode, setPreviewNode, functions } = editing;
   const documentRef = useRef(document);
   documentRef.current = document;
   return useCallback((nodeId: string): NestedMenuItem[] => {
     const current = documentRef.current;
-    const stop: NestedMenuItem = { id: "stop-previewing-node", label: "Stop Previewing Node", testId: "material-stop-previewing-node", icon: <EyeOffIcon />, onSelect: () => setPreviewNode(null) };
+    const stop: NestedMenuItem = { id: "stop-previewing-node", label: "Stop Previewing Node", testId: "material-stop-previewing-node", icon: <EyeOffIcon />, shortcut, onSelect: () => setPreviewNode(null) };
     const node = current.nodes.find((entry) => entry.id === nodeId);
     if (node && materialNodeDefinition(node.type)?.terminal) return previewNode ? [stop] : [];
     const outputs = materialNodePreviewOutputs(current, nodeId, { functions });
     if (outputs.length === 0) return [];
     const previewed = previewNode?.nodeId === nodeId ? previewNode.pinId : null;
     if (outputs.length === 1) {
-      return previewed ? [stop] : [{ id: "preview-node", label: "Preview Node", testId: "material-preview-node", icon: <EyeIcon />, onSelect: () => setPreviewNode({ nodeId, pinId: outputs[0]!.pinId }) }];
+      return previewed ? [stop] : [{ id: "preview-node", label: "Preview Node", testId: "material-preview-node", icon: <EyeIcon />, shortcut, onSelect: () => setPreviewNode({ nodeId, pinId: outputs[0]!.pinId }) }];
     }
     const choose: NestedMenuItem = {
       type: "submenu", id: "preview-node", label: "Preview Node", testId: "material-preview-node", icon: <EyeIcon />,
       items: [{
         type: "radio-group", id: "preview-node-output", value: previewed ?? "", closeOnClick: true,
         onValueChange: (pinId) => setPreviewNode({ nodeId, pinId }),
-        items: outputs.map((output) => ({ id: output.pinId, label: output.name, value: output.pinId, testId: `material-preview-node-${output.pinId}` })),
+        // The key previews the first output; on the previewed node it stops instead.
+        items: outputs.map((output, index) => ({ id: output.pinId, label: output.name, value: output.pinId, testId: `material-preview-node-${output.pinId}`, shortcut: index === 0 && !previewed ? shortcut : undefined })),
       }],
     };
     return previewed ? [stop, choose] : [choose];
-  }, [functions, previewNode, setPreviewNode]);
+  }, [functions, previewNode, setPreviewNode, shortcut]);
 }
 
 /**
@@ -396,7 +420,19 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
       }),
     [document, functions, globalParameters],
   );
-  const previewMenu = usePreviewNodeMenu(document);
+  // Preview Node's key acts on one selected node only: several have no one output to show.
+  const previewChord = useKeybindChord("material.previewNode");
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const keyNodeId = editing.selectedNodeIds.length === 1 ? editing.selectedNodeIds[0]! : null;
+  const keyResult = useMemo(
+    () => keyNodeId ? previewNodeKeyResult(document, keyNodeId, editing.previewNode, functions) : undefined,
+    [document, editing.previewNode, functions, keyNodeId],
+  );
+  useKeybindCommand("material.previewNode", () => { if (keyResult !== undefined) editing.setPreviewNode(keyResult); }, {
+    enabled: keyResult !== undefined,
+    focusWithinRef: canvasRef,
+  });
+  const previewMenu = usePreviewNodeMenu(document, previewChord);
   const nodeMenu = useCallback(
     (nodeId: string) => [...previewMenu(nodeId), ...conversionMenu(nodeId)],
     [conversionMenu, previewMenu],
@@ -410,6 +446,7 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   return (
     <PanelFrame className="flex-1" data-testid="material-graph-panel">
       <div
+        ref={canvasRef}
         className="flex h-full min-h-0 flex-col"
         data-testid="material-graph-editor"
       >

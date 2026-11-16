@@ -87,6 +87,7 @@ vi.mock("../context/material-editing-context", () => ({
   }),
 }));
 
+const { KeybindProvider } = await import("../context/keybind-context");
 const {
   MaterialCompilerResultsPanel,
   MaterialDetailsPanel,
@@ -807,6 +808,45 @@ describe("Material graph panel", () => {
     fireEvent.contextMenu(node("albedo").firstElementChild!);
     expect(await screen.findByRole("menuitem", { name: /Copy/ })).toBeTruthy();
     expect(screen.queryByTestId("material-preview-node")).toBeNull();
+  });
+
+  it("previews the one selected node with its key, stops with it again, and ignores it with several nodes selected", async () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({ id: "sample", type: "texture.sample", position: { x: 0, y: 300 }, properties: { textureGuid: "tex-1" } });
+    harness.content = doc as unknown as Record<string, unknown>;
+    harness.selectedNodeId = "sample";
+    const tree = () => <KeybindProvider><MaterialGraphPanel {...panelProps} /></KeybindProvider>;
+    const { container, rerender } = render(tree());
+    const node = (id: string) => container.querySelector<HTMLElement>(`[data-id="${id}"]`)!;
+    await waitFor(() => expect(node("sample")).not.toBeNull());
+    const pressP = () => fireEvent.keyDown(document.activeElement!, { key: "p", code: "KeyP" });
+
+    // Without focus in the graph, the key belongs to whatever has it.
+    pressP();
+    expect(harness.setPreviewNode).not.toHaveBeenCalled();
+    node("sample").focus();
+    pressP();
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith({ nodeId: "sample", pinId: "rgba" });
+
+    harness.previewNode = { nodeId: "sample", pinId: "rgb" };
+    rerender(tree());
+    pressP();
+    expect(harness.setPreviewNode).toHaveBeenLastCalledWith(null);
+
+    harness.selectedNodeId = null;
+    harness.selectedNodeIds = ["sample", "baseColor"];
+    rerender(tree());
+    pressP();
+    expect(harness.setPreviewNode).toHaveBeenCalledTimes(2);
+
+    // The menu shows the key on the entry it runs: the first output, or Stop on the previewed node.
+    harness.previewNode = null;
+    harness.selectedNodeIds = null;
+    harness.selectedNodeId = "sample";
+    rerender(tree());
+    fireEvent.contextMenu(node("sample").firstElementChild!);
+    fireEvent.click(await screen.findByTestId("material-preview-node"));
+    expect(screen.getAllByRole("menuitemradio").map((item) => item.getAttribute("aria-keyshortcuts"))).toEqual(["P", null, null, null, null, null]);
   });
 
   it("offers no second output node in Add Node", () => {

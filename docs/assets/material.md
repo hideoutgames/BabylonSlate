@@ -21,7 +21,7 @@ Simple graphs refresh the Preview as you edit. For expensive graphs, Custom GLSL
 
 ## Preview a node
 
-To see what one node outputs, right-click or hold it in the graph and choose **Preview Node**. For a node with several outputs, such as a **Texture Sample**, pick the output from the **Preview Node** submenu.
+To see what one node outputs, right-click or hold it in the graph and choose **Preview Node**. For a node with several outputs, such as a **Texture Sample**, pick the output from the **Preview Node** submenu. With a keyboard, select one node and press <kbd>P</kbd>: it previews the node's first output, and pressing it again stops. The key does nothing while several nodes are selected ([Keyboard Shortcuts](../start/shortcuts.md#material)).
 
 While a node is previewed:
 
