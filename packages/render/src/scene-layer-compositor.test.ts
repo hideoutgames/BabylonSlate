@@ -17,6 +17,7 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { RenderingManager } from "@babylonjs/core/Rendering/renderingManager";
 import { layerDrawableMeshes } from "./layer-drawable-meshes";
+import { sceneShadowController } from "./shadow-controller";
 import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 
 describe("SceneLayerCompositor", () => {
@@ -954,7 +955,9 @@ describe("SceneLayerCompositor", () => {
   }
 
   it("admits a layer's lights and shadows only on frames with something to admit", async () => {
-    const { engine, compositor, scene } = await preparedHud();
+    const { engine, compositor, scene, icon } = await preparedHud();
+    // Play's visual factory gives every Scene with visuals a shadow controller, a layer's included.
+    const shadows = sceneShadowController(scene);
     const admissions = () => compositor.diagnostics()[0]!.work.shadowAdmissions;
     admissions();
     dispatched(engine, compositor);
@@ -962,10 +965,18 @@ describe("SceneLayerCompositor", () => {
     dispatched(engine, compositor);
     dispatched(engine, compositor);
     expect(admissions()).toBe(steady);
+    // A mesh whose shadow participation changes is classified by the next admission.
+    shadows.setParticipation(icon, { castShadows: false, receiveShadows: true });
+    dispatched(engine, compositor);
+    expect(admissions()).toBeGreaterThan(steady);
+    const classified = admissions();
+    dispatched(engine, compositor);
+    expect(admissions()).toBe(classified);
+    const steadyAgain = admissions();
     // A Material joining changes what the light block's next sync writes: that frame admits.
     new StandardMaterial("joined", scene);
     dispatched(engine, compositor);
-    expect(admissions()).toBeGreaterThan(steady);
+    expect(admissions()).toBeGreaterThan(steadyAgain);
     const settled = admissions();
     dispatched(engine, compositor);
     expect(admissions()).toBe(settled);

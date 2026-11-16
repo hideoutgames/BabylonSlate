@@ -1476,12 +1476,13 @@ export class ForwardSceneFrameGraph {
     // every material's light defines) once per frame.
     if (this.auxiliary) return;
     const controller = findSceneShadowController(this.scene);
-    // Nothing to admit: no shadow owner, no light, and a light block the last sync left current
-    // (`sceneLightingSettledWithoutLights`: no Material joined and no flag changed since), as a Scene Layer's steady
-    // frames are. Both syncs below would return at once, so the readiness state around them (matrices, viewport, the
-    // cached Material) is not saved and restored either. A light or shadow owner that appears takes the full path on
-    // that same call.
-    if (!controller && !this.scene.lights.length && sceneLightingSettledWithoutLights(this.scene)) return;
+    // Nothing to admit: no light, a light block the last sync left current (`sceneLightingSettledWithoutLights`: no
+    // Material joined and no flag changed since) and no shadow owner or one with nothing to admit (`admitsNothing`: no
+    // light registered, no caster or unseen mesh, no map, the same camera and settings), as a Scene Layer's steady
+    // frames are. Both syncs below would change nothing, so the readiness state around them (matrices, viewport, the
+    // cached Material) is not saved and restored either. A light, a caster or a mesh that appears takes the full path
+    // on that same call.
+    if (!this.scene.lights.length && sceneLightingSettledWithoutLights(this.scene) && (!controller || controller.admitsNothing())) return;
     const started = this.measureWork ? performance.now() : 0;
     if (this.measureWork) this.work.shadowAdmissions += 1;
     withSceneReadinessState(this.scene, () => {

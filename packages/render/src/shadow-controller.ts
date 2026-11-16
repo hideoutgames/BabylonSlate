@@ -549,6 +549,25 @@ export class SceneShadowController {
     this.effectiveFrom = { requested, cascades, mode };
     return effectiveShadowSettings(requested, cascades, mode).settings;
   }
+  /**
+   * Whether a `sync("admission")` would change nothing now (a Scene Layer's, whose visuals register no light): no light
+   * registered or in the Scene, no mesh waiting to be classified or unseen, no map (a view's, the caster warm-up's or
+   * the atlas), and the camera and settings the last sync planned with. Such a sync plans nothing, releases nothing and
+   * writes the same empty reservation again; without a map its caster walk (`classifyCasters`, dropping removed casters)
+   * feeds nothing, and the first sync with a light runs it before it plans.
+   */
+  admitsNothing(): boolean {
+    const scene = this.scene;
+    if (this.entries.size || this.pending.size || scene.lights.length) return false;
+    if (scene.meshes.length !== this.knownMeshCount - this.removedSinceScan) return false;
+    if (!this.planSettings || this.selectionCamera !== scene.activeCamera) return false;
+    if (this.casterVariants.isBuilt() || liveShadowAtlasEdge(scene) !== 0) return false;
+    // The inputs `effectiveSettings` would find unchanged, read without recording them.
+    const state = sceneRenderingSettings(scene), from = this.effectiveFrom;
+    if (!from || from.requested !== state.shadows || from.cascades !== scene.getEngine()._features.supportCSM || from.mode !== state.mode)
+      return false;
+    return this.views.idleWith(this.planSettings);
+  }
   /** Whether the Scene lists the mesh; only a mesh that has left needs the search. */
   private listed(mesh: AbstractMesh): boolean {
     return !this.departed.has(mesh) || this.scene.meshes.includes(mesh);
