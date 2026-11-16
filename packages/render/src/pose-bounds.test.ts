@@ -1,9 +1,10 @@
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { SubMesh } from "@babylonjs/core/Meshes/subMesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { BakedVertexAnimationManager } from "@babylonjs/core/BakedVertexAnimation/bakedVertexAnimationManager";
 import { MorphTargetManager } from "@babylonjs/core/Morph/morphTargetManager";
 import { Scene } from "@babylonjs/core/scene";
@@ -89,6 +90,106 @@ describe("pose bounds", () => {
     expect(box(mesh).max).toEqual([6, 2, 0]);
     frame();
     expect(box(mesh).max).toEqual([10, 2, 0]);
+  });
+
+  it("computes a skeleton once a frame however many followed meshes it poses, its bones linked to nodes or not", () => {
+    const { scene, frame } = host();
+    // A loaded model's character: each primitive its own mesh on one skeleton whose bones follow transform nodes, as
+    // the glTF loader links them, so every prepare copies the nodes and computes every bone.
+    const linked = rig(scene);
+    const rootNode = new TransformNode("root node", scene), armNode = new TransformNode("arm node", scene);
+    armNode.parent = rootNode;
+    armNode.position.set(0, 2, 0);
+    linked.root.linkTransformNode(rootNode);
+    linked.arm.linkTransformNode(armNode);
+    const parts = ["body", "head", "hands"].map((name) => strip(scene, linked.skeleton, name));
+    // Another character sharing nothing, its bones unlinked.
+    const own = rig(scene);
+    const lone = strip(scene, own.skeleton, "lone");
+    for (const mesh of [...parts, lone]) expect(followPose(mesh)).toBe(true);
+    const computes = new Map([[linked.skeleton, 0], [own.skeleton, 0]]);
+    for (const skeleton of computes.keys()) skeleton.onBeforeComputeObservable.add(() => computes.set(skeleton, computes.get(skeleton)! + 1));
+    frame();
+    expect([...computes.values()]).toEqual([1, 0]);
+    armNode.position.set(5, 2, 0);
+    own.arm.position = new Vector3(3, 2, 0);
+    frame();
+    expect([...computes.values()]).toEqual([2, 1]);
+    for (const mesh of parts) expect(box(mesh), mesh.name).toEqual({ min: [0, 0, 0], max: [6, 2, 0] });
+    expect(box(lone)).toEqual({ min: [0, 0, 0], max: [4, 2, 0] });
+  });
+
+  it("gives every mesh of a shared skeleton the box of its own vertices skinned by the pose, in several poses", () => {
+    const { scene, frame } = host();
+    const { skeleton, root, arm } = rig(scene);
+    const rootNode = new TransformNode("root node", scene), armNode = new TransformNode("arm node", scene);
+    armNode.parent = rootNode;
+    armNode.position.set(0, 2, 0);
+    root.linkTransformNode(rootNode);
+    arm.linkTransformNode(armNode);
+    // Three meshes of different vertices on the one skeleton; the last is the skeleton's but not followed.
+    const wide = strip(scene, skeleton, "wide", [-2, 0, 0, 3, 0, 0, 0, 2, 0, 1, 2, 0]);
+    const tall = strip(scene, skeleton, "tall", [0, 0, 1, 1, 0, 1, 0, 2, -1, 0, 2, 4]);
+    const morphed = strip(scene, skeleton, "morphed");
+    morphed.morphTargetManager = new MorphTargetManager(scene);
+    expect([followPose(wide), followPose(tall), followPose(morphed)]).toEqual([true, true, false]);
+    let computes = 0;
+    skeleton.onBeforeComputeObservable.add(() => { computes += 1; });
+    /** Reference: each vertex skinned by hand, by its bone's node's world matrix after the bone's inverse bind. */
+    const skinned = (positions: readonly number[]) => {
+      rootNode.computeWorldMatrix(true);
+      armNode.computeWorldMatrix(true);
+      const moved = [rootNode.getWorldMatrix(), Matrix.Translation(0, -2, 0).multiply(armNode.getWorldMatrix())];
+      const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+      for (let vertex = 0; vertex < 4; vertex += 1) {
+        // A strip's lower pair is the root's, its upper pair the arm's.
+        const point = Vector3.TransformCoordinates(Vector3.FromArray(positions, vertex * 3), moved[vertex < 2 ? 0 : 1]!).asArray();
+        for (let axis = 0; axis < 3; axis += 1) {
+          min[axis] = Math.min(min[axis]!, point[axis]!);
+          max[axis] = Math.max(max[axis]!, point[axis]!);
+        }
+      }
+      return [...min, ...max];
+    };
+    const poses: Array<() => void> = [
+      () => undefined,
+      () => armNode.position.set(4, 3, -1),
+      () => { rootNode.position.set(0, -5, 2); armNode.rotationQuaternion = Quaternion.RotationAxis(Vector3.Forward(), Math.PI / 2); },
+      () => { armNode.rotationQuaternion = null; armNode.rotation.set(0, Math.PI / 3, Math.PI / 4); rootNode.scaling.set(2, 1, 0.5); },
+    ];
+    for (const [index, setPose] of poses.entries()) {
+      setPose();
+      computes = 0;
+      frame();
+      expect(computes, `pose ${index}`).toBe(1);
+      // Each bone moves a straight run of a strip's vertices, whose box is the run itself: the posed box is the box of
+      // the skinned vertices, a ten-thousandth of its size wider.
+      for (const [mesh, positions] of [[wide, [-2, 0, 0, 3, 0, 0, 0, 2, 0, 1, 2, 0]], [tall, [0, 0, 1, 1, 0, 1, 0, 2, -1, 0, 2, 4]]] as const) {
+        const { minimumWorld, maximumWorld } = mesh.getBoundingInfo().boundingBox;
+        const expected = skinned(positions);
+        [...minimumWorld.asArray(), ...maximumWorld.asArray()].forEach((value, bound) =>
+          expect(value, `${mesh.name}, pose ${index}, bound ${bound}`).toBeCloseTo(expected[bound]!, 2));
+      }
+    }
+  });
+
+  it("lets go of a mesh whose skeleton is swapped and still poses the meshes left on its old one", () => {
+    const { scene, frame } = host();
+    const first = rig(scene), second = rig(scene);
+    const kept = strip(scene, first.skeleton, "kept"), swapped = strip(scene, first.skeleton, "swapped");
+    for (const mesh of [kept, swapped]) followPose(mesh);
+    frame();
+    swapped.skeleton = second.skeleton;
+    first.arm.position = new Vector3(5, 2, 0);
+    second.arm.position = new Vector3(-3, 2, 0);
+    frame();
+    expect(followsPose(swapped)).toBe(false);
+    expect(swapped.alwaysSelectAsActiveMesh).toBe(true);
+    expect(box(kept).max).toEqual([6, 2, 0]);
+    // Followed again, on its new skeleton.
+    expect(followPose(swapped)).toBe(true);
+    frame();
+    expect(box(swapped)).toEqual({ min: [-3, 0, 0], max: [1, 2, 0] });
   });
 
   it("does not follow a mesh something else poses, or whose vertices it cannot read", () => {
