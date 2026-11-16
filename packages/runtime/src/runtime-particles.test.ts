@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
 import { createActor, createDefaultSceneSettings, type SerializedScene } from "@haptic/core";
 import { createInProcessRuntime } from "./driver";
@@ -132,6 +132,29 @@ describe("particle playback reports in the runtime", () => {
       generation, reason: "failed" });
     expect(finishedLogs(commands)).toEqual(["Finished:false"]);
     runtime.stop();
+  });
+
+  it("finds the reporting actor by its guid without walking the world, and never a destroyed one", async () => {
+    const commands: CommandMessage[] = [];
+    const runtime = await runtimeWithHandler(commands);
+    const generation = lastPlay(commands);
+    const world = runtime.getWorld();
+    const walks = vi.spyOn(world, "getActors");
+    runtime.applyParticlePlaybackEnded({ type: "particlePlaybackEnded", actorGuid: "emitter", componentId: "sparks",
+      generation, reason: "finished" });
+    expect(finishedLogs(commands)).toEqual(["Finished:false"]);
+    expect(walks).not.toHaveBeenCalled();
+    walks.mockRestore();
+    runtime.stop();
+
+    // A current report for an actor destroyed meanwhile runs nothing.
+    const laterCommands: CommandMessage[] = [];
+    const later = await runtimeWithHandler(laterCommands);
+    later.getWorld().findActor("emitter")!.destroyed = true;
+    later.applyParticlePlaybackEnded({ type: "particlePlaybackEnded", actorGuid: "emitter", componentId: "sparks",
+      generation: lastPlay(laterCommands), reason: "finished" });
+    expect(finishedLogs(laterCommands)).toEqual([]);
+    later.stop();
   });
 
   it("reports Stopped for a drain that Stop started", async () => {

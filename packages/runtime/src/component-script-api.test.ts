@@ -897,6 +897,57 @@ describe("component script API", () => {
     runtime.stop();
   });
 
+  it("looks for an ended voice's AudioComponent only on actors that own one, first owner in world order", async () => {
+    const commands: CommandMessage[] = [];
+    const audio = (id: string, sourceId?: string) =>
+      ({ id, sourceId, classId: "AudioComponent", properties: { audioAssetGuid: "jump", playOnStart: false } });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: sceneOf([
+        createActor("bystander-1", "Bystander", { classId: "Hero", components: [{ id: "light-1", classId: "PointLightComponent", properties: {} }] }),
+        createActor("removed", "Removed", { classId: "Hero", components: [audio("removed-audio")] }),
+        createActor("speaker", "Speaker", { classId: "Hero", components: [audio("audio-1")] }),
+        createActor("bystander-2", "Bystander", { classId: "Hero", components: [{ id: "light-2", classId: "PointLightComponent", properties: {} }] }),
+        createActor("later", "Later", { classId: "Hero", components: [audio("later-audio", "audio-1")] }),
+      ]),
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([script(
+      'export function onAudioFinished(ctx) { ctx.log("log", "Finished", String(ctx.self?.guid ?? "")); }',
+      { entryPoints: ["audio-1", "removed-audio", "later-audio"].map((componentId) =>
+        ({ name: "onAudioFinished", event: "onAudioFinished", isAsync: false, componentId })) },
+    )]);
+    runtime.realizePlayWorld();
+    const world = runtime.getWorld();
+    const searched = ["bystander-1", "bystander-2", "speaker", "later"].map((guid) => {
+      const components = world.findActor(guid)!.components;
+      let count = 0;
+      const find = components.find.bind(components);
+      components.find = ((...args: Parameters<typeof find>) => (count++, find(...args))) as typeof components.find;
+      return () => [guid, count];
+    });
+    const finished = () => commands.flatMap((command) => (command.type === "log" && command.category === "Finished" ? [command.message] : []));
+    // A script or Behaviour Tree voice is no component: only the owners are looked at, and nothing runs.
+    runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "script:3" });
+    runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "bt:tree:node" });
+    expect(finished()).toEqual([]);
+    expect(searched.map((read) => read())).toEqual([["bystander-1", 0], ["bystander-2", 0], ["speaker", 2], ["later", 2]]);
+    // The first live owner in world order ends the search.
+    runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "audio-1" });
+    expect(finished()).toEqual(["speaker"]);
+    expect(searched.map((read) => read()).filter(([guid]) => guid !== "speaker"))
+      .toEqual([["bystander-1", 0], ["bystander-2", 0], ["later", 2]]);
+    // A destroyed owner is passed over, and its own voice runs nothing.
+    world.findActor("removed")!.destroyed = true;
+    runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "removed-audio" });
+    expect(finished()).toEqual(["speaker"]);
+    runtime.applyAudioVoiceEnded({ type: "audioVoiceEnded", voiceId: "later-audio" });
+    expect(finished().slice(1).every((guid) => guid === "later")).toBe(true);
+    expect(finished().length).toBeGreaterThan(1);
+    runtime.stop();
+  });
+
   it("stops treating a dropped voice as playing without running Event On Audio Finished", async () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

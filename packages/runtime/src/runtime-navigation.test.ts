@@ -20,6 +20,8 @@ import { createInProcessRuntime } from "./driver";
 const costVolumesReceived = vi.hoisted(() => [] as NavCostVolume[]);
 /** Calls to the backend's agent reads: the allocating ones and the ones that write into a caller's point. */
 const agentReads = vi.hoisted(() => ({ agentPosition: 0, agentVelocity: 0, agentPositionInto: 0, agentVelocityInto: 0 }));
+/** Calls to the backend's `closestPoint`. */
+const projections = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock("@haptic/navigation", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@haptic/navigation")>();
@@ -32,6 +34,11 @@ vi.mock("@haptic/navigation", async (importOriginal) => {
       backend.applyCostVolume = (volume) => {
         costVolumesReceived.push(structuredClone(volume));
         applyCostVolume(volume);
+      };
+      const closestPoint = backend.closestPoint.bind(backend);
+      backend.closestPoint = (point) => {
+        projections.count += 1;
+        return closestPoint(point);
       };
       const agentPosition = backend.agentPosition.bind(backend);
       const agentVelocity = backend.agentVelocity.bind(backend);
@@ -124,6 +131,56 @@ describe("RuntimeNavigation", () => {
   beforeEach(() => {
     costVolumesReceived.length = 0;
     resetAgentReads();
+  });
+
+  it("projects a Move To destination once per destination and navmesh, with the same result every tick", async () => {
+    const runtime = await play([
+      agent("walker", [-6, 0, 0]),
+      blocker("door", { dynamic: true, kind: "box", area: "unwalkable" }, {
+        position: [0, 1, 0], rotation: [0, 0, 0, 1], scale: [2, 2, 8],
+      }),
+    ], await generateNavMesh({ ...ground, settings: { supportDynamicObstacles: true } }));
+    try {
+      runtime.tick();
+      const walker = runtime.getWorld().findActor("walker")!;
+      const navigation = (runtime as unknown as { navigation: import("./runtime-navigation").RuntimeNavigation }).navigation;
+      const memory: Record<string, unknown> = {};
+      const moveTo = (dest: { x: number; y: number; z: number } | null) => {
+        const before = projections.count;
+        const result = navigation.tickMoveTo(walker, {}, memory, dest);
+        return [result, projections.count - before];
+      };
+      // The first tick of a move projects the destination (and the crowd target); later ticks project nothing.
+      const first = moveTo({ x: 6, y: 0, z: 0 });
+      expect(first[0]).toBe("running");
+      expect(first[1]).toBeGreaterThanOrEqual(1);
+      for (let tick = 0; tick < 5; tick++) expect(moveTo({ x: 6, y: 0, z: 0 })).toEqual(["running", 0]);
+      // An equal destination in a new object is the same destination.
+      expect(moveTo({ x: 6, y: 0, z: 0 })).toEqual(["running", 0]);
+      // A destination off the navmesh fails on every tick, asked once.
+      expect(moveTo({ x: 500, y: 0, z: 500 })).toEqual(["failure", 1]);
+      expect(moveTo({ x: 500, y: 0, z: 500 })).toEqual(["failure", 0]);
+      // Back to the first destination: a new move, projected again.
+      expect(moveTo({ x: 6, y: 0, z: 0 })[1]).toBeGreaterThanOrEqual(1);
+      expect(moveTo({ x: 6, y: 0, z: 0 })).toEqual(["running", 0]);
+      // A navmesh change (the door's carve is removed) asks again, once.
+      runtime.getWorld().destroyActor("door");
+      runtime.tick();
+      expect(moveTo({ x: 6, y: 0, z: 0 })).toEqual(["running", 1]);
+      expect(moveTo({ x: 6, y: 0, z: 0 })).toEqual(["running", 0]);
+      // Another task's memory has its own answer.
+      const other: Record<string, unknown> = {};
+      const before = projections.count;
+      expect(navigation.tickMoveTo(walker, {}, other, { x: 500, y: 0, z: 500 })).toBe("failure");
+      expect(projections.count - before).toBe(1);
+      // A replaced navmesh without the destination fails the move that was running.
+      await runtime.loadNavMesh(await generateNavMesh({
+        positions: [-10, 0, -10, -2, 0, -10, -2, 0, 10, -10, 0, 10], indices: [0, 3, 2, 0, 2, 1],
+      }));
+      expect(moveTo({ x: 60, y: 0, z: 0 })).toEqual(["failure", 1]);
+    } finally {
+      runtime.stop();
+    }
   });
 
   it("keeps an idle agent's facing and turns a moving 2D agent toward its velocity", async () => {

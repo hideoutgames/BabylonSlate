@@ -117,6 +117,7 @@ import { RuntimeParticles } from "./runtime-particles";
 import type { RuntimeParticleEffects } from "./runtime-particle-effects";
 import { SpriteClipTrace, type SpriteClipState } from "./sprite-clip-trace";
 import { WaterClock } from "./water-world";
+import { componentOwners } from "./world-component-index";
 import { indexSceneLibrary, registerSceneAssetClasses } from "./scene-library";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { SceneStreams } from "./scene-streams";
@@ -753,7 +754,9 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     if (!voiceId) return;
     this.voices.ended(voiceId);
     if (message.dropped) return;
-    for (const actor of this.world.getActors()) {
+    // Only AudioComponent owners can match, in the world order a walk over every actor meets them in; a script or
+    // Behaviour Tree voice id matches none of them.
+    for (const actor of componentOwners(this.world, "AudioComponent")) {
       if (actor.destroyed) continue;
       const component = actor.components.find(
         (entry) =>
@@ -785,7 +788,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     // A spawned effect with Auto Destroy goes once its playback ends, failures included.
     this.particleEffects.ended(message.actorGuid, message.componentId);
     if (message.reason === "failed") return;
-    const actor = this.world.getActors().find((entry) => entry.guid === message.actorGuid && !entry.destroyed);
+    const found = this.world.findActor(message.actorGuid);
+    const actor = found && !found.destroyed ? found : undefined;
     const component = actor?.components.find(
       (entry) => !entry.destroyed && entry.classId === "ParticleComponent" && entry.guid === message.componentId,
     );

@@ -60,6 +60,10 @@ export function navPointFromUnknown(value: unknown): NavPoint | null {
  */
 export class RuntimeNavigation implements RuntimeSubsystem {
   private nav: NavigationBackend | null = null;
+  /** Each MoveTo task memory's last destination check (`moveDestinationOnNavMesh`). */
+  private readonly moveProjections = new WeakMap<Record<string, unknown>, {
+    nav: NavigationBackend; revision: number; x: number; y: number; z: number; projected: NavPoint | null;
+  }>();
   private readonly sceneNavmeshBytes = new Map<string, Uint8Array>();
   private navSceneGuid: string | null = null;
   private navigationInitialized = false;
@@ -748,6 +752,23 @@ export class RuntimeNavigation implements RuntimeSubsystem {
     return { x, y, z, w };
   }
 
+  /**
+   * `dest` projected onto the navmesh, or null when it does not reach it. The projection depends only on the point
+   * and the navmesh, so a task asking about the same destination over the same backend and navmesh revision reuses
+   * its last answer; reading the revision applies pending obstacle and cost changes exactly as the query would.
+   */
+  private moveDestinationOnNavMesh(memory: Record<string, unknown>, dest: NavPoint): NavPoint | null {
+    const nav = this.nav;
+    if (!nav) return null;
+    const revision = nav.navMeshRevision();
+    const last = this.moveProjections.get(memory);
+    if (last && last.nav === nav && last.revision === revision &&
+      last.x === dest.x && last.y === dest.y && last.z === dest.z) return last.projected;
+    const projected = nav.closestPoint(this.toNav(dest));
+    this.moveProjections.set(memory, { nav, revision, x: dest.x, y: dest.y, z: dest.z, projected });
+    return projected;
+  }
+
   /** Behaviour Tree MoveTo / MoveToBlackboardKey task host. */
   tickMoveTo(
     actor: Actor,
@@ -759,7 +780,7 @@ export class RuntimeNavigation implements RuntimeSubsystem {
       this.stopAgent(actor.guid);
       return "failure";
     }
-    const target = this.nav?.closestPoint(this.toNav(dest));
+    const target = this.moveDestinationOnNavMesh(memory, dest);
     if (!target) {
       this.warnMoveBlocked(actor);
       this.stopAgent(actor.guid);
