@@ -17,7 +17,7 @@ import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascaded
 import { readinessProbeListScope } from "./readiness-scope";
 import { shadowDebugOff } from "./shadow-debug";
 import { casterWithinShadowRange, deformsWithinBounds, drawsNoShadow, hasDeformingShadowBounds } from "./shadow-mesh-policy";
-import { castsIntoCascade } from "./shadow-caster-size";
+import { cascadeTexelScale, castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowCasterList } from "./shadow-caster-list";
 import type { RetainedShadowCasters } from "./shadow-retained-casters";
 import {
@@ -347,6 +347,7 @@ export function createShadowGenerator(
       // follow it.
       const minTexels = layer > 0 && generator instanceof AtlasCascadedShadowGenerator ? generator.farCasterMinTexels : 0;
       const size = minTexels ? shadowTileSize(generator, layer) : 0;
+      const scale = minTexels ? cascadeTexelScale(transform.m) : 0;
       let kept = 0;
       // A retained caster is drawn from the shared buffer (the observer below): Babylon's list leaves it out.
       const retained = context.retained?.begin(generator, activePlanes) ? context.retained : null;
@@ -355,7 +356,7 @@ export function createShadowGenerator(
         if (!isRevealPending(mesh) &&
           (!position || casterWithinShadowRange(mesh, position, range!)) &&
           (!posed || !boxOutside(mesh.getBoundingInfo().boundingBox, activePlanes)) &&
-          (!minTexels || castsIntoCascade(transform.m, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels) ||
+          (!minTexels || castsIntoCascade(scale, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels) ||
             (!posed && hasDeformingShadowBounds(mesh))) &&
           !retained?.take(mesh)) casters[kept++] = mesh;
       }

@@ -53,6 +53,15 @@ const SAMPLER = "hapticRetainedDraws";
 const DRAW_UNIFORM = "hapticRetainedDraw";
 const SLOTS_UNIFORM = "hapticRetainedSlots";
 const MULTI_DRAW_DEFINE = "HAPTIC_RETAINED_MULTI_DRAW";
+const MULTI_DRAW_EXTENSION = "#extension GL_ANGLE_multi_draw : require";
+const MULTI_DRAW_DEFINE_LINE = `#define ${MULTI_DRAW_DEFINE}`;
+
+/** Whether two define lists hold the same lines in the same order. */
+function sameStrings(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) if (a[index] !== b[index]) return false;
+  return true;
+}
 /** Texels a draw's row holds: its world matrix's four columns, then (has normals, uneven scaling, 0, 0). */
 const TEXELS = 5;
 /** Draws per row of the data texture, whose width is a whole number of them. */
@@ -201,7 +210,8 @@ type EngineInternals = {
 };
 
 const GROUPS = 8;
-const NORMAL_STUB = { getMesh: () => ({ isVerticesDataPresent: () => true }) };
+const NORMAL_STUB_MESH = { isVerticesDataPresent: () => true };
+const NORMAL_STUB = { getMesh: () => NORMAL_STUB_MESH };
 
 function grown<T extends Float32Array | Uint32Array | Int32Array>(array: T, needed: number): T {
   if (needed <= array.length) return array;
@@ -262,6 +272,9 @@ export class RetainedShadowCasters {
   private textureRows = 0;
   private textureLease: ManagedRenderLease | undefined;
   private readonly programs = new Map<string, Program>();
+  /** Per generator, the program `programFor` last found and the defines it was found for. */
+  private readonly lastPrograms = new WeakMap<ShadowGenerator, { key: string; defines: readonly string[]; program: Program }>();
+  private readonly definesScratch: string[] = [];
   private readonly layers = new WeakMap<ShadowGenerator, Layer>();
   private current: Layer | null = null;
   /** The walked frame whose layers share what they find of a caster (`beginFrame`); 0 outside one. */
@@ -535,9 +548,13 @@ export class RetainedShadowCasters {
       return null;
     }
     // The same geometry and parts keep their slots; only the matrix and the cull state are written again.
-    const same = caster.range === range && caster.draws.length === parts!.length && caster.draws.every((draw, index) =>
-      draw.part === parts![index] && this.counted[draw.slot] === partCount(parts![index]!, inOrder) &&
-      this.offsets[draw.slot] === (range.indexBase + partStart(parts![index]!, inOrder)) * 4);
+    let same = caster.range === range && caster.draws.length === parts!.length;
+    // A plain loop: a callback here would be a closure per described caster.
+    for (let index = 0; same && index < caster.draws.length; index++) {
+      const draw = caster.draws[index]!, part = parts![index]!;
+      same = draw.part === part && this.counted[draw.slot] === partCount(part, inOrder) &&
+        this.offsets[draw.slot] === (range.indexBase + partStart(part, inOrder)) * 4;
+    }
     if (!same) {
       this.freeDraws(caster);
       const previous = caster.range;
@@ -783,9 +800,15 @@ export class RetainedShadowCasters {
 
   /** The depth program for `generator`'s defines; null when it failed. */
   private programFor(generator: ShadowGenerator): Program | null {
-    const defines: string[] = [];
+    // The defines are asked into a scratch list and compared with the ones this generator's program was found for: the
+    // same list is the same key, so a steady generator builds no list and no key string per call.
+    const defines = this.definesScratch;
+    defines.length = 0;
     (generator as unknown as GeneratorInternals)._prepareShadowDefines(NORMAL_STUB, false, defines, false);
-    if (this.multiDraw) defines.unshift("#extension GL_ANGLE_multi_draw : require", `#define ${MULTI_DRAW_DEFINE}`);
+    if (this.multiDraw) defines.unshift(MULTI_DRAW_EXTENSION, MULTI_DRAW_DEFINE_LINE);
+    const last = this.lastPrograms.get(generator);
+    if (last && this.programs.get(last.key) === last.program && sameStrings(last.defines, defines))
+      return this.refused ? null : last.program;
     const key = defines.join("\n");
     let program = this.programs.get(key);
     if (!program) {
@@ -809,6 +832,7 @@ export class RetainedShadowCasters {
       program = { wrapper, effect, vao: null };
       this.programs.set(key, program);
     }
+    this.lastPrograms.set(generator, { key, defines: defines.slice(), program });
     return this.refused ? null : program;
   }
 
