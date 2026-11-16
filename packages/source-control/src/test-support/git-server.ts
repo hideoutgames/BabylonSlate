@@ -6,9 +6,11 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
+import { nodeFileTransfer, type TransferFetch } from "@haptic/vfs/node-file-transfer";
+import { folderFileTransfer } from "@haptic/vfs/native-file-transfer-port";
 import type { ProjectStorage } from "@haptic/core";
 import { fixedCredential, type HostCredential } from "../credentials";
-import type { HttpClient, HttpRequest } from "../http";
+import type { FileTransferClient, HttpClient, HttpRequest } from "../http";
 import { lfsPointerText } from "../lfs-pointer";
 
 /** The repository's origin as the code under test sees it; the test transport routes it to loopback. */
@@ -146,12 +148,36 @@ export class GitTestServer {
     return fixedCredential(CREDENTIAL);
   }
 
-  /** Native HTTP for tests: the HTTPS test origins go to the loopback servers over plain HTTP. */
-  readonly http: HttpClient = async (request: HttpRequest) => {
-    const url = new URL(request.url);
+  /** A test origin's loopback address; any other host is unreachable. */
+  private loopback(raw: string): string {
+    const url = new URL(raw);
     const port = url.origin === GIT_ORIGIN ? this.gitPort : url.origin === STORAGE_ORIGIN ? this.storagePort : 0;
     if (!port) throw new TypeError(`fetch failed: ${url.origin} is unreachable`);
-    const response = await fetch(`http://127.0.0.1:${port}${url.pathname}${url.search}`, {
+    return `http://127.0.0.1:${port}${url.pathname}${url.search}`;
+  }
+
+  /** `fetch` with the HTTPS test origins routed to loopback, as a host's native file transfer calls it. */
+  readonly fetch: TransferFetch = async (url, init) => fetch(this.loopback(url), init);
+
+  /**
+   * The native file transfer as the desktop main process runs it (Node
+   * streams to and from the files of the folder `storage` is bound to), over
+   * the test origins. `storage` is one `storage()` made, or a view of it.
+   */
+  files(storage: ProjectStorage): FileTransferClient {
+    const transfer = folderFileTransfer(nodeFileTransfer(storage as unknown as NodeStorageAdapter, this.fetch), storage);
+    return (request) => transfer.transfer(request);
+  }
+
+  /** The host writing the benchmark's random objects into `storage`'s folder, as the mobile plugins do. */
+  randomObjects(storage: ProjectStorage): (directory: string, size: number) => Promise<{ path: string; sha256: string }> {
+    const transfer = folderFileTransfer(nodeFileTransfer(storage as unknown as NodeStorageAdapter, this.fetch), storage);
+    return (directory, size) => transfer.writeRandomObject!(directory, size);
+  }
+
+  /** Native HTTP for tests: the HTTPS test origins go to the loopback servers over plain HTTP. */
+  readonly http: HttpClient = async (request: HttpRequest) => {
+    const response = await fetch(this.loopback(request.url), {
       method: request.method,
       headers: request.headers,
       ...(request.body === undefined ? {} : { body: request.body as BodyInit }),
@@ -332,20 +358,22 @@ export function blobPath(bytes: Uint8Array, folder = "assets"): string {
   return `${folder}/.blobs/${sha256(bytes)}`;
 }
 
-/** Storage that records every full read, so a test can see which files an operation opened. */
-export function countingStorage(storage: ProjectStorage): { storage: ProjectStorage; reads: string[] } {
+/** Storage that records every full read and every write, so a test can see which files an operation opened or wrote through it. */
+export function countingStorage(storage: ProjectStorage): { storage: ProjectStorage; reads: string[]; writes: string[] } {
   const reads: string[] = [];
+  const writes: string[] = [];
   const proxy = new Proxy(storage, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver) as unknown;
-      if ((property === "readBinary" || property === "readText") && typeof value === "function") {
+      const log = property === "readBinary" || property === "readText" ? reads : property === "writeBinary" || property === "writeText" ? writes : null;
+      if (log && typeof value === "function") {
         return (path: string, ...rest: unknown[]) => {
-          reads.push(path);
+          log.push(path);
           return (value as (...args: unknown[]) => unknown).call(target, path, ...rest);
         };
       }
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     },
   });
-  return { storage: proxy, reads };
+  return { storage: proxy, reads, writes };
 }

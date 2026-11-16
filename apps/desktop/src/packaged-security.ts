@@ -227,6 +227,54 @@ function androidSettingsChange(value: unknown): void {
   else requireValue((keys[0] === "pick" || keys[0] === "clear") && ANDROID_PICKS.has(value[keys[0]] as string));
 }
 
+/** An HTTPS address with no credentials in it. */
+function httpsUrl(value: unknown): void {
+  text(value, 8192);
+  const url = new URL(value);
+  requireValue(url.protocol === "https:" && !url.username && !url.password);
+}
+
+/** Request headers: token names and single-line values. */
+function headerRecord(value: unknown): void {
+  plainObject(value);
+  for (const [key, header] of Object.entries(value)) {
+    requireValue(/^[a-zA-Z0-9-]+$/.test(key));
+    text(header, 8192);
+    requireValue(!/[\r\n]/.test(header));
+  }
+}
+
+/** A renderer-chosen transfer id (a UUID). */
+function transferId(value: unknown): void {
+  text(value, 100);
+  requireValue(/^[A-Za-z0-9-]{1,100}$/.test(value));
+}
+
+const FILE_TRANSFER_KEYS = new Set(["id", "method", "url", "headers", "path", "expected"]);
+
+/**
+ * A native file transfer: the window's open project (a `node:` id, which
+ * main checks is still its folder), a file path inside it (never the root),
+ * GET or PUT over HTTPS, headers, and the object's size and SHA-256.
+ */
+function fileTransferRequest(folderId: unknown, value: unknown): void {
+  text(folderId, 4096);
+  requireValue(folderId.startsWith("node:"));
+  plainObject(value);
+  requireValue(Object.keys(value).every((key) => FILE_TRANSFER_KEYS.has(key)));
+  transferId(value.id);
+  requireValue(value.method === "GET" || value.method === "PUT");
+  httpsUrl(value.url);
+  headerRecord(value.headers);
+  projectPath(value.path, false);
+  if (value.expected !== undefined) {
+    plainObject(value.expected);
+    const { size, sha256 } = value.expected;
+    requireValue(typeof size === "number" && Number.isSafeInteger(size) && size >= 0);
+    requireValue(typeof sha256 === "string" && /^[0-9a-f]{64}$/.test(sha256));
+  }
+}
+
 function projectPath(value: unknown, allowRoot = true): void {
   text(value, 4096);
   requireValue(!/[\\:]/.test(value) && !value.startsWith("/") && !value.split("/").includes(".."));
@@ -276,7 +324,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,
     "memory:stats": 0, "updates:status": 0, "updates:restart": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
-    "lfs:fetch": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
+    "lfs:fetch": 1, "files:transfer": 2, "files:cancel": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
     "project:writeBinary": 2, "project:exists": 1, "project:readdir": 1, "project:mkdir": 2,
     "project:remove": 1, "project:stat": 1, "file:save": 2, "game-shell:runtime": 2, "game-shell:mac-identities": 0, "game-shell:package-mac": 1,
@@ -387,12 +435,14 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
   } else if (channel === "auth:open-browser") {
     text(args[0], 8192);
     requireValue(authProviderUrl(args[0]) !== null && args[1] === AUTH_CALLBACK_URL);
+  } else if (channel === "files:transfer") {
+    fileTransferRequest(args[0], args[1]);
+  } else if (channel === "files:cancel") {
+    transferId(args[0]);
   } else if (channel === "lfs:fetch") {
     requireValue(args[0] && typeof args[0] === "object");
     const request = args[0] as Record<string, unknown>;
-    text(request.url, 8192);
-    const url = new URL(request.url);
-    requireValue(url.protocol === "https:" && !url.username && !url.password);
+    httpsUrl(request.url);
     requireValue(request.method === undefined || ["GET", "POST", "PUT", "DELETE", "HEAD"].includes(String(request.method)));
     // Git packs and LFS objects cross as an exact ArrayBuffer, within the IPC limit, and only as a POST or PUT body.
     if (request.body instanceof ArrayBuffer) {
@@ -401,14 +451,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     if (request.upload !== undefined) validateImageUpload(request);
     requireValue(request.responseType === undefined || request.responseType === "text" || request.responseType === "binary");
     requireValue(request.disableRedirects === undefined || typeof request.disableRedirects === "boolean");
-    if (request.headers !== undefined) {
-      requireValue(request.headers && typeof request.headers === "object" && !Array.isArray(request.headers));
-      for (const [key, value] of Object.entries(request.headers)) {
-        requireValue(/^[a-zA-Z0-9-]+$/.test(key));
-        text(value, 8192);
-        requireValue(!/[\r\n]/.test(value));
-      }
-    }
+    if (request.headers !== undefined) headerRecord(request.headers);
   } else if (args.length > 0) {
     projectPath(args[0], channel !== "project:remove" && channel !== "project:writeBinary");
     if (channel === "project:readBinaryRange") {

@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createEmptyProject, type ProjectDocument, type SourceControlProjectSettings } from "@haptic/core";
-import type { GitBenchmarkResult } from "@haptic/source-control/git-benchmark";
-import type { EditorGitBenchmarkOptions } from "../lib/git-benchmark-runner";
+import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
+import type { EditorGitBenchmarkOptions, EditorGitBenchmarkResult } from "../lib/git-benchmark-runner";
 
 const harness = vi.hoisted(() => ({
   /** How often the runner module was evaluated: it must not load before Run. */
   runnerLoads: 0,
-  run: vi.fn<(options: EditorGitBenchmarkOptions) => Promise<GitBenchmarkResult>>(),
+  run: vi.fn<(options: EditorGitBenchmarkOptions) => Promise<EditorGitBenchmarkResult>>(),
   project: null as ProjectDocument | null,
 }));
 
@@ -25,6 +25,7 @@ const writeText = vi.fn<(text: string) => Promise<void>>();
 let clipboard: PropertyDescriptor | undefined;
 
 beforeEach(() => {
+  receiveActiveAppSettingsUpdate({ gitBenchmarkRun: null });
   harness.run.mockReset();
   harness.project = null;
   clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -56,16 +57,23 @@ async function freshDialog() {
 }
 
 const MIB = 1024 * 1024;
-const RESULT: GitBenchmarkResult = {
+const RESULT: EditorGitBenchmarkResult = {
+  transfer: "native",
   files: 2400,
   unchangedStatusChanges: 0,
   clone: { ms: 12_400, sent: 2048, received: 85 * MIB, workingReads: 0 },
   status: { ms: 640, sent: 0, received: 0, workingReads: 0 },
   commit: { ms: 210, sent: 0, received: 0, workingReads: 1 },
   push: { ms: 1_100, sent: 4096, received: 1024, workingReads: 0 },
+  createObjects: { ms: 1_500, objects: 3, bytes: 96 * MIB },
+  lfsCommit: { ms: 300, sent: 0, received: 0, workingReads: 0 },
   lfsUpload: { ms: 9_300, sent: 96 * MIB, received: 2048, workingReads: 0, objects: 3, bytes: 96 * MIB },
   lfsDownload: { ms: 7_900, sent: 1024, received: 96 * MIB, workingReads: 0, objects: 3, bytes: 96 * MIB },
   leftovers: "Branch haptic-benchmark-20261115120000 (two commits) and 3 LFS objects of 33554432 bytes on the host; delete the branch there.",
+  memory: {
+    clone: { appFootprintBytes: 300 * MIB, appAvailableBytes: 2048 * MIB },
+    "lfs-upload": { appFootprintBytes: 410 * MIB, appAvailableBytes: 1900 * MIB },
+  },
 };
 
 const field = (testId: string) => screen.getByTestId(testId) as HTMLInputElement;
@@ -90,7 +98,7 @@ describe("GitBenchmarkDialog", () => {
 
   it("loads the runner only on Run, runs it with the form's values, survives closing and shows the results to copy", async () => {
     harness.project = projectWith({ mode: "integrated", repositoryUrl: "https://github.com/acme/game.git", branch: "develop" });
-    let finish: (result: GitBenchmarkResult) => void = () => {};
+    let finish: (result: EditorGitBenchmarkResult) => void = () => {};
     harness.run.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     const GitBenchmarkDialog = await freshDialog();
     const { rerender } = render(<GitBenchmarkDialog open onOpenChange={vi.fn()} />);
@@ -125,6 +133,11 @@ describe("GitBenchmarkDialog", () => {
     expect(summary).toContain("Clone12.4 s · 0.0 MiB sent, 85.0 MiB received");
     expect(summary).toContain("Status640 ms");
     expect(summary).toContain("LFS Upload9.3 s · 3 objects, 96.0 MiB");
+    expect(summary).toContain("LFS TransferNative, between file and network");
+    const memory = screen.getByTestId("git-benchmark-memory").textContent;
+    expect(memory).toContain("Clone300.0 MiB app · 2048.0 MiB left");
+    expect(memory).toContain("LFS Upload410.0 MiB app · 1900.0 MiB left");
+    expect(memory).not.toContain("Status");
 
     fireEvent.click(screen.getByTestId("git-benchmark-copy"));
     await waitFor(() => expect(screen.getByTestId("git-benchmark-copy").textContent).toBe("Copied"));
@@ -173,5 +186,33 @@ describe("GitBenchmarkDialog", () => {
     await Promise.resolve();
     expect(harness.run).not.toHaveBeenCalled();
     expect(harness.runnerLoads).toBe(0);
+  });
+
+  // The runner records each stage before it starts and clears the record when the run ends, failed or not.
+  it("names the stage a run the app did not survive stopped in, without loading the runner", async () => {
+    const GitBenchmarkDialog = await freshDialog();
+    // The fresh dialog reads the fresh module graph's settings.
+    const { receiveActiveAppSettingsUpdate } = await import("../context/app-settings-context");
+    receiveActiveAppSettingsUpdate({ gitBenchmarkRun: { stage: "lfs-upload", startedAt: "2026-11-16T09:30:00.000Z" } });
+    render(<GitBenchmarkDialog open onOpenChange={vi.fn()} />);
+    const notice = screen.getByTestId("git-benchmark-interrupted");
+    expect(within(notice).getByText("Last Run Stopped During LFS Upload")).toBeTruthy();
+    expect(notice.textContent).toContain("most likely out of memory");
+    expect(harness.runnerLoads).toBe(0);
+
+    receiveActiveAppSettingsUpdate({ gitBenchmarkRun: null });
+    await waitFor(() => expect(screen.queryByTestId("git-benchmark-interrupted")).toBeNull());
+  });
+
+  it("shows the stage a running benchmark is in", async () => {
+    harness.project = projectWith({ mode: "integrated", repositoryUrl: "https://github.com/acme/game.git", branch: "main" });
+    harness.run.mockImplementation(() => new Promise(() => {}));
+    const { GitBenchmarkDialog } = await import("./git-benchmark-dialog");
+    render(<GitBenchmarkDialog open onOpenChange={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("git-benchmark-run"));
+    expect((await screen.findByTestId("git-benchmark-progress")).textContent).toContain("Running…");
+    receiveActiveAppSettingsUpdate({ gitBenchmarkRun: { stage: "create-objects", startedAt: "2026-11-16T09:30:00.000Z" } });
+    await waitFor(() => expect(screen.getByTestId("git-benchmark-progress").textContent).toContain("Create LFS Objects…"));
+    expect(screen.queryByTestId("git-benchmark-interrupted")).toBeNull();
   });
 });

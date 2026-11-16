@@ -22,6 +22,38 @@ export interface HttpResponse {
 
 export type HttpClient = (request: HttpRequest) => Promise<HttpResponse>;
 
+/**
+ * One file streamed natively between a URL and the repository's project
+ * folder (`@haptic/vfs` `NativeFileTransfer`, bound to that folder), so its
+ * bytes never enter JavaScript: `GET` downloads into `path`, committed only
+ * when it matches `expected`; `PUT` sends `path`, only when it matches.
+ */
+export interface FileTransferRequest {
+  method: "GET" | "PUT";
+  url: string;
+  headers: Record<string, string>;
+  path: string;
+  expected?: { size: number; sha256: string };
+  /** Redirects are never followed; `authorizedHttp` sets this as it does for every credentialed request. */
+  disableRedirects?: boolean;
+  signal?: AbortSignal;
+  onProgress?: (bytes: number) => void;
+}
+
+export interface FileTransferResponse {
+  status: number;
+  /** Body bytes sent or received, and their SHA-256 as the host computed it (0 and `""` for a download not committed). */
+  bytes: number;
+  sha256: string;
+}
+
+export type FileTransferClient = (request: FileTransferRequest) => Promise<FileTransferResponse>;
+
+/** A transfer whose body or file did not match `expected` (`@haptic/vfs` `transfer-mismatch`): nothing was committed or sent. */
+export function isTransferMismatch(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "transfer-mismatch";
+}
+
 /** The response object, or null when the body is empty, invalid JSON, or not an object. */
 export function parseJsonObject(text: string): Record<string, unknown> | null {
   if (!text) return null;

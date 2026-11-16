@@ -2,7 +2,7 @@ import { useId, useRef, useState } from "react";
 import { CircleCheckIcon, CircleXIcon, TriangleAlertIcon } from "lucide-react";
 import type { SourceControlProjectSettings } from "@haptic/core";
 import { parseRepositoryUrl } from "@haptic/source-control";
-import type { GitBenchmarkResult, GitBenchmarkStep } from "@haptic/source-control/git-benchmark";
+import type { GitBenchmarkStep } from "@haptic/source-control/git-benchmark";
 import { NumberField, SelectableText } from "@haptic/editor-kit";
 import { Alert, AlertDescription, AlertTitle } from "@haptic/ui/components/alert";
 import { Button } from "@haptic/ui/components/button";
@@ -18,19 +18,24 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@haptic/ui/components
 import { Input } from "@haptic/ui/components/input";
 import { Progress, ProgressLabel } from "@haptic/ui/components/progress";
 import { Textarea } from "@haptic/ui/components/textarea";
+import { useGitBenchmarkRun } from "../context/app-settings-context";
 import { useProjectState } from "../context/document-context";
 import { copyText } from "../lib/diagnostic-info";
 import {
   GIT_BENCHMARK_DEFAULT_BLOB_MIB,
   GIT_BENCHMARK_DEFAULT_BLOBS,
+  GIT_BENCHMARK_STAGE_LABELS,
+  gitBenchmarkStageLabel,
   runGitBenchmarkLazily,
+  type GitBenchmarkRunStage,
 } from "../lib/git-benchmark-hook";
+import type { EditorGitBenchmarkResult } from "../lib/git-benchmark-runner";
 
 type Form = { repositoryUrl: string; branch: string; blobs: number; blobMiB: number };
 type Run =
   | { kind: "idle" }
   | { kind: "running"; repositoryUrl: string; branch: string }
-  | { kind: "done"; result: GitBenchmarkResult; json: string }
+  | { kind: "done"; result: EditorGitBenchmarkResult; json: string }
   | { kind: "failed"; message: string };
 
 /**
@@ -53,7 +58,7 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 const transfer = (step: GitBenchmarkStep) => `${formatMiB(step.sent)} sent, ${formatMiB(step.received)} received`;
 
 /** The gate: a status of the unchanged tree reads no file and finds no change. */
-function StatusGate({ result }: { result: GitBenchmarkResult }) {
+function StatusGate({ result }: { result: EditorGitBenchmarkResult }) {
   const reads = result.status.workingReads;
   const changes = result.unchangedStatusChanges;
   const passed = reads === 0 && changes === 0;
@@ -70,18 +75,50 @@ function StatusGate({ result }: { result: GitBenchmarkResult }) {
   );
 }
 
-function TimingSummary({ result }: { result: GitBenchmarkResult }) {
+function TimingSummary({ result }: { result: EditorGitBenchmarkResult }) {
   const rows: Array<[string, string]> = [
     ["Files", String(result.files)],
     ["Clone", `${formatMs(result.clone.ms)} · ${transfer(result.clone)}`],
     ["Status", formatMs(result.status.ms)],
     ["Commit", formatMs(result.commit.ms)],
     ["Push", `${formatMs(result.push.ms)} · ${transfer(result.push)}`],
+    ["LFS Transfer", result.transfer === "native" ? "Native, between file and network" : "Whole body, through JavaScript"],
+    ["Create LFS Objects", `${formatMs(result.createObjects.ms)} · ${plural(result.createObjects.objects, "object", "objects")}, ${formatMiB(result.createObjects.bytes)}`],
+    ["LFS Commit", formatMs(result.lfsCommit.ms)],
     ["LFS Upload", `${formatMs(result.lfsUpload.ms)} · ${plural(result.lfsUpload.objects, "object", "objects")}, ${formatMiB(result.lfsUpload.bytes)}`],
     ["LFS Download", `${formatMs(result.lfsDownload.ms)} · ${plural(result.lfsDownload.objects, "object", "objects")}, ${formatMiB(result.lfsDownload.bytes)}`],
   ];
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs" data-testid="git-benchmark-summary">
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="tabular-nums">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * Each measured stage's peak: the app process's footprint and the least memory left on iOS and Android (the
+ * WebView's content process, where JavaScript runs on iOS, is not in it), or the JavaScript heap.
+ */
+function MemorySummary({ result }: { result: EditorGitBenchmarkResult }) {
+  const rows = (Object.keys(GIT_BENCHMARK_STAGE_LABELS) as GitBenchmarkRunStage[]).flatMap((stage) => {
+    const peak = result.memory[stage];
+    if (!peak) return [];
+    const parts = [
+      peak.appFootprintBytes !== undefined ? `${formatMiB(peak.appFootprintBytes)} app` : null,
+      peak.appAvailableBytes !== undefined ? `${formatMiB(peak.appAvailableBytes)} left` : null,
+      peak.jsHeapBytes !== undefined ? `${formatMiB(peak.jsHeapBytes)} JS heap` : null,
+    ].filter((part): part is string => part !== null);
+    return parts.length > 0 ? [[GIT_BENCHMARK_STAGE_LABELS[stage], parts.join(" · ")] as const] : [];
+  });
+  if (rows.length === 0) return null;
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs" data-testid="git-benchmark-memory">
+      <dt className="col-span-2 font-medium">Peak Memory</dt>
       {rows.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="text-muted-foreground">{label}</dt>
@@ -106,6 +143,8 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
   const id = useId();
   const { projectDocument } = useProjectState();
   const sourceControl = projectDocument?.settings.sourceControl;
+  // Recorded before each stage and cleared when a run ends: while no run is going here, a run the app did not survive.
+  const recorded = useGitBenchmarkRun();
   const [form, setForm] = useState<Form>(() => prefilledForm(sourceControl));
   const [urlError, setUrlError] = useState<string | null>(null);
   const [run, setRun] = useState<Run>({ kind: "idle" });
@@ -219,6 +258,16 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
                 </Field>
               </div>
             </FieldGroup>
+            {recorded ? (
+              <Alert variant="destructive" data-testid="git-benchmark-interrupted">
+                <CircleXIcon />
+                <AlertTitle>Last Run Stopped During {gitBenchmarkStageLabel(recorded.stage)}</AlertTitle>
+                <AlertDescription>
+                  The run started {new Date(recorded.startedAt).toLocaleString()} never finished: the app closed during
+                  this stage, most likely out of memory.
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <Alert data-testid="git-benchmark-warning">
               <TriangleAlertIcon className="text-(--warning)" />
               <AlertTitle>Pushes A New Branch</AlertTitle>
@@ -230,12 +279,15 @@ export function GitBenchmarkDialog({ open, onOpenChange }: GitBenchmarkDialogPro
           </>
         ) : run.kind === "running" ? (
           <Progress value={null} data-testid="git-benchmark-progress">
-            <ProgressLabel className="text-xs font-normal text-muted-foreground">Running…</ProgressLabel>
+            <ProgressLabel className="text-xs font-normal text-muted-foreground">
+              {recorded ? `${gitBenchmarkStageLabel(recorded.stage)}…` : "Running…"}
+            </ProgressLabel>
           </Progress>
         ) : run.kind === "done" ? (
           <>
             <StatusGate result={run.result} />
             <TimingSummary result={run.result} />
+            <MemorySummary result={run.result} />
             <Textarea
               readOnly
               value={run.json}

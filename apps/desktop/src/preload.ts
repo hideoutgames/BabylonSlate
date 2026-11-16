@@ -43,6 +43,18 @@ contextBridge.exposeInMainWorld("haptic", {
   http: {
     fetch: (request: unknown) => ipcRenderer.invoke("lfs:fetch", request),
   },
+  // Git LFS objects: main streams them between the network and the window's open project.
+  fileTransfer: {
+    transfer: (folderId: string, request: unknown) => ipcRenderer.invoke("files:transfer", folderId, request),
+    cancel: (id: string) => ipcRenderer.invoke("files:cancel", id),
+    onProgress: (listener: (id: string, bytes: number) => void) => {
+      const forward = (_event: unknown, id: string, bytes: number) => listener(id, bytes);
+      ipcRenderer.on("files:progress", forward);
+      return () => {
+        ipcRenderer.removeListener("files:progress", forward);
+      };
+    },
+  },
   // Native game packaging: this app's own Electron runtime as a release-layout zip.
   gameShell: {
     platform: process.platform,

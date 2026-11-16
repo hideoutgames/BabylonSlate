@@ -182,6 +182,17 @@ export class NodeStorageAdapter implements ProjectStorage {
     throw new Error(`Too many symbolic links: ${path}`);
   }
 
+  /**
+   * The absolute file `path` names inside the project, confined as every
+   * operation here is (a link inside the project is followed, and may not
+   * lead out of it), for a host that streams the file itself.
+   */
+  async filePath(path: string): Promise<string> {
+    const { full } = await this.resolvePath(path);
+    // As `writeBinary`: a link inside the project keeps pointing at its (checked) target.
+    return realpath(full).catch(() => full);
+  }
+
   async readBinary(path: string): Promise<Uint8Array> {
     const { full } = await this.resolvePath(path);
     let buf: Buffer;
