@@ -1228,6 +1228,9 @@ describe("Profile", () => {
     expect(comparison("heavy post off")).toMatchObject({ basis: "frame", before: 50, step: 40, after: 50, change: { ms: -10 }, unsettled: false });
     expect(comparison("mirror captures off")).toMatchObject({ before: 50, step: 45, after: null, change: { ms: -5 }, spread: null, unsettled: false });
     expect(comparison("heavy baseline 2")).toBeNull();
+    // Baselines within 2% of each other agree, however small the step's change.
+    const still = [at("light baseline 1", 16.7, 6), at("light discard samples", 16.6, 6), at("light baseline 2", 16.6, 6)];
+    expect(profileComparison(still, still[1]!)).toMatchObject({ spread: expect.closeTo(0.1), unsettled: false });
     // Per view in the order they ran, the largest saving first.
     expect(profileRanking(samples).map((group) => [group.view, group.steps.map((entry) => entry.label)])).toEqual([
       ["light", ["light MSAA off"]], ["heavy", ["heavy shadows off", "heavy post off"]], ["mirror", ["mirror captures off"]],

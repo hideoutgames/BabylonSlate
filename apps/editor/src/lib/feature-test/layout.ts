@@ -74,7 +74,7 @@ export interface FeatureTestProfileView {
  * The Feature Test Check's Profile views (`possess "<name>"`), each static so a step and its baselines see the same
  * frame: `light`, a close look down at the Lights And Shadows zone (few draws, local and sun shadows); `heavy`, high
  * over the left and middle of the zone grid toward the back row (many draws, with no Mirror on screen); `mirror`, the
- * Render Targets zone with both Mirrors and the capture monitors on screen. Every-frame captures draw from any view.
+ * Render Targets zone with both Mirrors and the capture monitors on screen (Mirrors and every-frame captures draw only there).
  */
 export const FEATURE_TEST_PROFILE_VIEWS: Readonly<Record<"light" | "heavy" | "mirror", FeatureTestProfileView>> = {
   light: { actorId: "ft-profile-light-camera", name: "Profile Light Camera", position: [32, 9, -10], target: [32, 0, -1], fieldOfView: 60 },

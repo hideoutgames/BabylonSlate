@@ -559,7 +559,7 @@ export function breakdownDelta(
  * A Profile step against the baselines of its view on either side of it (A B A): each in median GPU-busy time per frame
  * where the step and both baselines measured it (`basis: "gpu"`; display pacing quantises frame time, never it), else
  * in mean frame time. `change` is the step against their mean; `spread`, how far the two baselines differ. When they
- * differ by more than the step's own change (`unsettled`), the view drifted across it as much as the step moved it, and
+ * differ by more than the step's own change and by more than `PROFILE_SETTLED_SPREAD` of their mean (`unsettled`), the view drifted across it as much as the step moved it, and
  * the change says nothing. `after` is null where the baseline after it was not measured (the sweep stopped); the
  * change is then against the one before. `cpu` is the median CPU frame cost's change, the same way.
  */
@@ -576,6 +576,12 @@ export interface ProfileComparison {
   cpu: BaselineDelta | null;
   overlaps: boolean;
 }
+
+/**
+ * Baselines within this share of their mean of each other agree whatever the step's change (a step that changes
+ * nothing is then settled, not UNSETTLED by a few hundredths of a millisecond of noise).
+ */
+export const PROFILE_SETTLED_SPREAD = 0.02;
 
 /** The measured baselines of `sample`'s view nearest before and after it. */
 function baselinesAround(
@@ -602,7 +608,8 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
     const spread = afterValue === null ? null : Math.abs(afterValue - value(before)!);
     return {
       label: sample.label, view: sample.view, basis: gpu ? "gpu" : "frame", before: value(before)!, step, after: afterValue,
-      change: { ms, percent: (ms / base) * 100 }, spread, unsettled: spread !== null && spread > Math.abs(ms),
+      change: { ms, percent: (ms / base) * 100 }, spread,
+      unsettled: spread !== null && spread > Math.max(Math.abs(ms), base * PROFILE_SETTLED_SPREAD),
       cpu: deltaAroundBaselines(samples, sample, (entry) => entry.cpuMs),
       overlaps: profileStep(sample.label)?.overlaps === true,
     };
