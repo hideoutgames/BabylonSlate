@@ -29,15 +29,19 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.CookieHandler;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.HashMap;
@@ -602,11 +606,53 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         }
     }
 
+    /** A thread of `transferExecutor`, which `TransferCookieGate` tells apart. */
+    private static final class TransferThread extends Thread {
+        TransferThread(Runnable work) {
+            super(work, "BabylonSlate file transfer");
+        }
+    }
+
+    /**
+     * Capacitor makes its WebView cookie store the process's default cookie handler
+     * (`CapacitorCookies.load`), which `HttpURLConnection` applies to every request: it adds stored
+     * cookies and keeps any `Set-Cookie`. Transfers send and keep no cookie, as on iOS and the desktop,
+     * so this wrapper does nothing on a transfer thread and passes everything else through unchanged
+     * (sign-in and Git requests share the default). Installed before each connection, since Capacitor
+     * may install its handler again.
+     */
+    private static final class TransferCookieGate extends CookieHandler {
+        private final CookieHandler delegate;
+
+        private TransferCookieGate(CookieHandler delegate) {
+            this.delegate = delegate;
+        }
+
+        static synchronized void install() {
+            CookieHandler current = CookieHandler.getDefault();
+            if (!(current instanceof TransferCookieGate)) CookieHandler.setDefault(new TransferCookieGate(current));
+        }
+
+        private boolean passes() {
+            return delegate != null && !(Thread.currentThread() instanceof TransferThread);
+        }
+
+        @Override
+        public Map<String, List<String>> get(URI uri, Map<String, List<String>> requestHeaders) throws IOException {
+            return passes() ? delegate.get(uri, requestHeaders) : Collections.emptyMap();
+        }
+
+        @Override
+        public void put(URI uri, Map<String, List<String>> responseHeaders) throws IOException {
+            if (passes()) delegate.put(uri, responseHeaders);
+        }
+    }
+
     /**
      * Transfers run on their own threads: never Capacitor's task thread, which every plugin shares,
      * and never under the read-scope lock `executeFileOperation` holds for the whole operation.
      */
-    private final ExecutorService transferExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService transferExecutor = Executors.newCachedThreadPool(TransferThread::new);
     private final Map<String, Transfer> transfers = new ConcurrentHashMap<>();
     private static final int TRANSFER_CHUNK = 1024 * 1024;
     private static final long PROGRESS_INTERVAL_NANOS = 100_000_000L;
@@ -691,7 +737,12 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     @PluginMethod
     public void cancelTransfer(PluginCall call) {
         Transfer transfer = transfers.get(call.getString("id", ""));
-        if (transfer != null) transfer.cancel();
+        if (transfer != null) {
+            // Marked now, so a transfer about to connect stops; disconnecting does network I/O, which
+            // Capacitor's shared plugin thread (where this runs) must not wait on.
+            transfer.cancelled = true;
+            transferExecutor.execute(transfer::cancel);
+        }
         call.resolve();
     }
 
@@ -746,8 +797,9 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
         });
     }
 
-    /** Never follows a redirect (a 3xx comes back as the status), no cache; the caller's headers, used once. */
+    /** Never follows a redirect (a 3xx comes back as the status), no cache or cookie; the caller's headers, used once. */
     private HttpURLConnection connect(Transfer transfer, URL url, String method, Map<String, String> headers) throws Exception {
+        TransferCookieGate.install();
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setInstanceFollowRedirects(false);
         connection.setUseCaches(false);
