@@ -42,10 +42,10 @@ export type Interval = { readonly lo: readonly number[]; readonly hi: readonly n
  * `w³ (ĝ·xᵢ) N`, with ĝ a unit gradient (`inversesqrt(h·h) * h`), w = max(0.5 − |xᵢ|², 0), N = 37.837227241611316 (the
  * shader's FINAL_NORMALIZATION) and xᵢ = x0 − cᵢ: the corners cᵢ are 0, Pi₁ − 1/6, Pi₂ − 1/3 and ½, where Pi₁ and Pi₂
  * follow from g = step(x0.yzx, x0.xyz) alone. So |n| ≤ N · Σ f(|x0 − cᵢ|) with f(r) = r · max(0.5 − r², 0)³, whatever
- * x0 is (rounding included), for the g the shader computed. Maximised over every x0, per g (`mirror-offset-bound.test.ts`
- * recomputes it on a grid, with |f′| ≤ 0.125 bounding what lies between grid points): g = 000 cannot occur
- * (x < y < z < x); g = 111 only when x0's three components are equal, on the diagonal, where the sum stays below 0.0318;
- * every other g stays below 0.0297. N · 0.0318 is 1.2032; the function itself stays near ±1.
+ * x0 is (rounding included), for the g the shader computed. Bounded over every x0, per g (`mirror-offset-bound.test.ts`
+ * proves it by branch and bound, with |f′| ≤ 0.125 bounding the sum inside each cube): g = 000 cannot occur
+ * (x < y < z < x); g = 111 only when x0's three components are equal, on the diagonal, where the sum stays below 0.0318,
+ * so N · 0.0318 = 1.2032; every other g stays under the bound too. The function itself stays near ±1.
  */
 export const SIMPLEX_PERLIN_3D_BOUND = 1.21;
 /** Relative and absolute slack on every bound against single-precision and GPU transcendental error. */

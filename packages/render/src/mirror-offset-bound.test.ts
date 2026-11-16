@@ -171,23 +171,31 @@ describe("Simplex Perlin 3D", () => {
     };
     // Every term is 0 outside [−1.1, 1.6]³: the corners lie in [−1/3, 5/6]³ and a term reaches √0.5 from its corner.
     const N = 37.837227241611316;
-    // g = 000 needs x < y < z < x. Every mixed g, on a grid of step h: the sum moves at most 4 · 0.125 · h√3/2 off it.
-    const h = 0.0075;
-    let mixed = 0;
+    const target = SIMPLEX_PERLIN_3D_BOUND / N;
+    // g = 000 needs x < y < z < x. Every mixed g, by branch and bound over that cube: inside a cube of half-width h the
+    // sum is at most its value at the centre plus 4 · 0.125 · h√3, so a cube whose bound is under the target is done
+    // and any other is split in eight. It ends only if every point is under the bound.
+    let cubes = 0;
     for (let bits = 1; bits < 7; bits++) {
       const c = corners(bits);
-      for (let x = -1.1; x <= 1.6 + h; x += h) for (let y = -1.1; y <= 1.6 + h; y += h) for (let z = -1.1; z <= 1.6 + h; z += h) {
-        const s = sum(c, x, y, z);
-        if (s > mixed) mixed = s;
+      const stack: [number, number, number, number][] = [[0.25, 0.25, 0.25, 1.35]];
+      while (stack.length) {
+        const [x, y, z, half] = stack.pop()!;
+        cubes++;
+        if (sum(c, x, y, z) + 0.5 * half * Math.sqrt(3) < target) continue;
+        // A cube this small that still reaches the target means the bound does not hold there.
+        if (half <= 1e-4) throw new Error(`The bound is not met near (${x}, ${y}, ${z}) for step outcome ${bits}.`);
+        const h = half / 2;
+        for (let corner = 0; corner < 8; corner++) stack.push([x + (corner & 1 ? h : -h), y + (corner & 2 ? h : -h), z + (corner & 4 ? h : -h), h]);
       }
     }
-    expect(N * (mixed + 0.5 * h * Math.sqrt(3) / 2)).toBeLessThan(SIMPLEX_PERLIN_3D_BOUND);
-    // g = 111 needs x0's components equal: x0 = (t, t, t), with grid points h√3 apart along the line.
+    expect(cubes).toBeGreaterThan(1000);
+    // g = 111 needs x0's components equal: x0 = (t, t, t), sampled along the line with the slope covering the gaps.
     const step = 1e-4, diagonal = corners(7);
     let equal = 0;
     for (let t = -1.1; t <= 1.6 + step; t += step) equal = Math.max(equal, sum(diagonal, t, t, t));
     expect(N * (equal + 0.5 * step * Math.sqrt(3) / 2)).toBeLessThan(SIMPLEX_PERLIN_3D_BOUND);
-  }, 60_000);
+  });
 
   it("stays within the bound over a dense sample of the shader's own function", () => {
     const next = random(11);
