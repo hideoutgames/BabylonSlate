@@ -36,6 +36,26 @@ function mountedTileLocksKey(
   return JSON.stringify(locks);
 }
 
+/**
+ * Locks of the folder tree's asset rows, serialized like the tiles' so its
+ * rows rebuild only when one of them changes. Map lookups only: the tree
+ * lists the expanded folders' assets, not the whole project.
+ */
+export function treeAssetLocksKey(
+  rows: readonly { kind: string; path: string }[],
+  sourceControl: Parameters<typeof mountedTileLocksKey>[3],
+): string {
+  const locks: Record<string, ContentBrowserTileLock> = {};
+  for (const row of rows) {
+    if (row.kind !== "asset") continue;
+    const state = sourceControl.lockStateForPath(row.path);
+    if (!state) continue;
+    const ownerName = sourceControl.lockForPath(row.path)?.ownerName;
+    locks[row.path] = ownerName === undefined ? { state } : { state, ownerName };
+  }
+  return JSON.stringify(locks);
+}
+
 /** What the mounted grid window, its thumbnails and its tile locks read. */
 export interface ContentBrowserMountedTilesDeps {
   gridItems: readonly ContentBrowserGridItem[];

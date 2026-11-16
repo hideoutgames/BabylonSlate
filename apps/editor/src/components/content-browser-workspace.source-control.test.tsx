@@ -206,6 +206,11 @@ describe("Content Browser Source Control", () => {
     expect(within(tile(CAVE)).getByRole("img", { name: "Added" }).querySelector(".lucide-plus")).not.toBeNull();
     expect(within(tile(FOREST)).getByRole("img", { name: "Modified" }).textContent).toBe("M");
     expect(within(tile(ROCK)).queryByRole("img", { name: /Added|Modified/ })).toBeNull();
+    // The folder tree's asset rows carry the same marks, in their accessible names.
+    const tree = screen.getByTestId("content-browser-folder-tree");
+    expect(within(tree).getByRole("treeitem", { name: "Cave Added" })).toBeTruthy();
+    expect(within(tree).getByRole("treeitem", { name: "Forest Modified" })).toBeTruthy();
+    expect(within(tree).getByRole("treeitem", { name: "Rock Locked By Bob" })).toBeTruthy();
 
     // An unchanged asset has nothing to show or revert.
     expect(entries(openSourceControlMenu(ROCK))).toEqual(["[Locked By Bob]", "Force Unlock…", "Show Changes (disabled)", "Show History", "Revert… (disabled)"]);

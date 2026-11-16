@@ -16,6 +16,7 @@ import {
   type NestedMenuItem,
 } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
+import { LockBadge, StatusMarker } from "./source-control-markers";
 
 const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
   { id: "rename", label: "Rename", shortcut: "F2", onSelect: () => {} },
@@ -44,7 +45,39 @@ const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
       },
     ],
   },
+  {
+    id: "source-control",
+    type: "submenu",
+    label: "Source Control",
+    items: [
+      { type: "label", id: "holder", label: "Locked By Bob", icon: <LockBadge state="theirs" ownerName="Bob" size="sm" /> },
+      { type: "separator", id: "holder-separator" },
+      { id: "force-unlock", label: "Force Unlock…", variant: "destructive", onSelect: () => {} },
+    ],
+  },
 ];
+
+/** Source Control's status markers and lock badges, in rows and on a tile corner. */
+export function GallerySourceControlMarkers() {
+  return (
+    <div className="flex flex-col gap-2" data-testid="gallery-source-control-markers">
+      <h3 className="text-sm font-medium">Source Control markers</h3>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <span className="flex items-center gap-1.5">Added <StatusMarker status="added" /></span>
+        <span className="flex items-center gap-1.5">Modified <StatusMarker status="modified" /></span>
+        <span className="flex items-center gap-1.5">Deleted <StatusMarker status="deleted" /></span>
+        <span className="flex items-center gap-1.5">Mine <LockBadge state="mine" size="sm" /></span>
+        <span className="flex items-center gap-1.5">Theirs <LockBadge state="theirs" ownerName="Bob" size="sm" /></span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <StatusMarker status="added" variant="badge" />
+        <StatusMarker status="modified" variant="badge" />
+        <LockBadge state="mine" />
+        <LockBadge state="theirs" ownerName="Bob" />
+      </div>
+    </div>
+  );
+}
 
 export function GalleryNestedMenus() {
   const [showGrid, setShowGrid] = useState(true);

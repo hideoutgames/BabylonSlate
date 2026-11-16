@@ -79,7 +79,7 @@ import {
   CONTENT_BROWSER_TILE_HEIGHT_PX,
   contentBrowserColumnCount,
 } from "../lib/content-browser-grid";
-import type { ContentBrowserChangeStatuses, ContentBrowserGridActions } from "./content-browser-grid-tiles";
+import type { ContentBrowserChangeStatuses, ContentBrowserGridActions, ContentBrowserTileLock } from "./content-browser-grid-tiles";
 import { contentBrowserSourceControlMenu } from "./content-browser-source-control-menu";
 import { useOptionalSourceControlActions } from "./source-control-actions";
 import { ForceUnlockDialog } from "./source-control-force-unlock-dialog";
@@ -94,7 +94,7 @@ import { ContentBrowserNameDialog, type NameEntry } from "./content-browser-name
 import { ContentBrowserResultDialogs } from "./content-browser-result-dialogs";
 import { useContentBrowserModel } from "./content-browser-model";
 import { useContentBrowserTreeState } from "./content-browser-tree-state";
-import { useContentBrowserMountedTiles } from "./content-browser-mounted-tiles";
+import { treeAssetLocksKey, useContentBrowserMountedTiles } from "./content-browser-mounted-tiles";
 import { useContentBrowserDeleteFlow } from "./content-browser-delete-flow";
 import { useContentBrowserMoveFlow, type MoveTarget } from "./content-browser-move-flow";
 import { useContentBrowserImportFlow } from "./content-browser-import-flow";
@@ -462,6 +462,12 @@ function ContentBrowserWorkspaceBody({
     thumbnailVersions,
     loadAssetThumbnail,
   });
+
+  const treeLocksKey = sourceControl.enabled ? treeAssetLocksKey(browserRows, sourceControl) : "{}";
+  const treeLocks = useMemo(
+    () => JSON.parse(treeLocksKey) as Record<string, ContentBrowserTileLock>,
+    [treeLocksKey],
+  );
 
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;
 
@@ -891,6 +897,8 @@ function ContentBrowserWorkspaceBody({
       rootPrefixes={rootPrefixes}
       pluginRootIcons={pluginRootIcons}
       typeVisualFor={typeVisualFor}
+      locks={treeLocks}
+      changes={changeStatuses}
       treeSelectedId={treeSelectedId}
       treeSelectedIds={treeSelectedIds}
       onSelect={(id, options) => {

@@ -91,11 +91,11 @@ If only the first push fails, the project is already in Integrated mode with the
 
 ### The Changes window
 
-In Integrated mode the **Source Control** tab opens on **Changes**, with **History** and **Locks** beside it and the **Actors** and **Diff** windows to the right. The tab shows how many assets have uncommitted changes.
+In Integrated mode the **Source Control** tab opens on **Changes**, with **History** and **Locks** as tabs beside it, taking a quarter of the width; **Actors** takes the next quarter and **Diff** the other half. Your own arrangement of the windows is kept. The tab shows how many assets have uncommitted changes.
 
 - The top row shows the branch you are on (choose it to switch branches or start a **New Branch…**, see [Branches](#branches)), **Refresh**, **Pull** and **Push** with the number of commits each would bring in or send, and **More Actions** with **Remove Unused Files…** ([Remove unused files](#remove-unused-files)).
 - The status line says how many commits there are to pull and to push, and when Haptic last checked.
-- **Changes** lists each changed asset with its type, folder and **A** (added), **M** (modified) or **D** (deleted). A lock icon marks assets you have locked. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
+- **Changes** lists each changed asset with its type, folder and a green **+** (added), **M** (modified) or a red **−** (deleted). A lock badge marks locked assets: filled for yours, an outlined red badge with a person for someone else's (a push that sends it is refused). The Content Browser marks the same assets on their tiles and in its folder tree: **+** for added, **M** for modified. An asset's change includes the large data stored with it, so it is always committed whole. Project settings and other project files appear by name.
 - **Incoming** lists the newest commits waiting to be pulled, with their author and age.
 - Choose an asset (anywhere on its row but the checkbox) to see what changed in it: see [Compare versions](#compare-versions).
 
@@ -159,7 +159,7 @@ Haptic also doesn't switch to a branch whose project settings turn Source Contro
 
 Choosing a change opens its asset in **Actors** and **Diff**, comparing the last commit (**Base**) with your working copy (**Compare**). While the diff is shown, the toolbar holds the **Base** and **Compare** pickers: choose **Working Copy**, the branch's last commit, the branch on the host as last checked, or a commit that changed the asset. The pickers list the same commits as [History](#history) for the asset, newest first; **Load Older** at the end reads more, as **Load Older History** does.
 
-- **Actors** lists the asset itself first (choose it to see its name, type, stored data and settings), then its items: a Scene's folders and actors, a graph asset's changed graphs and nodes with its changed **Variables**, **Parameters**, **Inputs**, **Outputs** and **Functions**, or another asset's groups of properties. Added items are green with **A**, changed ones amber with **M**, removed ones red with **D**; items that didn't change are dimmed. The counts at the top say how many were added, removed and changed, and **Search Actors** finds an item by name. Choose one to see it in **Diff**.
+- **Actors** lists the asset itself first (choose it to see its name, type, stored data and settings), then its items: a Scene's folders and actors, a graph asset's changed graphs and nodes with its changed **Variables**, **Parameters**, **Inputs**, **Outputs** and **Functions**, or another asset's groups of properties. Added items are green with **+**, changed ones amber with **M**, removed ones red with **−**; items that didn't change are dimmed. The counts at the top say how many were added, removed and changed, and **Search Actors** finds an item by name. Choose one to see it in **Diff**.
 - **Diff** shows the chosen item in the view for the asset's kind:
   - Scenes and most assets show **Property**, **Base** and **Working Copy** columns grouped by component, with changed values tinted. **Side By Side** or **Inline** (the old value struck through beside the new) sets the layout; **Changed Only** hides the rest. With no actor chosen, a Scene shows the asset itself and its settings.
   - Graphs show on a read-only canvas drawn as their own editor draws them: Classes, Scene scripts, Materials and Material Functions, Particle Graphs, Behaviour Trees, and an Animation Graph's State Machine, state graphs, transition rules and Animation Object. Choose **Overlay** for both versions, or only **Base** or **Working Copy**; when several graphs changed, choose one above the canvas. Changed nodes are outlined amber, added ones green and removed ones red and dashed, each tagged; a changed node lists its changed values, the old value struck through beside the new. Choose the asset itself in **Actors** to see a graph asset's settings, such as a Material's blend mode or an Animation Graph's transition settings.
@@ -174,7 +174,7 @@ Haptic reads the base version from the project's history, so a diff needs no net
 
 - **This Asset** shows the commits that changed the asset you last compared, or the one you were editing when you chose **Open History**. Project Settings and folders aren't assets, so comparing them leaves it as it was. **All Assets** shows every commit on your branch.
 - **Uncommitted Changes** comes first while there are any; choose it to list them, and an asset to see its diff.
-- Choose a commit to see its full message, author, time and short id (**Copy Commit Id** copies the full one), and the assets it changed: choose one to see what that commit did to it.
+- Choose a commit to see its full message, author, time and short id (**Copy Commit Id** copies the full one), and the assets it changed, marked **+**, **M** or **−** as in **Changes**: choose one to see what that commit did to it.
 - With **This Asset**, **Compare With Working Copy** opens the asset's diff from that commit to your working copy, and **Revert To This Version** puts the asset back as that commit has it, as [Revert Asset](#revert-an-asset) does.
 - **Load Older History** reads more commits. A cloned project starts with only its latest commit, so older history is downloaded from the host the first time you ask for it.
 
@@ -231,7 +231,7 @@ If you open a project in Integrated or Manual mode on a device that has no accou
 - **Your edits:** with Auto-Lock on, the first change to a document locks its file. If locking fails, the edit still applies and an **Unlocked** banner warns you. In Integrated mode locks belong to the branch you are on, so until Haptic has opened the repository and knows that branch, locking waits: edits made meanwhile are locked once it does, and **Release** says why it waits.
 - **Switching branches:** on a host that keeps locks per branch, your locks on the branch you switched away from stay in **Locks**, marked **On** and the branch's name. **Release** releases them there, and **Release Locks After Push** releases them too when the push sent their assets.
 - **Someone else's lock:** the document opens read-only with a **Locked by** banner showing the owner and how long ago they locked it. Choose **Edit Anyway** only after talking to them; your changes may conflict.
-- **Content Browser:** locked assets show a lock badge, **Locked By You** or **Locked By** the owner's name.
+- **Content Browser:** a locked asset shows a lock badge in its tile's corner: a filled lock for yours (**Locked By You**), an outlined red badge with a person for someone else's, named in its tooltip (**Locked By** and their name). Its menu's **Source Control** submenu says who holds it and offers **Lock**, **Release Lock** or **Force Unlock…**, and in Integrated mode **Show Changes**, **Show History** and **Revert…**. See [Source Control in the Content Browser](../editor/content-browser.md#source-control-in-the-content-browser).
 - **Renaming and moving:** your locks move with the file. Haptic refuses to rename, move or delete a file someone else has locked.
 
 Haptic checks locks every minute while it is in the foreground.
@@ -240,7 +240,7 @@ Haptic checks locks every minute while it is in the foreground.
 
 While a project's mode is not Off, the **Source Control** tab sits at the right end of the document tabs, beside **Open Documents**. It can't be closed. In the phone layout, which has no tabs, a **Source Control** button beside the **Content Browser** button opens it.
 
-In Integrated mode it holds **Changes**, **History**, **Locks**, **Actors** and **Diff** ([Compare versions](#compare-versions), [History](#history)); in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age.
+In Integrated mode it holds **Changes**, **History**, **Locks**, **Actors** and **Diff** ([Compare versions](#compare-versions), [History](#history)); in Manual mode, **Locks** only. **Locks** lists every lock with its path, owner and age, each led by its lock badge.
 
 | Control | Description |
 | --- | --- |
