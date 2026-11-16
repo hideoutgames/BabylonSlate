@@ -2,6 +2,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { CommandMessage } from "@haptic/bridge";
 import { viewOfBox, type BoxView } from "./active-view";
+import { posesEveryCommand } from "./anim-pose";
 
 type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;
 
@@ -48,14 +49,25 @@ function actorSphere(root: AbstractMesh): ActorSphere | null {
 }
 
 /**
+ * When a slot's animation state is posed.
+ *
+ * A state is absolute: posing the latest one gives the pose that posing every one in turn gives. So a state is not
+ * posed as it arrives but before the next snapshot is applied and before each render (`flush`), and a slot that got
+ * several since (the worker ran catch-up ticks in one advance) is posed once, from its latest. The exception is a
+ * state with a change that steps or traces on every pose (`posesEveryCommand`: Spring Bones advance by each
+ * command's time step): it is posed as it arrives, as before.
+ *
  * Animation Tick Mode When Visible on the render side: a state whose actor no active camera can see is held, not
- * posed, and the latest held state is posed as soon as the actor comes into view (checked before each render) or
+ * posed, and the latest held state is posed as soon as the actor comes into view (checked at each flush) or
  * something reads its pose (a ragdoll capture). The worker still evaluates the graph every tick, so state, events
  * and replay never depend on the view. Seen means the actor's bounds sphere (grown for poses, and for a shadow
  * caster by its shadow's reach) meets an active camera's frustum.
+ *
+ * Whatever reads a slot's pose outside a frame must call `flushSlot` first.
  */
 export class AnimVisibilityGate {
-  private readonly held = new Set<number>();
+  /** Slots whose latest state (the binding's pending one) is not posed yet: arrived since the last flush, or unseen. */
+  private readonly waiting = new Set<number>();
   private readonly scene: Scene;
   private readonly binding: AnimVisibilityBinding;
   private readonly apply: (command: AnimStateCommand) => void;
@@ -66,35 +78,43 @@ export class AnimVisibilityGate {
     this.apply = apply;
   }
 
-  /** Poses the state now, or holds it while its When Visible actor is out of view. */
+  /** Takes the slot's latest state: posed at the next flush, or now when every command of it must be posed. */
   offer(command: AnimStateCommand): void {
-    if (command.whenVisible && !this.seen(command.slotId)) {
-      this.held.add(command.slotId);
+    if (!posesEveryCommand(command.boneModifiers)) {
+      this.waiting.add(command.slotId);
       return;
     }
-    this.held.delete(command.slotId);
+    if (command.whenVisible && !this.seen(command.slotId)) {
+      this.waiting.add(command.slotId);
+      return;
+    }
+    this.waiting.delete(command.slotId);
     this.apply(command);
   }
 
-  /** Before each render: poses the held actors that came into view. */
+  /** Before a snapshot is applied and before each render: poses the waiting slots that are Always or in view. */
   flush(): void {
-    if (this.held.size === 0) return;
-    for (const slotId of this.held) {
-      if (!this.binding.pendingAnimState?.get(slotId)) this.held.delete(slotId);
-      else if (this.seen(slotId)) this.flushSlot(slotId);
+    if (this.waiting.size === 0) return;
+    for (const slotId of this.waiting) {
+      const pending = this.binding.pendingAnimState?.get(slotId);
+      if (!pending) this.waiting.delete(slotId);
+      else if (!pending.whenVisible || this.seen(slotId)) {
+        this.waiting.delete(slotId);
+        this.apply(pending);
+      }
     }
   }
 
-  /** Poses the slot's held state now, seen or not: something is about to read its pose. */
+  /** Poses the slot's waiting state now, seen or not: something is about to read its pose. */
   flushSlot(slotId: number): void {
-    if (!this.held.delete(slotId)) return;
+    if (!this.waiting.delete(slotId)) return;
     const pending = this.binding.pendingAnimState?.get(slotId);
     if (pending) this.apply(pending);
   }
 
-  /** Whether the slot's latest state waits for its actor to be seen. */
+  /** Whether the slot's latest state is not posed yet; after a flush, that it waits for its actor to be seen. */
   isHeld(slotId: number): boolean {
-    return this.held.has(slotId);
+    return this.waiting.has(slotId);
   }
 
   private seen(slotId: number): boolean {

@@ -475,6 +475,8 @@ export interface PoseRig {
   readonly lastWeights: number[];
   /** The last pose's layering (`layeringSignature`), "" for none. */
   lastLayering: string;
+  /** The last layering serialised for this rig, so the same one is not serialised again. */
+  layeringMemo: LayeringMemo | null;
   /** Per branch filter key: each property's weight under it, worked out from its target's chain of names once. */
   readonly branchWeights: Map<string, Float64Array>;
   /** Per-pose scratch: each blend's summed input weight per property, and each layer's weight per property. */
@@ -558,6 +560,7 @@ function buildPoseRig(clips: readonly PoseClip[]): PoseRig {
     lastFrames: [],
     lastWeights: [],
     lastLayering: "",
+    layeringMemo: null,
     branchWeights: new Map(),
     blendSums: [],
     layerFactors: [],
@@ -627,27 +630,92 @@ export interface PoseAdditive {
 /** A forced pose's layering: never a signature, so the pose after it poses again. */
 const FORCED_LAYERING = "\u0000forced";
 
-/** The layering as one string, so a pose whose clips and layering are unchanged writes nothing. */
-function layeringSignature(count: number, layering: PoseLayering | null | undefined): string {
-  if (!layering) return "";
-  const additive: Array<string | null> = [];
-  let anyAdditive = false;
+/**
+ * Whether `value` serialises to the JSON text `parsed` was read from, up to the order of an object's keys, without
+ * serialising it: an array entry that is undefined or not finite reads as null, and an object key holding undefined
+ * is absent, as `JSON.stringify` writes them.
+ */
+function matchesParsedJson(value: unknown, parsed: unknown): boolean {
+  if (value === null || typeof value !== "object") {
+    if (typeof value === "number") return Number.isFinite(value) ? value === parsed : parsed === null;
+    if (typeof value === "string" || typeof value === "boolean") return value === parsed;
+    return parsed === null;
+  }
+  if (Array.isArray(value)) {
+    if (!Array.isArray(parsed) || parsed.length !== value.length) return false;
+    for (let at = 0; at < value.length; at++) if (!matchesParsedJson(value[at], parsed[at])) return false;
+    return true;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const expected = parsed as Record<string, unknown>;
+  const holder = value as Record<string, unknown>;
+  for (const key in holder) {
+    const entry = holder[key];
+    if (entry === undefined) continue;
+    if (!(key in expected) || !matchesParsedJson(entry, expected[key])) return false;
+  }
+  // And nothing the text holds is missing from the value.
+  for (const key in expected) if (holder[key] === undefined) return false;
+  return true;
+}
+
+/** The last layering a rig serialised: its signature, and what it was built from, to recognise the same layering. */
+interface LayeringMemo {
+  count: number;
+  signature: string;
+  /** `[masks, blends, modifiers]` as parsed back from the signature: a copy no later edit of a command reaches. */
+  parsed: [unknown[], unknown, unknown];
+  additive: Array<{ reference: PoseClip | null; frame: number } | null>;
+  locks: Array<string | null>;
+}
+
+/** Whether `layering` over `count` clips is the layering `memo` holds: equal data, whichever objects hold it. */
+function sameLayering(memo: LayeringMemo, count: number, layering: PoseLayering): boolean {
+  if (memo.count !== count) return false;
   for (let l = 0; l < count; l++) {
     const entry = layering.additive?.[l];
-    anyAdditive ||= entry !== undefined;
-    additive.push(entry ? `${entry.reference?.clipAssetGuid ?? ""}\0${entry.reference?.name ?? ""}\0${entry.frame}` : null);
+    const known = memo.additive[l]!;
+    // The same base clip has the same asset and name, which is what the signature holds of it.
+    if (entry ? !known || known.reference !== entry.reference || known.frame !== entry.frame : known !== null) return false;
+    if ((layering.rootLock?.[l] ?? null) !== memo.locks[l]) return false;
   }
-  const locks: Array<string | null> = [];
+  const [masks, blends, modifiers] = memo.parsed;
+  for (let l = 0; l < count; l++) if (!matchesParsedJson(layering.masks[l] ?? null, masks[l])) return false;
+  return matchesParsedJson(layering.blends, blends) && matchesParsedJson(layering.modifiers, modifiers);
+}
+
+/**
+ * The layering as one string, so a pose whose clips and layering are unchanged writes nothing. Every pose of a rig
+ * with blends, changes, additive clips or root motion needs it, and a state usually sends the same layering tick
+ * after tick in new objects: the layering is compared with the last one serialised for the rig (`sameLayering`, by
+ * value, so a command edited in place is still seen) and serialised only when it differs.
+ */
+function layeringSignature(rig: PoseRig, count: number, layering: PoseLayering | null | undefined): string {
+  if (!layering) return "";
+  let anyAdditive = false;
   let anyLock = false;
   for (let l = 0; l < count; l++) {
-    const bone = layering.rootLock?.[l];
-    anyLock ||= bone !== undefined;
-    locks.push(bone ?? null);
+    anyAdditive ||= layering.additive?.[l] !== undefined;
+    anyLock ||= layering.rootLock?.[l] !== undefined;
   }
   if (layering.blends.length === 0 && layering.modifiers.length === 0 && !anyAdditive && !anyLock) return "";
+  const memo = rig.layeringMemo;
+  if (memo && sameLayering(memo, count, layering)) return memo.signature;
+  const additive: Array<string | null> = [];
+  const additiveBases: LayeringMemo["additive"] = [];
+  const locks: Array<string | null> = [];
   const masks: Array<readonly AnimLayerMaskRef[] | null> = [];
-  for (let l = 0; l < count; l++) masks.push(layering.masks[l] ?? null);
-  return JSON.stringify([masks, layering.blends, layering.modifiers, additive, locks]);
+  for (let l = 0; l < count; l++) {
+    const entry = layering.additive?.[l];
+    additive.push(entry ? `${entry.reference?.clipAssetGuid ?? ""}\0${entry.reference?.name ?? ""}\0${entry.frame}` : null);
+    additiveBases.push(entry ? { reference: entry.reference, frame: entry.frame } : null);
+    locks.push(layering.rootLock?.[l] ?? null);
+    masks.push(layering.masks[l] ?? null);
+  }
+  const serialised = JSON.stringify([masks, layering.blends, layering.modifiers]);
+  const signature = `${serialised}${JSON.stringify([additive, locks])}`;
+  rig.layeringMemo = { count, signature, parsed: JSON.parse(serialised) as LayeringMemo["parsed"], additive: additiveBases, locks };
+  return signature;
 }
 
 /** Whether the pose's layers are the last pose's, which then still stands. Records them otherwise. */
@@ -716,7 +784,7 @@ export function applyPose(
   // trace each pose: these pose again every time, with no signature to compare (the next pose differs from it).
   const forced = layering?.modifiers.some(posesEveryTime) ?? false;
   if (forced) rig.lastLayering = "";
-  if (samePose(rig, count, clips, frames, weights, forced ? FORCED_LAYERING : layeringSignature(count, layering))) return;
+  if (samePose(rig, count, clips, frames, weights, forced ? FORCED_LAYERING : layeringSignature(rig, count, layering))) return;
   const { properties, stamps, weights: totals, blended, posed, quaternions, components, clipProperties } = rig;
   // Stamps mark the properties this pose blends; a wrapped counter clears them.
   rig.generation = (rig.generation + 1) >>> 0;
@@ -815,6 +883,14 @@ export function applyPose(
 }
 
 const NO_BLENDS: readonly AnimLayerBlend[] = [];
+
+/**
+ * Whether a state must be posed for every command rather than only its latest: one of its changes steps or traces
+ * with each pose (`posesEveryTime`), so a skipped command would change where its bones end up.
+ */
+export function posesEveryCommand(modifiers: readonly AnimBoneModifier[] | undefined): boolean {
+  return modifiers?.some(posesEveryTime) ?? false;
+}
 
 function posesEveryTime(change: AnimBoneModifier): boolean {
   if (change.kind === "springBones" || change.kind === "footPlacement") return true;

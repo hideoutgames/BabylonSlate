@@ -54,17 +54,76 @@ function setup(castShadows: boolean) {
     meshes.set(slotId, actorAt(`actor-${slotId}`, position));
     meshSorting.set(slotId, { castShadows });
   };
-  return { gate, applied, state, place, meshes };
+  return { gate, applied, state, place, meshes, pendingAnimState };
 }
 
 describe("AnimVisibilityGate", () => {
-  it("poses a When Visible actor in view at once and holds one out of view until it comes into view", () => {
+  it("poses a slot once per flush, from its latest state, however many states arrived since", () => {
+    const { gate, applied, state, place } = setup(false);
+    place(1, new Vector3(0, 0, 10));
+    place(2, new Vector3(0, 0, 10));
+    // Four catch-up ticks arrive in one advance: nothing is posed as they arrive.
+    for (const stateId of ["a", "b", "c", "d"]) {
+      gate.offer(state(1, stateId, false));
+      gate.offer(state(2, stateId));
+    }
+    expect(applied).toEqual([]);
+    gate.flush();
+    expect(applied).toEqual(["1:d", "2:d"]);
+    // Posed: a second flush (before the render that follows the snapshot) poses nothing again.
+    gate.flush();
+    expect(applied).toEqual(["1:d", "2:d"]);
+    gate.offer(state(1, "e", false));
+    gate.flush();
+    expect(applied).toEqual(["1:d", "2:d", "1:e"]);
+  });
+
+  it("poses every state that steps on each pose as it arrives, and none of the states it replaced", () => {
+    const { gate, applied, state, place } = setup(false);
+    place(1, new Vector3(0, 0, 10));
+    place(2, new Vector3(0, 0, -10));
+    const springs = (slotId: number, stateId: string, whenVisible: boolean): AnimStateCommand => {
+      const command = state(slotId, stateId, whenVisible);
+      command.boneModifiers = [{ kind: "springBones" } as NonNullable<AnimStateCommand["boneModifiers"]>[number]];
+      return command;
+    };
+    // Spring Bones advance by each command's time step: each is posed, in order, on arrival.
+    gate.offer(state(1, "plain", false));
+    gate.offer(springs(1, "s1", false));
+    gate.offer(springs(1, "s2", false));
+    expect(applied).toEqual(["1:s1", "1:s2"]);
+    // The plain state before them was replaced, and what arrived is posed: a flush adds nothing.
+    gate.flush();
+    expect(applied).toEqual(["1:s1", "1:s2"]);
+    // Out of view, a When Visible one is still held, and posed once from its latest when seen.
+    gate.offer(springs(2, "s1", true));
+    gate.offer(springs(2, "s2", true));
+    gate.flush();
+    expect(applied).toEqual(["1:s1", "1:s2"]);
+    expect(gate.isHeld(2)).toBe(true);
+    gate.flushSlot(2);
+    expect(applied).toEqual(["1:s1", "1:s2", "2:s2"]);
+  });
+
+  it("drops a waiting state whose slot is gone", () => {
+    const { gate, applied, state, place, pendingAnimState } = setup(false);
+    place(1, new Vector3(0, 0, 10));
+    gate.offer(state(1, "walk", false));
+    pendingAnimState.delete(1);
+    gate.flush();
+    gate.flushSlot(1);
+    expect(applied).toEqual([]);
+    expect(gate.isHeld(1)).toBe(false);
+  });
+
+  it("poses a When Visible actor in view at the next flush and holds one out of view until it comes into view", () => {
     const { gate, applied, state, place, meshes } = setup(false);
     place(1, new Vector3(0, 0, 10));
     place(2, new Vector3(0, 0, -10));
     gate.offer(state(1, "walk"));
     gate.offer(state(2, "walk"));
     gate.offer(state(2, "run"));
+    gate.flush();
     expect(applied).toEqual(["1:walk"]);
     expect(gate.isHeld(2)).toBe(true);
     gate.flush();
@@ -78,17 +137,25 @@ describe("AnimVisibilityGate", () => {
     expect(gate.isHeld(2)).toBe(false);
   });
 
-  it("poses an Always actor wherever it is, and a held actor when something reads its pose", () => {
+  it("poses an Always actor wherever it is, and a waiting actor at once when something reads its pose", () => {
     const { gate, applied, state, place } = setup(false);
     place(1, new Vector3(0, 0, -10));
     gate.offer(state(1, "idle", false));
+    gate.flush();
     expect(applied).toEqual(["1:idle"]);
     gate.offer(state(1, "walk"));
+    gate.flush();
     expect(applied).toEqual(["1:idle"]);
     gate.flushSlot(1);
     expect(applied).toEqual(["1:idle", "1:walk"]);
     gate.flushSlot(1);
     expect(applied).toHaveLength(2);
+    // A ragdoll capture between a state's arrival and the next flush reads that state's pose, posed once.
+    gate.offer(state(1, "fall", false));
+    gate.flushSlot(1);
+    expect(applied).toEqual(["1:idle", "1:walk", "1:fall"]);
+    gate.flush();
+    expect(applied).toHaveLength(3);
   });
 
   it("counts a shadow caster near the view as seen, so its shadow keeps moving", () => {
@@ -96,10 +163,12 @@ describe("AnimVisibilityGate", () => {
     // Just outside the left edge of the view, beside the frustum.
     quiet.place(1, new Vector3(-9, 0, 5));
     quiet.gate.offer(quiet.state(1, "walk"));
+    quiet.gate.flush();
     expect(quiet.applied).toEqual([]);
     const caster = setup(true);
     caster.place(2, new Vector3(-9, 0, 5));
     caster.gate.offer(caster.state(2, "walk"));
+    caster.gate.flush();
     expect(caster.applied).toEqual(["2:walk"]);
   });
 
@@ -109,6 +178,7 @@ describe("AnimVisibilityGate", () => {
     root.position.set(0, 0, -10);
     meshes.set(1, root);
     gate.offer(state(1, "walk"));
+    gate.flush();
     expect(applied).toEqual(["1:walk"]);
   });
 });

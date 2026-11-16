@@ -5,7 +5,7 @@ import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Scene } from "@babylonjs/core/scene";
 import { animBranchFilterKey, type AnimBranchFilter, type AnimLayerMaskRef, type AnimTransformBoneChange } from "@haptic/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyPose, bindPoseClip, poseRigFor, type PoseAdditive, type PoseClip, type PoseLayering } from "./anim-pose";
 
 let engine: NullEngine;
@@ -174,6 +174,58 @@ describe("Transform Bone changes", () => {
     nodes.spine.position.z = 7;
     applyPose(rig, 1, clips, [0], [1], modifier({ bone: "spine", translation: { value: [0, 0, 1], mode: "add", space: "parent" } }));
     expect(nodes.spine.position.z).toBe(7);
+  });
+});
+
+describe("layering comparison", () => {
+  it("serialises a layering once while its data stays the same, and poses again for every kind of change to it", () => {
+    const walk = clipAt("walk", 1, [nodes.hips, nodes.spine, nodes.arm]);
+    const attack = clipAt("attack", 5, [nodes.hips, nodes.spine, nodes.arm]);
+    const clips = [walk, attack];
+    const rig = poseRigFor(clips);
+    // What a state sends each tick: equal data in new objects every time.
+    type Options = { depth?: number; z?: number; input?: number; additiveFrame?: number; lock?: string };
+    const filterKeys = [0, 1].map((blendDepth) => animBranchFilterKey([{ bone: "spine", blendDepth }]));
+    const layering = ({ depth = 0, z = 1, input = 0, additiveFrame, lock }: Options = {}): PoseLayering => ({
+      masks: [[{ blend: 0, input: -1 }], [{ blend: 0, input }]],
+      blends: [{ filters: [filterKeys[depth]!], weights: [1] }],
+      modifiers: [{ kind: "transform", alpha: 1, bone: "arm", translation: { value: [0, 0, z], mode: "add", space: "parent" } }],
+      additive: [undefined, additiveFrame === undefined ? undefined : { reference: walk, frame: additiveFrame }],
+      rootLock: [lock, undefined],
+    });
+    const pose = (next: PoseLayering) => applyPose(rig, 2, clips, [0, 0], [1, 1], next);
+    const serialised = vi.spyOn(JSON, "stringify");
+    pose(layering());
+    expect(serialised).toHaveBeenCalled();
+    serialised.mockClear();
+    // An unchanged pose is recognised (nothing is written over a moved bone) without serialising anything.
+    nodes.arm.position.z = 7;
+    for (let tick = 0; tick < 10; tick++) pose(layering());
+    expect(nodes.arm.position.z).toBe(7);
+    expect(serialised).not.toHaveBeenCalled();
+    // Each of these differs from the layering before it, so the pose is written again (the moved bone is put back).
+    const moved = () => {
+      nodes.arm.position.z = 7;
+      return nodes.arm.position.z;
+    };
+    const changes: Options[] = [{ z: 2 }, { z: 2, depth: 1 }, { z: 2, depth: 1, input: -1 }, { z: 2, depth: 1, input: -1, additiveFrame: 0 },
+      { z: 2, depth: 1, input: -1, additiveFrame: 5 }, { z: 2, depth: 1, input: -1, additiveFrame: 5, lock: "hips" }, {}];
+    for (const change of changes) {
+      moved();
+      pose(layering(change));
+      expect(nodes.arm.position.z, Object.keys(change).join()).not.toBe(7);
+      moved();
+      pose(layering(change));
+      expect(nodes.arm.position.z, Object.keys(change).join()).toBe(7);
+    }
+    // A layering edited in place, in the very objects last posed from, is a change too.
+    const held = layering();
+    pose(held);
+    moved();
+    (held.modifiers[0] as { translation: { value: number[] } }).translation.value[2] = 3;
+    pose(held);
+    expect(nodes.arm.position.z).not.toBe(7);
+    serialised.mockRestore();
   });
 });
 
