@@ -57,6 +57,16 @@ export function neverCastsShadows(mesh: AbstractMesh): boolean {
   return isWaterSurfaceMesh(mesh) || isMirrorSurfaceMesh(mesh);
 }
 
+/**
+ * Whether a caster draws nothing into any shadow map now: a plain Babylon `Mesh` (no subclass, which could draw by
+ * other means) with no geometry and no levels of detail, such as an actor's root. Its instances, thin instances,
+ * sub-meshes and children draw nothing through it. Read again every frame: geometry applied or released, or a level of
+ * detail added, changes the answer.
+ */
+export function drawsNoShadow(mesh: AbstractMesh): boolean {
+  return Object.getPrototypeOf(mesh) === Mesh.prototype && !(mesh as Mesh).geometry && (mesh as Mesh).getLODLevels().length === 0;
+}
+
 /** Bind-pose bounds cannot certify where GPU-deformed vertices will be. */
 export function hasDeformingShadowBounds(mesh: AbstractMesh): boolean {
   return (
