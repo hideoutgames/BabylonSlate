@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
+import type { TransferIncomingMessage, TransferRequest, TransferRequestOptions } from "@haptic/vfs/node-file-transfer";
+import { netRequest } from "@haptic/vfs/net-request";
 import { DesktopFileTransfers, type DesktopTransferRequest } from "./desktop-file-transfer";
 import { validateIpcArguments } from "./packaged-security";
 
@@ -85,8 +87,78 @@ afterEach(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-/** Main's `net.fetch`, with `https://store.test` routed to the loopback server. */
-const fetchStore = (url: string, init: RequestInit) => fetch(url.replace("https://store.test", `http://127.0.0.1:${port}`), init);
+/**
+ * Electron's `net.request` as main passes it, played by the stand-in that
+ * keeps Electron's framing (a non-chunked body is sent with its length, an
+ * app's `Content-Length` fails the request, `redirect: "error"` fails on a
+ * 3xx), with `https://store.test` routed to the loopback server. It records
+ * what the transfer did with each request: the options, the headers it set,
+ * its writes (whose callbacks it delays, so a writer that does not wait for
+ * them would have several in flight), aborts, and any body chunk delivered
+ * while the transfer had paused the response.
+ */
+function electronNet(hooks: { onWrite?: () => void } = {}) {
+  const log = {
+    options: [] as TransferRequestOptions[],
+    headers: [] as string[],
+    writes: 0,
+    inFlight: 0,
+    mostInFlight: 0,
+    chunked: false,
+    aborts: 0,
+    pauses: 0,
+    dataWhilePaused: 0,
+  };
+  const inner = netRequest((url) => url.replace("https://store.test", `http://127.0.0.1:${port}`));
+  const request: TransferRequest = (options) => {
+    log.options.push(options);
+    const client = inner(options) as ReturnType<TransferRequest> & { chunkedEncoding: boolean };
+    const { setHeader, write, abort, on } = client;
+    return Object.assign(client, {
+      setHeader(name: string, value: string) {
+        log.headers.push(name);
+        setHeader.call(client, name, value);
+      },
+      write(chunk: Buffer, encoding: undefined, callback: () => void) {
+        log.writes += 1;
+        hooks.onWrite?.();
+        log.chunked ||= client.chunkedEncoding;
+        log.mostInFlight = Math.max(log.mostInFlight, (log.inFlight += 1));
+        write.call(client, chunk, encoding, () => setTimeout(() => {
+          log.inFlight -= 1;
+          callback();
+        }, 2));
+      },
+      abort() {
+        log.aborts += 1;
+        abort.call(client);
+      },
+      on(event: string, listener: (...args: never[]) => void) {
+        if (event !== "response") return on.call(client, event, listener);
+        return on.call(client, event, ((response: TransferIncomingMessage) => {
+          let paused = false;
+          const { pause, resume, on: onBody } = response;
+          (listener as (response: TransferIncomingMessage) => void)(Object.assign(response, {
+            pause: () => {
+              log.pauses += 1;
+              paused = true;
+              return pause.call(response);
+            },
+            resume: () => {
+              paused = false;
+              return resume.call(response);
+            },
+            on: (name: string, handler: (...args: never[]) => void) => onBody.call(response, name, name !== "data" ? handler : ((chunk: Buffer) => {
+              if (paused) log.dataWhilePaused += 1;
+              (handler as (chunk: Buffer) => void)(chunk);
+            }) as (...args: never[]) => void),
+          }));
+        }) as (...args: never[]) => void);
+      },
+    });
+  };
+  return { request, log };
+}
 
 async function project(name = "Game"): Promise<{ storage: NodeStorageAdapter; folderId: string; dir: string }> {
   const storage = new NodeStorageAdapter(join(root, "projects"));
@@ -111,8 +183,9 @@ const blobs = (dir: string) => readdirSync(join(dir, "assets/.blobs")).sort();
 describe("desktop native file transfer (main process)", () => {
   it("downloads a body larger than one read straight into the project file, hashed as it streams and reported as it goes", async () => {
     const { storage, folderId, dir } = await project();
+    const net = electronNet();
     const progress: number[] = [];
-    const result = await invoke(new DesktopFileTransfers(fetchStore), storage, folderId, request({ headers: { Authorization: "RemoteAuth store-token" } }), progress);
+    const result = await invoke(new DesktopFileTransfers(net.request), storage, folderId, request({ headers: { Authorization: "RemoteAuth store-token" } }), progress);
 
     expect(result).toEqual({ status: 200, bytes: SIZE, sha256: OBJECT_SHA });
     expect(sha256(readFileSync(join(dir, "assets/.blobs", OBJECT_SHA)))).toBe(OBJECT_SHA);
@@ -120,16 +193,29 @@ describe("desktop native file transfer (main process)", () => {
     expect(progress.every((bytes, index) => index === 0 || bytes >= progress[index - 1]!)).toBe(true);
     // Staged beside the file and renamed: nothing else is left in the folder.
     expect(blobs(dir)).toEqual([OBJECT_SHA]);
+    // Redirects refused, no session cookie or credential, no cache; the response paused while each chunk is written.
+    expect(net.log.options).toEqual([{ method: "GET", url: "https://store.test/object", redirect: "error", credentials: "omit", cache: "no-store" }]);
+    expect(net.log.pauses).toBeGreaterThan(1);
+    expect(net.log.dataWhilePaused).toBe(0);
   });
 
   // S3-style stores (GitHub's LFS storage) refuse chunked uploads, so the length must be known up front.
-  it("uploads the project file with its length, no chunked framing and exactly the caller's headers", async () => {
+  it("uploads the project file with its length, no chunked framing and the caller's headers, one write at a time", async () => {
     const { storage, folderId, dir } = await project();
     writeFileSync(join(dir, "assets/.blobs", OBJECT_SHA), OBJECT);
-    const result = await invoke(new DesktopFileTransfers(fetchStore), storage, folderId, request({ method: "PUT", url: "https://store.test/upload", headers: { Authorization: "RemoteAuth store-token", "Content-Type": "application/octet-stream" } }));
+    const net = electronNet();
+    // Framing is the transport's: Electron fails a request whose app set Content-Length or Transfer-Encoding.
+    const headers = { Authorization: "RemoteAuth store-token", "Content-Type": "application/octet-stream", "Content-Length": "1", "Transfer-Encoding": "chunked" };
+    const result = await invoke(new DesktopFileTransfers(net.request), storage, folderId, request({ method: "PUT", url: "https://store.test/upload", headers }));
 
     expect(result).toEqual({ status: 200, bytes: SIZE, sha256: OBJECT_SHA });
     expect(uploads).toEqual([{ contentLength: String(SIZE), transferEncoding: undefined, authorization: "RemoteAuth store-token", sha256: OBJECT_SHA, bytes: SIZE }]);
+    expect(net.log.headers).toEqual(["Authorization", "Content-Type"]);
+    expect(net.log.chunked).toBe(false);
+    expect(net.log.options[0]).toMatchObject({ method: "PUT", redirect: "error", credentials: "omit" });
+    // Read and written in chunks, each only once the last one's write was taken.
+    expect(net.log.writes).toBeGreaterThan(1);
+    expect(net.log.mostInFlight).toBe(1);
   });
 
   it("refuses a body or a file that is not the expected object, leaving the project file as it was", async () => {
@@ -137,20 +223,23 @@ describe("desktop native file transfer (main process)", () => {
     const target = join(dir, "assets/.blobs", OBJECT_SHA);
     writeFileSync(target, "previous");
     const wrongSha = "0".repeat(64);
-    const transfers = new DesktopFileTransfers(fetchStore);
+    const transfers = new DesktopFileTransfers(electronNet().request);
 
     expect(await invoke(transfers, storage, folderId, request({ expected: { size: SIZE, sha256: wrongSha } }))).toMatchObject({ errorCode: "transfer-mismatch" });
     expect(await invoke(transfers, storage, folderId, request({ expected: { size: SIZE - 1, sha256: OBJECT_SHA } }))).toMatchObject({ errorCode: "transfer-mismatch" });
     expect(readFileSync(target, "utf8")).toBe("previous");
     expect(blobs(dir)).toEqual([OBJECT_SHA]);
 
-    expect(await invoke(transfers, storage, folderId, request({ method: "PUT", url: "https://store.test/upload" }))).toMatchObject({ errorCode: "transfer-mismatch" });
+    const net = electronNet();
+    expect(await invoke(new DesktopFileTransfers(net.request), storage, folderId, request({ method: "PUT", url: "https://store.test/upload" }))).toMatchObject({ errorCode: "transfer-mismatch" });
+    expect(net.log.options).toEqual([]);
     expect(requests.filter((line) => line.startsWith("PUT"))).toEqual([]);
   });
 
   it("cancels a running download, removing its temporary file, and a closing window cancels its own", async () => {
     const { storage, folderId, dir } = await project();
-    const transfers = new DesktopFileTransfers(fetchStore);
+    const net = electronNet();
+    const transfers = new DesktopFileTransfers(net.request);
     let started: () => void = () => {};
     const progressed = new Promise<void>((resolve) => (started = resolve));
     const first = transfers.transfer(OWNER, storage, folderId, request({ url: "https://store.test/slow" }), () => started());
@@ -160,6 +249,7 @@ describe("desktop native file transfer (main process)", () => {
     transfers.cancel(OWNER + 1, "t-1");
     transfers.cancel(OWNER, "t-1");
     expect(await first).toMatchObject({ errorCode: "transfer-cancelled" });
+    expect(net.log.aborts).toBeGreaterThan(0);
     expect(blobs(dir)).toEqual([]);
 
     const second = invoke(transfers, storage, folderId, request({ id: "t-2", url: "https://store.test/slow" }));
@@ -172,7 +262,7 @@ describe("desktop native file transfer (main process)", () => {
   it("transfers only inside the window's open project", async () => {
     const { storage, folderId, dir } = await project();
     const other = await project("Other");
-    const transfers = new DesktopFileTransfers(fetchStore);
+    const transfers = new DesktopFileTransfers(electronNet().request);
     // A folder the window no longer has open.
     expect(await transfers.transfer(OWNER, storage, other.folderId, request(), () => {})).toMatchObject({ errorCode: "transfer-refused" });
     // A link inside the project that leads out of it.
@@ -185,9 +275,23 @@ describe("desktop native file transfer (main process)", () => {
     expect(requests).toEqual([]);
   });
 
+  it("cancels an upload while it is still being written, and the store never sees it", async () => {
+    const { storage, folderId, dir } = await project();
+    writeFileSync(join(dir, "assets/.blobs", OBJECT_SHA), OBJECT);
+    let transfers: DesktopFileTransfers | null = null;
+    // Cancelled as the second chunk is written, before the body is complete.
+    const net = electronNet({ onWrite: () => net.log.writes === 2 && transfers?.cancel(OWNER, "t-1") });
+    transfers = new DesktopFileTransfers(net.request);
+    const pending = transfers.transfer(OWNER, storage, folderId, request({ method: "PUT", url: "https://store.test/upload" }), () => {});
+    expect(await pending).toMatchObject({ errorCode: "transfer-cancelled" });
+    expect(net.log.writes).toBe(2);
+    expect(net.log.aborts).toBe(1);
+    expect(uploads).toEqual([]);
+  });
+
   it("never follows a redirect and writes nothing for an error status", async () => {
     const { storage, folderId, dir } = await project();
-    const transfers = new DesktopFileTransfers(fetchStore);
+    const transfers = new DesktopFileTransfers(electronNet().request);
     const redirected = await invoke(transfers, storage, folderId, request({ url: "https://store.test/moved" }));
     expect(redirected).toHaveProperty("error");
     expect(redirected).not.toHaveProperty("status");

@@ -6,7 +6,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
-import { nodeFileTransfer, type TransferFetch } from "@haptic/vfs/node-file-transfer";
+import { nodeFileTransfer, type TransferRequest } from "@haptic/vfs/node-file-transfer";
+import { netRequest } from "@haptic/vfs/net-request";
 import { folderFileTransfer } from "@haptic/vfs/native-file-transfer-port";
 import type { ProjectStorage } from "@haptic/core";
 import { fixedCredential, type HostCredential } from "../credentials";
@@ -156,8 +157,8 @@ export class GitTestServer {
     return `http://127.0.0.1:${port}${url.pathname}${url.search}`;
   }
 
-  /** `fetch` with the HTTPS test origins routed to loopback, as a host's native file transfer calls it. */
-  readonly fetch: TransferFetch = async (url, init) => fetch(this.loopback(url), init);
+  /** Electron's `net.request` as the desktop main process passes it to the native file transfer (a stand-in over Node's `http`), with the HTTPS test origins routed to loopback. */
+  readonly netRequest: TransferRequest = netRequest((url) => this.loopback(url));
 
   /**
    * The native file transfer as the desktop main process runs it (Node
@@ -165,13 +166,13 @@ export class GitTestServer {
    * the test origins. `storage` is one `storage()` made, or a view of it.
    */
   files(storage: ProjectStorage): FileTransferClient {
-    const transfer = folderFileTransfer(nodeFileTransfer(storage as unknown as NodeStorageAdapter, this.fetch), storage);
+    const transfer = folderFileTransfer(nodeFileTransfer(storage as unknown as NodeStorageAdapter, this.netRequest), storage);
     return (request) => transfer.transfer(request);
   }
 
   /** The host writing the benchmark's random objects into `storage`'s folder, as the mobile plugins do. */
   randomObjects(storage: ProjectStorage): (directory: string, size: number) => Promise<{ path: string; sha256: string }> {
-    const transfer = folderFileTransfer(nodeFileTransfer(storage as unknown as NodeStorageAdapter, this.fetch), storage);
+    const transfer = folderFileTransfer(nodeFileTransfer(storage as unknown as NodeStorageAdapter, this.netRequest), storage);
     return (directory, size) => transfer.writeRandomObject!(directory, size);
   }
 

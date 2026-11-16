@@ -54,8 +54,13 @@ const rendererRoot = join(app.getAppPath(), "renderer");
 const editorWindows = new Set<number>();
 /** Each editor document owns the project folder it opened. */
 const projectStorage = new Map<number, NodeStorageAdapter>();
-/** Git LFS objects streamed between the network and each document's project folder. */
-const fileTransfers = new DesktopFileTransfers((url, init) => net.fetch(url, init));
+/**
+ * Git LFS objects streamed between the network and each document's project
+ * folder through Chromium's network stack (`net.request`: the session's
+ * proxy and certificates, no session cookies or credentials). Left
+ * non-chunked, an upload goes with its length, which Electron sets itself.
+ */
+const fileTransfers = new DesktopFileTransfers((options) => net.request({ ...options, useSessionCookies: false }));
 let updates: ReturnType<typeof createDesktopUpdates> | undefined;
 let saveGames: DesktopSaveGames | undefined;
 /** Each editor document's user library folders, keyed by allowlisted scope. */

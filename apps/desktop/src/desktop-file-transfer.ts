@@ -1,5 +1,5 @@
 import type { NodeStorageAdapter } from "@haptic/vfs/node";
-import { nodeFileTransfer, type TransferFetch } from "@haptic/vfs/node-file-transfer";
+import { nodeFileTransfer, type TransferRequest } from "@haptic/vfs/node-file-transfer";
 import { FileTransferError, isFileTransferError, type FileTransferErrorCode } from "@haptic/vfs/native-file-transfer-port";
 
 /** A `files:transfer` request, validated by `validateIpcArguments`; see `NativeFileTransferRequest`. */
@@ -18,7 +18,7 @@ export type DesktopTransferResult =
   | { error: string; errorCode?: FileTransferErrorCode };
 
 /**
- * `files:transfer` and `files:cancel`: streams a file between `net.fetch`
+ * `files:transfer` and `files:cancel`: streams a file between `net.request`
  * and the sending window's open project in the main process, so no byte
  * crosses IPC (Node's `fs` streams with `crypto` hashing, the download
  * staged beside its file and renamed once checked). Each editor document
@@ -29,7 +29,7 @@ export type DesktopTransferResult =
 export class DesktopFileTransfers {
   private readonly running = new Map<number, Map<string, AbortController>>();
 
-  constructor(private readonly fetch: TransferFetch) {}
+  constructor(private readonly request: TransferRequest) {}
 
   async transfer(
     owner: number,
@@ -46,7 +46,7 @@ export class DesktopFileTransfers {
     try {
       const folder = storage.getCurrentFolder();
       if (!folder || folder.id !== folderId) throw new FileTransferError("transfer-refused", "The project folder is no longer open.");
-      return await nodeFileTransfer(storage, this.fetch).transfer(folder, {
+      return await nodeFileTransfer(storage, this.request).transfer(folder, {
         method: request.method,
         url: request.url,
         headers: request.headers,

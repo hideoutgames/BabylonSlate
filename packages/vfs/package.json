@@ -8,6 +8,7 @@
     "./node": "./src/node-adapter.ts",
     "./node-file-transfer": "./src/node-file-transfer.ts",
     "./native-file-transfer-port": "./src/native-file-transfer-port.ts",
+    "./net-request": "./src/test-support/net-request.ts",
     "./save-game-node": "./src/save-game-node.ts",
     "./library-folders": "./src/library-folders.ts",
     "./save-game-storage": "./src/save-game-storage.ts",
