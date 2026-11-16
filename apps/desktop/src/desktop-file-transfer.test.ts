@@ -59,6 +59,12 @@ beforeEach(async () => {
           sha256: hash.digest("hex"),
           bytes,
         });
+        if (request.url === "/upload-reset") {
+          // The answer's body is cut off: the connection drops part way through it.
+          response.writeHead(200, { "Content-Length": "1000" });
+          response.write("partial", () => setTimeout(() => response.socket?.destroy(), 20));
+          return;
+        }
         response.writeHead(200).end();
       });
       return;
@@ -287,6 +293,31 @@ describe("desktop native file transfer (main process)", () => {
     expect(net.log.writes).toBe(2);
     expect(net.log.aborts).toBe(1);
     expect(uploads).toEqual([]);
+  });
+
+  it("finishes an upload whose answer is cut off without an unhandled error in the main process", async () => {
+    const { storage, folderId, dir } = await project();
+    writeFileSync(join(dir, "assets/.blobs", OBJECT_SHA), OBJECT);
+    const unhandled: unknown[] = [];
+    const record = (error: unknown) => unhandled.push(error);
+    process.prependListener("uncaughtException", record);
+    try {
+      const result = await invoke(new DesktopFileTransfers(electronNet().request), storage, folderId, request({ method: "PUT", url: "https://store.test/upload-reset" }));
+      expect(result).toEqual({ status: 200, bytes: SIZE, sha256: OBJECT_SHA });
+      // The cut-off answer fails after the transfer has settled.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("uncaughtException", record);
+    }
+  });
+
+  it("aborts a download whose folder is missing instead of leaving its request open", async () => {
+    const { storage, folderId } = await project();
+    const net = electronNet();
+    const result = await invoke(new DesktopFileTransfers(net.request), storage, folderId, request({ path: `assets/missing/.blobs/${OBJECT_SHA}` }));
+    expect(result).toHaveProperty("error");
+    expect(net.log.aborts).toBe(1);
   });
 
   it("never follows a redirect and writes nothing for an error status", async () => {

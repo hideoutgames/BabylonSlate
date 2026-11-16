@@ -1,6 +1,6 @@
 import { createHash, randomFillSync, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { open, rename, stat, unlink } from "node:fs/promises";
+import { open, rename, stat, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { ProjectFolderHandle } from "@haptic/core";
 import type { NodeStorageAdapter } from "./node-adapter";
@@ -221,7 +221,9 @@ async function upload(
     } finally {
       body.destroy();
     }
-    // The answer's body is not needed; it is read off so the request can finish.
+    // The answer's body is not needed; it is read off so the request can finish. A connection that drops while
+    // it is read fails nothing: the status is already in hand, and an unheard `error` would throw in main.
+    response.on("error", () => undefined);
     response.resume();
     progress(sent.bytes, true);
     return { status: response.statusCode, ...sent };
@@ -246,9 +248,11 @@ async function download(
       return { status: response.statusCode, bytes: 0, sha256: "" };
     }
     const staged = join(dirname(file), `.haptic-${randomUUID()}.tmp`);
-    const handle = await open(staged, "wx");
+    let handle: FileHandle | null = null;
     let committed = false;
     try {
+      handle = await open(staged, "wx");
+      const output = handle;
       const hash = createHash("sha256");
       let bytes = 0;
       const received = new Promise<void>((resolve, reject) => {
@@ -258,7 +262,7 @@ async function download(
           response.pause();
           writing = writing.then(async () => {
             hash.update(chunk);
-            await handle.write(chunk);
+            await output.write(chunk);
             bytes += chunk.byteLength;
             progress(bytes);
             response.resume();
@@ -270,8 +274,8 @@ async function download(
       });
       received.catch(() => undefined);
       await Promise.race([received, exchange.failed]);
-      await handle.sync();
-      await handle.close();
+      await output.sync();
+      await output.close();
       const sha256 = hash.digest("hex");
       if (request.expected && (bytes !== request.expected.size || sha256 !== request.expected.sha256)) {
         throw mismatch("The downloaded file arrived damaged.");
@@ -285,7 +289,7 @@ async function download(
       exchange.request.abort();
       throw error;
     } finally {
-      if (!committed) {
+      if (!committed && handle) {
         await handle.close().catch(() => undefined);
         await unlink(staged).catch(() => undefined);
       }

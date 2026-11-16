@@ -11,7 +11,8 @@ const RESTRICTED = new Set(["content-length", "host", "trailer", "te", "upgrade"
  * a body written without `chunkedEncoding` is collected and sent with its
  * length (`SlurpStream`), and with it is streamed chunked; a restricted
  * header (`Content-Length`, `Transfer-Encoding`, …) fails the request;
- * `redirect: "error"` fails on a 3xx; `abort()` stops it. `route` maps a
+ * `redirect: "error"` fails on a 3xx; a response whose body the network
+ * cuts off emits `error`; `abort()` stops it. `route` maps a
  * URL to the loopback address that serves it.
  */
 export function netRequest(route: (url: string) => string = (url) => url): TransferRequest {
@@ -90,6 +91,12 @@ class NetRequest extends EventEmitter implements TransferClientRequest {
         this.emit("error", new Error("net::ERR_ABORTED: redirect was refused"));
         return;
       }
+      // Electron fails a response whose body the network cuts off with an `error` on it, which throws without a
+      // listener (an `abort()` destroys it without one); Node's reports `aborted` and drops the error when nothing
+      // listens for it.
+      response.once("aborted", () => {
+        if (!this.aborted) setImmediate(() => response.emit("error", new Error("net::ERR_CONNECTION_RESET")));
+      });
       this.emit("response", Object.assign(response, { statusCode: response.statusCode ?? 0 }));
     });
     request.on("error", (error) => {
