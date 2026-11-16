@@ -180,7 +180,7 @@ Haptic reads the base version from the project's history, so a diff needs no net
 
 ### Revert an asset
 
-**Revert Asset** in **Diff** puts the base version of the asset back in your working copy, with the large files it uses (an asset the base didn't have is removed). If the asset has unsaved edits, choose **Save All** or **Discard** first. Reverting replaces the file and cannot be undone. Documents are read-only while it runs, and the reverted asset reloads as after a pull. **Revert Asset** is unavailable when **Base** is the working copy. Only assets can be reverted, not Project Settings.
+**Revert Asset** in **Diff** puts the base version of the asset back in your working copy, with the large files it uses (an asset the base didn't have is removed). If the asset has unsaved edits, choose **Save All** or **Discard** first. Reverting replaces the file and cannot be undone; when the base version doesn't have the asset, the confirmation says **Delete** instead. Documents are read-only while it runs, and the reverted asset reloads as after a pull. **Revert Asset** is unavailable when **Base** is the working copy. Only assets can be reverted, not Project Settings.
 
 ### Repositories Haptic didn't publish
 
