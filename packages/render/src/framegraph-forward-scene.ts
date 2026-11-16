@@ -9,7 +9,7 @@ import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Te
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
-import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, type SceneEffectsPlan } from "./scene-effects";
+import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, withoutIdleStages, type SceneEffectsPlan } from "./scene-effects";
 import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
@@ -1600,7 +1600,7 @@ export class ForwardSceneFrameGraph {
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
-            plan: effectsPlan,
+            plan: withoutIdleStages(effectsPlan, { authoredInput: this.postProcessGraph !== undefined }),
             effects: this.auxiliary?.screenEffects === false ? displayEncodingEffects(effectsState.effects) : effectsState.effects,
             camera,
             authoredOutputTexture: this.postProcessGraph?.outputTexture,

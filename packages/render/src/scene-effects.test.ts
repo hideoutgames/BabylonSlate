@@ -6,7 +6,7 @@ import {
   RENDER_QUALITY_PROFILES,
   type RenderEffectsSettings,
 } from "@haptic/core";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   displayEncodingEffects,
   planSceneEffects,
@@ -14,7 +14,10 @@ import {
   sceneEffectsImageProcessingConfiguration,
   sceneEffectsKey,
   upscaledRenderSize,
+  withoutIdleStages,
 } from "./scene-effects";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 function effects(
   overrides: Partial<RenderEffectsSettings> = {},
@@ -188,6 +191,63 @@ it("plans Screen-Space Shadows on their own in PBR, never in CEL or with post-pr
   expect(low).not.toBe(off);
   expect(high).toBe(low);
   expect(sceneEffectsKey(plain, "cel", true, { screenShadows: "high" })).toBe(sceneEffectsKey(plain, "cel", true));
+});
+
+describe("stages left out where they write their input unchanged", () => {
+  const linear = { mode: "sceneLinear" } as const, display = { mode: "legacyDisplay" } as const;
+  const bloom = (weight: number) => ({ ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true, weight });
+  const reflections = (strength: number) => ({ ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, strength });
+  const occlusion = (strength: number) => ({ ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, strength });
+  const volumetricLighting = { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true };
+  const view = (overrides: Partial<RenderEffectsSettings>, inputs: Parameters<typeof planSceneEffects>[3] = {}, authoredInput = false) => {
+    const plan = withoutIdleStages(planSceneEffects(effects(overrides), "pbr", true, inputs)!, { authoredInput });
+    return { bloom: plan.bloom !== null, reflections: plan.reflections !== null };
+  };
+  it.each([
+    ["bloom at weight 0, in Scene Linear", { colorPipeline: linear, bloom: bloom(0) }, {}, false, { bloom: false, reflections: false }],
+    ["bloom at weight 0 beside FXAA, in Legacy Display", { colorPipeline: display, bloom: bloom(0) }, { fxaa: true }, false,
+      { bloom: false, reflections: false }],
+    // Alone it is the chain: without it the view would draw straight to its output.
+    ["bloom at weight 0 alone, in Legacy Display", { colorPipeline: display, bloom: bloom(0) }, {}, false, { bloom: true, reflections: false }],
+    ["bloom at weight 0.15", { colorPipeline: linear, bloom: bloom(0.15) }, {}, false, { bloom: true, reflections: false }],
+    ["reflections at strength 0, in Scene Linear", { colorPipeline: linear, reflections: reflections(0) }, {}, false,
+      { bloom: false, reflections: false }],
+    ["reflections at strength 0.5", { colorPipeline: linear, reflections: reflections(0.5) }, {}, false, { bloom: false, reflections: true }],
+    // The combine's gamma round trip is not exact.
+    ["reflections at strength 0, in Legacy Display", { colorPipeline: display, reflections: reflections(0) }, {}, false,
+      { bloom: false, reflections: true }],
+    // An authored stack's output can be smaller than the render size, which the combine resamples.
+    ["reflections at strength 0 after an authored stack", { colorPipeline: linear, reflections: reflections(0) }, {}, true,
+      { bloom: false, reflections: true }],
+    // Without them the volumetric march alone would read the geometry pass, which a game's world view seeds.
+    ["reflections at strength 0 beside volumetric lighting", { colorPipeline: linear, reflections: reflections(0), volumetricLighting }, {}, false,
+      { bloom: false, reflections: true }],
+    ["reflections at strength 0 beside volumetric lighting and Screen-Space Shadows",
+      { colorPipeline: linear, reflections: reflections(0), volumetricLighting }, { screenShadows: "high" }, false,
+      { bloom: false, reflections: false }],
+    ["reflections at strength 0 beside ambient occlusion and volumetric lighting",
+      { colorPipeline: linear, reflections: reflections(0), ambientOcclusion: occlusion(1), volumetricLighting }, {}, false,
+      { bloom: false, reflections: false }],
+  ] as const)("%s", (_name, overrides, inputs, authoredInput, expected) => {
+    expect(view(overrides, inputs, authoredInput)).toEqual(expected);
+  });
+
+  it("keeps ambient occlusion at strength 0, whose compose is not exact", () => {
+    const plan = planSceneEffects(effects({ colorPipeline: linear, ambientOcclusion: occlusion(0) }), "pbr")!;
+    expect(withoutIdleStages(plan, { authoredInput: false }).ambientOcclusion).toEqual(occlusion(0));
+  });
+
+  // The proofs read Babylon's shaders: bloom's merge adds `blur * weight`, and the reflections combine raises
+  // `F * strength` to the exponent 1 and blends the input by one minus that. A pin move that changes them reopens them.
+  it("rests on Babylon's bloom merge and reflections combine as pinned", () => {
+    const core = createRequire(import.meta.url).resolve("@babylonjs/core/package.json").slice(0, -"package.json".length);
+    const read = (path: string) => readFileSync(`${core}${path}`, "utf8");
+    expect(read("Shaders/bloomMerge.fragment.js")).toContain("gl_FragColor.rgb=gl_FragColor.rgb+(blurred.rgb*bloomWeight);");
+    const combine = read("Shaders/screenSpaceReflection2BlurCombiner.fragment.js");
+    expect(combine).toContain("reflectionMultiplier=clamp(pow(fresnel*strength,vec3(reflectionSpecularFalloffExponent)),0.0,1.0);");
+    expect(combine).toContain("vec3 colorMultiplier=1.0-reflectionMultiplier;vec3 finalColor=(color.rgb*colorMultiplier)+(SSR*reflectionMultiplier);");
+    expect(read("PostProcesses/thinSSRBlurCombinerPostProcess.js")).toContain("this.reflectionSpecularFalloffExponent = 1;");
+  });
 });
 
 it("plans nothing while the post-processing toggle is off", () => {

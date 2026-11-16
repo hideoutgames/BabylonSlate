@@ -267,8 +267,10 @@ export class SpatialEffectsGraph {
   }
   /**
    * Run before each frame's graph execution. Skips the stages that would change
-   * nothing for this camera, and the geometry passes once nothing running reads
-   * them; toggling flags never rebuilds the graph.
+   * nothing for this camera, Screen-Space Shadows without a shadowed sun or with an
+   * orthographic camera, and the geometry passes once nothing running reads
+   * them (the stages flagged `geometry` and the march; no other pass samples
+   * these buffers); toggling flags never rebuilds the graph.
    */
   syncIdle(): void {
     let geometryRead = false;
@@ -285,8 +287,8 @@ export class SpatialEffectsGraph {
       task.disabled = idle !== undefined && skipped;
       if (!task.disabled && task.stage.geometry) geometryRead = true;
     }
-    // Screen-Space Shadows read the depth every frame, whatever the lights.
-    if (this.screenShadows) geometryRead = true;
+    // Screen-Space Shadows read the depth (and the caster mark) while they march: a shadowed sun and a perspective view.
+    if (this.screenShadows?.sync()) geometryRead = true;
     this.geometry.disabled = this.clear.disabled = !geometryRead;
   }
   reconcile(): void {

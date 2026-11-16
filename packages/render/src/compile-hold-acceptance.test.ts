@@ -1396,6 +1396,32 @@ describe("the lighting CI gate", () => {
       .toEqual({ rendered: true, readers: before, variants: variantsBefore, reading: true, marching: false, reads: [0] });
   });
 
+  it.each(MODELS)("Screen-Space Shadows idle while the sun casts none, its draws reading none, and march once it casts, without a build or compile: %s", async (model) => {
+    const world = playWorld(model, actors());
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    world.handle.setRenderSettings(normalizeRenderProjectSettings({ shadows: { screenShadows: "high" } }));
+    world.place(sun({ castShadows: false }));
+    await settle(world);
+    const tasks = world.handle.renderTaskNames();
+    world.driver.arm();
+    const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
+    const uniforms = vi.spyOn(Effect.prototype, "setFloat4");
+    /** The frame's lit draws' screen-shadow reads, and how many marches it bound. */
+    const frame = async () => {
+      uniforms.mockClear();
+      await world.frame();
+      const calls = uniforms.mock.calls;
+      return { reads: [...new Set(calls.filter(([name]) => name === "hapticScreenShadowTerms").map(([, on]) => on))],
+        marches: calls.filter(([name]) => name === "ssMarch").length };
+    };
+    expect(await frame()).toEqual({ reads: [0], marches: 0 });
+    world.place(sun({ castShadows: true }));
+    let marching = { reads: [0], marches: 0 };
+    for (let index = 0; index < 8 && marching.marches === 0; index++) marching = await frame();
+    expect({ marching, created: world.driver.created.length, builds: builds.mock.calls.length, tasks: world.handle.renderTaskNames() })
+      .toEqual({ marching: { reads: [1], marches: 1 }, created: 0, builds: 0, tasks });
+  });
+
   /** The world view's Anti-Aliasing, on a device that multisamples at up to 4. */
   function withAntiAliasing(world: PlayWorld, antiAliasing: AntiAliasingMode) {
     Object.assign(world.engine.getCaps(), { maxMSAASamples: 4 });
