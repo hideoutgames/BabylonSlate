@@ -256,7 +256,11 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       if (!direct) return;
       // Untrack even an uncovered view: a stale entry would keep this Engine alive.
       trackDirectViewTarget(released.target, null);
-      if (direct.placement.view === released) direct.placement.park();
+      if (direct.placement.view === released) {
+        // A released view keeps its last frame in its own canvas, as a copied one does (a stopped game's page).
+        if (!engine.isDisposed) freeze(released);
+        direct.placement.park();
+      }
       direct.store.release(released);
     } };
     presenters.set(engine, owner);

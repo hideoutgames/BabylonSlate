@@ -84,13 +84,15 @@ describe("packed player Engine lifetime", () => {
     vi.unstubAllGlobals();
   });
 
-  it("boots on a private canvas and releases the player before its engine", async () => {
+  it("boots on a private canvas that the page shows directly, and releases the player before its engine", async () => {
     const loaded = await game();
     const handle = await startPlayerWithEngine({ game: loaded, canvas });
     const factory = createSession.mock.calls[0]![0];
     const privateCanvas = factory.createCanvas();
     expect(privateCanvas).not.toBe(canvas);
     expect([privateCanvas.width, privateCanvas.height]).toEqual([320, 180]);
+    // The game's view shows the Engine canvas itself instead of copying every frame into the page's canvas.
+    expect(factory.presentViewsDirectly).toBe(true);
     expect(factory.decoders).toEqual({
       ktx2BasePath: "https://game.example/subdir/ktx2/",
       dracoBasePath: "https://game.example/subdir/draco/",

@@ -50,11 +50,11 @@ describe("Engine session", () => {
     expect(h.engine.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("lets views present directly only on a session that asks for it, so the player's views keep receiving copies", async () => {
-    const player = host();
-    const copying = await createEngineSession(player.options);
-    const project = host();
-    const presenting = await createEngineSession({ ...project.options, presentViewsDirectly: true });
+  it("lets views present directly only on a session that asks for it; others keep receiving copies", async () => {
+    const plain = host();
+    const copying = await createEngineSession(plain.options);
+    const asking = host();
+    const presenting = await createEngineSession({ ...asking.options, presentViewsDirectly: true });
     expect([directViewPresentationAllowed(copying.engine), directViewPresentationAllowed(presenting.engine)]).toEqual([false, true]);
   });
 

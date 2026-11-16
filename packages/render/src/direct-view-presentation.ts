@@ -148,6 +148,8 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement, isDispose
   let original: { parent: ParentNode | null; next: Node | null; cssText: string; ariaHidden: string | null } | null = null;
   let offset = { x: 0, y: 0 };
   let box = { width: -1, height: -1 };
+  /** The view canvas's `image-rendering` last carried over, or null to write it on the next measure. */
+  let rendering: string | null = null;
   let observer: ResizeObserver | null = null;
   const style = canvas.style as unknown as Record<string, string>;
   const measure = () => {
@@ -169,6 +171,13 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement, isDispose
       box = { width: target.width, height: target.height };
       style.width = `${target.width}px`;
       style.height = `${target.height}px`;
+    }
+    // The browser scales this canvas's bitmap to the view's box, so it must smooth or keep pixels as the view
+    // canvas would: a pixelated game upscale sets the view canvas's inline style, and may change it at runtime.
+    const smoothing = view.target.style?.imageRendering ?? "";
+    if (smoothing !== rendering) {
+      rendering = smoothing;
+      style.imageRendering = smoothing;
     }
   };
   const vacate = () => {
@@ -200,6 +209,7 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement, isDispose
         Object.assign(style, PLACED_STYLE);
         offset = { x: 0, y: 0 };
         box = { width: -1, height: -1 };
+        rendering = null;
         view = next;
         if (typeof ResizeObserver !== "undefined") {
           observer ??= new ResizeObserver(() => measure());
@@ -231,9 +241,10 @@ export function createEngineCanvasPlacement(canvas: HTMLCanvasElement, isDispose
 const directEngines = new WeakSet<AbstractEngine>();
 
 /**
- * Declare that views of `engine` may show its canvas directly (the editor's
- * project Engine). Every other Engine, the exported player's included, keeps
- * copying into its view canvases, whose pixels the player and its checks read.
+ * Declare that views of `engine` may show its canvas directly: a session
+ * created with `presentViewsDirectly` (the editor's project Engine, the
+ * exported player's and Preview Build's). An Engine a view creates for itself
+ * keeps copying.
  */
 export function allowDirectViewPresentation(engine: AbstractEngine): void {
   directEngines.add(engine);
