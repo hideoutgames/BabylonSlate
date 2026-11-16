@@ -4091,7 +4091,7 @@ describe("Pure functions", () => {
     expect(entry?.pure).toBe(true);
     expect(entry?.latent).toBe(false);
     expect(entry?.defaultData?.pure).toBe(true);
-    expect(entry?.pins.map((pin) => [pin.id, pin.direction])).toEqual([["target", "in"], ["Value", "out"]]);
+    expect(entry?.pins?.map((pin) => [pin.id, pin.direction])).toEqual([["target", "in"], ["Value", "out"]]);
   });
 
   it("hydrates a Pure function's Call as pure", () => {
