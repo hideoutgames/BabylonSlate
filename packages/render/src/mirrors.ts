@@ -30,8 +30,6 @@ import { Camera } from "@babylonjs/core/Cameras/camera";
 import { reflectionDrewWhole } from "./reflection-pass-readiness";
 import { sceneReadinessRevision } from "./scene-readiness-signal";
 import { Constants } from "@babylonjs/core/Engines/constants";
-import { AnimatedInputBlockTypes } from "@babylonjs/core/Materials/Node/Blocks/Input/animatedInputBlockTypes";
-import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
@@ -39,7 +37,7 @@ import { Material } from "@babylonjs/core/Materials/material";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Frustum } from "@babylonjs/core/Maths/math.frustum";
-import { Matrix, Vector2, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -48,13 +46,15 @@ import type { Scene } from "@babylonjs/core/scene";
 import { capMirrorReflects, type MirrorProperties, type MirrorReflects } from "@haptic/core";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
+import { offsetReach } from "./mirror-offset-bound";
 import { MIRROR_RENDERS_PER_FRAME, selectMirrorsToRender, type MirrorCandidate } from "./mirror-selection";
 import {
   createMirrorReflectionBinding, isBuiltInMirrorMaterial, isMirrorSurfaceMesh, markBuiltInMirrorMaterial, mirrorFallbackTexture, type MirrorReflectionBinding,
 } from "./mirror-surface-state";
 import {
   beginPlanarMirrorPassState, buildViewProjectionMatrix, clipFrustumAtMirror, collectPlanarMirrorMeshes, createPlanarMirrorTarget,
-  cropToFootprint, disposePlanarMirrorTarget, drawPlanarMirrorPass, planarFootprintCulling, planarMirrorTargetSize, PlanarMirrorMath, resizePlanarMirrorTarget,
+  cropToFootprint, disposePlanarMirrorTarget, drawPlanarMirrorPass, planarFootprintCulling, planarMirrorTargetSize, PlanarMirrorMath,
+  projectHullInFront, resizePlanarMirrorTarget,
   type MirrorPlane, type PlanarMirrorTargetState,
 } from "./planar-mirror";
 import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
@@ -101,6 +101,13 @@ export interface MirrorDiagnostics {
    * found by a second `ReflectedContent` that asks on every render as before. Must stay 0.
    */
   readonly pollMismatches: number;
+  /** While `verifyMirrorFootprintCrops` is on: cropped culls also culled with the whole mirrored frustum. */
+  readonly cropChecks: number;
+  /**
+   * Meshes those uncropped culls listed and the crop left out whose bounds, through the mirror view, reach the
+   * surface's footprint widened by its sampling reach. Must stay 0.
+   */
+  readonly cropMisses: number;
 }
 
 let verifyingPolls = false;
@@ -112,6 +119,20 @@ let verifyingPolls = false;
 export function verifyMirrorContentPolls(enabled: boolean): void {
   verifyingPolls = enabled;
 }
+
+let verifyingCrops = false;
+
+/**
+ * Debugging aid: each Mirror cull cropped to its footprint also culls with the whole mirrored frustum, and counts the
+ * meshes only that one lists whose bounds reach the widened footprint (`MirrorDiagnostics.cropMisses`). It checks the
+ * crop's own geometry for the reach it was given, not the reach.
+ */
+export function verifyMirrorFootprintCrops(enabled: boolean): void {
+  verifyingCrops = enabled;
+}
+
+/** NDC slack before a left-out mesh's bounds count as reaching the footprint: a box touching its edge is either side. */
+const CROP_CHECK_SLACK = 1e-5;
 
 /** The verifier's own record of a surface: what the poll on every render follows, and the dirty flag it keeps. */
 type PollCheck = { content: ReflectedContent; dirty: boolean };
@@ -152,25 +173,23 @@ const owners = new WeakMap<Scene, SceneMirrors>();
 const FOOTPRINT_TEXELS = 2;
 const reach = { x: 0, y: 0 };
 
+const nodeReach = { x: 0, y: 0 };
+
 /**
  * How far (texture units per axis) `material` samples a surface's reflection from the surface's own screen position,
  * into `reach`; null when it cannot be bounded. The built-in surface samples it in place; an authored Mirror Reflection
- * node reaches by its Offset when that is a value input (read every render, so a parameter edit applies), and anything
- * else driving Offset is unbounded.
+ * node reaches by the bound on what drives its Offset (`offsetReach`: interval rules over the compiled blocks, read
+ * every render, so a parameter edit applies), and an Offset no rule bounds is unbounded.
  */
 function sampleReach(material: Material | null): { x: number; y: number } | null {
   reach.x = reach.y = 0;
   if (!material || isBuiltInMirrorMaterial(material)) return reach;
   if (!(material instanceof NodeMaterial)) return null;
   for (const block of material.attachedBlocks) {
-    if (!(block instanceof MirrorReflectionBlock) || !block.offset.isConnected) continue;
-    const source = block.offset.connectedPoint!.ownerBlock;
-    if (!(source instanceof InputBlock) || source.isAttribute || source.isSystemValue ||
-      source.animationType !== AnimatedInputBlockTypes.None || !(source.value instanceof Vector2)) return null;
-    const value = source.value;
-    if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) return null;
-    reach.x = Math.max(reach.x, Math.abs(value.x));
-    reach.y = Math.max(reach.y, Math.abs(value.y));
+    if (!(block instanceof MirrorReflectionBlock)) continue;
+    if (!offsetReach(block.offset, nodeReach)) return null;
+    reach.x = Math.max(reach.x, nodeReach.x);
+    reach.y = Math.max(reach.y, nodeReach.y);
   }
   return reach;
 }
@@ -192,6 +211,8 @@ class SceneMirrors {
   drawnMeshes = 0;
   skippedPolls = 0;
   pollMismatches = 0;
+  cropChecks = 0;
+  cropMisses = 0;
   private readonly scene: Scene;
   private beforeRender: Observer<Scene> | null = null;
   /** The owner's renders, and whether Reflection Shadows is on in this one. */
@@ -214,6 +235,12 @@ class SceneMirrors {
   private readonly viewProjection = new Matrix();
   private readonly cullViewProjection = new Matrix();
   private readonly cropViewProjection = new Matrix();
+  /** The widened footprint (NDC min x, min y, max x, max y) of the last crop, and the crop check's scratch. */
+  private readonly footprint = new Float64Array(4);
+  private readonly checkRect = new Float64Array(4);
+  private readonly checkPlanes = Frustum.GetPlanes(Matrix.Identity());
+  private readonly checkList: AbstractMesh[] = [];
+  private readonly checkListed = new Set<AbstractMesh>();
   private readonly corners = [new Vector3(), new Vector3(), new Vector3(), new Vector3()];
   private readonly relativeView = new Matrix();
   private readonly planes = Frustum.GetPlanes(Matrix.Identity());
@@ -276,7 +303,7 @@ class SceneMirrors {
       draws: this.draws, lastRenderDraws: this.lastRenderDraws, reuses: this.reuses, drawnMeshes: this.drawnMeshes,
       shadowPasses: shadowChangeSequence(this.scene),
       sunShadowViews: this.surfaces.filter((surface) => surface.target?.sunShadows.holdsMaps).length,
-      skippedPolls: this.skippedPolls, pollMismatches: this.pollMismatches,
+      skippedPolls: this.skippedPolls, pollMismatches: this.pollMismatches, cropChecks: this.cropChecks, cropMisses: this.cropMisses,
     };
   }
 
@@ -470,10 +497,11 @@ class SceneMirrors {
     // Cull with the mirror camera's ordinary frustum, cropped to the surface's footprint, its near plane replaced by the
     // mirror plane.
     target.mirror.mirrorView.multiplyToRef(this.projection, this.cullViewProjection);
-    const cull = this.cropToSurface(surface, target) ? this.cropViewProjection : this.cullViewProjection;
-    clipFrustumAtMirror(cull, surface.plane, this.reflectionPlanes);
-    collectPlanarMirrorMeshes(this.scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes,
-      this.mode(surface) === "movingActors" ? this.excludedStill : excludedFromMirrors);
+    const cropped = this.cropToSurface(surface, target);
+    clipFrustumAtMirror(cropped ? this.cropViewProjection : this.cullViewProjection, surface.plane, this.reflectionPlanes);
+    const excluded = this.mode(surface) === "movingActors" ? this.excludedStill : excludedFromMirrors;
+    collectPlanarMirrorMeshes(this.scene, target.texture.renderList!, camera.layerMask, this.reflectionPlanes, excluded);
+    if (cropped && verifyingCrops) this.checkCrop(target.texture.renderList!, camera.layerMask, surface.plane, excluded);
     surface.culledAt = this.culls;
     surface.culledInto = target;
     return true;
@@ -497,7 +525,28 @@ class SceneMirrors {
     // Texture units are half the NDC range.
     const marginX = 2 * sampled.x + 2 * FOOTPRINT_TEXELS / target.width;
     const marginY = 2 * sampled.y + 2 * FOOTPRINT_TEXELS / target.height;
-    return cropToFootprint(this.cullViewProjection, this.corners, marginX, marginY, this.cropViewProjection);
+    return cropToFootprint(this.cullViewProjection, this.corners, marginX, marginY, this.cropViewProjection, this.footprint);
+  }
+
+  /**
+   * The crop verifier: culls again with the whole mirrored frustum (`cullViewProjection`) and counts each mesh only it
+   * lists whose bounds, through the mirror view, reach the widened footprint the crop was made for.
+   */
+  private checkCrop(listed: readonly AbstractMesh[], layerMask: number, plane: MirrorPlane, excluded: (mesh: AbstractMesh) => boolean): void {
+    this.cropChecks++;
+    clipFrustumAtMirror(this.cullViewProjection, plane, this.checkPlanes);
+    collectPlanarMirrorMeshes(this.scene, this.checkList, layerMask, this.checkPlanes, excluded, false);
+    const kept = this.checkListed;
+    for (const mesh of listed) kept.add(mesh);
+    const footprint = this.footprint, rect = this.checkRect;
+    for (const mesh of this.checkList) {
+      if (kept.has(mesh)) continue;
+      projectHullInFront(this.cullViewProjection, mesh.getBoundingInfo().boundingBox.vectorsWorld, rect);
+      if (rect[0]! < footprint[2]! - CROP_CHECK_SLACK && rect[2]! > footprint[0]! + CROP_CHECK_SLACK &&
+        rect[1]! < footprint[3]! - CROP_CHECK_SLACK && rect[3]! > footprint[1]! + CROP_CHECK_SLACK) this.cropMisses++;
+    }
+    kept.clear();
+    this.checkList.length = 0;
   }
 
   private renderSurface(surface: Surface, camera: Camera, drawnWidth: number, drawnHeight: number, linear: boolean): boolean {

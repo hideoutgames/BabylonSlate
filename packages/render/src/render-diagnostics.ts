@@ -135,6 +135,13 @@ export type RenderDiagnostics = {
      * (`mismatches`, which must stay 0). Absent before the first.
      */
     captureActorLists?: { checks: number; mismatches: number };
+    /**
+     * While `verifyMirrorFootprintCrops` is on: Mirror culls cropped to a surface's footprint that were also culled with
+     * the whole mirrored frustum (`checks`), and meshes only those listed whose bounds reach the widened footprint
+     * (`misses`, which must stay 0). It checks the crop's geometry for the reach it was given, not the Offset bound.
+     * Absent without Mirrors.
+     */
+    mirrorCrop?: { checks: number; misses: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is

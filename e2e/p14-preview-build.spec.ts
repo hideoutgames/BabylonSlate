@@ -225,7 +225,14 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("preview-build-toggle").click();
     await page.getByTestId("play-preview").click();
     await waitForPreviewBuildBoot(page);
-    await expectGreenIllumination(page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas"));
+    const playerCanvas = page.frameLocator('[data-testid="preview-build-iframe"]').getByTestId("player-canvas");
+    await expectGreenIllumination(playerCanvas);
+    // The player shows its Engine canvas over the game canvas instead of copying each frame into it.
+    await expect.poll(() => playerCanvas.evaluate((node) => ({
+      direct: (globalThis as unknown as { __hapticPlayerTest: { rendering: () => { presentation?: { direct?: boolean } } | null } })
+        .__hapticPlayerTest.rendering()?.presentation?.direct,
+      covered: node.nextElementSibling instanceof HTMLCanvasElement && (node.nextElementSibling as HTMLCanvasElement).style.visibility === "visible",
+    }))).toEqual({ direct: true, covered: true });
     await page.getByTestId("preview-build-close").click();
   });
 

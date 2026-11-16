@@ -1,6 +1,23 @@
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { expect, it } from "vitest";
-import { PlanarMirrorMath, type MirrorPlane } from "./planar-mirror";
+import { PlanarMirrorMath, projectHullInFront, type MirrorPlane } from "./planar-mirror";
+
+it("bounds on screen the part of a box in front of the eye, its edges cut where they cross the eye plane", () => {
+  // Eye at the origin looking down +z, 90° field of view: a point (x, y, z) in front lands at (x/z, y/z).
+  const viewProjection = Matrix.PerspectiveFovLH(Math.PI / 2, 1, 0.1, 100, false);
+  const box = (min: Vector3, max: Vector3) => [0, 1, 2, 3, 4, 5, 6, 7].map((corner) =>
+    new Vector3(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z));
+  const rect = new Float64Array(4);
+  projectHullInFront(viewProjection, box(new Vector3(1, -1, 2), new Vector3(2, 1, 4)), rect);
+  expect([...rect].map((v) => Math.round(v * 1e6) / 1e6)).toEqual([0.25, -0.5, 1, 0.5]);
+  // Wholly behind the eye: empty.
+  projectHullInFront(viewProjection, box(new Vector3(-1, -1, -4), new Vector3(1, 1, -2)), rect);
+  expect(rect[0]! > rect[2]!).toBe(true);
+  // Reaching behind the eye beside it: the cut at the eye plane runs out to the side, past any finite crop.
+  projectHullInFront(viewProjection, box(new Vector3(1, -1, -2), new Vector3(2, 1, 2)), rect);
+  expect(rect[2]!).toBeGreaterThan(1e3);
+  expect(rect[0]!).toBeCloseTo(0.5, 6);
+});
 
 /** Where an eye sees `object` in the mirror plane: the ray from the eye to the object's reflection meets the plane. */
 function seenAt(eye: Vector3, object: Vector3, plane: MirrorPlane): Vector3 {
