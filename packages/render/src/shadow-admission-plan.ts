@@ -27,6 +27,12 @@ const SHADOW_MIN_RESIDENCY_MS = 250;
 /** A map holder ranks this much nearer (squared distance divided by it), so a slightly nearer light cannot take its map. */
 const SHADOW_INCUMBENT_DISTANCE_BONUS = 1.15;
 
+/**
+ * The largest atlas `shadowdebug atlasfit off` makes: 8192 (256 MiB of depth), never a 16384 one (1 GiB) for a level
+ * whose own atlas is already 8192, where the comparison would measure an allocation that may fail instead.
+ */
+const OVERSIZED_ATLAS_MAX_EDGE = 8192;
+
 /** The room a sync admits maps into: the shared ledger and the shadow atlas. */
 export type ShadowAdmissionBudget = {
   readonly bytes: number;
@@ -243,7 +249,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
     : budget.atlasEdge;
   // `oversizedAtlas` allocates a larger atlas but plans every tile, and the room for it, in the fitted one: the same
   // tiles go into the larger atlas (a Custom sun map whose first cascade tile the fitted edge halves keeps it whole there).
-  const atlasEdge = budget.oversizedAtlas ? Math.min(fitted * 2, budget.atlasEdgeLimit) : fitted;
+  const atlasEdge = budget.oversizedAtlas ? Math.min(fitted * 2, budget.atlasEdgeLimit, OVERSIZED_ATLAS_MAX_EDGE) : fitted;
   // The atlas is allocated whole for its first tile; its growth past the level's edge brings its own room.
   if (planned.length > 0) {
     admitted.bytes += atlasEdge ** 2 * SHADOW_ATLAS_BYTES_PER_TEXEL;

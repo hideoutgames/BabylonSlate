@@ -45,6 +45,7 @@ export const DEBUG_COMMAND_NAMES = [
   "waterdebug",
   "shadowdebug",
   "discardsamples",
+  "scenelayers",
   "gpubusy",
   "framesinflight",
   "preservebuffer",
@@ -246,6 +247,8 @@ export function builtinCommands(): RegisteredCommand[] {
     },
     flagCommand("discardsamples", (host, enabled) => host.setDiscardSamples?.(enabled),
       "Discard multisampled colour and depth samples after a frame's last resolve of them (on), or keep them (off), to measure what storing them costs"),
+    flagCommand("scenelayers", (host, enabled) => host.setSceneLayers?.(enabled),
+      "Composite Play's Scene Layers (on) or hide them all (off), so the frame is drawn at the world's resolution alone, to measure what the layers and the device-resolution output cost"),
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
       "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
     {

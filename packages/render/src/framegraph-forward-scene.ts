@@ -1799,7 +1799,10 @@ export class ForwardSceneFrameGraph {
         // Which pass writes each multisampled target last, for `discardsamples` (read at each resolve, not here).
         const textures = this.graph.textureManager;
         installSampleDiscard(scene.getEngine());
-        markLastSampleWriters(this.graph.tasks, (handle) => (textures.getTextureFromHandle(handle)?.samples ?? 1) > 1);
+        markLastSampleWriters(this.graph.tasks, (handle) => {
+          const texture = textures.getTextureFromHandle(handle);
+          return texture && texture.samples > 1 ? texture : null;
+        });
       }
       // Unlike Babylon whenReadyAsync cancellation, disposal settles our waiter.
       const started = performance.now();

@@ -266,6 +266,8 @@ export interface FeatureTestProfileState {
   captures: boolean;
   /** Whether multisampled samples are discarded after their last resolve (`discardsamples`, Engine-wide). */
   discard: boolean;
+  /** Whether Play composites its Scene Layers (`scenelayers`). */
+  layers: boolean;
 }
 
 /** The session's state from a baseline's settings fingerprint; a missing field reads as Play's default. */
@@ -274,7 +276,20 @@ export function profileState(settings: Readonly<Record<string, string>> | undefi
     postProcessing: settings?.["post.enabled"] !== "false",
     captures: settings?.captures !== "suspended",
     discard: settings?.["msaa.discard"] === "on",
+    layers: settings?.layers !== "hidden",
   };
+}
+
+/**
+ * The resolution a Profile holds for every row, from the session's fingerprint before it: with Dynamic Resolution on,
+ * its floor (`resolution.dynamic`, `on <minScale>`: a GPU-bound device sits there, and a level that moves during the
+ * run would confound every step), else the session's scale. `quality resolution scale` turns Dynamic Resolution off at
+ * that scale; it is the Profile's base, applied again after every `quality reset`.
+ */
+export function profileResolutionPin(settings: Readonly<Record<string, string>> | undefined): { scale: number; floor: boolean } {
+  const dynamic = /^on (\S+)$/.exec(settings?.["resolution.dynamic"] ?? "")?.[1];
+  const scale = Number(dynamic ?? settings?.["resolution.scale"] ?? 1);
+  return { scale: Number.isFinite(scale) && scale > 0 ? scale : 1, floor: dynamic !== undefined };
 }
 
 const GEOMETRY_EFFECT_FIELDS = ["post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "shadows.screen"] as const;
@@ -318,17 +333,27 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
   };
   return {
     views: [
-      { name: "light", enter: [possessProfileView("light")], steps: [msaaOff, discard] },
+      {
+        name: "light", enter: [possessProfileView("light")], steps: [
+          msaaOff, discard,
+          // Every Scene Layer hidden: the backbuffer is the world's size again, so the passes that ran at the device's
+          // resolution for the layers (their draws, the upscale and sharpening to the output) go.
+          { label: "scene layers hidden", commands: ["scenelayers off"], restore: [`scenelayers ${state.layers ? "on" : "off"}`], fields: ["layers"] },
+        ],
+      },
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
           { label: "shadows off", commands: ["quality shadows enabled off"], fields: ["shadows", "shadows.filter"] },
+          // Every map pass bound and cleared, no caster drawn: what drawing the casters costs.
+          { label: "shadow casters off", commands: ["shadowdebug casters off"], restore: ["shadowdebug casters on"], fields: ["shadows.debug"], overlaps: true },
+          // No map redrawn, the last maps still sampled: what redrawing the maps costs; beyond it, `shadows off` saves the sampling.
+          { label: "shadow passes off", commands: ["shadowdebug passes off"], restore: ["shadowdebug passes on"], fields: ["shadows.debug"], overlaps: true },
           { label: "shadows medium", commands: ["quality shadows medium"], fields: SHADOW_LEVEL_FIELDS, overlaps: true },
           {
             label: "shadows medium big atlas", commands: ["quality shadows medium", "shadowdebug atlasfit off"], restore: ["shadowdebug atlasfit on"],
             fields: [...SHADOW_LEVEL_FIELDS, "shadows.debug"], overlaps: true, includes: "shadows medium",
           },
           { label: "shadow filter low", commands: ["quality shadows filter low"], fields: ["shadows.filter"], overlaps: true },
-          { label: "AO off", commands: ["quality postprocessing ambientOcclusion off"], fields: ["post.ambientOcclusion"], overlaps: true },
           // Every effect that reads the geometry pass, so the pass itself goes too.
           {
             label: "geometry effects off",
@@ -339,9 +364,8 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
             fields: GEOMETRY_EFFECT_FIELDS, overlaps: true,
           },
           { label: "post off", commands: ["postprocessing off"], restore: [`postprocessing ${state.postProcessing ? "on" : "off"}`], fields: ["post.enabled"] },
-          msaaOff,
-          discard,
-          { label: "resolution 0.5", commands: ["quality resolution scale 0.5"], fields: ["resolution.scale", "resolution.dynamic"], overlaps: true },
+          // Full resolution (level 1) against the held one: what no resolution drop costs.
+          { label: "resolution 1.0", commands: ["quality resolution scale 1"], fields: ["resolution.scale", "resolution.dynamic"] },
         ],
       },
       {
@@ -367,7 +391,7 @@ export function featureTestProfileSequence(state: FeatureTestProfileState): Feat
 
 /** The Profile step a sample measured, by its label (`heavy shadows off`); undefined for baselines and warm-up windows. */
 export function profileStep(label: string): FeatureTestBreakdownSequenceStep | undefined {
-  const step = featureTestProfileSequence({ postProcessing: true, captures: true, discard: false }).find((entry) => entry.label === label);
+  const step = featureTestProfileSequence({ postProcessing: true, captures: true, discard: false, layers: true }).find((entry) => entry.label === label);
   return step?.baseline ? undefined : step;
 }
 
@@ -810,6 +834,8 @@ export interface FeatureTestBenchmarkSample {
   work?: SampledRendererWork;
   /** The native host's memory counters as the sample ended (`FeatureTestCheckDeps.hostMemory`); absent where none. */
   memory?: HostMemory;
+  /** The Engine's backbuffer while sampled (`RenderDiagnostics.backbuffer`), beside the world's `resolution`; absent where unreported. */
+  backbuffer?: string;
   /** When the sample began, from the start of its sweep: when a Profile's control view was revisited (`profileDrift`). */
   atMs?: number;
   /** The shadow atlas and its maps as the sample ended (`RenderDiagnostics.shadowAtlas`); absent where unreported. */
@@ -841,6 +867,11 @@ export interface FeatureTestProfileResult {
    * attempts. Each step waits against it (`PROFILE_HOLD_MARGIN`). Null where the view reports no counts.
    */
   holdRate: ProfileHoldRate | null;
+  /**
+   * The resolution every row held (`profileResolutionPin`): its scale, whether that is Dynamic Resolution's floor, and
+   * the scaling level Play was at before the Profile pinned it; null when not reached.
+   */
+  resolution?: { scale: number; floor: boolean; levelBefore: number | null } | null;
 }
 
 /** How often a view held frames: per second, and as a share of its attempts (drawn plus held). */
@@ -1329,7 +1360,7 @@ async function checkScene(
     const run = (line: string) => runCommand(play, line, deps, signal, limits);
     if (mode === "benchmark" || mode === "breakdown" || mode === "profile") {
       result.play.firstDrawsBeforeSweep = play.snapshot().rendering?.firstDraws ?? null;
-      if (mode === "profile") result.play.profile = { instancePool: null, endChanges: null, holdRate: null };
+      if (mode === "profile") result.play.profile = { instancePool: null, endChanges: null, holdRate: null, resolution: null };
       await benchmarkProfiles(scene.name, mode, method, play, run, deps, signal, limits, result.play.benchmark, result.play.profile);
       for (const sample of result.play.benchmark) {
         for (const failure of sample.failed) result.problems.push(`${sample.label}: ${failure}`);
@@ -1704,7 +1735,13 @@ async function benchmarkProfiles(
   // Breakdown and Profile alternate baselines and steps, time the GPU with fences and fingerprint every sample.
   const interleaved = mode !== "benchmark";
   const plan = featureTestBreakdownPlan(sceneName, method);
-  const base = breakdown ? FEATURE_TEST_BREAKDOWN_BASES[method] : PROFILE_BASE;
+  // A Profile's base holds the resolution its session started at (`profileResolutionPin`), so a step's change is not a
+  // resolution drop; its fingerprint before that is what the end compares with.
+  const sessionSettings = mode === "profile" ? play.snapshot().rendering?.settings : undefined;
+  const pin = mode === "profile" ? profileResolutionPin(sessionSettings) : null;
+  if (pin && profile) profile.resolution = { ...pin, levelBefore: play.snapshot().rendering?.scalingLevel ?? null };
+  const base: FeatureTestBreakdownBase = breakdown ? FEATURE_TEST_BREAKDOWN_BASES[method]
+    : pin ? { ...PROFILE_BASE, commands: [`quality resolution scale ${pin.scale}`] } : PROFILE_BASE;
   // A Profile keeps the session's frame cap.
   const cap = mode === "profile" ? undefined : /(\d+)/.exec((await run("framecap")).output)?.[1];
   if (mode !== "profile") await run(`framecap ${breakdown ? BREAKDOWN_FRAME_CAP : BENCHMARK_FRAME_CAP}`);
@@ -1787,6 +1824,7 @@ async function benchmarkProfiles(
       cpu: sampled.cpu,
       gpu: sampled.gpu,
       resolution: rendering ? `${rendering.width}x${rendering.height}@${rendering.scalingLevel.toFixed(2)}` : null,
+      ...(rendering?.backbuffer ? { backbuffer: `${rendering.backbuffer.width}x${rendering.backbuffer.height}` } : {}),
       failed: [...carried.splice(0), ...failed],
       ...(rendering?.frameBackpressure ? { framesInFlight: { mode: rendering.frameBackpressure.mode, skipped: rendering.frameBackpressure.skipped - skippedBefore } } : {}),
       ...(presentedBefore && presentedAfter ? {
@@ -1820,8 +1858,19 @@ async function benchmarkProfiles(
     // The base first, so the warm-up runs at the baseline the steps are compared with.
     if (interleaved) {
       await runAll(base.commands, carried);
-      // A Profile warms up at its control view, which it revisits unchanged through the run.
-      if (profileMode) await runAll([possessProfileView(PROFILE_CONTROL_VIEW)], carried);
+      // A Profile warms up at its control view, which it revisits unchanged through the run. Without it (a Feature Test
+      // project made before its Profile cameras) every row would measure the moving tour: nothing is sampled.
+      if (profileMode) {
+        const line = possessProfileView(PROFILE_CONTROL_VIEW);
+        const possessed = await run(line);
+        if (!possessed.success) {
+          samples.push({
+            label: "warm-up 1", frames: null, runtimeFps: null, cpuMs: null, gpuMs: null, drawCalls: 0, resolution: null, warmup: true,
+            failed: [...carried.splice(0), `${line} failed: ${sentence(possessed.output || "no output")} This project has no Profile cameras; create the Feature Test project again, then run the Profile.`],
+          });
+          return;
+        }
+      }
       await warmUp(sceneName, deps, { draws: waitForDraws, settle, unsettledNote }, measure, samples, mode === "profile"
         ? { windowMs: limits.profileWarmupWindowMs, windows: PROFILE_WARMUP_WINDOWS, ms: Number.POSITIVE_INFINITY }
         : { windowMs: limits.breakdownWarmupWindowMs, windows: Number.POSITIVE_INFINITY, ms: limits.breakdownWarmupMs });
@@ -1894,7 +1943,7 @@ async function benchmarkProfiles(
         // The tour camera again.
         await run(`possess "${FEATURE_TEST_MAIN_CAMERA.name}"`);
         // Back as the session was before the first step: `quality reset` must not have dropped or kept anything else.
-        await checkProfileRestored(play, waitForDraws, samples.find((sample) => sample.warmup)?.settings, profile);
+        await checkProfileRestored(play, waitForDraws, sessionSettings ?? samples.find((sample) => sample.warmup)?.settings, profile);
       } else {
         // A Benchmark's or a Breakdown's session ends with its sweep: the caller stops Play next. Nothing the view draws
         // is restored (quality, render path, camera), since a view about to be torn down would prepare it first: a tier

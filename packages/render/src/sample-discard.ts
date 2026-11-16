@@ -56,38 +56,50 @@ export interface SampleWriterTask {
   readonly passesDisabled: readonly unknown[];
 }
 
+/** Every render pass of the tasks, enabled and disabled, in execution order. */
+function renderPasses(tasks: readonly SampleWriterTask[]): SampleWriterPass[] {
+  return tasks.flatMap((task) => [...task.passes, ...task.passesDisabled] as SampleWriterPass[]).filter((pass) => pass.setRenderTarget !== undefined);
+}
+
 /**
  * For each multisampled texture the tasks' render passes draw into, the pass that draws into it last in execution
  * order, with the attachments that are its; a task's disabled passes count as writers too, so a pass that might not be
- * last is never chosen.
+ * last is never chosen. Passes name a texture by different handles (a task's output is a handle resolved to its
+ * target's), so `texture` gives the multisampled texture a handle stands for, or null for a single-sample one.
  */
 export function lastSampleWriters(
-  tasks: readonly SampleWriterTask[], multisampled: (handle: FrameGraphTextureHandle) => boolean,
+  tasks: readonly SampleWriterTask[], texture: (handle: FrameGraphTextureHandle) => object | null,
 ): Map<SampleWriterPass, SampleDiscard> {
-  const last = new Map<FrameGraphTextureHandle, { pass: SampleWriterPass; color: number | null }>();
-  for (const task of tasks) {
-    for (const entry of [...task.passes, ...task.passesDisabled]) {
-      const pass = entry as SampleWriterPass;
-      if (pass.setRenderTarget === undefined) continue;
-      const colors = pass.renderTarget === undefined ? [] : Array.isArray(pass.renderTarget) ? pass.renderTarget : [pass.renderTarget];
-      colors.forEach((handle, index) => { if (handle !== undefined) last.set(handle, { pass, color: index }); });
-      if (pass.renderTargetDepth !== undefined) last.set(pass.renderTargetDepth, { pass, color: null });
-    }
+  const last = new Map<object, { pass: SampleWriterPass; color: number | null }>();
+  const write = (handle: FrameGraphTextureHandle | undefined, pass: SampleWriterPass, color: number | null) => {
+    const target = handle === undefined ? null : texture(handle);
+    if (!target) return;
+    // Re-inserted, so the map's order stays the order of last writes.
+    last.delete(target);
+    last.set(target, { pass, color });
+  };
+  for (const pass of renderPasses(tasks)) {
+    const colors = pass.renderTarget === undefined ? [] : Array.isArray(pass.renderTarget) ? pass.renderTarget : [pass.renderTarget];
+    colors.forEach((handle, index) => write(handle, pass, index));
+    write(pass.renderTargetDepth, pass, null);
   }
   const writers = new Map<SampleWriterPass, SampleDiscard>();
-  for (const [handle, { pass, color }] of last) {
-    if (!multisampled(handle)) continue;
+  for (const { pass, color } of last.values()) {
     const discard = writers.get(pass) ?? { colors: [], depth: false };
     writers.set(pass, color === null ? { ...discard, depth: true } : { ...discard, colors: [...discard.colors, color].sort((a, b) => a - b) });
   }
   return writers;
 }
 
-/** Marks the render targets of a graph's last multisampled writers (`lastSampleWriters`), after each build. */
+/** Marks the render targets of a graph's last multisampled writers (`lastSampleWriters`) after each build, and no other pass's. */
 export function markLastSampleWriters(
-  tasks: readonly SampleWriterTask[], multisampled: (handle: FrameGraphTextureHandle) => boolean,
+  tasks: readonly SampleWriterTask[], texture: (handle: FrameGraphTextureHandle) => object | null,
 ): void {
-  for (const [pass, discard] of lastSampleWriters(tasks, multisampled)) {
+  for (const pass of renderPasses(tasks)) {
+    const target = pass.frameGraphRenderTarget?.renderTargetWrapper;
+    if (target) discards.delete(target);
+  }
+  for (const [pass, discard] of lastSampleWriters(tasks, texture)) {
     const target = pass.frameGraphRenderTarget?.renderTargetWrapper;
     if (target) discards.set(target, discard);
   }

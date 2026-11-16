@@ -425,7 +425,7 @@ describe("formatFeatureTestCheckReport", () => {
       label, baseline: / baseline | drift$/.test(` ${label}`), view: label.split(" ")[0],
       frames: { frames: 100, durationMs: 5000, fps: 20, medianMs: 50, meanMs: 50, vsync: [0, 0, 1, 0], p95Ms: 58, maxMs: 70, stalls: 0 },
       runtimeFps: null, cpuMs, gpuMs: null, drawCalls: 704, draws: { median: 704, min: 704, max: 704, samples: 10 },
-      resolution: "885x591@1.33", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes,
+      resolution: "885x591@1.33", backbuffer: "2360x1576", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes,
       gpuBusy: { medianMs: gpu, p95Ms: gpu + 6, frames: 100, pollMs: 6.4 },
       presentation: { drawn: 40, held: 0, ms: 5000, heldReasons: {} },
       shadowAtlas: { edge: 8192, maps: [{ mapSize: 2048, passes: 4 }, { mapSize: 2048, passes: 6 }] }, ...extra,
@@ -437,7 +437,10 @@ describe("formatFeatureTestCheckReport", () => {
         name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: 22, ticksPerSecond: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
-          profile: { instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 }, endChanges: [], holdRate: { heldPerSecond: 2.36, share: 0.234 } },
+          profile: {
+            instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 }, endChanges: [], holdRate: { heldPerSecond: 2.36, share: 0.234 },
+            resolution: { scale: 0.75, floor: true, levelBefore: 1.25 },
+          },
           benchmark: [
             { ...sample("heavy warm-up 1", 44, 11, { drawPasses: undefined, atMs: 0 }), label: "warm-up 1", baseline: false, warmup: true, view: "heavy" },
             { ...sample("heavy warm-up 2", 42, 10, { drawPasses: undefined, atMs: 10_000 }), label: "warm-up 2", baseline: false, warmup: true, view: "heavy" },
@@ -463,11 +466,13 @@ describe("formatFeatureTestCheckReport", () => {
     // The render loop's own count and the game's tick rate, which the loop does not set.
     expect(lines).toContain("  Play: loaded in 2.0 s · no frames sampled · render loop 22 fps (last second) · game 60 ticks/s");
     expect(lines).toContain("  Restored: every setting as before the first step");
+    expect(lines).toContain("  Resolution held: scale 0.75 (level 1.33) for every row, Dynamic Resolution's floor at this tier, where a GPU-bound device sits, with Dynamic Resolution off; Play was at scaling level 1.25 before");
     // The control view's visits, unchanged, at their times into the sweep, and its change over the run.
     expect(lines).toContain("  Drift (heavy view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms): warm-up 1 0:00 44.0/11.0 · warm-up 2 0:10 42.0/10.0 · heavy baseline 1 1:00 40.0/10.0 · heavy baseline 2 1:20 42.0/11.0 · heavy baseline 3 1:40 40.0/10.0 · heavy drift 5:00 46.0/12.0");
     expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9%; discount a step's change by the drift around it");
     // Against (20 + 24) / 2 in gpu busy; the baselines' spread is past the change.
-    expect(row("light MSAA off")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}post\.antiAliasing=off · UNSETTLED: its baselines differ by 4\.0 ms, more than its change$/);
+    // Each row's world size and level beside the backbuffer the layers and the output draw into.
+    expect(row("light MSAA off")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}885x591@1\.33 \/ 2360x1576 {2}post\.antiAliasing=off · UNSETTLED: its baselines differ by 4\.0 ms, more than its change$/);
     // A shadow step's atlas and maps; the big atlas's change beyond Medium's shadows is the atlas's size alone.
     expect(row("heavy shadows medium")).toMatch(/-7\.0ms -17% .*shadows=medium 2048, shadows\.screen=off · overlaps · atlas 4096 · maps 2048x3, 1024x6$/);
     expect(row("heavy shadows medium big atlas")).toMatch(/-5\.0ms -12% .*shadows\.debug=atlasfit · overlaps · \+2\.0ms beyond shadows medium · atlas 8192 · maps 2048x3, 1024x6$/);

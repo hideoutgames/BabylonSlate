@@ -27,10 +27,10 @@ function measuredCommands(): { source: string; line: string }[] {
   }
   // A Profile's control view, its steps (each view's first baseline holds its camera) and restores, for each state
   // they toggle back to, and the tour camera it ends on.
-  lines.push({ source: "profile warm-up", line: possessProfileView(PROFILE_CONTROL_VIEW) });
+  lines.push({ source: "profile warm-up", line: possessProfileView(PROFILE_CONTROL_VIEW) }, { source: "profile base", line: "quality resolution scale 0.75" });
   for (const state of [
-    { postProcessing: true, captures: true, discard: false },
-    { postProcessing: false, captures: false, discard: true },
+    { postProcessing: true, captures: true, discard: false, layers: true },
+    { postProcessing: false, captures: false, discard: true, layers: false },
   ]) {
     for (const step of featureTestProfileSequence(state))
       for (const line of [...step.commands, ...(step.restore ?? [])]) lines.push({ source: `profile ${step.label}`, line });
@@ -55,6 +55,7 @@ describe("Feature Test measurement commands", () => {
     const commands = measuredCommands();
     expect(commands.some(({ line }) => line.startsWith("quality postprocessing antialiasing"))).toBe(true);
     expect(commands.some(({ line }) => line === "discardsamples on")).toBe(true);
+    expect(commands.some(({ line }) => line === "scenelayers off")).toBe(true);
     expect(commands.some(({ line }) => line === "shadowdebug atlasfit off")).toBe(true);
     expect(commands.some(({ line }) => line === 'possess "Profile Mirror Camera"')).toBe(true);
     for (const { source, line } of commands) {

@@ -10,7 +10,7 @@ import {
   FEATURE_TEST_BREAKDOWN_BASES, FEATURE_TEST_BREAKDOWN_METHODS, FEATURE_TEST_BREAKDOWN_STEPS, featureTestBreakdownPlan, frameBound,
   frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges, vsyncShares, warmDeviceMinutes,
   FEATURE_TEST_PROFILE_SCENES, featureTestBreakdownScenes, featureTestProfilePlan, featureTestProfileSequence, profileComparison, profileDrift,
-  profileRanking, profileState, profileStep, PROFILE_WARMUP_WINDOWS,
+  profileRanking, profileResolutionPin, profileState, profileStep, PROFILE_WARMUP_WINDOWS,
   type FeatureTestBenchmarkSample, type FeatureTestBreakdownInfo, type FeatureTestCheckDeps, type FeatureTestProfileState,
 } from "./feature-test-check";
 import type { PlaySessionResult } from "./play-session";
@@ -168,6 +168,7 @@ function fingerprintAfter(
   let captures = true;
   let framesInFlight = options.framesInFlight ?? "2";
   let discard = false;
+  let layers = true;
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
   for (const line of commands) {
@@ -179,6 +180,7 @@ function fingerprintAfter(
     else if (name === "rendertargets") captures = first === "on";
     else if (name === "framesinflight") framesInFlight = first!;
     else if (name === "discardsamples") discard = first === "on";
+    else if (name === "scenelayers") layers = first === "on";
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
   }
@@ -192,6 +194,7 @@ function fingerprintAfter(
     "shadows.debug": SHADOW_DEBUG_PARTS.filter((part) => shadowOff.has(part)).join(",") || "none",
     "presentation.framesInFlight": framesInFlight,
     "msaa.discard": discard ? "on" : "off",
+    layers: layers ? "shown" : "hidden",
   };
 }
 
@@ -1106,16 +1109,16 @@ describe("frame pacing", () => {
 });
 
 describe("Profile", () => {
-  const SESSION: FeatureTestProfileState = { postProcessing: true, captures: true, discard: false };
+  const SESSION: FeatureTestProfileState = { postProcessing: true, captures: true, discard: false, layers: true };
 
   it("measures each step at fixed camera views between two baselines of that view, revisits the control view, and keeps to today's length", () => {
     expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
     const plan = featureTestProfilePlan(SESSION);
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples"]],
+      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden"]],
       ["heavy", ['possess "Profile Heavy Camera"'], [
-        "shadows off", "shadows medium", "shadows medium big atlas", "shadow filter low", "AO off", "geometry effects off",
-        "post off", "MSAA off", "discard samples", "resolution 0.5",
+        "shadows off", "shadow casters off", "shadow passes off", "shadows medium", "shadows medium big atlas", "shadow filter low",
+        "geometry effects off", "post off", "resolution 1.0",
       ]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["mirrors environment", "captures off"]],
     ]);
@@ -1126,13 +1129,20 @@ describe("Profile", () => {
     });
     expect(step("heavy", "shadow filter low")).toMatchObject({ commands: ["quality shadows filter low"], fields: ["shadows.filter"] });
     expect(step("light", "discard samples")).toMatchObject({ commands: ["discardsamples on"], restore: ["discardsamples off"], fields: ["msaa.discard"] });
+    expect(step("light", "scene layers hidden")).toMatchObject({ commands: ["scenelayers off"], restore: ["scenelayers on"], fields: ["layers"] });
+    // Maps not redrawn against casters not drawn, against shadows off: redrawing, drawing casters and sampling apart.
+    expect([step("heavy", "shadow casters off"), step("heavy", "shadow passes off")].map((entry) => [entry.commands, entry.restore])).toEqual([
+      [["shadowdebug casters off"], ["shadowdebug casters on"]], [["shadowdebug passes off"], ["shadowdebug passes on"]],
+    ]);
     // Toggles come back to the session's own value.
-    const other = featureTestProfilePlan({ postProcessing: false, captures: false, discard: true });
+    const other = featureTestProfilePlan({ postProcessing: false, captures: false, discard: true, layers: false });
     expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !entry.restore[0]!.startsWith("shadowdebug"))
-      .map((entry) => entry.restore)).toEqual([["discardsamples on"], ["postprocessing off"], ["discardsamples on"], ["rendertargets off"]]);
+      .map((entry) => entry.restore)).toEqual([["discardsamples on"], ["scenelayers off"], ["postprocessing off"], ["rendertargets off"]]);
     const sequence = featureTestProfileSequence(SESSION);
-    expect(sequence.slice(0, 6).map((entry) => entry.label))
-      .toEqual(["light baseline 1", "light MSAA off", "light baseline 2", "light discard samples", "light baseline 3", "heavy baseline 1"]);
+    expect(sequence.slice(0, 8).map((entry) => entry.label)).toEqual([
+      "light baseline 1", "light MSAA off", "light baseline 2", "light discard samples", "light baseline 3", "light scene layers hidden",
+      "light baseline 4", "heavy baseline 1",
+    ]);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
       .toEqual(["light baseline 1", "heavy baseline 1", "mirror baseline 1", "heavy drift"]);
@@ -1149,31 +1159,40 @@ describe("Profile", () => {
   });
 
   it("reads the session's state from a baseline's fingerprint, with Play's defaults for what it lacks", () => {
-    expect(profileState({ "post.enabled": "false", captures: "suspended", "msaa.discard": "on" }))
-      .toEqual({ postProcessing: false, captures: false, discard: true });
+    expect(profileState({ "post.enabled": "false", captures: "suspended", "msaa.discard": "on", layers: "hidden" }))
+      .toEqual({ postProcessing: false, captures: false, discard: true, layers: false });
     expect(profileState(undefined)).toEqual(SESSION);
   });
 
+  it("holds Dynamic Resolution's floor where it is on, else the session's scale", () => {
+    expect(profileResolutionPin({ "resolution.scale": "1", "resolution.dynamic": "on 0.75" })).toEqual({ scale: 0.75, floor: true });
+    expect(profileResolutionPin({ "resolution.scale": "0.85", "resolution.dynamic": "off" })).toEqual({ scale: 0.85, floor: false });
+    expect(profileResolutionPin(undefined)).toEqual({ scale: 1, floor: false });
+  });
+
   it("changes, with every step at every tier, only its own fields, or nothing where the tier already holds its value", () => {
-    // Low already has the low shadow filter and no AO or geometry effects; Medium has Medium's shadows.
+    // Low already has the low shadow filter and no geometry effects; Medium has Medium's shadows; Ultra is at full
+    // resolution without Dynamic Resolution.
     const expectedSkips: Record<QualityLevel, string[]> = {
-      low: ["shadow filter low", "AO off", "geometry effects off"],
+      low: ["shadow filter low", "geometry effects off"],
       medium: ["shadows medium"],
       high: [],
-      ultra: [],
+      ultra: ["resolution 1.0"],
     };
     for (const tier of ["low", "medium", "high", "ultra"] as const) {
       const project = projectAt(tier);
-      const reference = fingerprintAfter([], { project });
+      // Every row holds the resolution the session started at: the base, again after every `quality reset`.
+      const pin = `quality resolution scale ${profileResolutionPin(fingerprintAfter([], { project })).scale}`;
+      const reference = fingerprintAfter([pin], { project });
       const skipped: string[] = [];
       const steps = [...new Map(featureTestProfilePlan(profileState(reference)).views.flatMap((view) => view.steps).map((step) => [step.label, step])).values()];
       for (const step of steps) {
-        const after = fingerprintAfter(step.commands, { project });
+        const after = fingerprintAfter([pin, ...step.commands], { project });
         const changed = settingsChanges(reference, after).map((change) => change.slice(0, change.indexOf("=")));
         expect(changed.filter((field) => !step.fields!.includes(field)), `${tier} ${step.label}`).toEqual([]);
         if (breakdownSkip(step.fields, reference, after)) skipped.push(step.label);
         // Its restore and `quality reset` give the tier back.
-        expect(fingerprintAfter([...step.commands, "quality reset", ...step.restore ?? []], { project }), `${tier} ${step.label}`).toEqual(reference);
+        expect(fingerprintAfter([pin, ...step.commands, "quality reset", pin, ...step.restore ?? []], { project }), `${tier} ${step.label}`).toEqual(reference);
       }
       expect(skipped, tier).toEqual(expectedSkips[tier]);
     }
@@ -1252,8 +1271,8 @@ describe("Profile", () => {
     return { editor, deps };
   };
 
-  it("plays the main scene at the session's tier and frame cap: two warm-up windows at the control view, then every view's steps between its baselines, each undone", async () => {
-    const { editor, deps } = profileEditor({ tier: "ultra" });
+  it("plays the main scene at the session's tier and frame cap, its resolution held: two warm-up windows at the control view, then every view's steps between its baselines, each undone", async () => {
+    const { editor, deps } = profileEditor({ tier: "high" });
     const windows: number[] = [];
     const report = await runFeatureTestCheck({
       mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, signal: new AbortController().signal,
@@ -1267,22 +1286,25 @@ describe("Profile", () => {
     // The editor viewport's 3 s, Play's 5 s, two 5 s warm-up windows, then 5 s per row.
     expect(windows.slice(0, 4)).toEqual([3_000, 5_000, 5_000, 5_000]);
     expect(windows.slice(4).every((ms) => ms === 5_000)).toBe(true);
-    // At Ultra nothing is skipped; each row keeps its view and when it began.
+    // At High nothing is skipped; each row keeps its view and when it began.
     const rows = samples.slice(2);
     expect(rows.map((sample) => [sample.label, sample.view])).toEqual(featureTestProfileSequence(SESSION).map((step) => [step.label, step.view]));
     expect(rows.filter((sample) => sample.skipped)).toEqual([]);
     expect(samples.every((sample, index) => index === 0 || sample.atMs! > samples[index - 1]!.atMs!)).toBe(true);
     const commands = editor.commands;
     const at = (line: string) => commands.indexOf(line);
-    // No tier and no frame cap: the session's own. The camera holds the control view before the warm-up.
+    // No tier and no frame cap: the session's own. High's Dynamic Resolution held at its floor, then the camera at the
+    // control view, before the warm-up.
     expect(commands.filter((line) => line.startsWith("framecap") || /^quality (low|medium|high|ultra)$/.test(line))).toEqual([]);
-    expect(commands.slice(0, 3)).toEqual(['possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on"]);
-    // Each step's commands, its sample, then `quality reset` and its own restore before the next baseline.
-    expect(commands.slice(at("discardsamples on"), at("discardsamples off") + 1)).toEqual(["discardsamples on", "gpubusy on", "quality reset", "discardsamples off"]);
+    expect(commands.slice(0, 4)).toEqual(["quality resolution scale 0.75", 'possess "Profile Heavy Camera"', "gpubusy on", "gpubusy on"]);
+    expect(samples.every((sample) => sample.settings!["resolution.scale"] === "0.75" || sample.label === "heavy resolution 1.0")).toBe(true);
+    // Each step's commands, its sample, then `quality reset`, the held resolution and its own restore before the next baseline.
+    expect(commands.slice(at("discardsamples on"), at("discardsamples off") + 1))
+      .toEqual(["discardsamples on", "gpubusy on", "quality reset", "quality resolution scale 0.75", "discardsamples off"]);
     expect(commands.slice(at("shadowdebug atlasfit off") - 1, at("shadowdebug atlasfit on") + 1))
-      .toEqual(["quality shadows medium", "shadowdebug atlasfit off", "gpubusy on", "quality reset", "shadowdebug atlasfit on"]);
+      .toEqual(["quality shadows medium", "shadowdebug atlasfit off", "gpubusy on", "quality reset", "quality resolution scale 0.75", "shadowdebug atlasfit on"]);
     expect(commands.filter((line) => line === "gpubusy on")).toHaveLength(samples.length);
-    // Back to the session's quality and the tour camera.
+    // Back to the session's quality, its Dynamic Resolution included, and the tour camera.
     expect(commands.slice(-3)).toEqual(["gpubusy off", "quality reset", 'possess "Main Camera"']);
     // Each row's draws per pass and shadow atlas, as the step left them.
     const row = (label: string) => rows.find((sample) => sample.label === label)!;
@@ -1294,6 +1316,7 @@ describe("Profile", () => {
       endChanges: [],
       // This view reports no presentation counts.
       holdRate: null,
+      resolution: { scale: 0.75, floor: true, levelBefore: 1 },
     });
   });
 
@@ -1463,7 +1486,7 @@ describe("Profile", () => {
     const samples = report.scenes[0]!.play.benchmark;
     expect(samples.map((sample) => sample.label)).toEqual([
       "warm-up 1", "warm-up 2", "light baseline 1", "light MSAA off", "light baseline 2", "light discard samples", "light baseline 3",
-      "heavy baseline 1", "heavy shadows off",
+      "light scene layers hidden", "light baseline 4", "heavy baseline 1", "heavy shadows off",
     ]);
     expect(samples.at(-1)!.failed).toEqual(["The view drew no frame in the last 2 s of 90 s; the remaining profiles were skipped."]);
     expect(waits.at(-1)).toEqual({ step: "main: measuring heavy shadows off", ms: 90_000 });
@@ -1490,12 +1513,25 @@ describe("Profile", () => {
       ["heavy shadows medium", "already shadows medium 2048, shadows.filter high, shadows.screen off, shadows.reflections false", null],
     ]);
     const labels = rows.map((sample) => sample.label);
-    expect(labels.slice(labels.indexOf("heavy shadows off"), labels.indexOf("heavy shadows medium big atlas") + 2)).toEqual([
-      "heavy shadows off", "heavy baseline 2", "heavy shadows medium", "heavy shadows medium big atlas", "heavy baseline 4",
+    expect(labels.slice(labels.indexOf("heavy shadow passes off"), labels.indexOf("heavy shadows medium big atlas") + 2)).toEqual([
+      "heavy shadow passes off", "heavy baseline 4", "heavy shadows medium", "heavy shadows medium big atlas", "heavy baseline 6",
     ]);
     // The step's undo failed: the baseline after it says so and fails the scene.
-    expect(main!.problems).toEqual(["heavy baseline 8: postprocessing on failed: Refused."]);
+    expect(main!.problems).toEqual(["heavy baseline 9: postprocessing on failed: Refused."]);
     expect(main!.play.profile!.endChanges).toEqual(["post.enabled=false"]);
+  });
+
+  it("measures nothing in a project without the Profile cameras, says to create it again, and restores the session", async () => {
+    const { editor, deps } = profileEditor({ refused: ['possess "Profile Heavy Camera"'] });
+    const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, deps, signal: new AbortController().signal });
+    const [main] = report.scenes;
+    expect(main!.play.benchmark.map((sample) => [sample.label, sample.frames])).toEqual([["warm-up 1", null]]);
+    expect(main!.problems).toEqual([
+      'warm-up 1: possess "Profile Heavy Camera" failed: Refused. This project has no Profile cameras; create the Feature Test project again, then run the Profile.',
+    ]);
+    expect(editor.commands).not.toContain("gpubusy on");
+    expect(editor.commands.slice(-2)).toEqual(["quality reset", 'possess "Main Camera"']);
+    expect(main!.play.profile!.endChanges).toEqual([]);
   });
 });
 

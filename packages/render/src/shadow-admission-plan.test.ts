@@ -170,8 +170,9 @@ describe("Shadow admission into the shadow atlas", () => {
     // Tiles the fitted atlas had no room for find none in the larger one either.
     const crowded = run([...spots, lamp], 2048, 4096, 1024, true);
     expect([crowded.atlasEdge, shape(crowded)]).toEqual([4096, shape(run([...spots, lamp], 2048, 4096, 1024, false))]);
-    // At the device's limit the atlas stays as it is.
+    // At the device's limit, or past 8192, the atlas stays as it is.
     expect(run([sun, lamp], 8192, 8192, 1024, true).atlasEdge).toBe(8192);
+    expect(run([sun, lamp], 8192, 16384, 1024, true).atlasEdge).toBe(8192);
   });
 
   it("caps a spot map at the atlas's edge", () => {

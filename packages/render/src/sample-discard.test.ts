@@ -9,8 +9,14 @@ import {
 
 const GL = { FRAMEBUFFER: 0x8d40, READ_FRAMEBUFFER: 0x8ca8, COLOR_ATTACHMENT0: 0x8ce0, DEPTH_ATTACHMENT: 0x8d00, STENCIL_ATTACHMENT: 0x8d20 };
 
+// The scene colour and depth, each named by its own handle and by the handles later tasks' outputs resolve to.
 const COLOR = 1 as FrameGraphTextureHandle, DEPTH = 2 as FrameGraphTextureHandle, SINGLE = 3 as FrameGraphTextureHandle;
-const multisampled = (handle: FrameGraphTextureHandle) => handle === COLOR || handle === DEPTH;
+const CLEARED_COLOR = 4 as FrameGraphTextureHandle, CLEARED_DEPTH = 5 as FrameGraphTextureHandle, DRAWN_COLOR = 6 as FrameGraphTextureHandle;
+const sceneColor = { samples: 4 }, sceneDepth = { samples: 4 };
+const TEXTURES = new Map<FrameGraphTextureHandle, object>([
+  [COLOR, sceneColor], [CLEARED_COLOR, sceneColor], [DRAWN_COLOR, sceneColor], [DEPTH, sceneDepth], [CLEARED_DEPTH, sceneDepth],
+]);
+const multisampled = (handle: FrameGraphTextureHandle) => TEXTURES.get(handle) ?? null;
 
 /** A render pass drawing into `colors` and `depth`, with its own render target. */
 function pass(name: string, colors: FrameGraphTextureHandle[], depth?: FrameGraphTextureHandle) {
@@ -40,12 +46,12 @@ describe("Discarding multisampled samples after their last resolve", () => {
   // The scene's frame: a clear, the objects, water's transparent pass drawing into the same samples again, a copy
   // into a single-sample target, and a disabled task's pass that might draw into the depth.
   const clear = pass("clear", [COLOR], DEPTH);
-  const objects = pass("objects", [COLOR], DEPTH);
-  const transparent = pass("transparent", [COLOR]);
+  const objects = pass("objects", [CLEARED_COLOR], CLEARED_DEPTH);
+  const transparent = pass("transparent", [DRAWN_COLOR]);
   const copy = pass("copy", [SINGLE]);
   const fallback = pass("fallback", [SINGLE], DEPTH);
 
-  it("chooses, per multisampled texture, the pass that draws into it last, a disabled pass counting as one that might", () => {
+  it("chooses, per multisampled texture whatever handle names it, the pass that draws into it last, a disabled pass counting as one that might", () => {
     expect(lastSampleWriters([task([clear]), task([objects]), task([transparent]), task([copy])], multisampled))
       .toEqual(new Map([[transparent, { colors: [0], depth: false }], [objects, { colors: [], depth: true }]]));
     expect(lastSampleWriters([task([clear]), task([objects]), task([copy], [fallback])], multisampled))

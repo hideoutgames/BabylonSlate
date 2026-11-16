@@ -203,6 +203,11 @@ export type RenderDiagnostics = {
   height: number;
   /** Inverse render scale. Do not apply this again to the buffer dimensions. */
   scalingLevel: number;
+  /**
+   * The Engine's backbuffer: Play with Scene Layers composites them at the device's pixels there, while the world
+   * (`width` x `height`) draws at its own scale; absent where the view does not report it.
+   */
+  backbuffer?: { width: number; height: number };
   samples: number;
   shadowPasses: number;
   shadowMapBytes: number;

@@ -165,6 +165,17 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["discard:true", "discard:false"]);
   });
 
+  it("hides Play's Scene Layers and shows them again, in debug registries only", () => {
+    const host = recordingHost();
+    host.setSceneLayers = (enabled) => host.calls.push(`layers:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("scenelayers off", host)).toEqual({ success: true, output: "scenelayers off" });
+    expect(debug.execute("scenelayers on", host)).toEqual({ success: true, output: "scenelayers on" });
+    expect(release.execute("scenelayers off", host).success).toBe(false);
+    expect(host.calls).toEqual(["layers:false", "layers:true"]);
+  });
+
   it("starts and stops GPU-busy timing and stores the drawing-buffer setting, in debug registries only", () => {
     const host = recordingHost();
     host.setGpuBusyProbe = (enabled) => host.calls.push(`gpubusy:${enabled}`);
