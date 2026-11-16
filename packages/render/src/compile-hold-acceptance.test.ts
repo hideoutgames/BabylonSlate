@@ -1839,13 +1839,14 @@ describe("compile holds after the first frame", () => {
 
   it.each([
     ["opaque meshes alone", false, { geometryVariants: false, held: false, holdReported: false, leftOut: 0, recovered: true }],
-    ["a blended mesh", true, { geometryVariants: true, held: true, holdReported: true, leftOut: 0, recovered: true }],
+    ["a blended mesh", true, { geometryVariants: false, held: true, holdReported: true, leftOut: 0, recovered: true }],
   ] as const)("a Fog Volume coming into view over %s holds the view only for the meshes its geometry pass draws: webgpu", async (_name, blended, expected) => {
     // Fog Volumes alone run the geometry pass only while one is in the camera's view (behind the camera it is not), so
     // the view's complete frames leave it undrawn. A game's world view starts that pass from the scene's depth, so it
     // draws no opaque mesh and compiles no geometry variant of one: nothing to hold for. A blended mesh the scene's
-    // depth lacks is drawn, and its first draw misses its pipeline in a pass that had not drawn: it holds as a new
-    // graph's do.
+    // depth lacks is drawn. Its geometry variant was compiled when the mesh became drawable, before the fog came (a
+    // probe asks a mesh that becomes drawable after it was skipped), so none is created now; its first draw still misses
+    // its pipeline in a pass that had not drawn: it holds as a new graph's do.
     const world = playWorld("webgpu", []);
     Object.assign(world.engine.getCaps(), { texelFetch: true });
     // Fog Volumes alone: Screen-Space Shadows would keep the geometry pass drawing every frame.

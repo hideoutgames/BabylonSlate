@@ -28,7 +28,7 @@ import type { FrameGraphObjectList } from "@babylonjs/core/FrameGraph/frameGraph
 import type { Light } from "@babylonjs/core/Lights/light";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
-import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
@@ -47,6 +47,7 @@ import { isSceneFrameReady, type SceneReadinessDirtyReason, withSceneReadinessSt
 import { noteSceneReadinessChange } from "./scene-readiness-signal";
 import type { SceneReadinessScope } from "./scene-readiness-signal";
 import { lastProbedMesh, verifiesScopedReadinessProbes, withReadinessProbeScope } from "./readiness-scope";
+import { journalFollows, openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
 import { collectReadinessBlockers, noteReadinessBlocker } from "./readiness-blockers";
 import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
@@ -437,6 +438,26 @@ export class ForwardSceneFrameGraph {
   private unscopedMark = true;
   private readonly scopedMeshes = new Set<AbstractMesh>();
   /**
+   * Meshes no pass draws now (disabled, invisible or without geometry: `followDrawable`), each with the count of passing
+   * whole probes when this view found it so. A probe passes over them, so one that passed while a mesh was undrawn
+   * leaves its variants unasked: the frame it becomes drawable asks it (`followDrawable`).
+   */
+  private readonly undrawn = new WeakMap<AbstractMesh, number>();
+  /** Undrawn meshes whose writes the render change journal does not hear (`journalFollows`): polled each frame. */
+  private readonly polledUndrawn = new Set<AbstractMesh>();
+  /** Undrawn meshes a passing scoped probe named: they must be asked when they become drawable. */
+  private readonly passedOver = new WeakSet<AbstractMesh>();
+  /** Whether each mesh this view follows had a visibility below 1 when last read (`followDrawable`). */
+  private readonly translucent = new WeakMap<AbstractMesh, boolean>();
+  private wholeProbesPassed = 0;
+  /** The last passing probe was limited to `scopedMeshes` (`isReady`); any other passing probe counts as whole. */
+  private scopedProbePassed = false;
+  /** The enabled, visibility and geometry writes of the Scene's meshes (`followDrawable`). */
+  private readonly drawableChanges: RenderChangeReader;
+  private readonly visitDrawableChange = (node: unknown): void => {
+    if (node instanceof AbstractMesh) this.followDrawable(node);
+  };
+  /**
    * The last passing probe tolerated a mesh drawing its previous Effect while its new variant compiles. Steady frames
    * probe again each frame until every swap is drawn (`recheckVariantSwaps`); a probe that tolerates none re-probes.
    */
@@ -514,8 +535,10 @@ export class ForwardSceneFrameGraph {
       const observer = observable.add(notify);
       this.readinessDetach.push(() => observable.remove(observer));
     };
+    this.drawableChanges = openRenderChangeReader(scene, RenderChange.Enabled | RenderChange.Visibility | RenderChange.Geometry);
     watch(scene.onNewMeshAddedObservable, (mesh) => {
       this.watchMesh(mesh);
+      this.followDrawable(mesh);
       // Babylon announces an added mesh on a later task: a frame drawn before then found it by the Scene's mesh count
       // and marked it, and its probe has run.
       if (this.foundBeforeAnnounced.delete(mesh)) return;
@@ -524,6 +547,8 @@ export class ForwardSceneFrameGraph {
     });
     watch(scene.onMeshRemovedObservable, (mesh) => {
       this.unwatchMesh(mesh);
+      this.undrawn.delete(mesh);
+      this.polledUndrawn.delete(mesh);
       this.knownMeshes.delete(mesh);
       this.foundBeforeAnnounced.delete(mesh);
       this.removedMeshes += 1;
@@ -554,6 +579,7 @@ export class ForwardSceneFrameGraph {
     for (const mesh of scene.meshes) {
       this.watchMesh(mesh);
       this.knownMeshes.add(mesh);
+      this.followDrawable(mesh);
     }
     for (const system of scene.particleSystems) this.knownParticleSystems.add(system);
     for (const light of scene.lights) this.watchLight(light);
@@ -886,6 +912,11 @@ export class ForwardSceneFrameGraph {
 
   /** A graph-level probe passed: it covers the outline task along with every other task. */
   private markGraphProbed(): void {
+    // What the probe passed over stays unasked until it becomes drawable: a scoped probe the undrawn meshes it named,
+    // any other every undrawn mesh.
+    if (!this.scopedProbePassed) this.wholeProbesPassed += 1;
+    else for (const mesh of this.scopedMeshes) if (this.undrawn.has(mesh)) this.passedOver.add(mesh);
+    this.scopedProbePassed = false;
     this.readinessDirtyFlag = false;
     this.unscopedMark = false;
     this.scopedMeshes.clear();
@@ -916,7 +947,10 @@ export class ForwardSceneFrameGraph {
    * the readiness-relevant collection sizes each frame so a membership change
    * still invalidates the cache before the very next render.
    */
-  private syncMembership(): void {
+  private syncMembership(afterDraw = false): void {
+    // What draws is read as the next probe will find it: a mesh shown only for the draw (a Fog Volume's pass, enabled
+    // while it renders) is never drawable to a probe, and marking it at the draw's end would hold every frame.
+    if (!afterDraw) this.syncDrawable();
     const outlineRevision = this.outlineView?.revision ?? -1;
     if (outlineRevision !== this.observedOutlineRevision) {
       this.observedOutlineRevision = outlineRevision;
@@ -959,11 +993,57 @@ export class ForwardSceneFrameGraph {
         if (this.knownMeshes.has(mesh)) continue;
         this.knownMeshes.add(mesh);
         this.foundBeforeAnnounced.add(mesh);
+        // A Material it is given before Babylon announces it marks too.
+        this.watchMesh(mesh);
+        this.followDrawable(mesh);
         found.push(mesh);
       }
       this.markReadinessDirty("membership", anyMesh ? undefined : found);
     }
     this.membershipRecorded = true;
+  }
+
+  /**
+   * Reads the meshes whose enabled state, visibility or geometry changed since the last frame (the render change
+   * journal's writes), and those it cannot hear that are undrawn. Runs before every probe, not at a draw's end, so
+   * what a probe found drawable is what it asked. A frame that shows or hides nothing marks nothing.
+   */
+  private syncDrawable(): void {
+    if (!this.drawableChanges.drain(this.visitDrawableChange)) {
+      // Fell too far behind: the changes it lost may have made any undrawn mesh drawable.
+      for (const mesh of this.scene.meshes) this.followDrawable(mesh);
+      this.markReadinessDirty("drawable");
+    }
+    for (const mesh of this.polledUndrawn) this.followDrawable(mesh);
+  }
+
+  /**
+   * Follows whether any pass can draw `mesh` (Babylon's object renderers pass over a disabled or invisible mesh and
+   * one without geometry). A mesh that becomes drawable after a passing probe passed over it marks itself: the next
+   * frame asks its variants before it draws, as the probe that consumed its earlier mark could not.
+   */
+  private followDrawable(mesh: AbstractMesh): void {
+    // Editor guides and Play helpers are shown and hidden as selection changes, without a probe
+    // (render.md, Editor selection): they are editor chrome, never a game's visuals.
+    if (isEditorHelperMesh(mesh)) return;
+    // Babylon blends a mesh whose visibility is below 1 (`needAlphaBlendingForMesh`): crossing it changes its variant,
+    // as a glyph revealed from 0 or a fade that ends does.
+    const translucent = mesh.visibility < 1;
+    const wasTranslucent = this.translucent.get(mesh);
+    this.translucent.set(mesh, translucent);
+    if (wasTranslucent !== undefined && wasTranslucent !== translucent) this.markReadinessDirty("meshVisibility", [mesh]);
+    const since = this.undrawn.get(mesh);
+    if (!mesh.isEnabled() || !mesh.isVisible || !mesh.subMeshes?.length) {
+      if (since !== undefined) return;
+      this.undrawn.set(mesh, this.wholeProbesPassed);
+      if (!journalFollows(mesh)) this.polledUndrawn.add(mesh);
+      return;
+    }
+    if (since === undefined) return;
+    this.undrawn.delete(mesh);
+    this.polledUndrawn.delete(mesh);
+    const passedOver = this.passedOver.delete(mesh);
+    if (passedOver || since < this.wholeProbesPassed) this.markReadinessDirty("drawable", [mesh]);
   }
 
   /** Whether the Scene holds a particle system this graph has not seen; every one it holds counts as seen afterwards. */
@@ -1038,6 +1118,7 @@ export class ForwardSceneFrameGraph {
     } else {
       this.strictChecks += 1;
       this.noteStrictProbe();
+      this.scopedProbePassed = false;
       // Built-in water is left out: which variant it draws depends on the plan the next preparation makes from the
       // current demand, and that preparation's own probe compiles it under the pass that draws it.
       // An auxiliary view draws only inside the scene view's ready frames, and
@@ -1312,7 +1393,7 @@ export class ForwardSceneFrameGraph {
     const engine = this.scene.getEngine();
     enterDrawPass(engine, "readiness");
     try {
-      this.syncMembership();
+      this.syncMembership(true);
     } finally {
       leaveDrawPass(engine);
     }
@@ -1331,6 +1412,8 @@ export class ForwardSceneFrameGraph {
     this.releasePostProcessOwner();
     for (const detach of this.readinessDetach) detach();
     this.readinessDetach.length = 0;
+    this.drawableChanges.dispose();
+    this.polledUndrawn.clear();
     for (const [mesh, observer] of this.meshMaterialObservers)
       mesh.onMaterialChangedObservable.remove(observer);
     this.meshMaterialObservers.clear();
@@ -1907,6 +1990,7 @@ export class ForwardSceneFrameGraph {
     const round = () => this.timedProbe(() => withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
       () => revealRound(() => this.collectingEffects(() => this.probeReady()))));
     const scope = this.probeScope();
+    this.scopedProbePassed = false;
     if (!scope) return round();
     if (this.measureWork) this.scopedProbes += 1;
     if (!withReadinessProbeScope(scope, round)) return false;
@@ -1916,6 +2000,7 @@ export class ForwardSceneFrameGraph {
       return false;
     }
     if (verifiesScopedReadinessProbes() && !this.wholeProbeAgrees(round)) this.scopedMismatches += 1;
+    this.scopedProbePassed = true;
     return true;
   }
 
