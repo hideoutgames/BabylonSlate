@@ -413,7 +413,8 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         }
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                call.resolve(["sha256": try ProjectFileTransfers.writeRandomFile(in: folder, size: Int64(size))])
+                let sha256 = try ProjectFileTransfers.writeRandomFile(in: folder, size: Int64(size))
+                call.resolve(["sha256": sha256])
             } catch {
                 call.reject(error.localizedDescription, "UNREACHABLE", error)
             }

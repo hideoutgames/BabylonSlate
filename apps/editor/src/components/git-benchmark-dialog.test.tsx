@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createEmptyProject, type ProjectDocument, type SourceControlProjectSettings } from "@haptic/core";
-import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
+/** The settings the dialog module reads: after `freshDialog` resets the module registry, that registry's copy. */
+const recordRun = async (run: { stage: string; startedAt: string } | null) =>
+  (await import("../context/app-settings-context")).receiveActiveAppSettingsUpdate({ gitBenchmarkRun: run });
 import type { EditorGitBenchmarkOptions, EditorGitBenchmarkResult } from "../lib/git-benchmark-runner";
 
 const harness = vi.hoisted(() => ({
@@ -24,8 +26,8 @@ vi.mock("../context/document-context", async () =>
 const writeText = vi.fn<(text: string) => Promise<void>>();
 let clipboard: PropertyDescriptor | undefined;
 
-beforeEach(() => {
-  receiveActiveAppSettingsUpdate({ gitBenchmarkRun: null });
+beforeEach(async () => {
+  await recordRun(null);
   harness.run.mockReset();
   harness.project = null;
   clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
@@ -191,16 +193,14 @@ describe("GitBenchmarkDialog", () => {
   // The runner records each stage before it starts and clears the record when the run ends, failed or not.
   it("names the stage a run the app did not survive stopped in, without loading the runner", async () => {
     const GitBenchmarkDialog = await freshDialog();
-    // The fresh dialog reads the fresh module graph's settings.
-    const { receiveActiveAppSettingsUpdate } = await import("../context/app-settings-context");
-    receiveActiveAppSettingsUpdate({ gitBenchmarkRun: { stage: "lfs-upload", startedAt: "2026-11-16T09:30:00.000Z" } });
+    await recordRun({ stage: "lfs-upload", startedAt: "2026-11-16T09:30:00.000Z" });
     render(<GitBenchmarkDialog open onOpenChange={vi.fn()} />);
     const notice = screen.getByTestId("git-benchmark-interrupted");
     expect(within(notice).getByText("Last Run Stopped During LFS Upload")).toBeTruthy();
     expect(notice.textContent).toContain("most likely out of memory");
     expect(harness.runnerLoads).toBe(0);
 
-    receiveActiveAppSettingsUpdate({ gitBenchmarkRun: null });
+    await recordRun(null);
     await waitFor(() => expect(screen.queryByTestId("git-benchmark-interrupted")).toBeNull());
   });
 
@@ -211,7 +211,7 @@ describe("GitBenchmarkDialog", () => {
     render(<GitBenchmarkDialog open onOpenChange={vi.fn()} />);
     fireEvent.click(screen.getByTestId("git-benchmark-run"));
     expect((await screen.findByTestId("git-benchmark-progress")).textContent).toContain("Running…");
-    receiveActiveAppSettingsUpdate({ gitBenchmarkRun: { stage: "create-objects", startedAt: "2026-11-16T09:30:00.000Z" } });
+    await recordRun({ stage: "create-objects", startedAt: "2026-11-16T09:30:00.000Z" });
     await waitFor(() => expect(screen.getByTestId("git-benchmark-progress").textContent).toContain("Create LFS Objects…"));
     expect(screen.queryByTestId("git-benchmark-interrupted")).toBeNull();
   });

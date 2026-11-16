@@ -853,7 +853,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     private static String hex(byte[] bytes) {
         StringBuilder text = new StringBuilder(bytes.length * 2);
-        for (byte value : bytes) text.append(String.format("%02x", value & 0xff));
+        for (byte value : bytes) text.append(Character.forDigit((value >> 4) & 0xf, 16)).append(Character.forDigit(value & 0xf, 16));
         return text.toString();
     }
 
