@@ -4,14 +4,12 @@ import { FloppyDiskIcon } from "@phosphor-icons/react/dist/csr/FloppyDisk";
 import { PuzzlePieceIcon } from "@phosphor-icons/react/dist/csr/PuzzlePiece";
 import {
   IconAdjustmentsAlt,
-  IconAppWindow,
   IconCube3dSphere,
   IconDatabase,
   IconEaseInOutControlPoints,
   IconFileMusic,
   IconKeyframes,
   IconListDetails,
-  IconMap,
   IconMovie,
   IconPackage,
   IconPhoto,
@@ -147,7 +145,7 @@ function lucideStrokePx({ size = 24, strokeWidth = 2, absoluteStrokeWidth }: Typ
 }
 
 /** A Tabler icon (Lucide's 24-unit grid and 2-unit stroke), stroked as Lucide strokes the same props. */
-function tablerGlyph(Icon: typeof IconMap): TypeVisualGlyph {
+function tablerGlyph(Icon: typeof IconPhoto): TypeVisualGlyph {
   return function TablerTypeGlyph({ size = 24, strokeWidth = 2, absoluteStrokeWidth, ...rest }: TypeVisualGlyphProps) {
     return <Icon size={size} stroke={absoluteStrokeWidth ? (strokeWidth * 24) / size : strokeWidth} {...rest} />;
   };
@@ -170,8 +168,6 @@ function phosphorGlyph(Icon: typeof EqualizerIcon): TypeVisualGlyph {
   };
 }
 
-const MAP_GLYPH = tablerGlyph(IconMap);
-const APP_WINDOW_GLYPH = tablerGlyph(IconAppWindow);
 const MIXER_GLYPH = tablerGlyph(IconAdjustmentsAlt);
 const PHOTO_GLYPH = tablerGlyph(IconPhoto);
 const SPHERE_GLYPH = tablerGlyph(IconSphere);
@@ -339,7 +335,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   BTComposite: OBJECT_ICON,
   ActorComponent: FileCogIcon,
   Actor: ACTOR_ICON,
-  SceneLayer: APP_WINDOW_GLYPH,
+  SceneLayer: Layers2Icon,
   SceneLayerActor: ACTOR_ICON,
   SceneLayerActorSwitcher: Layers2Icon,
   SceneStreamingActor: LayersIcon,
@@ -418,7 +414,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   ColliderComponent: SquareDashedIcon,
   PhysicsConstraintComponent: LinkIcon,
   RagdollComponent: PersonStandingIcon,
-  Scene: MAP_GLYPH,
+  Scene: LayersIcon,
   Graph: FileJsonIcon,
   Texture: PHOTO_GLYPH,
   RenderTarget: CameraIcon,
@@ -455,7 +451,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   BehaviourTree: NetworkIcon,
   Blackboard: ClipboardListIcon,
   SaveGame: FLOPPY_GLYPH,
-  Sprite: PHOTO_GLYPH,
+  Sprite: ImagesIcon,
   Tileset: LayoutGridIcon,
   Tilemap: Grid3x3Icon,
   Class: OBJECT_ICON,
