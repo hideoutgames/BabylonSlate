@@ -3,7 +3,7 @@ import {
   getHostMemoryStats,
   type HostMemoryStats,
 } from "@haptic/vfs/device-memory";
-import { audioStats, particleStats } from "@haptic/render";
+import { audioStats, installDirectViewReadSync, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { createDecoderPrefetch } from "./decoder-prefetch";
 import { preloadPlayerWorkerPhysics, prewarmPlayerWorker, type PlayerWorkerHost } from "./worker-host";
@@ -32,6 +32,10 @@ import {
   isExpectedPreviewHostMessage,
   previewPackFromExpectedHostMessage,
 } from "./preview-protocol";
+
+// Test builds: pixel probes read `#game`, which the Engine canvas covers; a read first writes the shown image into it.
+// Installed before any Engine exists, in this page's realm (a Preview Build host's own shim cannot reach it).
+if (import.meta.env.VITE_TEST_MODE === "true") installDirectViewReadSync();
 
 const previewHostOrigin = window.location.origin;
 // The query string and frame nesting are fixed for the page's lifetime.

@@ -818,8 +818,8 @@ function initializeEngine(
       canCopy: () => frameCopyReady && !disposed && !contextLost,
       // renderLoop counts an attempt once it passes shouldRenderFrame, before it touches the framebuffer.
       dirty: () => presentationStats.attempted !== attemptedAtStep,
-      // Only the editor's project Engine presents directly. The exported player and Preview Build run their own
-      // Engine session, whose view canvas keeps receiving copies: the player and its checks read those pixels.
+      // A session created with `presentViewsDirectly` presents directly (the editor's project Engine, the exported
+      // player's and Preview Build's); an Engine this view created for itself keeps copying into its view canvas.
       allowDirect: () => directViewPresentationAllowed(engine),
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;

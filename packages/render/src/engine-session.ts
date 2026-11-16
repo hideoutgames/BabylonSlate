@@ -13,7 +13,7 @@ export interface EngineSessionOptions {
   createCanvas(): HTMLCanvasElement;
   releaseCanvas(canvas: HTMLCanvasElement): void;
   decoders?: Pick<CreateEngineOptions, "ktx2BasePath" | "dracoBasePath" | "meshoptBasePath">;
-  /** Views of this Engine may show its canvas directly while one is on screen (the editor's project Engine); absent: they copy. */
+  /** Views of this Engine may show its canvas directly while one is on screen (the editor's project Engine, the player's); absent: they copy. */
   presentViewsDirectly?: boolean;
   signal?: AbortSignal;
 }
