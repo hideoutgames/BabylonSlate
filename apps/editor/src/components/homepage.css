@@ -1075,7 +1075,9 @@
 }
 
 /* ------------------------------------------- New / Edit Project composer */
-.homepage-composer {
+/* Two classes outrank the editor's bounds for small dialogs on phones, which
+ * include phones held in landscape. */
+.homepage-theme.homepage-composer {
   top: calc(
     var(--homepage-visible-top, 0px) + var(--homepage-visible-height, 100dvh) /
       2
@@ -1086,10 +1088,15 @@
   max-width: none;
   max-height: var(--homepage-visible-height, 100dvh);
   padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  border: 0;
   border-radius: 0;
   box-shadow: none;
   --tw-ring-shadow: 0 0 #0000;
   background: var(--popover);
+}
+/* The keyboard covers the home indicator, so no inset is kept above it. */
+.homepage-theme.homepage-composer[data-keyboard-open] {
+  padding-bottom: 0;
 }
 .homepage-composer-header {
   position: relative;
@@ -2268,14 +2275,6 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   .homepage-gallery[data-layout="small"] .homepage-gallery-grid {
     --gallery-min: 140px;
   }
-  .homepage-theme.homepage-composer {
-    width: 100vw;
-    max-width: none;
-    height: var(--homepage-visible-height, 100dvh);
-    max-height: var(--homepage-visible-height, 100dvh);
-    border: 0;
-    border-radius: 0;
-  }
   .homepage-template-step {
     padding-bottom: var(--safe-bottom);
   }
@@ -2320,8 +2319,9 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   .homepage-composer-inline-preview {
     display: grid;
   }
+  /* The frame's padding already holds the bottom inset. */
   .homepage-composer-footer {
-    padding: 10px 16px max(10px, var(--safe-bottom));
+    padding: 10px 16px;
     flex-direction: row;
   }
   .homepage-composer-footer > button:first-child {

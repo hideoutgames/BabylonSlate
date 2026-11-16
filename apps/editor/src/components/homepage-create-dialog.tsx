@@ -63,6 +63,22 @@ const HOSTING_OPTIONS: ReadonlyArray<{ value: NewProjectHosting; label: string; 
 
 const PIXEL_ART_HINT = "Sharp textures and whole-multiple pixel upscaling at full resolution, without anti-aliasing. Without Black Bars the view extends to fill the screen.";
 
+/** Space kept between a revealed field and the edges of the form's scrollport. */
+const FIELD_REVEAL_MARGIN = 8;
+
+/** Scrolls the form, never the page, so its focused field shows between the header and the footer. */
+function revealFocusedField(form: HTMLElement | null): void {
+  const field = document.activeElement;
+  if (!form || !(field instanceof HTMLElement) || !form.contains(field)) return;
+  const area = form.getBoundingClientRect();
+  const box = field.getBoundingClientRect();
+  const above = box.top - (area.top + FIELD_REVEAL_MARGIN);
+  const below = box.bottom - (area.bottom - FIELD_REVEAL_MARGIN);
+  // A field taller than the scrollport keeps its top in view.
+  if (above < 0) form.scrollTop += above;
+  else if (below > 0) form.scrollTop += Math.min(below, above);
+}
+
 function nativeLocationStatus(
   hostPlatform: HostPlatform,
   pickFolder: boolean,
@@ -157,6 +173,7 @@ export function HomepageCreateDialog({
   const fileInput = useRef<HTMLInputElement>(null);
   const nameInput = useRef<HTMLInputElement>(null);
   const popup = useRef<HTMLDivElement>(null);
+  const form = useRef<HTMLFormElement>(null);
   const importRequest = useRef<AbortController | null>(null);
   const [imageIssue, setImageIssue] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
@@ -179,10 +196,13 @@ export function HomepageCreateDialog({
       const element = popup.current;
       const height = viewport?.height ?? window.innerHeight;
       if (!element || height <= 0) return;
+      const top = viewport?.offsetTop ?? 0;
       element.style.setProperty("--homepage-visible-height", `${height}px`);
-      element.style.setProperty(
-        "--homepage-visible-top",
-        `${viewport?.offsetTop ?? 0}px`,
+      element.style.setProperty("--homepage-visible-top", `${top}px`);
+      // The keyboard covers the bottom of the screen, home indicator included.
+      element.toggleAttribute(
+        "data-keyboard-open",
+        top + height < document.documentElement.clientHeight - 1,
       );
     };
     resize();
@@ -197,6 +217,17 @@ export function HomepageCreateDialog({
       window.removeEventListener("resize", resize);
     };
   }, [open]);
+
+  // WebKit reveals the focused field by panning the visual viewport, which the
+  // frame follows, so once the frame has resized the form scrolls the field
+  // back into view itself.
+  useEffect(() => {
+    const element = form.current;
+    if (!open || !element) return;
+    const observer = new ResizeObserver(() => revealFocusedField(element));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [open, step]);
 
   useEffect(() => {
     setImageBusy(false);
@@ -351,6 +382,7 @@ export function HomepageCreateDialog({
               data-testid="create-project-details"
             >
               <form
+                ref={form}
                 id="homepage-project-form"
                 className="homepage-composer-form"
                 data-testid="create-project-form"
