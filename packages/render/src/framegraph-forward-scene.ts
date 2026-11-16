@@ -30,6 +30,7 @@ import type { InternalTexture } from "@babylonjs/core/Materials/Textures/interna
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Observable, Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
@@ -444,6 +445,8 @@ export class ForwardSceneFrameGraph {
   private readonly passedOver = new WeakSet<AbstractMesh>();
   /** Whether each mesh this view follows had a visibility below 1 when last read (`followDrawable`). */
   private readonly translucent = new WeakMap<AbstractMesh, boolean>();
+  /** The first sub-mesh of each mesh this view follows, when last read (`followDrawable`). */
+  private readonly subMeshes = new WeakMap<AbstractMesh, SubMesh>();
   private wholeProbesPassed = 0;
   /** The last passing probe was limited to `scopedMeshes` (`isReady`); any other passing probe counts as whole. */
   private scopedProbePassed = false;
@@ -975,6 +978,12 @@ export class ForwardSceneFrameGraph {
     const wasTranslucent = this.translucent.get(mesh);
     this.translucent.set(mesh, translucent);
     if (wasTranslucent !== undefined && wasTranslucent !== translucent) this.markReadinessDirty("meshVisibility", [mesh]);
+    // New geometry with its indices (a redrawn text's `applyToMesh`) rebuilds the sub-meshes, whose draw wrappers hold
+    // no variant for any pass yet; vertex updates in place keep them.
+    const subMesh = mesh.subMeshes?.[0];
+    const drewWith = this.subMeshes.get(mesh);
+    if (subMesh) this.subMeshes.set(mesh, subMesh);
+    if (subMesh && drewWith && subMesh !== drewWith) this.markReadinessDirty("meshGeometry", [mesh]);
     const since = this.undrawn.get(mesh);
     if (!mesh.isEnabled() || !mesh.isVisible || !mesh.subMeshes?.length) {
       if (since !== undefined) return;

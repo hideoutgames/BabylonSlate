@@ -1201,6 +1201,40 @@ it.each(UNDRAWN_VISUALS.flatMap((visual) => PROBING_VIEWS.map((view) => ({ ...vi
   },
 );
 
+it.each(PROBING_VIEWS)("probes a mesh whose sub-meshes are rebuilt, as a redrawn text's are, and no vertex update, in $view", async ({ options, tolerant }) => {
+  const { scene, camera } = host();
+  const kept = MeshBuilder.CreateBox("kept", {}, scene);
+  kept.material = new StandardMaterial("kept", scene);
+  const text = MeshBuilder.CreatePlane("glyphs", { updatable: true }, scene);
+  const textMaterial = text.material = new StandardMaterial("glyphs", scene);
+  const graph = new ForwardSceneFrameGraph(scene, options);
+  verifyScopedReadinessProbes(true);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    graph.diagnostics();
+    const probe = () => tolerant ? probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera)) : graph.sceneStrictlyReady(camera);
+    const checks = graph.strictReadinessChecks;
+    // Its vertices rewritten in place (a box resize's counter-scale): the sub-meshes it drew with stay.
+    text.updateVerticesData(VertexBuffer.PositionKind, text.getVerticesData(VertexBuffer.PositionKind)!);
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.strictReadinessChecks).toBe(checks);
+    // Redrawn: new vertex data with its indices gives it new sub-meshes, which hold no variant for any pass yet.
+    const askedText = vi.spyOn(textMaterial, "isReadyForSubMesh");
+    VertexData.CreatePlane({ width: 2 }).applyToMesh(text);
+    expect(graph.readinessDirty).toBe(true);
+    expect(probe()).toBe(true);
+    expect(askedText).toHaveBeenCalled();
+    // A later probe for an unrelated change agrees with a probe of every mesh.
+    graph.markReadinessDirty("layerStyle", [kept]);
+    expect(probe()).toBe(true);
+    expect(graph.diagnostics()).toMatchObject({ scopedReadinessMismatches: 0 });
+  } finally {
+    verifyScopedReadinessProbes(false);
+    graph.dispose();
+  }
+});
+
 it("probes a mesh whose visibility crosses 1, as a revealed glyph's does, and no other fade step", async () => {
   const { scene, camera } = host();
   const kept = MeshBuilder.CreateBox("kept", {}, scene);
