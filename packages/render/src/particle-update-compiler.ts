@@ -370,7 +370,13 @@ export class ParticleUpdateQueueOwners {
     let compiled = 0;
     for (let item = (system as unknown as { _updateQueueStart: QueueItem | null })._updateQueueStart; item; item = item.nextItem) {
       const block = this.owners.get(item);
-      const process = block ? compileProcess(block, state, system) : null;
+      let process: Process | null;
+      try {
+        process = block ? compileProcess(block, state, system) : null;
+      } catch {
+        // A step this module cannot generate keeps Babylon's process; the graph still builds.
+        process = null;
+      }
       if (!process) continue;
       item.process = process;
       compiled += 1;

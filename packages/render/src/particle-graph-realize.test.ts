@@ -587,7 +587,8 @@ describe("Particle Graph catalog", () => {
   it.each(types)("pins %s's port types to what Babylon resolves, and simulates exactly as unpinned ports do", (type) => {
     const resolve = Object.getOwnPropertyDescriptor(NodeParticleConnectionPoint.prototype, "type")!.get!;
     const simulate = (unpin: boolean) => {
-      const built_ = built(realize(planOf(graphWith(type))).result);
+      // Babylon's own closures on both sides: they are what read the port types per particle.
+      const built_ = built(realize(planOf(graphWith(type)), "world", undefined, undefined, false).result);
       const ports = built_.set.attachedBlocks.flatMap((block) => [...block.inputs, ...block.outputs]);
       for (const port of ports) {
         expect(Object.hasOwn(port, "type")).toBe(true);
@@ -649,7 +650,60 @@ function seededRun(system: ParticleSystem, frames: number, between?: { at: numbe
   };
 }
 
+const NUMERIC_TYPES: readonly ParticleNumericType[] = ["float", "vec2", "vec3", "color"];
+
+/**
+ * Every value node at every type it can take (each type a generic pin group accepts, or its Value Type), with every
+ * input wired from a constant of the type it then has: what a typed graph builds, Clamp bounds and Lerp gradients wired.
+ */
+function typedValueGraphs(): [string, ParticleNumericType][] {
+  const cases: [string, ParticleNumericType][] = [];
+  for (const definition of PARTICLE_CATALOG) {
+    if (definition.terminal || definition.role !== "value" || definition.type.endsWith(".parameter")) continue;
+    const properties = newParticleNodeProperties(definition.type);
+    const group = definition.inputs.map((pin) => pin.type).find((pinType) => pinType.kind === "generic");
+    const accepts = group?.kind === "generic" ? group.accepts ?? NUMERIC_TYPES : null;
+    // A group whose fallback is not Float (Normalized Lerp) never takes Float.
+    const takesFloat = group?.kind === "generic" && (group.fallback ?? "float") === "float";
+    const kinds = "valueType" in properties ? NUMERIC_TYPES
+      : accepts ? NUMERIC_TYPES.filter((kind) => (kind === "float" ? takesFloat : accepts.includes(kind))) : [];
+    for (const kind of kinds) cases.push([definition.type, kind]);
+  }
+  return cases;
+}
+
+function typedValueGraph(type: string, kind: ParticleNumericType): ParticleGraphDocument {
+  const properties = newParticleNodeProperties(type);
+  if ("valueType" in properties) properties.valueType = kind;
+  if (type === "gradient.sample") {
+    properties.stops = [0, 0.6, 1].map((position, index) => ({ position, value: resizeParticleValue([0.2 + 0.35 * index], kind) }));
+  }
+  const subject = node("subject", type, properties);
+  const definition = particleNodeDefinitionFor(subject)!;
+  const extra: ParticleGraphNode[] = [subject];
+  const edges: ReturnType<typeof edge>[] = [];
+  definition.inputs.forEach((pin, index) => {
+    if (pin.type.kind === "particle") return;
+    const pinKind: ParticleNumericType = pin.type.kind === "generic" ? kind : pin.type.kind;
+    const id = `c-${pin.id}`;
+    // Distinct values in (0, 1): a valid Lerp gradient, Clamp bounds that bite, no division by zero.
+    extra.push(node(id, `const.${pinKind}`, { value: resizeParticleValue([0.15 + 0.2 * (index % 4)], pinKind) }));
+    edges.push(edge(id, "out", "subject", pin.id));
+  });
+  const output = definition.outputs[0]!;
+  const outKind: ParticleNumericType = output.type.kind === "generic" ? kind : output.type.kind as ParticleNumericType;
+  const consumer = CONSUMERS[outKind];
+  return withSpine([node("consumer", consumer.type)], extra, [...edges, edge("subject", output.id, "consumer", consumer.pin)]);
+}
+
 describe("Particle Graph update compilation", () => {
+  it.each(typedValueGraphs())("simulates %s at %s, every input wired, exactly as Babylon's own update closures do", (type, kind) => {
+    const compiled = seededRun(built(realize(planOf(typedValueGraph(type, kind))).result).system, 150);
+    const babylon = seededRun(built(realize(planOf(typedValueGraph(type, kind)), "world", undefined, undefined, false).result).system, 150);
+    expect(babylon.deaths).toBeGreaterThan(0);
+    expect(compiled).toEqual(babylon);
+  });
+
   type Queue = { process: { name: string }; nextItem: Queue | null };
   const processNames = (system: ParticleSystem) => {
     const names: string[] = [];
