@@ -20,7 +20,7 @@ A rig with the same bone names but other proportions, such as a larger version o
 
 Double-tap the asset to open it. The window has **Preview** and an **Inspector**.
 
-- **Preview** shows the Preview Model's bones in their rest pose: a tapered bone from each joint to each of its children and a ball at every joint. If it cannot load the mesh, it shows **No Mesh**.
+- **Preview** shows the Preview Model's bones in their rest pose, drawn as Blender draws an armature: one tapered bone per joint, running to the child it continues, a thin line to each of its other children, and a ball at every joint. A joint that moves no part of the mesh, such as a root at the floor, shows as a ball alone, and the end markers some FBX files add past the last bones show as those bones' ends. If it cannot load the mesh, it shows **No Mesh**.
 - The **Inspector** shows the settings below, then the bones as a tree, each bone's sockets under it. Select a bone to highlight it, and the bones it leads to, in the **Preview**, and to show its parent and rest pose under the tree; select it again to clear the highlight. A rest value that only an animation file has supplied shows **Unknown**.
 
 ## Sockets

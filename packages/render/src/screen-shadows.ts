@@ -142,14 +142,18 @@ export function screenShadowThicknessCaps(light: DirectionalLight, camera: Camer
   return { ends, caps };
 }
 
-type PassEntry = { texture: ThinTexture };
+/** An objects pass's screen shadows: read only while the view's march runs (`ScreenShadowsGraph.sync`). */
+type PassEntry = { texture: ThinTexture; marching: boolean };
 const registries = new WeakMap<Scene, Map<number, PassEntry>>();
 const placeholders = new WeakMap<Scene, ThinTexture>();
 
-/** The screen shadows the draw of `renderPassId` reads, or null: any pass but a planned view's objects passes. */
+/**
+ * The screen shadows the draw of `renderPassId` reads, or null: any pass but a planned view's objects passes, and those
+ * while the view's march is idle (its target then holds an earlier frame's).
+ */
 export function screenShadowsForPass(scene: Scene, renderPassId: number): ThinTexture | null {
-  const texture = registries.get(scene)?.get(renderPassId)?.texture;
-  return texture?.getInternalTexture() ? texture : null;
+  const entry = registries.get(scene)?.get(renderPassId);
+  return entry?.marching && entry.texture.getInternalTexture() ? entry.texture : null;
 }
 
 /** A lit 1 × 1 texture every program declaring the screen shadows binds where its pass has none. */
@@ -187,6 +191,10 @@ class ScreenShadowsTask extends FrameGraphPostProcessTask {
       this.bind(effect);
     });
     pass.addDependencies(this.depth);
+    // Idle (`ScreenShadowsGraph.sync`): Babylon runs the enabled passes of a disabled task that has no disabled pass.
+    const idle = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
+    idle.setRenderTarget(this.outputTexture);
+    idle.setExecuteFunc(() => {});
     return pass;
   }
   override dispose(): void {
@@ -202,15 +210,19 @@ class ScreenShadowsTask extends FrameGraphPostProcessTask {
 
 /**
  * One view's screen shadows: the task (after the geometry pass, before the objects), its RG16F target and the objects
- * passes that read it. It never idles on light state: without a shadowed sun it writes lit through a uniform, so the
- * sun starting to cast shadows creates no pipeline. Nor does a level change: every level is the same program and
- * target, so the march reads the Scene's current level (`level` until its plan has one) when it draws.
+ * passes that read it. With no shadowed sun or an orthographic camera the march would write lit everywhere, so it idles
+ * (`sync`, each frame): the task draws nothing and the objects bind the placeholder with the read off, which the light
+ * block takes as lit, as it would the march's 1. The sun starting to cast shadows creates no pipeline, only re-enables
+ * the task. Nor does a level change: every level is the same program and target, so the march reads the Scene's current
+ * level (`level` until its plan has one) when it draws.
  */
 export class ScreenShadowsGraph {
   readonly task: ScreenShadowsTask;
   readonly output: FrameGraphTextureHandle;
   private readonly entries = new Map<number, PassEntry>();
   private readonly scene: Scene;
+  private readonly camera: Camera;
+  private marching = true;
 
   constructor(
     graph: FrameGraph, camera: Camera, level: Exclude<ScreenShadowsQuality, "off">, depth: FrameGraphTextureHandle,
@@ -218,6 +230,7 @@ export class ScreenShadowsGraph {
   ) {
     const scene = graph.scene;
     this.scene = scene;
+    this.camera = camera;
     const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(),
       ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
@@ -261,9 +274,20 @@ export class ScreenShadowsGraph {
   registerPass(renderPassId: number): void {
     let registry = registries.get(this.scene);
     if (!registry) registries.set(this.scene, (registry = new Map()));
-    const entry = { texture: new ThinTexture(null) };
+    const entry = { texture: new ThinTexture(null), marching: this.marching };
     this.entries.set(renderPassId, entry);
     registry.set(renderPassId, entry);
+  }
+
+  /**
+   * Whether the march runs this frame: a shadowed sun (the light block's, written before the frame) and a perspective
+   * camera. Before each frame's graph execution; idles the task and turns its readers off otherwise.
+   */
+  sync(): boolean {
+    this.marching = hapticShadowedSun(this.scene) !== null && this.camera.mode === Camera.PERSPECTIVE_CAMERA;
+    this.task.disabled = !this.marching;
+    for (const entry of this.entries.values()) entry.marching = this.marching;
+    return this.marching;
   }
 
   /** Attaches the built target to the registered passes; after each build. */

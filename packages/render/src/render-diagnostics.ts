@@ -17,6 +17,7 @@ import type { GpuBusyStats } from "./gpu-busy-probe";
 import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
+import type { LayerDrawableMeshWork } from "./layer-drawable-meshes";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
 
@@ -142,14 +143,26 @@ export type RenderDiagnostics = {
      * Absent without Mirrors.
      */
     mirrorCrop?: { checks: number; misses: number };
+    /**
+     * The view's strict outline cull (`SharedOutlineView.cullDiagnostics`): periodic checks of its kept candidate split
+     * against a fresh one and those that replaced it (`splitChecks`, `healedSplits`), and while
+     * `verifySharedOutlineCulls` is on, culls also made the full way (`checks`) and those that disagreed (`mismatches`,
+     * which must stay 0). Absent without an outline view.
+     */
+    outlineCull?: { splitChecks: number; healedSplits: number; checks: number; mismatches: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is
    * for the world, with the layer's mesh count. A layer whose strict checks grow with every frame has something
    * marking its readiness each frame. Empty where the view composites no layer. `batching` is how its draw batcher kept
    * its work between frames, and what its verifier found (`OverlayBatchWork`); null where the layer does not batch.
+   * `drawable` is how the list of its meshes that can draw was kept, and what its checks against a full filter found
+   * and healed (`LayerDrawableMeshWork`: `mismatches` must stay 0).
    */
-  layerWork?: Array<{ layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]>; batching?: OverlayBatchWork | null }>;
+  layerWork?: Array<{
+    layerId: string; meshes: number; work: NonNullable<RenderDiagnostics["rendererWork"]>; batching?: OverlayBatchWork | null;
+    drawable?: LayerDrawableMeshWork | null;
+  }>;
   frameAdmission?: ReturnType<RenderScheduler["gateState"]> & {
     worldLoading: boolean;
     pendingPresentations: number;

@@ -34,7 +34,8 @@ import {
  *      `rendererWork.scopedReadinessMismatches`),
  *      HAPTIC_PERF_GPU_BUSY=1 (each Play window measures GPU-busy time per frame: `rendering.gpuBusy`),
  *      HAPTIC_PERF_VERIFY_BATCHES=1 (Play checks each Scene Layer pass whose draw batches kept their work against the
- *      full path: `layerWork[].batching.mismatches`),
+ *      full path: `layerWork[].batching.mismatches`, and each layer's drawable mesh list against a full filter every
+ *      frame: `layerWork[].drawable.mismatches`),
  *      HAPTIC_PERF_IDLE_HALF_RATE=1 (the editor viewport keeps Half Rate When Idle on; the route turns it off otherwise),
  *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
  *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`),
@@ -43,7 +44,9 @@ import {
  *      HAPTIC_PERF_VERIFY_CAPTURES=1 (Play's Capture Only Actors captures also list by the walk of every mesh, which
  *      must agree with the list from their actors' meshes: `rendererWork.captureActorLists.mismatches`),
  *      HAPTIC_PERF_VERIFY_MIRROR_CROP=1 (each Mirror cull cropped to its surface's footprint also culls with the whole
- *      mirrored frustum and counts the meshes the crop left out within the widened footprint: `rendererWork.mirrorCrop.misses`).
+ *      mirrored frustum and counts the meshes the crop left out within the widened footprint: `rendererWork.mirrorCrop.misses`),
+ *      HAPTIC_PERF_VERIFY_OUTLINES=1 (each strict outline cull also culls the full way, splitting its candidates afresh and
+ *      walking every occluder, and counts each that disagrees: `rendererWork.outlineCull.mismatches`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -88,6 +91,7 @@ const VERIFY_MIRRORS = process.env.HAPTIC_PERF_VERIFY_MIRRORS === "1";
 const VERIFY_CAPTURES = process.env.HAPTIC_PERF_VERIFY_CAPTURES === "1";
 /** Each cropped Mirror cull in Play also culls uncropped (the measured frames carry its cost). */
 const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
+const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -108,6 +112,7 @@ type PlayHost = {
     verifyMirrorContentPolls: (enabled: boolean) => void;
     verifyCaptureActorLists: (enabled: boolean) => void;
     verifyMirrorFootprintCrops: (enabled: boolean) => void;
+    verifySharedOutlineCulls: (enabled: boolean) => void;
   };
 };
 
@@ -360,6 +365,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_MIRRORS) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorContentPolls(true));
   if (VERIFY_CAPTURES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyCaptureActorLists(true));
   if (VERIFY_MIRROR_CROP) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorFootprintCrops(true));
+  if (VERIFY_OUTLINES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifySharedOutlineCulls(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.

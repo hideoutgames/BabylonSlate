@@ -552,7 +552,7 @@ function stressEmitter(materialGuid: string): ParticleEmitterPayload {
  * → Gravity (gentle lift) → Update Color (Initial Color × Gradient over
  * Normalized Age) → Emitter Output at 90/s. One Particle output feeds one node.
  */
-function glowGraph(name: string, materialGuid: string, globalParameters: string): ParticleGraphDocument {
+export function glowGraph(name: string, materialGuid: string, globalParameters: string): ParticleGraphDocument {
   const graph = createDefaultParticleGraphDocument(name);
   graph.materialGuid = materialGuid;
   graph.settings = { capacity: 512, loop: "infinite", duration: 4, prewarm: 1, blendMode: "additive", billboard: "all" };

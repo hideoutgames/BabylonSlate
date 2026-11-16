@@ -137,6 +137,35 @@ export function planWithoutScreenEffects(plan: SceneEffectsPlan | null): SceneEf
     next.upscale || next.screenShadows ? next : null;
 }
 
+/**
+ * The plan a view's chain builds: without the stages whose output provably equals their input bit for bit, so they
+ * neither draw nor hold targets. A weight or strength is part of `sceneEffectsKey`, so a change rebuilds the graph and
+ * the view's readiness holds it as for any graph change. Every proof holds for finite colour: a non-finite pixel within
+ * a stage's reach turns `blur · 0` into NaN, which the skipped stage no longer writes.
+ * - Bloom at weight 0, in either pipeline: the merge writes `base + blur · 0` = `base` into a target of the source's
+ *   type, size and sample count (or the single-sample one of the scene colour's type that the next stage would resolve
+ *   to). Kept when it is the chain's only stage: the plan would turn null and the view would draw straight to its
+ *   output.
+ * - Real-Time Reflections at strength 0, in Scene Linear only: the combine's multiplier is `clamp(pow(F · 0, 1))` = 0,
+ *   so it writes `color · 1 + ssr · 0` into a half-float target, as the half-float source holds it. In Legacy Display
+ *   the combine converts to linear and back (`pow` 2.2), which is not exact. Kept when an authored stack feeds the chain
+ *   (its output can be smaller than the render size; the combine resamples it into a full-size half-float target), and
+ *   when its removal would leave the volumetric march the geometry pass alone, which a game's world view then seeds
+ *   from the scene's depth instead of drawing (`SpatialEffectsGraph.seeded`), a different depth.
+ * - Ambient occlusion is never left out: at strength 0 the march and blurs write 1, but the compose divides by
+ *   `max(Σ weights, 1e-6)`, and a pixel whose four taps are all depth-rejected (a surface near the camera against one
+ *   ~10⁴ times farther) sums below the floor and darkens. No camera bounds that: an oblique mirror projection reaches
+ *   past the far plane.
+ */
+export function withoutIdleStages(plan: SceneEffectsPlan, view: { authoredInput: boolean }): SceneEffectsPlan {
+  const reflections = plan.reflections && plan.reflections.strength === 0 && plan.sceneLinear && !view.authoredInput &&
+    (plan.ambientOcclusion || plan.screenShadows || !plan.volumetricLighting) ? null : plan.reflections;
+  const others = plan.imageProcessing || plan.fxaa || plan.ambientOcclusion || reflections || plan.volumetricLighting ||
+    plan.upscale || plan.screenShadows;
+  const bloom = plan.bloom && plan.bloom.weight === 0 && others ? null : plan.bloom;
+  return bloom === plan.bloom && reflections === plan.reflections ? plan : { ...plan, bloom, reflections };
+}
+
 /** Display Color without the tone curve, exposure, contrast or white balance: linear colour encoded for display. */
 export function displayEncodingEffects(effects: RenderEffectsSettings): RenderEffectsSettings {
   return { ...effects, toneMapping: "none", exposure: 1, contrast: 1, whiteBalance: { ...effects.whiteBalance, enabled: false } };

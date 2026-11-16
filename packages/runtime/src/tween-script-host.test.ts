@@ -104,6 +104,20 @@ describe("Tween script targets", () => {
     tweens.advance(1); expect(await ref).toBe(true);
   });
 
+  it("refreshes a component only for tween steps that change a stored field", async () => {
+    const { ctx, component, tweens, refresh } = harness();
+    const text = component("2DTextComponent", { size: 12, wrapWidth: 100, wrapHeight: 40 });
+    const held = ctx.tweenProperty(text, "text.fontSize", "float", 12, 12, 2, "linear");
+    // Only the width changes; the pair refreshes once per step under its compound name.
+    const wrap = ctx.tweenProperty(text, "text.wrapSize", "vec2", { x: 100, y: 40 }, { x: 300, y: 40 }, 2, "linear");
+    tweens.advance(1);
+    expect(refresh.mock.calls).toEqual([[text, "text.wrapSize"]]);
+    tweens.advance(1);
+    expect(await Promise.all([held, wrap])).toEqual([true, true]);
+    expect(refresh.mock.calls).toEqual([[text, "text.wrapSize"], [text, "text.wrapSize"]]);
+    expect(text.getVariable("wrapWidth")).toBe(300);
+  });
+
   it("updates compound layout/text/anchor fields together and respects content sizing", async () => {
     const { ctx, component, tweens, refresh } = harness();
     const box = component("2DOverlayBoxComponent", { widthMode: "fixed", heightMode: "content", width: 4, height: 3 });

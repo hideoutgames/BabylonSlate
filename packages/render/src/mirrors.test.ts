@@ -344,8 +344,8 @@ it("crops a Mirror whose Offset a graph drives by the bound on that graph, and c
   } finally {
     verifyMirrorFootprintCrops(false);
   }
-  // Ripples ten times as strong reach it.
-  const strong = await use(rippleMaterialDocument(0.12));
+  // Ripples twenty times as strong reach it.
+  const strong = await use(rippleMaterialDocument(0.24));
   expect(reflected()).toEqual(expect.arrayContaining(["box", "side"]));
   // An Offset driven through a node without a rule is not bounded: the whole mirrored frustum draws.
   const doc = rippleMaterialDocument();

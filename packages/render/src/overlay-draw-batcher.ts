@@ -17,6 +17,7 @@ import {
 } from "./draw-batch-world-block";
 import { sceneDrawBatcher, setSceneDrawBatcher, type SceneDrawBatcher } from "./draw-batching";
 import { hasMeshLatticeDeformer, latticeMarksRevision } from "./lattice-deformer-binding";
+import { verifyLayerDrawableMeshes } from "./layer-drawable-meshes";
 import { LayerImageAtlas, type LayerImageCell } from "./layer-image-atlas";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
 import { overlayVisualStyle, shareOverlayVisualStyle } from "./overlay-visual-style";
@@ -247,6 +248,11 @@ export interface OverlayBatchWork {
   mismatches: number;
   missedKinds: string[];
   mismatchDetails: string[];
+  /**
+   * How a blended pass's list differed from the one it kept: the same meshes in the same order with other submeshes (a
+   * redraw that rebuilt them), the same meshes in another order (the back-to-front sort), or other meshes.
+   */
+  transparentListChanges: { subMeshes: number; order: number; members: number };
 }
 
 /** Every this many retained passes, the full path is worked out beside one and a difference healed. */
@@ -261,9 +267,11 @@ let verifies = false;
  * Debugging aid: every retained pass of every frame is checked against the full path, worked out on the verifier's
  * own entries and vertex copies, before it draws: classification, readings, bounds, batches in order, readiness, and
  * what each batch mesh it would draw from without refilling holds (`OverlayBatchWork.mismatches`, healed as found).
+ * Each layer's drawable mesh list is compared with a full filter every frame too (`verifyLayerDrawableMeshes`).
  */
 export function verifyRetainedOverlayBatches(enabled: boolean): void {
   verifies = enabled;
+  verifyLayerDrawableMeshes(enabled);
 }
 
 /** A batch mesh kept between frames, with what its buffers hold. */
@@ -741,8 +749,9 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   private marginY = 0;
   private readonly work: OverlayBatchWork = {
     skippedMembers: 0, rereadMembers: 0, fullMembers: 0, retainedPasses: 0, regroupedPasses: 0, fullPasses: 0, checkedPasses: 0, heals: 0,
-    mismatches: 0, missedKinds: [], mismatchDetails: [],
+    mismatches: 0, missedKinds: [], mismatchDetails: [], transparentListChanges: { subMeshes: 0, order: 0, members: 0 },
   };
+  private readonly scratchMeshes = new Map<AbstractMesh, number>();
   /** Before a regroup, each batch whose slot holds its fill, by its first member (`regroup`). */
   private readonly keptFills = new Map<Entry, { members: Entry[]; slot: Slot; serial: number }>();
   /** The full check's own entries, batches and arrays: it never reads or writes the retained path's. */
@@ -779,7 +788,10 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
 
   /** What the batcher has done since it was made (`OverlayBatchWork`), as a copy. */
   get batchWork(): OverlayBatchWork {
-    return { ...this.work, missedKinds: [...this.work.missedKinds], mismatchDetails: [...this.work.mismatchDetails] };
+    return {
+      ...this.work, missedKinds: [...this.work.missedKinds], mismatchDetails: [...this.work.mismatchDetails],
+      transparentListChanges: { ...this.work.transparentListChanges },
+    };
   }
 
   draw(sorted: readonly SubMesh[], count: number, transparent: boolean, drawOne: (subMesh: SubMesh) => void): void {
@@ -880,6 +892,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
    * them); new members get entries read at the pass, and the pass groups again. Another blend mode starts over.
    */
   private setList(record: PassRecord, sorted: readonly SubMesh[], count: number, transparent: boolean): void {
+    if (transparent && record.transparent && record.sorted.length > 0) this.countListChange(record.sorted, sorted, count);
     const held = this.heldEntries;
     if (record.transparent === transparent) for (const entry of record.entries) held.set(entry.subMesh, entry);
     else {
@@ -914,6 +927,30 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     }
     held.clear();
     record.listChanged = true;
+  }
+
+  /** Counts how a blended pass's new list differs from the one it kept (`OverlayBatchWork.transparentListChanges`). */
+  private countListChange(kept: readonly SubMesh[], sorted: readonly SubMesh[], count: number): void {
+    const changes = this.work.transparentListChanges;
+    let inOrder = kept.length === count;
+    for (let index = 0; inOrder && index < count; index += 1) if (kept[index]!.getMesh() !== sorted[index]!.getMesh()) inOrder = false;
+    if (inOrder) {
+      changes.subMeshes += 1;
+      return;
+    }
+    // The same meshes, each as many times, in another order?
+    const tally = this.scratchMeshes;
+    tally.clear();
+    for (const subMesh of kept) tally.set(subMesh.getMesh(), (tally.get(subMesh.getMesh()) ?? 0) + 1);
+    let same = kept.length === count;
+    for (let index = 0; same && index < count; index += 1) {
+      const mesh = sorted[index]!.getMesh(), left = tally.get(mesh) ?? 0;
+      if (left === 0) same = false;
+      else tally.set(mesh, left - 1);
+    }
+    tally.clear();
+    if (same) changes.order += 1;
+    else changes.members += 1;
   }
 
   /** Takes `entry` out of the journal's index and the polls. */

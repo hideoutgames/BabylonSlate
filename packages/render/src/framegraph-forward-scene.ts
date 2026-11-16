@@ -9,7 +9,7 @@ import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Te
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
-import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, type SceneEffectsPlan } from "./scene-effects";
+import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, withoutIdleStages, type SceneEffectsPlan } from "./scene-effects";
 import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
 import type { SharedOutlineView } from "./shared-outline";
@@ -53,9 +53,10 @@ import { collectReadinessBlockers, noteReadinessBlocker } from "./readiness-bloc
 import { drawingMesh } from "./instance-source";
 import { isParticleReadinessTexture, particleReadinessTextureCount } from "./particle-readiness-texture";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
+import { layerDrawableMeshes } from "./layer-drawable-meshes";
 import { findSceneShadowController } from "./shadow-controller";
 import { mirrorDiagnostics } from "./mirrors";
-import { syncSceneLighting } from "./scene-lighting";
+import { sceneLightingSettledWithoutLights, syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
@@ -277,8 +278,11 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
   }
 
   private cullFrame(): void {
+    const scene = this.camera.getScene();
     // Play: the meshes added since the last cull leave Intermediate's always-drawn mark first (`play-view-culling.ts`).
-    settlePlayViewCulling(this.camera.getScene());
+    settlePlayViewCulling(scene);
+    // A Scene Layer's drawable meshes, which its scene objects hold, brought up to date in place as the cull reads them.
+    layerDrawableMeshes(scene);
     const target = this.camera.outputRenderTarget?.renderTarget;
     if (!target) {
       super._execute();
@@ -389,6 +393,7 @@ export class ForwardSceneFrameGraph {
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...(mirrors ? { mirrorCrop: { checks: mirrors.cropChecks, misses: mirrors.cropMisses } } : {}),
+      ...(this.outlineView ? { outlineCull: this.outlineView.cullDiagnostics() } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
       readinessProbeReasons: { ...this.probeReasons }, readinessSwapRechecks: this.swapRechecks,
       failedReadinessProbes: this.failedProbes, scopedReadinessProbes: this.scopedProbes,
@@ -1471,9 +1476,16 @@ export class ForwardSceneFrameGraph {
     // scene's own view admits, so an auxiliary camera never churns it (or
     // every material's light defines) once per frame.
     if (this.auxiliary) return;
+    const controller = findSceneShadowController(this.scene);
+    // Nothing to admit: no light, a light block the last sync left current (`sceneLightingSettledWithoutLights`: no
+    // Material joined and no flag changed since) and no shadow owner or one with nothing to admit (`admitsNothing`: no
+    // light registered, no caster or unseen mesh, no map, the same camera and settings), as a Scene Layer's steady
+    // frames are. Both syncs below would change nothing, so the readiness state around them (matrices, viewport, the
+    // cached Material) is not saved and restored either. A light, a caster or a mesh that appears takes the full path
+    // on that same call.
+    if (!this.scene.lights.length && sceneLightingSettledWithoutLights(this.scene) && (!controller || controller.admitsNothing())) return;
     const started = this.measureWork ? performance.now() : 0;
     if (this.measureWork) this.work.shadowAdmissions += 1;
-    const controller = findSceneShadowController(this.scene);
     withSceneReadinessState(this.scene, () => {
       this.setActiveCamera(camera);
       // Admit the conventional prefix before shadows spend shared texture units.
@@ -1600,7 +1612,7 @@ export class ForwardSceneFrameGraph {
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
-            plan: effectsPlan,
+            plan: withoutIdleStages(effectsPlan, { authoredInput: this.postProcessGraph !== undefined }),
             effects: this.auxiliary?.screenEffects === false ? displayEncodingEffects(effectsState.effects) : effectsState.effects,
             camera,
             authoredOutputTexture: this.postProcessGraph?.outputTexture,
@@ -2204,9 +2216,10 @@ export class ForwardSceneFrameGraph {
     this.clear!.clearDepth = this.scene.autoClearDepthAndStencil;
     this.clear!.clearStencil = this.scene.autoClearDepthAndStencil;
     // Reference the live scene arrays; membership changes do not rebuild tasks.
-    // An auxiliary view draws its owner's candidates (no editor helpers).
+    // An auxiliary view draws its owner's candidates (no editor helpers); a Scene Layer its drawable meshes, which the
+    // cull reads again as it runs.
     const objects = this.auxiliary?.objects;
-    this.sceneObjects.meshes = objects?.meshes ?? admittedSceneMeshes(this.scene) ?? this.scene.meshes;
+    this.sceneObjects.meshes = objects?.meshes ?? admittedSceneMeshes(this.scene) ?? layerDrawableMeshes(this.scene) ?? this.scene.meshes;
     this.sceneObjects.particleSystems = objects?.particleSystems ?? admittedSceneParticles(this.scene) ?? this.scene.particleSystems;
     this.cull!.objectList = this.sceneObjects;
     this.objects!.objectList = this.cull!.outputObjectList;

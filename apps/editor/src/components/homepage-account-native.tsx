@@ -77,8 +77,12 @@ export default function HomepageNativeAccount({
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  // Open system file pickers; the foreground check waits for them to close.
+  // Holds on the foreground check (open system file pickers and open forms).
+  // A check that comes due while one is held is remembered; a form's hold runs
+  // it once the last hold ends, a picker's leaves it to the next focus.
   const pickers = useRef(0);
+  const deferredCheck = useRef(false);
+  const runDeferredCheck = useRef<() => void>(() => {});
   const alive = useRef(true);
   const currentSession = useRef<NativeClerkSession | null>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -88,7 +92,11 @@ export default function HomepageNativeAccount({
     let cancelled = false;
     let pending = false;
     const restore = () => {
-      if (cancelled || pending || busyRef.current || pickers.current > 0) return;
+      if (cancelled || pending || busyRef.current) return;
+      if (pickers.current > 0) {
+        deferredCheck.current = true;
+        return;
+      }
       pending = true;
       setRestoring(true);
       setRestoreError(null);
@@ -113,12 +121,14 @@ export default function HomepageNativeAccount({
         restore();
       }
     };
+    runDeferredCheck.current = resume;
     restore();
     window.addEventListener("focus", resume);
     document.addEventListener("visibilitychange", resume);
     return () => {
       cancelled = true;
       alive.current = false;
+      runDeferredCheck.current = () => {};
       window.removeEventListener("focus", resume);
       document.removeEventListener("visibilitychange", resume);
     };
@@ -208,13 +218,17 @@ export default function HomepageNativeAccount({
             onDeleted: () => {
               if (alive.current) leaveSession();
             },
-            holdSessionCheck: () => {
+            holdSessionCheck: (options) => {
               pickers.current += 1;
               let held = true;
               return () => {
                 if (!held) return;
                 held = false;
                 pickers.current -= 1;
+                if (options?.checkWhenReleased && pickers.current === 0 && deferredCheck.current) {
+                  deferredCheck.current = false;
+                  runDeferredCheck.current();
+                }
               };
             },
           }),

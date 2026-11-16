@@ -9,7 +9,10 @@ import { splineComponentFunction } from "./spline-script";
 export interface ComponentFunctionHost {
   readonly services: ScriptHostServices;
   canInvokeOwner(owner: EngineObject): boolean;
-  applyComponentVariable(component: ActorComponent, name: string, value: unknown, previous?: unknown): void;
+  /** Sends what a component property already stored changes. */
+  applyComponentVariable(component: ActorComponent, name: string, value: unknown): void;
+  /** Stores a component property and sends what it changes; an unchanged value sends nothing (`unchangedComponentWrite`). */
+  writeComponentVariable(component: ActorComponent, name: string, value: unknown): void;
 }
 
 /**
@@ -89,10 +92,7 @@ export function callNativeComponentFunction(
   // events wait for admission. A destroyed component takes no write.
   if (component.destroyed) return {};
   if (name === "setText") {
-    const text = String(args.text ?? "");
-    const previous = component.getVariable("text");
-    component.setVariable("text", text);
-    host.applyComponentVariable(component, "text", text, previous);
+    host.writeComponentVariable(component, "text", String(args.text ?? ""));
     return {};
   }
   if (name === "setConstraintTarget" && component.classId === "PhysicsConstraintComponent") {

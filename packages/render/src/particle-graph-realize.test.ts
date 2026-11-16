@@ -1,4 +1,5 @@
 import { GPUParticleSystem } from "@babylonjs/core/Particles/gpuParticleSystem";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import { UpdateSizeBlock } from "@babylonjs/core/Particles/Node/Blocks/Update/updateSizeBlock";
@@ -65,9 +66,10 @@ function planOf(doc: ParticleGraphDocument, settings: Partial<ParticleGraphSetti
 }
 
 function realize(plan: ParticleBuildPlan, space: ParticleSpace = "world", adapters?: Record<string, ParticleBlockAdapter>,
-  globalParameters?: GlobalParameterValueSource) {
+  globalParameters?: GlobalParameterValueSource, compileUpdate = true) {
   const { scene, emitter } = host();
-  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters, ...(globalParameters ? { globalParameters } : {}) });
+  const result = realizeParticleGraph(plan, { scene, name: "graph", emitter, space, adapters, compileUpdate,
+    ...(globalParameters ? { globalParameters } : {}) });
   return { scene, emitter, result };
 }
 
@@ -585,7 +587,8 @@ describe("Particle Graph catalog", () => {
   it.each(types)("pins %s's port types to what Babylon resolves, and simulates exactly as unpinned ports do", (type) => {
     const resolve = Object.getOwnPropertyDescriptor(NodeParticleConnectionPoint.prototype, "type")!.get!;
     const simulate = (unpin: boolean) => {
-      const built_ = built(realize(planOf(graphWith(type))).result);
+      // Babylon's own closures on both sides: they are what read the port types per particle.
+      const built_ = built(realize(planOf(graphWith(type)), "world", undefined, undefined, false).result);
       const ports = built_.set.attachedBlocks.flatMap((block) => [...block.inputs, ...block.outputs]);
       for (const port of ports) {
         expect(Object.hasOwn(port, "type")).toBe(true);
@@ -608,5 +611,144 @@ describe("Particle Graph catalog", () => {
     const pinned = simulate(false);
     expect(pinned.length).toBeGreaterThan(0);
     expect(pinned).toEqual(simulate(true));
+  });
+
+  it.each(types)("simulates %s through its particles' deaths exactly as Babylon's own update closures do", (type) => {
+    const compiled = seededRun(built(realize(planOf(graphWith(type))).result).system, 150);
+    const babylon = seededRun(built(realize(planOf(graphWith(type)), "world", undefined, undefined, false).result).system, 150);
+    expect(babylon.deaths).toBeGreaterThan(0);
+    expect(compiled.particles.length).toBeGreaterThan(0);
+    expect(compiled).toEqual(babylon);
+  });
+});
+
+/**
+ * `frames` seeded 1/60 s steps from a fresh start: every live particle's state, the random generator's final state
+ * (a read made more or fewer times than Babylon makes it changes it) and how many particles died.
+ */
+function seededRun(system: ParticleSystem, frames: number, between?: { at: number; write: () => void }) {
+  let seed = 12345;
+  let deaths = 0;
+  const owner = system as unknown as { recycleParticle: (particle: Particle) => void };
+  const recycle = owner.recycleParticle;
+  owner.recycleParticle = (particle) => { deaths += 1; recycle(particle); };
+  const random = vi.spyOn(Math, "random").mockImplementation(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
+  try {
+    system.start(0);
+    for (let frame = 0; frame < frames; frame++) {
+      if (frame === between?.at) between.write();
+      step(system);
+    }
+  } finally {
+    random.mockRestore();
+  }
+  return {
+    particles: (system as unknown as { _particles: Particle[] })._particles.map((p) => [p.position.asArray(), p.direction.asArray(),
+      p.color.asArray(), p.size, p.angle, p.scale.asArray(), p.age, p.lifeTime, p.cellIndex]),
+    seed,
+    deaths,
+  };
+}
+
+const NUMERIC_TYPES: readonly ParticleNumericType[] = ["float", "vec2", "vec3", "color"];
+
+/**
+ * Every value node at every type it can take (each type a generic pin group accepts, or its Value Type), with every
+ * input wired from a constant of the type it then has: what a typed graph builds, Clamp bounds and Lerp gradients wired.
+ */
+function typedValueGraphs(): [string, ParticleNumericType][] {
+  const cases: [string, ParticleNumericType][] = [];
+  for (const definition of PARTICLE_CATALOG) {
+    if (definition.terminal || definition.role !== "value" || definition.type.endsWith(".parameter")) continue;
+    const properties = newParticleNodeProperties(definition.type);
+    const group = definition.inputs.map((pin) => pin.type).find((pinType) => pinType.kind === "generic");
+    const accepts = group?.kind === "generic" ? group.accepts ?? NUMERIC_TYPES : null;
+    // A group whose fallback is not Float (Normalized Lerp) never takes Float.
+    const takesFloat = group?.kind === "generic" && (group.fallback ?? "float") === "float";
+    const kinds = "valueType" in properties ? NUMERIC_TYPES
+      : accepts ? NUMERIC_TYPES.filter((kind) => (kind === "float" ? takesFloat : accepts.includes(kind))) : [];
+    for (const kind of kinds) cases.push([definition.type, kind]);
+  }
+  return cases;
+}
+
+function typedValueGraph(type: string, kind: ParticleNumericType): ParticleGraphDocument {
+  const properties = newParticleNodeProperties(type);
+  if ("valueType" in properties) properties.valueType = kind;
+  if (type === "gradient.sample") {
+    properties.stops = [0, 0.6, 1].map((position, index) => ({ position, value: resizeParticleValue([0.2 + 0.35 * index], kind) }));
+  }
+  const subject = node("subject", type, properties);
+  const definition = particleNodeDefinitionFor(subject)!;
+  const extra: ParticleGraphNode[] = [subject];
+  const edges: ReturnType<typeof edge>[] = [];
+  definition.inputs.forEach((pin, index) => {
+    if (pin.type.kind === "particle") return;
+    const pinKind: ParticleNumericType = pin.type.kind === "generic" ? kind : pin.type.kind;
+    const id = `c-${pin.id}`;
+    // Distinct values in (0, 1): a valid Lerp gradient, Clamp bounds that bite, no division by zero.
+    extra.push(node(id, `const.${pinKind}`, { value: resizeParticleValue([0.15 + 0.2 * (index % 4)], pinKind) }));
+    edges.push(edge(id, "out", "subject", pin.id));
+  });
+  const output = definition.outputs[0]!;
+  const outKind: ParticleNumericType = output.type.kind === "generic" ? kind : output.type.kind as ParticleNumericType;
+  const consumer = CONSUMERS[outKind];
+  return withSpine([node("consumer", consumer.type)], extra, [...edges, edge("subject", output.id, "consumer", consumer.pin)]);
+}
+
+describe("Particle Graph update compilation", () => {
+  it.each(typedValueGraphs())("simulates %s at %s, every input wired, exactly as Babylon's own update closures do", (type, kind) => {
+    const compiled = seededRun(built(realize(planOf(typedValueGraph(type, kind))).result).system, 150);
+    const babylon = seededRun(built(realize(planOf(typedValueGraph(type, kind)), "world", undefined, undefined, false).result).system, 150);
+    expect(babylon.deaths).toBeGreaterThan(0);
+    expect(compiled).toEqual(babylon);
+  });
+
+  type Queue = { process: { name: string }; nextItem: Queue | null };
+  const processNames = (system: ParticleSystem) => {
+    const names: string[] = [];
+    for (let item = (system as unknown as { _updateQueueStart: Queue | null })._updateQueueStart; item; item = item.nextItem) names.push(item.process.name);
+    return names;
+  };
+
+  it("replaces the processes of the update blocks it compiles and keeps Babylon's for the rest", () => {
+    // The default graph: Apply Velocity (Babylon's, kept) then Update Color (compiled).
+    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument())).result).system)).toEqual(["processPosition", ""]);
+    expect(processNames(built(realize(planOf(createDefaultParticleGraphDocument()), "world", undefined, undefined, false).result).system))
+      .toEqual(["processPosition", "processColor"]);
+  });
+
+  it("simulates a Local Space graph exactly as Babylon's own update closures do", () => {
+    const doc = withSpine([node("gravity", "force.gravity", { "default:acceleration": [0, -2, 0.5] })]);
+    const compiled = seededRun(built(realize(planOf(doc), "local").result).system, 150);
+    const babylon = seededRun(built(realize(planOf(doc), "local", undefined, undefined, false).result).system, 150);
+    expect(babylon.deaths).toBeGreaterThan(0);
+    expect(compiled).toEqual(babylon);
+  });
+
+  it("applies a parameter written while the system runs on the next step, as Babylon's closures do", () => {
+    const doc = withSpine([node("size", "update.size"), node("gravity", "force.gravity")], [
+      { id: "scale", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p-scale", valueType: "float" } },
+      node("double", "math.multiply", { "default:b": [2] }),
+      { id: "lift", type: "input.parameter", position: { x: 0, y: 0 }, properties: { parameterId: "p-lift", valueType: "vec3" } },
+    ], [edge("scale", "out", "double", "a"), edge("double", "out", "size", "size"), edge("lift", "out", "gravity", "acceleration")]);
+    doc.parameters = [
+      { id: "p-scale", name: "Scale", type: "float", defaultValue: [0.25] },
+      { id: "p-lift", name: "Lift", type: "vec3", defaultValue: [0, 1, 0] },
+    ];
+    const run = (compileUpdate: boolean) => {
+      const { system, parameterBlocks } = built(realize(planOf(doc), "world", undefined, undefined, compileUpdate).result) as
+        Extract<RealizeParticleGraphResult, { ok: true }>;
+      return seededRun(system, 41, { at: 40, write: () => {
+        parameterBlocks.get("p-scale")![0]!.value = 1.5;
+        parameterBlocks.get("p-lift")![0]!.value = new Vector3(0, -3, 1);
+      } });
+    };
+    const compiled = run(true);
+    // The particles alive before the write took the new Scale on the step after it (those born on that step have not run
+    // the update yet).
+    expect(compiled.particles.length).toBeGreaterThan(0);
+    expect(compiled.particles.filter((particle) => particle[3] === 3).length).toBeGreaterThan(0);
+    expect(compiled).toEqual(run(false));
   });
 });

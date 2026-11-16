@@ -222,27 +222,39 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
    * drawn without view culling (`skipFrustumClipping`: Play's starting-state
    * draw) draws the full lists, so each program has its first draw there
    * rather than when its mesh comes into view.
+   *
+   * A narrowed frame in which no group can show a stroke (no stroked strict member can show, and the through and
+   * selection groups have no member in view) draws none of the task's passes: every mask would hold no identity, and the
+   * composition of masks without identities blends nothing onto the image (`strokes`).
    */
   private sync(cull = false): void {
     if (this.disposed) return;
     this.view.prepare();
     const narrow = cull && !this.view.scene.skipFrustumClipping;
+    let strokes = !narrow;
     for (const record of this.masks) {
       const active = this.view.active && this.view.groupActive(record.group);
-      if (record.clearPass) record.clearPass.disabled = !active;
-      if (record.seedPass) record.seedPass.disabled = !active;
-      if (record.drawPass) record.drawPass.disabled = !active;
       record.objects.camera = this.camera;
       // An inactive group's pass is disabled and never probed, so it keeps one empty list.
       const overSceneDepth = record.group === "strict" && this.seeded;
       const meshes = !active ? record.inactive : !narrow ? this.view.meshesForGroup(record.group, overSceneDepth)
         : record.group === "strict" ? this.view.strictOccludersFor(this.camera, this.width, this.height, overSceneDepth)
         : this.view.membersFor(record.group, this.camera, this.width, this.height);
+      // The through and selection lists hold only stroked members; the strict one also its identity streams' sources and
+      // instances, and occluders, so its cull says whether a stroked member shows.
+      if (active && !strokes) strokes = record.group === "strict" ? this.view.strictStrokesShow : meshes.length > 0;
       const list = record.objects.objectList;
       if (list.meshes !== meshes) list.meshes = meshes;
       record.renderer.prune();
     }
-    if (this.composePass) this.composePass.disabled = !this.view.active;
+    const drawn = this.view.active && strokes;
+    for (const record of this.masks) {
+      const disabled = !drawn || !this.view.groupActive(record.group);
+      if (record.clearPass) record.clearPass.disabled = disabled;
+      if (record.seedPass) record.seedPass.disabled = disabled;
+      if (record.drawPass) record.drawPass.disabled = disabled;
+    }
+    if (this.composePass) this.composePass.disabled = !drawn;
   }
   override isReady(): boolean { return this.probe(false); }
   /**

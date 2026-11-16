@@ -3,6 +3,7 @@ import {
   type TweenValueType,
 } from "@haptic/core";
 import { Actor, ActorComponent, EngineObject, LayerCamera, engineScriptApiFor } from "@haptic/object-model";
+import { unchangedComponentWrite } from "./runtime-property-writes";
 import type { ScriptHostServices } from "./script-host";
 import type { TweenReference } from "./tween-runtime";
 import { applyTweenTransform, tweenWorldTransformDepth, type TweenTransformChannel } from "./tween-transforms";
@@ -109,6 +110,13 @@ export function propertyTweenReference(
   return {
     identity: target, property, owner: target, channels: keys.map((key) => `variable:${key}`),
     set(value) {
+      // A step that leaves every key as it is (a held end value) sends nothing.
+      let changed = false;
+      const store = (key: string, stored: unknown) => {
+        if (unchangedComponentWrite(target, key, target.getVariable(key), stored)) return;
+        target.setVariable(key, stored);
+        changed = true;
+      };
       if (keys.length === 2) {
         const vector = value as { x: number; y: number };
         const dimensions = [vector.x, vector.y];
@@ -116,16 +124,16 @@ export function propertyTweenReference(
         if (layout && layout.widthMode !== "fixed" && layout.heightMode !== "fixed") return false;
         for (let index = 0; index < 2; index++) {
           if (layout && (index === 0 ? layout.widthMode : layout.heightMode) !== "fixed") continue;
-          target.setVariable(keys[index]!, property === "anchor.offset" ? dimensions[index] : Math.max(0, dimensions[index]!));
+          store(keys[index]!, property === "anchor.offset" ? dimensions[index] : Math.max(0, dimensions[index]!));
         }
       } else {
         const key = keys[0]!;
         const normalized = key === "opacity" ? Math.min(1, Math.max(0, value as number)) :
           key === "size" ? Math.max(Number.EPSILON, value as number) :
           key === "outline" ? Math.max(0, value as number) : value;
-        target.setVariable(key, tweenStorageValue(target, key, normalized));
+        store(key, tweenStorageValue(target, key, normalized));
       }
-      services.refreshComponent?.(target, keys.length === 1 ? keys[0] : property);
+      if (changed) services.refreshComponent?.(target, keys.length === 1 ? keys[0] : property);
     },
   };
 }

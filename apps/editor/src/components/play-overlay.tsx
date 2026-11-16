@@ -14,7 +14,7 @@ import { useAppSettings } from "../context/app-settings-context";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import {
   captureShadowDiagnostics, currentGlobalParameterCatalog, drawOcclusionOverlay, globalParameterDefaults, lightsDebugText, verifyRenderChangeJournal, verifyRetainedOverlayBatches,
-  verifyCaptureActorLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes,
+  verifyCaptureActorLists, verifyMirrorContentPolls, verifyMirrorFootprintCrops, verifyScopedReadinessProbes, verifySharedOutlineCulls,
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
@@ -1253,7 +1253,10 @@ function PlayOverlayView({
         spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
         /** Follows every scoped readiness probe with a probe of every mesh, which must agree (`rendererWork.scopedReadinessMismatches`). */
         verifyScopedReadinessProbes: (enabled: boolean) => void;
-        /** Checks every Scene Layer pass that kept its draw batches' work against the full path (`layerWork[].batching.mismatches`). */
+        /**
+         * Checks every Scene Layer pass that kept its draw batches' work against the full path (`layerWork[].batching.mismatches`),
+         * and each layer's drawable mesh list against a full filter (`layerWork[].drawable.mismatches`).
+         */
         verifyRetainedOverlayBatches: (enabled: boolean) => void;
         /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
         verifyRenderChangeJournal: (enabled: boolean) => void;
@@ -1263,6 +1266,8 @@ function PlayOverlayView({
         verifyCaptureActorLists: (enabled: boolean) => void;
         /** Has each cropped Mirror cull also cull with the whole mirrored frustum and count what the crop left out within reach (`rendererWork.mirrorCrop.misses`). */
         verifyMirrorFootprintCrops: (enabled: boolean) => void;
+        /** Has each strict outline cull also cull the full way, which must agree (`rendererWork.outlineCull.mismatches`). */
+        verifySharedOutlineCulls: (enabled: boolean) => void;
         /** Fly Play's free camera along a path and record per-frame render events (perf routes only). */
         flyThrough: (
           options: import("../testing/flythrough-probe").FlyThroughOptions,
@@ -1290,6 +1295,7 @@ function PlayOverlayView({
       verifyMirrorContentPolls,
       verifyCaptureActorLists,
       verifyMirrorFootprintCrops,
+      verifySharedOutlineCulls,
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       text2dLayouts: () => sessionRef.current?.handle.playText2DLayouts() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
