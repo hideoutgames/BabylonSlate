@@ -21,6 +21,7 @@ import { ValidationProvider, useValidation } from "../context/validation-context
 import { createProjectAsset } from "../lib/create-project-asset";
 import {
   addClassMember,
+  addVariableAccessNode,
   patchClassMember,
   removeClassMember,
 } from "../lib/class-members";
@@ -136,6 +137,38 @@ afterEach(async () => {
 });
 
 describe("Graph panel", () => {
+  it("converts a Get of an object variable to a Validated Get and back from the node menu", async () => {
+    render(
+      <DocumentProvider>
+        <MainClassGraph />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(seen.documents?.homepageReady).toBe(true));
+    const actions = seen.actions!;
+    await act(() => actions.createEmptyProject("Gets", { kind: "2d" }));
+    await act(() => actions.openDocument({ kind: "graph", path: MAIN_CLASS_FILE, label: "Main" }));
+    const withVariable = addClassMember(
+      { ...openContent<SerializedGraph>(MAIN_CLASS_ID), nodes: [], edges: [] },
+      "variable", "Enemy", () => "var-enemy", { typeId: "object", typeClassId: "Actor" },
+    );
+    await act(() => actions.applyGraphChange(
+      MAIN_CLASS_ID,
+      addVariableAccessNode(withVariable, withVariable.members!.find((member) => member.id === "var-enemy")!, "get", {
+        idFactory: () => "get-enemy",
+      }),
+    ));
+    const typeOf = () => openContent<SerializedGraph>(MAIN_CLASS_ID).nodes.find((node) => node.id === "get-enemy")?.type;
+    const convert = async (label: string) => {
+      await waitFor(() => expect(document.querySelector('.react-flow__node[data-id="get-enemy"]')).toBeTruthy());
+      fireEvent.contextMenu(document.querySelector('.react-flow__node[data-id="get-enemy"]')!.firstElementChild!);
+      fireEvent.click(await screen.findByRole("menuitem", { name: label }));
+    };
+    await convert("Convert to Validated Get");
+    await waitFor(() => expect(typeOf()).toBe("variables.getValidated"));
+    await convert("Convert to Get");
+    await waitFor(() => expect(typeOf()).toBe("variables.get"));
+  });
+
   it("offers a function added in another open Class tab before it is saved", async () => {
     render(
       <DocumentProvider>

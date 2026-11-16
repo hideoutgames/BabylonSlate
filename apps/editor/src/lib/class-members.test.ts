@@ -7,6 +7,7 @@ import {
   blueprintSectionsForClass,
   classAllowsMemberKind,
   completeClassMemberDrop,
+  convertVariableGetNode,
   droppedRowsNotice,
   ensureCallParentForEvent,
   ensureEventNodeOnGraph,
@@ -1364,5 +1365,53 @@ describe("patchClassMember Pure", () => {
     expect(graph.members?.[0]).not.toHaveProperty("pure");
     expect(graph.nodes.find((entry) => entry.id === "call")?.data).not.toHaveProperty("pure");
     expect(graph.edges).toEqual(pure.edges);
+  });
+});
+
+describe("convertVariableGetNode", () => {
+  const exec = (id: string, source: string, sourceHandle: string, target: string, targetHandle: string) =>
+    ({ id, source, sourceHandle, target, targetHandle });
+  const node = (id: string, type: string) => ({ id, type, position: { x: 0, y: 0 }, data: {} });
+
+  function withGet(access: "get" | "validatedGet", functionId?: string): SerializedGraph {
+    let graph = addClassMember(emptyGraph(), "variable", "Enemy", () => "var-enemy", { typeId: "object", typeClassId: "Actor" });
+    if (functionId) graph = { ...graph, functionGraphs: { [functionId]: { nodes: [], edges: [] } } };
+    return addVariableAccessNode(graph, graph.members![0]!, access, { idFactory: () => "get", functionId });
+  }
+
+  it("turns a Get of an object variable into a Validated Get with unwired exec pins, keeping its value wires", () => {
+    const graph = withGet("get");
+    graph.nodes.push(node("log", "debug.log"));
+    graph.edges = [exec("value", "get", "value", "log", "message")];
+    const next = convertVariableGetNode(graph, "get")!;
+    const converted = next.nodes.find((entry) => entry.id === "get")!;
+    expect([converted.type, converted.data.title, converted.data.__nodeType, converted.data.variableId])
+      .toEqual(["variables.getValidated", "Validated Get Enemy", "variables.getValidated", "var-enemy"]);
+    expect(next.edges).toEqual(graph.edges);
+  });
+
+  it("turns a Validated Get into a Get and runs what ran into it on to what followed Is Valid", () => {
+    const graph = withGet("validatedGet", "fn-1");
+    const slice = graph.functionGraphs!["fn-1"]!;
+    slice.nodes.push(node("input", "flow.function.input"), node("use", "debug.log"), node("warn", "debug.log"));
+    slice.edges = [
+      exec("into", "input", "exec", "get", "execIn"),
+      exec("valid", "get", "isValid", "use", "execIn"),
+      exec("invalid", "get", "notValid", "warn", "execIn"),
+      exec("value", "get", "value", "use", "message"),
+    ];
+    const next = convertVariableGetNode(graph, "get", "fn-1")!;
+    const converted = next.functionGraphs!["fn-1"]!;
+    expect(converted.nodes.find((entry) => entry.id === "get")?.type).toBe("variables.get");
+    expect(converted.edges.map((edge) => [edge.source, edge.sourceHandle, edge.target, edge.targetHandle])).toEqual([
+      ["get", "value", "use", "message"],
+      ["input", "exec", "use", "execIn"],
+    ]);
+  });
+
+  it("leaves a Get of a variable that is not a single object alone", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Speed", () => "var-speed", { typeId: "float" });
+    graph = addVariableAccessNode(graph, graph.members![0]!, "get", { idFactory: () => "get" });
+    expect(convertVariableGetNode(graph, "get")).toBeNull();
   });
 });

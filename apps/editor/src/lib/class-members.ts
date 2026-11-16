@@ -62,8 +62,10 @@ export {
   freeDispatcherEventName,
   type DispatcherDropAction,
   addVariableAccessNode,
+  convertVariableGetNode,
   isObjectInstanceVariableType,
   patchVariableAccessNode,
+  variableGetConversion,
   syncVariableAccessNodes,
   type VariableAccessKind,
 } from "./class-member-nodes";

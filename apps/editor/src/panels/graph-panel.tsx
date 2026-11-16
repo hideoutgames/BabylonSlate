@@ -50,10 +50,12 @@ import {
   addClassMember,
   adoptBoundEventSignatures,
   canRenameCustomEvent,
+  convertVariableGetNode,
   dispatcherEventNodeData,
   dispatcherEventPins,
   freeDispatcherEventName,
   functionLibraryShowsEventGraphEmpty,
+  variableGetConversion,
 } from "../lib/class-members";
 import { createEventCandidates, createEventPickData } from "../lib/create-event-members";
 import { CreateEventMemberPicker } from "../components/create-event-member-picker";
@@ -773,6 +775,23 @@ export function GraphPanel(
         : [];
       const { nodes, edges } = latestGraph.current;
       const node = nodes.find((candidate) => candidate.id === nodeId);
+      const conversion = graphContent && doc
+        ? variableGetConversion(
+          (activeFunctionId ? graphContent.functionGraphs?.[activeFunctionId] : graphContent)?.nodes
+            .find((candidate) => candidate.id === nodeId),
+        )
+        : null;
+      if (conversion && graphContent && doc) {
+        items.push({
+          id: "convert-variable-get",
+          label: conversion === "get" ? "Convert to Get" : "Convert to Validated Get",
+          testId: "graph-convert-variable-get",
+          onSelect: () => {
+            const next = convertVariableGetNode(graphContent, nodeId, activeFunctionId);
+            if (next) applyLogicGraphCommit(documentActions, documentId, commitLogicGraph(doc.ref.kind, doc.content, next));
+          },
+        });
+      }
       if (watchStore && watchAsset) {
         const pins = watchablePins(node?.data, (pinId) => edges.some((edge) => edge.target === nodeId && edge.targetHandle === pinId));
         items.push(...watchPinMenuItems(watchStore, pins, (pin) => ({
@@ -783,7 +802,8 @@ export function GraphPanel(
       // The canvas adds the breakpoint items for the whole selection.
       return withExtensions(items);
     },
-    [breakpointLabel, classId, graphContent, nodeExtensionItems, renameChord, renameEvent, runGraphId, watchAsset, watchStore],
+    [activeFunctionId, breakpointLabel, classId, doc, documentActions, documentId, graphContent, nodeExtensionItems, renameChord,
+      renameEvent, runGraphId, watchAsset, watchStore],
   );
 
   // In a function graph, a wire dropped on the Input or Output node's body adds a pin of its type.
