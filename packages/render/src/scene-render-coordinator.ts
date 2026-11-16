@@ -16,7 +16,7 @@ import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import { retainWaterPlanarReflections } from "./water-planar-reflection";
 import { sceneOutputScale } from "./scene-output-scale";
 import { probeVariantSwaps, sceneBindsPreviousEffects, variantSwapsTolerated } from "./variant-swaps";
-import { admitSteadyFirstDraws } from "./variant-pipeline-warmup";
+import { admitSteadyFirstDraws } from "./variant-first-draws";
 import { withDrawPass } from "./draw-passes";
 import {
   heldThreadMs, SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS,

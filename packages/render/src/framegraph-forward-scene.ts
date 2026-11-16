@@ -58,7 +58,7 @@ import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
 import { isRevealPending, revealRound } from "./reveal-pending";
-import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
+import { withFirstDrawRound } from "./variant-first-draws";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -1527,7 +1527,7 @@ export class ForwardSceneFrameGraph {
         // Alpha-tested draws turn alpha-to-coverage on for themselves (`alpha-to-coverage.ts`); nothing after the pass keeps it.
         guardAlphaToCoverageBlending(scene.getEngine());
         this.objects.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
-        this.objects.warmsPipelines = !this.auxiliary;
+        this.objects.spreadsFirstDraws = !this.auxiliary;
         // The strict outline mask reads the scene's depth after this pass where a chain or the view's own pair holds
         // it as a texture (the backbuffer's cannot be read): resolved by sample where the pass is multisampled.
         const outlineDepth = this.outlineTask && this.seedsFromSceneDepth
@@ -1838,13 +1838,13 @@ export class ForwardSceneFrameGraph {
 
   /**
    * Set by the view once it draws steady frames: its readiness rounds then make the Effects they request first cold
-   * (`variant-pipeline-warmup.ts`), strict ones included.
+   * (`variant-first-draws.ts`), strict ones included.
    */
   warmsVariants = false;
 
   /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    const round = () => this.timedProbe(() => withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
+    const round = () => this.timedProbe(() => withFirstDrawRound(this.scene.getEngine(), this.warmsVariants,
       () => revealRound(() => this.collectingEffects(() => this.probeReady()))));
     const scope = this.probeScope();
     if (!scope) return round();

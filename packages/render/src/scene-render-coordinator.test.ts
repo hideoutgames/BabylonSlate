@@ -43,7 +43,7 @@ import { createGizmoHost } from "./gizmo-host";
 import { applyCableFrame, createCableMesh } from "./cable-mesh";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { AREA_LIGHT_LOOKUP_BYTES } from "./area-light-resources";
-import { registerPipelineWarmPasses, withPipelineWarmupRound } from "./variant-pipeline-warmup";
+import { registerFirstDrawPasses, withFirstDrawRound } from "./variant-first-draws";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { setOutlineContribution } from "./test-support/shared-outline-contributions";
 
@@ -1389,8 +1389,8 @@ it("admits a cold variant in each steady frame, also when no readiness round run
   await renderer.prepare();
   expect(renderer.render(false).rendered).toBe(true);
   const pass = engine.createRenderPassId("Forward objects");
-  registerPipelineWarmPasses(engine, [pass]);
-  const variant = withPipelineWarmupRound(engine, true, () => engine.createEffect(
+  registerFirstDrawPasses(engine, [pass]);
+  const variant = withFirstDrawRound(engine, true, () => engine.createEffect(
     { vertexSource: "void main() { gl_Position = vec4(0.0); }", fragmentSource: "void main() { gl_FragColor = vec4(1.0); }" },
     ["position"], [], [], "#define WATER_DETAIL_1",
   ));

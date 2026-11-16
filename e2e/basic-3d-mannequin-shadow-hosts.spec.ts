@@ -32,7 +32,7 @@ async function settings(canvas: Locator, host: Host, value: RenderShadingSetting
   }, { timeout: 30_000 }).toEqual([value.mode, value.shadows!.enabled]);
   const frame = await presented(canvas, host);
   // Each frame waits for the GPU to finish the frames before it (frames-in-flight), and software GL compiles the new
-  // pipelines at their first draw: on a slow runner the frames after a mode change took longer than 30 s.
+  // programs at their first draw: on a slow runner the frames after a mode change took longer than 30 s.
   await expect.poll(() => presented(canvas, host), { timeout: 90_000 }).toBeGreaterThan(frame + 2);
 }
 

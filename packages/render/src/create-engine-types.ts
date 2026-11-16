@@ -152,7 +152,7 @@ export interface EngineHandle {
   occlusionOverlay: () => { buffer: { width: number; height: number; depth: Float32Array } | null } | null;
   /** Explicit CPU timing only; host controls finite capture, session mode and result retention. */
   observePerformance: (onFrame: (sample: RenderPerformanceSample) => void) => () => void;
-  /** Explicit unpaired engine-wide GPU queries; unavailable backends explain why. */
+  /** Explicit unpaired engine-wide GPU queries; an Engine without them explains why. */
   observeGpuTiming: (onSample: (sample: EngineGpuTimingSample) => void, onError?: (error: unknown) => void) => EngineGpuTimingObservation;
   /**
    * The next presented frame (not a loading or held one) as the player sees it, downsampled (`presented-image.ts`): the

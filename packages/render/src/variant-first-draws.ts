@@ -28,7 +28,7 @@ type ColdEntry = { base: () => boolean };
  * New variants a world view's steady frame admits at most, so their first draws spread over frames. A program's first
  * use holds the thread (about 100 ms on iPad WebKit WebGL2), so one a frame keeps each such frame to one stall.
  */
-export const FIRST_DRAWS_PER_FRAME = { webgl2: 1 } as const;
+export const FIRST_DRAWS_PER_FRAME = 1;
 
 type WarmupState = {
   /** Cold Effects, oldest first. */
@@ -56,7 +56,7 @@ const warmedPasses = new WeakMap<AbstractEngine, Map<number, number>>();
  * A world view's main object pass and its blended depth pre-pass: a cold Effect waits there only (a probe pass nothing
  * draws, such as the camera's, or a shadow map's takes it at once). Returns the release.
  */
-export function registerPipelineWarmPasses(engine: AbstractEngine, passIds: readonly number[]): () => void {
+export function registerFirstDrawPasses(engine: AbstractEngine, passIds: readonly number[]): () => void {
   let passes = warmedPasses.get(engine);
   if (!passes) warmedPasses.set(engine, (passes = new Map()));
   const owned = passes;
@@ -138,7 +138,7 @@ function warmUp(state: WarmupState, effect: Effect): void {
  * view has drawn steady frames (`steady`). A tolerant round (one per steady frame) first admits up to
  * `FIRST_DRAWS_PER_FRAME` admissible cold Effects, oldest first.
  */
-export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boolean, run: () => T): T {
+export function withFirstDrawRound<T>(engine: AbstractEngine, steady: boolean, run: () => T): T {
   const tolerated = variantSwapsTolerated();
   if (!(tolerated || steady)) {
     const strict = states.get(engine);
@@ -174,7 +174,7 @@ export function withPipelineWarmupRound<T>(engine: AbstractEngine, steady: boole
 function admitColdEffects(engine: AbstractEngine, state: WarmupState): void {
   if (state.budgetFrame !== engine.frameId) {
     state.budgetFrame = engine.frameId;
-    state.budget = FIRST_DRAWS_PER_FRAME.webgl2;
+    state.budget = FIRST_DRAWS_PER_FRAME;
   }
   let budget = state.budget;
   for (const [effect, entry] of state.cold) {

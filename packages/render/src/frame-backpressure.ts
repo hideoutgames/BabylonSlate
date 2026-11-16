@@ -50,7 +50,7 @@ export class FrameBackpressure {
    * Whether this Engine frame may render. Called by each view's loop that is about to render; a skip counts once per
    * frame. A loading owner's presentation frame (`loading`) renders past the limit and still counts in flight: it waits
    * for its own GPU completion under its own budget, one attempt at a time, and holding it behind the frames already
-   * queued would charge their GPU time (software GL compiling new pipelines at first draw) to its first-frame deadline.
+   * queued would charge their GPU time (software GL compiling new programs at first draw) to its first-frame deadline.
    */
   admit(loading = false): boolean {
     if (!loading && this.limit !== "off" && this.submit) {

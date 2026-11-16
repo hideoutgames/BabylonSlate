@@ -855,7 +855,7 @@ export interface FeatureTestCheckSceneResult {
     counters?: PlayCounters | null;
     /** What Play presented while it was measured: frames drawn, held and skipped, context losses and image samples. */
     presentation: PlayPresentation | null;
-    /** Shaders first drawn after the scene presented, read when its commands finished (WebGL2 only). */
+    /** Shaders first drawn after the scene presented, read when its commands finished. */
     firstDraws: NonNullable<RenderDiagnostics["firstDraws"]> | null;
     /**
      * The same, read before a Benchmark's, Breakdown's or Profile's sweep began: what ordinary Play first drew after

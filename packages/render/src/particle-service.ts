@@ -66,7 +66,7 @@ import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerRes
 import { drawWhateverTheView } from "./play-view-culling";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { effectDrawnOn } from "./first-draw-stats";
-import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
+import { FIRST_DRAWS_PER_FRAME } from "./variant-first-draws";
 
 export type { ParticleLibrary, ParticleLibraryEmitter } from "@haptic/assets";
 export type ParticleDiagnosticCode =
@@ -368,7 +368,7 @@ export class ParticleService {
   /** Whether a system's programs have drawn on the Engine (`effectDrawnOn`; true where draws are not tracked). */
   private readonly programsDrawn: (system: IParticleSystem) => boolean;
   /** This frame's first-draw budget for systems whose programs never drew, and the entries waiting for one. */
-  private firstDrawBudget: number = FIRST_DRAWS_PER_FRAME.webgl2;
+  private firstDrawBudget: number = FIRST_DRAWS_PER_FRAME;
   private readonly waitingToStart = new Set<LiveComponent>();
   /** What `particleStats` reads for this service. */
   private readonly readStats = () => this.stats();
@@ -1429,7 +1429,7 @@ export class ParticleService {
 
   /** Each frame admits `FIRST_DRAWS_PER_FRAME` new systems, then starts the entries that waited, in order. */
   private startWaitingSystems(): void {
-    this.firstDrawBudget = FIRST_DRAWS_PER_FRAME.webgl2;
+    this.firstDrawBudget = FIRST_DRAWS_PER_FRAME;
     if (!this.waitingToStart.size) return;
     // A copy: starting an entry can take it out of the Set and put it back.
     for (const entry of [...this.waitingToStart]) {

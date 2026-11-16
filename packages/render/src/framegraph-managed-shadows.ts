@@ -18,7 +18,7 @@ import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetProbeReady } from "./readiness-scope";
 import { noteReadinessBlocker } from "./readiness-blockers";
 import { isRevealPending } from "./reveal-pending";
-import { registerPipelineWarmPasses } from "./variant-pipeline-warmup";
+import { registerFirstDrawPasses } from "./variant-first-draws";
 import { noteVariantSwap, variantSwapsTolerated } from "./variant-swaps";
 import { awaitsFirstDraw } from "./shadow-first-draw";
 import { configureCutoutSorting } from "./sorting";
@@ -57,20 +57,20 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
 
   /**
    * A world view's main pass: a cold Effect waits in this pass and its blended depth pre-pass until a steady frame
-   * admits it (`registerPipelineWarmPasses`).
+   * admits it (`registerFirstDrawPasses`).
    */
-  get warmsPipelines(): boolean {
+  get spreadsFirstDraws(): boolean {
     return this.releaseWarmPasses !== undefined;
   }
 
-  set warmsPipelines(value: boolean) {
-    if (value === this.warmsPipelines) return;
+  set spreadsFirstDraws(value: boolean) {
+    if (value === this.spreadsFirstDraws) return;
     if (!value) {
       this.releaseWarmPasses?.();
       this.releaseWarmPasses = undefined;
       return;
     }
-    this.releaseWarmPasses = registerPipelineWarmPasses(this._frameGraph.engine,
+    this.releaseWarmPasses = registerFirstDrawPasses(this._frameGraph.engine,
       [...this._renderer.renderPassIds, this.depthPrePass.renderPassId]);
   }
 
@@ -173,7 +173,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
   }
 
   override dispose(): void {
-    this.warmsPipelines = false;
+    this.spreadsFirstDraws = false;
     this.requestedAhead.clear();
     this.depthPrePass.dispose();
     super.dispose();

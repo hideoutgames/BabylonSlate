@@ -804,7 +804,7 @@ describe("Play createEngine view", () => {
   }
 
   it("presents a load's first frame while earlier frames fill the GPU queue, and holds steady frames behind it", async () => {
-    // GPU markers that never finish: frames queued before the load (software GL compiling their pipelines) keep the
+    // GPU markers that never finish: frames queued before the load (software GL compiling their programs) keep the
     // Engine at its frames-in-flight limit. Before the fix the load's frame waited behind them until its deadline.
     const markers = vi.spyOn(gpuBusyProbe, "engineFrameMarkers").mockReturnValue((submitted) => ({ submitted, done: () => false, dispose: () => {} }));
     handles.push({ dispose: () => markers.mockRestore() });

@@ -479,7 +479,7 @@ describe("SceneLayerCompositor", () => {
   it("keeps only the last presented layer image while replacement graphs prepare without acknowledging it", async () => {
     const { engine } = world();
     adaptNullEngineFrameGraph(engine);
-    // NullEngine omits the raw upload-ready flag that the real backends set.
+    // NullEngine omits the raw upload-ready flag that a WebGL2 Engine sets.
     // Preserve actual texture ownership and the production readiness checks.
     const upload = engine.createRawTexture.bind(engine);
     vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
@@ -906,7 +906,7 @@ describe("SceneLayerCompositor", () => {
   it("does not re-probe strict layer readiness on unchanged frames", async () => {
     const engine = new NullEngine();
     engines.push(engine);
-    // NullEngine omits the raw upload-ready flag that the real backends set.
+    // NullEngine omits the raw upload-ready flag that a WebGL2 Engine sets.
     const upload = engine.createRawTexture.bind(engine);
     vi.spyOn(engine, "createRawTexture").mockImplementation((...args) => {
       const texture = upload(...args); texture.isReady = true; return texture;

@@ -74,7 +74,7 @@ import { drawingMesh } from "./instance-source";
 import { POOLED_LEAF_SUFFIX } from "./pooled-primitive-visual";
 import { pooledLeafOf } from "./pooled-visuals";
 import { isRevealPending, onMeshRevealed } from "./reveal-pending";
-import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
+import { FIRST_DRAWS_PER_FRAME } from "./variant-first-draws";
 import { isSceneGameTimePaused } from "./scene-game-time";
 import { enableHeadlessCascades, enableHeadlessCubeTargets } from "./shadow-test-fixtures";
 import { encodeAnimatedLimbGlb, encodeTriangleGlb, encodeUvSphereGlb } from "./glb-test-fixtures";
@@ -519,7 +519,7 @@ function expectSwapped(record: CauseRecord, model: Model): void {
   // Only a pending compile leaves a previous Effect drawing; a synchronous link draws the new one at once.
   // With more new variants than a frame admits (`FIRST_DRAWS_PER_FRAME`), whether the subject's waits depends on its
   // place in the queue, so that case does not say.
-  const previous = model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME.webgl2
+  const previous = model === "sync" && record.effects > FIRST_DRAWS_PER_FRAME
     ? {} : { previousEffectDrawn: record.previousEffectDrawn };
   expect({
     heldFrames: record.heldFrames, holdReported: record.holdReported, holdRaised: record.holdRaised,
@@ -721,8 +721,8 @@ describe("compile holds after the first frame", () => {
     }
     expect({
       allAdopted: current.every((effect, at) => effect !== before[at] && world.driver.created.includes(effect!)),
-      atMostPerFrame: Math.max(...adoptedPerFrame) <= FIRST_DRAWS_PER_FRAME.webgl2,
-      spread: adoptedPerFrame.filter((count) => count > 0).length >= Math.ceil(barrels.length / FIRST_DRAWS_PER_FRAME.webgl2),
+      atMostPerFrame: Math.max(...adoptedPerFrame) <= FIRST_DRAWS_PER_FRAME,
+      spread: adoptedPerFrame.filter((count) => count > 0).length >= Math.ceil(barrels.length / FIRST_DRAWS_PER_FRAME),
     }, JSON.stringify(adoptedPerFrame)).toEqual({ allAdopted: true, atMostPerFrame: true, spread: true });
   });
 
