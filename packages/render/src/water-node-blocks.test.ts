@@ -125,9 +125,9 @@ describe("Water material nodes", () => {
     for (const helper of ["swnFieldAt", "swnContactAt", "swSceneDepth", "swMarch", "swnEnvTap", "swnNoise", "swPlanarTexel"]) expect(fragment, helper).toContain(helper);
     // The march takes one sample per copy texel the ray crosses on screen, at most its steps, and the fades known before
     // it (grazing ripples, fog that leaves nothing of the water) gate it.
-    expect(march(fragment)).toMatch(/swSteps = clamp\(ceil\(length\(\(swN1 - swN0\) \* swEnd \* 0\.5 \/ swSceneTexelUv\(\)\)\), 1\.0, f(32|loat)\(SLATE_WATER_SSR_STEPS\)\);/);
-    expect(march(fragment)).toMatch(/if \(f(32|loat)\(swI\) > swSteps\) \{ break; \}\s+(let|float) swU = swEnd \* f(32|loat)\(swI\) \/ swSteps;/);
-    expect(fragment).toMatch(/swnObjFade(: f32)? = [^;]*fwidth\(swnObjR\)[^;]*\* step\(0\.001, swnAirKeep\);/);
+    expect(march(fragment)).toMatch(/swSteps = clamp\(ceil\(length\(\(swN1 - swN0\) \* swEnd \* 0\.5 \/ swSceneTexelUv\(\)\)\), 1\.0, float\(SLATE_WATER_SSR_STEPS\)\);/);
+    expect(march(fragment)).toMatch(/if \(float\(swI\) > swSteps\) \{ break; \}\s+float swU = swEnd \* float\(swI\) \/ swSteps;/);
+    expect(fragment).toMatch(/swnObjFade = [^;]*fwidth\(swnObjR\)[^;]*\* step\(0\.001, swnAirKeep\);/);
     expect(fragment).toMatch(/swnObj\.a = swnObj\.a \* swnObjFade;/);
     // The terrain and contact fields read the water mesh's data, the copy only with the pass's copy, the cube only with a cube.
     const sampler = (name: string) => ` ${name};`;
@@ -151,7 +151,7 @@ describe("Water material nodes", () => {
     const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
     expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
     // Its shoreline under the waves comes from four terrain taps, whose slope softens gentle shores, as built-in water's.
-    expect(fragment).toMatch(/if \((uniforms\.)?slateWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
+    expect(fragment).toMatch(/if \(slateWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
     expect(fragment).toMatch(/swShoreSlope = mix\(length\(swTerrainSlope\), 1\.0, swFineClamped\);/);
     expect(fragment).toMatch(/smoothstep\(0\.35, 1\.0, swShoreSlope\)/);
     // Beside the silhouette of something in front of the water, Water Scene Color and Water Depth Fade both take the copy
@@ -163,16 +163,16 @@ describe("Water material nodes", () => {
     // Its lighting takes Water Reflection's normal: the half vector toward the reflected ray, lifted above the horizon
     // as built-in water lifts it, from the waves' normal flattened by the horizon haze through the scene's fog.
     expect(fragment).toMatch(/\w+ = swnH;/);
-    expect(fragment).toMatch(/swnRLiftA(: f32)? = 60\.0 \* \(0\.03 - swnR\.y\)/);
+    expect(fragment).toMatch(/swnRLiftA = 60\.0 \* \(0\.03 - swnR\.y\)/);
     // What it refracts was fogged by what lies below: it comes undone of the Material's own fog, by the same factor.
-    expect(fragment).toMatch(/swnFogKeep(: f32)? = max\(sceneFogKeep\([^;]*\), 0\.01\);/);
-    expect(fragment).toMatch(/= \(\w+ - (uniforms\.)?sceneFogColor\.rgb \* \(1\.0 - swnFogKeep\)\) \/ swnFogKeep;/);
+    expect(fragment).toMatch(/swnFogKeep = max\(sceneFogKeep\([^;]*\), 0\.01\);/);
+    expect(fragment).toMatch(/= \(\w+ - sceneFogColor\.rgb \* \(1\.0 - swnFogKeep\)\) \/ swnFogKeep;/);
     // Its Roughness is built-in water's slope-variance roughness, which drops away under the haze.
     expect(fragment).toMatch(/\w+ = swnShade;/);
-    expect(fragment).toMatch(/swnShadeVar(: f32)? = \(max\([^;]*\* \(1\.0 - 0\.97 \* swHaze\);/);
+    expect(fragment).toMatch(/swnShadeVar = \(max\([^;]*\* \(1\.0 - 0\.97 \* swHaze\);/);
     expect(fragment).toMatch(/swnAirKeep = max\(sceneFogKeep\(/);
     // Every fog term is the one rule surfaces fog by: Babylon PBR's linear-space factor.
-    expect(fragment).toMatch(/sceneFogKeep\((vec3 )?viewPosition[^)]*\)[^{]*\{ return toLinearSpace\(CalcFogFactor\(viewPosition, (uniforms\.)?sceneFogInfo\)\); \}/);
+    expect(fragment).toMatch(/sceneFogKeep\(vec3 viewPosition[^)]*\)[^{]*\{ return toLinearSpace\(CalcFogFactor\(viewPosition, sceneFogInfo\)\); \}/);
     // It is seen from below too, as built-in water is.
     expect(result.material.backFaceCulling).toBe(false);
     for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
@@ -825,7 +825,7 @@ describe("Water debug switches", () => {
     expect(lit.defines).not.toMatch(/^#define HAPTIC_SHADOW_NARROW$/m);
     // The 5 × 5 and 7 × 7 kernels (their weights' sums 144 and 2704) and Contact Hardening's call stay in the rock's
     // shadow filter and are compiled out of water's.
-    const filter = (effect: Effect) => /(fn |float )hapticShadow\([\s\S]*?\n\}/.exec(definedOnly(effect.fragmentSourceCode, effect.defines))?.[0] ?? "";
+    const filter = (effect: Effect) => /float hapticShadow\([\s\S]*?\n\}/.exec(definedOnly(effect.fragmentSourceCode, effect.defines))?.[0] ?? "";
     const kernels = (effect: Effect) => ["/ 144.0", "lit /= 2704.0", "hapticContactLit("].map((term) => filter(effect).includes(term));
     expect(kernels(lit)).toEqual([true, true, true]);
     expect(kernels(water)).toEqual([false, false, false]);
@@ -876,7 +876,7 @@ describe("Water distance detail", () => {
     expect(await result.ready).toEqual([]);
     const fragment = (await programFor(result.material, lake)).fragmentSourceCode;
     // The first layer always samples; every finer one only inside its fade, with the gradients of its own uv.
-    expect(fragment).toMatch(/swnSa0 *(: *vec4f)? *= *swSpecTap\(swnSu0/);
+    expect(fragment).toMatch(/swnSa0 *= *swSpecTap\(swnSu0/);
     for (const c of [1, 2]) {
       const branch = new RegExp(`if \\(swnSr${c} > 0\\.0\\) \\{([\\s\\S]*?)\\n\\}`).exec(fragment)?.[1] ?? "";
       for (const layer of [2 * c, 2 * c + 1]) {

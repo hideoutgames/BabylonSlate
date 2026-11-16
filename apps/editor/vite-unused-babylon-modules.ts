@@ -14,13 +14,13 @@ export function isUnusedBabylonModule(id: string): boolean {
 }
 
 /**
- * Resolves Babylon's lazy imports of modules a WebGL2 game never runs (`isUnusedBabylonModule`) to an empty module, so
- * an exported game does not ship them. A module some other module imports statically is left alone: it is part of the
- * code that runs.
+ * Resolves Babylon's lazy imports of modules a WebGL2 Engine never runs (`isUnusedBabylonModule`) to an empty module, so
+ * neither the editor nor an exported game ships them. A module some other module imports statically is left alone: it
+ * is part of the code that runs.
  */
 export function leaveOutUnusedBabylonModules(): Plugin {
   return {
-    name: "player-unused-babylon-modules",
+    name: "unused-babylon-modules",
     async resolveDynamicImport(source, importer) {
       if (typeof source !== "string") return null;
       const resolved = await this.resolve(source, importer);

@@ -9,7 +9,7 @@ import { recastHostedWasmVitePlugin } from "../editor/vite-recast-wasm";
 import { bundledPackagesReport } from "./vite-bundled-packages";
 import { createPlatformModules, platformModuleGroup, platformModules } from "./vite-platform-modules";
 import { previewDiagnosticsEntry } from "./vite-preview-diagnostics";
-import { leaveOutUnusedBabylonModules } from "./vite-unused-babylon-modules";
+import { leaveOutUnusedBabylonModules } from "../editor/vite-unused-babylon-modules";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -121,6 +121,7 @@ export default defineConfig({
     format: "es",
     plugins: () => [
       havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), recastHostedWasmVitePlugin(), bundledPackages.worker(),
+      leaveOutUnusedBabylonModules(),
       platformModules(platformModuleState, { writeList: false }),
     ],
     rolldownOptions: {
