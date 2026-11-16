@@ -125,19 +125,25 @@ describe("Foot Placement", () => {
     expect(at("foot.l").y).toBeCloseTo(0.1, 4);
   });
 
-  it("stands on a pickable thin-instanced mesh's instances, where they are", () => {
+  it("stands on a pickable thin-instanced mesh's instances, where they are, turned to their slope", () => {
     ground("floor", -1, 1, 0);
     engine.getCaps().instancedArrays = true;
-    // Its own place is far off; its one instance is a step under the left foot.
+    // Its own place is far off; its one instance is a step under the left foot, tilted about the forward axis.
     const slab = CreateBox("slab", { width: 1, height: 0.3, depth: 4 }, scene);
     slab.position.set(10, 0, 0);
-    slab.thinInstanceAdd(Matrix.Translation(-9.5, 0.15, 0));
+    const tilt = Quaternion.RotationAxis(Vector3.Forward(), (10 * Math.PI) / 180);
+    slab.thinInstanceAdd(Matrix.Compose(Vector3.One(), tilt, new Vector3(-9.5, 0.15, 0)));
     slab.thinInstanceEnablePicking = true;
     slab.thinInstanceRefreshBoundingInfo(true);
     slab.computeWorldMatrix(true);
     place({});
-    expect(at("foot.l").y).toBeCloseTo(0.4, 4);
+    // The instance's top plane: through its turned top centre, facing its turned up axis; the ankle sits 0.1 above.
+    const normal = Vector3.Up().applyRotationQuaternion(tilt);
+    const centre = new Vector3(0.5, 0.15, 0).addInPlace(new Vector3(0, 0.15, 0).applyRotationQuaternion(tilt));
+    expect(at("foot.l").y).toBeCloseTo(centre.y - (normal.x * (0.2 - centre.x)) / normal.y + 0.1, 4);
     expect(at("foot.r").y).toBeCloseTo(0.1, 4);
+    const footUp = Vector3.TransformNormal(Vector3.Up(), nodes["foot.l"]!.computeWorldMatrix(true)).normalize();
+    expect(Vector3.Dot(footUp, Vector3.Up().applyRotationQuaternion(tilt))).toBeCloseTo(1, 4);
   });
 
   it("poses the feet as animated again once the control stops", () => {

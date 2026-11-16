@@ -198,20 +198,32 @@ function gatherGround(scene: Scene, actorRoot: unknown, min: Vector3, max: Vecto
   return count;
 }
 
+const instanceMatrix = new Matrix();
 const instanceWorld = new Matrix();
 const instanceInverse = new Matrix();
+/** What a thin-instanced mesh's pick reads beyond its public API (Babylon 9.29 internals, as `Scene.pickWithRay` reads them). */
+type ThinInstanceData = { _thinInstanceDataStorage: { matrixData: Float32Array | null } };
 
-/** The nearest hit of a world-space ray on a pickable thin-instanced mesh's instances, as `Scene.pickWithRay` tests them. */
+/**
+ * The nearest hit of a world-space ray on a pickable thin-instanced mesh's instances, as `Scene.pickWithRay` tests
+ * them: from the instances' current matrices, the hit naming its instance (its normal turns with it).
+ */
 function nearestInstanceHit(mesh: Mesh, ray: Ray, nearest: PickingInfo | null): PickingInfo | null {
+  const matrices = (mesh as unknown as ThinInstanceData)._thinInstanceDataStorage.matrixData;
+  if (!matrices) return nearest;
   const raw = mesh.rawBoundingInfo;
   const world = mesh.getWorldMatrix();
-  for (const instance of mesh.thinInstanceGetWorldMatrices()) {
-    instance.multiplyToRef(world, instanceWorld);
+  const count = Math.min(mesh.thinInstanceCount, matrices.length >> 4);
+  for (let index = 0; index < count; index++) {
+    Matrix.FromArrayToRef(matrices, index << 4, instanceMatrix);
+    instanceMatrix.multiplyToRef(world, instanceWorld);
     instanceWorld.invertToRef(instanceInverse);
     Ray.TransformToRef(ray, instanceInverse, localRay);
-    if (raw && !localRay.intersectsBox(raw.boundingBox)) continue;
+    if (raw && (!localRay.intersectsSphere(raw.boundingSphere, 0) || !localRay.intersectsBox(raw.boundingBox, 0))) continue;
     const info = mesh.intersects(localRay, false, undefined, false, instanceWorld, true);
-    if (info.hit && (!nearest || info.distance < nearest.distance)) nearest = info;
+    if (!info.hit || (nearest && !(info.distance < nearest.distance))) continue;
+    info.thinInstanceIndex = index;
+    nearest = info;
   }
   return nearest;
 }
@@ -223,7 +235,8 @@ function nearestHit(ray: Ray, count: number): PickingInfo | null {
     const mesh = candidates[i]!;
     // As `Scene.pickWithRay` passes it: the ray in the mesh's own space; the hit answers in world units.
     Ray.TransformToRef(ray, inverses[i]!, localRay);
-    if (!localRay.intersectsBox(mesh.getBoundingInfo().boundingBox)) continue;
+    const bounds = mesh.getBoundingInfo();
+    if (!localRay.intersectsSphere(bounds.boundingSphere, 0) || !localRay.intersectsBox(bounds.boundingBox, 0)) continue;
     if ((mesh as Mesh).hasThinInstances && (mesh as Mesh).thinInstanceEnablePicking) {
       nearest = nearestInstanceHit(mesh as Mesh, ray, nearest);
       continue;
