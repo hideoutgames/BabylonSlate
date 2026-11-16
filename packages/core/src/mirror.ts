@@ -1,3 +1,5 @@
+import { normalizeUpdateRate, type UpdateRate } from "./update-rate";
+
 export const MIRROR_CLASS_ID = "MirrorComponent";
 
 /** Lowest Resolution Scale: below it a reflection is too coarse to read as a mirror. */
@@ -29,6 +31,8 @@ export type MirrorProperties = {
   tint: [number, number, number];
   /** Material override for the surface; null draws the built-in mirror surface. */
   materialGuid: string | null;
+  /** How often the reflection redraws in Play; the editor viewport draws it every frame. */
+  updateRate: UpdateRate;
 };
 
 export function parseMirrorProperties(value: unknown): MirrorProperties {
@@ -48,5 +52,6 @@ export function parseMirrorProperties(value: unknown): MirrorProperties {
       : 1,
     tint,
     materialGuid: typeof source.materialGuid === "string" && source.materialGuid.trim() ? source.materialGuid.trim() : null,
+    updateRate: normalizeUpdateRate(source.updateRate),
   };
 }

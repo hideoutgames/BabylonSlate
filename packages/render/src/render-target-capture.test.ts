@@ -37,6 +37,7 @@ import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { acquireAuthoredMaterialVariant } from "./material-compiler";
 import { disposeMeshLatticeDeformer, setMeshLatticeDeformer } from "./lattice-deformer";
 import { applyEditorMaterialFreeze } from "./scene-perf";
+import { setSceneHonoursUpdateRates } from "./update-rate-gate";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -1036,5 +1037,107 @@ describe("an every-frame capture draws only while something shows its output", (
     captures.configure("capture", { ...settings, captureEveryFrame: false }, () => root);
     captures.request("capture");
     expect([frame(), frame()]).toEqual([1, 0]);
+  });
+});
+
+describe("Update Rate", () => {
+  /** `shown()`'s capture and screen at `rate`, in a Play Scene unless `play` is false; counts the capture's own work. */
+  function rated(rate: string, play = true) {
+    const made = host();
+    const { scene, engine, captures, root, settings } = made;
+    if (play) setSceneHonoursUpdateRates(scene);
+    const everyFrame = { ...settings, captureEveryFrame: true, updateRate: rate } as typeof settings;
+    captures.configure("capture", everyFrame, () => root);
+    const screen = MeshBuilder.CreatePlane("screen", { size: 1 }, scene);
+    const material = new StandardMaterial("screen", scene);
+    material.emissiveTexture = captures.acquireTexture("texture")!.resource;
+    screen.material = material;
+    // Placement reads the root's world matrix; `findShown` asks each consumer whether it draws anything.
+    const placements = vi.spyOn(root, "computeWorldMatrix");
+    const asks = vi.spyOn(screen, "getTotalVertices");
+    const frame = () => {
+      (engine as unknown as { _frameId: number })._frameId += 1;
+      const before = made.draws.length;
+      captures.render();
+      return made.draws.length - before;
+    };
+    const place = (z: number) => { screen.position.z = z; screen.computeWorldMatrix(true); };
+    return { ...made, everyFrame, screen, placements, asks, frame, place };
+  }
+
+  it.each([
+    ["every2ndFrame", [1, 1, 0, 1, 0, 1, 0, 1]],
+    ["every4thFrame", [1, 0, 0, 1, 0, 0, 0, 1]],
+  ])("draws a capture at %s only on its rate's renders in Play, and places, asks and lists nothing on the others", (rate, due) => {
+    const { captures, placements, asks, frame } = rated(rate);
+    for (const drawn of due) {
+      const placed = placements.mock.calls.length, asked = asks.mock.calls.length;
+      // The first render draws its first image whatever the phase.
+      expect(frame()).toBe(drawn);
+      expect(placements.mock.calls.length > placed).toBe(drawn === 1);
+      expect(asks.mock.calls.length > asked).toBe(drawn === 1);
+    }
+    const draws = due.filter(Boolean).length;
+    expect(captures.diagnostics()[0]).toMatchObject({ draws, rateSkips: due.length - draws, published: true });
+  });
+
+  it("draws every frame in the editor viewport, whatever its rate", () => {
+    const { captures, frame } = rated("every4thFrame", false);
+    expect([frame(), frame(), frame(), frame()]).toEqual([1, 1, 1, 1]);
+    expect(captures.diagnostics()[0]).toMatchObject({ draws: 4, rateSkips: 0 });
+  });
+
+  it("staggers captures on the same rate so they take turns instead of drawing on the same render", () => {
+    const { scene, captures, everyFrame, frame } = rated("every2ndFrame");
+    captures.setAssets(
+      new Map([["target", { mode: "SceneColor", width: 16, height: 8 }], ["second", { mode: "SceneColor", width: 16, height: 8 }]]),
+      new Map([["texture", { renderTargetGuid: "target" }], ["secondTexture", { renderTargetGuid: "second" }]]));
+    const secondRoot = new Mesh("Second Root", scene);
+    captures.configure("second", { ...everyFrame, renderTargetGuid: "second" }, () => secondRoot);
+    const screen = MeshBuilder.CreatePlane("second screen", { size: 1 }, scene);
+    const material = new StandardMaterial("second screen", scene);
+    material.emissiveTexture = captures.acquireTexture("secondTexture")!.resource;
+    screen.material = material;
+    const drawn = () => captures.diagnostics().map((entry) => entry.draws);
+    // Both draw their first image; then the first takes the even renders and the second the odd ones.
+    frame();
+    expect(drawn()).toEqual([1, 1]);
+    const turns: number[][] = [];
+    for (let i = 0; i < 4; i++) {
+      frame();
+      turns.push(drawn());
+    }
+    expect(turns).toEqual([[2, 1], [2, 2], [3, 2], [3, 3]]);
+  });
+
+  it("draws at once off its rate's renders for a changed setting, Quality or Render Target, but not for a move", () => {
+    const { captures, root, everyFrame, frame } = rated("every4thFrame");
+    // Render 1 draws the first image; renders 2, 3, 5, 6 and 7 are off its phase.
+    expect(frame()).toBe(1);
+    captures.configure("capture", { ...everyFrame, fieldOfView: 40 }, () => root);
+    expect(frame()).toBe(1);
+    captures.configure("capture", { ...everyFrame, fieldOfView: 40 }, () => root, {
+      position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+    });
+    expect(frame()).toBe(0);
+    expect(frame()).toBe(1); // Render 4, on its phase.
+    captures.configure("capture", { ...everyFrame, fieldOfView: 40, quality: "highQuality" }, () => root);
+    captures.configure("capture", { ...everyFrame, fieldOfView: 40 }, () => root);
+    expect(frame()).toBe(1);
+    captures.setAssets(new Map([["target", { mode: "SceneColor", width: 32, height: 8 }]]), new Map([["texture", { renderTargetGuid: "target" }]]));
+    expect(frame()).toBe(1);
+    expect(frame()).toBe(0);
+  });
+
+  it("keeps asking while nothing shows it on its rate's render, and draws in the frame its screen comes into view", () => {
+    const { captures, frame, place } = rated("every4thFrame");
+    expect(frame()).toBe(1);
+    place(-50);
+    // Render 4 is its phase's, but nothing shows it: it stays due, asks again on render 5 and draws on render 6.
+    expect([frame(), frame(), frame(), frame()]).toEqual([0, 0, 0, 0]);
+    place(0);
+    expect(frame()).toBe(1);
+    expect(frame()).toBe(0);
+    expect(captures.diagnostics()[0]).toMatchObject({ draws: 2, rateSkips: 3, shownBy: "view" });
   });
 });

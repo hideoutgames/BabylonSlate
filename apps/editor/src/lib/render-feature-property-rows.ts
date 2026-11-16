@@ -9,6 +9,8 @@ import {
   SKYBOX_FACE_KEYS,
   type SerializedComponent,
   type SkyboxFaceKey,
+  UPDATE_RATE_LABELS,
+  UPDATE_RATES,
 } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
 import {
@@ -146,6 +148,10 @@ export function mirrorPropertyRows(
       value: properties.resolutionScale, defaultValue: defaults.resolutionScale, min: 0.1, max: 1, step: 0.05,
       description: "Reflection resolution as a fraction of the view's. Lower values save GPU time and memory.",
       onChange: (next) => update("resolutionScale", Math.min(1, Math.max(0.1, next))) },
+    { kind: "enum", id: rowId(actorId, component.id, "updateRate"), label: "Update Rate", value: properties.updateRate, defaultValue: defaults.updateRate,
+      options: UPDATE_RATES.map((value) => ({ value, label: UPDATE_RATE_LABELS[value] })),
+      description: "In Play, a lower rate keeps the last reflection on skipped frames; the editor draws every frame.",
+      onChange: (next) => update("updateRate", next) },
     { kind: "color", id: rowId(actorId, component.id, "tint"), label: "Tint", value: properties.tint,
       description: "Multiplies the reflection on the built-in surface. A Material override decides its own look.",
       onChange: (next) => update("tint", next) },

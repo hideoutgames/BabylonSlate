@@ -38,6 +38,7 @@ Depth Pass and World Normal skip lighting and post-processing, and leave out tra
 | **Quality** | Fast | **Fast** draws a lightweight pass. **High Quality** renders like a camera at the capture and leaves the screen effects to the camera that shows the image. **Full Quality** also applies them. See [Quality](#quality). |
 | **Enabled** | On | Turns capturing on or off. |
 | **Capture Every Frame** | On | Off stops automatic captures, so scripts decide when to capture. |
+| **Update Rate** | Every Frame | In Play, how often Capture Every Frame captures: every frame, every 2nd or every 4th frame. Skipped frames keep the last image. See [Update rate](../components/render-target-capture.md#update-rate). |
 | **Capture Only Actors** | Off | Captures only the actors in **Capture Actors**. An empty list captures nothing. |
 | **Field Of View** | 60 | Lens angle in degrees, 1 to 179. |
 | **Near Clip**, **Far Clip** | 0.1, 1000 | Capture range. |
@@ -71,7 +72,7 @@ High Quality and Fast store display colour: highlights brighter than white are c
 
 ## Keep captures cheap
 
-- Capturing every frame costs a second scene render each frame, and High and Full Quality cost about as much as a second camera. For a picture that rarely changes, turn off **Capture Every Frame** and call [Capture Render Target](../scripting/class/capture-render-target.md) when you need a new image: the capture draws nothing in between. Until the first capture, the target is transparent.
+- Capturing every frame costs a second scene render each frame, and High and Full Quality cost about as much as a second camera. For a picture that can lag a little, set **Update Rate** to Every 2nd or Every 4th Frame. For a picture that rarely changes, turn off **Capture Every Frame** and call [Capture Render Target](../scripting/class/capture-render-target.md) when you need a new image: the capture draws nothing in between. Until the first capture, the target is transparent.
 - With sun shadows on, each High or Full Quality capture draws its own sun shadow maps every captured frame and keeps them in GPU memory, as much as the main camera's, or one cascade's worth for a target of 512 × 512 or smaller. Lower **Shadow Cascades** or **Directional Map Size** in the [shadow settings](shadows.md#shadow-settings) to make them cheaper.
 - Keep High and Full Quality Render Targets at 512 × 512 or smaller, and use only a few of these captures at once.
 

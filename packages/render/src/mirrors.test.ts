@@ -28,6 +28,7 @@ import { createSpriteQuad, setSpriteQuadSize } from "./sprite-quad";
 import { createText3DMesh } from "./text3d-mesh";
 import { setUnlitMaterial, type UnlitBinding } from "./unlit-material";
 import { updateUnlitBinding } from "./unlit-material-blocks";
+import { setSceneHonoursUpdateRates } from "./update-rate-gate";
 
 /** Scene walks for mirror passes, counted through the real culling. */
 const walks = vi.hoisted(() => ({ count: 0 }));
@@ -769,5 +770,111 @@ describe("a moved view skips asking what its reflection's pass draws changed", (
     });
     expect(drawsOver(1)).toBe(0);
     expect(mirrorDiagnostics(scene)!.pollMismatches).toBe(1);
+  });
+});
+
+describe("Update Rate", () => {
+  /** A box in front of the surfaces, which are `rate` Mirrors (2 × 2, facing the view) at the given places. */
+  function ratedHost(rate: string, places: Record<string, Vector3>, play = true) {
+    const view = host();
+    if (play) setSceneHonoursUpdateRates(view.scene);
+    MeshBuilder.CreateBox("box", { size: 0.5 }, view.scene).position.set(0, 1, 1.5);
+    const surfaces = Object.fromEntries(Object.entries(places).map(([name, at]) => {
+      const mesh = createMirrorSurfaceMesh(view.scene, name, parseMirrorProperties({ width: 2, height: 2, updateRate: rate }));
+      mesh.position.copyFrom(at);
+      return [name, mesh];
+    }));
+    /** Renders with the view moving: each must draw, so only the rate (and the budget) holds a surface back. */
+    const moving = () => {
+      view.camera.position.x += 0.05;
+      return view.frame();
+    };
+    return { ...view, surfaces, moving };
+  }
+
+  /** Settles the owner's first eight renders with a still view: its next render is the 9th. */
+  function settle(frame: () => string[]) {
+    for (let i = 0; i < 7; i++) frame();
+    expect(frame()).toEqual([]);
+  }
+
+  it.each([
+    ["every2ndFrame", [false, true, false, true, false, true, false, true]],
+    ["every4thFrame", [false, false, false, true, false, false, false, true]],
+  ])("draws a Mirror at %s only on its rate's renders in Play, and culls, asks and draws nothing on the others", (rate, due) => {
+    const { scene, frame, moving } = ratedHost(rate, { mirror: new Vector3(0, 1, 3) });
+    settle(frame);
+    const before = mirrorDiagnostics(scene)!;
+    for (const drawn of due) {
+      const culls = walks.count;
+      const asks = vi.spyOn(ReflectedContent.prototype, "changed");
+      expect(moving()).toEqual(drawn ? ["mirror:mirror"] : []);
+      // A skipped render does not cull the pass's list or ask what it draws; a drawn one culls once (the draw reuses it).
+      expect(walks.count - culls).toBe(drawn ? 1 : 0);
+      expect(asks.mock.calls.length > 0).toBe(drawn);
+      asks.mockRestore();
+    }
+    const draws = due.filter(Boolean).length;
+    expect(mirrorDiagnostics(scene)).toMatchObject({
+      draws: before.draws + draws, rateSkips: before.rateSkips + due.length - draws,
+      // Only the drawn renders were moved views asked about; none kept a current image.
+      skippedPolls: before.skippedPolls + draws, reuses: before.reuses,
+    });
+  });
+
+  it("draws every Mirror on every render in the editor viewport, whatever its rate", () => {
+    const { scene, frame, moving } = ratedHost("every4thFrame", { mirror: new Vector3(0, 1, 3) }, false);
+    settle(frame);
+    for (let i = 0; i < 6; i++) expect(moving()).toEqual(["mirror:mirror"]);
+    expect(mirrorDiagnostics(scene)!.rateSkips).toBe(0);
+  });
+
+  it("staggers Mirrors on the same rate so they take turns instead of drawing on the same render", () => {
+    const { frame, moving } = ratedHost("every2ndFrame", { left: new Vector3(-1.5, 1, 3), right: new Vector3(1.5, 1, 3) });
+    settle(frame);
+    // The first registered takes the even renders, the second the odd ones.
+    for (let i = 0; i < 3; i++) {
+      expect(moving()).toEqual(["mirror:right"]);
+      expect(moving()).toEqual(["mirror:left"]);
+    }
+  });
+
+  it("draws at once off its rate's renders when it first draws, comes into view, needs another target or reflects otherwise", () => {
+    const { scene, camera, surfaces, frame, moving } = ratedHost("every4thFrame", { mirror: new Vector3(0, 1, 3) });
+    settle(frame);
+    // Renders 9 to 11 are off the first surface's phase.
+    const late = createMirrorSurfaceMesh(scene, "late", parseMirrorProperties({ width: 2, height: 2, updateRate: "every4thFrame" }));
+    late.position.set(-2.5, 1, 5);
+    expect(frame()).toEqual(["mirror:late"]);
+    // Out of view the surface asks nothing; the render it is back in view draws it from where the view moved meanwhile.
+    surfaces.mirror!.isVisible = false;
+    late.isVisible = false;
+    expect(frame()).toEqual([]);
+    camera.position.x += 0.2;
+    surfaces.mirror!.isVisible = true;
+    expect(frame()).toEqual(["mirror:mirror"]);
+    expect(moving()).toEqual(["mirror:mirror"]); // Render 12, on its phase.
+    expect(moving()).toEqual([]);
+    // A still view off its phase: a smaller view resizes its target, and a quality level that caps what it reflects.
+    updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled: true, renderScale: 0.5, sharpness: 0.2 } } });
+    expect(frame()).toEqual(["mirror:mirror"]);
+    expect(frame()).toEqual([]);
+    updateSceneRenderingSettings(scene, { quality: normalizeRenderingQuality({ geometry: { mirrorReflections: "movingActors" } }) });
+    expect(frame()).toEqual(["mirror:mirror"]);
+  });
+
+  it("leaves the budget to choose among due Mirrors, and keeps one it passed over due on the renders after", () => {
+    const { scene, frame, moving } = ratedHost("every2ndFrame", {
+      // Phases by registration: a, c and e on the even renders, b and d on the odd ones.
+      a: new Vector3(0, 1, 3), b: new Vector3(-3, 1, 9), c: new Vector3(-2, 1, 4), d: new Vector3(3, 1, 10), e: new Vector3(2, 1, 6),
+    });
+    for (let i = 0; i < 9; i++) frame();
+    expect(frame()).toEqual([]);
+    expect(moving()).toEqual(["mirror:b", "mirror:d"]);
+    // Three are due and two may draw: the nearest two do, the third keeps its image and stays due.
+    expect(moving()).toEqual(["mirror:a", "mirror:c"]);
+    // Off its phase, the one passed over is a candidate beside the two now due, and is nearer than both.
+    expect(moving()).toEqual(["mirror:e", "mirror:b"]);
+    expect(mirrorDiagnostics(scene)!.lastRenderDraws).toBe(2);
   });
 });

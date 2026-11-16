@@ -46,6 +46,7 @@ import { samplePresentedImage, type PresentedImageSample } from "./presented-ima
 import { stubWebGlDraws } from "./webgl-draw-stub";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
+import { setSceneHonoursUpdateRates } from "./update-rate-gate";
 import { SceneOutlineHost, isOutlineOnlySceneEdit } from "./scene-outline-host";
 import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-host";
 import { markLatticeComponentRoot } from "./lattice-deformer";
@@ -498,6 +499,8 @@ function initializeEngine(
   if (!presentRtt && !options.previewLighting) allowSceneScreenShadows(scene, () => !spatialEffectsUnsupported(scene));
   // Play's and the player's world view cull by occlusion while the Occlusion Culling setting is on; the editor's does not.
   if (!presentRtt && !options.previewLighting && options.playMode) allowSceneOcclusionCulling(scene, "setting");
+  // Mirrors and captures on a reduced Update Rate skip renders only in Play and the player; the editor draws them all.
+  if (options.playMode) setSceneHonoursUpdateRates(scene);
   // Every view shares the same graph path for authored and selection outlines.
   // The graph owns its active queue; editor world matrices still freeze.
   // The world view draws every frame and presents only rendered ones, so it

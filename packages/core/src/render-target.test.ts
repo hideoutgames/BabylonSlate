@@ -39,6 +39,14 @@ describe("render target asset contracts", () => {
     expect(normalizeRenderTargetCaptureProperties({ quality: 1 }).quality).toBe("fast");
   });
 
+  it("keeps a known Update Rate and reads an absent or unknown one as Every Frame", () => {
+    expect(normalizeRenderTargetCaptureProperties({ renderTargetGuid: "target" }).updateRate).toBe("everyFrame");
+    expect(normalizeRenderTargetCaptureProperties({ updateRate: "every2ndFrame" }).updateRate).toBe("every2ndFrame");
+    expect(normalizeRenderTargetCaptureProperties({ updateRate: "every4thFrame" }).updateRate).toBe("every4thFrame");
+    expect(normalizeRenderTargetCaptureProperties({ updateRate: "onDemand" }).updateRate).toBe("everyFrame");
+    expect(normalizeRenderTargetCaptureProperties({ updateRate: 4 }).updateRate).toBe("everyFrame");
+  });
+
   it("keeps assets referenced by graph nodes and typed containers reachable without collecting text", () => {
     const node = (type: string, data: Record<string, unknown>): SerializedGraph["nodes"][number] => ({
       id: type, type, position: { x: 0, y: 0 }, data,
