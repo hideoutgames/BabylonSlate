@@ -260,3 +260,344 @@ describe("OcclusionBuffer", () => {
     expect(buffer.occluded(-1, -1, 4, 1, 1, 12)).toBe(false);
   });
 });
+
+/**
+ * The buffer as it was before its pyramid became lazy and its clear partial: every frame cleared the whole buffer and
+ * reduced every pyramid level. The current buffer must answer every test from exactly the same depths.
+ */
+class ReferenceOcclusionBuffer {
+  readonly levels: Float32Array[] = [];
+  readonly levelWidths: number[] = [];
+  readonly levelHeights: number[] = [];
+  private readonly occluder: Float32Array;
+  private readonly rowMax: Float32Array;
+  private occluderLeft = 0;
+  private occluderRight = -1;
+  private occluderTop = 0;
+  private occluderBottom = -1;
+  private readonly matrix = new Float64Array(16);
+  private near = 0.1;
+  private readonly clipped = new Float64Array(16 * 4);
+  private readonly screen = new Float64Array(4 * 3);
+  readonly width: number;
+  readonly height: number;
+
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+    this.occluder = new Float32Array(width * height).fill(Infinity);
+    this.rowMax = new Float32Array(width * height);
+    for (let w = width, h = height; ; w = Math.max(1, Math.ceil(w / 2)), h = Math.max(1, Math.ceil(h / 2))) {
+      this.levels.push(new Float32Array(w * h));
+      this.levelWidths.push(w);
+      this.levelHeights.push(h);
+      if (w === 1 && h === 1) break;
+    }
+  }
+
+  begin(viewProjection: ArrayLike<number>, near: number): void {
+    for (let index = 0; index < 16; index++) this.matrix[index] = viewProjection[index]!;
+    this.near = Math.max(near, 1e-6);
+    this.levels[0]!.fill(Infinity);
+  }
+
+  rasterize(positions: ArrayLike<number>, indices?: ArrayLike<number>, transform?: ArrayLike<number>, winding: Winding = "both"): void {
+    const count = indices ? indices.length : positions.length / 3;
+    for (let corner = 0; corner + 2 < count; corner += 3) {
+      const a = indices ? indices[corner]! : corner, b = indices ? indices[corner + 1]! : corner + 1, c = indices ? indices[corner + 2]! : corner + 2;
+      this.triangle(positions, a, b, c, transform, winding);
+    }
+    this.mergeOccluder();
+  }
+
+  finish(): void {
+    for (let level = 1; level < this.levels.length; level++) {
+      const source = this.levels[level - 1]!, target = this.levels[level]!;
+      const sw = this.levelWidths[level - 1]!, sh = this.levelHeights[level - 1]!, tw = this.levelWidths[level]!, th = this.levelHeights[level]!;
+      for (let y = 0; y < th; y++) {
+        for (let x = 0; x < tw; x++) {
+          let depth = 0;
+          for (let dy = 0; dy < 2; dy++) {
+            const row = Math.min(y * 2 + dy, sh - 1);
+            for (let dx = 0; dx < 2; dx++) {
+              const value = source[row * sw + Math.min(x * 2 + dx, sw - 1)]!;
+              if (value > depth) depth = value;
+            }
+          }
+          target[y * tw + x] = depth;
+        }
+      }
+    }
+  }
+
+  /** The texels the test of box [min, max] reads, as [level, x, y], and its nearest depth; null where it reads none. */
+  reads(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number): { nearest: number; texels: [number, number, number][] } | null {
+    const m = this.matrix;
+    let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity, nearest = Infinity;
+    for (let corner = 0; corner < 8; corner++) {
+      const x = corner & 1 ? maxX : minX, y = corner & 2 ? maxY : minY, z = corner & 4 ? maxZ : minZ;
+      const w = x * m[3]! + y * m[7]! + z * m[11]! + m[15]!;
+      if (!(w > this.near)) return null;
+      const sx = ((x * m[0]! + y * m[4]! + z * m[8]! + m[12]!) / w * 0.5 + 0.5) * this.width;
+      const sy = (0.5 - (x * m[1]! + y * m[5]! + z * m[9]! + m[13]!) / w * 0.5) * this.height;
+      if (sx < left) left = sx;
+      if (sx > right) right = sx;
+      if (sy < top) top = sy;
+      if (sy > bottom) bottom = sy;
+      if (w < nearest) nearest = w;
+    }
+    const x0 = Math.floor(left - 0.5) - 1, x1 = Math.ceil(right - 0.5) + 1;
+    const y0 = Math.floor(top - 0.5) - 1, y1 = Math.ceil(bottom - 0.5) + 1;
+    if (x0 < 0 || y0 < 0 || x1 >= this.width || y1 >= this.height) return null;
+    let level = 0;
+    while (level + 1 < this.levels.length && ((x1 >> level) - (x0 >> level) >= 8 || (y1 >> level) - (y0 >> level) >= 8)) level++;
+    const texels: [number, number, number][] = [];
+    for (let y = y0 >> level; y <= y1 >> level; y++) for (let x = x0 >> level; x <= x1 >> level; x++) texels.push([level, x, y]);
+    return { nearest, texels };
+  }
+
+  occluded(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, epsilon = 1e-3): boolean {
+    const read = this.reads(minX, minY, minZ, maxX, maxY, maxZ);
+    if (!read) return false;
+    const limit = read.nearest - epsilon;
+    return read.texels.every(([level, x, y]) => this.levels[level]![y * this.levelWidths[level]! + x]! < limit);
+  }
+
+  private mergeOccluder(): void {
+    const { width, height, occluder, rowMax } = this;
+    const base = this.levels[0]!;
+    const top = this.occluderTop, bottom = this.occluderBottom, left = this.occluderLeft, right = this.occluderRight;
+    for (let y = top; y <= bottom; y++) {
+      const row = y * width;
+      for (let x = left; x <= right; x++) {
+        const centre = occluder[row + x]!;
+        const before = x > 0 ? occluder[row + x - 1]! : Infinity;
+        const after = x + 1 < width ? occluder[row + x + 1]! : Infinity;
+        rowMax[row + x] = Math.max(before, centre, after);
+      }
+    }
+    for (let y = top; y <= bottom; y++) {
+      if (y === 0 || y + 1 === height || y === top || y === bottom) continue;
+      const row = y * width;
+      for (let x = left; x <= right; x++) {
+        const depth = Math.max(rowMax[row - width + x]!, rowMax[row + x]!, rowMax[row + width + x]!);
+        if (depth < base[row + x]!) base[row + x] = depth;
+      }
+    }
+    for (let y = this.occluderTop; y <= this.occluderBottom; y++)
+      occluder.fill(Infinity, y * width + this.occluderLeft, y * width + this.occluderRight + 1);
+    this.occluderLeft = this.occluderTop = 0;
+    this.occluderRight = this.occluderBottom = -1;
+  }
+
+  private triangle(positions: ArrayLike<number>, a: number, b: number, c: number, transform: ArrayLike<number> | undefined, winding: Winding): void {
+    const m = this.matrix, out = this.clipped;
+    for (let corner = 0; corner < 3; corner++) {
+      const index = (corner === 0 ? a : corner === 1 ? b : c) * 3;
+      let x = positions[index]!, y = positions[index + 1]!, z = positions[index + 2]!;
+      if (transform) {
+        const t = transform;
+        const wx = x * t[0]! + y * t[4]! + z * t[8]! + t[12]!;
+        const wy = x * t[1]! + y * t[5]! + z * t[9]! + t[13]!;
+        const wz = x * t[2]! + y * t[6]! + z * t[10]! + t[14]!;
+        x = wx; y = wy; z = wz;
+      }
+      out[corner * 3] = x * m[0]! + y * m[4]! + z * m[8]! + m[12]!;
+      out[corner * 3 + 1] = x * m[1]! + y * m[5]! + z * m[9]! + m[13]!;
+      out[corner * 3 + 2] = x * m[3]! + y * m[7]! + z * m[11]! + m[15]!;
+    }
+    const near = this.near, screen = this.screen;
+    let vertices = 0, farthest = 0;
+    for (let corner = 0; corner < 3; corner++) {
+      const next = (corner + 1) % 3;
+      const cx = out[corner * 3]!, cy = out[corner * 3 + 1]!, cw = out[corner * 3 + 2]!;
+      const nx = out[next * 3]!, ny = out[next * 3 + 1]!, nw = out[next * 3 + 2]!;
+      const inside = cw >= near, nextInside = nw >= near;
+      if (inside) vertices = this.emit(screen, vertices, cx, cy, cw);
+      if (inside !== nextInside) {
+        const t = (near - cw) / (nw - cw);
+        vertices = this.emit(screen, vertices, cx + (nx - cx) * t, cy + (ny - cy) * t, near);
+      }
+    }
+    if (vertices < 3) return;
+    for (let vertex = 0; vertex < vertices; vertex++) if (screen[vertex * 3 + 2]! > farthest) farthest = screen[vertex * 3 + 2]!;
+    for (let vertex = 1; vertex + 1 < vertices; vertex++) this.fill(0, vertex, vertex + 1, farthest, winding);
+  }
+
+  private emit(screen: Float64Array, count: number, x: number, y: number, w: number): number {
+    screen[count * 3] = (x / w * 0.5 + 0.5) * this.width;
+    screen[count * 3 + 1] = (0.5 - y / w * 0.5) * this.height;
+    screen[count * 3 + 2] = w;
+    return count + 1;
+  }
+
+  private fill(a: number, b: number, c: number, depth: number, winding: Winding): void {
+    const s = this.screen;
+    const ax = s[a * 3]!, ay = s[a * 3 + 1]!, bx = s[b * 3]!, by = s[b * 3 + 1]!, cx = s[c * 3]!, cy = s[c * 3 + 1]!;
+    const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if (area === 0 || !Number.isFinite(area)) return;
+    if (winding === "clockwise" && area < 0) return;
+    if (winding === "counterClockwise" && area > 0) return;
+    const sign = area > 0 ? 1 : -1;
+    const x0 = Math.max(0, Math.ceil(Math.min(ax, bx, cx) - 0.5)), x1 = Math.min(this.width - 1, Math.floor(Math.max(ax, bx, cx) - 0.5));
+    const y0 = Math.max(0, Math.ceil(Math.min(ay, by, cy) - 0.5)), y1 = Math.min(this.height - 1, Math.floor(Math.max(ay, by, cy) - 0.5));
+    const occluder = this.occluder, width = this.width;
+    if (x0 > x1 || y0 > y1) return;
+    if (this.occluderRight < this.occluderLeft) {
+      this.occluderLeft = x0; this.occluderRight = x1; this.occluderTop = y0; this.occluderBottom = y1;
+    } else {
+      this.occluderLeft = Math.min(this.occluderLeft, x0); this.occluderRight = Math.max(this.occluderRight, x1);
+      this.occluderTop = Math.min(this.occluderTop, y0); this.occluderBottom = Math.max(this.occluderBottom, y1);
+    }
+    for (let y = y0; y <= y1; y++) {
+      const py = y + 0.5;
+      let from = x0, to = x1;
+      for (let edge = 0; edge < 3 && from <= to; edge++) {
+        let ex = edge === 0 ? ax : edge === 1 ? bx : cx, ey = edge === 0 ? ay : edge === 1 ? by : cy;
+        let fx = edge === 0 ? bx : edge === 1 ? cx : ax, fy = edge === 0 ? by : edge === 1 ? cy : ay;
+        let side = sign;
+        if (ey > fy || (ey === fy && ex > fx)) {
+          [ex, ey, fx, fy] = [fx, fy, ex, ey];
+          side = -side;
+        }
+        if (fy === ey) {
+          if (side * (fx - ex) * (py - ey) < 0) to = from - 1;
+          continue;
+        }
+        const crossing = ex + ((fx - ex) * (py - ey)) / (fy - ey) - 0.5;
+        if (side < 0) from = Math.max(from, Math.ceil(crossing));
+        else to = Math.min(to, Math.floor(crossing));
+      }
+      const row = y * width;
+      for (let x = from; x <= to; x++) if (depth < occluder[row + x]!) occluder[row + x] = depth;
+    }
+  }
+}
+
+type Winding = "clockwise" | "counterClockwise" | "both";
+
+describe("OcclusionBuffer against the full-rebuild reference", () => {
+  type Box = { min: Vec; max: Vec };
+  interface Frame {
+    viewProjection: number[];
+    occluders: { positions: number[]; indices: number[]; transform?: number[]; winding: Winding }[];
+    tests: Box[];
+  }
+
+  /** The current buffer's depth at a pyramid texel, as a test reads it (reduced on demand). */
+  const texelOf = (buffer: OcclusionBuffer, level: number, x: number, y: number) =>
+    (buffer as unknown as { texel(level: number, x: number, y: number): number }).texel(level, x, y);
+
+  /**
+   * Runs the frames through one current and one reference buffer, frame after frame, and checks that every test answers
+   * the same from the same depths at every texel it reads, and that level 0 is the same everywhere.
+   */
+  function compare(frames: Frame[], width: number, height: number): { culled: number; tested: number; read: number } {
+    const buffer = new OcclusionBuffer(width, height), reference = new ReferenceOcclusionBuffer(width, height);
+    let culled = 0, tested = 0, read = 0;
+    frames.forEach((frame, index) => {
+      for (const target of [buffer, reference]) {
+        target.begin(frame.viewProjection, NEAR);
+        for (const occluder of frame.occluders) target.rasterize(occluder.positions, occluder.indices, occluder.transform, occluder.winding);
+        target.finish();
+      }
+      for (const { min, max } of frame.tests) {
+        tested++;
+        const expected = reference.occluded(...min, ...max);
+        // Asked before the texels are read below, so the answer comes from the buffer's own on-demand reductions.
+        expect(buffer.occluded(...min, ...max), `frame ${index}, box ${min} – ${max}`).toBe(expected);
+        if (expected) culled++;
+        for (const [level, x, y] of reference.reads(...min, ...max)?.texels ?? []) {
+          if (level > 0) read++;
+          expect(texelOf(buffer, level, x, y), `frame ${index}, level ${level} texel ${x}, ${y}`)
+            .toBe(reference.levels[level]![y * reference.levelWidths[level]! + x]!);
+        }
+      }
+      expect(Array.from(buffer.depths().depth), `frame ${index} level 0`).toEqual(Array.from(reference.levels[0]!));
+    });
+    return { culled, tested, read };
+  }
+
+  /** A seeded scene: a camera, boxes and walls around it (some crossing the near plane or off screen), boxes to test. */
+  function randomFrame(next: () => number, occluderCount: number): Frame {
+    const eye: Vec = [next() * 10 - 5, next() * 3, next() * 10 - 5];
+    const forward = normalize([next() - 0.5, (next() - 0.5) * 0.4, next() - 0.5]);
+    const occluders: Frame["occluders"] = [];
+    for (let index = 0; index < occluderCount; index++) {
+      const centre = add(eye, add(scale(forward, next() * 25 - 3), [next() * 24 - 12, next() * 8 - 4, next() * 24 - 12]));
+      const half: Vec = next() < 0.5 ? [next() * 4, next() * 3, 0.05 + next() * 0.2] : [next() * 3, next() * 3, next() * 3];
+      const { positions, indices } = boxTriangles(sub(centre, half), add(centre, half));
+      const winding = (["clockwise", "counterClockwise", "both"] as const)[Math.floor(next() * 3)]!;
+      // Some placed by a world transform (a scale and a move), as `ViewOcclusion` draws them.
+      const transform = next() < 0.3
+        ? [1 + next(), 0, 0, 0, 0, 1 + next(), 0, 0, 0, 0, 1 + next(), 0, next() - 0.5, next() - 0.5, next() - 0.5, 1]
+        : undefined;
+      occluders.push({ positions, indices, transform, winding });
+    }
+    const tests: Box[] = [];
+    for (let index = 0; index < 40; index++) {
+      const centre = add(eye, add(scale(forward, 1 + next() * 40), [next() * 30 - 15, next() * 10 - 5, next() * 30 - 15]));
+      // Mostly small boxes, some wide enough to be read at coarse levels.
+      const reach = next() < 0.8 ? 1.5 : 12;
+      const half: Vec = [0.05 + next() * reach, 0.05 + next() * reach, 0.05 + next() * reach];
+      tests.push({ min: sub(centre, half), max: add(centre, half) });
+    }
+    return { viewProjection: viewProjection(eye, add(eye, forward), FOV, ASPECT, NEAR, FAR), occluders, tests };
+  }
+
+  it.each([
+    ["256 × 128", 256, 128, 3],
+    // Odd sizes, whose pyramid repeats its last row and column.
+    ["77 × 37", 77, 37, 4],
+  ])("answers every test from the same depths over seeded scenes, frame after frame, at %s", (_, width, height, seed) => {
+    const next = random(seed);
+    // Each frame follows one with other occluders and another camera, so a stale area of the last frame would show.
+    const frames = Array.from({ length: 120 }, (_, index) => randomFrame(next, index % 10 === 0 ? 0 : 1 + Math.floor(next() * 8)));
+    const { culled, tested, read } = compare(frames, width, height);
+    // Not vacuous: boxes are culled and kept, and texels above level 0 are read.
+    expect(culled).toBeGreaterThan(100);
+    expect(culled).toBeLessThan(tested * 0.95);
+    expect(read).toBeGreaterThan(100);
+  });
+
+  const lookAhead = () => viewProjection([0, 0, 0], [0, 0, 1], FOV, ASPECT, NEAR, FAR);
+  const wallAhead = { ...boxTriangles([-5, -5, 5], [5, 5, 5.2]), winding: "both" as const };
+  const behindWall: Box = { min: [-1, -1, 10], max: [1, 1, 12] };
+
+  it("answers the same with no occluder, with occluders wholly off screen, after a frame with no test, and for a box reaching past the edge", () => {
+    const offScreen = { ...boxTriangles([40, -1, 5], [42, 1, 6]), winding: "both" as const };
+    const behindEye = { ...boxTriangles([-5, -5, -8], [5, 5, -6]), winding: "both" as const };
+    const tests: Box[] = [behindWall, { min: [-1, -1, 10], max: [30, 1, 12] }, { min: [40, -1, 10], max: [42, 1, 12] }];
+    const { culled } = compare([
+      { viewProjection: lookAhead(), occluders: [], tests },
+      { viewProjection: lookAhead(), occluders: [offScreen, behindEye], tests },
+      { viewProjection: lookAhead(), occluders: [wallAhead], tests: [] },
+      { viewProjection: lookAhead(), occluders: [wallAhead], tests },
+    ], 128, 64);
+    // Only the box wholly behind the wall, in the last frame.
+    expect(culled).toBe(1);
+  });
+
+  it("forgets the last frame's occluders: a wall drawn in one frame hides nothing in the next", () => {
+    const buffer = new OcclusionBuffer(128, 64);
+    buffer.begin(lookAhead(), NEAR);
+    buffer.rasterize(wallAhead.positions, wallAhead.indices);
+    buffer.finish();
+    expect(buffer.occluded(...behindWall.min, ...behindWall.max)).toBe(true);
+    buffer.begin(lookAhead(), NEAR);
+    buffer.finish();
+    expect(buffer.occluded(...behindWall.min, ...behindWall.max)).toBe(false);
+    expect(buffer.depths().depth.every((depth) => depth === Infinity)).toBe(true);
+  });
+
+  it("answers nothing occluded between an occluder and the next finish", () => {
+    const buffer = new OcclusionBuffer(128, 64);
+    buffer.begin(lookAhead(), NEAR);
+    buffer.rasterize(wallAhead.positions, wallAhead.indices);
+    buffer.finish();
+    buffer.rasterize(wallAhead.positions, wallAhead.indices);
+    expect(buffer.occluded(...behindWall.min, ...behindWall.max)).toBe(false);
+    buffer.finish();
+    expect(buffer.occluded(...behindWall.min, ...behindWall.max)).toBe(true);
+  });
+});

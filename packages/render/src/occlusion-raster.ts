@@ -12,7 +12,9 @@
  *   for an occluder whose screen shape is convex (a box, a wall, a convex hull); a concave one can claim a sliver of a
  *   notch, so concave occluders are split into convex parts.
  * - A max-reduced mip pyramid answers a box's test from at most `TEST_SPAN` × `TEST_SPAN` texels: a coarser level would
- *   reach further past the box's rectangle, to the next block edge.
+ *   reach further past the box's rectangle, to the next block edge. Its texels are reduced lazily, on a test's first
+ *   read of each since `finish`, and a texel stops reading its children once one is Infinity (nothing occludes there).
+ * - A frame clears only the rectangle the last frame's occluders wrote; the rest of the buffer is still Infinity.
  * - Triangles are clipped against the near plane (w ≥ near); a box with any corner at or behind it is visible.
  * - Matrices are Babylon's layout (`Matrix.m`: clip = (x, y, z, 1) · M, translation in m[12..14]), read in doubles,
  *   so a camera far from the origin keeps its precision. Nothing allocates per frame.
@@ -31,6 +33,14 @@ export class OcclusionBuffer {
   private readonly levels: Float32Array[] = [];
   private readonly levelWidths: number[] = [];
   private readonly levelHeights: number[] = [];
+  /** Per level above 0, the `generation` in which each texel was last reduced; a texel of an older one is stale. */
+  private readonly stamps: Uint32Array[] = [];
+  private generation = 0;
+  /** The texel rectangle of level 0 that may hold a depth (outside it every texel is Infinity). */
+  private writtenLeft = 0;
+  private writtenRight: number;
+  private writtenTop = 0;
+  private writtenBottom: number;
   /** The occluder being rasterised, before its erosion, and the texel rectangle it has written. */
   private readonly occluder: Float32Array;
   /** The occluder's 3-texel row maxima, the first half of its erosion. */
@@ -45,6 +55,8 @@ export class OcclusionBuffer {
   // Scratch for one clipped triangle: up to four vertices of (screen x, screen y, w).
   private readonly clipped = new Float64Array(16 * 4);
   private readonly screen = new Float64Array(4 * 3);
+  // Scratch for one screen triangle's three edges: top x, top y, x run, y run and inside sign per edge.
+  private readonly edges = new Float64Array(3 * 5);
 
   constructor(width = 256, height = 128) {
     if (!(width >= 1 && height >= 1)) throw new Error("An occlusion buffer needs a positive size.");
@@ -54,10 +66,14 @@ export class OcclusionBuffer {
     this.rowMax = new Float32Array(width * height);
     for (let w = width, h = height; ; w = Math.max(1, Math.ceil(w / 2)), h = Math.max(1, Math.ceil(h / 2))) {
       this.levels.push(new Float32Array(w * h));
+      this.stamps.push(new Uint32Array(this.levels.length > 1 ? w * h : 0));
       this.levelWidths.push(w);
       this.levelHeights.push(h);
       if (w === 1 && h === 1) break;
     }
+    // The first frame clears the whole buffer.
+    this.writtenRight = width - 1;
+    this.writtenBottom = height - 1;
   }
 
   /**
@@ -67,7 +83,11 @@ export class OcclusionBuffer {
   begin(viewProjection: ArrayLike<number>, near: number): void {
     for (let index = 0; index < 16; index++) this.matrix[index] = viewProjection[index]!;
     this.near = Math.max(near, 1e-6);
-    this.levels[0]!.fill(Infinity);
+    const base = this.levels[0]!, width = this.width;
+    for (let y = this.writtenTop; y <= this.writtenBottom; y++)
+      base.fill(Infinity, y * width + this.writtenLeft, y * width + this.writtenRight + 1);
+    this.writtenLeft = this.writtenTop = 0;
+    this.writtenRight = this.writtenBottom = -1;
     this.ready = false;
   }
 
@@ -84,28 +104,41 @@ export class OcclusionBuffer {
       this.triangle(positions, a, b, c, transform, winding);
     }
     this.mergeOccluder();
+    this.ready = false;
   }
 
-  /** Builds the pyramid; call after the last occluder and before the first test. */
+  /** Ends the occluders: tests may follow (the pyramid above level 0 is reduced as they read it). */
   finish(): void {
-    for (let level = 1; level < this.levels.length; level++) {
-      const source = this.levels[level - 1]!, target = this.levels[level]!;
-      const sw = this.levelWidths[level - 1]!, sh = this.levelHeights[level - 1]!, tw = this.levelWidths[level]!, th = this.levelHeights[level]!;
-      for (let y = 0; y < th; y++) {
-        for (let x = 0; x < tw; x++) {
-          let depth = 0;
-          for (let dy = 0; dy < 2; dy++) {
-            const row = Math.min(y * 2 + dy, sh - 1);
-            for (let dx = 0; dx < 2; dx++) {
-              const value = source[row * sw + Math.min(x * 2 + dx, sw - 1)]!;
-              if (value > depth) depth = value;
-            }
-          }
-          target[y * tw + x] = depth;
+    // Wraps after 2³² frames; a stamp that old would then read as current, so every stamp restarts.
+    if (++this.generation === 0xffffffff) {
+      for (const stamp of this.stamps) stamp.fill(0);
+      this.generation = 1;
+    }
+    this.ready = true;
+  }
+
+  /** The depth at texel (x, y) of `level`: the max of its 2 × 2 children (edge ones repeated), reduced once per frame. */
+  private texel(level: number, x: number, y: number): number {
+    if (level === 0) return this.levels[0]![y * this.width + x]!;
+    const width = this.levelWidths[level]!, index = y * width + x;
+    const stamp = this.stamps[level]!;
+    if (stamp[index] === this.generation) return this.levels[level]![index]!;
+    const sw = this.levelWidths[level - 1]!, sh = this.levelHeights[level - 1]!;
+    let depth = 0;
+    for (let dy = 0; dy < 2 && depth !== Infinity; dy++) {
+      const row = Math.min(y * 2 + dy, sh - 1);
+      for (let dx = 0; dx < 2; dx++) {
+        const value = this.texel(level - 1, Math.min(x * 2 + dx, sw - 1), row);
+        if (value > depth) {
+          depth = value;
+          // Nothing is farther: the other children cannot change the max.
+          if (depth === Infinity) break;
         }
       }
     }
-    this.ready = true;
+    this.levels[level]![index] = depth;
+    stamp[index] = this.generation;
+    return depth;
   }
 
   /**
@@ -135,36 +168,54 @@ export class OcclusionBuffer {
     if (x0 < 0 || y0 < 0 || x1 >= this.width || y1 >= this.height) return false;
     let level = 0;
     while (level + 1 < this.levels.length && ((x1 >> level) - (x0 >> level) >= TEST_SPAN || (y1 >> level) - (y0 >> level) >= TEST_SPAN)) level++;
-    const data = this.levels[level]!, levelWidth = this.levelWidths[level]!;
     const limit = nearest - epsilon;
     for (let y = y0 >> level; y <= y1 >> level; y++)
       for (let x = x0 >> level; x <= x1 >> level; x++)
-        if (!(data[y * levelWidth + x]! < limit)) return false;
+        if (!(this.texel(level, x, y) < limit)) return false;
     return true;
   }
 
   /** Erodes the occluder just rasterised into the buffer, nearer depth winning, and clears it for the next. */
   private mergeOccluder(): void {
-    const { width, height, occluder, rowMax } = this;
+    const { width, occluder, rowMax } = this;
     const base = this.levels[0]!;
     const top = this.occluderTop, bottom = this.occluderBottom, left = this.occluderLeft, right = this.occluderRight;
     // A separable 3 × 3 max: along each row, then down the columns. Outside the buffer and the written rectangle nothing
     // is known to occlude, and erosion only shrinks coverage, so texels outside the rectangle stay uncovered.
+    // Depths are positive or Infinity (never NaN), so plain comparisons give Math.max's answer.
+    // Only texels strictly inside the rectangle (so inside the buffer) can stay covered: each one at its edge has an
+    // uncovered neighbour. Their neighbours all lie in the buffer.
+    const from = left + 1, to = right - 1;
     for (let y = top; y <= bottom; y++) {
       const row = y * width;
-      for (let x = left; x <= right; x++) {
-        const centre = occluder[row + x]!;
-        const before = x > 0 ? occluder[row + x - 1]! : Infinity;
-        const after = x + 1 < width ? occluder[row + x + 1]! : Infinity;
-        rowMax[row + x] = Math.max(before, centre, after);
+      let before = occluder[row + from - 1]!, centre = occluder[row + from]!;
+      for (let x = from; x <= to; x++) {
+        const after = occluder[row + x + 1]!;
+        let depth = centre;
+        if (before > depth) depth = before;
+        if (after > depth) depth = after;
+        rowMax[row + x] = depth;
+        before = centre;
+        centre = after;
       }
     }
-    for (let y = top; y <= bottom; y++) {
-      if (y === 0 || y + 1 === height || y === top || y === bottom) continue;
+    const first = top + 1, last = bottom - 1;
+    for (let y = first; y <= last; y++) {
       const row = y * width;
-      for (let x = left; x <= right; x++) {
-        const depth = Math.max(rowMax[row - width + x]!, rowMax[row + x]!, rowMax[row + width + x]!);
+      for (let x = from; x <= to; x++) {
+        let depth = rowMax[row + x]!;
+        const above = rowMax[row - width + x]!, below = rowMax[row + width + x]!;
+        if (above > depth) depth = above;
+        if (below > depth) depth = below;
         if (depth < base[row + x]!) base[row + x] = depth;
+      }
+    }
+    if (from <= to && first <= last) {
+      if (this.writtenRight < this.writtenLeft) {
+        this.writtenLeft = from; this.writtenRight = to; this.writtenTop = first; this.writtenBottom = last;
+      } else {
+        this.writtenLeft = Math.min(this.writtenLeft, from); this.writtenRight = Math.max(this.writtenRight, to);
+        this.writtenTop = Math.min(this.writtenTop, first); this.writtenBottom = Math.max(this.writtenBottom, last);
       }
     }
     for (let y = this.occluderTop; y <= this.occluderBottom; y++)
@@ -250,23 +301,34 @@ export class OcclusionBuffer {
     // Each row's span of texel centres inside (or on an edge of) the triangle: each edge bounds it on one side, where the
     // row crosses the edge's line. That crossing is computed from the edge's endpoints in a fixed order, so a triangle
     // sharing the edge finds the very same crossing, and a centre on it belongs to both: no seam between them.
+    const edges = this.edges;
+    for (let edge = 0; edge < 3; edge++) {
+      let ex = edge === 0 ? ax : edge === 1 ? bx : cx, ey = edge === 0 ? ay : edge === 1 ? by : cy;
+      let fx = edge === 0 ? bx : edge === 1 ? cx : ax, fy = edge === 0 ? by : edge === 1 ? cy : ay;
+      let side = sign;
+      if (ey > fy || (ey === fy && ex > fx)) {
+        const tx = ex, ty = ey;
+        ex = fx; ey = fy; fx = tx; fy = ty;
+        side = -side;
+      }
+      edges[edge * 5] = ex;
+      edges[edge * 5 + 1] = ey;
+      edges[edge * 5 + 2] = fx - ex;
+      edges[edge * 5 + 3] = fy - ey;
+      edges[edge * 5 + 4] = side;
+    }
     for (let y = y0; y <= y1; y++) {
       const py = y + 0.5;
       let from = x0, to = x1;
       for (let edge = 0; edge < 3 && from <= to; edge++) {
-        let ex = edge === 0 ? ax : edge === 1 ? bx : cx, ey = edge === 0 ? ay : edge === 1 ? by : cy;
-        let fx = edge === 0 ? bx : edge === 1 ? cx : ax, fy = edge === 0 ? by : edge === 1 ? cy : ay;
-        let side = sign;
-        if (ey > fy || (ey === fy && ex > fx)) {
-          [ex, ey, fx, fy] = [fx, fy, ex, ey];
-          side = -side;
-        }
+        const ex = edges[edge * 5]!, ey = edges[edge * 5 + 1]!, run = edges[edge * 5 + 2]!, rise = edges[edge * 5 + 3]!;
+        const side = edges[edge * 5 + 4]!;
         // Inside: side · ((fx − ex)(py − ey) − (fy − ey)(px − ex)) ≥ 0.
-        if (fy === ey) {
-          if (side * (fx - ex) * (py - ey) < 0) to = from - 1;
+        if (rise === 0) {
+          if (side * run * (py - ey) < 0) to = from - 1;
           continue;
         }
-        const crossing = ex + ((fx - ex) * (py - ey)) / (fy - ey) - 0.5;
+        const crossing = ex + (run * (py - ey)) / rise - 0.5;
         if (side < 0) from = Math.max(from, Math.ceil(crossing));
         else to = Math.min(to, Math.floor(crossing));
       }
