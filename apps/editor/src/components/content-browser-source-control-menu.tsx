@@ -1,4 +1,4 @@
-import { GitBranchIcon, GitCompareIcon, HistoryIcon, LockIcon, LockKeyholeOpenIcon, LockOpenIcon, Undo2Icon } from "lucide-react";
+import { GitCommitHorizontalIcon, GitCompareIcon, HistoryIcon, LockIcon, LockKeyholeOpenIcon, LockOpenIcon, Undo2Icon } from "lucide-react";
 import type { ContextMenuItem } from "@haptic/editor-kit";
 import type { FileLock } from "@haptic/source-control";
 import type { ChangeRow } from "../lib/source-control-changes";
@@ -111,5 +111,5 @@ export function contentBrowserSourceControlMenu(
     );
   }
 
-  return { type: "submenu", id: "source-control", label: "Source Control", icon: <GitBranchIcon />, items };
+  return { type: "submenu", id: "source-control", label: "Source Control", icon: <GitCommitHorizontalIcon />, items };
 }
