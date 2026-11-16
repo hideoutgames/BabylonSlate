@@ -35,6 +35,11 @@ export type NavigationBackend = {
   /** Straight path from start to goal; empty when the goal cannot be reached. */
   findPath(from: NavPoint, to: NavPoint): NavPoint[];
   closestPoint(point: NavPoint): NavPoint | null;
+  /**
+   * Applies pending obstacle and cost changes, as a query does, and returns a number that changes whenever a
+   * `closestPoint` result can: on an import, a dispose, and each flush that rebuilt tiles or restamped areas.
+   */
+  navMeshRevision(): number;
   randomPointInRadius(center: NavPoint, radius: number): NavPoint | null;
   /**
    * Carve a tile-cache obstacle centered on `pose`. `size` is the full extent

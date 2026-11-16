@@ -11,9 +11,11 @@ function fixture(settings?: Partial<FocusNavigationSettings>, mappings: InputMap
   const layer = world.createSceneLayer({ assetGuid: "menu", zOrder: 0 });
   const events: string[] = [];
   const notReady = new Set<string>();
+  /** The actor of every admission check the navigation made, in order. */
+  const canRunCalls: string[] = [];
   const resolver = new InputResolver(mappings);
   const navigation = new SceneLayerFocusNavigation(world, settings, {
-    canRun: (actor) => !notReady.has(actor.sceneLayerId!),
+    canRun: (actor) => (canRunCalls.push(actor.guid), !notReady.has(actor.sceneLayerId!)),
     event: (_actor, component, event) => events.push(`${component.guid}:${event}`),
   });
   const add = (id: string, x: number, y: number, properties: Record<string, unknown> = {}, layerId = layer.guid) => {
@@ -25,10 +27,85 @@ function fixture(settings?: Partial<FocusNavigationSettings>, mappings: InputMap
     return { actor, component };
   };
   const tick = (events: RawInputEvent[] = [], dt = 0.1) => navigation.tick(events, resolver.resolve(events, dt), dt);
-  return { world, layer, navigation, events, notReady, add, tick, resolver };
+  return { world, layer, navigation, events, notReady, canRunCalls, add, tick, resolver };
 }
 
 describe("SceneLayer focus navigation", () => {
+  it("walks only the topmost layer with a candidate, and falls to the next layer when that one has none", () => {
+    const f = fixture();
+    const middle = f.world.createSceneLayer({ assetGuid: "pause", zOrder: 5 });
+    const top = f.world.createSceneLayer({ assetGuid: "dialog", zOrder: 9 });
+    // Spawned interleaved, so world order differs from layer order.
+    const low1 = f.add("low-1", 0, 0);
+    const dialogA = f.add("dialog-a", 0, 0, {}, top.guid);
+    const mid1 = f.add("mid-1", 0, 0, {}, middle.guid);
+    const low2 = f.add("low-2", 3, 0, { focusInitial: true });
+    const dialogB = f.add("dialog-b", 3, 0, { focusInitial: true }, top.guid);
+    const low3 = f.add("low-3", 6, 0);
+    f.tick();
+    expect(f.navigation.getFocused()).toBe(dialogB.component);
+    // An idle tick admits the two actors of the owning layer once each, never the four under it.
+    f.canRunCalls.length = 0;
+    f.tick();
+    expect(f.canRunCalls).toEqual(["dialog-a", "dialog-b"]);
+    // Tab order is the owning layer's targets in world order.
+    expect(f.navigation.advance(true)).toBe(dialogA.component);
+    // With the top layer's targets gone, the next layer down owns navigation: the walk goes that far and no further.
+    dialogA.component.setVariable("enabled", false);
+    dialogB.component.setVariable("enabled", false);
+    f.tick();
+    expect(f.navigation.advance()).toBe(mid1.component);
+    f.canRunCalls.length = 0;
+    f.tick();
+    expect(f.canRunCalls).toEqual(["dialog-a", "dialog-b", "mid-1"]);
+    // Then the bottom layer, with its own initial target and its targets in world order.
+    mid1.actor.setVariable("visible", false);
+    f.tick();
+    expect(f.navigation.getFocused()).toBe(low2.component);
+    expect(f.navigation.advance(true)).toBe(low1.component);
+    expect(f.navigation.advance()).toBe(low2.component);
+    expect(f.navigation.advance()).toBe(low3.component);
+  });
+
+  it("gives a target under the owning layer its first focused value once, when it can first take focus", () => {
+    const f = fixture();
+    const top = f.world.createSceneLayer({ assetGuid: "dialog", zOrder: 9 });
+    const waiting = f.world.createSceneLayer({ assetGuid: "loading", zOrder: 1 });
+    const orphaned = "no-such-layer";
+    const owner = f.add("owner", 0, 0, {}, top.guid);
+    const lower = f.add("lower", 0, 0);
+    const disabled = f.add("disabled", 3, 0, { enabled: false });
+    const unfocusable = f.add("unfocusable", 6, 0, { focusEnabled: false });
+    const notReady = f.add("not-ready", 0, 0, {}, waiting.guid);
+    const stray = f.add("stray", 0, 0, {}, orphaned);
+    f.notReady.add(waiting.guid);
+    const focused = (target: { component: { getVariable(name: string): unknown } }) => target.component.getVariable("focused");
+    for (const target of [owner, lower, disabled, unfocusable, notReady, stray]) expect(focused(target)).toBeUndefined();
+    f.tick();
+    expect([owner, lower, stray].map(focused)).toEqual([false, false, false]);
+    expect([disabled, unfocusable, notReady].map(focused)).toEqual([undefined, undefined, undefined]);
+    // Each gets its value on the tick it becomes able to take focus, though its layer is never walked.
+    disabled.component.setVariable("enabled", true);
+    f.tick();
+    expect([disabled, unfocusable, notReady].map(focused)).toEqual([false, undefined, undefined]);
+    f.notReady.delete(waiting.guid);
+    unfocusable.component.setVariable("focusEnabled", true);
+    f.tick();
+    expect([disabled, unfocusable, notReady].map(focused)).toEqual([false, false, false]);
+    // Once every target has a value, an idle tick admits the owning layer's actor alone.
+    f.canRunCalls.length = 0;
+    f.tick();
+    expect(f.canRunCalls).toEqual(["owner"]);
+    // A value written since (a script's own flag) is left alone.
+    lower.component.setVariable("focused", true);
+    f.tick();
+    expect(focused(lower)).toBe(true);
+    // A target attached later, under the owning layer, is reached too.
+    const late = f.add("late", 9, 0);
+    f.tick();
+    expect(focused(late)).toBe(false);
+  });
+
   it("keeps quick direction and activate taps and dispatches the focused button's events exactly once", () => {
     const f = fixture();
     const a = f.add("a", 0, 0, { focusInitial: true });

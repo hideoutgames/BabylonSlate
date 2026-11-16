@@ -233,7 +233,7 @@ class RecastNavigationBackend implements NavigationBackend {
   private nextAgent = 1;
   /** Each agent's last `syncAgentPosition`: the position it got, where it projected, and the navmesh it read. */
   private readonly agentSyncs = new Map<string, AgentSync>();
-  /** Advances on an import and on each flush that rebuilt tiles or restamped areas, which can move a projection. */
+  /** Advances on an import, a dispose and each flush that rebuilt tiles or restamped areas, which can move a projection. */
   private meshRevision = 0;
   private costVolumes = new Map<
     string,
@@ -304,6 +304,11 @@ class RecastNavigationBackend implements NavigationBackend {
     const result = this.query.findClosestPoint(point, { halfExtents: QUERY_EXTENTS });
     if (!result.success) return null;
     return { x: result.point.x, y: result.point.y, z: result.point.z };
+  }
+
+  navMeshRevision(): number {
+    this.flushPendingChanges();
+    return this.meshRevision;
   }
 
   randomPointInRadius(center: NavPoint, radius: number): NavPoint | null {
@@ -695,6 +700,7 @@ class RecastNavigationBackend implements NavigationBackend {
     this.query = null;
     this.tileCache = null;
     this.navMesh = null;
+    this.meshRevision += 1;
     this.releaseTileCacheResources?.();
     this.releaseTileCacheResources = null;
     this.tileCacheDirty = false;

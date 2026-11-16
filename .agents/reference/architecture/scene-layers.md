@@ -64,7 +64,7 @@ SceneLayer overlays: unlit 2D documents stacked on a Play session compositor abo
 - Physics is opt-in per asset. Each enabled instance gets its own Rapier 2D world, independent of the world and other layers; disabled layers have no world (bodies, colliders and overlap events do nothing).
 - Traces, sweeps and overlaps answer from the caller's world; `showcollision` draws layer colliders in that layer's own scene.
 - Picking walks layers high → low `zOrder`, honoring Hit Test (Ignore / Block / Pass Through), then the world. `2DButton` opts an actor into pointer events and is the only source of pointer graph events (no `onTouch*` nodes). Engine Settings `touchMinTargetPx` widens pick AABBs, not visuals.
-- Focus navigation uses project Input assets; focus state is session-only and never saved.
+- Focus navigation uses project Input assets; focus state is session-only and never saved. Each tick walks Scene Layers from the top and stops at the first with a live candidate (`SceneLayerFocusNavigation.candidates`), so layers under the owning one cost nothing. A target outside the walked layers still gets its `focused` variable's first value (false) on the tick it can first take focus: the components still without a value are tracked per world structure revision, and one holding a value is not looked at again (nothing may clear `focused` back to undefined).
 
 ## Components with fixed contracts
 

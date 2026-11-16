@@ -20,10 +20,15 @@ interface Candidate {
   bounds: FocusBounds;
   properties: FocusTargetProperties;
 }
-/** Scene Layer actors with focus-target components, in world order, for one world structure revision. */
+/** A Scene Layer actor and its focus-target components. */
+interface FocusEntry { actor: Actor; components: ActorComponent[] }
+/** Scene Layer actors with focus-target components, for one world structure revision. */
 interface FocusTargets {
   revision: number;
-  entries: Array<{ actor: Actor; components: ActorComponent[] }>;
+  /** Each Scene Layer id's entries, in world order (an actor's layer never changes). */
+  byLayer: Map<string, FocusEntry[]>;
+  /** The components whose `focused` variable held no value when last looked at, in world order. */
+  unset: FocusEntry[];
 }
 
 /** Parsed focus properties and the variable values they were parsed from. */
@@ -78,6 +83,8 @@ export class SceneLayerFocusNavigation {
   private repeatRemaining = 0;
   private initialLayer: string | null = null;
   private targets: FocusTargets | null = null;
+  /** The layers the current `candidates` call walked, reused between calls. */
+  private readonly walkedLayers = new Set<string>();
   private readonly parsed = new WeakMap<ActorComponent, ParsedFocusProperties>();
   /**
    * Parent lookups through the World's own guid registry, which holds exactly its actor list; nothing spawns or
@@ -100,14 +107,19 @@ export class SceneLayerFocusNavigation {
   private focusTargets(): FocusTargets {
     const revision = this.world.structuralRevision;
     if (this.targets?.revision === revision) return this.targets;
-    const actors = this.world.getActors();
-    const entries: FocusTargets["entries"] = [];
-    for (const actor of actors) {
+    const byLayer: FocusTargets["byLayer"] = new Map();
+    const unset: FocusEntry[] = [];
+    for (const actor of this.world.getActors()) {
       if (!actor.sceneLayerId) continue;
       const components = actor.components.filter((component) => isFocusTargetClass(component.classId));
-      if (components.length > 0) entries.push({ actor, components });
+      if (components.length === 0) continue;
+      let entries = byLayer.get(actor.sceneLayerId);
+      if (!entries) byLayer.set(actor.sceneLayerId, entries = []);
+      entries.push({ actor, components });
+      const pending = components.filter((component) => component.getVariable("focused") === undefined);
+      if (pending.length > 0) unset.push({ actor, components: pending });
     }
-    this.targets = { revision, entries };
+    this.targets = { revision, byLayer, unset };
     return this.targets;
   }
 
@@ -127,60 +139,95 @@ export class SceneLayerFocusNavigation {
     return properties;
   }
 
+  /**
+   * The live candidates of the topmost layer that has any, in world order.
+   *
+   * Layers are walked from the top and the walk stops at the first with a
+   * candidate, so the layers under it cost nothing. The one thing the walk
+   * does to a target outside the owning layer is give its `focused` variable
+   * its first value (false) once the target could take focus; `unset` keeps
+   * exactly the components still without a value, so that write reaches the
+   * layers that were not walked. A `focused` that holds a value is never
+   * looked at again here: nothing clears the variable back to undefined.
+   */
   private candidates(): Candidate[] {
     if (!this.settings.enabled) return [];
     // Focus targets live only on Scene Layer actors; a world without a live layer has none to walk.
     const liveLayers = this.world.getSceneLayers().filter((layer) => !layer.destroyed);
     if (liveLayers.length === 0) return [];
-    const { entries } = this.focusTargets();
-    const byGuid = this.actors;
+    const targets = this.focusTargets();
     const result: Candidate[] = [];
-    for (const { actor, components } of entries) {
-      if (!available(actor) || !this.host.canRun(actor)) continue;
-      const visited = new Set<string>([actor.guid]);
-      let parentId = actorParentGuid(actor);
-      let visible = true;
-      while (parentId) {
-        const parent = byGuid.get(parentId);
-        if (!parent || visited.has(parentId) || !available(parent) || parent.sceneLayerId !== actor.sceneLayerId) { visible = false; break; }
-        visited.add(parentId);
-        parentId = actorParentGuid(parent);
-      }
-      if (!visible) continue;
-      const actorTransform = actorWorldTransform(actor, byGuid);
-      if (!actorTransform) continue;
-      for (const component of components) {
-        if (!available(component)) continue;
-        const properties = this.focusProperties(component);
-        if (!properties.focusEnabled) continue;
-        if (component.getVariable("focused") === undefined) component.setVariable("focused", false);
-        const chain = [component.transform];
-        const seen = new Set([component.guid]);
-        let attachment = component.parentId;
-        let eligible = true;
-        while (attachment) {
-          const parent = actor.components.find((entry) => entry.guid === attachment || entry.sourceId === attachment);
-          if (!parent || seen.has(parent.guid) || !available(parent)) { eligible = false; break; }
-          seen.add(parent.guid);
-          chain.unshift(parent.transform);
-          attachment = parent.parentId;
-        }
-        if (!eligible) continue;
-        let transform = actorTransform;
-        for (const local of chain) transform = composeParentChildTransform(transform, local);
-        const customBounds = this.host.bounds?.(actor, component);
-        const bounds = customBounds === undefined ? {
-          x: transform.position.x, y: transform.position.y,
-          width: Math.abs(transform.scale.x), height: Math.abs(transform.scale.y),
-        } : customBounds;
-        if (!bounds || !Number.isFinite(bounds.x) || !Number.isFinite(bounds.y) || bounds.width <= 0 || bounds.height <= 0) continue;
-        result.push({ actor, component, bounds, properties });
-      }
-    }
     // Same tie-break as the compositor: the last drawn eligible layer owns navigation.
     const layers = liveLayers.sort((a, b) => a.zOrder - b.zOrder || a.guid.localeCompare(b.guid));
-    const active = layers.reverse().find((layer) => result.some((candidate) => candidate.actor.sceneLayerId === layer.guid));
-    return active ? result.filter((candidate) => candidate.actor.sceneLayerId === active.guid) : [];
+    const walked = this.walkedLayers;
+    walked.clear();
+    for (let at = layers.length - 1; at >= 0 && result.length === 0; at--) {
+      const layer = layers[at]!;
+      walked.add(layer.guid);
+      for (const entry of targets.byLayer.get(layer.guid) ?? []) this.collect(entry, result);
+    }
+    const unset = targets.unset;
+    if (unset.length > 0) {
+      let kept = 0;
+      for (const entry of unset) {
+        if (!walked.has(entry.actor.sceneLayerId!)) this.collect(entry, null);
+        let pending = 0;
+        for (const component of entry.components) {
+          if (component.getVariable("focused") === undefined) entry.components[pending++] = component;
+        }
+        entry.components.length = pending;
+        if (pending > 0) unset[kept++] = entry;
+      }
+      unset.length = kept;
+    }
+    return result;
+  }
+
+  /**
+   * Gives each of the entry's components that can take focus now its first `focused` value and, with `result`,
+   * appends those with usable bounds as candidates.
+   */
+  private collect({ actor, components }: FocusEntry, result: Candidate[] | null): void {
+    if (!available(actor) || !this.host.canRun(actor)) return;
+    const byGuid = this.actors;
+    const visited = new Set<string>([actor.guid]);
+    let parentId = actorParentGuid(actor);
+    while (parentId) {
+      const parent = byGuid.get(parentId);
+      if (!parent || visited.has(parentId) || !available(parent) || parent.sceneLayerId !== actor.sceneLayerId) return;
+      visited.add(parentId);
+      parentId = actorParentGuid(parent);
+    }
+    const actorTransform = actorWorldTransform(actor, byGuid);
+    if (!actorTransform) return;
+    for (const component of components) {
+      if (!available(component)) continue;
+      const properties = this.focusProperties(component);
+      if (!properties.focusEnabled) continue;
+      if (component.getVariable("focused") === undefined) component.setVariable("focused", false);
+      if (!result) continue;
+      const chain = [component.transform];
+      const seen = new Set([component.guid]);
+      let attachment = component.parentId;
+      let eligible = true;
+      while (attachment) {
+        const parent = actor.components.find((entry) => entry.guid === attachment || entry.sourceId === attachment);
+        if (!parent || seen.has(parent.guid) || !available(parent)) { eligible = false; break; }
+        seen.add(parent.guid);
+        chain.unshift(parent.transform);
+        attachment = parent.parentId;
+      }
+      if (!eligible) continue;
+      let transform = actorTransform;
+      for (const local of chain) transform = composeParentChildTransform(transform, local);
+      const customBounds = this.host.bounds?.(actor, component);
+      const bounds = customBounds === undefined ? {
+        x: transform.position.x, y: transform.position.y,
+        width: Math.abs(transform.scale.x), height: Math.abs(transform.scale.y),
+      } : customBounds;
+      if (!bounds || !Number.isFinite(bounds.x) || !Number.isFinite(bounds.y) || bounds.width <= 0 || bounds.height <= 0) continue;
+      result.push({ actor, component, bounds, properties });
+    }
   }
 
   private emit(target: Candidate, event: string): void {
