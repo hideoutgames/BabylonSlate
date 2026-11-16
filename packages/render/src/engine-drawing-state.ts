@@ -5,9 +5,8 @@ import type { IViewportLike } from "@babylonjs/core/Maths/math.like";
 import type { Nullable } from "@babylonjs/core/types";
 
 /**
- * Engine state an owned pass changes: framebuffer attachment (WebGL framebuffer, or WebGPU target layer and mip),
- * viewport, depth/cull, stencil, alpha and colour write. Reusable, so passes that run every frame save without
- * allocating.
+ * Engine state an owned pass changes: framebuffer attachment (WebGL framebuffer), viewport, depth/cull, stencil, alpha
+ * and colour write. Reusable, so passes that run every frame save without allocating.
  */
 interface EngineDrawingState {
   viewport: Nullable<IViewportLike>;
@@ -15,8 +14,6 @@ interface EngineDrawingState {
   height: number;
   target: Nullable<RenderTargetWrapper>;
   framebuffer: WebGLFramebuffer | null | undefined;
-  layer: number;
-  mip: number;
   depthTest: boolean;
   depthMask: boolean;
   depthFunc: Nullable<number>;
@@ -33,15 +30,11 @@ interface EngineDrawingState {
 
 export function createEngineDrawingState(): EngineDrawingState {
   return {
-    viewport: null, width: 0, height: 0, target: null, framebuffer: undefined, layer: 0, mip: 0,
+    viewport: null, width: 0, height: 0, target: null, framebuffer: undefined,
     depthTest: false, depthMask: false, depthFunc: null, cull: null, cullFace: null, frontFace: null, zOffset: 0, zOffsetUnits: 0,
     stencilTest: false, stencilMaterial: undefined, alpha: 0, color: true,
   };
 }
-
-type WebGpuAttachment = AbstractEngine & {
-  _rttRenderPassWrapper?: { colorAttachmentViewDescriptor?: { baseArrayLayer?: number; baseMipLevel?: number } };
-};
 
 /** Fallback when no viewport was cached; never mutated. */
 const FULL_VIEWPORT: IViewportLike = Object.freeze({ x: 0, y: 0, width: 1, height: 1 });
@@ -55,10 +48,7 @@ export function saveEngineDrawingState(engine: AbstractEngine, state: EngineDraw
   state.width = engine.getRenderWidth();
   state.height = engine.getRenderHeight();
   state.target = engine._currentRenderTarget;
-  state.framebuffer = engine.isWebGPU ? undefined : (engine as ThinEngine)._currentFramebuffer;
-  const attachment = (engine as WebGpuAttachment)._rttRenderPassWrapper?.colorAttachmentViewDescriptor;
-  state.layer = attachment?.baseArrayLayer ?? 0;
-  state.mip = attachment?.baseMipLevel ?? 0;
+  state.framebuffer = (engine as ThinEngine)._currentFramebuffer;
   const depth = engine.depthCullingState;
   state.depthTest = depth.depthTest;
   state.depthMask = depth.depthMask;
@@ -79,23 +69,8 @@ export function saveEngineDrawingState(engine: AbstractEngine, state: EngineDraw
 /** Rebinds the recorded attachment and restores the recorded render state, then resets the engine's state caches. */
 export function restoreEngineDrawingState(engine: AbstractEngine, state: EngineDrawingState): void {
   const target = state.target;
-  if (!engine.isWebGPU) {
-    (engine as ThinEngine)._bindUnboundFramebuffer(state.framebuffer ?? null);
-    engine._currentRenderTarget = target;
-  } else if (target) {
-    engine.bindFramebuffer(
-      target,
-      target.isCube ? state.layer % 6 : 0,
-      state.width,
-      state.height,
-      true,
-      state.mip,
-      target.isCube ? Math.floor(state.layer / 6) : state.layer,
-    );
-  } else {
-    // Unbind only: WebGPU would otherwise open an empty swapchain pass that the next target bind closes again.
-    engine.restoreDefaultFramebuffer(true);
-  }
+  (engine as ThinEngine)._bindUnboundFramebuffer(state.framebuffer ?? null);
+  engine._currentRenderTarget = target;
   engine.setViewport(state.viewport ?? FULL_VIEWPORT, state.width, state.height);
   engine.setAlphaMode(state.alpha);
   engine.setColorWrite(state.color);

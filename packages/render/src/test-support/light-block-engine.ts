@@ -3,7 +3,7 @@ import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Material
 
 /**
  * Gives every NullEngine what a shipped Engine has for the light block, the one lighting path: uniform buffers (every
- * WebGL2 and WebGPU Engine has them; a plain NullEngine models a WebGL1 fallback no build runs), and what the block's
+ * WebGL2 Engine has them; a plain NullEngine models a WebGL1 fallback no build runs), and what the block's
  * resources need that NullEngine cannot make: the emission texture array (uploaded at once), the shadow atlas's depth
  * texture and its tiles' scissored clears. The Babylon test project loads it first (`setupFiles`); a test that needs
  * another shape spies on its own Engine.

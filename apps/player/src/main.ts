@@ -7,7 +7,7 @@ import { audioStats, particleStats } from "@haptic/render";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { createDecoderPrefetch } from "./decoder-prefetch";
 import { preloadPlayerWorkerPhysics, prewarmPlayerWorker, type PlayerWorkerHost } from "./worker-host";
-import { startPlayerWithBackend } from "./player-backend";
+import { startPlayerWithEngine } from "./player-engine";
 import { previewConsoleCatalog } from "./console-catalog";
 import type { PlayerTestHandle } from "./boot";
 import { mountPlayerHud, mountPlayerDebuggerOverlays, type PlayerHudStats } from "./hud";
@@ -43,7 +43,7 @@ const PREVIEW_CONSOLE_EVENTS: ReadonlySet<string> = new Set([
 ]);
 const startupAbort = new AbortController();
 let stopCurrentPlayer: (() => void) | undefined;
-// Install before pack loading, fonts or asynchronous backend initialization.
+// Install before pack loading, fonts or asynchronous Engine initialization.
 window.addEventListener("message", (event) => {
   if (!isExpectedPreviewHostMessage(event, window.parent, previewHostOrigin)) return;
   if (event.data?.type !== PREVIEW_STOP_MESSAGE) return;
@@ -202,7 +202,7 @@ async function launchLoaded(
     if (errors.length) throw new AggregateError(errors, "Player page cleanup failed.");
   };
 
-  const session = await startPlayerWithBackend({
+  const session = await startPlayerWithEngine({
     signal: startupAbort.signal,
     canvas,
     game,
@@ -255,9 +255,6 @@ async function launchLoaded(
     try { session.stop(); } finally { cleanupPage(); }
     return;
   }
-  rootEl().dataset.requestedBackend = session.backend.requestedBackend;
-  rootEl().dataset.effectiveBackend = session.backend.effectiveBackend;
-  rootEl().dataset.backendFallback = session.backend.fallbackReason ?? "";
   layoutObserver =
     typeof ResizeObserver === "undefined"
       ? null

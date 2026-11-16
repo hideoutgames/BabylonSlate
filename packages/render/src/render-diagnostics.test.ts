@@ -20,23 +20,6 @@ afterEach(() => {
 });
 
 describe("render diagnostics qualification fields", () => {
-  it("does not report unsupported WebGPU whole-frame timestamps as zero GPU cost", () => {
-    const engine = new NullEngine();
-    engines.push(engine);
-    const scene = new Scene(engine);
-    Object.defineProperty(engine, "isWebGPU", { value: true });
-    const caps = engine.getCaps();
-    vi.spyOn(engine, "getCaps").mockReturnValue({ ...caps, timerQuery: {} as NonNullable<typeof caps.timerQuery> });
-    const capture = vi.spyOn(engine, "captureGPUFrameTime");
-
-    const diagnostics = createRenderDiagnostics(scene, () => 1)();
-
-    expect(diagnostics.adapter.api).toBe("webgpu");
-    expect(diagnostics.gpuMs).toBeNull();
-    expect(diagnostics.gpuStatus).toBe("unsupported");
-    expect(capture).not.toHaveBeenCalled();
-  });
-
   it("reads lightweight Stats without enabling an otherwise supported GPU query", () => {
     const engine = new NullEngine(); engines.push(engine);
     const scene = new Scene(engine);
@@ -62,9 +45,7 @@ describe("render diagnostics qualification fields", () => {
 
     const diagnostics = createRenderDiagnostics(scene, () => 1.5)();
 
-    // NullEngine exposes neither getInfo nor getGlInfo: the API is still named
-    // and the strings stay null rather than fabricated.
-    expect(diagnostics.adapter.api).toBe("webgl2");
+    // NullEngine exposes neither getInfo nor getGlInfo: the strings stay null rather than fabricated.
     expect(diagnostics.adapter.vendor).toBeNull();
     expect(diagnostics.adapter.renderer).toBeNull();
     expect(diagnostics.adapter.version).toBeNull();

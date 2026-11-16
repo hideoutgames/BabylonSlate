@@ -6,7 +6,6 @@
  * Engine's own conversion (`useExactSrgbConversions`, exact sRGB in the editor and player) instead of a fixed 2.2 power,
  * so it round-trips through the Display Color stage's encode as every other surface's colour does.
  */
-import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { Effect } from "@babylonjs/core/Materials/effect";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
@@ -21,48 +20,6 @@ let msdfShadersRegistered = false;
 function ensureMsdfShaders(): void {
   if (msdfShadersRegistered) return;
   msdfShadersRegistered = true;
-  ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}VertexShader`] = `
-attribute position: vec3f;
-attribute uv: vec2f;
-uniform worldViewProjection: mat4x4f;
-varying vUV: vec2f;
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  vertexOutputs.vUV = vertexInputs.uv;
-  vertexOutputs.position = uniforms.worldViewProjection * vec4f(vertexInputs.position, 1.0);
-}
-`;
-  ShaderStore.ShadersStoreWGSL[`${MSDF_SHADER}FragmentShader`] = `
-varying vUV: vec2f;
-var atlasSampler: sampler;
-var atlas: texture_2d<f32>;
-uniform fillColor: vec3f;
-uniform strokeColor: vec3f;
-uniform strokeWidth: f32;
-uniform glyphOpacity: f32;
-uniform overlayTint: vec4f;
-uniform linearOutput: f32;
-uniform exactSrgb: f32;
-fn median(r: f32, g: f32, b: f32) -> f32 {
-  return max(min(r, g), min(max(r, g), b));
-}
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  let msd = textureSample(atlas, atlasSampler, fragmentInputs.vUV).rgb;
-  let sd = median(msd.r, msd.g, msd.b);
-  let screenPxDistance = fwidth(sd) * 0.5;
-  let fill = clamp((sd - 0.5) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0);
-  let outline = select(fill, clamp((sd - 0.5 + uniforms.strokeWidth) / max(screenPxDistance, 0.0001) + 0.5, 0.0, 1.0), uniforms.strokeWidth > 0.0);
-  var color = mix(uniforms.strokeColor, uniforms.fillColor, fill);
-  if (uniforms.linearOutput > 0.5) {
-    if (uniforms.exactSrgb > 0.5) { color = select(pow(color * 0.947867 + 0.0521327, vec3f(2.4)), color * 0.0773993, color <= vec3f(0.04045)); }
-    else { color = pow(max(color, vec3f(0.0)), vec3f(2.2)); }
-  }
-  let alpha = max(fill, outline) * uniforms.glyphOpacity;
-  if (alpha < 0.01) { discard; }
-  fragmentOutputs.color = vec4f(color, alpha) * uniforms.overlayTint;
-}
-`;
   Effect.ShadersStore[`${MSDF_SHADER}VertexShader`] = `
 attribute vec3 position;
 attribute vec2 uv;
@@ -121,7 +78,7 @@ export function msdfReferenceMaterial(
     scene,
     { vertex: MSDF_SHADER, fragment: MSDF_SHADER },
     {
-      shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+      shaderLanguage: ShaderLanguage.GLSL,
       attributes: ["position", "uv"],
       uniforms: ["worldViewProjection", "fillColor", "strokeColor", "strokeWidth", "glyphOpacity", "overlayTint", "linearOutput", "exactSrgb"],
       samplers: ["atlas"],

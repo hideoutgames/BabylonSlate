@@ -17,13 +17,12 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings, type RenderMode } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { setHapticLightLoopProof } from "../../../../packages/render/src/haptic-lighting-block";
 import { setHapticLightCulling } from "../../../../packages/render/src/haptic-lights";
 import { isForwardLightExcluded } from "../../../../packages/render/src/light-policy";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const COLUMNS = 8;
 const ROWS = 6;
@@ -38,8 +37,8 @@ const SAMPLE_STEP = 8;
 /** Frames drawn for each timing. */
 const TIMED_FRAMES = 30;
 
-export async function runLightLoopProof(backend: "webgl2" | "webgpu" = "webgl2") {
-  return lightsGrid(backend, true, async ({ scene, draw, settings, lights, floor, camera, engine, canvas }) => {
+export async function runLightLoopProof() {
+  return lightsGrid(true, async ({ scene, draw, settings, lights, floor, camera, canvas }) => {
     const pbr = await draw();
     // The frame's admission (the nearest 32).
     const admitted = lights.filter((light) => light.isEnabled() && !isForwardLightExcluded(light));
@@ -50,7 +49,7 @@ export async function runLightLoopProof(backend: "webgl2" | "webgpu" = "webgl2")
         const pick = scene.pick(x + 0.5, y + 0.5, (mesh) => mesh === floor, false, camera);
         if (!pick?.hit || !pick.pickedPoint) continue;
         const point = pick.pickedPoint;
-        const row = engine.isWebGPU ? y : canvas.height - 1 - y;
+        const row = canvas.height - 1 - y;
         samples.push({
           pixel: row * canvas.width + x,
           reached: admitted.filter((light) => Vector3.DistanceSquared(light.position, point) < RANGE * RANGE).length,
@@ -64,8 +63,8 @@ export async function runLightLoopProof(backend: "webgl2" | "webgpu" = "webgl2")
 }
 
 /** The grid lit, PBR and CEL, with the clusters and without, and the mean frame time of each. */
-export async function runLightCullingParity(backend: "webgl2" | "webgpu" = "webgl2") {
-  return lightsGrid(backend, false, async ({ scene, draw, frame, settings }) => {
+export async function runLightCullingParity() {
+  return lightsGrid(false, async ({ scene, draw, frame, settings }) => {
     const timed = async () => {
       await frame();
       const start = performance.now();
@@ -95,15 +94,12 @@ type Grid = {
   draw: () => Promise<{ rgba: number[]; visited: number[]; reached: number[]; clustered: number[] }>;
 };
 
-async function lightsGrid<T>(backend: "webgl2" | "webgpu", proof: boolean, run: (grid: Grid) => Promise<T>): Promise<T> {
+async function lightsGrid<T>(proof: boolean, run: (grid: Grid) => Promise<T>): Promise<T> {
   const canvas = document.createElement("canvas");
   canvas.width = 160;
   canvas.height = 100;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0, 0, 0, 1);
@@ -151,8 +147,8 @@ async function lightsGrid<T>(backend: "webgl2" | "webgpu", proof: boolean, run: 
     const draw = async () => {
       await render();
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-      const rgba = toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
-      // Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): the counts, 4/255 apart.
+      const rgba = Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
+      // Per pixel, in readPixels' rows (bottom-up): the counts, 4/255 apart.
       const visited: number[] = [];
       const reached: number[] = [];
       const clustered: number[] = [];

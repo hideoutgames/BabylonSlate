@@ -1,5 +1,4 @@
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import { isEngineContextLost } from "./context-lost-error";
 
 /** Conservative managed rendering ceiling, not measured/free GPU memory. */
 export const MANAGED_RENDER_BYTE_LIMIT = 1024 * 1024 ** 2;
@@ -47,9 +46,7 @@ type Ledger = {
   resources: Map<object, ResourceEntry>;
 };
 const ledgers = new WeakMap<AbstractEngine, Ledger>();
-const disposedEngines = new WeakSet<AbstractEngine>();
 const leaseEngines = new WeakMap<ManagedRenderLease, AbstractEngine>();
-const deferredReleases = new WeakMap<ManagedRenderLease, Promise<void>>();
 
 function ledger(engine: AbstractEngine): Ledger {
   let value = ledgers.get(engine);
@@ -67,7 +64,6 @@ function ledger(engine: AbstractEngine): Ledger {
     // Restoration rebuilds owners independently. Keep reservations until each
     // owner disposes its old handles; clearing globally would over-admit siblings.
     engine.onDisposeObservable.addOnce(() => {
-      disposedEngines.add(engine);
       ledgers.delete(engine);
     });
   }
@@ -261,62 +257,15 @@ export function beginManagedRenderAllocation(
   return lease;
 }
 
-/** Whether releaseManagedRenderLeaseAfterDisposal holds a lease until a later
- * end frame (a live WebGPU Engine's destruction drain) rather than releasing it at once. */
-function managedRenderReleaseIsDeferred(engine: AbstractEngine): boolean {
-  return engine.isWebGPU && !disposedEngines.has(engine) && !isEngineContextLost(engine);
-}
-
-/** Call only after disposing all owned resources. Native WebGPU queues physical
- * texture/buffer destruction until endFrame; hold the lease through that drain.
- * A lost device frees everything at once, so loss also settles it.
+/** Call only after disposing all owned resources: releases the lease at once.
  * A failed/uncertain disposal must keep its lease instead of calling this helper.
- * Never forces a shared Engine frame. Repeated calls share one completion. */
+ * Never forces a shared Engine frame. */
 export function releaseManagedRenderLeaseAfterDisposal(
   engine: AbstractEngine,
   lease: ManagedRenderLease,
 ): Promise<void> {
   if (leaseEngines.get(lease) !== engine)
     throw new Error("Managed render lease belongs to another Engine.");
-  const pending = deferredReleases.get(lease);
-  if (pending) return pending;
-  if (!managedRenderReleaseIsDeferred(engine)) {
-    lease.release();
-    return Promise.resolve();
-  }
-  const completion = new Promise<void>((resolve, reject) => {
-    let finished = false;
-    let removeFrame: (() => void) | undefined;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      removeFrame?.();
-      engine.onDisposeObservable.remove(disposeObserver);
-      engine.onContextLostObservable.remove(lostObserver);
-      try {
-        lease.release();
-        resolve();
-      } catch (error) {
-        reject(error);
-      }
-    };
-    const disposeObserver = engine.onDisposeObservable.addOnce(finish);
-    const lostObserver = engine.onContextLostObservable.addOnce(finish);
-    // Babylon 9.29 drains deferred resources BEFORE notifying end-frame. A
-    // disposal requested inside that notification must await the NEXT drain;
-    // registering synchronously could run our observer in the current iteration.
-    queueMicrotask(() => {
-      if (finished) return;
-      if (disposedEngines.has(engine) || isEngineContextLost(engine)) {
-        finish();
-        return;
-      }
-      const observer = engine.onEndFrameObservable.addOnce(finish);
-      removeFrame = () => {
-        engine.onEndFrameObservable.remove(observer);
-      };
-    });
-  });
-  deferredReleases.set(lease, completion);
-  return completion;
+  lease.release();
+  return Promise.resolve();
 }

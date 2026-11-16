@@ -99,15 +99,13 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     state._emitUniformFromString(this.atlasRect, Types.Vector4);
     state._emitUniformFromString(this.materialRect, Types.Vector4);
     state._emitUniformFromString(this.opacity, Types.Float);
-    const wgsl = state.shaderLanguage === 1;
-    const uniform = wgsl ? "uniforms." : "";
-    const params = uniform + this.parameters, stroke = uniform + this.stroke;
+    const params = this.parameters, stroke = this.stroke;
     const vec4 = state._getShaderType(Types.Vector4);
     // What each glyph binds for itself: bound, or a draw batch's own per vertex. The span colour goes with the opacity.
     const [atlasKind, rectKind, tintKind] = DRAW_BATCH_TEXT_KINDS;
-    const atlasRect = drawBatchValue(state, atlasKind, uniform + this.atlasRect);
-    const rect = drawBatchValue(state, rectKind, uniform + this.materialRect);
-    const tinted = drawBatchValue(state, tintKind, `${vec4}(${uniform}${this.tint}, ${uniform}${this.opacity})`);
+    const atlasRect = drawBatchValue(state, atlasKind, this.atlasRect);
+    const rect = drawBatchValue(state, rectKind, this.materialRect);
+    const tinted = drawBatchValue(state, tintKind, `${vec4}(${this.tint}, ${this.opacity})`);
     const tint = `${tinted}.rgb`;
     const sampled = state._getFreeVariableName("textGlyphSample");
     const distance = state._getFreeVariableName("textGlyphDistance");
@@ -115,13 +113,13 @@ export class TextMaterialBlock extends NodeMaterialBlock {
     const fill = state._getFreeVariableName("textGlyphFill");
     const outline = state._getFreeVariableName("textGlyphOutline");
     const uv = this.glyphUV.associatedVariableName;
-    const sample = wgsl ? `textureSample(${this.sampler}, ${this.sampler}Sampler, ${uv})` : `texture2D(${this.sampler}, ${uv})`;
-    if (!wgsl) state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
+    const sample = `texture2D(${this.sampler}, ${uv})`;
+    state._emitExtension("derivatives", "#extension GL_OES_standard_derivatives : enable");
     state.compilationString += `${state._declareOutput(this.uv)} = ((${uv} - ${atlasRect}.xy) / ${atlasRect}.zw) * ${rect}.zw + ${rect}.xy;\n`;
     state.compilationString += `${state._declareLocalVar(sampled, Types.Vector4)} = ${sample};\n`;
     state.compilationString += `${state._declareOutput(this.color)} = ${vec4}(${tint}, 1.0);\n`;
     state.compilationString += `if (${params}.x > 0.5) { ${this.color.associatedVariableName} = ${sampled}; }\n`;
-    // Evaluate derivatives uniformly, outside the per-glyph mode branch (WGSL).
+    // The derivative is evaluated for every glyph, outside the per-glyph mode branch.
     state.compilationString += `${state._declareLocalVar(distance, Types.Float)} = max(min(${sampled}.r, ${sampled}.g), min(max(${sampled}.r, ${sampled}.g), ${sampled}.b));\n`;
     state.compilationString += `${state._declareLocalVar(pixel, Types.Float)} = max(fwidth(${distance}) * 0.5, 0.0001);\n`;
     state.compilationString += `${state._declareLocalVar(fill, Types.Float)} = clamp((${distance} - 0.5) / ${pixel} + 0.5, 0.0, 1.0);\n`;

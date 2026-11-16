@@ -2,10 +2,10 @@ import { expect, test } from "@playwright/test";
 import type {
   runRenderTargetMonitorProof, runRenderTargetQualityCost, runRenderTargetQualityProof, runRenderTargetShadowProof,
 } from "../apps/editor/src/testing/render-target-quality-proof";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
 if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
-  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+  test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type ProofWindow = {
   __renderTargetQualityProof: typeof runRenderTargetQualityProof;
@@ -14,85 +14,76 @@ type ProofWindow = {
   __renderTargetMonitorProof: typeof runRenderTargetMonitorProof;
 };
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`High and Full Quality captures of water match the scene view and a Fast one does not on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (message.type() === "error" || (message.type() === "warning" &&
-        /shader|GPUValidation|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
-    });
-    await page.goto("/?test=1&renderTargetQualityProof=1");
-    await page.waitForFunction(() => "__renderTargetQualityProof" in window);
-    const report = await page.evaluate((backend) => (window as unknown as ProofWindow).__renderTargetQualityProof(backend), backend);
-    await testInfo.attach("render-target-quality", { body: JSON.stringify(report), contentType: "application/json" });
-    expect(errors).toEqual([]);
-    expect(report.effectiveBackend).toBe(backend);
-    expect(report.mainCameraPreserved).toBe(true);
-    expect(report.retainedBytes).toBe(0);
-    for (const [label, result] of Object.entries(report.cases)) {
-      // High and Full Quality draw the water through their own scene copy, like the view. These cases have no screen
-      // effects but an identity vignette, so both match the view's own image.
-      expect(result.waterCopy, label).toBe(true);
-      expect(result.fullQuality, label).toBeLessThan(1.5);
-      expect(result.highQuality, label).toBeLessThan(1.5);
-      // Fast draws blended water without refraction: visibly different.
-      expect(result.fast, label).toBeGreaterThan(Math.max(4, result.fullQuality * 4));
-    }
+test("High and Full Quality captures of water match the scene view and a Fast one does not", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" || (message.type() === "warning" &&
+      /shader|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&renderTargetQualityProof=1");
+  await page.waitForFunction(() => "__renderTargetQualityProof" in window);
+  const report = await page.evaluate(() => (window as unknown as ProofWindow).__renderTargetQualityProof());
+  await testInfo.attach("render-target-quality", { body: JSON.stringify(report), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  expect(report.mainCameraPreserved).toBe(true);
+  expect(report.retainedBytes).toBe(0);
+  for (const [label, result] of Object.entries(report.cases)) {
+    // High and Full Quality draw the water through their own scene copy, like the view. These cases have no screen
+    // effects but an identity vignette, so both match the view's own image.
+    expect(result.waterCopy, label).toBe(true);
+    expect(result.fullQuality, label).toBeLessThan(1.5);
+    expect(result.highQuality, label).toBeLessThan(1.5);
+    // Fast draws blended water without refraction: visibly different.
+    expect(result.fast, label).toBeGreaterThan(Math.max(4, result.fullQuality * 4));
+  }
+});
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`a Full Quality capture far from the scene camera shows the sun shadows a camera there sees on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(300_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (message.type() === "error" || (message.type() === "warning" &&
-        /shader|GPUValidation|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
-    });
-    await page.goto("/?test=1&renderTargetQualityProof=1");
-    await page.waitForFunction(() => "__renderTargetShadowProof" in window);
-    const report = await page.evaluate((backend) => (window as unknown as ProofWindow).__renderTargetShadowProof(backend), backend);
-    await testInfo.attach("render-target-shadows", { body: JSON.stringify(report), contentType: "application/json" });
-    expect(errors).toEqual([]);
-    expect(report.effectiveBackend).toBe(backend);
-    expect(report.mainCameraPreserved).toBe(true);
-    expect(report.retainedBytes).toBe(0);
-    for (const [label, result] of Object.entries(report.cases)) {
-      // Sun shadows are a visible part of the reference image, beyond the scene camera's maps.
-      expect.soft(result.shadowContrast, label).toBeGreaterThan(6);
-      // The capture draws them as a camera at its pose does.
-      expect.soft(result.fullQuality, label).toBeLessThan(1.5);
-    }
+test("a Full Quality capture far from the scene camera shows the sun shadows a camera there sees", async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" || (message.type() === "warning" &&
+      /shader|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&renderTargetQualityProof=1");
+  await page.waitForFunction(() => "__renderTargetShadowProof" in window);
+  const report = await page.evaluate(() => (window as unknown as ProofWindow).__renderTargetShadowProof());
+  await testInfo.attach("render-target-shadows", { body: JSON.stringify(report), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  expect(report.mainCameraPreserved).toBe(true);
+  expect(report.retainedBytes).toBe(0);
+  for (const [label, result] of Object.entries(report.cases)) {
+    // Sun shadows are a visible part of the reference image, beyond the scene camera's maps.
+    expect.soft(result.shadowContrast, label).toBeGreaterThan(6);
+    // The capture draws them as a camera at its pose does.
+    expect.soft(result.fullQuality, label).toBeLessThan(1.5);
+  }
+});
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`a High Quality capture on a monitor matches the scene around it in Scene Linear and a Full Quality one does not on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (message.type() === "error" || (message.type() === "warning" &&
-        /shader|GPUValidation|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
-    });
-    await page.goto("/?test=1&renderTargetQualityProof=1");
-    await page.waitForFunction(() => "__renderTargetMonitorProof" in window);
-    const report = await page.evaluate((backend) => (window as unknown as ProofWindow).__renderTargetMonitorProof(backend), backend);
-    await testInfo.attach("render-target-monitor", { body: JSON.stringify(report), contentType: "application/json" });
-    expect(errors).toEqual([]);
-    expect(report.effectiveBackend).toBe(backend);
-    expect(report.retainedBytes).toBe(0);
-    const { fast, highQuality, fullQuality } = report.cases;
-    // The scene view applies Exposure and the tone curve once, to the subject and to the monitor alike.
-    expect(highQuality.monitorError).toBeLessThan(2.5);
-    expect(fast.monitorError).toBeLessThan(2.5);
-    // Full Quality's image is tone-mapped already: on a monitor it is processed twice.
-    expect(fullQuality.monitorError).toBeGreaterThan(Math.max(5, highQuality.monitorError * 4));
+test("a High Quality capture on a monitor matches the scene around it in Scene Linear and a Full Quality one does not", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" || (message.type() === "warning" &&
+      /shader|validation error|INVALID_|feedback loop|conflicting usages/i.test(message.text()))) errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&renderTargetQualityProof=1");
+  await page.waitForFunction(() => "__renderTargetMonitorProof" in window);
+  const report = await page.evaluate(() => (window as unknown as ProofWindow).__renderTargetMonitorProof());
+  await testInfo.attach("render-target-monitor", { body: JSON.stringify(report), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  expect(report.retainedBytes).toBe(0);
+  const { fast, highQuality, fullQuality } = report.cases;
+  // The scene view applies Exposure and the tone curve once, to the subject and to the monitor alike.
+  expect(highQuality.monitorError).toBeLessThan(2.5);
+  expect(fast.monitorError).toBeLessThan(2.5);
+  // Full Quality's image is tone-mapped already: on a monitor it is processed twice.
+  expect(fullQuality.monitorError).toBeGreaterThan(Math.max(5, highQuality.monitorError * 4));
+});
 
 // Opt-in measurement (HAPTIC_RENDER_TARGET_COST=1): capture cost per frame on this device.
 test("capture cost per frame for each Quality", async ({ page }, testInfo) => {
@@ -100,16 +91,7 @@ test("capture cost per frame for each Quality", async ({ page }, testInfo) => {
   test.setTimeout(600_000);
   await page.goto("/?test=1&renderTargetQualityProof=1");
   await page.waitForFunction(() => "__renderTargetQualityCost" in window);
-  const reports: Array<Awaited<ReturnType<typeof runRenderTargetQualityCost>> | { backend: string; unavailable: string }> = [];
-  for (const backend of ["webgl2", "webgpu"] as const) {
-    try {
-      reports.push(await page.evaluate((backend) => (window as unknown as ProofWindow).__renderTargetQualityCost(backend), backend));
-    } catch (error) {
-      // A native run may have no WebGPU adapter; record it rather than lose the other backend.
-      reports.push({ backend, unavailable: String(error).slice(0, 200) });
-    }
-  }
-  await testInfo.attach("render-target-quality-cost", { body: JSON.stringify(reports, null, 2), contentType: "application/json" });
-  for (const report of reports) if ("retainedBytes" in report) expect(report.retainedBytes).toBe(0);
-  expect(reports.some((report) => "retainedBytes" in report)).toBe(true);
+  const report = await page.evaluate(() => (window as unknown as ProofWindow).__renderTargetQualityCost());
+  await testInfo.attach("render-target-quality-cost", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+  expect(report.retainedBytes).toBe(0);
 });

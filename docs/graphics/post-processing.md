@@ -62,7 +62,7 @@ An **Allow** switch never turns an effect on; the effect also has to be on in **
 | Mode | Description |
 | --- | --- |
 | **MSAA 4x** | Draws each pixel of the scene from four samples. Edges are smooth and the image stays sharp and still. |
-| **MSAA 2x** | Two samples per pixel: cheaper, a little less smooth. WebGPU only supports four, so it uses **MSAA 4x** there. |
+| **MSAA 2x** | Two samples per pixel: cheaper, a little less smooth. |
 | **FXAA** | Draws one sample per pixel, then blurs edges in a full-screen pass. Cheapest, slightly soft. |
 | **Off** | No anti-aliasing. |
 

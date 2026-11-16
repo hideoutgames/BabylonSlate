@@ -44,7 +44,7 @@ describe("texturesRetainedAfterPlay", () => {
     while (engines.length > 0) engines.pop()?.dispose();
   });
 
-  /** A NullEngine whose cache lists raw textures, as the WebGL and WebGPU Engines' do. */
+  /** A NullEngine whose cache lists raw textures, as the WebGL Engine's does. */
   function sharedEngine(): NullEngine {
     const engine = new NullEngine();
     engines.push(engine);

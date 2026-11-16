@@ -73,7 +73,7 @@ describe("experimental GLSL to ordinary Material nodes", () => {
     expect(result[3]).toBe(0.25);
     expect(edited.shadingModel).toBe("unlit");
     expect(edited.blendMode).toBe("translucent");
-    expect(validateMaterialDocument(edited, { capabilities: { customGlsl: false } })).toEqual([]);
+    expect(validateMaterialDocument(edited)).toEqual([]);
   });
 
   it("creates editable numeric uniform components without color-space conversion", () => {
@@ -105,7 +105,7 @@ describe("experimental GLSL to ordinary Material nodes", () => {
         gl_FragColor = vec4(color, smoothstep(0.0, 1.0, intensity));
       }
     `, { vUV: "uv", uTime: "time" });
-    expect(validateMaterialDocument(document, { capabilities: { customGlsl: false } })).toEqual([]);
+    expect(validateMaterialDocument(document)).toEqual([]);
     const lowered = lowerMaterialDocument(document);
     expect(lowered.ok).toBe(true);
     if (!lowered.ok) return;

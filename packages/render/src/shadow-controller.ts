@@ -47,7 +47,6 @@ import { RetainedShadowCasters, type RetainedShadowDiagnostics } from "./shadow-
 import { writeSceneShadowDebug } from "./shadow-debug";
 import { awaitsFirstDraw, setAwaitingFirstDraw } from "./shadow-first-draw";
 import { onMeshRevealed } from "./reveal-pending";
-import { forgetCasterRequests, setShadowCasterReach } from "./shadow-caster-warm";
 import {
   availableSceneShadowBytes,
   reserveSceneShadows,
@@ -267,26 +266,14 @@ export class SceneShadowController {
     // A hidden mesh casts into no map; revealed, it joins the caster lists of the maps it can reach, which draw again
     // with it: a local light's only when the mesh is within its range, a sun's always.
     const unwatchReveals = onMeshRevealed(scene, (mesh) => {
-      forgetCasterRequests(mesh);
       if (!this.meshes.has(mesh)) return;
       this.forEachGenerator((generator) => {
         if (reaches(generator, mesh)) generator.getShadowMap()?.resetRefreshCounter();
       });
     });
-    // On WebGPU a hidden mesh's reveal waits for the depth pipelines of the scene view's drawn maps among those
-    // (`shadow-caster-warm.ts`): a standby map samples neutrally, and one awaiting its first draw has none yet.
-    setShadowCasterReach(scene, (mesh, visit) => {
-      if (!this.meshes.has(mesh) || !scene.shadowsEnabled || !scene.renderTargetsEnabled) return;
-      for (const entry of this.entries.values()) {
-        const generator = entry.generator;
-        if (!generator || entry.status !== "active" || entry.standby || awaitsFirstDraw(generator)) continue;
-        if (entry.light.isEnabled() && entry.light.shadowEnabled && reaches(generator, mesh)) visit(generator);
-      }
-    });
     scene.onDisposeObservable.addOnce(() => {
       engine.onContextRestoredObservable.remove(restored);
       unwatchReveals();
-      setShadowCasterReach(scene, undefined);
       this.views.releaseAll();
       for (const entry of this.entries.values()) entry.generator?.dispose();
       this.casterVariants.dispose();
@@ -703,8 +690,8 @@ export class SceneShadowController {
     if (this.views.prune()) changed = true;
     // An atlas of another edge (another quality level's, or a sun's growth coming or going) is empty now and goes in
     // this frame; the maps planned into the new one wait `budget-limited` until a later Engine frame builds it, so the
-    // two never live in the same frame. WebGPU destroys a disposed texture only at the frame's end, and a GPU process
-    // that frees storage once the frame's commands finish would otherwise hold both.
+    // two never live in the same frame. A GPU process that frees storage once the frame's commands finish would
+    // otherwise hold both.
     const engine = scene.getEngine();
     if (heldEdge !== 0 && heldEdge !== atlasEdge) {
       releaseEmptyShadowAtlas(scene);

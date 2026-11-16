@@ -87,8 +87,7 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
     const fade = sample(.25, 1 / 3), start = sample(.25, 2 / 3), end = sample(.75, 2 / 3);
     return {
       initial: fade.every((c) => c > 240) && start.every((c) => c > 240) && end.every((c) => c < 20),
-      // Alpha blending and output transfer can differ by backend; both must
-      // retain a visibly dim gray texture rather than full white or vanished black.
+      // The fade must leave a visibly dim gray texture rather than full white or vanished black.
       finished: fade.every((c) => c > 30 && c < 180) && Math.max(...fade) - Math.min(...fade) < 5 &&
         start.every((c) => c < 20) && end[0]! > 220 && end[1]! < 20 && end[2]! < 20,
     };

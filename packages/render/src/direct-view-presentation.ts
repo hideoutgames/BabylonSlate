@@ -20,35 +20,20 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 /** GPU copies of each view's last coherent frame. */
 export interface HeldImageStore {
   /**
-   * The step about to draw is presented directly (WebGPU then draws into its
-   * own target instead of the canvas). Stays in effect until `clear`.
-   */
-  engage?(): void;
-  /**
    * The frame just drawn (`width` × `height`) is coherent: hold it as the
-   * view's image and present it. False when nothing was drawn to hold.
+   * view's image. The default framebuffer, which holds it, is what shows.
    */
-  snapshot(view: EngineView, width: number, height: number): boolean;
+  snapshot(view: EngineView, width: number, height: number): void;
   /**
    * Make the Engine canvas show the view's held image again, scaled to
-   * `width` × `height`, after something else drew or a resize. `forRead`
-   * also makes it readable in this task (a `drawImage` of the canvas).
-   * False when the view has no held image.
+   * `width` × `height`, after something else drew or a resize. False when the
+   * view has no held image.
    */
-  restore(view: EngineView, width: number, height: number, forRead?: boolean): boolean;
-  /**
-   * `restore` copies the held image unscaled into the canvas's top-left corner
-   * (WebGPU), so after a resize only the overlapping region holds it.
-   */
-  readonly restoresUnscaled?: boolean;
+  restore(view: EngineView, width: number, height: number): boolean;
   size(view: EngineView): { width: number; height: number } | null;
   release(view: EngineView): void;
-  /** Forget every held image and stop drawing for direct presentation; `lost` skips GPU deletes after a context loss. */
+  /** Forget every held image; `lost` skips GPU deletes after a context loss. */
   clear(lost?: boolean): void;
-  /** False once the store found it cannot work on this Engine; presentation then copies. */
-  usable?(): boolean;
-  /** Undo what the store installed on the Engine (the presenter is going away). */
-  dispose?(): void;
 }
 
 type WebGlEngine = AbstractEngine & {
@@ -58,14 +43,14 @@ type WebGlEngine = AbstractEngine & {
 };
 
 /**
- * The WebGL2 store, or null when the Engine cannot present directly: WebGPU,
- * WebGL1, a multisampled default framebuffer (a blit cannot write into it) or
- * an OffscreenCanvas rendering surface. Those keep the copy path.
+ * The WebGL2 store, or null when the Engine cannot present directly: WebGL1, a
+ * multisampled default framebuffer (a blit cannot write into it) or an
+ * OffscreenCanvas rendering surface. Those keep the copy path.
  */
 export function createWebGl2HeldImageStore(engine: AbstractEngine): HeldImageStore | null {
   const native = engine as WebGlEngine;
   const gl = native._gl;
-  if (engine.isWebGPU || !gl || native.webGLVersion !== 2 || typeof gl.blitFramebuffer !== "function") return null;
+  if (!gl || native.webGLVersion !== 2 || typeof gl.blitFramebuffer !== "function") return null;
   if (gl.getContextAttributes()?.antialias) return null;
   if (typeof HTMLCanvasElement === "undefined" || !(engine.getRenderingCanvas() instanceof HTMLCanvasElement)) return null;
   type Held = { framebuffer: WebGLFramebuffer; renderbuffer: WebGLRenderbuffer; width: number; height: number };
@@ -107,9 +92,8 @@ export function createWebGl2HeldImageStore(engine: AbstractEngine): HeldImageSto
   return {
     snapshot(view, width, height) {
       const entry = allocate(view, width, height);
+      // Without an entry nothing is held; the default framebuffer is shown either way.
       if (entry) blit(null, entry.framebuffer, entry, { width, height });
-      // The default framebuffer is shown either way.
-      return true;
     },
     restore(view, width, height) {
       const entry = held.get(view);

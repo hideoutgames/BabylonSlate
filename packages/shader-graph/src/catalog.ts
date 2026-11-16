@@ -21,8 +21,7 @@ export type MaterialCapability =
   | "textureLod"
   | "sceneDepth"
   | "sceneNormal"
-  | "vertexTexture"
-  | "customGlsl";
+  | "vertexTexture";
 
 export type MaterialPinType =
   | { kind: MaterialValueType }
@@ -1163,7 +1162,6 @@ const CUSTOM_NODES: MaterialNodeDefinition[] = [
     // Pins come from each node's typed interface (`customGlslDefinition`).
     inputs: [],
     outputs: [],
-    requires: ["customGlsl"],
   },
 ];
 

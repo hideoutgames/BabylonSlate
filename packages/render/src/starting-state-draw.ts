@@ -42,9 +42,9 @@ function withoutViewCulling(scene: Scene, draw: () => boolean): boolean {
 
 /**
  * Keeps every Effect the meshes of `scene` draw with, in any pass, compiled until it is released (one reference each;
- * also released when the scene is disposed). Babylon releases an Effect, its program and its WebGPU pipelines, once the
- * last draw wrapper using it is disposed: a shadow map that stops disposes its casters' depth wrappers, so starting it
- * again would compile them anew mid-game. `hold` retains the Effects the meshes hold now and returns them.
+ * also released when the scene is disposed). Babylon releases an Effect and its program once the last draw wrapper
+ * using it is disposed: a shadow map that stops disposes its casters' depth wrappers, so starting it again would
+ * compile them anew mid-game. `hold` retains the Effects the meshes hold now and returns them.
  */
 function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } {
   const retained = new Set<Effect>();
@@ -86,15 +86,15 @@ function effectRetainer(scene: Scene): { hold(): Set<Effect>; release(): void } 
 /**
  * Draws a loaded Play scene's starting state behind its loading screen, before the first presented frame, without view
  * culling (Play's world Scene culls by view: `play-view-culling.ts`): every enabled, visible mesh, a mesh outside the
- * starting view included, has its program's first use (WebGL2) or its render pipelines (WebGPU) here rather than when
- * gameplay first shows it. Frames draw while the meshes hold an Effect no frame of this draw drew (a draw's post-draw
- * probe can ask for more, which the next ready frame draws); after the first, they wait for `settled` (the views it
- * created, such as a High or Full Quality capture's, have prepared). Its Effects stay compiled until `release`.
+ * starting view included, has its program's first use here rather than when gameplay first shows it. Frames draw
+ * while the meshes hold an Effect no frame of this draw drew (a draw's post-draw probe can ask for more, which the next
+ * ready frame draws); after the first, they wait for `settled` (the views it created, such as a High or Full Quality
+ * capture's, have prepared). Its Effects stay compiled until `release`.
  *
  * `draws` says whether there is a reason to draw: the caller passes true when the Scene holds a light or Play may spawn
  * one, when a particle component is to play (its unstarted systems draw their programs in these frames), or when the
- * spawn warm-up staged meshes for it (shown only until it has drawn, `onDrawn`; on WebGL2 a program's
- * first draw holds iPad WebKit and no probe sees it). Without one it draws no frame: an extra loading frame steps GPU
+ * spawn warm-up staged meshes for it (shown only until it has drawn, `onDrawn`; a program's first draw holds iPad
+ * WebKit and no probe sees it). Without one it draws no frame: an extra loading frame steps GPU
  * particles once more, which a paused Simulation's redraw shows. `onDrawn` runs once it has drawn, or when it ends
  * first, for the caller to remove the staged meshes. `drawAgain` holds while something only a further frame of it can
  * complete waits (a manual capture's rehearsal, drawn inside the view's frame, that its variants left undrawn): it

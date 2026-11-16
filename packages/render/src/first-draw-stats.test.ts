@@ -252,11 +252,4 @@ describe("first draw stats", () => {
       .toEqual([2 + LONG_FRAMES_KEPT, LONG_FRAMES_KEPT, 300, 180, FIRST_DRAW_STALL_MS + 10]);
     session.close();
   });
-
-  it("leaves a WebGPU Engine untracked", () => {
-    const { engine } = createTestEngine();
-    Object.defineProperty(engine, "isWebGPU", { value: true });
-    trackFirstDraws(engine);
-    expect(openFirstDrawStats(engine)).toBeNull();
-  });
 });

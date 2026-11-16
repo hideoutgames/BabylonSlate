@@ -65,7 +65,6 @@ export const SCALABILITY_FIELD_OWNERS = {
 export const PROJECT_RENDER_SETTING_OWNERS = {
   quality: "scalability",
   shadows: "shadows",
-  gpuBackend: "independent",
   mode: "independent",
   cel: "independent",
   environmentLighting: "independent",

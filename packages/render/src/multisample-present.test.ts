@@ -14,7 +14,7 @@ describe("presentsMultisampleByBlit", () => {
 
   it("keeps the resolve and the output copy wherever the blit cannot stand in for them", () => {
     for (const change of [
-      { webGl2: false }, // WebGPU resolves in the render pass
+      { webGl2: false }, // no WebGL2 context to blit with
       { samples: 1 },
       { colorType: Constants.TEXTURETYPE_HALF_FLOAT }, // a multisampled blit needs the backbuffer's format
       { backbuffer: false },

@@ -17,7 +17,7 @@ description: "Babylon.js engine work in Haptic: packages/render and engine code 
 
 ## Invariants
 
-- **One Engine per project** (`packages/render/src/create-engine.ts`). Previews and thumbnails render to an RTT on it; never create a second WebGL or WebGPU context. The only exceptions are the Preview Build iframe and the Homepage launcher ([render.md](../../reference/architecture/render.md#one-engine-per-project)).
+- **One Engine per project** (`packages/render/src/create-engine.ts`). Previews and thumbnails render to an RTT on it; never create a second WebGL context. The only exceptions are the Preview Build iframe and the Homepage launcher ([render.md](../../reference/architecture/render.md#one-engine-per-project)).
 - **Draw only through the forward FrameGraph** (`ForwardSceneFrameGraph` in `framegraph-forward-scene.ts`). There is no `Scene.render` fallback; render.md lists what graph preparation rejects.
 - **Construct textures only in `ResourceCache`** (`resource-cache.ts`). The ESLint rule `boundary/render-texture-cache` rejects `new Texture` elsewhere in `packages/render`; renderer-owned targets reserve through `beginManagedRenderAllocation`.
 - **Create shadows only through `SceneShadowController`** (`shadow-controller.ts`). An unmanaged shadow generator makes graph preparation reject.

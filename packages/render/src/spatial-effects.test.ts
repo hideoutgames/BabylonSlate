@@ -10,7 +10,6 @@ import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch }
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createSpatialStages, type SpatialStage } from "./spatial-effects";
-import { volumetricShader } from "./volumetric-shader";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); });
@@ -114,7 +113,7 @@ it("reports a failed volumetric march as the chain's compile failure", () => {
   expect(failure.message).toBe("Scene Volumetric Lighting failed to compile: march failed");
 });
 
-it("declares in the volumetric march, in both shader languages, exactly the uniforms and samplers its Effect binds", () => {
+it("declares in the volumetric march exactly the uniforms and samplers its Effect binds", () => {
   const stages = stagesFor({ volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, maxLights: 4 } });
   const march = stages[named(stages, "Scene Volumetric Lighting")]!.wrapper;
   // Babylon adds the post-process scale (read by its vertex shader) and the source texture (the march reads none).
@@ -126,14 +125,10 @@ it("declares in the volumetric march, in both shader languages, exactly the unif
   const glsl = [...fragment.matchAll(/uniform\s+(?:highp\s+)?(\w+)\s+(\w+)/g)];
   expect(glsl.filter(([, type]) => !type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(uniforms);
   expect(glsl.filter(([, type]) => type!.startsWith("sampler")).map(([, , name]) => name).sort()).toEqual(samplers);
-  const wgsl = volumetricShader(true, 4, DEFAULT_RENDER_EFFECTS.volumetricLighting.steps);
-  expect([...wgsl.matchAll(/uniform\s+(\w+)\s*:/g)].map(([, name]) => name).sort()).toEqual(uniforms);
-  expect([...wgsl.matchAll(/var\s+(\w+)\s*:\s*texture_/g)].map(([, name]) => name).sort()).toEqual(samplers);
   // The scene depth and the atlas; the block's views in its buffer.
   expect(samplers).toEqual(["depthSampler", "hapticShadowAtlas"]);
   expect(march.options.uniformBuffers).toEqual(["HapticLights"]);
   expect(fragment).toContain("uniform HapticLights {");
-  expect(wgsl).toContain("var<uniform> HapticLights : HapticLightsBlock;");
 });
 
 it("gives the orthographic reflection compose the parallel view direction its trace uses", async () => {

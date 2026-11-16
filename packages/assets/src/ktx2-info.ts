@@ -21,8 +21,8 @@ export function sniffKtx2Size(bytes: Uint8Array): ImageSize | null {
 }
 
 /**
- * True when a KTX2's base size is a whole number of `align`-texel blocks, the
- * WebGPU requirement for ASTC 4x4 / BC7 uploads. Unreadable headers are false.
+ * True when a KTX2's base size is a whole number of `align`-texel blocks: with
+ * 4, the block grid of ASTC 4x4 / BC7. Unreadable headers are false.
  */
 export function isKtx2BlockAligned(bytes: Uint8Array, align: number): boolean {
   const size = sniffKtx2Size(bytes);

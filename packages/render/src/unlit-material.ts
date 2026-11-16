@@ -44,7 +44,6 @@ import {
   markPerMeshBindingMaterial, setMaterialUnlitBinding, setUnlitBinding, unlitBinding, type UnlitBinding,
 } from "./unlit-material-blocks";
 import { Light2DBlock, UnlitLinearColorBlock } from "./unlit-lighting-blocks";
-import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { registerAlphaToCoverage, samplesSteppedAlpha } from "./alpha-to-coverage";
 import { drawBatchWorld } from "./draw-batch-world-block";
 
@@ -329,9 +328,8 @@ function buildVariant(material: NodeMaterial, { textured, msdf }: SurfaceKind, k
 
 function createNodeMaterial(scene: Scene, name: string): NodeMaterial {
   const material = new NodeMaterial(name, scene, {
-    shaderLanguage: scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+    shaderLanguage: ShaderLanguage.GLSL,
   });
-  if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   material.allowShaderHotSwapping = false;
   return material;
 }

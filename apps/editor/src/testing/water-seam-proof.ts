@@ -5,17 +5,15 @@
  * is drawn twice, so a seam that changes between frames shows too.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
-import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
 import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
-import { compileMaterialPlan, configureEditorRenderingGroups, createAppWebGpuEngine, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateSceneWater } from "@haptic/render";
+import { compileMaterialPlan, configureEditorRenderingGroups, createWaterMesh, setSceneRenderSettings, setSceneWaterTime, updateSceneWater } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 /** From FT_World's own camera out to where the Global grid's cells are wider than the Ocean, looking at its west edge. */
 const CAMERAS: ReadonlyArray<readonly [number, number, number]> = [[-4, 52, -82], [0, 100, -160], [0, 150, -250], [0, 300, -600], [0, 600, -700]];
@@ -37,15 +35,12 @@ async function colour(scene: Scene, name: string, rgb: readonly number[]) {
   return compiled;
 }
 
-export async function runWaterSeamProof(backend: "webgl2" | "webgpu" = "webgl2") {
+export async function runWaterSeamProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 160;
   canvas.height = 108;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
-  const order = readbackChannelOrder(engine.isWebGPU);
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   const scene = new Scene(engine);
   try {
     configureEditorRenderingGroups(scene);
@@ -72,7 +67,7 @@ export async function runWaterSeamProof(backend: "webgl2" | "webgpu" = "webgl2")
       engine.beginFrame();
       try { graph.render(camera, false); } finally { engine.endFrame(); }
       const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-      return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+      return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
     };
     const views: { camera: readonly number[]; corners: number[][]; first: number[]; second: number[] }[] = [];
     for (const position of CAMERAS) {
@@ -84,7 +79,7 @@ export async function runWaterSeamProof(backend: "webgl2" | "webgpu" = "webgl2")
       // The Ocean's corners in the read-back rows (WebGL reads bottom row first).
       const corners = [[16, -40], [56, -40], [16, 40], [56, 40]].map(([x, z]) => {
         const p = Vector3.Project(new Vector3(x!, -6, z!), Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(canvas.width, canvas.height));
-        return [Math.round(p.x), engine.isWebGPU ? Math.round(p.y) : canvas.height - 1 - Math.round(p.y)];
+        return [Math.round(p.x), canvas.height - 1 - Math.round(p.y)];
       });
       views.push({ camera: position, corners, first, second });
     }

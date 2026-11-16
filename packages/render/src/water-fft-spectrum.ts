@@ -174,7 +174,7 @@ export function waterFftCycle(time: number, timeScale = 1, period = WATER_SPECTR
   return cycle < 0 ? cycle + 1 : cycle;
 }
 
-/** v − floor(v), as GLSL `fract` and WGSL `fract` compute it. */
+/** v − floor(v), as GLSL `fract` computes it. */
 const fract = (value: number) => value - Math.floor(value);
 
 /** Writes A + i·B for complex A and B (each the spectrum of a real field) at `o`: (A.re − B.im, A.im + B.re). */

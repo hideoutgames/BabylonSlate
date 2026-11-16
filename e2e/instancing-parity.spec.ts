@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { runInstancingParityProof } from "../apps/editor/src/testing/instancing-parity-proof";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type Proof = typeof runInstancingParityProof;
 
@@ -19,35 +19,33 @@ function compare(a: number[], b: number[]) {
   return { max, over };
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`pooled primitives draw the same image as meshes of their own, in fewer draws, on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(180_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (["error", "warning"].includes(message.type()) &&
-        /shader|WGSL|WebGPU uncaptured|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error|InstancedMesh/i.test(message.text()))
-        errors.push(message.text());
-    });
-    await page.goto("/?test=1&instancingParityProof=1");
-    await page.waitForFunction(() => typeof (window as unknown as { __instancingParityProof?: unknown }).__instancingParityProof === "function");
-    const result = await page.evaluate((backend) =>
-      (window as unknown as { __instancingParityProof: Proof }).__instancingParityProof(backend), backend);
-    const report = {
-      draws: result.draws, pool: result.pool,
-      visible: compare(result.unpooled.visible, result.pooled.visible),
-      occluded: compare(result.unpooled.occluded, result.pooled.occluded),
-    };
-    await testInfo.attach(`instancing-parity-${backend}`, { body: JSON.stringify(report, null, 2), contentType: "application/json" });
-    console.log(JSON.stringify(report));
-    expect(errors).toEqual([]);
-    // Shading, shadows (casting and receiving) and occlusion culling are the same within one step of a channel.
-    expect(report.visible).toEqual({ max: expect.any(Number), over: 0 });
-    expect(report.occluded).toEqual({ max: expect.any(Number), over: 0 });
-    // Three shapes and two Materials: one batch per group, so far fewer draws, in the shadow maps too.
-    expect(report.pool.pooled).toBe(36);
-    expect(report.pool.groups).toBeLessThanOrEqual(6);
-    expect(report.draws.pooled.visible).toBeLessThan(report.draws.unpooled.visible);
-    expect(report.draws.pooled.occluded).toBeLessThanOrEqual(report.draws.unpooled.occluded);
+test("pooled primitives draw the same image as meshes of their own, in fewer draws", async ({ page }, testInfo) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type()) &&
+      /shader|VALIDATE_STATUS|GL_INVALID|ERROR: 0:|context lost|fatal error|InstancedMesh/i.test(message.text()))
+      errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&instancingParityProof=1");
+  await page.waitForFunction(() => typeof (window as unknown as { __instancingParityProof?: unknown }).__instancingParityProof === "function");
+  const result = await page.evaluate(() =>
+    (window as unknown as { __instancingParityProof: Proof }).__instancingParityProof());
+  const report = {
+    draws: result.draws, pool: result.pool,
+    visible: compare(result.unpooled.visible, result.pooled.visible),
+    occluded: compare(result.unpooled.occluded, result.pooled.occluded),
+  };
+  await testInfo.attach("instancing-parity", { body: JSON.stringify(report, null, 2), contentType: "application/json" });
+  console.log(JSON.stringify(report));
+  expect(errors).toEqual([]);
+  // Shading, shadows (casting and receiving) and occlusion culling are the same within one step of a channel.
+  expect(report.visible).toEqual({ max: expect.any(Number), over: 0 });
+  expect(report.occluded).toEqual({ max: expect.any(Number), over: 0 });
+  // Three shapes and two Materials: one batch per group, so far fewer draws, in the shadow maps too.
+  expect(report.pool.pooled).toBe(36);
+  expect(report.pool.groups).toBeLessThanOrEqual(6);
+  expect(report.draws.pooled.visible).toBeLessThan(report.draws.unpooled.visible);
+  expect(report.draws.pooled.occluded).toBeLessThanOrEqual(report.draws.unpooled.occluded);
+});

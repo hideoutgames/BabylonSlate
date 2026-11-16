@@ -7,8 +7,7 @@ const enumeration = (name: string, members: string[]): EngineEnum => ({
 });
 export const SCALABILITY_ENUMS: EngineEnum[] = [
   enumeration("ScalabilityPreset", ["low", "medium", "high", "ultra"]),
-  enumeration("ScalabilityStatus", ["applied", "clamped", "unsupported", "rebuildPending", "restartRequired", "failed"]),
-  enumeration("GpuBackend", ["auto", "webgl2", "webgpu"]),
+  enumeration("ScalabilityStatus", ["applied", "clamped", "unsupported", "rebuildPending", "failed"]),
   enumeration("RenderMode", ["pbr", "cel"]),
   enumeration("LightBudgetMode", ["auto", "manual"]),
   enumeration("ShadowFilter", ["pcf", "pcss"]),
@@ -67,7 +66,7 @@ export const SCALABILITY_STRUCTS: EngineStruct[] = [
   define("RenderingQuality", [structure("resolution", "ResolutionQuality"), structure("textures", "TextureQuality"),
     structure("geometry", "GeometryQuality"), structure("water", "WaterQuality"), structure("lighting", "LightingQuality"),
     structure("postprocessing", "PostProcessingQuality")]),
-  define("RenderSettings", [choice("gpuBackend", "GpuBackend", "webgl2"), choice("mode", "RenderMode", "pbr"),
+  define("RenderSettings", [choice("mode", "RenderMode", "pbr"),
     structure("quality", "RenderingQuality"), structure("shadows", "ShadowQuality"), structure("cel", "CelShading"), structure("effects", "RenderEffects"),
     structure("environmentLighting", "EnvironmentLighting"), bool("customResolution", false), number("width", 1920), number("height", 1080), bool("blackBars", false)]),
   define("RuntimeRenderingSettings", [structure("render", "RenderSettings"), number("frameCap", 60)]),

@@ -74,26 +74,8 @@ function sameRect(a: OverlayLayoutRect | undefined, b: OverlayLayoutRect): boole
   return !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 }
 
-/** Babylon 9.29 WebGPU scissor state: the rect asked for, and how draws reach the render pass. */
-type WebGpuScissorInternals = {
-  compatibilityMode: boolean;
-  _bundleList: unknown;
-  _currentRenderPass: unknown;
-  _applyScissor(bundleList: unknown): void;
-};
-
-/**
- * Ends a clip's scissor. On WebGPU, Babylon's `disableScissor` forgets the rect without resetting the render pass's,
- * whose later draws then stay clipped to it: the pass gets the whole target's rect first.
- */
+/** Ends a clip's scissor. */
 export function disableOverlayClipScissor(engine: AbstractEngine): void {
-  if (engine.isWebGPU) {
-    const gpu = engine as unknown as WebGpuScissorInternals;
-    if (gpu._currentRenderPass || !gpu.compatibilityMode) {
-      engine.enableScissor(0, 0, engine.getRenderWidth(), engine.getRenderHeight());
-      gpu._applyScissor(gpu.compatibilityMode ? null : gpu._bundleList);
-    }
-  }
   engine.disableScissor();
 }
 
@@ -116,9 +98,7 @@ export function enableOverlayClipScissor(scene: Scene, clip: OverlayLayoutRect):
   const right = Math.max(x, Math.min(width, Math.ceil(maxX)));
   const bottom = Math.max(top, Math.min(height, Math.ceil(maxY)));
   const empty = clip.width <= 0 || clip.height <= 0;
-  // Babylon's canvas scissor uses a bottom-left origin on both backends.
-  // WebGPU RTTs also flip geometry Y, so their unflipped scissor has the same
-  // coordinates for the layer's ordinary render targets.
+  // Babylon's scissor uses a bottom-left origin.
   engine.enableScissor(empty ? 1 : x, height - bottom, empty ? 0 : right - x, empty ? 0 : bottom - top);
   return true;
 }

@@ -9,7 +9,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import {
-  HAPTIC_2D_LIGHT_FUNCTION_GLSL, HAPTIC_2D_LIGHT_FUNCTION_WGSL, HAPTIC_2D_LIGHTS_GLSL, HAPTIC_2D_LIGHTS_WGSL, HAPTIC_2D_SHADOW_SAMPLER,
+  HAPTIC_2D_LIGHT_FUNCTION_GLSL, HAPTIC_2D_LIGHTS_GLSL, HAPTIC_2D_SHADOW_SAMPLER,
   bind2DLights, bind2DShadows,
 } from "./lights-2d";
 
@@ -45,10 +45,9 @@ export class Light2DBlock extends NodeMaterialBlock {
     super._buildBlock(state);
     state.sharedData.dynamicUniformBlocks.push(this);
     state.sharedData.forcedBindableBlocks.push(this);
-    const wgsl = state.shaderLanguage === 1;
     state._emit2DSampler(HAPTIC_2D_SHADOW_SAMPLER);
-    state._emitFunction("haptic2DLights", wgsl ? HAPTIC_2D_LIGHTS_WGSL : HAPTIC_2D_LIGHTS_GLSL, "// Haptic2DLights");
-    state._emitFunction("haptic2DLightFunction", wgsl ? HAPTIC_2D_LIGHT_FUNCTION_WGSL : HAPTIC_2D_LIGHT_FUNCTION_GLSL, "// 2D light");
+    state._emitFunction("haptic2DLights", HAPTIC_2D_LIGHTS_GLSL, "// Haptic2DLights");
+    state._emitFunction("haptic2DLightFunction", HAPTIC_2D_LIGHT_FUNCTION_GLSL, "// 2D light");
     state.compilationString += `${state._declareOutput(this.output)} = ${this.color.associatedVariableName} * haptic2DLight(${this.worldPosition.associatedVariableName}.xy);\n`;
     return this;
   }
@@ -69,8 +68,7 @@ export class UnlitLinearColorBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state._emitFunctionFromInclude("helperFunctions", "");
-    const decode = state.shaderLanguage === 1 ? "toLinearSpaceVec3" : "toLinearSpace";
-    state.compilationString += `${state._declareOutput(this.output)} = ${decode}(${this.input.associatedVariableName});\n`;
+    state.compilationString += `${state._declareOutput(this.output)} = toLinearSpace(${this.input.associatedVariableName});\n`;
     return this;
   }
 }

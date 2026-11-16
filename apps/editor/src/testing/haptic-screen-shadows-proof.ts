@@ -23,31 +23,27 @@ import {
   type RenderMode,
   type ScreenShadowsQuality,
 } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, setSceneRenderSettings } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { allowSceneScreenShadows, sceneRenderingSettings } from "../../../../packages/render/src/render-settings";
 import { SCREEN_SHADOW_LEVELS } from "../../../../packages/render/src/screen-shadows";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 type Capture = { name: string; pixels: number[]; screenShadows: boolean };
 /** Per pixel: the surface hit (floor, ramp, other, glass-covered floor) and whether a caster blocks its sun within reach. */
 type Mask = { surface: ("floor" | "ramp" | "glass" | "other")[]; contact: boolean[]; open: boolean[]; distance: number[] };
 
-export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") {
+export async function runHapticScreenShadowsProof() {
   const canvas = document.createElement("canvas");
   canvas.width = 160;
   canvas.height = 100;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(canvas.width, canvas.height);
-  const order = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, canvas.width, canvas.height);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   try {
@@ -167,7 +163,7 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
     await capture("cel high");
 
     const reach = SCREEN_SHADOW_LEVELS.high.length;
-    const mask = surfaceMask(scene, camera, canvas, engine.isWebGPU, floor, ramp, glass, casters, sun.direction.normalizeToNew().scaleInPlace(-1), reach);
+    const mask = surfaceMask(scene, camera, canvas, floor, ramp, glass, casters, sun.direction.normalizeToNew().scaleInPlace(-1), reach);
     graph.dispose();
     return {
       width: canvas.width, height: canvas.height, captures, mask, lightCompiles, planned,
@@ -181,18 +177,18 @@ export async function runHapticScreenShadowsProof(backend: "webgl2" | "webgpu") 
 }
 
 /**
- * Per pixel, in readPixels' rows (WebGL2's bottom-up, WebGPU's top-down): the surface the view hits first (the glass's
+ * Per pixel, in readPixels' rows (bottom-up): the surface the view hits first (the glass's
  * pixels report the floor seen through it as "glass"), whether a caster or the glass blocks the sun within `reach` of
  * that point (`contact`) or at no distance at all (`open`), and its eye distance.
  */
 function surfaceMask(
-  scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, topDown: boolean, floor: AbstractMesh, ramp: AbstractMesh,
+  scene: Scene, camera: FreeCamera, canvas: HTMLCanvasElement, floor: AbstractMesh, ramp: AbstractMesh,
   glass: AbstractMesh, casters: AbstractMesh[], toSun: Vector3, reach: number,
 ): Mask {
   const mask: Mask = { surface: [], contact: [], open: [], distance: [] };
   const solid = (mesh: AbstractMesh) => mesh === floor || casters.includes(mesh);
   for (let row = 0; row < canvas.height; row++) {
-    const y = topDown ? row + 0.5 : canvas.height - row - 0.5;
+    const y = canvas.height - row - 0.5;
     for (let column = 0; column < canvas.width; column++) {
       const ray = scene.createPickingRay(column + 0.5, y, Matrix.Identity(), camera);
       const throughGlass = scene.pickWithRay(ray, (mesh) => mesh === glass || solid(mesh));

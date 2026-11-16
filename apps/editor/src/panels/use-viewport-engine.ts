@@ -150,7 +150,7 @@ export function useViewportEngine({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!sharedEngine) {
-      // The Engine is gone (a lost device, a backend change, a closed project):
+      // The Engine is gone (a failed or replaced Engine, a closed project):
       // a failed load has nothing left to retry; the next Engine loads anew.
       setSceneReady(false);
       setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene" });

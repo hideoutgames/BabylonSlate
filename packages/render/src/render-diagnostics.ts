@@ -1,8 +1,6 @@
-import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
 import type { FramePressureSample } from "./hardware-scaling";
-import type { ResolvedRenderingPipeline } from "@haptic/core";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { findSceneShadowController, shadowLightDiagnostics } from "./shadow-controller";
@@ -27,11 +25,11 @@ import { deviceTextureLimits } from "./device-profile";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
 
 export type RenderDiagnostics = {
-  /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere and on WebGPU. */
+  /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere. */
   firstDraws?: FirstDrawStats | null;
   /**
    * The programs the view's Engine holds now, every view's among them: how many, how many it never drew, and the drawn
-   * ones by the pass that first drew each (`programInventory`); null on WebGPU.
+   * ones by the pass that first drew each (`programInventory`); null for an Engine whose draws are not tracked.
    */
   programs?: ProgramInventory | null;
   /**
@@ -71,7 +69,7 @@ export type RenderDiagnostics = {
     attempted: number; drawn: number; copied: number; held: number;
     /**
      * `held` by why the world view held each frame (`held-frames.ts`): its draw's `reason` ("Scene is not ready to
-     * render.", "Render pipelines are compiling.", a FrameGraph reason) or a `HELD_FRAME_LABELS` label; at most
+     * render.", a FrameGraph reason) or a `HELD_FRAME_LABELS` label; at most
      * `MAX_HELD_FRAME_REASONS` keys, later reasons under "other".
      */
     heldReasons: Record<string, number>;
@@ -187,20 +185,18 @@ export type RenderDiagnostics = {
   /**
    * Shadow casters drawn from one shared buffer instead of one Babylon draw each: how many are retained, and since the
    * Scene's first map the draw calls made (`calls`) for the caster draws they stood for (`drawn`). Null where no
-   * caster can be retained (WebGPU).
+   * caster can be retained.
    */
   shadowRetained: RetainedShadowDiagnostics | null;
   readbackMs: number | null;
   shadowLights: ReturnType<typeof shadowLightDiagnostics>;
   qualityLimits: string[];
-  pipeline: ResolvedRenderingPipeline;
   /**
-   * Graphics API and adapter identity reported by the Engine itself, so a
-   * diagnostics capture always names the real adapter and cannot be mistaken
-   * for device qualification.
+   * Adapter identity reported by the Engine itself, so a diagnostics capture
+   * always names the real adapter and cannot be mistaken for device
+   * qualification.
    */
   adapter: {
-    api: "webgpu" | "webgl2";
     vendor: string | null;
     renderer: string | null;
     version: string | null;
@@ -246,11 +242,9 @@ export function createRenderDiagnostics(
     const shadows = findSceneShadowController(scene);
     const metrics = shadows?.metrics() ?? { passes: 0, bytes: 0 };
     const state = sceneRenderingSettings(scene);
-    const pipeline = sceneRenderingPipeline(scene);
     const { sample, gpuAttribution } = pressure();
     return {
       cpuMs: cpuMs(),
-      pipeline,
       readbackMs: readbackMs(),
       shadowDrawCalls: shadows?.shadowDrawCalls() ?? 0,
       shadowTriangles: shadows?.shadowTriangles() ?? 0,
@@ -272,7 +266,6 @@ export function createRenderDiagnostics(
       shadowMapBytes: metrics.bytes,
       shadowLights: state.lightsDebug ? shadowLightDiagnostics(scene, shadows) : [],
       qualityLimits: [
-        ...pipeline.limits,
         ...sceneLightingLimits(scene),
         ...effectiveShadowSettings(
           state.shadows,
@@ -314,7 +307,6 @@ export function engineAdapterInfo(engine: AbstractEngine) {
   };
   const info = infoEngine.getInfo?.() ?? infoEngine.getGlInfo?.();
   return {
-    api: (engine.isWebGPU ? "webgpu" : "webgl2") as "webgpu" | "webgl2",
     vendor: info?.vendor ?? null,
     renderer: info?.renderer ?? null,
     version: info?.version ?? null,

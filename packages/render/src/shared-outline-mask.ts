@@ -209,7 +209,7 @@ export class SharedOutlineMaskRenderer {
         samplers: ["styleSampler", "diffuseSampler", "opacitySampler", "boneSampler", "morphTargets", "bakedVertexAnimationTexture", LATTICE_SAMPLER],
         defines: joined, fallbacks, onCompiled: null, onError: this.compileFailure?.for(`Shared Outline ${this.group} Mask`) ?? null,
         indexParameters: { maxSimultaneousMorphTargets: morphs },
-        shaderLanguage: this.view.scene.getEngine().isWebGPU ? ShaderLanguage.WGSL : ShaderLanguage.GLSL,
+        shaderLanguage: ShaderLanguage.GLSL,
       }, this.view.scene.getEngine()), joined);
     }
     program.wrapper = wrapper;

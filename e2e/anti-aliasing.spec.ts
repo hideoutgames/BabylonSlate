@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { runAntiAliasingHaloProof, runAntiAliasingProof } from "../apps/editor/src/testing/anti-aliasing-proof";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 /** Largest and mean absolute channel difference over RGB, ignoring alpha. */
 function difference(a: number[], b: number[]) {
@@ -22,61 +22,58 @@ function partialPixels(pixels: number[]) {
   return pixels.filter((value, i) => i % 4 === 0 && value > 24 && value < 231).length;
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`a static camera draws identical frames and MSAA smooths geometric and alpha-tested edges on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(90_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (["warning", "error"].includes(message.type()) &&
-        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|INVALID_(?:ENUM|OPERATION|VALUE)|context lost|fatal error/i.test(message.text()))
-        errors.push(message.text());
-    });
-    await page.goto("/?test=1&antiAliasingProof=1");
-    await page.waitForFunction(() => typeof (window as unknown as { __antiAliasingProof?: unknown }).__antiAliasingProof === "function");
-    const result = await page.evaluate((backend) => (window as unknown as {
-      __antiAliasingProof: typeof runAntiAliasingProof;
-    }).__antiAliasingProof(backend), backend).catch(async (error: unknown) => {
-      await testInfo.attach("anti-aliasing-errors", { body: JSON.stringify(errors), contentType: "application/json" });
-      throw error;
-    });
-    await testInfo.attach("anti-aliasing-pixels", { body: JSON.stringify(result), contentType: "application/json" });
-    expect(errors).toEqual([]);
-    expect(result.reservations.reservedBytes).toBe(0);
-    expect(result.glErrors).toEqual([]);
-    const capture = Object.fromEntries(result.captures.map((entry) => [entry.label, entry]));
-    // WebGPU multisamples at 4 only.
-    expect(result.captures.map((entry) => entry.samples)).toEqual([1, 4, backend === "webgpu" ? 4 : 2, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4]);
-    for (const entry of result.captures) {
-      expect(entry.first.some((value, i) => i % 4 === 0 && value > 200), `${entry.label}: visible surfaces`).toBe(true);
-      // No jitter: a static camera's consecutive frames are the same image, pixel for pixel.
-      expect(difference(entry.first, entry.second).max, `${entry.label}: consecutive frames are identical`).toBe(0);
-    }
-    // The cutout's edges are alpha-test edges: MSAA alone leaves them hard, alpha-to-coverage smooths them.
-    for (const [aliased, smoothed] of [["off", "msaa4"], ["off", "msaa2"], ["chain off", "chain msaa4"], ["cutout off", "cutout msaa4"]] as const) {
-      expect(partialPixels(capture[aliased]!.first), `${aliased}: aliased edges`).toBeLessThan(8);
-      expect(partialPixels(capture[smoothed]!.first), `${smoothed}: smoothed edges`).toBeGreaterThan(40);
-      // Multisampling smooths edges only: the image stays in place.
-      expect(difference(capture[aliased]!.first, capture[smoothed]!.first).mean, `${smoothed}: same image`).toBeLessThan(6);
-    }
-    // WebGL2 presents a multisampled view without a chain by one blit to the backbuffer; WebGPU, and any chain, resolve and copy.
-    for (const entry of result.captures) {
-      const blit = backend === "webgl2" && entry.samples > 1 && !entry.label.startsWith("chain");
-      expect(entry.tasks.includes("Multisample present"), `${entry.label}: direct blit`).toBe(blit);
-      expect(entry.tasks.includes("Multisample output"), `${entry.label}: output copy`).toBe(entry.samples > 1 && !blit && !entry.label.startsWith("chain"));
-    }
-    // Back to Off, the view draws exactly what it drew before multisampling.
-    expect(difference(capture.off!.first, capture["off again"]!.first).max).toBe(0);
-    // A sprite's quad shows only its frame of the atlas: under MSAA a pixel on its edge whose centre lies outside it reads
-    // its UV inside the quad (centroid), never the magenta texels beyond the frame, while its edges still smooth.
-    const magenta = (pixels: number[]) => pixels.filter((_, i) => i % 4 === 0 && pixels[i]! - pixels[i + 1]! > 24 && pixels[i + 2]! - pixels[i + 1]! > 24).length;
-    expect({ off: magenta(capture["sprite off"]!.first), msaa4: magenta(capture["sprite msaa4"]!.first) }).toEqual({ off: 0, msaa4: 0 });
-    expect(partialPixels(capture["sprite msaa4"]!.first), "sprite msaa4: smoothed edges").toBeGreaterThan(40);
-    // A nearest-sampled tile's alpha steps at texel edges, so it discards at its cutoff under MSAA too: coverage would draw
-    // its texels below the cutoff wherever a neighbouring pixel samples an opaque one (its centre, the atlas's next cell).
-    expect({ off: magenta(capture["tile off"]!.first), msaa4: magenta(capture["tile msaa4"]!.first) }).toEqual({ off: 0, msaa4: 0 });
+test("a static camera draws identical frames and MSAA smooths geometric and alpha-tested edges", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["warning", "error"].includes(message.type()) &&
+      /shader|VALIDATE_STATUS|ERROR: 0:|INVALID_(?:ENUM|OPERATION|VALUE)|context lost|fatal error/i.test(message.text()))
+      errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&antiAliasingProof=1");
+  await page.waitForFunction(() => typeof (window as unknown as { __antiAliasingProof?: unknown }).__antiAliasingProof === "function");
+  const result = await page.evaluate(() => (window as unknown as {
+    __antiAliasingProof: typeof runAntiAliasingProof;
+  }).__antiAliasingProof()).catch(async (error: unknown) => {
+    await testInfo.attach("anti-aliasing-errors", { body: JSON.stringify(errors), contentType: "application/json" });
+    throw error;
+  });
+  await testInfo.attach("anti-aliasing-pixels", { body: JSON.stringify(result), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  expect(result.reservations.reservedBytes).toBe(0);
+  expect(result.glErrors).toEqual([]);
+  const capture = Object.fromEntries(result.captures.map((entry) => [entry.label, entry]));
+  expect(result.captures.map((entry) => entry.samples)).toEqual([1, 4, 2, 1, 4, 1, 4, 1, 4, 1, 4, 1, 4]);
+  for (const entry of result.captures) {
+    expect(entry.first.some((value, i) => i % 4 === 0 && value > 200), `${entry.label}: visible surfaces`).toBe(true);
+    // No jitter: a static camera's consecutive frames are the same image, pixel for pixel.
+    expect(difference(entry.first, entry.second).max, `${entry.label}: consecutive frames are identical`).toBe(0);
+  }
+  // The cutout's edges are alpha-test edges: MSAA alone leaves them hard, alpha-to-coverage smooths them.
+  for (const [aliased, smoothed] of [["off", "msaa4"], ["off", "msaa2"], ["chain off", "chain msaa4"], ["cutout off", "cutout msaa4"]] as const) {
+    expect(partialPixels(capture[aliased]!.first), `${aliased}: aliased edges`).toBeLessThan(8);
+    expect(partialPixels(capture[smoothed]!.first), `${smoothed}: smoothed edges`).toBeGreaterThan(40);
+    // Multisampling smooths edges only: the image stays in place.
+    expect(difference(capture[aliased]!.first, capture[smoothed]!.first).mean, `${smoothed}: same image`).toBeLessThan(6);
+  }
+  // A multisampled view without a chain is presented by one blit to the backbuffer; a chain resolves and copies.
+  for (const entry of result.captures) {
+    const blit = entry.samples > 1 && !entry.label.startsWith("chain");
+    expect(entry.tasks.includes("Multisample present"), `${entry.label}: direct blit`).toBe(blit);
+    expect(entry.tasks.includes("Multisample output"), `${entry.label}: output copy`).toBe(entry.samples > 1 && !blit && !entry.label.startsWith("chain"));
+  }
+  // Back to Off, the view draws exactly what it drew before multisampling.
+  expect(difference(capture.off!.first, capture["off again"]!.first).max).toBe(0);
+  // A sprite's quad shows only its frame of the atlas: under MSAA a pixel on its edge whose centre lies outside it reads
+  // its UV inside the quad (centroid), never the magenta texels beyond the frame, while its edges still smooth.
+  const magenta = (pixels: number[]) => pixels.filter((_, i) => i % 4 === 0 && pixels[i]! - pixels[i + 1]! > 24 && pixels[i + 2]! - pixels[i + 1]! > 24).length;
+  expect({ off: magenta(capture["sprite off"]!.first), msaa4: magenta(capture["sprite msaa4"]!.first) }).toEqual({ off: 0, msaa4: 0 });
+  expect(partialPixels(capture["sprite msaa4"]!.first), "sprite msaa4: smoothed edges").toBeGreaterThan(40);
+  // A nearest-sampled tile's alpha steps at texel edges, so it discards at its cutoff under MSAA too: coverage would draw
+  // its texels below the cutoff wherever a neighbouring pixel samples an opaque one (its centre, the atlas's next cell).
+  expect({ off: magenta(capture["tile off"]!.first), msaa4: magenta(capture["tile msaa4"]!.first) }).toEqual({ off: 0, msaa4: 0 });
+});
 
 /**
  * Pixels MSAA changed (any channel by more than `threshold`) that lie more than one pixel from every edge of the aliased
@@ -116,28 +113,26 @@ function haloPixels(aliased: number[], smoothed: number[], width: number, thresh
   return count;
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) {
-  test(`MSAA leaves no halo beside silhouettes over ambient occlusion, reflections and water on ${backend}`, async ({ page }, testInfo) => {
-    test.setTimeout(90_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (message) => {
-      if (["warning", "error"].includes(message.type()) &&
-        /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|INVALID_(?:ENUM|OPERATION|VALUE)|context lost|fatal error/i.test(message.text()))
-        errors.push(message.text());
-    });
-    await page.goto("/?test=1&antiAliasingProof=1");
-    await page.waitForFunction(() => typeof (window as unknown as { __antiAliasingHaloProof?: unknown }).__antiAliasingHaloProof === "function");
-    const result = await page.evaluate((backend) => (window as unknown as {
-      __antiAliasingHaloProof: typeof runAntiAliasingHaloProof;
-    }).__antiAliasingHaloProof(backend), backend);
-    await testInfo.attach("anti-aliasing-halo", { body: JSON.stringify(result), contentType: "application/json" });
-    expect(errors).toEqual([]);
-    // Every depth reader is in the frame: the spatial chain and the water scene copy.
-    expect(result.tasks).toEqual(expect.arrayContaining(["Scene Ambient Occlusion", "Scene Reflections", "Water scene copy"]));
-    const [aliased, smoothed] = result.captures;
-    expect([aliased!.samples, smoothed!.samples]).toEqual([1, 4]);
-    expect(difference(aliased!.pixels, smoothed!.pixels).mean, "same image").toBeLessThan(6);
-    expect(haloPixels(aliased!.pixels, smoothed!.pixels, result.width, 16), "no halo away from the edges").toBe(0);
+test("MSAA leaves no halo beside silhouettes over ambient occlusion, reflections and water", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (["warning", "error"].includes(message.type()) &&
+      /shader|VALIDATE_STATUS|ERROR: 0:|INVALID_(?:ENUM|OPERATION|VALUE)|context lost|fatal error/i.test(message.text()))
+      errors.push(message.text());
   });
-}
+  await page.goto("/?test=1&antiAliasingProof=1");
+  await page.waitForFunction(() => typeof (window as unknown as { __antiAliasingHaloProof?: unknown }).__antiAliasingHaloProof === "function");
+  const result = await page.evaluate(() => (window as unknown as {
+    __antiAliasingHaloProof: typeof runAntiAliasingHaloProof;
+  }).__antiAliasingHaloProof());
+  await testInfo.attach("anti-aliasing-halo", { body: JSON.stringify(result), contentType: "application/json" });
+  expect(errors).toEqual([]);
+  // Every depth reader is in the frame: the spatial chain and the water scene copy.
+  expect(result.tasks).toEqual(expect.arrayContaining(["Scene Ambient Occlusion", "Scene Reflections", "Water scene copy"]));
+  const [aliased, smoothed] = result.captures;
+  expect([aliased!.samples, smoothed!.samples]).toEqual([1, 4]);
+  expect(difference(aliased!.pixels, smoothed!.pixels).mean, "same image").toBeLessThan(6);
+  expect(haloPixels(aliased!.pixels, smoothed!.pixels, result.width, 16), "no halo away from the edges").toBe(0);
+});

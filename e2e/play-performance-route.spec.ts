@@ -25,8 +25,7 @@ import {
  * Env: HAPTIC_PERF_QUALITY (low|medium|high|ultra, default low),
  *      HAPTIC_PERF_WARMUP_MS (default 10000), HAPTIC_PERF_SAMPLE_MS (default 30000),
  *      HAPTIC_PERF_SAMPLES (default 2), HAPTIC_PERF_LABEL (free text recorded in output),
- *      HAPTIC_PERF_RENDER_MODE (cel) sets project.settings.render.mode for a CEL run,
- *      HAPTIC_PERF_BACKEND (webgl2|webgpu) sets project.settings.render.gpuBackend.
+ *      HAPTIC_PERF_RENDER_MODE (cel) sets project.settings.render.mode for a CEL run.
  */
 const ROUTE_ENABLED = process.env.HAPTIC_PERF_ROUTE === "1";
 const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.HAPTIC_PERF_QUALITY ?? "")

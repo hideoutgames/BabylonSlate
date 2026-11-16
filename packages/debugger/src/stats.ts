@@ -54,7 +54,7 @@ export type StatsHudRendering = {
   /** The world view's last frame culled by occlusion; null or absent while it does not. */
   occlusion?: { tested: number; culled: number; triangles: number; ms: number } | null;
   qualityLimits: readonly string[];
-  /** Play on WebGL2: shaders first drawn since the scene presented, and the frames that held them. */
+  /** Play: shaders first drawn since the scene presented, and the frames that held them. */
   firstDraws?: { draws: number; loadCompiled: number; stalls: number; worstFrameMs: number } | null;
   /** The Engine's GPU backpressure: its `framesinflight` mode, frames queued now and renders skipped so far. */
   frameBackpressure?: { mode: "off" | 2 | 3; inFlight: number; skipped: number } | null;

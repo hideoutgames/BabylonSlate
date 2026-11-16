@@ -13,7 +13,6 @@ import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { GetEnvironmentBRDFTexture } from "@babylonjs/core/Misc/brdfTextureTools";
@@ -24,16 +23,14 @@ import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { areaEmissionTexture } from "./area-emission-array";
 import { areaLightLtcTexture } from "./area-light-resources";
 import { CEL_UNIFORMS, bindCelSettings, celFunctions } from "./cel-shader";
-import { HAPTIC_CLUSTERS_GLSL, HAPTIC_CLUSTERS_WGSL, HAPTIC_LIGHTS_GLSL, HAPTIC_LIGHTS_WGSL, bindHapticClusters, bindHapticLights } from "./haptic-lights";
+import { HAPTIC_CLUSTERS_GLSL, HAPTIC_LIGHTS_GLSL, bindHapticClusters, bindHapticLights } from "./haptic-lights";
 import {
   HAPTIC_IRRADIANCE_KEYS,
   HAPTIC_IRRADIANCE_UNIFORMS,
   HAPTIC_SHADOW_ATLAS,
   HAPTIC_SHADOW_ATLAS_DEPTH,
   HAPTIC_LIGHTING_FUNCTIONS_GLSL,
-  HAPTIC_LIGHTING_FUNCTIONS_WGSL,
   hapticLightingGlsl,
-  hapticLightingWgsl,
 } from "./haptic-lighting-shader";
 import { sceneRenderingSettings } from "./render-settings";
 import { screenShadowsForPass, screenShadowsPlaceholder } from "./screen-shadows";
@@ -154,9 +151,8 @@ export function environmentPlaceholderCube(engine: AbstractEngine): { texture: I
 
 const environmentPlaceholders = new WeakMap<Scene, BaseTexture>();
 /**
- * A 1 × 1 cube a lit program binds where no environment lights its mesh: every such program declares the cube (WebGPU
- * draws only with every declared texture bound, and WebGL2 warns of a sampled unit with none), and none samples it at
- * a scale of zero.
+ * A 1 × 1 cube a lit program binds where no environment lights its mesh: every such program declares the cube (WebGL2
+ * warns of a sampled unit with none), and none samples it at a scale of zero.
  */
 export function environmentPlaceholder(scene: Scene): BaseTexture {
   let texture = environmentPlaceholders.get(scene);
@@ -278,9 +274,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
    * (`material-compiler.ts`).
    * - The drawn mesh's own terms: whether it receives shadows (the atlas's and the screen shadows'); otherwise one
    *   mesh's Receive Shadows leaks to the next.
-   * - The Scene's light and cluster blocks. On WebGPU a draw's uniform buffers belong to its own draw context, which
-   *   would keep the buffer it bound last; a block written again in a frame (a caster that leaves moves the shadow
-   *   tiles) has by then moved to another, and the draw would light from what the old one now holds.
+   * - The Scene's light and cluster blocks, whose binding points other programs reuse.
    */
   bindReceiver(effect: Effect, mesh: AbstractMesh): void {
     const scene = mesh.getScene();
@@ -303,12 +297,10 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     effect.setTexture("hapticAreaLtcSampler", areaLightLtcTexture(scene));
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
     effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
-    if (!scene.getEngine().isWebGPU) {
-      plainDepthSampler(scene.getEngine());
-      effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
-    }
+    plainDepthSampler(scene.getEngine());
+    effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
     this.bindReceiver(effect, mesh);
-    // WebGPU draws only with every declared texture bound: the table always, the cube where a program declares it.
+    // Every declared texture is bound: the table always, the cube where a program declares it.
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     if (celEffect(effect)) {
       bindCelSettings(effect, scene);
@@ -333,7 +325,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       (scene.useRightHandedSystem ? !environment.invertZ : environment.invertZ) ? -1 : 1,
       environment.isRGBD ? 2 : environment.gammaSpace ? 1 : 0);
     if (box.boundingBoxSize) {
-      // Relative to the floating origin, as the surface's world position is (the app's WebGPU Engine's).
+      // Relative to the floating origin, as the surface's world position is.
       const origin = scene.floatingOriginOffset;
       effect.setFloat4("hapticEnvironmentBoxPosition", box.boundingBoxPosition.x - origin.x, box.boundingBoxPosition.y - origin.y,
         box.boundingBoxPosition.z - origin.z, 0);
@@ -365,23 +357,20 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emit2DSampler("hapticEnvironmentBrdfSampler");
     state._emit2DSampler("hapticAreaLtcSampler");
     state._emit2DArraySampler("hapticAreaEmissionSampler");
-    const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     // The shadow atlas compares as it samples (`shadow-atlas.ts`); the build state has no helper for a compare sampler.
-    // GLSL also reads it plainly for Contact Hardening's blocker search, WGSL loads from the compare binding's texture.
+    // The program also reads it plainly for Contact Hardening's blocker search.
     if (!state.samplers.includes(HAPTIC_SHADOW_ATLAS)) {
-      state._samplerDeclaration += wgsl
-        ? `var ${HAPTIC_SHADOW_ATLAS}Sampler: sampler_comparison;\nvar ${HAPTIC_SHADOW_ATLAS}: texture_depth_2d;\n`
-        : `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\nuniform highp sampler2D ${HAPTIC_SHADOW_ATLAS_DEPTH};\n`;
+      state._samplerDeclaration += `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\nuniform highp sampler2D ${HAPTIC_SHADOW_ATLAS_DEPTH};\n`;
       state.samplers.push(HAPTIC_SHADOW_ATLAS);
-      if (!wgsl) state.samplers.push(HAPTIC_SHADOW_ATLAS_DEPTH);
+      state.samplers.push(HAPTIC_SHADOW_ATLAS_DEPTH);
     }
-    state._emitFunction("hapticLights", wgsl ? HAPTIC_LIGHTS_WGSL : HAPTIC_LIGHTS_GLSL, "// HapticLights");
-    state._emitFunction("hapticClusters", wgsl ? HAPTIC_CLUSTERS_WGSL : HAPTIC_CLUSTERS_GLSL, "// HapticClusters");
-    state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions(wgsl)}\n#endif\n`, "// CEL");
-    state._emitFunction("hapticLightingFunctions", wgsl ? HAPTIC_LIGHTING_FUNCTIONS_WGSL : HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
-    for (const output of this._outputs) state.compilationString += `${state._declareOutput(output)} = ${wgsl ? "vec3f" : "vec3"}(0.0);\n`;
+    state._emitFunction("hapticLights", HAPTIC_LIGHTS_GLSL, "// HapticLights");
+    state._emitFunction("hapticClusters", HAPTIC_CLUSTERS_GLSL, "// HapticClusters");
+    state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions()}\n#endif\n`, "// CEL");
+    state._emitFunction("hapticLightingFunctions", HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
+    for (const output of this._outputs) state.compilationString += `${state._declareOutput(output)} = vec3(0.0);\n`;
     state.compilationString += `#ifdef HAPTIC_UNLIT\n${this.diffuseDirect.associatedVariableName} = ${this.baseColor.associatedVariableName};\n#else\n`;
-    state.compilationString += (wgsl ? hapticLightingWgsl : hapticLightingGlsl)({
+    state.compilationString += hapticLightingGlsl({
       worldPosition: this.worldPosition.associatedVariableName,
       worldNormal: this.worldNormal.associatedVariableName,
       normal: this.normal.isConnected ? this.normal.associatedVariableName : `${this.worldNormal.associatedVariableName}.xyz`,

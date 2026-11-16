@@ -14,8 +14,8 @@ import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
 /**
  * Texture type for a geometry pass's view-depth attachment. Transparent meshes
  * draw into the geometry targets with blending on, and blending into a 32-bit
- * float target needs EXT_float_blend (WebGL) or float32-blendable (WebGPU).
- * iPads lack both, so every such draw failed; half float always blends.
+ * float target needs EXT_float_blend.
+ * iPads lack it, so every such draw failed; half float always blends.
  */
 export function geometryDepthTextureType(
   caps: Pick<EngineCapabilities, "textureFloatRender" | "textureHalfFloatRender" | "blendFloat">,

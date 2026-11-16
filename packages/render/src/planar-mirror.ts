@@ -97,17 +97,8 @@ export interface PlanarMirrorTargetState {
 
 function planarMirrorTargetBytes(width: number, height: number, type: number): number {
   return renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_RGBA, type }) +
-    // Conservative depth bound; actual WebGL renderbuffers and WebGPU depth textures commit their real size.
+    // Conservative depth bound; actual WebGL renderbuffers commit their real size.
     renderTargetAllocationBytes({ width, height, format: Constants.TEXTUREFORMAT_DEPTH32FLOAT_STENCIL8, renderbuffer: true });
-}
-
-/**
- * The view's colour format: display colour on a bgra8unorm WebGPU swap chain is stored BGRA, and WebGPU depth
- * carries the main pass's stencil, so reflected materials reuse the view's WebGPU render pipelines.
- */
-function targetFormat(engine: AbstractEngine, type: number): number {
-  const swapChain = engine.isWebGPU ? (engine as unknown as { _options?: { swapChainFormat?: string } })._options?.swapChainFormat : undefined;
-  return swapChain === "bgra8unorm" && type === Constants.TEXTURETYPE_UNSIGNED_BYTE ? Constants.TEXTUREFORMAT_BGRA : Constants.TEXTUREFORMAT_RGBA;
 }
 
 /** A target dimension: `scale` of the view's, snapped up to SIZE_STEP pixels. */
@@ -136,9 +127,9 @@ export function createPlanarMirrorTarget(
     try {
       mirror = new PlanarMirrorCamera(name, Vector3.Zero(), scene, false);
       texture = new PlanarMirrorTarget(name, { width, height }, scene, {
-        generateMipMaps: false, doNotChangeAspectRatio: true, type, format: targetFormat(engine, type),
+        generateMipMaps: false, doNotChangeAspectRatio: true, type, format: Constants.TEXTUREFORMAT_RGBA,
         samplingMode: Texture.BILINEAR_SAMPLINGMODE, generateDepthBuffer: true,
-        generateStencilBuffer: engine.isWebGPU && engine.isStencilEnable,
+        generateStencilBuffer: false,
       });
     } finally {
       scene._blockEntityCollection = blocked;
@@ -229,15 +220,15 @@ export function buildViewProjectionMatrix(scene: Scene, camera: Camera, aspect: 
   const maxZ = camera.ignoreCameraMaxZ ? 0 : camera.maxZ;
   const vertical = camera.fovMode === Camera.FOVMODE_VERTICAL_FIXED;
   if (scene.useRightHandedSystem)
-    Matrix.PerspectiveFovRHToRef(camera.fov, aspect, reverse ? maxZ : minZ, reverse ? minZ : maxZ, out, vertical, engine.isNDCHalfZRange, camera.projectionPlaneTilt, reverse);
+    Matrix.PerspectiveFovRHToRef(camera.fov, aspect, reverse ? maxZ : minZ, reverse ? minZ : maxZ, out, vertical, false, camera.projectionPlaneTilt, reverse);
   else
-    Matrix.PerspectiveFovLHToRef(camera.fov, aspect, reverse ? maxZ : minZ, reverse ? minZ : maxZ, out, vertical, engine.isNDCHalfZRange, camera.projectionPlaneTilt, reverse);
+    Matrix.PerspectiveFovLHToRef(camera.fov, aspect, reverse ? maxZ : minZ, reverse ? minZ : maxZ, out, vertical, false, camera.projectionPlaneTilt, reverse);
 }
 
 /** One entry of the oblique projection's depth column: `plane` is a·C for the row, `w` the projection's w entry. */
-function obliqueDepth(w: number, plane: number, reverse: boolean, half: boolean): number {
-  // Near z = −w (full range) or 0 (half range); reverse depth has its near plane at z = w.
-  return reverse ? w - plane : half ? plane : plane - w;
+function obliqueDepth(w: number, plane: number, reverse: boolean): number {
+  // The near plane is at z = −w; reverse depth has its near plane at z = w.
+  return reverse ? w - plane : plane - w;
 }
 
 /**
@@ -260,7 +251,7 @@ export class PlanarMirrorMath {
    * (the eye on or behind the plane, or a degenerate projection).
    */
   mirror(
-    view: Matrix, eyePosition: Vector3, plane: MirrorPlane, projection: Matrix, reverse: boolean, half: boolean,
+    view: Matrix, eyePosition: Vector3, plane: MirrorPlane, projection: Matrix, reverse: boolean,
     outView: Matrix, outProjection: Matrix,
   ): boolean {
     const v = view.m, n0 = plane.nx, n1 = plane.ny, n2 = plane.nz;
@@ -294,7 +285,7 @@ export class PlanarMirrorMath {
     projection.invertToRef(this.inverse);
     const inv = this.inverse.m;
     // The far frustum corner toward the plane (clip x, y signs of the plane), at far depth.
-    const sx = cx < 0 ? -1 : 1, sy = cy < 0 ? -1 : 1, sz = reverse ? (half ? 0 : -1) : 1;
+    const sx = cx < 0 ? -1 : 1, sy = cy < 0 ? -1 : 1, sz = reverse ? -1 : 1;
     const qx = sx * inv[0]! + sy * inv[4]! + sz * inv[8]! + inv[12]!;
     const qy = sx * inv[1]! + sy * inv[5]! + sz * inv[9]! + inv[13]!;
     const qz = sx * inv[2]! + sy * inv[6]! + sz * inv[10]! + inv[14]!;
@@ -303,13 +294,13 @@ export class PlanarMirrorMath {
     const qW = qx * p[3]! + qy * p[7]! + qz * p[11]! + qw * p[15]!;
     if (!(qC > 1e-12)) return false;
     // Replace the depth column so the near plane is the mirror plane and that corner stays on the far plane.
-    const a = (half ? 1 : 2) * qW / qC;
+    const a = 2 * qW / qC;
     if (!Number.isFinite(a) || a <= 0) return false;
     for (let i = 0; i < 16; i++) values[i] = p[i]!;
-    values[2] = obliqueDepth(p[3]!, a * cx, reverse, half);
-    values[6] = obliqueDepth(p[7]!, a * cy, reverse, half);
-    values[10] = obliqueDepth(p[11]!, a * cz, reverse, half);
-    values[14] = obliqueDepth(p[15]!, a * cw, reverse, half);
+    values[2] = obliqueDepth(p[3]!, a * cx, reverse);
+    values[6] = obliqueDepth(p[7]!, a * cy, reverse);
+    values[10] = obliqueDepth(p[11]!, a * cz, reverse);
+    values[14] = obliqueDepth(p[15]!, a * cw, reverse);
     Matrix.FromArrayToRef(values, 0, outProjection);
     return true;
   }
@@ -317,8 +308,7 @@ export class PlanarMirrorMath {
   /**
    * The last mirror's view × `projection` taking positions relative to `origin` (a shader's floating origin, or the
    * world origin): a fragment at relative position r on the mirror projects to clip c, and the texel holding what it
-   * reflects is at uv = 0.5 + 0.5·c.xy/c.w on both backends (Babylon's WebGPU engine flips render-target rows to
-   * WebGL's layout).
+   * reflects is at uv = 0.5 + 0.5·c.xy/c.w.
    */
   relativeViewProjection(origin: Vector3, projection: Matrix, scratch: Matrix, out: Matrix): void {
     const q = this.rotation, eye = this.eye, values = this.values;

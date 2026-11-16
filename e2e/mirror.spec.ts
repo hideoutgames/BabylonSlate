@@ -10,16 +10,14 @@ import {
 import { createDefaultMaterialDocument } from "../packages/shader-graph/src/document";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene, waitForSceneViewportReady } from "./open-test-project";
-import { PROJECT_FILE } from "../packages/core/src/project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type ViewportHost = {
   __hapticViewportTest: {
     setShadowCaptureView(position: number[], target: number[], fov: number): void;
-    renderingBaseline(): { backend: string } | null;
     mirrorDiagnostics(): { draws: number; reuses: number; drawnMeshes: number; shadowPasses: number; sunShadowViews: number } | null;
     setMirrorFootprintCulling(enabled: boolean): void;
   };
@@ -56,18 +54,15 @@ async function expectReflected(canvas: Locator, name: string, channel: "red" | "
   }
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an object behind the camera in the editor, Play and Preview Build, built in and through a Mirror Reflection Material, on ${backend}`, async ({ page }) => {
+test("a Mirror shows an object behind the camera in the editor, Play and Preview Build, built in and through a Mirror Reflection Material", async ({ page }) => {
   test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type()) &&
-      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived/i.test(message.text())) errors.push(message.text());
+      /shader|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived/i.test(message.text())) errors.push(message.text());
   });
   const files = await minimalProjectFiles();
-  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
-  project.settings.render.gpuBackend = backend;
-  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const materialGuid = "00000000-0000-4000-8000-000000000030";
   const material = createDefaultMaterialDocument("Red");
   material.shadingModel = "unlit";
@@ -128,7 +123,6 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows an obj
 
   await openMinimalTestProject(page, files);
   await openMainScene(page);
-  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
   // The editor view looks down at the mirror from just in front of the scene camera (and its camera model).
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   await expectReflected(page.getByTestId("viewport-canvas"), "mirror-editor", "red");
@@ -188,12 +182,9 @@ async function canvasHash(canvas: Locator): Promise<string> {
   });
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only what its footprint can show, with the same pixels as the whole mirrored view, on ${backend}`, async ({ page }) => {
+test("a Mirror draws only what its footprint can show, with the same pixels as the whole mirrored view", async ({ page }) => {
   test.setTimeout(180_000);
   const files = await minimalProjectFiles();
-  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
-  project.settings.render.gpuBackend = backend;
-  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const sceneFile = files.get(MAIN_SCENE_FILE)!;
   const decoded = await decodeAssetDocument(sceneFile);
   const scene = decoded.payload as unknown as SerializedScene;
@@ -218,7 +209,6 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only w
 
   await openMinimalTestProject(page, files);
   await openMainScene(page);
-  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   const viewport = page.getByTestId("viewport-canvas");
   const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
@@ -247,12 +237,9 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws only w
   expect((await settled(beforeCropping)).hash).toBe(cropped.hash);
 });
 
-for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror keeps its reflection while a caster whose shadow it cannot show moves, and redraws for one it can, on ${backend}`, async ({ page }) => {
+test("a Mirror keeps its reflection while a caster whose shadow it cannot show moves, and redraws for one it can", async ({ page }) => {
   test.setTimeout(180_000);
   const files = await minimalProjectFiles();
-  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
-  project.settings.render.gpuBackend = backend;
-  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   const sceneFile = files.get(MAIN_SCENE_FILE)!;
   const decoded = await decodeAssetDocument(sceneFile);
   const scene = decoded.payload as unknown as SerializedScene;
@@ -287,7 +274,6 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror keeps its re
 
   await openMinimalTestProject(page, files);
   await openMainScene(page);
-  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
   const settled = () => expect.poll(async () => {
@@ -323,18 +309,15 @@ async function centerBrightness(canvas: Locator): Promise<number> {
   return (r! + g! + b!) / 3;
 }
 
-for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the sun's shadow on what only it shows with Reflection Shadows on, and none with them off, on ${backend}`, async ({ page }, testInfo) => {
+test("a Mirror shows the sun's shadow on what only it shows with Reflection Shadows on, and none with them off", async ({ page }, testInfo) => {
   test.setTimeout(240_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type()) &&
-      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived|do not fit the shadow atlas/i.test(message.text())) errors.push(message.text());
+      /shader|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived|do not fit the shadow atlas/i.test(message.text())) errors.push(message.text());
   });
   const files = await minimalProjectFiles();
-  const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
-  project.settings.render.gpuBackend = backend;
-  files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
   // A plain lit white floor: the default box's checker grid would hide the shadow's edge in the sampled region.
   const whiteGuid = "00000000-0000-4000-8000-000000000032";
   const white = createDefaultMaterialDocument("White");
@@ -378,7 +361,6 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the su
 
   await openMinimalTestProject(page, files);
   await openMainScene(page);
-  expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
   await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2.6, -3], [0, 2, 0], 0.8));
   const viewport = page.getByTestId("viewport-canvas");
   const mirrors = () => page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics()!);
@@ -420,15 +402,15 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the su
   await reflectionShadows(true);
   const onWithSlab = await settled();
   expect((await mirrors()).sunShadowViews).toBe(1);
-  await page.screenshot({ path: testInfo.outputPath(`reflection-shadows-on-${backend}.png`) });
+  await page.screenshot({ path: testInfo.outputPath("reflection-shadows-on.png") });
   await moveSlabX(40);
   const onWithoutSlab = await settled();
   await reflectionShadows(false);
   const offWithoutSlab = await settled();
   expect((await mirrors()).sunShadowViews).toBe(0);
-  const measured = { backend, offWithSlab, onWithSlab, onWithoutSlab, offWithoutSlab };
+  const measured = { offWithSlab, onWithSlab, onWithoutSlab, offWithoutSlab };
   console.log(`reflection-shadows ${JSON.stringify(measured)}`);
-  await testInfo.attach(`reflection-shadows-${backend}`, { body: JSON.stringify(measured, null, 2), contentType: "application/json" });
+  await testInfo.attach("reflection-shadows", { body: JSON.stringify(measured, null, 2), contentType: "application/json" });
   // On, the slab's shadow darkens the reflected floor clearly; off, the slab changes nothing there.
   expect(onWithoutSlab - onWithSlab).toBeGreaterThan(30);
   expect(Math.abs(offWithoutSlab - offWithSlab)).toBeLessThan(4);
@@ -444,13 +426,13 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror shows the su
  * behind it; a quarter of the view to the side shows the wall, drawn or from the probe. The quality level's cap does
  * the same to a Mirror that asks for everything.
  */
-for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what its Reflects property and the quality level's cap say, and shows the rest from its Reflection Probe, on ${backend}`, async ({ page }) => {
+test("a Mirror draws what its Reflects property and the quality level's cap say, and shows the rest from its Reflection Probe", async ({ page }) => {
   test.setTimeout(420_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type()) &&
-      /shader|WebGPU uncaptured|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived/i.test(message.text())) errors.push(message.text());
+      /shader|VALIDATE_STATUS|ERROR: 0:|GL_INVALID|INVALID_OPERATION|feedback loop|Mirror reflection|outlived/i.test(message.text())) errors.push(message.text());
   });
   const dominant = (color: number[]) => {
     const [r, g, b] = color as [number, number, number];
@@ -458,9 +440,6 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what i
   };
   for (const [reflects, middle, meshes] of [["everything", "blue", "several"], ["movingActors", "blue", "one"], ["environment", "red", "none"]] as const) {
     const files = await minimalProjectFiles();
-    const project = JSON.parse(new TextDecoder().decode(files.get(PROJECT_FILE)!));
-    project.settings.render.gpuBackend = backend;
-    files.set(PROJECT_FILE, new TextEncoder().encode(JSON.stringify(project)));
     const unlit = async (guid: string, name: string, color: [number, number, number]) => {
       const material = createDefaultMaterialDocument(name);
       material.shadingModel = "unlit";
@@ -508,14 +487,13 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what i
     ));
     await openMinimalTestProject(page, files);
     await openMainScene(page);
-    expect(await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.renderingBaseline()?.backend)).toBe(backend);
     await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.setShadowCaptureView([0, 2, -4], [0, 2, 0], 0.8));
     const viewport = page.getByTestId("viewport-canvas");
     try {
       await expect.poll(async () => `${dominant(await centerColor(viewport))} in the middle, ${dominant(await centerColor(viewport, 0.25))} to the side`,
         { timeout: 60_000 }).toBe(`${middle} in the middle, red to the side`);
     } finally {
-      await viewport.screenshot({ path: test.info().outputPath(`mirror-${reflects}-${backend}.png`) });
+      await viewport.screenshot({ path: test.info().outputPath(`mirror-${reflects}.png`) });
     }
     const drawn = await page.evaluate(() => (window as unknown as ViewportHost).__hapticViewportTest.mirrorDiagnostics());
     const perDraw = drawn && drawn.draws ? drawn.drawnMeshes / drawn.draws : 0;
@@ -538,7 +516,7 @@ for (const backend of ["webgl2", "webgpu"] as const) test(`a Mirror draws what i
       await cap("everything");
       await middleInPlay("blue");
     } finally {
-      await play.screenshot({ path: test.info().outputPath(`mirror-cap-play-${backend}.png`) });
+      await play.screenshot({ path: test.info().outputPath("mirror-cap-play.png") });
     }
     await page.getByTestId("play-overlay-close").click();
   }

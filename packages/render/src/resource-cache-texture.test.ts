@@ -899,33 +899,13 @@ describe("bindResourceCacheToHandle", () => {
   });
 });
 
-describe("WebGPU KTX2 off the 4x4 block grid", () => {
-  it.each([
-    ["raw bytes", () => ktx2HeaderBytes(1, 1)],
-    ["an installed Blob", () => installTextureBytes(new Map([["odd", ktx2HeaderBytes(1, 1)]]))!.get("odd")!],
-  ])("gives an ASTC-capable WebGPU engine a KTX2 texture from %s", (_source, bytes) => {
-    const engine = textureEngine();
-    // The engine that used to be refused before upload; ktx2-webgpu-rgba.test.ts covers the RGBA decode.
-    vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
-    vi.spyOn(engine, "getCaps").mockReturnValue({ ...engine.getCaps(), astc: {} });
-    const cache = new ResourceCache();
-    const lease = acquireMaterialTexture(cache, "odd", engine, bytes());
-    expect(lease?.resource).toBeInstanceOf(Texture);
-    expect(lease!.resource.mimeType).toBe("image/ktx2");
-    lease!.release();
-    cache.dispose();
-    engine.dispose();
-  });
-});
-
 /**
  * Image row (0 = top, as encoded) that NEAREST sampling at `v` reads from a
  * `rows`-row texture. The wrapper's texture matrix is applied as Babylon's
  * shaders do (`textureMatrix * vec4(uv, 1, 0)`). Upload behaviour is Babylon
  * 9.29's, which a NullEngine cannot run: an image or RGBA upload stores rows
  * bottom-first when the InternalTexture's `invertY` is set, while a
- * block-compressed KTX2 upload never flips (WebGPU passes `false`, WebGL2 sets
- * no `UNPACK_FLIP_Y_WEBGL`).
+ * block-compressed KTX2 upload never flips (it sets no `UNPACK_FLIP_Y_WEBGL`).
  */
 function sampledImageRow(texture: Texture, v: number, rows: number, upload: "rgba" | "block-compressed"): number {
   const m = texture.getTextureMatrix().m;

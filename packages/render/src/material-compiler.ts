@@ -1,4 +1,3 @@
-import { rebindEmptiedDrawContexts } from "./webgpu-node-material-rebind";
 import { CoverageClipBlock, registerAlphaToCoverage } from "./alpha-to-coverage";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { Constants } from "@babylonjs/core/Engines/constants";
@@ -368,11 +367,8 @@ export function compileMaterialPlan(
   const cacheableShadowShape = !auxiliary && (plan.domain === "surface" || plan.domain === "landscape") && plan.blendMode === "opaque" &&
     plan.cost.customBlocks === 0 && isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   const material = new NodeMaterial(options.name, scene, {
-    shaderLanguage: scene.getEngine().isWebGPU
-      ? ShaderLanguage.WGSL
-      : ShaderLanguage.GLSL,
+    shaderLanguage: ShaderLanguage.GLSL,
   });
-  if (scene.getEngine().isWebGPU) rebindEmptiedDrawContexts(material);
   if (auxiliary) material.allowShaderHotSwapping = false;
   // `plannedStockVertexStage`: its plan's vertex stage is Babylon's own (identity World Position Offset, no custom
   // blocks), known before the build that `hasStockVertexStage` waits for (`instance-pool.ts` groups by it at once).
@@ -615,17 +611,8 @@ export function compileMaterialPlan(
       });
       return false;
     }
-    if (operation.nodeType === "custom.glsl" && scene.getEngine().isWebGPU) {
-      diagnostics.push({
-        code: "material.capability",
-        message: "Custom GLSL is GLSL/WebGL only and cannot run on WebGPU",
-        severity: "error",
-        nodeId: anchorNodeId(operation),
-      });
-      return false;
-    }
-    if (operation.nodeType === "input.environmentSample" && !scene.getEngine().isWebGPU && !scene.getEngine().getCaps().textureLOD) {
-      diagnostics.push({ code: "material.capability", message: "Environment Sample requires explicit cube mip sampling (WebGL2 or WebGPU).", severity: "error", nodeId: anchorNodeId(operation) });
+    if (operation.nodeType === "input.environmentSample" && !scene.getEngine().getCaps().textureLOD) {
+      diagnostics.push({ code: "material.capability", message: "Environment Sample requires explicit cube mip sampling (WebGL2).", severity: "error", nodeId: anchorNodeId(operation) });
       return false;
     }
 

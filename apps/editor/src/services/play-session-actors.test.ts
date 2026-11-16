@@ -110,7 +110,7 @@ describe.each(["worker", "in-process"] as const)(
       vi.stubGlobal("cancelAnimationFrame", () => {});
       vi.mocked(createEngine).mockReturnValue({
         applySceneEnvironment() {},
-        engine: { isWebGPU: false },
+        engine: {},
         scalabilityStatus: () => null,
         captureFrame: options.captureFrame,
         cancelFrameCapture() {},

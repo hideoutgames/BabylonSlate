@@ -66,7 +66,7 @@ import { applySortingToParticleSystem, resolveSortingLayer, type SortingLayerRes
 import { drawWhateverTheView } from "./play-view-culling";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { effectDrawnOn } from "./first-draw-stats";
-import { FIRST_DRAWS_PER_FRAME } from "./variant-pipeline-warmup";
+import { FIRST_DRAWS_PER_FRAME } from "./variant-first-draws";
 
 export type { ParticleLibrary, ParticleLibraryEmitter } from "@haptic/assets";
 export type ParticleDiagnosticCode =
@@ -318,7 +318,7 @@ const WARM_ACTOR = "particle-service:spawnable";
 
 /**
  * Whether every program `system` draws with (its render Effects, a GPU system's update Effect too) has drawn on
- * `engine`; true where draws are not tracked (WebGPU) or the system holds none yet.
+ * `engine`; true where draws are not tracked or the system holds none yet.
  */
 function particleProgramsDrawn(engine: AbstractEngine, system: IParticleSystem): boolean {
   for (const effect of particlePrograms(system)) if (effectDrawnOn(engine, effect) === false) return false;
@@ -368,7 +368,7 @@ export class ParticleService {
   /** Whether a system's programs have drawn on the Engine (`effectDrawnOn`; true where draws are not tracked). */
   private readonly programsDrawn: (system: IParticleSystem) => boolean;
   /** This frame's first-draw budget for systems whose programs never drew, and the entries waiting for one. */
-  private firstDrawBudget: number = FIRST_DRAWS_PER_FRAME.webgl2;
+  private firstDrawBudget: number = FIRST_DRAWS_PER_FRAME;
   private readonly waitingToStart = new Set<LiveComponent>();
   /** What `particleStats` reads for this service. */
   private readonly readStats = () => this.stats();
@@ -1411,7 +1411,7 @@ export class ParticleService {
       if (!this.current(entry, entry.generation) || !entry.desiredPlaying || entry.state !== "playing") break;
       if (record.started || record.pending) continue;
       // A system whose programs no draw on the Engine has used (one Play's load did not know of) starts within the
-      // frame's first-draw budget, so several spawned in one frame do not first-draw together (WebGL2).
+      // frame's first-draw budget, so several spawned in one frame do not first-draw together.
       if (!this.programsDrawn(record.system)) {
         if (this.firstDrawBudget <= 0) {
           this.waitingToStart.add(entry);
@@ -1429,7 +1429,7 @@ export class ParticleService {
 
   /** Each frame admits `FIRST_DRAWS_PER_FRAME` new systems, then starts the entries that waited, in order. */
   private startWaitingSystems(): void {
-    this.firstDrawBudget = FIRST_DRAWS_PER_FRAME.webgl2;
+    this.firstDrawBudget = FIRST_DRAWS_PER_FRAME;
     if (!this.waitingToStart.size) return;
     // A copy: starting an entry can take it out of the Set and put it back.
     for (const entry of [...this.waitingToStart]) {

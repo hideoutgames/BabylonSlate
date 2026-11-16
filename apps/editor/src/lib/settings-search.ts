@@ -110,7 +110,6 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
   ...category("rendering", [
     ["pipeline", "Pipeline", [
       ["Render Mode PBR CEL", "setting-render-mode"],
-      ["GPU Backend Auto WebGL2 WebGPU", "project-gpu-backend"],
     ]],
     ["scalability", "Scalability", [
       ["Overall Quality", "quality-all"],

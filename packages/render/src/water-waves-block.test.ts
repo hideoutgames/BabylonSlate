@@ -4,7 +4,6 @@ import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import {
@@ -18,15 +17,12 @@ import { waterFftCycle, waterFftSynthesize, waterSpectrumInitial, waterSpectrumL
 import { WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM, WATER_NODE_FOAM_UNIFORM, WATER_VERTEX_WAVE_UNIFORMS, waterFoamDrift, waterWaveBlockSource } from "./water-material";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { materialHasWaterWaves } from "./water-waves-block";
-// The WGSL cases fake a WebGPU Engine, whose code registers the WGSL includes Haptic's blocks emit as it loads.
-import "./webgpu-registrations";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
 
-function host(webgpu = false): Scene {
+function host(): Scene {
   const engine = new NullEngine(), scene = new Scene(engine);
-  if (webgpu) vi.spyOn(engine, "isWebGPU", "get").mockReturnValue(true);
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   return scene;
 }
@@ -71,20 +67,20 @@ function declaredUnder(source: string, define: string, line: string): boolean {
 }
 
 describe("Water Waves node", () => {
-  it.each([ShaderLanguage.GLSL, ShaderLanguage.WGSL])("declares its inputs once per stage, displaces in the vertex stage and shades per pixel in language %s", async (language) => {
-    const wgsl = language === ShaderLanguage.WGSL, scene = host(wgsl);
+  it("declares its inputs once per stage, displaces in the vertex stage and shades per pixel", async () => {
+    const scene = host();
     const result = compile(scene, wavesDocument());
     expect(await result.ready).toEqual([]);
     const source = result.material.compiledShaders;
     // The fragment program declares the vertex program's uniforms too, so each is declared once per stage.
     const [vertex = "", fragment = ""] = source.split("// Fragment shader");
-    const uniform = (name: string) => wgsl ? `uniform ${name}: vec4f;` : `uniform vec4 ${name};`;
+    const uniform = (name: string) => `uniform vec4 ${name};`;
     for (const name of [...WATER_VERTEX_WAVE_UNIFORMS, WATER_CLOCK_UNIFORM, WATER_EYE_UNIFORM]) {
       expect(vertex.split(uniform(name)).length - 1, name).toBe(1);
       expect(fragment.split(uniform(name)).length - 1, name).toBe(1);
     }
     expect(fragment.split(uniform(WATER_NODE_FOAM_UNIFORM)).length - 1).toBe(1);
-    const attribute = (name: string, components: number) => wgsl ? `attribute ${name}: vec${components}f;` : `attribute vec${components} ${name};`;
+    const attribute = (name: string, components: number) => `attribute vec${components} ${name};`;
     for (const [name, components, define] of [["slateWaterData", 4, "SLATE_WATER_SURFACE"], ["slateWaterBaseNormal", 3, "SLATE_WATER_SURFACE"], ["slateWaterBlend", 4, "defined(SLATE_WATER_BLEND) || defined(SLATE_WATER_NODE_BLEND)"]] as const) {
       expect(declaredUnder(source, define, attribute(name, components)), name).toBe(true);
       expect(source.split(attribute(name, components)).length - 1, name).toBe(1);
@@ -95,16 +91,8 @@ describe("Water Waves node", () => {
     expect(fragment).toContain("slateWaterFoamSampler");
     expect(source).not.toMatch(/\b[UAOS]\.slate|\bIN\./);
     expect(source).toContain("#ifdef SLATE_WATER_GPU_WAVES");
-    if (wgsl) {
-      expect(source).toContain("vertexInputs.slateWaterData.x");
-      expect(source).toContain("uniforms.slateWaterFft");
-      // Every GLSL declaration was translated.
-      expect(source).not.toMatch(/^\s*(float|vec[234]) \w+ =/m);
-      expect(source).toMatch(/var swvNormal: vec3f = normalize\(vec3f\(/);
-    } else {
-      expect(source).toMatch(/vec3 swvNormal = normalize\(vec3\(/);
-      expect(source).toMatch(/uniform highp sampler2DArray slateWaterFftSampler;/);
-    }
+    expect(source).toMatch(/vec3 swvNormal = normalize\(vec3\(/);
+    expect(source).toMatch(/uniform highp sampler2DArray slateWaterFftSampler;/);
   });
 
   it("displaces the rest point by the spectrum at Wave Scale, λ and the bank fade, with the surface's normal", () => {
@@ -129,17 +117,6 @@ describe("Water Waves node", () => {
       const n = Math.hypot(slope[0]!, 1, slope[1]!);
       expect(shader.normal.map((value) => Number(value.toFixed(5))), label).toEqual([-slope[0]! / n, 1 / n, -slope[1]! / n].map((value) => Number(value.toFixed(5))));
     }
-  });
-
-  it("computes the same arithmetic in WGSL as in GLSL", () => {
-    const water = createDefaultWaterDefinition(), spectrum = waterSpectrum(water), size = 16;
-    const layout = waterSpectrumLayout(spectrum, size, 1), layers = waterFftSynthesize(waterSpectrumInitial(spectrum, layout), layout, waterFftCycle(5.5, layout.timeScale));
-    const terms = { scale: 1, lambda: spectrum.choppiness, patch: layout.patchSizes[0]!, fade: 4 };
-    const glsl = shaderSample(layers, size, terms, 6.5, -3.5, 0.3, 2);
-    // The WGSL text itself, run as it is except for the prefixes the language binds uniforms and attributes with.
-    const wgsl = waterWaveBlockSource(ShaderLanguage.WGSL).replace(/\b(?:uniforms|vertexInputs)\./g, "");
-    expect(wgsl).toContain("var swvH: f32 = 0.0;");
-    expect(shaderSample(layers, size, terms, 6.5, -3.5, 0.3, 2, [0, 1, 0], wgsl)).toEqual(glsl);
   });
 
   it("compiles out for meshes that are not water displaced by the node", async () => {
@@ -239,7 +216,7 @@ describe("Water Waves node", () => {
  */
 function shaderSample(
   layers: Float64Array[], size: number, terms: { scale: number; lambda: number; patch: number; fade: number }, x: number, z: number, spacing: number, bank: number,
-  baseNormal: number[] = [0, 1, 0], source = waterWaveBlockSource(ShaderLanguage.GLSL),
+  baseNormal: number[] = [0, 1, 0], source = waterWaveBlockSource(),
 ) {
   const variables = new Map<string, Value>();
   variables.set("slateWaterGridOffset", [0, 0, 0, 0]);
@@ -283,7 +260,7 @@ const FUNCTIONS: Record<string, (...args: Value[]) => Value> = {
 };
 
 /**
- * Runs the shader subset the water vertex source is written in, GLSL or its WGSL translation (declarations and assignments
+ * Runs the shader subset the water vertex source is written in (declarations and assignments
  * of float and vec2-4, arithmetic, swizzles, constructors, a few builtins, `#ifdef` / `#if X >= n`), over `variables`, which
  * it updates. An identifier or function it does not know is an error, so a typo in the shader fails here.
  */
@@ -306,7 +283,7 @@ function evaluateShader(source: string, variables: Map<string, Value>, defines: 
   const peek = () => tokens[at], next = () => tokens[at++]!;
   const expectToken = (token: string) => { if (next() !== token) throw new Error(`Expected ${token} near token ${at}`); };
   const call = (name: string, args: Value[]): Value => {
-    if (/^vec[234]f?$/.test(name)) {
+    if (/^vec[234]$/.test(name)) {
       const size = Number(name[3]), flat = args.flatMap(lanes);
       if (flat.length === 1) return Array<number>(size).fill(flat[0]!);
       if (flat.length !== size) throw new Error(`${name} of ${flat.length} lanes`);
@@ -355,8 +332,8 @@ function evaluateShader(source: string, variables: Map<string, Value>, defines: 
   const operators: Record<string, (a: number, b: number) => number> = { "+=": (a, b) => a + b, "-=": (a, b) => a - b, "*=": (a, b) => a * b, "/=": (a, b) => a / b };
   while (at < tokens.length) {
     let name = next();
-    // `float name =` (GLSL) or `var name: f32 =` (WGSL).
-    if (name === "var") { name = next(); expectToken(":"); next(); } else if (/^(float|vec[234])$/.test(name)) name = next();
+    // A declaration (`float name =`) names its variable after the type.
+    if (/^(float|vec[234])$/.test(name)) name = next();
     const op = next(), value = expression();
     expectToken(";");
     if (op === "=") variables.set(name, value);

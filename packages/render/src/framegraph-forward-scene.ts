@@ -58,9 +58,8 @@ import { syncSceneLighting } from "./scene-lighting";
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
-import { drawsInPass, pipelinesDeferred } from "./webgpu-pipeline-deferral";
 import { isRevealPending, revealRound } from "./reveal-pending";
-import { withPipelineWarmupRound } from "./variant-pipeline-warmup";
+import { withFirstDrawRound } from "./variant-first-draws";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { SCENE_PREPARATION_CEILING_MS, SCENE_THREAD_HELD_BUDGET_MS } from "./stall-deadline";
 import { whenPresentationFenceClear } from "./presented-frame";
@@ -336,10 +335,6 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
 export class ForwardSceneFrameGraph {
   private measureWork = false;
   private readonly work = { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, readinessProbeMs: 0 };
-  /** Geometry render pass ids that drew in a complete frame of the prepared graph (`noteCompleteFrame`). */
-  private readonly drawnGeometryPasses = new Set<number>();
-  /** Each geometry render pass id's `drawsInPass` count at the last complete frame. */
-  private readonly geometryDraws = new Map<number, number>();
   /** Effects this graph's readiness probes requested and that were not ready when their probe ended. */
   readonly requestedEffects = new Set<Effect>();
 
@@ -719,56 +714,6 @@ export class ForwardSceneFrameGraph {
     return this.graph?.tasks.map((task) => task.name) ?? [];
   }
 
-  /**
-   * Whether `renderPassId` is one of the prepared graph's object passes (opaque,
-   * transparent, geometry), their blended depth pre-passes or the shared
-   * outline masks, which all draw every frame. Shadow maps, which may draw
-   * once, and post-process draws under the camera's pass are not.
-   */
-  ownsObjectPass(renderPassId: number): boolean {
-    for (const task of this.graph?.tasks ?? []) {
-      const owner = task as { objectRenderer?: { renderPassIds?: readonly number[] }; ownsRenderPass?: (id: number) => boolean };
-      if (owner.objectRenderer?.renderPassIds?.includes(renderPassId) || owner.ownsRenderPass?.(renderPassId)) return true;
-    }
-    return false;
-  }
-
-  /** The prepared graph's geometry tasks (the spatial effects' and the authored post-process chain's geometry buffers). */
-  private *geometryTasks(): Generator<LogicalGeometryTask> {
-    for (const task of this.graph?.tasks ?? []) if (task instanceof LogicalGeometryTask) yield task;
-  }
-
-  /**
-   * The view drew a complete frame (no draw skipped). A geometry pass that ran
-   * and drew something since the last one (`drawsInPass`) has drawn the meshes
-   * it saw; one its spatial stages left idle is forgotten, since its next draws
-   * can all be new.
-   */
-  noteCompleteFrame(): void {
-    const engine = this.scene.getEngine();
-    for (const task of this.geometryTasks()) {
-      for (const id of task.objectRenderer.renderPassIds) {
-        const draws = drawsInPass(engine, id);
-        const drew = draws !== (this.geometryDraws.get(id) ?? 0);
-        this.geometryDraws.set(id, draws);
-        if (task.disabled) this.drawnGeometryPasses.delete(id);
-        else if (drew) this.drawnGeometryPasses.add(id);
-      }
-    }
-  }
-
-  /**
-   * Whether `renderPassId` is a geometry pass that drew something in a
-   * complete frame since the graph was prepared or invalidated, and has not
-   * been idle since (`noteCompleteFrame`): a frame may then present it without
-   * a draw for a few frames. Before that, its draws (a new graph, an effect
-   * switched on, a Fog Volume coming into view, a first view of anything)
-   * can miss every mesh's pipeline at once.
-   */
-  omitsGeometryPass(renderPassId: number): boolean {
-    return this.drawnGeometryPasses.has(renderPassId);
-  }
-
   /** Actual mask/compose drawing passes, separately from clear records. */
   sharedOutlineDiagnostics(): { drawingPassCount: number; renderRecordCount: number } {
     return {
@@ -846,8 +791,6 @@ export class ForwardSceneFrameGraph {
   invalidate(): void {
     this.failure = undefined;
     this.failedOutput = undefined;
-    // A new run (a scene switch, a changed Material library) can give every mesh new geometry variants.
-    this.drawnGeometryPasses.clear();
     this.markReadinessDirty("invalidate");
   }
 
@@ -1089,10 +1032,7 @@ export class ForwardSceneFrameGraph {
     if (this.swapsStillPending()) return false;
     // What admission stales (a caster that joined or left, a light capacity that changed) is staled before the probe:
     // `readiness` admits right after it, and would otherwise probe every mesh a second time in the same frame.
-    // Not where pipelines are deferred (WebGPU): there a spawn whose pipelines exist is revealed by the probe that
-    // first sees it, in its first frame, and only then does the admission list it in the drawn shadow maps, which
-    // its reveal would otherwise ask for theirs and wait a frame for (`casterPipelinesWarm`).
-    if (this.readinessDirtyFlag && !pipelinesDeferred(this.scene.getEngine())) this.syncShadowAdmission(camera);
+    if (this.readinessDirtyFlag) this.syncShadowAdmission(camera);
     // A settings change stales a prepared graph like a stack revision; with
     // no graph yet there is no baked chain to re-key.
     if (!this.readinessDirtyFlag &&
@@ -1598,7 +1538,7 @@ export class ForwardSceneFrameGraph {
         const engine = scene.getEngine();
         /** Whether the view's own multisampled colour presents by one blit to the backbuffer (`MultisamplePresentTask`). */
         const presentsByBlit = (own: { samples: number; colorType: number }, laterReaders: boolean) => presentsMultisampleByBlit({
-          webGl2: !engine.isWebGPU && (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
+          webGl2: (engine as { webGLVersion?: number }).webGLVersion === 2, samples: own.samples, colorType: own.colorType,
           backbuffer: !output.color, outputSized: renderSize.width === output.width && renderSize.height === output.height,
           laterReaders,
         });
@@ -1670,7 +1610,7 @@ export class ForwardSceneFrameGraph {
         // Alpha-tested draws turn alpha-to-coverage on for themselves (`alpha-to-coverage.ts`); nothing after the pass keeps it.
         guardAlphaToCoverageBlending(scene.getEngine());
         this.objects.objectRenderer.onFinishRenderingObservable.add(() => endAlphaToCoverage(scene.getEngine()));
-        this.objects.warmsPipelines = !this.auxiliary;
+        this.objects.spreadsFirstDraws = !this.auxiliary;
         // The strict outline mask reads the scene's depth after this pass where a chain or the view's own pair holds
         // it as a texture (the backbuffer's cannot be read): resolved by sample where the pass is multisampled.
         const outlineDepth = this.outlineTask && this.seedsFromSceneDepth
@@ -1980,14 +1920,14 @@ export class ForwardSceneFrameGraph {
   }
 
   /**
-   * Set by the view once it draws steady frames: its readiness rounds then make the Effects they request first wait
-   * for their pipelines where those are deferred (`variant-pipeline-warmup.ts`), strict ones included.
+   * Set by the view once it draws steady frames: its readiness rounds then make the Effects they request first cold
+   * (`variant-first-draws.ts`), strict ones included.
    */
   warmsVariants = false;
 
   /** One readiness round: hidden meshes whose every variant its passes probed is ready are revealed at its end. */
   private isReady(): boolean {
-    const round = () => this.timedProbe(() => withPipelineWarmupRound(this.scene.getEngine(), this.warmsVariants,
+    const round = () => this.timedProbe(() => withFirstDrawRound(this.scene.getEngine(), this.warmsVariants,
       () => revealRound(() => this.collectingEffects(() => this.probeReady()))));
     const scope = this.probeScope();
     this.scopedProbePassed = false;
@@ -2247,8 +2187,6 @@ export class ForwardSceneFrameGraph {
 
   private releaseGraphResources(): void {
     this.admittedCamera = undefined;
-    this.drawnGeometryPasses.clear();
-    this.geometryDraws.clear();
     // Babylon FrameGraph.clear/dispose reset tasks without disposing their
     // ObjectRenderer, OIT renderer and render-pass resources.
     this.postProcessOwner?.clearGraph();
@@ -2270,7 +2208,7 @@ export class ForwardSceneFrameGraph {
       if (water) this.postProcessRetirement.add(water);
       void water?.releaseAfterGraphDisposal().catch((error: unknown) => { this.cleanupFailure = error; });
       if (ownScene) {
-        // The graph disposed the targets; WebGPU destroys them at the end of its frame.
+        // The graph disposed the targets.
         const released = releaseManagedRenderLeaseAfterDisposal(this.scene.getEngine(), ownScene.lease);
         this.postProcessRetirement.add({ whenDisposed: () => released, whenReleased: () => released });
       }

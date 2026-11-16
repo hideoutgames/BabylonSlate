@@ -15,7 +15,6 @@ import { Scene } from "@babylonjs/core/scene";
 import {
   beginEngineDrawCallFrame,
   compileMaterialPlan,
-  createAppWebGpuEngine,
   readEngineDrawCalls,
   setSceneRenderSettings,
 } from "@haptic/render";
@@ -25,12 +24,12 @@ import {
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
 
-export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "webgl2", output: "backbuffer" | "texture" = "backbuffer") {
+export async function runFrameGraphForwardProof(output: "backbuffer" | "texture" = "backbuffer") {
   const canvas = document.createElement("canvas");
   canvas.width = 80;
   canvas.height = 64;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas) : new Engine(canvas, false, {
+  const engine = new Engine(canvas, false, {
     preserveDrawingBuffer: true,
     stencil: true,
     disableWebGL2Support: false,
@@ -48,8 +47,8 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength),
     );
   };
-  // Observe the actual retained canvas bitmap, rather than a WebGPU swapchain
-  // texture whose frame lifetime can end while an unrelated RTT is rendering.
+  // Observe the retained canvas bitmap itself, not the framebuffer that is
+  // bound while an unrelated RTT is rendering.
   const readCanvas = () => {
     const copy = document.createElement("canvas");
     copy.width = canvas.width;
@@ -197,7 +196,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         });
         const referenceDraws = readEngineDrawCalls(engine);
         const reference = await read(target);
-        engine.restoreDefaultFramebuffer(true);
+        engine.restoreDefaultFramebuffer();
         beginEngineDrawCallFrame(engine);
         const previousBefore = before;
         const previousAfter = after;
@@ -211,11 +210,10 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
         });
         const graphDraws = readEngineDrawCalls(engine);
         // A registered view copies this bitmap synchronously at the end of its
-        // admitted frame. WebGPU's private constructor canvas is not persistent
-        // storage across later presentation frames.
+        // admitted frame.
         const visibleSibling = beforeTarget ? readCanvas() : null;
         const graph = await read(target);
-        engine.restoreDefaultFramebuffer(true);
+        engine.restoreDefaultFramebuffer();
         captures.push({
           name: `${mode}-${name}`,
           reference,
@@ -302,7 +300,7 @@ export async function runFrameGraphForwardProof(backend: "webgl2" | "webgpu" = "
       });
       sibling.dispose();
     }
-    return { captures, lifecycle, backend, output, info: engine instanceof Engine ? engine.getGlInfo() : engine.getInfo(), webGLVersion: engine instanceof Engine ? engine.webGLVersion : null };
+    return { captures, lifecycle, output, info: engine.getGlInfo(), webGLVersion: engine.webGLVersion };
   } finally {
     engine.dispose();
     canvas.remove();

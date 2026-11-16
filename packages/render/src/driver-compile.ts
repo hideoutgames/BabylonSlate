@@ -4,7 +4,6 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { ObjectRenderer } from "@babylonjs/core/Rendering/objectRenderer";
 import type { Scene } from "@babylonjs/core/scene";
 import { SCENE_DRIVER_COMPILE_TIMEOUT_MS, SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
-import { deferredPipelinesSettled } from "./webgpu-pipeline-deferral";
 
 /** Babylon exposes no enumeration of the Engine's cached effects. */
 type EngineEffects = { _compiledEffects?: Readonly<Record<string, Effect>> };
@@ -108,10 +107,8 @@ export function readinessScanMeshes(renderer: ObjectRenderer, scene: Scene): rea
  *   previous renewal, or since the watch began. Where links are synchronous this
  *   is the only sign: without KHR_parallel_shader_compile (SwiftShader),
  *   Babylon's first completion check, inside the Effect constructor, already
- *   finds the program complete and nothing is ever pending. WebGPU effects are
- *   ready once created. A key compiled again after its release is no progress.
- * - a WebGPU render pipeline a held view's skipped draw waited for that
- *   finished (`deferredPipelinesSettled`); WebKit builds those one at a time.
+ *   finds the program complete and nothing is ever pending. A key compiled again
+ *   after its release is no progress.
  * - effects pending on a parallel-compile driver (D3D11 through ANGLE; iPad
  *   WebKit WebGL2, whose new effects stay pending until the link completes and
  *   whose heavy programs finish roughly one after another). A cascade, such as a
@@ -133,7 +130,6 @@ export class DriverCompileWatch {
   private compiled = 0;
   private compiledAtRenewal = 0;
   private pending = 0;
-  private pipelinesSettled = 0;
 
   private readonly engine: AbstractEngine;
   /** No budget is renewed from this time (a `performance.now()` value) on. */
@@ -175,17 +171,12 @@ export class DriverCompileWatch {
   describe(): string {
     this.sample();
     const effects = Object.keys((this.engine as unknown as EngineEffects)._compiledEffects ?? {}).length;
-    const driver = this.engine.isWebGPU ? ""
-      : `; KHR_parallel_shader_compile ${this.engine.getCaps().parallelShaderCompile ? "exposed" : "not exposed"}`;
+    const driver = `; KHR_parallel_shader_compile ${this.engine.getCaps().parallelShaderCompile ? "exposed" : "not exposed"}`;
     return `Shaders: ${this.compiled} compiled while waiting, ${this.pending} still compiling, ${effects} on the Engine${driver}.`;
   }
 
   /** Counts keys that became ready and returns the keys still compiling on a parallel-compile driver. */
   private sample(): string[] {
-    // WebGPU render pipelines a held view waits for (`beginPipelineDeferral`) are progress too.
-    const settled = deferredPipelinesSettled(this.engine);
-    this.compiled += Math.max(0, settled - this.pipelinesSettled);
-    this.pipelinesSettled = settled;
     const parallel = Boolean(this.engine.getCaps().parallelShaderCompile);
     const pending: string[] = [];
     for (const [key, effect] of Object.entries((this.engine as unknown as EngineEffects)._compiledEffects ?? {})) {

@@ -785,7 +785,7 @@ describe("adopting a replaced visual that has child actors", () => {
 describe("mesh shadow participation through the editor apply path", () => {
   it("excludes a castShadows:false primitive from the generator renderList", async () => {
     const { sync, scene } = fixture();
-    // The sun's atlas map is cascaded, as every WebGL2 and WebGPU Engine supports.
+    // The sun's atlas map is cascaded, as every WebGL2 Engine supports.
     scene.getEngine()._features.supportCSM = true;
     updateSceneRenderingSettings(scene, {
       shadows: normalizeShadowSettings({ cascades: 1 }),

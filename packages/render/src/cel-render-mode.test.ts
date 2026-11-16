@@ -109,8 +109,7 @@ describe("CEL render mode", () => {
     expect(
       uniforms.mock.calls.filter(([name]) => name === "slateCelSpecular").at(-1),
     ).toEqual(["slateCelSpecular", 0.3, 0.25, 0, 0]);
-    for (const wgsl of [false, true])
-      expect(celFunctions(wgsl)).not.toContain("smoothstep");
+    expect(celFunctions()).not.toContain("smoothstep");
     compiled.dispose();
   });
 

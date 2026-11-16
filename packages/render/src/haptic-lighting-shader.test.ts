@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { HAPTIC_LIGHTING_FUNCTIONS_GLSL, HAPTIC_LIGHTING_FUNCTIONS_WGSL } from "./haptic-lighting-shader";
+import { HAPTIC_LIGHTING_FUNCTIONS_GLSL } from "./haptic-lighting-shader";
 
 /** The body of the function whose header starts with `header`, up to the closing brace of its own line. */
 function body(source: string, header: string): string {
@@ -17,8 +17,6 @@ const calls = (text: string, name: string) => text.split(`${name}(`).length - 1;
 it.each([
   ["GLSL PBR", HAPTIC_LIGHTING_FUNCTIONS_GLSL, "void hapticDirectLights("],
   ["GLSL CEL", HAPTIC_LIGHTING_FUNCTIONS_GLSL, "vec3 hapticCelLighting("],
-  ["WGSL PBR", HAPTIC_LIGHTING_FUNCTIONS_WGSL, "fn hapticDirectLights("],
-  ["WGSL CEL", HAPTIC_LIGHTING_FUNCTIONS_WGSL, "fn hapticCelLighting("],
 ])("a lit surface's light function looks shadows up from one call site: %s", (_name, source, header) => {
   const lights = body(source, header);
   expect(calls(lights, "hapticShadow")).toBe(1);

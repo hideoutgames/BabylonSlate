@@ -3,12 +3,12 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { arch, cpus, platform, release } from "node:os";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 
 /** Reproducibility metadata; desktop functional captures never certify A16. */
 export function renderingEvidence(sceneSource: string, graphicsArguments =
   process.env.HAPTIC_RENDER_NATIVE_GPU === "1" && !process.env.CI
-    ? test.info().project.use.launchOptions?.args ?? [] : SOFTWARE_WEBGPU_ARGS) {
+    ? test.info().project.use.launchOptions?.args ?? [] : SOFTWARE_GL_ARGS) {
   return {
     kind: "desktop-functional-only",
     recordedAt: new Date().toISOString(),

@@ -46,7 +46,7 @@ function createHandle() {
 }
 
 /**
- * What a shipped Engine (WebGL2, WebGPU) gives the shadow atlas: textures large enough for a sun's cascades beside local
+ * What the shipped Engine gives the shadow atlas: textures large enough for a sun's cascades beside local
  * maps, and cascades with hardware depth comparison (the sun's atlas map is cascaded).
  */
 function shippedShadowEngine(scene: Scene): void {

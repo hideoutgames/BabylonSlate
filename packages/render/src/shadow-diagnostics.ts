@@ -9,7 +9,6 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { engineAdapterInfo } from "./render-diagnostics";
 import { sceneRenderingSettings } from "./render-settings";
-import { sceneRenderingPipeline } from "./scene-rendering-pipeline";
 import { lightsInCreationOrder } from "./light-policy";
 import { findSceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowTileSize } from "./shadow-atlas";
@@ -38,7 +37,7 @@ const limit = (value: number | undefined, maximum: number) =>
     : maximum;
 
 /** Reads an already-produced matrix without asking Babylon to update projection. */
-function orthographicExtents(projection: Matrix | null, halfZ: boolean) {
+function orthographicExtents(projection: Matrix | null) {
   if (!projection) return null;
   const m = projection.m;
   if (m[15] !== 1 || m[3] !== 0 || m[7] !== 0 || m[11] !== 0) return null;
@@ -47,7 +46,7 @@ function orthographicExtents(projection: Matrix | null, halfZ: boolean) {
   const x1 = (1 - m[12]) / m[0];
   const y0 = (-1 - m[13]) / m[5];
   const y1 = (1 - m[13]) / m[5];
-  const z0 = ((halfZ ? 0 : -1) - m[14]) / m[10];
+  const z0 = (-1 - m[14]) / m[10];
   const z1 = (1 - m[14]) / m[10];
   return {
     min: [
@@ -85,7 +84,6 @@ export function captureShadowDiagnostics(
   const engine = scene.getEngine();
   const controller = findSceneShadowController(scene);
   const state = sceneRenderingSettings(scene);
-  const pipeline = sceneRenderingPipeline(scene);
   const camera = scene.activeCamera;
   const canvas = engine.getRenderingCanvas();
   const renderSize = camera?.outputRenderTarget?.getSize();
@@ -102,25 +100,16 @@ export function captureShadowDiagnostics(
       capturedAfterViewDraw: "caller-responsibility",
     },
     backend: {
-      requested: pipeline.requested.gpuBackend,
       actual:
         engine instanceof NullEngine
           ? "null"
-          : engine.isWebGPU
-            ? "webgpu"
-            : (engine as { webGLVersion?: number }).webGLVersion === 1
-              ? "webgl1"
-              : "webgl2",
+          : (engine as { webGLVersion?: number }).webGLVersion === 1
+            ? "webgl1"
+            : "webgl2",
       adapter: engineAdapterInfo(engine),
-      ndcHalfZRange: engine.isNDCHalfZRange,
       reverseDepthBuffer: engine.useReverseDepthBuffer,
     },
     surfaceMode: state.mode,
-    pipeline: {
-      requested: { ...pipeline.requested },
-      effective: { ...pipeline.effective },
-      limits: pipeline.limits.slice(0, 32).map((value) => value.slice(0, 512)),
-    },
     viewport: {
       cssWidth: finite(canvas?.clientWidth),
       cssHeight: finite(canvas?.clientHeight),
@@ -262,7 +251,7 @@ export function captureShadowDiagnostics(
                     generator instanceof CascadedShadowGenerator
                       ? generator.getCascadeProjectionMatrix(layer)
                       : generator.projectionMatrix;
-                  const extents = orthographicExtents(projection, engine.isNDCHalfZRange);
+                  const extents = orthographicExtents(projection);
                   return {
                     layer,
                     scope: map?.isCube ? "last-rendered-cube-face" : "layer",

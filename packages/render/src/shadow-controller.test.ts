@@ -57,7 +57,7 @@ function fixture(beforeController?: (scene: Scene) => void) {
     textureHalfFloatRender: true,
     textureHalfFloatLinearFiltering: true,
   });
-  // Every shipped Engine (WebGL2, WebGPU) draws cascades with hardware depth comparison: the sun's atlas map is one.
+  // The shipped Engine draws cascades with hardware depth comparison: the sun's atlas map is one.
   engine._features.supportCSM = true;
   engine._features.supportShadowSamplers = true;
   // NullEngine also leaves _releaseTexture empty. Match WebGL cache ownership

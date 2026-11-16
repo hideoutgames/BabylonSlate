@@ -5,11 +5,11 @@ import type { RenderShadingSettings, ShadowDiagnostics } from "../packages/rende
 import { openMainScene, waitForEditorInteractive } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot, showOverlayButtons } from "./play";
 import { setPreviewScene } from "./preview-parity";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 import { captureMannequinPixels, mannequinContactCoverage, mannequinShadowMetrics, mannequinShadowSamples, posedMannequin, type MannequinGeometry } from "./mannequin-shadow-pixels";
 
 if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
-  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+  test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 type Api = {
   shadowDiagnostics(): ShadowDiagnostics | null;
@@ -32,7 +32,7 @@ async function settings(canvas: Locator, host: Host, value: RenderShadingSetting
   }, { timeout: 30_000 }).toEqual([value.mode, value.shadows!.enabled]);
   const frame = await presented(canvas, host);
   // Each frame waits for the GPU to finish the frames before it (frames-in-flight), and software GL compiles the new
-  // pipelines at their first draw: on a slow runner the frames after a mode change took longer than 30 s.
+  // programs at their first draw: on a slow runner the frames after a mode change took longer than 30 s.
   await expect.poll(() => presented(canvas, host), { timeout: 90_000 }).toBeGreaterThan(frame + 2);
 }
 
@@ -94,7 +94,7 @@ test("Basic 3D mannequin preserves real materials, contacts and animation in Pla
     await dilation(0);
     const initial = (await diagnostics(canvas, host))!;
     for (const mode of ["pbr", "cel"] as const) {
-      const render: RenderShadingSettings = { gpuBackend: "webgl2", mode, shadows: initial.requestedShadows, quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }) };
+      const render: RenderShadingSettings = { mode, shadows: initial.requestedShadows, quality: normalizeRenderingQuality({ resolution: { scale: 1, minScale: 1, dynamic: false } }) };
       await settings(canvas, host, render);
       const state = (await diagnostics(canvas, host))!;
       const size = await canvas.evaluate((node: HTMLCanvasElement) => ({ width: node.width, height: node.height }));

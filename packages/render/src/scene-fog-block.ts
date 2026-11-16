@@ -5,7 +5,6 @@ import { NodeMaterialBlockTargets } from "@babylonjs/core/Materials/Node/Enums/n
 import type { NodeMaterial, NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { Effect } from "@babylonjs/core/Materials/effect";
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
@@ -14,7 +13,6 @@ import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/node
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import "@babylonjs/core/Shaders/ShadersInclude/fogFragmentDeclaration";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
-// The WGSL twins register with the WebGPU Engine's code (webgpu-registrations).
 
 /** The scene's fog (mode, start, end, density), for Babylon's fog factor (`emitSceneFogFactor`). */
 const SCENE_FOG_UNIFORM = "sceneFogInfo";
@@ -36,23 +34,16 @@ export function bindSceneFogColor(effect: Effect, scene: Scene): void {
 /**
  * Declares how much of a surface the scene's fog keeps, one rule for every surface: Babylon PBR's, the fog factor in
  * linear space, `toLinearSpace(CalcFogFactor(view-space position, SCENE_FOG_UNIFORM))` (`sceneFogKeep`), from the
- * include Babylon's fog uses (emitted once per program). GLSL `vec3`/WGSL `vec3f` `viewPosition`; meaningful under `FOG`.
+ * include Babylon's fog uses (emitted once per program). A `vec3` `viewPosition`; meaningful under `FOG`.
  */
 export function emitSceneFogFactor(state: NodeMaterialBuildState): void {
-  const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
   state._emitUniformFromString(SCENE_FOG_UNIFORM, Types.Vector4);
   state._emitFunctionFromInclude("helperFunctions", "");
   state._emitFunctionFromInclude("fogFragmentDeclaration", "", {
     removeUniforms: true, removeVaryings: true, removeIfDef: false,
-    replaceStrings: wgsl ? [
-      { search: /fn CalcFogFactor\(\)/, replace: "fn CalcFogFactor(vFogDistance: vec3f, vFogInfos: vec4f)" },
-      { search: /uniforms.vFogInfos/g, replace: "vFogInfos" },
-      { search: /fragmentInputs.vFogDistance/g, replace: "vFogDistance" },
-    ] : [{ search: /float CalcFogFactor\(\)/, replace: "float CalcFogFactor(vec3 vFogDistance, vec4 vFogInfos)" }],
+    replaceStrings: [{ search: /float CalcFogFactor\(\)/, replace: "float CalcFogFactor(vec3 vFogDistance, vec4 vFogInfos)" }],
   });
-  state._emitFunction("sceneFogKeep", `#ifdef FOG\n${wgsl
-    ? `fn sceneFogKeep(viewPosition: vec3f) -> f32 { return toLinearSpace(CalcFogFactor(viewPosition, uniforms.${SCENE_FOG_UNIFORM})); }`
-    : `float sceneFogKeep(vec3 viewPosition) { return toLinearSpace(CalcFogFactor(viewPosition, ${SCENE_FOG_UNIFORM})); }`}\n#endif\n`, "");
+  state._emitFunction("sceneFogKeep", `#ifdef FOG\nfloat sceneFogKeep(vec3 viewPosition) { return toLinearSpace(CalcFogFactor(viewPosition, ${SCENE_FOG_UNIFORM})); }\n#endif\n`, "");
 }
 
 /**
@@ -93,17 +84,16 @@ export class SceneFogBlock extends NodeMaterialBlock {
     super._buildBlock(state);
     state.sharedData.blocksWithDefines.push(this);
     state.sharedData.bindableBlocks.push(this);
-    const wgsl = state.shaderLanguage === ShaderLanguage.WGSL;
     emitSceneFogFactor(state);
     state._emitUniformFromString(SCENE_FOG_COLOR_UNIFORM, Types.Vector4);
     const output = this.output.associatedVariableName, input = this.input.associatedVariableName;
     const keep = state._getFreeVariableName("fogKeep");
-    const linear = this.displaySpace ? `${wgsl ? "toLinearSpaceVec3" : "toLinearSpace"}(${input}.rgb)` : `${input}.rgb`;
-    const fogged = `${keep} * ${linear} + (1.0 - ${keep}) * ${wgsl ? "uniforms." : ""}${SCENE_FOG_COLOR_UNIFORM}.rgb`;
+    const linear = this.displaySpace ? `toLinearSpace(${input}.rgb)` : `${input}.rgb`;
+    const fogged = `${keep} * ${linear} + (1.0 - ${keep}) * ${SCENE_FOG_COLOR_UNIFORM}.rgb`;
     state.compilationString += `${state._declareOutput(this.output)} = ${input}.rgb;\n#ifdef FOG\n`
       + `${state._declareLocalVar(keep, Types.Float)} = sceneFogKeep(${this.viewPosition.isConnected ? this.viewPosition.associatedVariableName
-        : `(${this.view.associatedVariableName} * vec4${wgsl ? "f" : ""}(${this.worldPosition.associatedVariableName}.xyz, 1.0))`}.xyz);\n`
-      + `${output} = ${this.displaySpace ? `${wgsl ? "toGammaSpaceVec3" : "toGammaSpace"}(${fogged})` : fogged};\n#endif\n`;
+        : `(${this.view.associatedVariableName} * vec4(${this.worldPosition.associatedVariableName}.xyz, 1.0))`}.xyz);\n`
+      + `${output} = ${this.displaySpace ? `toGammaSpace(${fogged})` : fogged};\n#endif\n`;
     return this;
   }
 }

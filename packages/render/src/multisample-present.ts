@@ -6,7 +6,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 
 /** What decides whether a multisampled world view presents by one blit instead of a resolve and a copy. */
 export interface MultisamplePresentInputs {
-  /** A WebGL2 Engine (WebGPU resolves in the render pass itself). */
+  /** The Engine has a WebGL2 context, whose `blitFramebuffer` the blit uses. */
   webGl2: boolean;
   /** The view's own scene colour's samples. */
   samples: number;

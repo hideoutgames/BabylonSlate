@@ -3,7 +3,7 @@ import type { runPooledLodProof } from "../apps/editor/src/testing/pooled-lod-pr
 
 type Proof = typeof runPooledLodProof;
 
-test("pooled model leaves draw at their own Auto LOD level, the far one through its source's coarser level, on webgl2", async ({ page }, testInfo) => {
+test("pooled model leaves draw at their own Auto LOD level, the far one through its source's coarser level", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -13,7 +13,7 @@ test("pooled model leaves draw at their own Auto LOD level, the far one through 
   });
   await page.goto("/?test=1&pooledLodProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __pooledLodProof?: unknown }).__pooledLodProof === "function");
-  const result = await page.evaluate(() => (window as unknown as { __pooledLodProof: Proof }).__pooledLodProof("webgl2"));
+  const result = await page.evaluate(() => (window as unknown as { __pooledLodProof: Proof }).__pooledLodProof());
   await testInfo.attach("pooled-lod", { body: JSON.stringify(result, null, 2), contentType: "application/json" });
   expect(errors).toEqual([]);
   expect(result.pooled).toBe(true);

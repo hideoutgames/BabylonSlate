@@ -14,7 +14,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import {
-  applyAuthoredLightProperties, compileMaterialPlan, createAppWebGpuEngine, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings,
+  applyAuthoredLightProperties, compileMaterialPlan, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
@@ -25,17 +25,15 @@ import { setActorMeshMaterial } from "../../../../packages/render/src/pooled-vis
 import { applyWorldVisualGroup } from "../../../../packages/render/src/sorting";
 import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
 import { allowSceneOcclusionCulling } from "../../../../packages/render/src/view-occlusion";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 192;
 const HEIGHT = 108;
 
 /** One run: the street drawn with pooling `pooled`, occlusion culling off then on. */
 async function drawStreet(engine: AbstractEngine, pooled: boolean) {
-  const order = readbackChannelOrder(engine.isWebGPU);
   const read = async () => {
     const pixels = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-    return toRgbaPixels(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength), order);
+    return Array.from(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
   };
   const scene = new Scene(engine);
   try {
@@ -128,14 +126,12 @@ async function drawStreet(engine: AbstractEngine, pooled: boolean) {
   }
 }
 
-export async function runInstancingParityProof(backend: "webgl2" | "webgpu") {
+export async function runInstancingParityProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
   try {
     const unpooled = await drawStreet(engine, false);

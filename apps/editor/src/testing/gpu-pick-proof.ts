@@ -10,7 +10,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
 import { Scene } from "@babylonjs/core/scene";
 import {
-  compileMaterialPlan, createAppWebGpuEngine, gpuPickMesh, pickAtCanvas,
+  compileMaterialPlan, gpuPickMesh, pickAtCanvas,
 } from "@haptic/render";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 
@@ -22,17 +22,16 @@ const CAMERA_DISTANCE = 8;
 
 /**
  * `bare` is a plain engine and scene. `editor` matches the editor viewport: a floating-origin
- * engine (`useLargeWorldRendering`, always on for WebGPU) and the gizmo's utility layer rendered
+ * engine (`useLargeWorldRendering`) and the gizmo's utility layer rendered
  * after the scene every frame, so the last scene to render is not the one being picked.
  */
 export type GpuPickProofVariant = "bare" | "editor";
 
-export async function runGpuPickProof(backend: "webgl2" | "webgpu", variant: GpuPickProofVariant = "bare") {
+export async function runGpuPickProof(variant: GpuPickProofVariant = "bare") {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH; canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine = backend === "webgpu" ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: variant === "editor" });
+  const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: variant === "editor" });
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine); scene.clearColor = new Color4(0, 0, 0, 1);
   const camera = new FreeCamera("Pick Camera", new Vector3(0, 0, -CAMERA_DISTANCE), scene);
@@ -140,7 +139,6 @@ export async function runGpuPickProof(backend: "webgl2" | "webgpu", variant: Gpu
     const result = { orthographic, perspective, inPlace: { before, afterMarkDirty, afterVertexColors }, pickTargetSizes: [...pickTargetSizes] };
     compiled.dispose();
     return {
-      effectiveBackend: engine.isWebGPU ? "webgpu" : (engine as Engine).webGLVersion === 2 ? "webgl2" : "webgl1",
       floatingOriginWithGizmoLayer: scene.floatingOriginMode && !!gizmoLayer?.utilityLayerScene.floatingOriginMode,
       ...result,
     };

@@ -30,8 +30,7 @@ import {
  *      HAPTIC_PERF_SUSTAINED_WARMUP_MS (default 60000, applied per host),
  *      HAPTIC_PERF_SAMPLE_MS (default 30000),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra, default low),
- *      HAPTIC_PERF_RENDER_MODE (cel) sets project.settings.render.mode,
- *      HAPTIC_PERF_BACKEND (webgl2|webgpu) sets project.settings.render.gpuBackend.
+ *      HAPTIC_PERF_RENDER_MODE (cel) sets project.settings.render.mode.
  */
 const ROUTE_ENABLED = process.env.HAPTIC_PERF_SUSTAINED === "1";
 const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.HAPTIC_PERF_QUALITY ?? "")
@@ -40,10 +39,6 @@ const QUALITY = (QUALITY_LEVELS as readonly string[]).includes(process.env.HAPTI
 const MINUTES = Number(process.env.HAPTIC_PERF_SUSTAINED_MINUTES ?? 20);
 const WARMUP_MS = Number(process.env.HAPTIC_PERF_SUSTAINED_WARMUP_MS ?? 60_000);
 const SAMPLE_MS = Number(process.env.HAPTIC_PERF_SAMPLE_MS ?? 30_000);
-const BACKEND =
-  process.env.HAPTIC_PERF_BACKEND === "webgl2" || process.env.HAPTIC_PERF_BACKEND === "webgpu"
-    ? process.env.HAPTIC_PERF_BACKEND
-    : null;
 
 type Diagnostics = Record<string, unknown> | null;
 
@@ -290,7 +285,6 @@ test(`sustained route (${QUALITY}, ${MINUTES}min, play + preview build)`, async 
     quality: QUALITY,
     qualityProfile: RENDER_QUALITY_PROFILES[QUALITY],
     renderMode: process.env.HAPTIC_PERF_RENDER_MODE === "cel" ? "cel" : "pbr",
-    requestedBackend: BACKEND,
     warmupMs: WARMUP_MS,
     sampleMs: SAMPLE_MS,
     durationMinutes: MINUTES,
@@ -315,7 +309,7 @@ test(`sustained route (${QUALITY}, ${MINUTES}min, play + preview build)`, async 
     contentType: "application/json",
   });
   const lines = [
-    `sustained route ${QUALITY}/${report.renderMode} backend=${BACKEND ?? "project"}`,
+    `sustained route ${QUALITY}/${report.renderMode}`,
     ...hosts.flatMap((host) =>
       host.windows.map((window, index) => summaryLine(host.name, index, window)),
     ),

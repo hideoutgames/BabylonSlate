@@ -7,7 +7,6 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
-import type { WebGPUDrawContext } from "@babylonjs/core/Engines/WebGPU/webgpuDrawContext";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderLease,
@@ -249,11 +248,7 @@ export class SharedOutlineOwner {
     const storage = source._userInstancedBuffersStorage!;
     storage.data[SHARED_OUTLINE_ATTRIBUTE] = state.data;
     storage.sizes[SHARED_OUTLINE_ATTRIBUTE] = capacity;
-    if (engine.isWebGPU) {
-      storage.renderPasses ??= {};
-      storage.renderPasses[pass] ??= {};
-      storage.renderPasses[pass][SHARED_OUTLINE_ATTRIBUTE] = state.buffer;
-    } else if (storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] !== state.buffer) {
+    if (storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] !== state.buffer) {
       storage.vertexBuffers[SHARED_OUTLINE_ATTRIBUTE] = state.buffer;
       // WebGL VAOs capture the buffer handle, not just its layout. A pass may
       // retain its own unchanged data while another pass renders a different list.
@@ -309,11 +304,7 @@ export class SharedOutlineOwner {
       for (const id of pass === undefined ? this.renderPasses : [pass]) {
         const wrapper = subMesh._getDrawWrapper(id);
         // This can run after material binding inside a native mesh draw. A
-        // full reset would erase this frame's uniform/storage-buffer bindings.
-        // Vertex handles are captured only by the fast bundle; its layout and
-        // uniform bind groups are unchanged by replacement of this ID stream.
-        if (this.scene.getEngine().isWebGPU && wrapper?.drawContext)
-          (wrapper.drawContext as WebGPUDrawContext).fastBundle = undefined;
+        // full reset would erase this frame's uniform bindings.
         if (wrapper) wrapper._forceRebindOnNextCall = true;
       }
     }

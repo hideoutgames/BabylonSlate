@@ -5,12 +5,10 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type RefObject,
 } from "react";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
-import type { GpuBackend } from "@haptic/core";
 import { createProjectEngineController } from "../lib/project-engine";
-import { RenderingRetryError, retryProjectRendering, stopGameOnDeviceLoss } from "../lib/project-rendering-recovery";
+import { RenderingRetryError, retryProjectRendering } from "../lib/project-rendering-recovery";
 import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
 import {
   isUsableEngine,
@@ -19,29 +17,24 @@ import {
 } from "../lib/shared-engine-generation";
 import type { GameSessionOwner, GameSessionState } from "../services/game-session-owner";
 import type { PlaySessionResult } from "../services/play-session";
-import type { SimulationSession } from "../services/simulation-session";
 
 /**
- * The open project's Engine: its controller follows the project's backend,
- * Retry replaces it after a failure or a lost device, and the shared Engine
- * the editor viewports and Play use is registered here.
+ * The open project's Engine: its controller follows the open project, Retry
+ * replaces it after a failure, and the shared Engine the editor viewports and
+ * Play use is registered here.
  */
 export function useProjectRendering({
   projectOpen,
   projectGuid,
-  requestedBackend,
   sessionOwner,
   sessionState,
   appendLog,
-  simulationRef,
 }: {
   projectOpen: boolean;
   projectGuid: string | null;
-  requestedBackend: GpuBackend;
   sessionOwner: GameSessionOwner<PlaySessionResult>;
   sessionState: GameSessionState;
   appendLog: (line: string) => void;
-  simulationRef: RefObject<SimulationSession | null>;
 }) {
   const engineRef = useRef<AbstractEngine | null>(null);
   const ownedEngineRef = useRef<AbstractEngine | null>(null);
@@ -69,13 +62,11 @@ export function useProjectRendering({
 
   const renderingRequest = useMemo(() => projectOpen && projectGuid ? {
     projectGuid,
-    backend: requestedBackend,
     async prepare(signal: AbortSignal) {
       await waitForSceneLoadingPaint(signal);
       signal.throwIfAborted();
-      return undefined;
     },
-  } : null, [projectOpen, projectGuid, requestedBackend]);
+  } : null, [projectOpen, projectGuid]);
 
   useEffect(() => {
     // A running simulation keeps its Engine. Apply the authored change after Stop.
@@ -83,12 +74,6 @@ export function useProjectRendering({
     setRenderingFailureDismissed(false);
     void projectEngine.sync(renderingRequest);
   }, [projectEngine, renderingRequest, sessionOwner, sessionState]);
-
-  // A lost device stops the game at once; Retry then only replaces the Engine.
-  useEffect(() => stopGameOnDeviceLoss(projectEngine, sessionOwner, {
-    simulation: () => simulationRef.current,
-    log: appendLog,
-  }), [appendLog, projectEngine, sessionOwner, simulationRef]);
 
   // A retry failure belongs to the controller state it was shown over, and
   // ends once the game it waited for has released.

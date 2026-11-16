@@ -2,8 +2,7 @@
  * The FFT ocean: every water body's waves, simulated on the GPU from its spectrum (`waterSpectrum`) for rendering.
  * Physics, queries and buoyancy read the same spectrum's large waves on the CPU (`WaterSpectrumField`), never this.
  *
- * Simulation (fragment shaders through EffectWrapper/EffectRenderer, so WebGL2 and WebGPU run the same passes; no
- * compute shaders):
+ * Simulation (fragment shaders through EffectWrapper/EffectRenderer; no compute shaders):
  * - h0: the initial spectrum (`waterSpectrumInitial`), uploaded as an RGBA32F raw texture (`cascades · N` × N).
  * - Per dispatch: one time-evolution pass into an RGBA32F work atlas (`2 · cascades · N` × N), log2 N horizontal and
  *   log2 N − 1 vertical Stockham butterfly passes ping-ponging between two work atlases (every cascade in one draw), then
@@ -110,18 +109,13 @@ const OVERWRITTEN = new Color4(0, 0, 0, 0);
 /**
  * Every pass draws over its whole bound target (a work atlas, or one layer of an output), so nothing it held is read: a
  * clear as the pass starts lets a tile-based GPU begin from a clear tile instead of loading the target from memory
- * (WebGPU and ANGLE's Metal backend turn it into the pass's load action).
+ * (ANGLE's Metal backend turns it into the pass's load action).
  */
 function overwrite(engine: AbstractEngine): void {
   engine.clear(OVERWRITTEN, true, false, false);
 }
 /** Grid texels a spectrum-water build step draws (whole rows; each mode evaluates the directional spectrum). */
-for (const wgsl of [false, true]) {
-  const store = ShaderStore.GetShadersStore(wgsl ? 1 : 0);
-  store[`${VERTEX}VertexShader`] = wgsl
-    ? "attribute position: vec2f;\n@vertex\nfn main(input: VertexInputs) -> FragmentInputs {\nvertexOutputs.position = vec4f(vertexInputs.position, 0.0, 1.0);\n}"
-    : "attribute vec2 position;\nvoid main(void) {\ngl_Position = vec4(position, 0.0, 1.0);\n}";
-}
+ShaderStore.ShadersStore[`${VERTEX}VertexShader`] = "attribute vec2 position;\nvoid main(void) {\ngl_Position = vec4(position, 0.0, 1.0);\n}";
 // Time evolution: h̃ = A·(h0(k)·e^{−iθ} + conj(h0(−k))·e^{iθ}), θ = 2π·fract(m·cycle); writes the packed field
 // spectra (`waterFftEvolve`). fftParams = (N, cycle, A, 0). The mirrored texel of index x is (N − x) mod N.
 // m reaches about 4200 at 256²×3, where a float32 m·cycle loses ~1e-3 rad and each packed pair's phase error leaks
@@ -165,42 +159,6 @@ result = vec4(slatePack(ih * k.x, ih * k.y), slatePack(-h * (k.x * u.x), -h * (k
 }
 gl_FragColor = result;
 }`;
-ShaderStore.ShadersStoreWGSL[`${EVOLVE}PixelShader`] = `var h0Texture: texture_2d<f32>;
-uniform fftParams: vec4f;
-uniform fftPatch: vec4f;
-uniform fftShear: vec4f;
-fn slatePack(a: vec2f, b: vec2f) -> vec2f { return vec2f(a.x - b.y, a.y + b.x); }
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-let size = i32(uniforms.fftParams.x);
-let p = vec2i(fragmentInputs.position.xy);
-let segment = p.x / size;
-let cascade = segment / 2;
-let x = p.x - segment * size;
-let y = p.y;
-let mirrorX = select(size - x, 0, x == 0);
-let mirrorY = select(size - y, 0, y == 0);
-let a = textureLoad(h0Texture, vec2i(cascade * size + x, y), 0);
-let b = textureLoad(h0Texture, vec2i(cascade * size + mirrorX, mirrorY), 0);
-let mHigh = floor(a.z / 64.0);
-let theta = 6.283185307179586 * fract(mHigh * fract(64.0 * uniforms.fftParams.y) + (a.z - 64.0 * mHigh) * uniforms.fftParams.y);
-let c = cos(theta);
-let s = sin(theta);
-let bIm = -b.y;
-let h = uniforms.fftParams.z * vec2f(a.x * c + a.y * s + b.x * c - bIm * s, a.y * c - a.x * s + b.x * s + bIm * c);
-let scale = select(select(uniforms.fftPatch.z, uniforms.fftPatch.y, cascade == 1), uniforms.fftPatch.x, cascade == 0);
-let shear = select(select(uniforms.fftShear.z, uniforms.fftShear.y, cascade == 1), uniforms.fftShear.x, cascade == 0);
-let k = vec2f(f32(select(x - size, x, x < size / 2)), f32(select(y - size, y, y < size / 2))) * scale;
-let u = k / max(length(k), 1e-30);
-let ih = vec2f(-h.y, h.x);
-var result: vec4f;
-if (segment - cascade * 2 == 0) {
-result = vec4f(slatePack(ih * u.x, h), slatePack(ih * u.y, -h * (k.x * u.y * shear)));
-} else {
-result = vec4f(slatePack(ih * k.x, ih * k.y), slatePack(-h * (k.x * u.x), -h * (k.y * u.y)));
-}
-fragmentOutputs.color = result;
-}`;
 // One radix-2 Stockham stage (`waterFftButterfly`): fftStage = (2^stage, horizontal, x offset, N); the result is
 // multiplied by fftScale (1 except the final pass of a cascade's first layer, which restores ∂Dx/∂z).
 ShaderStore.ShadersStore[`${BUTTERFLY}PixelShader`] = `precision highp float;
@@ -231,32 +189,6 @@ float s = sin(angle);
 float direction = pos >= span ? -1.0 : 1.0;
 gl_FragColor = fftScale * (a + direction * vec4(c * b.x - s * b.y, c * b.y + s * b.x, c * b.z - s * b.w, c * b.w + s * b.z));
 }`;
-ShaderStore.ShadersStoreWGSL[`${BUTTERFLY}PixelShader`] = `var fftInput: texture_2d<f32>;
-uniform fftStage: vec4f;
-uniform fftScale: vec4f;
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-let p = vec2i(fragmentInputs.position.xy);
-let span = i32(uniforms.fftStage.x);
-let size = i32(uniforms.fftStage.w);
-let x = p.x + i32(uniforms.fftStage.z);
-let y = p.y;
-let horizontal = uniforms.fftStage.y > 0.5;
-let i = select(y, x - (x / size) * size, horizontal);
-let block = i / (2 * span);
-let pos = i - block * 2 * span;
-let k = select(pos, pos - span, pos >= span);
-let j = block * span + k;
-let ia = select(vec2i(x, j), vec2i(x - i + j, y), horizontal);
-let ib = select(vec2i(x, j + size / 2), vec2i(x - i + j + size / 2, y), horizontal);
-let a = textureLoad(fftInput, ia, 0);
-let b = textureLoad(fftInput, ib, 0);
-let angle = 3.141592653589793 * f32(k) / f32(span);
-let c = cos(angle);
-let s = sin(angle);
-let direction = select(1.0, -1.0, pos >= span);
-fragmentOutputs.color = uniforms.fftScale * (a + direction * vec4f(c * b.x - s * b.y, c * b.y + s * b.x, c * b.z - s * b.w, c * b.w + s * b.z));
-}`;
 
 // Persistent foam (FFT-Ocean's turbulence), one cascade layer per draw: the Jacobian determinant J of the displaced
 // surface at λ = foamParams.x, and T = min(J, T_prev + r·0.5 / max(J, 0.5)): T follows J down instantly where the
@@ -279,42 +211,11 @@ float previous = texelFetch(foamPrevious, ivec3(p, layer), 0).r;
 float turbulence = foamParams.z > 0.5 ? jacobian : min(jacobian, previous + foamParams.y * 0.5 / max(jacobian, 0.5));
 gl_FragColor = vec4(turbulence, jacobian, 0.0, 1.0);
 }`;
-ShaderStore.ShadersStoreWGSL[`${FOAM}PixelShader`] = `var fftOutput: texture_2d_array<f32>;
-var foamPrevious: texture_2d_array<f32>;
-uniform foamParams: vec4f;
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-let p = vec2i(fragmentInputs.position.xy);
-let layer = i32(uniforms.foamParams.w);
-let lambda = uniforms.foamParams.x;
-let a = textureLoad(fftOutput, p, 2 * layer, 0);
-let b = textureLoad(fftOutput, p, 2 * layer + 1, 0);
-let jacobian = (1.0 + lambda * b.z) * (1.0 + lambda * b.w) - lambda * lambda * a.w * a.w;
-let previous = textureLoad(foamPrevious, p, layer, 0).r;
-let turbulence = select(min(jacobian, previous + uniforms.foamParams.y * 0.5 / max(jacobian, 0.5)), jacobian, uniforms.foamParams.z > 0.5);
-fragmentOutputs.color = vec4f(turbulence, jacobian, 0.0, 1.0);
-}`;
 
-/** Engine internals the per-layer mip generation of a 2D-array target uses on WebGPU (Babylon mips only layer 0). */
-interface WebGpuMipInternals {
-  _endCurrentRenderPass(): void;
-  _renderEncoder: unknown;
-  _textureHelper: { generateMipmaps(texture: unknown, mipLevelCount: number, layer: number, encoder: unknown): void };
-}
-
-/** Builds every mip level of every layer of a 2D-array render target, on either backend. */
-function generateArrayMipmaps(engine: AbstractEngine, texture: InternalTexture, layers: number): void {
-  if (!engine.isWebGPU) {
-    // A NullEngine (tests, headless tools) has no context to build mips in.
-    if ((engine as unknown as { _gl?: unknown })._gl) engine.generateMipmaps(texture);
-    return;
-  }
-  const hardware = texture._hardwareTexture as unknown as { underlyingResource?: { mipLevelCount: number } } | null;
-  const levels = hardware?.underlyingResource?.mipLevelCount ?? 1;
-  if (levels <= 1) return;
-  const internals = engine as unknown as WebGpuMipInternals;
-  internals._endCurrentRenderPass();
-  for (let layer = 0; layer < layers; layer++) internals._textureHelper.generateMipmaps(hardware, levels, layer, internals._renderEncoder);
+/** Builds every mip level of every layer of a 2D-array render target. */
+function generateArrayMipmaps(engine: AbstractEngine, texture: InternalTexture): void {
+  // A NullEngine (tests, headless tools) has no context to build mips in.
+  if ((engine as unknown as { _gl?: unknown })._gl) engine.generateMipmaps(texture);
 }
 
 /** Shared, reused save slot: dispatches never nest and run synchronously. */
@@ -398,7 +299,7 @@ class WaterFftWork {
     return this;
   }
 
-  /** Drops one simulation's use; the last frees the pair, then its lease (after WebGPU drains its deferred destruction). */
+  /** Drops one simulation's use; the last frees the pair, then its lease. */
   release(): void {
     if (this.disposed || --this.users > 0) return;
     this.disposed = true;
@@ -455,17 +356,16 @@ class WaterFftSimulation {
     this.foamTextures = [wrap(foam[0], "Water FFT Foam A"), wrap(foam[1], "Water FFT Foam B")];
     this.h0Texture = new ThinTexture(h0);
     this.renderer = new EffectRenderer(engine);
-    const language = engine.isWebGPU ? 1 : 0;
     this.evolve = new EffectWrapper({
-      engine, name: EVOLVE, vertexShader: VERTEX, fragmentShader: EVOLVE, useShaderStore: true, shaderLanguage: language,
+      engine, name: EVOLVE, vertexShader: VERTEX, fragmentShader: EVOLVE, useShaderStore: true, shaderLanguage: 0,
       uniformNames: ["fftParams", "fftPatch", "fftShear"], samplerNames: ["h0Texture"],
     });
     this.butterfly = new EffectWrapper({
-      engine, name: BUTTERFLY, vertexShader: VERTEX, fragmentShader: BUTTERFLY, useShaderStore: true, shaderLanguage: language,
+      engine, name: BUTTERFLY, vertexShader: VERTEX, fragmentShader: BUTTERFLY, useShaderStore: true, shaderLanguage: 0,
       uniformNames: ["fftStage", "fftScale"], samplerNames: ["fftInput"],
     });
     this.foamEffect = new EffectWrapper({
-      engine, name: FOAM, vertexShader: VERTEX, fragmentShader: FOAM, useShaderStore: true, shaderLanguage: language,
+      engine, name: FOAM, vertexShader: VERTEX, fragmentShader: FOAM, useShaderStore: true, shaderLanguage: 0,
       uniformNames: ["foamParams"], samplerNames: ["fftOutput", "foamPrevious"],
     });
     // Restored contexts rebuild every target empty (h0 re-uploads from its retained data): dispatch again first.
@@ -601,8 +501,8 @@ class WaterFftSimulation {
       engine.unBindFramebuffer(targets[next], true);
     }
     this.foamCurrent = next;
-    generateArrayMipmaps(engine, this.output.texture!, 2 * this.layout.cascades);
-    generateArrayMipmaps(engine, targets[next].texture!, this.layout.cascades);
+    generateArrayMipmaps(engine, this.output.texture!);
+    generateArrayMipmaps(engine, targets[next].texture!);
   }
 
   /** Horizontal scale λ the foam's Jacobian is taken at (the asset's choppiness, at Wave Scale 1). */
@@ -625,7 +525,7 @@ class WaterFftSimulation {
     engine.unBindFramebuffer(target, true);
   }
 
-  /** Releases GPU storage, then the ledger lease (after WebGPU drains its deferred destruction). */
+  /** Releases GPU storage, then the ledger lease. */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true; this.ready = false;

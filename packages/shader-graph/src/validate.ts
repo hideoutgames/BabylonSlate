@@ -76,7 +76,6 @@ const DEFAULT_CAPABILITIES: Required<MaterialCapabilities> = {
   sceneDepth: true,
   sceneNormal: true,
   vertexTexture: false,
-  customGlsl: true,
 };
 
 function customGlslBody(node: MaterialGraphNode): string {
@@ -254,10 +253,7 @@ function validateGraph(
       if (capabilities[capability] === false) {
         diagnostics.push({
           code: "material.capability",
-          message:
-            capability === "customGlsl"
-              ? "Custom GLSL is GLSL/WebGL only and cannot run on WebGPU"
-              : `"${definition.title}" needs ${capability} support, which this device does not report`,
+          message: `"${definition.title}" needs ${capability} support, which this device does not report`,
           severity: "error",
           nodeId: node.id,
         });

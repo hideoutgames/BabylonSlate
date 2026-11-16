@@ -81,7 +81,7 @@ export type SceneReadinessDirtyReason =
   | "shadowCasters" | "shadowMap" | "particleBind" | "particleCancel" | "particlePreparation" | "particlePrepared"
   | "layerStyle" | "instanceRekey" | "renderSettings" | "environmentLighting" | "reflectionProbes" | "materialLibrary"
   | "materialParameters" | "materialInstance" | "meshAssets" | "blendChange" | "lattice" | "sceneLighting"
-  | "streamAdmission" | "spawnWarm"
+  | "streamAdmission"
   | "other";
 
 /**

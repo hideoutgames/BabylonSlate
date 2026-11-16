@@ -56,7 +56,6 @@ export type PerformanceIdentity = {
   sourceSha: string | null;
   buildId: string | null;
   sceneId: string;
-  backend: string;
   runtimeHost: "worker" | "in-process";
   quality: string;
   frameCap: number | null;
@@ -388,7 +387,7 @@ function validIdentity(value: unknown): value is PerformanceIdentity {
     !(identity.frameCap === null || finite(identity.frameCap)) ||
     !Array.isArray(identity.enabledDiagnostics) || identity.enabledDiagnostics.length > 32 ||
     !identity.enabledDiagnostics.every((item) => typeof item === "string" && item.length <= 256)) return false;
-  for (const key of ["sessionId", "sceneId", "backend", "quality", "sourceSha", "buildId"] as const) {
+  for (const key of ["sessionId", "sceneId", "quality", "sourceSha", "buildId"] as const) {
     const field = identity[key];
     if ((key === "sourceSha" || key === "buildId") && field === null) continue;
     if (typeof field !== "string" || field.length > (key === "quality" ? 32_768 : 4096)) return false;
@@ -400,9 +399,9 @@ function metadataBytes(identity: PerformanceIdentity): number {
   return new TextEncoder().encode(JSON.stringify(copyIdentity(identity))).byteLength;
 }
 function copyIdentity(identity: PerformanceIdentity): PerformanceIdentity {
-  const { sessionId, mode, sourceSha, buildId, sceneId, backend, runtimeHost,
+  const { sessionId, mode, sourceSha, buildId, sceneId, runtimeHost,
     quality, frameCap, dynamicResolution, enabledDiagnostics, gpuTiming, gpuReason, gpuAttribution } = identity;
-  return { sessionId, mode, sourceSha, buildId, sceneId, backend, runtimeHost,
+  return { sessionId, mode, sourceSha, buildId, sceneId, runtimeHost,
     quality, frameCap, dynamicResolution, enabledDiagnostics: [...enabledDiagnostics], gpuTiming,
     ...(gpuReason !== undefined ? { gpuReason } : {}), ...(gpuAttribution !== undefined ? { gpuAttribution } : {}) };
 }

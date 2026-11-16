@@ -4,8 +4,8 @@ import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Material
 
 /**
  * Babylon 9.29 NullEngine has no FrameGraph allocation, MRT, depth-texture or
- * attachment-clear overrides, and omits the raw upload-ready flag the real
- * backends set. Supply only those absent GPU boundaries on one test engine; the
+ * attachment-clear overrides, and omits the raw upload-ready flag a WebGL2
+ * Engine sets. Supply only those absent GPU boundaries on one test engine; the
  * graph, tasks, wrappers and refcounts stay real.
  */
 export function adaptNullEngineFrameGraph(engine: NullEngine): NullEngine {

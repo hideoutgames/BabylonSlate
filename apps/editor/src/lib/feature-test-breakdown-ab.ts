@@ -1,7 +1,6 @@
 import type { ProjectFolderHandle } from "@haptic/core";
 import {
   isBreakdownBaseline,
-  livePreserve,
   type FeatureTestBreakdownInfo,
   type FeatureTestCheckReport,
 } from "../services/feature-test-check";
@@ -134,7 +133,6 @@ export function planSecondPass(
   const original = first.breakdown.passes[0]!.preserveDrawingBuffer;
   if (first.cancelled) return onePass("the first was cancelled");
   if (!first.scenes.some((scene) => scene.play.benchmark.some(isBreakdownBaseline))) return onePass("the first measured no baseline");
-  if (livePreserve(first.scenes) === "n/a") return onePass("WebGPU has no preserveDrawingBuffer");
   if (!context.project) return onePass("the open project was not found in the project list, to reopen after a reload");
   const marker: BreakdownResumeMarker = {
     version: VERSION, stage: "reload", savedAt: deps.now(), project: context.project,

@@ -9,7 +9,7 @@ export const EFFECT_BRIDGE_MS = 120_000;
 /**
  * Most Effects an Engine keeps for its next Play (`keepPlayEffects`), least recently used first out: about two
  * Feature Test scenes' Play programs (a large level links about 100, a light one about 50). An Effect holds its
- * program and, on WebGPU, its pipelines, never a texture or render target, so the bound is a count of programs.
+ * program, never a texture or render target, so the bound is a count of programs.
  */
 const PLAY_EFFECT_KEEP_BUDGET = 256;
 
@@ -21,8 +21,8 @@ const watched = new WeakSet<AbstractEngine>();
 /**
  * Keeps every Effect compiled on `engine` until its next world view has presented (`releaseBridgedEffects`), when a
  * view closes on an Engine that outlives it. The editor's scene view closes before Play loads, and Play's before the
- * editor's scene reloads; both draw mostly the same Materials. Babylon releases an Effect, its program and its
- * pipelines with its last draw wrapper, so without the bridge every such load compiles them again; with it the next
+ * editor's scene reloads; both draw mostly the same Materials. Babylon releases an Effect and its program
+ * with its last draw wrapper, so without the bridge every such load compiles them again; with it the next
  * load's Materials find them in the Engine's Effect cache. One reference each; a later bridge takes over an earlier
  * one, and the bridge ends after `EFFECT_BRIDGE_MS` or with the Engine.
  */

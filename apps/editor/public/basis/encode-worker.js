@@ -27,8 +27,8 @@ function clampSize(width, height, maxDimension) {
 
 // Mirrors textureEncodeSize (packages/assets/src/texture-compression.ts):
 // clamp, then round each edge up to blockAlign (set by textureEncodePadding
-// for compressed non-atlas Textures and Particle; WebGPU needs block-aligned
-// ASTC/BC7). Pinned against the TS helper by
+// for compressed non-atlas Textures and Particle, which stay on the 4-texel
+// ASTC/BC7 block grid). Pinned against the TS helper by
 // apps/editor/src/lib/encode-worker.test.ts.
 function encodeSize(width, height, settings) {
   const size = clampSize(width, height, settings.maxDimension || 2048);

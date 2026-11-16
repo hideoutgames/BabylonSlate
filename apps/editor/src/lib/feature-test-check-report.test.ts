@@ -11,9 +11,9 @@ const environment: FeatureTestCheckEnvironment = {
 describe("formatFeatureTestCheckReport", () => {
   it("leads with the outcome and device, then shows why each scene failed", () => {
     const rendering = {
-      adapter: { api: "webgl2", vendor: "Apple Inc.", renderer: "Apple GPU", version: "WebGL 2.0" },
+      adapter: { vendor: "Apple Inc.", renderer: "Apple GPU", version: "WebGL 2.0" },
       cpuMs: 4.2, gpuMs: null, gpuStatus: "unsupported", width: 2048, height: 1536, scalingLevel: 1,
-      qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } },
+      qualityLimits: [],
       // The last frame's split; the report prefers the medians sampled while Play was measured.
       drawPasses: { objects: 9, layers: 33 }, drawPassMs: { objects: 30 },
       layerBatches: { visuals: 181, draws: 60, batches: 9, batched: 130, alone: { single: 1, material: 30, transform: 4, vertexColor: 0, other: 2, unmatched: 14 } },
@@ -45,7 +45,7 @@ describe("formatFeatureTestCheckReport", () => {
             drawPassMs: { objects: 6.26, mirrors: 8.24, shadows: 0, other: 0.04, post: 1 }, cpuMsWithoutDraws: { median: 12, min: 11, max: 13, samples: 4 },
           },
           presentation: {
-            frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "Render pipelines are compiling.": 1, "Scene is not ready to render.": 3 } },
+            frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "FrameGraph is not ready.": 1, "Scene is not ready to render.": 3 } },
             contextLosses: 0, imageBlack: [0, 0.031, null],
           },
           firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6,
@@ -67,7 +67,7 @@ describe("formatFeatureTestCheckReport", () => {
       "Result: 1/2 scenes passed · took 95.0 s",
       "App: 1.2.3",
     ]);
-    expect(lines).toContain("GPU: webgl2 · Apple Inc. · Apple GPU · webgl2");
+    expect(lines).toContain("GPU: Apple Inc. · Apple GPU");
     expect(lines).toContain("[FAIL] main");
     expect(lines).toContain("  ! Play did not finish loading in 120 s (stuck at Loading Models 45%).");
     expect(lines).toContain("  Play: timeout after 120.0 s at Loading Models 45%");
@@ -97,7 +97,7 @@ describe("formatFeatureTestCheckReport", () => {
     // 4200 ms over 140 checks, and over the 280 frames drawn.
     expect(lines).toContain("  Readiness probes: 140 in 280 drawn frames · 30.0 ms each · 15.0 ms per drawn frame");
     // Holds by reason, the most first.
-    expect(lines).toContain("  Presentation: drawn 280 · held 4 (3 Scene is not ready to render; 1 Render pipelines are compiling) · skipped 16 (frames in flight) · context losses 0 · image near-black 0%, 3%, no frame");
+    expect(lines).toContain("  Presentation: drawn 280 · held 4 (3 Scene is not ready to render; 1 FrameGraph is not ready) · skipped 16 (frames in flight) · context losses 0 · image near-black 0%, 3%, no frame");
     expect(lines).toContain("  TypeError: x is undefined");
   });
 
@@ -136,7 +136,7 @@ describe("formatFeatureTestCheckReport", () => {
           // 40 probes: a probe counts once for each reason marked since the last that passed, so causes overlap.
           work: { drawn: 400, work: { graphBuilds: 0, shadowAdmissions: 0, shadowAdmissionMs: 0, strictReadinessChecks: 40,
             readinessProbeMs: 800, outlineReadinessChecks: 0,
-            readinessProbeReasons: { meshAdded: 20, particleBind: 12, shadowMap: 5, membership: 5, spawnWarm: 4, other: 2, outline: 1 },
+            readinessProbeReasons: { meshAdded: 20, particleBind: 12, shadowMap: 5, membership: 5, streamAdmission: 4, other: 2, outline: 1 },
             readinessSwapRechecks: 9, failedReadinessProbes: 3, scopedReadinessProbes: 30, scopedReadinessMismatches: 2,
             readinessBlockers: ['mesh "crate" (Material "wood"): pbr #4 linking', 'task "Forward objects"', 'texture "sky"', 'render target "mirror"'] } },
           commands: [], benchmark: [], logs: [] },
@@ -147,7 +147,7 @@ describe("formatFeatureTestCheckReport", () => {
     // Equal counts are named alphabetically; failed, other and outline fall past the sixth.
     // 30 of the probes asked only the meshes their causes named; a verification run found two of those wrong.
     // The last probe that failed names the first three things it found unready.
-    expect(lines).toContain("  Readiness probes: 40 in 400 drawn frames (30 asked only the changed meshes) · 20.0 ms each · 2.0 ms per drawn frame · causes: mesh added 20, particle bind 12, swap recheck 9, membership count 5, shadow map 5, spawn warm-up 4 · 2 of those DISAGREED with a probe of every mesh · the last failed one waited for mesh \"crate\" (Material \"wood\"): pbr #4 linking; task \"Forward objects\"; texture \"sky\"");
+    expect(lines).toContain("  Readiness probes: 40 in 400 drawn frames (30 asked only the changed meshes) · 20.0 ms each · 2.0 ms per drawn frame · causes: mesh added 20, particle bind 12, swap recheck 9, membership count 5, shadow map 5, stream admission 4 · 2 of those DISAGREED with a probe of every mesh · the last failed one waited for mesh \"crate\" (Material \"wood\"): pbr #4 linking; task \"Forward objects\"; texture \"sky\"");
   });
 
   it("recommends the highest quality tier every benchmarked scene holds at 60 and 30 fps", () => {
@@ -466,7 +466,7 @@ describe("formatFeatureTestCheckReport", () => {
             sample("MSAA off", 81, 40, {
               presentation: {
                 drawn: 20, held: 20, ms: 5000,
-                heldReasons: { "Scene is not ready to render.": 4, "Render pipelines are compiling.": 15, "FrameGraph is not ready.": 1 },
+                heldReasons: { "Scene is not ready to render.": 4, "World presentation was not ready.": 15, "FrameGraph is not ready.": 1 },
               },
             }),
             sample("baseline 4", 80, 40, { presentation: undefined }),
@@ -493,7 +493,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("baseline 3")[0]).toMatch(/NOT RESTORED: post\.enabled=false$/);
     expect(row("screen shadows off")[0]).toMatch(/ no setting changed \(already shadows\.screen off\)$/);
     // Its held share and top two reasons, the rest counted; a row without counts shows none.
-    expect(row("MSAA off")[0]).toMatch(/ 50% {3}\+1\.0ms \+1% {6}\+0\.0ms \+0% {6}no setting changed · held: 15 Render pipelines are compiling; 4 Scene is not ready to render; \+1 more$/);
+    expect(row("MSAA off")[0]).toMatch(/ 50% {3}\+1\.0ms \+1% {6}\+0\.0ms \+0% {6}no setting changed · held: 15 World presentation was not ready; 4 Scene is not ready to render; \+1 more$/);
     expect(row("baseline 4")[0]).toMatch(/ 704 {11}- {5}\+0\.0ms \+0% {6}\+0\.0ms \+0%$/);
     expect(row("baseline 1")[0]).toMatch(/ 704 {11}0% {4}\+0\.0ms \+0% {6}\+0\.0ms \+0%$/);
     expect(row("warm-up 1")[0]).toMatch(/ warm-up$/);
@@ -542,8 +542,8 @@ describe("formatFeatureTestCheckReport", () => {
     const alone = { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 0 };
     const layers = (layerBatches: RenderDiagnostics["layerBatches"]) => {
       const rendering = {
-        adapter: { api: "webgl2", vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
-        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } }, layerBatches,
+        adapter: { vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
+        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], layerBatches,
       } as unknown as RenderDiagnostics;
       const report: FeatureTestCheckReport = {
         mode: "quick", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [],
@@ -568,8 +568,8 @@ describe("formatFeatureTestCheckReport", () => {
   it("says how many shadow casters the maps draw from the shared buffer, and how, only where some are", () => {
     const casters = (shadowRetained: RenderDiagnostics["shadowRetained"]) => {
       const rendering = {
-        adapter: { api: "webgl2", vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
-        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], pipeline: { effective: { gpuBackend: "webgl2" } }, shadowRetained,
+        adapter: { vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
+        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], shadowRetained,
       } as unknown as RenderDiagnostics;
       const report: FeatureTestCheckReport = {
         mode: "quick", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [],
@@ -587,7 +587,7 @@ describe("formatFeatureTestCheckReport", () => {
     expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer, a map layer in one call · 12.5 caster draws a call"]);
     // Without the extension each caster is a call, and before any map drew there is no ratio.
     expect(casters({ ...stats, multiDraw: false, calls: 0, drawn: 0 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer, one call each (no WEBGL_multi_draw)"]);
-    // WebGPU retains none, and a Scene without such casters has no line.
+    // A view that retains none and a Scene without such casters have no line.
     expect(casters(null)).toEqual([]);
     expect(casters({ ...stats, casters: 0 })).toEqual([]);
   });
@@ -600,13 +600,13 @@ describe("formatFeatureTestCheckReport", () => {
         problems: ["Editor viewport reported Scene Loading Failed at Presenting First Frame."],
         editor: { status: "failed", ms: 15_300, phase: "Presenting First Frame", frames: null,
           error: ["Error: The scene did not present a frame before the loading deadline. Ready: true; draws: 3; rendered: true; GPU pending: true; copied: false."],
-          gpu: { api: "webgpu", vendor: "apple", renderer: "apple-a16", version: null } },
+          gpu: { vendor: "apple", renderer: "apple-a16", version: null } },
         play: { status: "not-started", ms: 0, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
         session: null,
       }],
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
-    expect(lines).toContain("GPU: webgpu · apple · apple-a16");
+    expect(lines).toContain("GPU: apple · apple-a16");
     expect(lines).toContain("  Editor: failed after 15.3 s at Presenting First Frame");
     expect(lines.slice(lines.indexOf("  Editor error:") + 1, lines.indexOf("  Editor error:") + 2)).toEqual([
       "    Error: The scene did not present a frame before the loading deadline. Ready: true; draws: 3; rendered: true; GPU pending: true; copied: false.",

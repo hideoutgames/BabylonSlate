@@ -13,12 +13,11 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
 import {
-  acquireMaterialTexture, createAppWebGpuEngine, MaterialLibrary, materialTextureSampling, resourceCacheForEngine,
+  acquireMaterialTexture, MaterialLibrary, materialTextureSampling, resourceCacheForEngine,
   setNearestTextures, setSceneRenderSettings,
 } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { readbackChannelOrder, toRgbaPixels } from "./readback-channels";
 
 const WIDTH = 160;
 const HEIGHT = 120;
@@ -39,14 +38,12 @@ async function checkerPng(dark: number, light: number): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-export async function runNearestTexturesProof(backend: "webgl2" | "webgpu") {
+export async function runNearestTexturesProof() {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   document.getElementById("root")!.append(canvas);
-  const engine: AbstractEngine = backend === "webgpu"
-    ? await createAppWebGpuEngine(canvas)
-    : new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
+  const engine: AbstractEngine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true, useLargeWorldRendering: true });
   engine.setSize(WIDTH, HEIGHT);
   const scene = new Scene(engine);
   const graph = new ForwardSceneFrameGraph(scene, {});
@@ -75,8 +72,7 @@ export async function runNearestTexturesProof(backend: "webgl2" | "webgpu") {
       acquired.material.freeze();
       return acquired.material;
     };
-    // Three strips share the Material: a frozen Material binds only the first of a run of draws, and on WebGPU each
-    // draw keeps its own bindings.
+    // Three strips share the Material: a frozen Material binds only the first of a run of draws.
     const checker = await material("checker");
     const strips = [-1, 0, 1].map((column) => {
       const strip = MeshBuilder.CreatePlane(`strip-${column}`, { width: 0.8, height: 2.2 }, scene);
@@ -84,7 +80,6 @@ export async function runNearestTexturesProof(backend: "webgl2" | "webgpu") {
       strip.material = checker;
       return strip;
     });
-    const order = readbackChannelOrder(engine.isWebGPU);
     /** Draws until the view presents a few frames, then counts the pixels between the checker's two levels. */
     const capture = async () => {
       for (let frame = 0, presented = 0; presented < 6; frame++) {
@@ -97,7 +92,7 @@ export async function runNearestTexturesProof(backend: "webgl2" | "webgpu") {
         if (presented < 6) await new Promise<void>((resolve) => setTimeout(resolve, 16));
       }
       const read = await engine.readPixels(0, 0, WIDTH, HEIGHT);
-      const pixels = toRgbaPixels(new Uint8Array(read.buffer, read.byteOffset, read.byteLength), order);
+      const pixels = Array.from(new Uint8Array(read.buffer, read.byteOffset, read.byteLength));
       let low = 255, high = 0;
       for (let offset = 0; offset < pixels.length; offset += 4) {
         low = Math.min(low, pixels[offset]!);

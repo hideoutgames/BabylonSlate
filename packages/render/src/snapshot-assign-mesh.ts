@@ -74,7 +74,6 @@ import {
   applyPlayVisualSorting,
   createPlayVisual,
 } from "./snapshot-visual-factory";
-import { noteReplacesDrawnVisual, visualHasShown } from "./reveal-pending";
 
 const rejectedTextAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
 const rejectedPreparedAssignments = new WeakMap<SnapshotSceneBinding, Map<number, string>>();
@@ -123,9 +122,9 @@ interface AssignMeshContext {
  * Remember (and rebuild) the Play mesh for a slot from an assignMesh command. The runtime re-sends an actor's visual
  * with every component property write, unchanged when the value was (a script writing a Text3D's text every tick), so
  * a command asking for the visual the slot already shows, or is preparing, in `scene` keeps it (`showsAssignment`): a
- * rebuild would replace a drawn mesh with one that has not drawn, which a world view hides until its variants, and on
- * WebGPU its pipelines, are known ready, and would restart a staged visual's preparation before it ever adopts. A
- * command that changes only what a 2D Text says redraws the text with that visual (`redrawTextInPlace`).
+ * rebuild would replace a drawn mesh with one that has not drawn, which a world view hides until its variants are known
+ * ready, and would restart a staged visual's preparation before it ever adopts. A command that changes only what a 2D
+ * Text says redraws the text with that visual (`redrawTextInPlace`).
  */
 export function applyAssignMesh(
   scene: Scene,
@@ -538,13 +537,10 @@ function stagePreparedVisual(
       // Retirement must not cancel this winning candidate or its new helpers.
       binding.slotVisualReady?.(command.slotId, staged);
       pending.delete(command.slotId);
-      // The staged visual takes the place of the one the slot shows only now, as in a plain rebuild.
-      const replacesShown = working.getScene() === scene && visualHasShown(working);
       disposeSlotVisuals(binding, command.slotId);
       retireRemovedMaterials();
       releaseRetainedMaterialOwners(binding, command.slotId);
       binding.meshes.set(command.slotId, staged);
-      if (replacesShown) noteReplacesDrawnVisual(staged);
       for (const [slot, overlay] of targets.spriteOverlays) (binding.spriteOverlays ??= new Map()).set(slot, overlay);
       for (const [slot, light] of targets.lights) {
         binding.lights.set(slot, light);
@@ -628,9 +624,6 @@ function rebuildVisual(assign: AssignMeshContext, existing: Mesh | undefined): v
   }
   // A hidden text rewritten every tick must not show its new glyphs for a frame.
   const lastVisible = existing ? appliedPlayVisibilityOf(existing) : undefined;
-  // Asked before the predecessor goes: a rebuild of a visual the view has shown is revealed without waiting for the
-  // drawn shadow maps to list it (`noteReplacesDrawnVisual`).
-  const replacesShown = existing?.getScene() === scene && visualHasShown(existing);
   if (existing) {
     disposeSlotVisuals(binding, command.slotId);
   }
@@ -638,7 +631,6 @@ function rebuildVisual(assign: AssignMeshContext, existing: Mesh | undefined): v
   releaseRetainedMaterialOwners(binding, command.slotId);
   const rebuilt = stagedText ?? createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
-  if (replacesShown) noteReplacesDrawnVisual(rebuilt);
   updateComponentIllumination(rebuilt);
   for (const start of deferredModels) void start().catch(() => {});
   stampOverlayPick(rebuilt, command);

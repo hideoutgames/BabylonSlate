@@ -8,8 +8,7 @@ import { currentDrawPass, type DrawPass } from "./draw-passes";
  * frames that held them took. A program's first draw holds iPad WebKit WebGL2 (about 100 ms each, unmeasured on the
  * device), and no readiness probe sees it, so this is the measurement for it: `trackFirstDraws` records every Effect
  * the Engine draws from its first view on, and a Play handle's `openFirstDrawStats` counts the ones first drawn while
- * it counts (between a world load's first presented frame and the next load). WebGL2 only: on WebGPU a skipped warm
- * draw returns like a real one, and the cost there is per render pipeline, which Babylon's cache misses count.
+ * it counts (between a world load's first presented frame and the next load).
  *
  * The same session keeps the longest frames it counted, with what they held, since WebKit has no Long Tasks API to
  * say why a Play frame was long: time inside the Engine's frame and outside it, first draws and Effects created.
@@ -114,9 +113,9 @@ type Tracker = {
 
 const trackers = new WeakMap<AbstractEngine, Tracker>();
 
-/** Records every Effect `engine` draws from now on, once per Engine; WebGPU Engines are left alone. */
+/** Records every Effect `engine` draws from now on, once per Engine. */
 export function trackFirstDraws(engine: AbstractEngine): void {
-  if (engine.isWebGPU || trackers.has(engine)) return;
+  if (trackers.has(engine)) return;
   const target = engine as unknown as DrawEngine;
   const tracker: Tracker = { drawn: new WeakMap(), created: new WeakSet(Object.values(target._compiledEffects ?? {})), sessions: new Set() };
   trackers.set(engine, tracker);
@@ -158,7 +157,7 @@ export function trackFirstDraws(engine: AbstractEngine): void {
 
 /**
  * Whether some draw on `engine` has drawn with `effect` since its first view; undefined where the Engine is not
- * tracked (WebGPU, or an Engine no view was created on).
+ * tracked (an Engine no view was created on).
  */
 type ShaderName = string | {
   vertex?: string; fragment?: string; vertexElement?: string; fragmentElement?: string; vertexSource?: string; fragmentSource?: string;
@@ -220,7 +219,7 @@ export function programVariants(effects: readonly Effect[]): ProgramVariants {
   };
 }
 
-/** The Engine's programs as it holds them now (`ProgramInventory`); null where its draws are not tracked (WebGPU). */
+/** The Engine's programs as it holds them now (`ProgramInventory`); null where its draws are not tracked. */
 export function programInventory(engine: AbstractEngine): ProgramInventory | null {
   const tracker = trackers.get(engine);
   const compiled = (engine as unknown as DrawEngine)._compiledEffects;

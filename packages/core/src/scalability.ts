@@ -5,14 +5,13 @@ import { MIRROR_REFLECTS } from "./mirror";
 import { normalizeCelShadingOverrides, normalizeCelShadingSettings, type CelShadingOverrides } from "./cel-shading";
 import { normalizeEnvironmentLightingOverrides, type EnvironmentLightingOverrides } from "./environment-lighting";
 import { normalizeRenderEffectsOverrides, type RenderEffectsOverrides } from "./render-effects";
-import type { ResolvedRenderingPipeline } from "./rendering-pipeline";
 
 export type RenderSettingsPatch<T = RenderProjectSettings> = {
   [K in keyof T]?: NonNullable<T[K]> extends readonly unknown[] ? T[K]
     : NonNullable<T[K]> extends object ? RenderSettingsPatch<NonNullable<T[K]>> : T[K];
 };
-export type ScalabilityStatus = "applied" | "clamped" | "unsupported" | "rebuildPending" | "restartRequired" | "failed";
-export type RenderingApplicationPolicy = "live" | "rebuild" | "restart" | "authoring";
+export type ScalabilityStatus = "applied" | "clamped" | "unsupported" | "rebuildPending" | "failed";
+export type RenderingApplicationPolicy = "live" | "rebuild" | "authoring";
 export interface ScalabilitySceneDefaults {
   shadowOverrides?: ShadowOverrides;
   celShading?: CelShadingOverrides;
@@ -30,13 +29,11 @@ export interface ScalabilityTransaction {
 }
 export interface ScalabilityAcknowledgement extends ScalabilityResult {
   effective?: RuntimeRenderingSettings;
-  pipeline?: ResolvedRenderingPipeline;
 }
 export interface ScalabilitySnapshot {
   requested: RuntimeRenderingSettings;
   /** Null until the renderer confirms its first ready frame. */
   effective: RuntimeRenderingSettings | null;
-  pipeline: ResolvedRenderingPipeline | null;
   appliedRevision: number;
   result: ScalabilityResult;
 }
@@ -46,7 +43,6 @@ export type ScalabilityRequest =
   | { kind: "reset"; group?: QualityGroup };
 
 const ENUMS: Record<string, readonly unknown[]> = {
-  gpuBackend: ["auto", "webgl2", "webgpu"],
   mode: ["pbr", "cel"], "cel.lightMixing": ["strongest", "additive", "blend"],
   "shadows.filter": ["pcf", "pcss"], "shadows.filterQuality": ["low", "medium", "high"],
   "shadows.localLightMode": ["auto", "manual"], "quality.lighting.localLightMode": ["auto", "manual"],
@@ -69,7 +65,6 @@ const LIVE_FIELDS = new Set([
 ]);
 /** Conservative application policy: shader/resource changes wait at the view boundary. */
 export function renderingApplicationPolicy(path: string): RenderingApplicationPolicy {
-  if (path === "gpuBackend") return "restart";
   if (/\.(profile|preset)$/.test(path)) return "authoring";
   return LIVE_FIELDS.has(path) ? "live" : "rebuild";
 }
@@ -134,7 +129,6 @@ export class ScalabilitySession {
   private revision = 0;
   private appliedRevision = -1;
   private effective: RuntimeRenderingSettings | null = null;
-  private pipeline: ResolvedRenderingPipeline | null = null;
   private result: ScalabilityResult = { revision: 0, status: "rebuildPending", message: "Waiting for the renderer's first ready frame." };
   constructor(
     project: Partial<RenderProjectSettings> | undefined,
@@ -164,7 +158,7 @@ export class ScalabilitySession {
       frameCap: this.frameCapOverride ?? this.project.frameCap };
   }
   snapshot(): ScalabilitySnapshot {
-    return structuredClone({ requested: this.requested, effective: this.effective, pipeline: this.pipeline,
+    return structuredClone({ requested: this.requested, effective: this.effective,
       appliedRevision: this.appliedRevision, result: this.result });
   }
   transaction(): ScalabilityTransaction {
@@ -200,8 +194,6 @@ export class ScalabilitySession {
       if (error) return this.rejected("failed", error);
       if (request.frameCap !== undefined && (!Number.isFinite(request.frameCap) || request.frameCap <= 0))
         return this.rejected("failed", "Frame cap must be a finite number greater than zero.");
-      if (request.render?.gpuBackend !== undefined && request.render.gpuBackend !== before.render.gpuBackend)
-        return this.rejected("restartRequired", "GPU backend changes require restarting the player; this transaction was not applied.");
       const patch = request.render ?? {};
       const normalized = normalizeRenderProjectSettings(mergeRenderSettings(before.render, patch));
       const selected = selectedFields(patch as Record<string, unknown>, normalized as unknown as Record<string, unknown>) as RenderSettingsPatch;
@@ -226,13 +218,12 @@ export class ScalabilitySession {
   }
   /** Ignore stale asynchronous completions and duplicates; only ready frames advance effective values. */
   acknowledge(ack: ScalabilityAcknowledgement): boolean {
-    if (ack.revision !== this.revision || same(this.result, { revision: ack.revision, status: ack.status, message: ack.message }) && same(this.effective, ack.effective ?? this.effective) && same(this.pipeline, ack.pipeline ?? this.pipeline)) return false;
+    if (ack.revision !== this.revision || same(this.result, { revision: ack.revision, status: ack.status, message: ack.message }) && same(this.effective, ack.effective ?? this.effective)) return false;
     if (ack.effective && (ack.status === "applied" || ack.status === "clamped")) {
       this.effective = structuredClone(ack.effective);
       this.appliedRevision = ack.revision;
       this.clamped = false;
     }
-    if (ack.pipeline) this.pipeline = structuredClone(ack.pipeline);
     this.result = { revision: ack.revision, status: ack.status, message: ack.message };
     return true;
   }

@@ -1,7 +1,7 @@
 /**
  * Samples of the image a view presented, for checks that cannot see the screen (the Feature Test Check on a device).
  * The element the player sees is drawn down into a small 2D canvas in the task that presented it, while the WebGL
- * drawing buffer (with or without preserveDrawingBuffer) and the WebGPU canvas texture still hold the frame.
+ * drawing buffer (with or without preserveDrawingBuffer) still holds the frame.
  */
 
 /** A pixel is near-black when its brightest channel, weighted by its alpha, is at most this (of 255). */

@@ -1,8 +1,7 @@
 /**
- * Assembled water shader source per language: the Water Waves node's sources and the Water Cut block's blend cull.
- * `toWgsl` translates the GLSL-shaped chunks.
+ * Assembled water shader source: the Water Waves node's sources and the Water Cut block's blend cull, from the
+ * GLSL-shaped chunks.
  */
-import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
 import { WATER_FFT_CASCADES_MAX, WATER_FOAM_WEIGHTS, WATER_SPECTRUM_LOW_BIN } from "@haptic/core";
 import {
   fftHelpers, fftTurnIn, fftTurnOut, fftTurnTensor, FOAM_FAR_PATCHES, ifFft, SHADING_SLOPE_CAP, spectrumHelpers, spectrumNormalSource,
@@ -20,9 +19,8 @@ import {
  * and offset for the varyings in `swvH` / `swvD`, so the fragment finds its rest point and contacts see the rendered
  * height. `slateWaterGridOffset` (xyz) is the world-space translation of the rest grid since its positions were uploaded
  * (Global Water's recentre, `waterGridOffset`): it is added before the rest point is taken, so the spectrum and bank terms
- * all see the translated grid. GLSL-shaped: `A.` attributes and `U.` uniforms are bound per language, then `toWgsl`
- * translates it. It also leaves `swvNormal` (`spectrumNormalSource`); `distance` is the eye-distance expression the
- * spectrum's LOD reads.
+ * all see the translated grid. GLSL-shaped: `A.` attributes and `U.` uniforms are bound by `bindVertexSource`. It also
+ * leaves `swvNormal` (`spectrumNormalSource`); `distance` is the eye-distance expression the spectrum's LOD reads.
  */
 function vertexWaveSource(distance: string): string {
   return `
@@ -64,14 +62,14 @@ const BLEND_CULL = `if (min(A.slateWaterData.y, A.slateWaterBlend.z) < -(${f(BLE
  * The blend cull for the Water Cut block's vertex program, which the graph's Water Waves node
  * displaces (GPU waves only: there `slateWaterData.x` is the grid spacing).
  */
-export function waterBlendCullSource(wgsl: boolean): string {
-  return `#if defined(${WATER_GPU_WAVES_DEFINE}) && defined(${WATER_BLEND_DEFINE})\n${bindVertexSource(BLEND_CULL, wgsl)
-    .replace(/\bSW_CLIP_POSITION\b/g, wgsl ? "vertexOutputs.position" : "gl_Position")}\n#endif\n`;
+export function waterBlendCullSource(): string {
+  return `#if defined(${WATER_GPU_WAVES_DEFINE}) && defined(${WATER_BLEND_DEFINE})\n${bindVertexSource(BLEND_CULL)
+    .replace(/\bSW_CLIP_POSITION\b/g, "gl_Position")}\n#endif\n`;
 }
 
-/** Binds the GLSL-shaped `A.` / `U.` prefixes for one language. */
-function bindVertexSource(code: string, wgsl: boolean): string {
-  return code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bA\./g, wgsl ? "vertexInputs." : "");
+/** Binds the GLSL-shaped `A.` / `U.` prefixes: GLSL names attributes and uniforms without one. */
+function bindVertexSource(code: string): string {
+  return code.replace(/\bU\./g, "").replace(/\bA\./g, "");
 }
 
 /**
@@ -84,20 +82,16 @@ export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = ["slateWaterSwellIn
  * Material's Water Waves and Water Foam nodes (`WaterVertexWaves.bind`).
  */
 export const WATER_CLOCK_UNIFORM = "slateWaterClock";
-const blockWaveSources = new Map<ShaderLanguage, string>();
+let blockWaveSource: string | undefined;
 /**
- * The Water Waves node's vertex code for one language: `vertexWaveSource`, bound and translated, its eye distance from `slateWaterEye` (the camera's world position relative to the rest positions). It reads
+ * The Water Waves node's vertex code: `vertexWaveSource`, bound, its eye distance from `slateWaterEye` (the camera's world position relative to the rest positions). It reads
  * and writes a `worldPos` vec4 (rest point in, displaced point out) and leaves `swvH` (height), `swvD` (horizontal offset)
  * and `swvNormal`, under `SLATE_WATER_GPU_WAVES`; it reads `slateWaterData` and `slateWaterBaseNormal`, and under
  * `SLATE_WATER_BLEND` `slateWaterBlend`, as attributes. Built once.
  */
-export function waterWaveBlockSource(language: ShaderLanguage): string {
-  let source = blockWaveSources.get(language);
-  if (!source) {
-    const wgsl = language === ShaderLanguage.WGSL, code = vertexWaveSource("length(worldPos.xyz - U.slateWaterEye.xyz)");
-    blockWaveSources.set(language, source = stripShaderComments(bindVertexSource(wgsl ? toWgsl(code) : code, wgsl)));
-  }
-  return source;
+export function waterWaveBlockSource(): string {
+  blockWaveSource ??= stripShaderComments(bindVertexSource(vertexWaveSource("length(worldPos.xyz - U.slateWaterEye.xyz)")));
+  return blockWaveSource;
 }
 
 /** The Water Waves node's eye position uniform (`waterWaveBlockSource`): the camera relative to the rest positions. */
@@ -212,10 +206,10 @@ swnEdgeTurbulence = max(swnCrestPast, ${f(EDGE_FOAM_CALM)});
 `;
 }
 
-/** Binds the GLSL-shaped `U.` and `IN.` prefixes of fragment code for one language. */
-const bindFragmentSource = (code: string, wgsl: boolean) => code.replace(/\bU\./g, wgsl ? "uniforms." : "").replace(/\bIN\./g, wgsl ? "fragmentInputs." : "");
+/** Binds the GLSL-shaped `U.` and `IN.` prefixes of fragment code: GLSL names uniforms and varyings without one. */
+const bindFragmentSource = (code: string) => code.replace(/\bU\./g, "").replace(/\bIN\./g, "");
 
-/** The Water Waves node's per-stage sources for one language (`WaterWavesBlock`), built once each. */
+/** The Water Waves node's per-stage sources (`WaterWavesBlock`), built once. */
 export interface WaterWaveNodeSources {
   /** Taps of each stage, under `SLATE_WATER_GPU_WAVES` (the block declares the samplers). */
   vertexHelpers: string;
@@ -225,35 +219,21 @@ export interface WaterWaveNodeSources {
   /** The fragment code, given the rest position, base normal and varying expressions (already bound). */
   fragment(rest: string, base: string, varying: string): string;
 }
-const nodeSources = new Map<ShaderLanguage, WaterWaveNodeSources>();
-export function waterWaveNodeSources(language: ShaderLanguage): WaterWaveNodeSources {
-  let sources = nodeSources.get(language);
-  if (!sources) {
-    const wgsl = language === ShaderLanguage.WGSL;
+let nodeSources: WaterWaveNodeSources | undefined;
+export function waterWaveNodeSources(): WaterWaveNodeSources {
+  if (!nodeSources) {
     const guard = (code: string) => `#ifdef ${WATER_GPU_WAVES_DEFINE}\n${code}\n#endif\n`;
-    const vertexBind = (code: string) => stripShaderComments(bindVertexSource(wgsl ? toWgsl(code) : code, wgsl));
-    const fragmentBind = (code: string) => stripShaderComments(bindFragmentSource(wgsl ? toWgsl(code) : code, wgsl));
-    sources = {
+    const vertexBind = (code: string) => stripShaderComments(bindVertexSource(code));
+    const fragmentBind = (code: string) => stripShaderComments(bindFragmentSource(code));
+    nodeSources = {
       // The block declares the samplers itself, once per stage.
-      vertexHelpers: guard(fftHelpers(wgsl)),
-      fragmentHelpers: guard(fftHelpers(wgsl) + spectrumHelpers(wgsl)),
+      vertexHelpers: guard(fftHelpers()),
+      fragmentHelpers: guard(fftHelpers() + spectrumHelpers()),
       varying: (out) => vertexBind(nodeVaryingSource(out)),
       fragment: (rest, base, varying) => fragmentBind(nodeFragmentSource(rest, base, varying)),
     };
-    nodeSources.set(language, sources);
   }
-  return sources;
-}
-
-/** Translate the restricted GLSL-shaped source above. Only the constructs it uses are supported. */
-export function toWgsl(source: string): string {
-  const type = (t: string) => ({ float: "f32", vec2: "vec2f", vec3: "vec3f", vec4: "vec4f", mat4: "mat4x4f" })[t] ?? t;
-  return source
-    .replace(/^(\s*)(float|vec2|vec3|vec4) (\w+)\(([^)]*)\) \{/gm, (_, indent: string, ret: string, name: string, args: string) =>
-      `${indent}fn ${name}(${args.split(",").map((arg) => arg.trim().split(" ")).map(([t, n]) => `${n}: ${type(t!)}`).join(", ")}) -> ${type(ret)} {`)
-    .replace(/^(\s*)(float|vec2|vec3|vec4) (\w+) = /gm, (_, indent: string, t: string, name: string) => `${indent}var ${name}: ${type(t)} = `)
-    .replace(/\bvec([234])\(/g, "vec$1f(")
-    .replace(/\bdFdx\(/g, "dpdx(").replace(/\bdFdy\(/g, "dpdy(");
+  return nodeSources;
 }
 
 /**

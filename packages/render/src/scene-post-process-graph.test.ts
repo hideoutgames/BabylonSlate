@@ -526,7 +526,6 @@ it.each(["released", "uncertain"] as const)(
     vi.spyOn(task, "whenReleased").mockImplementation(() =>
       nativeRelease().then(() => confirmed),
     );
-    Object.defineProperty(h.engine, "isWebGPU", { get: () => true });
     h.disposeGraph();
     const cpu = owner.whenDisposed();
     const actual = owner.whenReleased();

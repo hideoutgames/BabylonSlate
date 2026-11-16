@@ -5,12 +5,12 @@ import { exportGame, GAME_MANIFEST_FILE } from "../packages/exporter/src/index";
 import type { PlayerTestHandle } from "../apps/player/src/boot";
 import { previewPlacementScene } from "./preview-scene-fixture";
 import { serveExportFiles } from "./export-static-server";
-import { SOFTWARE_WEBGPU_ARGS } from "./software-webgpu";
+import { SOFTWARE_GL_ARGS } from "./software-gl";
 import { scalabilityGraphScripts } from "./scalability-graph-fixture";
 import { renderingEvidence } from "./rendering-evidence";
 
-if (process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || process.env.CI)
-  test.use({ launchOptions: { args: SOFTWARE_WEBGPU_ARGS } });
+const SOFTWARE_GL = process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || Boolean(process.env.CI);
+if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
 const command = (page: Page, line: string) => page.evaluate((line) =>
   (window as unknown as { __hapticPlayerTest: PlayerTestHandle }).__hapticPlayerTest.executeConsoleCommand(line), line);
@@ -36,203 +36,195 @@ const magentaPixels = (page: Page, captured: string) => page.evaluate(async (bas
   return count;
 }, captured);
 
-// One WebGL2 export keeps the standalone settings and deferred-loading
-// journey in CI; backend variants are covered by webgpu-backend and player-backend.
-for (const variant of [{ backend: "webgl2" }] as const) {
-  test(`non-default settings reach the standalone ${variant.backend} player`, async ({ page, baseURL }, testInfo) => {
-    test.setTimeout(120_000);
-    await page.addInitScript(() => { Error.stackTraceLimit = 30; });
-    const errors: string[] = [];
-    const rendererMessages: string[] = [];
-    page.on("console", (message) => { if (message.type() === "warning" || message.type() === "error") rendererMessages.push(message.text()); });
-    page.on("pageerror", (error) => errors.push(error.message));
-    const renderSettings = normalizeRenderProjectSettings({
-      gpuBackend: variant.backend, mode: "cel",
-      cel: { shadowBands: 5, lightMixing: "blend", specularEnabled: false },
-      shadows: { enabled: false },
-      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false }, postprocessing: { antiAliasing: "fxaa" } },
-      environmentLighting: { enabled: false, intensity: 2 },
-      customResolution: true, width: 480, height: 270, blackBars: true,
-    });
-    const scripts = scalabilityGraphScripts();
-    const exported = await exportGame({
-      platform: "web",
-      bundleDebugger: true, startupSceneGuid: "first",
-      renderSettings, playFrameCap: 30, scripts,
-      assets: [...scripts.map((script) => ({ guid: script.assetGuid, type: "Class", sceneGuid: "first", name: script.classId,
-        bytes: new TextEncoder().encode(JSON.stringify({ components: [] })) })), ...["first", "second"].map((guid) => {
-        const scene = { ...previewPlacementScene(), name: guid };
-        // This setter fixture qualifies transactions, not large shadow-map
-        // allocations. Dedicated shadow fixtures own actual caster coverage.
-        for (const actor of scene.actors) for (const component of actor.components)
-          if (component.classId === "LightComponent") component.properties.castShadows = false;
-        // Serialized authored state reaches runtime hydration; only this actor
-        // receives the magenta style.
-        scene.actors.find((actor) => actor.id === "material-actor")!.components.push({ id: "authored-ink", classId: "OutlineComponent", properties: { enabled: true, color: [1, 0, 1], width: 4, throughMeshes: false } });
-        if (guid === "second") {
-          scene.actors.find((actor) => actor.id === "far-actor")!.transform.position[2] = 3;
-          scene.settings.celShading = { shadowBands: 7 };
-          scene.settings.environmentLighting = { intensity: 3 };
-        }
-        return { guid, type: "Scene", sceneGuid: guid, bytes: new TextEncoder().encode(JSON.stringify(scene)) };
-      })],
-      playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
-    });
-    if (!exported.ok) throw new Error(exported.error);
-    // The packaged player may use only included files on this local origin.
-    // This simulates a host without Internet/editor services, while retaining
-    // local HTTP needed to serve cold files to the browser.
-    const server = await serveExportFiles(exported.value.files, { honorRange: false });
-    const blockedOrigins: string[] = [];
-    const origin = new URL(server.url).origin;
-    await page.context().route(/^https?:\/\//, async route => {
-      if (new URL(route.request().url()).origin === origin) await route.continue();
-      else { blockedOrigins.push(route.request().url()); await route.abort("blockedbyclient"); }
-    });
-    const entry = (guid: string) => exported.value.manifest.assets.find(asset => asset.guid === guid)!;
-    const secondPath = entry("second").path!;
-    const commandClass = exported.value.manifest.assets.find(asset => asset.classId === "qual_pbr" && asset.type === "Class")!;
-    const commandCode = exported.value.manifest.assets.find(asset => asset.ownerGuid === commandClass.guid && asset.type === "CompiledScript")!;
-    const requestsFor = (path: string) => server.requests.filter(request => request.path === path);
-    try {
-      await page.goto(server.url);
-      const root = page.getByTestId("player-root");
-      await expect(root).toHaveAttribute("data-requested-backend", variant.backend);
-      await expect(root).toHaveAttribute("data-effective-backend", variant.backend);
-      await expect(root).toHaveAttribute("data-backend-fallback", "");
-      const ready = async (scale: number, scene = "first") => {
-        await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
-        await expect(root).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
-        await expect.poll(async () => (await read(page)).rendering?.scalingLevel).toBeCloseTo(scale, 5);
-        await expect.poll(async () => (await read(page)).visuals.find((visual) => visual.position[0] === 4)?.position[2]).toBe(scene === "second" ? 3 : 0);
-        // Published on the first presented frame after the load, which on software GL waits for the GPU's first draw.
-        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale, { timeout: 30_000 }).toBeCloseTo(1 / scale, 5);
-        try {
-          await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/i.test(name)), { message: "prepared FXAA graph after output resizing" }).toBe(true);
-        } finally {
-          await testInfo.attach(`readiness-${scale}-${scene}`, { body: JSON.stringify({ state: await read(page), rendererMessages, errors }), contentType: "application/json" });
-        }
-        const live = await read(page);
-        await testInfo.attach(`effective-output-${scale}-${scene}`, { body: JSON.stringify(live), contentType: "application/json" });
-        expect(live.rendering?.width).toBe(Math.floor(480 / scale));
-        expect(live.rendering?.height).toBe(Math.floor(270 / scale));
-        expect(live.rendering?.shadowPasses).toBe(0);
-        expect(live.rendering?.pipeline.requested.gpuBackend).toBe(variant.backend);
-        expect(live.visuals.filter((visual) => visual.visible)).toHaveLength(3);
-        expect(live.tasks?.some((name) => /FXAA/i.test(name))).toBe(true);
-        return live;
-      };
-      const boot = await ready(1.25);
-      expect(requestsFor(secondPath), "deferred Scene document stays unread at startup").toEqual([]);
-      expect(requestsFor(commandClass.path!), "available console Class stays unread at startup").toEqual([]);
-      expect(requestsFor(commandCode.path!), "available compiled command code stays unread at startup").toEqual([]);
-      const startupRequests = server.requests.map(request => ({ ...request }));
-      // Graph surfaces keep their names when switching mode: compare actual
-      // presented shading, then restore the complete authored settings.
-      const celPixels = await pixels(page);
-      await testInfo.attach("authored-cel", { body: Buffer.from(celPixels, "base64"), contentType: "image/png" });
-      expect(await command(page, "qual_pbr")).toMatchObject({ success: true });
-      expect(requestsFor(commandClass.path!)).toEqual([{ path: commandClass.path!, status: 200, range: null, bytes: commandClass.byteLength! }]);
-      expect(requestsFor(commandCode.path!)).toEqual([{ path: commandCode.path!, status: 200, range: null, bytes: commandCode.byteLength! }]);
-      await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("pbr");
-      await expect.poll(async () => await pixels(page) !== celPixels).toBe(true);
-      await testInfo.attach("runtime-pbr", { body: Buffer.from(await pixels(page), "base64"), contentType: "image/png" });
-      expect(await command(page, "qual_cel")).toMatchObject({ success: true });
-      await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("cel");
-      await expect.poll(async () => await pixels(page) === celPixels).toBe(true);
-      expect(await command(page, "qual_outlines_off")).toMatchObject({ success: true });
-      await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.outlinesEnabled).toBe(false);
-      const componentOnly = await pixels(page);
-      expect(componentOnly).not.toBe(celPixels);
-      expect(await magentaPixels(page, componentOnly)).toBeGreaterThan(8);
-      await testInfo.attach("authored-component-only", { body: Buffer.from(componentOnly, "base64"), contentType: "image/png" });
-      expect(await command(page, "qual_outlines")).toMatchObject({ success: true });
-      await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.outlineWidth).toBe(4);
-      await expect.poll(async () => await pixels(page) !== componentOnly).toBe(true);
-      const outlined = await read(page);
-      expect(outlined.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
-      expect(await command(page, "qual_outline_roundtrip")).toMatchObject({ success: true });
-      expect((await read(page)).scalability?.revision).toBe(outlined.scalability?.revision);
-      expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
-      expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
-      const changed = await ready(2);
-      expect(changed.scalability?.effective?.frameCap).toBe(20);
-      for (let repeat = 0; repeat < 20; repeat++) expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
-      expect((await read(page)).scalability?.revision).toBe(changed.scalability?.revision);
-      expect(requestsFor(secondPath), "unrelated commands do not prepare the deferred Scene").toEqual([]);
-      expect(await command(page, "changescene second")).toMatchObject({ success: true });
-      const transitioned = await ready(2, "second");
-      expect(requestsFor(secondPath)).toEqual([{ path: secondPath, status: 200, range: null, bytes: entry("second").byteLength! }]);
-      expect(transitioned.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
-      await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.shadowBands).toBe(7);
-      expect((await read(page)).scalability?.effective?.render.environmentLighting?.intensity).toBe(3);
-      expect(boot.scalability?.pipeline?.requested.gpuBackend).toBe(variant.backend);
-      expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 20" });
-      const stored = await (await page.request.get(new URL(GAME_MANIFEST_FILE, server.url).href)).json();
-      expect(stored.render).toMatchObject({ gpuBackend: variant.backend, mode: "cel", quality: { resolution: { scale: 0.8 }, postprocessing: { antiAliasing: "fxaa" } } });
-      const environment = await page.evaluate(() => ({ userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio }));
-      await testInfo.attach("standalone-settings", { body: JSON.stringify({
-        evidence: renderingEvidence("e2e/render-settings-export.spec.ts"), environment,
-        variant, boot, transitioned, stored, startupRequests,
-        deferredLoading: { secondPath, commandClassPath: commandClass.path, commandCodePath: commandCode.path, requests: server.requests, blockedOrigins },
-      }), contentType: "application/json" });
-      await testInfo.attach("standalone-settings-canvas", { body: await page.getByTestId("player-canvas").screenshot(), contentType: "image/png" });
-      expect(await command(page, "qual_reset")).toMatchObject({ success: true });
-      const reset = await ready(1.25, "second");
-      expect(reset.scalability?.effective?.frameCap).toBe(30);
-      expect(reset.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
-      expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
-      for (const preset of ["low", "medium", "high", "ultra"]) {
-        expect(await command(page, `qual_${preset}`)).toMatchObject({ success: true });
-        await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.lighting.profile).toBe(preset);
-        const applied = (await read(page)).scalability!;
-        expect(applied.effective?.render.mode).toBe("cel");
-        // Anti-Aliasing is a quality setting: each tier sets its own.
-        expect(applied.effective?.render.quality?.postprocessing.antiAliasing).toBe(preset === "low" ? "fxaa" : preset === "medium" ? "msaa2" : "msaa4");
-        expect(applied.effective?.render.cel?.shadowBands).toBe(7);
-        expect(applied.effective?.frameCap).toBe(30);
-      }
-      expect(await command(page, "qual_settings")).toMatchObject({ success: true });
-      await expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees).toBe(23);
-      const custom = await read(page);
-      expect(custom.rendering).toMatchObject({ width: 300, height: 180, scalingLevel: 1 / 0.75 });
-      expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: {
-        width: 400, height: 240, customResolution: true, blackBars: true,
-        quality: { resolution: { scale: 0.75, dynamic: false, targetFps: 30 }, lighting: { localLightMode: "manual", maxLocalLights: 3 }, textures: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5, antiAliasing: "off" } },
-        shadows: { enabled: false, distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filterQuality: "low", autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 },
-        effects: { exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1, color: [0.2, 0.1, 0.3] } },
-        cel: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" },
-        environmentLighting: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 },
-      } });
-      expect(custom.tasks?.some((name) => /FXAA/.test(name))).toBe(false);
-      await testInfo.attach("compiled-setters", { body: JSON.stringify(custom), contentType: "application/json" });
-      expect(await command(page, "qual_invalid")).toMatchObject({ success: true });
-      expect((await read(page)).scalability?.revision).toBe(custom.scalability?.revision);
-      expect(await command(page, "qual_aa")).toMatchObject({ success: true });
-      await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/.test(name))).toBe(true);
-      expect(await command(page, "qual_clamped")).toMatchObject({ success: true });
-      await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBe(0.25);
-      expect((await read(page)).scalability?.status).toBe("clamped");
-      expect(await command(page, "qual_reset")).toMatchObject({ success: true });
-      await ready(1.25, "second");
-      await page.reload();
-      await ready(1.25);
-      expect(requestsFor(secondPath), "restarting Scene A does not request Scene B again").toHaveLength(1);
-      expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
-      expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
-      expect(errors).toEqual([]);
-      expect(blockedOrigins, "packaged startup and cold loads need no external origin").toEqual([]);
-    } finally {
-      await testInfo.attach("standalone-final-diagnostics", {
-        body: JSON.stringify({ errors, rendererMessages, servedRequests: server.requests, blockedOrigins,
-          state: await read(page).catch((error: unknown) => ({ unavailable: String(error) })),
-          shutdown: await page.evaluate(() =>
-            (window as unknown as { __hapticPlayerTest: PlayerTestHandle }).__hapticPlayerTest.stop()
-          ).catch((error: unknown) => ({ unavailable: String(error) })),
-          evidence: renderingEvidence("e2e/render-settings-export.spec.ts"),
-        }), contentType: "application/json",
-      });
-      await server.close();
-    }
+// One export keeps the standalone settings and deferred-loading journey in CI.
+test("non-default settings reach the standalone player", async ({ page, baseURL }, testInfo) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => { Error.stackTraceLimit = 30; });
+  const errors: string[] = [];
+  const rendererMessages: string[] = [];
+  page.on("console", (message) => { if (message.type() === "warning" || message.type() === "error") rendererMessages.push(message.text()); });
+  page.on("pageerror", (error) => errors.push(error.message));
+  const renderSettings = normalizeRenderProjectSettings({
+    mode: "cel",
+    cel: { shadowBands: 5, lightMixing: "blend", specularEnabled: false },
+    shadows: { enabled: false },
+    quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false }, postprocessing: { antiAliasing: "fxaa" } },
+    environmentLighting: { enabled: false, intensity: 2 },
+    customResolution: true, width: 480, height: 270, blackBars: true,
   });
-}
+  const scripts = scalabilityGraphScripts();
+  const exported = await exportGame({
+    platform: "web",
+    bundleDebugger: true, startupSceneGuid: "first",
+    renderSettings, playFrameCap: 30, scripts,
+    assets: [...scripts.map((script) => ({ guid: script.assetGuid, type: "Class", sceneGuid: "first", name: script.classId,
+      bytes: new TextEncoder().encode(JSON.stringify({ components: [] })) })), ...["first", "second"].map((guid) => {
+      const scene = { ...previewPlacementScene(), name: guid };
+      // This setter fixture qualifies transactions, not large shadow-map
+      // allocations. Dedicated shadow fixtures own actual caster coverage.
+      for (const actor of scene.actors) for (const component of actor.components)
+        if (component.classId === "LightComponent") component.properties.castShadows = false;
+      // Serialized authored state reaches runtime hydration; only this actor
+      // receives the magenta style.
+      scene.actors.find((actor) => actor.id === "material-actor")!.components.push({ id: "authored-ink", classId: "OutlineComponent", properties: { enabled: true, color: [1, 0, 1], width: 4, throughMeshes: false } });
+      if (guid === "second") {
+        scene.actors.find((actor) => actor.id === "far-actor")!.transform.position[2] = 3;
+        scene.settings.celShading = { shadowBands: 7 };
+        scene.settings.environmentLighting = { intensity: 3 };
+      }
+      return { guid, type: "Scene", sceneGuid: guid, bytes: new TextEncoder().encode(JSON.stringify(scene)) };
+    })],
+    playerFiles: await loadPlayerDistFiles(new URL("/player/", baseURL).href),
+  });
+  if (!exported.ok) throw new Error(exported.error);
+  // The packaged player may use only included files on this local origin.
+  // This simulates a host without Internet/editor services, while retaining
+  // local HTTP needed to serve cold files to the browser.
+  const server = await serveExportFiles(exported.value.files, { honorRange: false });
+  const blockedOrigins: string[] = [];
+  const origin = new URL(server.url).origin;
+  await page.context().route(/^https?:\/\//, async route => {
+    if (new URL(route.request().url()).origin === origin) await route.continue();
+    else { blockedOrigins.push(route.request().url()); await route.abort("blockedbyclient"); }
+  });
+  const entry = (guid: string) => exported.value.manifest.assets.find(asset => asset.guid === guid)!;
+  const secondPath = entry("second").path!;
+  const commandClass = exported.value.manifest.assets.find(asset => asset.classId === "qual_pbr" && asset.type === "Class")!;
+  const commandCode = exported.value.manifest.assets.find(asset => asset.ownerGuid === commandClass.guid && asset.type === "CompiledScript")!;
+  const requestsFor = (path: string) => server.requests.filter(request => request.path === path);
+  try {
+    await page.goto(server.url);
+    const root = page.getByTestId("player-root");
+    const ready = async (scale: number, scene = "first") => {
+      await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
+      await expect(root).toHaveAttribute("data-scene-loading", "false", { timeout: 30_000 });
+      await expect.poll(async () => (await read(page)).rendering?.scalingLevel).toBeCloseTo(scale, 5);
+      await expect.poll(async () => (await read(page)).visuals.find((visual) => visual.position[0] === 4)?.position[2]).toBe(scene === "second" ? 3 : 0);
+      // Published on the first presented frame after the load, which on software GL waits for the GPU's first draw.
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale, { timeout: 30_000 }).toBeCloseTo(1 / scale, 5);
+      try {
+        await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/i.test(name)), { message: "prepared FXAA graph after output resizing" }).toBe(true);
+      } finally {
+        await testInfo.attach(`readiness-${scale}-${scene}`, { body: JSON.stringify({ state: await read(page), rendererMessages, errors }), contentType: "application/json" });
+      }
+      const live = await read(page);
+      await testInfo.attach(`effective-output-${scale}-${scene}`, { body: JSON.stringify(live), contentType: "application/json" });
+      expect(live.rendering?.width).toBe(Math.floor(480 / scale));
+      expect(live.rendering?.height).toBe(Math.floor(270 / scale));
+      expect(live.rendering?.shadowPasses).toBe(0);
+      expect(live.visuals.filter((visual) => visual.visible)).toHaveLength(3);
+      expect(live.tasks?.some((name) => /FXAA/i.test(name))).toBe(true);
+      return live;
+    };
+    const boot = await ready(1.25);
+    expect(requestsFor(secondPath), "deferred Scene document stays unread at startup").toEqual([]);
+    expect(requestsFor(commandClass.path!), "available console Class stays unread at startup").toEqual([]);
+    expect(requestsFor(commandCode.path!), "available compiled command code stays unread at startup").toEqual([]);
+    const startupRequests = server.requests.map(request => ({ ...request }));
+    // Graph surfaces keep their names when switching mode: compare actual
+    // presented shading, then restore the complete authored settings.
+    const celPixels = await pixels(page);
+    await testInfo.attach("authored-cel", { body: Buffer.from(celPixels, "base64"), contentType: "image/png" });
+    expect(await command(page, "qual_pbr")).toMatchObject({ success: true });
+    expect(requestsFor(commandClass.path!)).toEqual([{ path: commandClass.path!, status: 200, range: null, bytes: commandClass.byteLength! }]);
+    expect(requestsFor(commandCode.path!)).toEqual([{ path: commandCode.path!, status: 200, range: null, bytes: commandCode.byteLength! }]);
+    await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("pbr");
+    await expect.poll(async () => await pixels(page) !== celPixels).toBe(true);
+    await testInfo.attach("runtime-pbr", { body: Buffer.from(await pixels(page), "base64"), contentType: "image/png" });
+    expect(await command(page, "qual_cel")).toMatchObject({ success: true });
+    await expect.poll(async () => (await read(page)).scalability?.effective?.render.mode).toBe("cel");
+    await expect.poll(async () => await pixels(page) === celPixels).toBe(true);
+    expect(await command(page, "qual_outlines_off")).toMatchObject({ success: true });
+    await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.outlinesEnabled).toBe(false);
+    const componentOnly = await pixels(page);
+    expect(componentOnly).not.toBe(celPixels);
+    expect(await magentaPixels(page, componentOnly)).toBeGreaterThan(8);
+    await testInfo.attach("authored-component-only", { body: Buffer.from(componentOnly, "base64"), contentType: "image/png" });
+    expect(await command(page, "qual_outlines")).toMatchObject({ success: true });
+    await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.outlineWidth).toBe(4);
+    await expect.poll(async () => await pixels(page) !== componentOnly).toBe(true);
+    const outlined = await read(page);
+    expect(outlined.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
+    expect(await command(page, "qual_outline_roundtrip")).toMatchObject({ success: true });
+    expect((await read(page)).scalability?.revision).toBe(outlined.scalability?.revision);
+    expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
+    expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
+    const changed = await ready(2);
+    expect(changed.scalability?.effective?.frameCap).toBe(20);
+    for (let repeat = 0; repeat < 20; repeat++) expect(await command(page, "qual_runtime")).toMatchObject({ success: true });
+    expect((await read(page)).scalability?.revision).toBe(changed.scalability?.revision);
+    expect(requestsFor(secondPath), "unrelated commands do not prepare the deferred Scene").toEqual([]);
+    expect(await command(page, "changescene second")).toMatchObject({ success: true });
+    const transitioned = await ready(2, "second");
+    expect(requestsFor(secondPath)).toEqual([{ path: secondPath, status: 200, range: null, bytes: entry("second").byteLength! }]);
+    expect(transitioned.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.1875, 0.75, 0.375], outlineWidth: 4 });
+    await expect.poll(async () => (await read(page)).scalability?.effective?.render.cel?.shadowBands).toBe(7);
+    expect((await read(page)).scalability?.effective?.render.environmentLighting?.intensity).toBe(3);
+    expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 20" });
+    const stored = await (await page.request.get(new URL(GAME_MANIFEST_FILE, server.url).href)).json();
+    expect(stored.render).toMatchObject({ mode: "cel", quality: { resolution: { scale: 0.8 }, postprocessing: { antiAliasing: "fxaa" } } });
+    const environment = await page.evaluate(() => ({ userAgent: navigator.userAgent, devicePixelRatio: window.devicePixelRatio }));
+    await testInfo.attach("standalone-settings", { body: JSON.stringify({
+      evidence: renderingEvidence("e2e/render-settings-export.spec.ts", SOFTWARE_GL ? SOFTWARE_GL_ARGS : undefined), environment,
+      boot, transitioned, stored, startupRequests,
+      deferredLoading: { secondPath, commandClassPath: commandClass.path, commandCodePath: commandCode.path, requests: server.requests, blockedOrigins },
+    }), contentType: "application/json" });
+    await testInfo.attach("standalone-settings-canvas", { body: await page.getByTestId("player-canvas").screenshot(), contentType: "image/png" });
+    expect(await command(page, "qual_reset")).toMatchObject({ success: true });
+    const reset = await ready(1.25, "second");
+    expect(reset.scalability?.effective?.frameCap).toBe(30);
+    expect(reset.scalability?.effective?.render.cel).toMatchObject({ outlinesEnabled: true, outlineColor: [0.03, 0.03, 0.03], outlineWidth: 1 });
+    expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
+    for (const preset of ["low", "medium", "high", "ultra"]) {
+      expect(await command(page, `qual_${preset}`)).toMatchObject({ success: true });
+      await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.lighting.profile).toBe(preset);
+      const applied = (await read(page)).scalability!;
+      expect(applied.effective?.render.mode).toBe("cel");
+      // Anti-Aliasing is a quality setting: each tier sets its own.
+      expect(applied.effective?.render.quality?.postprocessing.antiAliasing).toBe(preset === "low" ? "fxaa" : preset === "medium" ? "msaa2" : "msaa4");
+      expect(applied.effective?.render.cel?.shadowBands).toBe(7);
+      expect(applied.effective?.frameCap).toBe(30);
+    }
+    expect(await command(page, "qual_settings")).toMatchObject({ success: true });
+    await expect.poll(async () => (await read(page)).scalability?.effective?.render.environmentLighting?.rotationYDegrees).toBe(23);
+    const custom = await read(page);
+    expect(custom.rendering).toMatchObject({ width: 300, height: 180, scalingLevel: 1 / 0.75 });
+    expect(custom.scalability?.effective).toMatchObject({ frameCap: 24, render: {
+      width: 400, height: 240, customResolution: true, blackBars: true,
+      quality: { resolution: { scale: 0.75, dynamic: false, targetFps: 30 }, lighting: { localLightMode: "manual", maxLocalLights: 3 }, textures: { lodBias: 1, anisotropy: 2, byteBudget: 128 * 1024 ** 2 }, geometry: { autoLod: false, lodDistanceScale: 2 }, postprocessing: { resolutionScale: 0.5, antiAliasing: "off" } },
+      shadows: { enabled: false, distance: 80, fadeFraction: 0.2, mapSize: 512, cascades: 1, filterQuality: "low", autoBias: false, depthBias: 0.002, normalBias: 0.01, localLightMode: "manual", maxLocalLights: 1, localMapSize: 256 },
+      effects: { exposure: 1.5, contrast: 1.2, vignette: { enabled: true, weight: 1.1, color: [0.2, 0.1, 0.3] } },
+      cel: { shadowBands: 6, shadowThreshold: 0.4, shadowStrength: 0.7, specularEnabled: false, specularStrength: 0.1, specularSize: 0.3, lightColorInfluence: 0.8, lightMixing: "additive" },
+      environmentLighting: { enabled: false, intensity: 0.3, rotationYDegrees: 23, celStrength: 0.5 },
+    } });
+    expect(custom.tasks?.some((name) => /FXAA/.test(name))).toBe(false);
+    await testInfo.attach("compiled-setters", { body: JSON.stringify(custom), contentType: "application/json" });
+    expect(await command(page, "qual_invalid")).toMatchObject({ success: true });
+    expect((await read(page)).scalability?.revision).toBe(custom.scalability?.revision);
+    expect(await command(page, "qual_aa")).toMatchObject({ success: true });
+    await expect.poll(async () => (await read(page)).tasks?.some((name) => /FXAA/.test(name))).toBe(true);
+    expect(await command(page, "qual_clamped")).toMatchObject({ success: true });
+    await expect.poll(async () => (await read(page)).scalability?.effective?.render.quality?.resolution.scale).toBe(0.25);
+    expect((await read(page)).scalability?.status).toBe("clamped");
+    expect(await command(page, "qual_reset")).toMatchObject({ success: true });
+    await ready(1.25, "second");
+    await page.reload();
+    await ready(1.25);
+    expect(requestsFor(secondPath), "restarting Scene A does not request Scene B again").toHaveLength(1);
+    expect(await magentaPixels(page, await pixels(page))).toBeGreaterThan(8);
+    expect(await command(page, "framecap")).toMatchObject({ success: true, output: "framecap 30" });
+    expect(errors).toEqual([]);
+    expect(blockedOrigins, "packaged startup and cold loads need no external origin").toEqual([]);
+  } finally {
+    await testInfo.attach("standalone-final-diagnostics", {
+      body: JSON.stringify({ errors, rendererMessages, servedRequests: server.requests, blockedOrigins,
+        state: await read(page).catch((error: unknown) => ({ unavailable: String(error) })),
+        shutdown: await page.evaluate(() =>
+          (window as unknown as { __hapticPlayerTest: PlayerTestHandle }).__hapticPlayerTest.stop()
+        ).catch((error: unknown) => ({ unavailable: String(error) })),
+        evidence: renderingEvidence("e2e/render-settings-export.spec.ts", SOFTWARE_GL ? SOFTWARE_GL_ARGS : undefined),
+      }), contentType: "application/json",
+    });
+    await server.close();
+  }
+});

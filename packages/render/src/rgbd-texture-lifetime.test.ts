@@ -156,47 +156,6 @@ describe("pinned native RGBD texture lifecycle", () => {
     } finally { context._gl = previousGl; context._currentRenderTarget = null; scene.dispose(); target.dispose(); engine.dispose(); }
   });
 
-  it.each(["private canvas", "cube layer"] as const)("restores WebGPU %s state without opening an empty swapchain pass", async (destination) => {
-    const { engine, scene, texture, internal, compiler, allocation, draw } = fixture();
-    const previousTarget = destination === "cube layer" ? engine.createRenderTargetCubeTexture(8, { generateDepthBuffer: false }) : null;
-    const native = engine as unknown as { _currentRenderTarget: unknown; _rttRenderPassWrapper: { colorAttachmentViewDescriptor: { baseArrayLayer: number; baseMipLevel: number } }; _mrtAttachments?: number[] };
-    const webgpu = vi.spyOn(engine, "isWebGPU", "get");
-    const restore = vi.spyOn(engine, "restoreDefaultFramebuffer");
-    const bind = vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, face = 0, _width, _height, _fullscreen, mip = 0, layer = 0) => {
-      native._currentRenderTarget = target;
-      native._rttRenderPassWrapper.colorAttachmentViewDescriptor = { baseArrayLayer: layer * 6 + face, baseMipLevel: mip };
-    });
-    try {
-      allocation.mockClear();
-      draw.mockImplementation(() => {
-        native._currentRenderTarget = allocation.mock.results[0]!.value;
-        native._rttRenderPassWrapper.colorAttachmentViewDescriptor = { baseArrayLayer: 0, baseMipLevel: 0 };
-      });
-      RGBDTextureTools.ExpandRGBDTexture(texture);
-      await vi.waitFor(() => expect(allocation).toHaveBeenCalledOnce());
-      const effect = vi.mocked(engine.createEffect).mock.results[0]!.value!;
-      effect.onCompileObservable.add(() => {
-        webgpu.mockReturnValue(true);
-        native._currentRenderTarget = previousTarget;
-        native._rttRenderPassWrapper = { colorAttachmentViewDescriptor: { baseArrayLayer: 10, baseMipLevel: 2 } };
-        // Native WebGPU has no MRT attachment state before its first target bind.
-        native._mrtAttachments = previousTarget ? [] : undefined;
-      }, -1, true);
-      compiler.resolve();
-      await vi.waitFor(() => expect(internal.isReady).toBe(true));
-      if (previousTarget) {
-        expect(native._currentRenderTarget).toBe(previousTarget);
-        expect(native._rttRenderPassWrapper.colorAttachmentViewDescriptor).toEqual({ baseArrayLayer: 10, baseMipLevel: 2 });
-        expect(bind).toHaveBeenCalledWith(previousTarget, 4, undefined, undefined, true, 2, 1);
-        expect(restore).not.toHaveBeenCalled();
-      } else {
-        expect(restore).toHaveBeenCalledExactlyOnceWith(true);
-      }
-      expect(engine.postProcesses).toEqual([]);
-      expect(draw).toHaveBeenCalledOnce();
-    } finally { webgpu.mockRestore(); native._currentRenderTarget = null; previousTarget?.dispose(); scene.dispose(); engine.dispose(); }
-  });
-
   it("reports late native state capture failures and releases the pending decode", async () => {
     const { engine, scene, texture, internal, compiler, allocation, draw, errors } = fixture();
     try {

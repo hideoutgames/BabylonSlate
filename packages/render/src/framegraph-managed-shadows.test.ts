@@ -202,10 +202,10 @@ it.each(["point", "spot"] as const)(
 );
 
 /** The world texel and automatic depth bias the sun's first cascade needs for the projection it holds. */
-function cascadeBias(engine: NullEngine, generator: CascadedShadowGenerator, authoredDepthBias: number) {
+function cascadeBias(generator: CascadedShadowGenerator, authoredDepthBias: number) {
   const m = generator.getCascadeProjectionMatrix(0)!.m;
   const worldTexelSize = Math.max(2 / Math.abs(m[0]!), 2 / Math.abs(m[5]!)) / 256;
-  const depth = (engine.isNDCHalfZRange ? 1 : 2) / Math.abs(m[10]!);
+  const depth = 2 / Math.abs(m[10]!);
   // PCF's quarter-texel raster correction over the depth interval, scaled for depth-clamped hardware depth.
   return { worldTexelSize, bias: Math.max(authoredDepthBias, Math.min(0.05, (0.25 * worldTexelSize) / depth / 1.5)) };
 }
@@ -236,7 +236,7 @@ it("draws no map layer with shadow passes off, and binds each without its caster
 });
 
 it("binds current directional projection bias before the managed caster draw without replacing resources", async () => {
-  const { engine, scene, camera, light, controller, generator, map, texture, graph, render } =
+  const { scene, camera, light, controller, generator, map, texture, graph, render } =
     await fixture("sun");
   expect(generator).toBeInstanceOf(CascadedShadowGenerator);
   const sun = generator as CascadedShadowGenerator;
@@ -253,7 +253,7 @@ it("binds current directional projection bias before the managed caster draw wit
   uniforms.length = 0;
   expect(render()).toBe(1);
   expect(uniforms.length).toBeGreaterThan(0);
-  const first = cascadeBias(engine, sun, authored.depthBias);
+  const first = cascadeBias(sun, authored.depthBias);
   // The automatic bias, not the authored floor or the guard's ceiling, is what this draw needs.
   expect(first.bias).toBeGreaterThan(authored.depthBias);
   expect(first.bias).toBeLessThan(0.05);
@@ -274,7 +274,7 @@ it("binds current directional projection bias before the managed caster draw wit
   uniforms.length = 0;
   expect(render()).toBe(1);
   expect(uniforms.length).toBeGreaterThan(0);
-  const second = cascadeBias(engine, sun, authored.depthBias);
+  const second = cascadeBias(sun, authored.depthBias);
   expect(second.worldTexelSize).toBeGreaterThan(first.worldTexelSize);
   for (const [bias] of uniforms) expect(bias).toBeCloseTo(second.bias, 8);
   expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(second.worldTexelSize, 8);
@@ -287,7 +287,7 @@ it("binds current directional projection bias before the managed caster draw wit
 });
 
 it("insets smooth-normal casters by world texels while other casters keep the authored normal bias", async () => {
-  const { engine, scene, camera, mesh, light, controller, generator, graph, render } = await fixture("sun");
+  const { scene, camera, mesh, light, controller, generator, graph, render } = await fixture("sun");
   const terrain = MeshBuilder.CreateGround("terrain", { width: 4, height: 4, subdivisions: 4 }, scene);
   terrain.material = mesh.material;
   markSmoothNormalShadowCaster(terrain);
@@ -305,7 +305,7 @@ it("insets smooth-normal casters by world texels while other casters keep the au
   generator.onAfterShadowMapRenderObservable.add(() => { drawn.set(caster, normalBias); });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   render();
-  const { worldTexelSize } = cascadeBias(engine, generator as CascadedShadowGenerator, 0);
+  const { worldTexelSize } = cascadeBias(generator as CascadedShadowGenerator, 0);
   // Three world texels exceed the authored normal bias, so the inset is the smooth caster's own.
   expect(SMOOTH_CASTER_NORMAL_BIAS_TEXELS * worldTexelSize).toBeGreaterThan(0.005);
   expect(controller.effectiveBias(light)[0].worldTexelSize).toBeCloseTo(worldTexelSize, 8);

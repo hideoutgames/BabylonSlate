@@ -130,7 +130,7 @@ interface InstanceGroup {
   readonly key: InstanceGroupKey;
   readonly source: Mesh;
   readonly members: Set<InstancedMesh>;
-  /** Some member has drawn: the group's variants and pipelines exist. */
+  /** Some member has drawn: the group's variants exist. */
   drawn: boolean;
   release: (() => void) | undefined;
 }
