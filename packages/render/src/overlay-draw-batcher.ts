@@ -20,7 +20,7 @@ import { hasMeshLatticeDeformer, latticeMarksRevision } from "./lattice-deformer
 import { LayerImageAtlas, type LayerImageCell } from "./layer-image-atlas";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
 import { overlayVisualStyle, shareOverlayVisualStyle } from "./overlay-visual-style";
-import { journalFollows, openRenderChangeReader, type RenderChangeReader } from "./render-change-journal";
+import { journalFollows, openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
 import { sceneReadinessRevision } from "./scene-readiness-signal";
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
@@ -130,6 +130,8 @@ interface Entry {
   readyKnown: boolean;
   /** Whether it waits in its record's re-read list (`markDirty`). */
   queued: boolean;
+  /** The kinds of change (`RenderChange` bits) that named it since it was last read: what the re-read must ask again. */
+  changes: number;
   /** Whether the journal cannot hear its writes (`journalFollows`): read again every pass. */
   polled: boolean;
   /** The Material and texture it is polled through (`track`). */
@@ -530,7 +532,7 @@ function createEntry(subMesh: SubMesh, record: PassRecord | null): Entry {
   return {
     subMesh, record, node: null, mesh: null, material: null, binding: null, cell: null, text: null, clip: null, bake: null, ownBake: createBake(),
     extras: EXTRA_KINDS.map(() => null), layout: 0, indices: null, minX: 0, minY: 0, maxX: 0, maxY: 0, batch: -1, alone: null, drawStamp: new Stamp(),
-    ready: false, readyKnown: false, queued: false, polled: false, trackedMaterial: null, trackedTexture: null,
+    ready: false, readyKnown: false, queued: false, changes: 0, polled: false, trackedMaterial: null, trackedTexture: null,
     style: new Float32Array(STYLE_FLOATS), glyph: new Float32Array(TEXT_FLOATS),
   };
 }
@@ -852,9 +854,9 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       if (pollValues(poll.stamp, object, poll.texture)) for (const entry of poll.users) markDirty(entry);
   }
 
-  private readonly visitChange = (node: Node): void => {
+  private readonly visitChange = (node: Node, kinds: number): void => {
     const entries = this.entriesByNode.get(node as AbstractMesh);
-    if (entries) for (const entry of entries) markDirty(entry);
+    if (entries) for (const entry of entries) markDirty(entry, kinds);
   };
 
   /**
@@ -1001,14 +1003,18 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     this.marginY = 4 / Math.max(1, viewport.height);
   }
 
-  /** Reads `entry` anew for the record (classification, polls, readiness to ask) and keeps its tally. */
-  private reread(record: PassRecord, entry: Entry, eye: Eye): void {
+  /**
+   * Reads `entry` anew for the record (classification, polls) and keeps its tally. Its readiness is asked again unless
+   * `named` and only changes that keep the gate's answer (`KEEPS_READINESS`) named it since its last reading.
+   */
+  private reread(record: PassRecord, entry: Entry, eye: Eye, named = false): void {
     const was = entry.alone;
     const alone = (entry.alone = this.classify(entry, eye));
     if (was) record.tally[was] -= 1;
     if (alone) record.tally[alone] += 1;
     this.track(entry, entry.subMesh.getMaterial(), entry.binding?.texture ?? entry.text?.atlas ?? null);
-    entry.readyKnown = false;
+    if (!named || (entry.changes & ~KEEPS_READINESS) !== 0) entry.readyKnown = false;
+    entry.changes = 0;
   }
 
   /** Reads every member anew and groups the pass: what a new list, a lost journal or a heal takes. */
@@ -1073,7 +1079,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
       rereadCount += 1;
       // Its batch's slot no longer holds what a fill would write for it.
       if (entry.batch >= 0 && entry.batch < record.batchCount) batches[entry.batch]!.serial = -1;
-      this.reread(record, entry, eye);
+      this.reread(record, entry, eye, !all);
       if (stampDraw(entry)) regroup = true;
       if (!moved) {
         const before = this.scratchBounds;
@@ -1596,10 +1602,22 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   }
 }
 
-/** Marks `entry` to be read again at its record's next pass. */
-function markDirty(entry: Entry): void {
+/** Every kind of change: what a poll, a new member or a pass-wide change stands for. */
+const ANY_CHANGE = -1;
+
+/**
+ * Changes after which Babylon's readiness gate answers as before, so a member they alone named keeps its answer: a
+ * world matrix (the gate reads no pose; a mirrored pose draws on its own, through its own gate) and an overlay style
+ * that stays on its side of full opacity (one that crosses it marks the Scene's readiness, which asks every member).
+ */
+const KEEPS_READINESS = RenderChange.Transform | RenderChange.Style;
+
+/** Marks `entry` to be read again at its record's next pass, for changes of `kinds`. */
+function markDirty(entry: Entry, kinds: number = ANY_CHANGE): void {
   const record = entry.record;
-  if (!record || entry.queued) return;
+  if (!record) return;
+  entry.changes |= kinds;
+  if (entry.queued) return;
   entry.queued = true;
   record.dirty.push(entry);
 }

@@ -1011,6 +1011,39 @@ describe("Scene Layer draw batching", () => {
       expect(pass()).toEqual({ draws: 1, drawn: 1, skipped: 2, reread: 0 });
     });
 
+    it("keeps a member's readiness answer when only its pose or style changed, and asks again for any other change", async () => {
+      const { frame, scene, quads } = await retainedLayer();
+      const quad = quads[1]!;
+      frame();
+      frame();
+      // From the opaque white it starts with to a translucent style: how it blends changes, so the Scene's readiness
+      // moves and every member is asked again.
+      applyOverlayVisualStyle(quad, { tint: [0.9, 0.1, 0.1, 0.5], opacity: 0.5 });
+      frame();
+      // A checked pass asks every member: count the asks of the pass alone.
+      verifyRetainedOverlayBatches(false);
+      const asked = vi.spyOn(quad.material!, "isReadyForSubMesh");
+      const asks = (change: () => void) => {
+        asked.mockClear();
+        change();
+        frame();
+        return asked.mock.calls.filter(([mesh]) => mesh === quad).length;
+      };
+      expect(asks(() => {})).toBe(0);
+      // A move, and a tint that stays translucent: the gate answers as before.
+      expect(asks(() => { quad.position.y += 0.25; })).toBe(0);
+      expect(asks(() => applyOverlayVisualStyle(quad, { tint: [0.2, 0.6, 0.1, 0.5], opacity: 0.75 }))).toBe(0);
+      // Any other change asks again: a Haptic-owned write, a visibility.
+      expect(asks(() => noteRenderChange(quad))).toBeGreaterThan(0);
+      expect(asks(() => { quad.visibility = 0.5; })).toBeGreaterThan(0);
+      // A move together with another change asks again too.
+      expect(asks(() => { quad.position.y -= 0.25; noteRenderChange(quad); })).toBeGreaterThan(0);
+      asked.mockRestore();
+      verifyRetainedOverlayBatches(true);
+      frame();
+      expect(sceneDrawBatchWork(scene)!.mismatchDetails).toEqual([]);
+    });
+
     it("reads a member again when a texture or Material it draws with changes state that has no write point", async () => {
       const { work, frame, quads, sprites } = await retainedLayer();
       frame();
