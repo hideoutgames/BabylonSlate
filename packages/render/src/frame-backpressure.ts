@@ -36,6 +36,8 @@ export class FrameBackpressure {
   private skips = 0;
   private skippedFrame = -1;
   private readonly depths = [0, 0, 0, 0, 0, 0];
+  /** The last Engine frame a view rendered in (`renderedThisFrame`). */
+  private renderedFrame = -1;
 
   private readonly submit: ((submitted: number) => FrameMarker | null) | null;
   private readonly frameId: () => number;
@@ -52,6 +54,12 @@ export class FrameBackpressure {
   }
 
   get mode(): FramesInFlight { return this.limit; }
+
+  /**
+   * Whether a view rendered in the Engine frame that is ending (read after this gate's own frame end): an Engine frame
+   * in which every view was capped, held or skipped submitted no GPU work of its own.
+   */
+  renderedThisFrame(): boolean { return this.renderedFrame === this.frameId(); }
 
   /**
    * Whether this Engine frame may render. Called by each view's loop that is about to render; a skip counts once per
@@ -76,6 +84,7 @@ export class FrameBackpressure {
   frameEnd(): void {
     if (!this.admitted) return;
     this.admitted = false;
+    this.renderedFrame = this.frameId();
     if (this.limit === "off" || !this.submit) return;
     const marker = this.submit(this.now());
     if (!marker) return;

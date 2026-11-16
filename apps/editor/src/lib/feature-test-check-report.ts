@@ -706,11 +706,11 @@ function stateProbeLines(samples: readonly FeatureTestBenchmarkSample[]): string
   const value = (sample: FeatureTestBenchmarkSample | undefined) =>
     sample?.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)}` : meanFrameMs(sample?.frames ?? null)?.toFixed(1) ?? "-";
   const lines = [
-    `  State probe, hold (${PROFILE_HOLD_WINDOWS} windows back to back at the control view, nothing changing): gpu busy · mean frame · cpu · frames by display intervals · readiness checks (ms) · graph builds · frames over 100 ms · renders skipped for frames in flight · deepest GPU queue · memory · state`,
+    `  State probe, hold (${PROFILE_HOLD_WINDOWS} windows back to back at the control view, nothing changing): gpu busy · mean frame (animation frames) · frames the view rendered per second · cpu · animation frames by display intervals · readiness checks (ms) · graph builds · frames over 100 ms · renders skipped for frames in flight · deepest GPU queue · memory · state`,
   ];
   for (const sample of hold) {
     const work = sample.work;
-    lines.push(`    ${pad(sample.label, 14)}${pad(value(sample), 6)}${pad(ms(meanFrameMs(sample.frames)), 8)}${pad(ms(sample.cpuMs), 8)}${pad(intervalsText(sample), 28)}${pad(work ? `${work.strictReadinessChecks} (${work.readinessProbeMs.toFixed(0)} ms)` : "-", 14)}${pad(work ? String(work.graphBuilds) : "-", 3)}${pad(String(sample.frames?.stalls ?? "-"), 3)}${pad(String(sample.framesInFlight?.skipped ?? "-"), 4)}${pad(sample.inFlightPeak === undefined ? "-" : String(sample.inFlightPeak), 3)}${pad(memoryText(sample) || "-", 34)}${profileFrameState(samples, sample) ?? "-"}`.trimEnd());
+    lines.push(`    ${pad(sample.label, 14)}${pad(value(sample), 6)}${pad(ms(meanFrameMs(sample.frames)), 8)}${pad(sample.presentation && sample.presentation.ms > 0 ? ((sample.presentation.drawn * 1000) / sample.presentation.ms).toFixed(0) : "-", 4)}${pad(ms(sample.cpuMs), 8)}${pad(intervalsText(sample), 28)}${pad(work ? `${work.strictReadinessChecks} (${work.readinessProbeMs.toFixed(0)} ms)` : "-", 14)}${pad(work ? String(work.graphBuilds) : "-", 3)}${pad(String(sample.frames?.stalls ?? "-"), 3)}${pad(String(sample.framesInFlight?.skipped ?? "-"), 4)}${pad(sample.inFlightPeak === undefined ? "-" : String(sample.inFlightPeak), 3)}${pad(memoryText(sample) || "-", 34)}${profileFrameState(samples, sample) ?? "-"}`.trimEnd());
   }
   // Each reset: the baseline before it (the last row of the control view before), then its two baselines after.
   const resets = samples.filter((sample) => /^state after .+ 1$/.test(sample.label));

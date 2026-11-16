@@ -76,6 +76,16 @@ describe("frame backpressure", () => {
     expect(gate.stats().inFlightCounts).toEqual([0, 1, 2, 0, 0, 0]);
   });
 
+  it("says whether a view rendered in the Engine frame that is ending", () => {
+    const { gate, run } = gpu();
+    run();
+    expect(gate.renderedThisFrame()).toBe(true);
+    // Two frames queued: the next one renders nothing.
+    run();
+    run();
+    expect(gate.renderedThisFrame()).toBe(false);
+  });
+
   it("submits nothing for a frame no view rendered, and renders every frame without a marker source", () => {
     const { gate, queue } = gpu();
     gate.frameEnd();

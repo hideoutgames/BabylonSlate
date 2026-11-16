@@ -3241,7 +3241,8 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "setGpuBusyProbeDebug") {
-        const probe = engineGpuBusyProbe(engine);
+        // Measured per rendered frame: a capped, held or skipped Engine frame submitted nothing of its own.
+        const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
       }
       if (command.type === "setRenderTargetCapturesDebug") {

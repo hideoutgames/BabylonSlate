@@ -63,15 +63,23 @@ export class GpuBusyProbe {
   private readonly submit: (submitted: number) => Marker | null;
   private readonly now: () => number;
   private readonly schedule: (callback: () => void) => void;
+  private readonly rendered: () => boolean;
 
   constructor(
     submit: (submitted: number) => Marker | null,
     now: () => number = () => performance.now(),
     schedule: (callback: () => void) => void = (callback) => { setTimeout(callback, 0); },
+    /**
+     * Whether the ending Engine frame rendered anything. A frame that rendered nothing (a frame cap's off slot, a held
+     * or skipped frame) is not measured: its marker would signal right after the previous frame's and count as a frame
+     * of almost no GPU time.
+     */
+    rendered: () => boolean = () => true,
   ) {
     this.submit = submit;
     this.now = now;
     this.schedule = schedule;
+    this.rendered = rendered;
   }
 
   /** Starts a measurement, discarding the previous one. */
@@ -95,7 +103,7 @@ export class GpuBusyProbe {
 
   /** Call once at the end of every Engine frame. */
   frameEnd(): void {
-    if (!this.active) return;
+    if (!this.active || !this.rendered()) return;
     if (this.outstanding.length >= MAX_OUTSTANDING) { this.skipped += 1; return; }
     const marker = this.submit(this.now());
     if (!marker) return;
@@ -178,19 +186,24 @@ export function engineFrameMarkers(engine: AbstractEngine): ((submitted: number)
 }
 
 /** A probe whose markers are WebGL2 fences, polled without blocking. */
-export function createFenceGpuBusyProbe(gl: FenceContext, now?: () => number, schedule?: (callback: () => void) => void): GpuBusyProbe {
-  return new GpuBusyProbe((submitted) => fenceFrameMarker(gl, submitted), now, schedule);
+export function createFenceGpuBusyProbe(
+  gl: FenceContext, now?: () => number, schedule?: (callback: () => void) => void, rendered?: () => boolean,
+): GpuBusyProbe {
+  return new GpuBusyProbe((submitted) => fenceFrameMarker(gl, submitted), now, schedule, rendered);
 }
 
 const probes = new WeakMap<AbstractEngine, GpuBusyProbe | null>();
 
-/** The Engine's probe (one per Engine: GPU work is Engine-wide), installed at its frame end; null without fences. */
-export function engineGpuBusyProbe(engine: AbstractEngine): GpuBusyProbe | null {
+/**
+ * The Engine's probe (one per Engine: GPU work is Engine-wide), installed at its frame end; null without fences.
+ * `rendered` (the first caller's) says whether the ending Engine frame rendered anything.
+ */
+export function engineGpuBusyProbe(engine: AbstractEngine, rendered?: () => boolean): GpuBusyProbe | null {
   if (probes.has(engine)) return probes.get(engine)!;
   let probe: GpuBusyProbe | null = null;
   const gl = (engine as unknown as { _gl?: WebGL2RenderingContext; webGLVersion?: number })._gl;
   const version = (engine as unknown as { webGLVersion?: number }).webGLVersion;
-  if (gl && version === 2 && typeof gl.fenceSync === "function") probe = createFenceGpuBusyProbe(gl);
+  if (gl && version === 2 && typeof gl.fenceSync === "function") probe = createFenceGpuBusyProbe(gl, undefined, undefined, rendered);
   probes.set(engine, probe);
   if (probe) {
     const observer = engine.onEndFrameObservable.add(() => probe!.frameEnd());
