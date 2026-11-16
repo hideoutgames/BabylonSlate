@@ -1327,6 +1327,8 @@ describe("the lighting CI gate", () => {
     world.handle.setRenderSettings(normalizeRenderProjectSettings({
       shadows: { screenShadows: "high" },
     }));
+    // The march runs under a shadowed sun only.
+    world.place(sun({ castShadows: true }));
     const surfaces = unlitSurfaces(world);
     await settle(world);
     const tasks = world.handle.renderTaskNames();
@@ -1351,6 +1353,8 @@ describe("the lighting CI gate", () => {
     const screenShadows = (level: "low" | "high") =>
       world.handle.setRenderSettings(normalizeRenderProjectSettings({ shadows: { screenShadows: level } }));
     screenShadows("high");
+    // The march runs under a shadowed sun only.
+    world.place(sun({ castShadows: true }));
     await settle(world);
     const tasks = world.handle.renderTaskNames();
     const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
@@ -1372,6 +1376,8 @@ describe("the lighting CI gate", () => {
     const screenShadows = (level: "off" | "high") =>
       world.handle.setRenderSettings(normalizeRenderProjectSettings({ shadows: { screenShadows: level } }));
     screenShadows("high");
+    // The march runs under a shadowed sun only.
+    world.place(sun({ castShadows: true }));
     await settle(world);
     const readers = () => Object.values(compiledEffects(world.engine)).filter((effect) => /^#define HAPTIC_SCREEN_SHADOWS$/m.test(effect.defines));
     // A program's shaders, without its defines: another variant of a reader's shaders is a lit program linked again.
@@ -1394,6 +1400,36 @@ describe("the lighting CI gate", () => {
     rendered = (await world.frame()).view?.rendered === true;
     expect({ rendered, readers: readers(), variants: variants(before), reading: before.length > 0, marching: world.handle.renderTaskNames().includes("Screen shadows"), reads: [...new Set(reads())] })
       .toEqual({ rendered: true, readers: before, variants: variantsBefore, reading: true, marching: false, reads: [0] });
+  });
+
+  // The geometry pass idles with the march: meshes it has not drawn may compile their geometry variant when it resumes,
+  // which the view's readiness holds as for a graph change (the driver finishes it here).
+  it.each(MODELS)("Screen-Space Shadows idle while the sun casts none, its draws reading none, and march once it casts, without a build: %s", async (model) => {
+    const world = playWorld(model, actors());
+    Object.assign(world.engine.getCaps(), { texelFetch: true });
+    world.handle.setRenderSettings(normalizeRenderProjectSettings({ shadows: { screenShadows: "high" } }));
+    world.place(sun({ castShadows: false }));
+    await settle(world);
+    const tasks = world.handle.renderTaskNames();
+    world.driver.arm();
+    const builds = vi.spyOn(FrameGraph.prototype, "buildAsync");
+    const uniforms = vi.spyOn(Effect.prototype, "setFloat4");
+    /** The frame's lit draws' screen-shadow reads, and how many marches it bound. */
+    const frame = async () => {
+      uniforms.mockClear();
+      await world.frame();
+      const calls = uniforms.mock.calls;
+      return { reads: [...new Set(calls.filter(([name]) => name === "hapticScreenShadowTerms").map(([, on]) => on))],
+        marches: calls.filter(([name]) => name === "ssMarch").length };
+    };
+    expect(await frame()).toEqual({ reads: [0], marches: 0 });
+    world.place(sun({ castShadows: true }));
+    world.driver.release();
+    let marching = { reads: [0], marches: 0 };
+    for (let index = 0; index < 8 && marching.marches === 0; index++) marching = await frame();
+    // Other passes (shadow maps, probes) bind the placeholder with the read off; the objects read the march.
+    expect({ marches: marching.marches, reads: marching.reads.includes(1), builds: builds.mock.calls.length, tasks: world.handle.renderTaskNames() })
+      .toEqual({ marches: 1, reads: true, builds: 0, tasks });
   });
 
   /** The world view's Anti-Aliasing, on a device that multisamples at up to 4. */

@@ -7,6 +7,7 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { Effect } from "@babylonjs/core/Materials/effect";
 import { PrecisionDate } from "@babylonjs/core/Misc/precisionDate";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
@@ -60,6 +61,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
 import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
+import { screenShadowsForPass } from "./screen-shadows";
 import { hapticLightBuffer, hapticShadowedSun } from "./haptic-lights";
 import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { configureCutoutSorting } from "./sorting";
@@ -2052,6 +2054,7 @@ it.each([
   ["reflections", { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true } }, false],
   ["Screen-Space Shadows", {}, true],
 ] as const)("keeps a geometry pass that also feeds %s before the objects with every mesh", async (_name, effects, screenShadows) => {
+  // No light here casts shadows: the march idles (the fog keeps the geometry pass running), yet stays planned.
   // Normals, reflectivity and caster marks come only from the meshes' own draws, and the objects read the shadows.
   const { graph, skipped } = await fogHost(effects, undefined, (scene) => {
     opaqueAndBlended(scene);
@@ -2061,8 +2064,110 @@ it.each([
   }, { seedsFromSceneDepth: true });
   const tasks = graph.taskNames();
   expect(tasks.indexOf("Spatial Geometry")).toBeLessThan(tasks.indexOf("Forward objects"));
-  expect(skipped()).toEqual([]);
+  expect(skipped()).toEqual(screenShadows ? ["Screen shadows"] : []);
   expect(spatialGeometry(graph).objectList.meshes.map((mesh) => mesh.name)).toEqual(["opaque", "blended"]);
+  graph.dispose();
+});
+
+/** A world view with Screen-Space Shadows at High and no Fog Volume: a sun (shadowed as `shadowed` says) over a plane. */
+async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}) {
+  const { engine, scene, camera } = host();
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  engine._features.supportCSM = true;
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256 }),
+  });
+  allowSceneScreenShadows(scene, () => true);
+  updateSceneRenderingSettings(scene, undefined, undefined, { screenShadows: "high" });
+  const sun = new DirectionalLight("sun", new Vector3(0, -1, 0.2), scene);
+  MeshBuilder.CreatePlane("receiver", { size: 2 }, scene).position.z = 1;
+  const controller = sceneShadowController(scene);
+  controller.register(sun, shadowed);
+  controller.sync();
+  const graph = new ForwardSceneFrameGraph(scene);
+  await graph.prepare(camera);
+  /**
+   * The first presented frame's skipped tasks, and whether the objects' draws read the march's target (else the lit
+   * placeholder, read off). A shadow map's change holds a frame or two for its casters' readiness.
+   */
+  const frame = () => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const captured = captureRenderFrame(engine, () => graph.render(camera));
+      if ((captured.value as { rendered?: boolean }).rendered === false) continue;
+      expect(captured.value).toEqual({ path: "frameGraph" });
+      const skipped = captured.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
+      // The objects pass of the graph now prepared (a projection change rebuilds it).
+      const objectsPass = (graph as unknown as { objects: FrameGraphObjectRendererTask }).objects.objectRenderer.renderPassId;
+      return { skipped: skipped.sort(), reads: screenShadowsForPass(scene, objectsPass) !== null };
+    }
+    throw new Error("The view presented no frame.");
+  };
+  /** Casts or stops casting the sun's shadows; the view's preparation writes the light block the next frame draws with. */
+  const cast = async (on: boolean) => {
+    controller.register(sun, on);
+    controller.sync();
+    await graph.prepare(camera);
+  };
+  return { scene, camera, graph, frame, cast };
+}
+const SCREEN_SHADOW_TASKS = ["Screen shadows", "Spatial Geometry", "Spatial Geometry Clear"];
+
+it("idles Screen-Space Shadows and the geometry pass without a shadowed sun, reading none, and marches again once the sun casts, without rebuilding", async () => {
+  const { scene, graph, frame, cast } = await screenShadowsHost(true);
+  const builds = graph.diagnostics().graphBuilds;
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  await cast(false);
+  expect(hapticShadowedSun(scene)).toBeNull();
+  expect(frame()).toEqual({ skipped: SCREEN_SHADOW_TASKS, reads: false });
+  await cast(true);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
+  graph.dispose();
+});
+
+it("idles Screen-Space Shadows and the geometry pass for an orthographic camera, and marches again once it turns perspective", async () => {
+  const { camera, graph, frame } = await screenShadowsHost(true);
+  camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+  Object.assign(camera, { orthoLeft: -2, orthoRight: 2, orthoTop: 2, orthoBottom: -2 });
+  await graph.prepare(camera);
+  expect(frame()).toEqual({ skipped: SCREEN_SHADOW_TASKS, reads: false });
+  camera.mode = Camera.PERSPECTIVE_CAMERA;
+  await graph.prepare(camera);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  graph.dispose();
+});
+
+it("keeps the geometry pass for ambient occlusion while Screen-Space Shadows idle", async () => {
+  const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
+  expect(frame()).toEqual({ skipped: ["Screen shadows"], reads: false });
+  graph.dispose();
+});
+
+// Bloom at weight 0 and Real-Time Reflections at strength 0 in Scene Linear write their input unchanged
+// (`withoutIdleStages`): the chain leaves them out. Ambient occlusion at strength 0 is not exact (its compose's floor).
+it.each([
+  ["bloom", { bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true, weight: 0 } }, "Scene Effects Bloom", false],
+  ["bloom", { bloom: { ...DEFAULT_RENDER_EFFECTS.bloom, enabled: true, weight: 0.15 } }, "Scene Effects Bloom", true],
+  ["reflections", { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, strength: 0 } }, "Scene Reflections", false],
+  ["reflections", { reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true, strength: 0.5 } }, "Scene Reflections", true],
+  ["ambient occlusion", { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, strength: 0 } },
+    "Scene Ambient Occlusion", true],
+] as const)("in Scene Linear, builds %s's passes only where they change the image (%o)", async (_name, effects, task, built) => {
+  const { engine, scene, camera } = host();
+  Object.assign(engine.getCaps(), {
+    maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
+    textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
+  });
+  updateSceneRenderingSettings(scene, {
+    mode: "pbr",
+    effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { ...DEFAULT_RENDER_EFFECTS.colorPipeline, mode: "sceneLinear" }, ...effects },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  expect(await graph.prepare(camera)).toMatchObject({ path: "frameGraph" });
+  expect(graph.taskNames().includes(task)).toBe(built);
   graph.dispose();
 });
 
