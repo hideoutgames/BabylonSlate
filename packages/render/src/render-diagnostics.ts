@@ -129,6 +129,12 @@ export type RenderDiagnostics = {
      * an ask on every render would have decided otherwise (`mismatches`). Absent without Mirrors.
      */
     mirrorPolls?: { skipped: number; mismatches: number };
+    /**
+     * The Scene's Capture Only Actors capture lists made by the walk of every mesh (`checks`: the periodic ones, and
+     * every list while `verifyCaptureActorLists` is on), and those the actors' meshes would have listed differently
+     * (`mismatches`, which must stay 0). Absent before the first.
+     */
+    captureActorLists?: { checks: number; mismatches: number };
   };
   /**
    * Each Scene Layer's own renderer work, in draw order (`SceneLayerCompositor.diagnostics`): what `rendererWork` is

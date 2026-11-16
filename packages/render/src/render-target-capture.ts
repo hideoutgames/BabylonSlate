@@ -40,7 +40,10 @@ import { buildViewProjectionMatrix, drawsInsidePlanes } from "./planar-mirror";
 import { drawBorrowedTarget } from "./framegraph-borrowed-draw";
 import { createRenderTargetDepthMaterial, createRenderTargetNormalMaterial } from "./render-target-normal-material";
 import type { ResourceLease } from "./resource-cache";
-import { isRenderTargetCaptureCandidate, renderTargetCaptureDrawing } from "./render-target-capture-state";
+import {
+  ACTOR_LIST_FULL_CHECK_INTERVAL, isRenderTargetCaptureCandidate, noteCaptureActorListCheck, renderTargetCaptureDrawing,
+  verifyingCaptureActorLists,
+} from "./render-target-capture-state";
 import { admittedSceneMeshes, admittedSceneParticles } from "./scene-stream-admission";
 import { acquireAuthoredMaterialVariant, type AuthoredMaterialVariant } from "./material-compiler";
 import { retireOwnedEffect } from "./owned-effect-retirement";
@@ -199,6 +202,8 @@ type Target = CaptureBuffer & {
   overrides: Set<AbstractMesh>;
   pendingOverrides: Set<AbstractMesh>;
   meshes: AbstractMesh[];
+  /** Lists made from the actors' meshes since the last full walk (`renderList`). */
+  actorLists: number;
   particles: IParticleSystem[];
   published: boolean;
 };
@@ -212,6 +217,9 @@ export class RenderTargetCaptures {
   private readonly captures = new Map<string, Capture>();
   private readonly actorRoots = new Map<string, () => AbstractMesh | null>();
   private readonly rootOwners = new Map<AbstractMesh, string>();
+  /** `includedMeshes` scratch, and the full walk's list a check compares with. */
+  private readonly included = new Set<AbstractMesh>();
+  private readonly checkedMeshes: AbstractMesh[] = [];
   private rootsDirty = true;
   /** The pass that stores a Fast colour capture's drawn image display-referred; made at the first such draw. */
   private conversion: DisplayConversion | null = null;
@@ -780,7 +788,7 @@ export class RenderTargetCaptures {
       const target: Target = {
         key, definition, quality, ...buffer, scene, linear: this.scene.imageProcessingConfiguration.applyByPostProcess, owner, depth, normals,
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
-        overrides: new Set(), pendingOverrides: new Set(), meshes: [], particles: [], published: false,
+        overrides: new Set(), pendingOverrides: new Set(), meshes: [], actorLists: 0, particles: [], published: false,
       };
       this.targets.set(guid, target);
       return target;
@@ -838,7 +846,7 @@ export class RenderTargetCaptures {
         key, definition, quality, texture, lease, owner, linear: false,
         view: { renderer, camera, postProcess: null, postProcessRevision: -1, outlines: null, outlineRevision: -1, shadows },
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
-        overrides: new Set(), pendingOverrides: new Set(), meshes, particles, published: false,
+        overrides: new Set(), pendingOverrides: new Set(), meshes, actorLists: 0, particles, published: false,
       };
       this.targets.set(guid, target);
       return target;
@@ -900,10 +908,15 @@ export class RenderTargetCaptures {
     }
   }
   /**
-   * What a Fast capture draws: the eligible meshes its camera sees. Babylon culls no explicit list, so without the
-   * test a capture drew every eligible mesh of the Scene, behind its camera included. A mesh is tested where the
-   * capture's draw puts it: by the world matrix it holds under the current render id, as that draw reads it. An
-   * emitter stays whatever the view: its particles draw only while it is in the list.
+   * What a capture draws: the eligible meshes its camera sees, in Scene order. Babylon culls no explicit list, so
+   * without the test a capture drew every eligible mesh of the Scene, behind its camera included. A mesh is tested
+   * where the capture's draw puts it: by the world matrix it holds under the current render id, as that draw reads it.
+   * An emitter stays whatever the view: its particles draw only while it is in the list.
+   *
+   * A Capture Only Actors capture tests only the meshes under its actors' roots (`includedMeshes`): a mesh one of its
+   * actors owns descends from that actor's root, so the list is the one the walk of every mesh makes. Every
+   * `ACTOR_LIST_FULL_CHECK_INTERVAL`th list, and every list while `verifyCaptureActorLists` is on, is made by that walk
+   * instead, and a list the actors' meshes would have made differently is counted.
    */
   private renderList(capture: Capture, target: Target): AbstractMesh[] {
     const meshes = admittedSceneMeshes(this.scene) ?? this.scene.meshes;
@@ -911,12 +924,45 @@ export class RenderTargetCaptures {
     buildViewProjectionMatrix(this.scene, capture.camera, width / height, this.projection);
     capture.camera.getViewMatrix().multiplyToRef(this.projection, this.viewProjection);
     Frustum.GetPlanesToRef(this.viewProjection, this.planes);
+    const actors = capture.settings.captureOnlyActors;
+    if (actors && !verifyingCaptureActorLists() && ++target.actorLists < ACTOR_LIST_FULL_CHECK_INTERVAL)
+      return this.listMeshes(capture, target, meshes, this.includedMeshes(capture), target.meshes);
+    this.listMeshes(capture, target, meshes, null, target.meshes);
+    if (actors) {
+      target.actorLists = 0;
+      const listed = this.listMeshes(capture, target, meshes, this.includedMeshes(capture), this.checkedMeshes);
+      let mismatch = listed.length !== target.meshes.length;
+      for (let index = 0; !mismatch && index < listed.length; index++) mismatch = listed[index] !== target.meshes[index];
+      noteCaptureActorListCheck(this.scene, mismatch);
+      listed.length = 0;
+    }
+    return target.meshes;
+  }
+  /** Writes into `out` the meshes of `meshes` the capture draws, of those in `included` when given. */
+  private listMeshes(capture: Capture, target: Target, meshes: readonly AbstractMesh[],
+    included: ReadonlySet<AbstractMesh> | null, out: AbstractMesh[]): AbstractMesh[] {
     let count = 0;
     for (const mesh of meshes) {
-      if (this.isEligible(capture, target, mesh) && (this.emitters.has(mesh) || drawsInsidePlanes(mesh, this.planes))) target.meshes[count++] = mesh;
+      if (included && !included.has(mesh)) continue;
+      if (this.isEligible(capture, target, mesh) && (this.emitters.has(mesh) || drawsInsidePlanes(mesh, this.planes))) out[count++] = mesh;
     }
-    target.meshes.length = count;
-    return target.meshes;
+    out.length = count;
+    return out;
+  }
+  /**
+   * The capture's actors' roots and every mesh under them, into a reused set: every mesh its actors own, and meshes
+   * under them that another actor owns, which `isEligible` then leaves out.
+   */
+  private includedMeshes(capture: Capture): ReadonlySet<AbstractMesh> {
+    this.refreshRoots();
+    const included = this.included;
+    included.clear();
+    for (const [root, id] of this.rootOwners) {
+      if (!capture.includeIds.has(id)) continue;
+      included.add(root);
+      for (const mesh of root.getChildMeshes(false)) included.add(mesh);
+    }
+    return included;
   }
   private isEligible(capture: Capture, target: Target, mesh: AbstractMesh): boolean {
     if (mesh.isDisposed() || !mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || !(mesh.layerMask & capture.camera.layerMask)) return false;

@@ -39,7 +39,9 @@ import {
  *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
  *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`),
  *      HAPTIC_PERF_VERIFY_MIRRORS=1 (Play's Mirror surfaces also ask what changed on every render, as before a moved
- *      view skipped it, and count each render that would have decided otherwise: `rendererWork.mirrorPolls.mismatches`).
+ *      view skipped it, and count each render that would have decided otherwise: `rendererWork.mirrorPolls.mismatches`),
+ *      HAPTIC_PERF_VERIFY_CAPTURES=1 (Play's Capture Only Actors captures also list by the walk of every mesh, which
+ *      must agree with the list from their actors' meshes: `rendererWork.captureActorLists.mismatches`).
  *
  * Each Play window reports the view's own frames (`view`, `drawnFps`: animation frames keep their cadence while the
  * view holds its picture), and from half-second readings its frame's main-thread time, draws, and both by pass
@@ -80,6 +82,8 @@ const IDLE_HALF_RATE = process.env.HAPTIC_PERF_IDLE_HALF_RATE === "1";
 const VERIFY_JOURNAL = process.env.HAPTIC_PERF_VERIFY_JOURNAL === "1";
 /** Mirror surfaces in Play also ask what changed on every render (the measured frames carry its cost). */
 const VERIFY_MIRRORS = process.env.HAPTIC_PERF_VERIFY_MIRRORS === "1";
+/** Capture Only Actors captures in Play also list by the walk of every mesh (the measured frames carry its cost). */
+const VERIFY_CAPTURES = process.env.HAPTIC_PERF_VERIFY_CAPTURES === "1";
 const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
   .split(",")
   .map((scene) => scene.trim())
@@ -98,6 +102,7 @@ type PlayHost = {
     verifyRetainedOverlayBatches: (enabled: boolean) => void;
     verifyRenderChangeJournal: (enabled: boolean) => void;
     verifyMirrorContentPolls: (enabled: boolean) => void;
+    verifyCaptureActorLists: (enabled: boolean) => void;
   };
 };
 
@@ -348,6 +353,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (VERIFY_BATCHES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRetainedOverlayBatches(true));
   if (VERIFY_JOURNAL) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyRenderChangeJournal(true));
   if (VERIFY_MIRRORS) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyMirrorContentPolls(true));
+  if (VERIFY_CAPTURES) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.verifyCaptureActorLists(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
     // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
