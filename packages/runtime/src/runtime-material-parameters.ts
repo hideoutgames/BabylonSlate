@@ -20,6 +20,8 @@ type State = {
   authoredNames?: Set<string>;
   defaults: ReadonlyMap<string, MaterialParameterValue>;
   values: Map<string, MaterialParameterValue>;
+  /** Names whose value the renderer was sent since the material was last assigned; only those can skip an unchanged write. */
+  sent?: Set<string>;
 };
 const copy = copyMaterialParameterValue;
 
@@ -27,6 +29,12 @@ const equal = (left: MaterialParameterValue, right: MaterialParameterValue | und
   right?.kind === left.kind && (left.kind === "float" ? left.value === (right as typeof left).value
     : left.kind === "texture" ? left.textureAssetGuid === (right as typeof left).textureAssetGuid
       : left.value.every((channel, index) => channel === (right as typeof left).value[index]));
+
+/** The same value, channel by channel (`Object.is`, so -0 against 0 differs). */
+const same = (left: MaterialParameterValue, right: MaterialParameterValue | undefined): boolean =>
+  right?.kind === left.kind && (left.kind === "float" ? Object.is(left.value, (right as typeof left).value)
+    : left.kind === "texture" ? left.textureAssetGuid === (right as typeof left).textureAssetGuid
+      : left.value.length === (right as typeof left).value.length && left.value.every((channel, index) => Object.is(channel, (right as typeof left).value[index])));
 
 const sameDefinition = (left: Definition, right: Definition): boolean => {
   if (left.domain !== right.domain || left.planHash !== right.planHash) return false;
@@ -101,7 +109,23 @@ export class RuntimeMaterialParameters {
     if (!this.accepts(material, name, value)) return false;
     const state = this.state(material)!;
     state.values.set(name, copy(value)); state.revision++;
+    (state.sent ??= new Set()).add(name);
     return true;
+  }
+
+  /**
+   * Whether a script write of `value` would send the renderer what it already has: the parameter
+   * holds that value and was sent since the material's last assignment. A value only seeded from
+   * the asset's default was never sent, so its first write still compiles the private instance.
+   */
+  unchanged(material: MaterialInstanceObject, name: string, value: MaterialParameterValue): boolean {
+    const state = this.state(material);
+    return !!state?.sent?.has(name) && same(value, state.values.get(name));
+  }
+
+  /** The renderer is assigned the material again: the next write of each parameter is sent. */
+  resend(material: MaterialInstanceObject): void {
+    this.state(material)?.sent?.clear();
   }
 
   /** Atomic reapply boundary; validates every value before changing any state. */
@@ -116,6 +140,7 @@ export class RuntimeMaterialParameters {
     }
     state.defaults = defaults;
     state.revision++;
+    state.sent?.clear();
     return true;
   }
 

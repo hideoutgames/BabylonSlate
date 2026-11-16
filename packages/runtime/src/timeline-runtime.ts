@@ -29,6 +29,7 @@ import {
 } from "@haptic/object-model";
 import { defaultValueForMember, jsIdent } from "@haptic/scripting";
 import { copyTransform } from "./actor-world-transform";
+import { unchangedComponentWrite } from "./runtime-property-writes";
 import { applyTweenTransform } from "./tween-transforms";
 
 /** What Timeline playback needs from the running game. */
@@ -452,19 +453,27 @@ export class TimelineRuntime {
       return;
     }
     if (target.kind === "visible") {
-      object.setVariable("visible", value === true);
-      if (object instanceof ActorComponent) this.host.refreshComponent(object, "visible");
+      this.store(object, "visible", value === true);
       return;
     }
     if (target.kind === "variable") {
-      object.setVariable(target.property, timelineStoredValue(track, value, object.getVariable(target.property), object instanceof ActorComponent));
-      if (object instanceof ActorComponent) this.host.refreshComponent(object, target.property);
+      this.store(object, target.property, timelineStoredValue(track, value, object.getVariable(target.property), object instanceof ActorComponent));
       return;
     }
     const component = this.trackComponent(object, actorId, target.componentId);
     if (!component) return;
-    component.setVariable(target.property, timelineStoredValue(track, value, component.getVariable(target.property), true));
-    this.host.refreshComponent(component, target.property);
+    this.store(component, target.property, timelineStoredValue(track, value, component.getVariable(target.property), true));
+  }
+
+  /** Stores a key's value; a component refreshes unless the property already held it (a held key sends nothing). */
+  private store(object: Actor | ActorComponent, name: string, stored: unknown): void {
+    if (!(object instanceof ActorComponent)) {
+      object.setVariable(name, stored);
+      return;
+    }
+    if (unchangedComponentWrite(object, name, object.getVariable(name), stored)) return;
+    object.setVariable(name, stored);
+    this.host.refreshComponent(object, name);
   }
 
   /** A component track's component: on an actor by its authored id, or a Component proxy's own (its id is the proxy's). */

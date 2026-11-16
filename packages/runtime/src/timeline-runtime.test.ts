@@ -85,6 +85,23 @@ describe("TimelineRuntime", () => {
     expect(clip.playback).toMatchObject({ time: 2, playing: false });
   });
 
+  it("refreshes a component only while its track changes the value, not while a key holds it", () => {
+    const { runtime, owner, light, clip, refreshComponent } = setup({ length: 4, objects: [{ id: "o", actorId: "door", tracks: [
+      { id: "int", target: { kind: "component", componentId: "light", property: "intensity" }, valueType: "float", keys: [key("i0", 0, 1), key("i1", 2, 3)] },
+    ] }] });
+    runtime.play(clip);
+    runtime.advance(1, [owner], () => true);
+    expect(light.getVariable("intensity")).toBe(2);
+    expect(refreshComponent).toHaveBeenCalledTimes(1);
+    runtime.advance(1, [owner], () => true);
+    expect(refreshComponent).toHaveBeenCalledTimes(2);
+    // Past the last key the value holds at 3.
+    runtime.advance(1, [owner], () => true);
+    runtime.advance(0.5, [owner], () => true);
+    expect(light.getVariable("intensity")).toBe(3);
+    expect(refreshComponent).toHaveBeenCalledTimes(2);
+  });
+
   it("auto plays once its owner can run, and waits while it cannot", () => {
     const { runtime, owner, clip, door } = setup({ autoPlay: true });
     runtime.advance(0.5, [owner], () => false);

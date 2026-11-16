@@ -1,6 +1,7 @@
 import type { CommandMessage } from "@haptic/bridge";
 import {
   CUSTOM_COLLISION_PRESET,
+  isOverlayScrollClass,
   isUIControl2DClass,
   parseOverlayVisualStyle,
   supportsOverlayVisualStyle,
@@ -39,7 +40,7 @@ interface RuntimePropertyWritesOptions {
 interface RuntimePropertyWritesHost {
   world(): World;
   simulation(): Pick<SimulationSession, "canEditActor">;
-  materialParameters(): Pick<RuntimeMaterialParameters, "accepts" | "set">;
+  materialParameters(): Pick<RuntimeMaterialParameters, "accepts" | "set" | "unchanged">;
   renderSlots(): Pick<RenderSlots, "recordedSlot">;
   renderEmitter(): Pick<RenderCommandEmitter,
     "rendersComponent" | "queueDeformers" | "emitActorDeformers" | "emitMaterialAssignments" |
@@ -57,6 +58,28 @@ interface RuntimePropertyWritesHost {
   layers(): Pick<SceneLayers, "get">;
   sceneRealizer(): Pick<SceneRealizer, "loadId">;
   emit(command: CommandMessage): void;
+}
+
+/**
+ * Whether storing `next` over the component's `stored` value changes nothing, so the write needs no
+ * `refreshComponent`: a script, timeline or tween writing the value a property already has sends no
+ * command and syncs no physics or layout. Only equal strings, numbers and booleans (`Object.is`, so
+ * -0 against 0 applies) qualify, because an array or object may have been changed in place and
+ * written back. Excluded, because their refresh does more than send the value:
+ * - `layer`, `mask` and `overlapMask`, which make the collider's preset Custom;
+ * - `materialGuid`, which assigns the material again;
+ * - any Particle component property, whose `assignParticle` restarts the system;
+ * - any 2D Anchor property, which re-anchors every anchored actor from its current pose;
+ * - a scroll box's `scrollX` and `scrollY`, which take the clamped scroll back from layout.
+ * Callers compare in the stored form, after the normalization they store.
+ */
+export function unchangedComponentWrite(component: ActorComponent, name: string, stored: unknown, next: unknown): boolean {
+  if (!Object.is(stored, next)) return false;
+  const kind = typeof next;
+  if (kind !== "string" && kind !== "number" && kind !== "boolean") return false;
+  if (name === "layer" || name === "mask" || name === "overlapMask" || name === "materialGuid") return false;
+  if (component.classId === "ParticleComponent" || component.classId === "2DAnchorComponent") return false;
+  return !((name === "scrollX" || name === "scrollY") && isOverlayScrollClass(component.classId));
 }
 
 /**
@@ -193,6 +216,13 @@ export class RuntimePropertyWrites {
       const slotId = this.host.renderSlots().recordedSlot(owner);
       if (slotId === undefined) return false;
       if (!this.host.renderEmitter().rendersComponent(owner, component)) return false;
+      // A script writing the value the renderer already has (a Tick graph holding a parameter) sends
+      // nothing; the value is still recorded, as every accepted write is. Post-process writes always
+      // send: the renderer drops one while its owner loads, and only a later write repairs that.
+      if (!inspector && validated && this.host.materialParameters().unchanged(material, parameterName, parameter)) {
+        this.host.materialParameters().set(material, parameterName, parameter);
+        return true;
+      }
       this.host.emit({ type: "setMaterialParameter", slotId, componentId: component.guid,
         materialAssetGuid: material.materialAssetGuid, parameterName, parameter });
     }
