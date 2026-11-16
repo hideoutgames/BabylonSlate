@@ -3,7 +3,7 @@ import { rewriteRenderList } from "./observed-render-list";
 import { activeRenderFrameCapture } from "./render-frame-report";
 import { pausedSceneRedrawIssue, renderSceneWithGameTime } from "./scene-game-time";
 import { PostProcessRetirement } from "./post-process-retirement";
-import { renderTargetCaptureDrawing } from "./render-target-capture-state";
+import { captureActorListDiagnostics, renderTargetCaptureDrawing } from "./render-target-capture-state";
 import { createScenePostProcessGraph, type ScenePostProcessGraph } from "./scene-post-process-graph";
 import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToTextureTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
@@ -383,7 +383,9 @@ export class ForwardSceneFrameGraph {
     this.measureWork = true;
     const shadowJournal = findSceneShadowController(this.scene)?.journalDiagnostics();
     const mirrors = mirrorDiagnostics(this.scene);
+    const captureLists = captureActorListDiagnostics(this.scene);
     return {
+      ...(captureLists ? { captureActorLists: { ...captureLists } } : {}),
       ...(shadowJournal ? { shadowJournal } : {}),
       ...(mirrors ? { mirrorPolls: { skipped: mirrors.skippedPolls, mismatches: mirrors.pollMismatches } } : {}),
       ...this.work, strictReadinessChecks: this.strictReadinessChecks, outlineReadinessChecks: this.outlineChecks,
