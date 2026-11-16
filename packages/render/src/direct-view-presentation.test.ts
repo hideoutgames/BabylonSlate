@@ -352,6 +352,7 @@ describe("direct view presentation", () => {
       const other = view();
       draw(0x40a0ff);
       expect([source.parentNode, game.target.pixel, other.target.pixel]).toEqual([null, 0x40a0ff, 0x40a0ff]);
+      setRegisteredViewEnabled(other.view, false);
       other.release();
       draw(0x10ff10);
       expect(source.parentNode).toBe(game.panel);
