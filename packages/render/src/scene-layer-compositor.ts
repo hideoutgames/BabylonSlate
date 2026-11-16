@@ -29,6 +29,7 @@ import {
 } from "@haptic/core";
 import { installEngineDefaultMaterial } from "./default-material";
 import { sceneDrawBatchWork, setSceneDrawBatching, type OverlayBatchWork } from "./overlay-draw-batcher";
+import { keepLayerDrawableMeshes, layerDrawableMeshWork, type LayerDrawableMeshWork } from "./layer-drawable-meshes";
 import { isSceneFrameReady } from "./scene-perf";
 import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
@@ -139,6 +140,9 @@ export class SceneLayerCompositor {
     installEngineDefaultMaterial(scene);
     // HUD content is many small unlit draws: batched where the output cannot change (`overlay-draw-batcher.ts`).
     setSceneDrawBatching(scene, true);
+    // Most of a HUD's meshes are hidden actor roots and disabled control parts: the mesh loop and the cull read only
+    // those that can draw (`layer-drawable-meshes.ts`).
+    keepLayerDrawableMeshes(scene);
     scene.lightsEnabled = false;
     scene.skipPointerMovePicking = false;
     scene.autoClear = false;
@@ -309,12 +313,17 @@ export class SceneLayerCompositor {
 
   /**
    * Each layer's renderer work in draw order (`ForwardSceneFrameGraph.diagnostics`: its graph builds, strict readiness
-   * checks with their reasons and time, and what the last failed one waited for) with its mesh count and how its draw
-   * batcher kept its work (`sceneDrawBatchWork`). Reading starts the measuring, as a view's own does.
+   * checks with their reasons and time, and what the last failed one waited for) with its mesh count, how its draw
+   * batcher kept its work (`sceneDrawBatchWork`) and how its drawable mesh list was kept (`layerDrawableMeshWork`).
+   * Reading starts the measuring, as a view's own does.
    */
-  diagnostics(): Array<{ layerId: string; meshes: number; work: ReturnType<SceneRenderCoordinator["diagnostics"]>; batching: OverlayBatchWork | null }> {
+  diagnostics(): Array<{
+    layerId: string; meshes: number; work: ReturnType<SceneRenderCoordinator["diagnostics"]>; batching: OverlayBatchWork | null;
+    drawable: LayerDrawableMeshWork | null;
+  }> {
     return this.orderedLayers().map((layer) => ({
       layerId: layer.layerId, meshes: layer.scene.meshes.length, work: layer.renderer.diagnostics(), batching: sceneDrawBatchWork(layer.scene),
+      drawable: layerDrawableMeshWork(layer.scene),
     }));
   }
 

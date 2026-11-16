@@ -34,7 +34,8 @@ import {
  *      `rendererWork.scopedReadinessMismatches`),
  *      HAPTIC_PERF_GPU_BUSY=1 (each Play window measures GPU-busy time per frame: `rendering.gpuBusy`),
  *      HAPTIC_PERF_VERIFY_BATCHES=1 (Play checks each Scene Layer pass whose draw batches kept their work against the
- *      full path: `layerWork[].batching.mismatches`),
+ *      full path: `layerWork[].batching.mismatches`, and each layer's drawable mesh list against a full filter every
+ *      frame: `layerWork[].drawable.mismatches`),
  *      HAPTIC_PERF_IDLE_HALF_RATE=1 (the editor viewport keeps Half Rate When Idle on; the route turns it off otherwise),
  *      HAPTIC_PERF_VERIFY_JOURNAL=1 (Play follows each shadow caster walk of the change journal with the full walk, which
  *      must find nothing more: `rendererWork.shadowJournal.mismatches` and `missedKinds`),

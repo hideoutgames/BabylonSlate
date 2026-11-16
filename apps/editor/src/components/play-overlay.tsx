@@ -1253,7 +1253,10 @@ function PlayOverlayView({
         spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
         /** Follows every scoped readiness probe with a probe of every mesh, which must agree (`rendererWork.scopedReadinessMismatches`). */
         verifyScopedReadinessProbes: (enabled: boolean) => void;
-        /** Checks every Scene Layer pass that kept its draw batches' work against the full path (`layerWork[].batching.mismatches`). */
+        /**
+         * Checks every Scene Layer pass that kept its draw batches' work against the full path (`layerWork[].batching.mismatches`),
+         * and each layer's drawable mesh list against a full filter (`layerWork[].drawable.mismatches`).
+         */
         verifyRetainedOverlayBatches: (enabled: boolean) => void;
         /** Follows every shadow caster walk of the change journal with the full walk, which must find nothing more (`rendererWork.shadowJournal.mismatches`). */
         verifyRenderChangeJournal: (enabled: boolean) => void;

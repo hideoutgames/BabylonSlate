@@ -8,7 +8,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
 import { installLightFreeMeshes } from "./light-free-meshes";
 
-type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[] };
+type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[]; settledLightless: () => boolean };
 
 const lightingByScene = new WeakMap<Scene, SceneLighting>();
 
@@ -27,6 +27,14 @@ function sceneLighting(scene: Scene): SceneLighting {
     lightingByScene.set(scene, lighting);
   }
   return lighting;
+}
+
+/**
+ * Whether `syncSceneLighting` would change nothing now because `scene` holds no light and its empty block is already
+ * written: no Material joined, no flag changed and nothing invalidated it since. False before the first sync.
+ */
+export function sceneLightingSettledWithoutLights(scene: Scene): boolean {
+  return lightingByScene.get(scene)?.settledLightless() ?? false;
 }
 
 export function sceneLightingLimits(scene: Scene): string[] {
@@ -62,13 +70,15 @@ function installSceneLighting(scene: Scene): SceneLighting {
   };
   // The last sync wrote the block of a Scene without lights.
   let wroteLightless = false;
+  // A Scene without lights (a Scene Layer) admits and writes nothing new once its empty block is written: a sync,
+  // several per frame, changes nothing until a light or Material joins or a flag below changes.
+  const settledLightless = (): boolean =>
+    wroteLightless && !dirty && !scene.lights.length && materialCount === scene.materials.length &&
+    sceneLightsEnabled === scene.lightsEnabled && sceneShadowsEnabled === scene.shadowsEnabled;
 
   const sync = (): void => {
     if (scene.isDisposed) return;
-    // A Scene without lights (a Scene Layer) admits and writes nothing new once its empty block is written: a sync,
-    // several per frame, changes nothing until a light or Material joins or a flag below changes.
-    if (wroteLightless && !dirty && !scene.lights.length && materialCount === scene.materials.length &&
-      sceneLightsEnabled === scene.lightsEnabled && sceneShadowsEnabled === scene.shadowsEnabled) return;
+    if (settledLightless()) return;
     // Selection precedes the collection fast path: camera/light movement and
     // priority changes need no scene membership or Enabled event.
     admission = syncForwardLightPolicy(scene, Math.max(0, sceneRenderingSettings(scene).localLightBudget), selectHapticLights);
@@ -141,6 +151,7 @@ function installSceneLighting(scene: Scene): SceneLighting {
   return {
     sync,
     invalidate,
+    settledLightless,
     limits: () => {
       if (!admission.limited.length) return [];
       const limited = `Limited: ${lightsInCreationOrder(admission.limited)
