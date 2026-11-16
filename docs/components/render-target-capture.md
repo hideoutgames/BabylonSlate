@@ -26,7 +26,7 @@ Select an actor, then choose **Add Component > Camera > Render Target Capture**.
 **Update Rate** lets a capture with **Capture Every Frame** on draw less often, for a monitor or minimap that doesn't need every frame.
 
 - On the frames it skips, the capture keeps its last image and costs nothing.
-- Captures on the same rate take turns: two captures at Every 2nd Frame draw on different frames.
+- Captures and [Mirrors](mirror.md#update-rate) on the same rate take turns: two of them at Every 2nd Frame draw on different frames.
 - A capture still draws at once, whatever its rate, for its first image, when its Render Target or Quality changes, and when a script changes one of its settings. Moving the capture doesn't make it draw early.
 - A capture whose turn comes while nothing shows its image draws in the frame the image comes into view.
 - The rate applies in Play and in exported games. The editor viewport captures every frame, so edits show at once.

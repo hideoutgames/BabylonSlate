@@ -56,7 +56,7 @@ The reflective side faces the actor's local −Z, the same side a Plane mesh sho
 **Update Rate** lets a mirror draw its reflection less often, for a mirror whose reflection doesn't need to follow every frame, such as one at the side of a room.
 
 - On the frames it skips, the mirror keeps showing its last reflection and costs nothing.
-- Mirrors on the same rate take turns: two mirrors at Every 2nd Frame draw on different frames.
+- Mirrors and [Render Target Captures](render-target-capture.md#update-rate) on the same rate take turns: two of them at Every 2nd Frame draw on different frames.
 - A mirror still draws at once, whatever its rate, when it first appears, when it comes into view, when the view's size changes, and when [Scalability](../graphics/index.md#scalability) changes what it reflects.
 - The two-mirrors-per-frame limit still applies. A mirror whose turn comes when two others draw keeps its turn and draws on the next frame there is room.
 - The rate applies in Play and in exported games. The editor viewport draws every mirror every frame, so edits show at once.
