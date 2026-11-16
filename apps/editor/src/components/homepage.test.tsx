@@ -437,9 +437,10 @@ describe("Slate project browser", () => {
     );
   });
 
-  // The iOS and Android apps check the account again whenever the window regains focus, unmounting the
-  // Homepage meanwhile, so a check while a form is open would drop what is being filled in.
-  it("keeps New Project, Clone and Engine Settings open through the mobile account's foreground check", async () => {
+  // The iOS and Android apps check the account again whenever the window regains focus (iOS also sends focus while
+  // the app stays in front) and cover the Homepage meanwhile, so a check while a form is open would drop what is
+  // being filled in. The check waits while a form is open and runs once the last one closes.
+  it("keeps New Project, Clone and Engine Settings open through the mobile account's foreground check, and checks once they close", async () => {
     getHostPlatform.mockReturnValue("ios");
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     vi.stubGlobal("PointerEvent", MouseEvent);
@@ -456,15 +457,18 @@ describe("Slate project browser", () => {
     expect(within(create).getByText("Options").closest("details")?.open).toBe(true);
     expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(1);
     fireEvent.click(within(create).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByTestId("create-project-dialog")).toBeNull());
+    // The check that waited runs as soon as New Project closes.
+    await waitFor(() => expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId("create-project")).toBeTruthy();
 
     fireEvent.click(screen.getByTestId("clone-project"));
     const clone = await screen.findByTestId("clone-project-dialog");
     fireEvent(window, new Event("focus"));
     expect(screen.getByTestId("clone-project-dialog")).toBe(clone);
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(1);
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(2);
     fireEvent.click(within(clone).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByTestId("clone-project-dialog")).toBeNull());
+    await waitFor(() => expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(3));
+    expect(await screen.findByTestId("clone-project")).toBeTruthy();
 
     fireEvent.click(
       await screen.findByRole("button", { name: `${nativeSession.name}, ${nativeSession.email}`, expanded: false }),
@@ -473,15 +477,38 @@ describe("Slate project browser", () => {
     const settings = await screen.findByRole("dialog", { name: "Engine Settings" });
     fireEvent(window, new Event("focus"));
     expect(screen.getByRole("dialog", { name: "Engine Settings" })).toBe(settings);
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(1);
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(3);
     fireEvent.click(within(settings).getByRole("button", { name: "Close Engine Settings" }));
+    await waitFor(() => expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(4));
 
-    // With every form closed, the check runs again and hides the Homepage while it does.
+    // Closing a form with no focus while it was open runs no check; with every form closed, focus checks at once
+    // and covers the Homepage while it does.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Engine Settings" })).toBeNull());
+    expect(await screen.findByTestId("create-project")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("clone-project"));
+    const quiet = await screen.findByTestId("clone-project-dialog");
+    fireEvent.click(within(quiet).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByTestId("clone-project-dialog")).toBeNull());
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(4);
     fireEvent(window, new Event("focus"));
-    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(2);
+    expect(nativeAuth.restoreSession).toHaveBeenCalledTimes(5);
     expect(screen.queryByTestId("create-project")).toBeNull();
     expect(await screen.findByTestId("create-project")).toBeTruthy();
+  });
+
+  it("keeps a check that finds no session waiting until the open form closes, then returns to sign-in", async () => {
+    getHostPlatform.mockReturnValue("ios");
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    nativeAuth.restoreSession.mockResolvedValueOnce(nativeSession).mockResolvedValueOnce(null);
+    renderHomepage({ onCloneProject: vi.fn() }, { mobileAccountGate: true });
+    fireEvent.click(await screen.findByTestId("clone-project"));
+    const clone = await screen.findByTestId("clone-project-dialog");
+    fireEvent(window, new Event("focus"));
+    expect(screen.getByTestId("clone-project-dialog")).toBe(clone);
+    fireEvent.click(within(clone).getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByLabelText("Email Address")).toBeTruthy();
+    expect(screen.queryByTestId("create-project")).toBeNull();
   });
 
   it.each(["ios", "electron"])(

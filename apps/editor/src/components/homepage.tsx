@@ -253,16 +253,6 @@ export function Homepage({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
-  // The mobile account gate checks the session again whenever the window
-  // regains focus and unmounts the Homepage meanwhile, which would drop a
-  // form being filled in, so the forms opened here hold the check.
-  const holdSessionCheck = useNativeHomepageAccount()?.profile.holdSessionCheck;
-  const holdSessionCheckRef = useRef(holdSessionCheck);
-  holdSessionCheckRef.current = holdSessionCheck;
-  const formOpen = createOpen || cloneOpen || settingsOpen;
-  useEffect(() => {
-    if (formOpen) return holdSessionCheckRef.current?.();
-  }, [formOpen]);
   const [chooseTemplate, setChooseTemplate] = useState(true);
   const [editTarget, setEditTarget] = useState<ListedProject | null>(null);
   const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
@@ -275,6 +265,18 @@ export function Homepage({
   /** The selection as listed in the Delete dialog; fixed while it is open. */
   const [deleteTargets, setDeleteTargets] = useState<ListedProject[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // The mobile account gate checks the session again whenever the window
+  // regains focus (iOS also sends focus while the app stays in front) and
+  // covers the Homepage meanwhile, which would unmount a form or confirmation
+  // being filled in. While one is open the check waits, and it runs once the
+  // last one closes.
+  const holdSessionCheck = useNativeHomepageAccount()?.profile.holdSessionCheck;
+  const holdSessionCheckRef = useRef(holdSessionCheck);
+  holdSessionCheckRef.current = holdSessionCheck;
+  const formOpen = createOpen || cloneOpen || settingsOpen || accountOpen || removeOpen || deleteOpen;
+  useEffect(() => {
+    if (formOpen) return holdSessionCheckRef.current?.({ checkWhenReleased: true });
+  }, [formOpen]);
   const [name, setName] = useState("");
   // Shown as the Name placeholder; used when the field is left empty.
   const [suggestedName, setSuggestedName] = useState("");

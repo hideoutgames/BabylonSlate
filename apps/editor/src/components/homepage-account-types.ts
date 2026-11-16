@@ -26,11 +26,13 @@ export interface NativeProfileActions {
     code: string,
   ) => Promise<void>;
   /**
-   * Pauses the foreground session check while the system file picker is open:
-   * on mobile that check hides the app, which would drop the picked file.
-   * Returns the release function.
+   * Pauses the mobile foreground session check until the returned release is
+   * called: that check hides the app, which would drop a picked file or a form
+   * being filled in. With `checkWhenReleased`, a check that came due while held
+   * runs as soon as this hold ends and no other hold remains (for forms; a file
+   * picker's hold leaves the check to the next focus).
    */
-  holdSessionCheck: () => () => void;
+  holdSessionCheck: (options?: { checkWhenReleased?: boolean }) => () => void;
 }
 
 /**
