@@ -1111,9 +1111,12 @@
   font-size: 13px;
   font-weight: 600;
 }
+/* Absolute positioning ignores the frame's safe-area padding, so the close
+ * button adds the insets itself to stay in the header row, clear of the
+ * status bar and notch. */
 .homepage-composer [data-slot="dialog-close"] {
-  top: 6px;
-  right: 6px;
+  top: calc(var(--safe-top) + 6px);
+  right: calc(var(--safe-right) + 6px);
 }
 .homepage-template-step {
   display: flex;
@@ -2153,8 +2156,8 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
   padding-right: 48px;
 }
 :where(.touch-ui) .homepage-composer [data-slot="dialog-close"] {
-  top: 6px;
-  right: 6px;
+  top: calc(var(--safe-top) + 6px);
+  right: calc(var(--safe-right) + 6px);
 }
 :where(.touch-ui) .homepage-composer-color-row {
   row-gap: 12px;
@@ -2272,13 +2275,6 @@ body:has(.homepage-theme) [data-slot="alert-dialog-overlay"] {
     max-height: var(--homepage-visible-height, 100dvh);
     border: 0;
     border-radius: 0;
-  }
-  .homepage-composer-header {
-    padding-top: var(--safe-top);
-    min-height: calc(var(--touch-target, 44px) + var(--safe-top));
-  }
-  .homepage-composer [data-slot="dialog-close"] {
-    top: calc(var(--safe-top) + 6px);
   }
   .homepage-template-step {
     padding-bottom: var(--safe-bottom);
