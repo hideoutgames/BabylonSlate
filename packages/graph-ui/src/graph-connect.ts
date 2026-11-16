@@ -456,6 +456,49 @@ export function oppositeSideHandleId(pinId: string): string | undefined {
   return `${oppositeSide}-${direction === "out" ? "in" : "out"}`;
 }
 
+/** The row's Target input (`PaletteNode.targetPinId`), if it declares one. */
+function paletteTargetPin(node: PaletteNode): SerializedPin | undefined {
+  if (!node.targetPinId) return undefined;
+  return node.pins?.find((pin) => pin.id === node.targetPinId && pin.direction === "in");
+}
+
+/** Whether `dragged` supplies the row's Target. An unresolved wildcard names no object, so it never does. */
+function draggedReachesTarget(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
+): SerializedPin | undefined {
+  const target = paletteTargetPin(node);
+  if (!target || isWildcardType(dragged.type)) return undefined;
+  return pinsAreCompatible(dragged, target, rule) ? target : undefined;
+}
+
+/**
+ * Whether a pin-filtered Add Node lists `node` for `dragged`. A row whose
+ * Target must be wired (it does not read Self) is listed only when the dragged
+ * pin connects to that Target; any other row needs one compatible pin.
+ */
+function paletteRowAcceptsPin(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
+): boolean {
+  const target = paletteTargetPin(node);
+  if (target && target.selfWhenUnwired !== true) {
+    return draggedReachesTarget(node, dragged, rule) !== undefined;
+  }
+  return firstCompatiblePin(node.pins, dragged, rule) !== undefined;
+}
+
+/** The pin on a new Add Node row that `dragged` wires to: its Target when the drag reaches it. */
+export function paletteConnectPin(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
+): SerializedPin | undefined {
+  return draggedReachesTarget(node, dragged, rule) ?? firstCompatiblePin(node.pins, dragged, rule);
+}
+
 export function filterPaletteForPin(
   nodes: PaletteNode[],
   dragged: SerializedPin,
@@ -464,7 +507,7 @@ export function filterPaletteForPin(
 ): PaletteNode[] {
   return nodes
     .map((node, index) => ({ node, index }))
-    .filter(({ node }) => firstCompatiblePin(node.pins, dragged, rule))
+    .filter(({ node }) => paletteRowAcceptsPin(node, dragged, rule))
     .sort((left, right) => {
       const score =
         paletteRelevanceScore(right.node, dragged, rule, sourcePins) -
@@ -475,6 +518,7 @@ export function filterPaletteForPin(
 }
 
 const CATALOG_PREF_BAND = 1_000_000;
+const TARGET_BAND = 100_000;
 const TYPE_QUALITY_BAND = 10_000;
 const CLASS_AFFINITY_BAND = 1_000;
 const PIN_OVERLAP_BAND = 10;
@@ -487,6 +531,7 @@ function paletteRelevanceScore(
 ): number {
   return (
     catalogPreferenceScore(node, dragged) * CATALOG_PREF_BAND +
+    targetAffinity(node, dragged, rule) * TARGET_BAND +
     primaryMatchQuality(node, dragged, rule) * TYPE_QUALITY_BAND +
     objectClassAffinity(node, dragged, rule) * CLASS_AFFINITY_BAND +
     matchingPinCount(node, dragged, sourcePins, rule) * PIN_OVERLAP_BAND
@@ -530,6 +575,21 @@ function primaryMatchQuality(
 function classIdOf(type: SerializedPin["type"]): string | undefined {
   const classId = type.classId;
   return typeof classId === "string" && classId.trim() ? classId.trim() : undefined;
+}
+
+/**
+ * The dragged object's own members first (2: the Target is its exact class),
+ * then rows whose Target it reaches through a parent class (1).
+ */
+function targetAffinity(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
+): number {
+  const target = draggedReachesTarget(node, dragged, rule);
+  if (!target) return 0;
+  const draggedClass = classIdOf(dragged.type);
+  return draggedClass && classIdOf(target.type) === draggedClass ? 2 : 1;
 }
 
 function stringData(data: Record<string, unknown> | undefined, key: string): string {

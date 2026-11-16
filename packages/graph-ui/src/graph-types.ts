@@ -68,11 +68,18 @@ export type PaletteNode = {
   /** When true, added nodes stamp `data.__editorOnly` for the canvas banner. */
   editorOnly?: boolean;
   /**
-   * Needs a Target on another object (other-class members, engine component
-   * APIs, scene-placed components). Context Sensitive hides these rows unless
-   * a dragged pin makes them compatible.
+   * Not reachable from the host graph on its own (other-class members, engine
+   * component APIs, scene-placed components, rows meant for a dragged pin).
+   * Context Sensitive hides these rows while no pin is dragged.
    */
   outOfContext?: boolean;
+  /**
+   * The input taking the object the row acts on (its Target). Unless that pin
+   * reads Self while unwired (`selfWhenUnwired`), a dragged pin lists the row
+   * under Context Sensitive only when it connects to this pin; rows whose
+   * Target the dragged object reaches rank first, its own class's first.
+   */
+  targetPinId?: string;
   /**
    * More nodes added together with this one and wired to it (Assign: a Bind
    * node and the custom event bound by it). A dragged pin connects to this
