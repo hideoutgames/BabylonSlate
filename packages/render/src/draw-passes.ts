@@ -188,13 +188,14 @@ export function withDrawPass<T>(engine: object, pass: DrawPass, draw: () => T, o
 const observed = new WeakSet<FrameGraphTask>();
 
 /**
- * Counts `task`'s draws to `pass` on every frame it runs. Its end runs before any other observer of it, so what those
- * draw (the scene view's capture views, after its shadow maps) is not the task's. Babylon skips the end when a pass
- * throws; the next frame starts balanced.
+ * Counts `task`'s draws and time to `pass` on every frame it runs. Its start runs before any other observer of it, so
+ * the task's own before-observers (a shared outline's sync) are the task's; its end runs before any other observer of
+ * it, so what those draw (the scene view's capture views, after its shadow maps) is not the task's. Babylon skips the
+ * end when a pass throws; the next frame starts balanced.
  */
 export function observeTaskDrawPass(task: FrameGraphTask, engine: object, pass: DrawPass): void {
   if (observed.has(task)) return;
   observed.add(task);
-  task.onBeforeTaskExecute.add(() => enterDrawPass(engine, pass));
+  task.onBeforeTaskExecute.add(() => enterDrawPass(engine, pass), undefined, true);
   task.onAfterTaskExecute.add(() => leaveDrawPass(engine), undefined, true);
 }
