@@ -853,6 +853,52 @@ describe("SourceControlService", () => {
     expect(fake.snapshot()).toHaveLength(0);
   });
 
+  it("locks paths on request even with Auto-Lock off, and names the holder of one someone else locked", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    fake.addTheirs("assets/theirs.hasset", "Bob");
+    await service.configure({
+      settings: { ...manual, autoLockOnEdit: false },
+      projectKey: "proj",
+      platform: "electron",
+      testMode: true,
+      hosts: await signedIn(),
+      fake,
+    });
+    await service.lockPaths(["assets/a.hasset", "assets/theirs.hasset", "assets/b.hasset"]);
+    expect(service.lockStateForPath("assets/a.hasset")).toBe("mine");
+    expect(service.lockStateForPath("assets/b.hasset")).toBe("mine");
+    expect(service.lockStateForPath("assets/theirs.hasset")).toBe("theirs");
+    expect(service.operationError).toBe("assets/theirs.hasset: Locked by Bob");
+    // A path already ours is not asked for again.
+    const creates = fake.createCount;
+    await service.lockPaths(["assets/a.hasset"]);
+    expect(fake.createCount).toBe(creates);
+    expect(service.operationError).toBeNull();
+  });
+
+  it("releases our locks on the paths asked for and leaves the rest", async () => {
+    const service = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    fake.addTheirs("assets/theirs.hasset", "Bob");
+    await service.configure({
+      settings: manual,
+      projectKey: "proj",
+      platform: "electron",
+      testMode: true,
+      hosts: await signedIn(),
+      fake,
+    });
+    await service.lockPaths(["assets/a.hasset", "assets/b.hasset", "assets/c.hasset"]);
+    await service.refresh();
+    await service.releasePaths(["assets/a.hasset", "assets/b.hasset", "assets/theirs.hasset"]);
+    expect(service.lockStateForPath("assets/a.hasset")).toBeNull();
+    expect(service.lockStateForPath("assets/b.hasset")).toBeNull();
+    expect(service.lockStateForPath("assets/c.hasset")).toBe("mine");
+    expect(service.lockStateForPath("assets/theirs.hasset")).toBe("theirs");
+    expect(service.operationError).toBeNull();
+  });
+
   it("keeps the lock list when the mode is turned Off and back on", async () => {
     const service = new SourceControlService();
     const fake = new FakeLockProvider({ selfName: "Ada" });

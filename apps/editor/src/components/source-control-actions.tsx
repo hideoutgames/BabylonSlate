@@ -154,6 +154,12 @@ export function useSourceControlActions(): SourceControlActions {
   return actions;
 }
 
+/** The shared actions, or null outside `SourceControlActionsProvider` (a Content Browser mounted on its own). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalSourceControlActions(): SourceControlActions | null {
+  return useContext(SourceControlActionsContext);
+}
+
 /** **Open History**: on the asset in the active tab, else on the asset History last showed. */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useOpenHistory(): () => void {

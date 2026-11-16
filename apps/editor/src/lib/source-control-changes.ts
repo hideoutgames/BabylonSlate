@@ -66,6 +66,19 @@ export interface GroupedChanges {
   rows: readonly ChangeRow[];
 }
 
+/**
+ * The Content Browser's change markers by `.hasset` path: each asset added
+ * or modified since the last commit. A deleted asset has no tile (the
+ * Changes window lists it), so it has none.
+ */
+export function assetChangeStatuses(rows: readonly ChangeRow[]): ReadonlyMap<string, "added" | "modified"> {
+  const statuses = new Map<string, "added" | "modified">();
+  for (const row of rows) {
+    if (row.kind !== "deleted" && isAssetPath(row.id)) statuses.set(row.id, row.kind);
+  }
+  return statuses;
+}
+
 const ASSET_EXTENSION = /(\.[a-z0-9-]+)?\.hasset$/i;
 
 /** `assets/Levels/Forest.scene.hasset` → `Levels`; a root asset → `Assets`; anything outside assets → `Project`. */

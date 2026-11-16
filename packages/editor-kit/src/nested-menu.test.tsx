@@ -249,6 +249,19 @@ describe("NestedMenu dropdown", () => {
     fireEvent.click(trigger);
     expect(queryByTestId("context-menu-sub-columns")).toBeNull();
   });
+
+  it("shows a label line that is no menu item", () => {
+    const { getByTestId, queryByRole } = render(
+      <NestedMenu
+        items={[{ id: "holder", type: "label", label: "Locked By You" }, leaf()]}
+        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        contentTestId="menu-content"
+      />,
+    );
+    fireEvent.click(getByTestId("menu-trigger"));
+    expect(getByTestId("context-menu-item-holder").textContent).toBe("Locked By You");
+    expect(queryByRole("menuitem", { name: "Locked By You" })).toBeNull();
+  });
 });
 
 describe("NestedMenu context overlay", () => {
@@ -328,6 +341,52 @@ describe("NestedMenu context overlay", () => {
     fireEvent.keyDown(first, { key: "Escape" });
     expect(view.queryByTestId("context-menu-panel")).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("shows a label line in a submenu that keyboard focus and taps pass over", async () => {
+    const onSelect = vi.fn();
+    const view = render(
+      <KeyboardMenu
+        items={[
+          {
+            id: "source-control",
+            type: "submenu",
+            label: "Source Control",
+            items: [
+              { id: "holder", type: "label", label: "Locked By Bob" },
+              { type: "separator", id: "after-holder" },
+              leaf(onSelect),
+            ],
+          },
+        ]}
+      />,
+    );
+    const trigger = view.getByTestId("keyboard-trigger");
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(view.getByTestId("context-menu-item-source-control"), { key: "ArrowRight" });
+    const holder = view.getByTestId("context-menu-item-holder");
+    expect(holder.textContent).toBe("Locked By Bob");
+    expect(holder.tagName).not.toBe("BUTTON");
+    expect(holder.getAttribute("aria-disabled")).toBe("true");
+    // Focus starts on the first action, and the arrows never land on the label.
+    const action = view.getByTestId("context-menu-item-duplicate");
+    expect(document.activeElement).toBe(action);
+    fireEvent.keyDown(action, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(action);
+    fireEvent.click(holder);
+    expect(view.getByTestId("context-menu-sub-source-control")).toBeTruthy();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("disables a submenu holding only a label", () => {
+    const view = render(
+      <KeyboardMenu
+        items={[{ id: "source-control", type: "submenu", label: "Source Control", items: [{ id: "holder", type: "label", label: "Locked By Bob" }] }]}
+      />,
+    );
+    fireEvent.click(view.getByTestId("keyboard-trigger"));
+    expect((view.getByTestId("context-menu-item-source-control") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("enters and leaves a submenu with arrows and restores the original trigger on Escape", async () => {

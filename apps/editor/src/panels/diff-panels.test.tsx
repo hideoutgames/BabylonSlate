@@ -244,6 +244,14 @@ describe("Source Control diff windows", () => {
     expect(label("Bridge").dataset.tone).toBe("success");
     expect(label("Fence 03").dataset.tone).toBe("destructive");
     expect(label("Sky Atmosphere").className).toContain("text-muted-foreground");
+    // Each changed row ends with the marker Changes uses: a plus, a minus or M.
+    const marker = (name: string) => within(label(name).closest<HTMLElement>('[role="treeitem"]')!).getByRole("img");
+    expect(marker("Bridge").getAttribute("aria-label")).toBe("Added");
+    expect(marker("Bridge").querySelector(".lucide-plus")).not.toBeNull();
+    expect(marker("Fence 03").getAttribute("aria-label")).toBe("Removed");
+    expect(marker("Fence 03").querySelector(".lucide-minus")).not.toBeNull();
+    expect(marker("Directional Light").getAttribute("aria-label")).toBe("Changed");
+    expect(marker("Directional Light").textContent).toBe("M");
 
     // The first changed actor is shown: its changed cells tinted, both versions named.
     expect(screen.getByTestId("diff-item-name").textContent).toBe("Directional Light");

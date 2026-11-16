@@ -3,7 +3,6 @@ import type { DiffState } from "../services/source-control-diff";
 
 type Changed = Exclude<DiffStatus, "unchanged">;
 
-export const STATUS_LETTER: Record<Changed, string> = { added: "A", removed: "D", changed: "M" };
 export const STATUS_LABEL: Record<Changed, string> = { added: "Added", removed: "Removed", changed: "Changed" };
 /** The tree row tint of each status. */
 export const STATUS_TONE = { added: "success", removed: "destructive", changed: "warning" } as const;

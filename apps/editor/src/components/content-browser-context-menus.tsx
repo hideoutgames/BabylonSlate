@@ -26,6 +26,8 @@ export interface ContentBrowserContextMenusDeps extends ContentBrowserTileMenuDe
   /** Creates a folder in the open folder and renames it inline in the grid. */
   onNewFolder: () => void;
   handleImport: () => Promise<void>;
+  /** The **Source Control** submenu for a selection of assets, built as the menu opens; null while it is Off. */
+  sourceControlMenu: (guids: readonly string[]) => ContextMenuItem | null;
 }
 
 /**
@@ -94,6 +96,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
     openNewAssetMenu,
     onNewFolder,
     handleImport,
+    sourceControlMenu,
   } = deps;
   const tileContextItems = useMemo(
     () => contentBrowserTileMenuItems({
@@ -313,7 +316,13 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
         if (item.id === "generate-thumbnail") items.push({ ...item, label: guids.length === 1 ? "Generate Thumbnail" : "Generate Thumbnails" });
         else items.push(item);
       }
-      const deleteIndex = items.findIndex((item) => item.id === "delete");
+      let deleteIndex = items.findIndex((item) => item.id === "delete");
+      // Source Control sits above Delete, for assets only; it reads the locks and changes as they are now.
+      const sourceControl = folders.length === 0 ? sourceControlMenu(guids) : null;
+      if (sourceControl) {
+        items.splice(deleteIndex < 0 ? items.length : deleteIndex, 0, sourceControl);
+        if (deleteIndex >= 0) deleteIndex += 1;
+      }
       if (deleteIndex > 0)
         items.splice(deleteIndex, 0, { type: "separator", id: "delete-separator" });
       // Extension entries apply to a selection of only assets or only folders.
@@ -331,6 +340,7 @@ export function useContentBrowserContextMenus(deps: ContentBrowserContextMenusDe
       selectedGuids,
       tileContextItems,
       selectionActionIds,
+      sourceControlMenu,
       menuTargetGuidsRef,
       menuTargetFoldersRef,
       setSelectedGuids,

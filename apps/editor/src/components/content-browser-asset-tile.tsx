@@ -1,6 +1,5 @@
 import { isCheckeredThumbnailType, stripAssetFileSuffix, type IndexedAsset } from "@haptic/assets";
 import {
-  SelectableText,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
   useContextMenuGesture,
@@ -18,8 +17,8 @@ import {
   compressionBadgeLabel,
   textureCompressionState,
 } from "../lib/content-browser-helpers";
-import { LockIcon } from "lucide-react";
 import { ContentBrowserTileName } from "./content-browser-tile-name";
+import { LockBadge, StatusMarker } from "./source-control-markers";
 
 export interface ContentBrowserAssetTileProps {
   asset: IndexedAsset;
@@ -38,6 +37,8 @@ export interface ContentBrowserAssetTileProps {
   sourceControlEnabled?: boolean;
   lockState?: "mine" | "theirs" | null;
   lockOwnerName?: string;
+  /** Integrated mode: what the working copy changed about the asset since the last commit. */
+  changeStatus?: "added" | "modified" | null;
   /** The Texture's encode is running, which its saved header does not say. */
   encoding?: boolean;
   /** Shows the name as a focused inline rename of the file name. */
@@ -66,6 +67,7 @@ export function ContentBrowserAssetTile({
   sourceControlEnabled = false,
   lockState = null,
   lockOwnerName,
+  changeStatus = null,
   encoding = false,
   renaming = false,
   onRenameDone,
@@ -75,10 +77,6 @@ export function ContentBrowserAssetTile({
   const Root = editing ? "div" : "button";
   const compression = textureCompressionState(asset, encoding);
   const thumbAccent = typeColorThumbAccent(typeVisual.colorVar);
-  const lockLabel =
-    lockState === "mine"
-      ? "Locked By You"
-      : `Locked By ${lockOwnerName || "Another User"}`;
   // Exclusive: the grid around the tile has its own empty-space menu.
   const bind = useContextMenuGesture({
     exclusive: true,
@@ -159,26 +157,24 @@ export function ContentBrowserAssetTile({
                   </Badge>
                 ) : null}
               </div>
-              {sourceControlEnabled && lockState ? (
-                <Badge
-                  variant="secondary"
-                  data-lock-slot
-                  data-lock-state={lockState}
-                  className="max-w-14 gap-1 px-1 text-[10px]"
-                  title={lockLabel}
-                  role="img"
-                  aria-label={lockLabel}
-                >
-                  <LockIcon className="shrink-0" aria-hidden />
-                  {lockState === "theirs" && lockOwnerName ? (
-                    <SelectableText className="truncate">
-                      {lockOwnerName}
-                    </SelectableText>
-                  ) : null}
-                </Badge>
-              ) : (
-                <span data-lock-slot className="hidden" aria-hidden />
-              )}
+              <div className="flex shrink-0 items-start gap-1">
+                {changeStatus ? (
+                  <StatusMarker
+                    status={changeStatus}
+                    variant="badge"
+                    data-testid={`content-item-change-${asset.header.guid}`}
+                  />
+                ) : null}
+                {sourceControlEnabled && lockState ? (
+                  <LockBadge
+                    state={lockState}
+                    ownerName={lockOwnerName}
+                    data-lock-slot
+                  />
+                ) : (
+                  <span data-lock-slot className="hidden" aria-hidden />
+                )}
+              </div>
             </div>
           </div>
         </div>

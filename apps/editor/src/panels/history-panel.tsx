@@ -1,7 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { memo, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Columns2Icon, CopyIcon, FileIcon, FolderIcon, HistoryIcon, SettingsIcon, Undo2Icon } from "lucide-react";
-import type { ChangeKind, CommitInfo, FileChange } from "@haptic/source-control";
+import type { CommitInfo, FileChange } from "@haptic/source-control";
 import {
   PanelFrame,
   resolveTypeVisual,
@@ -18,6 +18,7 @@ import { cn } from "@haptic/ui/lib/utils";
 import { useIntegratedSync, useIntegratedSyncState, useRegistryState } from "../context/document-context";
 import { useSourceControlActions } from "../components/source-control-actions";
 import { IconActionButton } from "../components/icon-action-button";
+import { StatusMarker } from "../components/source-control-markers";
 import { groupChanges, isAssetPath, registryChangeLookup, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { agoLabel, branchLabel } from "../lib/source-control-labels";
 import { shortId, WORKING_COPY } from "../services/source-control-diff";
@@ -25,10 +26,6 @@ import { shortId, WORKING_COPY } from "../services/source-control-diff";
 /** Two lines (the subject, then author and time) at the compact density. */
 const HISTORY_ROW_HEIGHT = 40;
 const WORKING = "working";
-
-const KIND_LETTER: Record<ChangeKind, string> = { added: "A", modified: "M", deleted: "D" };
-const KIND_LABEL: Record<ChangeKind, string> = { added: "Added", modified: "Modified", deleted: "Deleted" };
-const KIND_CLASS: Record<ChangeKind, string> = { added: "text-(--success)", modified: "text-(--warning)", deleted: "text-destructive" };
 
 type Scope = "asset" | "all";
 
@@ -83,7 +80,7 @@ function AssetRow({ row, onOpen }: { row: ChangeRow; onOpen: ((row: ChangeRow) =
         <RowIcon type={row.type} />
         <span className="truncate">{row.name}</span>
         <span className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground">{row.folder}</span>
-        <span className={cn("w-3.5 shrink-0 text-center text-xs font-bold", KIND_CLASS[row.kind])} title={KIND_LABEL[row.kind]}>{KIND_LETTER[row.kind]}</span>
+        <StatusMarker status={row.kind} />
       </Button>
     </li>
   );

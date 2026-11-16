@@ -738,6 +738,71 @@ export class SourceControlService {
     this.emit();
   }
 
+  /**
+   * **Lock** (the Content Browser's Source Control menu): locks each path not
+   * already ours, one at a time, whatever Auto-Lock On First Edit says. A
+   * path someone else holds is listed as theirs and named with its holder;
+   * failures are joined into `operationError`, as Release All My Locks does.
+   */
+  async lockPaths(paths: readonly string[]): Promise<void> {
+    if (!this.provider || !this.active || this.unsupported || this.waitForLockBranch()) return;
+    const revision = this.providerRevision;
+    this.lastOperationError = null;
+    this.emit();
+    const errors: string[] = [];
+    for (const path of paths) {
+      if (revision !== this.providerRevision || this.unsupported) return;
+      const error = await this.lockPath(path);
+      if (error) errors.push(`${path}: ${error}`);
+    }
+    if (revision !== this.providerRevision) return;
+    this.lastOperationError = errors.length ? errors.join("; ") : null;
+    this.emit();
+  }
+
+  /** One explicit lock: null once the path is ours (or the provider changed meanwhile), else why not. */
+  private async lockPath(path: string): Promise<string | null> {
+    const provider = this.provider;
+    if (!provider) return "Source control is unavailable.";
+    // Only a list of the branch locks name now says the lock is held.
+    if (this.listBranch === this.lockBranch && this.locksByPath.get(path)?.ours) return null;
+    const revision = this.providerRevision;
+    let result;
+    try {
+      result = await provider.create(path);
+    } catch (error) {
+      return revision === this.providerRevision ? message(error) : null;
+    }
+    if (revision !== this.providerRevision) return null;
+    if (!isOk(result)) {
+      if (result.error.kind === "unsupported") {
+        this.markUnsupported();
+        return "This host does not support file locking.";
+      }
+      if (result.error.kind !== "conflict" || !result.error.lock) return result.error.message || "Could not lock this asset.";
+    }
+    const lock = isOk(result) ? result.value : result.error.lock!;
+    this.setLock(path, lock);
+    if (!lock.ours) return `Locked by ${lock.ownerName}`;
+    this.autoLockAttempted.add(path);
+    this.banners.delete(path);
+    this.editMode.set(path, "editable");
+    return null;
+  }
+
+  /**
+   * **Release Lock** (the Content Browser's Source Control menu): this
+   * device's locks on `paths` on the branch lock requests name, as the Locks
+   * window's Release does for each; someone else's are left alone.
+   */
+  async releasePaths(paths: readonly string[]): Promise<void> {
+    const locks = paths.flatMap((path) => {
+      const lock = this.locksByPath.get(path);
+      return lock?.ours ? [lock] : [];
+    });
+    await this.releaseEach(locks);
+  }
+
   refuseIfTheirs(path: string): string | null {
     if (!this.active) return null;
     const lock = this.locksByPath.get(path);
