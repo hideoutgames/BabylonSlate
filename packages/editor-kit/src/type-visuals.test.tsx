@@ -39,6 +39,16 @@ describe("resolveTypeVisual", () => {
     for (const assetType of ["Sprite", "SpriteAnimation", "AnimationGraph2D", "Tileset", "Tilemap"]) expect(resolveTypeVisual({ assetType }).colorVar).toBe("var(--asset-sprite)");
   });
 
+  it("gives particle assets the Visual Effects colour and Material Instances their own, apart from Materials", () => {
+    for (const assetType of ["ParticleEmitter", "ParticleGraph", "ParticleSystem"]) {
+      expect(resolveTypeVisual({ assetType }).colorVar, assetType).toBe("var(--asset-visual-effects)");
+    }
+    expect(resolveTypeVisual({ assetType: "MaterialInstance" }).colorVar).toBe("var(--asset-material-instance)");
+    for (const assetType of ["Material", "MaterialFunction", "Water", "SkyboxCreator"]) {
+      expect(resolveTypeVisual({ assetType }).colorVar, assetType).toBe("var(--asset-material)");
+    }
+  });
+
   it("recognizes Material Object references as objects with the material glyph", () => {
     expect(walkAncestry("MaterialObject", engineParentOf)).toEqual(["MaterialObject", "Object"]);
     const visual = resolveTypeVisual({ classId: "MaterialObject" });
@@ -154,6 +164,36 @@ describe("resolveTypeVisual", () => {
     expect(unknown.family).toBe("unknown");
     expect(unknown.colorVar).toBe("var(--muted-foreground)");
     expect(unknown.icon).toBe(resolveTypeVisual({}).icon);
+  });
+});
+
+describe("Class kind labels", () => {
+  it.each([
+    [["MyHero", "Actor", "Object"], "Actor"],
+    [["MyLayerActor", "SceneLayerActor", "Actor", "Object"], "Actor"],
+    [["Inventory", "GameSubsystem", "Subsystem", "Object"], "Subsystem"],
+    [["Weather", "SceneSubsystem", "Subsystem", "Object"], "Subsystem"],
+    [["MyGame", "GameInstance", "Object"], "Game Instance"],
+    [["Health", "ActorComponent", "Object"], "Component"],
+    [["MathHelpers", "FunctionLibrary", "Object"], "Function Library"],
+    [["Tools", "EditorFunctionLibrary", "FunctionLibrary", "Object"], "Editor Function Library"],
+    [["Cheat", "DebugCommand", "Object"], "Debug Command"],
+    [["Importer", "EditorUtilityObject", "Object"], "Editor Utility Object"],
+    [["Patrol", "BTTask", "Object"], "Behaviour Tree Task"],
+    [["IsHungry", "BTDecorator", "Object"], "Behaviour Tree Decorator"],
+    [["Scan", "BTService", "Object"], "Behaviour Tree Service"],
+    [["Random", "BTComposite", "Object"], "Behaviour Tree Composite"],
+    [["GameRules", "Object"], "Object"],
+    [["Orphan"], "Object"],
+  ] as const)("labels a Class with ancestry %j as %s", (ancestry, label) => {
+    expect(resolveTypeVisual({ assetType: "Class", ancestry: [...ancestry] }).classKind).toBe(label);
+  });
+
+  it("walks engine parents when only the parent class is known, and labels only Class assets", () => {
+    expect(resolveTypeVisual({ assetType: "Class", parentClass: "SceneStreamingActor" }).classKind).toBe("Actor");
+    expect(resolveTypeVisual({ assetType: "Class" }).classKind).toBe("Object");
+    expect(resolveTypeVisual({ assetType: "Texture" }).classKind).toBeUndefined();
+    expect(resolveTypeVisual({ classId: "Actor" }).classKind).toBeUndefined();
   });
 });
 

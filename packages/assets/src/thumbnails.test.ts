@@ -101,6 +101,8 @@ describe("thumbnails I/O", () => {
     expect(isThumbnailableAssetType("Class")).toBe(true);
     expect(isThumbnailableAssetType("Tileset")).toBe(true);
     expect(isThumbnailableAssetType("Tilemap")).toBe(true);
+    expect(isThumbnailableAssetType("Sprite")).toBe(true);
+    expect(isThumbnailableAssetType("SpriteAnimation")).toBe(false);
     expect(isThumbnailableAssetType("Audio")).toBe(false);
   });
 });

@@ -2,13 +2,13 @@ import { isThumbnailableAssetType, type IndexedAsset } from "@haptic/assets";
 import { createAssetThumbnailRevisionIndex } from "./asset-thumbnail-revision";
 import type { ModelThumbnailJob } from "./model-thumbnail-queue";
 
-/** Textures first: they draw without the Engine, so a new project's grid fills fastest. */
-const ORDER: Record<string, number> = { Texture: 0, Tileset: 1, Tilemap: 1 };
+/** Textures first, then the other assets drawn without the Engine, so a new project's grid fills fastest. */
+const ORDER: Record<string, number> = { Texture: 0, Sprite: 1, Tileset: 1, Tilemap: 1 };
 
 /**
  * Generation jobs for those of `guids` that have thumbnails: Textures, Models,
- * Animations, Materials, Tilesets, Tilemaps and actor Classes that show a
- * Prefab. Each carries its saved revision, so a later edit supersedes it.
+ * Animations, Materials, Sprites, Tilesets, Tilemaps and actor Classes that
+ * show a Prefab. Each carries its saved revision, so a later edit supersedes it.
  */
 export async function thumbnailJobsFor(
   assets: readonly IndexedAsset[],

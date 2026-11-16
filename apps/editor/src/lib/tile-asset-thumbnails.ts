@@ -5,6 +5,7 @@ import {
   DOCUMENT_CHUNK_ID,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  parseSpritePayload,
   orderedTilemapLayers,
   tilemapPaintedExtent,
   tilemapTilesetGuids,
@@ -35,10 +36,10 @@ export interface ThumbnailPlan {
   draw(ctx: ThumbnailContext): void;
 }
 
-const TILE_THUMBNAIL_TYPES = new Set(["Tileset", "Tilemap"]);
+const TILE_THUMBNAIL_TYPES = new Set(["Sprite", "Tileset", "Tilemap"]);
 
-/** Asset types whose thumbnail is drawn in 2D from their tiles, without the Engine. */
-export function isTileThumbnailType(type: string): type is "Tileset" | "Tilemap" {
+/** Asset types whose thumbnail is drawn in 2D from their Texture or tiles, without the Engine. */
+export function isTileThumbnailType(type: string): type is "Sprite" | "Tileset" | "Tilemap" {
   return TILE_THUMBNAIL_TYPES.has(type);
 }
 
@@ -71,6 +72,20 @@ export function tilesetThumbnailPlan(
     draw(ctx) {
       ctx.imageSmoothingEnabled = size.scale < 1;
       ctx.drawImage(atlas.image, 0, 0, width, height, 0, 0, size.width, size.height);
+    },
+  };
+}
+
+/** A Sprite's thumbnail: its whole Texture, as the Sprite shows it, fitted into `maxEdge`. */
+export function spriteThumbnailPlan(atlas: ThumbnailAtlas, maxEdge = DEFAULT_THUMBNAIL_MAX_EDGE): ThumbnailPlan | null {
+  if (atlas.width <= 0 || atlas.height <= 0) return null;
+  const size = fit(atlas.width, atlas.height, maxEdge);
+  return {
+    width: size.width,
+    height: size.height,
+    draw(ctx) {
+      ctx.imageSmoothingEnabled = size.scale < 1;
+      ctx.drawImage(atlas.image, 0, 0, atlas.width, atlas.height, 0, 0, size.width, size.height);
     },
   };
 }
@@ -177,9 +192,9 @@ export interface TileAssetThumbnailOptions {
 }
 
 /**
- * Draws a saved Tileset's or Tilemap's thumbnail from its document, its
- * Tilesets' documents and their Textures' pixels. `null` (the type icon) when
- * there is nothing to draw, a Tileset has no Texture, a Texture's pixels
+ * Draws a saved Sprite's, Tileset's or Tilemap's thumbnail from its document,
+ * its Tilesets' documents and their Textures' pixels. `null` (the type icon) when
+ * there is nothing to draw, a Sprite or Tileset has no Texture, a Texture's pixels
  * cannot be read or decoded (a later save draws it again), the host has no 2D
  * canvas, or `shouldContinue` turned false.
  */
@@ -197,9 +212,9 @@ export async function generateTileAssetThumbnail(options: TileAssetThumbnailOpti
       return null;
     }
   };
-  /** The Tileset's atlas; `null` when it has no Texture, `undefined` when its pixels are unreadable. */
-  const atlasFor = async (tileset: TilesetPayload): Promise<ThumbnailAtlas | null | undefined> => {
-    const texture = tileset.textureGuid ? registry.getByGuid(tileset.textureGuid) : undefined;
+  /** The Sprite's or Tileset's atlas; `null` when it has no Texture, `undefined` when its pixels are unreadable. */
+  const atlasFor = async (owner: { textureGuid: string | null }): Promise<ThumbnailAtlas | null | undefined> => {
+    const texture = owner.textureGuid ? registry.getByGuid(owner.textureGuid) : undefined;
     if (!texture || texture.header.type !== "Texture") return null;
     const bytes = await readAssetChunk(texture.path, "pixels");
     if (!bytes?.byteLength || typeof createImageBitmap !== "function") return undefined;
@@ -214,7 +229,13 @@ export async function generateTileAssetThumbnail(options: TileAssetThumbnailOpti
   };
   try {
     let plan: ThumbnailPlan | null = null;
-    if (asset.header.type === "Tileset") {
+    if (asset.header.type === "Sprite") {
+      const document = await readDocument(asset);
+      if (document === null || !current()) return null;
+      const atlas = await atlasFor(parseSpritePayload(document));
+      if (!atlas || !current()) return null;
+      plan = spriteThumbnailPlan(atlas);
+    } else if (asset.header.type === "Tileset") {
       const document = await readDocument(asset);
       if (document === null || !current()) return null;
       const tileset = normalizeTilesetPayload(document);
@@ -250,9 +271,9 @@ export async function generateTileAssetThumbnail(options: TileAssetThumbnailOpti
 }
 
 /**
- * The Tilesets and Tilemaps whose thumbnails show any of `changed`: those
- * assets themselves and every Tileset or Tilemap that depends on one, directly
- * or through others (a Texture's Tilesets and their Tilemaps).
+ * The Sprites, Tilesets and Tilemaps whose thumbnails show any of `changed`:
+ * those assets themselves and every one that depends on one, directly or
+ * through others (a Texture's Sprites and Tilesets, and those Tilesets' Tilemaps).
  */
 export function tileThumbnailTargets(assets: readonly IndexedAsset[], changed: Iterable<string>): IndexedAsset[] {
   const byGuid = new Map(assets.map((asset) => [asset.header.guid, asset] as const));
@@ -291,7 +312,7 @@ export async function tileThumbnailJobs(
   return Promise.all(targets.map(async (asset) => ({
     guid: asset.header.guid,
     path: asset.path,
-    type: asset.header.type as "Tileset" | "Tilemap",
+    type: asset.header.type as "Sprite" | "Tileset" | "Tilemap",
     payload: {},
     projectGuid,
     cacheKey: (await revisions.cacheKey(asset.header.guid)) ?? asset.header.guid,

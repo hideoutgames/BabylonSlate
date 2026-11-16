@@ -4,25 +4,24 @@ import { FloppyDiskIcon } from "@phosphor-icons/react/dist/csr/FloppyDisk";
 import { PuzzlePieceIcon } from "@phosphor-icons/react/dist/csr/PuzzlePiece";
 import {
   IconAdjustmentsAlt,
-  IconAppWindow,
   IconCube3dSphere,
   IconDatabase,
   IconEaseInOutControlPoints,
   IconFileMusic,
   IconKeyframes,
   IconListDetails,
-  IconMap,
   IconMovie,
   IconPackage,
   IconPhoto,
   IconPhotoVideo,
   IconSphere,
-  IconSpherePlus,
+  IconSphere2,
   IconTimelineEvent,
 } from "@tabler/icons-react";
 import {
   ActivityIcon,
   AnchorIcon,
+  AtomIcon,
   ApertureIcon,
   ArrowDownUpIcon,
   BoxIcon,
@@ -103,6 +102,8 @@ export type AssetVisualFamily =
   | "renderTarget"
   | "sprite"
   | "material"
+  | "materialInstance"
+  | "visualEffects"
   | "model"
   | "audio"
   | "font"
@@ -134,6 +135,8 @@ export type TypeVisual = {
   colorVar: string;
   icon: TypeVisualGlyph;
   iconKey: string;
+  /** What a Class asset reads as in the Content Browser (Actor, Object, Subsystem, ...); other types have none. */
+  classKind?: string;
 };
 
 /** Lucide's on-screen stroke in px: `absoluteStrokeWidth` holds it at `strokeWidth` px whatever the size. */
@@ -142,7 +145,7 @@ function lucideStrokePx({ size = 24, strokeWidth = 2, absoluteStrokeWidth }: Typ
 }
 
 /** A Tabler icon (Lucide's 24-unit grid and 2-unit stroke), stroked as Lucide strokes the same props. */
-function tablerGlyph(Icon: typeof IconMap): TypeVisualGlyph {
+function tablerGlyph(Icon: typeof IconPhoto): TypeVisualGlyph {
   return function TablerTypeGlyph({ size = 24, strokeWidth = 2, absoluteStrokeWidth, ...rest }: TypeVisualGlyphProps) {
     return <Icon size={size} stroke={absoluteStrokeWidth ? (strokeWidth * 24) / size : strokeWidth} {...rest} />;
   };
@@ -165,12 +168,10 @@ function phosphorGlyph(Icon: typeof EqualizerIcon): TypeVisualGlyph {
   };
 }
 
-const MAP_GLYPH = tablerGlyph(IconMap);
-const APP_WINDOW_GLYPH = tablerGlyph(IconAppWindow);
 const MIXER_GLYPH = tablerGlyph(IconAdjustmentsAlt);
 const PHOTO_GLYPH = tablerGlyph(IconPhoto);
 const SPHERE_GLYPH = tablerGlyph(IconSphere);
-const SPHERE_PLUS_GLYPH = tablerGlyph(IconSpherePlus);
+const SPHERE_2_GLYPH = tablerGlyph(IconSphere2);
 const MODEL_GLYPH = tablerGlyph(IconCube3dSphere);
 const PACKAGE_GLYPH = tablerGlyph(IconPackage);
 const MOVIE_GLYPH = tablerGlyph(IconMovie);
@@ -334,7 +335,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   BTComposite: OBJECT_ICON,
   ActorComponent: FileCogIcon,
   Actor: ACTOR_ICON,
-  SceneLayer: APP_WINDOW_GLYPH,
+  SceneLayer: Layers2Icon,
   SceneLayerActor: ACTOR_ICON,
   SceneLayerActorSwitcher: Layers2Icon,
   SceneStreamingActor: LayersIcon,
@@ -413,13 +414,13 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   ColliderComponent: SquareDashedIcon,
   PhysicsConstraintComponent: LinkIcon,
   RagdollComponent: PersonStandingIcon,
-  Scene: MAP_GLYPH,
+  Scene: LayersIcon,
   Graph: FileJsonIcon,
   Texture: PHOTO_GLYPH,
   RenderTarget: CameraIcon,
   RenderTargetTexture: ImageIcon,
   Material: SPHERE_GLYPH,
-  MaterialInstance: SPHERE_PLUS_GLYPH,
+  MaterialInstance: SPHERE_2_GLYPH,
   MaterialFunction: SquareFunctionIcon,
   Model: MODEL_GLYPH,
   Audio: FILE_MUSIC_GLYPH,
@@ -431,7 +432,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   CameraShake: VibrateIcon,
   ParticleEmitter: FlameIcon,
   ParticleGraph: NetworkIcon,
-  ParticleSystem: SparklesIcon,
+  ParticleSystem: AtomIcon,
   Water: WavesIcon,
   SkyboxCreator: CloudSunIcon,
   Trace: TIMELINE_EVENT_GLYPH,
@@ -450,7 +451,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   BehaviourTree: NetworkIcon,
   Blackboard: ClipboardListIcon,
   SaveGame: FLOPPY_GLYPH,
-  Sprite: PHOTO_GLYPH,
+  Sprite: ImagesIcon,
   Tileset: LayoutGridIcon,
   Tilemap: Grid3x3Icon,
   Class: OBJECT_ICON,
@@ -481,7 +482,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   RenderTarget: "renderTarget",
   RenderTargetTexture: "renderTarget",
   Material: "material",
-  MaterialInstance: "material",
+  MaterialInstance: "materialInstance",
   MaterialFunction: "material",
   Model: "model",
   Audio: "class",
@@ -490,9 +491,9 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   InputAxis: "struct",
   AudioChannel: "struct",
   SoundAttenuation: "class",
-  ParticleEmitter: "material",
-  ParticleGraph: "material",
-  ParticleSystem: "material",
+  ParticleEmitter: "visualEffects",
+  ParticleGraph: "visualEffects",
+  ParticleSystem: "visualEffects",
   Water: "material",
   SkyboxCreator: "material",
   Trace: "class",
@@ -536,6 +537,8 @@ const COLOR_BY_FAMILY: Record<AssetVisualFamily, string> = {
   renderTarget: assetColorVar("renderTarget"),
   sprite: assetColorVar("sprite"),
   material: assetColorVar("material"),
+  materialInstance: assetColorVar("materialInstance"),
+  visualEffects: assetColorVar("visualEffects"),
   model: assetColorVar("model"),
   audio: assetColorVar("audio"),
   font: assetColorVar("font"),
@@ -610,6 +613,31 @@ function familyFor(query: TypeVisualQuery, iconId: string | undefined): AssetVis
   return "unknown";
 }
 
+/** A Class's kind by its nearest engine base; a Class with none of these bases reads Object. */
+const CLASS_KIND_LABEL: Record<string, string> = {
+  Actor: "Actor",
+  Subsystem: "Subsystem",
+  GameInstance: "Game Instance",
+  ActorComponent: "Component",
+  FunctionLibrary: "Function Library",
+  EditorFunctionLibrary: "Editor Function Library",
+  DebugCommand: "Debug Command",
+  EditorUtilityObject: "Editor Utility Object",
+  BTTask: "Behaviour Tree Task",
+  BTDecorator: "Behaviour Tree Decorator",
+  BTService: "Behaviour Tree Service",
+  BTComposite: "Behaviour Tree Composite",
+};
+
+/** The kind label for a Class ancestry, most specific first. */
+function classKindLabel(ancestry: readonly string[]): string {
+  for (const id of ancestry) {
+    const label = CLASS_KIND_LABEL[id];
+    if (label) return label;
+  }
+  return "Object";
+}
+
 export function resolveTypeVisual(query: TypeVisualQuery = {}): TypeVisual {
   const iconId = iconIdFor(query);
   const family = familyFor(query, iconId);
@@ -618,6 +646,15 @@ export function resolveTypeVisual(query: TypeVisualQuery = {}): TypeVisual {
     colorVar: COLOR_BY_FAMILY[family],
     icon: iconId ? ICON_BY_ID[iconId]! : FileIcon,
     iconKey: iconId ?? "File",
+    ...(query.assetType === "Class"
+      ? {
+          classKind: classKindLabel(
+            query.ancestry?.length
+              ? query.ancestry
+              : walkAncestry(query.parentClass ?? query.classId ?? "Object", (id) => engineParentOf(id) ?? null),
+          ),
+        }
+      : {}),
   };
 }
 

@@ -8,6 +8,7 @@ import {
   type TilesetPayload,
 } from "@haptic/assets";
 import {
+  spriteThumbnailPlan,
   tilemapThumbnailPlan,
   tilesetThumbnailPlan,
   tileThumbnailJobs,
@@ -85,6 +86,24 @@ describe("Tileset thumbnails", () => {
     grown.draw(small.ctx);
     expect(small.calls).toEqual([{ kind: "image", image: "small", source: [0, 0, 48, 32], target: [0, 0, 128, 85] }]);
     expect(small.smoothing()).toBe(false);
+  });
+});
+
+describe("Sprite thumbnails", () => {
+  it("draws the whole Texture fitted into 128 px, smoothed only when it shrinks", () => {
+    const tall = recorder();
+    const plan = spriteThumbnailPlan(atlas("hero", 64, 256))!;
+    expect([plan.width, plan.height]).toEqual([32, 128]);
+    plan.draw(tall.ctx);
+    expect(tall.calls).toEqual([{ kind: "image", image: "hero", source: [0, 0, 64, 256], target: [0, 0, 32, 128] }]);
+    expect(tall.smoothing()).toBe(true);
+
+    const small = recorder();
+    const grown = spriteThumbnailPlan(atlas("coin", 16, 8))!;
+    expect([grown.width, grown.height]).toEqual([128, 64]);
+    grown.draw(small.ctx);
+    expect(small.smoothing()).toBe(false);
+    expect(spriteThumbnailPlan(atlas("empty", 0, 0))).toBeNull();
   });
 });
 
@@ -183,11 +202,15 @@ describe("Tile thumbnail jobs", () => {
     asset("map", "Tilemap", ["tileset", "other-tileset"]),
     asset("other-map", "Tilemap", ["other-tileset"]),
     asset("material", "Material", ["texture"]),
+    asset("sprite", "Sprite", ["texture"]),
+    asset("walk", "SpriteAnimation", ["texture"]),
   ];
   const guids = (changed: string[]) => tileThumbnailTargets(assets, changed).map((entry) => entry.header.guid).sort();
 
-  it("draws a saved Tileset or Tilemap and every Tileset and Tilemap showing a saved asset", () => {
-    expect(guids(["texture"])).toEqual(["map", "tileset"]);
+  it("draws a saved Sprite, Tileset or Tilemap and every one showing a saved asset, but no Sprite Animation", () => {
+    expect(guids(["texture"])).toEqual(["map", "sprite", "tileset"]);
+    expect(guids(["sprite"])).toEqual(["sprite"]);
+    expect(guids(["walk"])).toEqual([]);
     expect(guids(["other-tileset"])).toEqual(["map", "other-map", "other-tileset"]);
     expect(guids(["map"])).toEqual(["map"]);
     expect(guids(["material"])).toEqual([]);
@@ -205,5 +228,8 @@ describe("Tile thumbnail jobs", () => {
       ["tileset", "Tileset", "project-a"],
     ]);
     for (const job of jobs) expect(job.cacheKey).toMatch(new RegExp(`^${job.guid}\\.preview-v1\\.[0-9a-f]{64}$`));
+    const [sprite] = await tileThumbnailJobs(assets, ["sprite"], "project-a");
+    expect([sprite!.guid, sprite!.type]).toEqual(["sprite", "Sprite"]);
+    expect(sprite!.cacheKey).toMatch(/^sprite\.preview-v1\.[0-9a-f]{64}$/);
   });
 });

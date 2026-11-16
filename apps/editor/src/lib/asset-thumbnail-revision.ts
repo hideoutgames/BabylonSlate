@@ -35,7 +35,7 @@ export function createAssetThumbnailRevisionIndex(
     const asset = byGuid.get(guid);
     const type = asset?.header.type;
     // Pixels Per Unit changes only an actor Class's capture.
-    const unscaled = type === "Material" || type === "Tileset" || type === "Tilemap";
+    const unscaled = type === "Material" || type === "Sprite" || type === "Tileset" || type === "Tilemap";
     if (!asset || (!unscaled && !(
       type === "Class" && classDocumentShowsPrefab(asset.header.parentClass, parentOf)
     ))) {
