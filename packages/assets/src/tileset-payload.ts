@@ -55,12 +55,16 @@ export interface TilesetTile {
 
 export const DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS = 100;
 
+/** How long each frame of `tile`'s animation shows; an omitted or invalid value is 100 ms. */
+export function tilesetAnimationFrameDurationMs(tile: TilesetTile): number {
+  const duration = tile.animationFrameDurationMs;
+  return duration && Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS;
+}
+
 /** Animation IDs address atlas cells directly; collision stays on the painted tile. */
 export function tilesetAnimationFrame(tileset: TilesetPayload, tile: TilesetTile, elapsedMs: number): number {
   if (!tile.animation.length) return tile.id;
-  const duration = tile.animationFrameDurationMs;
-  const frameDuration = duration && Number.isFinite(duration) && duration > 0
-    ? duration : DEFAULT_TILE_ANIMATION_FRAME_DURATION_MS;
+  const frameDuration = tilesetAnimationFrameDurationMs(tile);
   const time = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
   const frame = tile.animation[Math.floor(time / frameDuration) % tile.animation.length]!;
   return Number.isInteger(frame) && tilesetTileRect(tileset, frame) ? frame : tile.id;
