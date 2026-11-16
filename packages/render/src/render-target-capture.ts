@@ -26,8 +26,9 @@ import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOr
 import {
   normalizeRenderTargetCaptureProperties, normalizeRenderTargetPayload, RENDER_TARGET_CAPTURE_QUALITY_LABELS,
   type RenderTargetCaptureProperties, type RenderTargetCaptureQuality, type RenderTargetPayload,
-  type RenderTargetTexturePayload, type SerializedScene, type SerializedTransform,
+  type RenderTargetTexturePayload, type SerializedScene, type SerializedTransform, updateRateInterval,
 } from "@haptic/core";
+import { dueAtUpdateRate, sceneHonoursUpdateRates, takeUpdateRatePhase, updateRateTick } from "./update-rate-gate";
 import { authoredActorMatrices, authoredComponentActorTransform, authoredTransformMatrix } from "./authored-transform-matrices";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { managedRenderTargetResources, renderTargetAllocationBytes } from "./render-target-resource-cost";
@@ -94,6 +95,10 @@ export type RenderTargetCaptureDiagnostics = {
    * reflection, a mesh another shown capture draws, or a consumer that cannot be placed. Null: nothing shows it.
    */
   shownBy: "view" | "reflection" | "another capture" | "unknown consumer" | "unplaced Material" | "another Scene" | null;
+  /** Images this output published. */
+  draws: number;
+  /** Renders its capture sat out at its Update Rate, keeping its last image without listing or drawing anything. */
+  rateSkips: number;
 };
 
 const controllers = new WeakMap<Scene, RenderTargetCaptures>();
@@ -113,6 +118,14 @@ export function captureSunCascades(definition: RenderTargetPayload): number | un
   return Math.max(width, height) <= SMALL_CAPTURE_EDGE ? 1 : undefined;
 }
 const drawing = renderTargetCaptureDrawing;
+
+function sameCaptureSettings(a: RenderTargetCaptureProperties, b: RenderTargetCaptureProperties): boolean {
+  for (const key of Object.keys(a) as (keyof RenderTargetCaptureProperties)[]) {
+    const x = a[key], y = b[key];
+    if (Array.isArray(x) && Array.isArray(y) ? x.length !== y.length || x.some((entry, index) => entry !== y[index]) : x !== y) return false;
+  }
+  return true;
+}
 
 class CaptureTexture extends Texture {
   constructor(scene: Scene, name: string) {
@@ -155,6 +168,13 @@ type Capture = {
   local: Matrix;
   fallback?: Matrix;
   requested: boolean;
+  /** Renders between draws at its Update Rate (1, 2 or 4), and its stable offset among them. */
+  interval: number;
+  phase: number;
+  /** Owed a draw: its rate's render or a settings change made it draw, and it has not published since. */
+  due: boolean;
+  /** Sits this render out at its Update Rate (`skipsByRate`). */
+  skipping: boolean;
 };
 type CaptureBuffer = { texture: CaptureRenderTarget; lease: ManagedRenderLease };
 /**
@@ -206,6 +226,9 @@ type Target = CaptureBuffer & {
   actorLists: number;
   particles: IParticleSystem[];
   published: boolean;
+  /** Images published, and renders its capture sat out at its Update Rate (`RenderTargetCaptureDiagnostics`). */
+  draws: number;
+  rateSkips: number;
 };
 type CaptureMaterial = { material: NodeMaterial; mask: Texture | null; uvIndex: number; authored?: AuthoredMaterialVariant };
 
@@ -341,9 +364,14 @@ export class RenderTargetCaptures {
     const settings = normalizeRenderTargetCaptureProperties(properties);
     const camera = previous?.camera ?? this.createCamera(actorId);
     const local = transform ? authoredTransformMatrix(transform) : Matrix.Identity();
+    // A capture keeps its rate's phase while its rate stands. A changed setting draws at the next render whatever the
+    // phase; a moved transform does not (it is what a reduced rate is for).
+    const interval = updateRateInterval(settings.updateRate);
     this.captures.set(actorId, {
       camera, settings, includeIds: new Set(settings.actorIds), root, local, fallback,
       requested: previous?.requested ?? false,
+      interval, phase: previous && previous.interval === interval ? previous.phase : takeUpdateRatePhase(this.scene, interval),
+      due: !previous || previous.due || !sameCaptureSettings(previous.settings, settings), skipping: false,
     });
     camera.fov = settings.fieldOfView * Math.PI / 180;
     camera.minZ = settings.nearClip;
@@ -412,6 +440,9 @@ export class RenderTargetCaptures {
     this.pendingViews.length = 0;
     if (this.disposed || drawing.has(this.scene) || isSceneGameTimePaused(this.scene)) return;
     this.frameOwners.clear();
+    const tick = updateRateTick(this.scene);
+    const rates = sceneHonoursUpdateRates(this.scene);
+    for (const [actorId, capture] of this.captures) capture.skipping = rates && this.skipsByRate(actorId, capture, tick);
     this.findShown();
     for (const [actorId, capture] of this.captures) {
       const settings = capture.settings;
@@ -425,6 +456,11 @@ export class RenderTargetCaptures {
       // A staged producer cannot claim a loaded sibling's shared asset output.
       // Eligible producers retain stable actor insertion order.
       this.frameOwners.add(guid);
+      // Off its Update Rate's renders the capture keeps its last image: no placement, listing, readiness ask or draw.
+      if (capture.skipping) {
+        this.targets.get(guid)!.rateSkips++;
+        continue;
+      }
       // Play's starting-state draw rehearses a manual capture not yet requested: it draws once, unpublished, so its
       // variants (a data capture's override Materials) compile and first draw behind the loading screen.
       const rehearsal = !settings.captureEveryFrame && !capture.requested;
@@ -526,6 +562,7 @@ export class RenderTargetCaptures {
       waterSceneCopyPass: target.view?.renderer.waterSceneCopyDiagnostics()?.renderPassId ?? null,
       strictReadinessChecks: target.view?.renderer.strictReadinessChecks ?? 0,
       shownBy: this.lastShownBy.get(renderTargetGuid) ?? null,
+      draws: target.draws, rateSkips: target.rateSkips,
     }));
   }
   /** Settles once every retired capture view's native release confirmed and its output and lease are freed. */
@@ -599,12 +636,16 @@ export class RenderTargetCaptures {
    * change could leave stale. Without an active camera every output counts as shown.
    */
   private findShown(): void {
+    // A render every every-frame capture sits out at its Update Rate asks nothing and keeps the last render's answers:
+    // a reflection drawn meanwhile still marks the outputs its meshes sample (`noteListed`).
+    const everyFrame = this.everyFrameCaptures();
+    if (this.textures.size && everyFrame === "skipping") return;
     this.consumers.clear();
     this.materialTargets.clear();
     this.placed.clear();
     this.unplaced.clear();
     // Only every-frame captures are held back: a Scene without one (many unlit sprites, no capture) asks no mesh.
-    if (!this.textures.size || !this.capturesEveryFrame()) return;
+    if (!this.textures.size || everyFrame === "none") return;
     const frame = this.scene.getEngine().frameId;
     const camera = this.scene.activeCamera;
     // The camera's pose as it is now, not the matrices its last render left: this runs before the view's own update.
@@ -632,8 +673,32 @@ export class RenderTargetCaptures {
       for (const guid of this.materialSamples(material) ?? []) this.unplaced.add(guid);
     }
   }
-  private capturesEveryFrame(): boolean {
-    for (const capture of this.captures.values()) if (capture.settings.enabled && capture.settings.captureEveryFrame) return true;
+  /**
+   * The enabled every-frame captures this render: none, all sitting it out at their Update Rate, or some that may draw.
+   */
+  private everyFrameCaptures(): "none" | "skipping" | "drawing" {
+    let any = false;
+    for (const capture of this.captures.values()) {
+      if (!capture.settings.enabled || !capture.settings.captureEveryFrame) continue;
+      if (!capture.skipping) return "drawing";
+      any = true;
+    }
+    return any ? "skipping" : "none";
+  }
+  /**
+   * Whether an every-frame capture sits this render out at its Update Rate. It does not while its output has not
+   * published (its first image, or a target made again for a new asset, quality or colour type) or while it is owed a
+   * draw (its rate's render or a settings change made it draw, and it has not published since: one nothing showed, or
+   * whose view was not ready, keeps asking every render); a render on its phase makes it owed.
+   */
+  private skipsByRate(actorId: string, capture: Capture, tick: number): boolean {
+    const settings = capture.settings;
+    if (!settings.enabled || !settings.captureEveryFrame || capture.interval <= 1 || capture.due) return false;
+    const target = settings.renderTargetGuid ? this.targets.get(settings.renderTargetGuid) : undefined;
+    if (!target?.published || target.owner !== actorId ||
+      (target.scene && target.linear !== this.scene.imageProcessingConfiguration.applyByPostProcess)) return false;
+    if (!dueAtUpdateRate(tick, capture.interval, capture.phase)) return true;
+    capture.due = true;
     return false;
   }
   /** The Render Targets `mesh` samples through `material`: an unlit Material's image is its mesh's own binding. */
@@ -723,6 +788,8 @@ export class RenderTargetCaptures {
   /** A drawn frame consumes the manual request and publishes the front buffer. */
   private published(capture: Capture, target: Target): void {
     capture.requested = false;
+    capture.due = false;
+    target.draws++;
     const wasPublished = target.published;
     target.published = true;
     if (!wasPublished) this.publishTextures();
@@ -789,6 +856,7 @@ export class RenderTargetCaptures {
         key, definition, quality, ...buffer, scene, linear: this.scene.imageProcessingConfiguration.applyByPostProcess, owner, depth, normals,
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes: [], actorLists: 0, particles: [], published: false,
+        draws: 0, rateSkips: 0,
       };
       this.targets.set(guid, target);
       return target;
@@ -847,6 +915,7 @@ export class RenderTargetCaptures {
         view: { renderer, camera, postProcess: null, postProcessRevision: -1, outlines: null, outlineRevision: -1, shadows },
         normalMaterials: new Map(), normalSlots: new Map(), usedNormalSources: new Set(), materialRetirement: Promise.resolve(),
         overrides: new Set(), pendingOverrides: new Set(), meshes, actorLists: 0, particles, published: false,
+        draws: 0, rateSkips: 0,
       };
       this.targets.set(guid, target);
       return target;

@@ -15,6 +15,7 @@ Select an actor, then choose **Add Component > Rendering > Mirror**. You can als
 | Width | Width along local X, in scene units. Default 2. |
 | Height | Height along local Y, in scene units. Default 2. |
 | Resolution Scale | Reflection resolution as a fraction of the resolution the view renders at, from 0.1 to 1. With [FSR Upscaling](../graphics/post-processing.md#project-effects) on, that is its lower render resolution. Lower values look softer and save GPU time and memory. Default 1. |
+| Update Rate | How often the reflection draws again in Play: **Every Frame**, **Every 2nd Frame** or **Every 4th Frame**. See [Update rate](#update-rate). Default Every Frame. |
 | Tint | Multiplies the reflection on the built-in surface. Default white. |
 | Material | A Material for the surface instead of the built-in one. Default none (the built-in surface). |
 
@@ -29,6 +30,7 @@ The reflective side faces the actor's local −Z, the same side a Plane mesh sho
 - A mirror the camera can't see, or sees from behind, draws nothing.
 - A reflection draws only what can appear on the mirror's surface: objects outside that part of the mirrored view cost nothing, and moving them doesn't make the mirror draw again unless their shadow falls on something it shows.
 - While the camera and everything in the reflection stay still, the mirror keeps its reflection instead of drawing it again. Text, sprites and tilemaps keep it too, and animated tiles draw it again only when their frame changes. Animated Materials, skinned meshes and live images such as other captures make it draw again each frame.
+- **Update Rate** makes a mirror draw only every second or fourth frame. See [Update rate](#update-rate).
 - Each mirror keeps its own reflection image in GPU memory. **Resolution Scale** makes it smaller.
 - With [Reflection Shadows](../graphics/shadows.md#shadows-in-reflections) on (Ultra), each mirror that draws also renders the directional light's shadow again, fitted to its reflection.
 
@@ -48,6 +50,16 @@ The reflective side faces the actor's local −Z, the same side a Plane mesh sho
 - A moving actor is drawn in front of everything that comes from the probe, even static scenery that stands between it and the mirror.
 - Without a probe or environment lighting, that part shows the scene's background colour.
 - **Mirror Reflections** in the **Geometry** group of [Scalability](../graphics/index.md#scalability) caps every mirror at once, so a project can keep full reflections on fast devices and cheaper ones elsewhere. A mirror draws whichever of its own **Reflects** and the cap draws less.
+
+## Update rate
+
+**Update Rate** lets a mirror draw its reflection less often, for a mirror whose reflection doesn't need to follow every frame, such as one at the side of a room.
+
+- On the frames it skips, the mirror keeps showing its last reflection and costs nothing.
+- Mirrors and [Render Target Captures](render-target-capture.md#update-rate) on the same rate take turns: two of them at Every 2nd Frame draw on different frames.
+- A mirror still draws at once, whatever its rate, when it first appears, when it comes into view, when the view's size changes, and when [Scalability](../graphics/index.md#scalability) changes what it reflects.
+- The two-mirrors-per-frame limit still applies. A mirror whose turn comes when two others draw keeps its turn and draws on the next frame there is room.
+- The rate applies in Play and in exported games. The editor viewport draws every mirror every frame, so edits show at once.
 
 ## Custom surfaces
 

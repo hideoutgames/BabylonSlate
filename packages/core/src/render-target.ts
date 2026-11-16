@@ -1,5 +1,6 @@
 import { parseMapDefaultEntries } from "./map-default";
 import type { GraphClassMember, SerializedGraph } from "./project";
+import { normalizeUpdateRate, type UpdateRate } from "./update-rate";
 
 /** Babylon-free render capture contracts shared by authoring and exported games. */
 export const ENGINE_RENDER_TARGET_MODE_ENUM_ID = "engine:RenderTargetMode";
@@ -51,6 +52,8 @@ export type RenderTargetCaptureProperties = {
   farClip: number;
   /** Optional in saved data; absent or unknown values load as `fast`. */
   quality: RenderTargetCaptureQuality;
+  /** How often an every-frame capture redraws in Play; the editor viewport draws it every frame. */
+  updateRate: UpdateRate;
 };
 export type RenderTargetCaptureProperty = keyof RenderTargetCaptureProperties;
 
@@ -95,6 +98,7 @@ export function createDefaultRenderTargetCaptureProperties(): RenderTargetCaptur
     nearClip: 0.1,
     farClip: 1000,
     quality: "fast",
+    updateRate: "everyFrame",
   };
 }
 function normalizeRenderTargetCaptureQuality(value: unknown): RenderTargetCaptureQuality {
@@ -115,6 +119,7 @@ export function normalizeRenderTargetCaptureProperties(value: unknown): RenderTa
     nearClip,
     farClip: Math.max(nearClip + 0.001, finite(source.farClip, 1000, 0.002, 1000000)),
     quality: normalizeRenderTargetCaptureQuality(source.quality),
+    updateRate: normalizeUpdateRate(source.updateRate),
   };
 }
 

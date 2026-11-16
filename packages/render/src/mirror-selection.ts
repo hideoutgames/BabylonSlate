@@ -5,7 +5,7 @@
  * of them; every other surface keeps the image it last drew. Only a surface the view can see (its bounds meet the
  * frustum) from its reflective side is eligible. Surfaces that have never drawn come first, so every visible mirror
  * gets an image; after that the nearest surfaces (by the closest point of their rectangle to the eye) draw, ties
- * going to the older surface.
+ * going to the older surface. A surface its Update Rate holds back this render is not visible here (`mirrors.ts`).
  */
 
 /** Reflections drawn per scene render; the rest keep their last image. */

@@ -6,9 +6,11 @@ describe("mirror authoring", () => {
   it("replaces invalid sizes, clamps scale and tint, and trims the Material override", () => {
     expect(parseMirrorProperties({
       width: 0, height: -3, resolutionScale: 0.01, tint: [-1, 0.25, 7], materialGuid: " mat ", surface: "native",
-    })).toEqual({ enabled: true, reflects: "everything", width: 2, height: 2, resolutionScale: 0.1, tint: [0, 0.25, 1], materialGuid: "mat" });
+    })).toEqual({
+      enabled: true, reflects: "everything", width: 2, height: 2, resolutionScale: 0.1, tint: [0, 0.25, 1], materialGuid: "mat", updateRate: "everyFrame",
+    });
     expect(parseMirrorProperties({ enabled: false, width: Infinity, resolutionScale: 4, tint: [1, 1], materialGuid: "  " }))
-      .toEqual({ enabled: false, reflects: "everything", width: 2, height: 2, resolutionScale: 1, tint: [1, 1, 1], materialGuid: null });
+      .toEqual({ enabled: false, reflects: "everything", width: 2, height: 2, resolutionScale: 1, tint: [1, 1, 1], materialGuid: null, updateRate: "everyFrame" });
     expect(parseMirrorProperties({ resolutionScale: Number.NaN }).resolutionScale).toBe(1);
   });
 
@@ -17,6 +19,14 @@ describe("mirror authoring", () => {
     expect(parseMirrorProperties({ reflects: "environment" }).reflects).toBe("environment");
     expect(parseMirrorProperties({ reflects: "nothing" }).reflects).toBe("everything");
     expect(parseMirrorProperties({ reflects: 2 }).reflects).toBe("everything");
+  });
+
+  it("keeps a known Update Rate and reads an absent or unknown one as Every Frame", () => {
+    expect(parseMirrorProperties({}).updateRate).toBe("everyFrame");
+    expect(parseMirrorProperties({ updateRate: "every2ndFrame" }).updateRate).toBe("every2ndFrame");
+    expect(parseMirrorProperties({ updateRate: "every4thFrame" }).updateRate).toBe("every4thFrame");
+    expect(parseMirrorProperties({ updateRate: "every3rdFrame" }).updateRate).toBe("everyFrame");
+    expect(parseMirrorProperties({ updateRate: 2 }).updateRate).toBe("everyFrame");
   });
 
   it("caps what a Mirror draws at whichever of its own Reflects and the quality level's draws less", () => {
@@ -34,7 +44,7 @@ describe("mirror authoring", () => {
       actors: [{ id: "a", name: "Mirror", components: [{ id: "m", classId: "MirrorComponent", properties: { width: 3, height: "tall" } }] }],
     });
     expect(scene.actors[0]!.components[0]!.properties).toEqual({
-      enabled: true, reflects: "everything", width: 3, height: 2, resolutionScale: 1, tint: [1, 1, 1], materialGuid: null,
+      enabled: true, reflects: "everything", width: 3, height: 2, resolutionScale: 1, tint: [1, 1, 1], materialGuid: null, updateRate: "everyFrame",
     });
   });
 });

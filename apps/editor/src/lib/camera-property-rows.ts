@@ -11,6 +11,8 @@ import {
   SPRING_ARM_PROBE_RETURN_SPEED_LIMITS,
   SPRING_ARM_PROBE_SIZE_LIMITS,
   type SerializedComponent,
+  UPDATE_RATE_LABELS,
+  UPDATE_RATES,
 } from "@haptic/core";
 import { humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
 import {
@@ -173,13 +175,19 @@ export function renderTargetCapturePropertyRows(
       description: "Fast draws a lightweight pass. High Quality renders like a camera here, with its own sun shadows, water refraction, ambient occlusion and outlines, and leaves tone mapping, bloom, vignette, color grading and post-processing to the view that shows the image, so a monitor in the world matches the scene around it. Full Quality also applies them, as a camera's own image does. Both differ from a camera only in planar water mirrors, and in which lights shine and which point and spot lights cast shadows when more ask than the device allows. Both cost about a second camera, including their own sun shadow maps each captured frame: keep their Render Target at 512 × 512 or smaller, and turn off Capture Every Frame for images that rarely change. Scene Color targets only.",
       onChange: (value) => update("quality", value),
     },
-    ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).map((key): PropertyRow => ({
+    ...(["enabled", "captureEveryFrame", "captureOnlyActors"] as const).flatMap((key): PropertyRow[] => [{
       kind: "boolean", id: rowId(actorId, component.id, key), label: humanizePropertyLabel(key), value: capture[key],
       defaultValue: key !== "captureOnlyActors",
       ...(key === "captureEveryFrame" ? { description: "Disable automatic captures and request captures from a NodeGraph." } : {}),
       ...(key === "captureOnlyActors" ? { description: "Capture only the actors in Capture Actors. An empty enabled list captures nothing." } : {}),
       onChange: (value) => update(key, value),
-    })),
+    }, ...(key === "captureEveryFrame" ? [{
+      kind: "enum", id: rowId(actorId, component.id, "updateRate"), label: "Update Rate", value: capture.updateRate,
+      defaultValue: "everyFrame", disabled: !capture.captureEveryFrame,
+      options: UPDATE_RATES.map((value) => ({ value, label: UPDATE_RATE_LABELS[value] })),
+      description: "In Play, a lower rate keeps the last image on skipped frames; the editor draws every frame.",
+      onChange: (value) => update("updateRate", value),
+    } satisfies PropertyRow] : [])]),
     ...([
       ["fieldOfView", "Field Of View", 1, 179], ["nearClip", "Near Clip", 0.001, 100000], ["farClip", "Far Clip", 0.002, 100000],
     ] as const).map(([key, label, min, max]): PropertyRow => ({

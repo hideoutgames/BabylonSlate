@@ -14,11 +14,23 @@ Select an actor, then choose **Add Component > Camera > Render Target Capture**.
 | Quality | **Fast** draws a lightweight pass. **High Quality** renders like a camera at the capture, including its own sun shadows, water refraction, ambient occlusion and outlines, and leaves tone mapping, bloom and the other screen effects to the camera that shows the image, so a monitor matches the scene around it. **Full Quality** also applies the screen effects and post-processing, as a camera's own image does. Both cost about a second camera. Scene Color targets only. Default Fast. |
 | Enabled | Turns capturing on or off. Default on. |
 | Capture Every Frame | Captures each frame in which something shows the image. Turn off to capture only when a script asks. Default on. |
+| Update Rate | How often Capture Every Frame captures in Play: **Every Frame**, **Every 2nd Frame** or **Every 4th Frame**. See [Update rate](#update-rate). Default Every Frame. |
 | Capture Only Actors | Captures only the actors in **Capture Actors**. Default off. |
 | Capture Actors | The actors to capture. Shown when Capture Only Actors is on. An empty list captures nothing. |
 | Field Of View | Lens angle in degrees, 1 to 179. Default 60. |
 | Near Clip | Nothing closer is captured. Default 0.1. |
 | Far Clip | Nothing farther is captured. Default 1000. |
+
+## Update rate
+
+**Update Rate** lets a capture with **Capture Every Frame** on draw less often, for a monitor or minimap that doesn't need every frame.
+
+- On the frames it skips, the capture keeps its last image and costs nothing.
+- Captures and [Mirrors](mirror.md#update-rate) on the same rate take turns: two of them at Every 2nd Frame draw on different frames.
+- A capture still draws at once, whatever its rate, for its first image, when its Render Target or Quality changes, and when a script changes one of its settings. Moving the capture doesn't make it draw early.
+- A capture whose turn comes while nothing shows its image draws in the frame the image comes into view.
+- The rate applies in Play and in exported games. The editor viewport captures every frame, so edits show at once.
+- To capture only when a script asks, turn **Capture Every Frame** off instead.
 
 ## Notes
 

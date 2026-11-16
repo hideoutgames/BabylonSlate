@@ -5707,6 +5707,35 @@ describe("Play createEngine view", () => {
     } finally { ready.mockRestore(); draw.mockRestore(); for (const spy of stored) spy.mockRestore(); }
   });
 
+  it.each([["Play", true, 1], ["the editor viewport", false, 0]] as const)("holds a capture to its Update Rate in %s only", (_view, play, skipped) => {
+    const engine = sharedEngine();
+    const allocate = engine.createRenderTargetTexture.bind(engine);
+    vi.spyOn(engine, "createRenderTargetTexture").mockImplementation((size, options) => {
+      const target = allocate(size, options);
+      target.texture!.format = Constants.TEXTUREFORMAT_RGBA;
+      return target;
+    });
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement,
+      play ? { sharedEngine: engine, playMode: true } : { sharedEngine: engine, editor: true });
+    handles.push(handle);
+    const captures = sceneRenderTargetCaptures(handle.scene);
+    captures.setAssets(new Map([["target", { mode: "SceneColor", width: 16, height: 8 }]]));
+    const lens = MeshBuilder.CreateBox("lens", { size: 0.1 }, handle.scene);
+    captures.configure("lens", { ...createDefaultRenderTargetCaptureProperties(), renderTargetGuid: "target", updateRate: "every2ndFrame" }, () => lens);
+    const spies = [vi.spyOn(RenderTargetTexture.prototype, "isReadyForRendering").mockReturnValue(true),
+      vi.spyOn(RenderTargetTexture.prototype, "render").mockImplementation(() => {}),
+      vi.spyOn(DisplayConversion.prototype, "ready").mockReturnValue(true), vi.spyOn(DisplayConversion.prototype, "draw").mockImplementation(() => {})];
+    try {
+      // Frames 1 to 4: the first image, then the capture's phase falls on the even frames.
+      (engine as unknown as { _frameId: number })._frameId = 0;
+      for (let i = 0; i < 4; i++) {
+        (engine as unknown as { _frameId: number })._frameId += 1;
+        captures.render();
+      }
+      expect(captures.diagnostics()[0]).toMatchObject({ draws: 4 - skipped, rateSkips: skipped });
+    } finally { for (const spy of spies) spy.mockRestore(); }
+  });
+
   it("refreshes spawned area lights when prepared assets arrive or disappear without another actor command", async () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);

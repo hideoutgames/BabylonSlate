@@ -18,6 +18,12 @@
  * surface due on every render while it is reflected, within the same budget. A target allocates on a surface's first draw and lives with the surface (resized
  * when the size the view draws at, which FSR Upscaling lowers, or Resolution Scale changes), so a skipped surface always has its last image to show.
  *
+ * Update Rate (Play only, `sceneHonoursUpdateRates`): a surface at Every 2nd or 4th Frame is a candidate only on the
+ * renders its stable phase falls on; on the others it keeps its last image and costs nothing: no cull, content ask,
+ * readiness ask or draw. It is a candidate at once, whatever its phase, until it has drawn, when it comes into view,
+ * when its target's size or colour type changes, when the quality level changes what it reflects, and while its last
+ * draw left a mesh out. A due surface the budget passes over stays due on later renders until it draws or is current.
+ *
  * Shadows: a pass shows the scene view's spot and point light shadows. The sun's, only with Reflection Shadows: then a
  * drawing surface's mirror camera holds the sun's cascades as maps of its own, fitted to its mirrored view and drawn
  * just before its pass when they changed (`ReflectionSunShadows`); a surface whose maps would draw differently is not
@@ -43,7 +49,8 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
-import { capMirrorReflects, type MirrorProperties, type MirrorReflects } from "@haptic/core";
+import { capMirrorReflects, updateRateInterval, type MirrorProperties, type MirrorReflects } from "@haptic/core";
+import { dueAtUpdateRate, sceneHonoursUpdateRates, takeUpdateRatePhase, updateRateTick } from "./update-rate-gate";
 import type { ManagedRenderResource } from "./managed-render-resources";
 import { MirrorReflectionBlock } from "./mirror-reflection-block";
 import { offsetReach } from "./mirror-offset-bound";
@@ -88,6 +95,8 @@ export interface MirrorDiagnostics {
   readonly lastRenderDraws: number;
   /** Visible surfaces that kept their current reflection instead of drawing it again. */
   readonly reuses: number;
+  /** Visible surfaces that kept their last reflection unasked because their Update Rate skipped the render. */
+  readonly rateSkips: number;
   /** Meshes the drawn reflections' passes drew, summed over draws. */
   readonly drawnMeshes: number;
   /** Shadow map passes the Scene's surfaces sample, recorded so far (`shadowChangeSequence`). */
@@ -159,6 +168,13 @@ type Surface = MirrorCandidate & {
   culledInto: PlanarMirrorTargetState | null;
   /** While verifying (`verifyMirrorContentPolls`); null otherwise, and until the surface's first draw after it is on. */
   check: PollCheck | null;
+  /** Renders between candidacies at its Update Rate (1, 2 or 4), and its stable offset among them. */
+  readonly interval: number;
+  readonly phase: number;
+  /** Whether the surface was in view (`place`) at the owner's last render. */
+  inView: boolean;
+  /** Owed a draw: its rate (or a change) made it a candidate and it has not drawn or been found current since. */
+  due: boolean;
 };
 
 /** What a Moving Actors reflection is cleared to: no colour, and alpha 1, which a drawn fragment turns to 0. */
@@ -208,6 +224,7 @@ class SceneMirrors {
   draws = 0;
   lastRenderDraws = 0;
   reuses = 0;
+  rateSkips = 0;
   drawnMeshes = 0;
   skippedPolls = 0;
   pollMismatches = 0;
@@ -284,7 +301,9 @@ class SceneMirrors {
   }
 
   add(mesh: Mesh, properties: MirrorProperties): void {
+    const interval = updateRateInterval(properties.updateRate);
     const surface: Surface = {
+      interval, phase: takeUpdateRatePhase(this.scene, interval), inView: false, due: false,
       mesh, properties, binding: createMirrorReflectionBinding(mesh, properties.tint, properties.reflects), plane: { nx: 0, ny: 0, nz: -1, d: 0 },
       target: null, ready: false, failed: false, content: new ReflectedContent(), dirty: true, drawnViewProjection: new Matrix(),
       drawnEmpty: false, culledAt: 0, culledInto: null, check: null, drawn: false, visible: false, order: this.order++, distance: 0,
@@ -300,7 +319,7 @@ class SceneMirrors {
   diagnostics(): MirrorDiagnostics {
     return {
       surfaces: this.surfaces.length, targets: this.surfaces.filter((surface) => surface.target?.lease).length,
-      draws: this.draws, lastRenderDraws: this.lastRenderDraws, reuses: this.reuses, drawnMeshes: this.drawnMeshes,
+      draws: this.draws, lastRenderDraws: this.lastRenderDraws, reuses: this.reuses, rateSkips: this.rateSkips, drawnMeshes: this.drawnMeshes,
       shadowPasses: shadowChangeSequence(this.scene),
       sunShadowViews: this.surfaces.filter((surface) => surface.target?.sunShadows.holdsMaps).length,
       skippedPolls: this.skippedPolls, pollMismatches: this.pollMismatches, cropChecks: this.cropChecks, cropMisses: this.cropMisses,
@@ -350,15 +369,19 @@ class SceneMirrors {
     const tick = ++this.renders;
     this.culls++;
     this.sunShadows = reflectionShadowsEnabled(scene);
+    const rates = sceneHonoursUpdateRates(scene), frame = updateRateTick(scene);
     for (const surface of this.surfaces) {
       // Off, every surface gives its maps back now; a current one then draws again, unshadowed.
       if (!this.sunShadows) surface.target?.sunShadows.release();
+      const wasInView = surface.inView;
       this.place(surface, camera.layerMask);
+      surface.inView = surface.visible;
       const mode = this.mode(surface);
       if (mode !== surface.binding.reflects) {
         // The quality level changed what the surface shows: its Material compiles the other variant. The image drawn
         // for the old one is drawn again, as after any change of the render settings (`ReflectedContent`).
         surface.binding.reflects = mode;
+        surface.due = true;
         this.recompile(surface.mesh.material);
       }
       // An Environment surface draws no reflection and holds no storage for one: its Material shows the environment.
@@ -367,9 +390,16 @@ class SceneMirrors {
         if (surface.target) this.release(surface);
         continue;
       }
+      // Off its Update Rate's renders the surface keeps its last image without asking anything about it.
+      if (surface.visible && rates && this.skipsByRate(surface, frame, wasInView, drawnWidth, drawnHeight, type, maxSize)) {
+        surface.visible = false;
+        this.rateSkips++;
+        continue;
+      }
       // A current reflection is not a candidate: the budget goes to surfaces whose image is due.
       if (surface.visible && this.current(surface, camera, drawnWidth, drawnHeight, type, maxSize)) {
         surface.visible = false;
+        surface.due = false;
         this.reuses++;
       }
     }
@@ -427,9 +457,7 @@ class SceneMirrors {
    */
   private current(surface: Surface, camera: Camera, drawnWidth: number, drawnHeight: number, type: number, maxSize: number): boolean {
     const target = surface.target;
-    if (!surface.drawn || !target?.lease || target.type !== type) return false;
-    const scale = surface.properties.resolutionScale;
-    if (target.width !== planarMirrorTargetSize(drawnWidth, scale, maxSize) || target.height !== planarMirrorTargetSize(drawnHeight, scale, maxSize)) return false;
+    if (!surface.drawn || !target || !this.fits(surface, drawnWidth, drawnHeight, type, maxSize)) return false;
     if (!this.mirrorAndCull(surface, camera, target)) return false;
     target.mirror.mirrorView.multiplyToRef(target.projection, this.nextViewProjection);
     const moved = !surface.drawnViewProjection.equals(this.nextViewProjection);
@@ -468,6 +496,28 @@ class SceneMirrors {
       if (polled !== current) this.pollMismatches++;
     }
     return current;
+  }
+
+  /** Whether the surface's target holds storage of the size and colour type a draw this render would use. */
+  private fits(surface: Surface, drawnWidth: number, drawnHeight: number, type: number, maxSize: number): boolean {
+    const target = surface.target;
+    if (!target?.lease || target.type !== type) return false;
+    const scale = surface.properties.resolutionScale;
+    return target.width === planarMirrorTargetSize(drawnWidth, scale, maxSize) && target.height === planarMirrorTargetSize(drawnHeight, scale, maxSize);
+  }
+
+  /**
+   * Whether a visible surface sits this render out at its Update Rate. It does not while it has never drawn, has just
+   * come into view, needs another target, is owed a draw (its rate's render or a change made it a candidate and it has
+   * neither drawn nor been found current since) or its last draw left a mesh out (`dirty` after a draw); a render on its
+   * phase makes it owed.
+   */
+  private skipsByRate(surface: Surface, tick: number, wasInView: boolean, drawnWidth: number, drawnHeight: number, type: number, maxSize: number): boolean {
+    if (surface.interval <= 1) return false;
+    if (!surface.due && surface.drawn && wasInView && !surface.dirty && this.fits(surface, drawnWidth, drawnHeight, type, maxSize) &&
+      !dueAtUpdateRate(tick, surface.interval, surface.phase)) return true;
+    surface.due = true;
+    return false;
   }
 
   /** The surface's verifier record while verifying; gives it up once verifying stops. */
@@ -576,6 +626,7 @@ class SceneMirrors {
     this.draws++;
     this.drawnMeshes += target.texture.renderList!.length;
     surface.drawn = true;
+    surface.due = false;
     surface.drawnEmpty = this.mode(surface) === "movingActors" && !target.texture.renderList!.length;
     target.mirror.mirrorView.multiplyToRef(target.projection, surface.drawnViewProjection);
     const binding = surface.binding;
