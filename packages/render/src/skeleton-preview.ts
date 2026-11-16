@@ -57,7 +57,10 @@ function weightedBones(meshes: readonly AbstractMesh[]): Set<number> {
 /** The rig drawn over (or instead of) a previewed model. */
 export interface SkeletonPreviewHandle {
   boneCount: number;
-  /** Draws the named joint, and the bones it heads, in the selection colour; null or an unknown name clears it. */
+  /**
+   * Draws the named joint and its bone in the selection colour; an end marker lights the bone that ends at it. Null,
+   * an unknown name or a joint drawn not at all clears it.
+   */
   setSelectedBone(name: string | null): void;
   dispose(): void;
 }
@@ -108,7 +111,8 @@ export function attachSkeletonPreview(
           position: Vector3.Zero(),
           parent: parent ? offset + skeleton.bones.indexOf(parent) : -1,
           local: bone.getRestMatrix().getTranslation().asArray() as [number, number, number],
-          deforms: weighted.has(index),
+          // No weights to read (CPU vertex data released) says nothing: every joint deforms.
+          deforms: weighted.size === 0 || weighted.has(index),
           underImportRoot: !parent && !!linked?.parent && IMPORT_ROOTS.has(linked.parent.name),
           readPosition: (position) => {
             if (linked) {

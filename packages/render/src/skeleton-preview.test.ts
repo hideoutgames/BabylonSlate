@@ -72,6 +72,12 @@ describe("attachSkeletonPreview", () => {
     // The first bone is the hips' (the root draws none): it runs to the spine, the next joint up.
     expect(Vector3.Distance(point(3), rest[6]!)).toBeLessThan(1e-5);
     expect(Vector3.Distance(point(0), rest[1]!)).toBeLessThan(1e-5);
+    // The fifth is the right toes' (no child): its tail runs along the toes' own axis, forward along the ground, half
+    // as long as the foot-to-toes bone (16.6 cm).
+    const toes = point(4 * RIG_BONE_VERTICES + 3).subtract(point(4 * RIG_BONE_VERTICES));
+    expect(Vector3.Distance(point(4 * RIG_BONE_VERTICES), rest[5]!)).toBeLessThan(1e-5);
+    expect(toes.length()).toBeCloseTo(0.083, 3);
+    expect(Math.abs(toes.z)).toBeGreaterThan(Math.abs(toes.y) * 2);
 
     // Walking, a vertex weighted wholly to one bone keeps its distance to that bone's drawn joint.
     const mesh = root.getChildMeshes(false).find((candidate) => candidate.skeleton && candidate.getTotalVertices() > 0)!;
@@ -118,6 +124,45 @@ describe("attachSkeletonPreview", () => {
     expect(selectedFaces()).toBe((RIG_BONE_VERTICES + RIG_JOINT_VERTICES) / 3);
     rig.setSelectedBone("Armature");
     expect(selectedFaces()).toBe(0);
+  });
+
+  it("draws an animation library's joints alike at rest and attached mid-clip", async () => {
+    const bytes = read("engine-content/kaykit-assets/Adventurers/Rig_Medium_MovementBasic.glb");
+    const counts: number[] = [];
+    for (const posed of [false, true]) {
+      const handle = createTestEngine();
+      const host = createModelPreviewScene(handle.engine);
+      disposers.push(() => {
+        host.scene.dispose();
+        handle.engine.dispose();
+      });
+      const loaded = await loadModelPreviewSource(host, bytes);
+      const root = previewRigRoot(host);
+      // No meshes, as an animation-only file: the rig is its nodes, with no weights to tell what deforms.
+      // The loader moves a skinned mesh out of its node, which stays behind empty under the mesh's name.
+      const removed = new Set<string>();
+      for (const mesh of root.getChildMeshes(false)) {
+        if (mesh.getTotalVertices() === 0) continue;
+        removed.add(mesh.name);
+        mesh.dispose(true);
+      }
+      for (const node of root.getChildTransformNodes(false)) if (removed.has(node.name)) node.dispose(true);
+      for (const group of loaded!.animationGroups) group.stop();
+      if (posed) {
+        const walk = loaded!.animationGroups.find((group) => group.name === "Walking_A")!;
+        walk.start(false, 1, walk.from, walk.to);
+        walk.goToFrame((walk.from + walk.to) / 2);
+        walk.pause();
+      }
+      attachSkeletonPreview(root, host.scene, "skin");
+      const overlay = root.getChildMeshes(true).find((mesh) => mesh.name.endsWith("_skeleton_overlay"))!;
+      counts.push(overlay.getTotalVertices());
+    }
+    // The armature object draws nothing and the root (the top joint) a ball alone; the other 22 joints a bone each,
+    // the hand slots too; lines from the root to the hips, the hips to both thighs, the chest to both upper arms and
+    // each hand to its slot.
+    const rest = (22 + 7) * RIG_BONE_VERTICES + 23 * RIG_JOINT_VERTICES;
+    expect(counts).toEqual([rest, rest]);
   });
 
   it("runs each rigid part's bone from its pivot through its part", async () => {
