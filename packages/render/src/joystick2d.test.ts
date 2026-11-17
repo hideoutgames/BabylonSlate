@@ -8,6 +8,7 @@ import { createJoystick2DMesh, joystick2DMesh, refreshJoystick2DMaterials } from
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { applyAssignMesh, createSnapshotSceneBinding, type AssignMeshCommand } from "./snapshot-apply";
 import { applySceneToBabylonScene } from "./scene-loader";
+import { layerCanvas } from "./scene-layer-canvas-fixtures";
 
 describe("SceneLayer joystick", () => {
   const engines: NullEngine[] = [];
@@ -17,7 +18,7 @@ describe("SceneLayer joystick", () => {
     const engine = new NullEngine({ renderWidth: 800, renderHeight: 450, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 4 });
     engines.push(engine);
     const compositor = new SceneLayerCompositor({ engine });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
     const binding = createSnapshotSceneBinding();
     binding.liveSlots.add(1);
     const command: AssignMeshCommand = {
@@ -110,7 +111,7 @@ describe("SceneLayer joystick", () => {
     const disabled = setup({ enabled: false });
     expect(disabled.input.down(1, disabled.hits(), 400, 225)).toBe(false);
     const { layer, compositor, input, hits } = setup();
-    const other = compositor.create({ type: "sceneLayerCreate", layerId: "menu", assetGuid: "menu", zOrder: 1, ownerSceneGuid: null, postProcessStack: [] });
+    const other = compositor.create({ type: "sceneLayerCreate", layerId: "menu", assetGuid: "menu", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
     const blocker = createJoystick2DMesh(other.scene, "menu-stick");
     blocker.metadata = { ...blocker.metadata, overlayActorGuid: "menu" };
     const blockedHits = hits();

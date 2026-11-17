@@ -18,6 +18,8 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 
 Ambient occlusion, reflections and volumetric fog draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass, or add it when none of these is on.
 
+Ambient occlusion, reflections and volumetric fog are applied to the image together, in one full-screen pass. Reflections show the scene as it was before ambient occlusion darkened it, so a reflected crease or contact is not darkened in the reflection.
+
 For **Color Grading**, use a horizontal strip of square slices, such as 256×16 or 1024×32. Open the Texture and set **Usage** to **Color Grading LUT** so it stays uncompressed.
 
 ## Scene overrides

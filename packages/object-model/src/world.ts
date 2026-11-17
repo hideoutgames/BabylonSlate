@@ -559,7 +559,7 @@ export class World {
     zOrder: number;
     ownerSceneGuid?: string | null;
     postProcessStack?: ScenePostProcessEntry[];
-    layerBounds?: { width: number; height: number };
+    canvas?: import("@haptic/core").SceneLayerCanvasDesign;
     cameraLocation?: readonly [number, number] | null;
     tickOnPause?: boolean;
     variables?: Record<string, unknown>;

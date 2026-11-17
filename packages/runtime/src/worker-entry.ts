@@ -508,10 +508,13 @@ function handleControl(msg: ControlMessage): void {
     case "sceneLayerFocusNavigate":
       ensureRuntime().applySceneLayerFocusNavigate(msg.reverse);
       return;
+    case "sceneLayerView":
+      ensureRuntime().applySceneLayerView(msg.layerId, msg.view);
+      return;
     case "sceneLayerResize":
       ensureRuntime().applySceneLayerResize(
-        msg.frustumWidth,
-        msg.frustumHeight,
+        msg.outputWidth,
+        msg.outputHeight,
         msg.canvasWidth,
         msg.canvasHeight,
         msg.safeAreaInsets,

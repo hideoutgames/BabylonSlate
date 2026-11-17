@@ -9,8 +9,6 @@ import {
   parseSceneLayerAnchor,
   sceneLayerActorFrameBounds,
   sceneLayerCanvasToLayer,
-  sceneLayerFrustumSize,
-  sceneLayerOrthoBounds,
   sceneLayerRelativeAnchorWorldPosition,
   sceneLayerViewBounds,
   sceneLayerToEditorScene,
@@ -33,14 +31,8 @@ describe("SceneLayer schema", () => {
     expect(layer.settings.fixedTimestepMs).toBe(
       createDefaultSceneSettings("2d").fixedTimestepMs,
     );
-    expect(layer.settings.layerBounds).toEqual({ width: 32, height: 18 });
-  });
-
-  it("resolves Play HUD ortho from layerBounds and defaults to 32x18", () => {
-    expect(sceneLayerOrthoBounds()).toEqual({ width: 32, height: 18 });
-    expect(sceneLayerOrthoBounds({ width: 20, height: 10 })).toEqual({
-      width: 20,
-      height: 10,
+    expect(layer.settings.canvas).toEqual({
+      sizeMode: "fullscreen", rootAnchor: "center", scaling: "fitToScreen", customSizePx: { width: 400, height: 300 },
     });
   });
 
@@ -119,32 +111,37 @@ describe("SceneLayer schema", () => {
       { id: "pass", materialGuid: "pp", enabled: true },
     ]);
     expect(scene.actors).toHaveLength(1);
-    expect(scene.settings.cameraBounds2D).toEqual({ width: 32, height: 18 });
     expect(scene.settings.environmentColor).toEqual([0, 0, 0]);
     expect(scene.overlayEditor).toBe(true);
   });
 
-  it("round-trips layer bounds and Camera Location through the editor scene as the orange camera frame", () => {
+  it("round-trips the canvas and Camera Location through a normalized editor scene", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
-      settings: { layerBounds: { width: 20, height: 10 }, cameraLocation: [6, -1] },
+      settings: {
+        canvas: { sizeMode: "custom", customSizePx: { width: 640, height: 360 }, rootAnchor: "topLeft", scaling: "truePixelSize" },
+        cameraLocation: [6, -1],
+      },
     });
-    expect(layer.settings.layerBounds).toEqual({ width: 20, height: 10 });
-    expect(layer.settings.cameraLocation).toEqual([6, -1]);
-    const scene = sceneLayerToEditorScene(layer);
-    expect(scene.settings.cameraBounds2D).toEqual({ width: 20, height: 10 });
+    expect(layer.settings.canvas).toEqual({
+      sizeMode: "custom", customSizePx: { width: 640, height: 360 }, rootAnchor: "topLeft", scaling: "truePixelSize",
+    });
+    const scene = normalizeScene(sceneLayerToEditorScene(layer));
     expect(scene.settings.cameraLocation2D).toEqual([6, -1]);
     const restored = editorSceneToSceneLayer({
       ...scene,
       settings: {
         ...scene.settings,
-        cameraBounds2D: { width: 24, height: 12 },
+        layerCanvas: { ...scene.settings.layerCanvas!, sizeMode: "desired", scaling: "fitToScreen" },
         cameraLocation2D: [-2, 3],
       },
     });
-    expect(restored.settings.layerBounds).toEqual({ width: 24, height: 12 });
+    expect(restored.settings.canvas).toEqual({
+      sizeMode: "desired", customSizePx: { width: 640, height: 360 }, rootAnchor: "topLeft", scaling: "fitToScreen",
+    });
     expect(restored.settings.cameraLocation).toEqual([-2, 3]);
     expect(normalizeSceneLayer({}).settings.cameraLocation).toEqual([0, 0]);
+    expect(normalizeScene(createDefaultScene()).settings).not.toHaveProperty("layerCanvas");
   });
 
   it("keeps Tick On Pause off unless set, and round-trips it through the editor scene", () => {
@@ -216,45 +213,22 @@ describe("SceneLayer schema", () => {
 });
 
 describe("SceneLayer anchors and hit tests", () => {
-  it("sizes the 16x9 frustum and falls back to the center anchor", () => {
-    expect(sceneLayerFrustumSize(16 / 9)).toEqual({ width: 16, height: 9 });
+  it("falls back to the center anchor", () => {
     expect(parseSceneLayerAnchor("nope")).toBe("center");
   });
 
-  it("maps authored XY relative to the orange layer bounds onto the Play frustum", () => {
-    expect(
-      sceneLayerRelativeAnchorWorldPosition({
-        anchor: "bottomLeft",
-        authoredX: 8,
-        authoredY: -4.5,
-        layerWidth: 16,
-        layerHeight: 9,
-        frustumWidth: 16,
-        frustumHeight: 9,
-      }),
-    ).toEqual({ x: 8, y: -4.5 });
-    expect(
-      sceneLayerRelativeAnchorWorldPosition({
-        anchor: "bottomLeft",
-        authoredX: 8,
-        authoredY: -4.5,
-        layerWidth: 16,
-        layerHeight: 9,
-        frustumWidth: 32,
-        frustumHeight: 18,
-      }),
-    ).toEqual({ x: 0, y: -9 });
-    expect(
-      sceneLayerRelativeAnchorWorldPosition({
-        anchor: "bottomLeft",
-        authoredX: 8,
-        authoredY: -4.5,
-        layerWidth: 16,
-        layerHeight: 9,
-        frustumWidth: 21.333333333333332,
-        frustumHeight: 9,
-      }),
-    ).toEqual({ x: 5.333333333333334, y: -4.5 });
+  it("maps authored XY from the canvas's anchor point to the view's, keeping its distance", () => {
+    const canvas = { width: 16, height: 9, center: [0, 0] as const };
+    const anchored = (view: { width: number; height: number; center: readonly [number, number] }) =>
+      sceneLayerRelativeAnchorWorldPosition({ anchor: "bottomLeft", authoredX: -7, authoredY: -4, canvas, view });
+    expect(anchored(canvas)).toEqual({ x: -7, y: -4 });
+    expect(anchored({ width: 32, height: 18, center: [0, 0] })).toEqual({ x: -15, y: -8.5 });
+    // A canvas whose Root is its top left: the view's centre moved with it.
+    expect(sceneLayerRelativeAnchorWorldPosition({
+      anchor: "topRight", authoredX: 15, authoredY: -1,
+      canvas: { width: 16, height: 9, center: [8, -4.5] },
+      view: { width: 20, height: 9, center: [10, -4.5] },
+    })).toEqual({ x: 19, y: -1 });
   });
 
   it("widens the layer bounds to the viewport aspect without stretching them", () => {
@@ -264,7 +238,8 @@ describe("SceneLayer anchors and hit tests", () => {
     expect(sceneLayerViewBounds({ width: 16, height: 9 }, Number.NaN)).toEqual({ width: 16, height: 9 });
   });
 
-  it("maps canvas pixels into layer space through the camera's centre, zoom and roll", () => {
+  it("maps canvas pixels into layer space through the view's centre and the camera's location, zoom and roll", () => {
+    expect(sceneLayerCanvasToLayer(0, 0, 1920, 1080, { width: 19.2, height: 10.8, center: [9.6, -5.4] })).toEqual({ x: 0, y: 0 });
     const view = { width: 32, height: 18 };
     expect(sceneLayerCanvasToLayer(0, 0, 1920, 1080, view)).toEqual({ x: -16, y: 9 });
     expect(sceneLayerCanvasToLayer(1920, 1080, 1920, 1080, view)).toEqual({ x: 16, y: -9 });
@@ -324,10 +299,14 @@ describe("2DPanel properties", () => {
 });
 
 describe("SceneLayerActor Prefab frame", () => {
-  it("defaults to a Fullscreen frame hanging from the Root at its top right", () => {
+  const context = { resolution: { width: 1920, height: 1080 }, pixelsPerUnit: 100 };
+
+  it("defaults to a Fullscreen frame of the design resolution centred on the Root", () => {
     const design = normalizeSceneLayerActorDesign(undefined);
-    expect(design).toMatchObject({ sizeMode: "fullscreen", rootAnchor: "topRight" });
-    expect(sceneLayerActorFrameBounds(design, 100, null)).toEqual({ width: 32, height: 18, center: [-16, -9] });
+    expect(design).toMatchObject({ sizeMode: "fullscreen", rootAnchor: "center" });
+    expect(sceneLayerActorFrameBounds(design, context, null)).toEqual({ width: 19.2, height: 10.8, center: [0, 0] });
+    expect(sceneLayerActorFrameBounds(design, { resolution: { width: 640, height: 360 }, pixelsPerUnit: 16 }, null))
+      .toEqual({ width: 40, height: 22.5, center: [0, 0] });
   });
 
   it("drops unknown modes, anchors and non-positive sizes", () => {
@@ -337,15 +316,15 @@ describe("SceneLayerActor Prefab frame", () => {
 
   it("converts a Custom pixel size to layer units around the chosen pivot", () => {
     const design = normalizeSceneLayerActorDesign({ sizeMode: "custom", customSizePx: { width: 400, height: 200 }, rootAnchor: "bottomLeft" });
-    expect(sceneLayerActorFrameBounds(design, 100, null)).toEqual({ width: 4, height: 2, center: [2, 1] });
+    expect(sceneLayerActorFrameBounds(design, context, null)).toEqual({ width: 4, height: 2, center: [2, 1] });
     const centred = { ...design, rootAnchor: "center" as const };
-    expect(sceneLayerActorFrameBounds(centred, 50, null)).toEqual({ width: 8, height: 4, center: [0, 0] });
+    expect(sceneLayerActorFrameBounds(centred, { ...context, pixelsPerUnit: 50 }, null)).toEqual({ width: 8, height: 4, center: [0, 0] });
   });
 
   it("wraps Desired around the content and has no frame without content", () => {
     const design = normalizeSceneLayerActorDesign({ sizeMode: "desired" });
-    expect(sceneLayerActorFrameBounds(design, 100, null)).toBeNull();
-    expect(sceneLayerActorFrameBounds(design, 100, { minX: -1, minY: 2, maxX: 3, maxY: 5 }))
+    expect(sceneLayerActorFrameBounds(design, context, null)).toBeNull();
+    expect(sceneLayerActorFrameBounds(design, context, { minX: -1, minY: 2, maxX: 3, maxY: 5 }))
       .toEqual({ width: 4, height: 3, center: [1, 3.5] });
   });
 });

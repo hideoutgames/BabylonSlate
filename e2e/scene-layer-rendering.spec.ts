@@ -58,6 +58,8 @@ test("SceneLayer compiled Tweens fade, tint and move rendered components after o
     guid: classGuid, type: "Class", name: "Main", version: versions.currentVersion("Class"), payload: graph as unknown as Record<string, unknown>,
   }, { parentClass: "SceneLayerActor", dependencies: [materialGuid] }));
   const layer = createDefaultSceneLayer();
+  // A Custom 3200 x 1800 px canvas keeps the 32 x 18 layer units this test is laid out in.
+  layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", customSizePx: { width: 3200, height: 1800 } };
   layer.actors = [createActor("tween-hud", "Tween HUD", { classId: "main", components })];
   files.set("assets/TweenHud.scenelayer.hasset", await encodeAssetDocument({
     guid: layerGuid, type: "SceneLayer", name: "Tween HUD", version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown>,

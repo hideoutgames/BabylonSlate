@@ -233,7 +233,8 @@ import {
   type OverlayPointerPhase,
 } from "./scene-layer-pointer";
 import {
-  sceneLayerFrustumSize,
+  sceneLayerDesignResolution,
+  sceneLayerOutputDesignSize,
   walkOverlayPointerHits,
 } from "@haptic/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
@@ -1318,9 +1319,29 @@ function initializeEngine(
   // Apply at the host boundary below, never inside Scene.render.
   scene.onNewTextureAddedObservable.add(applyTextureAnisotropy);
 
+  /**
+   * The Play output in design pixels (`sceneLayerOutputDesignSize`): a pixelated framebuffer extended past the design
+   * size is itself in design pixels; any other output is the design resolution widened to its aspect, so a high-density
+   * window shows design pixels, not device pixels.
+   */
+  const sceneLayerOutput = () => {
+    const resolution = sceneLayerDesignResolution(playOutput);
+    const extended = pixelatedExtend(playOutput) && lockedViewSize !== null;
+    return sceneLayerOutputDesignSize(
+      resolution,
+      extended ? lockedViewSize! : { width: Math.max(1, engine.getRenderWidth(true)), height: Math.max(1, engine.getRenderHeight(true)) },
+      extended,
+    );
+  };
   const sceneLayerCompositor = options.playMode
     ? new SceneLayerCompositor({
         engine,
+        screen: () => {
+          const output = sceneLayerOutput();
+          const ppu = binding.pixelsPerUnit && binding.pixelsPerUnit > 0 ? binding.pixelsPerUnit : 100;
+          return { width: output.width / ppu, height: output.height / ppu };
+        },
+        onLayerView: (layerId, view) => options.onSceneLayerView?.(layerId, view),
         postProcessingEnabled: () => postProcessingEnabled,
         isLayerReady: (layerId) => layerLoads.get(layerId)?.ready !== false,
         attachLayerPostProcess: (layer, stack, renderer) => {
@@ -1397,13 +1418,11 @@ function initializeEngine(
 
   const notifyOverlayResize = () => {
     if (!sceneLayerCompositor) return;
-    const height = Math.max(1, engine.getRenderHeight());
-    const width = Math.max(1, engine.getRenderWidth());
-    const frustum = sceneLayerFrustumSize(width / height);
+    const output = sceneLayerOutput();
     const canvasSize = pointerCanvas();
     options.onSceneLayerResize?.({
-      frustumWidth: frustum.width,
-      frustumHeight: frustum.height,
+      outputWidth: output.width,
+      outputHeight: output.height,
       canvasWidth: canvasSize.width,
       canvasHeight: canvasSize.height,
       safeAreaInsets: sceneLayerSafeAreaInsets(canvas),
@@ -1884,7 +1903,8 @@ function initializeEngine(
         canvas.height = nextHeight;
       }
       engine.setSize(nextWidth, nextHeight);
-      sceneLayerCompositor?.resize();
+      // The compositor frames layers in design pixels of the locked size just set (`sceneLayerOutput`).
+      sceneLayerCompositor?.resize(true);
       // A pixelated framebuffer extended past the design size shows more world in its extra rows, not a larger one.
       setSceneCameraLensExtent(scene, playOutput ? pixelatedLensExtent(playOutput, lockedViewSize) : 1);
       refreshAuthoredCameraLenses(scene);
