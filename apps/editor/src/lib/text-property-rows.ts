@@ -197,7 +197,7 @@ export function text2DPropertyRows(
     }
     : sliderRow(actorId, component.id, "size", "Size", parsed.size, 1, 256, update, 1, 32);
   return [
-    ...(component.classId === "2DRichTextComponent" ? richTextAppearPropertyRows(actorId, component, update) : []),
+    ...(component.classId === "2DRichTextComponent" ? richTextAppearPropertyRows(actorId, component, update, context) : []),
     {
       ...font,
       description:
@@ -370,6 +370,10 @@ export function text2DPropertyRows(
         "appearStart",
         "appearInterval",
         "appearDuration",
+        "appearSound",
+        "appearSoundAssetGuid",
+        "appearSoundPlay",
+        "appearSoundOffset",
       ]),
     ),
   ];

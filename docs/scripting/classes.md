@@ -28,6 +28,7 @@ The **Parent Class** list shows engine classes by their class names.
 | **DebugCommand** | A console command. See [Console commands](#console-commands). |
 | **EditorUtilityObject**, **EditorFunctionLibrary** | Tools that run only in the editor. See [Editor Scripting](editor-scripting.md). |
 | **BTTask**, **BTDecorator**, **BTService**, **BTComposite** | Behaviour Tree nodes you script yourself. See [Behaviour Trees](../ai/behaviour-trees.md). |
+| **RichText2DAppearMode**, **RichText2DDecoratorEffect** | Your own ways for the letters of a 2D Rich Text to appear and to animate. See [2D Rich Text](../components/2d-rich-text.md#custom-appear-modes-and-effects). |
 
 For components without any logic, a [Prefab](../assets/prefab.md) is lighter than an Actor class.
 

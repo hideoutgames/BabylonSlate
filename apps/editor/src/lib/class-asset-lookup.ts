@@ -6,7 +6,7 @@
  */
 import type { AssetRegistry } from "@haptic/assets";
 import { engineParentOf, walkAncestry } from "@haptic/editor-kit";
-import { GAME_SUBSYSTEM_CLASS_ID, SCENE_SUBSYSTEM_CLASS_ID, documentClassParentOf, isLockedEngineClassId } from "@haptic/object-model";
+import { GAME_SUBSYSTEM_CLASS_ID, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, SCENE_SUBSYSTEM_CLASS_ID, documentClassParentOf, isLockedEngineClassId } from "@haptic/object-model";
 import { classIdForGraphPath } from "../services/script-compiler";
 import type { CreatableAssetType } from "./content-browser-helpers";
 
@@ -30,6 +30,8 @@ export const ENGINE_BASE_CLASSES = [
   "BTDecorator",
   "BTService",
   "BTComposite",
+  RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
 ] as const;
 
 export type ClassAssetRef = {

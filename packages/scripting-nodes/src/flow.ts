@@ -416,6 +416,15 @@ export const flowNodes: NodeDefinition[] = [
     { id: "switcher", name: "Switcher", type: objectRef("SceneLayerActorSwitcher") },
     { id: "index", name: "Index", type: INT },
   ])),
+  argsEvent("flow.event.richTextLetterAppear", "Event On Letter Appear", [
+    { id: "letter", name: "Letter", type: objectRef("RichText2DLetter") },
+    { id: "alpha", name: "Alpha", type: FLOAT },
+  ]),
+  argsEvent("flow.event.richTextDecorateLetters", "Event On Decorate Letters", [
+    { id: "letters", name: "Letters", type: arrayOf(objectRef("RichText2DLetter")) },
+    { id: "deltaSeconds", name: "Delta Seconds", type: FLOAT },
+    { id: "strength", name: "Strength", type: FLOAT },
+  ]),
   {
     id: "flow.event.textChanged",
     title: "Event On Text Changed",

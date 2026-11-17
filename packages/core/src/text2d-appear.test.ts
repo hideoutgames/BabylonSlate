@@ -5,6 +5,10 @@ import {
   parseText2DAppearProperties,
   sampleText2DAppearTransition,
   text2DAppearDuration,
+  text2DAppearSoundPlan,
+  parseText2DLetterPoses,
+  text2DCustomAppearModeClassId,
+  text2DLetterPoseAt,
   text2DCharacterReveal,
   text2DFormattedUnits,
 } from "./text2d-appear";
@@ -31,6 +35,7 @@ describe("rich text appear properties", () => {
     expect(parsed).toEqual({
       appearModes: ["scale", "fade"], appearTransition: "cubicOut", appearInterval: 0.1,
       appearDuration: 0.3, appearStart: "hidden", appearProgress: 1,
+      appearSound: false, appearSoundAssetGuid: null, appearSoundPlay: "everyLetter", appearSoundOffset: 0,
     });
     expect(parseText2DAppearProperties({ appearModes: ["fade", "instant", "slide"] }).appearModes).toEqual(["instant"]);
     expect(parseText2DAppearProperties({ appearInterval: 0, appearDuration: 0, appearProgress: Infinity }))
@@ -127,5 +132,69 @@ describe("appear easing", () => {
     expect(sampleText2DAppearTransition("backOut", 0.75)).toBeGreaterThan(1);
     expect(sampleText2DAppearTransition("elasticOut", 0.15)).toBeGreaterThan(1);
     expect(sampleText2DAppearTransition("instant", 0.01)).toBe(1);
+  });
+
+  it.each([
+    // "Hi [b]you[/b]!" reveals H i _ y o u ! at 0.1 s steps; the space (index 2) is silent.
+    { play: "everyLetter", offset: 0, times: [0, 0.1, 0.3, 0.4, 0.5, 0.6] },
+    { play: "everyOtherLetter", offset: 0, times: [0, 0.3, 0.5] },
+    { play: "everyThirdLetter", offset: 0.05, times: [0.05, 0.45] },
+    { play: "everyFourthLetter", offset: 0, times: [0, 0.5] },
+    { play: "once", offset: 0.25, times: [0.25] },
+    { play: "unknown", offset: -1, times: [0, 0.1, 0.3, 0.4, 0.5, 0.6] },
+  ])("schedules the appear sound for $play at offset $offset", ({ play, offset, times }) => {
+    const plan = text2DAppearSoundPlan(parseText2DProperties({
+      text: "Hi [b]you[/b]!", appearModes: ["fade"], appearInterval: 0.1, appearDuration: 0.3,
+      appearSound: true, appearSoundAssetGuid: " beep ", appearSoundPlay: play, appearSoundOffset: offset,
+    }, { rich: true }));
+    expect(plan?.assetGuid).toBe("beep");
+    expect(plan?.loop).toBeNull();
+    expect(plan?.times.map((time) => Number(time.toFixed(6)))).toEqual(times);
+  });
+
+  it("loops until the last character has appeared and stays silent without a sound, a reveal or the toggle", () => {
+    const base = {
+      text: "A [img=icon]B", appearModes: ["fade"], appearInterval: 0.1, appearDuration: 0.3,
+      appearSound: true, appearSoundAssetGuid: "beep", appearSoundPlay: "loop", appearSoundOffset: 0.1,
+    };
+    const plan = (overrides: Record<string, unknown>) =>
+      text2DAppearSoundPlan(parseText2DProperties({ ...base, ...overrides }, { rich: true }));
+    // Four characters: three 0.1 s intervals and a 0.3 s transition.
+    const loop = plan({})!;
+    expect(loop.times).toEqual([]);
+    expect(loop.loop!.start).toBe(0.1);
+    expect(loop.loop!.stop).toBeCloseTo(0.6);
+    expect(plan({ appearSoundOffset: 0.7 })).toBeNull();
+    // An inline image counts as a letter; characters that start together share one sound.
+    expect(plan({ appearSoundPlay: "everyLetter", appearSoundOffset: 0 })!.times.map((t) => Number(t.toFixed(6)))).toEqual([0, 0.2, 0.3]);
+    expect(plan({ appearSoundPlay: "everyLetter", appearInterval: 0 })!.times).toEqual([0.1]);
+    expect(plan({ appearSound: false })).toBeNull();
+    expect(plan({ appearSoundAssetGuid: null })).toBeNull();
+    expect(plan({ appearModes: [] })).toBeNull();
+    expect(plan({ text: "[b][/b]" })).toBeNull();
+  });
+
+  it("keeps custom Appear Mode Classes beside the built-in modes and lets Instant replace them all", () => {
+    expect(parseText2DAppearProperties({ appearModes: ["fade", "class:Rise", "class: ", "class:Rise", 7, "class:Pop"] }).appearModes)
+      .toEqual(["fade", "class:Rise", "class:Pop"]);
+    expect(parseText2DAppearProperties({ appearModes: ["class:Rise", "instant"] }).appearModes).toEqual(["instant"]);
+    expect(text2DCustomAppearModeClassId("class:Rise")).toBe("Rise");
+    expect(text2DCustomAppearModeClassId("fade")).toBeNull();
+    // A custom mode alone still gives the reveal a timeline.
+    expect(text2DAppearDuration(3, { appearModes: ["class:Rise"], appearInterval: 0.1, appearDuration: 0.3 })).toBeCloseTo(0.5);
+  });
+
+  it("reads scripted letter poses in whole strides and rests letters beyond or without them", () => {
+    const poses = [1, 2, 3, 4, 5, 0.5, -1, -2, 1, 1, 0, 7];
+    expect(parseText2DLetterPoses(poses)).toBe(poses);
+    expect({ ...text2DLetterPoseAt(poses, 0) }).toEqual({ offsetX: 1, offsetY: 2, scaleX: 3, scaleY: 4, rotation: 5, opacity: 0.5 });
+    // Opacity is clamped; a letter the list does not reach is at rest.
+    expect(text2DLetterPoseAt(poses, 1).opacity).toBe(1);
+    expect({ ...text2DLetterPoseAt(poses, 2) }).toEqual({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 });
+    for (const malformed of [[1, 2, 3], [1, 2, 3, 4, 5, Number.NaN], "poses", undefined]) {
+      expect(parseText2DLetterPoses(malformed)).toEqual([]);
+    }
+    expect(parseText2DAppearProperties({ letterPoses: poses }).letterPoses).toBe(poses);
+    expect(parseText2DAppearProperties({ letterPoses: [1] })).not.toHaveProperty("letterPoses");
   });
 });

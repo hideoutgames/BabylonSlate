@@ -3,6 +3,9 @@ import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
   GAME_SUBSYSTEM_CLASS_ID,
+  RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_LETTER_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   SUBSYSTEM_CLASS_ID,
   isLockedEngineClassId,
@@ -82,7 +85,7 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
-    for (const id of ["MaterialObject", "LayerCamera", "SceneCameraManager"]) {
+    for (const id of ["MaterialObject", "LayerCamera", "SceneCameraManager", RICH_TEXT_2D_LETTER_CLASS_ID]) {
       this.register({ id, parentClassId: "Object", kind: "object", variables: [], implementedInterfaces: [] });
     }
     for (const id of ["FloatCurveObject", "VectorCurveObject", "ColorCurveObject", "TimelineClip", "Timeline"]) {
@@ -189,7 +192,7 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
-    for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite"] as const) {
+    for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite", RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID] as const) {
       this.register({
         id,
         parentClassId: "Object",

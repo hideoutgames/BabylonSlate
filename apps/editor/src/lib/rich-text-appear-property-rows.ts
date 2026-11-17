@@ -4,14 +4,18 @@ import {
   TEXT2D_APPEAR_TRANSITION_LABELS,
   TEXT2D_APPEAR_STARTS,
   TEXT2D_APPEAR_START_LABELS,
+  TEXT2D_APPEAR_SOUND_PLAYS,
+  TEXT2D_APPEAR_SOUND_PLAY_LABELS,
   type SerializedComponent,
 } from "@haptic/core";
 import type { PropertyRow } from "@haptic/editor-kit";
+import { assetRow, type ComponentPropertyContext } from "./component-property-row-helpers";
 
 export function richTextAppearPropertyRows(
   actorId: string,
   component: SerializedComponent,
   update: (property: string, value: unknown) => void,
+  context: ComponentPropertyContext,
 ): PropertyRow[] {
   const parsed = parseText2DAppearProperties(component.properties);
   const defaults = parseText2DAppearProperties({});
@@ -47,5 +51,28 @@ export function richTextAppearPropertyRows(
       description: "Time for each character's transition. Instant ignores this duration.",
       onChange: (next) => update("appearDuration", Math.max(0, next)),
     },
+    {
+      kind: "boolean", id: id("appearSound"), label: "Appear Sound", value: parsed.appearSound,
+      disabled: off,
+      description: "Plays while the text appears. Play Reverse is silent.",
+      onChange: (next) => update("appearSound", next),
+    },
+    ...(parsed.appearSound ? [
+      { ...assetRow(actorId, component, "appearSoundAssetGuid", "Sound", ["Audio"], update, context, "Pick Audio"), disabled: off },
+      {
+        kind: "enum", id: id("appearSoundPlay"), label: "Sound Play", value: parsed.appearSoundPlay,
+        defaultValue: defaults.appearSoundPlay,
+        disabled: off,
+        options: TEXT2D_APPEAR_SOUND_PLAYS.map((value) => ({ value, label: TEXT2D_APPEAR_SOUND_PLAY_LABELS[value] })),
+        description: "Letters skip spaces. Loop Until Finished stops when the last character has appeared.",
+        onChange: (next) => update("appearSoundPlay", next),
+      },
+      {
+        kind: "number", id: id("appearSoundOffset"), label: "Sound Offset", unit: "s",
+        value: parsed.appearSoundOffset, defaultValue: defaults.appearSoundOffset, min: 0, precision: 3, sensitivity: 0.01,
+        disabled: off,
+        onChange: (next) => update("appearSoundOffset", Math.max(0, next)),
+      },
+    ] satisfies PropertyRow[] : []),
   ];
 }

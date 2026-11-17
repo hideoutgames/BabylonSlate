@@ -62,7 +62,7 @@ interface RenderCommandEmitterHost {
   dynamicMeshes(): Pick<DynamicRuntimeMeshSync, "assign">;
   uiControls(): Pick<UIControls2DRuntime, "payload">;
   painters(): Pick<Painter2DRuntime, "payload">;
-  textAppear(): Pick<Text2DAppearRuntime, "progress">;
+  textAppear(): Pick<Text2DAppearRuntime, "progress" | "letterPoses">;
   materialParameters(): Pick<RuntimeMaterialParameters, "captureOverrides" | "resend">;
   emit(command: CommandMessage): void;
   /** The outlines the actor's 2D body casts 2D light shadows with, in its body's frame (`RuntimePhysicsWorlds.occluders2D`). */
@@ -308,6 +308,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
                   renderableIds,
                 ),
                 component.classId === "2DRichTextComponent" ? this.host.textAppear().progress(component) : undefined,
+                component.classId === "2DRichTextComponent" ? this.host.textAppear().letterPoses(component) : undefined,
               ),
               ...(supportsOverlayVisualStyle(component.classId) ? { overlayStyle: parseOverlayVisualStyle(variables ?? Object.fromEntries(component.variables)) } : {}),
               ...(component.classId === "CableComponent" ? { cable: this.host.cables().assign(component) } : {}),
@@ -372,7 +373,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
             }
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
-          text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().progress(text2dComp) : 1) } : {}),
+          text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().progress(text2dComp) : 1,
+          text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().letterPoses(text2dComp) : undefined) } : {}),
         ...(camera ? { camera: this.cameraAssignPayload(camera) } : {}),
         ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
@@ -759,6 +761,7 @@ function text3dAssignPayload(
 function text2dAssignPayload(
   component: ActorComponent,
   appearProgress = 1,
+  letterPoses?: number[],
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text2d"]> {
   const parsed = parseText2DProperties(
     {
@@ -812,6 +815,7 @@ function text2dAssignPayload(
     appearDuration: parsed.appearDuration,
     appearStart: parsed.appearStart,
     appearProgress,
+    ...(letterPoses?.length ? { letterPoses } : {}),
   };
 }
 
@@ -837,6 +841,7 @@ function playMeshPartOf(
   component: ActorComponent,
   parentId = component.parentId,
   textAppearProgress?: number,
+  textLetterPoses?: number[],
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["parts"]>[number] {
   const assetGuid = component.assetGuid ?? component.getVariable("assetGuid");
   const { position, rotation, scale } = component.transform;
@@ -868,7 +873,7 @@ function playMeshPartOf(
       : {}),
     ...(component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
-      ? { text2d: text2dAssignPayload(component, textAppearProgress) }
+      ? { text2d: text2dAssignPayload(component, textAppearProgress, textLetterPoses) }
       : {}),
     ...(component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent"
