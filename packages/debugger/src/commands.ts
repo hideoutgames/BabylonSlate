@@ -259,7 +259,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "fsrdebug",
       tier: "debug",
       category: "engine",
-      description: "Where Play's upscale ends: at the output (output device, the default: under Scene Layers the device's resolution) or at the view's own size with one copy filling the output (output view), to measure what upscaling and sharpening at the device's resolution cost",
+      description: "Where Play's upscale ends: at the view's own size with one copy filling the output (output view, the default) or at the output (output device: under Scene Layers the device's resolution), to measure what upscaling and sharpening at the device's resolution would cost",
       parameters: [{ name: "part", type: "enum", enumValues: ["output"] }, { name: "value", type: "enum", enumValues: ["device", "view"] }],
       run(args, host) {
         const output = args.value as "device" | "view";

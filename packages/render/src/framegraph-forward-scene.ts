@@ -1623,8 +1623,8 @@ export class ForwardSceneFrameGraph {
         // backbuffer after that blit: no resolve and no output copy.
         const outlineOnOutput = !!this.preparedOutlineView && !effectsPlan && !this.postProcessGraph && !!this.ownScene &&
           presentsByBlit(this.ownScene, waterDemand > 0);
-        // Debug (`fsrdebug output view`): a scene view whose backbuffer is larger than the view ends its chain at the
-        // view's size.
+        // A scene view whose backbuffer is larger than the view ends its chain at the view's size (`fsrdebug output
+        // device` ends it at the backbuffer's).
         const chainAtView = sceneRenderingSettings(scene).fsrOutputAtView && !this.auxiliary && !output.color &&
           (viewSize.width !== output.width || viewSize.height !== output.height);
         if (effectsPlan) {
