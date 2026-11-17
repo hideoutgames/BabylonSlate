@@ -33,16 +33,22 @@ export interface SourceControlHosts {
   /** The origin's credential for requests: refreshed before it expires and renewed after a 401. */
   credentialSource(origin: string): CredentialSource;
   readonly http: HttpClient | null;
-  /** Called after a credential is saved or removed. */
+  /** Called after a credential is saved, removed, refused or found working again. */
   subscribe(listener: () => void): () => void;
+  /** Whether a saved credential still works as far as the device knows; signed in when the hosts cannot tell. */
+  signInState?(credential: HostCredential): "signed-in" | "refused" | "expired";
+  /** Asks the host whether the origin's saved credential still works, once per credential; never rejects. */
+  checkSignIn?(origin: string): Promise<void>;
 }
 
-/** What the signed-out banner names and where its Sign In leads. */
+/** What the sign-in banner names, why it asks, and where its Sign In leads. */
 export interface SourceControlSignInPrompt {
   origin: string;
   /** `github.com` and `gitlab.com` sign in on the device; any other host takes a token in Engine Settings. */
   deviceHost: "github" | "gitlab" | null;
   label: string;
+  /** No credential for the host, or the saved one no longer works (`SignInState`). */
+  reason: "signed-out" | "refused" | "expired";
 }
 
 export interface LockRefreshState {
@@ -84,10 +90,10 @@ function loadDeviceHosts(testMode: boolean): Promise<SourceControlHosts> {
   return import("./source-control-accounts").then((module) => module.sourceControlAccounts(testMode));
 }
 
-export function signInPromptFor(origin: string): SourceControlSignInPrompt {
-  if (origin === "https://github.com") return { origin, deviceHost: "github", label: "GitHub" };
-  if (origin === "https://gitlab.com") return { origin, deviceHost: "gitlab", label: "GitLab" };
-  return { origin, deviceHost: null, label: new URL(origin).host };
+export function signInPromptFor(origin: string, reason: SourceControlSignInPrompt["reason"] = "signed-out"): SourceControlSignInPrompt {
+  if (origin === "https://github.com") return { origin, deviceHost: "github", label: "GitHub", reason };
+  if (origin === "https://gitlab.com") return { origin, deviceHost: "gitlab", label: "GitLab", reason };
+  return { origin, deviceHost: null, label: new URL(origin).host, reason };
 }
 
 export async function readGitPrefill(
@@ -476,7 +482,11 @@ export class SourceControlService {
       this.emit();
       return;
     }
-    this.signInPrompt = null;
+    // A credential the host refused, or one past an expiry nothing renews, asks to sign in again; its provider stays,
+    // so locking resumes as soon as a new sign-in replaces it. The check asks the host once per credential.
+    const state = hosts.signInState?.(credential) ?? "signed-in";
+    this.signInPrompt = state === "signed-in" ? null : signInPromptFor(location.origin, state);
+    void hosts.checkSignIn?.(location.origin);
     // The account, not the token, so a refreshed GitLab token keeps the provider and its locks.
     const credentialKey = `${credential.kind}\n${credential.username}\n${credential.account ?? credential.token}`;
     if (this.provider && credentialKey === this.credentialKey) {

@@ -58,7 +58,7 @@ describe("SourceControlService", () => {
     const accounts = await signedIn(null, null);
     try {
       await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: true, hosts: accounts, fake });
-      expect(service.signIn).toEqual({ origin: "https://github.com", deviceHost: "github", label: "GitHub" });
+      expect(service.signIn).toEqual({ origin: "https://github.com", deviceHost: "github", label: "GitHub", reason: "signed-out" });
       expect(service.enabled).toBe(false);
       await service.autoLock("assets/a.hasset");
       await vi.advanceTimersByTimeAsync(120_000);
@@ -98,7 +98,7 @@ describe("SourceControlService", () => {
         settings: { ...manual, repositoryUrl: "git@gitea.example.com:team/game.git" },
         projectKey: "proj", platform: "electron", testMode: false, hosts: await signedIn(),
       });
-      expect(service.signIn).toEqual({ origin: "https://gitea.example.com", deviceHost: null, label: "gitea.example.com" });
+      expect(service.signIn).toEqual({ origin: "https://gitea.example.com", deviceHost: null, label: "gitea.example.com", reason: "signed-out" });
     } finally { service.dispose(); }
   });
 
@@ -187,6 +187,44 @@ describe("SourceControlService", () => {
       await vi.waitFor(() => expect(service.signIn?.label).toBe("GitLab"));
       expect(service.enabled).toBe(false);
       expect(await accounts.list()).toEqual([]);
+    } finally { service.dispose(); }
+  });
+
+  it("checks the saved sign-in once as the project opens, asks to sign in again when the host refuses it, and stops asking once it is replaced", async () => {
+    const host = new FakeGitHost();
+    const accounts = new SourceControlAccounts(new MemorySecrets(), host.http, { clientId: () => "client" });
+    await accounts.save({ origin: "https://github.com", username: "x-access-token", token: "fake-old", kind: "github", account: "ada" });
+    host.refusedTokens.add("fake-old");
+    const service = new SourceControlService();
+    service.pausePolling();
+    const checks = () => host.requests.filter((request) => request.url === "https://api.github.com/user").length;
+    try {
+      const config = { settings: manual, projectKey: "proj", platform: "electron", testMode: false, hosts: accounts };
+      await service.configure(config);
+      await vi.waitFor(() => expect(service.signIn).toEqual({ origin: "https://github.com", deviceHost: "github", label: "GitHub", reason: "refused" }));
+      await service.configure({ ...config, settings: { ...manual, mode: "off" as const } });
+      await service.configure(config);
+      expect(checks()).toBe(1);
+
+      await accounts.save({ origin: "https://github.com", username: "x-access-token", token: "fake-new", kind: "github", account: "ada" });
+      await vi.waitFor(() => expect(service.signIn).toBeNull());
+      expect(service.enabled).toBe(true);
+      await vi.waitFor(() => expect(checks()).toBe(2));
+      expect(service.signIn).toBeNull();
+    } finally { service.dispose(); }
+  });
+
+  it("says a GitHub sign-in whose expiry passed has expired, without asking the host", async () => {
+    const host = new FakeGitHost();
+    const now = 1_000_000;
+    const accounts = new SourceControlAccounts(new MemorySecrets(), host.http, { clientId: () => "client", now: () => now });
+    await accounts.save({ origin: "https://github.com", username: "x-access-token", token: "fake-1", kind: "github", account: "ada", expiresAt: now - 1 });
+    const service = new SourceControlService();
+    service.pausePolling();
+    try {
+      await service.configure({ settings: manual, projectKey: "proj", platform: "electron", testMode: false, hosts: accounts });
+      expect(service.signIn).toEqual({ origin: "https://github.com", deviceHost: "github", label: "GitHub", reason: "expired" });
+      expect(host.requests.filter((request) => request.url === "https://api.github.com/user")).toEqual([]);
     } finally { service.dispose(); }
   });
 
@@ -943,6 +981,8 @@ describe("SourceControlService lock ref", () => {
   function recordingHost() {
     const refs: Array<[string, string]> = [];
     const http: HttpClient = async (request) => {
+      // The sign-in check as the project opens is no lock request.
+      if (request.url === "https://api.github.com/user") return { status: 200, bodyText: '{"login":"ada"}' };
       const body = JSON.parse(String(request.body ?? "{}")) as { path?: string; ref?: { name?: string } };
       const endpoint = request.url.endsWith("/verify") ? "verify" : request.url.endsWith("/unlock") ? "unlock" : "create";
       refs.push([endpoint, body.ref?.name ?? ""]);

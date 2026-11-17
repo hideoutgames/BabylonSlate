@@ -135,6 +135,36 @@ describe("Engine Settings → Source Control", () => {
     expect(await state.accounts!.list()).toEqual([]);
   });
 
+  it("checks each saved sign-in as the page opens and offers Sign In Again for one the host refuses, which replaces it", async () => {
+    await state.accounts!.save({ origin: "https://github.com", username: "x-access-token", token: "fake-old", kind: "github", account: "ada" });
+    host.refusedTokens.add("fake-old");
+    host.tokenReplies = [];
+    host.account = "ada";
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("settings-source-control-account-github-user").textContent).toBe("Sign-In Refused"));
+    expect(host.requests.filter((request) => request.url === "https://api.github.com/user")).toHaveLength(1);
+    expect(screen.getByTestId("settings-source-control-sign-out-github")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("settings-source-control-sign-in-again-github"));
+    fireEvent.click(await screen.findByTestId("source-control-link-accept"));
+    await waitFor(() => {
+      releaseWaits();
+      expect(screen.queryByTestId("source-control-sign-in-dialog")).toBeNull();
+    });
+    await waitFor(() => expect(screen.getByTestId("settings-source-control-account-github-user").textContent).toBe("ada"));
+    expect(screen.queryByTestId("settings-source-control-sign-in-again-github")).toBeNull();
+  });
+
+  it("says a GitHub sign-in past its expiry expired, and a token the host refused was refused", async () => {
+    await state.accounts!.save({ origin: "https://github.com", username: "x-access-token", token: "fake-1", kind: "github", account: "ada", expiresAt: Date.now() - 1 });
+    await state.accounts!.save({ origin: "https://gitlab.example.com", username: "haptic", token: "fake-2", kind: "gitlab-token" });
+    host.refusedTokens.add("fake-2");
+    // The fake host answers gitlab.com only; this instance's API is refused as the token would be.
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("settings-source-control-account-github-user").textContent).toBe("Sign-In Expired"));
+    expect(host.requests.filter((request) => request.url === "https://api.github.com/user")).toEqual([]);
+    await waitFor(() => expect(within(screen.getByTestId("settings-source-control-host-gitlab.example.com")).getByText("Token Refused")).toBeTruthy());
+  });
+
   it("hides a host's Sign In without its client id", async () => {
     state.testMode = false;
     renderPage();
