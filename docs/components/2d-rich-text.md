@@ -51,7 +51,7 @@ Add these from **Add Event** in the **Class** window of the actor that has the c
 
 ## Tags
 
-Tags use square brackets and can nest. Close them with the same name, such as `[/b]`. A tag left open runs to the end of the text, and an unknown tag shows as plain text.
+Tags use square brackets and can nest. Close them with the same name, such as `[/b]`. A tag left open runs to the end of the text, and an unknown tag shows as plain text. You can also make [tags of your own](#custom-tags).
 
 | Tag | Effect |
 | --- | --- |
@@ -106,11 +106,41 @@ A Letter Effect can take settings of its own from its tag, such as `[fx=Wave spe
 - **Get Keys** runs once when the text is built, and again only when the text or its Appear Modes change.
 - **Strength** stays a pin of the event; you can also list `strength` as a keyword to read it as text.
 
+## Custom tags
+
+A **Rich Text Decorator** is a [Class](../scripting/classes.md) that adds a tag of its own and decides what the tag turns into. For example, `[player]` can show the player's name, and `[item=sword]Sword[/item]` can become `[img=… size=20] [color=orange]Sword[/color]`.
+
+1. Create a Class whose parent is **RichText2DDecorator**.
+2. In the **Class** window, tap **+** next to **Functions** and choose **Get Tag**, marked **RichText2DDecorator**. Return the tag's name from its **Tag** output, such as `item`.
+3. Tap **+** again and choose **Decorate**. Build the markup that replaces the tag and return it from its **Markup** output.
+4. Write the tag in any 2D Rich Text, such as `[item=sword rarity=epic]Sword[/item]`.
+
+**Decorate** receives:
+
+| Input | Type | Description |
+| --- | --- | --- |
+| Value | String | What follows `=` in the opening tag, such as `sword`. Empty when the tag has none. |
+| Content | String | The text between the opening tag and its closing tag, exactly as written, tags included. Empty when the tag has no closing tag. |
+| Component | 2DRichTextComponent Reference | The 2D Rich Text being built, for reading its actor or other values. |
+
+- **Markup** replaces the whole tag, from the opening tag through its closing tag, or just the opening tag when it has none. It can use any tag, including other custom tags and tags in **Content**.
+- Read the tag's other keywords with [Get Tag Value](../scripting/class/get-tag-value.md), such as `rarity` for `rarity=epic`. Every keyword is available; no **Get Keys** is needed.
+- Tag names are not case-sensitive. They start with a letter and use letters, numbers and hyphens. A built-in tag name, such as `color` or `fx`, cannot be used.
+- When two Classes return the same tag, the one whose name comes first alphabetically handles it, and the Output Log shows a warning naming both.
+- Tags of one name pair like brackets: in `[q]a[q]b[/q]c[/q]` the inner pair closes first. A tag without a closing tag replaces only itself.
+- Custom tags expand up to eight levels deep: markup that keeps producing custom tags stops there and shows the rest as written. Very long results stop being expanded at 100 000 characters.
+- When **Decorate** returns nothing, fails or waits, the tag shows as written.
+- The tag is turned into markup when the text first appears, whenever its **Text** changes and when scripts reload, never every tick. Call **Refresh Text** on the component to run the Decorators again, for example after the player's name changes. Nothing is redrawn when the result is the same.
+- **Text**, **Set Text** and [Event On Text Changed](../scripting/class/event-on-text-changed.md) keep the text as you wrote it, tags included. The reveal, its sound and letter effects follow the text as shown.
+- Decorators run in Play only. The editor shows custom tags as written, like any unknown tag.
+- Get Tag runs once each time scripts load. One object of each Decorator Class serves every text.
+
 ## Notes
 
 - Scene Layers only.
 - Tags use no reveal time. Each inline image counts as one character. The whole text decides the wrapping, so text does not reflow as it appears.
 - Control the reveal from a graph. **Trigger Appear** restarts from hidden, **Play** continues toward fully revealed and **Play Reverse** continues toward hidden. The read-only **Appear Progress** variable runs from 0 to 1, and **Is Revealed** is true at 1.
+- **Refresh Text** runs the [custom tags](#custom-tags) of the text again.
 - Letter effects pause while the game is paused.
 - **Set Text** and [Event On Text Changed](../scripting/class/event-on-text-changed.md) work as on 2D Text.
 

@@ -876,7 +876,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Get Tag Value](get-tag-value.md) | Returns the value a Letter Effect's `[fx]` tag gives one of its keywords. |
+| [Get Tag Value](get-tag-value.md) | Returns the value the tag a Letter Effect or a Rich Text Decorator is running for gives one of its keywords. |
 
 ## Render
 

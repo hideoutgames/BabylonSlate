@@ -16,6 +16,7 @@ import type { SceneSourceAssets } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
+import { RICH_TEXT_2D_DECORATOR_CLASS_ID } from "@haptic/object-model";
 import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { ownedActorsOfScene, ownedTimelineClipsOfScene } from "../lib/owned-actor-gets";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
@@ -206,6 +207,10 @@ function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promi
   });
 }
 
+/**
+ * What every Play session loads besides its scene: the audio mixer, render effects, the Game Instance Class, the
+ * leaf subsystem Classes, and every Rich Text Decorator Class, which text names only by the tag its Get Tag returns.
+ */
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
   const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
@@ -215,16 +220,18 @@ export function requiredProjectAssets(registry: AssetRegistry, project: ProjectD
   const classId = settings.gameInstanceClass;
   const asset = classId ? byId.get(classId) : undefined;
   if (asset) roots.push(asset.header.guid);
-  const subsystemClasses = classes.filter(asset => {
+  const derivesFrom = (asset: (typeof classes)[number], bases: readonly string[]) => {
     const seen = new Set<string>();
     let parent = asset.header.parentClass;
     while (parent && !seen.has(parent)) {
-      if (parent === "GameSubsystem" || parent === "SceneSubsystem") return true;
+      if (bases.includes(parent)) return true;
       seen.add(parent);
       parent = byId.get(parent)?.header.parentClass;
     }
     return false;
-  });
+  };
+  for (const decorator of classes) if (derivesFrom(decorator, [RICH_TEXT_2D_DECORATOR_CLASS_ID])) roots.push(decorator.header.guid);
+  const subsystemClasses = classes.filter(asset => derivesFrom(asset, ["GameSubsystem", "SceneSubsystem"]));
   const parents = new Set(subsystemClasses.flatMap(asset => {
     const parent = asset.header.parentClass && byId.get(asset.header.parentClass);
     return parent ? [parent.header.guid] : [];
