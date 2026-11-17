@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { SaveAllOutcome } from "../context/document-context-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import type { OpenDocument } from "../services/document-service";
@@ -9,7 +10,7 @@ import SourceControlPullFlow from "./source-control-pull-flow";
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
   dirty: [] as OpenDocument[],
-  saveAll: vi.fn(async () => true),
+  saveAll: vi.fn(async (): Promise<SaveAllOutcome> => "saved"),
   reloadDocs: vi.fn<(paths: string[]) => Promise<void>>(async () => {}),
   applyPulledChanges: vi.fn<(paths: readonly string[], hold?: { release: () => void }) => Promise<void>>(async () => {}),
   lockAuthoring: vi.fn<(reason: string) => () => void>(() => () => {}),
@@ -88,6 +89,24 @@ describe("Pull", () => {
     expect(state.writes).toBe(1);
     expect(await storage.readText("assets/Rock.texture.hasset")).toBe("R2");
     expect(state.applyPulledChanges).toHaveBeenCalledWith(["assets/Rock.texture.hasset"], expect.objectContaining({ release: expect.any(Function) }));
+  });
+
+  it("stays on the unsaved step when Save All leaves documents someone else has locked, for Save Failed to resolve", async () => {
+    const { service, remote } = await integratedSync();
+    state.sync = service;
+    state.dirty = [dirtyForest];
+    state.saveAll.mockResolvedValueOnce("locked");
+    remote.commit({ "assets/Rock.texture.hasset": "R2" }, "Teammate");
+    await service.fetch();
+    const onDone = vi.fn();
+    render(<SourceControlPullFlow onDone={onDone} />);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("source-control-pull-save"));
+    });
+    expect(state.saveAll).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("source-control-pull-unsaved").textContent).toContain("Forest");
+    expect(screen.queryByTestId("source-control-pull-confirm")).toBeNull();
+    expect(onDone).not.toHaveBeenCalled();
   });
 
   it("holds the documents read-only behind a Pulling step until the pulled files are reloaded, in the same write-queue turn", async () => {

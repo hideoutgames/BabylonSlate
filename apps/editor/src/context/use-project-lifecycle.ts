@@ -99,6 +99,7 @@ export interface ProjectLifecycleDeps {
   resetExternalChanges: () => void;
   // Save.
   setAutoSaveStatus: (status: DocumentContextValue["autoSaveStatus"]) => void;
+  dismissSaveFailed: () => void;
   cancelDebouncedSave: () => void;
   enqueueProjectWrite: <T>(operation: () => Promise<T>) => Promise<T>;
   // Tabs.
@@ -145,6 +146,7 @@ export function useProjectLifecycle({
   captureMtimeSnapshot,
   resetExternalChanges,
   setAutoSaveStatus,
+  dismissSaveFailed,
   cancelDebouncedSave,
   enqueueProjectWrite,
   cancelExclusiveSceneOpen,
@@ -410,6 +412,7 @@ export function useProjectLifecycle({
     playContent.clearCompileCache();
     setRoute("home");
     resetExternalChanges();
+    dismissSaveFailed();
     setDocumentOpenError(null);
     setPublishNotice(null);
     await refreshProjectList();
@@ -436,6 +439,7 @@ export function useProjectLifecycle({
     projectSaveState,
     resetExternalChanges,
     setAutoSaveStatus,
+    dismissSaveFailed,
     setDocumentOpenError,
     setPublishNotice,
     setLastCompiledSignature,

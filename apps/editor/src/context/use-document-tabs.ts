@@ -42,7 +42,7 @@ export interface DocumentTabDeps {
   ensureDerived: () => Promise<ProjectStorage>;
   editing: DocumentEditingService;
   /** Save All the user asked for, for an exclusive Scene open's Save choice. */
-  saveAll: () => Promise<boolean>;
+  saveAll: DocumentActions["saveAll"];
   /** Re-derives the document context value. */
   bump: () => void;
   captureLayoutForId: (id: string) => void;
@@ -337,8 +337,9 @@ export function useDocumentTabs({
       if (allowed === false || (typeof allowed !== "boolean" && !await allowed)) return;
       if (request !== exclusiveSceneRequest.current) return;
       if (mode === "save") {
-        const saved = await saveAll();
-        if (!saved || request !== exclusiveSceneRequest.current ||
+        // A Scene someone else has locked stays unsaved (Save Failed): the request waits for Discard Changes.
+        const outcome = await saveAll();
+        if (outcome !== "saved" || request !== exclusiveSceneRequest.current ||
           dirtyScenesBlockingOpen(documentService.getDirtyDocuments(), documentId(ref)).length > 0) return;
       }
       setPendingExclusiveScene(null);

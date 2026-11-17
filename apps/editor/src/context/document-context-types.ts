@@ -92,6 +92,24 @@ export type CloseProjectResult =
   | { outcome: "refused" };
 
 /**
+ * How a Save All ended. `saved` wrote everything; `locked` wrote everything
+ * except documents someone else holds a source control lock on, which stay
+ * unsaved. Nothing was written for `migrations` (pending schema migrations
+ * wait for approval), `authoring-locked` (Play or a Simulation holds the
+ * project) or `no-document` (no project is open).
+ */
+export type SaveAllOutcome = "saved" | "locked" | "migrations" | "authoring-locked" | "no-document";
+
+/** What a Save All the user asked for was for: Play and Preview Build cannot start while documents stay unsaved. */
+export type SaveFailedPurpose = "save" | "play" | "preview";
+
+/** The documents a Save All left unsaved because someone else has locked them, each with its lock's holder. */
+export interface SaveFailed {
+  documents: readonly { id: string; path: string; label: string; holder: string }[];
+  purpose: SaveFailedPurpose;
+}
+
+/**
  * Everything `DocumentProvider` publishes, by field: `DocumentActions` picks
  * its callbacks and each state slice below its fields. Open documents are
  * read through the subscription hooks (`useOpenDocument`,
@@ -215,6 +233,8 @@ export interface DocumentContextValue {
   dirtyDocuments: OpenDocument[];
   projectDirty: boolean;
   autoSaveStatus: { state: "saving" | "saved" | "error"; message?: string } | null;
+  /** Documents a Save All the user asked for left unsaved because someone else has locked them. */
+  saveFailed: SaveFailed | null;
   migrationPending: MigrationPending[];
   /** Advances each time a Save All the user asked for is refused for pending migrations. */
   migrationPromptRequest: number;
@@ -238,16 +258,31 @@ export interface DocumentContextValue {
   ) => Promise<void>;
   removeListedProject: (handle: ProjectFolderHandle) => Promise<void>;
   reconnectProject: () => Promise<void>;
-  saveProject: () => Promise<boolean>;
+  /** Auto-Save's Save All: documents someone else has locked stay unsaved quietly, and nothing prompts. */
+  saveProject: () => Promise<SaveAllOutcome>;
   /**
    * Hold the auto-save timer while a prompt lists unsaved work, so the choice
    * it asks for applies to that work. Resuming starts a new interval when
    * something is still unsaved.
    */
   setAutoSavePaused: (paused: boolean) => void;
-  saveAll: () => Promise<boolean>;
-  /** Approve pending schema migrations and run the complete Save All; false when it did not save. */
-  approveMigrationsAndSave: () => Promise<boolean>;
+  /**
+   * The Save All the user asked for (`purpose` names what for in Save
+   * Failed): pending migrations open their prompt, and documents someone else
+   * has locked are listed in Save Failed.
+   */
+  saveAll: (purpose?: SaveFailedPurpose) => Promise<SaveAllOutcome>;
+  /** Approve pending schema migrations and run the complete Save All. */
+  approveMigrationsAndSave: (purpose?: SaveFailedPurpose) => Promise<SaveAllOutcome>;
+  /** Save Failed's **Ignore**: the documents stay unsaved in the editor. */
+  dismissSaveFailed: () => void;
+  /**
+   * Save Failed's **Discard Changes**: reloads the open documents of `paths`
+   * from disk, dropping their unsaved edits, Undo history and recovery
+   * records. False when it could not now: documents are read-only (Play,
+   * Simulation, a pull) or a file could not be read.
+   */
+  discardDocumentChanges: (paths: string[]) => Promise<boolean>;
   /** Closes a clean project; unsaved work returns it without asking a session to stop. */
   closeProject: () => Promise<CloseProjectResult>;
   /**
@@ -604,6 +639,7 @@ export type EditorShellState = Pick<
   | "recoveryAvailable"
   | "migrationPending"
   | "migrationPromptRequest"
+  | "saveFailed"
   | "templates"
   | "homepageReady"
   | "pendingExclusiveScene"

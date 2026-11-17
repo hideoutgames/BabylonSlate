@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { SaveAllOutcome } from "../context/document-context-types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenDocument } from "../services/document-service";
 import type { SourceControlSyncService } from "../services/source-control-sync";
@@ -9,7 +10,7 @@ import SourceControlRevertFlow from "./source-control-revert-flow";
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
   dirty: [] as OpenDocument[],
-  saveAll: vi.fn(async () => true),
+  saveAll: vi.fn(async (): Promise<SaveAllOutcome> => "saved"),
   reloadDocs: vi.fn<(paths: string[]) => Promise<void>>(async () => {}),
   applyPulledChanges: vi.fn<(paths: readonly string[], hold?: { release: () => void }) => Promise<void>>(async () => {}),
   lockAuthoring: vi.fn<(reason: string) => () => void>(() => () => {}),

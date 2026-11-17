@@ -9,6 +9,8 @@ import type {
 } from "@haptic/core";
 import { isAssetDocumentKind } from "@haptic/core";
 import { truncateJournal, type MigrationPending } from "@haptic/assets";
+import { journalDiscardLine } from "@haptic/edit";
+import type { FileLock } from "@haptic/source-control";
 import type { JournalBuffer } from "../lib/journal-buffer";
 import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { withEditorViewportFramesHeld } from "../lib/editor-frame-hold";
@@ -17,6 +19,7 @@ import {
   flushNavBakeForSave,
 } from "../lib/nav-bake-save";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
+import { skippingRefusedScenes } from "../lib/locked-writes";
 import { refreshMtimeSnapshotAfterEditorSave } from "../lib/external-change";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
@@ -29,10 +32,17 @@ import {
 } from "../lib/dirty-trace";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { tileThumbnailJobs } from "../lib/tile-asset-thumbnails";
-import type { DocumentService } from "../services/document-service";
+import type { DocumentService, OpenDocument } from "../services/document-service";
 import type { PlayContentService } from "../services/play-content-service";
 import type { ProjectService } from "../services/project-service";
-import type { DocumentActions, DocumentContextValue } from "./document-context-types";
+import type { SourceControlService } from "../services/source-control-service";
+import type {
+  DocumentActions,
+  DocumentContextValue,
+  SaveAllOutcome,
+  SaveFailed,
+  SaveFailedPurpose,
+} from "./document-context-types";
 
 export interface ProjectSaveDeps {
   projectService: ProjectService;
@@ -46,6 +56,8 @@ export interface ProjectSaveDeps {
   playContent: PlayContentService;
   setLastCompiledSignature: (signature: string | null) => void;
   setMigrationPending: (pending: MigrationPending[]) => void;
+  /** Someone else's lock refuses a document's write; it stays unsaved. */
+  sourceControlRef: RefObject<SourceControlService>;
   /** Re-derives the document context value. */
   bump: () => void;
 }
@@ -67,6 +79,7 @@ export function useProjectSave({
   playContent,
   setLastCompiledSignature,
   setMigrationPending,
+  sourceControlRef,
   bump,
 }: ProjectSaveDeps) {
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,14 +100,23 @@ export function useProjectSave({
   }, []);
   const [autoSaveStatus, setAutoSaveStatus] = useState<DocumentContextValue["autoSaveStatus"]>(null);
   const [migrationPromptRequest, setMigrationPromptRequest] = useState(0);
+  const [saveFailed, setSaveFailed] = useState<SaveFailed | null>(null);
+  const dismissSaveFailed = useCallback(() => setSaveFailed(null), []);
 
   /**
    * The one Save All path: auto-save, Save All, Play's save and Migrate On
    * Save. Pending schema migrations refuse it until the user approves them
    * (`approveMigrations`, kept for the rest of the project session); a refused
    * Save All the user asked for (`promptMigrations`) opens the migration prompt.
+   * A document someone else has locked is not written and stays unsaved
+   * (`locked`); a Save All the user asked for (`reportLocked`) lists them in
+   * the Save Failed prompt, while Auto-Save skips them quietly.
    */
-  const runSaveAll = useCallback((options: { approveMigrations?: boolean; promptMigrations?: boolean } = {}): Promise<boolean> => {
+  const runSaveAll = useCallback((options: {
+    approveMigrations?: boolean;
+    promptMigrations?: boolean;
+    reportLocked?: SaveFailedPurpose;
+  } = {}): Promise<SaveAllOutcome> => {
     // Keep the immutable authored document as the only save source. A session
     // defers new saves; an already admitted Save All retains its complete lane.
     // Refuse before queueing so a deferred save never waits behind that lane.
@@ -104,12 +126,12 @@ export function useProjectSave({
       recordSaveAllTrace({ ok: false, reason: "authoring-locked", dirtyBefore: dirty, dirtyAfter: dirty });
       return true;
     };
-    if (refuseLocked()) return Promise.resolve(false);
+    if (refuseLocked()) return Promise.resolve("authoring-locked");
     // Each await below resumes only after any editor viewport frame drawn
     // meanwhile, so the viewports hold their frames until this save settles.
-    return enqueueProjectWrite(() => withEditorViewportFramesHeld(async () => {
-    if (refuseLocked()) return false;
-    return projectService.withBaselineSave(async writer => {
+    return enqueueProjectWrite(() => withEditorViewportFramesHeld(async (): Promise<SaveAllOutcome> => {
+    if (refuseLocked()) return "authoring-locked";
+    return projectService.withBaselineSave(async (admitted): Promise<SaveAllOutcome> => {
       const progress = beginSaveAllProgress();
       const document = projectDocumentRef.current;
       const guid = projectService.guid;
@@ -122,7 +144,7 @@ export function useProjectSave({
           dirtyAfter: dirtyBefore,
         });
         progress.finish();
-        return false;
+        return "no-document";
       }
       const migrate = options.approveMigrations === true || projectService.migrationsApproved;
       if (!migrate && projectService.pendingMigrations.length > 0) {
@@ -136,7 +158,7 @@ export function useProjectSave({
         });
         progress.finish();
         // Never silently rewrite: the user approves through the migration prompt.
-        return false;
+        return "migrations";
       }
       if (options.approveMigrations) projectService.approveMigrateOnSave();
       cancelDebouncedSave();
@@ -144,6 +166,15 @@ export function useProjectSave({
       // fails part-way leaves them recoverable. The clear below awaits them.
       void journalBuffer.flush();
       const projectSave = projectSaveState.current.capture(document);
+      // Someone else's lock, read once per path for the whole save: its file
+      // is never written, bakes included, and its document stays unsaved.
+      const sourceControl = sourceControlRef.current;
+      const lockChecks = new Map<string, FileLock | null>();
+      const lockedByOther = (path: string) => {
+        if (!lockChecks.has(path)) lockChecks.set(path, sourceControl.lockedByOther(path));
+        return lockChecks.get(path)!;
+      };
+      const writer = skippingRefusedScenes(admitted, lockedByOther);
       try {
         progress.phase("audio-reverb");
         await flushAudioReverbForSave(undefined, writer);
@@ -151,10 +182,18 @@ export function useProjectSave({
         await flushNavBakeForSave(writer);
         captureAllLayouts();
         const dirtyDocs = documentService.getDirtyDocuments().map((doc) => ({ ...doc }));
-        const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
-        const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
+        const blocked = dirtyDocs.flatMap((doc) => {
+          const lock = lockedByOther(doc.ref.path);
+          return lock ? [{ doc, lock }] : [];
+        });
+        // Everything after the writes uses only what this save wrote.
+        const saved: OpenDocument[] = blocked.length
+          ? dirtyDocs.filter((doc) => !blocked.some((entry) => entry.doc.id === doc.id))
+          : dirtyDocs;
+        const savedScene = saved.some((doc) => doc.ref.kind === "scene");
+        const savedModels = saved.filter((doc) => doc.ref.kind === "model" || doc.ref.kind === "animation");
         progress.phase("documents");
-        for (const doc of dirtyDocs) {
+        for (const doc of saved) {
           // A Content Browser delete or move between two saves leaves this
           // snapshot's path behind; writing it would bring the file back.
           // `markAllClean` skips the same documents, so a moved one stays dirty.
@@ -183,8 +222,16 @@ export function useProjectSave({
         const layouts = documentService.buildLayouts();
         progress.phase("project");
         await writer.saveProject(document, layouts);
-        documentService.markAllClean(dirtyDocs);
+        documentService.markAllClean(saved);
         setMigrationPending([]);
+        if (guid && documentService.getDirtyDocuments().length > 0) {
+          // The journal is cleared only once nothing is unsaved: until then it
+          // must not replay what this save wrote onto the saved files.
+          const at = new Date().toISOString();
+          for (const doc of saved) {
+            if (documentService.getDocument(doc.id)?.dirty === false) journalBuffer.append(guid, journalDiscardLine(doc.id, at));
+          }
+        }
         progress.phase("mtime");
         await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
         if (guid) {
@@ -220,7 +267,7 @@ export function useProjectSave({
         // Saved Tilesets and Tilemaps draw again, and so do those showing a saved Texture or Tileset.
         const registry = projectService.registry;
         if (guid && registry) {
-          const savedGuids = dirtyDocs.flatMap((doc) => projectService.guidForPath(doc.ref.path) ?? []);
+          const savedGuids = saved.flatMap((doc) => projectService.guidForPath(doc.ref.path) ?? []);
           void tileThumbnailJobs(registry.list(), savedGuids, guid, document.settings.twoD.pixelsPerUnit)
             .then(enqueueModelThumbnailJobs)
             // A thumbnail that cannot be queued keeps the type icon.
@@ -228,16 +275,23 @@ export function useProjectSave({
         }
         projectSaveState.current.complete(projectSave);
         setAutoSaveStatus(null);
+        const purpose = options.reportLocked;
+        if (blocked.length > 0 && purpose) {
+          setSaveFailed({
+            purpose,
+            documents: blocked.map(({ doc, lock }) => ({ id: doc.id, path: doc.ref.path, label: doc.ref.label, holder: lock.ownerName })),
+          });
+        }
         flushSync(() => {
           bump();
         });
         recordSaveAllTrace({
-          ok: true,
-          reason: "saved",
+          ok: blocked.length === 0,
+          reason: blocked.length === 0 ? "saved" : "locked",
           dirtyBefore,
           dirtyAfter: documentService.getDirtyDocuments().length + Number(projectSaveState.current.isDirty(projectDocumentRef.current)),
         });
-        return true;
+        return blocked.length === 0 ? "saved" : "locked";
       } catch (error) {
         recordSaveAllTrace({
           ok: false,
@@ -267,13 +321,22 @@ export function useProjectSave({
     projectSaveState,
     setLastCompiledSignature,
     setMigrationPending,
+    sourceControlRef,
   ]);
-  /** Auto-save: a refusal pauses it with a status message, never a prompt. */
+  /**
+   * Auto-save: a refusal pauses it with a status message, never a prompt, and
+   * documents someone else has locked are skipped quietly.
+   */
   const saveProject = useCallback(() => runSaveAll(), [runSaveAll]);
-  /** Save All the user asked for: a refusal for pending migrations opens the prompt. */
-  const saveAll = useCallback(() => runSaveAll({ promptMigrations: true }), [runSaveAll]);
+  /**
+   * Save All the user asked for: a refusal for pending migrations opens the
+   * prompt, and documents someone else has locked are listed in Save Failed.
+   */
+  const saveAll = useCallback((purpose: SaveFailedPurpose = "save") =>
+    runSaveAll({ promptMigrations: true, reportLocked: purpose }), [runSaveAll]);
   /** Migrate On Save: approve the pending migrations and run the complete Save All. */
-  const approveMigrationsAndSave = useCallback(() => runSaveAll({ approveMigrations: true }), [runSaveAll]);
+  const approveMigrationsAndSave = useCallback((purpose: SaveFailedPurpose = "save") =>
+    runSaveAll({ approveMigrations: true, reportLocked: purpose }), [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
     if (saveDebounceRef.current || autoSavePausedRef.current) return;
@@ -289,9 +352,10 @@ export function useProjectSave({
       const guid = projectService.guid;
       setAutoSaveStatus({ state: "saving" });
       void saveProject().then(
-        (saved) => {
+        (outcome) => {
           if (projectService.guid !== guid) return;
-          setAutoSaveStatus(saved
+          // Documents someone else has locked stay unsaved without a word: Save All names them.
+          setAutoSaveStatus(outcome === "saved" || outcome === "locked"
             ? { state: "saved" }
             : { state: "error", message: "Auto-Save Paused. Use Save All to review the pending changes." });
         },
@@ -348,23 +412,28 @@ export function useProjectSave({
       | "saveAll"
       | "approveMigrationsAndSave"
       | "setAutoSavePaused"
+      | "dismissSaveFailed"
     > => ({
       saveProject,
       saveAll,
       approveMigrationsAndSave,
       setAutoSavePaused,
+      dismissSaveFailed,
     }),
     [
       saveProject,
       saveAll,
       approveMigrationsAndSave,
       setAutoSavePaused,
+      dismissSaveFailed,
     ],
   );
 
   return {
     autoSaveStatus,
     setAutoSaveStatus,
+    saveFailed,
+    dismissSaveFailed,
     migrationPromptRequest,
     cancelDebouncedSave,
     enqueueProjectWrite,

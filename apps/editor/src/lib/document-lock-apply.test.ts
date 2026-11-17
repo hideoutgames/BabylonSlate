@@ -58,7 +58,7 @@ describe("document lock apply gate", () => {
     expect(isMutatingApplyBlocked(service, path, false, false)).toBe(false);
   });
 
-  it("auto-locks after a successful apply", async () => {
+  it("locks on edit after a successful apply", async () => {
     const fake = new FakeLockProvider();
     const service = await readyService(fake);
     await afterMutatingApply(service, "assets/main.scene.hasset");
@@ -71,5 +71,18 @@ describe("document lock apply gate", () => {
     expect(await requeueWithEditLock(service, "assets/odd.hasset", async () => true)).toBe(true);
     await vi.waitFor(() => expect(service.lockStateForPath("assets/odd.hasset")).toBe("mine"));
     expect(service.lockStateForPath("assets/refused.hasset")).toBeNull();
+  });
+
+  it("refuses to re-encode a Texture someone else has locked, Edit Anyway or not", async () => {
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    const path = "assets/rock.texture.hasset";
+    fake.addTheirs(path, "Bob");
+    const service = await readyService(fake);
+    await service.refresh();
+    service.onOpenDocument(path);
+    service.setEditAnyway(path);
+    const requeue = vi.fn(async () => true);
+    await expect(requeueWithEditLock(service, path, requeue)).rejects.toThrow("Locked by Bob. You can't save it until they release the lock.");
+    expect(requeue).not.toHaveBeenCalled();
   });
 });

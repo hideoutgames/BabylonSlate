@@ -845,10 +845,12 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             dirtyNames: plan.dirtyNames,
           });
           if (plan.needsSave) {
-            const saved = await current(saveAll());
-            if (!saved) {
+            const outcome = await current(saveAll("play"));
+            if (outcome !== "saved") {
               setPrepareState(null);
-              setPlayAwaitingMigration(true);
+              // Pending migrations wait for Migrate On Save, then Play resumes. A document
+              // someone else has locked stays unsaved: Save Failed says Play did not start.
+              if (outcome === "migrations") setPlayAwaitingMigration(true);
               return;
             }
           }

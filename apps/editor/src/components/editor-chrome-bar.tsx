@@ -96,6 +96,7 @@ import {
   useRegistryState,
   useSaveState,
 } from "../context/document-context";
+import type { SaveAllOutcome } from "../context/document-context-types";
 import { Badge } from "@haptic/ui/components/badge";
 import { SourceControlPhoneTools } from "./source-control-phone-tools";
 import { usePlay } from "../context/play-context";
@@ -308,7 +309,7 @@ export function EditorChromeBar({
   onCloseAllDocuments,
 }: {
   onCloseProject?: () => void;
-  onSaveProject?: () => Promise<boolean>;
+  onSaveProject?: () => Promise<SaveAllOutcome>;
   onCloseDocument?: (id: string) => void;
   onCloseAllDocuments?: () => void;
 }) {
@@ -1024,7 +1025,8 @@ export function EditorChromeBar({
               disabled={
                 !projectName || (dirtyDocuments.length === 0 && !projectDirty)
               }
-              onAction={onSaveProject ?? saveAll}
+              // Only a complete save shows success; Save Failed or the migration prompt explains the rest.
+              onAction={async () => (await (onSaveProject ?? saveAll)()) === "saved"}
             />
             {dirtyDocuments.length > 0 || projectDirty ? (
               <span

@@ -306,10 +306,11 @@ export function usePreviewBuild({
     setPreviewPhase("Saving");
     try {
       if (needsSave) {
-        const saved = await saveAll();
+        const outcome = await saveAll("preview");
         if (!isCurrentRequest()) return;
-        if (!saved) {
-          setPlayAwaitingMigration(true);
+        if (outcome !== "saved") {
+          // As Play: migrations wait for approval; locked documents are named in Save Failed.
+          if (outcome === "migrations") setPlayAwaitingMigration(true);
           return;
         }
       }

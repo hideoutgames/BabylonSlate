@@ -15,8 +15,9 @@ import {
   snapshotIndexedMtimes,
   type ExternalChangeClassification,
 } from "@haptic/assets";
-import type { EditSession } from "@haptic/edit";
+import { journalDiscardLine, type EditSession } from "@haptic/edit";
 import { readProjectJsonMtime } from "../lib/external-change";
+import type { JournalBuffer } from "../lib/journal-buffer";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import { editorTabContentForKind } from "../lib/scene-layer-document";
 import type { DocumentService, OpenDocument } from "../services/document-service";
@@ -51,6 +52,8 @@ export interface ExternalChangeDeps {
   noteRegistryReread: () => void;
   /** Lock On Edit asks or locks again on the next edit of a file changed outside the editor. */
   sourceControlRef: RefObject<SourceControlService>;
+  /** A reloaded document's earlier edits leave crash recovery. */
+  journalBuffer: JournalBuffer;
 }
 
 /** Every path a classification found changed, added, deleted or reaching an open document. */
@@ -75,6 +78,7 @@ export function useExternalChanges({
   closeDocumentsForPathsRef,
   noteRegistryReread,
   sourceControlRef,
+  journalBuffer,
 }: ExternalChangeDeps) {
   const [externalChangePrompt, setExternalChangePrompt] =
     useState<ExternalChangeClassification | null>(null);
@@ -137,36 +141,47 @@ export function useExternalChanges({
 
   /**
    * Puts what `readOpenDocuments` read into the tabs, in one synchronous
-   * step: each loses its history, and a tab whose file was deleted closes, as
-   * reloading it has nothing to load.
+   * step: each loses its history and its crash-recovery records (replaying
+   * them would bring discarded edits back onto the file's content), and a tab
+   * whose file was deleted closes, as reloading it has nothing to load.
    */
   const applyOpenDocuments = useCallback(
     (reads: OpenDocumentReads) => {
+      const guid = projectService.guid;
+      const at = new Date().toISOString();
       for (const { id, content } of reads.contents) {
         documentService.replaceLoadedContent(id, content);
         editSessionRef.current.dropDocument(id);
+        if (guid) journalBuffer.append(guid, journalDiscardLine(id, at));
       }
+      if (reads.contents.length > 0) void journalBuffer.flush();
       if (reads.deleted.length > 0) closeDocumentsForPathsRef.current(reads.deleted);
       bump();
     },
-    [bump, closeDocumentsForPathsRef, documentService, editSessionRef],
+    [bump, closeDocumentsForPathsRef, documentService, editSessionRef, journalBuffer, projectService],
   );
 
   /**
    * Returns the paths whose file could not be read; their tabs keep their
-   * content. Nothing changes when an authoring lease starts or ends meanwhile.
+   * content. Null, and nothing changes, while documents are read-only or when
+   * an authoring lease starts or ends meanwhile.
    */
   const reloadDocumentsFromDisk = useCallback(
-    async (paths: string[]): Promise<string[]> => {
+    async (paths: string[]): Promise<string[] | null> => {
       const authoring = documentService.getAuthoringLock();
-      if (authoring.readOnly) return [];
+      if (authoring.readOnly) return null;
       const reads = await readOpenDocuments(paths);
-      if (documentService.getAuthoringLock() !== authoring) return [];
+      if (documentService.getAuthoringLock() !== authoring) return null;
       applyOpenDocuments(reads);
       return reads.failed;
     },
     [applyOpenDocuments, documentService, readOpenDocuments],
   );
+
+  const discardDocumentChanges = useCallback(async (paths: string[]) => {
+    const failed = await reloadDocumentsFromDisk(paths);
+    return failed !== null && failed.length === 0;
+  }, [reloadDocumentsFromDisk]);
 
   const runForegroundRescan = useCallback(async () => {
     if (!projectDocumentRef.current) return;
@@ -236,7 +251,7 @@ export function useExternalChanges({
   const confirmExternalChangeReloadDocs = useCallback(
     async (paths: string[]) => {
       if (documentService.getAuthoringLock().readOnly) return;
-      const failed = await reloadDocumentsFromDisk(paths);
+      const failed = await reloadDocumentsFromDisk(paths) ?? [];
       // The next rescan will not report these files again, so the prompt
       // keeps offering the ones that could not be read.
       const keep = (list: string[]) => list.filter((path) => failed.includes(path));
@@ -331,15 +346,18 @@ export function useExternalChanges({
       | "confirmExternalChangeReloadProject"
       | "confirmExternalChangeReloadDocs"
       | "dismissExternalChange"
+      | "discardDocumentChanges"
     > => ({
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
+      discardDocumentChanges,
     }),
     [
       confirmExternalChangeReloadProject,
       confirmExternalChangeReloadDocs,
       dismissExternalChange,
+      discardDocumentChanges,
     ],
   );
 
