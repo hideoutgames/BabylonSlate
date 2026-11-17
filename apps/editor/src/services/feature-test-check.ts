@@ -404,6 +404,8 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           // The effect chain ends at the view's size and one copy fills the backbuffer: what upscaling and sharpening at
           // the device's resolution cost, with the layers still drawn there.
           { label: "FSR to view size", commands: ["fsrdebug output view"], restore: ["fsrdebug output device"], fields: ["upscale.output"] },
+          // No depth-and-stencil clear before each layer drawn over the world: what those clears cost in the backbuffer's pass.
+          { label: "layer clears off", commands: ["layerdebug clears off"], restore: ["layerdebug clears on"], fields: ["layers.clears"] },
         ],
       },
       {

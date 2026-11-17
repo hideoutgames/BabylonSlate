@@ -64,6 +64,8 @@ export type ConsoleCommandHost = {
   setSceneLayers?(enabled: boolean): void;
   /** `fsrdebug output`: end Play's upscale at the output (device) or at the view's own size (view). */
   setFsrOutput?(output: "device" | "view"): void;
+  /** `layerdebug clears`: clear depth and stencil before each Scene Layer drawn over the world (on), or leave them (off). */
+  setLayerDebug?(part: "clears", enabled: boolean): void;
   /** `renderreset`: rebuild the Play view's frame graph, reallocate its shadow maps, or render nothing for 3 s. */
   resetRendering?(what: "graph" | "shadows" | "idle"): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */

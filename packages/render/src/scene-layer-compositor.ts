@@ -223,6 +223,13 @@ export class SceneLayerCompositor {
     });
   }
 
+  /**
+   * Debug (`layerdebug clears off`): a layer composited straight over the world no longer clears depth and stencil
+   * before it draws. A layer whose meshes test or write depth then draws against what the frame left there, so its
+   * picture may differ: a measurement switch, never a default.
+   */
+  depthClears = true;
+
   clear(): void {
     for (const layerId of [...this.byId.keys()]) {
       this.remove(layerId);
@@ -431,7 +438,7 @@ export class SceneLayerCompositor {
           }
         } else {
           record.scene.autoClear = false;
-          record.scene.autoClearDepthAndStencil = true;
+          record.scene.autoClearDepthAndStencil = this.depthClears;
           const frameCapture = activeRenderFrameCapture(this.engine);
           const result = frameCapture
             ? frameCapture.stage(record.scene, { name: "SceneLayer scene output", kind: "composition", sceneId: record.layerId },

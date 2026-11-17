@@ -1219,6 +1219,8 @@ function initializeEngine(
       layers: layersHidden ? "hidden" : "shown",
       // Where the effect chain's upscale ends (`fsrdebug output`): the output (the device's resolution) or the view's size.
       "upscale.output": sceneRenderingSettings(scene).fsrOutputAtView ? "view" : "device",
+      // Whether a Scene Layer drawn over the world clears depth and stencil first (`layerdebug clears`).
+      "layers.clears": sceneLayerCompositor?.depthClears === false ? "off" : "on",
     };
   };
   // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
@@ -3249,6 +3251,10 @@ function initializeEngine(
         // Measured per rendered frame: a capped, held or skipped Engine frame submitted nothing of its own.
         const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
+      }
+      if (command.type === "setLayerDebug" && sceneLayerCompositor && sceneLayerCompositor.depthClears !== command.enabled) {
+        sceneLayerCompositor.depthClears = command.enabled;
+        scheduler.invalidate("asset");
       }
       if (command.type === "setFsrDebug" && setSceneFsrOutputDebug(scene, command.output)) scheduler.invalidate("asset");
       if (command.type === "setGpuProbeDebug") {

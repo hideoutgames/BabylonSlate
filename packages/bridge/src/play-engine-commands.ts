@@ -47,6 +47,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setDiscardSamplesDebug",
   "setSceneLayersDebug",
   "setFsrDebug",
+  "setLayerDebug",
   "resetRenderingDebug",
   "setGpuBusyProbeDebug",
   "setGpuProbeDebug",

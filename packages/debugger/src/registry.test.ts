@@ -177,6 +177,18 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["fsr:view", "fsr:device"]);
   });
 
+  it("switches the Scene Layers' depth and stencil clears off and on, in debug registries only", () => {
+    const host = recordingHost();
+    host.setLayerDebug = (part, enabled) => host.calls.push(`layer:${part}:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("layerdebug clears off", host)).toEqual({ success: true, output: "layerdebug clears off" });
+    expect(debug.execute("layerdebug clears on", host)).toEqual({ success: true, output: "layerdebug clears on" });
+    expect(debug.execute("layerdebug depth off", host).success).toBe(false);
+    expect(release.execute("layerdebug clears off", host).success).toBe(false);
+    expect(host.calls).toEqual(["layer:clears:false", "layer:clears:true"]);
+  });
+
   it("resets one part of Play's rendering by name, in debug registries only", () => {
     const host = recordingHost();
     host.resetRendering = (what) => host.calls.push(`reset:${what}`);

@@ -65,6 +65,22 @@ describe("SceneLayerCompositor", () => {
     expect(scene.autoClear).toBe(true);
   });
 
+  it("leaves depth and stencil uncleared before a layer drawn over the world only while its clears are switched off", () => {
+    const { compositor } = world();
+    const layer = compositor.create({
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+    });
+    compositor.render();
+    expect(layer.scene.autoClearDepthAndStencil).toBe(true);
+    compositor.depthClears = false;
+    compositor.render();
+    // The colour beneath is never cleared; now neither are depth and stencil.
+    expect([layer.scene.autoClear, layer.scene.autoClearDepthAndStencil]).toEqual([false, false]);
+    compositor.depthClears = true;
+    compositor.render();
+    expect(layer.scene.autoClearDepthAndStencil).toBe(true);
+  });
+
   it("lists each layer's own renderer work in draw order, with its mesh count", () => {
     const { compositor } = world();
     const create = (layerId: string, zOrder: number) =>

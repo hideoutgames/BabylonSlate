@@ -47,6 +47,7 @@ export const DEBUG_COMMAND_NAMES = [
   "discardsamples",
   "scenelayers",
   "fsrdebug",
+  "layerdebug",
   "renderreset",
   "gpubusy",
   "gpuprobe",
@@ -263,6 +264,19 @@ export function builtinCommands(): RegisteredCommand[] {
         if (!host.setFsrOutput) return fail("fsrdebug is unavailable here");
         host.setFsrOutput(output);
         return ok(`fsrdebug output ${output}`);
+      },
+    },
+    {
+      name: "layerdebug",
+      tier: "debug",
+      category: "engine",
+      description: "Clear depth and stencil before each Scene Layer drawn over the world (clears on, the default) or leave them (clears off), to measure what the clears cost; a layer whose meshes use depth may then draw differently",
+      parameters: [{ name: "part", type: "enum", enumValues: ["clears"] }, FLAG],
+      run(args, host) {
+        const enabled = Boolean(args.enabled);
+        if (!host.setLayerDebug) return fail("layerdebug is unavailable here");
+        host.setLayerDebug("clears", enabled);
+        return ok(`layerdebug clears ${enabled ? "on" : "off"}`);
       },
     },
     {

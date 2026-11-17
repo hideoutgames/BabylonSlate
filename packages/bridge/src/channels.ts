@@ -1235,6 +1235,8 @@ export type CommandMessage =
    * device's resolution under Scene Layers), or at the view's own size with one copy filling the output.
    */
   | { type: "setFsrDebug"; output: "device" | "view" }
+  /** Debug: whether a Scene Layer drawn over the world clears depth and stencil before it draws (the `layerdebug` console command). */
+  | { type: "setLayerDebug"; part: "clears"; enabled: boolean }
   /** Debug: rebuild the view's frame graph, reallocate its shadow maps, or render nothing for 3 s (the `renderreset` console command). */
   | { type: "resetRenderingDebug"; what: "graph" | "shadows" | "idle" }
   /** Debug: start (restart) or stop measuring GPU-busy time per Engine frame (the `gpubusy` console command). */
