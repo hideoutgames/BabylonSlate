@@ -11,6 +11,7 @@ import {
   text2DLetterPoseAt,
   text2DCharacterReveal,
   text2DFormattedUnits,
+  text2DShownLetters,
 } from "./text2d-appear";
 import { createRichText2DComponent, createText2DComponent, parseText2DProperties } from "./text2d";
 
@@ -184,14 +185,27 @@ describe("appear easing", () => {
     expect(text2DAppearDuration(3, { appearModes: ["class:Rise"], appearInterval: 0.1, appearDuration: 0.3 })).toBeCloseTo(0.5);
   });
 
+  it("lists the letters a reveal shows: no whitespace or line breaks, an image as a letter without a character", () => {
+    expect(text2DShownLetters({ text: "A b\n[img=icon]C", rich: true, appearModes: ["fade"] })).toEqual([
+      { index: 0, character: "A" }, { index: 2, character: "b" }, { index: 3, character: "" }, { index: 4, character: "C" },
+    ]);
+    // Appear Modes Off has no timeline, so no letter is shown.
+    expect(text2DShownLetters({ text: "Ab", rich: true, appearModes: [] })).toEqual([]);
+  });
+
   it("reads scripted letter poses in whole strides and rests letters beyond or without them", () => {
-    const poses = [1, 2, 3, 4, 5, 0.5, -1, -2, 1, 1, 0, 7];
+    const poses = [1, 2, 3, 4, 5, 0.5, 0.25, 0.5, 0.75, -1, -2, 1, 1, 0, 7, 2, -0.5, 1];
     expect(parseText2DLetterPoses(poses)).toBe(poses);
-    expect({ ...text2DLetterPoseAt(poses, 0) }).toEqual({ offsetX: 1, offsetY: 2, scaleX: 3, scaleY: 4, rotation: 5, opacity: 0.5 });
-    // Opacity is clamped; a letter the list does not reach is at rest.
-    expect(text2DLetterPoseAt(poses, 1).opacity).toBe(1);
-    expect({ ...text2DLetterPoseAt(poses, 2) }).toEqual({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 });
-    for (const malformed of [[1, 2, 3], [1, 2, 3, 4, 5, Number.NaN], "poses", undefined]) {
+    expect({ ...text2DLetterPoseAt(poses, 0) }).toEqual({
+      offsetX: 1, offsetY: 2, scaleX: 3, scaleY: 4, rotation: 5, opacity: 0.5, tintR: 0.25, tintG: 0.5, tintB: 0.75,
+    });
+    // Opacity and Tint are clamped to 0..1; a letter the list does not reach is at rest, white.
+    expect({ ...text2DLetterPoseAt(poses, 1) }).toMatchObject({ opacity: 1, tintR: 1, tintG: 0, tintB: 1 });
+    expect({ ...text2DLetterPoseAt(poses, 2) }).toEqual({
+      offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, tintR: 1, tintG: 1, tintB: 1,
+    });
+    // Six numbers per letter is the old, shorter stride: not whole poses.
+    for (const malformed of [[1, 2, 3], [0, 0, 1, 1, 0, 1], [0, 0, 1, 1, 0, 1, 1, 1, Number.NaN], "poses", undefined]) {
       expect(parseText2DLetterPoses(malformed)).toEqual([]);
     }
     expect(parseText2DAppearProperties({ letterPoses: poses }).letterPoses).toBe(poses);

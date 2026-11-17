@@ -515,6 +515,8 @@ export interface ScriptContext {
   /** Get Third-Party Notices: the notices text, or an error message when they cannot be read. */
   getThirdPartyNotices(): Promise<{ success: boolean; text: string; errorMessage: string }>;
   getSceneReference(): Scene | null;
+  /** Get Tag Value: the current `[fx]` tag's value for `key` while Self decorates letters; "" otherwise. */
+  getRichTextTagValue(key: unknown): string;
   /** Live subsystem whose class isA `classId`, or null (`Get <Subsystem>`). */
   getSubsystem(classId: string): EngineObject | null;
   /** The session Game Instance, or null in hosts without one. */

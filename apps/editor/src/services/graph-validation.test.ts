@@ -6,6 +6,8 @@ import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@h
 import { engineParentOf } from "@haptic/editor-kit";
 import { filterPaletteForPin, type SerializedPin } from "@haptic/graph-ui";
 import { ownedTimelineClipDispatcherSymbols } from "../lib/owned-actor-gets";
+import { withEngineClassGraphs } from "../lib/logic-graph-document";
+import { collectParentFunctionSignatures } from "../lib/overridable-functions";
 import { timelineScriptClassIds, timelineScriptSymbols, type TimelineScriptAsset } from "../lib/timeline-script-catalog";
 import {
   classHierarchyFromParentOf,
@@ -1322,6 +1324,39 @@ describe("scriptPinCompatibility", () => {
     expect(rule(pin("objectRef", "Hero"), pin("objectRef", "Object"))).toBe(true);
     expect(rule(pin("objectRef", "Hero"), pin("objectRef", "Actor"))).toBe(true);
     expect(rule(pin("objectRef", "Object"), pin("objectRef", "Actor"))).toBe(false);
+  });
+});
+
+describe("engine overridable functions", () => {
+  const parentOf = (id: string) => id === "Wave" ? "RichText2DDecoratorEffect" : engineParentOf(id) ?? null;
+  const otherClassGraphs = withEngineClassGraphs({});
+
+  it("offers Get Keys and Get Tag Value only to Decorator Effect Classes", () => {
+    const ids = (parentClass: string, classId: string) =>
+      scriptPaletteNodes(registry, { parentClass, classId, parentOf, otherClassGraphs }).map((node) => node.id);
+    expect(ids("RichText2DDecoratorEffect", "Wave")).toEqual(expect.arrayContaining([
+      "functions.call:RichText2DDecoratorEffect:Get Keys", "richText.getTagValue",
+    ]));
+    for (const [parentClass, classId] of [["Actor", "Hero"], ["RichText2DAppearMode", "Rise"], ["Object", "Thing"]] as const) {
+      const offered = ids(parentClass, classId);
+      expect(offered, parentClass).not.toContain("functions.call:RichText2DDecoratorEffect:Get Keys");
+      expect(offered, parentClass).not.toContain("richText.getTagValue");
+    }
+  });
+
+  it("checks a Get Keys override against the engine's signature", () => {
+    const override = (pins: NonNullable<SerializedGraph["members"]>[number]["pins"]): Pick<SerializedGraph, "members"> => ({ members: [{
+      id: "get-keys", kind: "function", name: "Get Keys", pins,
+      overrides: { classId: "RichText2DDecoratorEffect", name: "Get Keys" },
+    }] });
+    const diagnostics = (graph: Pick<SerializedGraph, "members">) => validateSerializedGraph({ nodes: [], edges: [], ...graph }, {
+      assetGuid: "wave", graphId: "wave", classId: "Wave", parentOf,
+      members: classMemberSymbolsFromGraphs({ Wave: { nodes: [], edges: [], ...graph } }, { parentOf }),
+      parentFunctionSignatures: collectParentFunctionSignatures({ classId: "Wave", parentOf, parentGraphs: otherClassGraphs }),
+    }).filter((diagnostic) => diagnostic.code === "member.override_signature");
+    const exec = [{ name: "exec", typeId: "exec", direction: "in" as const }, { name: "then", typeId: "exec", direction: "out" as const }];
+    expect(diagnostics(override([...exec, { name: "Keys", typeId: "string", direction: "out", container: "array" }]))).toEqual([]);
+    expect(diagnostics(override([...exec, { name: "Keys", typeId: "string", direction: "out" }]))).toHaveLength(1);
   });
 });
 

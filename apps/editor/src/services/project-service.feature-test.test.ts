@@ -435,7 +435,11 @@ describe("FeatureTest starter", () => {
   // Each scene plays headlessly as in editor Play: its probes assert what they check, so a broken feature fails here.
   // Event handlers whose asserts would pass by never running also print a line, which must appear.
   const HEARD: Partial<Record<(typeof FEATURE_TEST_CHECK_SCENES)[number]["name"], string[]>> = {
-    main: ["Feature Test scene script heard On Intro Line (Intro) through FT_Timeline", "FT_HUD script plays its own FT_HudPulse"],
+    main: [
+      "Feature Test scene script heard On Intro Line (Intro) through FT_Timeline", "FT_HUD script plays its own FT_HudPulse",
+      // The HUD's rich text reveals on start; its Class hears each letter shown, then the reveal finish.
+      "FT_UIRichText heard On Appear Finished (Markup)",
+    ],
     FT_World: ["FT_TimelineListener heard On Door Open (Door Loop)", "FT_SwingDoor heard On Swing Open (FT_DoorSwing)"],
     // Animation Events reach each graph's Animation Object: clip events, a window's Begin and End, and state events.
     FT_Animation: [

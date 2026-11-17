@@ -79,10 +79,11 @@ export type Text2DAppearProperties = {
   letterPoses?: number[];
 };
 
-/** Offset X and Y in pixels (Y up), Scale X and Y, Rotation in degrees, Opacity. */
-export const TEXT2D_LETTER_POSE_STRIDE = 6;
+/** Offset X and Y in pixels (Y up), Scale X and Y, Rotation in degrees, Opacity, then Tint red, green and blue (0 to 1). */
+export const TEXT2D_LETTER_POSE_STRIDE = 9;
 export type Text2DLetterPose = {
   offsetX: number; offsetY: number; scaleX: number; scaleY: number; rotation: number; opacity: number;
+  tintR: number; tintG: number; tintB: number;
 };
 const NO_LETTER_POSES: readonly number[] = [];
 
@@ -92,7 +93,11 @@ export function parseText2DLetterPoses(value: unknown): readonly number[] {
   return value.every((entry) => typeof entry === "number" && Number.isFinite(entry)) ? value as number[] : NO_LETTER_POSES;
 }
 
-const letterPoseScratch: Text2DLetterPose = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+const letterPoseScratch: Text2DLetterPose = {
+  offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, tintR: 1, tintG: 1, tintB: 1,
+};
+
+const clampUnit = (value: number): number => Math.min(1, Math.max(0, value));
 
 /** The pose of one reveal character, at rest when the list does not reach it. Returns a shared object: read it at once. */
 export function text2DLetterPoseAt(poses: readonly number[], index: number): Text2DLetterPose {
@@ -103,7 +108,10 @@ export function text2DLetterPoseAt(poses: readonly number[], index: number): Tex
   letterPoseScratch.scaleX = posed ? poses[at + 2]! : 1;
   letterPoseScratch.scaleY = posed ? poses[at + 3]! : 1;
   letterPoseScratch.rotation = posed ? poses[at + 4]! : 0;
-  letterPoseScratch.opacity = posed ? Math.min(1, Math.max(0, poses[at + 5]!)) : 1;
+  letterPoseScratch.opacity = posed ? clampUnit(poses[at + 5]!) : 1;
+  letterPoseScratch.tintR = posed ? clampUnit(poses[at + 6]!) : 1;
+  letterPoseScratch.tintG = posed ? clampUnit(poses[at + 7]!) : 1;
+  letterPoseScratch.tintB = posed ? clampUnit(poses[at + 8]!) : 1;
   return letterPoseScratch;
 }
 
@@ -275,4 +283,28 @@ export function text2DAppearSoundPlan(
     if (letter++ % step === 0) times.add(unit.index * interval + offset);
   }
   return times.size ? { assetGuid, times: [...times], loop: null } : null;
+}
+
+export type Text2DShownLetter = { index: number; character: string };
+
+/**
+ * The letters a forward reveal shows, in text order: reveal characters that are not whitespace (an inline image
+ * is a letter with no character). Letter `index` starts appearing at timeline second `index * appearInterval`. None
+ * when Appear Modes is Off.
+ */
+export function text2DShownLetters(
+  properties: { text: string; rich?: boolean } & Partial<Text2DAppearProperties>,
+): Text2DShownLetter[] {
+  if (!properties.appearModes?.length) return [];
+  const letters: Text2DShownLetter[] = [];
+  for (const unit of text2DFormattedUnits(properties.text, countDefaults, properties)) {
+    if (unit.kind === "image") letters.push({ index: unit.index, character: "" });
+    else if (unit.kind === "glyph" && unit.ch.trim()) letters.push({ index: unit.index, character: unit.ch });
+  }
+  return letters;
+}
+
+/** Seconds into the reveal timeline at which a reveal character starts appearing. */
+export function text2DLetterStart(index: number, properties: Partial<Pick<Text2DAppearProperties, "appearInterval">>): number {
+  return Math.max(0, index) * nonnegative(properties.appearInterval, DEFAULT_TEXT2D_APPEAR_INTERVAL);
 }

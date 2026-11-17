@@ -4,18 +4,25 @@ import {
 } from "@haptic/core";
 import {
   EngineObject, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
-  RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_DECORATE_LETTERS_EVENT, RICH_TEXT_LETTER_APPEAR_EVENT,
+  RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_DECORATE_LETTERS_EVENT, RICH_TEXT_GET_KEYS_FUNCTION, RICH_TEXT_LETTER_APPEAR_EVENT,
   type ActorComponent, type World,
 } from "@haptic/object-model";
+import { jsIdent } from "@haptic/scripting";
 
-/** What letter scripting needs from the session: its World's classes and the script host's event dispatch. */
+/** What letter scripting needs from the session: its World's classes and the script host's dispatch. */
 export interface Text2DLetterScriptsHost {
   world(): Pick<World, "classRegistry" | "createObject">;
   invokeEvent(classId: string, event: string, self: EngineObject, args: Record<string, unknown>): void;
+  /**
+   * Runs script function `name` (its export name) on `self` and returns its outputs by output pin name; null when
+   * `self` has no such function or it waits (a latent function), which counts as no result.
+   */
+  callFunction(self: EngineObject, name: string): Record<string, unknown> | null;
 }
 
 type ScriptedClass = { classId: string; self: EngineObject };
-type Decorator = ScriptedClass & { strength: number; letters: EngineObject[] };
+/** One `onDecorateLetters` call: letters under tags of one Class with one Strength and one value per declared key. */
+type Decorator = ScriptedClass & { strength: number; letters: EngineObject[]; values: ReadonlyMap<string, string> };
 type LetterState = {
   /** The component's variables revision this state was read at. */
   revision: number;
@@ -35,18 +42,35 @@ type LetterState = {
   sent: number[];
 };
 
-const REST = [0, 0, 1, 1, 0, 1] as const;
+const REST = [0, 0, 1, 1, 0, 1, 1, 1, 1] as const;
 const NO_POSES: number[] = [];
+const NO_VALUES: ReadonlyMap<string, string> = new Map();
+/** A letter's Tint at rest, shared: script colour values are never changed in place. */
+const WHITE = Object.freeze({ x: 1, y: 1, z: 1, w: 1 });
+const GET_KEYS = jsIdent(RICH_TEXT_GET_KEYS_FUNCTION.name);
+const KEYS_OUTPUT = RICH_TEXT_GET_KEYS_FUNCTION.pins.find((pin) => pin.direction === "out" && pin.typeId !== "exec")!.name;
 
 function finite(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
+
+const clampUnit = (value: number): number => Math.min(1, Math.max(0, value));
 
 function writePose(letter: EngineObject, poses: readonly number[], at: number): void {
   letter.setVariable("offset", { x: poses[at]!, y: poses[at + 1]! });
   letter.setVariable("scale", { x: poses[at + 2]!, y: poses[at + 3]! });
   letter.setVariable("rotation", poses[at + 4]!);
   letter.setVariable("opacity", poses[at + 5]!);
+  const r = poses[at + 6]!, g = poses[at + 7]!, b = poses[at + 8]!;
+  letter.setVariable("tint", r === 1 && g === 1 && b === 1 ? WHITE : { x: r, y: g, z: b, w: 1 });
+}
+
+/** A script colour (`{ x, y, z }`, `{ r, g, b }` or `[r, g, b]`) channel, clamped to 0..1; alpha is not read. */
+function tintChannel(tint: unknown, index: 0 | 1 | 2): number {
+  if (Array.isArray(tint)) return clampUnit(finite(tint[index], 1));
+  if (!tint || typeof tint !== "object") return 1;
+  const color = tint as Record<string, unknown>;
+  return clampUnit(finite(color[index === 0 ? "x" : index === 1 ? "y" : "z"] ?? color[index === 0 ? "r" : index === 1 ? "g" : "b"], 1));
 }
 
 function readPoses(letters: readonly EngineObject[]): number[] {
@@ -54,12 +78,21 @@ function readPoses(letters: readonly EngineObject[]): number[] {
   for (const letter of letters) {
     const offset = letter.getVariable("offset") as { x?: unknown; y?: unknown } | null | undefined;
     const scale = letter.getVariable("scale") as { x?: unknown; y?: unknown } | null | undefined;
+    const tint = letter.getVariable("tint");
     poses.push(
       finite(offset?.x, 0), finite(offset?.y, 0), finite(scale?.x, 1), finite(scale?.y, 1),
-      finite(letter.getVariable("rotation"), 0), Math.min(1, Math.max(0, finite(letter.getVariable("opacity"), 1))),
+      finite(letter.getVariable("rotation"), 0), clampUnit(finite(letter.getVariable("opacity"), 1)),
+      tint === WHITE ? 1 : tintChannel(tint, 0), tint === WHITE ? 1 : tintChannel(tint, 1), tint === WHITE ? 1 : tintChannel(tint, 2),
     );
   }
   return poses;
+}
+
+/** The tag keywords a Decorator Effect declares with Get Keys: lower-cased, distinct, non-empty strings. */
+function declaredKeys(outputs: Record<string, unknown> | null): readonly string[] {
+  const keys = outputs?.[KEYS_OUTPUT];
+  if (!Array.isArray(keys)) return [];
+  return [...new Set(keys.flatMap((key) => typeof key === "string" && key.trim() ? [key.trim().toLowerCase()] : []))];
 }
 
 function atRest(poses: readonly number[]): boolean {
@@ -81,6 +114,9 @@ export class Text2DLetterScripts {
   private readonly dirty = new Set<ActorComponent>();
   /** The variables revision at which a component was last found to script nothing. */
   private readonly idle = new WeakMap<ActorComponent, number>();
+  /** The Decorator Effect whose `onDecorateLetters` runs now, and its tag's values by declared key. */
+  private decorating: EngineObject | null = null;
+  private tagValues: ReadonlyMap<string, string> = NO_VALUES;
 
   bind(host: Text2DLetterScriptsHost): void {
     this.host = host;
@@ -111,13 +147,27 @@ export class Text2DLetterScripts {
     if (state.decorators.length > 0) {
       if (!moved) state.letters.forEach((letter, index) => writePose(letter, state.appear, index * TEXT2D_LETTER_POSE_STRIDE));
       for (const decorator of state.decorators) {
-        host.invokeEvent(decorator.classId, RICH_TEXT_DECORATE_LETTERS_EVENT.exportName, decorator.self, {
-          letters: [...decorator.letters], deltaSeconds, strength: decorator.strength,
-        });
+        // Get Tag Value reads the values of this call's tag.
+        const previousSelf = this.decorating, previousValues = this.tagValues;
+        this.decorating = decorator.self;
+        this.tagValues = decorator.values;
+        try {
+          host.invokeEvent(decorator.classId, RICH_TEXT_DECORATE_LETTERS_EVENT.exportName, decorator.self, {
+            letters: [...decorator.letters], deltaSeconds, strength: decorator.strength,
+          });
+        } finally {
+          this.decorating = previousSelf;
+          this.tagValues = previousValues;
+        }
       }
     } else if (!moved) return;
     const read = readPoses(state.letters);
     this.send(component, state, atRest(read) ? NO_POSES : read);
+  }
+
+  /** Get Tag Value: the value of `key` (any case) in the tag `self` decorates now; "" outside its decorate call. */
+  tagValue(self: EngineObject | null, key: string): string {
+    return self !== null && self === this.decorating ? this.tagValues.get(key.toLowerCase()) ?? "" : "";
   }
 
   flush(send: (component: ActorComponent, poses: number[]) => void): void {
@@ -193,6 +243,13 @@ export class Text2DLetterScripts {
     };
     const letters: EngineObject[] = [];
     const decorators = new Map<string, Decorator>();
+    // Each Decorator Effect's Get Keys, called once per build.
+    const declared = new Map<string, readonly string[]>();
+    const keysOf = (classId: string, self: EngineObject): readonly string[] => {
+      let keys = declared.get(classId);
+      if (!keys) declared.set(classId, keys = declaredKeys(this.host!.callFunction(self, GET_KEYS)));
+      return keys;
+    };
     for (const unit of units) {
       if (unit.kind === "lineBreak") continue;
       const letter = new EngineObject({
@@ -203,13 +260,18 @@ export class Text2DLetterScripts {
       writePose(letter, REST, 0);
       letters.push(letter);
       for (const effect of unit.effects.custom ?? []) {
-        // Letters under one tag strength are decorated together, in text order.
-        const key = `${effect.name}\0${effect.strength}`;
-        let decorator = decorators.get(key);
+        const self = instance(effect.name, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID);
+        if (!self) continue;
+        // Letters under one Strength and the same values of the Class's declared keys are decorated together, in
+        // text order; keywords the Class does not declare do not split them.
+        const keys = keysOf(effect.name, self);
+        let group = `${effect.name}\0${effect.strength}`;
+        for (const key of keys) group += `\0${Object.hasOwn(effect.attrs, key) ? effect.attrs[key] : ""}`;
+        let decorator = decorators.get(group);
         if (!decorator) {
-          const self = instance(effect.name, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID);
-          if (!self) continue;
-          decorators.set(key, decorator = { classId: effect.name, self, strength: effect.strength, letters: [] });
+          const values = new Map<string, string>();
+          for (const key of keys) if (Object.hasOwn(effect.attrs, key)) values.set(key, effect.attrs[key]!);
+          decorators.set(group, decorator = { classId: effect.name, self, strength: effect.strength, letters: [], values });
         }
         decorator.letters.push(letter);
       }

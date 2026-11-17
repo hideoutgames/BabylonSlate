@@ -22,7 +22,7 @@ import {
   withOpenScenesForPalette,
   type PaletteSceneDocument,
 } from "../lib/logic-graph-document";
-import { useClassGraphs } from "../lib/use-class-graphs";
+import { useClassGraphsWithEngineBases } from "../lib/use-class-graphs";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
@@ -129,7 +129,7 @@ export function useGraphPanelCatalogs() {
     return classParentLookup(assetRegistry?.list() ?? []);
   }, [assetRegistry, registryEpoch]);
   // Header-derived parts follow the registry; an edit lays the open tabs over them.
-  const otherClassGraphs = useClassGraphs();
+  const otherClassGraphs = useClassGraphsWithEngineBases();
   const functionLibraryHeaders = useMemo(() => {
     void registryEpoch;
     return collectFunctionLibraryHeaders({

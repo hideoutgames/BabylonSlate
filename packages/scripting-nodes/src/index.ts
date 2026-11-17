@@ -26,6 +26,7 @@ import { assetRegistryNodes } from "./asset-registry";
 import { projectNodes } from "./project";
 import { saveGameNodes } from "./save-game";
 import { gameInstanceNodes } from "./game-instance";
+import { richTextNodes } from "./rich-text";
 import { subsystemNodes } from "./subsystem";
 import { sceneOwnedNodes } from "./scene-owned";
 import { timelineClipNodes } from "./timeline-clips";
@@ -88,6 +89,7 @@ export * from "./asset-registry";
 export * from "./project";
 export * from "./save-game";
 export * from "./game-instance";
+export * from "./rich-text";
 export * from "./subsystem";
 export * from "./scene-owned";
 export * from "./timeline-clips";
@@ -152,6 +154,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...projectNodes,
     ...saveGameNodes,
     ...gameInstanceNodes,
+    ...richTextNodes,
     ...subsystemNodes,
     ...sceneOwnedNodes,
     ...timelineClipNodes,

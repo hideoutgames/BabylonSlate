@@ -9,9 +9,28 @@ import { parseOverlayVisualStyle, type OverlayVisualStyle } from "@haptic/core";
 import { noteRenderChange, RenderChange } from "./render-change-journal";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
-type VisualStyleBinding = { style: OverlayVisualStyle; meshes: AbstractMesh[] };
+type VisualStyleBinding = {
+  style: OverlayVisualStyle;
+  meshes: AbstractMesh[];
+  /** Meshes of a component binding that also carry a letter tint; null on a letter tint's own binding. */
+  tinted: LetterTint[] | null;
+};
+/**
+ * One mesh's RGB multiplier over its component's style (a Rich Text letter's Tint). While it is not white the mesh
+ * draws through `binding`, its own, whose style is the component's times this tint, worked out only when either
+ * changes; at white the mesh draws through the component's binding again, so an untinted mesh's draw reads exactly
+ * what it did without one.
+ */
+type LetterTint = {
+  mesh: AbstractMesh;
+  r: number; g: number; b: number;
+  /** The component binding whose style this composes with; null until the component's style is first applied. */
+  source: VisualStyleBinding | null;
+  binding: VisualStyleBinding;
+};
 const bindings = new WeakMap<AbstractMesh, VisualStyleBinding>();
 const roots = new WeakMap<AbstractMesh, VisualStyleBinding>();
+const letterTints = new WeakMap<AbstractMesh, LetterTint>();
 const materials = new WeakSet<StandardMaterial>();
 const white: OverlayVisualStyle = { opacity: 1, tint: [1, 1, 1, 1] };
 
@@ -34,10 +53,13 @@ export function shareOverlayVisualStyle(target: AbstractMesh, source: AbstractMe
 export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): void {
   let binding = roots.get(root);
   if (!binding) {
-    binding = { style: white, meshes: [root, ...root.getChildMeshes()] };
+    binding = { style: white, meshes: [root, ...root.getChildMeshes()], tinted: null };
     roots.set(root, binding);
     for (const mesh of binding.meshes) {
       bindings.set(mesh, binding);
+      // A letter tint set before its component's style composes with it from now on.
+      const tint = letterTints.get(mesh);
+      if (tint) attachLetterTint(tint, binding);
       enableOverlayVisualMaterial(mesh);
       noteRenderChange(mesh);
     }
@@ -53,10 +75,62 @@ export function applyOverlayVisualStyle(root: AbstractMesh, value: unknown): voi
   if (style.opacity === held.opacity && style.tint[0] === held.tint[0] && style.tint[1] === held.tint[1] && style.tint[2] === held.tint[2] &&
     style.tint[3] === held.tint[3]) return;
   binding.style = style;
+  if (binding.tinted) for (const tint of binding.tinted) composeLetterTint(tint);
   // Each of its meshes draws the new style: the render change journal hears of each, as a style change.
   for (const mesh of binding.meshes) noteRenderChange(mesh, RenderChange.Style);
   // Only this component's own meshes blend differently now.
   if ((before < 1) !== (binding.style.opacity * binding.style.tint[3] < 1)) markSceneReadinessDirty(root.getScene(), "layerStyle", binding.meshes);
+}
+
+/**
+ * Multiplies `mesh`'s colour by `r`, `g` and `b` on top of its component's style (a Rich Text letter's Tint); white
+ * (1, 1, 1) removes it. Call it only when the value changes; it composes with styles applied before or after.
+ */
+export function setOverlayLetterTint(mesh: AbstractMesh, r: number, g: number, b: number): void {
+  let tint = letterTints.get(mesh);
+  if (!tint) {
+    if (r === 1 && g === 1 && b === 1) return;
+    const own: LetterTint = { mesh, r: 1, g: 1, b: 1, source: null, binding: { style: white, meshes: [mesh], tinted: null } };
+    tint = own;
+    letterTints.set(mesh, own);
+    const source = bindings.get(mesh);
+    if (source) attachLetterTint(own, source);
+    mesh.onDisposeObservable.addOnce(() => {
+      letterTints.delete(mesh);
+      const list = own.source?.tinted;
+      const at = list ? list.indexOf(own) : -1;
+      if (at >= 0) list!.splice(at, 1);
+      if (bindings.get(mesh) === own.binding) bindings.delete(mesh);
+    });
+  }
+  if (tint.r === r && tint.g === g && tint.b === b) return;
+  tint.r = r;
+  tint.g = g;
+  tint.b = b;
+  composeLetterTint(tint);
+  noteRenderChange(mesh, RenderChange.Style);
+}
+
+function attachLetterTint(tint: LetterTint, source: VisualStyleBinding): void {
+  tint.source = source;
+  (source.tinted ??= []).push(tint);
+  composeLetterTint(tint);
+}
+
+/**
+ * The letter's own binding takes its component's style times its tint, and the mesh draws through it, or through the
+ * component's binding at white. The own binding stays current even then: a draw batch may still share it.
+ */
+function composeLetterTint(tint: LetterTint): void {
+  const base = tint.source?.style ?? white;
+  const isWhite = tint.r === 1 && tint.g === 1 && tint.b === 1;
+  tint.binding.style = isWhite ? base : {
+    opacity: base.opacity,
+    tint: [base.tint[0] * tint.r, base.tint[1] * tint.g, base.tint[2] * tint.b, base.tint[3]],
+  };
+  const drawn = isWhite ? tint.source : tint.binding;
+  if (drawn) bindings.set(tint.mesh, drawn);
+  else bindings.delete(tint.mesh);
 }
 
 /** Also called when a texture finishes replacing its owned construction material. */

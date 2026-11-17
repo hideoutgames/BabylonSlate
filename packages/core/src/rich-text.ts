@@ -22,7 +22,11 @@ export type RichTextEffects = {
   custom?: readonly RichTextCustomEffect[];
 };
 
-export type RichTextCustomEffect = { name: string; strength: number };
+/**
+ * One `[fx=ClassName key=value ...]` tag: `strength` is the parsed Strength (1 when absent), `attrs` every
+ * `key=value` of the tag as written, keys lower-cased (Strength included when written).
+ */
+export type RichTextCustomEffect = { name: string; strength: number; attrs: Readonly<Record<string, string>> };
 
 export type RichTextSpan =
   | {
@@ -207,7 +211,14 @@ function effectsOf(frame: Frame): RichTextEffects {
 
 function sameCustom(a: RichTextEffects["custom"], b: RichTextEffects["custom"]): boolean {
   if ((a?.length ?? 0) !== (b?.length ?? 0)) return false;
-  return (a ?? []).every((effect, index) => effect.name === b![index]!.name && sameNumber(effect.strength, b![index]!.strength));
+  return (a ?? []).every((effect, index) => effect.name === b![index]!.name && sameNumber(effect.strength, b![index]!.strength) &&
+    sameAttrs(effect.attrs, b![index]!.attrs));
+}
+
+function sameAttrs(a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => Object.hasOwn(b, key) && a[key] === b[key]);
 }
 
 // Runs used to compare via JSON.stringify, which writes NaN and +-Infinity as
@@ -310,11 +321,11 @@ function applyTag(frame: Frame, tag: ParsedTag): Frame {
       break;
     }
     case "fx": {
-      // An effect named twice keeps its place and takes the inner strength.
+      // An effect named twice keeps its place and takes the inner tag's values.
       const name = primary?.trim();
       if (!name) break;
       const strength = Number(tag.attrs.strength ?? "1");
-      const effect = { name, strength: Number.isFinite(strength) ? strength : 1 };
+      const effect: RichTextCustomEffect = { name, strength: Number.isFinite(strength) ? strength : 1, attrs: { ...tag.attrs } };
       const custom = next.custom ?? [];
       next.custom = custom.some((entry) => entry.name === name)
         ? custom.map((entry) => entry.name === name ? effect : entry)

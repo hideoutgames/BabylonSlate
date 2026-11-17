@@ -34,6 +34,7 @@ import { asEnumAsset, asStructureAsset } from "./type-asset-payload";
 import { walkAncestry } from "@haptic/editor-kit";
 import {
   compareClassIds,
+  engineOverridableFunctionApis,
   isLockedEngineClassId,
   subsystemBaseClassIdOf,
   type SubsystemBaseClassId,
@@ -553,6 +554,38 @@ export function collectScriptInterfacesForPalette(options: {
     });
   }
   return [...byGuid.values()];
+}
+
+/**
+ * One members-only graph per engine base that declares functions for its Classes to override (Get Keys on Rich Text
+ * 2D Decorator Effect), keyed by the engine class id, as a parent Class's graph would be. Never a project asset:
+ * only the views that resolve parent functions (My Class, and the graph editor's palette, symbols and validation)
+ * add them, through `withEngineClassGraphs`.
+ */
+const ENGINE_CLASS_GRAPHS: Readonly<Record<string, SerializedGraph>> = Object.fromEntries(
+  engineOverridableFunctionApis().map((api): [string, SerializedGraph] => [api.classId, {
+    nodes: [],
+    edges: [],
+    members: (api.overridableFunctions ?? []).map((fn): GraphClassMember => ({
+      id: `engine:${api.classId}:function:${fn.name}`,
+      kind: "function",
+      name: fn.name,
+      overridable: true,
+      pins: fn.pins.map((pin) => ({ ...pin })),
+    })),
+  }]),
+);
+
+/** Whether a Class graph key is an engine base's synthetic graph (`withEngineClassGraphs`), never a project asset. */
+export function isEngineClassGraphKey(classId: string): boolean {
+  return Object.hasOwn(ENGINE_CLASS_GRAPHS, classId);
+}
+
+/** `graphs` with the engine bases' overridable functions as parent graphs, as a fresh record. */
+export function withEngineClassGraphs(
+  graphs: Readonly<Record<string, SerializedGraph>>,
+): Record<string, SerializedGraph> {
+  return { ...graphs, ...ENGINE_CLASS_GRAPHS };
 }
 
 /** Closed Class header graphs keyed by class id; they depend on the registry alone. */

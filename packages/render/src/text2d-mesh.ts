@@ -41,7 +41,7 @@ import { materialRestore, setUnlitMaterial, type UnlitBinding, type UnlitMateria
 import { bindTextMaterialGlyph } from "./text-material-block";
 import { glyphBatchVertexData, writeGlyphBatchPositions, type GlyphBatchQuad } from "./text2d-glyph-batch";
 import { sceneGlyphAtlas, type AtlasGlyph, type GlyphAtlasPage } from "./text2d-glyph-atlas";
-import { applyOverlayVisualStyle } from "./overlay-visual-style";
+import { applyOverlayVisualStyle, setOverlayLetterTint } from "./overlay-visual-style";
 import {
   combineText2DEffects,
   layoutText2DFromProperties,
@@ -426,6 +426,9 @@ function attachEffects(
     slideOffset: 0,
     revealVisibility: 1,
     revealScale: 1,
+    tintR: 1,
+    tintG: 1,
+    tintB: 1,
   }));
   const effectEntries = entries.filter((entry) => hasBuiltInEffects(entry.item));
   let poses: readonly number[] = parseText2DLetterPoses(properties.letterPoses);
@@ -445,6 +448,12 @@ function attachEffects(
     if (mesh.scaling.x !== scaleX) mesh.scaling.x = scaleX;
     if (mesh.scaling.y !== scaleY) mesh.scaling.y = scaleY;
     if (mesh.visibility !== visibility) mesh.visibility = visibility;
+    if (entry.tintR !== pose.tintR || entry.tintG !== pose.tintG || entry.tintB !== pose.tintB) {
+      entry.tintR = pose.tintR;
+      entry.tintG = pose.tintG;
+      entry.tintB = pose.tintB;
+      setOverlayLetterTint(mesh, pose.tintR, pose.tintG, pose.tintB);
+    }
   };
   const applyReveal = (value: number) => {
     if (progress === value) return;

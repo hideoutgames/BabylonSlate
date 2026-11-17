@@ -4,8 +4,32 @@ import {
   collectOverridableEventRows,
   collectOverridableFunctionRows,
 } from "./overridable-functions";
+import { withEngineClassGraphs } from "./logic-graph-document";
 
 describe("collectOverridableFunctionRows", () => {
+  it("offers a Decorator Effect Class the engine's Get Keys to override, and no other lineage", () => {
+    const parents: Record<string, string> = { Wave: "RichText2DDecoratorEffect", Rise: "RichText2DAppearMode", Hero: "Actor" };
+    const rows = (classId: string, graph?: SerializedGraph) => collectOverridableFunctionRows({
+      classId, graph, parentOf: (id) => parents[id] ?? null, parentGraphs: withEngineClassGraphs({}),
+    });
+    expect(rows("Wave")).toEqual([{
+      id: "function:RichText2DDecoratorEffect:Get Keys",
+      kind: "function",
+      name: "Get Keys",
+      description: "Parent · RichText2DDecoratorEffect",
+      overwritten: false,
+      pins: [
+        { name: "exec", typeId: "exec", direction: "in" },
+        { name: "then", typeId: "exec", direction: "out" },
+        { name: "Keys", typeId: "string", direction: "out", container: "array" },
+      ],
+      overrides: { classId: "RichText2DDecoratorEffect", name: "Get Keys" },
+    }]);
+    expect(rows("Wave", { nodes: [], edges: [], members: [{ id: "keys", kind: "function", name: "Get Keys" }] })[0]?.overwritten).toBe(true);
+    expect(rows("Rise")).toEqual([]);
+    expect(rows("Hero")).toEqual([]);
+  });
+
   it("lists interface methods and parent overridable functions", () => {
     const rows = collectOverridableFunctionRows({
       classId: "Hero",

@@ -7,6 +7,7 @@ import {
 import {
   ENGINE_CLASS_SCRIPT_APIS,
   GAME_SUBSYSTEM_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
   TICKABLE_OBJECT_INTERFACE_GUID,
   isCreatableObjectChain,
   SCENE_SUBSYSTEM_CLASS_ID,
@@ -46,10 +47,12 @@ export const LINEAGE_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(
 export const GET_GAME_INSTANCE_NODE_ID = "gameInstance.get";
 
 /**
- * Game Instance catalog getters and the lineages whose graphs may use them
- * (their implicit Self is the Game Instance or a subsystem).
+ * Catalog getters and the lineages whose graphs may use them: the Game Instance getters (their implicit Self is the
+ * Game Instance or a subsystem) and Get Tag Value (Self is the Decorator Effect decorating letters). Add Node and
+ * paste both follow this.
  */
 const LINEAGE_FUNCTION_NODE_BASES: Readonly<Record<string, readonly string[]>> = {
+  "richText.getTagValue": [RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID],
   "gameInstance.getSceneLoadingProgress": ["GameInstance", GAME_SUBSYSTEM_CLASS_ID],
   "gameInstance.getSceneReference": [
     "GameInstance",
@@ -96,6 +99,9 @@ export const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.onPressStart": "Event On Press Start",
   "flow.event.onPressEnd": "Event On Press End",
   "flow.event.textChanged": "Event On Text Changed",
+  "flow.event.richTextLetterShown": "Event On Letter Shown",
+  "flow.event.richTextAppearFinished": "Event On Appear Finished",
+  "flow.event.richTextDisappearFinished": "Event On Disappear Finished",
   "flow.event.audioFinished": "Event On Audio Finished",
   "flow.event.particlesFinished": "Event On Particles Finished",
   "flow.event.uiValueChanged": "Event On Value Changed",
@@ -152,6 +158,9 @@ const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginOverlap",
   "flow.event.endOverlap",
   "flow.event.textChanged",
+  "flow.event.richTextLetterShown",
+  "flow.event.richTextAppearFinished",
+  "flow.event.richTextDisappearFinished",
   "flow.event.audioFinished",
   "flow.event.particlesFinished",
   "flow.event.movementStarted",

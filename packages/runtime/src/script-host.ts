@@ -605,6 +605,20 @@ export class ScriptHost {
     this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, componentId);
   }
 
+  /**
+   * Whether `component`'s owner has a handler for component event `event` bound to that component (the lookup
+   * `fireComponentEvent` dispatches through), so an engine system can skip work nothing would hear.
+   */
+  handlesComponentEvent(component: ActorComponent, event: string): boolean {
+    const owner = component.owner;
+    return owner ? this.eventScriptsFor(owner.classId, event, owner, component.guid) !== undefined : false;
+  }
+
+  /** Runs component event `event` on `component`'s owner, as that component's event. */
+  fireComponentEvent(component: ActorComponent, event: string, args: Record<string, unknown>): void {
+    this.fireComponentOwnerEvent(component, event, args);
+  }
+
   hasClass(classId: string): boolean {
     return (this.byClassId.get(classId)?.length ?? 0) > 0;
   }
