@@ -1290,14 +1290,15 @@ describe("collectExportReachability subsystem roots", () => {
     expect(result).toMatchObject({ ok: true, value: { guids: ["base", "leaf", "scene"] } });
   });
 
-  it("packs Rich Text Appear Mode and Decorator Effect Classes, which text names only by Class id", () => {
+  it("packs Rich Text Appear Mode, Letter Effect and Decorator Classes, which text names only by Class id or tag", () => {
     const result = subsystemClosure([
       { guid: "rise", name: "Rise", parentClass: "RichText2DAppearMode" },
       { guid: "tilt-leaf", name: "BigTilt", parentClass: "Tilt" },
-      { guid: "tilt", name: "Tilt", parentClass: "RichText2DDecoratorEffect" },
+      { guid: "tilt", name: "Tilt", parentClass: "RichText2DLetterEffect" },
+      { guid: "item", name: "ItemTag", parentClass: "RichText2DDecorator" },
       { guid: "plain", name: "Plain", parentClass: "Object" },
     ]);
-    expect(result).toMatchObject({ ok: true, value: { guids: ["rise", "scene", "tilt", "tilt-leaf"] } });
+    expect(result).toMatchObject({ ok: true, value: { guids: ["item", "rise", "scene", "tilt", "tilt-leaf"] } });
   });
 
   it("packs every custom easing curve Class, which curves name only by Class id", () => {

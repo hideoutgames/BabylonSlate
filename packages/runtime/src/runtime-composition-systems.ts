@@ -184,6 +184,10 @@ export function createScriptRuntime(rt: RuntimeComposition, options: RuntimeDriv
       setCustomEasingCurves(curves);
       rt.emit({ type: "setCustomEasingCurves", curves });
     },
+    // A text whose drawn text changed sends again, as a Set Text would.
+    richTextDecoratorsLoaded: (decorators) => {
+      for (const component of rt.textAppear.loadDecorators(rt.world, decorators)) rt.propertyWrites.refreshComponent(component, "text");
+    },
   });
 }
 

@@ -297,11 +297,11 @@ describe("nativeEventStubs", () => {
 
   it.each([
     ["RichText2DAppearMode", "flow.event.richTextLetterAppear", "Event On Letter Appear"],
-    ["RichText2DDecoratorEffect", "flow.event.richTextDecorateLetters", "Event On Decorate Letters"],
+    ["RichText2DLetterEffect", "flow.event.richTextUpdateLetters", "Event On Update Letters"],
   ])("offers %s its letter event alone, and no other lineage", (parentClass, eventType, name) => {
     expect(nativeEventStubs({ parentClass })).toEqual([{ eventType, name }]);
     expect(isScriptCatalogNodeAllowed(eventType, { parentClass })).toBe(true);
-    for (const other of ["Actor", "Object", "GameInstance", "BTService", parentClass === "RichText2DAppearMode" ? "RichText2DDecoratorEffect" : "RichText2DAppearMode"]) {
+    for (const other of ["Actor", "Object", "GameInstance", "BTService", parentClass === "RichText2DAppearMode" ? "RichText2DLetterEffect" : "RichText2DAppearMode"]) {
       expect(isScriptCatalogNodeAllowed(eventType, { parentClass: other }), other).toBe(false);
     }
   });
@@ -311,9 +311,15 @@ describe("nativeEventStubs", () => {
     expect(isScriptCatalogNodeAllowed("flow.event.init", { parentClass: "CustomEasingCurve" })).toBe(false);
   });
 
-  it("offers Get Tag Value only in Decorator Effect graphs, where its tag is", () => {
-    expect(isScriptCatalogNodeAllowed("richText.getTagValue", { parentClass: "RichText2DDecoratorEffect" })).toBe(true);
-    for (const other of ["Actor", "Object", "SceneLayerActor", "RichText2DAppearMode", "FunctionLibrary"]) {
+  it("offers a Rich Text Decorator no events: the engine only calls its Get Tag and Decorate", () => {
+    expect(nativeEventStubs({ parentClass: "RichText2DDecorator" })).toEqual([]);
+    expect(isScriptCatalogNodeAllowed("flow.event.richTextUpdateLetters", { parentClass: "RichText2DDecorator" })).toBe(false);
+  });
+
+  it("offers Get Tag Value only in Letter Effect and Decorator graphs, where its tag is", () => {
+    expect(isScriptCatalogNodeAllowed("richText.getTagValue", { parentClass: "RichText2DLetterEffect" })).toBe(true);
+    expect(isScriptCatalogNodeAllowed("richText.getTagValue", { parentClass: "RichText2DDecorator" })).toBe(true);
+    for (const other of ["Actor", "Object", "SceneLayerActor", "RichText2DAppearMode", "FunctionLibrary", "CustomEasingCurve"]) {
       expect(isScriptCatalogNodeAllowed("richText.getTagValue", { parentClass: other }), other).toBe(false);
     }
   });

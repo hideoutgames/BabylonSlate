@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  expandRichTextTags,
   parseRichText,
   parseRichTextColor,
   richTextCustomEffectNames,
   richTextImageGuids,
   type ParseRichTextDefaults,
+  type RichTextTagDecoration,
 } from "./rich-text";
 
 const defaults: ParseRichTextDefaults = {
@@ -141,5 +143,85 @@ describe("richTextImageGuids", () => {
         "[img=one] x [img=one size=8] [img=two] [img=PASTE_TEXTURE_GUID]",
       ),
     ).toEqual(["one", "two", "PASTE_TEXTURE_GUID"]);
+  });
+});
+
+describe("expandRichTextTags", () => {
+  /** Expands with markup from `handlers` by tag, recording every decoration in `calls`; a missing handler is null. */
+  function expand(source: string, handlers: Record<string, (decoration: RichTextTagDecoration) => string | null>) {
+    const calls: RichTextTagDecoration[] = [];
+    const text = expandRichTextTags(source, new Set(Object.keys(handlers)), (decoration) => {
+      calls.push(decoration);
+      return handlers[decoration.tag]!(decoration);
+    });
+    return { text, calls };
+  }
+  const player = () => "Ada";
+
+  it("returns the source itself without calling anything when there are no custom tags, or none in the text", () => {
+    const source = "[b]Hi[/b] [player [img=x]";
+    expect(expandRichTextTags(source, new Set(), () => { throw new Error("no call"); })).toBe(source);
+    const { text, calls } = expand(source, { hero: player });
+    expect(text).toBe(source);
+    expect(calls).toEqual([]);
+  });
+
+  it("replaces a tag with no closing tag alone, matching its name in any case", () => {
+    expect(expand("Hi [player]! Bye [PLAYER].", { player }).text).toBe("Hi Ada! Bye Ada.");
+  });
+
+  it("hands Decorate the lower-cased tag, the value, the raw content and every keyword, and replaces the whole span", () => {
+    const { text, calls } = expand("Take [Item=sword Rarity=Epic size=2]the [b]Sword[/b][/item] now", {
+      item: ({ value, content }) => `[img=${value} size=20] [color=orange]${content}[/color]`,
+    });
+    expect(text).toBe("Take [img=sword size=20] [color=orange]the [b]Sword[/b][/color] now");
+    expect(calls).toEqual([{ tag: "item", value: "sword", content: "the [b]Sword[/b]", attrs: { rarity: "Epic", size: "2" } }]);
+  });
+
+  it("gives a tag without a closing tag empty content and an empty value when it has no =", () => {
+    const { text, calls } = expand("[item] and [item=axe] more", { item: ({ value }) => `<${value}>` });
+    expect(text).toBe("<> and <axe> more");
+    expect(calls.map((call) => [call.value, call.content])).toEqual([["", ""], ["axe", ""]]);
+  });
+
+  it("pairs nested tags of one name inner-first, like brackets", () => {
+    const { text, calls } = expand("[q]a[q]b[/q]c[/q]d", { q: ({ content }) => `(${content})` });
+    expect(text).toBe("(a(b)c)d");
+    expect(calls.map((call) => call.content)).toEqual(["a[q]b[/q]c", "b"]);
+  });
+
+  it("expands custom tags in the returned markup, including ones from the raw content it was given", () => {
+    const { text, calls } = expand("[hero] / [quote][player][/quote]", {
+      hero: () => "[player] the brave",
+      quote: ({ content }) => `"${content}"`,
+      player,
+    });
+    expect(text).toBe("Ada the brave / \"Ada\"");
+    expect(calls.find((call) => call.tag === "quote")?.content).toBe("[player]");
+  });
+
+  it("expands at most eight nested expansions deep and leaves deeper tags as written", () => {
+    const { text, calls } = expand("[loop]", { loop: () => "x[loop]" });
+    expect(text).toBe("xxxxxxxx[loop]");
+    expect(calls).toHaveLength(8);
+  });
+
+  it("leaves a tag with no markup as written, still expanding the tags inside it", () => {
+    const source = "[none=1]Sword[/none]";
+    expect(expand(source, { none: () => null }).text).toBe(source);
+    expect(expand("[none][player][/none]", { none: () => null, player }).text).toBe("[none]Ada[/none]");
+  });
+
+  it("passes built-in, image, fx, unknown and stray closing tags through", () => {
+    // The closing tag comes before any opening one, so nothing pairs with it.
+    const { text } = expand("[/player] [b][player][/b] [img=x size=3] [fx=Wave]y[/fx] [unknown] [/b]", { player });
+    expect(text).toBe("[/player] [b]Ada[/b] [img=x size=3] [fx=Wave]y[/fx] [unknown] [/b]");
+  });
+
+  it("stops before the output passes 100 000 characters, leaving that tag and the rest as written", () => {
+    const big = "x".repeat(60_000);
+    expect(expand("[big] [big] [player]", { big: () => big, player }).text).toBe(`${big} [big] [player]`);
+    // Passed inside a tag's own markup: the outer tag stays as written.
+    expect(expand("a [outer] b", { outer: () => "[big][big]", big: () => big }).text).toBe("a [outer] b");
   });
 });

@@ -29,6 +29,7 @@ import type { SceneStreams } from "./scene-streams";
 import { compiledScriptKey, compiledScriptSourceLabel, type CompiledScript, type ScriptHost } from "./script-host";
 import type { AnchorEntry } from "./stack-map";
 import { bakeCustomEasingCurves, EVALUATE_EXPORT } from "./custom-easing-curves";
+import { loadRichTextDecorators, type RichTextDecorator } from "./rich-text-decorators";
 
 interface ScriptRuntimeOptions {
   /** Class id for the session Game Instance singleton. */
@@ -43,6 +44,8 @@ interface ScriptRuntimeHost {
   scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "classTicks" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor" | "invokeEngineFunction" | "releaseObject">;
   /** The custom easing curves baked from the loaded Classes, by Class id: every load, empty when there are none. */
   customEasingCurvesBaked(curves: Record<string, number[]>): void;
+  /** The Rich Text Decorators of the loaded Classes, by tag: every load, empty when there are none. */
+  richTextDecoratorsLoaded(decorators: ReadonlyMap<string, RichTextDecorator>): void;
   /** Live streamed Scenes, whose classes keep their sources on replacement. */
   streams(): Pick<SceneStreams, "scenes">;
   registerAnchors(label: string, anchors: readonly AnchorEntry[]): void;
@@ -95,6 +98,8 @@ export class ScriptRuntime {
   private readonly ambiguousSubsystemWarnings = new Set<string>();
   private readonly admission: OwnerAdmission;
   private readonly host: ScriptRuntimeHost;
+  /** This load's Rich Text Decorators, whose instances live until the next load or Stop. */
+  private richTextDecorators: ReadonlyMap<string, RichTextDecorator> = new Map();
 
   constructor(admission: OwnerAdmission, options: ScriptRuntimeOptions, host: ScriptRuntimeHost) {
     for (const [classId, guid] of Object.entries(options.classAssetGuids)) this.classGuids.set(classId, guid);
@@ -163,6 +168,7 @@ export class ScriptRuntime {
       this.applyGameInstanceClassDefaults();
       this.installSubsystems();
       this.bakeCustomEasingCurves();
+      this.loadRichTextDecorators();
       // Read the owners again: objects created while the modules loaded must bind the new handlers too.
       for (const owner of this.liveScriptOwners()) this.host.scriptHost().bindInterfaceHandlers(owner);
     });
@@ -187,6 +193,7 @@ export class ScriptRuntime {
 
   /** Stop: unregister the script classes (children first) and forget their sources. */
   unregisterClasses(): void {
+    this.releaseRichTextDecorators();
     this.unregisterScriptClasses();
     this.scriptSources.clear();
   }
@@ -334,6 +341,34 @@ export class ScriptRuntime {
         scripts.releaseObject(self);
       },
     }));
+  }
+
+  /**
+   * Load the Rich Text Decorators (`loadRichTextDecorators`) after releasing the previous load's instances, and hand
+   * them on, which expands every live 2D Rich Text again. Runs with the easing curve bake, the only time Get Tag runs.
+   */
+  private loadRichTextDecorators(): void {
+    const world = this.host.world();
+    const scripts = this.host.scriptHost();
+    this.releaseRichTextDecorators();
+    this.richTextDecorators = loadRichTextDecorators({
+      classes: () => world.classRegistry,
+      createInstance: (classId) => world.createObject({ classId }),
+      call: (self, exportName, args) => scripts.invokeEngineFunction(self, exportName, args),
+      release: (self) => this.releaseInstance(self),
+      warn: (message) => this.host.reportLog(message, "warning", "Script"),
+    });
+    this.host.richTextDecoratorsLoaded(this.richTextDecorators);
+  }
+
+  private releaseRichTextDecorators(): void {
+    for (const decorator of this.richTextDecorators.values()) this.releaseInstance(decorator.self);
+    this.richTextDecorators = new Map();
+  }
+
+  private releaseInstance(self: EngineObject): void {
+    self.destroyed = true;
+    this.host.scriptHost().releaseObject(self);
   }
 
   /**

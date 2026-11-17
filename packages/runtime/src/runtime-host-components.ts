@@ -11,7 +11,7 @@ interface ComponentHostDeps {
   uiControls: Pick<UIControls2DRuntime, "invoke">;
   dynamicMeshes: Pick<DynamicRuntimeMeshSync, "invoke">;
   movement: Pick<MovementWorldSync, "invoke">;
-  textAppear: Pick<Text2DAppearRuntime, "progress" | "execute" | "letters">;
+  textAppear: Pick<Text2DAppearRuntime, "progress" | "execute" | "letters" | "refreshText">;
   /** A tick is running; its end flushes painter and text reveal changes. */
   processingTick(): boolean;
   flushPainters(): void;
@@ -21,12 +21,12 @@ interface ComponentHostDeps {
 
 /**
  * Script component function calls: 2D painters, UI controls, dynamic meshes,
- * movement, text reveal, Rich Text tag values and property refreshes. Painter and reveal changes
+ * movement, text reveal, Rich Text refreshes and tag values, and property refreshes. Painter and reveal changes
  * made outside a tick are sent at once.
  */
 export function createComponentHostBindings(deps: ComponentHostDeps): Pick<ScriptHostServices,
   "paint2D" | "uiControlFunction" | "dynamicMeshFunction" | "movementFunction" |
-  "text2DAppearProgress" | "text2DAppear" | "richTextTagValue" | "refreshComponent"> {
+  "text2DAppearProgress" | "text2DAppear" | "refreshRichText" | "richTextTagValue" | "refreshComponent"> {
   return {
     paint2D: (component, operation, args) => {
       const changed = deps.painters.execute(component, operation, args);
@@ -40,6 +40,10 @@ export function createComponentHostBindings(deps: ComponentHostDeps): Pick<Scrip
     text2DAppear: (component, operation) => {
       deps.textAppear.execute(component, operation);
       if (!deps.processingTick()) deps.flushTextAppear();
+    },
+    // Sent again, as a Set Text would, only when the expanded text changed.
+    refreshRichText: (component) => {
+      if (deps.textAppear.refreshText(component)) deps.refreshComponent(component, "text");
     },
     richTextTagValue: (self, key) => deps.textAppear.letters.tagValue(self, key),
     refreshComponent: (component, propertyName) => deps.refreshComponent(component, propertyName),

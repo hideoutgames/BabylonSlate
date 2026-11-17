@@ -87,6 +87,22 @@ describe("SceneLayer control state", () => {
     ]);
   });
 
+  it("filters typed and graph-set text by the Input Type, and refilters when the type changes", () => {
+    const f = fixture(), field = f.add("2DTextInputComponent", { inputType: "integer" });
+    f.input(field, { value: "a1-2b3" });
+    expect(field.getVariable("text")).toBe("123");
+    expect(f.events.at(-1)).toEqual({ id: field.guid, name: "onUITextChanged", args: { text: "123" } });
+    expect(f.runtime.invoke(field, "setUIControlText", { text: "-4.5x" })).toBe(true);
+    expect(field.getVariable("text")).toBe("-45");
+    // A Number keeps the point the Integer dropped from new text; a Password keeps everything and publishes the real text.
+    field.setVariable("inputType", "number"); f.runtime.refresh(field);
+    expect(f.runtime.invoke(field, "setUIControlText", { text: "-4.5x" })).toBe(true);
+    expect(field.getVariable("text")).toBe("-4.5");
+    field.setVariable("inputType", "password"); f.runtime.refresh(field);
+    f.input(field, { value: "s3 cret" });
+    expect(f.updates.at(-1)?.properties).toMatchObject({ text: "s3 cret", inputType: "password" });
+  });
+
   it("publishes option and tint arrays that a script editing the variables in place cannot change afterwards", () => {
     const f = fixture(), dropdown = f.add("2DDropdownComponent", { options: ["Low", "High"] });
     dropdown.setVariable("selectedIndex", 1); f.runtime.refresh(dropdown);

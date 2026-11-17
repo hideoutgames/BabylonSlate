@@ -51,6 +51,10 @@ export function callNativeComponentFunction(
     if (host.canInvokeOwner(component)) host.services.text2DAppear?.(component, name);
     return {};
   }
+  if (component.classId === "2DRichTextComponent" && name === "refreshText") {
+    if (host.canInvokeOwner(component)) host.services.refreshRichText?.(component);
+    return {};
+  }
   if (name === "setFocusTarget") return { success: host.canInvokeOwner(component) && host.services.setFocusTarget?.(component) === true };
   if (name === "clearFocusTarget") {
     if (host.canInvokeOwner(component)) host.services.clearFocusTarget?.(component);

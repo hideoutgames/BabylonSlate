@@ -4,7 +4,7 @@ import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
-import { parseUIControl2DProperties, uiControl2DFraction, type UIControl2DProperties } from "@haptic/core";
+import { parseUIControl2DProperties, uiControl2DDisplayText, uiControl2DFraction, type UIControl2DProperties } from "@haptic/core";
 import { applyAlbedoTexture, restoreAlbedoMaterial, type MeshAssetContext } from "./mesh-assets";
 import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
@@ -176,7 +176,8 @@ export function createUIControl2DMesh(scene: Scene, name: string, source: UICont
         if (p.checked) place(fill, p.width * 0.9, p.height * 0.7);
         place(thumb, p.height * 0.65, p.height * 0.65, (p.checked ? 1 : -1) * Math.max(0, p.width - p.height) * 0.4);
       } else if (kind === "2DTextInputComponent") {
-        label("label", editingText ?? (p.text || p.placeholder), p.width * 0.94, p.height * 0.9, 0, 0, true);
+        const shown = editingText ?? p.text;
+        label("label", shown || editingText !== null ? uiControl2DDisplayText(shown, p.inputType) : p.placeholder, p.width * 0.94, p.height * 0.9, 0, 0, true);
       } else if (kind === "2DNumericInputComponent") {
         label("label", editingText ?? String(p.value), p.width * 0.78, p.height * 0.9, -p.width * 0.1, 0, true);
         label("increment", "+", p.width * 0.2, p.height * 0.45, p.width * 0.4, p.height * 0.25);

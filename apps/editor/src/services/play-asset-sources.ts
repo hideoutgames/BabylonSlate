@@ -16,6 +16,20 @@ import type { SceneSourceAssets } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import type { ControlMessage, ScriptBundleEntry } from "@haptic/bridge";
 import type { Diagnostic } from "@haptic/scripting";
+import {
+  CUSTOM_EASING_CURVE_CLASS_ID, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_CLASS_ID,
+  RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
+} from "@haptic/object-model";
+
+/**
+ * Bases whose Classes are named only by a string the dependency scan cannot follow: a tag a Decorator returns, an
+ * `[fx=ClassName]` tag typed into text, or a `class:<ClassId>` entry for an Appear Mode or a custom easing curve. Export
+ * packs the same Classes (`rootsFromIndex` in the exporter's closure).
+ */
+const NAMED_BY_STRING_BASES: readonly string[] = [
+  RICH_TEXT_2D_DECORATOR_CLASS_ID, RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
+  CUSTOM_EASING_CURVE_CLASS_ID,
+];
 import { assetHeaderDependencyMetadata, classIdFromClassAsset } from "../lib/content-browser-helpers";
 import { ownedActorsOfScene, ownedTimelineClipsOfScene } from "../lib/owned-actor-gets";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
@@ -206,6 +220,10 @@ function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promi
   });
 }
 
+/**
+ * What every Play session loads besides its scene: the audio mixer, render effects, the Game Instance Class, the
+ * leaf subsystem Classes, and every Class of the `NAMED_BY_STRING_BASES`.
+ */
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
   const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
@@ -215,16 +233,18 @@ export function requiredProjectAssets(registry: AssetRegistry, project: ProjectD
   const classId = settings.gameInstanceClass;
   const asset = classId ? byId.get(classId) : undefined;
   if (asset) roots.push(asset.header.guid);
-  const subsystemClasses = classes.filter(asset => {
+  const derivesFrom = (asset: (typeof classes)[number], bases: readonly string[]) => {
     const seen = new Set<string>();
     let parent = asset.header.parentClass;
     while (parent && !seen.has(parent)) {
-      if (parent === "GameSubsystem" || parent === "SceneSubsystem") return true;
+      if (bases.includes(parent)) return true;
       seen.add(parent);
       parent = byId.get(parent)?.header.parentClass;
     }
     return false;
-  });
+  };
+  for (const named of classes) if (derivesFrom(named, NAMED_BY_STRING_BASES)) roots.push(named.header.guid);
+  const subsystemClasses = classes.filter(asset => derivesFrom(asset, ["GameSubsystem", "SceneSubsystem"]));
   const parents = new Set(subsystemClasses.flatMap(asset => {
     const parent = asset.header.parentClass && byId.get(asset.header.parentClass);
     return parent ? [parent.header.guid] : [];

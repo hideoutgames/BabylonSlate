@@ -15,12 +15,14 @@ export const GAME_SUBSYSTEM_CLASS_ID = "GameSubsystem";
 /** Main-scene-lifetime subsystem base users can parent to. */
 export const SCENE_SUBSYSTEM_CLASS_ID = "SceneSubsystem";
 
-/** A letter of a 2D Rich Text that custom Appear Modes and Decorator Effects pose; engine-made, never subclassed. */
+/** A letter of a 2D Rich Text that custom Appear Modes and Letter Effects pose; engine-made, never subclassed. */
 export const RICH_TEXT_2D_LETTER_CLASS_ID = "RichText2DLetter";
 /** Base of Classes that script how each letter of a 2D Rich Text appears. */
 export const RICH_TEXT_2D_APPEAR_MODE_CLASS_ID = "RichText2DAppearMode";
 /** Base of Classes that script a continuous letter effect, applied with the `[fx=ClassName]` tag. */
-export const RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID = "RichText2DDecoratorEffect";
+export const RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID = "RichText2DLetterEffect";
+/** Base of Classes that define a Rich Text tag of their own and the markup it turns into (Get Tag, Decorate). */
+export const RICH_TEXT_2D_DECORATOR_CLASS_ID = "RichText2DDecorator";
 /** Base of Classes that script an easing curve by overriding Evaluate; listed as `<Class> (Custom)` with the built-in curves. */
 export const CUSTOM_EASING_CURVE_CLASS_ID = "CustomEasingCurve";
 
@@ -57,7 +59,8 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTService",
   "BTComposite",
   RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
-  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_CLASS_ID,
   CUSTOM_EASING_CURVE_CLASS_ID,
 ] as const;
 

@@ -5,7 +5,8 @@ import {
   GAME_SUBSYSTEM_CLASS_ID,
   CUSTOM_EASING_CURVE_CLASS_ID,
   RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
-  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_CLASS_ID,
   RICH_TEXT_2D_LETTER_CLASS_ID,
   SCENE_SUBSYSTEM_CLASS_ID,
   SUBSYSTEM_CLASS_ID,
@@ -193,7 +194,7 @@ export class ClassRegistry {
       variables: [],
       implementedInterfaces: [],
     });
-    for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite", RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, CUSTOM_EASING_CURVE_CLASS_ID] as const) {
+    for (const id of ["BTTask", "BTDecorator", "BTService", "BTComposite", RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID, RICH_TEXT_2D_DECORATOR_CLASS_ID, CUSTOM_EASING_CURVE_CLASS_ID] as const) {
       this.register({
         id,
         parentClassId: "Object",

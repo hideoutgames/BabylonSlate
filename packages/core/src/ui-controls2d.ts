@@ -6,6 +6,17 @@ export const UI_CONTROL_2D_VISUAL_PARTS = ["background", "track", "fill", "thumb
 type UIControl2DVisualPart = (typeof UI_CONTROL_2D_VISUAL_PARTS)[number];
 type VisualAssets = Record<`${UIControl2DVisualPart}${"Material" | "Texture"}Guid`, string | null>;
 
+/** What a 2D Text Input accepts: the on-screen keyboard it asks for, the characters it keeps and how it shows them. */
+export const UI_TEXT_INPUT_TYPES = ["text", "number", "integer", "email", "password", "url", "phone"] as const;
+export type UITextInputType = (typeof UI_TEXT_INPUT_TYPES)[number];
+export const UI_TEXT_INPUT_TYPE_LABELS: Record<UITextInputType, string> = {
+  text: "Text", number: "Number", integer: "Integer", email: "Email", password: "Password", url: "URL", phone: "Phone",
+};
+
+export function parseUITextInputType(value: unknown): UITextInputType {
+  return UI_TEXT_INPUT_TYPES.includes(value as UITextInputType) ? value as UITextInputType : "text";
+}
+
 /** Shared serialized control state. Dimensions and font size use SceneLayer units. */
 export interface UIControl2DProperties extends OverlayVisualStyle, VisualAssets {
   enabled: boolean;
@@ -24,6 +35,8 @@ export interface UIControl2DProperties extends OverlayVisualStyle, VisualAssets 
   placeholder: string;
   /** Zero leaves text length unrestricted; counts Unicode code points. */
   maxLength: number;
+  /** 2D Text Input only: the characters `text` keeps (`normalizeUIControl2DText`) and how it is typed and shown. */
+  inputType: UITextInputType;
   readOnly: boolean;
   options: string[];
   selectedIndex: number;
@@ -67,9 +80,36 @@ export function uiControl2DValueAt(x: number, y: number, properties: UIControl2D
   return clampUIControl2DValue(properties.min * (1 - fraction) + properties.max * fraction, properties);
 }
 
-export function normalizeUIControl2DText(text: string, properties: Pick<UIControl2DProperties, "maxLength">): string {
-  const singleLine = text.replace(/[\r\n]+/g, " ");
-  return properties.maxLength > 0 ? Array.from(singleLine).slice(0, properties.maxLength).join("") : singleLine;
+/** A sign only in front, then digits, with one decimal point when `decimal`; a comma counts as the point. */
+function numericText(text: string, decimal: boolean): string {
+  let result = "", point = false;
+  for (const ch of text) {
+    if (ch >= "0" && ch <= "9") result += ch;
+    else if (ch === "-" && result === "") result = "-";
+    else if (decimal && !point && (ch === "." || ch === ",")) { result += "."; point = true; }
+  }
+  return result;
+}
+
+/** The characters an Input Type keeps: it filters what is typed, pasted or set, and validates nothing else. */
+function filterUITextInput(text: string, inputType: UITextInputType): string {
+  switch (inputType) {
+    case "number": return numericText(text, true);
+    case "integer": return numericText(text, false);
+    case "email": case "url": return text.replace(/\s+/g, "");
+    case "phone": return text.replace(/[^\d+\-() ]+/g, "");
+    default: return text;
+  }
+}
+
+export function normalizeUIControl2DText(text: string, properties: Pick<UIControl2DProperties, "maxLength"> & { inputType?: UITextInputType }): string {
+  const kept = filterUITextInput(text.replace(/[\r\n]+/g, " "), properties.inputType ?? "text");
+  return properties.maxLength > 0 ? Array.from(kept).slice(0, properties.maxLength).join("") : kept;
+}
+
+/** What a 2D Text Input draws for `text`: a Password shows one bullet per character, so carets and selections line up. */
+export function uiControl2DDisplayText(text: string, inputType: UITextInputType): string {
+  return inputType === "password" ? "\u2022".repeat(Array.from(text).length) : text;
 }
 
 export function parseUIControl2DProperties(classId: string, source: Partial<UIControl2DProperties> | Record<string, unknown> = {}): UIControl2DProperties {
@@ -83,6 +123,7 @@ export function parseUIControl2DProperties(classId: string, source: Partial<UICo
   const upper = clampUIControl2DValue(finite(source.upperValue, max), range);
   const options = Array.isArray(source.options) ? source.options.filter((option): option is string => typeof option === "string") : [];
   const maxLength = Math.max(0, Math.floor(finite(source.maxLength, 0)));
+  const inputType = parseUITextInputType(source.inputType);
   const compact = classId === "2DCheckboxComponent" || classId === "2DRadioButtonComponent";
   const assets = Object.fromEntries(UI_CONTROL_2D_VISUAL_PARTS.flatMap((part) => ["Material", "Texture"].map((kind) => {
     const key = `${part}${kind}Guid` as keyof VisualAssets;
@@ -100,9 +141,10 @@ export function parseUIControl2DProperties(classId: string, source: Partial<UICo
     orientation: source.orientation === "vertical" ? "vertical" : "horizontal",
     checked: source.checked === true,
     group: typeof source.group === "string" ? source.group : "",
-    text: normalizeUIControl2DText(typeof source.text === "string" ? source.text : "", { maxLength }),
+    text: normalizeUIControl2DText(typeof source.text === "string" ? source.text : "", { maxLength, inputType }),
     placeholder: typeof source.placeholder === "string" ? source.placeholder : "",
     maxLength,
+    inputType,
     readOnly: source.readOnly === true,
     options,
     selectedIndex: Math.max(-1, Math.min(options.length - 1, Math.floor(finite(source.selectedIndex, options.length ? 0 : -1)))),

@@ -14,8 +14,9 @@ import {
   type SerializedTransform,
 } from "@haptic/core";
 import {
-  engineScriptApiFor, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
-  RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_GET_KEYS_FUNCTION, type EngineScriptFunction,
+  engineScriptApiFor, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_CLASS_ID, RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_DECORATE_FUNCTION, RICH_TEXT_GET_KEYS_FUNCTION, RICH_TEXT_GET_TAG_FUNCTION,
+  type EngineOverridableFunction, type EngineScriptFunction,
 } from "@haptic/object-model";
 import {
   comp,
@@ -52,8 +53,10 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   cameraRig: "FT_UICameraRig",
   /** Rich Text 2D Appear Mode: each letter's Opacity and Tint follow its reveal Alpha. */
   richTextMode: "FT_RichTextRiseMode",
-  /** Rich Text 2D Decorator Effect: tilts the letters inside its `[fx]` tag by the tag's own `tilt` keyword. */
+  /** Rich Text 2D Letter Effect: tilts the letters inside its `[fx]` tag by the tag's own `tilt` keyword. */
   richTextEffect: "FT_RichTextTiltEffect",
+  /** Rich Text 2D Decorator: its `[hint=<color> size=<n>]…[/hint]` tag colours and sizes what it wraps. */
+  richTextDecorator: "FT_RichTextHintTag",
   /** The HUD's rich text: notes when its reveal finishes (Event On Appear Finished). */
   richTextLabel: "FT_UIRichText",
 } as const;
@@ -110,7 +113,7 @@ interface LayerRefs {
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
-  /** Class ids of the custom Appear Mode and Decorator Effect the rich text uses, and the rich text's own Class. */
+  /** Class ids of the custom Appear Mode and Letter Effect the rich text uses, and the rich text's own Class. */
   richText: { mode: string; effect: string; label: PlacedClass };
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
   classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter" | "cameraRig", PlacedClass>;
@@ -357,17 +360,69 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
   ], { parentId: "ft-ui-safe-area" }));
 }
 
-/** The `tilt` keyword the Decorator Effect declares with Get Keys and reads with Get Tag Value. */
+/** The `tilt` keyword the Letter Effect declares with Get Keys and reads with Get Tag Value. */
 const TILT_KEY = "tilt";
+/** The tag FT_RichTextHintTag handles, and the keyword its Decorate reads with Get Tag Value. */
+const HINT_TAG = "hint";
+const HINT_SIZE_KEY = "size";
 
+/** The custom `[fx]` word sits in a `[hint]` tag, whose Decorator turns it into a colour and size around that word. */
 function richTextMarkup(imageGuid: string, effectClassId: string): string {
   return [
     "[b]Rich[/b] [i]Text[/i] [color=orange]color[/color] [size=21.6]size[/size]",
     "[outline=1.8][outline-color=1a0a3a]outline[/outline-color][/outline] [u]under[/u]",
     `[img=${imageGuid} size=16.8] [wave=3 intensity=1.2]wave[/wave] [shake=1]shake[/shake]`,
     "[hover=1]hover[/hover] [rotate=10]tilt[/rotate]",
-    `[fx=${effectClassId} ${TILT_KEY}=8]custom[/fx]`,
+    `[${HINT_TAG}=yellow ${HINT_SIZE_KEY}=19.8][fx=${effectClassId} ${TILT_KEY}=8]custom[/fx][/${HINT_TAG}]`,
   ].join(" ");
+}
+
+/** A Class function member overriding the engine function `fn` of `base`. */
+function engineOverride(id: string, base: string, fn: EngineOverridableFunction) {
+  return {
+    id, kind: "function" as const, name: fn.name,
+    pins: fn.pins.map((pin) => ({ ...pin })),
+    overrides: { classId: base, name: fn.name },
+  };
+}
+
+/**
+ * Rich Text 2D Decorator: Get Tag returns `hint`, and Decorate turns `[hint=<color> size=<n>]Content[/hint]` into
+ * `[color=<color>][size=<n>]Content[/size][/color]`, its size read with Get Tag Value.
+ */
+async function saveRichTextDecorator(ctx: FeatureTestContext): Promise<void> {
+  const getTag = engineOverride("ft-ui-fn-get-tag", RICH_TEXT_2D_DECORATOR_CLASS_ID, RICH_TEXT_GET_TAG_FUNCTION);
+  const decorate = engineOverride("ft-ui-fn-decorate", RICH_TEXT_2D_DECORATOR_CLASS_ID, RICH_TEXT_DECORATE_FUNCTION);
+  const pinOf = (fn: EngineOverridableFunction, direction: "in" | "out", index = 0) =>
+    fn.pins.filter((pin) => pin.direction === direction && pin.typeId !== "exec")[index]!.name;
+  const markup = "format";
+  // Get Tag's Output holds the tag as its Tag literal.
+  const getTagGraph = fnGraph(getTag);
+  const getTagOutput = getTagGraph.nodes.find((node) => node.id === `${getTag.id}-output`)!;
+  getTagOutput.data = { ...getTagOutput.data, [`default:${pinOf(RICH_TEXT_GET_TAG_FUNCTION, "out")}`]: HINT_TAG };
+  await ctx.saveClass({
+    folder: FOLDER, name: NAMES.richTextDecorator, parentClass: RICH_TEXT_2D_DECORATOR_CLASS_ID,
+    graph: classGraph({
+      members: [getTag, decorate],
+      nodes: [],
+      edges: [],
+      functionGraphs: {
+        [getTag.id]: getTagGraph,
+        [decorate.id]: fnGraph(decorate, {
+          nodes: [
+            gNode("size", "richText.getTagValue", 240, 320, { "default:key": HINT_SIZE_KEY }),
+            gNode(markup, "string.format", 480, 240, { "default:format": "[color={value}][size={size}]{content}[/size][/color]" }),
+          ],
+          edges: [
+            gWire(`${decorate.id}-input`, pinOf(RICH_TEXT_DECORATE_FUNCTION, "in", 0), markup, "arg:value"),
+            gWire("size", "value", markup, "arg:size"),
+            gWire(`${decorate.id}-input`, pinOf(RICH_TEXT_DECORATE_FUNCTION, "in", 1), markup, "arg:content"),
+            gWire(markup, "out", `${decorate.id}-output`, pinOf(RICH_TEXT_DECORATE_FUNCTION, "out")),
+          ],
+        }),
+      },
+    }),
+  });
 }
 
 /** Get or Set of a Rich Text letter's variable; its Target is the Letter. */
@@ -385,7 +440,7 @@ function letterVariableNode(id: string, propertyKey: string, x: number, y: numbe
 }
 
 /**
- * The custom Appear Mode and Decorator Effect the HUD's rich text names, and the rich text's own Class, whose
+ * The custom Appear Mode, Letter Effect and Decorator the HUD's rich text uses, and the rich text's own Class, whose
  * Event On Appear Finished sets Revealed once its reveal (Play On Start) ends.
  */
 async function saveRichTextClasses(ctx: FeatureTestContext, refs: ClassBase): Promise<LayerRefs["richText"]> {
@@ -412,26 +467,22 @@ async function saveRichTextClasses(ctx: FeatureTestContext, refs: ClassBase): Pr
     }),
   });
   // Get Keys declares `tilt`; each tagged letter's Rotation is that tag value as a number.
-  const getKeys = {
-    id: "ft-ui-fn-get-keys", kind: "function" as const, name: RICH_TEXT_GET_KEYS_FUNCTION.name,
-    pins: RICH_TEXT_GET_KEYS_FUNCTION.pins.map((pin) => ({ ...pin })),
-    overrides: { classId: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, name: RICH_TEXT_GET_KEYS_FUNCTION.name },
-  };
+  const getKeys = engineOverride("ft-ui-fn-get-keys", RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID, RICH_TEXT_GET_KEYS_FUNCTION);
   const keysPin = RICH_TEXT_GET_KEYS_FUNCTION.pins.find((pin) => pin.direction === "out" && pin.typeId !== "exec")!.name;
   const effect = await ctx.saveClass({
-    folder: FOLDER, name: NAMES.richTextEffect, parentClass: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+    folder: FOLDER, name: NAMES.richTextEffect, parentClass: RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
     graph: classGraph({
       members: [getKeys],
       nodes: [
-        gNode("decorate", "flow.event.richTextDecorateLetters", 0, 0),
+        gNode("update", "flow.event.richTextUpdateLetters", 0, 0),
         gNode("each", "flow.forEach", 320, 0),
         gNode("tilt-value", "richText.getTagValue", 320, 200, { "default:key": TILT_KEY }),
         gNode("tilt-number", "string.parseFloat", 560, 200),
         letterVariableNode("set-rotation", "rotation", 800, 0),
       ],
       edges: [
-        gExec("decorate", "each"),
-        gWire("decorate", "letters", "each", "array"),
+        gExec("update", "each"),
+        gWire("update", "letters", "each", "array"),
         gWire("each", "loopBody", "set-rotation", "execIn"),
         gWire("each", "element", "set-rotation", "target"),
         gWire("tilt-value", "value", "tilt-number", "in"),
@@ -445,6 +496,7 @@ async function saveRichTextClasses(ctx: FeatureTestContext, refs: ClassBase): Pr
       },
     }),
   });
+  await saveRichTextDecorator(ctx);
   const revealed = varMember("ft-ui-var-revealed", "Revealed", "bool", false, { category: "Rich Text" });
   const lastLetter = varMember("ft-ui-var-last-letter", "Last Letter", "int", -1, { category: "Rich Text" });
   const components = [
@@ -545,6 +597,7 @@ function addForms(refs: LayerRefs, add: AddActor): void {
     width: 2.46,
     text: "FeatureTest",
     placeholder: "Type here",
+    inputType: "email",
     maxLength: 24,
   });
   control("ft-ui-numeric-input", "Numeric Input", "2DNumericInputComponent", {

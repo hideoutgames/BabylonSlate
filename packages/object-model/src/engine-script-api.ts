@@ -9,7 +9,10 @@ import {
   SCENE_LAYER_SWITCHER_SCRIPT_API,
 } from "./scene-layer-switcher-api";
 import { TIMELINE_CLIP_SCRIPT_API } from "./timeline-clip-api";
-import { CUSTOM_EASING_CURVE_CLASS_ID, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, RICH_TEXT_2D_LETTER_CLASS_ID } from "./ids";
+import {
+  CUSTOM_EASING_CURVE_CLASS_ID, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_CLASS_ID, RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_LETTER_CLASS_ID,
+} from "./ids";
 import { LAYER_CAMERA_SCRIPT_API, SCENE_CAMERA_MANAGER_SCRIPT_API } from "./camera-script-api";
 
 export type EngineScriptPin = {
@@ -148,9 +151,9 @@ const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
 export const RICH_TEXT_LETTER_APPEAR_EVENT: EngineScriptEvent = {
   name: "On Letter Appear", eventType: "flow.event.richTextLetterAppear", exportName: "onLetterAppear",
 };
-/** Runs on a Rich Text 2D Decorator Effect every tick with the letters inside its tag. */
-export const RICH_TEXT_DECORATE_LETTERS_EVENT: EngineScriptEvent = {
-  name: "On Decorate Letters", eventType: "flow.event.richTextDecorateLetters", exportName: "onDecorateLetters",
+/** Runs on a Rich Text 2D Letter Effect every tick with the letters inside its tag. */
+export const RICH_TEXT_UPDATE_LETTERS_EVENT: EngineScriptEvent = {
+  name: "On Update Letters", eventType: "flow.event.richTextUpdateLetters", exportName: "onUpdateLetters",
 };
 
 /** Runs on the owner of a 2D Rich Text as each letter starts appearing on a forward reveal. */
@@ -166,7 +169,7 @@ export const RICH_TEXT_DISAPPEAR_FINISHED_EVENT: EngineScriptEvent = {
   name: "On Disappear Finished", eventType: "flow.event.richTextDisappearFinished", exportName: "onDisappearFinished",
 };
 
-/** The Get Keys a Rich Text 2D Decorator Effect overrides: the tag keywords whose values Get Tag Value reads. */
+/** The Get Keys a Rich Text 2D Letter Effect overrides: the tag keywords whose values Get Tag Value reads. */
 export const RICH_TEXT_GET_KEYS_FUNCTION: EngineOverridableFunction = {
   name: "Get Keys",
   description: "The tag keywords this effect reads with Get Tag Value.",
@@ -174,6 +177,34 @@ export const RICH_TEXT_GET_KEYS_FUNCTION: EngineOverridableFunction = {
     { name: "exec", typeId: "exec", direction: "in" },
     { name: "then", typeId: "exec", direction: "out" },
     { name: "Keys", typeId: "string", direction: "out", container: "array" },
+  ],
+};
+
+/** The Get Tag a Rich Text 2D Decorator overrides: the name of the tag it handles, called when scripts load. */
+export const RICH_TEXT_GET_TAG_FUNCTION: EngineOverridableFunction = {
+  name: "Get Tag",
+  description: "The name of the tag this Decorator handles, such as item. Read once when scripts load.",
+  pins: [
+    { name: "exec", typeId: "exec", direction: "in" },
+    { name: "then", typeId: "exec", direction: "out" },
+    { name: "Tag", typeId: "string", direction: "out" },
+  ],
+};
+
+/**
+ * The Decorate a Rich Text 2D Decorator overrides: the markup its tag turns into, from the tag's Value, the raw
+ * Content up to its closing tag, and the 2D Rich Text being built.
+ */
+export const RICH_TEXT_DECORATE_FUNCTION: EngineOverridableFunction = {
+  name: "Decorate",
+  description: "The markup that replaces this Decorator's tag, from the tag's Value and Content.",
+  pins: [
+    { name: "exec", typeId: "exec", direction: "in" },
+    { name: "then", typeId: "exec", direction: "out" },
+    { name: "Value", typeId: "string", direction: "in" },
+    { name: "Content", typeId: "string", direction: "in" },
+    { name: "Component", typeId: "object", typeClassId: "2DRichTextComponent", direction: "in" },
+    { name: "Markup", typeId: "string", direction: "out" },
   ],
 };
 
@@ -442,10 +473,11 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   { classId: RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, nativeEvents: [RICH_TEXT_LETTER_APPEAR_EVENT] },
   {
-    classId: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
-    nativeEvents: [RICH_TEXT_DECORATE_LETTERS_EVENT],
+    classId: RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
+    nativeEvents: [RICH_TEXT_UPDATE_LETTERS_EVENT],
     overridableFunctions: [RICH_TEXT_GET_KEYS_FUNCTION],
   },
+  { classId: RICH_TEXT_2D_DECORATOR_CLASS_ID, overridableFunctions: [RICH_TEXT_GET_TAG_FUNCTION, RICH_TEXT_DECORATE_FUNCTION] },
   { classId: CUSTOM_EASING_CURVE_CLASS_ID, overridableFunctions: [CUSTOM_EASING_CURVE_EVALUATE_FUNCTION] },
   SCENE_CAMERA_MANAGER_SCRIPT_API,
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
@@ -652,6 +684,10 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Trigger Appear", runtime: "triggerAppear", pins: [EXEC_IN, EXEC_OUT] },
       { name: "Play", runtime: "play", pins: [EXEC_IN, EXEC_OUT] },
       { name: "Play Reverse", runtime: "playReverse", pins: [EXEC_IN, EXEC_OUT] },
+      {
+        name: "Refresh Text", runtime: "refreshText", pins: [EXEC_IN, EXEC_OUT],
+        description: "Runs the Rich Text Decorators of this text's custom tags again, so they show current values.",
+      },
     ],
     events: [TEXT_CHANGED, RICH_TEXT_LETTER_SHOWN_EVENT, RICH_TEXT_APPEAR_FINISHED_EVENT, RICH_TEXT_DISAPPEAR_FINISHED_EVENT],
   },

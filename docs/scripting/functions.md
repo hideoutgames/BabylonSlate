@@ -75,7 +75,7 @@ Variables that only one function needs belong in **Local Variables**, which appe
 
 If an override's inputs, outputs or **Pure** setting no longer match the parent, **Compiler Results** reports an error. The same menu lists the methods of the class's [Script Interfaces](interfaces.md).
 
-Some engine parent classes have functions of their own to override, which the engine calls: a **RichText2DDecoratorEffect** Class overrides **Get Keys** to list its [tag keywords](../components/2d-rich-text.md#tag-keywords), and a **CustomEasingCurve** Class overrides **Evaluate** to shape its [easing curve](curves-and-ranges.md#custom-easing-curves).
+Some engine parent classes have functions of their own to override, which the engine calls: a **RichText2DLetterEffect** Class overrides **Get Keys** to list its [tag keywords](../components/2d-rich-text.md#tag-keywords), a **RichText2DDecorator** Class overrides **Get Tag** and **Decorate** to add a [custom tag](../components/2d-rich-text.md#custom-tags), and a **CustomEasingCurve** Class overrides **Evaluate** to shape its [easing curve](curves-and-ranges.md#custom-easing-curves).
 
 ## Function libraries
 

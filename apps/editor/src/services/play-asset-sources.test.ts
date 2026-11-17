@@ -402,7 +402,7 @@ describe("Play source ownership", () => {
     loading.dispose();
   });
 
-  it("starts genuine subsystem leaves and the selected Game Instance using only class headers", async () => {
+  it("starts genuine subsystem leaves, the selected Game Instance and every Class named only by a string using only class headers", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
     await storage.mkdir("assets");
@@ -410,6 +410,9 @@ describe("Play source ownership", () => {
       ["Session", "session", "GameInstance"], ["SystemBase", "base", "GameSubsystem"],
       ["System", "system", "SystemBase"], ["Weather", "weather", "SceneSubsystem"],
       ["Debug", "debug", "DebugCommand"], ["UnusedPrefab", "unused", "Actor"],
+      // A tag, an [fx] name or a class: entry names these Classes, which no dependency lists: each starts, a parent too.
+      ["ItemTag", "item", "RichText2DDecorator"], ["RareItemTag", "rare", "ItemTag"], ["Tilt", "tilt", "RichText2DLetterEffect"],
+      ["Rise", "rise", "RichText2DAppearMode"], ["Snap", "snap", "CustomEasingCurve"], ["HardSnap", "hard", "Snap"],
     ]) await storage.writeBinary(`assets/${name}.class.hasset`, await encodeHasset({
       header: { guid: guid!, name: name!, type: "Class", parentClass: parent, engineVersion: "0.0.0", version: 1, mode: "thin",
         dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: {} },
@@ -420,7 +423,8 @@ describe("Play source ownership", () => {
     const before = storage.getReadMetrics();
     const project = createEmptyProject("Systems");
     project.settings.gameInstanceClass = "Session";
-    expect(requiredProjectAssets(registry, project).sort()).toEqual(["session", "system", "weather"]);
+    expect(requiredProjectAssets(registry, project).sort())
+      .toEqual(["hard", "item", "rare", "rise", "session", "snap", "system", "tilt", "weather"]);
     expect(storage.getReadMetrics()).toEqual(before);
   });
 

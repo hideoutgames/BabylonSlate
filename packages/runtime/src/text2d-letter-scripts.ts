@@ -1,10 +1,10 @@
 import {
-  countText2DRevealCharacters, parseText2DProperties, text2DCharacterReveal, text2DCustomAppearModeClassId,
+  countText2DRevealCharacters, text2DCharacterReveal, text2DCustomAppearModeClassId,
   text2DFormattedUnits, TEXT2D_LETTER_POSE_STRIDE, type Text2DProperties,
 } from "@haptic/core";
 import {
-  EngineObject, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
-  RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_DECORATE_LETTERS_EVENT, RICH_TEXT_GET_KEYS_FUNCTION, RICH_TEXT_LETTER_APPEAR_EVENT,
+  EngineObject, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_UPDATE_LETTERS_EVENT, RICH_TEXT_GET_KEYS_FUNCTION, RICH_TEXT_LETTER_APPEAR_EVENT,
   type ActorComponent, type World,
 } from "@haptic/object-model";
 import { jsIdent } from "@haptic/scripting";
@@ -21,8 +21,8 @@ export interface Text2DLetterScriptsHost {
 }
 
 type ScriptedClass = { classId: string; self: EngineObject };
-/** One `onDecorateLetters` call: letters under tags of one Class with one Strength and one value per declared key. */
-type Decorator = ScriptedClass & { strength: number; letters: EngineObject[]; values: ReadonlyMap<string, string> };
+/** One `onUpdateLetters` call: letters under tags of one Class with one Strength and one value per declared key. */
+type EffectCall = ScriptedClass & { strength: number; letters: EngineObject[]; values: ReadonlyMap<string, string> };
 type LetterState = {
   /** The component's variables revision this state was read at. */
   revision: number;
@@ -32,9 +32,9 @@ type LetterState = {
   count: number;
   letters: EngineObject[];
   modes: ScriptedClass[];
-  decorators: Decorator[];
+  effectCalls: EffectCall[];
   instances: Map<string, EngineObject>;
-  /** Poses the Appear Modes left, which Decorator Effects start from each tick. */
+  /** Poses the Appear Modes left, which Letter Effects start from each tick. */
   appear: number[];
   /** The reveal position `appear` was computed at; NaN when it must be computed again. */
   appearProgress: number;
@@ -88,7 +88,7 @@ function readPoses(letters: readonly EngineObject[]): number[] {
   return poses;
 }
 
-/** The tag keywords a Decorator Effect declares with Get Keys: lower-cased, distinct, non-empty strings. */
+/** The tag keywords a Letter Effect declares with Get Keys: lower-cased, distinct, non-empty strings. */
 function declaredKeys(outputs: Record<string, unknown> | null): readonly string[] {
   const keys = outputs?.[KEYS_OUTPUT];
   if (!Array.isArray(keys)) return [];
@@ -104,19 +104,28 @@ function samePoses(a: readonly number[], b: readonly number[]): boolean {
 }
 
 /**
- * Runs Rich Text 2D Appear Mode and Decorator Effect Classes on a 2D Rich Text's letters. Scripts pose engine-made
+ * Runs Rich Text 2D Appear Mode and Letter Effect Classes on a 2D Rich Text's letters. Scripts pose engine-made
  * Letter objects; the packed poses (`TEXT2D_LETTER_POSE_STRIDE` numbers per reveal character) are what the renderer
- * receives. Appear Modes run when the reveal moves, Decorator Effects every tick on top of what they left.
+ * receives. Appear Modes run when the reveal moves, Letter Effects every tick on top of what they left.
  */
 export class Text2DLetterScripts {
   private host: Text2DLetterScriptsHost | null = null;
+  /** A 2D Rich Text's properties as drawn, its custom tags expanded (`Text2DAppearRuntime.properties`). */
+  private readonly properties: (component: ActorComponent) => Text2DProperties;
   private readonly states = new Map<ActorComponent, LetterState>();
   private readonly dirty = new Set<ActorComponent>();
   /** The variables revision at which a component was last found to script nothing. */
   private readonly idle = new WeakMap<ActorComponent, number>();
-  /** The Decorator Effect whose `onDecorateLetters` runs now, and its tag's values by declared key. */
-  private decorating: EngineObject | null = null;
+  /**
+   * The script whose tag Get Tag Value reads now, and that tag's values by lower-cased key: a Letter Effect in its
+   * `onUpdateLetters` (its declared keys), or a Rich Text Decorator in its Decorate (every keyword of its tag).
+   */
+  private tagSelf: EngineObject | null = null;
   private tagValues: ReadonlyMap<string, string> = NO_VALUES;
+
+  constructor(properties: (component: ActorComponent) => Text2DProperties) {
+    this.properties = properties;
+  }
 
   bind(host: Text2DLetterScriptsHost): void {
     this.host = host;
@@ -144,30 +153,42 @@ export class Text2DLetterScripts {
       state.appear = readPoses(state.letters);
       state.appearProgress = progress;
     }
-    if (state.decorators.length > 0) {
+    if (state.effectCalls.length > 0) {
       if (!moved) state.letters.forEach((letter, index) => writePose(letter, state.appear, index * TEXT2D_LETTER_POSE_STRIDE));
-      for (const decorator of state.decorators) {
+      for (const call of state.effectCalls) {
         // Get Tag Value reads the values of this call's tag.
-        const previousSelf = this.decorating, previousValues = this.tagValues;
-        this.decorating = decorator.self;
-        this.tagValues = decorator.values;
-        try {
-          host.invokeEvent(decorator.classId, RICH_TEXT_DECORATE_LETTERS_EVENT.exportName, decorator.self, {
-            letters: [...decorator.letters], deltaSeconds, strength: decorator.strength,
-          });
-        } finally {
-          this.decorating = previousSelf;
-          this.tagValues = previousValues;
-        }
+        this.withTag(call.self, call.values, () => host.invokeEvent(call.classId, RICH_TEXT_UPDATE_LETTERS_EVENT.exportName, call.self, {
+          letters: [...call.letters], deltaSeconds, strength: call.strength,
+        }));
       }
     } else if (!moved) return;
     const read = readPoses(state.letters);
     this.send(component, state, atRest(read) ? NO_POSES : read);
   }
 
-  /** Get Tag Value: the value of `key` (any case) in the tag `self` decorates now; "" outside its decorate call. */
+  /** Get Tag Value: the value of `key` (any case) in the tag `self` runs for now; "" outside such a call. */
   tagValue(self: EngineObject | null, key: string): string {
-    return self !== null && self === this.decorating ? this.tagValues.get(key.toLowerCase()) ?? "" : "";
+    return self !== null && self === this.tagSelf ? this.tagValues.get(key.toLowerCase()) ?? "" : "";
+  }
+
+  /** Runs `run` with Get Tag Value on `self` reading `values`, then restores the tag that was current before. */
+  withTag<T>(self: EngineObject, values: ReadonlyMap<string, string>, run: () => T): T {
+    const previousSelf = this.tagSelf, previousValues = this.tagValues;
+    this.tagSelf = self;
+    this.tagValues = values;
+    try {
+      return run();
+    } finally {
+      this.tagSelf = previousSelf;
+      this.tagValues = previousValues;
+    }
+  }
+
+  /** The text `component` draws changed without a variable write: its letters are read again on its next advance. */
+  invalidate(component: ActorComponent): void {
+    const state = this.states.get(component);
+    if (state) state.revision = Number.NaN;
+    this.idle.delete(component);
   }
 
   flush(send: (component: ActorComponent, poses: number[]) => void): void {
@@ -201,7 +222,7 @@ export class Text2DLetterScripts {
     const revision = component.variablesRevision;
     if (previous && previous.revision === revision) return previous;
     if (!previous && this.idle.get(component) === revision) return null;
-    const properties = parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
+    const properties = this.properties(component);
     const units = text2DFormattedUnits(properties.text, undefined, { rich: true }).filter((unit) => unit.kind !== "lineBreak");
     const modeIds = properties.appearModes.flatMap((mode) => text2DCustomAppearModeClassId(mode) ?? []);
     const effectIds = [...new Set(units.flatMap((unit) => unit.effects.custom?.map((effect) => effect.name) ?? []))];
@@ -242,8 +263,8 @@ export class Text2DLetterScripts {
       return self;
     };
     const letters: EngineObject[] = [];
-    const decorators = new Map<string, Decorator>();
-    // Each Decorator Effect's Get Keys, called once per build.
+    const effectCalls = new Map<string, EffectCall>();
+    // Each Letter Effect's Get Keys, called once per build.
     const declared = new Map<string, readonly string[]>();
     const keysOf = (classId: string, self: EngineObject): readonly string[] => {
       let keys = declared.get(classId);
@@ -260,20 +281,20 @@ export class Text2DLetterScripts {
       writePose(letter, REST, 0);
       letters.push(letter);
       for (const effect of unit.effects.custom ?? []) {
-        const self = instance(effect.name, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID);
+        const self = instance(effect.name, RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID);
         if (!self) continue;
-        // Letters under one Strength and the same values of the Class's declared keys are decorated together, in
+        // Letters under one Strength and the same values of the Class's declared keys are updated together, in
         // text order; keywords the Class does not declare do not split them.
         const keys = keysOf(effect.name, self);
         let group = `${effect.name}\0${effect.strength}`;
         for (const key of keys) group += `\0${Object.hasOwn(effect.attrs, key) ? effect.attrs[key] : ""}`;
-        let decorator = decorators.get(group);
-        if (!decorator) {
+        let call = effectCalls.get(group);
+        if (!call) {
           const values = new Map<string, string>();
           for (const key of keys) if (Object.hasOwn(effect.attrs, key)) values.set(key, effect.attrs[key]!);
-          decorators.set(group, decorator = { classId: effect.name, self, strength: effect.strength, letters: [], values });
+          effectCalls.set(group, call = { classId: effect.name, self, strength: effect.strength, letters: [], values });
         }
-        decorator.letters.push(letter);
+        call.letters.push(letter);
       }
     }
     const modes = modeIds.flatMap((classId): ScriptedClass[] => {
@@ -282,7 +303,7 @@ export class Text2DLetterScripts {
     });
     return {
       revision: 0, signature, properties, count: countText2DRevealCharacters(properties), letters, modes,
-      decorators: [...decorators.values()], instances, appear: NO_POSES, appearProgress: Number.NaN,
+      effectCalls: [...effectCalls.values()], instances, appear: NO_POSES, appearProgress: Number.NaN,
       sent: previous?.sent ?? NO_POSES,
     };
   }

@@ -1328,26 +1328,41 @@ describe("scriptPinCompatibility", () => {
 });
 
 describe("engine overridable functions", () => {
-  const parentOf = (id: string) => id === "Wave" ? "RichText2DDecoratorEffect" : engineParentOf(id) ?? null;
+  const parentOf = (id: string) => id === "Wave" ? "RichText2DLetterEffect" : id === "ItemTag" ? "RichText2DDecorator" : engineParentOf(id) ?? null;
   const otherClassGraphs = withEngineClassGraphs({});
 
-  it("offers Get Keys and Get Tag Value only to Decorator Effect Classes", () => {
+  it("offers Get Keys and Get Tag Value only to Letter Effect Classes", () => {
     const ids = (parentClass: string, classId: string) =>
       scriptPaletteNodes(registry, { parentClass, classId, parentOf, otherClassGraphs }).map((node) => node.id);
-    expect(ids("RichText2DDecoratorEffect", "Wave")).toEqual(expect.arrayContaining([
-      "functions.call:RichText2DDecoratorEffect:Get Keys", "richText.getTagValue",
+    expect(ids("RichText2DLetterEffect", "Wave")).toEqual(expect.arrayContaining([
+      "functions.call:RichText2DLetterEffect:Get Keys", "richText.getTagValue",
     ]));
     for (const [parentClass, classId] of [["Actor", "Hero"], ["RichText2DAppearMode", "Rise"], ["Object", "Thing"]] as const) {
       const offered = ids(parentClass, classId);
-      expect(offered, parentClass).not.toContain("functions.call:RichText2DDecoratorEffect:Get Keys");
+      expect(offered, parentClass).not.toContain("functions.call:RichText2DLetterEffect:Get Keys");
       expect(offered, parentClass).not.toContain("richText.getTagValue");
+    }
+  });
+
+  it("offers Get Tag, Decorate and Get Tag Value to Rich Text Decorator Classes, and not their functions elsewhere", () => {
+    const ids = (parentClass: string, classId: string) =>
+      scriptPaletteNodes(registry, { parentClass, classId, parentOf, otherClassGraphs }).map((node) => node.id);
+    const decorator = ids("RichText2DDecorator", "ItemTag");
+    expect(decorator).toEqual(expect.arrayContaining([
+      "functions.call:RichText2DDecorator:Get Tag", "functions.call:RichText2DDecorator:Decorate", "richText.getTagValue",
+    ]));
+    expect(decorator).not.toContain("functions.call:RichText2DLetterEffect:Get Keys");
+    for (const [parentClass, classId] of [["Actor", "Hero"], ["RichText2DLetterEffect", "Wave"], ["Object", "Thing"]] as const) {
+      const offered = ids(parentClass, classId);
+      expect(offered, parentClass).not.toContain("functions.call:RichText2DDecorator:Get Tag");
+      expect(offered, parentClass).not.toContain("functions.call:RichText2DDecorator:Decorate");
     }
   });
 
   it("checks a Get Keys override against the engine's signature", () => {
     const override = (pins: NonNullable<SerializedGraph["members"]>[number]["pins"]): Pick<SerializedGraph, "members"> => ({ members: [{
       id: "get-keys", kind: "function", name: "Get Keys", pins,
-      overrides: { classId: "RichText2DDecoratorEffect", name: "Get Keys" },
+      overrides: { classId: "RichText2DLetterEffect", name: "Get Keys" },
     }] });
     const diagnostics = (graph: Pick<SerializedGraph, "members">) => validateSerializedGraph({ nodes: [], edges: [], ...graph }, {
       assetGuid: "wave", graphId: "wave", classId: "Wave", parentOf,

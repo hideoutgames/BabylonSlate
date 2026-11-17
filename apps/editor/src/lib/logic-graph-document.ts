@@ -560,7 +560,7 @@ export function collectScriptInterfacesForPalette(options: {
 
 /**
  * One members-only graph per engine base that declares functions for its Classes to override (Get Keys on Rich Text
- * 2D Decorator Effect), keyed by the engine class id, as a parent Class's graph would be. Never a project asset:
+ * 2D Letter Effect, Get Tag and Decorate on Rich Text 2D Decorator, Evaluate on Custom Easing Curve), keyed by the engine class id, as a parent Class's graph would be. Never a project asset:
  * only the views that resolve parent functions (My Class, and the graph editor's palette, symbols and validation)
  * add them, through `withEngineClassGraphs`.
  */

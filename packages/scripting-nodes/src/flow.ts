@@ -420,7 +420,7 @@ export const flowNodes: NodeDefinition[] = [
     { id: "letter", name: "Letter", type: objectRef("RichText2DLetter") },
     { id: "alpha", name: "Alpha", type: FLOAT },
   ]),
-  argsEvent("flow.event.richTextDecorateLetters", "Event On Decorate Letters", [
+  argsEvent("flow.event.richTextUpdateLetters", "Event On Update Letters", [
     { id: "letters", name: "Letters", type: arrayOf(objectRef("RichText2DLetter")) },
     { id: "deltaSeconds", name: "Delta Seconds", type: FLOAT },
     { id: "strength", name: "Strength", type: FLOAT },
