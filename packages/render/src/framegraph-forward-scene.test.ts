@@ -547,7 +547,7 @@ it("renders a scaled view at its scale into own targets whose single output copy
   graph.dispose();
 });
 
-it("ends a scaled view's upscale at the view's size under `fsrdebug output view`, one copy filling the output, and at the output again after", async () => {
+it("ends a scaled view's upscale at the view's size, one copy filling the output, and at the output under `fsrdebug output device`", async () => {
   const options = new NullEngineOptions();
   options.renderWidth = 80;
   options.renderHeight = 64;
@@ -564,24 +564,23 @@ it("ends a scaled view's upscale at the view's size under `fsrdebug output view`
   };
   const outputCopies = () => owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").map((task) => task.name);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  // The default: upscaled to the output, whose sharpening writes it; no copy.
-  expect(upscaled()).toEqual([80, 64]);
-  expect(outputCopies()).toEqual([]);
-  expect(setSceneFsrOutputDebug(scene, "view")).toBe(true);
-  expect(setSceneFsrOutputDebug(scene, "view")).toBe(false);
-  // The prepared graph is stale.
-  expect(graph.render(camera)).toMatchObject({ rendered: false });
-  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // The default: upscaled and sharpened to the view's size, one copy filling the output.
   expect(upscaled()).toEqual([40, 32]);
   expect(outputCopies()).toEqual(["Scene post-process output"]);
   expect(graph.render(camera)).toEqual({ path: "frameGraph" });
   expect(setSceneFsrOutputDebug(scene, "device")).toBe(true);
+  expect(setSceneFsrOutputDebug(scene, "device")).toBe(false);
+  // The prepared graph is stale.
+  expect(graph.render(camera)).toMatchObject({ rendered: false });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // Upscaled to the output, whose sharpening writes it; no copy.
   expect(upscaled()).toEqual([80, 64]);
   expect(outputCopies()).toEqual([]);
+  expect(setSceneFsrOutputDebug(scene, "view")).toBe(true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(upscaled()).toEqual([40, 32]);
   // A view as large as its output has nothing to end early.
   setSceneOutputScale(scene, 1);
-  setSceneFsrOutputDebug(scene, "view");
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(upscaled()).toEqual([80, 64]);
   expect(outputCopies()).toEqual([]);
