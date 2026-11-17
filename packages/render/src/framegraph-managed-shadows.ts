@@ -416,6 +416,9 @@ export class ManagedShadowsTask extends FrameGraphTask {
         const { generator, map } = entry;
         const light = generator.getLight();
         if (!light.isEnabled() || !light.shadowEnabled) continue;
+        // A view's own sun map follows the scene view's refresh policy, applied once its camera projects as the map
+        // fits to it: it draws again only when its fit, its light, its settings or a caster it draws changed.
+        const viewMap = this.view !== undefined;
         const draw = () => drawBorrowedTarget(
           this.scene,
           map,
@@ -430,6 +433,10 @@ export class ManagedShadowsTask extends FrameGraphTask {
                 this.scene.getEngine().bindFramebuffer(output);
                 this.scene.updateTransformMatrix(true);
               }
+              if (viewMap) {
+                findSceneShadowController(this.scene)?.applyViewRefresh(generator);
+                if (!map._shouldRender()) return;
+              }
               context.renderUnmanaged(map);
             });
           },
@@ -443,7 +450,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
         }
         // `shadowdebug passes off`: a map that has drawn keeps the depth it holds; its refresh stays due.
         if (!firstDraw && shadowDebugOff(this.scene, "passes")) continue;
-        if (!map._shouldRender()) continue;
+        if (!viewMap && !map._shouldRender()) continue;
         draw();
       }
       // Do not sample an allocation replaced during another shadow's callback.

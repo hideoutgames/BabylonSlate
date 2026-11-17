@@ -410,23 +410,27 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
 
 /**
  * A local light's cluster record at `count`, the one written there last time when there is one (records are reused);
- * true when it differs from that one.
+ * true when it differs from that one. A point or spot light's has its range, a rect light's its emitting side's normal.
  */
 function clusterRecord(clusters: ClusterLight[], count: number, kind: ClusterLight["kind"], index: number,
-  x: number, y: number, z: number, radius: number): boolean {
+  x: number, y: number, z: number, radius: number, nx = 0, ny = 0, nz = 0): boolean {
   const record = clusters[count];
   if (!record) {
-    clusters.push({ kind, index, x, y, z, radius });
+    clusters.push({ kind, index, x, y, z, radius, nx, ny, nz });
     return true;
   }
   if (record.kind === kind && record.index === index && Object.is(record.x, x) && Object.is(record.y, y) &&
-    Object.is(record.z, z) && Object.is(record.radius, radius)) return false;
+    Object.is(record.z, z) && Object.is(record.radius, radius) && Object.is(record.nx, nx) && Object.is(record.ny, ny) &&
+    Object.is(record.nz, nz)) return false;
   record.kind = kind;
   record.index = index;
   record.x = x;
   record.y = y;
   record.z = z;
   record.radius = radius;
+  record.nx = nx;
+  record.ny = ny;
+  record.nz = nz;
   return true;
 }
 
@@ -535,7 +539,10 @@ export function writeHapticLights(scene: Scene): void {
       rect[at + 14] = light.diffuse.b * intensity;
       rect[at + 15] = -1;
       state.rects.push(light);
-      if (clusterRecord(clusters, clustered++, "rect", rects, 0, 0, 0, Infinity)) clustersChanged = true;
+      // The shader's emitting side: in front of cross(c1 - c0, c3 - c0), four times cross(height, width).
+      const normal = Vector3.CrossToRef(height, width, TmpVectors.Vector3[3]);
+      if (clusterRecord(clusters, clustered++, "rect", rects, rect[at]!, rect[at + 1]!, rect[at + 2]!, Infinity, normal.x, normal.y, normal.z))
+        clustersChanged = true;
       rects++;
     } else if (light instanceof PointLight) {
       if (points === HAPTIC_LIGHT_MAXIMUM.point) continue;
