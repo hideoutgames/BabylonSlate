@@ -201,8 +201,12 @@ test("HapticLightingBlock shades graph Materials as its model predicts, and ligh
   // The fill is a sky with no point to reflect: it gives no highlight anywhere, so turning highlights off changes
   // nothing under it (a highlight from its direction sat under the camera and followed it).
   expect(cel.get("fill only"), "fill only").toEqual(cel.get("fill only, no highlights"));
-  // One CEL program per Material: CEL ignores the cube's format and box.
-  expect(result.celEffects).toBe(3);
+  // A Material's Roughness fades its highlights out above one half: at the default the highlights show, fully rough
+  // turning them off changes nothing.
+  expect(outliers(cel.get("glossy")!, cel.get("glossy, no highlights")!), "glossy").toBeGreaterThan(20);
+  expect(cel.get("rough"), "rough").toEqual(cel.get("rough, no highlights"));
+  // One CEL program per Material (the three regular ones, the glossy and the rough): CEL ignores the cube's format and box.
+  expect(result.celEffects).toBe(5);
   expect(result.celSteps).toEqual(LIGHT_STEPS);
 
   // A spot light's, the sun's and a point light's shadows, drawn through the shadow controller and the frame graph
