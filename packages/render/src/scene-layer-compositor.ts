@@ -404,7 +404,7 @@ export class SceneLayerCompositor {
   /**
    * A Desired layer's canvas is its drawn content's bounds: measured again only after its Scene noted a change of a
    * mesh's transform, visibility, enabled state or geometry, or added or removed a mesh, and never for another mode.
-   * `force` (preparation) measures and computes the world matrices; a frame reads those its last render computed.
+   * `force` (preparation) measures whatever changed and recomputes every world matrix.
    */
   private measureContent(layer: LayerRecord, force = false): void {
     const changes = layer.contentChanges;
@@ -962,7 +962,8 @@ export function sceneLayerContentBounds(scene: Scene, computeMatrices = false): 
   let bounds: SceneLayerContentBounds | null = null;
   for (const mesh of scene.meshes) {
     if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0) continue;
-    if (computeMatrices) mesh.computeWorldMatrix(true);
+    // A frame's own render computed most matrices; one moved since is computed here, as that render would.
+    mesh.computeWorldMatrix(computeMatrices);
     const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;
     if (!Number.isFinite(min.x) || !Number.isFinite(max.x)) continue;
     bounds = bounds

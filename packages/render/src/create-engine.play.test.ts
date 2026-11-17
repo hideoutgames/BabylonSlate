@@ -101,6 +101,15 @@ import { sceneDrawBatcher } from "./draw-batching";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { emptyDrawPasses, withDrawPass } from "./draw-passes";
 
+/** A Custom canvas of `width` × `height` layer units centred on the origin, fitted to the screen (`sceneLayerCreate.canvas`). */
+function layerCanvas(width: number, height: number) {
+  return {
+    design: { sizeMode: "custom" as const, customSizePx: { width: width * 100, height: height * 100 }, rootAnchor: "center" as const, scaling: "fitToScreen" as const },
+    rect: { width, height, center: [0, 0] as [number, number] },
+  };
+}
+
+
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
 
 /** Graph post-process passes in creation order; shader prewarm passes excluded. */
@@ -174,7 +183,7 @@ function spawnOverlayButton(
   handle: ReturnType<typeof createEngine>,
   renderFrame: () => void,
   layerId = "hud",
-  layerBounds?: { width: number; height: number },
+  canvas?: ReturnType<typeof layerCanvas>,
 ): void {
   handle.applyCommand({
     type: "sceneLayerCreate",
@@ -183,7 +192,7 @@ function spawnOverlayButton(
     zOrder: 0,
     ownerSceneGuid: null,
     postProcessStack: [],
-    ...(layerBounds ? { layerBounds } : {}),
+    ...(canvas ? { canvas } : {}),
   });
   handle.applyCommand({
     type: "spawn",
@@ -4900,7 +4909,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
       onSceneLayerPointer: event => events.push(event.event) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "setFreeCam", enabled: true });
     const camera = handle.scene.activeCamera as UniversalCamera;
     const rotation = () => JSON.stringify([camera.rotation.asArray(), camera.rotationQuaternion?.asArray() ?? null]);
@@ -6217,7 +6226,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
       onSceneLayerPointer: event => events.push(event.event), onSceneLayerScroll: event => scrolls.push(event) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => renderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => renderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2,
       rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20,
         axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 1, scaleY: 1 } }] });
@@ -6259,7 +6268,7 @@ describe("Play createEngine view", () => {
     const scrolls: Array<{ deltaX: number }> = [];
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, onSceneLayerScroll: event => scrolls.push(event) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "strip", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 20, maxY: 0, axis: "horizontal", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
     canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 32, deltaY: 0, deltaMode: 0 });
     canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
@@ -6277,7 +6286,7 @@ describe("Play createEngine view", () => {
     const events: string[] = [], scrolls: Array<{ deltaY: number }> = [];
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, onSceneLayerPointer: event => events.push(event.event), onSceneLayerScroll: event => scrolls.push(event) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
     canvas.emit("wheel", { clientX: 128, clientY: 128, deltaX: 0, deltaY: 32, deltaMode: 0 });
     expect(scrolls[0]?.deltaY).toBeCloseTo(0.5625);
@@ -6288,7 +6297,7 @@ describe("Play createEngine view", () => {
     expect(events).toContain("onPressEnd");
     expect(events).not.toContain("onClick");
     expect(scrolls.at(-1)?.deltaY).toBeCloseTo(0.4921875);
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "modal", assetGuid: "modal-asset", zOrder: 10, ownerSceneGuid: null, postProcessStack: [], layerBounds: { width: 9, height: 9 } });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "modal", assetGuid: "modal-asset", zOrder: 10, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(9, 9) });
     const modalScene = handle.sceneLayerScenes().find(layer => layer.layerId === "modal")!.scene;
     const blocker = MeshBuilder.CreatePlane("modal-blocker", { size: 4 }, modalScene);
     blocker.metadata = { overlayActorGuid: "modal", overlayHitTest: "block" };
@@ -6314,7 +6323,7 @@ describe("Play createEngine view", () => {
     const scrolls: Array<{ deltaX: number; deltaY: number }> = [];
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true, onSceneLayerScroll: event => scrolls.push(event) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "sceneLayerLayout", layerId: "hud", entries: [{ actorId: "scroll", componentId: "viewport", slotId: 2, rect: { x: 0, y: 0, width: 9, height: 9 }, clip: null, scrollAncestors: [], scroll: { x: 0, y: 0, maxX: 0, maxY: 20, axis: "vertical", viewport: { x: 0, y: 0, width: 9, height: 9 }, scaleX: 2, scaleY: 2 } }] });
     handle.applyCommand({ type: "sceneLayerCamera", layerId: "hud", camera: { x: 0, y: 0, rotation: 90, zoom: 2 } });
     // Zoom 2 halves the layer units per pixel; the wheel scrolls along the box's own axis.
@@ -6344,7 +6353,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
       onSceneLayerControl: event => controls.push(event), onSceneLayerScroll: event => scrolls.push(event) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "assignMesh", slotId: 1, actorGuid: "btn", sceneLayerId: "hud", meshKind: "2dcontrol", meshAssetGuid: null, hitTest: "block",
       parts: [{ componentId: "control", meshKind: "2dcontrol", meshAssetGuid: null, parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
         uiControl: { classId, properties: parseUIControl2DProperties(classId, { width: 4, height: 2, options: ["First", "Second"] }) } }] });
@@ -6387,7 +6396,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
       onTouchAxis: (controlId, value) => axes.set(controlId, value) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "assignMesh", slotId: 1, actorGuid: "btn", sceneLayerId: "hud", meshKind: "2djoystick", meshAssetGuid: null, hitTest: "block",
       parts: [{ componentId: "stick", meshKind: "2djoystick", meshAssetGuid: null, parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
         joystick: parseJoystick2DProperties({ radius: 2, joystickRadius: 1, deadZone: 0 }) }] });
@@ -6412,7 +6421,7 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true,
       onSceneLayerControl: event => controls.push(event), onSceneLayerScroll: event => scrolls.push(event) });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     handle.applyCommand({ type: "assignMesh", slotId: 1, actorGuid: "btn", sceneLayerId: "hud", meshKind: "2dcontrol", meshAssetGuid: null, hitTest: "block",
       parts: [{ componentId: "control", meshKind: "2dcontrol", meshAssetGuid: null, parentId: null, position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
         uiControl: { classId, properties: parseUIControl2DProperties(classId, { width: 4, height: 2 }) } }] });
@@ -6443,7 +6452,7 @@ describe("Play createEngine view", () => {
       },
     });
     handles.push(handle);
-    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", { width: 9, height: 9 });
+    spawnOverlayButton(handle, () => runRenderLoop.mock.calls[0]?.[0]?.(), "hud", layerCanvas(9, 9));
     const mesh = handle.sceneLayerScenes()[0]?.scene.getMeshByName("actor-1");
     mesh?.refreshBoundingInfo(false, false);
     const extent = mesh?.getBoundingInfo().boundingBox.extendSize;

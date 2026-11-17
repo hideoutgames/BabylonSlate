@@ -16,6 +16,15 @@ import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { encodeTriangleGlb } from "./glb-test-fixtures";
 import * as modelContainer from "./model-container";
 
+/** A Custom canvas of `width` × `height` layer units centred on the origin, fitted to the screen (`sceneLayerCreate.canvas`). */
+function layerCanvas(width: number, height: number) {
+  return {
+    design: { sizeMode: "custom" as const, customSizePx: { width: width * 100, height: height * 100 }, rootAnchor: "center" as const, scaling: "fitToScreen" as const },
+    rect: { width, height, center: [0, 0] as [number, number] },
+  };
+}
+
+
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()!(); vi.restoreAllMocks(); });
 
@@ -171,7 +180,7 @@ describe("SceneLayer layout rendering", () => {
     vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
     const compositor = new SceneLayerCompositor({ engine });
     const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0,
-      ownerSceneGuid: null, postProcessStack: [], layerBounds: { width: 2, height: 2 } });
+      ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(2, 2) });
     const renderer = new OverlayLayoutRenderer(id => id === "hud" ? layer.scene : undefined);
     cleanup.push(() => { renderer.dispose(); compositor.dispose(); scene.dispose(); engine.dispose(); });
     const root = new Mesh("actor-1", layer.scene);
