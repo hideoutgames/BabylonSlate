@@ -33,6 +33,8 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Event On Movement Jumped](event-on-movement-jumped.md) | Runs when the actor's Movement component starts a jump. |
 | [Event On Movement Landed](event-on-movement-landed.md) | Runs when the actor's Movement component touches the ground after being airborne. |
 | [Event On Movement Left Ground](event-on-movement-left-ground.md) | Runs when the actor's Movement component stops being on the ground. |
+| [Event On Decorate Letters](event-on-decorate-letters.md) | Runs every tick on a Rich Text 2D Decorator Effect with the letters inside its tag. |
+| [Event On Letter Appear](event-on-letter-appear.md) | Runs on a Rich Text 2D Appear Mode for one letter of a 2D Rich Text as the text appears. |
 | [Event On Movement Started](event-on-movement-started.md) | Runs when the actor's Movement component starts moving horizontally. |
 | [Event On Movement Stopped](event-on-movement-stopped.md) | Runs when the actor's Movement component stops moving horizontally. |
 | [Event On Particles Finished](event-on-particles-finished.md) | Runs when a Particle component stops playing and its last particles are gone. |

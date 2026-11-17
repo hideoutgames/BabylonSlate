@@ -29,6 +29,8 @@ Copying an event never breaks this rule; see [Copy and duplicate events](#copy-a
 | **BTTask** | [Event On Activate](class/event-on-activate.md), [Event On Tick](class/event-on-tick.md), [Event On Abort](class/event-on-abort.md) |
 | **BTDecorator** | [Event On Evaluate](class/event-on-evaluate.md) |
 | **BTService** | On Tick |
+| **RichText2DAppearMode** | [Event On Letter Appear](class/event-on-letter-appear.md) |
+| **RichText2DDecoratorEffect** | [Event On Decorate Letters](class/event-on-decorate-letters.md) |
 
 A [Scene Script](scene-scripts.md) has Begin Play, Tick and Destroyed; a Scene Layer Script also has Scalability Changed.
 
