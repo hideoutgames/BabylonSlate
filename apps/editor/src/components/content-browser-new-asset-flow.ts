@@ -67,6 +67,8 @@ export interface ContentBrowserNewAssetFlowDeps extends Pick<
   operationError: string | null;
   setOperationError: (error: string | null) => void;
   openOrFocusDocument: (asset: IndexedAsset) => Promise<void>;
+  /** The project's new-scene camera framing (`projectSceneCameraFraming`): a Pixel Art Optimized project's. */
+  sceneCameraFraming: import("@haptic/core").SceneCameraFraming | null;
 }
 
 /** New Asset: the type menu, the New Asset dialog and the asset it creates. */
@@ -98,6 +100,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     setOperationError,
     noteAssetsCreated,
     openOrFocusDocument,
+    sceneCameraFraming,
   } = deps;
   const [newAssetMenuOpen, setNewAssetMenuOpen] = useState(false);
   const [newAssetMenuAnchor, setNewAssetMenuAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -213,6 +216,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
         viewportMode: type === "Prefab" ? openSceneViewportMode(getOpenDocuments(), activeDocumentId) : undefined,
         timelineAsset,
         skeletonGuid: type === "AnimationGraph3D" || type === "BlendSpace" ? newSkeleton : undefined,
+        sceneCameraFraming: type === "Scene" ? sceneCameraFraming : undefined,
       });
       setNewAssetOpen(false);
       // A Location changed in the dialog shows the folder the asset went to.
@@ -238,6 +242,7 @@ export function useContentBrowserNewAssetFlow(deps: ContentBrowserNewAssetFlowDe
     assetRegistry,
     browserRoots,
     classParentOf,
+    sceneCameraFraming,
     newAssetFolder,
     newAssetName,
     newAssetTakenError,

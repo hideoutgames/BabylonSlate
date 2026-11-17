@@ -13,6 +13,7 @@ import {
   PROJECT_FILE,
   nearestTextureFiltering,
   normalizeProjectSettings,
+  projectSceneCameraFraming,
   normalizeRenderProjectSettings,
   type ProjectSettings,
 } from "./project";
@@ -161,6 +162,19 @@ describe("project schema", () => {
     expect(plain.twoD).toMatchObject({ pixelPerfect: false, nearestTextures: false });
     expect(plain.render.upscaling).toBe("smooth");
     expect(plain.render.quality?.postprocessing.antiAliasing).not.toBe("off");
+  });
+
+  it("frames a Pixel Art Optimized project's new scenes at one design pixel per texel, and no other project's", () => {
+    const at = (width: number, height: number) =>
+      projectSceneCameraFraming(createEmptyProject("Pixels", { kind: "2d", render: { width, height }, pixelArt: true }).settings);
+    expect(at(640, 360)).toEqual({ orthographicSize: 1.8, cameraBounds2D: { width: 6.4, height: 3.6 } });
+    expect(at(320, 180)).toEqual({ orthographicSize: 0.9, cameraBounds2D: { width: 3.2, height: 1.8 } });
+    expect(projectSceneCameraFraming(createEmptyProject("Basic", { kind: "2d" }).settings)).toBeNull();
+    expect(projectSceneCameraFraming(createEmptyProject("Plain").settings)).toBeNull();
+    const scene = createDefaultScene("2d", at(640, 360));
+    expect(scene.settings.cameraBounds2D).toEqual({ width: 6.4, height: 3.6 });
+    expect(scene.actors[0]!.components[0]!.properties.orthographicSize).toBe(1.8);
+    expect(createDefaultScene("2d").actors[0]!.components[0]!.properties.orthographicSize).toBe(DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE);
   });
 
   it("fades distance fog in new 3D scenes into the default sky's horizon", () => {
