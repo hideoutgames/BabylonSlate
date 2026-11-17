@@ -10,6 +10,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Call Parent Event](call-parent-event.md) | Runs the parent class's version of an event that this graph overrides. |
 | [Event Begin Play](event-begin-play.md) | Runs once when an actor or one of its components starts playing. |
 | [Event Custom](event-custom.md) | Defines an event of your own that other graphs can call by name. |
+| [Event On Decorate Letters](event-on-decorate-letters.md) | Runs every tick on a Rich Text 2D Decorator Effect with the letters inside its tag. |
 | [Event On Editor Begin Play](event-on-editor-begin-play.md) | Runs when the editor loads an Editor Utility Object. |
 | [Event On Actor Destroyed](event-on-actor-destroyed.md) | Runs when the actor this graph belongs to is destroyed. |
 | [Event On Audio Finished](event-on-audio-finished.md) | Runs when an Audio component finishes playing a sound. |
@@ -28,13 +29,12 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Event On Game Loaded](event-on-game-loaded.md) | Runs after Load Game restores saved world state and references, before gameplay continues. |
 | [Event On Hit](event-on-hit.md) | Runs on each physics step that the actor's collider touches another solid collider. |
 | [Event On Init](event-on-init.md) | Runs once when the Game Instance or a subsystem is created. |
+| [Event On Letter Appear](event-on-letter-appear.md) | Runs on a Rich Text 2D Appear Mode for one letter of a 2D Rich Text as the text appears. |
 | [Event On Mouse Enter](event-on-mouse-enter.md) | Runs when the pointer moves onto a 2D Button. |
 | [Event On Mouse Leave](event-on-mouse-leave.md) | Runs when the pointer moves off a 2D Button. |
 | [Event On Movement Jumped](event-on-movement-jumped.md) | Runs when the actor's Movement component starts a jump. |
 | [Event On Movement Landed](event-on-movement-landed.md) | Runs when the actor's Movement component touches the ground after being airborne. |
 | [Event On Movement Left Ground](event-on-movement-left-ground.md) | Runs when the actor's Movement component stops being on the ground. |
-| [Event On Decorate Letters](event-on-decorate-letters.md) | Runs every tick on a Rich Text 2D Decorator Effect with the letters inside its tag. |
-| [Event On Letter Appear](event-on-letter-appear.md) | Runs on a Rich Text 2D Appear Mode for one letter of a 2D Rich Text as the text appears. |
 | [Event On Movement Started](event-on-movement-started.md) | Runs when the actor's Movement component starts moving horizontally. |
 | [Event On Movement Stopped](event-on-movement-stopped.md) | Runs when the actor's Movement component stops moving horizontally. |
 | [Event On Particles Finished](event-on-particles-finished.md) | Runs when a Particle component stops playing and its last particles are gone. |
