@@ -1771,7 +1771,7 @@ async function fogHost(
   };
   return { engine, scene, camera, graph, skipped, far };
 }
-const FOG_ONLY_TASKS = ["Spatial Geometry Clear", "Spatial Geometry", "Scene Volumetric Lighting", "Scene Volumetric Compose"].sort();
+const FOG_ONLY_TASKS = ["Spatial Geometry", "Scene Volumetric Lighting", "Scene Volumetric Compose"].sort();
 
 it("skips the Fog Volume geometry and march while none is in front of the camera, without rebuilding", async () => {
   const { camera, graph, skipped } = await fogHost({});
@@ -2023,6 +2023,8 @@ function opaqueAndBlended(scene: Scene): void {
 type SpatialGeometry = {
   objectList: { meshes: { name: string }[] };
   isReady(): boolean;
+  onBeforeTaskExecute: { add(callback: () => void): unknown };
+  onAfterTaskExecute: { add(callback: () => void): unknown };
   seed?: { wrapper: { isReady(): boolean; dispose(): void } };
 };
 const spatialGeometry = (graph: ForwardSceneFrameGraph) =>
@@ -2031,16 +2033,24 @@ const spatialGeometry = (graph: ForwardSceneFrameGraph) =>
 // A Fog Volume's march reads the view depth alone. In a game's world view (`seedsFromSceneDepth`) its geometry pass
 // follows the objects and starts from their depth, so it draws the blended box and not the opaque one again.
 it.each([
-  [true, "after", ["blended"], [[2, -1, 10000]]],
-  [false, "before", ["opaque", "blended"], []],
-] as const)("with a game's world view %s, draws a Fog Volume's geometry pass %s the objects with the meshes their depth lacks", async (game, order, meshes, seeds) => {
+  [true, "after", ["blended"], [[2, -1, 10000]], []],
+  [false, "before", ["opaque", "blended"], [], [true]],
+] as const)("with a game's world view %s, draws a Fog Volume's geometry pass %s the objects with the meshes their depth lacks", async (game, order, meshes, seeds, depthClears) => {
   const depthRange = vi.spyOn(Effect.prototype, "setFloat3");
-  const { graph, skipped } = await fogHost({}, undefined, opaqueAndBlended, { seedsFromSceneDepth: game });
+  const { engine, graph, skipped } = await fogHost({}, undefined, opaqueAndBlended, { seedsFromSceneDepth: game });
   const tasks = graph.taskNames();
   expect(tasks.indexOf("Spatial Geometry") > tasks.indexOf("Forward objects") ? "after" : "before").toBe(order);
-  expect(tasks.indexOf("Spatial Geometry Clear")).toBe(tasks.indexOf("Spatial Geometry") - 1);
+  // The pass clears its own depth, within its render pass (a seeded one writes every pixel's): no clear task precedes it.
+  expect(tasks).not.toContain("Spatial Geometry Clear");
+  let inPass = false;
+  const cleared: boolean[] = [];
+  spatialGeometry(graph).onBeforeTaskExecute.add(() => { inPass = true; });
+  spatialGeometry(graph).onAfterTaskExecute.add(() => { inPass = false; });
+  const clear = vi.spyOn(engine, "clear").mockImplementation((_color, _backBuffer, depth) => { if (inPass) cleared.push(depth); });
   depthRange.mockClear();
   expect(skipped()).toEqual([]);
+  clear.mockRestore();
+  expect(cleared).toEqual(depthClears);
   expect(spatialGeometry(graph).objectList.meshes.map((mesh) => mesh.name)).toEqual(meshes);
   // The depth copy runs once a frame: clip depth spans -1 to 1 here, and a pixel nothing drew lies at the camera's far plane.
   expect(depthRange.mock.calls.filter((call) => call[0] === "depthRange").map((call) => call.slice(1))).toEqual(seeds);
@@ -2155,7 +2165,7 @@ async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFA
   };
   return { scene, camera, graph, frame, cast };
 }
-const SCREEN_SHADOW_TASKS = ["Screen shadows", "Spatial Geometry", "Spatial Geometry Clear"];
+const SCREEN_SHADOW_TASKS = ["Screen shadows", "Spatial Geometry"];
 
 it("idles Screen-Space Shadows and the geometry pass without a shadowed sun, reading none, and marches again once the sun casts, without rebuilding", async () => {
   const { scene, graph, frame, cast } = await screenShadowsHost(true);

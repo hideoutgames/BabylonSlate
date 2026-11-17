@@ -4,7 +4,6 @@ import type { InternalTexture } from "@babylonjs/core/Materials/Textures/interna
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
-import { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { createGeometryDepthSeed } from "./geometry-depth-seed";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
@@ -95,7 +94,6 @@ export class SpatialEffectsGraph {
   /** Set once any spatial stage shader fails to compile. */
   readonly compileFailure = new EffectCompileFailure();
   private readonly graph: FrameGraph;
-  readonly clear: FrameGraphClearTextureTask;
   readonly geometry: LogicalGeometryTask;
   readonly tasks: SpatialTask[] = [];
   readonly output: FrameGraphTextureHandle;
@@ -168,14 +166,6 @@ export class SpatialEffectsGraph {
         });
         return handle;
       };
-      this.clear = new FrameGraphClearTextureTask(
-        "Spatial Geometry Clear",
-        graph,
-      );
-      this.clear.clearColor = false;
-      this.clear.clearDepth = true;
-      this.clear.clearStencil = false;
-      this.clear.depthTexture = target("Spatial Geometry Z", 1, true);
       this.geometry = new LogicalGeometryTask(
         "Spatial Geometry",
         graph,
@@ -185,7 +175,9 @@ export class SpatialEffectsGraph {
       registerSpatialGeometryPass(graph.scene, this.geometry.objectRenderer.renderPassId);
       this.geometry.camera = camera;
       this.geometry.objectList = { meshes: [], particleSystems: [] };
-      this.geometry.depthTexture = this.clear.outputDepthTexture;
+      // The pass clears its depth itself (`clearsDepth`): a clear task would be a render pass of its own.
+      this.geometry.depthTexture = target("Spatial Geometry Z", 1, true);
+      this.geometry.clearsDepth = true;
       this.geometry.size = { width, height };
       this.geometry.sizeIsPercentage = false;
       this.geometry.textureDescriptions = [
@@ -289,7 +281,7 @@ export class SpatialEffectsGraph {
     }
     // Screen-Space Shadows read the depth (and the caster mark) while they march: a shadowed sun and a perspective view.
     if (this.screenShadows?.sync()) geometryRead = true;
-    this.geometry.disabled = this.clear.disabled = !geometryRead;
+    this.geometry.disabled = !geometryRead;
   }
   reconcile(): void {
     this.screenShadows?.reconcile(this.graph);
@@ -316,7 +308,6 @@ export class SpatialEffectsGraph {
     if (seed) this.seedRetirement = retireOwnedEffect(seed.effect, () => seed.dispose());
     if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);
     this.geometry?.dispose();
-    this.clear?.dispose();
     this.disposed = true;
   }
   whenDisposed(): Promise<void> {
