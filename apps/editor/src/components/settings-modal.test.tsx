@@ -917,7 +917,7 @@ describe("SettingsModal project authoring", () => {
   // live state (a missing requirement) stays visible.
   it.each([
     ["general", "settings-infinite-loop-detection", /Stops runaway scripts/, "hint"],
-    ["game", "settings-pixel-perfect", /Frames the 2D editor view 1:1/, "hint"],
+    ["game", "settings-pixel-perfect", /Draws the 2D editor view at device pixels/, "hint"],
     ["game", "settings-nearest-textures", /nearest-neighbour filtering/, "hint"],
     ["game", "settings-nearest-textures", /Needs Pixel-Perfect Mode/, "status"],
     ["audio", "settings-audio-occlusion", /Wall muffling/, "hint"],

@@ -741,8 +741,15 @@ function initializeEngine(
    */
   const fullQuality = options.fullQuality === true && !options.playMode && !presentRtt;
   if (fullQuality) pinFullRenderQuality(scene);
-  const viewLevel = () => fullQuality
-    ? 1 / (canvas.ownerDocument?.defaultView?.devicePixelRatio || 1)
+  /**
+   * A 2D editor view with Pixel-Perfect Mode (`EditorTools.setPixelPerfect`) draws at device pixels too, so the
+   * browser never resamples it, at its own level only: quality and the other views of the Engine are unchanged.
+   */
+  let devicePixels = false;
+  const deviceView = () => fullQuality || devicePixels;
+  const devicePixelRatio = () => canvas.ownerDocument?.defaultView?.devicePixelRatio || 1;
+  const viewLevel = () => deviceView()
+    ? 1 / devicePixelRatio()
     : engine.getHardwareScalingLevel();
   const fullQualityResize = () => {
     if (!viewCanvasHasLayoutBox(canvas)) return;
@@ -1809,7 +1816,6 @@ function initializeEngine(
   if (options.editor && editorSync) {
     ({ editor, debugOverlay, disposeInput, selectedActorIds } = createEditorViewportTools({
       canvas,
-      engine,
       scene,
       options,
       editorSync,
@@ -1822,6 +1828,17 @@ function initializeEngine(
       pointerCanvas,
       syncEditorOutlines,
       onRollback,
+      setDevicePixels: (enabled) => {
+        const next = enabled && registeredView !== null && !options.playMode;
+        if (next !== devicePixels) {
+          devicePixels = next;
+          // A backbuffer floored from fractional device pixels is stretched by under a pixel: never smoothed.
+          if (canvas.style) canvas.style.imageRendering = next ? "pixelated" : "";
+          resize();
+        }
+        const css = cssCanvasPixelSize(canvas);
+        return { height: Math.max(1, Math.floor(css.height / viewLevel())), pixelRatio: 1 / viewLevel() };
+      },
     }));
     editorToolsRef.current = editor;
   }
@@ -1841,7 +1858,7 @@ function initializeEngine(
       rttPresent?.bind();
     } else if (registeredView) {
       // Babylon's own view resize divides by the Engine-wide level.
-      registeredView.customResize = fullQuality ? fullQualityResize : undefined;
+      registeredView.customResize = deviceView() ? fullQualityResize : undefined;
       const size = cssCanvasPixelSize(canvas);
       const scale = viewLevel();
       engine.setSize(Math.max(1, Math.floor(size.width / scale)), Math.max(1, Math.floor(size.height / scale)));
