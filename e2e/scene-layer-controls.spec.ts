@@ -35,6 +35,8 @@ for (const mode of ["Play"] as const) {
         version: versions.currentVersion("Material"), payload: material as unknown as Record<string, unknown> }));
     }
     const layer = createDefaultSceneLayer();
+    // A Custom 3200 x 1800 px canvas keeps the 32 x 18 layer units this test is laid out in.
+    layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", customSizePx: { width: 3200, height: 1800 } };
     layer.actors = [
       createActor("slider", "Slider", { classId: "SceneLayerActor", transform: { position: [0, 3, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] }, components: [{
         id: "slider-control", classId: "2DSliderComponent", properties: { width: 8, height: 1, value: 0.5,

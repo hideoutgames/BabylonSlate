@@ -1430,12 +1430,28 @@ describe("SceneDetailsPanel authoring", () => {
     expect(
       screen.queryByTestId("property-scene-game-instance-class"),
     ).toBeNull();
-    expect(
-      screen.getByTestId("property-row-scene-camera-bounds-width"),
-    ).toBeTruthy();
-    expect(screen.getByText("Layer Width")).toBeTruthy();
-    expect(screen.getByText("Layer Height")).toBeTruthy();
     expect(screen.getByText("Camera Location")).toBeTruthy();
+  });
+
+  it("shows a Scene Layer's canvas defaults and the Custom Size only for Custom", () => {
+    harness.documentKind = "scene-layer";
+    harness.documentId = "scene-layer:assets/Hud.scenelayer.hasset";
+    harness.scene = sceneLayerToEditorScene(createDefaultSceneLayer());
+    const { rerender } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("property-scene-layer-canvas-size").textContent).toContain("Fullscreen");
+    expect(screen.getByTestId("property-scene-layer-canvas-root").textContent).toContain("Center");
+    expect(screen.getByTestId("property-scene-layer-canvas-scaling").textContent).toContain("Fit To Screen");
+    expect(screen.queryByTestId("property-row-scene-layer-canvas-custom-size")).toBeNull();
+
+    const layer = createDefaultSceneLayer();
+    layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", scaling: "truePixelSize" };
+    harness.scene = sceneLayerToEditorScene(layer);
+    rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Custom Size W" }), { target: { value: "640" } });
+    const edited = harness.applySceneChange.mock.calls.at(-1)![1];
+    expect(persistableDocumentContent("scene-layer", edited)).toMatchObject({
+      settings: { canvas: { sizeMode: "custom", scaling: "truePixelSize", customSizePx: { width: 640, height: 300 }, rootAnchor: "center" } },
+    });
   });
 
   it("toggles Scene Layer Enable Physics into the saved SceneLayer document", () => {

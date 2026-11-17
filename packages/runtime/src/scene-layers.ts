@@ -96,10 +96,10 @@ export class SceneLayers implements RuntimeSubsystem {
   private readonly independentWork = new Map<string, IndependentLayerWork>();
   private readonly readinessWaiters = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>();
   private readonly admission: OwnerAdmission;
-  private readonly overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget">;
+  private readonly overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget" | "canvasRect">;
   private readonly host: SceneLayersHost;
 
-  constructor(admission: OwnerAdmission, overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget">, host: SceneLayersHost) {
+  constructor(admission: OwnerAdmission, overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget" | "canvasRect">, host: SceneLayersHost) {
     this.admission = admission;
     this.overlay = overlay;
     this.host = host;
@@ -425,7 +425,7 @@ export class SceneLayers implements RuntimeSubsystem {
       postProcessStack: document.settings.postProcessStack.map((entry) => ({
         ...entry,
       })),
-      layerBounds: document.settings.layerBounds,
+      canvas: document.settings.canvas,
       cameraLocation: document.settings.cameraLocation,
       tickOnPause: document.settings.tickOnPause,
     });
@@ -448,7 +448,13 @@ export class SceneLayers implements RuntimeSubsystem {
         zOrder: layer.zOrder,
         ownerSceneGuid: layer.ownerSceneGuid,
         postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
-        layerBounds: { ...layer.layerBounds },
+        canvas: (() => {
+          const rect = this.overlay.canvasRect(layer);
+          return {
+            design: { ...layer.canvas, customSizePx: { ...layer.canvas.customSizePx } },
+            rect: { width: rect.width, height: rect.height, center: [rect.center[0], rect.center[1]] as [number, number] },
+          };
+        })(),
         camera: { ...layer.camera.state },
       });
       checkpoint();

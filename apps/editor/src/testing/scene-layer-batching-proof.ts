@@ -93,7 +93,12 @@ export async function runSceneLayerBatchingProof(images: "filtered" | "nearest" 
   engine.setSize(WIDTH, HEIGHT);
   const compositor = new SceneLayerCompositor({ engine });
   try {
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    // A 32 × 18 unit Custom canvas fitted to the output, as the proof's layout expects.
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+      canvas: {
+        design: { sizeMode: "custom", customSizePx: { width: 3200, height: 1800 }, rootAnchor: "center", scaling: "fitToScreen" },
+        rect: { width: 32, height: 18, center: [0, 0] },
+      } });
     const textures = new Map<string, RawTexture>();
     // An authored Scene Layer Material for every second tinted background: its draws batch too.
     const document = createDefaultMaterialDocument();

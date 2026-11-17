@@ -31,6 +31,7 @@ import { noteRenderChange } from "./render-change-journal";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { ownedUnlitMaterial, setUnlitMaterial, type UnlitBinding } from "./unlit-material";
 import { unlitBinding, updateUnlitBinding } from "./unlit-material-blocks";
+import { layerCanvas } from "./scene-layer-canvas-fixtures";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -51,7 +52,7 @@ function host(options: { webgl2?: boolean } = {}) {
   engine.drawElementsType = function (this: NullEngine) { this._reportDrawCall(); };
   engine.drawArraysType = function (this: NullEngine) { this._reportDrawCall(); };
   const compositor = new SceneLayerCompositor({ engine });
-  const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+  const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
   return { engine, compositor, layer, scene: layer.scene };
 }
 
@@ -294,7 +295,7 @@ describe("Scene Layer draw batching", () => {
     engines.push(engine);
     vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
     const compositor = new SceneLayerCompositor({ engine });
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
     expect(layer.scene.floatingOriginMode).toBe(true);
     const first = quad(layer.scene, "first", 2.25, -1.5);
     const second = quad(layer.scene, "second", 5.5, 1.25, { size: 2 });
@@ -433,7 +434,7 @@ describe("Scene Layer draw batching", () => {
     });
     expect(draws).toBe(7);
     // Every layer drawn meanwhile counts: a second one with two visuals that share a draw.
-    const second = compositor.create({ type: "sceneLayerCreate", layerId: "second", assetGuid: "second", zOrder: 1, ownerSceneGuid: null, postProcessStack: [] });
+    const second = compositor.create({ type: "sceneLayerCreate", layerId: "second", assetGuid: "second", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
     quad(second.scene, "a", -2, 0);
     quad(second.scene, "b", 2, 0);
     await compositor.prepare("second", () => {});
@@ -1164,7 +1165,7 @@ describe("Scene Layer draw batching", () => {
       engines.push(engine);
       vi.spyOn(engine, "getCreationOptions").mockReturnValue({ useLargeWorldRendering: true });
       const compositor = new SceneLayerCompositor({ engine });
-      const { scene } = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+      const { scene } = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
       [-3, 0, 3].forEach((x, index) => quad(scene, `q${index}`, x, 0));
       await compositor.prepare("hud", () => {});
       const frame = () => engineFrame(engine, () => compositor.render());

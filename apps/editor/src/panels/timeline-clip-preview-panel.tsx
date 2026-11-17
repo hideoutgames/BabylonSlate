@@ -2,7 +2,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AssetLoadError } from "@haptic/assets";
-import { applyTimelineClipToScene, type SerializedScene } from "@haptic/core";
+import { applyTimelineClipToScene, sceneLayerCameraFrame, sceneLayerDesignResolution, type SerializedScene } from "@haptic/core";
 import { applyViewportJoystickSteer, createEngine, EDITOR_CANVAS_COLOR_SCHEME, syncEditorPlayState, type EngineHandle } from "@haptic/render";
 import { isTestModeEnabled } from "@haptic/vfs";
 import { ViewportJoystick } from "../components/viewport-joystick";
@@ -336,15 +336,24 @@ function ClipPreview(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
   }, [pivotAroundCenter, engineEpoch]);
 
+  // A Scene Layer's canvas (a Desired one, measured only in its Design view, shows none here).
+  const frame = base?.overlayEditor
+    ? sceneLayerCameraFrame(base, { context: {
+      resolution: sceneLayerDesignResolution(projectDocument?.settings.render),
+      pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+    } })
+    : base?.settings.cameraBounds2D ?? { width: 16, height: 9 };
+  const frameKey = JSON.stringify(frame);
   useEffect(() => {
+    const bounds = JSON.parse(frameKey) as typeof frame;
     engineRef.current?.editor?.setGridSettings({
       tileSize: gridSize,
       tileSubdivisions: 4,
-      cameraBounds2D: base?.settings.cameraBounds2D ?? { width: 16, height: 9 },
+      cameraBounds2D: bounds,
       showGrid: gridVisible,
     });
-    if (!twoD) engineRef.current?.editor?.grid.setCameraBounds(null);
-  }, [base?.settings.cameraBounds2D, gridSize, gridVisible, twoD, engineEpoch]);
+    if (!twoD || !bounds) engineRef.current?.editor?.grid.setCameraBounds(null);
+  }, [frameKey, gridSize, gridVisible, twoD, engineEpoch]);
 
   return (
     <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background" data-testid="timeline-clip-preview-panel">

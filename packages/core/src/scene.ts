@@ -8,6 +8,14 @@ import { normalizeRenderEffectsOverrides, type RenderEffectsOverrides } from "./
 import { parseSplineProperties, SPLINE_COMPONENT_CLASS_ID } from "./spline-component";
 import { normalizeSceneStreamingProperties } from "./scene-streaming";
 import type { SerializedGraph } from "./project";
+import {
+  SCENE_LAYER_FALLBACK_RESOLUTION,
+  normalizeSceneLayerCanvasDesign,
+  sceneLayerCanvasRect,
+  type SceneLayerCanvasContext,
+  type SceneLayerCanvasDesign,
+  type SceneLayerContentBounds,
+} from "./scene-layer-canvas";
 import { normalizeTimelineClips, type SerializedTimelineClip } from "./timeline-clips";
 
 
@@ -187,7 +195,7 @@ export interface SceneSettings {
    */
   physicsWorld: PhysicsWorldKind;
   grid: SceneGridSettings;
-  /** The Layer Camera's view at zoom 1 (Scene Layers: Layer Width and Height, the design canvas). */
+  /** The Layer Camera's view at zoom 1 (world Scenes; a Scene Layer's canvas is `layerCanvas`). */
   cameraBounds2D: SceneCameraBounds2D;
   /** Where the Layer Camera starts: the XY centre of its view and of the orange outline. */
   cameraLocation2D: [number, number];
@@ -212,6 +220,8 @@ export interface SceneSettings {
   layerPhysicsEnabled?: boolean;
   /** SceneLayer tabs only: the hosted layer's `tickOnPause`. World Scenes omit it. */
   layerTickOnPause?: boolean;
+  /** SceneLayer tabs only: the hosted layer's `canvas`. World Scenes omit it. */
+  layerCanvas?: SceneLayerCanvasDesign;
 }
 
 /** One entry of the scene's ordered post-process chain. */
@@ -630,16 +640,29 @@ export function sceneDefaultCameraActor(scene: Pick<SerializedScene, "actors" | 
 }
 
 /**
- * The orange outline the 2D viewport draws: the Layer Camera's view at zoom 1
- * (Layer Camera Width × Height) centred on its Layer Camera Location. A world
- * Scene that starts on a Default Camera actor draws none, because Play does
- * not start on its Layer Camera; a Scene Layer always draws its canvas.
+ * The orange outline the 2D viewport draws: what the Layer Camera frames at
+ * zoom 1 when it starts. A world Scene's is its Layer Camera Width × Height
+ * centred on its Layer Camera Location, and none while it starts on a Default
+ * Camera actor, because Play does not start on its Layer Camera. A Scene
+ * Layer's is its canvas (`sceneLayerCanvasRect`: the project's design
+ * resolution and Pixels Per Unit in `layer.context`, the drawn content's
+ * bounds for Desired, none without content) moved by its Camera Location.
  */
 export function sceneLayerCameraFrame(
   scene: Pick<SerializedScene, "actors" | "settings" | "overlayEditor">,
+  layer?: { context?: SceneLayerCanvasContext; contentBounds?: SceneLayerContentBounds | null },
 ): { width: number; height: number; center: [number, number] } | null {
-  if (!scene.overlayEditor && sceneDefaultCameraActor(scene)) return null;
-  return { ...scene.settings.cameraBounds2D, center: [...scene.settings.cameraLocation2D] };
+  const [x, y] = scene.settings.cameraLocation2D;
+  if (scene.overlayEditor) {
+    const canvas = sceneLayerCanvasRect(
+      normalizeSceneLayerCanvasDesign(scene.settings.layerCanvas),
+      layer?.context ?? { resolution: { ...SCENE_LAYER_FALLBACK_RESOLUTION }, pixelsPerUnit: 100 },
+      layer?.contentBounds ?? null,
+    );
+    return canvas ? { width: canvas.width, height: canvas.height, center: [canvas.center[0] + x, canvas.center[1] + y] } : null;
+  }
+  if (sceneDefaultCameraActor(scene)) return null;
+  return { ...scene.settings.cameraBounds2D, center: [x, y] };
 }
 
 /** The Camera component an actor is looked through: its first one. */
@@ -748,6 +771,7 @@ export function normalizeSceneSettings(
     ...(source.foliageGroups !== undefined ? { foliageGroups: normalizeFoliageGroups(source.foliageGroups) } : {}),
     ...(source.layerPhysicsEnabled !== undefined ? { layerPhysicsEnabled: source.layerPhysicsEnabled === true } : {}),
     ...(source.layerTickOnPause !== undefined ? { layerTickOnPause: source.layerTickOnPause === true } : {}),
+    ...(source.layerCanvas !== undefined ? { layerCanvas: normalizeSceneLayerCanvasDesign(source.layerCanvas) } : {}),
   };
 }
 

@@ -5,6 +5,7 @@ import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { createUIControl2DMesh, uiControl2DMesh } from "./ui-controls2d-mesh";
 import { UIControls2DInput, type SceneLayerControlEvent } from "./ui-controls2d-input";
 import { text2DMeshLayout } from "./text2d-mesh";
+import { layerCanvas } from "./scene-layer-canvas-fixtures";
 
 const dispose: Array<() => void> = [];
 beforeEach(() => { vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null); });
@@ -14,7 +15,7 @@ function editing(classId = "2DTextInputComponent", navigate?: (reverse: boolean)
   const engine = new NullEngine({ renderWidth: 800, renderHeight: 450, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 4 });
   dispose.push(() => engine.dispose());
   const compositor = new SceneLayerCompositor({ engine });
-  const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [] });
+  const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
   const mesh = createUIControl2DMesh(layer.scene, "control", { classId, properties: { text: "ABCD", value: 12, max: 100, width: 4, height: 1 } }, undefined, "field");
   mesh.metadata = { ...mesh.metadata, overlayActorGuid: "actor" };
   const canvas = document.createElement("canvas"); canvas.tabIndex = 0; document.body.append(canvas);

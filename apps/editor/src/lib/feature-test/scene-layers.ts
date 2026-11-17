@@ -35,6 +35,8 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   hud: "FT_HUD",
   /** Small physics-enabled layer (own 2D world), spawned over the main scene at z-order 5. */
   overlayPhysics: "FT_OverlayPhysics",
+  /** A Desired canvas at True Pixel Size, its top right in the screen's, spawned over the main scene at z-order 15. */
+  badge: "FT_Badge",
   listItem: "FT_UIListItem",
   gridItem: "FT_UIGridItem",
   cardA: "FT_UICardA",
@@ -57,8 +59,10 @@ const FEATURE_TEST_SCENE_LAYER_KNOBS = {
   overlayPhysicsBoxes: 8,
   /** Seconds between Card Switcher swaps. */
   switchIntervalSeconds: 2.5,
-  painterPixelsPerUnit: 64,
+  /** The Painter canvas's pixel density: 1.92 × 1.2 units at 107 keep its 205 × 128 pixels. */
+  painterPixelsPerUnit: 107,
   hudZOrder: 10,
+  badgeZOrder: 15,
   overlayPhysicsZOrder: 5,
   /** Seconds each FT_UICameraRig tween takes. */
   cameraTweenSeconds: 1.5,
@@ -69,8 +73,10 @@ const KNOBS = FEATURE_TEST_SCENE_LAYER_KNOBS;
 const FOLDER = FEATURE_TEST_SCENE_LAYERS_FOLDER;
 
 /**
- * Layer units: the default 32 × 18 canvas (x −16..16, y −9..9). 2D Text sizes
- * and wrap boxes are pixels at the project's default 100 pixels per unit.
+ * Layer units: FT_HUD is laid out for the default Fullscreen canvas, the project's
+ * 1920 × 1080 Custom Resolution at 100 Pixels Per Unit: 19.2 × 10.8 units
+ * (x −9.6..9.6, y −5.4..5.4). 2D Text sizes and wrap boxes are pixels at 100
+ * pixels per unit.
  * Backgrounds sit at +Z (behind) and labels at −Z (in front): the overlay
  * camera looks down +Z from z = −10.
  */
@@ -78,10 +84,10 @@ const BACK_Z = 0.4;
 const ITEM_BACK_Z = 0.05;
 const FRONT_Z = -0.05;
 
-const LIST = { width: 4.1, height: 1.7, itemHeight: 0.34, gap: 0.06, overscan: 2 } as const;
-const GRID = { width: 4.1, height: 1.6, item: 0.6, gap: 0.08, overscan: 1 } as const;
-const CARD = { width: 2.8, height: 0.85 } as const;
-const BUTTON = { width: 2.6, height: 0.7 } as const;
+const LIST = { width: 2.46, height: 1.02, itemHeight: 0.204, gap: 0.036, overscan: 2 } as const;
+const GRID = { width: 2.46, height: 0.96, item: 0.36, gap: 0.048, overscan: 1 } as const;
+const CARD = { width: 1.68, height: 0.51 } as const;
+const BUTTON = { width: 1.56, height: 0.42 } as const;
 
 /** Guids and Classes the layers are written from. */
 interface LayerRefs {
@@ -103,7 +109,7 @@ interface PlacedClass {
   components: SerializedComponent[];
 }
 
-const layerGuidsByContext = new WeakMap<FeatureTestContext, { hud: string; overlayPhysics: string }>();
+const layerGuidsByContext = new WeakMap<FeatureTestContext, { hud: string; overlayPhysics: string; badge: string }>();
 
 /**
  * SceneLayerActor Classes (list and grid items, two switchable cards, a click
@@ -164,7 +170,14 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     content: overlayPhysicsLayer(refs),
     order: SCENE_SAVE_ORDER.sceneLayer,
   });
-  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid });
+  const badge = await ctx.addSceneDocument({
+    kind: "scene-layer",
+    folder: FOLDER,
+    name: NAMES.badge,
+    content: badgeLayer(refs),
+    order: SCENE_SAVE_ORDER.sceneLayer,
+  });
+  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid, badge: badge.guid });
 
   await bindJoystickToMove(ctx);
   const confirm = ctx.registry
@@ -185,6 +198,7 @@ export async function placeFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
   const entries: SceneLayerSpawnEntry[] = [
     { assetGuid: guids.overlayPhysics, zOrder: KNOBS.overlayPhysicsZOrder, enabled: true },
     { assetGuid: guids.hud, zOrder: KNOBS.hudZOrder, enabled: true },
+    { assetGuid: guids.badge, zOrder: KNOBS.badgeZOrder, enabled: true },
   ];
   const settings = ctx.mainScene.settings;
   settings.sceneLayers = [
@@ -206,7 +220,6 @@ type Rgba = [number, number, number, number];
  */
 function hudLayer(refs: LayerRefs): SerializedSceneLayer {
   const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.hud };
-  layer.settings.layerBounds = { width: 32, height: 18 };
   // The HUD and its Scene Layer Script stay live while `ft_system pause` pauses the game.
   layer.settings.tickOnPause = true;
   layer.folders = [
@@ -282,65 +295,65 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
       ...margins(0.08),
       tint: [0.4, 0.3, 0.8, 0.55],
     }),
-  ], { position: [0, 7.95, BACK_Z], scale: [16, 1.7], folderId }));
+  ], { position: [0, 4.77, BACK_Z], scale: [9.6, 1.02], folderId }));
   add(layerActor("ft-ui-title", "Title", [
-    ui("ft-ui-title-text", "2DTextComponent", text(refs, "Haptic Feature Test", 44, [900, 60], {
+    ui("ft-ui-title-text", "2DTextComponent", text(refs, "Haptic Feature Test", 26.4, [540, 36], {
       bold: true,
       alignment: "center",
-      outline: 2,
+      outline: 1.2,
       outlineColor: [0.12, 0.05, 0],
       materialGuid: refs.textMaterial,
       materialUv: "text",
     })),
-    ui("ft-ui-title-anchor", "2DAnchorComponent", { anchor: "topCenter", offsetX: 0, offsetY: -0.1 }),
-  ], { position: [0, 8.35], folderId }));
+    ui("ft-ui-title-anchor", "2DAnchorComponent", { anchor: "topCenter", offsetX: 0, offsetY: -0.06 }),
+  ], { position: [0, 5.01], folderId }));
   add(layerActor("ft-ui-rich-text", "Rich Text", [
     ui("ft-ui-rich-text-markup", "2DRichTextComponent", {
-      ...text(refs, richTextMarkup(refs.icons.camera), 30, [1500, 44], { alignment: "center" }),
+      ...text(refs, richTextMarkup(refs.icons.camera), 18, [900, 26.4], { alignment: "center" }),
       appearModes: ["fade", "slide"],
       appearTransition: "cubicOut",
       appearInterval: 0.03,
       appearDuration: 0.25,
       appearStart: "play",
     }),
-  ], { position: [0, 7.55], folderId }));
+  ], { position: [0, 4.53], folderId }));
   // Root Safe Area over the whole canvas: its label lands top-left inside the insets.
   add(layerActor("ft-ui-safe-area", "Safe Area", [
     ui("ft-ui-safe-area-box", "2DSafeAreaComponent", {
-      width: 32,
-      height: 18,
+      width: 19.2,
+      height: 10.8,
       horizontalAlignment: "start",
       verticalAlignment: "start",
-      insetLeft: 0.3,
-      insetRight: 0.3,
-      insetTop: 0.25,
-      insetBottom: 0.25,
+      insetLeft: 0.18,
+      insetRight: 0.18,
+      insetTop: 0.15,
+      insetBottom: 0.15,
     }),
   ], { folderId }));
-  // A pixel Font draws at whole multiples of its Pixel Size: Scale 2 is 24 px, and the size tag rounds to Scale 4.
+  // A pixel Font draws at whole multiples of its Pixel Size: Scale 1 is 12 px (the nearest to the 14.4 px that 0.6 of the old 24 px asks for), and the size tag rounds to Scale 2 (24 px, 28.8 px wanted).
   add(layerActor("ft-ui-pixel-text", "Pixel Text", [
     ui("ft-ui-pixel-text-markup", "2DRichTextComponent", {
-      text: "[color=7fd3ff]Pixel Font[/color] Ark 像素 ピクセル [size=48]4x[/size]",
+      text: "[color=7fd3ff]Pixel Font[/color] Ark 像素 ピクセル [size=24]2x[/size]",
       fontAssetGuid: refs.pixelFont,
-      pixelScale: 2,
-      outline: 2,
+      pixelScale: 1,
+      outline: 1.2,
       outlineColor: [0.05, 0.08, 0.2],
-      wrapWidth: 640,
-      wrapHeight: 80,
+      wrapWidth: 384,
+      wrapHeight: 48,
       alignment: "left",
     }),
-  ], { position: [-12.2, 6.3], folderId }));
+  ], { position: [-7.32, 3.78], folderId }));
   // No Font of its own: the label draws with the project Default Font (Onest).
   add(layerActor("ft-ui-safe-area-label", "Safe Area Label", [
-    ui("ft-ui-safe-area-label-text", "2DTextComponent", text(refs, "Safe Area", 24, [220, 32], { color: [0.7, 0.9, 1], fontAssetGuid: null })),
+    ui("ft-ui-safe-area-label-text", "2DTextComponent", text(refs, "Safe Area", 14.4, [132, 19.2], { color: [0.7, 0.9, 1], fontAssetGuid: null })),
   ], { parentId: "ft-ui-safe-area" }));
 }
 
 function richTextMarkup(imageGuid: string): string {
   return [
-    "[b]Rich[/b] [i]Text[/i] [color=orange]color[/color] [size=36]size[/size]",
-    "[outline=3][outline-color=1a0a3a]outline[/outline-color][/outline] [u]under[/u]",
-    `[img=${imageGuid} size=28] [wave=3 intensity=1.2]wave[/wave] [shake=1]shake[/shake]`,
+    "[b]Rich[/b] [i]Text[/i] [color=orange]color[/color] [size=21.6]size[/size]",
+    "[outline=1.8][outline-color=1a0a3a]outline[/outline-color][/outline] [u]under[/u]",
+    `[img=${imageGuid} size=16.8] [wave=3 intensity=1.2]wave[/wave] [shake=1]shake[/shake]`,
     "[hover=1]hover[/hover] [rotate=10]tilt[/rotate]",
   ].join(" ");
 }
@@ -351,27 +364,27 @@ function addForms(refs: LayerRefs, add: AddActor): void {
   const column = "ft-ui-forms";
   add(layerActor("ft-ui-forms-background", "Forms Background", [
     texturePanel("ft-ui-forms-background-panel", refs.panelTexture),
-  ], { position: [-13.45, 2.55, BACK_Z], scale: [4.7, 5.4], folderId }));
+  ], { position: [-8.07, 1.53, BACK_Z], scale: [2.82, 3.24], folderId }));
   add(layerActor(column, "Form Column", [
     ui(`${column}-box`, "2DVerticalBoxComponent", {
-      width: 4.5,
-      height: 5.3,
-      gap: 0.17,
-      paddingTop: 0.2,
-      paddingLeft: 0.2,
-      paddingRight: 0.2,
+      width: 2.7,
+      height: 3.18,
+      gap: 0.102,
+      paddingTop: 0.12,
+      paddingLeft: 0.12,
+      paddingRight: 0.12,
       horizontalAlignment: "start",
       verticalAlignment: "start",
     }),
-  ], { position: [-13.45, 2.55], folderId }));
+  ], { position: [-8.07, 1.53], folderId }));
   const control = (id: string, name: string, classId: string, properties: Record<string, unknown>, parentId = column) =>
-    add(layerActor(id, name, [ui(`${id}-control`, classId, { height: 0.5, fontSize: 0.28, ...properties })], { parentId }));
+    add(layerActor(id, name, [ui(`${id}-control`, classId, { height: 0.3, fontSize: 0.168, ...properties })], { parentId }));
 
   add(layerActor("ft-ui-forms-header", "Forms Header", [
     ui("ft-ui-forms-header-text", "2DTextComponent", header(refs, "Form Controls")),
   ], { parentId: column }));
   control("ft-ui-slider", "Slider", "2DSliderComponent", {
-    width: 4.1,
+    width: 2.46,
     min: 0,
     max: 100,
     step: 5,
@@ -379,7 +392,7 @@ function addForms(refs: LayerRefs, add: AddActor): void {
     thumbTextureGuid: refs.icons.point_light,
   });
   control("ft-ui-range-slider", "Range Slider", "2DRangeSliderComponent", {
-    width: 4.1,
+    width: 2.46,
     min: 0,
     max: 10,
     step: 1,
@@ -388,34 +401,34 @@ function addForms(refs: LayerRefs, add: AddActor): void {
   });
   const toggles = "ft-ui-toggle-row";
   add(layerActor(toggles, "Toggle Row", [
-    ui(`${toggles}-box`, "2DHorizontalBoxComponent", { width: 4.1, height: 0.5, gap: 0.35, verticalAlignment: "center" }),
+    ui(`${toggles}-box`, "2DHorizontalBoxComponent", { width: 2.46, height: 0.3, gap: 0.21, verticalAlignment: "center" }),
   ], { parentId: column }));
-  control("ft-ui-checkbox", "Checkbox", "2DCheckboxComponent", { width: 0.5, checked: true }, toggles);
-  control("ft-ui-radio-low", "Radio Low", "2DRadioButtonComponent", { width: 0.5, group: "quality", checked: true }, toggles);
-  control("ft-ui-radio-high", "Radio High", "2DRadioButtonComponent", { width: 0.5, group: "quality" }, toggles);
-  control("ft-ui-toggle", "Toggle", "2DToggleComponent", { width: 1, checked: true }, toggles);
+  control("ft-ui-checkbox", "Checkbox", "2DCheckboxComponent", { width: 0.3, checked: true }, toggles);
+  control("ft-ui-radio-low", "Radio Low", "2DRadioButtonComponent", { width: 0.3, group: "quality", checked: true }, toggles);
+  control("ft-ui-radio-high", "Radio High", "2DRadioButtonComponent", { width: 0.3, group: "quality" }, toggles);
+  control("ft-ui-toggle", "Toggle", "2DToggleComponent", { width: 0.6, checked: true }, toggles);
   control("ft-ui-text-input", "Text Input", "2DTextInputComponent", {
-    width: 4.1,
+    width: 2.46,
     text: "FeatureTest",
     placeholder: "Type here",
     maxLength: 24,
   });
   control("ft-ui-numeric-input", "Numeric Input", "2DNumericInputComponent", {
-    width: 4.1,
+    width: 2.46,
     min: 0,
     max: 100,
     step: 1,
     value: 42,
   });
   control("ft-ui-dropdown", "Dropdown", "2DDropdownComponent", {
-    width: 4.1,
+    width: 2.46,
     options: ["Low", "Medium", "High", "Epic"],
     selectedIndex: 2,
   });
   // The fill part uses the scrolling overlay Material instead of the native mesh.
   control("ft-ui-progress-bar", "Progress Bar", "2DProgressBarComponent", {
-    width: 4.1,
-    height: 0.35,
+    width: 2.46,
+    height: 0.21,
     min: 0,
     max: 1,
     value: 0.65,
@@ -429,41 +442,41 @@ function addContainers(refs: LayerRefs, add: AddActor): void {
   const column = "ft-ui-containers";
   add(layerActor("ft-ui-containers-background", "Containers Background", [
     texturePanel("ft-ui-containers-background-panel", refs.panelTexture),
-  ], { position: [13.45, 2.2, BACK_Z], scale: [4.7, 6.5], folderId }));
+  ], { position: [8.07, 1.32, BACK_Z], scale: [2.82, 3.9], folderId }));
   add(layerActor(column, "Container Column", [
     ui(`${column}-box`, "2DVerticalBoxComponent", {
-      width: 4.5,
-      height: 6.4,
-      gap: 0.17,
-      paddingTop: 0.2,
-      paddingLeft: 0.2,
-      paddingRight: 0.2,
+      width: 2.7,
+      height: 3.84,
+      gap: 0.102,
+      paddingTop: 0.12,
+      paddingLeft: 0.12,
+      paddingRight: 0.12,
       horizontalAlignment: "start",
       verticalAlignment: "start",
     }),
-  ], { position: [13.45, 2.2], folderId }));
+  ], { position: [8.07, 1.32], folderId }));
   add(layerActor("ft-ui-containers-header", "Containers Header", [
     ui("ft-ui-containers-header-text", "2DTextComponent", header(refs, "Containers")),
   ], { parentId: column }));
 
   // Scroll Box → Vertical Box (content height) → text rows taller than the viewport.
   add(layerActor("ft-ui-scroll-box", "Scroll Box", [
-    ui("ft-ui-scroll-box-viewport", "2DScrollBoxComponent", { width: 4.1, height: 1.9, scrollAxis: "vertical" }),
-    containerBackground("ft-ui-scroll-box-background", refs, 4.1, 1.9),
+    ui("ft-ui-scroll-box-viewport", "2DScrollBoxComponent", { width: 2.46, height: 1.14, scrollAxis: "vertical" }),
+    containerBackground("ft-ui-scroll-box-background", refs, 2.46, 1.14),
   ], { parentId: column }));
   add(layerActor("ft-ui-scroll-content", "Scroll Content", [
     ui("ft-ui-scroll-content-box", "2DVerticalBoxComponent", {
-      width: 4.1,
+      width: 2.46,
       heightMode: "content",
-      gap: 0.06,
-      paddingLeft: 0.1,
+      gap: 0.036,
+      paddingLeft: 0.06,
       horizontalAlignment: "start",
     }),
   ], { parentId: "ft-ui-scroll-box" }));
   for (let row = 1; row <= KNOBS.scrollRows; row += 1) {
     const label = String(row).padStart(2, "0");
     add(layerActor(`ft-ui-scroll-row-${label}`, `Scroll Row ${label}`, [
-      ui(`ft-ui-scroll-row-${label}-text`, "2DTextComponent", text(refs, `Scroll Row ${label}`, 24, [390, 32], {
+      ui(`ft-ui-scroll-row-${label}-text`, "2DTextComponent", text(refs, `Scroll Row ${label}`, 14.4, [234, 19.2], {
         color: row % 2 === 0 ? [0.75, 0.85, 1] : [1, 1, 1],
       })),
     ], { parentId: "ft-ui-scroll-content" }));
@@ -505,14 +518,14 @@ function addContainers(refs: LayerRefs, add: AddActor): void {
 function addWidgetRow(refs: LayerRefs, add: AddActor): void {
   const row = "ft-ui-widget-row";
   add(layerActor(row, "Widget Row", [
-    ui(`${row}-box`, "2DHorizontalBoxComponent", { width: 23, height: 1, gap: 0.35, verticalAlignment: "center" }),
-    ui(`${row}-padding`, "2DPaddingComponent", { paddingLeft: 0.3, paddingRight: 0.3 }, undefined, `${row}-box`),
-  ], { position: [0, -6.55], folderId: "ft-ui-folder-widgets" }));
+    ui(`${row}-box`, "2DHorizontalBoxComponent", { width: 13.8, height: 0.6, gap: 0.21, verticalAlignment: "center" }),
+    ui(`${row}-padding`, "2DPaddingComponent", { paddingLeft: 0.18, paddingRight: 0.18 }, undefined, `${row}-box`),
+  ], { position: [0, -3.93], folderId: "ft-ui-folder-widgets" }));
   add(layerActor("ft-ui-texture", "Texture Icon", [
-    ui("ft-ui-texture-image", "2DTextureComponent", { textureGuid: refs.icons.camera }),
+    ui("ft-ui-texture-image", "2DTextureComponent", { textureGuid: refs.icons.camera }, at(0, 0, 0, 0.6)),
   ], { parentId: row }));
   add(layerActor("ft-ui-material", "Material Swatch", [
-    ui("ft-ui-material-quad", "2DMaterialComponent", { materialGuid: refs.overlayMaterial }, at(0, 0, 0, 0.9)),
+    ui("ft-ui-material-quad", "2DMaterialComponent", { materialGuid: refs.overlayMaterial }, at(0, 0, 0, 0.54)),
   ], { parentId: row }));
   add(classInstance(refs.classes.clickButton, "ft-ui-click-button", "Click Button", { parentId: row }));
   add(layerActor("ft-ui-widget-spacer", "Widget Spacer", [
@@ -522,10 +535,10 @@ function addWidgetRow(refs: LayerRefs, add: AddActor): void {
   const overlay = "ft-ui-overlay-box-layout";
   add(layerActor("ft-ui-overlay-box", "Overlay Box", [
     ui(overlay, "2DOverlayBoxComponent", {
-      width: 3,
-      height: 0.8,
-      paddingLeft: 0.1,
-      paddingRight: 0.1,
+      width: 1.8,
+      height: 0.48,
+      paddingLeft: 0.06,
+      paddingRight: 0.06,
       horizontalAlignment: "center",
       verticalAlignment: "center",
     }),
@@ -535,7 +548,7 @@ function addWidgetRow(refs: LayerRefs, add: AddActor): void {
       widthMode: "fill",
       heightMode: "fill",
     }, at(0, 0, ITEM_BACK_Z), overlay),
-    ui("ft-ui-overlay-box-label", "2DTextComponent", text(refs, "Overlay Box", 24, [280, 30], { alignment: "center" }),
+    ui("ft-ui-overlay-box-label", "2DTextComponent", text(refs, "Overlay Box", 14.4, [168, 18], { alignment: "center" }),
       at(0, 0, FRONT_Z), overlay),
   ], { parentId: row }));
 
@@ -543,19 +556,19 @@ function addWidgetRow(refs: LayerRefs, add: AddActor): void {
   const maskPanel = "ft-ui-mask-panel-clip";
   add(layerActor("ft-ui-mask-panel", "Mask Panel", [
     ui(maskPanel, "2DMaskPanelComponent", {
-      width: 1.8,
-      height: 0.8,
+      width: 1.08,
+      height: 0.48,
       horizontalAlignment: "center",
       verticalAlignment: "center",
     }),
-    ui("ft-ui-mask-panel-image", "2DTextureComponent", { textureGuid: refs.icons.spot_light }, at(0, 0, 0, 3), maskPanel),
+    ui("ft-ui-mask-panel-image", "2DTextureComponent", { textureGuid: refs.icons.spot_light }, at(0, 0, 0, 1.8), maskPanel),
   ], { parentId: row }));
   add(layerActor("ft-ui-mask", "Mask", [
-    ui("ft-ui-mask-clip", "2DMaskComponent", { width: 0.8, height: 0.8 }),
-    ui("ft-ui-mask-image", "2DTextureComponent", { textureGuid: refs.icons.particles }, at(0, 0, 0, 2)),
+    ui("ft-ui-mask-clip", "2DMaskComponent", { width: 0.48, height: 0.48 }),
+    ui("ft-ui-mask-image", "2DTextureComponent", { textureGuid: refs.icons.particles }, at(0, 0, 0, 1.2)),
   ], { parentId: row }));
   add(layerActor("ft-ui-focus-target", "Focus Target", [
-    ui("ft-ui-focus-target-image", "2DTextureComponent", { textureGuid: refs.icons.audio }),
+    ui("ft-ui-focus-target-image", "2DTextureComponent", { textureGuid: refs.icons.audio }, at(0, 0, 0, 0.6)),
     ui("ft-ui-focus-target-focus", "2DFocusTargetComponent", {}),
   ], { parentId: row }));
 }
@@ -570,14 +583,14 @@ function addClassRow(refs: LayerRefs, add: AddActor): void {
   const { classes } = refs;
   add(layerActor(row, "Class Row", [
     ui(`${row}-box`, "2DHorizontalBoxComponent", {
-      width: 23,
-      height: 0.95,
-      gap: 0.35,
-      paddingLeft: 0.3,
-      paddingRight: 0.3,
+      width: 13.8,
+      height: 0.57,
+      gap: 0.21,
+      paddingLeft: 0.18,
+      paddingRight: 0.18,
       verticalAlignment: "center",
     }),
-  ], { position: [0, -8.15], folderId: "ft-ui-folder-classes" }));
+  ], { position: [0, -4.89], folderId: "ft-ui-folder-classes" }));
   add(classInstance(classes.switcher, "ft-ui-card-switcher", "Card Switcher", {
     parentId: row,
     properties: {
@@ -589,7 +602,7 @@ function addClassRow(refs: LayerRefs, add: AddActor): void {
     ui("ft-ui-class-spacer-fill", "2DSpacerComponent", { fillWeight: 1 }),
   ], { parentId: row }));
   add(layerActor("ft-ui-samples-label", "Class Samples Label", [
-    ui("ft-ui-samples-label-text", "2DTextComponent", text(refs, "Class Samples", 24, [230, 30], { color: [0.7, 0.9, 1] })),
+    ui("ft-ui-samples-label-text", "2DTextComponent", text(refs, "Class Samples", 14.4, [138, 18], { color: [0.7, 0.9, 1] })),
   ], { parentId: row }));
   add(classInstance(classes.listItem, "ft-ui-sample-list-item", "List Item Sample", {
     parentId: row,
@@ -599,8 +612,8 @@ function addClassRow(refs: LayerRefs, add: AddActor): void {
     parentId: row,
     properties: { itemIndex: 3 },
   }));
-  add(classInstance(classes.cardA, "ft-ui-sample-card-a", "Card A Sample", { parentId: row, scale: [0.6, 0.6] }));
-  add(classInstance(classes.cardB, "ft-ui-sample-card-b", "Card B Sample", { parentId: row, scale: [0.6, 0.6] }));
+  add(classInstance(classes.cardA, "ft-ui-sample-card-a", "Card A Sample", { parentId: row, scale: [0.36, 0.36] }));
+  add(classInstance(classes.cardB, "ft-ui-sample-card-b", "Card B Sample", { parentId: row, scale: [0.36, 0.36] }));
 }
 
 /** Joystick (own bottom-left Anchor) and a persistent Painter (anchored by a child anchor-only helper). */
@@ -608,30 +621,30 @@ function addJoystickAndPainter(add: AddActor): void {
   const folderId = "ft-ui-folder-input";
   add(layerActor("ft-ui-joystick", "Joystick", [
     ui("ft-ui-joystick-stick", "2DJoystickComponent", {
-      radius: 1,
-      joystickRadius: 0.42,
+      radius: 0.6,
+      joystickRadius: 0.252,
       deadZone: 0.12,
       horizontalControl: "joystick-x",
       verticalControl: "joystick-y",
     }),
-    ui("ft-ui-joystick-anchor", "2DAnchorComponent", { anchor: "bottomLeft", offsetX: 0.05, offsetY: 0.05 }),
-  ], { position: [-14.2, -7.35], folderId }));
+    ui("ft-ui-joystick-anchor", "2DAnchorComponent", { anchor: "bottomLeft", offsetX: 0.03, offsetY: 0.03 }),
+  ], { position: [-8.52, -4.41], folderId }));
   add(layerActor("ft-ui-painter", "Painter", [
     ui("ft-ui-painter-canvas", "2DPainterComponent", {
-      width: 3.2,
-      height: 2,
+      width: 1.92,
+      height: 1.2,
       pixelsPerUnit: KNOBS.painterPixelsPerUnit,
       // Authored commands seed the canvas once; clearing every frame would erase them on the first tick.
       clearEachFrame: false,
       commands: painterCommands(),
     }),
-  ], { position: [14, -7.35], folderId }));
+  ], { position: [8.4, -4.41], folderId }));
   add(layerActor("ft-ui-painter-anchor", "Painter Anchor", [
-    ui("ft-ui-painter-anchor-pin", "2DAnchorComponent", { anchor: "bottomRight", offsetX: -0.05, offsetY: 0.05 }),
+    ui("ft-ui-painter-anchor-pin", "2DAnchorComponent", { anchor: "bottomRight", offsetX: -0.03, offsetY: 0.03 }),
   ], { parentId: "ft-ui-painter" }));
 }
 
-/** Painter coordinates are centered layer units (x ±1.6, y ±1, +Y up). */
+/** Painter coordinates are centered layer units (x ±0.96, y ±0.6, +Y up). */
 function painterCommands(): PainterCommand[] {
   const full = Math.PI * 2;
   return [
@@ -640,11 +653,11 @@ function painterCommands(): PainterCommand[] {
       fill: true,
       stroke: true,
       fillRule: "nonzero",
-      style: { fillColor: [0.1, 0.6, 1, 0.85], strokeColor: [1, 1, 1, 1], strokeWidth: 0.05, lineCap: "round", lineJoin: "round" },
+      style: { fillColor: [0.1, 0.6, 1, 0.85], strokeColor: [1, 1, 1, 1], strokeWidth: 0.03, lineCap: "round", lineJoin: "round" },
       path: [
-        { kind: "move", point: [-1.4, -0.6] },
-        { kind: "line", point: [-0.4, 0.85] },
-        { kind: "line", point: [0.6, -0.6] },
+        { kind: "move", point: [-0.84, -0.36] },
+        { kind: "line", point: [-0.24, 0.51] },
+        { kind: "line", point: [0.36, -0.36] },
         { kind: "close" },
       ],
     },
@@ -652,7 +665,7 @@ function painterCommands(): PainterCommand[] {
     {
       kind: "cutout",
       fillRule: "nonzero",
-      path: [{ kind: "ellipse", center: [-0.4, -0.1], radius: [0.15, 0.15], rotation: 0, start: 0, end: full, anticlockwise: false }],
+      path: [{ kind: "ellipse", center: [-0.24, -0.06], radius: [0.09, 0.09], rotation: 0, start: 0, end: full, anticlockwise: false }],
     },
     // Even-odd ring.
     {
@@ -662,10 +675,10 @@ function painterCommands(): PainterCommand[] {
       fillRule: "evenodd",
       style: { fillColor: [1, 0.45, 0.1, 1], strokeColor: [0, 0, 0, 1], strokeWidth: 0, lineCap: "butt", lineJoin: "miter" },
       path: [
-        { kind: "ellipse", center: [0.95, 0.3], radius: [0.5, 0.5], rotation: 0, start: 0, end: full, anticlockwise: false },
+        { kind: "ellipse", center: [0.57, 0.18], radius: [0.3, 0.3], rotation: 0, start: 0, end: full, anticlockwise: false },
         { kind: "close" },
-        { kind: "move", point: [1.23, 0.3] },
-        { kind: "ellipse", center: [0.95, 0.3], radius: [0.28, 0.28], rotation: 0, start: 0, end: full, anticlockwise: false },
+        { kind: "move", point: [0.738, 0.18] },
+        { kind: "ellipse", center: [0.57, 0.18], radius: [0.168, 0.168], rotation: 0, start: 0, end: full, anticlockwise: false },
         { kind: "close" },
       ],
     },
@@ -673,7 +686,7 @@ function painterCommands(): PainterCommand[] {
     {
       kind: "pushMask",
       fillRule: "nonzero",
-      path: [{ kind: "ellipse", center: [-1.1, 0.55], radius: [0.3, 0.3], rotation: 0, start: 0, end: full, anticlockwise: false }],
+      path: [{ kind: "ellipse", center: [-0.66, 0.33], radius: [0.18, 0.18], rotation: 0, start: 0, end: full, anticlockwise: false }],
     },
     {
       kind: "draw",
@@ -682,10 +695,10 @@ function painterCommands(): PainterCommand[] {
       fillRule: "nonzero",
       style: { fillColor: [1, 0.9, 0.2, 1], strokeColor: [0, 0, 0, 1], strokeWidth: 0, lineCap: "butt", lineJoin: "miter" },
       path: [
-        { kind: "move", point: [-1.5, 0.15] },
-        { kind: "line", point: [-0.85, 0.15] },
-        { kind: "line", point: [-0.85, 0.95] },
-        { kind: "line", point: [-1.5, 0.95] },
+        { kind: "move", point: [-0.9, 0.09] },
+        { kind: "line", point: [-0.51, 0.09] },
+        { kind: "line", point: [-0.51, 0.57] },
+        { kind: "line", point: [-0.9, 0.57] },
         { kind: "close" },
       ],
     },
@@ -696,14 +709,36 @@ function painterCommands(): PainterCommand[] {
       fill: false,
       stroke: true,
       fillRule: "nonzero",
-      style: { fillColor: [0, 0, 0, 0], strokeColor: [0.4, 1, 0.6, 1], strokeWidth: 0.06, lineCap: "round", lineJoin: "round" },
+      style: { fillColor: [0, 0, 0, 0], strokeColor: [0.4, 1, 0.6, 1], strokeWidth: 0.036, lineCap: "round", lineJoin: "round" },
       path: [
-        { kind: "move", point: [-1.5, -0.85] },
-        { kind: "bezier", control1: [-1, -0.35], control2: [-0.5, -1.05], point: [0, -0.75] },
-        { kind: "quadratic", control: [0.75, -0.3], point: [1.5, -0.85] },
+        { kind: "move", point: [-0.9, -0.51] },
+        { kind: "bezier", control1: [-0.6, -0.21], control2: [-0.3, -0.63], point: [0, -0.45] },
+        { kind: "quadratic", control: [0.45, -0.18], point: [0.9, -0.51] },
       ],
     },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// FT_Badge
+
+/**
+ * One label on a Desired canvas at True Pixel Size with Root Top Right: the
+ * canvas wraps the label wherever it is authored, and Play shows it at one
+ * pixel per design pixel with its top right in the screen's top right.
+ */
+function badgeLayer(refs: LayerRefs): SerializedSceneLayer {
+  const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.badge };
+  layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "desired", rootAnchor: "topRight", scaling: "truePixelSize" };
+  addLayerActor(layer, layerActor("ft-ui-badge", "Badge", [
+    ui("ft-ui-badge-text", "2DTextComponent", text(refs, "True Pixel Size", 16, [150, 22], {
+      alignment: "right",
+      color: [0.75, 0.95, 1],
+      outline: 1,
+      outlineColor: [0.05, 0.08, 0.2],
+    })),
+  ], { position: [3, 2] }));
+  return layer;
 }
 
 // ---------------------------------------------------------------------------
@@ -718,6 +753,9 @@ function painterCommands(): PainterCommand[] {
 function overlayPhysicsLayer(refs: LayerRefs): SerializedSceneLayer {
   const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.overlayPhysics };
   layer.settings.physicsEnabled = true;
+  // A Custom canvas of 3200 x 1800 px at 100 Pixels Per Unit keeps the 32 x 18 units this layer's physics is laid
+  // out for, fitted to the screen as a Fullscreen canvas is.
+  layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", customSizePx: { width: 3200, height: 1800 } };
   const add = (actor: SerializedActor) => addLayerActor(layer, actor);
   const icons = [refs.icons.default, refs.icons.camera, refs.icons.audio, refs.icons.navmesh];
   const solid = (id: string, name: string, x: number, y: number, width: number, height: number) =>
@@ -901,7 +939,7 @@ async function saveListItem(ctx: FeatureTestContext, refs: ClassBase): Promise<P
       materialGuid: refs.overlayMaterial,
       tint: [0.2, 0.32, 0.5, 0.85],
     }, at(0, 0, ITEM_BACK_Z, LIST.width, LIST.itemHeight)),
-    ui("prefab-label", "2DTextComponent", text(refs, "Row", 22, [380, 28]), at(0, 0, FRONT_Z)),
+    ui("prefab-label", "2DTextComponent", text(refs, "Row", 13.2, [228, 16.8]), at(0, 0, FRONT_Z)),
   ];
   return saveOverlayClass(ctx, NAMES.listItem, "SceneLayerActor", components, itemLabelGraph("Row {index}"));
 }
@@ -909,9 +947,9 @@ async function saveListItem(ctx: FeatureTestContext, refs: ClassBase): Promise<P
 /** Virtualized Grid cell: an icon with its Item Index underneath. */
 async function saveGridItem(ctx: FeatureTestContext, refs: ClassBase): Promise<PlacedClass> {
   const components = [
-    ui("prefab-icon", "2DTextureComponent", { textureGuid: refs.icons.navmesh }, at(0, 0.05, ITEM_BACK_Z, 0.75)),
-    ui("prefab-label", "2DTextComponent", text(refs, "#", 18, [60, 22], { alignment: "center", outline: 1 }),
-      at(0, -0.2, FRONT_Z)),
+    ui("prefab-icon", "2DTextureComponent", { textureGuid: refs.icons.navmesh }, at(0, 0.03, ITEM_BACK_Z, 0.45)),
+    ui("prefab-label", "2DTextComponent", text(refs, "#", 10.8, [36, 13.2], { alignment: "center", outline: 0.6 }),
+      at(0, -0.12, FRONT_Z)),
   ];
   return saveOverlayClass(ctx, NAMES.gridItem, "SceneLayerActor", components, itemLabelGraph("#{index}"));
 }
@@ -927,7 +965,7 @@ async function saveCard(
   const components = [
     ui("prefab-background", "2DMaterialComponent", { materialGuid: refs.overlayMaterial, tint },
       at(0, 0, ITEM_BACK_Z, CARD.width, CARD.height)),
-    ui("prefab-label", "2DTextComponent", text(refs, label, 26, [270, 32], { alignment: "center", bold: true }),
+    ui("prefab-label", "2DTextComponent", text(refs, label, 15.6, [162, 19.2], { alignment: "center", bold: true }),
       at(0, 0, FRONT_Z)),
   ];
   const nodes = [
@@ -969,7 +1007,7 @@ async function saveSwitcher(ctx: FeatureTestContext, refs: ClassBase): Promise<P
     ui("prefab-frame", "2DMaterialComponent", {
       materialGuid: refs.overlayMaterial,
       tint: [0.12, 0.12, 0.18, 0.7],
-    }, at(0, 0, 0.1, CARD.width + 0.15, CARD.height + 0.1)),
+    }, at(0, 0, 0.1, CARD.width + 0.09, CARD.height + 0.06)),
   ];
   const graph = classGraph({
     members: [elapsed, interval],
@@ -1015,7 +1053,7 @@ async function saveClickButton(ctx: FeatureTestContext, refs: ClassBase): Promis
       tint: [0.25, 0.6, 1, 1],
     }, at(0, 0, ITEM_BACK_Z, BUTTON.width, BUTTON.height)),
     comp("prefab-button", "2DButtonComponent", { focusInitial: true }, undefined, { name: "Button" }),
-    ui("prefab-label", "2DTextComponent", text(refs, "Click Me", 26, [250, 32], { alignment: "center", bold: true }),
+    ui("prefab-label", "2DTextComponent", text(refs, "Click Me", 15.6, [150, 19.2], { alignment: "center", bold: true }),
       at(0, 0, FRONT_Z)),
   ];
   const graph = classGraph({
@@ -1172,7 +1210,7 @@ function text(
 }
 
 function header(refs: Pick<LayerRefs, "font">, value: string): Record<string, unknown> {
-  return text(refs, value, 28, [410, 34], { bold: true, color: [1, 0.86, 0.42] });
+  return text(refs, value, 16.8, [246, 20.4], { bold: true, color: [1, 0.86, 0.42] });
 }
 
 function margins(value: number): Record<string, number> {

@@ -93,6 +93,8 @@ test("a Scene Layer keeps its device-pixel size and sharpness at the Low and Hig
     payload: { members: [], components, nodes: [], edges: [] } as unknown as Record<string, unknown>,
   }, { parentClass: "SceneLayerActor", dependencies: [materialGuid] }));
   const layer = createDefaultSceneLayer();
+  // A Custom 3200 x 1800 px canvas keeps the 32 x 18 layer units this test is laid out in.
+  layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", customSizePx: { width: 3200, height: 1800 } };
   layer.actors = [createActor("panel-hud", "Panel HUD", { classId: "main", components })];
   files.set("assets/PanelHud.scenelayer.hasset", await encodeAssetDocument({
     guid: layerGuid, type: "SceneLayer", name: "Panel HUD", version: versions.currentVersion("SceneLayer"), payload: layer as unknown as Record<string, unknown>,

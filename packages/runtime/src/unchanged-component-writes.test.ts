@@ -1,3 +1,4 @@
+import type { SceneLayerCanvasDesign } from "@haptic/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommandMessage } from "@haptic/bridge";
 import {
@@ -13,6 +14,12 @@ import { createInProcessRuntime } from "./driver";
 import type { RuntimePropertyWrites } from "./runtime-property-writes";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
 import type { CompiledScript } from "./script-host";
+
+/** A Custom canvas of `width` × `height` layer units at 100 Pixels Per Unit, Root Center, fitted to the screen. */
+function customCanvas(width: number, height: number): SceneLayerCanvasDesign {
+  return { sizeMode: "custom", customSizePx: { width: width * 100, height: height * 100 }, rootAnchor: "center", scaling: "fitToScreen" };
+}
+
 
 type Runtime = ReturnType<typeof createInProcessRuntime>;
 /** The in-process driver's property write and Scene Layer layout seams. */
@@ -169,7 +176,7 @@ describe("unchanged component property writes", () => {
   it("still re-anchors on an equal 2D Anchor write", async () => {
     const layer: SerializedSceneLayer = {
       ...createDefaultSceneLayer(), name: "HUD",
-      settings: { ...createDefaultSceneLayer().settings, layerBounds: { width: 16, height: 9 } },
+      settings: { ...createDefaultSceneLayer().settings, canvas: customCanvas(16, 9) },
       actors: [
         createActor("visual", "Visual", { classId: "SceneLayerActor", transform: { position: [-7, 4, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }),
         createActor("badge", "Badge", { classId: "Hud", parentId: "visual", components: [

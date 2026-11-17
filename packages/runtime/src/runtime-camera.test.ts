@@ -39,7 +39,7 @@ function fixture(options: { physicsKind?: PhysicsWorldKind; canvas?: { width: nu
     guidSlot: (guid) => slots.guidSlot(guid),
     cursor: () => ({ x: 0, y: 0, pressed: false }),
     touches: () => [],
-    overlay: () => ({ canvasSize: () => options.canvas ?? { width: 1, height: 1 }, viewBounds: () => ({ width: 32, height: 18 }) }),
+    overlay: () => ({ canvasSize: () => options.canvas ?? { width: 1, height: 1 }, viewBounds: () => ({ width: 32, height: 18, center: [0, 0] }) }),
     physics: () => physics as never,
     traceDebugDraw: false,
     warn: (message) => warnings.push(message),
