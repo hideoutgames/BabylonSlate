@@ -17,6 +17,8 @@ import { SHADOW_CAPACITY_PROFILES, type ShadowProfile } from "@haptic/core";
 import { deviceProfile } from "./device-profile";
 import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-allocator";
 import { recordShadowMapPass, type ShadowTileView } from "./shadow-change-journal";
+import { shadowDebugOff } from "./shadow-debug";
+import { applyVertexDepthClamp } from "./shadow-vertex-clamp";
 
 /**
  * The light block's shadows (`HapticLightingBlock`) live in one depth-only texture per Scene, the shadow
@@ -627,6 +629,12 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
    */
   get cascadeCorrections(): readonly Vector3[] {
     return this.corrections;
+  }
+
+  /** Debug (`shadowdebug depthclamp off`): the casters' depth is clamped in the vertex stage (`shadow-vertex-clamp.ts`). */
+  protected override _isReadyCustomDefines(defines: string[]): void {
+    super._isReadyCustomDefines(defines);
+    if (shadowDebugOff(this._scene, "depthclamp")) applyVertexDepthClamp(defines);
   }
 
   protected override _initializeGenerator(): void {

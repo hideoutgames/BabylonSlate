@@ -242,7 +242,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "shadowdebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), or the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles)",
+      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles), or the sun cascades' depth clamp in the fragment stage (depthclamp; off, casters are clamped in the vertex stage instead)",
       parameters: [{ name: "part", type: "enum", enumValues: [...SHADOW_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as ShadowDebugPart, enabled = Boolean(args.enabled);

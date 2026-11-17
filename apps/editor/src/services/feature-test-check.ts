@@ -419,6 +419,8 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           { label: "shadow casters off", commands: ["shadowdebug casters off"], restore: ["shadowdebug casters on"], fields: ["shadows.debug"], overlaps: true },
           // No map redrawn, the last maps still sampled: what redrawing the maps costs; beyond it, `shadows off` saves the sampling.
           { label: "shadow passes off", commands: ["shadowdebug passes off"], restore: ["shadowdebug passes on"], fields: ["shadows.debug"], overlaps: true },
+          // The cascades' casters clamped to the near plane in the vertex stage, so no caster fragment writes its depth.
+          { label: "shadow vertex clamp", commands: ["shadowdebug depthclamp off"], restore: ["shadowdebug depthclamp on"], fields: ["shadows.debug"] },
           { label: "shadows medium", commands: ["quality shadows medium"], fields: SHADOW_LEVEL_FIELDS, overlaps: true },
           {
             label: "shadows medium big atlas", commands: ["quality shadows medium", "shadowdebug atlasfit off"], restore: ["shadowdebug atlasfit on"],

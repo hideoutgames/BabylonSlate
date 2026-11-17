@@ -240,7 +240,8 @@ export function createShadowGenerator(
       : generator.useContactHardeningShadow ? "pcss" : "none";
     biasInput.filterQuality = generator.filteringQuality === ShadowGenerator.QUALITY_HIGH ? "high"
       : generator.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? "medium" : "low";
-    biasInput.depthClamp = generator instanceof CascadedShadowGenerator && generator.depthClamp;
+    // The vertex-stage clamp (`shadowdebug depthclamp off`) adds no bias in the fragment stage: it biases as unclamped.
+    biasInput.depthClamp = generator instanceof CascadedShadowGenerator && generator.depthClamp && !shadowDebugOff(context.scene, "depthclamp");
     biasInput.authoredDepthBias = settings.depthBias;
     biasInput.authoredNormalBias = settings.normalBias;
     const effective = resolveDirectionalShadowBias(biasInput);
