@@ -36,6 +36,12 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
    * depth (`geometry-depth-seed.ts`) and its object list holds only the meshes that depth lacks.
    */
   seed: GeometryDepthSeed | undefined;
+  /**
+   * The pass clears its own depth as it starts, in its own render pass, instead of a clear task before it (a pass of
+   * its own that stores the cleared depth for this one to load). A seeded pass needs no clear: its seed writes every
+   * pixel's depth.
+   */
+  clearsDepth = false;
 
   override record(...args: Parameters<FrameGraphGeometryRendererTask["record"]>): FrameGraphRenderPass {
     this.pass = super.record(...args);
@@ -61,6 +67,11 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
       if (this.seed) {
         drawGeometryDepthSeed(context, this._frameGraph.engine, this.seed, this.camera, far);
         // The full-screen draw leaves its own depth states: the meshes draw with the pass's.
+        context.setDepthStates(this.depthTest && depthEnabled, this.depthWrite && depthEnabled);
+      } else if (this.clearsDepth) {
+        // A clear honours the depth write mask.
+        this._frameGraph.engine.setDepthWrite(true);
+        context.clear(null, false, true, false);
         context.setDepthStates(this.depthTest && depthEnabled, this.depthWrite && depthEnabled);
       }
       context.restoreDefaultFramebuffer();

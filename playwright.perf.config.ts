@@ -18,13 +18,15 @@ import { defineConfig, devices } from "@playwright/test";
  * The FeatureTest heap route measures live heap growth in the editor's viewport and in Play, and Stop's time:
  *   HAPTIC_PERF_HEAP=1 pnpm run test:e2e e2e/feature-test-heap-route.spec.ts \
  *     --config playwright.perf.config.ts --project perf-gpu
+ * The geometry pass lighting proof runs on the machine's GPU the same way:
+ *   HAPTIC_RENDER_NATIVE_GPU=1 pnpm run test:e2e e2e/geometry-pass-lighting.spec.ts  *     --config playwright.perf.config.ts --project perf-gpu
  * The editor-edit profiling route also needs a React profiling build:
  *   VITE_REACT_PROFILING=true pnpm run test:e2e e2e/editor-edit-profile.spec.ts \
  *     --config playwright.perf.config.ts --project perf-software
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough|load|heap)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer)\.spec\.ts$/,
+  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough|load|heap)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer|geometry-pass-lighting)\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,

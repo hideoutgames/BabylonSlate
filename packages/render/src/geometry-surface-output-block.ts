@@ -85,6 +85,18 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
 }
 RegisterClass("BABYLON.GeometrySurfaceOutputBlock", GeometrySurfaceOutputBlock);
 
+/** The geometry outputs this block writes besides the colour. */
+const GEOMETRY_DATA_OUTPUTS = ["PREPASS_DEPTH", "PREPASS_REFLECTIVITY", "PREPASS_NORMALIZED_VIEW_DEPTH", "PREPASS_WORLD_NORMAL"] as const;
+
+/**
+ * A preprocessor condition that holds in a geometry pass that reads nothing of the surface's lit colour: it has no
+ * colour output, and its first attachment, where the fragment output writes the colour, is one of the outputs this
+ * block overwrites. The light block compiles no lighting there (`HapticLightingBlock`): every output such a pass keeps
+ * is computed from the surface's inputs alone.
+ */
+export const GEOMETRY_PASS_WITHOUT_COLOR =
+  `defined(PREPASS) && !defined(PREPASS_COLOR) && (${GEOMETRY_DATA_OUTPUTS.map((define) => `(defined(${define}) && ${define}_INDEX == 0)`).join(" || ")})`;
+
 /** Writes `value` to the geometry output `define` names (`PREPASS_WORLD_NORMAL` and so on), where the pass has one. */
 export function geometryOutputWrite(define: string, value: string): string {
   let code = "";

@@ -38,6 +38,7 @@ import { spatialEffectsUnsupported } from "./spatial-effects";
 import { isWaterSurfaceMesh } from "./water-surface-block";
 import { waterDebugOff } from "./water-debug";
 import { shadowAtlasTexture } from "./shadow-atlas";
+import { GEOMETRY_PASS_WITHOUT_COLOR } from "./geometry-surface-output-block";
 
 const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentForm", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
 
@@ -377,7 +378,9 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions()}\n#endif\n`, "// CEL");
     state._emitFunction("hapticLightingFunctions", HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
     for (const output of this._outputs) state.compilationString += `${state._declareOutput(output)} = vec3(0.0);\n`;
-    state.compilationString += `#ifdef HAPTIC_UNLIT\n${this.diffuseDirect.associatedVariableName} = ${this.baseColor.associatedVariableName};\n#else\n`;
+    // A geometry pass without a colour output overwrites the colour (`GeometrySurfaceOutputBlock`): the lighting, with
+    // its light loop, shadow lookups and environment, is left out of its program.
+    state.compilationString += `#ifdef HAPTIC_UNLIT\n${this.diffuseDirect.associatedVariableName} = ${this.baseColor.associatedVariableName};\n#elif ${GEOMETRY_PASS_WITHOUT_COLOR}\n#else\n`;
     state.compilationString += hapticLightingGlsl({
       worldPosition: this.worldPosition.associatedVariableName,
       worldNormal: this.worldNormal.associatedVariableName,
