@@ -299,9 +299,9 @@ export class RuntimeCamera implements RuntimeSubsystem {
   /**
    * `Project Cursor To Scene` (and `Project Touch To Scene`, with the
    * finger's position) from a Scene Layer's script: the cursor through
-   * that layer's orthographic camera (z = -10 looking along +Z, Layer Width ×
-   * Height widened to the Play canvas aspect, then the camera's zoom, roll and
-   * centre, as the compositor draws and picks it) to a point on the layer
+   * that layer's orthographic camera (z = -10 looking along +Z, its view
+   * (`sceneLayerView`: size and centre), then the camera's zoom, roll and
+   * location, as the compositor draws and picks it) to a point on the layer
    * plane, answered by the first collider of the layer's own 2D world there.
    * No hit when the layer has no physics. It draws no debug line: debug draws
    * render in the main Scene, not in layers.

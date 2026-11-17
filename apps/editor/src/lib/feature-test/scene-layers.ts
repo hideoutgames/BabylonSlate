@@ -35,6 +35,8 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   hud: "FT_HUD",
   /** Small physics-enabled layer (own 2D world), spawned over the main scene at z-order 5. */
   overlayPhysics: "FT_OverlayPhysics",
+  /** A Desired canvas at True Pixel Size, its top right in the screen's, spawned over the main scene at z-order 15. */
+  badge: "FT_Badge",
   listItem: "FT_UIListItem",
   gridItem: "FT_UIGridItem",
   cardA: "FT_UICardA",
@@ -60,6 +62,7 @@ const FEATURE_TEST_SCENE_LAYER_KNOBS = {
   /** The Painter canvas's pixel density: 1.92 × 1.2 units at 107 keep its 205 × 128 pixels. */
   painterPixelsPerUnit: 107,
   hudZOrder: 10,
+  badgeZOrder: 15,
   overlayPhysicsZOrder: 5,
   /** Seconds each FT_UICameraRig tween takes. */
   cameraTweenSeconds: 1.5,
@@ -106,7 +109,7 @@ interface PlacedClass {
   components: SerializedComponent[];
 }
 
-const layerGuidsByContext = new WeakMap<FeatureTestContext, { hud: string; overlayPhysics: string }>();
+const layerGuidsByContext = new WeakMap<FeatureTestContext, { hud: string; overlayPhysics: string; badge: string }>();
 
 /**
  * SceneLayerActor Classes (list and grid items, two switchable cards, a click
@@ -167,7 +170,14 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     content: overlayPhysicsLayer(refs),
     order: SCENE_SAVE_ORDER.sceneLayer,
   });
-  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid });
+  const badge = await ctx.addSceneDocument({
+    kind: "scene-layer",
+    folder: FOLDER,
+    name: NAMES.badge,
+    content: badgeLayer(refs),
+    order: SCENE_SAVE_ORDER.sceneLayer,
+  });
+  layerGuidsByContext.set(ctx, { hud: hud.guid, overlayPhysics: overlayPhysics.guid, badge: badge.guid });
 
   await bindJoystickToMove(ctx);
   const confirm = ctx.registry
@@ -188,6 +198,7 @@ export async function placeFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
   const entries: SceneLayerSpawnEntry[] = [
     { assetGuid: guids.overlayPhysics, zOrder: KNOBS.overlayPhysicsZOrder, enabled: true },
     { assetGuid: guids.hud, zOrder: KNOBS.hudZOrder, enabled: true },
+    { assetGuid: guids.badge, zOrder: KNOBS.badgeZOrder, enabled: true },
   ];
   const settings = ctx.mainScene.settings;
   settings.sceneLayers = [
@@ -706,6 +717,28 @@ function painterCommands(): PainterCommand[] {
       ],
     },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// FT_Badge
+
+/**
+ * One label on a Desired canvas at True Pixel Size with Root Top Right: the
+ * canvas wraps the label wherever it is authored, and Play shows it at one
+ * pixel per design pixel with its top right in the screen's top right.
+ */
+function badgeLayer(refs: LayerRefs): SerializedSceneLayer {
+  const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.badge };
+  layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "desired", rootAnchor: "topRight", scaling: "truePixelSize" };
+  addLayerActor(layer, layerActor("ft-ui-badge", "Badge", [
+    ui("ft-ui-badge-text", "2DTextComponent", text(refs, "True Pixel Size", 16, [150, 22], {
+      alignment: "right",
+      color: [0.75, 0.95, 1],
+      outline: 1,
+      outlineColor: [0.05, 0.08, 0.2],
+    })),
+  ], { position: [3, 2] }));
+  return layer;
 }
 
 // ---------------------------------------------------------------------------

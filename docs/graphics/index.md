@@ -56,7 +56,7 @@ With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and 
 
 | Setting | Description |
 | --- | --- |
-| **Custom Resolution** | Sets a design size for Play and exported games. On for new projects. |
+| **Custom Resolution** | Sets a design size for Play and exported games. On for new projects. A Scene Layer's Fullscreen canvas is this size ([Canvas size and scaling](../scenes/scene-layers.md#canvas-size-and-scaling)). |
 | **Render Size** | The design width and height. Default 1920 × 1080. |
 | **Black Bars** | Adds bars to keep the design size. Off fills the window without stretching. |
 | **Upscaling** | Shown with Custom Resolution. **Smooth** fits the design size to the window. **Pixelated** enlarges it by the largest whole multiple that fits, so every game pixel is the same sharp square: a 320 × 180 game shows at × 4 in a 1366 × 768 window. With **Black Bars**, bars fill the rest. Without them, the view extends past the design size to fill the window, and cameras show more of the scene there instead of stretching it. Pixelated always draws at full resolution: **Resolution Scale** and **Dynamic Resolution** do not apply. Menus and text from Scene Layers enlarge with the game. |
