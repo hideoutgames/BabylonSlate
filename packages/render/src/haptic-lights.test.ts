@@ -101,6 +101,38 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(mesh.subMeshes[0]!.effect).toBe(effect);
   });
 
+  it("compiles no lighting into a geometry pass that has no colour output and overwrites the colour's attachment", async () => {
+    const { scene } = host();
+    new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    const { material } = await litBox(scene);
+    // The fragment source is the contract here: which preprocessor branch holds the lighting.
+    const fragment = material.compiledShaders.slice(material.compiledShaders.indexOf("// Fragment shader"));
+    const unlit = fragment.indexOf("#ifdef HAPTIC_UNLIT");
+    const guard = fragment.indexOf("#elif defined(PREPASS) && !defined(PREPASS_COLOR) && (", unlit);
+    const lit = fragment.indexOf("#else", guard);
+    expect([unlit > -1, guard > unlit, lit > guard]).toEqual([true, true, true]);
+    // The geometry branch is empty: the outputs keep the zero they were declared with.
+    expect(fragment.slice(fragment.indexOf("\n", guard) + 1, lit)).toBe("");
+    // The end of that conditional, past the conditionals nested in the lighting.
+    let depth = 0, end = -1;
+    for (let at = lit; at < fragment.length && end < 0; at = fragment.indexOf("\n", at) + 1) {
+      const line = fragment.slice(at, fragment.indexOf("\n", at));
+      if (/^#if/.test(line)) depth += 1;
+      else if (/^#endif/.test(line) && depth-- === 0) end = at;
+      if (fragment.indexOf("\n", at) < 0) break;
+    }
+    expect(end).toBeGreaterThan(lit);
+    // The lighting, from its first statement on, is in the lit branch and nowhere else in main().
+    const lighting = [...fragment.matchAll(/vec3 hapticN = normalize\(|hapticSurface hapticS;/g)].map((match) => match.index);
+    expect(lighting).toHaveLength(2);
+    expect(lighting.every((index) => index > lit && index < end)).toBe(true);
+    // Only a pass whose first attachment is one of the surface's own data outputs: the colour written there is overwritten.
+    const condition = fragment.slice(guard, fragment.indexOf("\n", guard));
+    for (const output of ["PREPASS_DEPTH", "PREPASS_REFLECTIVITY", "PREPASS_NORMALIZED_VIEW_DEPTH", "PREPASS_WORLD_NORMAL"])
+      expect(condition).toContain(`(defined(${output}) && ${output}_INDEX == 0)`);
+    expect(condition).not.toContain("PREPASS_OBJECT_ID");
+  });
+
   it("draws Base Color alone under the Unlit viewport mode, frozen or not, and lights again after it", async () => {
     const { scene } = host();
     new PointLight("lamp", new Vector3(0, 2, 0), scene);
