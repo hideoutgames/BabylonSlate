@@ -401,9 +401,9 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           // Every Scene Layer hidden: the backbuffer is the world's size again, so the passes that ran at the device's
           // resolution for the layers (their draws, the upscale and sharpening to the output) go.
           { label: "scene layers hidden", commands: ["scenelayers off"], restore: [`scenelayers ${state.layers ? "on" : "off"}`], fields: ["layers"] },
-          // The effect chain ends at the view's size and one copy fills the backbuffer: what upscaling and sharpening at
-          // the device's resolution cost, with the layers still drawn there.
-          { label: "FSR to view size", commands: ["fsrdebug output view"], restore: ["fsrdebug output device"], fields: ["upscale.output"] },
+          // The effect chain ends at the backbuffer's size instead of the view's: what upscaling and sharpening at the
+          // device's resolution would cost, with the layers drawn there either way.
+          { label: "FSR to device size", commands: ["fsrdebug output device"], restore: ["fsrdebug output view"], fields: ["upscale.output"] },
           // No depth-and-stencil clear before each layer drawn over the world: what those clears cost in the backbuffer's pass.
           { label: "layer clears off", commands: ["layerdebug clears off"], restore: ["layerdebug clears on"], fields: ["layers.clears"] },
           // No copy of each presented frame into the held image: what that device-resolution blit costs.

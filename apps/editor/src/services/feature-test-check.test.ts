@@ -170,7 +170,7 @@ function fingerprintAfter(
   let framesInFlight = options.framesInFlight ?? "2";
   let discard = false;
   let layers = true;
-  let fsrOutput = "device";
+  let fsrOutput = "view";
   let layerClears = "on";
   let heldImage = "on";
   let backbufferDepth = "kept";
@@ -1128,7 +1128,7 @@ describe("Profile", () => {
     expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
     const plan = featureTestProfilePlan(SESSION);
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden", "FSR to view size", "layer clears off", "held image off", "backbuffer depth discarded"]],
+      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden", "FSR to device size", "layer clears off", "held image off", "backbuffer depth discarded"]],
       ["heavy", ['possess "Profile Heavy Camera"'], [
         "shadows off", "shadow casters off", "shadow passes off", "shadow vertex clamp", "far cascades alternate", "shadows medium", "shadows medium big atlas", "shadow filter low",
         "geometry effects off", "post off", "resolution 1.0",
@@ -1143,7 +1143,7 @@ describe("Profile", () => {
     expect(step("heavy", "shadow filter low")).toMatchObject({ commands: ["quality shadows filter low"], fields: ["shadows.filter"] });
     expect(step("light", "discard samples")).toMatchObject({ commands: ["discardsamples on"], restore: ["discardsamples off"], fields: ["msaa.discard"] });
     expect(step("light", "scene layers hidden")).toMatchObject({ commands: ["scenelayers off"], restore: ["scenelayers on"], fields: ["layers"] });
-    expect(step("light", "FSR to view size")).toMatchObject({ commands: ["fsrdebug output view"], restore: ["fsrdebug output device"], fields: ["upscale.output"] });
+    expect(step("light", "FSR to device size")).toMatchObject({ commands: ["fsrdebug output device"], restore: ["fsrdebug output view"], fields: ["upscale.output"] });
     // Maps not redrawn against casters not drawn, against shadows off: redrawing, drawing casters and sampling apart.
     expect([step("heavy", "shadow casters off"), step("heavy", "shadow passes off")].map((entry) => [entry.commands, entry.restore])).toEqual([
       [["shadowdebug casters off"], ["shadowdebug casters on"]], [["shadowdebug passes off"], ["shadowdebug passes on"]],
@@ -1157,7 +1157,7 @@ describe("Profile", () => {
     expect(sequence.slice(0, probe.length)).toEqual(probe);
     expect(sequence.slice(probe.length, probe.length + 8).map((entry) => entry.label)).toEqual([
       "light baseline 1", "light MSAA off", "light baseline 2", "light discard samples", "light baseline 3", "light scene layers hidden",
-      "light baseline 4", "light FSR to view size",
+      "light baseline 4", "light FSR to device size",
     ]);
     // Only a view's first baseline moves the camera; every step sits between two baselines of its own view.
     expect(sequence.filter((entry) => entry.commands.some((line) => line.startsWith("possess"))).map((entry) => entry.label))
