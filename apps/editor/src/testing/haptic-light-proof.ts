@@ -559,6 +559,9 @@ export async function runHapticLightProof() {
 
     // CEL: the block's HAPTIC_CEL define over the same records.
     const local = [...spots, ...points];
+    // A grey non-metal at the Material's default Roughness and fully rough: CEL's highlights fade out above one half.
+    const glossy = await compile({ ...MATTE, name: "glossy", specular: 0.5, roughness: 0.5 });
+    const rough = await compile({ ...MATTE, name: "rough", specular: 0.5, roughness: 1 });
     const celPoses: { name: string; cel?: Partial<CelShadingSettings>; apply: () => void }[] = [
       { name: "sun and fill", apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "sun only", apply: () => [fill, ...local].forEach((light) => setAuthoredLightEnabled(light, false)) },
@@ -571,6 +574,10 @@ export async function runHapticLightProof() {
       { name: "blend", cel: { lightMixing: "blend" }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "wide highlights", cel: { specularSize: 0.5, specularStrength: 0.6 }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
       { name: "no highlights", cel: { specularEnabled: false }, apply: () => local.forEach((light) => setAuthoredLightEnabled(light, false)) },
+      { name: "glossy", apply: () => { local.forEach((light) => setAuthoredLightEnabled(light, false)); assign(glossy); } },
+      { name: "glossy, no highlights", cel: { specularEnabled: false }, apply: () => { local.forEach((light) => setAuthoredLightEnabled(light, false)); assign(glossy); } },
+      { name: "rough", apply: () => { local.forEach((light) => setAuthoredLightEnabled(light, false)); assign(rough); } },
+      { name: "rough, no highlights", cel: { specularEnabled: false }, apply: () => { local.forEach((light) => setAuthoredLightEnabled(light, false)); assign(rough); } },
       { name: "rect light", apply: () => panelOnly() },
       { name: "all lights", apply: () => undefined },
     ];
@@ -679,7 +686,8 @@ export async function runHapticLightProof() {
     const shadow = { spot: spotShadow, sun: sunShadow, "sun far tiles": sunFarTiles, point: pointShadow };
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     const lightDefines = litEffectKeys(engine).filter((key) => /#define LIGHT\d/.test(effects[key]!.defines)).length;
-    const celEffects = cel.effects.filter((key) => /#define HAPTIC_CEL/.test(effects[key]!.defines)).length;
+    // The programs still compiled, so one a later mode change released does not count.
+    const celEffects = cel.effects.filter((key) => effects[key] && /#define HAPTIC_CEL/.test(effects[key].defines)).length;
     const imageProcessing = scene.imageProcessingConfiguration;
     graph.dispose();
     return {

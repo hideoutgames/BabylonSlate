@@ -187,7 +187,7 @@ describe("loadModelPreviewSource", () => {
     loaded?.dispose();
   });
 
-  it("binds the same hard-step CEL uniforms as world scenes", async () => {
+  it("binds the same CEL uniforms as world scenes", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const host = createModelPreviewScene(handle.engine);
@@ -206,7 +206,7 @@ describe("loadModelPreviewSource", () => {
     const mesh = host.mesh;
     mesh.material = material;
     host.scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
-    await vi.waitFor(() => expect(material.compiledShaders).toContain("slateCelSurfaceLight"));
+    await vi.waitFor(() => expect(material.compiledShaders).toContain("hapticCelLighting"));
     await material.forceCompilationAsync(mesh);
     const subMesh = mesh.subMeshes[0]!;
     expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
@@ -214,10 +214,13 @@ describe("loadModelPreviewSource", () => {
     material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
     expect(
       uniforms.mock.calls.filter(([name]) => name === "slateCelBands").at(-1),
-    ).toEqual(["slateCelBands", 4, 0.4, 0.7, 0]);
+    // Bands - 1, the ramp's exponent, the shade floor and the first lit band's brightness, as `bindCelSettings` packs them.
+    ).toEqual(["slateCelBands", 3, expect.closeTo(Math.log(0.5) / Math.log(0.4), 6), expect.closeTo(0.3, 6),
+      expect.closeTo((0.5 / 3) ** (Math.log(0.4) / Math.log(0.5)), 6)]);
     expect(
       uniforms.mock.calls.filter(([name]) => name === "slateCelSpecular").at(-1),
-    ).toEqual(["slateCelSpecular", 0.3, 0.25, 0, 0]);
+    // Strength, the highlight's cosine (Specular Size is its sine) and a rect light's form-factor threshold.
+    ).toEqual(["slateCelSpecular", 0.3, expect.closeTo(Math.sqrt(1 - 0.25 ** 2), 6), 0.75, 0]);
     host.dispose();
   });
 

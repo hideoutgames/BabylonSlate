@@ -183,22 +183,31 @@ test("HapticLightingBlock shades graph Materials as its model predicts, and ligh
   expect(result.lightDefines).toBe(0);
   expect(result.steps).toEqual(LIGHT_STEPS);
 
-  // CEL, the block's HAPTIC_CEL define: hard steps, so a flat floor under the sun and the fill takes one band and the
-  // highlight (two colours), and one without highlights, under the fill alone or under the environment alone takes
-  // one; every pose lights the scene, and each setting changes the image.
+  // CEL, the block's HAPTIC_CEL define: hard steps, each edge one anti-aliased pixel, so a flat floor away from any
+  // edge takes one colour in every pose (the floor's view of every light's reflection lies outside the highlight's
+  // angle: highlights are a few degrees wide and show on the box and the ball); every pose lights the scene, and each
+  // setting changes the image.
   const cel = new Map(result.celCaptures.map((capture) => [capture.name, capture.pixels]));
   const floor = settled(surfaceIds, width, height, (id) => id === 0);
   const colours = (pose: string) => new Set(floor.map((pixel) => channels(cel.get(pose)!, pixel).join())).size;
   for (const [pose, pixels] of cel) expect(lit(pixels), `cel ${pose}`).toBeGreaterThan(3000);
-  for (const pose of ["sun and fill", "sun only"]) expect(colours(pose), pose).toBe(2);
-  for (const pose of ["no highlights", "fill only", "environment only"]) expect(colours(pose), pose).toBe(1);
+  for (const pose of ["sun and fill", "sun only", "no highlights", "fill only", "environment only"]) expect(colours(pose), pose).toBe(1);
   for (const pose of ["fill only", "environment only", "additive", "blend", "wide highlights", "no highlights", "rect light", "all lights"])
     expect(cel.get(pose), pose).not.toEqual(cel.get("sun and fill"));
+  // The fill is ambient, shown where it is brighter than the lights' band: under the sun's lit band (its N.L of 0.89
+  // at 0.7) the 0.2 fill does not change the floor.
+  expect(floor.filter((pixel) => difference(cel.get("sun and fill")!, cel.get("sun only")!, pixel) > 0), "fill under the lit band").toEqual([]);
   expect(cel.get("rotated environment")).not.toEqual(cel.get("environment only"));
   // The fill is a sky with no point to reflect: it gives no highlight anywhere, so turning highlights off changes
   // nothing under it (a highlight from its direction sat under the camera and followed it).
   expect(cel.get("fill only"), "fill only").toEqual(cel.get("fill only, no highlights"));
-  // One CEL program per Material: CEL ignores the cube's format and box.
+  // A Material's Roughness fades its highlights out above one half: at the default the highlights show, fully rough
+  // turning them off changes nothing.
+  // The ball shows the sun's highlight (a few degrees wide: about twenty pixels here).
+  expect(outliers(cel.get("glossy")!, cel.get("glossy, no highlights")!), "glossy").toBeGreaterThan(5);
+  expect(cel.get("rough"), "rough").toEqual(cel.get("rough, no highlights"));
+  // One CEL program per regular Material still compiled at the end (the glossy and the rough Materials' programs are
+  // released once their poses are over): CEL ignores the cube's format and box.
   expect(result.celEffects).toBe(3);
   expect(result.celSteps).toEqual(LIGHT_STEPS);
 

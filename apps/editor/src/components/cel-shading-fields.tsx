@@ -94,13 +94,21 @@ const fields: {
     label: "Shadow Strength",
     hint: "Darkness of the deepest shade and cast shadows.",
   },
-  { key: "specularEnabled", label: "Specular" },
+  {
+    key: "specularEnabled",
+    label: "Specular",
+    hint: "Highlights fade as a Material's Roughness rises from 0.5 to 1.",
+  },
   {
     key: "specularStrength",
     label: "Specular Strength",
     hint: "Zero disables highlights.",
   },
-  { key: "specularSize", label: "Specular Size" },
+  {
+    key: "specularSize",
+    label: "Specular Size",
+    hint: "Highlight radius as a share of a sphere's radius.",
+  },
   {
     key: "lightColorInfluence",
     label: "Light Color Influence",
