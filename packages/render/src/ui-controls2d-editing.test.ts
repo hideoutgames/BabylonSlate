@@ -11,12 +11,12 @@ const dispose: Array<() => void> = [];
 beforeEach(() => { vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null); });
 afterEach(() => { for (const cleanup of dispose.splice(0).reverse()) cleanup(); document.body.replaceChildren(); vi.restoreAllMocks(); });
 
-function editing(classId = "2DTextInputComponent", navigate?: (reverse: boolean) => void) {
+function editing(classId = "2DTextInputComponent", navigate?: (reverse: boolean) => void, extra: Record<string, unknown> = {}) {
   const engine = new NullEngine({ renderWidth: 800, renderHeight: 450, textureSize: 512, deterministicLockstep: false, lockstepMaxSteps: 4 });
   dispose.push(() => engine.dispose());
   const compositor = new SceneLayerCompositor({ engine });
   const layer = compositor.create({ type: "sceneLayerCreate", layerId: "controls", assetGuid: "controls", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
-  const mesh = createUIControl2DMesh(layer.scene, "control", { classId, properties: { text: "ABCD", value: 12, max: 100, width: 4, height: 1 } }, undefined, "field");
+  const mesh = createUIControl2DMesh(layer.scene, "control", { classId, properties: { text: "ABCD", value: 12, max: 100, width: 4, height: 1, ...extra } }, undefined, "field");
   mesh.metadata = { ...mesh.metadata, overlayActorGuid: "actor" };
   const canvas = document.createElement("canvas"); canvas.tabIndex = 0; document.body.append(canvas);
   const events: SceneLayerControlEvent[] = [];
@@ -115,3 +115,40 @@ it("writes a control's background colour only when focus changes it, and draws t
   const selection = visual.surfaces.find((surface) => surface.mesh.name.endsWith(":selection"))!;
   expect(selection.fallback.binding.alpha).toBe(0.4);
 });
+
+it.each([
+  { inputType: "text", type: "text", inputMode: "text" },
+  { inputType: "number", type: "text", inputMode: "decimal" },
+  { inputType: "integer", type: "text", inputMode: "numeric" },
+  { inputType: "email", type: "text", inputMode: "email" },
+  { inputType: "password", type: "password", inputMode: "text" },
+  { inputType: "url", type: "text", inputMode: "url" },
+  { inputType: "phone", type: "text", inputMode: "tel" },
+])("asks for the $inputType keyboard", ({ inputType, type, inputMode }) => {
+  const { native } = editing("2DTextInputComponent", undefined, { text: "", inputType });
+  expect(native.type).toBe(type);
+  expect(native.inputMode).toBe(inputMode);
+});
+
+it("keeps only a Number's characters as the player types and hides a Password behind bullets", () => {
+  const number = editing("2DTextInputComponent", undefined, { text: "", inputType: "number" });
+  number.native.value = "-1a2,5.7-"; number.native.dispatchEvent(new InputEvent("input"));
+  // The field itself is corrected, so the caret and the next key act on what is kept.
+  expect(number.native.value).toBe("-12.57");
+  expect(number.visual.properties.text).toBe("-12.57");
+  expect(number.renderedText()).toBe("-12.57");
+  document.body.replaceChildren();
+
+  const password = editing("2DTextInputComponent", undefined, { text: "ab", inputType: "password", placeholder: "Secret" });
+  expect(password.renderedText()).toBe("\u2022\u2022");
+  password.native.value = "ab c\u{1F642}"; password.native.dispatchEvent(new InputEvent("input"));
+  // One bullet per character, spaces and emoji included; the stored text is what was typed.
+  expect(password.renderedText()).toBe("\u2022\u2022\u2022\u2022\u2022");
+  expect(password.visual.properties.text).toBe("ab c\u{1F642}");
+  password.native.value = ""; password.native.dispatchEvent(new InputEvent("input"));
+  expect(password.renderedText()).toBe("");
+  password.native.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  // Empty and no longer being edited: the placeholder shows as written, not as bullets.
+  expect(password.renderedText()).toBe("Secret");
+});
+

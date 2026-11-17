@@ -14,6 +14,7 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Tex
 | Width, Height | Size of the field in layer units. Default 4 by 0.6. |
 | Text | The current text. Line breaks become spaces. |
 | Placeholder | Shown while Text is empty. |
+| Input Type | What the field accepts: **Text** (the default), **Number**, **Integer**, **Email**, **Password**, **URL** or **Phone**. See [Input types](#input-types). |
 | Max Length | Most characters allowed. 0 means no limit. Default 0. |
 | Read Only | The player can focus the field but not edit it. Default off. |
 | Font Size | Size of the text in layer units. Default 0.32. |
@@ -23,6 +24,24 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Tex
 | Background Material, Background Texture | Replace the default look of the field. A Material or Material Instance, or a Texture. A Material wins when both are set. |
 | Indicator Material, Indicator Texture | Replace the caret and the selection highlight. |
 | Focus Enabled, Initial Focus, Focus Up, Focus Down, Focus Left, Focus Right | Keyboard and gamepad focus. See [Scene Layers](../scenes/scene-layers.md). |
+
+## Input types
+
+The Input Type picks the on-screen keyboard on touch devices and the characters the field keeps. Characters that do not fit are dropped as they are typed, pasted or set from a graph.
+
+| Input Type | Keyboard | Keeps |
+| --- | --- | --- |
+| Text | Standard | Everything. |
+| Number | Decimal | Digits, a minus sign in front and one decimal point. A comma counts as the point. |
+| Integer | Number pad | Digits and a minus sign in front. |
+| Email | Email | Everything except spaces. |
+| Password | Standard | Everything. The field shows a dot for each character. |
+| URL | Web address | Everything except spaces. |
+| Phone | Phone pad | Digits, spaces and `+ - ( )`. |
+
+- The type only filters characters. It does not check that an email or a web address is complete.
+- **Text** in a graph is always the real text, for a Password too.
+- A Number is still text. For a value with a range and steps, use [2D Numeric Input](2d-numeric-input.md).
 
 ## Notes
 

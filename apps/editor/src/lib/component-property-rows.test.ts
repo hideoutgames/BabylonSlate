@@ -1423,6 +1423,19 @@ describe("applyPrefabPropertyDefaults", () => {
     expect(gone.options.slice(-2)).toEqual([{ value: "class:Snap", label: "Snap (Custom)" }, { value: "class:Deleted", label: "Deleted (Custom)" }]);
   });
 
+  it("offers the Input Type list on a 2D Text Input only and writes the chosen type", () => {
+    const { rows, update } = rowsFor({ id: "field", classId: "2DTextInputComponent", properties: { inputType: "email" } });
+    const type = rows.find((row) => row.id.endsWith("-inputType"));
+    if (type?.kind !== "enum") throw new Error("Missing Input Type row");
+    expect(type.label).toBe("Input Type");
+    expect(type.value).toBe("email");
+    expect(type.options.map((option) => option.label)).toEqual(["Text", "Number", "Integer", "Email", "Password", "URL", "Phone"]);
+    type.onChange("password");
+    expect(update).toHaveBeenCalledWith("inputType", "password");
+    const numeric = rowsFor({ id: "spinner", classId: "2DNumericInputComponent", properties: {} });
+    expect(numeric.rows.some((row) => row.id.endsWith("-inputType"))).toBe(false);
+  });
+
   it("edits rich-text reveal timing without exposing it on plain text", () => {
     const rich = rowsFor({
       id: "label", classId: "2DRichTextComponent",

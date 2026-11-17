@@ -60,7 +60,7 @@ export const UI_CONTROL_2D_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   control("2DRadioButtonComponent", [CHECKED, variable("Group", "group", "string")], [SET_CHECKED], [CHECKED_CHANGED]),
   control("2DToggleComponent", [CHECKED], [SET_CHECKED], [CHECKED_CHANGED]),
   control("2DTextInputComponent", [variable("Text", "text", "string"), variable("Placeholder", "placeholder", "string"),
-    variable("Maximum Length", "maxLength", "int"), READ_ONLY, ...TEXT_STYLE],
+    variable("Maximum Length", "maxLength", "int"), variable("Input Type", "inputType", "string"), READ_ONLY, ...TEXT_STYLE],
     [fn("Set Text", "setUIControlText", [["text", "string"]])], [event("On Text Changed", "TextChanged"), event("On Text Submitted", "TextSubmitted")]),
   control("2DNumericInputComponent", [...NUMERIC, VALUE, READ_ONLY, ...TEXT_STYLE], [SET_VALUE, INCREMENT], [VALUE_CHANGED]),
   control("2DDropdownComponent", [{ ...variable("Options", "options", "string"), container: "array" },

@@ -1,4 +1,4 @@
-import { parseUIControl2DProperties, type SerializedComponent } from "@haptic/core";
+import { parseUIControl2DProperties, UI_TEXT_INPUT_TYPES, UI_TEXT_INPUT_TYPE_LABELS, type SerializedComponent } from "@haptic/core";
 import { colorFromHex, colorToHex, humanizePropertyLabel, type PropertyRow } from "@haptic/editor-kit";
 import type { ComponentPropertyContext } from "./component-property-rows";
 import { focusPropertyRows } from "./focus-property-rows";
@@ -24,7 +24,12 @@ export function uiControlPropertyRows(actorId: string, component: SerializedComp
   if (slider || progress) rows.push({ kind: "enum", id: id("orientation"), label: "Orientation", value: p.orientation, options: [{ value: "horizontal", label: "Horizontal" }, { value: "vertical", label: "Vertical" }], onChange: value => update("orientation", value) });
   if (["2DCheckboxComponent", "2DRadioButtonComponent", "2DToggleComponent"].includes(kind)) rows.push(bool("checked"));
   if (kind === "2DRadioButtonComponent") rows.push(text("group"));
-  if (kind === "2DTextInputComponent") rows.push(text("text"), text("placeholder"), number("maxLength", 0), bool("readOnly"));
+  if (kind === "2DTextInputComponent") {
+    rows.push(text("text"), text("placeholder"),
+      { kind: "enum", id: id("inputType"), label: "Input Type", value: p.inputType, defaultValue: "text", verbatim: true,
+        options: UI_TEXT_INPUT_TYPES.map((value) => ({ value, label: UI_TEXT_INPUT_TYPE_LABELS[value] })), onChange: value => update("inputType", value) },
+      number("maxLength", 0), bool("readOnly"));
+  }
   if (numeric) rows.push(bool("readOnly"));
   if (kind === "2DDropdownComponent") rows.push(text("placeholder"), number("selectedIndex", -1, p.options.length - 1));
   if (kind === "2DTextInputComponent" || numeric || kind === "2DDropdownComponent") {

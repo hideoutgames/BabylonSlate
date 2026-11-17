@@ -1,8 +1,14 @@
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { UITextInputType } from "@haptic/core";
 import { clampUIControl2DValue, normalizeUIControl2DText, sceneLayerCanvasToLayer, uiControl2DValueAt, type OverlayPointerHit } from "@haptic/core";
 import { uiControl2DMesh, type UIControl2DMesh } from "./ui-controls2d-mesh";
 import type { SceneLayerView } from "./scene-layer-compositor";
+
+/** The on-screen keyboard each Input Type asks for. */
+const TEXT_INPUT_MODES: Record<UITextInputType, string> = {
+  text: "text", number: "decimal", integer: "numeric", email: "email", password: "text", url: "url", phone: "tel",
+};
 
 export type SceneLayerControlEvent = {
   layerId: string; actorGuid: string; componentId: string;
@@ -279,8 +285,11 @@ export class UIControls2DInput {
     if (!this.canvas || this.editor || target.visual.properties.readOnly) return;
     const doc = this.canvas.ownerDocument;
     const input = doc.createElement("input");
-    input.type = "text";
-    input.inputMode = target.visual.classId === "2DNumericInputComponent" ? "decimal" : "text";
+    const inputType = target.visual.classId === "2DTextInputComponent" ? target.visual.properties.inputType : "text";
+    // A password field keeps the platform's secure entry; every other type stays a text field so selection can be read.
+    input.type = inputType === "password" ? "password" : "text";
+    input.inputMode = target.visual.classId === "2DNumericInputComponent" ? "decimal" : TEXT_INPUT_MODES[inputType];
+    if (inputType !== "text") input.autocapitalize = "off";
     input.value = String(this.value(target).value);
     input.dataset.testid = "scene-layer-native-input";
     input.setAttribute("aria-label", target.visual.properties.placeholder || (input.inputMode === "decimal" ? "Numeric Input" : "Text Input"));
