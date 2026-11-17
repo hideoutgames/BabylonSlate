@@ -286,6 +286,8 @@ export type PlaySessionOptions = {
   collisionPresets?: readonly import("@haptic/core").CollisionPreset[];
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
+  /** Pixel-Perfect Mode with Nearest Texture Filtering (`pixelMatchedCameras`), for the runtime's camera rays. */
+  pixelMatchedCameras?: boolean;
   /** Overlay 2DButton pick floor in CSS pixels. */
   touchMinTargetPx?: number;
   /** Baked Scene navmesh bytes; Play imports and never generates. */

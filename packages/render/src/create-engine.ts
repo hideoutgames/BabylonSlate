@@ -3698,6 +3698,11 @@ function initializeEngine(
       applySerializedSceneEnvironment(scene, sceneData, { assets: binding });
       scheduler.invalidate("asset");
     },
+    setPixelMatchedCameras: (lens) => {
+      if (options.playMode) return;
+      setScenePixelMatchedLens(scene, lens);
+      scheduler.invalidate("camera");
+    },
     setRenderSettings: (settings) => {
       setSceneRenderSettings(scene, settings);
       viewportShading?.apply();

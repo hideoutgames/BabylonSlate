@@ -230,6 +230,12 @@ export interface EngineHandle {
   releaseInitialSources: () => void;
   /** Project render mode and defaults; scene overrides remain independent. */
   setRenderSettings: (settings: RenderShadingSettings) => void;
+  /**
+   * An editor view's camera previews and frustum guides frame orthographic cameras pixel-matched over the design
+   * resolution (`setScenePixelMatchedLens`), or with null at their Orthographic Size. Play frames its own from its
+   * options and output.
+   */
+  setPixelMatchedCameras: (lens: { design: { width: number; height: number }; pixelsPerUnit: number } | null) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
