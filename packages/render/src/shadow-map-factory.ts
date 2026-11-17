@@ -305,6 +305,11 @@ export function createShadowGenerator(
         casters.length = 0;
         return casters;
       }
+      // `shadowdebug farcascades off`: a far cascade left out of this frame's render draws no caster either.
+      if (generator instanceof AtlasCascadedShadowGenerator && generator.defersCascade(layer)) {
+        casters.length = 0;
+        return casters;
+      }
       const transform =
         generator instanceof CascadedShadowGenerator
           ? generator.getCascadeTransformMatrix(layer)

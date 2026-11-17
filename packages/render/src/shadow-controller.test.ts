@@ -164,6 +164,54 @@ describe("shared shadow lifecycle", () => {
     expect([single.numCascades, single.tiles.length]).toEqual([1, 1]);
   });
 
+  it("draws the sun's far cascades in every second frame only while `shadowdebug farcascades` is off, each keeping the view that drew it", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ cascades: 4, maxLocalLights: 1 }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    controller.register(sun, true);
+    controller.sync();
+    const generator = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
+    const camera = scene.activeCamera!;
+    // The tiles a render cleared, by cascade: each tile clears under its own scissor.
+    const scissors: number[][] = [];
+    vi.spyOn(engine, "enableScissor").mockImplementation((x, y) => { scissors.push([x, y]); });
+    const cleared = () => {
+      scissors.length = 0;
+      prepareShadowLayers(generator);
+      return scissors.map(([x, y]) => generator.tiles.findIndex((tile) => tile.x === x && tile.y === y));
+    };
+    const views = () => generator.drawnViews.map((view) => view.m.join());
+    const frame = (id: number) => { (engine as unknown as { _frameId: number })._frameId = id; };
+    // The default: every cascade in every frame, odd or even.
+    frame(1);
+    expect(cleared()).toEqual([0, 1, 2, 3]);
+    expect(controller.setDebug("farcascades", false)).toBe(true);
+    // An even frame draws them all.
+    frame(2);
+    camera.position.x += 3;
+    expect(cleared()).toEqual([0, 1, 2, 3]);
+    const even = views();
+    // An odd frame leaves the far two out: their tiles are not cleared, and they keep the view that drew them while
+    // the near two follow the camera.
+    frame(3);
+    camera.position.x += 3;
+    expect(generator.defersCascade(1)).toBe(false);
+    expect(generator.defersCascade(2)).toBe(true);
+    expect(cleared()).toEqual([0, 1]);
+    const odd = views();
+    expect([odd[0] === even[0], odd[1] === even[1], odd[2] === even[2], odd[3] === even[3]]).toEqual([false, false, true, true]);
+    // That render was incomplete: the map is due again in the next frame, which draws the far ones where the camera is.
+    expect((generator.getShadowMap() as unknown as { _objectRenderer: { _currentRefreshId: number } })._objectRenderer._currentRefreshId).toBe(-1);
+    frame(4);
+    expect(cleared()).toEqual([0, 1, 2, 3]);
+    expect(views()[3]).not.toBe(even[3]);
+    // Switched back on, odd frames draw every cascade again.
+    controller.setDebug("farcascades", true);
+    frame(5);
+    expect(cleared()).toEqual([0, 1, 2, 3]);
+  });
+
   it("gives a level's first cascade its larger tile and its last cascades tiles of half the edge, never the first two and never below the floor", () => {
     expect((["low", "medium", "high", "ultra"] as const).map((level) =>
       cascadeTileSizes(2048, 4, SHADOW_HALF_TILE_CASCADES[level], SHADOW_FIRST_CASCADE_SCALE[level]))).toEqual([

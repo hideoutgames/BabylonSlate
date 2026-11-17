@@ -1130,7 +1130,7 @@ describe("Profile", () => {
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
       ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden", "FSR to view size", "layer clears off", "held image off", "backbuffer depth discarded"]],
       ["heavy", ['possess "Profile Heavy Camera"'], [
-        "shadows off", "shadow casters off", "shadow passes off", "shadow vertex clamp", "shadows medium", "shadows medium big atlas", "shadow filter low",
+        "shadows off", "shadow casters off", "shadow passes off", "shadow vertex clamp", "far cascades alternate", "shadows medium", "shadows medium big atlas", "shadow filter low",
         "geometry effects off", "post off", "resolution 1.0",
       ]],
       ["mirror", ['possess "Profile Mirror Camera"'], ["mirrors environment", "captures off"]],

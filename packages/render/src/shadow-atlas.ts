@@ -273,17 +273,28 @@ function filterReach(shadow: ShadowGenerator, size: number, correction: Vector3 
  * emit the other render events) is recorded in the Scene's shadow change journal (`recordShadowMapPass`) with its
  * tiles' drawn views, and partial when it skipped a caster that was not ready (Babylon resets the refresh counter).
  */
-function drawIntoTiles(map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShadow, atlas: RenderTargetTexture, edge: number, drawing: (pass: number) => void): void {
+function drawIntoTiles(
+  map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShadow, atlas: RenderTargetTexture, edge: number, drawing: (pass: number) => void,
+  deferral?: { defers(pass: number): boolean; drawn(pass: number): void },
+): void {
   const scene = map.getScene()!;
   const viewports = map.tiles.map((tile) => new Viewport(tile.x / edge, tile.y / edge, tile.size / edge, tile.size / edge));
   const views: { view: Matrix; reach: number }[] = map.tiles.map(() => ({ view: Matrix.Identity(), reach: 0 }));
   let pass = 0;
   let cleared = false;
   let partial = false;
+  // A pass left out of this render (`deferral`): its tile keeps its depth and the view it was drawn with.
+  let deferring = false;
+  let deferred = false;
   map.ignoreCameraViewport = false;
   map.onBeforeRenderObservable.add((layer) => {
     pass = layer;
     scene.getEngine().setViewport(viewports[layer]!);
+    deferring = deferral?.defers(layer) === true;
+    if (deferring) {
+      deferred = true;
+      return;
+    }
     drawing(layer);
   });
   const resetRefreshCounter = map.resetRefreshCounter.bind(map);
@@ -294,7 +305,9 @@ function drawIntoTiles(map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShad
   // Only the tile's depth: Babylon's clear would wipe every other light's.
   map.onClearObservable.clear();
   map.onClearObservable.add((engine) => {
+    if (deferring) return;
     cleared = true;
+    deferral?.drawn(pass);
     const tile = map.tiles[pass]!;
     if (atlases.get(scene)?.target === atlas) {
       const counts = shadowAtlasDrawCounts(scene) as ShadowAtlasDrawCounts;
@@ -310,6 +323,9 @@ function drawIntoTiles(map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShad
     }
   });
   map.onAfterUnbindObservable.add(() => {
+    // A render that left a pass out is incomplete: the map draws again next frame, when that pass is due.
+    if (deferred && cleared) map.resetRefreshCounter();
+    deferred = deferring = false;
     if (cleared) {
       // Only the Scene's atlas is sampled by its surfaces; a private one (caster warm-up) is not.
       if (atlases.get(scene)?.target === atlas) {
@@ -568,6 +584,9 @@ export function createAtlasShadowGenerator(light: SpotLight | PointLight, size: 
   return placement && construct(placement, () => new AtlasShadowGenerator(size, light));
 }
 
+/** The first cascade `shadowdebug farcascades off` draws on alternate frames: the first two hold the near shadows. */
+const FIRST_DEFERRED_CASCADE = 2;
+
 /**
  * The sun's cascaded shadow generator drawing each cascade into its own tile of the Scene's atlas, built with its
  * cascade count (`createAtlasCascadedShadowGenerator`), which a change of count rebuilds. Disposing it frees the tiles.
@@ -579,6 +598,11 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   private readonly lengths: number[] = [];
   private readonly depth = new Vector4(0, 0, 0, 0);
   declare private corrections: Vector3[];
+  /**
+   * Per cascade, whether its tile has been cleared and drawn since the map was made (`defersCascade`). Set as the map
+   * is initialised, which Babylon's constructor does before this class's own fields would be.
+   */
+  declare private cascadeDrawn: boolean[];
   /** The share of the shadow distance's far end over which the shadow fades out (`ShadowSettings.fadeFraction`). */
   fadeFraction = 0;
   /** Automatic bias (`ShadowSettings.autoBias`): receivers compare against their own plane (receiver-plane PCF). */
@@ -661,6 +685,7 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
     const csm = this as unknown as {
       _viewSpaceFrustumsZ: number[]; _frustumLengths: number[]; _cascadeMinExtents: Vector3[]; _cascadeMaxExtents: Vector3[];
     };
+    const cascadeDrawn: boolean[] = this.cascadeDrawn = [];
     drawIntoTiles(this._shadowMap as AtlasTileTarget, this, this.placement.atlas.target, this.placement.atlas.tiles.edge, (cascade) => {
       this.views[cascade]!.copyFrom(this.getCascadeTransformMatrix(cascade)!);
       // The splits the cascades are drawn for, computed as the map binds.
@@ -680,7 +705,18 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
           ratio(max[0]!.y - min[0]!.y, max[index]!.y - min[index]!.y),
           ratio(max[index]!.z - min[index]!.z, max[0]!.z - min[0]!.z)));
       }
-    });
+    }, { defers: (cascade) => this.defersCascade(cascade), drawn: (cascade) => { cascadeDrawn[cascade] = true; } });
+  }
+
+  /**
+   * Debug (`shadowdebug farcascades off`): whether `cascade` is left out of a render in this Engine frame. The
+   * cascades after the first two, once each has drawn, are cleared and drawn only in even Engine frames; in odd ones
+   * their tiles keep their depth and `drawnViews` keeps the view that drew it, which receivers go on sampling with. A
+   * render that left one out asks for another (`drawIntoTiles`), so a map that draws on change is whole a frame later.
+   */
+  defersCascade(cascade: number): boolean {
+    return cascade >= FIRST_DEFERRED_CASCADE && this.cascadeDrawn[cascade] === true &&
+      (this._scene.getEngine().frameId & 1) === 1 && shadowDebugOff(this._scene, "farcascades");
   }
 
   protected override _applyFilterValues(): void {}
