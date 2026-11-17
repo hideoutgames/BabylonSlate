@@ -1,26 +1,21 @@
 import { NestedMenu, NumericDragField, type NestedMenuItem } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import {
-  SCENE_LAYER_ACTOR_SIZE_MODES,
   SCENE_LAYER_ANCHOR_LABELS,
   SCENE_LAYER_ANCHORS,
+  SCENE_LAYER_SIZE_MODE_LABELS as SIZE_MODE_LABELS,
+  SCENE_LAYER_SIZE_MODES,
   type SceneLayerActorDesign,
-  type SceneLayerActorSizeMode,
   type SceneLayerAnchor,
+  type SceneLayerSizeMode,
 } from "@haptic/core";
 import { ChevronDownIcon, FrameIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
-const SIZE_MODE_LABELS: Record<SceneLayerActorSizeMode, string> = {
-  fullscreen: "Fullscreen",
-  desired: "Desired",
-  custom: "Custom",
-};
-
 /**
  * SceneLayerActor Prefab island controls: how the orange frame is sized
- * (Fullscreen, Desired, Custom pixels) and which frame point sits on the
- * Prefab Root.
+ * (Fullscreen, Desired, Custom pixels, as a Scene Layer's Canvas Size) and
+ * which frame point sits on the Prefab Root.
  */
 export function SceneLayerActorFrameControls({
   design,
@@ -46,8 +41,8 @@ export function SceneLayerActorFrameControls({
       id: "frame-size",
       value: design.sizeMode,
       disabled,
-      onValueChange: (value) => onChange({ ...design, sizeMode: value as SceneLayerActorSizeMode }),
-      items: SCENE_LAYER_ACTOR_SIZE_MODES.map((mode) => ({
+      onValueChange: (value) => onChange({ ...design, sizeMode: value as SceneLayerSizeMode }),
+      items: SCENE_LAYER_SIZE_MODES.map((mode) => ({
         id: mode,
         label: SIZE_MODE_LABELS[mode],
         value: mode,

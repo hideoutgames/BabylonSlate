@@ -1,9 +1,21 @@
 import {
   ENVIRONMENT_SOURCES,
   actorCameraComponent,
+  createDefaultSceneLayerCanvasDesign,
   createDefaultSceneSettings,
   normalizeSceneFogSettings,
+  normalizeSceneLayerCanvasDesign,
+  SCENE_LAYER_ANCHOR_LABELS,
+  SCENE_LAYER_ANCHORS,
+  SCENE_LAYER_SCALING_LABELS,
+  SCENE_LAYER_SCALINGS,
+  SCENE_LAYER_SIZE_MODE_LABELS,
+  SCENE_LAYER_SIZE_MODES,
   type EnvironmentSource,
+  type SceneLayerAnchor,
+  type SceneLayerCanvasDesign,
+  type SceneLayerScaling,
+  type SceneLayerSizeMode,
   type ProjectDocument,
   type SerializedScene,
 } from "@haptic/core";
@@ -365,19 +377,83 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       }),
   };
   const row = (id: string) => settingsRows.find((entry) => entry.id === id)!;
-  const [layerLocation, layerWidth, layerHeight] = layerCameraRows(scene, mutate);
-  // A Scene Layer's canvas is its camera's view: Layer Width and Height, and where its Layer Camera starts.
+  const [layerLocation] = layerCameraRows(scene, mutate);
+  // A Scene Layer's canvas: its size, its Root and how Play scales it, and where its Layer Camera starts.
   const overlaySettingsRows: PropertyRow[] = [
     row("scene-name"),
     layerPhysicsRow,
     layerTickOnPauseRow,
     row("scene-gravity"),
-    { ...layerWidth!, label: "Layer Width" },
-    { ...layerHeight!, label: "Layer Height" },
+    ...layerCanvasRows(scene, mutate),
     { ...layerLocation!, label: "Camera Location" },
   ];
 
   return { settingsRows, overlaySettingsRows };
+}
+
+/** A Scene Layer's canvas: Canvas Size (with its pixel size for Custom), Root Pivot and Canvas Scaling. */
+function layerCanvasRows(
+  scene: SerializedScene,
+  mutate: (next: SerializedScene) => void,
+): PropertyRow[] {
+  const canvas = normalizeSceneLayerCanvasDesign(scene.settings.layerCanvas);
+  const defaults = createDefaultSceneLayerCanvasDesign();
+  const set = (next: Partial<SceneLayerCanvasDesign>) =>
+    mutate({ ...scene, settings: { ...scene.settings, layerCanvas: { ...canvas, ...next } } });
+  const rows: PropertyRow[] = [
+    {
+      kind: "enum",
+      id: "scene-layer-canvas-size",
+      label: "Canvas Size",
+      description: "Fullscreen is the project's Custom Resolution (1920 x 1080 without one); Desired wraps the layer's content.",
+      value: canvas.sizeMode,
+      defaultValue: defaults.sizeMode,
+      verbatim: true,
+      options: SCENE_LAYER_SIZE_MODES.map((mode) => ({ value: mode, label: SCENE_LAYER_SIZE_MODE_LABELS[mode] })),
+      onChange: (sizeMode) => set({ sizeMode: sizeMode as SceneLayerSizeMode }),
+    },
+  ];
+  if (canvas.sizeMode === "custom") {
+    rows.push({
+      kind: "vector3",
+      id: "scene-layer-canvas-custom-size",
+      label: "Custom Size",
+      value: [canvas.customSizePx.width, canvas.customSizePx.height, 0],
+      defaultValue: [defaults.customSizePx.width, defaults.customSizePx.height, 0],
+      axes: ["W", "H"],
+      onChange: ([width, height]) => set({
+        customSizePx: {
+          width: width > 0 ? width : canvas.customSizePx.width,
+          height: height > 0 ? height : canvas.customSizePx.height,
+        },
+      }),
+    });
+  }
+  rows.push(
+    {
+      kind: "enum",
+      id: "scene-layer-canvas-root",
+      label: "Root Pivot",
+      description: "The canvas point at the layer's origin, and the point of the screen it lines up with in Play.",
+      value: canvas.rootAnchor,
+      defaultValue: defaults.rootAnchor,
+      verbatim: true,
+      options: SCENE_LAYER_ANCHORS.map((anchor) => ({ value: anchor, label: SCENE_LAYER_ANCHOR_LABELS[anchor] })),
+      onChange: (rootAnchor) => set({ rootAnchor: rootAnchor as SceneLayerAnchor }),
+    },
+    {
+      kind: "enum",
+      id: "scene-layer-canvas-scaling",
+      label: "Canvas Scaling",
+      description: "True Pixel Size shows a Custom or Desired canvas at its pixel size instead of scaling it to the screen.",
+      value: canvas.scaling,
+      defaultValue: defaults.scaling,
+      verbatim: true,
+      options: SCENE_LAYER_SCALINGS.map((scaling) => ({ value: scaling, label: SCENE_LAYER_SCALING_LABELS[scaling] })),
+      onChange: (scaling) => set({ scaling: scaling as SceneLayerScaling }),
+    },
+  );
+  return rows;
 }
 
 /**

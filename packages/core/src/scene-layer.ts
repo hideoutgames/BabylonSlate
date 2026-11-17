@@ -6,7 +6,6 @@ import {
   normalizeScene,
   normalizeSceneLayerSpawnList,
   normalizeScenePostProcessStack,
-  type SceneCameraBounds2D,
   type SceneLayerSpawnEntry,
   type ScenePostProcessEntry,
   type SerializedActor,

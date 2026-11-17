@@ -57,7 +57,8 @@ const FEATURE_TEST_SCENE_LAYER_KNOBS = {
   overlayPhysicsBoxes: 8,
   /** Seconds between Card Switcher swaps. */
   switchIntervalSeconds: 2.5,
-  painterPixelsPerUnit: 64,
+  /** The Painter canvas's pixel density: 1.92 × 1.2 units at 107 keep its 205 × 128 pixels. */
+  painterPixelsPerUnit: 107,
   hudZOrder: 10,
   overlayPhysicsZOrder: 5,
   /** Seconds each FT_UICameraRig tween takes. */
@@ -719,6 +720,9 @@ function painterCommands(): PainterCommand[] {
 function overlayPhysicsLayer(refs: LayerRefs): SerializedSceneLayer {
   const layer: SerializedSceneLayer = { ...createDefaultSceneLayer(), name: NAMES.overlayPhysics };
   layer.settings.physicsEnabled = true;
+  // A Custom canvas of 3200 x 1800 px at 100 Pixels Per Unit keeps the 32 x 18 units this layer's physics is laid
+  // out for, fitted to the screen as a Fullscreen canvas is.
+  layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", customSizePx: { width: 3200, height: 1800 } };
   const add = (actor: SerializedActor) => addLayerActor(layer, actor);
   const icons = [refs.icons.default, refs.icons.camera, refs.icons.audio, refs.icons.navmesh];
   const solid = (id: string, name: string, x: number, y: number, width: number, height: number) =>
