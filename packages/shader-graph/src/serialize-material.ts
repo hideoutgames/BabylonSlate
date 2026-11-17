@@ -216,13 +216,17 @@ export function serializedToMaterialFunctionGraph(
 
 /**
  * The title a node shows on the canvas: a parameter's name, a Global Parameter's selection, a Material
- * Function call's function name, else the catalog title.
+ * Function call's function name, else its definition's title as its properties shape it (Swizzle (ZX),
+ * Component Mask (XZ)). `definition` is the node's resolved definition when the caller already has it.
  */
 export function materialNodeTitle(
   node: { type: string; properties: Record<string, unknown> },
   context: Pick<MaterialPinContext, "functions" | "globalParameters"> = {},
+  definition = createTypeResolver(
+    { nodes: [{ id: "node", position: { x: 0, y: 0 }, ...node }], edges: [] },
+    { functions: context.functions },
+  ).definitionOf("node"),
 ): string {
-  const definition = materialNodeDefinition(node.type);
   if (isMaterialParameterNode(node.type)) return materialParameterName(node) || definition?.title || node.type;
   if (node.type === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE) return globalParameterNodeTitle(node.properties, context.globalParameters);
   const functionGuid = node.type === "function.call" && typeof node.properties.functionGuid === "string" ? node.properties.functionGuid : undefined;
@@ -261,7 +265,7 @@ export function hydrateMaterialGraphForEditor(
           __material: true,
           __nodeType: node.type,
           ...(definition ? { __category: definition.category } : {}),
-          title: materialNodeTitle({ type: node.type, properties: data }, context),
+          title: materialNodeTitle({ type: node.type, properties: data }, context, definition),
         },
       };
     }),
