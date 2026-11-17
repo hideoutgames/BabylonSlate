@@ -14,6 +14,7 @@ import {
   type CommitInput,
   type CommitResult,
   type FileChange,
+  type LfsFile,
   type LogOptions,
   type LogPage,
   type PullInput,
@@ -384,11 +385,33 @@ export class FakeSync implements SyncPort {
     return (await this.workingObject(path, size)) ?? this.storedObject(oid, size);
   }
 
-  /** The working copy's file for an LFS object of `size` (an object never changes under its name), or null. */
+  async downloadLfsObjects(files: readonly LfsFile[], options: TransferOptions = {}): Promise<void> {
+    throwIfCancelled(options.signal);
+    for (const { path, size } of files) {
+      const oid = lfsObjectId(path);
+      if (!oid) throw new Error(`${path} is not an LFS object.`);
+      if ((await this.storedSize(path)) === size) continue;
+      await this.storage.writeBinary(path, this.storedObject(oid, size));
+    }
+  }
+
+  releaseCaches(): void {
+    // Nothing is cached between operations.
+  }
+
+  /** The working copy's file for an LFS object of `size` (an object never changes under its name), or null; read only at that size. */
   private async workingObject(path: string, size: number): Promise<Uint8Array | null> {
+    const stored = await this.storedSize(path);
+    if (stored !== size && stored !== undefined) return null;
+    const local = await this.storage.readBinary(path);
+    return local.byteLength === size ? local : null;
+  }
+
+  /** A working file's size from its stat: null when absent or a folder, undefined when the storage cannot tell. */
+  private async storedSize(path: string): Promise<number | null | undefined> {
     try {
-      const local = await this.storage.readBinary(path);
-      return local.byteLength === size ? local : null;
+      const stat = await this.storage.stat(path);
+      return stat.isDir ? null : (stat.size ?? undefined);
     } catch (error) {
       if (isStorageNotFound(error)) return null;
       throw error;

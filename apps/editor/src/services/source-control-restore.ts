@@ -1,34 +1,22 @@
 import { readHassetHeader } from "@haptic/assets";
-import { isStorageNotFound, type ProjectStorage } from "@haptic/core";
-import type { SyncPort } from "@haptic/source-control";
+import type { ProjectStorage } from "@haptic/core";
+import type { LfsFile, SyncPort } from "@haptic/source-control";
 import { assetBlobFolder } from "../lib/source-control-changes";
 
 function parentOf(path: string): string {
   return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 }
 
-async function write(storage: ProjectStorage, path: string, bytes: Uint8Array): Promise<void> {
-  const parent = parentOf(path);
-  if (parent !== "") await storage.mkdir(parent, true);
-  await storage.writeBinary(path, bytes);
-}
-
-async function sizeOf(storage: ProjectStorage, path: string): Promise<number | null> {
-  try {
-    return (await storage.stat(path)).size ?? null;
-  } catch (error) {
-    if (isStorageNotFound(error)) return null;
-    throw error;
-  }
-}
-
 /**
  * Makes the working copy's `path` what `commit` holds: the file and every
  * blob its chunks are stored in, or no file when the commit has none. Blobs
- * the copy lacks are downloaded before anything is written, and written
- * before the asset, so the asset never names a blob that is not there. A
- * blob already present keeps its file (it never changes under its name).
- * Returns the asset paths written or removed.
+ * the copy lacks (or holds at another size) are downloaded straight into
+ * their files first (`SyncPort.downloadLfsObjects`: natively on a device, so
+ * their bytes never enter JavaScript), and the asset is written only once
+ * every one is there, so it never names a blob that is not. A blob already
+ * present keeps its file (it never changes under its name). A blob that
+ * cannot be had rejects with the asset untouched; blobs that did arrive stay,
+ * untracked. Returns the asset paths written or removed.
  */
 export async function restoreVersion({ port, storage, path, commit, signal }: {
   port: SyncPort;
@@ -43,18 +31,22 @@ export async function restoreVersion({ port, storage, path, commit, signal }: {
     if (await storage.exists(path)) await storage.remove(path);
     return [path];
   }
-  const blobs: { path: string; bytes: Uint8Array }[] = [];
-  if (path.endsWith(".hasset")) {
-    const folder = assetBlobFolder(path);
+  const blobs = new Map<string, LfsFile>();
+  const folder = path.endsWith(".hasset") ? assetBlobFolder(path) : null;
+  if (folder) {
     for (const chunk of readHassetHeader(bytes).chunks) {
-      if (!("blob" in chunk.locator) || !folder) continue;
+      if (!("blob" in chunk.locator)) continue;
       const blobPath = `${folder}/${chunk.locator.blob}`;
-      if (blobs.some((blob) => blob.path === blobPath) || (await sizeOf(storage, blobPath)) === chunk.byteLength) continue;
-      blobs.push({ path: blobPath, bytes: await port.readLfsObject(blobPath, chunk.byteLength, signal ? { signal } : {}) });
+      blobs.set(blobPath, { path: blobPath, size: chunk.byteLength });
     }
   }
+  if (blobs.size > 0) {
+    await storage.mkdir(folder!, true);
+    await port.downloadLfsObjects([...blobs.values()], signal ? { signal } : {});
+  }
   signal?.throwIfAborted();
-  for (const blob of blobs) await write(storage, blob.path, blob.bytes);
-  await write(storage, path, bytes);
+  const parent = parentOf(path);
+  if (parent !== "") await storage.mkdir(parent, true);
+  await storage.writeBinary(path, bytes);
   return [path];
 }

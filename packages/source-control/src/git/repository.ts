@@ -20,6 +20,7 @@ import {
   type CommitInput,
   type CommitResult,
   type FileChange,
+  type LfsFile,
   type LogOptions,
   type LogPage,
   type PullInput,
@@ -191,8 +192,12 @@ export class GitRepository implements SyncPort {
   private readonly repositoryUrl: string;
   private readonly url: string;
   private readonly now: () => number;
-  /** isomorphic-git's object and index cache: packs are immutable and the index is checked by stat. */
-  private readonly cache = {};
+  /**
+   * isomorphic-git's object and index cache: packs are immutable and the
+   * index is checked by stat. It holds every pack an operation read, whole,
+   * until `releaseCaches` replaces it.
+   */
+  private cache: object = {};
   private queue: Promise<unknown> = Promise.resolve();
   /** The checked-out branch: HEAD's, moved only by a switch or a new branch. */
   private current: string;
@@ -418,24 +423,40 @@ export class GitRepository implements SyncPort {
    * once read).
    */
   private async lfsObject(op: Op, path: string, object: LfsObject): Promise<Uint8Array> {
-    try {
+    const stat = await this.storage.stat(storagePath(path)).catch((error: unknown) => {
+      if (isStorageNotFound(error)) return null;
+      throw error;
+    });
+    // Read only a file of the object's size (or of a size the storage cannot tell): another is damaged and downloaded instead.
+    if (stat && !stat.isDir && (stat.size === object.size || stat.size === null)) {
       const local = await this.storage.readBinary(storagePath(path));
       if (local.byteLength === object.size) return local;
-    } catch (error) {
-      if (!isStorageNotFound(error)) throw error;
     }
     return op.lfs.read(object, `${LFS_SCRATCH}/${object.oid}`);
   }
 
-  /**
-   * Downloads the LFS objects `commit` holds at `paths` whose working files
-   * are missing or of another size into those files, as a clone, pull or
-   * switch does before its checkout (with a native file transfer, straight
-   * to the file); present files are never read. No index entry or other
-   * file changes: the Git benchmark's download step.
-   */
-  downloadLfsObjects(commit: string, paths: readonly string[], options: TransferOptions = {}): Promise<void> {
-    return this.run((op) => this.downloadMissing(op, commit, new Set(paths.map(storagePath))), options.signal);
+  downloadLfsObjects(files: readonly LfsFile[], options: TransferOptions = {}): Promise<void> {
+    return this.run(async (op) => {
+      const wanted = new Map<string, LfsObject>();
+      for (const { path, size } of files) {
+        const oid = lfsObjectId(path);
+        if (!oid) throw new Error(`${path} is not an LFS object.`);
+        wanted.set(storagePath(path), { oid, size });
+      }
+      await this.downloadInto(op, wanted);
+      // The batch may leave out an object it lacks; the caller relies on every file being there.
+      for (const [path, object] of wanted) {
+        const stat = await this.storage.stat(path).catch(() => null);
+        if (!stat || stat.isDir || stat.size !== object.size) {
+          throw new SyncError("lfs", `The server has no LFS object ${object.oid}.`, { code: "lfs-object-missing" });
+        }
+      }
+    }, options.signal);
+  }
+
+  releaseCaches(): void {
+    // A running operation keeps the cache it started with; the next one starts empty.
+    this.cache = {};
   }
 
   removableLfsObjects({ signal, references }: RemovableLfsOptions): Promise<string[]> {
@@ -1024,7 +1045,15 @@ export class GitRepository implements SyncPort {
 
   /** Downloads the LFS objects of `commit` (under `paths`) whose files are missing; present files are never read. */
   private async downloadMissing(op: Op, commit: string, paths: ReadonlySet<string> | null): Promise<void> {
-    const wanted = await this.lfsEntries(op, commit, paths);
+    await this.downloadInto(op, await this.lfsEntries(op, commit, paths));
+  }
+
+  /**
+   * Downloads each object of `wanted` (by working path) whose file is
+   * missing or of another size into that file (with a native file transfer,
+   * straight to the file); a file of the object's size is never read.
+   */
+  private async downloadInto(op: Op, wanted: ReadonlyMap<string, LfsObject>): Promise<void> {
     const pathsByOid = new Map<string, string[]>();
     const missing: LfsObject[] = [];
     for (const [path, object] of wanted) {

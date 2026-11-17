@@ -194,15 +194,31 @@ describe("SourceControlDiffService", () => {
 });
 
 describe("SourceControlSyncService.revert", () => {
-  it("writes HEAD's version with the blob it references, downloading a blob the copy lost, and leaves no change", async () => {
-    const { service, storage, save, head, base, baseBlob } = await seeded();
+  it("writes HEAD's version with the blob it references, downloading a blob the copy lost into its file, and leaves no change", async () => {
+    const { service, storage, port, save, head, base, baseBlob } = await seeded();
     await save({ 1: "Edited" });
     await storage.remove(baseBlob);
+    const reads = vi.spyOn(port, "readLfsObject");
+    const downloads = vi.spyOn(port, "downloadLfsObjects");
     expect(await service.revert(PATH, head)).toEqual([PATH]);
+    // Straight into the file (natively on a device): the blob's bytes never enter JavaScript.
+    expect(reads).not.toHaveBeenCalled();
+    expect(downloads.mock.calls.map(([files]) => files)).toEqual([[{ path: baseBlob, size: [...base.blobs.values()][0]!.byteLength }]]);
     expect(await storage.readBinary(PATH)).toEqual(base.bytes);
     expect(await storage.readBinary(baseBlob)).toEqual([...base.blobs.values()][0]);
     // The edit's own blob is left as an added file; the asset itself matches HEAD.
     expect(service.getSnapshot().rows.map((row) => row.id)).not.toContain(PATH);
+  });
+
+  it("leaves the asset as it was when a blob it needs cannot be had", async () => {
+    const { service, storage, remote, save, head, baseBlob } = await seeded();
+    await save({ 1: "Edited" });
+    const edited = await storage.readBinary(PATH);
+    await storage.remove(baseBlob);
+    remote.lfsObjects.delete(baseBlob.slice("assets/.blobs/".length));
+    await expect(service.revert(PATH, head)).rejects.toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    expect(await storage.readBinary(PATH)).toEqual(edited);
+    expect(await storage.exists(baseBlob)).toBe(false);
   });
 
   it("removes an asset HEAD does not have", async () => {

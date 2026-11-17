@@ -395,6 +395,9 @@ export class SourceControlSyncService {
 
   /** The app went to the background or came back (the editor-quiet flag is read directly). */
   setHidden(hidden: boolean): void {
+    // In the background the system may reclaim the app: the Git client's caches go at once (not queued behind
+    // a running transfer), and the next status reads them again.
+    if (hidden && !this.hidden) this.port?.releaseCaches();
     this.hidden = hidden;
     this.resumeStatus();
   }
