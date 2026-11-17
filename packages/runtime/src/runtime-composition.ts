@@ -258,6 +258,10 @@ export function registerRuntimeSubsystems(rt: RuntimeComposition): void {
   rt.subsystems.register(rt.behaviourTrees);
   rt.subsystems.register(rt.particleEffects);
   rt.subsystems.register(rt.textAppear);
+  rt.textAppear.letters.bind({
+    world: () => rt.world,
+    invokeEvent: (classId, event, self, args) => rt.scriptHost.invokeEvent(classId, event, self, args),
+  });
   rt.subsystems.register(rt.renderEmitter);
   rt.subsystems.register(rt.camera);
   rt.subsystems.register(rt.layers);

@@ -198,6 +198,9 @@ export function flushTextAppear(rt: RuntimeComposition): void {
       voiceId: sound.voiceId ?? rt.voices.scriptVoiceId(),
       ...(sound.loop ? { loop: true } : {}),
     });
+  }, (component, poses) => {
+    const slotId = component.owner ? rt.actorSlot(component.owner) : undefined;
+    if (slotId !== undefined) rt.emit({ type: "setText2DLetterPoses", slotId, componentId: component.guid, poses });
   });
 }
 

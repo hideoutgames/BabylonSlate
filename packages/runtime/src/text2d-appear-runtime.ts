@@ -4,6 +4,7 @@ import {
 } from "@haptic/core";
 import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
+import { Text2DLetterScripts } from "./text2d-letter-scripts";
 import { componentOwners } from "./world-component-index";
 
 /** A forward reveal's sound clock in timeline seconds; it outlives the reveal by the sound offset. */
@@ -21,9 +22,16 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   private readonly states = new WeakMap<ActorComponent, AppearState>();
   private readonly dirty = new Set<ActorComponent>();
   private sounds: Text2DAppearSoundEvent[] = [];
+  /** Scripted Appear Modes and Decorator Effects, which follow the reveal this runtime owns. */
+  readonly letters = new Text2DLetterScripts();
 
   progress(component: ActorComponent): number {
     return this.state(component).progress;
+  }
+
+  /** The scripted letter poses the renderer holds; undefined while every letter is at rest. */
+  letterPoses(component: ActorComponent): number[] | undefined {
+    return this.letters.poses(component);
   }
 
   refresh(component: ActorComponent): void {
@@ -56,14 +64,16 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
         if (component.classId !== "2DRichTextComponent" || component.destroyed) continue;
         const state = this.state(component);
         if (state.sound) this.advanceSound(component, state, deltaSeconds);
-        if (!state.direction) continue;
-        const target = state.direction === 1 ? 1 : 0;
-        const step = state.duration > 0 ? deltaSeconds / state.duration : 1;
-        const remaining = Math.abs(target - state.progress);
-        state.progress = step >= remaining - Number.EPSILON * 4
-          ? target : state.progress + state.direction * step;
-        if (state.progress === target) state.direction = 0;
-        this.dirty.add(component);
+        if (state.direction) {
+          const target = state.direction === 1 ? 1 : 0;
+          const step = state.duration > 0 ? deltaSeconds / state.duration : 1;
+          const remaining = Math.abs(target - state.progress);
+          state.progress = step >= remaining - Number.EPSILON * 4
+            ? target : state.progress + state.direction * step;
+          if (state.progress === target) state.direction = 0;
+          this.dirty.add(component);
+        }
+        this.letters.advance(component, state.progress, deltaSeconds);
       }
     }
   }
@@ -71,6 +81,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   flush(
     send: (component: ActorComponent, progress: number) => void,
     sound?: (event: Text2DAppearSoundEvent) => void,
+    letterPoses?: (component: ActorComponent, poses: number[]) => void,
   ): void {
     for (const component of this.dirty) {
       if (!component.destroyed && component.owner && !component.owner.destroyed) send(component, this.state(component).progress);
@@ -81,11 +92,13 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
     for (const event of sounds) {
       if (event.type === "stop" || (!event.component.destroyed && event.component.owner && !event.component.owner.destroyed)) sound?.(event);
     }
+    if (letterPoses) this.letters.flush(letterPoses);
   }
 
   remove(component: ActorComponent): void {
     const state = this.states.get(component);
     if (state) this.stopSound(component, state);
+    this.letters.remove(component);
     this.states.delete(component);
     this.dirty.delete(component);
   }

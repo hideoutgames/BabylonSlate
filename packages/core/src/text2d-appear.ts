@@ -17,6 +17,21 @@ export const TEXT2D_APPEAR_MODE_LABELS: Record<Text2DAppearMode, string> = {
   fade: "Fade", scale: "Scale", slide: "Slide", instant: "Instant",
 };
 
+/** A Rich Text 2D Appear Mode Class in the Appear Modes list, by Class id. */
+export const TEXT2D_CUSTOM_APPEAR_MODE_PREFIX = "class:";
+export type Text2DCustomAppearMode = `class:${string}`;
+export type Text2DAppearModeEntry = Text2DAppearMode | Text2DCustomAppearMode;
+
+export function text2DCustomAppearMode(classId: string): Text2DCustomAppearMode {
+  return `${TEXT2D_CUSTOM_APPEAR_MODE_PREFIX}${classId}`;
+}
+
+/** The Class id of a custom Appear Modes entry, or null for a built-in mode. */
+export function text2DCustomAppearModeClassId(entry: unknown): string | null {
+  if (typeof entry !== "string" || !entry.startsWith(TEXT2D_CUSTOM_APPEAR_MODE_PREFIX)) return null;
+  return entry.slice(TEXT2D_CUSTOM_APPEAR_MODE_PREFIX.length).trim() || null;
+}
+
 export const TEXT2D_APPEAR_TRANSITIONS = [
   "instant", ...EASING_CURVES,
 ] as const;
@@ -47,7 +62,7 @@ const DEFAULT_TEXT2D_APPEAR_INTERVAL = 0.1;
 const DEFAULT_TEXT2D_APPEAR_DURATION = 0.3;
 
 export type Text2DAppearProperties = {
-  appearModes: Text2DAppearMode[];
+  appearModes: Text2DAppearModeEntry[];
   appearTransition: Text2DAppearTransition;
   appearInterval: number;
   appearDuration: number;
@@ -92,11 +107,14 @@ export function text2DLetterPoseAt(poses: readonly number[], index: number): Tex
   return letterPoseScratch;
 }
 
-function parseText2DAppearModes(value: unknown): Text2DAppearMode[] {
+function parseText2DAppearModes(value: unknown): Text2DAppearModeEntry[] {
   if (!Array.isArray(value)) return [];
   if (value.includes("instant")) return ["instant"];
-  return [...new Set(value.filter((mode): mode is Text2DAppearMode =>
-    TEXT2D_APPEAR_MODES.includes(mode as Text2DAppearMode)))];
+  return [...new Set(value.flatMap((mode): Text2DAppearModeEntry[] => {
+    if (TEXT2D_APPEAR_MODES.includes(mode as Text2DAppearMode)) return [mode as Text2DAppearMode];
+    const classId = text2DCustomAppearModeClassId(mode);
+    return classId ? [text2DCustomAppearMode(classId)] : [];
+  }))];
 }
 
 function parseText2DAppearTransition(value: unknown): Text2DAppearTransition {
