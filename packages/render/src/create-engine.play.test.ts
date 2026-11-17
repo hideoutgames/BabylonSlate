@@ -4738,6 +4738,32 @@ describe("Play createEngine view", () => {
     return buf;
   }
 
+  it("frames a Fullscreen Scene Layer in design pixels of a 640 x 360 pixel-art output, extended or not", () => {
+    const sizes: Array<{ outputWidth: number; outputHeight: number }> = [];
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), playMode: true, pixelsPerUnit: 100,
+      renderSettings: { customResolution: true, width: 640, height: 360, blackBars: false, upscaling: "pixelated" },
+      onSceneLayerResize: (size) => sizes.push(size),
+    });
+    handles.push(handle);
+    handle.setSize(640, 360);
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+      canvas: {
+        design: { sizeMode: "fullscreen", customSizePx: { width: 400, height: 300 }, rootAnchor: "center", scaling: "fitToScreen" },
+        rect: { width: 6.4, height: 3.6, center: [0, 0] },
+      } });
+    const camera = () => handle.sceneLayerScenes().find((layer) => layer.layerId === "hud")!.scene.activeCamera!;
+    // 3.6 units over 360 framebuffer rows: a 12 px (0.12 unit) font is 12 rows tall.
+    expect(camera().orthoTop).toBeCloseTo(1.8);
+    expect(camera().orthoRight).toBeCloseTo(3.2);
+    expect(sizes.at(-1)).toMatchObject({ outputWidth: 640, outputHeight: 360 });
+    // Pixelated without Black Bars extends a 1300 x 800 window's framebuffer to 650 x 400 design pixels.
+    handle.setSize(650, 400);
+    expect(camera().orthoTop).toBeCloseTo(2);
+    expect(camera().orthoRight).toBeCloseTo(3.25);
+    expect(sizes.at(-1)).toMatchObject({ outputWidth: 650, outputHeight: 400 });
+  });
+
   it("views through the Scene's Layer Camera until a camera is possessed, and moves it on sceneCamera", () => {
     const { handle } = playHandle(sharedEngine());
     const layerCamera = handle.scene.getCameraByName("playLayerCamera");

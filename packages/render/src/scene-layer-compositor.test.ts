@@ -239,6 +239,16 @@ describe("SceneLayerCompositor", () => {
     compositor.render();
     expect(layer.viewBounds.width).toBeCloseTo(8);
     expect(views).toHaveLength(2);
+
+    // A new screen reframes it, and the runtime hears the new view.
+    compositor.resize(true);
+    expect(views).toHaveLength(3);
+
+    // With nothing left to draw, it is the Fullscreen canvas again.
+    quad.setEnabled(false);
+    compositor.render();
+    expect(layer.viewBounds.width).toBeCloseTo(19.2);
+    expect(layer.viewBounds.center[0]).toBeCloseTo(0);
   });
 
   it("leaves an untouched HUD camera and its matrices alone each frame, and restores one another owner moved", () => {

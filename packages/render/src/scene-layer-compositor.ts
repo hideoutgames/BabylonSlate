@@ -2,6 +2,7 @@ import { activeRenderFrameCapture } from "./render-frame-report";
 import { CameraShakeView, type CameraShakeViewOffset } from "./camera-shake-view";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { overlayClipAllowsPoint } from "./overlay-layout-render";
+import { isColliderVisualMesh } from "./collider-visual";
 import { openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
 import { pickBufferSize } from "./pick-coords";
 import type { AttachedPostProcessStack } from "./post-process-material";
@@ -100,6 +101,8 @@ type LayerRecord = SceneLayerView & {
   design: SceneLayerCanvasDesign;
   /** The canvas in layer units: the command's, or for Desired the drawn content's bounds once measured. */
   canvas: SceneLayerRect;
+  /** The command's canvas: a Desired layer's while it draws nothing. */
+  commandCanvas: SceneLayerRect;
   /** Desired only: hears the layer Scene's changes since its content was last measured. */
   contentChanges: ContentWatch | null;
   /** Null until the first bind. */
@@ -185,6 +188,7 @@ export class SceneLayerCompositor {
       renderer: layerRenderer(scene),
       design: normalizeSceneLayerCanvasDesign(command.canvas.design),
       canvas: commandCanvas(command),
+      commandCanvas: commandCanvas(command),
       contentChanges: null,
       viewBounds: { width: 1, height: 1, center: [0, 0] },
       cameraState: { ...(command.camera ?? DEFAULT_LAYER_CAMERA_STATE) },
@@ -381,6 +385,8 @@ export class SceneLayerCompositor {
     for (const layer of this.byId.values()) {
       layer.viewBounds = this.layerView(layer);
       this.bindHudCamera(layer, true);
+      // The runtime frames a Desired layer by its reported view, which a new screen changes.
+      if (layer.contentChanges) this.onLayerView?.(layer.layerId, layer.viewBounds);
       if (layer.rtt) {
         const previous = layer.rtt.getSize();
         if (previous.width !== width || previous.height !== height)
@@ -415,12 +421,12 @@ export class SceneLayerCompositor {
     const bounds = sceneLayerContentBounds(layer.scene, force);
     // Its own matrix computations are not content changes.
     changes.reader.drain(() => {});
-    if (!bounds) return;
-    const canvas: SceneLayerRect = {
+    // Without anything drawn it is the command's (Fullscreen) canvas.
+    const canvas: SceneLayerRect = bounds ? {
       width: Math.max(bounds.maxX - bounds.minX, 1e-3),
       height: Math.max(bounds.maxY - bounds.minY, 1e-3),
       center: [(bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2],
-    };
+    } : layer.commandCanvas;
     if (sameRect(canvas, layer.canvas)) return;
     layer.canvas = canvas;
     layer.viewBounds = this.layerView(layer);
@@ -958,12 +964,13 @@ function watchContent(scene: Scene): ContentWatch {
 
 /**
  * The XY bounds of a layer Scene's drawn content: every enabled, visible mesh with vertices, as the editor's
- * `visualBounds2D` measures visuals. Null without any.
+ * `visualBounds2D` measures visuals, less `showcollision` collider outlines (draw batches are not in `scene.meshes`).
+ * Null without any.
  */
 export function sceneLayerContentBounds(scene: Scene, computeMatrices = false): SceneLayerContentBounds | null {
   let bounds: SceneLayerContentBounds | null = null;
   for (const mesh of scene.meshes) {
-    if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0) continue;
+    if (!mesh.isEnabled() || !mesh.isVisible || mesh.visibility <= 0 || mesh.getTotalVertices() === 0 || isColliderVisualMesh(mesh)) continue;
     // A frame's own render computed most matrices; one moved since is computed here, as that render would.
     mesh.computeWorldMatrix(computeMatrices);
     const { minimumWorld: min, maximumWorld: max } = mesh.getBoundingInfo().boundingBox;
