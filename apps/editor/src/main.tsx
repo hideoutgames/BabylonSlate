@@ -43,6 +43,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
   void import("./testing/spatial-effects-proof").then(({ runSpatialEffectsProof }) => Object.assign(window, { __spatialEffectsProof: runSpatialEffectsProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("geometryPassLightingProof")) {
   void import("./testing/geometry-pass-lighting-proof").then(({ runGeometryPassLightingProof }) => Object.assign(window, { __geometryPassLightingProof: runGeometryPassLightingProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("effectsComposeProof")) {
+  void import("./testing/effects-compose-proof").then(({ runEffectsComposeProof }) => Object.assign(window, { __effectsComposeProof: runEffectsComposeProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("colorGradingProof")) {
   void import("./testing/color-grading-proof").then(({ runColorGradingProof, runDisplayColorProof }) => Object.assign(window, { __colorGradingProof: runColorGradingProof, __displayColorProof: runDisplayColorProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("antiAliasingProof")) {

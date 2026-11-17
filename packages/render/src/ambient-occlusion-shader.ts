@@ -154,37 +154,3 @@ ${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
 `;
   return header + main(body);
 }
-
-/**
- * Full-resolution composition: a depth-weighted four-tap upsample of the
- * blurred occlusion multiplies scene color in linear space.
- */
-export function ambientOcclusionCompositeShader(linear: boolean): string {
-  const { v2, v3, v4, f, uv, u, decl, field, texture, sample, output, main } = syntax();
-  const header = `varying vec2 vUV;
-${texture("textureSampler")}${texture("mainSampler")}${texture("depthSampler")}
-${field(v2, "aoTexelSize")}
-`;
-  const taps = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => `{
-  ${decl(v2, "tap", `start + ${v2}(${x}.0, ${y}.0) * ${u("aoTexelSize")}`)}
-  ${decl(f, "tapDepth", `abs(${sample("depthSampler", "tap")}.r)`)}
-  ${decl(f, "weight", `${x ? "fraction.x" : "(1.0-fraction.x)"} * ${y ? "fraction.y" : "(1.0-fraction.y)"} / (1.0 + 100.0 * abs(tapDepth - depth) / max(depth, 0.1))`)}
-  visibility += ${sample("textureSampler", "tap")}.r * weight;
-  total += weight;
-}`).join("\n");
-  const body = `
-${decl(v4, "base", sample("mainSampler", uv))}
-${decl(f, "depth", `abs(${sample("depthSampler", uv)}.r)`)}
-${decl(v2, "grid", `${uv} / ${u("aoTexelSize")} - ${v2}(0.5)`)}
-${decl(v2, "fraction", "fract(grid)")}
-${decl(v2, "start", `(floor(grid) + ${v2}(0.5)) * ${u("aoTexelSize")}`)}
-${decl(f, "visibility", "0.0")}
-${decl(f, "total", "0.0")}
-${taps}
-visibility = visibility / max(total, 0.000001);
-if (depth < 0.000001) { visibility = 1.0; }
-${decl(v3, "color", linear ? "base.rgb * visibility" : `pow(max(base.rgb, ${v3}(0.0)), ${v3}(2.2)) * visibility`)}
-${output(`${v4}(${linear ? "color" : `pow(color, ${v3}(1.0 / 2.2))`}, base.a)`)}
-`;
-  return header + main(body);
-}

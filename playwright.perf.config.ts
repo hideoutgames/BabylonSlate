@@ -26,7 +26,7 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough|load|heap)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer|geometry-pass-lighting)\.spec\.ts$/,
+  testMatch: /(?:play-(performance|sustained)-route|feature-test-(?:perf|flythrough|load|heap)-route|editor-edit-profile|rendering-baseline|shared-outline|scalability-play|lattice-deformer|geometry-pass-lighting|effects-compose)\.spec\.ts$/,
   timeout: 600_000,
   fullyParallel: false,
   retries: 0,
