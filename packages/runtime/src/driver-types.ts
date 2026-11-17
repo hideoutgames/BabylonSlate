@@ -285,8 +285,8 @@ export interface RuntimeDriver {
     materialGuid: string,
   ): void;
   applySceneLayerResize(
-    frustumWidth: number,
-    frustumHeight: number,
+    outputWidth: number,
+    outputHeight: number,
     canvasWidth?: number,
     canvasHeight?: number,
     safeAreaInsets?: Partial<OverlaySafeAreaInsets>,
@@ -296,6 +296,8 @@ export interface RuntimeDriver {
   ): void;
   applySceneLayerControl(message: Extract<ControlMessage, { type: "sceneLayerControl" }>): void;
   applySceneLayerFocusNavigate(reverse: boolean): void;
+  /** The compositor measured a Desired Scene Layer's content: its view. */
+  applySceneLayerView(layerId: string, view: { width: number; height: number; center: readonly [number, number] }): void;
   /**
    * The editor's graph debugger watches `target` and follows `instanceId`: publish `debugRoster` for
    * the target and, for that instance only, a per-tick `executionTrace` (and a Behaviour Tree's

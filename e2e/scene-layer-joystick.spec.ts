@@ -35,6 +35,8 @@ for (const mode of ["Play"] as const) {
         version: versions.currentVersion("Material"), payload: material as unknown as Record<string, unknown> }));
     }
     const layer = createDefaultSceneLayer();
+    // A Custom 3200 x 1800 px canvas keeps the 32 x 18 layer units this test is laid out in.
+    layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", customSizePx: { width: 3200, height: 1800 } };
     layer.actors = [createActor("stick", "Stick", { classId: "SceneLayerActor", components: [{ id: "joystick", classId: "2DJoystickComponent",
       properties: { radius: 3, joystickRadius: 1, backgroundMaterialGuid: backgroundGuid, joystickMaterialGuid: joystickGuid } }] })];
     files.set("assets/Controls.scenelayer.hasset", await encodeAssetDocument({ guid: layerGuid, type: "SceneLayer", name: "Controls",

@@ -1,3 +1,4 @@
+import { normalizeSceneLayerCanvasDesign } from "./scene-layer-canvas";
 import { describe, expect, it } from "vitest";
 import { createDefaultScene } from "./project";
 import {
@@ -450,9 +451,23 @@ describe("scene schema", () => {
     // A Default Camera without a Camera component starts Play on the Layer Camera, so the outline stays.
     const prop = createActor("prop", "Prop", { components: [] });
     expect(sceneLayerCameraFrame({ actors: [prop], settings: { ...settings, defaultCameraActorId: "prop" } })).not.toBeNull();
-    // A Scene Layer's canvas always shows.
+    // A Scene Layer's canvas always shows: its own size from the project, moved by Camera Location.
     expect(sceneLayerCameraFrame({ actors: [camera], settings: { ...settings, defaultCameraActorId: "rig" }, overlayEditor: true }))
-      .toEqual({ width: 20, height: 10, center: [4, -1] });
+      .toEqual({ width: 19.2, height: 10.8, center: [4, -1] });
+  });
+
+  it("outlines a Scene Layer's canvas from the project's design resolution, its Root and its content", () => {
+    const context = { resolution: { width: 640, height: 360 }, pixelsPerUnit: 100 };
+    const layer = (layerCanvas: Record<string, unknown>) => ({
+      actors: [], overlayEditor: true,
+      settings: { ...createDefaultSceneSettings(), cameraLocation2D: [1, 0] as [number, number], layerCanvas: normalizeSceneLayerCanvasDesign(layerCanvas) },
+    });
+    expect(sceneLayerCameraFrame(layer({}), { context })).toEqual({ width: 6.4, height: 3.6, center: [1, 0] });
+    expect(sceneLayerCameraFrame(layer({ sizeMode: "custom", customSizePx: { width: 200, height: 100 }, rootAnchor: "topLeft" }), { context }))
+      .toEqual({ width: 2, height: 1, center: [2, -0.5] });
+    expect(sceneLayerCameraFrame(layer({ sizeMode: "desired" }), { context })).toBeNull();
+    expect(sceneLayerCameraFrame(layer({ sizeMode: "desired" }), { context, contentBounds: { minX: 0, minY: 0, maxX: 2, maxY: 2 } }))
+      .toEqual({ width: 2, height: 2, center: [2, 1] });
   });
 
   it("resolves the Default Camera only to a placed actor with a Camera component", () => {

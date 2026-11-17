@@ -1,3 +1,4 @@
+import type { SceneLayerCanvasDesign } from "@haptic/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   readSnapshotHeader,
@@ -19,6 +20,12 @@ import {
 import type { Actor } from "@haptic/object-model";
 import { createInProcessRuntime } from "./driver";
 import { createPlayBootCoordinator } from "./play-boot";
+
+/** A Custom canvas of `width` × `height` layer units at 100 Pixels Per Unit, Root Center, fitted to the screen. */
+function customCanvas(width: number, height: number): SceneLayerCanvasDesign {
+  return { sizeMode: "custom", customSizePx: { width: width * 100, height: height * 100 }, rootAnchor: "center", scaling: "fitToScreen" };
+}
+
 
 /** Scene Layer actor guids are scoped to their layer instance. */
 const inLayer = (layer: { guid: string } | null | undefined, id: string) => `${layer?.guid}:${id}`;
@@ -285,7 +292,7 @@ describe("Scene Layer physics queries", () => {
       physicsLayer("Layer", [0, 0, 0], [createActor("probe", "Probe", { classId: "LayerProbe" })], false),
     );
     try {
-      runtime.applySceneLayerResize(32, 18, 800, 600);
+      runtime.applySceneLayerResize(3200, 1800, 800, 600);
       // The cursor over layer point (2, 0), where the main wall is.
       runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 450, y: 300, button: 0 }]);
       runtime.tick();
@@ -303,8 +310,8 @@ describe("Scene Layer physics queries", () => {
     try {
       const world = runtime.getWorld();
       const layerProbe = world.findActor(inLayer(instance, "probe"));
-      runtime.applySceneLayerResize(32, 18, 800, 600);
-      // 32 × 18 layer units stretch over 800 × 600 px: x 500 px is layer x 4.
+      runtime.applySceneLayerResize(3200, 1800, 800, 600);
+      // A Fullscreen layer frames 3200 × 1800 design pixels, 32 × 18 units, stretched over 800 × 600 px: x 500 px is layer x 4.
       runtime.pushInput([{ kind: "pointer", tick: 0, pointerId: 1, phase: "move", x: 500, y: 300, button: 0 }]);
       runtime.tick();
       expect(probe(layerProbe).cursor).toMatchObject({
@@ -458,7 +465,7 @@ describe("SceneLayer runtime compositor", () => {
     ).toBe(true);
   });
 
-  it("emits layerBounds on create and keeps default-canvas anchors in design space after resize", () => {
+  it("emits the Fullscreen canvas on create and carries its anchors to the screen edges in design pixels", () => {
     const commands: CommandMessage[] = [];
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
@@ -467,7 +474,7 @@ describe("SceneLayer runtime compositor", () => {
         createActor("badge", "Badge", {
           classId: "SceneLayerActor",
           transform: {
-            position: [-16, 9, 0],
+            position: [-9.6, 5.4, 0],
             rotation: [0, 0, 0, 1],
             scale: [1, 1, 1],
           },
@@ -495,18 +502,47 @@ describe("SceneLayer runtime compositor", () => {
     expect(created).toMatchObject({
       type: "sceneLayerCreate",
       assetGuid: "hud",
-      layerBounds: { width: 32, height: 18 },
+      canvas: {
+        design: { sizeMode: "fullscreen", rootAnchor: "center", scaling: "fitToScreen" },
+        rect: { width: 19.2, height: 10.8, center: [0, 0] },
+      },
     });
     const badge = () => runtime.getWorld().findActor(inLayer(layer, "badge"));
-    expect(badge()?.transform.position.x).toBe(-16);
-    expect(badge()?.transform.position.y).toBe(9);
-    runtime.applySceneLayerResize(16, 9);
-    expect(badge()?.transform.position.x).toBe(-16);
-    expect(badge()?.transform.position.y).toBe(9);
-    // Ultra-wide: the 32×18 canvas widens to 42×18, so the top-left badge follows the screen edge unscaled.
-    runtime.applySceneLayerResize(21, 9);
-    expect(badge()?.transform.position.x).toBeCloseTo(-21);
-    expect(badge()?.transform.position.y).toBe(9);
+    expect(badge()?.transform.position.x).toBe(-9.6);
+    expect(badge()?.transform.position.y).toBe(5.4);
+    runtime.applySceneLayerResize(1920, 1080);
+    expect(badge()?.transform.position.x).toBeCloseTo(-9.6);
+    expect(badge()?.transform.position.y).toBeCloseTo(5.4);
+    // Ultra-wide: 2520 × 1080 design pixels are 25.2 × 10.8 units, so the top-left badge follows the screen edge unscaled.
+    runtime.applySceneLayerResize(2520, 1080);
+    expect(badge()?.transform.position.x).toBeCloseTo(-12.6);
+    expect(badge()?.transform.position.y).toBeCloseTo(5.4);
+  });
+
+  it.each([
+    ["a True Pixel Size Custom canvas", { sizeMode: "custom", scaling: "truePixelSize" }],
+    ["a Desired canvas", { sizeMode: "desired", scaling: "fitToScreen" }],
+  ] as const)("leaves anchored content where it was authored on %s", (_name, mode) => {
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "Panel",
+      settings: { ...createDefaultSceneLayer().settings, canvas: { ...customCanvas(4, 3), ...mode } },
+      actors: [createActor("badge", "Badge", {
+        classId: "SceneLayerActor",
+        transform: { position: [-2, 1.5, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+        components: [
+          { id: "texture", classId: "2DTextureComponent", properties: {} },
+          { id: "anchor", classId: "2DAnchorComponent", properties: { anchor: "topLeft", offsetX: 0, offsetY: 0 } },
+        ],
+      })],
+    };
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: worldScene("A"), sceneLayerLibrary: { hud } });
+    runtime.realizePlayWorld();
+    const layer = runtime.createSceneLayer("hud", 0);
+    runtime.applySceneLayerResize(2520, 1080);
+    const badge = runtime.getWorld().findActor(inLayer(layer, "badge"));
+    expect(badge?.transform.position.x).toBeCloseTo(-2);
+    expect(badge?.transform.position.y).toBeCloseTo(1.5);
   });
 
   it("keeps graph-created overlays across scene travel until remove or clear", () => {
@@ -854,7 +890,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
         physicsEnabled: true,
       },
       actors: [
@@ -955,7 +991,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("badge", "Badge", {
@@ -992,7 +1028,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("badge", "Badge", {
@@ -1035,7 +1071,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("banner", "Banner", {
@@ -1091,7 +1127,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("banner", "Banner", {
@@ -1174,7 +1210,7 @@ describe("SceneLayer runtime compositor", () => {
       const guid = (id: string) => inLayer(layer, id);
       runtime.start();
       for (let pass = 0; pass < 2; pass++) {
-        runtime.applySceneLayerResize(32, 18);
+        runtime.applySceneLayerResize(1920, 1080);
         runtime.tick();
         const snapshot = new Float32Array(snapshotFloatCount(16));
         expect(runtime.copySnapshot(snapshot)).toBe(true);
@@ -1391,7 +1427,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("solo", "Solo", {
@@ -1458,7 +1494,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("caption", "Caption", {
@@ -1515,7 +1551,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("banner", "Banner", {
@@ -1683,7 +1719,7 @@ describe("SceneLayer runtime compositor", () => {
       name: "HUD",
       settings: {
         ...createDefaultSceneLayer().settings,
-        layerBounds: { width: 16, height: 9 },
+        canvas: customCanvas(16, 9),
       },
       actors: [
         createActor("frame", "Frame", {

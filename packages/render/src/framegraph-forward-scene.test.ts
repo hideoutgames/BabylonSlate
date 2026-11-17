@@ -1770,7 +1770,7 @@ async function fogHost(
   };
   return { engine, scene, camera, graph, skipped, far };
 }
-const FOG_ONLY_TASKS = ["Spatial Geometry", "Scene Volumetric Lighting", "Scene Volumetric Compose"].sort();
+const FOG_ONLY_TASKS = ["Spatial Geometry", "Scene Volumetric Lighting", "Scene Effects Compose"].sort();
 
 it("skips the Fog Volume geometry and march while none is in front of the camera, without rebuilding", async () => {
   const { camera, graph, skipped } = await fogHost({});
@@ -2004,10 +2004,11 @@ it("writes the light block once per readiness while shadow admission changes not
   graph.dispose();
 });
 
-it("keeps the geometry pass running for another spatial effect while the fog march is skipped", async () => {
+it("keeps the geometry pass and the compose running for another spatial effect while the fog march is skipped", async () => {
   const { camera, graph, skipped } = await fogHost({ ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
   camera.rotation.y = Math.PI;
-  expect(skipped().sort()).toEqual(["Scene Volumetric Compose", "Scene Volumetric Lighting"]);
+  // The one compose still applies the occlusion, without the fog's term.
+  expect(skipped()).toEqual(["Scene Volumetric Lighting"]);
   graph.dispose();
 });
 
@@ -2284,7 +2285,6 @@ it("keeps occlusion's march and blurs in one half-float channel, which every rea
       "Scene Ambient Occlusion": Constants.TEXTUREFORMAT_R,
       "Scene Ambient Occlusion Blur X": Constants.TEXTUREFORMAT_R,
       "Scene Ambient Occlusion Blur Y": Constants.TEXTUREFORMAT_R,
-      "Scene Ambient Occlusion Compose": Constants.TEXTUREFORMAT_RGBA,
     });
     // The 160 × 128 RGBA16F compose, and two 80 × 64 R16F targets at 2 B a pixel (the march and Blur Y share one
     // texture: the blur Y writes after the blur X has read the march), where RGBA16F took 8 B.
@@ -2335,10 +2335,8 @@ it("sizes every screen-space target of the world view from its render scale; onl
       "Spatial Geometry Z": "160x128", "Spatial Geometry ViewDepth": "160x128",
       "Spatial Geometry WorldNormal": "160x128", "Spatial Geometry Reflectivity": "160x128",
       "Scene Ambient Occlusion": "80x64", "Scene Ambient Occlusion Blur X": "80x64", "Scene Ambient Occlusion Blur Y": "80x64",
-      "Scene Ambient Occlusion Compose": "160x128",
       "Scene Reflections": "80x64", "Scene Reflections Blur X": "80x64", "Scene Reflections Blur Y": "80x64",
-      "Scene Reflections Compose": "160x128",
-      "Scene Volumetric Lighting": "80x64", "Scene Volumetric Compose": "160x128",
+      "Scene Volumetric Lighting": "80x64", "Scene Effects Compose": "160x128",
     };
     expect(sizes()).toEqual(full);
     // Half the render scale halves every target but the backbuffer, which the view's output copy fills.

@@ -1,5 +1,11 @@
-import { useEffect, type RefObject } from "react";
-import { isSceneLayerAnchorActor, sceneLayerCameraFrame, type SerializedScene } from "@haptic/core";
+import { useEffect, useState, type RefObject } from "react";
+import {
+  isSceneLayerAnchorActor,
+  sceneLayerCameraFrame,
+  sceneLayerDesignResolution,
+  type SceneLayerContentBounds,
+  type SerializedScene,
+} from "@haptic/core";
 import type { EngineHandle } from "@haptic/render";
 import { useAppSettings } from "../context/app-settings-context";
 import { useProjectState, useRegistryState } from "../context/document-context";
@@ -149,8 +155,33 @@ export function useViewportEditorSync({
     });
   }, [scene?.settings.grid, snapEnabled, engineEpoch, engineRef]);
 
+  // A Desired Scene Layer's canvas wraps its drawn content: measured once its visuals have loaded and after each edit.
+  const [contentBounds, setContentBounds] = useState<SceneLayerContentBounds | null>(null);
+  const measureContent = scene?.overlayEditor === true && scene.settings.layerCanvas?.sizeMode === "desired";
+  useEffect(() => {
+    if (!measureContent || !scene) return;
+    const measure = () => {
+      const next = engineRef.current?.editor?.visualBounds2D(scene.actors.map((actor) => actor.id)) ?? null;
+      setContentBounds((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+    };
+    const frame = requestAnimationFrame(measure);
+    // Visuals that load after the edit (fonts, textures) settle within the next moments.
+    const settle = setTimeout(measure, 500);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(settle);
+    };
+  }, [measureContent, scene, engineEpoch, engineRef]);
   // The frame hides while the Scene starts on a Default Camera actor, so it follows actor edits too.
-  const cameraFrame = scene ? sceneLayerCameraFrame(scene) : null;
+  const cameraFrame = scene
+    ? sceneLayerCameraFrame(scene, {
+      context: {
+        resolution: sceneLayerDesignResolution(projectDocument?.settings.render),
+        pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+      },
+      contentBounds: measureContent ? contentBounds : null,
+    })
+    : null;
   const cameraFrameKey = JSON.stringify(cameraFrame);
   useEffect(() => {
     const settings = scene?.settings;

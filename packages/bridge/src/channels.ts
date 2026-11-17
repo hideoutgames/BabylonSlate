@@ -401,6 +401,8 @@ export type ControlMessage =
       secondaryValue?: number;
     }
   | { type: "sceneLayerScroll"; layerId: string; actorId: string; componentId: string; deltaX: number; deltaY: number }
+  /** A Desired Scene Layer's view after the compositor measured its content (`sceneLayerView`). */
+  | { type: "sceneLayerView"; layerId: string; view: { width: number; height: number; center: [number, number] } }
   | {
       type: "sceneLayerPointer";
       layerId: string;
@@ -415,8 +417,9 @@ export type ControlMessage =
     }
   | {
       type: "sceneLayerResize";
-      frustumWidth: number;
-      frustumHeight: number;
+      /** The output in design pixels (`sceneLayerOutputDesignSize`): what a Fullscreen canvas fills. */
+      outputWidth: number;
+      outputHeight: number;
       canvasWidth?: number;
       canvasHeight?: number;
       /** Browser safe-area insets in CSS pixels. */
@@ -1281,7 +1284,11 @@ export type CommandMessage =
       zOrder: number;
       ownerSceneGuid: string | null;
       postProcessStack: ScenePostProcessEntry[];
-      layerBounds?: { width: number; height: number };
+      /** The asset's canvas design and its rectangle in layer units (for Desired, the Fullscreen stand-in until measured). */
+      canvas: {
+        design: import("@haptic/core").SceneLayerCanvasDesign;
+        rect: { width: number; height: number; center: [number, number] };
+      };
       /** The instance's Layer Camera pose at creation (the asset's Camera Location); absent is the default pose. */
       camera?: LayerCameraState;
     }

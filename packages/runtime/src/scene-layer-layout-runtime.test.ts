@@ -1,7 +1,14 @@
+import type { SceneLayerCanvasDesign } from "@haptic/core";
 import { describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createDefaultSceneLayer } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
+
+/** A Custom canvas of `width` × `height` layer units at 100 Pixels Per Unit, Root Center, fitted to the screen. */
+function customCanvas(width: number, height: number): SceneLayerCanvasDesign {
+  return { sizeMode: "custom", customSizePx: { width: width * 100, height: height * 100 }, rootAnchor: "center", scaling: "fitToScreen" };
+}
+
 
 describe("SceneLayer layout runtime", () => {
   it("retires a virtual row's nested virtual items and attached actor descendants when it leaves the window", async () => {
@@ -125,7 +132,7 @@ describe("SceneLayer layout runtime", () => {
   it("converts browser safe insets using each layer's bounds and reapplies them after resize", () => {
     const layer = (id: string, extent: number) => {
       const document = createDefaultSceneLayer();
-      document.settings.layerBounds = { width: extent, height: extent };
+      document.settings.canvas = customCanvas(extent, extent);
       document.actors = [createActor(id, id, { classId: "SceneLayerActor", components: [
         { id: `${id}-safe`, classId: "2DSafeAreaComponent", properties: { width: 10, height: 10 } },
         { id: `${id}-content`, classId: "2DMaterialComponent", parentId: `${id}-safe`, properties: { widthMode: "fill", heightMode: "fill" } },

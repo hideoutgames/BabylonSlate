@@ -40,6 +40,8 @@ async function coldFontProject(fontBytes: Uint8Array) {
   ));
   const layerGuid = "00000000-0000-4000-8000-0000000000f2";
   const layer = createDefaultSceneLayer();
+  // A Custom 3200 x 1800 px canvas keeps the 32 x 18 layer units this test is laid out in.
+  layer.settings.canvas = { ...layer.settings.canvas, sizeMode: "custom", customSizePx: { width: 3200, height: 1800 } };
   // One actor, so each Text mesh is named after its component.
   layer.actors = [createActor("cold-font-texts", "Cold Font Texts", {
     classId: "SceneLayerActor",

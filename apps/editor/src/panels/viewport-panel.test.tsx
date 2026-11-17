@@ -1018,9 +1018,10 @@ describe("ViewportPanel engine", () => {
       viewportMode: "2d" as const,
       settings: {
         grid: { tileSize: 4, tileSubdivisions: 4, snapTranslate: 0.5 },
-        cameraBounds2D: { width: 32, height: 18 },
+        cameraBounds2D: { width: 16, height: 9 },
         cameraLocation2D: [2, -1],
         defaultCameraActorId: null,
+        layerCanvas: { sizeMode: "custom", customSizePx: { width: 3200, height: 1800 }, rootAnchor: "center", scaling: "fitToScreen" },
       },
       overlayEditor: true,
       actors: [],
@@ -1042,7 +1043,7 @@ describe("ViewportPanel engine", () => {
       expect(handle.editor.setGridSettings).toHaveBeenCalledWith(
         expect.objectContaining({
           tileSize: 4,
-          // The outline is centred on the layer's Camera Location.
+          // The outline is the layer's canvas (3200 x 1800 px at the default 100 Pixels Per Unit) moved by its Camera Location.
           cameraBounds2D: { width: 32, height: 18, center: [2, -1] },
         }),
       );

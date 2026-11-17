@@ -6,7 +6,7 @@ A box that keeps its content clear of device cut-outs and rounded corners, with 
 
 Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Safe Area**. You can also place a ready-made actor from **Place Actors > Overlay > 2D Safe Area**.
 
-Make the HUD elements children of this actor. To cover the whole layer, set Width and Height to the layer's **Layer Width** and **Layer Height**.
+Make the HUD elements children of this actor. To cover the whole layer, set Width and Height to the size of its canvas in layer units: 19.2 × 10.8 for a Fullscreen canvas at 1920 × 1080 and 100 Pixels Per Unit ([Canvas size and scaling](../scenes/scene-layers.md#canvas-size-and-scaling)).
 
 ## Settings
 
