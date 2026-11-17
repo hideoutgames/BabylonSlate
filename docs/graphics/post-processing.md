@@ -14,7 +14,7 @@ Open **Project Settings > Rendering > Post Processing**. Every effect is off in 
 | **Bloom** | **Bloom Threshold** (0.9), **Bloom Weight** (0.15), **Bloom Kernel** (64), **Bloom Scale** (0.5) | Glow around bright surfaces. |
 | **Vignette** | **Vignette Weight** (1.5), **Vignette Color** (black) | Darkens the frame edges. |
 | **Color Grading** | **LUT Texture** | Remaps final colours through a lookup table. |
-| **FSR Upscaling** | **Render Scale** (0.67), **Sharpness** (0.2) | Renders at a lower resolution, then upscales and sharpens with AMD FSR 1. In Play with Scene Layers on a high-density screen, it upscales to the view's size and the result is stretched to the device's pixels; Scene Layers stay at the device's resolution. |
+| **FSR Upscaling** | **Render Scale** (0.67), **Sharpness** (0.2) | Renders at a lower resolution, then upscales and sharpens with AMD FSR 1. In Play with Scene Layers on a high-density screen, it upscales to the view's size and the result is stretched to the device's pixels; Scene Layers stay at the device's resolution. Stays off while **Upscaling** is **Pixelated**, even when a scene turns it on. |
 
 Ambient occlusion, reflections and volumetric fog draw a depth pass of the scene. [Screen-Space Shadows](shadows.md#screen-space-shadows) use the same pass, or add it when none of these is on.
 
@@ -72,6 +72,7 @@ An **Allow** switch never turns an effect on; the effect also has to be on in **
 - MSAA costs GPU memory and time in proportion to the samples. Lower it first on a device that struggles.
 - Effects that read the scene's depth, such as water and Screen-Space Shadows, see one real surface depth at every pixel, never a blend of the surfaces along an edge.
 - Render Target Captures, previews and thumbnails always draw one sample per pixel.
+- With **Upscaling** set to **Pixelated** (see [Graphics](index.md)), the world draws with no anti-aliasing, whatever the level says, so pixel art keeps hard edges. The setting shows a note while that holds.
 - Devices that cannot multisample, or support fewer samples, draw with what they support.
 - Changing the mode while a game runs keeps the last image on screen for a moment while the view rebuilds.
 

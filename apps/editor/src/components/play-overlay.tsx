@@ -204,6 +204,8 @@ export interface PlayOverlayProps {
   collisionPresets?: readonly CollisionPreset[];
   sortingLayers?: readonly string[];
   pixelPerfect?: boolean;
+  /** Pixel-Perfect Mode with Nearest Texture Filtering (`pixelMatchedCameras`): the runtime's rays follow it. */
+  pixelMatchedCameras?: boolean;
   touchMinTargetPx?: number;
   navmeshBytes?: Uint8Array | null;
   sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
@@ -344,6 +346,7 @@ function PlayOverlayView({
   collisionPresets,
   sortingLayers,
   pixelPerfect,
+  pixelMatchedCameras,
   touchMinTargetPx,
   navmeshBytes,
   sceneNavmeshBytes,
@@ -726,6 +729,8 @@ function PlayOverlayView({
   touchMinTargetPxRef.current = touchMinTargetPx;
   const pixelPerfectRef = useRef(pixelPerfect);
   pixelPerfectRef.current = pixelPerfect;
+  const pixelMatchedCamerasRef = useRef(pixelMatchedCameras);
+  pixelMatchedCamerasRef.current = pixelMatchedCameras;
   const physicsRef = useRef(physics);
   physicsRef.current = physics;
   const sceneRef = useRef({
@@ -948,6 +953,7 @@ function PlayOverlayView({
           sortingLayers: sortingLayersRef.current,
           touchMinTargetPx: touchMinTargetPxRef.current,
           pixelPerfect: pixelPerfectRef.current,
+          pixelMatchedCameras: pixelMatchedCamerasRef.current,
           navmeshBytes: navmeshBytesRef.current,
           sceneNavmeshBytes: sceneNavmeshBytesRef.current,
           audioReverbByScene: audioReverbBySceneRef.current,

@@ -187,6 +187,20 @@ export function flushTextAppear(rt: RuntimeComposition): void {
   rt.textAppear.flush((component, progress) => {
     const slotId = component.owner ? rt.actorSlot(component.owner) : undefined;
     if (slotId !== undefined) rt.emit({ type: "setText2DAppear", slotId, componentId: component.guid, progress });
+  }, (sound) => {
+    if (sound.type === "stop") rt.emit({ type: "stopSound", voiceId: sound.voiceId });
+    else rt.emit({
+      type: "playSound",
+      assetGuid: sound.assetGuid,
+      volume: 1,
+      frameId: rt.frameId,
+      emitterActorGuid: sound.component.owner?.guid ?? null,
+      voiceId: sound.voiceId ?? rt.voices.scriptVoiceId(),
+      ...(sound.loop ? { loop: true } : {}),
+    });
+  }, (component, poses) => {
+    const slotId = component.owner ? rt.actorSlot(component.owner) : undefined;
+    if (slotId !== undefined) rt.emit({ type: "setText2DLetterPoses", slotId, componentId: component.guid, poses });
   });
 }
 

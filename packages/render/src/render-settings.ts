@@ -3,6 +3,7 @@ import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTa
 import type { Scene } from "@babylonjs/core/scene";
 import {
   mergeRenderSettings,
+  pixelatedUpscaling,
   type RenderSettingsPatch,
   normalizeCelShadingSettings,
   normalizeCelShadingOverrides,
@@ -46,7 +47,7 @@ import { markSceneReadinessDirty } from "./scene-readiness-signal";
 import { clampWaterQualityToDevice, type WaterQualityDeviceClamp } from "./water-quality-device";
 
 export type RenderShadingSettings = Partial<
-  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "effects" | "water">
+  Pick<RenderProjectSettings, "mode" | "cel" | "shadows" | "quality" | "environmentLighting" | "effects" | "water" | "customResolution" | "upscaling">
 >;
 type SceneRendering = {
   mode: RenderMode;
@@ -234,7 +235,9 @@ export function updateSceneRenderingSettings(
   state.shadows = quality.shadows;
   const { ambientOcclusion, reflections, volumetricLighting } = quality.postprocessing;
   state.effectAllowances = { ambientOcclusion, reflections, volumetricLighting };
-  state.antiAliasing = quality.postprocessing.antiAliasing;
+  // Upscaling Pixelated keeps every edge on the pixel grid: no tier, Scene or session smooths it (MSAA or FXAA).
+  const pixelated = pixelatedUpscaling(state.project);
+  state.antiAliasing = pixelated ? "off" : quality.postprocessing.antiAliasing;
   readMultisampleLimit(scene, state);
   state.localLightBudget = resolveLocalLightBudget(quality.lighting);
   state.textureLodBias = quality.textures.lodBias;
@@ -252,10 +255,12 @@ export function updateSceneRenderingSettings(
     ...normalizeCelShadingOverrides(state.runtimeOverrides.cel),
   });
   // Project, then the Scene's Post Processing overrides, then the session's.
-  state.effects = resolveRenderEffectsSettings(
+  const effects = resolveRenderEffectsSettings(
     resolveRenderEffectsSettings(state.project.effects, state.effectsOverrides),
     state.runtimeOverrides.effects,
   );
+  // Nor does an FSR upscale soften it.
+  state.effects = pixelated && effects.upscaling.enabled ? { ...effects, upscaling: { ...effects.upscaling, enabled: false } } : effects;
   state.mode = mode;
   // A newly requested LUT publishes asynchronously and replans once ready.
   state.colorGrading.sync(

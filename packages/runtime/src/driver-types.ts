@@ -170,6 +170,11 @@ export interface RuntimeDriverOptions {
   models?: Readonly<Record<string, ModelPayload>>;
   complexMeshes?: Readonly<Record<string, CollisionTriangleMesh>>;
   pixelsPerUnit?: number;
+  /**
+   * Pixel-Perfect Mode with Nearest Texture Filtering: orthographic cameras are pixel-matched (`pixelMatchedView`), so
+   * the camera rays and view size reads follow the same framing the renderer draws.
+   */
+  pixelMatchedCameras?: boolean;
   texturePixelSizes?: Readonly<Record<string, { width: number; height: number }>>;
   /**
    * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Every worker

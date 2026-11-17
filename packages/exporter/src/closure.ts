@@ -175,6 +175,12 @@ function rootsFromIndex(input: ExportRootInput, { sortedAssets }: ClosureIndex):
   // Commands are discoverable from catalog metadata, but their resources
   // remain deferred until the command runs.
   for (const asset of sortedAssets) if (asset.consoleCommand || (asset.type === "Class" && asset.parentClass && hierarchy.ancestry(asset.parentClass).includes("DebugCommand"))) startupRefs.push(asset.guid);
+  // Rich Text names its custom Appear Modes and Decorator Effects by Class id, in a list entry or a text tag.
+  for (const asset of sortedAssets) {
+    if (asset.type !== "Class" || !asset.parentClass) continue;
+    const ancestry = hierarchy.ancestry(asset.parentClass);
+    if (ancestry.includes("RichText2DAppearMode") || ancestry.includes("RichText2DDecoratorEffect")) startupRefs.push(asset.guid);
+  }
   for (const ref of [input.gameInstanceClass, input.audioMixerGuid, input.saveGameDefinitionGuid, ...(input.renderAssetGuids ?? [])]) {
     if (ref?.trim()) startupRefs.push(ref.trim());
   }

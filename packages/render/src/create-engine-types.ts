@@ -230,6 +230,12 @@ export interface EngineHandle {
   releaseInitialSources: () => void;
   /** Project render mode and defaults; scene overrides remain independent. */
   setRenderSettings: (settings: RenderShadingSettings) => void;
+  /**
+   * An editor view's camera previews and frustum guides frame orthographic cameras pixel-matched over the design
+   * resolution (`setScenePixelMatchedLens`), or with null at their Orthographic Size. Play frames its own from its
+   * options and output.
+   */
+  setPixelMatchedCameras: (lens: { design: { width: number; height: number }; pixelsPerUnit: number } | null) => void;
   /** Register FontFace source bytes before Bitmap 2D Text paints. */
   registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
@@ -577,7 +583,11 @@ export interface EditorTools {
   setDrawMeshCollision: (enabled: boolean) => void;
   /** Session: the viewport culls by occlusion whatever the project setting (default off). */
   setOcclusionCulling: (enabled: boolean) => void;
-  /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
+  /**
+   * Pixel-Perfect Mode in a 2D view (project 2D unit settings), or null to leave it off. While on, this view draws at
+   * device pixels, as a Scene Layer's editor view does (other views of a shared Engine keep their level), and its
+   * zoom steps through whole device pixels per texel.
+   */
   setPixelPerfect: (settings: { pixelsPerUnit: number } | null) => void;
   /** Ordered sorting layers from project settings, back to front. */
   setSortingLayers: (layers: readonly string[]) => void;

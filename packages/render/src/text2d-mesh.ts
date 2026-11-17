@@ -10,9 +10,11 @@ import { Scene } from "@babylonjs/core/scene";
 import type { Nullable } from "@babylonjs/core/types";
 import {
   parseSceneLayerHitTest,
+  parseText2DLetterPoses,
   parseText2DProperties,
   resolveText2DRenderer,
   text2DCharacterReveal,
+  text2DLetterPoseAt,
   type RichTextStyle,
   type SceneLayerHitTest,
   type Text2DProperties,
@@ -64,6 +66,7 @@ export type Text2DAssetContext = MeshAssetContext & {
 
 const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; restore: () => void }> }>();
 const appearVisuals = new WeakMap<Mesh, (progress: number) => void>();
+const letterPoseVisuals = new WeakMap<Mesh, (poses: readonly number[]) => void>();
 const textLayouts = new WeakMap<Mesh, Text2DLayout>();
 
 /** One batch mesh of a text: the glyphs that share `key` (`glyphBatchKey`), as the quads it last drew. */
@@ -102,6 +105,11 @@ export function updateText2DAppear(mesh: Mesh, progress: number): void {
   if (!mesh.isDisposed() && Number.isFinite(progress)) {
     appearVisuals.get(mesh)?.(Math.min(1, Math.max(0, progress)));
   }
+}
+
+/** Apply the simulation's scripted letter poses (`TEXT2D_LETTER_POSE_STRIDE` numbers per character) without rebuilding. */
+export function updateText2DLetterPoses(mesh: Mesh, poses: readonly number[]): void {
+  if (!mesh.isDisposed()) letterPoseVisuals.get(mesh)?.(poses);
 }
 
 /** Rebind hot-reloaded Text graphs without replacing the atlas or layout. */
@@ -378,7 +386,12 @@ function warnMsdfFallback(fontGuid: string | null): void {
   console.warn("[render] 2D text MSDF atlas missing; using Bitmap");
 }
 
+/** A glyph a tag animates: built-in effects sample in the renderer, `[fx]` Classes pose it from the simulation. */
 function hasLetterEffects(item: Text2DLayoutItem): boolean {
+  return hasBuiltInEffects(item) || Boolean(item.effects.custom?.length);
+}
+
+function hasBuiltInEffects(item: Text2DLayoutItem): boolean {
   const fx = item.effects;
   return (
     fx.shake !== 0 ||
@@ -411,31 +424,36 @@ function attachEffects(
     sample: { x: 0, y: 0, rotation: 0 },
     sampled: false,
     slideOffset: 0,
+    revealVisibility: 1,
+    revealScale: 1,
   }));
-  const effectEntries = entries.filter((entry) => hasLetterEffects(entry.item));
+  const effectEntries = entries.filter((entry) => hasBuiltInEffects(entry.item));
+  let poses: readonly number[] = parseText2DLetterPoses(properties.letterPoses);
   const applyPose = (entry: (typeof entries)[number]) => {
-    const { mesh, item, restRotation, sample, slideOffset } = entry;
-    const x = item.x + sample.x;
-    const y = item.y + sample.y - slideOffset;
-    const rotation = restRotation + sample.rotation;
+    const { mesh, item, restRotation, restScale, sample, slideOffset } = entry;
+    const pose = text2DLetterPoseAt(poses, item.index);
+    const x = item.x + sample.x + pose.offsetX / pixelsPerUnit;
+    const y = item.y + sample.y - slideOffset + pose.offsetY / pixelsPerUnit;
+    const rotation = restRotation + sample.rotation + pose.rotation * Math.PI / 180;
+    const scaleX = restScale.x * entry.revealScale * pose.scaleX;
+    const scaleY = restScale.y * entry.revealScale * pose.scaleY;
+    const visibility = entry.revealVisibility * pose.opacity;
     // Babylon marks transforms dirty even when a setter receives the same value.
     if (mesh.position.x !== x) mesh.position.x = x;
     if (mesh.position.y !== y) mesh.position.y = y;
     if (mesh.rotation.z !== rotation) mesh.rotation.z = rotation;
+    if (mesh.scaling.x !== scaleX) mesh.scaling.x = scaleX;
+    if (mesh.scaling.y !== scaleY) mesh.scaling.y = scaleY;
+    if (mesh.visibility !== visibility) mesh.visibility = visibility;
   };
   const applyReveal = (value: number) => {
     if (progress === value) return;
     progress = value;
     for (const entry of entries) {
-      const { mesh, item } = entry;
+      const { item } = entry;
       const reveal = text2DCharacterReveal(value, item.index, characterCount, properties);
-      const visibility = fade ? Math.max(0, Math.min(1, reveal)) : reveal !== 0 ? 1 : 0;
-      if (mesh.visibility !== visibility) mesh.visibility = visibility;
-      const amount = scale ? Math.max(0, reveal) : 1;
-      const scaleX = entry.restScale.x * amount;
-      const scaleY = entry.restScale.y * amount;
-      if (mesh.scaling.x !== scaleX) mesh.scaling.x = scaleX;
-      if (mesh.scaling.y !== scaleY) mesh.scaling.y = scaleY;
+      entry.revealVisibility = fade ? Math.max(0, Math.min(1, reveal)) : reveal !== 0 ? 1 : 0;
+      entry.revealScale = scale ? Math.max(0, reveal) : 1;
       entry.slideOffset = slide ? (1 - reveal) * item.style.size / pixelsPerUnit : 0;
       applyPose(entry);
     }
@@ -467,6 +485,10 @@ function attachEffects(
   };
   let elapsed = 0;
   appearVisuals.set(parent, applyReveal);
+  letterPoseVisuals.set(parent, (next) => {
+    poses = parseText2DLetterPoses(next);
+    for (const entry of entries) applyPose(entry);
+  });
   tickEffects(0);
   applyReveal(properties.appearProgress ?? (properties.appearStart === "revealed" ? 1 : 0));
   const observer: Nullable<Observer<Scene>> = effectEntries.length > 0 ? scene.onBeforeRenderObservable.add(() => {
@@ -476,6 +498,7 @@ function attachEffects(
   }) : null;
   bundle.cancelWith(() => {
     appearVisuals.delete(parent);
+    letterPoseVisuals.delete(parent);
     if (observer) scene.onBeforeRenderObservable.remove(observer);
   });
   parent.metadata = {

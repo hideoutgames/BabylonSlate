@@ -1,6 +1,8 @@
 import type { CommandMessage } from "@haptic/bridge";
 import {
   deprojectCursorRay,
+  pixelMatchedDesignFrame,
+  pixelMatchedView,
   sceneDefaultCameraActor,
   sceneLayerCanvasToLayer,
   sceneLayerViewBounds,
@@ -43,7 +45,9 @@ interface RuntimeCameraHost {
   cursor(): ResolvedInputTick["cursor"];
   /** The touches of the most recent resolved input tick. */
   touches(): ResolvedInputTick["touches"];
-  overlay(): Pick<SceneLayerOverlay, "canvasSize" | "viewBounds">;
+  overlay(): Pick<SceneLayerOverlay, "canvasSize" | "viewBounds" | "pixelMatchContext">;
+  /** Pixel-Perfect Mode with Nearest Texture Filtering: orthographic cameras are pixel-matched (`pixelMatchedView`). */
+  pixelMatchedCameras?: boolean;
   physics(): Pick<RuntimePhysicsWorlds, "main" | "layer" | "kind">;
   /** False strips Project Cursor and Touch To Scene's debug lines whatever `drawDebug` says; true when omitted. */
   traceDebugDraw?: boolean;
@@ -206,9 +210,7 @@ export class RuntimeCamera implements RuntimeSubsystem {
             projectionMode:
               projection === "orthographic" ? "orthographic" : "perspective",
             fieldOfView: Number(component.getVariable("fieldOfView") ?? 60),
-            orthographicSize: Number(
-              component.getVariable("orthographicSize") ?? 5,
-            ),
+            orthographicSize: this.orthographicHalfHeight(Number(component.getVariable("orthographicSize") ?? 5)),
             nearClip: Number(component.getVariable("nearClip") ?? 0.1),
             farClip: Number(component.getVariable("farClip") ?? 1000),
           },
@@ -265,9 +267,43 @@ export class RuntimeCamera implements RuntimeSubsystem {
    * then the camera's zoom, roll and centre, as Play draws it), cast along +Z
    * from the camera's depth to its far clip.
    */
+  /**
+   * The half-height an orthographic camera with `orthographicSize` shows, as the renderer frames it: the authored size,
+   * or its pixel-matched view's (`pixelMatchedView`).
+   */
+  orthographicHalfHeight(orthographicSize: number): number {
+    if (!this.host.pixelMatchedCameras) return orthographicSize;
+    return pixelMatchedView(2 * orthographicSize, this.host.overlay().pixelMatchContext()).height / 2;
+  }
+
+  /**
+   * Half the height an orthographic camera with `orthographicSize` shows over the design resolution: the size itself,
+   * or with pixel-matched cameras its whole ratio's (`pixelMatchedDesignFrame`), whatever the output's extension, so
+   * Set Orthographic Size with it picks the same ratio again.
+   */
+  designHalfHeight(orthographicSize: number): number {
+    if (!this.host.pixelMatchedCameras) return orthographicSize;
+    return pixelMatchedDesignFrame(2 * orthographicSize, this.host.overlay().pixelMatchContext()).height / 2;
+  }
+
+  /**
+   * What the Layer Camera frames at zoom 1, as the renderer frames it (`layerCameraHalfSize`): its Width × Height
+   * fitted to the canvas, or pixel-matched (the zoom picks the whole ratio, so this is the zoomed view times the zoom).
+   */
+  layerCameraViewBounds(): { width: number; height: number } {
+    const canvas = this.host.overlay().canvasSize();
+    const authored = this.host.playScene()?.settings.cameraBounds2D;
+    if (!this.host.pixelMatchedCameras) return sceneLayerViewBounds(authored, canvas.width / Math.max(1, canvas.height));
+    const context = this.host.overlay().pixelMatchContext();
+    const zoom = this.layerCameraState().zoom > 0 ? this.layerCameraState().zoom : 1;
+    const fitted = sceneLayerViewBounds(authored, context.design.width / Math.max(1, context.design.height));
+    const view = pixelMatchedView(fitted.height / zoom, context);
+    return { width: view.width * zoom, height: view.height * zoom };
+  }
+
   private layerCameraRay(screen: { x: number; y: number }) {
     const canvas = this.host.overlay().canvasSize();
-    const bounds = sceneLayerViewBounds(this.host.playScene()?.settings.cameraBounds2D, canvas.width / Math.max(1, canvas.height));
+    const bounds = this.layerCameraViewBounds();
     const point = sceneLayerCanvasToLayer(screen.x, screen.y, canvas.width, canvas.height, bounds, this.layerCameraState());
     return {
       origin: { x: point.x, y: point.y, z: -WORLD_LAYER_CAMERA_DISTANCE },

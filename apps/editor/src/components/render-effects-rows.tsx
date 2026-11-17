@@ -25,6 +25,7 @@ export function EffectRow({
   dependent = false,
   disabled = false,
   display = defaultDisplay,
+  note,
   children,
 }: {
   scope: EffectsScope;
@@ -42,6 +43,8 @@ export function EffectRow({
   disabled?: boolean;
   /** The project value as the Scene status line shows it. */
   display?: (value: unknown) => string;
+  /** Live state the row must show, such as why the setting does not apply. */
+  note?: string;
   children: (control: { id: string; disabled: boolean; describedBy?: string }) => ReactNode;
 }) {
   const id = `${scope.idPrefix}-${suffix}`;
@@ -49,12 +52,15 @@ export function EffectRow({
   const labelled = hint ? <LabelHint hint={hint}>{fieldLabel}</LabelHint> : fieldLabel;
   const description = hint ? <FieldDescription id={`${id}-description`} className="sr-only">{hint}</FieldDescription> : null;
   const className = dependent ? "settings-field settings-field-dependent" : "settings-field";
+  const noteLine = note ? <FieldDescription id={`${id}-note`} data-testid={`${id}-note`}>{note}</FieldDescription> : null;
   if (!scope.scene) {
+    const describedBy = [hint ? `${id}-description` : "", note ? `${id}-note` : ""].filter(Boolean).join(" ");
     return (
       <Field orientation={toggle ? "horizontal" : undefined} className={className}>
         {labelled}
-        {children({ id, disabled, describedBy: hint ? `${id}-description` : undefined })}
+        {children({ id, disabled, describedBy: describedBy || undefined })}
         {description}
+        {noteLine}
       </Field>
     );
   }
@@ -78,10 +84,11 @@ export function EffectRow({
       {children({
         id,
         disabled: disabled || !overridden,
-        describedBy: [hint ? `${id}-description` : "", `${id}-status`].filter(Boolean).join(" "),
+        describedBy: [hint ? `${id}-description` : "", `${id}-status`, note ? `${id}-note` : ""].filter(Boolean).join(" "),
       })}
       {description}
       <FieldDescription id={`${id}-status`}>{status}</FieldDescription>
+      {noteLine}
     </Field>
   );
 }

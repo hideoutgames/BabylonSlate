@@ -50,7 +50,7 @@ function wholeMultiple(container: PlayContainer, frame: { width: number; height:
 }
 
 /** Whether Play enlarges its design size pixelated (Upscaling: Pixelated with Custom Resolution), with or without bars. */
-export function pixelatedUpscaling(render?: PlayOutputSettings | null): boolean {
+export function pixelatedUpscaling(render?: Partial<Pick<PlayOutputSettings, "customResolution" | "upscaling">> | null): boolean {
   return !!render?.customResolution && render.upscaling === "pixelated";
 }
 

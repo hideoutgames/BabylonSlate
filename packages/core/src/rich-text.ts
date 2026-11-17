@@ -18,7 +18,11 @@ export type RichTextEffects = {
   waveIntensity: number;
   hover: number;
   rotate: number;
+  /** `[fx=ClassName strength=2]`: Rich Text 2D Decorator Effect Classes by name, outermost first. Absent when none. */
+  custom?: readonly RichTextCustomEffect[];
 };
+
+export type RichTextCustomEffect = { name: string; strength: number };
 
 export type RichTextSpan =
   | {
@@ -71,6 +75,7 @@ const WRAPPER_TAGS = new Set([
   "wave",
   "hover",
   "rotate",
+  "fx",
 ]);
 const VOID_TAGS = new Set(["img"]);
 
@@ -196,7 +201,13 @@ function effectsOf(frame: Frame): RichTextEffects {
     waveIntensity: frame.waveIntensity,
     hover: frame.hover,
     rotate: frame.rotate,
+    ...(frame.custom?.length ? { custom: frame.custom } : {}),
   };
+}
+
+function sameCustom(a: RichTextEffects["custom"], b: RichTextEffects["custom"]): boolean {
+  if ((a?.length ?? 0) !== (b?.length ?? 0)) return false;
+  return (a ?? []).every((effect, index) => effect.name === b![index]!.name && sameNumber(effect.strength, b![index]!.strength));
 }
 
 // Runs used to compare via JSON.stringify, which writes NaN and +-Infinity as
@@ -226,7 +237,8 @@ function sameRun(a: RichTextSpan, b: RichTextSpan): boolean {
     sameNumber(ea.waveSpeed, eb.waveSpeed) &&
     sameNumber(ea.waveIntensity, eb.waveIntensity) &&
     sameNumber(ea.hover, eb.hover) &&
-    sameNumber(ea.rotate, eb.rotate)
+    sameNumber(ea.rotate, eb.rotate) &&
+    sameCustom(ea.custom, eb.custom)
   );
 }
 
@@ -295,6 +307,18 @@ function applyTag(frame: Frame, tag: ParsedTag): Frame {
     case "rotate": {
       const degrees = Number(primary ?? "0");
       next.rotate = Number.isFinite(degrees) ? degrees : 0;
+      break;
+    }
+    case "fx": {
+      // An effect named twice keeps its place and takes the inner strength.
+      const name = primary?.trim();
+      if (!name) break;
+      const strength = Number(tag.attrs.strength ?? "1");
+      const effect = { name, strength: Number.isFinite(strength) ? strength : 1 };
+      const custom = next.custom ?? [];
+      next.custom = custom.some((entry) => entry.name === name)
+        ? custom.map((entry) => entry.name === name ? effect : entry)
+        : [...custom, effect];
       break;
     }
     default:
@@ -379,6 +403,14 @@ export function parseRichText(
     index = close + 1;
   }
   return spans;
+}
+
+/** The Class names the text's `[fx=ClassName]` tags apply, in first-use order. */
+export function richTextCustomEffectNames(source: string): string[] {
+  const spans = parseRichText(source, {
+    bold: false, italic: false, underline: false, color: [1, 1, 1], size: 32, outline: 0, outlineColor: [0, 0, 0],
+  });
+  return [...new Set(spans.flatMap((span) => span.effects.custom?.map((effect) => effect.name) ?? []))];
 }
 
 export function richTextImageGuids(source: string): string[] {

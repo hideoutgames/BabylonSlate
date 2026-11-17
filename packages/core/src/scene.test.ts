@@ -456,6 +456,17 @@ describe("scene schema", () => {
       .toEqual({ width: 19.2, height: 10.8, center: [4, -1] });
   });
 
+  it("draws a pixel-matched Layer Camera's outline as the design area at the whole ratio its bounds pick", () => {
+    const settings = { ...createDefaultSceneSettings(), cameraBounds2D: { width: 20, height: 10 }, cameraLocation2D: [4, -1] as [number, number] };
+    const context = { resolution: { width: 640, height: 360 }, pixelsPerUnit: 100 };
+    // 20 x 10 fitted to 16:9 is 20 x 11.25 units: nearest three texels per design pixel, so 19.2 x 10.8.
+    expect(sceneLayerCameraFrame({ actors: [], settings }, { context, pixelMatched: true }))
+      .toEqual({ width: expect.closeTo(19.2, 9), height: expect.closeTo(10.8, 9), center: [4, -1] });
+    expect(sceneLayerCameraFrame({ actors: [], settings: { ...settings, cameraBounds2D: { width: 3.2, height: 1.8 } } }, { context, pixelMatched: true }))
+      .toEqual({ width: 3.2, height: 1.8, center: [4, -1] });
+    expect(sceneLayerCameraFrame({ actors: [], settings }, { context })).toEqual({ width: 20, height: 10, center: [4, -1] });
+  });
+
   it("outlines a Scene Layer's canvas from the project's design resolution, its Root and its content", () => {
     const context = { resolution: { width: 640, height: 360 }, pixelsPerUnit: 100 };
     const layer = (layerCanvas: Record<string, unknown>) => ({

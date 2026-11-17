@@ -24,12 +24,16 @@ import {
   type ComponentPropertyContext,
   type ComponentPropertyUpdate,
 } from "./component-property-row-helpers";
+import { PIXEL_MATCHED_SIZE_HINT, pixelMatchedSizeStatus } from "./pixel-matched-camera-status";
 
 export function cameraPropertyRows(
   actorId: string,
   component: SerializedComponent,
   update: ComponentPropertyUpdate,
+  context?: ComponentPropertyContext,
 ): PropertyRow[] {
+  const orthographicSize = asNumber(component.properties.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE);
+  const pixelMatched = context?.pixelMatchedCamera ?? null;
   const projectionMode =
     component.properties.projectionMode === "orthographic"
       ? "orthographic"
@@ -57,21 +61,18 @@ export function cameraPropertyRows(
       update,
       1,
       DEFAULT_CAMERA_FIELD_OF_VIEW,
-    ), unit: "deg" }] : [sliderRow(
+    ), unit: "deg" }] : [{ ...sliderRow(
       actorId,
       component.id,
       "orthographicSize",
       "Orthographic Size",
-      asNumber(
-        component.properties.orthographicSize,
-        DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
-      ),
+      orthographicSize,
       0.1,
       50,
       update,
       0.1,
       DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
-    )]),
+    ), ...(pixelMatched ? { description: PIXEL_MATCHED_SIZE_HINT, status: pixelMatchedSizeStatus(2 * orthographicSize, pixelMatched) } : {}) }]),
     {
       kind: "number",
       id: rowId(actorId, component.id, "nearClip"),

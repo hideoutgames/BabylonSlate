@@ -15,12 +15,20 @@ export const GAME_SUBSYSTEM_CLASS_ID = "GameSubsystem";
 /** Main-scene-lifetime subsystem base users can parent to. */
 export const SCENE_SUBSYSTEM_CLASS_ID = "SceneSubsystem";
 
+/** A letter of a 2D Rich Text that custom Appear Modes and Decorator Effects pose; engine-made, never subclassed. */
+export const RICH_TEXT_2D_LETTER_CLASS_ID = "RichText2DLetter";
+/** Base of Classes that script how each letter of a 2D Rich Text appears. */
+export const RICH_TEXT_2D_APPEAR_MODE_CLASS_ID = "RichText2DAppearMode";
+/** Base of Classes that script a continuous letter effect, applied with the `[fx=ClassName]` tag. */
+export const RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID = "RichText2DDecoratorEffect";
+
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
   "Object",
   "MaterialObject",
   "LayerCamera",
   "SceneCameraManager",
+  RICH_TEXT_2D_LETTER_CLASS_ID,
   "FloatCurveObject",
   "VectorCurveObject",
   "ColorCurveObject",
@@ -46,6 +54,8 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTDecorator",
   "BTService",
   "BTComposite",
+  RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
 ] as const;
 
 /**

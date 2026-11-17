@@ -5,7 +5,9 @@ import { Scene } from "@babylonjs/core/scene";
 import type { ViewportMode } from "@haptic/core";
 import type { RenderScheduler } from "./render-scheduler";
 import {
+  pixelPerfectOrthoBounds,
   pixelPerfectOrthoHalfHeight,
+  pixelZoomDetent,
   type PixelPerfectSettings,
 } from "./pixel-perfect";
 import { worldPositionFromCanvas } from "./editor-place";
@@ -88,10 +90,18 @@ export interface EditorCameraController {
   orthoHalfHeight: () => number;
   /** Pixel-perfect 2D framing; pass null to return to free ortho zoom. */
   setPixelPerfect: (settings: PixelPerfectSettings | null) => void;
-  /** Canvas height in device pixels, needed to derive pixel-perfect bounds. */
+  /** Canvas height in render pixels, needed to derive pixel-perfect bounds. */
   setCanvasHeight: (heightPx: number) => void;
-  /** Zoom factor relative to the pixel-perfect 1:1 framing (continuous). */
+  /**
+   * Zoom relative to the pixel-perfect framing of one texel per CSS pixel. Pinch and wheel move it continuously; the
+   * view shows it at `pixelsPerTexel`, which settles on whole levels near them.
+   */
   pixelZoom: () => number;
+  /**
+   * Render pixels per texel the pixel-perfect view shows: the zoom times the pixel ratio, settled on a whole level near
+   * one (`pixelZoomDetent`); 1 without it.
+   */
+  pixelsPerTexel: () => number;
   /**
    * When true in 3D, `look` orbits around `camera.target` instead of looking
    * in place. No-op in 2D. Session-only; not stored on the scene document.
@@ -152,7 +162,7 @@ export function createEditorCamera(
   let aspect = 1;
   let pixelPerfect: PixelPerfectSettings | null = null;
   let canvasHeightPx = 0;
-  /** Live pixel-perfect zoom; pinch and wheel stay continuous (not 1×/2× steps). */
+  /** Live pixel-perfect zoom; pinch and wheel move it continuously and the view settles near whole levels (`pixelsPerTexel`). */
   let pixelZoom = 1;
   let pose3d: {
     target: Vector3;
@@ -168,22 +178,31 @@ export function createEditorCamera(
 
   const invalidate = () => options.scheduler?.invalidate("camera");
 
-  const applyPixelPerfectFraming = () => {
-    if (!pixelPerfect || mode !== "2d" || canvasHeightPx <= 0) return;
-    orthoHalfHeight = pixelPerfectOrthoHalfHeight(
-      canvasHeightPx,
-      pixelPerfect.pixelsPerUnit,
-      pixelZoom,
-    );
-  };
+  const pixelsPerTexel = () => pixelPerfect ? pixelZoomDetent(pixelZoom * (pixelPerfect.pixelRatio ?? 1)) : 1;
+  const pixelFramed = () => pixelPerfect !== null && mode === "2d" && canvasHeightPx > 0;
 
   const applyOrthoBounds = () => {
-    applyPixelPerfectFraming();
+    if (pixelPerfect && pixelFramed()) {
+      const scale = pixelsPerTexel();
+      orthoHalfHeight = pixelPerfectOrthoHalfHeight(canvasHeightPx, pixelPerfect.pixelsPerUnit, scale);
+      const bounds = pixelPerfectOrthoBounds(camera.target, { width: Math.max(1, Math.round(canvasHeightPx * aspect)), height: canvasHeightPx },
+        pixelPerfect.pixelsPerUnit, scale);
+      camera.orthoTop = bounds.top;
+      camera.orthoBottom = bounds.bottom;
+      camera.orthoLeft = bounds.left;
+      camera.orthoRight = bounds.right;
+      return;
+    }
     camera.orthoTop = orthoHalfHeight;
     camera.orthoBottom = -orthoHalfHeight;
     camera.orthoLeft = -orthoHalfHeight * aspect;
     camera.orthoRight = orthoHalfHeight * aspect;
   };
+  // Pixel-perfect bounds sit on the world's pixel grid, so they follow every move of the target (pan, fly, frame),
+  // before the projection the same frame reads.
+  camera.onViewMatrixChangedObservable.add(() => {
+    if (pixelFramed()) applyOrthoBounds();
+  });
 
   const applyMode = () => {
     if (mode === "2d") {
@@ -322,6 +341,7 @@ export function createEditorCamera(
       }
     },
     pixelZoom: () => pixelZoom,
+    pixelsPerTexel,
     captureFraming: () => ({
       target: plainVec(camera.target),
       radius: camera.radius,

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import type { Text2DAppearMode } from "@haptic/core";
+import type { Text2DAppearModeEntry } from "@haptic/core";
 import { RichTextAppearModesField } from "./rich-text-appear-modes-field";
 import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 
@@ -10,7 +10,7 @@ afterEach(cleanup);
 describe("RichTextAppearModesField", () => {
   it("keeps focus on Instant when choosing it removes preceding modes", async () => {
     function ControlledModes() {
-      const [value, setValue] = useState<Text2DAppearMode[]>(["fade", "scale"]);
+      const [value, setValue] = useState<Text2DAppearModeEntry[]>(["fade", "scale"]);
       return <RichTextAppearModesField value={value} onChange={setValue} />;
     }
     render(<ControlledModes />);
@@ -39,6 +39,21 @@ describe("RichTextAppearModesField", () => {
     rerender(<RichTextAppearModesField value={["fade"]} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Reset Appear Modes" }));
     expect(onChange).toHaveBeenLastCalledWith([]);
+  });
+
+  it("offers the project's custom modes as '<Class> (Custom)' beside the built-in ones", async () => {
+    const onChange = vi.fn();
+    render(<RichTextAppearModesField value={["fade", "class:Gone"]} customClassIds={["Rise"]} onChange={onChange} />);
+    // A stored mode whose Class no longer exists still shows what it is.
+    expect(screen.getByRole("combobox", { name: "Appear Modes Mode 2" }).textContent).toContain("Gone (Custom)");
+    fireEvent.click(screen.getByRole("combobox", { name: "Appear Modes Mode 1" }));
+    const custom = await screen.findByRole("option", { name: "Rise (Custom)" });
+    act(() => {
+      dispatchPointerEvent(custom, "pointerdown", { pointerType: "mouse" });
+      dispatchPointerEvent(custom, "pointerup", { pointerType: "mouse" });
+    });
+    fireEvent.click(custom, { detail: 1 });
+    expect(onChange).toHaveBeenLastCalledWith(["class:Rise", "class:Gone"]);
   });
 
   it("combines different modes and makes Instant replace the combination", async () => {

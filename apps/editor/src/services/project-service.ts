@@ -22,6 +22,7 @@ import {
   normalizeInputAssetPayload,
   assetTypeForDocumentKind,
   createDefaultScene,
+  projectSceneCameraFraming,
   createEmptyLayouts,
   createEmptyProject,
   normalizeProjectSettings,
@@ -1252,7 +1253,8 @@ export class ProjectService {
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});
     const graph = createDefaultLogicGraphSerialized();
-    const scene = createDefaultScene(kind === "2d" ? "2d" : "3d");
+    // A Pixel Art Optimized project's scene frames its design resolution at one design pixel per texel.
+    const scene = createDefaultScene(kind === "2d" ? "2d" : "3d", projectSceneCameraFraming(document.settings));
     if (kind === "blank") {
       scene.actors = [];
       scene.settings.environmentSource = "none";

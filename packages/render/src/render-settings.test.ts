@@ -289,6 +289,30 @@ it("multisamples a world view's scene pass at the tier's Anti-Aliasing, within t
   expect(mode("msaa4").samples).toBe(1);
 });
 
+it("plans no FSR upscale and no anti-aliasing under Upscaling Pixelated, whatever the tier, Scene or session asks", () => {
+  const scene = fixture();
+  scene.getEngine().getCaps().maxMSAASamples = 4;
+  const state = sceneRenderingSettings(scene);
+  allowSceneScreenShadows(scene, () => false);
+  const fsr = { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled: true, renderScale: 0.67, sharpness: 0.2 } };
+  const plan = (upscaling: "smooth" | "pixelated", antiAliasing: "msaa4" | "fxaa") => {
+    state.qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing });
+    updateSceneRenderingSettings(scene, { effects: DEFAULT_RENDER_EFFECTS, customResolution: true, upscaling }, undefined, undefined, undefined,
+      { upscaling: { enabled: true } });
+    return { samples: sceneMultisampleCount(scene), fxaa: state.effectsPlan?.fxaa ?? false, upscale: state.effectsPlan?.upscale != null };
+  };
+  // The Scene's Post Processing override turns FSR on over a project that leaves it off.
+  expect(plan("smooth", "msaa4")).toEqual({ samples: 4, fxaa: false, upscale: true });
+  expect(plan("smooth", "fxaa")).toEqual({ samples: 1, fxaa: true, upscale: true });
+  expect(plan("pixelated", "msaa4")).toEqual({ samples: 1, fxaa: false, upscale: false });
+  expect(plan("pixelated", "fxaa")).toEqual({ samples: 1, fxaa: false, upscale: false });
+  // Pixelated needs Custom Resolution; the project's own FSR is dropped too.
+  updateSceneRenderingSettings(scene, { effects: fsr, customResolution: false, upscaling: "pixelated" }, undefined, undefined, undefined, {});
+  expect(state.effectsPlan?.upscale).not.toBeNull();
+  updateSceneRenderingSettings(scene, { effects: fsr, customResolution: true, upscaling: "pixelated" });
+  expect(state.effectsPlan?.upscale ?? null).toBeNull();
+});
+
 it("tells listeners of each render-mode change once, after the plan is current, and of nothing else", () => {
   const scene = fixture();
   const state = sceneRenderingSettings(scene);

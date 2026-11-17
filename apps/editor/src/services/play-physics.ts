@@ -201,6 +201,8 @@ export function playLoadControl(options: {
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
   pixelsPerUnit?: number;
+  /** Pixel-Perfect Mode with Nearest Texture Filtering (`pixelMatchedCameras`). */
+  pixelMatchedCameras?: boolean;
   texturePixelSizes?: Record<string, { width: number; height: number }>;
   sceneAssetGuid?: string;
   scene?: SerializedScene;
@@ -261,6 +263,7 @@ export function playLoadControl(options: {
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
+    ...(options.pixelMatchedCameras ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: options.texturePixelSizes,
     sceneAssetGuid: options.sceneAssetGuid ?? "play-scene",
     scene: options.scene,

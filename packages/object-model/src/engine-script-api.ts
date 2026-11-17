@@ -1,5 +1,5 @@
 import { overlayContainerScriptVariables } from "./overlay-container-api";
-import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID } from "@haptic/core";
+import { OVERLAY_LAYOUT_CLASSES, ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID, ENGINE_TEXT2D_APPEAR_START_ENUM_ID, ENGINE_TEXT2D_APPEAR_SOUND_PLAY_ENUM_ID } from "@haptic/core";
 import { UI_CONTROL_2D_SCRIPT_APIS } from "./ui-controls2d-api";
 import {
   SCALABILITY_CHANGED_EVENT,
@@ -8,6 +8,7 @@ import {
   SCENE_LAYER_SWITCHER_SCRIPT_API,
 } from "./scene-layer-switcher-api";
 import { TIMELINE_CLIP_SCRIPT_API } from "./timeline-clip-api";
+import { RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, RICH_TEXT_2D_LETTER_CLASS_ID } from "./ids";
 import { LAYER_CAMERA_SCRIPT_API, SCENE_CAMERA_MANAGER_SCRIPT_API } from "./camera-script-api";
 
 export type EngineScriptPin = {
@@ -128,6 +129,15 @@ const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
   { name: "Wrap Width", typeId: "float", propertyKey: "wrapWidth" },
   { name: "Wrap Height", typeId: "float", propertyKey: "wrapHeight" },
 ];
+
+/** Runs on a Rich Text 2D Appear Mode for each letter whenever the reveal moves. */
+export const RICH_TEXT_LETTER_APPEAR_EVENT: EngineScriptEvent = {
+  name: "On Letter Appear", eventType: "flow.event.richTextLetterAppear", exportName: "onLetterAppear",
+};
+/** Runs on a Rich Text 2D Decorator Effect every tick with the letters inside its tag. */
+export const RICH_TEXT_DECORATE_LETTERS_EVENT: EngineScriptEvent = {
+  name: "On Decorate Letters", eventType: "flow.event.richTextDecorateLetters", exportName: "onDecorateLetters",
+};
 
 const TEXT_CHANGED: EngineScriptEvent = {
   name: "On Text Changed",
@@ -365,6 +375,19 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   SCENE_LAYER_SWITCHER_SCRIPT_API,
   TIMELINE_CLIP_SCRIPT_API,
   LAYER_CAMERA_SCRIPT_API,
+  {
+    classId: RICH_TEXT_2D_LETTER_CLASS_ID,
+    variables: [
+      { name: "Index", typeId: "int", propertyKey: "index", getOnly: true },
+      { name: "Character", typeId: "string", propertyKey: "character", getOnly: true },
+      { name: "Offset", typeId: "vec2", propertyKey: "offset" },
+      { name: "Scale", typeId: "vec2", propertyKey: "scale" },
+      { name: "Rotation", typeId: "float", propertyKey: "rotation" },
+      { name: "Opacity", typeId: "float", propertyKey: "opacity" },
+    ],
+  },
+  { classId: RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, nativeEvents: [RICH_TEXT_LETTER_APPEAR_EVENT] },
+  { classId: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, nativeEvents: [RICH_TEXT_DECORATE_LETTERS_EVENT] },
   SCENE_CAMERA_MANAGER_SCRIPT_API,
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
     ...overlayContainerScriptVariables(classId),
@@ -559,6 +582,10 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Appear Interval", typeId: "float", propertyKey: "appearInterval" },
       { name: "Appear Duration", typeId: "float", propertyKey: "appearDuration" },
       { name: "Appear Start", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_START_ENUM_ID, propertyKey: "appearStart" },
+      { name: "Appear Sound", typeId: "bool", propertyKey: "appearSound" },
+      { name: "Appear Sound Asset", typeId: "asset", typeClassId: "Audio", propertyKey: "appearSoundAssetGuid" },
+      { name: "Appear Sound Play", typeId: "enum", typeClassId: ENGINE_TEXT2D_APPEAR_SOUND_PLAY_ENUM_ID, propertyKey: "appearSoundPlay" },
+      { name: "Appear Sound Offset", typeId: "float", propertyKey: "appearSoundOffset" },
       { name: "Appear Progress", typeId: "float", propertyKey: "appearProgress", getOnly: true },
       { name: "Is Revealed", typeId: "bool", propertyKey: "isRevealed", getOnly: true },
     ],

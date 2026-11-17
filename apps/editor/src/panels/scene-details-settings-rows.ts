@@ -11,6 +11,7 @@ import {
   SCENE_LAYER_SCALINGS,
   SCENE_LAYER_SIZE_MODE_LABELS,
   SCENE_LAYER_SIZE_MODES,
+  sceneLayerFitToAspect,
   type EnvironmentSource,
   type SceneLayerAnchor,
   type SceneLayerCanvasDesign,
@@ -27,6 +28,7 @@ import {
   type PropertyRow,
 } from "@haptic/editor-kit";
 import { sceneActorDisplayLabel } from "../lib/scene-actor-entries";
+import { PIXEL_MATCHED_SIZE_HINT, pixelMatchedSizeStatus, projectPixelMatchedLens } from "../lib/pixel-matched-camera-status";
 
 /** Scene rows shown inside the Environment Lighting section. */
 export const ENVIRONMENT_ROW_IDS = new Set(["scene-environment-source", "scene-environment-texture"]);
@@ -272,7 +274,7 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
         ]
       : []),
     defaultCameraRow(scene, mutate, setCameraPickerOpen),
-    ...layerCameraRows(scene, mutate),
+    ...layerCameraRows(scene, mutate, projectDocument),
     {
       kind: "boolean",
       id: "scene-editor-joystick",
@@ -494,9 +496,16 @@ function defaultCameraRow(
 function layerCameraRows(
   scene: SerializedScene,
   mutate: (next: SerializedScene) => void,
+  projectDocument?: ProjectDocument | null,
 ): PropertyRow[] {
   const defaults = createDefaultSceneSettings();
   const bounds = scene.settings.cameraBounds2D;
+  // Pixel-matched, the bounds fitted to the design aspect only pick the whole pixel scale.
+  const pixelMatched = projectPixelMatchedLens(projectDocument);
+  const pixelStatus = pixelMatched ? {
+    description: PIXEL_MATCHED_SIZE_HINT,
+    status: pixelMatchedSizeStatus(sceneLayerFitToAspect(bounds, pixelMatched.design.width / pixelMatched.design.height).height, pixelMatched),
+  } : {};
   return [
     {
       kind: "vector3",
@@ -529,6 +538,7 @@ function layerCameraRows(
       label: "Layer Camera Height",
       value: bounds.height,
       defaultValue: defaults.cameraBounds2D.height,
+      ...pixelStatus,
       onChange: (height) =>
         mutate({
           ...scene,

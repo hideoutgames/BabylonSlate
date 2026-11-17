@@ -30,6 +30,7 @@ import {
   composeActorComponentTransform,
   composeAuthoredComponentTransform,
   applyAuthoredCameraLens,
+  authoredOrthoHalfSize,
   type AuthoredCameraProperties,
 } from "./scene-illumination";
 import { actorIdFromMeshName, editorComponentMeshName, editorMeshName } from "./scene-loader";
@@ -194,7 +195,7 @@ class DashedGuide {
   }
 }
 
-function buildFrustumCornersLocal(lens: AuthoredCameraProperties, aspect: number): Vector3[] {
+function buildFrustumCornersLocal(lens: AuthoredCameraProperties, aspect: number, scene: Scene): Vector3[] {
   const near = asNumber(lens.nearClip, 0.1);
   const far = debugFarDistance(near, asNumber(lens.farClip, 1000));
   let nearH: number;
@@ -202,13 +203,14 @@ function buildFrustumCornersLocal(lens: AuthoredCameraProperties, aspect: number
   let farH: number;
   let farW: number;
   if (lens.projectionMode === "orthographic") {
-    const ortho = Math.max(
+    // The view the camera draws: the authored size, or pixel-matched (`setScenePixelMatchedLens`).
+    const { halfWidth, halfHeight } = authoredOrthoHalfSize(scene, Math.max(
       0.01,
       asNumber(lens.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE),
-    );
-    nearH = ortho;
-    farH = ortho;
-    nearW = ortho * aspect;
+    ), aspect);
+    nearH = halfHeight;
+    farH = halfHeight;
+    nearW = halfWidth;
     farW = nearW;
   } else {
     const fov = (asNumber(lens.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW) * Math.PI) / 180;
@@ -319,8 +321,8 @@ const FRUSTUM_EDGES: ReadonlyArray<readonly [number, number]> = [
   [0, 4], [1, 5], [2, 6], [3, 7],
 ];
 
-function frustumPaths(lens: AuthoredCameraProperties, aspect: number): Vector3[][] {
-  const corners = buildFrustumCornersLocal(lens, aspect);
+function frustumPaths(lens: AuthoredCameraProperties, aspect: number, scene: Scene): Vector3[][] {
+  const corners = buildFrustumCornersLocal(lens, aspect, scene);
   return FRUSTUM_EDGES.map(([a, b]) => [corners[a]!, corners[b]!]);
 }
 
@@ -760,8 +762,9 @@ export class EditorDebugOverlay {
   private showLens(actor: SerializedActor, component: SerializedComponent, debug: LensDebug): void {
     const { lens, aspect } = debug;
     this.lensGuide.reshape(
-      [lens.projectionMode, lens.nearClip, lens.farClip, lens.fieldOfView, lens.orthographicSize, aspect].join("|"),
-      () => frustumPaths(lens, aspect),
+      [lens.projectionMode, lens.nearClip, lens.farClip, lens.fieldOfView, lens.orthographicSize, aspect,
+        JSON.stringify(authoredOrthoHalfSize(this.scene, asNumber(lens.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE), aspect))].join("|"),
+      () => frustumPaths(lens, aspect, this.scene),
     );
     this.lensGuide.label(actor.id);
     const composed = composeActorComponentTransform(actor, component);
