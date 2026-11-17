@@ -366,10 +366,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emit2DSampler("hapticEnvironmentBrdfSampler", "!defined(HAPTIC_CEL)");
     state._emit2DSampler("hapticAreaLtcSampler");
     state._emit2DArraySampler("hapticAreaEmissionSampler");
-    // The shadow atlas compares as it samples (`shadow-atlas.ts`); the build state has no helper for a compare sampler.
-    // A PBR program also reads it plainly for Contact Hardening's blocker search, which CEL never draws.
+    // The shadow atlas, a depth texture array of pages, compares as it samples (`shadow-atlas.ts`); the build state has
+    // no helper for a compare sampler. A PBR program also reads it plainly for Contact Hardening's blocker search, which
+    // CEL never draws.
     if (!state.samplers.includes(HAPTIC_SHADOW_ATLAS)) {
-      state._samplerDeclaration += `uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n#ifndef HAPTIC_CEL\nuniform highp sampler2D ${HAPTIC_SHADOW_ATLAS_DEPTH};\n#endif\n`;
+      state._samplerDeclaration += `uniform highp sampler2DArrayShadow ${HAPTIC_SHADOW_ATLAS};\n#ifndef HAPTIC_CEL\nuniform highp sampler2DArray ${HAPTIC_SHADOW_ATLAS_DEPTH};\n#endif\n`;
       state.samplers.push(HAPTIC_SHADOW_ATLAS);
       state.samplers.push(HAPTIC_SHADOW_ATLAS_DEPTH);
     }

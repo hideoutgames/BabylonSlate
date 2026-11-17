@@ -80,6 +80,18 @@ index e33593b25e62a6cb9f47cd552ee314d4b0805236..22f10c03a1f446614259761612624a31
          gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rtWrapper._MSAAFramebuffer);
          gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rtWrapper._framebuffer);
          for (let i = 0; i < count; i++) {
+diff --git a/Engines/renderTargetWrapper.js b/Engines/renderTargetWrapper.js
+--- a/Engines/renderTargetWrapper.js
++++ b/Engines/renderTargetWrapper.js
+@@ -460,7 +460,7 @@ export class RenderTargetWrapper {
+                 const size = {
+                     width: this.width,
+                     height: this.height,
+-                    layers: this.is2DArray || this.is3D ? this.texture?.depth : undefined,
++                    layers: this.is2DArray || this.is3D ? (this.texture?.depth ?? this.layers) : undefined, // Haptic: a depth-only layered target (the shadow atlas) keeps its layers through a context restore.
+                 };
+                 rtw = this._engine.createRenderTargetTexture(size, options);
+             }
 diff --git a/Engines/thinEngine.pure.d.ts b/Engines/thinEngine.pure.d.ts
 index 24b6329cb60c28f279e16018f9a3f5566d8c30b5..82cfaba9ce0c12d963c3b5074fe5149494fa0b33 100644
 --- a/Engines/thinEngine.pure.d.ts
@@ -114,6 +126,15 @@ index 1b0259a1a514fadb726788114650232754c0287f..cab2bd4229f50b188966c51806254d28
          const useStencilGlobalOnly = this.stencilStateComposer.useStencilGlobalOnly;
          this.stencilStateComposer.useStencilGlobalOnly = true; // make sure the stencil mask is coming from the global stencil and not from a material (effect) which would currently be in effect
          this.applyStates();
+@@ -858,7 +860,7 @@ export class ThinEngine extends AbstractEngine {
+         const gl = this._gl;
+         if (!rtWrapper.isMulti) {
+             if (rtWrapper.is2DArray || rtWrapper.is3D) {
+-                gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, rtWrapper.texture._hardwareTexture?.underlyingResource, lodLevel, layer);
++                gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, rtWrapper.texture?._hardwareTexture?.underlyingResource ?? null, lodLevel, layer); // Haptic: a depth-only layered target (the shadow atlas) has no colour texture.
+                 webglRtWrapper._currentLOD = lodLevel;
+             }
+             else if (rtWrapper.isCube) {
 @@ -969,6 +971,8 @@ export class ThinEngine extends AbstractEngine {
       */
      _bindUnboundFramebuffer(framebuffer) {

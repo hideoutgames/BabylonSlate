@@ -402,7 +402,7 @@ it("draws a Full Quality capture's own sun maps, fitted to its camera, and leave
   expect(own.camera).toBe(capture);
   expect(own.numCascades).toBe(main.numCascades);
   expect(own.getShadowMap()!.getSize()).toEqual(main.getShadowMap()!.getSize());
-  expect(own.tiles.some((tile) => main.tiles.some((held) => held.x === tile.x && held.y === tile.y))).toBe(false);
+  expect(own.tiles.some((tile) => main.tiles.some((held) => held.layer === tile.layer && held.x === tile.x && held.y === tile.y))).toBe(false);
   // The scene view keeps binding its own map; the spot map is shared.
   expect(sun.getShadowGenerator()).toBe(main);
   expect(spot.getShadowGenerators()?.size).toBe(1);
