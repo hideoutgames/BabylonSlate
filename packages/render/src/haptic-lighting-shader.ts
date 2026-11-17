@@ -344,31 +344,43 @@ float hapticScreenLit = 1.0;
 // The screen shadows of this draw's pass (\`hapticScreenShadowSampler\`: R the sun's lit share, G the eye distance of the
 // surface marched from; \`hapticScreenShadowTerms.x\` 0 where the pass has none, a placeholder then bound), for the surface
 // at P only: a fragment at another distance (behind glass or water, or anything the depth did not hold) keeps 1. The
-// march runs at half resolution (\`SCREEN_SHADOW_SCALE\`), each texel from the top-left pixel of its 2 x 2 block, and is
-// upsampled by depth: the lit share averages the 3 x 3 texels around this pixel's that marched from the same surface,
-// each compared with this surface's distance carried to the pixel it marched from along the surface's screen slope
-// (within twice the tolerance), and needs this pixel's own texel within the tolerance, so a contact shadow's edge stays
-// on the geometry's edge and a surface seen at a grazing angle still matches its texels. The average also filters the
-// march's noise.
-float hapticScreenShadowLit(vec3 P, vec3 eye) {
+// march runs once per 2 x 2 block (\`SCREEN_SHADOW_SCALE\`) and writes which of the block's pixels share the surface it
+// marched from, and the distance of the first that does not (\`screen-shadows.ts\`): this pixel's surface is known
+// exactly, as at full resolution. The lit share blends the texels whose marched pixel lies within two pixels of this
+// one (a tent over that distance) and that marched from this surface, each compared with this surface's distance
+// carried along its screen slope to the pixel it marched from.
+vec2 hapticScreenShadowPixel(ivec2 block, float code) {
+  return vec2(block * 2 + ivec2(int(code) % 2, int(code) / 2)) + 0.5;
+}
+// \`slope\`: the change of this surface's eye distance per pixel, taken by the caller where control flow is uniform.
+float hapticScreenShadowLit(vec3 P, vec3 eye, vec2 slope) {
   float distance = length(eye - P);
-  vec2 slope = vec2(dFdx(distance), dFdy(distance));
   if (hapticScreenShadowTerms.x < 0.5) return 1.0;
   ivec2 last = textureSize(hapticScreenShadowSampler, 0) - 1;
-  ivec2 pixel = ivec2(gl_FragCoord.xy) / 2;
+  ivec2 fragment = ivec2(gl_FragCoord.xy);
+  ivec2 block = clamp(fragment / 2, ivec2(0), last);
   float tolerance = 0.004 * distance + 0.01;
+  vec4 own = texelFetch(hapticScreenShadowSampler, block, 0);
+  float bits = mod(own.b, 16.0);
+  int index = (fragment.x % 2) + 2 * (fragment.y % 2);
+  bool onMarched = mod(floor(bits / exp2(float(index))), 2.0) > 0.5;
+  float stored = onMarched ? own.g : own.a;
+  vec2 from = hapticScreenShadowPixel(block, onMarched ? mod(floor(own.b / 16.0), 4.0) : floor(own.b / 64.0));
+  if (stored <= 0.0 || abs(distance + dot(slope, from - gl_FragCoord.xy) - stored) >= tolerance) return 1.0;
   float lit = 0.0;
   float weight = 0.0;
-  bool same = false;
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
-      ivec2 at = clamp(pixel + ivec2(x, y), ivec2(0), last);
-      vec2 texel = texelFetch(hapticScreenShadowSampler, at, 0).rg;
-      float gap = abs(distance + dot(slope, vec2(at * 2) + 0.5 - gl_FragCoord.xy) - texel.y);
-      if (gap < 2.0 * tolerance) { lit += texel.x; weight += 1.0; if (x == 0 && y == 0) same = gap < tolerance; }
+      ivec2 at = clamp(block + ivec2(x, y), ivec2(0), last);
+      vec4 texel = x == 0 && y == 0 ? own : texelFetch(hapticScreenShadowSampler, at, 0);
+      vec2 marched = hapticScreenShadowPixel(at, mod(floor(texel.b / 16.0), 4.0));
+      vec2 offset = marched - gl_FragCoord.xy;
+      // A tent two pixels wide around this pixel, over the pixels the texels marched from.
+      float tent = max(0.0, 1.0 - abs(offset.x) * 0.5) * max(0.0, 1.0 - abs(offset.y) * 0.5);
+      if (tent > 0.0 && abs(distance + dot(slope, offset) - texel.g) < 2.0 * tolerance) { lit += texel.r * tent; weight += tent; }
     }
   }
-  return same ? lit / weight : 1.0;
+  return weight > 0.0 ? lit / weight : 1.0;
 }
 
 // Where the sun's cascades darken to (the first cascade's darkness; a map awaiting its first draw is neutral), as far as
@@ -944,7 +956,8 @@ vec3 hapticEnergy = vec3(1.0) + hapticS.F0 * (1.0 / hapticBrdf.y - 1.0);
 vec3 hapticDiffuseLight = vec3(0.0);
 vec3 hapticSpecularLight = vec3(0.0);
 #ifdef HAPTIC_SCREEN_SHADOWS
-hapticScreenLit = hapticScreenShadowLit(hapticP, ${input.cameraPosition});
+float hapticScreenDistance = length(${input.cameraPosition} - hapticP);
+hapticScreenLit = hapticScreenShadowLit(hapticP, ${input.cameraPosition}, vec2(dFdx(hapticScreenDistance), dFdy(hapticScreenDistance)));
 #endif
 hapticDirectLights(hapticS, hapticP, hapticN, hapticV, hapticDiffuseLight, hapticSpecularLight);
 ${output.diffuseDirect} = hapticDiffuseLight * hapticS.diffuse;

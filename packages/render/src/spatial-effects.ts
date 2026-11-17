@@ -129,10 +129,10 @@ export function reserveSpatialEffects(
   // The normal and reflectivity attachments, and the trace and its blurs.
   if (plan.reflections) bytes += pixels * 8 + scaledBytes(plan.reflections.resolutionScale) * 3;
   if (plan.volumetricLighting) bytes += scaledBytes(plan.volumetricLighting.resolutionScale);
-  // Screen-Space Shadows' half-resolution RG16F target and the caster mark's second channel of the geometry Z (at most
+  // Screen-Space Shadows' half-resolution RGBA16F target and the caster mark's second channel of the geometry Z (at most
   // float).
   if (plan.screenShadows)
-    bytes += Math.ceil(width / SCREEN_SHADOW_SCALE) * Math.ceil(height / SCREEN_SHADOW_SCALE) * 4 + pixels * 4;
+    bytes += Math.ceil(width / SCREEN_SHADOW_SCALE) * Math.ceil(height / SCREEN_SHADOW_SCALE) * 8 + pixels * 4;
   return beginManagedRenderAllocation(scene.getEngine(), bytes);
 }
 
