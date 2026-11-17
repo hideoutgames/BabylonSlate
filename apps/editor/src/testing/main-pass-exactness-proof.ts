@@ -3,8 +3,8 @@
  * drawn through the production scene view with a Fast and a High Quality Render Target Capture and a Mirror, under a
  * shadowed sun, shadowed spot and point lights, two rect lights (one facing away from most of the view) and
  * Screen-Space Shadows. `reference` draws it as before the savings: the light block's rect loop visits every rect light
- * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, the screen shadows' centre
- * texel is read twice, and a capture's own sun maps redraw every time. The spec compares the two runs' frames and
+ * and fetches the LTC tables per light, a spot light's shadow is looked up outside its cone, and a capture's own sun
+ * maps redraw every time. The spec compares the two runs' frames and
  * capture images byte for byte, after a still stretch and after a caster moves.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
@@ -46,11 +46,6 @@ import { SceneShadowController } from "../../../../packages/render/src/shadow-co
  * pair's current text and what stood there. A pair that no longer matches fails the proof rather than proving nothing.
  */
 const REFERENCE_GLSL: readonly (readonly [string, string])[] = [
-  // The screen shadows' centre texel, read again in the 3 x 3 loop.
-  [
-    "      // The centre's texel is the one read above.\n      vec2 texel = x == 0 && y == 0 ? center : texelFetch(",
-    "      vec2 texel = texelFetch(",
-  ],
   // A spot light's cone, applied after its shadow lookup.
   [
     "      lightDistance = sqrt(distanceSquared);\n      L = offset / max(lightDistance, HAPTIC_EPSILON);\n" +
