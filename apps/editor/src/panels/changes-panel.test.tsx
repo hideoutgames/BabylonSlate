@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FakeLockProvider } from "@haptic/source-control";
 import { SourceControlService } from "../services/source-control-service";
+import { MANUAL_SOURCE_CONTROL, signedInHosts } from "../testing/source-control-hosts";
 import type { SourceControlSyncService } from "../services/source-control-sync";
 import { deviceIntegratedSync, INTEGRATED_LOOKUP, integratedSync } from "../testing/integrated-sync";
 import { SourceControlActionsProvider } from "../components/source-control-actions";
@@ -14,6 +16,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 
 const state = vi.hoisted(() => ({
   sync: null as SourceControlSyncService | null,
+  locks: null as SourceControlService | null,
   setAdoption: null as ((adopted: boolean) => Promise<void>) | null,
   dirtyDocuments: [] as unknown[],
   withProjectWrites: null as (<T>(work: () => Promise<T>) => Promise<T>) | null,
@@ -22,6 +25,7 @@ const state = vi.hoisted(() => ({
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     ...(state.sync ? { sourceControlSync: state.sync } : {}),
+    ...(state.locks ? { sourceControl: state.locks } : {}),
     ...(state.setAdoption ? { setSourceControlAdoption: state.setAdoption } : {}),
     ...(state.withProjectWrites ? { withProjectWrites: state.withProjectWrites } : {}),
     dirtyDocuments: state.dirtyDocuments,
@@ -32,6 +36,8 @@ afterEach(() => {
   cleanup();
   state.sync?.dispose();
   state.sync = null;
+  state.locks?.dispose();
+  state.locks = null;
   state.setAdoption = null;
   state.dirtyDocuments = [];
   state.withProjectWrites = null;
@@ -121,6 +127,30 @@ describe("Changes window", () => {
     expect(new TextDecoder().decode(head.files.get("assets/Rock.texture.hasset"))).toBe("R");
     expect((screen.getByTestId("changes-commit-message") as HTMLTextAreaElement).value).toBe("");
     expect(screen.getByTestId("changes-status").textContent).toMatch(/^Up to date\. Checked/);
+  });
+
+  it("marks added assets with a plus, deleted ones with a minus and modified ones with M, beside who holds each lock", async () => {
+    const { service, storage } = await integratedSync();
+    state.sync = service;
+    const locks = new SourceControlService();
+    const fake = new FakeLockProvider({ selfName: "Ada" });
+    fake.addTheirs("assets/Rock.texture.hasset", "Bob");
+    await locks.configure({ settings: MANUAL_SOURCE_CONTROL, projectKey: "proj", platform: "electron", testMode: true, hosts: await signedInHosts(), fake });
+    await locks.lockPaths(["assets/Forest.scene.hasset"]);
+    await locks.refresh();
+    state.locks = locks;
+    await storage.writeText("assets/Forest.scene.hasset", "F2");
+    await storage.remove("assets/Rock.texture.hasset");
+    await storage.writeText("assets/Cave.scene.hasset", "C");
+    await service.refreshStatus();
+    renderPanel();
+    const row = (path: string) => within(screen.getByTestId(`changes-row-${path}`));
+    expect(row("assets/Cave.scene.hasset").getByRole("img", { name: "Added" }).querySelector(".lucide-plus")).not.toBeNull();
+    expect(row("assets/Rock.texture.hasset").getByRole("img", { name: "Deleted" }).querySelector(".lucide-minus")).not.toBeNull();
+    expect(row("assets/Forest.scene.hasset").getByRole("img", { name: "Modified" }).textContent).toBe("M");
+    expect(row("assets/Forest.scene.hasset").getByRole("img", { name: "Locked By You" })).toBeTruthy();
+    expect(row("assets/Rock.texture.hasset").getByRole("img", { name: "Locked By Bob" })).toBeTruthy();
+    expect(row("assets/Cave.scene.hasset").queryByRole("img", { name: /^Locked By/ })).toBeNull();
   });
 
   it("keeps the commit local without Push After Commit, and counts it to push", async () => {

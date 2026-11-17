@@ -65,6 +65,7 @@ import { GalleryModuleStack, GalleryParticleFields } from "./component-gallery-p
 import {
   GalleryCatalogRows,
   GalleryNestedMenus,
+  GallerySourceControlMarkers,
   GalleryToolbarOverflow,
 } from "./component-gallery-menus";
 
@@ -712,6 +713,7 @@ export function GalleryComposites() {
         </AddMemberMenu>
       </div>
       <GalleryNestedMenus />
+      <GallerySourceControlMarkers />
       <GalleryToolbarOverflow />
       <GalleryCatalogRows />
       <GalleryDisclosure />

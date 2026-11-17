@@ -67,7 +67,7 @@ import {
   type SerializedPin,
 } from "./graph-types";
 import type { PinTypeNames } from "./pin-default-preview";
-import { GraphEditorProvider } from "./graph-editor-context";
+import { GraphEditorProvider, type GraphPreviewedNode } from "./graph-editor-context";
 import {
   canonicalGraphSignature,
   createEdgeId,
@@ -340,6 +340,8 @@ export interface GraphEditorProps {
    * above the graph's own Copy, Paste, Duplicate, Delete and Break Links.
    */
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
+  /** The node whose output the host previews, tagged and ringed in the warning colour (Material **Preview Node**). */
+  previewedNode?: GraphPreviewedNode | null;
   contextMenuItemsForAttachment?: (
     nodeId: string,
     attachmentId: string,
@@ -838,6 +840,7 @@ function GraphEditorCanvas({
   deleteKeyCode,
   nodesFocusable = true,
   contextMenuItemsForNode,
+  previewedNode = null,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
   pinCompatibility,
@@ -3220,6 +3223,7 @@ function GraphEditorCanvas({
       runTrace,
       breakpoints,
       describeNode,
+      previewedNode,
       connectionLineKind:
         defaultEdgeOptions.type === "animTransition" ||
         defaultEdgeOptions.type === "animTransitionBoth"
@@ -3253,6 +3257,7 @@ function GraphEditorCanvas({
       runTrace,
       breakpoints,
       describeNode,
+      previewedNode,
       defaultEdgeOptions.type,
     ],
   );

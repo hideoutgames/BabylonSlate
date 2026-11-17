@@ -41,7 +41,7 @@ type SpawnOptions = { classId: string; transform?: Transform; streamOwner?: Engi
 /** Script actor calls: spawning, destruction, added components and bone attachment. */
 export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostServices,
   "destroyActor" | "addComponent" | "spawnActor" | "spawnActorAsync" | "beginDeferredSpawnAsync" | "finishDeferredSpawn" |
-  "getActors" | "attachToBone" | "findActor"> {
+  "getActors" | "getWorld" | "attachToBone" | "findActor"> {
   // Spawn Actor Deferred results awaiting Finish Deferred Spawn Actor, with the Class preload each one owns.
   const deferred = new WeakMap<Actor, string | null>();
   const release = (preloadId: string | null) => {
@@ -164,6 +164,7 @@ export function createActorHostBindings(deps: ActorHostDeps): Pick<ScriptHostSer
       return spawned;
     },
     getActors: () => deps.world().getActors(),
+    getWorld: () => deps.world(),
     attachToBone: (actor, target, boneName) => {
       const slotId = deps.slot(actor);
       const targetSlotId = target ? deps.slot(target) : null;

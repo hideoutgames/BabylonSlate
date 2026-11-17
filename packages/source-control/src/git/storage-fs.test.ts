@@ -2,7 +2,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ProjectStorage } from "@haptic/core";
+import { DocumentsStorageAdapter } from "@haptic/vfs";
+import { createFakeDocumentsFs } from "@haptic/vfs/fake-documents-fs";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
+import * as git from "isomorphic-git";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { lfsPointerText } from "../lfs-pointer";
 import { isSyncError } from "../sync-port";
@@ -90,5 +93,21 @@ describe("StorageFs", () => {
     await expect(fs.promises.lstat("/missing.txt")).rejects.toMatchObject({ code: "ENOENT" });
     await expect(fs.promises.unlink("/missing.txt")).rejects.toMatchObject({ code: "ENOENT" });
     await expect(fs.promises.readdir("/missing")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+// A native transfer the system ends (the app killed in the background) can leave its staged file beside the object.
+describe("StorageFs on the mobile Documents tier", () => {
+  it("leaves a staged transfer file out of the working copy Git reads for status", async () => {
+    const documents = new DocumentsStorageAdapter(createFakeDocumentsFs());
+    await documents.openDocumentsProject("project");
+    const fs = new StorageFs(documents);
+    await git.init({ fs, dir: "/", defaultBranch: "main" });
+    await documents.writeBinary("assets/a.hasset", encode("A"));
+    await documents.writeBinary(BLOB, encode("abc"));
+    await documents.writeBinary("assets/.blobs/.haptic-0f8b9c1e-3d2a-4c5b-9e7f-1a2b3c4d5e6f.tmp", encode("partial"));
+
+    const rows = await git.statusMatrix({ fs, dir: "/" });
+    expect(rows.map(([path]) => path)).toEqual(["assets/.blobs/" + OID, "assets/a.hasset"]);
   });
 });

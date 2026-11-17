@@ -1,6 +1,8 @@
 import Capacitor
+import CryptoKit
 import Foundation
 import Darwin
+import Security
 import UniformTypeIdentifiers
 
 private enum ScopedStoragePluginError: LocalizedError {
@@ -37,9 +39,14 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "readdir", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "exists", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "transferFile", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancelTransfer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "writeRandomObject", returnType: CAPPluginReturnPromise),
     ]
 
     private var pendingPickCall: CAPPluginCall?
+    /// Git LFS objects streamed between a URL and a file in app storage.
+    private lazy var fileTransfers = ProjectFileTransfers(plugin: self)
     /// Folders resolved this session, each holding one security-scoped access.
     /// Every bookmark resolution issues a new sandbox extension, and iOS caps
     /// them per process: resolving per file operation exhausted the cap during
@@ -341,6 +348,75 @@ public class BabylonSlateScopedStoragePlugin: CAPPlugin, CAPBridgedPlugin {
                 } else {
                     self.reject(call, error: error)
                 }
+            }
+        }
+    }
+
+    // MARK: - File transfer (Git LFS objects)
+
+    /// A file of a project in app storage, named as `readDocumentsRange` names
+    /// one: never a chosen folder (Integrated mode never runs in one), never
+    /// the project folder itself, inside Documents after resolving links.
+    private func documentsFile(_ call: CAPPluginCall) throws -> URL {
+        guard let path = call.getString("path"), path.hasPrefix("BabylonSlate/projects/"),
+              path.split(separator: "/").count >= 4,
+              ["DOCUMENTS", "DATA"].contains(call.getString("directory") ?? "") else {
+            throw ScopedStoragePluginError.invalidPath(call.getString("path") ?? "")
+        }
+        let root = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+        return try childURL(folderUrl: root, path: path)
+    }
+
+    @objc func transferFile(_ call: CAPPluginCall) {
+        let file: URL
+        do { file = try documentsFile(call) } catch { reject(call, error: error); return }
+        guard let id = call.getString("id"), !id.isEmpty,
+              let method = call.getString("method"), method == "GET" || method == "PUT",
+              let raw = call.getString("url"), let url = URL(string: raw),
+              url.scheme?.lowercased() == "https", url.user == nil, url.password == nil else {
+            call.reject("Files are transferred over HTTPS only", "UNREACHABLE")
+            return
+        }
+        var headers: [String: String] = [:]
+        for (name, value) in call.getObject("headers") ?? [:] {
+            guard let value = value as? String else {
+                call.reject("Header values must be text", "UNREACHABLE")
+                return
+            }
+            headers[name] = value
+        }
+        var expected: (size: Int64, sha256: String)?
+        if let size = call.getDouble("expectedSize") {
+            guard size >= 0, size.rounded(.down) == size, size <= 9007199254740991,
+                  let sha256 = call.getString("expectedSha256"), sha256.count == 64 else {
+                call.reject("Invalid expected object", "UNREACHABLE")
+                return
+            }
+            expected = (Int64(size), sha256)
+        }
+        fileTransfers.start(call: call, id: id, method: method, url: url, headers: headers, file: file, expected: expected)
+    }
+
+    @objc func cancelTransfer(_ call: CAPPluginCall) {
+        fileTransfers.cancel(id: call.getString("id") ?? "")
+        call.resolve()
+    }
+
+    /// The Git benchmark's objects: random bytes made and hashed here, so no
+    /// object is built in JavaScript or crosses the bridge.
+    @objc func writeRandomObject(_ call: CAPPluginCall) {
+        let folder: URL
+        do { folder = try documentsFile(call) } catch { reject(call, error: error); return }
+        guard let size = call.getDouble("size"), size >= 0, size.rounded(.down) == size, size <= 9007199254740991 else {
+            call.reject("Invalid size", "UNREACHABLE")
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let sha256 = try ProjectFileTransfers.writeRandomFile(in: folder, size: Int64(size))
+                call.resolve(["sha256": sha256])
+            } catch {
+                call.reject(error.localizedDescription, "UNREACHABLE", error)
             }
         }
     }
@@ -708,4 +784,294 @@ extension BabylonSlateScopedStoragePlugin: UIDocumentPickerDelegate {
 
 extension String {
     var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+private enum FileTransferFailure: LocalizedError {
+    case mismatch(String)
+    case cancelled
+    case refused(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .mismatch(let message), .refused(let message): return message
+        case .cancelled: return "The transfer was cancelled"
+        }
+    }
+}
+
+/// Streams Git LFS objects between a URL and a file in app storage with
+/// URLSession, so their bytes never cross the bridge: uploads with an upload
+/// task from the file (URLSession sends its length), downloads with a
+/// download task, moved beside the file as `.haptic-<uuid>.tmp`, hashed with
+/// CryptoKit in chunks, and renamed over it only when it is the expected
+/// object. Headers are the caller's, used once and never kept; the session is
+/// ephemeral (no cookies or cache) and follows no redirect, so a 3xx comes
+/// back as the status. Progress goes to JavaScript at most every 100 ms.
+private final class ProjectFileTransfers: NSObject, URLSessionDownloadDelegate {
+    private final class Transfer {
+        let call: CAPPluginCall
+        let file: URL
+        let expected: (size: Int64, sha256: String)?
+        var task: URLSessionTask?
+        var sent: (bytes: Int64, sha256: String)?
+        var staged: URL?
+        var failure: Error?
+        var cancelled = false
+        var lastProgress = Date.distantPast
+
+        init(call: CAPPluginCall, file: URL, expected: (size: Int64, sha256: String)?) {
+            self.call = call
+            self.file = file
+            self.expected = expected
+        }
+    }
+
+    private static let chunkBytes = 1 << 20
+    private weak var plugin: CAPPlugin?
+    private let lock = NSLock()
+    private var transfers: [String: Transfer] = [:]
+    private var ids: [Int: String] = [:]
+    private let work = DispatchQueue(label: "BabylonSlate.FileTransfers", qos: .userInitiated)
+    private lazy var session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        return URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
+    }()
+
+    init(plugin: CAPPlugin) {
+        self.plugin = plugin
+    }
+
+    func start(call: CAPPluginCall, id: String, method: String, url: URL, headers: [String: String], file: URL, expected: (size: Int64, sha256: String)?) {
+        let transfer = Transfer(call: call, file: file, expected: expected)
+        lock.lock()
+        guard transfers[id] == nil else {
+            lock.unlock()
+            call.reject("A transfer with this id is already running", "UNREACHABLE")
+            return
+        }
+        transfers[id] = transfer
+        lock.unlock()
+        work.async {
+            do {
+                var request = URLRequest(url: url)
+                request.httpMethod = method
+                for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                    throw FileTransferFailure.refused("The file's folder does not exist")
+                }
+                let task: URLSessionTask
+                if method == "PUT" {
+                    let sent = try Self.hash(file)
+                    if let expected = expected, sent.bytes != expected.size || sent.sha256 != expected.sha256 {
+                        throw FileTransferFailure.mismatch("The file is not the object its name says")
+                    }
+                    transfer.sent = sent
+                    task = self.session.uploadTask(with: request, fromFile: file)
+                } else {
+                    task = self.session.downloadTask(with: request)
+                }
+                self.lock.lock()
+                let cancelled = transfer.cancelled
+                if !cancelled {
+                    transfer.task = task
+                    self.ids[task.taskIdentifier] = id
+                }
+                self.lock.unlock()
+                if cancelled { throw FileTransferFailure.cancelled }
+                task.resume()
+            } catch {
+                self.finish(id: id, error: error)
+            }
+        }
+    }
+
+    func cancel(id: String) {
+        lock.lock()
+        let transfer = transfers[id]
+        transfer?.cancelled = true
+        let task = transfer?.task
+        lock.unlock()
+        task?.cancel()
+    }
+
+    // MARK: URLSession delegate
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        progress(task: task, bytes: totalBytesSent)
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        progress(task: downloadTask, bytes: totalBytesWritten)
+    }
+
+    /// The system removes `location` when this returns, so a 2xx body moves beside its file now.
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        guard let transfer = transfer(for: downloadTask),
+              let status = (downloadTask.response as? HTTPURLResponse)?.statusCode, (200...299).contains(status) else { return }
+        let staged = transfer.file.deletingLastPathComponent().appendingPathComponent(".haptic-\(UUID().uuidString.lowercased()).tmp")
+        do {
+            try FileManager.default.moveItem(at: location, to: staged)
+            transfer.staged = staged
+        } catch {
+            transfer.failure = error
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lock.lock()
+        let id = ids.removeValue(forKey: task.taskIdentifier)
+        let transfer = id.flatMap { transfers[$0] }
+        lock.unlock()
+        guard let id = id, let transfer = transfer else { return }
+        if let error = error ?? transfer.failure {
+            finish(id: id, error: transfer.cancelled ? FileTransferFailure.cancelled : error)
+            return
+        }
+        let status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+        if let sent = transfer.sent {
+            finish(id: id, result: ["status": status, "bytes": sent.bytes, "sha256": sent.sha256])
+            return
+        }
+        guard let staged = transfer.staged else {
+            // An error status: nothing was written.
+            finish(id: id, result: ["status": status, "bytes": 0, "sha256": ""])
+            return
+        }
+        work.async {
+            do {
+                let received = try Self.hash(staged)
+                if let expected = transfer.expected, received.bytes != expected.size || received.sha256 != expected.sha256 {
+                    throw FileTransferFailure.mismatch("The downloaded file arrived damaged")
+                }
+                if transfer.cancelled { throw FileTransferFailure.cancelled }
+                guard Darwin.rename(staged.path, transfer.file.path) == 0 else {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                }
+                transfer.staged = nil
+                self.progress(transfer: transfer, id: id, bytes: received.bytes, final: true)
+                self.finish(id: id, result: ["status": status, "bytes": received.bytes, "sha256": received.sha256])
+            } catch {
+                self.finish(id: id, error: error)
+            }
+        }
+    }
+
+    // MARK: Helpers
+
+    private func transfer(for task: URLSessionTask) -> Transfer? {
+        lock.lock()
+        defer { lock.unlock() }
+        return ids[task.taskIdentifier].flatMap { transfers[$0] }
+    }
+
+    private func progress(task: URLSessionTask, bytes: Int64) {
+        lock.lock()
+        let id = ids[task.taskIdentifier]
+        let transfer = id.flatMap { transfers[$0] }
+        lock.unlock()
+        guard let id = id, let transfer = transfer else { return }
+        progress(transfer: transfer, id: id, bytes: bytes, final: false)
+    }
+
+    private func progress(transfer: Transfer, id: String, bytes: Int64, final: Bool) {
+        let now = Date()
+        guard final || now.timeIntervalSince(transfer.lastProgress) >= 0.1 else { return }
+        transfer.lastProgress = now
+        plugin?.notifyListeners("transferProgress", data: ["id": id, "bytes": bytes])
+    }
+
+    private func finish(id: String, result: [String: Any]) {
+        lock.lock()
+        let transfer = transfers.removeValue(forKey: id)
+        lock.unlock()
+        transfer?.call.resolve(result)
+    }
+
+    private func finish(id: String, error: Error) {
+        lock.lock()
+        let transfer = transfers.removeValue(forKey: id)
+        lock.unlock()
+        guard let transfer = transfer else { return }
+        if let staged = transfer.staged { try? FileManager.default.removeItem(at: staged) }
+        if let failure = error as? FileTransferFailure {
+            switch failure {
+            case .mismatch(let message):
+                transfer.call.reject(message, "MISMATCH", error)
+            case .refused(let message):
+                transfer.call.reject(message, "UNREACHABLE", error)
+            case .cancelled:
+                transfer.call.reject("The transfer was cancelled", "CANCELLED", error)
+            }
+        } else if (error as? URLError)?.code == .cancelled || transfer.cancelled {
+            transfer.call.reject("The transfer was cancelled", "CANCELLED", error)
+        } else {
+            transfer.call.reject(error.localizedDescription, "NETWORK", error)
+        }
+    }
+
+    private static func hex(_ digest: SHA256.Digest) -> String {
+        digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A file's size and SHA-256, read in bounded chunks.
+    static func hash(_ url: URL) throws -> (bytes: Int64, sha256: String) {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        var bytes: Int64 = 0
+        while true {
+            let chunk = try autoreleasepool { try handle.read(upToCount: chunkBytes) } ?? Data()
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+            bytes += Int64(chunk.count)
+        }
+        return (bytes, hex(hasher.finalize()))
+    }
+
+    /// `size` random bytes in a new file of `folder`, named by their SHA-256.
+    static func writeRandomFile(in folder: URL, size: Int64) throws -> String {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw FileTransferFailure.refused("The folder does not exist")
+        }
+        let staged = folder.appendingPathComponent(".haptic-\(UUID().uuidString.lowercased()).tmp")
+        guard FileManager.default.createFile(atPath: staged.path, contents: nil) else {
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteUnknownError)
+        }
+        var committed = false
+        defer { if !committed { try? FileManager.default.removeItem(at: staged) } }
+        let handle = try FileHandle(forWritingTo: staged)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        var remaining = size
+        while remaining > 0 {
+            let count = Int(min(Int64(chunkBytes), remaining))
+            try autoreleasepool {
+                var part = Data(count: count)
+                let status = part.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+                guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+                hasher.update(data: part)
+                try handle.write(contentsOf: part)
+            }
+            remaining -= Int64(count)
+        }
+        try handle.synchronize()
+        let sha256 = hex(hasher.finalize())
+        guard Darwin.rename(staged.path, folder.appendingPathComponent(sha256).path) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        committed = true
+        return sha256
+    }
 }

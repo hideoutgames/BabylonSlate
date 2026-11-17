@@ -17,6 +17,8 @@ import {
 } from "@haptic/ui/components/alert-dialog";
 import type { FileLock } from "@haptic/source-control";
 import { useSourceControl } from "../context/document-context";
+import { ForceUnlockDialog } from "../components/source-control-force-unlock-dialog";
+import { LockBadge } from "../components/source-control-markers";
 import {
   formatLockAge,
   type SourceControlService,
@@ -48,6 +50,7 @@ const LockRow = memo(function LockRow({
       data-testid={`locks-row-${key}`}
       data-lock-ours={lock.ours ? "true" : "false"}
     >
+      <LockBadge state={lock.ours ? "mine" : "theirs"} ownerName={lock.ownerName} size="sm" />
       <div className="flex min-w-0 flex-1 flex-col">
         <SelectableText className="truncate">{lock.path}</SelectableText>
         <span className="truncate text-xs text-muted-foreground">
@@ -244,25 +247,14 @@ export function LocksPanelContents({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={confirmForceUnlock !== null} onOpenChange={(open) => { if (!open) setConfirmForceUnlock(null); }}>
-        <AlertDialogContent data-testid="locks-force-unlock-confirm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Force Unlock Asset?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmForceUnlock?.path} is locked by {confirmForceUnlock?.ownerName}. Removing their lock allows others to edit while they may still have unsaved or unpushed changes.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" data-testid="locks-force-unlock-confirm-action" onClick={() => {
-              if (!confirmForceUnlock) return;
-              const id = confirmForceUnlock.id;
-              setConfirmForceUnlock(null);
-              void run(() => sourceControl.forceUnlock(id));
-            }}>Force Unlock</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ForceUnlockDialog
+        lock={confirmForceUnlock}
+        onCancel={() => setConfirmForceUnlock(null)}
+        onConfirm={(lock) => {
+          setConfirmForceUnlock(null);
+          void run(() => sourceControl.forceUnlock(lock.id));
+        }}
+      />
     </PanelFrame>
   );
 }

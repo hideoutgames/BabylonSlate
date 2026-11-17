@@ -20,7 +20,7 @@ import { editorQuiet, subscribeEditorQuiet } from "../lib/editor-quiet";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { TransferBytes } from "../lib/transfer-bytes";
 import { CommitHistory } from "./source-control-history";
-import { commitPaths, groupChanges, withWorkingHeaders, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
+import { commitPaths, groupChanges, sameChangeRows, withWorkingHeaders, type ChangeLookup, type ChangeRow } from "../lib/source-control-changes";
 import { asksAdoption, branchSettingsRefusal, integratedBlocker, type IntegratedBlocker } from "../lib/source-control-mode";
 
 /** One status after a burst of editor saves. Status is stat based and cheap; this only coalesces the burst. */
@@ -110,9 +110,15 @@ export interface SyncSnapshot {
   readonly head: string | null;
   /** The remote branch's commit as last fetched, null when it has none. */
   readonly remoteHead: string | null;
-  /** Changed assets and files, as the Changes window lists them. */
+  /** Changed assets and files, as the Changes window lists them; a status that finds the same rows keeps this array. */
   readonly rows: readonly ChangeRow[];
   readonly statusReady: boolean;
+  /**
+   * Counts finished status reads. A reader that acts on every one follows it
+   * (the Diff checks its working files, which a save changes without changing
+   * a row); the rows themselves change only when a row does.
+   */
+  readonly statusReads: number;
   readonly ahead: number;
   readonly behind: number;
   /** The newest commits to pull, newest first. */
@@ -161,6 +167,7 @@ const IDLE: SyncSnapshot = {
   remoteHead: null,
   rows: [],
   statusReady: false,
+  statusReads: 0,
   ahead: 0,
   behind: 0,
   incoming: [],
@@ -388,6 +395,9 @@ export class SourceControlSyncService {
 
   /** The app went to the background or came back (the editor-quiet flag is read directly). */
   setHidden(hidden: boolean): void {
+    // In the background the system may reclaim the app: the Git client's caches go at once (not queued behind
+    // a running transfer), and the next status reads them again.
+    if (hidden && !this.hidden) this.port?.releaseCaches();
     this.hidden = hidden;
     this.resumeStatus();
   }
@@ -398,7 +408,7 @@ export class SourceControlSyncService {
     this.dropHeldStatus();
     await this.run(null, "Could Not Read Changes", async ({ port, input, update }) => {
       const status = await port.status();
-      update({ branch: status.branch, head: status.head, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true });
+      update({ branch: status.branch, head: status.head, rows: groupChanges(status.changes, input.lookup).rows, statusReady: true, statusReads: this.snapshot.statusReads + 1 });
     });
   }
 
@@ -839,7 +849,7 @@ export class SourceControlSyncService {
       const status = await port.status();
       const remote = await port.remoteState();
       rows = groupChanges(status.changes, input.lookup).rows;
-      update({ branch: status.branch, head: status.head, remoteHead: remote.remote, rows, statusReady: true, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming });
+      update({ branch: status.branch, head: status.head, remoteHead: remote.remote, rows, statusReady: true, statusReads: this.snapshot.statusReads + 1, ahead: remote.ahead, behind: remote.behind, incoming: remote.incoming });
     }, revision);
     return rows;
   }
@@ -922,6 +932,8 @@ export class SourceControlSyncService {
 
   private set(next: SyncSnapshot): void {
     if (next === this.snapshot) return;
+    // Rows read again but unchanged keep their array, so readers of the rows alone (the Content Browser) re-render nothing.
+    if (next.rows !== this.snapshot.rows && sameChangeRows(next.rows, this.snapshot.rows)) next = { ...next, rows: this.snapshot.rows };
     this.snapshot = next;
     for (const listener of this.listeners) listener();
   }

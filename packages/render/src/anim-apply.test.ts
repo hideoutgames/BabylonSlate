@@ -13,6 +13,7 @@ import {
   sceneAnimHostFromBinding,
 } from "./anim-apply";
 import { bindPoseClip, type PoseClip, type PoseTrackSource } from "./anim-pose";
+import { AnimVisibilityGate } from "./anim-visibility";
 import {
   applyAssignMesh,
   applySnapshotToScene,
@@ -439,6 +440,63 @@ describe("applyAnimStateToScene", () => {
     );
     // The blend input's Swing (frame 20) holds the spine; the base's (frame 10) gets none of it.
     expect(spine.value).toBeCloseTo(20);
+  });
+
+  it("poses a burst of states once, from the latest, to the pose that posing each in turn gives", () => {
+    type Command = Parameters<typeof applyAnimStateToScene>[1];
+    // The same clips over two sets of targets: one posed by every state as it arrives, one through the gate.
+    const rig = () => {
+      const pose = { value: 0 };
+      const spine = { value: 0, name: "spine" };
+      const clips = [frameClip("Idle", 20, "idle", pose), frameClip("Walk", 40, "walk", pose), frameClip("Swing", 40, "swing", spine),
+        frameClip("Lean", 40, "lean", pose)];
+      return { pose, spine, host: { getPoseClips: () => clips } };
+    };
+    const every = rig();
+    const latest = rig();
+    const layer = (clipName: string, normalisedTime: number, weight: number, extra: Record<string, unknown> = {}) => ({
+      stateId: "s", clipAssetGuid: clipName.toLowerCase(), clipName, clipKind: "animation" as const, normalisedTime, weight, ...extra,
+    });
+    const state = (layers: Command["layers"], extra: Partial<Command> = {}): Command =>
+      ({ type: "animState", slotId: 1, stateId: "s", normalisedTime: 0, blendWeights: { s: 1 }, layers, ...extra });
+    const spineBlend = { layerBlends: [{ filters: [animBranchFilterKey([{ bone: "spine", blendDepth: 0 }])], weights: [1] }] };
+    const leanOnIdle = { additive: true, additiveBase: { clipAssetGuid: "idle", clipName: "Idle", normalisedTime: 0.5 } };
+    // Each burst is what catch-up ticks send between two frames; the last state of each is what must show.
+    const bursts: Command[][] = [
+      [state([layer("Idle", 0.1, 1)]), state([layer("Idle", 0.2, 1)]), state([layer("Idle", 0.3, 0.5), layer("Walk", 0.1, 0.5)])],
+      [state([layer("Walk", 0.2, 1)]), state([layer("Swing", 0.25, 1, { masks: [{ blend: 0, input: -1 }] }), layer("Swing", 0.5, 1, { masks: [{ blend: 0, input: 0 }] })], spineBlend)],
+      [state([layer("Idle", 0.25, 1), layer("Lean", 0.5, 1, leanOnIdle)]), state([layer("Idle", 0.5, 1), layer("Lean", 0.75, 1, leanOnIdle)])],
+      [state([layer("Idle", 0.5, 1)], { boneModifiers: [{ kind: "transform", alpha: 1, bone: "spine" }] }), state([layer("Walk", 0.5, 1)])],
+      [state([layer("Walk", 0.5, 1)])],
+      [state([]), state([layer("Idle", 0.9, 0.25)])],
+    ];
+    const pending = new Map<number, Command>();
+    let gatePoses = 0;
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const gate = new AnimVisibilityGate(scene, { meshes: new Map(), pendingAnimState: pending, meshSorting: new Map() }, (command) => {
+      gatePoses += 1;
+      applyAnimStateToScene(latest.host, command);
+    });
+    const shown: number[][] = [];
+    for (const burst of bursts) {
+      for (const command of burst) {
+        applyAnimStateToScene(every.host, command);
+        pending.set(1, command);
+        gate.offer(command);
+      }
+      gate.flush();
+      expect([latest.pose.value, latest.spine.value]).toEqual([every.pose.value, every.spine.value]);
+      shown.push([latest.pose.value, latest.spine.value]);
+    }
+    expect(gatePoses).toBe(bursts.length);
+    // Hand-derived for the first, second and last bursts: Idle frame 6 and Walk frame 4 by halves; Walk rests and
+    // the masked Swing holds the spine at frame 20; Idle at frame 18 by a quarter over rest.
+    expect(shown[0]![0]).toBeCloseTo(0.5 * 6 + 0.5 * 4);
+    expect(shown[1]![1]).toBeCloseTo(20);
+    expect(shown[5]![0]).toBeCloseTo(0.25 * 18);
+    scene.dispose();
+    engine.dispose();
   });
 
   it("adds an additive layer's change from its base clip's frame, falling back to rest when the base is missing", () => {

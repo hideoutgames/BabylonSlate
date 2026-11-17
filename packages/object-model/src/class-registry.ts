@@ -60,6 +60,8 @@ export interface ReparentResult {
 
 export class ClassRegistry {
   private readonly classes = new Map<string, ClassDef>();
+  /** Advances whenever a class is registered or unregistered: what `isA` answers can only change then. */
+  revision = 0;
 
   constructor() {
     this.registerEngineDefaults();
@@ -231,6 +233,7 @@ export class ClassRegistry {
         );
       }
     }
+    this.revision++;
     this.classes.set(def.id, {
       ...def,
       variables: [...def.variables],
@@ -257,7 +260,9 @@ export class ClassRegistry {
   unregister(classId: string): boolean {
     if (isLockedEngineClassId(classId)) return false;
     if ([...this.classes.values()].some((entry) => entry.parentClassId === classId)) return false;
-    return this.classes.delete(classId);
+    const removed = this.classes.delete(classId);
+    if (removed) this.revision++;
+    return removed;
   }
 
   /** Every registered class id (engine defaults first), in registration order. */

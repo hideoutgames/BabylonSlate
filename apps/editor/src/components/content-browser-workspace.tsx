@@ -10,6 +10,7 @@ import {
 } from "react";
 import { ArrowUpRightIcon } from "lucide-react";
 import type { IndexedAsset } from "@haptic/assets";
+import type { FileLock } from "@haptic/source-control";
 import {
   normalizeAnimationPayload,
   normalizeSkeletonPayload,
@@ -40,6 +41,7 @@ import {
   useDocumentActions,
   useDocumentKindsRevision,
   useEditorShellState,
+  useIntegratedSync,
   useProjectState,
   useRegistryState,
   useSourceControl,
@@ -56,9 +58,12 @@ import {
 import { useKeybindCommand, useKeybindings } from "../context/keybind-context";
 import { useProjectSearch } from "../context/project-search-context";
 import { useValidation } from "../context/validation-context";
+import { assetChangeStatuses, type ChangeRow } from "../lib/source-control-changes";
+import { contentBrowserFolderOps } from "../lib/plugin-ui";
 import {
   ASSETS_ROOT,
   applyContentBrowserTileSelect,
+  parentFolderPath,
   type ContentBrowserSortMode,
   type CreatableAssetType,
   type DeleteTarget,
@@ -74,7 +79,10 @@ import {
   CONTENT_BROWSER_TILE_HEIGHT_PX,
   contentBrowserColumnCount,
 } from "../lib/content-browser-grid";
-import type { ContentBrowserGridActions } from "./content-browser-grid-tiles";
+import type { ContentBrowserChangeStatuses, ContentBrowserGridActions, ContentBrowserTileLock } from "./content-browser-grid-tiles";
+import { contentBrowserSourceControlMenu } from "./content-browser-source-control-menu";
+import { useOptionalSourceControlActions } from "./source-control-actions";
+import { ForceUnlockDialog } from "./source-control-force-unlock-dialog";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserCopyProgressDialog } from "./content-browser-copy-progress-dialog";
 import { ImportProgressDialog } from "./import-progress-dialog";
@@ -86,7 +94,7 @@ import { ContentBrowserNameDialog, type NameEntry } from "./content-browser-name
 import { ContentBrowserResultDialogs } from "./content-browser-result-dialogs";
 import { useContentBrowserModel } from "./content-browser-model";
 import { useContentBrowserTreeState } from "./content-browser-tree-state";
-import { useContentBrowserMountedTiles } from "./content-browser-mounted-tiles";
+import { treeAssetLocksKey, useContentBrowserMountedTiles } from "./content-browser-mounted-tiles";
 import { useContentBrowserDeleteFlow } from "./content-browser-delete-flow";
 import { useContentBrowserMoveFlow, type MoveTarget } from "./content-browser-move-flow";
 import { useContentBrowserImportFlow } from "./content-browser-import-flow";
@@ -98,6 +106,7 @@ import { ContentBrowserFolderNavigation } from "./content-browser-folder-navigat
 import { ContentBrowserAssetPane } from "./content-browser-asset-pane";
 
 const ALL_DOCUMENT_KINDS: readonly DocumentKind[] = ["content-browser", ...ASSET_DOCUMENT_KINDS];
+const NO_CHANGE_ROWS: readonly ChangeRow[] = [];
 const NO_DOCUMENT_KINDS: readonly DocumentKind[] = [];
 const NO_OPEN_DOCUMENTS: OpenDocument[] = [];
 
@@ -109,6 +118,11 @@ type ContentBrowserWorkspaceBodyProps = {
   thumbnailVersions: ReturnType<typeof useThumbnailVersions>;
   thumbnailsEnabled: boolean;
   sourceControl: ReturnType<typeof useSourceControl>["sourceControl"];
+  integratedSync: ReturnType<typeof useIntegratedSync>;
+  /** Integrated mode's added and modified assets, one map per change in the sync's rows. */
+  changeStatuses: ContentBrowserChangeStatuses;
+  /** Show Changes, Show History and Revert for the Source Control submenu; null outside the editor route. */
+  sourceControlActions: ReturnType<typeof useOptionalSourceControlActions>;
   activeDocumentId: string | null;
   tabOrder: readonly string[];
   diagnostics: ReturnType<typeof useValidation>["diagnostics"];
@@ -122,6 +136,9 @@ function ContentBrowserWorkspaceBody({
   thumbnailVersions,
   thumbnailsEnabled,
   sourceControl,
+  integratedSync,
+  changeStatuses,
+  sourceControlActions,
   activeDocumentId,
   tabOrder,
   diagnostics,
@@ -189,6 +206,7 @@ function ContentBrowserWorkspaceBody({
   const [referenceGuid, setReferenceGuid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [forceUnlockTarget, setForceUnlockTarget] = useState<FileLock | null>(null);
   // Open tabs mutate in place, so the dialogs that read their unsaved content
   // follow the document revisions, but only while one of them is showing.
   const dialogNeedsOpenDocuments = deleteTarget !== null || referenceGuid !== null ||
@@ -448,6 +466,12 @@ function ContentBrowserWorkspaceBody({
     loadAssetThumbnail,
   });
 
+  const treeLocksKey = sourceControl.enabled ? treeAssetLocksKey(browserRows, sourceControl) : "{}";
+  const treeLocks = useMemo(
+    () => JSON.parse(treeLocksKey) as Record<string, ContentBrowserTileLock>,
+    [treeLocksKey],
+  );
+
   const selectionCount = selectedGuids.size + selectedFolderPaths.size;
 
   const openIds = useMemo(() => new Set(tabOrder), [tabOrder]);
@@ -673,6 +697,31 @@ function ContentBrowserWorkspaceBody({
     }
   }, [gridItems, gridRenamingTarget, scrollerRef]);
 
+  // A lock action reports its failure through the service, as the Locks window shows it.
+  const runLockAction = useCallback(async (action: () => Promise<void>) => {
+    await action();
+    if (sourceControl.operationError) setOperationError(sourceControl.operationError);
+  }, [sourceControl]);
+  const sourceControlMenu = useCallback((guids: readonly string[]) => {
+    const assets = guids.flatMap((guid) => {
+      const asset = assetRegistry?.getByGuid(guid);
+      return asset ? [asset] : [];
+    });
+    // Engine plugin content is no part of the repository.
+    if (assets.length !== guids.length || assets.some((asset) => contentBrowserFolderOps(parentFolderPath(asset.path), browserRoots).readOnly)) return null;
+    return contentBrowserSourceControlMenu(
+      assets.map((asset) => ({ path: asset.path, name: asset.header.name, type: asset.header.type })),
+      {
+        sourceControl,
+        sync: integratedSync.getSnapshot(),
+        actions: sourceControlActions,
+        lock: (paths) => void runLockAction(() => sourceControl.lockPaths(paths)),
+        release: (paths) => void runLockAction(() => sourceControl.releasePaths(paths)),
+        forceUnlock: setForceUnlockTarget,
+      },
+    );
+  }, [assetRegistry, browserRoots, integratedSync, runLockAction, sourceControl, sourceControlActions]);
+
   const keybinds = useKeybindings();
   const {
     menu,
@@ -722,6 +771,7 @@ function ContentBrowserWorkspaceBody({
     openNewAssetMenu,
     onNewFolder: newFolderInGrid,
     handleImport,
+    sourceControlMenu,
   });
 
   const applyTileSelection = useCallback(
@@ -849,6 +899,8 @@ function ContentBrowserWorkspaceBody({
       rootPrefixes={rootPrefixes}
       pluginRootIcons={pluginRootIcons}
       typeVisualFor={typeVisualFor}
+      locks={treeLocks}
+      changes={changeStatuses}
       treeSelectedId={treeSelectedId}
       treeSelectedIds={treeSelectedIds}
       onSelect={(id, options) => {
@@ -987,6 +1039,7 @@ function ContentBrowserWorkspaceBody({
             pluginRootIcons={pluginRootIcons}
             sourceControlEnabled={sourceControl.enabled}
             tileLocks={tileLocks}
+            changeStatuses={changeStatuses}
             renaming={gridRenamingTarget}
             gridActions={gridActions}
           />
@@ -1025,6 +1078,15 @@ function ContentBrowserWorkspaceBody({
 
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <ContextMenuOverlay menu={emptyGridMenu} onClose={closeEmptyGridMenu} />
+
+      <ForceUnlockDialog
+        lock={forceUnlockTarget}
+        onCancel={() => setForceUnlockTarget(null)}
+        onConfirm={(lock) => {
+          setForceUnlockTarget(null);
+          void runLockAction(() => sourceControl.forceUnlock(lock.id));
+        }}
+      />
 
       <ContentBrowserNewAssetDialog {...newAssetDialogProps} />
 
@@ -1125,6 +1187,15 @@ export function ContentBrowserWorkspace({
   const { thumbnailsEnabled } = useEditorShellState();
   const thumbnailVersions = useThumbnailVersions();
   const { sourceControl } = useSourceControl();
+  const integratedSync = useIntegratedSync();
+  // Only a change in the rows re-renders: the snapshot keeps them across fetches and operations.
+  const changeRows = useSyncExternalStore(integratedSync.subscribe, () => {
+    const snapshot = integratedSync.getSnapshot();
+    return snapshot.active ? snapshot.rows : NO_CHANGE_ROWS;
+  });
+  const changeStatuses = useMemo(() => assetChangeStatuses(changeRows), [changeRows]);
+  // Read here, so a hidden browser's memo still skips the renders a new actions value starts.
+  const sourceControlActions = useOptionalSourceControlActions();
   const activeDocumentId = useActiveDocumentId();
   const tabOrder = useTabOrder();
   const { diagnostics } = useValidation();
@@ -1137,6 +1208,9 @@ export function ContentBrowserWorkspace({
       thumbnailVersions={thumbnailVersions}
       thumbnailsEnabled={thumbnailsEnabled}
       sourceControl={sourceControl}
+      integratedSync={integratedSync}
+      changeStatuses={changeStatuses}
+      sourceControlActions={sourceControlActions}
       activeDocumentId={activeDocumentId}
       tabOrder={tabOrder}
       diagnostics={diagnostics}

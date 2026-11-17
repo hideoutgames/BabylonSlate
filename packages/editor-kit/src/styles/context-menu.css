@@ -87,6 +87,24 @@
   color: var(--destructive);
 }
 
+/* A line of text that is no action (who holds a lock): item height, muted, no hover. */
+.context-menu-label {
+  display: flex;
+  min-height: var(--chrome-row, 28px);
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
+:where(.touch-ui) .context-menu-label {
+  padding-inline: 10px;
+}
+
 .context-menu-item-leading {
   display: flex;
   width: 1rem;

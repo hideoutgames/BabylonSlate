@@ -228,6 +228,28 @@ describe.each([
     expect((await rejection(port.readLfsObject(blobPath(pushed), pushed.byteLength, { signal: cancelled.signal }))).kind).toBe("cancelled");
   });
 
+  it("downloads LFS objects into their working files, and rejects when one cannot be had", async () => {
+    const texture = blobBytes(8, 3000);
+    const mesh = blobBytes(9, 2000);
+    await fixture.teammate({ ".gitattributes": RULE, "assets/a.hasset": "A", [blobPath(texture)]: texture, [blobPath(mesh)]: mesh });
+    const { port, storage } = await fixture.copy();
+    await storage.remove(blobPath(texture));
+    await storage.writeBinary(blobPath(mesh), mesh.slice(0, 10));
+    await port.downloadLfsObjects([{ path: blobPath(texture), size: texture.byteLength }, { path: blobPath(mesh), size: mesh.byteLength }]);
+    expect(await storage.readBinary(blobPath(texture))).toEqual(texture);
+    expect(await storage.readBinary(blobPath(mesh))).toEqual(mesh);
+    expect((await port.status()).changes).toEqual([]);
+
+    // The server never had it: nothing lands, and the caller learns before it relies on the file.
+    const missing = blobBytes(10, 1000);
+    expect(await rejection(port.downloadLfsObjects([{ path: blobPath(missing), size: missing.byteLength }]))).toMatchObject({ kind: "lfs", code: "lfs-object-missing" });
+    expect(await storage.exists(blobPath(missing))).toBe(false);
+    const cancelled = new AbortController();
+    cancelled.abort();
+    await storage.remove(blobPath(texture));
+    expect((await rejection(port.downloadLfsObjects([{ path: blobPath(texture), size: texture.byteLength }], { signal: cancelled.signal }))).kind).toBe("cancelled");
+  });
+
   it("counts the commits on each side after a fetch", async () => {
     await fixture.teammate({ "assets/a.hasset": "A" });
     const { port, storage } = await fixture.copy();

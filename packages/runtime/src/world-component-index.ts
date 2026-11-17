@@ -1,11 +1,20 @@
 import type { Actor, World } from "@haptic/object-model";
 
-/** Actors owning at least one component of each class, in world order, for one structure revision. */
+/**
+ * Actors owning at least one component of each class, and actors of each class themselves, in world order, for one
+ * structure revision.
+ */
 export class WorldComponentIndex {
   private readonly byClass = new Map<string, Actor[]>();
+  private readonly byActorClass = new Map<string, Actor[]>();
 
   constructor(actors: readonly Actor[]) {
     for (const actor of actors) {
+      if (actor.classId) {
+        const sameClass = this.byActorClass.get(actor.classId);
+        if (sameClass) sameClass.push(actor);
+        else this.byActorClass.set(actor.classId, [actor]);
+      }
       for (const component of actor.components) {
         let owners = this.byClass.get(component.classId);
         if (!owners) this.byClass.set(component.classId, owners = []);
@@ -23,13 +32,23 @@ export class WorldComponentIndex {
   classIds(): IterableIterator<string> {
     return this.byClass.keys();
   }
+
+  /** Actors whose own class is exactly `classId` (an actor without a class is in no list). Never mutated once built. */
+  actors(classId: string): readonly Actor[] {
+    return this.byActorClass.get(classId) ?? NO_OWNERS;
+  }
+
+  actorClassIds(): IterableIterator<string> {
+    return this.byActorClass.keys();
+  }
 }
 
 const NO_OWNERS: readonly Actor[] = [];
 const indexes = new WeakMap<World, { revision: number; index: WorldComponentIndex }>();
 
 /**
- * Which actors own which component classes changes only with the world
+ * Which actors own which component classes, and which actors are of which
+ * class, changes only with the world
  * structure (spawn, destroy, attach), so one pass over the actors serves every
  * per-tick system until the next structural change. Membership only: enabled
  * flags, `destroyed` and properties are read live by each consumer, and a

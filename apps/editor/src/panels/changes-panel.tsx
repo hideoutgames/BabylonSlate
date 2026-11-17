@@ -9,14 +9,13 @@ import {
   FolderIcon,
   GitBranchIcon,
   GitCommitHorizontalIcon,
-  LockIcon,
   MoreHorizontalIcon,
   PlusIcon,
   RefreshCwIcon,
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
-import type { ChangeKind, CommitInfo } from "@haptic/source-control";
+import type { CommitInfo } from "@haptic/source-control";
 import {
   PanelFrame,
   resolveTypeVisual,
@@ -47,20 +46,13 @@ import { useDocumentActions, useIntegratedSync, useIntegratedSyncState, useSourc
 import { AdoptGitFolderDialog } from "../components/source-control-adopt-dialog";
 import { useSourceControlActions, useSourceControlDiffState } from "../components/source-control-actions";
 import { BranchMenuItems } from "../components/source-control-branch-menu";
+import { LockBadge, StatusMarker } from "../components/source-control-markers";
 import { SourceControlUnusedFilesFlow } from "../components/source-control-unused-files-flow";
 import { integratedBlockerLabel, type IntegratedBlocker } from "../lib/source-control-mode";
 import type { ChangeRow as ChangeRowData } from "../lib/source-control-changes";
 import { agoLabel, branchLabel, syncStatusLine, transferLabel } from "../lib/source-control-labels";
 import { useTransferBytes } from "../lib/transfer-bytes";
 import type { SyncSnapshot } from "../services/source-control-sync";
-
-const KIND_LETTER: Record<ChangeKind, string> = { added: "A", modified: "M", deleted: "D" };
-const KIND_LABEL: Record<ChangeKind, string> = { added: "Added", modified: "Modified", deleted: "Deleted" };
-const KIND_CLASS: Record<ChangeKind, string> = {
-  added: "text-(--success)",
-  modified: "text-(--warning)",
-  deleted: "text-destructive",
-};
 
 function RowIcon({ type }: { type: string | null }) {
   if (type === "Folder") return <FolderIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />;
@@ -77,14 +69,17 @@ const ChangeRow = memo(function ChangeRow({
   kind,
   type,
   included,
-  ownLock,
+  lockState,
+  lockOwner,
   disabled,
   selected,
   onToggle,
   onOpen,
 }: Pick<ChangeRowData, "id" | "name" | "folder" | "kind" | "type"> & {
   included: boolean;
-  ownLock: boolean;
+  /** Who holds the asset's lock, if anyone: a push of someone else's is refused. */
+  lockState: "mine" | "theirs" | null;
+  lockOwner: string | undefined;
   disabled: boolean;
   /** Its diff is the one open. */
   selected: boolean;
@@ -119,10 +114,8 @@ const ChangeRow = memo(function ChangeRow({
         <span className="truncate">{name}</span>
         <span className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground">{folder}</span>
       </Button>
-      {ownLock ? <LockIcon className="size-3.5 shrink-0 text-muted-foreground" role="img" aria-label="Locked By You" /> : null}
-      <span className={cn("w-3.5 shrink-0 text-center text-xs font-bold", KIND_CLASS[kind])} title={KIND_LABEL[kind]}>
-        {KIND_LETTER[kind]}
-      </span>
+      {lockState ? <LockBadge state={lockState} ownerName={lockOwner} size="sm" /> : null}
+      <StatusMarker status={kind} />
     </div>
   );
 });
@@ -425,7 +418,8 @@ export function ChangesPanelContents() {
                         kind={row.kind}
                         type={row.type}
                         included={!excluded.has(row.id)}
-                        ownLock={sourceControl.lockStateForPath(row.id) === "mine"}
+                        lockState={sourceControl.lockStateForPath(row.id)}
+                        lockOwner={sourceControl.lockForPath(row.id)?.ownerName}
                         disabled={busy}
                         selected={diffState.target?.path === row.id}
                         onToggle={toggle}

@@ -273,6 +273,32 @@ describe("Capacitor 8 iOS host", () => {
     );
   });
 
+  // The Swift cannot be compiled here: an unregistered method would reject on a device only.
+  it("registers every scoped-storage method the TypeScript plugin interface calls", () => {
+    const typescript = readFileSync(join(vfsDir, "capacitor-scoped-storage.ts"), "utf8");
+    const body = typescript.match(/export interface BabylonSlateScopedStoragePlugin \{([\s\S]*?)\n\}/)?.[1];
+    expect(body).toBeDefined();
+    const methods = [...body!.matchAll(/^\s{2}(\w+)(\?)?\(/gm)]
+      .filter((match) => match[2] !== "?")
+      .map((match) => match[1])
+      .sort();
+    const registered = [...scopedStoragePlugin.matchAll(/CAPPluginMethod\(name: "(\w+)"/g)].map((match) => match[1]).sort();
+    expect(registered).toEqual(methods);
+    for (const method of methods) expect(scopedStoragePlugin).toContain(`@objc func ${method}(_ call: CAPPluginCall)`);
+  });
+
+  it("streams Git LFS transfers over HTTPS only, following no redirect and keeping no cookie or cache", () => {
+    expect(scopedStoragePlugin).toContain('url.scheme?.lowercased() == "https"');
+    expect(scopedStoragePlugin).toMatch(/willPerformHTTPRedirection[\s\S]*?completionHandler\(nil\)/);
+    expect(scopedStoragePlugin).toContain("URLSessionConfiguration.ephemeral");
+    expect(scopedStoragePlugin).toContain("configuration.httpCookieStorage = nil");
+    // Upload-from-file and download-to-file tasks: no body is ever held in memory.
+    expect(scopedStoragePlugin).toContain("uploadTask(with: request, fromFile: file)");
+    expect(scopedStoragePlugin).toContain("downloadTask(with: request)");
+    // App storage only: a chosen folder never gets a transfer.
+    expect(scopedStoragePlugin).toMatch(/func documentsFile[\s\S]*?hasPrefix\("BabylonSlate\/projects\/"\)/);
+  });
+
   it("exports through the share sheet with an iPad popover source and a bounded temporary file", () => {
     for (const method of ["begin", "append", "finish", "discard"]) {
       expect(fileExportPlugin).toContain(`CAPPluginMethod(name: "${method}"`);

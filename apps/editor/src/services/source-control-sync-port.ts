@@ -1,12 +1,15 @@
+import type { ProjectStorage } from "@haptic/core";
 import {
   commitAuthorFor,
   parseRepositoryUrl,
   repositoryCloneUrl,
+  type FileTransferClient,
   type HttpClient,
   type SyncPort,
   type TransferOptions,
 } from "@haptic/source-control";
 import type { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
+import { createNativeFileTransfer, folderFileTransfer } from "@haptic/vfs";
 import { folderBoundStorage } from "../lib/folder-bound-storage";
 import { sourceControlAccounts } from "./source-control-accounts";
 import type { SyncPortFactory, SyncPortRequest, TransferMonitor } from "./source-control-sync";
@@ -30,6 +33,43 @@ export function monitoredHttp(http: HttpClient, monitor: TransferMonitor): HttpC
     monitor.bytes(byteLength(request.body) + (response.bodyBytes?.byteLength ?? byteLength(response.bodyText)));
     return response;
   };
+}
+
+/**
+ * The native file transfer that reports the bytes it moves as they stream
+ * (each request's progress, then whatever its answer adds), so a large LFS
+ * object counts up rather than landing at once.
+ */
+export function monitoredFiles(files: FileTransferClient, monitor: TransferMonitor): FileTransferClient {
+  return async (request) => {
+    let reported = 0;
+    const report = (bytes: number) => {
+      if (bytes <= reported) return;
+      monitor.bytes(bytes - reported);
+      reported = bytes;
+    };
+    const response = await files({
+      ...request,
+      onProgress: (bytes) => {
+        report(bytes);
+        request.onProgress?.(bytes);
+      },
+    });
+    report(response.bytes);
+    return response;
+  };
+}
+
+/**
+ * The host's native file transfer for the folder `storage` is bound to (a
+ * folder-bound view refuses it once another project is open), or none on a
+ * host without one, where LFS objects cross whole through native HTTP.
+ */
+function deviceFileTransfer(storage: ProjectStorage): FileTransferClient | null {
+  const native = createNativeFileTransfer();
+  if (!native) return null;
+  const bound = folderFileTransfer(native, storage);
+  return (request) => bound.transfer(request);
 }
 
 /** Test mode: one fake remote per repository and one working copy per folder, for the page's lifetime. */
@@ -64,11 +104,13 @@ async function deviceRepository(request: SyncPortRequest) {
   if (!location) throw new Error(`Invalid repository URL: ${request.repositoryUrl}`);
   const accounts = await sourceControlAccounts(false);
   if (!accounts.http) throw new Error("Source control is not available on this device.");
+  const files = deviceFileTransfer(request.storage);
   return {
     git: await import("@haptic/source-control/git"),
     options: {
       storage: request.storage,
       http: monitoredHttp(accounts.http, request.transfer),
+      ...(files ? { files: monitoredFiles(files, request.transfer) } : {}),
       credential: accounts.credentialSource(location.origin),
       repositoryUrl: request.repositoryUrl,
     },

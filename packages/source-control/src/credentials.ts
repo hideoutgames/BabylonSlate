@@ -1,4 +1,3 @@
-import type { HttpClient, HttpRequest, HttpResponse } from "./http";
 import { originOf } from "./http";
 import type { CommitAuthor } from "./sync-port";
 
@@ -101,14 +100,14 @@ function authorization(credential: HostCredential, scheme: "basic" | "bearer"): 
  * HTTP that adds the source's credential to each request, refuses any URL
  * outside its origin and never follows a redirect, so the token cannot reach
  * another host. A 401 renews the credential and retries once. Git and Git LFS
- * take Basic; REST APIs take Bearer.
+ * take Basic; REST APIs take Bearer. Any transport shaped like `HttpClient`
+ * (the native file transfer) takes the same rule.
  */
-export function authorizedHttp(
-  source: CredentialSource,
-  http: HttpClient,
-  scheme: "basic" | "bearer",
-): HttpClient {
-  return async (request: HttpRequest): Promise<HttpResponse> => {
+export function authorizedHttp<
+  Request extends { url: string; headers: Record<string, string>; disableRedirects?: boolean },
+  Response extends { status: number },
+>(source: CredentialSource, http: (request: Request) => Promise<Response>, scheme: "basic" | "bearer"): (request: Request) => Promise<Response> {
+  return async (request: Request): Promise<Response> => {
     const origin = originOf(request.url);
     let credential = await source.current();
     if (!credential) throw new NoCredentialError(request.url);

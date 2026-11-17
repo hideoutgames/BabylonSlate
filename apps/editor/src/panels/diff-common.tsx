@@ -4,11 +4,10 @@ import type { DiffCounts, DiffStatus } from "@haptic/assets/asset-diff";
 import { PanelFrame } from "@haptic/editor-kit";
 import { Badge } from "@haptic/ui/components/badge";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@haptic/ui/components/empty";
-import { cn } from "@haptic/ui/lib/utils";
 import { useSourceControlDiff } from "../components/source-control-actions";
 import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import type { DiffState } from "../services/source-control-diff";
-import { STATUS_LABEL, STATUS_LETTER } from "./diff-status";
+import { STATUS_LABEL } from "./diff-status";
 
 /**
  * Whether this window is on screen (its dock tab shown and the Source
@@ -25,22 +24,7 @@ export function useDiffWindowShown(api: DockviewPanelApi | undefined): boolean {
   return shown;
 }
 
-const STATUS_TEXT: Record<Exclude<DiffStatus, "unchanged">, string> = {
-  added: "text-(--success)",
-  removed: "text-destructive",
-  changed: "text-(--warning)",
-};
 const STATUS_BADGE = { added: "success", removed: "destructive", changed: "warning" } as const;
-
-/** The A, M or D letter a changed item ends with, as in Changes. */
-export function StatusLetter({ status }: { status: DiffStatus }) {
-  if (status === "unchanged") return null;
-  return (
-    <span className={cn("w-3.5 shrink-0 text-center text-xs font-bold", STATUS_TEXT[status])} title={STATUS_LABEL[status]} data-diff-status={status}>
-      {STATUS_LETTER[status]}
-    </span>
-  );
-}
 
 /** `Added`, `Removed` or `Changed`, tinted. */
 export function StatusBadge({ status }: { status: DiffStatus }) {

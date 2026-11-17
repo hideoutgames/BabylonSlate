@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectStorage } from "@haptic/core";
-import type { HttpRequest } from "@haptic/source-control";
+import type { FileTransferRequest, HttpRequest } from "@haptic/source-control";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { cloneIntoFolder, monitoredHttp, testRemote } from "./source-control-sync-port";
+import { cloneIntoFolder, monitoredFiles, monitoredHttp, testRemote } from "./source-control-sync-port";
 
 describe("monitoredHttp", () => {
   it("counts the bytes each request sends and receives", async () => {
@@ -13,6 +13,23 @@ describe("monitoredHttp", () => {
     await monitored({ method: "POST", url: "https://git.example.com/a", headers: {}, body: new Uint8Array(300), responseType: "binary" });
     await monitored({ method: "GET", url: "https://git.example.com/b", headers: {} });
     expect(bytes.mock.calls).toEqual([[1300], [6]]);
+  });
+});
+
+describe("monitoredFiles", () => {
+  it("counts a streamed object's bytes as it moves, once each, whatever the transfer reports last", async () => {
+    const bytes = vi.fn();
+    const seen: number[] = [];
+    const files = vi.fn(async (request: FileTransferRequest) => {
+      for (const progress of [100, 100, 700]) request.onProgress?.(progress);
+      return { status: 200, bytes: 1000, sha256: "" };
+    });
+    const monitored = monitoredFiles(files, { bytes });
+    expect(await monitored({ method: "GET", url: "https://lfs.example/a", headers: {}, path: "assets/.blobs/a", onProgress: (progress) => seen.push(progress) }))
+      .toEqual({ status: 200, bytes: 1000, sha256: "" });
+    expect(bytes.mock.calls).toEqual([[100], [600], [300]]);
+    // The caller's own progress still arrives.
+    expect(seen).toEqual([100, 100, 700]);
   });
 });
 

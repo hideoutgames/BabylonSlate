@@ -7,6 +7,7 @@ import {
   hydrateMaterialGraphForEditor,
   materialAddNodePalette,
   materialGraphToSerialized,
+  materialNodeTitle,
   materialPaletteNodes,
   materialPinsAreCompatible,
   pinsForMaterialNode,
@@ -259,5 +260,14 @@ describe("material graph serialization", () => {
       type: { kind: "generic" },
     };
     expect(materialPinsAreCompatible(texture, generic)).toBe(false);
+  });
+
+  it("titles a node on its own as the canvas does, from its properties and the functions it calls", () => {
+    const fn = { ...createDefaultMaterialFunctionDocument(), name: "Wave Blend" };
+    expect(materialNodeTitle({ type: "vector.swizzle", properties: { components: "zx" } })).toBe("Swizzle (ZX)");
+    expect(materialNodeTitle({ type: "vector.mask", properties: { r: true, b: true } })).toBe("Component Mask (XZ)");
+    expect(materialNodeTitle({ type: "param.float", properties: { name: "Roughness Scale" } })).toBe("Roughness Scale");
+    expect(materialNodeTitle({ type: "function.call", properties: { functionGuid: "wave" } }, { functions: { wave: fn } })).toBe("Wave Blend");
+    expect(materialNodeTitle({ type: "noise.perlin", properties: {} })).toBe("Perlin Noise");
   });
 });

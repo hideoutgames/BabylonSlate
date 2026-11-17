@@ -90,6 +90,8 @@ type SceneLights2D = {
   beforeRender: Observer<Scene> | null;
   listeners: Set<() => void>;
   occluders: Set<Occluder2DRecord>;
+  /** The casters whose pose or outlines changed since their world outlines were built (`markOccluderDirty`). */
+  dirtyOccluders: Set<Occluder2DRecord>;
   /** Bounds (minX, minY, maxX, maxY) a caster left or entered since the last write: the shadows they reach redraw. */
   changedBounds: number[];
   shadow: ShadowMap | null;
@@ -104,10 +106,18 @@ export type Occluder2DRecord = {
   shapes: readonly { closed: boolean; points: readonly number[] }[];
   /** Body position and rotation about Z. */
   x: number; y: number; angle: number;
-  /** The pose changed since `world` was built. */
+  /** The pose or outlines changed since `world` was built. Set through `markOccluderDirty`, never directly. */
   dirty: boolean;
   world: WorldOccluder2D[];
+  /** While the record is in a Scene: that Scene's set of dirty casters, which a change adds it to. */
+  dirtyIn?: Set<Occluder2DRecord> | null;
 };
+
+/** Marks a caster's world outlines stale and, in a Scene, queues it for the next shadow write. */
+function markOccluderDirty(record: Occluder2DRecord): void {
+  record.dirty = true;
+  record.dirtyIn?.add(record);
+}
 
 /** The 2D shadow map and, per row, the light and pose it was drawn for. */
 type ShadowMap = {
@@ -127,7 +137,7 @@ function sceneLights2D(scene: Scene): SceneLights2D {
   if (!state) {
     state = {
       lit: false, records: new Set(), limited: new Set(), buffer: null, beforeRender: null, listeners: new Set(),
-      occluders: new Set(), changedBounds: [], shadow: null,
+      occluders: new Set(), dirtyOccluders: new Set(), changedBounds: [], shadow: null,
     };
     scenes.set(scene, state);
     const owned = state;
@@ -141,6 +151,7 @@ function sceneLights2D(scene: Scene): SceneLights2D {
         owned.shadow = null;
       }
       owned.occluders.clear();
+      owned.dirtyOccluders.clear();
       owned.records.clear();
       owned.listeners.clear();
       scenes.delete(scene);
@@ -288,9 +299,12 @@ export function add2DOccluder(scene: Scene, record: Occluder2DRecord): () => voi
   const state = sceneLights2D(scene);
   state.occluders.add(record);
   pushBounds(state, record);
-  record.dirty = true;
+  record.dirtyIn = state.dirtyOccluders;
+  markOccluderDirty(record);
   return () => {
     if (!state.occluders.delete(record)) return;
+    state.dirtyOccluders.delete(record);
+    record.dirtyIn = null;
     pushBounds(state, record);
   };
 }
@@ -299,13 +313,13 @@ export function add2DOccluder(scene: Scene, record: Occluder2DRecord): () => voi
 export function setOccluderPose(record: Occluder2DRecord, x: number, y: number, angle: number): void {
   if (record.x === x && record.y === y && record.angle === angle) return;
   record.x = x; record.y = y; record.angle = angle;
-  record.dirty = true;
+  markOccluderDirty(record);
 }
 
 /** Replaces a body's outlines (its collider set changed). */
 export function setOccluderShapes(record: Occluder2DRecord, shapes: Occluder2DRecord["shapes"]): void {
   record.shapes = shapes;
-  record.dirty = true;
+  markOccluderDirty(record);
 }
 
 function pushBounds(state: SceneLights2D, record: Occluder2DRecord): void {
@@ -359,7 +373,11 @@ function shadowMap(scene: Scene, state: SceneLights2D): ShadowMap {
 function drawShadows(scene: Scene, state: SceneLights2D, shadowed: readonly Light2DRecord[]): void {
   if (!state.shadow && !shadowed.length) { state.changedBounds.length = 0; return; }
   const map = shadowMap(scene, state);
-  if (shadowed.length) for (const record of state.occluders) refreshOccluder(state, record);
+  // Only the casters that changed are posed again, not every caster looked at.
+  if (shadowed.length && state.dirtyOccluders.size > 0) {
+    for (const record of state.dirtyOccluders) refreshOccluder(state, record);
+    state.dirtyOccluders.clear();
+  }
   const changed = state.changedBounds;
   const reached = (x: number, y: number, radius: number) => {
     for (let index = 0; index < changed.length; index += 4)

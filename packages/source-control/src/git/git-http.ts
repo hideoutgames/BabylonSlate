@@ -1,5 +1,5 @@
 import { version, type GitHttpRequest, type GitHttpResponse, type HttpClient as IsoHttpClient } from "isomorphic-git";
-import type { HttpClient } from "../http";
+import type { FileTransferClient, HttpClient } from "../http";
 import { throwIfCancelled } from "../sync-port";
 import { requestError } from "./errors";
 
@@ -12,6 +12,21 @@ export function cancellableHttp(http: HttpClient, signal: AbortSignal | undefine
   return async (request) => {
     throwIfCancelled(signal);
     const response = await http(request);
+    throwIfCancelled(signal);
+    return response;
+  };
+}
+
+/**
+ * The native file transfer under the same rule, except that the host can
+ * stop a transfer: `signal` goes with each request, so aborting cancels it
+ * there and a download leaves no file.
+ */
+export function cancellableFiles(files: FileTransferClient, signal: AbortSignal | undefined): FileTransferClient {
+  if (!signal) return files;
+  return async (request) => {
+    throwIfCancelled(signal);
+    const response = await files({ ...request, signal });
     throwIfCancelled(signal);
     return response;
   };

@@ -16,7 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import { UserFocusIcon } from "@phosphor-icons/react/dist/csr/UserFocus";
-import { CircleAlertIcon, OctagonPauseIcon } from "lucide-react";
+import { CircleAlertIcon, EyeIcon, OctagonPauseIcon } from "lucide-react";
 import ImageGlyph from "react-bootstrap-icons/dist/icons/image";
 import ImageFillGlyph from "react-bootstrap-icons/dist/icons/image-fill";
 import {
@@ -491,6 +491,20 @@ function NodeErrorBadge({
   );
 }
 
+/** The previewed node's tag above its top-left corner (eye icon, host label), drawn at node scale like the error count. */
+function NodePreviewTag({ label }: { label: string }) {
+  return (
+    <span className="pointer-events-none absolute bottom-full left-0 z-10 flex pb-1.5" data-testid="graph-node-preview-tag">
+      <span className="rounded-sm bg-graph-node shadow-md">
+        <Badge variant="warning" size="lg" className="h-8 gap-1.5 text-sm has-data-[icon=inline-start]:pl-2 [&>svg]:size-4!">
+          <EyeIcon data-icon="inline-start" aria-hidden="true" />
+          {label}
+        </Badge>
+      </span>
+    </span>
+  );
+}
+
 /** Where a node shows its breakpoint tab. */
 export type NodeBreakpointPlacement = "titleBar" | "cardTop" | "inset";
 
@@ -592,7 +606,8 @@ export function BlueprintNodeShell({
   /** Fixed-width flat card without the role title bar; children render their own header. */
   card?: boolean;
 }) {
-  const { nodeErrorCount, describeNode } = useGraphEditorContext();
+  const { nodeErrorCount, describeNode, previewedNode } = useGraphEditorContext();
+  const previewed = previewedNode?.nodeId === nodeId ? previewedNode : null;
   const description = data ? describeNode?.(String(data.__nodeType ?? ""), data) : undefined;
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
@@ -602,6 +617,7 @@ export function BlueprintNodeShell({
   return (
     <div className={cn("group/node relative", card && "group/title")}>
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} leading={headerPins.length > 0} />
+      {previewed ? <NodePreviewTag label={previewed.label} /> : null}
       {/* Outside the shell, which clips its body to the rounded corners. */}
       <NodeBreakpointTab nodeId={nodeId} data={data} placement={card ? "cardTop" : "titleBar"} />
       <div
@@ -612,7 +628,11 @@ export function BlueprintNodeShell({
           "overflow-hidden border border-border bg-graph-node text-card-foreground shadow-sm",
           card
             ? "graph-card-node w-56 rounded-md"
-            : cn("w-max min-w-80 rounded-lg", selected && "ring-2 ring-primary"),
+            : cn(
+              "w-max min-w-80 rounded-lg",
+              // A previewed node keeps its warning ring; selection then draws outside it.
+              previewed ? cn("ring-2 ring-(--warning)", selected && "outline-2 outline-offset-2 outline-primary") : selected && "ring-2 ring-primary",
+            ),
           disabled && "opacity-50",
         )}
       >

@@ -44,6 +44,7 @@ Hold or right-click an asset to open its menu. Items depend on the selection:
 | Move… / Copy to Folder… | Move or copy the selection to a folder you pick. |
 | Copy Asset Reference | Copy the asset's ID to the clipboard. If the clipboard refuses the copy, the Content Browser says so. |
 | Show References | Open the references graph (below). |
+| Source Control | While [Source Control](../projects/source-control.md) is on: who holds the asset's lock, and lock actions such as **Lock** and **Release Lock** (see [Source Control in the Content Browser](#source-control-in-the-content-browser)). |
 | Delete | Delete the selection. |
 
 Double-tap empty space in the grid to open the **New Asset** menu there. Hold or right-click empty space in the grid for **New Folder**, **New Asset** and **Import**, or empty space in the folder tree for **New Folder**.
@@ -141,4 +142,24 @@ Plugin folders appear in the tree when **Project Settings > Plugins > Show Plugi
 
 The content folder of an enabled gameplay extension appears when its **Appear In Content Browser** is on, whatever **Show Plugin Content** says. See [Gameplay extensions](../projects/extensions.md#gameplay-extensions).
 
-When [Source Control](../projects/source-control.md) is on, locked assets show a lock badge with the owner's name.
+## Source Control in the Content Browser
+
+While [Source Control](../projects/source-control.md) is on, assets show who has locked them, in the tile's top right corner and at the end of their row in the folder tree:
+
+- A filled lock badge is your own lock (**Locked By You**).
+- An outlined red badge with a person is someone else's lock. Its tooltip names them (**Locked By** and their name).
+
+In Integrated mode the corner also shows what changed since the last commit: a green **+** for an asset you added, **M** for one you changed. A deleted asset has no tile; the **Changes** window lists it.
+
+The asset menu's **Source Control** submenu starts with who holds the lock, when the asset is locked, then offers what applies:
+
+| Item | Description |
+| --- | --- |
+| Lock | Lock the asset, so others can't edit it. With several assets selected, locks each one nobody holds. |
+| Release Lock | Release your lock. With several assets selected, releases each of yours. |
+| Force Unlock… | Someone else's lock, one asset: remove it after a confirmation. They may still have unpushed changes. |
+| Show Changes | Integrated mode, one changed asset: compare it with the last commit in the Source Control tab. |
+| Show History | Integrated mode, one asset: list the commits that changed it in **History**. |
+| Revert… | Integrated mode, one changed asset: put back the last committed version after a confirmation, as **Revert Asset** does. An asset you added since then is removed. |
+
+Lock actions are unavailable until you are signed in to the project's host.

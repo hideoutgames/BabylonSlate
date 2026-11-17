@@ -2,6 +2,7 @@ import { isSceneLayerAnchorActor, SaveGameError, type SaveGameResult, type SaveG
 import { Actor, ActorComponent, Scene, SceneLayer, type EngineObject } from "@haptic/object-model";
 import type { Vec3 } from "@haptic/physics";
 import { actorLabel } from "./actor-world-transform";
+import { componentsOfClass } from "./script-class-queries";
 import type { ScriptHostServices } from "./script-host-services";
 
 /** The installed save service, read on each call because `setSaveGameService` installs it after construction. */
@@ -15,22 +16,30 @@ export async function saveGameUnavailable<T>(): Promise<SaveGameResult<T>> {
   return { ok: false, error: { code: "unavailable", message: "Select a default Save Game in Project Settings before using saves." } };
 }
 
-export function* componentsOfType(
+/**
+ * The live components of `classId` or a subclass on live actors, in world order: appended to `into`, or with no list
+ * the first one. A host with a world answers from its component index (`componentsOfClass`); one that only lists
+ * actors is walked.
+ */
+export function componentsOfType(
   services: ScriptHostServices,
-  classId: string,
-): Generator<ActorComponent, undefined, unknown> {
+  classId: unknown,
+  into: ActorComponent[] | null,
+): ActorComponent | null {
   const target = String(classId ?? "");
-  if (!target) return;
+  if (!target) return null;
+  const world = services.getWorld?.();
+  if (world) return componentsOfClass(world, services.classRegistry, target, into);
   for (const actor of services.getActors?.() ?? []) {
     if (actor.destroyed) continue;
     for (const component of actor.components) {
       if (component.destroyed) continue;
-      if (component.classId === target ||
-        (services.classRegistry?.isA(component.classId, target) ?? false)) {
-        yield component;
-      }
+      if (component.classId !== target && !(services.classRegistry?.isA(component.classId, target) ?? false)) continue;
+      if (!into) return component;
+      into.push(component);
     }
   }
+  return null;
 }
 
 export function asActor(target: unknown): Actor | null {

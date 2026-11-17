@@ -1,6 +1,6 @@
 # Source Control Plan
 
-What remains of built-in Git before Integrated mode ships: the iPad benchmark and the native streaming path it decides. [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Git LFS locks (on the checked-out branch in Integrated mode), device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes and History windows, commit, pull with whole-file conflicts, push with lock verify and release, branches, Remove Unused Files, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers over History's commit lists, Revert Asset and Revert To This Version, Compare in Pull Conflicts). Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
+What remains of built-in Git before Integrated mode ships: the iPad benchmark rerun on the native file transfer, and reclaiming the space of [leftover staged files](#leftover-staged-files). [architecture/source-control.md](architecture/source-control.md) describes what is built: the modes (Off, Integrated, Manual), Git LFS locks (on the checked-out branch in Integrated mode), device credentials with GitHub and GitLab sign-in, the link warning, the [Git core](architecture/source-control.md#git-core) and [Integrated mode](architecture/source-control.md#integrated-mode) (Clone, Publish, the Changes and History windows, commit, pull with whole-file conflicts, push with lock verify and release, branches, Remove Unused Files, the status bar and the phone More Tools actions) and its [asset diffs](architecture/source-control.md#asset-diffs) (the Actors and Diff windows, the Base and Compare pickers over History's commit lists, Revert Asset and Revert To This Version, Compare in Pull Conflicts). Until a step of [Order](#order) is built, this file is the source of its decisions, and [engine-plan.md](engine-plan.md#source-control) points here.
 
 ## Scope
 
@@ -38,9 +38,24 @@ What remains of built-in Git before Integrated mode ships: the iPad benchmark an
 
 What exists today and what each part must change. Check these against the code before building; they are a starting map, not a contract.
 
-- **Native HTTP:** `NativeHttp` (`packages/vfs/src/native-http-port.ts`) carries GET, POST and PUT with text or byte bodies and binary answers, whole ([binary HTTP](architecture/source-control.md#binary-http)). A streaming file transfer in the native plugins and the desktop IPC (`lfs:fetch`) waits for step 1's results.
+- **LFS transfer:** objects stream through the native file transfer where the host has one ([native file transfer](architecture/source-control.md#native-file-transfer)); `NativeHttp` carries Git packs and batch and lock requests whole ([binary HTTP](architecture/source-control.md#binary-http)), and LFS objects only where no native transfer exists (web). Revert puts missing blobs straight into their files too; only `readFile` and `readLfsObject` (Diff's base blobs, a Texture's rasters) hand an object to JavaScript, since their callers want its bytes. The Git core's pack cache is released when the app goes to the background.
 - **Docs:** `docs/projects/source-control.md` and `docs/editor/settings.md` change with each step.
+
+## Benchmark evidence
+
+Why LFS objects stream natively: the owner's A16 iPad (TestFlight build), against a 374-file repository, on the whole-body path.
+
+| Run | Result |
+| --- | --- |
+| 3 × 32 MiB LFS objects | Clone 9.5 s; unchanged status 135 ms with no file read (the gate passes); LFS upload 28 s, download 18 s; no failure. |
+| 3 × 256 MiB LFS objects | The app ran out of memory and closed, on both tries, at a stage the benchmark could not report then. Whole bodies cross the Capacitor bridge as base64 (about three copies of an object in JavaScript), and the benchmark held all its objects in memory before writing them. |
+
+The native file transfer (iOS, Android, desktop), objects made one at a time (natively on iOS and Android), the download into files and the per-stage record and memory peaks answer both.
+
+## Leftover staged files
+
+A native download stages its object as `.haptic-<uuid>.tmp` beside the target (`.blobs`) and renames it when it matches. When the system kills the app mid-download, the staged file stays. Listings hide it on every host, so it never reaches the Content Browser, Changes or a commit, but its space is not reclaimed: Remove Unused Files lists blob folders through the same filtered `readdir`. Reclaiming it needs either an unfiltered listing of blob folders in Remove Unused Files, or downloads staged in one project folder (such as `.git/lfs/incoming`) that `openRepository` empties, as it empties `.git/lfs/tmp`; the second changes the native transfer's request (iOS, Android and Electron).
 
 ## Order
 
-1. The owner runs the Git benchmark on the A16 iPad; its results decide the native streaming path before Integrated mode ships. Run it from **Debug > Run Git Benchmark…** with Debug Mode on (any build, TestFlight included) against a repository with a few thousand assets, and copy the results from its dialog ([benchmark](architecture/source-control.md#benchmark)); the unchanged status must read no files.
+1. The owner reruns the Git benchmark on the A16 iPad with 3 × 256 MiB objects on the native path, in a build made from this change (a new TestFlight build: the native plugin code changed). From **Debug > Run Git Benchmark…** with Debug Mode on, against a repository the account can push to: set **LFS Objects** 3 and **Object Size** 256 MiB, keep the app in the foreground until it finishes, and copy the results from its dialog ([benchmark](architecture/source-control.md#benchmark)). The summary must say **LFS Transfer** native and the unchanged status must read no files; the peak memory per stage shows what each step cost. If the app closes, reopen the dialog: it names the stage the run stopped in. Delete the `haptic-benchmark-…` branch on the host afterwards.

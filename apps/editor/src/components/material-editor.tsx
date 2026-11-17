@@ -19,6 +19,7 @@ import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
   selectedPickerIdentity,
+  type KeyChord,
   type NestedMenuItem,
   type PinListRow,
   type PropertyRow,
@@ -62,6 +63,8 @@ import {
   listUnconnectedMaterialPinDefaults,
   materialGraphToSerialized,
   materialAddNodePalette,
+  materialNodePreviewOutputs,
+  materialNodeTitle,
   materialPinDefaultPropertyKey,
   materialPinsAreCompatible,
   normalizeMaterialDocument,
@@ -77,6 +80,7 @@ import {
   type MaterialDomain,
   type MaterialFunctionPin,
   type MaterialPreviewMesh,
+  type MaterialNodePreviewTarget,
   type MaterialPreviewSettings,
 } from "@haptic/shader-graph";
 import {
@@ -85,6 +89,8 @@ import {
   CircleIcon,
   ConeIcon,
   CylinderIcon,
+  EyeIcon,
+  EyeOffIcon,
   SquareIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -94,6 +100,7 @@ import {
   useRegistryState,
 } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
 import { useMaterialEditing } from "../context/material-editing-context";
 import { documentBatch, type DocumentBatch } from "../lib/document-batch";
 
@@ -305,6 +312,78 @@ function useMaterialConversionMenu<T extends MaterialGraphDocument>(document: T,
   }, [commit]);
 }
 
+/**
+ * What the **Preview Node** key does with the one selected node: stop when that node is previewed, or
+ * when it is the output node while another node is; otherwise preview its first numeric output.
+ * Undefined when the key does nothing (a node with no numeric output, or the output node with nothing previewed).
+ */
+function previewNodeKeyResult(
+  document: MaterialDocument,
+  nodeId: string,
+  previewNode: MaterialNodePreviewTarget | null,
+  functions: Record<string, MaterialFunctionDocument>,
+): MaterialNodePreviewTarget | null | undefined {
+  const node = document.nodes.find((entry) => entry.id === nodeId);
+  if (!node) return undefined;
+  if (previewNode?.nodeId === nodeId) return null;
+  if (materialNodeDefinition(node.type)?.terminal) return previewNode ? null : undefined;
+  const first = materialNodePreviewOutputs(document, nodeId, { functions })[0];
+  return first ? { nodeId, pinId: first.pinId } : undefined;
+}
+
+/**
+ * The node menu's **Preview Node**: an item for a node with one numeric output, a submenu of its outputs
+ * for a node with several, and **Stop Previewing Node** on the previewed node and on the output node.
+ * `shortcut` is the key's chord, shown on the entry the key would run.
+ */
+function usePreviewNodeMenu(document: MaterialDocument, shortcut: KeyChord | undefined) {
+  const editing = useMaterialEditing();
+  const { previewNode, setPreviewNode, functions } = editing;
+  const documentRef = useRef(document);
+  documentRef.current = document;
+  return useCallback((nodeId: string): NestedMenuItem[] => {
+    const current = documentRef.current;
+    const stop: NestedMenuItem = { id: "stop-previewing-node", label: "Stop Previewing Node", testId: "material-stop-previewing-node", icon: <EyeOffIcon />, shortcut, onSelect: () => setPreviewNode(null) };
+    const node = current.nodes.find((entry) => entry.id === nodeId);
+    if (node && materialNodeDefinition(node.type)?.terminal) return previewNode ? [stop] : [];
+    const outputs = materialNodePreviewOutputs(current, nodeId, { functions });
+    if (outputs.length === 0) return [];
+    const previewed = previewNode?.nodeId === nodeId ? previewNode.pinId : null;
+    if (outputs.length === 1) {
+      return previewed ? [stop] : [{ id: "preview-node", label: "Preview Node", testId: "material-preview-node", icon: <EyeIcon />, shortcut, onSelect: () => setPreviewNode({ nodeId, pinId: outputs[0]!.pinId }) }];
+    }
+    const choose: NestedMenuItem = {
+      type: "submenu", id: "preview-node", label: "Preview Node", testId: "material-preview-node", icon: <EyeIcon />,
+      items: [{
+        type: "radio-group", id: "preview-node-output", value: previewed ?? "", closeOnClick: true,
+        onValueChange: (pinId) => setPreviewNode({ nodeId, pinId }),
+        // The key previews the first output; on the previewed node it stops instead.
+        items: outputs.map((output, index) => ({ id: output.pinId, label: output.name, value: output.pinId, testId: `material-preview-node-${output.pinId}`, shortcut: index === 0 && !previewed ? shortcut : undefined })),
+      }],
+    };
+    return previewed ? [stop, choose] : [choose];
+  }, [functions, previewNode, setPreviewNode, shortcut]);
+}
+
+/**
+ * The previewed node as the canvas titles it, with the output's name when the node has several, for
+ * the Preview banner and the node's tag. Null while the Material's own output is previewed.
+ */
+function usePreviewedNode(document: MaterialDocument): { nodeId: string; title: string; output: string | null } | null {
+  const { previewNode, functions } = useMaterialEditing();
+  const globalParameters = useGlobalParameterCatalog();
+  return useMemo(() => {
+    const node = previewNode && document.nodes.find((entry) => entry.id === previewNode.nodeId);
+    if (!previewNode || !node) return null;
+    const outputs = materialNodePreviewOutputs(document, node.id, { functions });
+    return {
+      nodeId: node.id,
+      title: materialNodeTitle(node, { functions, globalParameters }),
+      output: outputs.length > 1 ? outputs.find((output) => output.pinId === previewNode.pinId)?.name ?? null : null,
+    };
+  }, [document, functions, globalParameters, previewNode]);
+}
+
 export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, documentId, commit } = useMaterialDocument();
@@ -341,10 +420,33 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
       }),
     [document, functions, globalParameters],
   );
+  // Preview Node's key acts on one selected node only: several have no one output to show.
+  const previewChord = useKeybindChord("material.previewNode");
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const keyNodeId = editing.selectedNodeIds.length === 1 ? editing.selectedNodeIds[0]! : null;
+  const keyResult = useMemo(
+    () => keyNodeId ? previewNodeKeyResult(document, keyNodeId, editing.previewNode, functions) : undefined,
+    [document, editing.previewNode, functions, keyNodeId],
+  );
+  useKeybindCommand("material.previewNode", () => { if (keyResult !== undefined) editing.setPreviewNode(keyResult); }, {
+    enabled: keyResult !== undefined,
+    focusWithinRef: canvasRef,
+  });
+  const previewMenu = usePreviewNodeMenu(document, previewChord);
+  const nodeMenu = useCallback(
+    (nodeId: string) => [...previewMenu(nodeId), ...conversionMenu(nodeId)],
+    [conversionMenu, previewMenu],
+  );
+  const previewed = usePreviewedNode(document);
+  const previewedNode = useMemo(
+    () => previewed ? { nodeId: previewed.nodeId, label: previewed.output ? `Previewing ${previewed.output}` : "Previewing" } : null,
+    [previewed],
+  );
 
   return (
     <PanelFrame className="flex-1" data-testid="material-graph-panel">
       <div
+        ref={canvasRef}
         className="flex h-full min-h-0 flex-col"
         data-testid="material-graph-editor"
       >
@@ -361,7 +463,8 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           focusedNodeId={editing.focusedNodeId ?? undefined}
           focusRequest={editing.focusRequest}
           commitPositionsOnDragEnd
-          contextMenuItemsForNode={conversionMenu}
+          contextMenuItemsForNode={nodeMenu}
+          previewedNode={previewedNode}
           onChange={(next, meta) => {
             const nextDocument = serializedToMaterialGraph(next, document);
             commit(
@@ -449,11 +552,14 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
 export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, commit } = useMaterialDocument();
+  const { setPreviewNode } = useMaterialEditing();
   return (
     <MaterialPreviewSurface
       preview={document.preview}
       domain={document.domain}
       onPreviewChange={(preview) => commit({ ...document, preview })}
+      previewedNode={usePreviewedNode(document)}
+      onStopPreviewingNode={() => setPreviewNode(null)}
     />
   );
 }
@@ -463,10 +569,15 @@ export function MaterialPreviewSurface({
   preview,
   domain,
   onPreviewChange,
+  previewedNode = null,
+  onStopPreviewingNode,
 }: {
   preview: MaterialPreviewSettings;
   domain: MaterialDomain | null;
   onPreviewChange: (preview: MaterialPreviewSettings) => void;
+  /** The node the preview shows instead of the Material's output (**Preview Node**). */
+  previewedNode?: { title: string; output: string | null } | null;
+  onStopPreviewingNode?: () => void;
 }) {
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -497,7 +608,31 @@ export function MaterialPreviewSurface({
 
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
+      {previewedNode ? (
+        <div
+          className="flex min-h-7 shrink-0 items-center gap-1.5 border-b border-(--warning)/40 bg-(--warning)/15 pr-1 pl-2 text-xs text-(--warning)"
+          role="status"
+          data-testid="material-preview-node-banner"
+        >
+          <EyeIcon className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 truncate">
+            Previewing Node: <span className="font-semibold">{previewedNode.output ? `${previewedNode.title} · ${previewedNode.output}` : previewedNode.title}</span>
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="ml-auto shrink-0 text-(--warning) hover:bg-(--warning)/20 hover:text-(--warning) pointer-coarse:h-[var(--touch-target,44px)]"
+            onClick={onStopPreviewingNode}
+            data-testid="material-preview-node-stop"
+          >
+            Stop Previewing
+          </Button>
+        </div>
+      ) : null}
       <div className="relative flex h-full min-h-0 flex-col">
+        {/* Frames the canvas so a node's value is never taken for the Material. */}
+        {previewedNode ? <div className="pointer-events-none absolute inset-0 z-10 ring-2 ring-inset ring-(--warning)" aria-hidden="true" /> : null}
         {domain !== "particle" && domain !== "text" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto toolbar-island flex-wrap"

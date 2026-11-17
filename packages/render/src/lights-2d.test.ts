@@ -1,13 +1,18 @@
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
+import { FromHalfFloat } from "@babylonjs/core/Misc/textureTools";
 import { createDefaultSpritePayload } from "@haptic/assets";
 import { parseLight2DProperties, type Light2DProperties } from "@haptic/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { Light2DGroup } from "./light-2d-group";
-import { LIGHT_2D_MAXIMUM, pack2DLights, setScene2DLighting, type Light2DRecord } from "./lights-2d";
+import {
+  LIGHT_2D_MAXIMUM, add2DLight, add2DOccluder, bind2DLights, bind2DShadows, pack2DLights, setOccluderPose, setOccluderShapes, setScene2DLighting,
+  write2DLights, type Light2DRecord, type Occluder2DRecord,
+} from "./lights-2d";
 import { applyAlbedoTexture, installTextureBytes } from "./mesh-assets";
 import { ResourceCache } from "./resource-cache";
 import { createSpriteQuad } from "./sprite-quad";
@@ -17,6 +22,18 @@ const record = (properties: Partial<Light2DProperties>, x = 0, y = 0, direction:
   properties: parseLight2DProperties(properties), x, y, directionX: direction[0], directionY: direction[1],
 });
 const words = () => new Float32Array(LIGHT_2D_MAXIMUM * 16);
+/** Reads the first shadowed light's row of the Scene's 2D shadow map, as its last upload left it. Call before the first write. */
+function shadowRowReader(scene: Scene): (bin: number) => number {
+  let uploaded: Uint16Array | undefined;
+  bind2DShadows(scene, {
+    setTexture: (_name: string, texture: { update(data: Uint16Array): void }) => {
+      const update = texture.update.bind(texture);
+      texture.update = (data) => { uploaded = data; update(data); };
+    },
+  } as unknown as Effect);
+  return (bin) => FromHalfFloat(uploaded![bin]!);
+}
+
 const lit = { lightsEnabled: true, camera: null, origin: { x: 0, y: 0 } };
 
 describe("pack2DLights", () => {
@@ -73,6 +90,65 @@ describe("pack2DLights", () => {
     expect(pack2DLights([record({}), record({ lightKind: "global", intensity: 3 })], { ...lit, lightsEnabled: false }, out))
       .toEqual({ count: 0, ambient: [1, 1, 1], limited: [], shadowed: [] });
     expect(out.every((value) => value === 0)).toBe(true);
+  });
+});
+
+describe("2D shadow casters", () => {
+  it("poses again only the casters that changed, and redraws the shadows they reach", () => {
+    const engine = new NullEngine({ renderWidth: 64, renderHeight: 64, textureSize: 4, deterministicLockstep: false, lockstepMaxSteps: 1 });
+    const scene = new Scene(engine);
+    const bound: unknown[] = [];
+    // The block and its per-frame write start with the first draw that binds it.
+    const bind = () => bind2DLights(scene, { bindUniformBuffer: (buffer: unknown) => bound.push(buffer) } as unknown as Effect);
+    add2DLight(scene, record({ radius: 10 }, 0, 0));
+    const square = [-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5];
+    /** A unit-square caster whose `dirty` flag counts how often it is looked at. */
+    const caster = (x: number, y: number) => {
+      const occluder: Occluder2DRecord = { shapes: [{ closed: true, points: square }], x, y, angle: 0, dirty: true, world: [] };
+      let dirty = true;
+      const looks = { count: 0 };
+      Object.defineProperty(occluder, "dirty", { get: () => (looks.count++, dirty), set: (value: boolean) => { dirty = value; } });
+      const remove = add2DOccluder(scene, occluder);
+      return { occluder, looks, remove };
+    };
+    const still = Array.from({ length: 20 }, (_, at) => caster(20 + at * 2, 30));
+    const mover = caster(3, 0);
+    const map = shadowRowReader(scene);
+    bind();
+    // Straight right of the light (bin 256), shadow starts where the ray leaves the mover: 3.5 of 10.
+    expect(map(256)).toBeCloseTo(0.35, 2);
+    expect(mover.occluder.world[0]!.minX).toBe(2.5);
+    for (const entry of [...still, mover]) entry.looks.count = 0;
+    // Frames in which nothing moves look at no caster.
+    for (let frame = 0; frame < 5; frame++) write2DLights(scene);
+    expect(still.reduce((sum, entry) => sum + entry.looks.count, 0) + mover.looks.count).toBe(0);
+    // A moved caster is posed again, alone, and the shadow follows it.
+    setOccluderPose(mover.occluder, 5, 0, 0);
+    write2DLights(scene);
+    expect(mover.occluder.world[0]!.minX).toBe(4.5);
+    expect(map(256)).toBeCloseTo(0.55, 2);
+    expect(still.reduce((sum, entry) => sum + entry.looks.count, 0)).toBe(0);
+    // So is one whose outlines were replaced, and one that turned.
+    setOccluderShapes(mover.occluder, [{ closed: true, points: square.map((value) => value * 2) }]);
+    write2DLights(scene);
+    expect(map(256)).toBeCloseTo(0.6, 2);
+    setOccluderPose(mover.occluder, 5, 0, Math.PI / 4);
+    write2DLights(scene);
+    expect(map(256)).toBeCloseTo((5 + Math.SQRT2) / 10, 2);
+    // A caster moved and then removed before the next write casts nothing, and is not posed.
+    setOccluderPose(mover.occluder, 2, 0, 0);
+    mover.remove();
+    write2DLights(scene);
+    expect(map(256)).toBe(1);
+    expect(mover.occluder.world[0]!.minX).not.toBe(1.5);
+    // A caster moved while it is out of the Scene is posed when it joins again.
+    setOccluderPose(mover.occluder, 4, 0, 0);
+    add2DOccluder(scene, mover.occluder);
+    write2DLights(scene);
+    expect(map(256)).toBeCloseTo(0.5, 2);
+    expect(bound).toHaveLength(1);
+    scene.dispose();
+    engine.dispose();
   });
 });
 
