@@ -85,7 +85,7 @@ export function hapticShadowGlsl(surface: boolean): string {
 // with automatic bias compares each tap against the receiver's plane, from the position's change across the pixel
 // (\`dPdx\`, \`dPdy\`, taken where control flow is uniform). ESSL 3.00 has no \`textureLod\` for an array compare sampler:
 // zero gradients ask for level 0 explicitly, as \`textureLod\` did. An implicit level (\`texture\`) would leave it to
-// derivatives, which this non-uniform control flow does not define.
+// derivatives, which the light loop's divergent branches leave undefined.
 float hapticShadowTap(vec4 tile, float layer, vec2 texel, float depth) {
   return textureGrad(hapticShadowAtlas, vec4(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), layer, depth), vec2(0.0), vec2(0.0));
 }
