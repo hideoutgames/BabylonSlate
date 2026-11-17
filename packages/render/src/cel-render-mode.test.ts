@@ -4,6 +4,7 @@ import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { Effect } from "@babylonjs/core/Materials/effect";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { Scene } from "@babylonjs/core/scene";
 import {
@@ -14,7 +15,6 @@ import {
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,
 } from "@haptic/core";
-import { celFunctions } from "./cel-shader";
 import { compileMaterialPlan } from "./material-compiler";
 import { HapticLightingBlock } from "./haptic-lighting-block";
 import { sceneRenderingSettings } from "./render-settings";
@@ -41,6 +41,39 @@ async function defaultGraph(scene: Scene, name: string) {
   if (!compiled.ok) throw new Error(JSON.stringify(compiled.diagnostics));
   expect(await compiled.ready).toEqual([]);
   return compiled;
+}
+
+/**
+ * `effect`'s fragment source as the GPU's preprocessor leaves it, for the simple conditions (`#ifdef`, `#ifndef`, one
+ * `defined()`), without comments. A block under any other condition stays whole, so a check that the source lacks a
+ * name cannot pass by leaving one out.
+ */
+function preprocessed(effect: Effect): string {
+  const defined = new Set([...effect.defines.matchAll(/^#define (\w+)/gm)].map((match) => match[1]!));
+  const known = (line: string): boolean | null => {
+    const match = /^#(ifdef|ifndef) (\w+)$/.exec(line) ?? /^#if (!?)defined\((\w+)\)$/.exec(line);
+    if (!match) return null;
+    return (match[1] === "ifndef" || match[1] === "!") !== defined.has(match[2]!);
+  };
+  const stack: { outer: boolean; condition: boolean | null }[] = [];
+  let active = true;
+  const kept: string[] = [];
+  for (const raw of effect.fragmentSourceCode.split("\n")) {
+    const line = raw.trim();
+    if (/^#if/.test(line)) {
+      const condition = known(line);
+      stack.push({ outer: active, condition });
+      active = active && condition !== false;
+    } else if (/^#el/.test(line) && stack.length) {
+      const top = stack.at(-1)!;
+      // An \`#elif\` is not evaluated: it is taken unless an earlier branch surely was.
+      active = top.outer && top.condition !== true;
+      if (!line.startsWith("#else")) top.condition = null;
+    } else if (/^#endif/.test(line) && stack.length) {
+      active = stack.pop()!.outer;
+    } else if (active) kept.push(raw.replace(/\/\/.*$/, ""));
+  }
+  return kept.join("\n");
 }
 
 describe("CEL render mode", () => {
@@ -81,19 +114,17 @@ describe("CEL render mode", () => {
     compiled.dispose();
   });
 
-  it("binds only hard-step uniforms and the CEL functions contain no smoothstep", async () => {
+  it("binds the ramp's and the highlight's terms derived from the CEL settings", async () => {
     const scene = host();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
-    setSceneRenderSettings(scene, {
-      mode: "cel",
-      cel: normalizeCelShadingSettings({
-        shadowBands: 4,
-        shadowThreshold: 0.4,
-        shadowStrength: 0.7,
-        specularStrength: 0.3,
-        specularSize: 0.25,
-      }),
-    });
+    const cel = {
+      shadowBands: 4,
+      shadowThreshold: 0.4,
+      shadowStrength: 0.7,
+      specularStrength: 0.3,
+      specularSize: 0.25,
+    };
+    setSceneRenderSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings(cel) });
     const compiled = await defaultGraph(scene, "graph-bands");
     const material = compiled.material;
     const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
@@ -102,15 +133,84 @@ describe("CEL render mode", () => {
     const subMesh = mesh.subMeshes[0]!;
     expect(material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
     const uniforms = vi.spyOn(subMesh.effect!, "setFloat4");
+    const last = (name: string) => uniforms.mock.calls.filter(([uniform]) => uniform === name).at(-1)!.slice(1) as number[];
+    const expectClose = (actual: number[], expected: number[]) =>
+      expected.forEach((value, index) => expect(actual[index], `${index}`).toBeCloseTo(value, 6));
     material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
-    expect(
-      uniforms.mock.calls.filter(([name]) => name === "slateCelBands").at(-1),
-    ).toEqual(["slateCelBands", 4, 0.4, 0.7, 0]);
-    expect(
-      uniforms.mock.calls.filter(([name]) => name === "slateCelSpecular").at(-1),
-    ).toEqual(["slateCelSpecular", 0.3, 0.25, 0, 0]);
-    expect(celFunctions()).not.toContain("smoothstep");
+    // Three levels above the darkest; ln 0.5 / ln 0.4; 1 - 0.7; (0.5 / 3) ^ (1 / 0.75647), where the first lit band starts.
+    expectClose(last("slateCelBands"), [3, 0.7564708, 0.3, 0.0936138]);
+    // Strength; the cosine of the highlight's half angle, sqrt(1 - 0.25²); a rect light's form factor threshold.
+    expectClose(last("slateCelSpecular"), [0.3, 0.9682458, 0.75, 0]);
+    // Highlights off bind a zero strength, which skips them in the shader.
+    setSceneRenderSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({ ...cel, specularEnabled: false }) });
+    material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh);
+    expect(last("slateCelSpecular")[0]).toBe(0);
     compiled.dispose();
+  });
+
+  it("compiles neither the PBR lighting nor the samplers it never reads into a CEL program", async () => {
+    // The fragment source is the contract here: what a program declares and links is what its source holds once the
+    // GPU's preprocessor has resolved it (`preprocessed`).
+    const fragment = async (mode: "cel" | "pbr") => {
+      const scene = host();
+      scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+      setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({}) });
+      const compiled = await defaultGraph(scene, `graph-${mode}`);
+      const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
+      mesh.material = compiled.material;
+      await compiled.material.forceCompilationAsync(mesh);
+      expect(compiled.material.isReadyForSubMesh(mesh, mesh.subMeshes[0]!)).toBe(true);
+      const source = preprocessed(mesh.subMeshes[0]!.effect!);
+      compiled.dispose();
+      return source;
+    };
+    const pbrOnly = ["hapticDirectLights", "hapticEnvironmentBrdfSampler", "hapticShadowAtlasDepth", "hapticContactLit", "hapticPoisson64"];
+    const cel = await fragment("cel");
+    expect(cel).toContain("hapticCelLighting");
+    for (const name of pbrOnly) expect(cel, name).not.toContain(name);
+    const pbr = await fragment("pbr");
+    expect(pbr).not.toContain("hapticCelLighting");
+    for (const name of pbrOnly) expect(pbr, name).toContain(name);
+  });
+
+  it("binds a CEL program's settings once per Scene and frame, and again on a change", async () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const a = new Scene(engine);
+    const b = new Scene(engine);
+    const draw = async (scene: Scene, shadowBands: number) => {
+      scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+      setSceneRenderSettings(scene, { mode: "cel", cel: normalizeCelShadingSettings({ shadowBands }) });
+      const compiled = await defaultGraph(scene, "graph-shared");
+      const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
+      mesh.material = compiled.material;
+      await compiled.material.forceCompilationAsync(mesh);
+      const subMesh = mesh.subMeshes[0]!;
+      expect(compiled.material.isReadyForSubMesh(mesh, subMesh)).toBe(true);
+      return { effect: subMesh.effect!, bind: () => compiled.material.bindForSubMesh(mesh.computeWorldMatrix(), mesh, subMesh) };
+    };
+    const { effect, bind: drawA } = await draw(a, 3);
+    const { effect: effectB, bind: drawB } = await draw(b, 6);
+    // One program serves both Scenes, each with its own settings.
+    expect(effectB).toBe(effect);
+    const uniforms = vi.spyOn(effect, "setFloat4");
+    const bands = () => uniforms.mock.calls.filter(([name]) => name === "slateCelBands").map(([, levels]) => levels);
+    drawA();
+    drawA();
+    expect(bands()).toEqual([2]);
+    // Another Scene drawing the same program in the same frame binds its own, and the first binds its own back.
+    drawB();
+    drawA();
+    expect(bands()).toEqual([2, 5, 2]);
+    // A settings change within the frame binds at once.
+    setSceneRenderSettings(a, { mode: "cel", cel: normalizeCelShadingSettings({ shadowBands: 4 }) });
+    drawA();
+    drawA();
+    expect(bands()).toEqual([2, 5, 2, 3]);
+    // The next frame binds again.
+    engine.endFrame();
+    drawA();
+    expect(bands()).toEqual([2, 5, 2, 3, 3]);
   });
 
   it("fogs a CEL graph by the one rule, in linear as a PBR graph", async () => {

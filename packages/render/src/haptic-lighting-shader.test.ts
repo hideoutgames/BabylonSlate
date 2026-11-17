@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { celFunctions } from "./cel-shader";
 import { HAPTIC_LIGHTING_FUNCTIONS_GLSL } from "./haptic-lighting-shader";
 
 /** The body of the function whose header starts with `header`, up to the closing brace of its own line. */
@@ -24,4 +25,25 @@ it.each([
   expect(calls(lights, "hapticSunShadowFactor") + calls(lights, "hapticPointShadow")).toBe(0);
   // Every light kind is still summed: the sun's lights, then the cluster's points and spots, then the rect lights.
   for (const part of ["hapticDirectional[", "hapticPoint[", "hapticSpot[", "hapticRect["]) expect(lights, part).toContain(part);
+});
+
+// GLSL ES 3.00 leaves derivatives undefined in non-uniform control flow, and the light loops branch per fragment
+// (`break`, `continue`): only the light functions' first lines, before their loops, take the position's derivatives, and
+// CEL's anti-aliased thresholds (its only other derivatives) run after its loops on the summed light.
+it("takes derivatives only where control flow is uniform", () => {
+  const derivatives = /\b(dFdx|dFdy|fwidth)\(/g;
+  const prologue = "vec3 dPdx = dFdx(P);\n  vec3 dPdy = dFdy(P);";
+  expect(HAPTIC_LIGHTING_FUNCTIONS_GLSL.split(prologue).length - 1).toBe(2);
+  expect(HAPTIC_LIGHTING_FUNCTIONS_GLSL.split(prologue).join("").match(derivatives)).toBeNull();
+  for (const header of ["void hapticDirectLights(", "vec3 hapticCelLighting("]) {
+    const lights = body(HAPTIC_LIGHTING_FUNCTIONS_GLSL, header);
+    expect(lights.indexOf(prologue), header).toBeLessThan(lights.indexOf("for ("));
+  }
+  const cel = celFunctions();
+  const thresholds = ["float slateCelStep(", "float slateCelEdge("].map((header) => body(cel, header));
+  expect(thresholds.reduce((rest, threshold) => rest.replace(threshold, ""), cel).match(derivatives)).toBeNull();
+  const lights = body(HAPTIC_LIGHTING_FUNCTIONS_GLSL, "vec3 hapticCelLighting(");
+  const loops = lights.slice(lights.indexOf("for ("), lights.indexOf("// After the loop"));
+  expect(loops.length).toBeGreaterThan(0);
+  for (const threshold of ["slateCelStep", "slateCelEdge", "slateCelBand"]) expect(calls(loops, threshold), threshold).toBe(0);
 });
