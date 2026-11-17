@@ -69,6 +69,7 @@ const { createEngineMock, play, documents, handle, selection } = vi.hoisted(() =
     // The engine reports the guids whose installed bytes now match; by default that is every Texture it is given.
     replaceTextureBytes: vi.fn((textureBytes: ReadonlyMap<string, unknown>) => [...textureBytes.keys()]),
     setRenderSettings: vi.fn(),
+    setPixelMatchedCameras: vi.fn(),
     setMaterialDocuments: vi.fn(),
     whenEditorModelsReady: vi.fn(async () => {}),
     whenMaterialTexturesReady: vi.fn(async () => {}),

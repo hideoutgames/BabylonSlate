@@ -23,7 +23,7 @@ import { SettingsSection } from "./settings-section";
 
 // Label tooltips that also stay their control's screen-reader description.
 const PIXELS_PER_UNIT_HINT = "Texture pixels per world unit. Sizes sprites, tilemaps and 2D text.";
-const PIXEL_PERFECT_HINT = "Frames the 2D editor view 1:1. Play and exported games snap the game camera to the pixel grid.";
+const PIXEL_PERFECT_HINT = "Draws the 2D editor view at device pixels; its zoom settles on whole pixels per texel near them. Play and exported games snap the game camera to the pixel grid.";
 const NEAREST_TEXTURES_HINT = "Samples every Material texture with nearest-neighbour filtering, in 3D too.";
 
 interface ProjectGameSettingsProps {

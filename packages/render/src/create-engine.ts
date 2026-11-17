@@ -145,6 +145,7 @@ import {
   refreshAuthoredCameraLenses,
   sceneCameraLensExtent,
   setSceneCameraLensExtent,
+  setScenePixelMatchedLens,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { createWorldLayerCamera } from "./world-layer-camera";
@@ -213,7 +214,7 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
-import { observeNearestTextures, setNearestTextures } from "./nearest-textures";
+import { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
 import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { AnimVisibilityGate } from "./anim-visibility";
@@ -742,8 +743,15 @@ function initializeEngine(
    */
   const fullQuality = options.fullQuality === true && !options.playMode && !presentRtt;
   if (fullQuality) pinFullRenderQuality(scene);
-  const viewLevel = () => fullQuality
-    ? 1 / (canvas.ownerDocument?.defaultView?.devicePixelRatio || 1)
+  /**
+   * A 2D editor view with Pixel-Perfect Mode (`EditorTools.setPixelPerfect`) draws at device pixels too, so the
+   * browser never resamples it, at its own level only: quality and the other views of the Engine are unchanged.
+   */
+  let devicePixels = false;
+  const deviceView = () => fullQuality || devicePixels;
+  const devicePixelRatio = () => canvas.ownerDocument?.defaultView?.devicePixelRatio || 1;
+  const viewLevel = () => deviceView()
+    ? 1 / devicePixelRatio()
     : engine.getHardwareScalingLevel();
   const fullQualityResize = () => {
     if (!viewCanvasHasLayoutBox(canvas)) return;
@@ -908,7 +916,10 @@ function initializeEngine(
     apply: options.playMode && !presentRtt ? (level) => {
       worldLevel = level;
       syncPlayOutput();
-    } : fullQuality ? () => {} : undefined,
+    } : (level) => {
+      // A device-pixel view (a Scene Layer tab, a Pixel-Perfect 2D view) never writes the Engine-wide level.
+      if (!deviceView()) engine.setHardwareScalingLevel(level);
+    },
     targetFrameMs:
       options.frameCap && options.frameCap > 0
         ? 1000 / options.frameCap
@@ -945,7 +956,10 @@ function initializeEngine(
   fitWorldLayerCamera();
   if (options.nearestTextures !== undefined) setNearestTextures(engine, options.nearestTextures);
   // The Engine's other views (the editor's settings) switch it too: this view redraws with the new sampling.
-  const releaseNearestTextures = observeNearestTextures(engine, () => scheduler.invalidate("asset"));
+  const releaseNearestTextures = observeNearestTextures(engine, () => {
+    syncPixelMatchedCameras();
+    scheduler.invalidate("asset");
+  });
   onRollback(releaseNearestTextures);
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
@@ -1360,6 +1374,20 @@ function initializeEngine(
       })
     : null;
   onRollback(() => sceneLayerCompositor?.dispose());
+  /**
+   * Play's orthographic cameras are pixel-matched with Pixel-Perfect Mode and Nearest Texture Filtering
+   * (`pixel-matched-camera.ts`), over the same output in design pixels the Scene Layers fill, so world and layers agree.
+   */
+  const syncPixelMatchedCameras = () => {
+    if (!options.playMode) return;
+    const ppu = binding.pixelsPerUnit && binding.pixelsPerUnit > 0 ? binding.pixelsPerUnit : 100;
+    const lens = binding.pixelPerfect && nearestTexturesEnabled(engine)
+      ? { design: sceneLayerDesignResolution(playOutput), output: sceneLayerOutput(), pixelsPerUnit: ppu }
+      : null;
+    worldLayerCamera?.pixelMatch(lens);
+    setScenePixelMatchedLens(scene, lens);
+  };
+  syncPixelMatchedCameras();
   binding.sceneForSlot = (slotId) =>
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
   binding.isOverlaySlot = (slotId) =>
@@ -1810,7 +1838,6 @@ function initializeEngine(
   if (options.editor && editorSync) {
     ({ editor, debugOverlay, disposeInput, selectedActorIds } = createEditorViewportTools({
       canvas,
-      engine,
       scene,
       options,
       editorSync,
@@ -1823,6 +1850,19 @@ function initializeEngine(
       pointerCanvas,
       syncEditorOutlines,
       onRollback,
+      setDevicePixels: (enabled) => {
+        const next = enabled && registeredView !== null && !options.playMode;
+        if (next !== devicePixels) {
+          devicePixels = next;
+          // Back at the Engine's level: the one this view's quality last asked for.
+          if (!next && engine.getHardwareScalingLevel() !== scaling.getLevel()) engine.setHardwareScalingLevel(scaling.getLevel());
+          // A backbuffer floored from fractional device pixels is stretched by under a pixel: never smoothed.
+          if (canvas.style) canvas.style.imageRendering = next ? "pixelated" : "";
+          resize();
+        }
+        const css = cssCanvasPixelSize(canvas);
+        return { height: Math.max(1, Math.floor(css.height / viewLevel())), pixelRatio: 1 / viewLevel() };
+      },
     }));
     editorToolsRef.current = editor;
   }
@@ -1842,7 +1882,7 @@ function initializeEngine(
       rttPresent?.bind();
     } else if (registeredView) {
       // Babylon's own view resize divides by the Engine-wide level.
-      registeredView.customResize = fullQuality ? fullQualityResize : undefined;
+      registeredView.customResize = deviceView() ? fullQualityResize : undefined;
       const size = cssCanvasPixelSize(canvas);
       const scale = viewLevel();
       engine.setSize(Math.max(1, Math.floor(size.width / scale)), Math.max(1, Math.floor(size.height / scale)));
@@ -1869,6 +1909,7 @@ function initializeEngine(
     setSceneCameraLensExtent(scene, 1);
     refreshAuthoredCameraLenses(scene);
     fitWorldLayerCamera();
+    syncPixelMatchedCameras();
     notifyOverlayResize();
   };
 
@@ -1909,6 +1950,7 @@ function initializeEngine(
       setSceneCameraLensExtent(scene, playOutput ? pixelatedLensExtent(playOutput, lockedViewSize) : 1);
       refreshAuthoredCameraLenses(scene);
       fitWorldLayerCamera();
+      syncPixelMatchedCameras();
       notifyOverlayResize();
     };
 
@@ -2197,11 +2239,12 @@ function initializeEngine(
         const { quality, shadows, ...visual } = transaction.overrides;
         state.runtimeOverrides = visual;
         state.qualityOverrides = { ...quality, ...(shadows ? { shadows } : {}) };
-        setSceneRenderSettings(scene);
+        const output = transaction.settings.render;
+        // The session's output decides Upscaling Pixelated, which keeps FSR and anti-aliasing off.
+        setSceneRenderSettings(scene, { ...state.project, customResolution: output.customResolution, upscaling: output.upscaling });
         outlineHost.refreshSettings();
         applyRenderingQuality();
         scheduler.setFrameCap(transaction.settings.frameCap);
-        const output = transaction.settings.render;
         if (["width", "height", "customResolution", "blackBars", "upscaling"].some((key) => output[key as keyof RenderProjectSettings] !== appliedOutput[key as keyof RenderProjectSettings])) {
           const wasPixelated = pixelatedUpscaling(playOutput);
           playOutput = output;
@@ -2539,7 +2582,7 @@ function initializeEngine(
       // The scaling level is Engine-wide: only the sole rendering view drives
       // it, so sibling views on a shared Engine cannot ratchet it against
       // each other.
-      if (sole) scaling.noteFramePressure(lastPressureSample);
+      if (sole && !deviceView()) scaling.noteFramePressure(lastPressureSample);
       if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;
@@ -3675,6 +3718,11 @@ function initializeEngine(
       outlineHost.refreshSettings();
       applySerializedSceneEnvironment(scene, sceneData, { assets: binding });
       scheduler.invalidate("asset");
+    },
+    setPixelMatchedCameras: (lens) => {
+      if (options.playMode) return;
+      setScenePixelMatchedLens(scene, lens);
+      scheduler.invalidate("camera");
     },
     setRenderSettings: (settings) => {
       setSceneRenderSettings(scene, settings);

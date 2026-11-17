@@ -1181,7 +1181,7 @@ describe("Pixel Art Optimized projects", () => {
   it("import the Ark Pixel Fonts as pixel Fonts and make Ark Pixel 12px Proportional the default Font", async () => {
     const storage = new MemoryStorageAdapter("documents");
     const service = new ProjectService(storage);
-    const project = await service.createEmptyProject("PixelFonts", { kind: "2d", pixelArt: true });
+    const project = await service.createEmptyProject("PixelFonts", { kind: "2d", pixelArt: true, renderWidth: 640, renderHeight: 360 });
     const fonts = service.registry!.list({ type: "Font" }).map((asset) => ({
       guid: asset.header.guid,
       name: asset.header.name,
@@ -1198,6 +1198,11 @@ describe("Pixel Art Optimized projects", () => {
     expect(fonts.every((font) => font.path.startsWith("assets/Fonts/"))).toBe(true);
     const proportional = fonts.find((font) => font.family === "Ark Pixel 12px Proportional")!;
     expect(project.document.settings.fonts.defaultFontGuid).toBe(proportional.guid);
+    // The starter scene frames the 640 x 360 design resolution at one design pixel per texel.
+    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    expect(project.document.settings.render).toMatchObject({ width: 640, height: 360 });
+    expect(scene.settings.cameraBounds2D).toEqual({ width: 6.4, height: 3.6 });
+    expect(scene.actors.flatMap((actor) => actor.components).find((component) => component.classId === "CameraComponent")?.properties.orthographicSize).toBe(1.8);
     const stored = JSON.parse(await storage.readText(PROJECT_FILE)) as { settings: { fonts: { defaultFontGuid: string } } };
     expect(stored.settings.fonts.defaultFontGuid).toBe(proportional.guid);
   });

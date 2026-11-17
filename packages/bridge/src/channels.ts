@@ -245,6 +245,8 @@ export type ControlMessage =
       inputAssets?: import("@haptic/core").InputAssetDefinition[];
       focusNavigation?: import("@haptic/core").FocusNavigationSettings;
       pixelsPerUnit?: number;
+      /** Pixel-Perfect Mode with Nearest Texture Filtering: orthographic cameras are pixel-matched (`pixelMatchedView`). */
+      pixelMatchedCameras?: boolean;
       texturePixelSizes?: Record<string, { width: number; height: number }>;
       /** Authored scene document. When present, Play instantiates these actors. */
       scene?: SerializedScene;

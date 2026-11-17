@@ -85,6 +85,8 @@ export type ImportFileExtras = AssetImportControl & {
   attachToGuid?: string;
   /** Largest cube face for an `.hdr` panorama (128, 256 or 512). */
   hdrFaceSize?: number;
+  /** The project's Nearest Texture Filtering (`ImportOptions.nearestTextures`). */
+  nearestTextures?: boolean;
 };
 
 export async function importFile(
@@ -107,6 +109,7 @@ export async function importFile(
     sidecars: extras?.sidecars,
     attachToGuid: extras?.attachToGuid,
     hdrFaceSize: extras?.hdrFaceSize,
+    nearestTextures: extras?.nearestTextures,
     signal,
     onProgress: extras?.onProgress,
   };

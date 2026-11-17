@@ -695,10 +695,11 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     getCameraFieldOfView: (target) =>
       Number(cameraComponentOf(target)?.getVariable("fieldOfView") ?? 60),
     setCameraFieldOfView: (target, fov) => writeIllumination(target, cameraComponentOf(target), "fieldOfView", Number(fov)),
-    getCameraOrthographicSize: (target) =>
-      Number(
-        cameraComponentOf(target)?.getVariable("orthographicSize") ?? 5,
-      ),
+    // The view's half-height as drawn: with pixel-matched cameras, the whole ratio the authored size picks.
+    getCameraOrthographicSize: (target) => {
+      const size = Number(cameraComponentOf(target)?.getVariable("orthographicSize") ?? 5);
+      return services.cameraViewHalfHeight?.(size) ?? size;
+    },
     setCameraOrthographicSize: (target, size) => writeIllumination(target, cameraComponentOf(target), "orthographicSize", Number(size)),
     setLightEnabled: (target, enabled) => writeIllumination(target, lightComponentOf(target), "enabled", Boolean(enabled)),
     setLightColor: (target, color) => writeIllumination(target, lightComponentOf(target), "color", [

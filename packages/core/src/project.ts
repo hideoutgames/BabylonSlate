@@ -1,4 +1,5 @@
 import { normalizeAppIdentity, type AppIdentity } from "./app-identity";
+import { sceneLayerDesignResolution } from "./scene-layer-canvas";
 import { normalizeCollisionPresets, type CollisionPreset } from "./collision-presets";
 import { applyProjectQualityPatch, normalizeRenderingQuality, qualityPresetPatch, type RenderingQuality } from "./render-quality";
 import { lookAtRotation } from "./euler";
@@ -54,8 +55,8 @@ export interface TwoDProjectSettings {
   /** Texture pixels per world unit; the 2D authoring scale. */
   pixelsPerUnit: number;
   /**
-   * Derive the 2D editor view's orthographic bounds from the canvas pixel size
-   * and snap the game camera to the pixel grid.
+   * Draw the 2D editor view at device pixels with whole device pixels per
+   * texel, and snap the game camera to the pixel grid.
    */
   pixelPerfect: boolean;
   /**
@@ -632,6 +633,14 @@ export function nearestTextureFiltering(twoD: Pick<TwoDProjectSettings, "pixelPe
   return twoD.pixelPerfect && twoD.nearestTextures;
 }
 
+/**
+ * Whether orthographic game cameras are pixel-matched (`pixel-matched-camera.ts`): Pixel-Perfect Mode with Nearest
+ * Texture Filtering, the pixel-art look.
+ */
+export function pixelMatchedCameras(twoD: Pick<TwoDProjectSettings, "pixelPerfect" | "nearestTextures">): boolean {
+  return nearestTextureFiltering(twoD);
+}
+
 /** Trimmed, unique, non-empty sorting layer names in order; the defaults when none remain. */
 export function normalizeSortingLayers(value: unknown): string[] {
   if (!Array.isArray(value)) return [...DEFAULT_SORTING_LAYERS];
@@ -969,6 +978,24 @@ export function pixelArtProjectSettings(settings: ProjectSettings): ProjectSetti
   return { ...settings, render, twoD: { ...settings.twoD, pixelPerfect: true, nearestTextures: true } };
 }
 
+/** A new scene's game camera framing: its camera's Orthographic Size and its Layer Camera Width × Height. */
+export interface SceneCameraFraming {
+  orthographicSize: number;
+  cameraBounds2D: { width: number; height: number };
+}
+
+/**
+ * The framing new scenes take in a project with pixel-matched cameras (`pixelMatchedCameras`): the design resolution
+ * at one design pixel per texel (half its height in units, and its size in units), so a Pixel Art Optimized project
+ * starts pixel for pixel. Null in every other project, whose scenes keep the defaults.
+ */
+export function projectSceneCameraFraming(settings: Pick<ProjectSettings, "twoD" | "render">): SceneCameraFraming | null {
+  if (!pixelMatchedCameras(settings.twoD)) return null;
+  const design = sceneLayerDesignResolution(settings.render);
+  const ppu = settings.twoD.pixelsPerUnit > 0 ? settings.twoD.pixelsPerUnit : 100;
+  return { orthographicSize: design.height / ppu / 2, cameraBounds2D: { width: design.width / ppu, height: design.height / ppu } };
+}
+
 export function createEmptyProject(
   name: string,
   options?: {
@@ -1031,7 +1058,7 @@ function defaultEditorOrbitPosition(): [number, number, number] {
   ];
 }
 
-function createDefaultCameraActor(viewportMode: ViewportMode): SerializedActor {
+function createDefaultCameraActor(viewportMode: ViewportMode, orthographicSize = DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE): SerializedActor {
   const position: [number, number, number] =
     viewportMode === "2d"
       ? [0, 0, -DEFAULT_SCENE_CAMERA_RADIUS]
@@ -1048,7 +1075,7 @@ function createDefaultCameraActor(viewportMode: ViewportMode): SerializedActor {
         classId: "CameraComponent",
         properties: {
           fieldOfView: DEFAULT_CAMERA_FIELD_OF_VIEW,
-          orthographicSize: DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+          orthographicSize,
           projectionMode: viewportMode === "2d" ? "orthographic" : "perspective",
           nearClip: 0.1,
           farClip: 1000,
@@ -1068,10 +1095,12 @@ const DEFAULT_3D_ENVIRONMENT_COLOR: [number, number, number] = [
 /** The default sky's horizon (`engine-content/skybox`): far objects fade into the sky, not into grey. */
 const DEFAULT_3D_FOG_COLOR: [number, number, number] = [0.68, 0.77, 0.95];
 
+/** `framing` (`projectSceneCameraFraming`) replaces the default camera's Orthographic Size and Layer Camera bounds. */
 export function createDefaultScene(
   viewportMode: ViewportMode = "3d",
+  framing?: SceneCameraFraming | null,
 ): SerializedScene {
-  const camera = createDefaultCameraActor(viewportMode);
+  const camera = createDefaultCameraActor(viewportMode, framing?.orthographicSize);
   const actors =
     viewportMode === "2d"
       ? [camera]
@@ -1088,6 +1117,7 @@ export function createDefaultScene(
     viewportMode,
     settings: {
       ...createDefaultSceneSettings(viewportMode),
+      ...(framing ? { cameraBounds2D: { ...framing.cameraBounds2D } } : {}),
       ...(viewportMode === "3d"
         ? { environmentColor: DEFAULT_3D_ENVIRONMENT_COLOR, environmentSource: "skybox" as const, fogColor: DEFAULT_3D_FOG_COLOR }
         : {}),

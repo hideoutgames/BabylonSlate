@@ -93,6 +93,7 @@ import { DEFAULT_CAMERA_PREVIEW_FRAME_RATE } from "./editor-debug-overlay";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isSceneStaticMesh } from "./scene-static-meshes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
+import { setNearestTextures } from "./nearest-textures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
@@ -4800,6 +4801,59 @@ describe("Play createEngine view", () => {
     expect(sizes.at(-1)).toMatchObject({ outputWidth: 650, outputHeight: 400 });
   });
 
+  it("keeps FSR off while the session's output is Upscaling Pixelated, and follows a live output change", () => {
+    const effects = { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled: true, renderScale: 0.67, sharpness: 0.2 } };
+    const pixelated = { customResolution: true, width: 640, height: 360, blackBars: true, upscaling: "pixelated" as const, effects };
+    const upscale = (scene: Scene) => sceneRenderingSettings(scene).effectsPlan?.upscale != null;
+    const fixed = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), playMode: true, renderSettings: pixelated,
+    });
+    handles.push(fixed);
+    expect(upscale(fixed.scene)).toBe(false);
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, renderSettings: { ...pixelated, upscaling: "smooth" },
+    });
+    handles.push(handle);
+    expect(upscale(handle.scene)).toBe(true);
+    const output = (upscaling: "smooth" | "pixelated", revision: number): CommandMessage => ({
+      type: "setScalability",
+      transaction: { revision, settings: { render: normalizeRenderProjectSettings({ ...pixelated, upscaling }), frameCap: 60 }, overrides: {} },
+    });
+    // Transactions apply at the next frame boundary.
+    handle.applyCommand(output("pixelated", 1));
+    loop.mock.calls[0]![0]();
+    expect(upscale(handle.scene)).toBe(false);
+  });
+
+  it("pixel-matches orthographic cameras over the extended output with Pixel-Perfect Mode and Nearest Texture Filtering", () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, pixelsPerUnit: 100, pixelPerfect: true, nearestTextures: true,
+      renderSettings: { customResolution: true, width: 640, height: 360, blackBars: false, upscaling: "pixelated" },
+    });
+    handles.push(handle);
+    // A 21:9 window: the framebuffer extends the design size to 854 x 360 design pixels.
+    handle.setSize(854, 360);
+    const layerCamera = handle.scene.getCameraByName("playLayerCamera")!;
+    // The default 16 x 9 Layer Camera is nearest three texels per design pixel: 854 x 360 pixels show 25.62 x 10.8 units.
+    handle.applyCommand({ type: "sceneCamera", camera: { x: 0, y: 0, rotation: 0, zoom: 1 }, bounds: { width: 16, height: 9 } });
+    expect([layerCamera.orthoTop, layerCamera.orthoRight]).toEqual([expect.closeTo(5.4, 9), expect.closeTo(12.81, 9)]);
+    // Zoom 2.8 on a 6.4 x 3.6 frame rounds to three design pixels per texel.
+    handle.applyCommand({ type: "sceneCamera", camera: { x: 0, y: 0, rotation: 0, zoom: 2.8 }, bounds: { width: 6.4, height: 3.6 } });
+    expect([layerCamera.orthoTop, layerCamera.orthoRight]).toEqual([expect.closeTo(0.6, 9), expect.closeTo(854 / 600, 9)]);
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "cam", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null, camera: { projectionMode: "orthographic", orthographicSize: 1 } });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    const camera = handle.scene.activeCamera!;
+    // Orthographic Size 1 frames 2 of the design's 3.6 units: two design pixels per texel.
+    expect([camera.orthoTop, camera.orthoRight]).toEqual([expect.closeTo(0.9, 9), expect.closeTo(2.135, 9)]);
+    // Without Nearest Texture Filtering the authored size frames the view again.
+    setNearestTextures(engine, false);
+    expect(camera.orthoTop).toBeCloseTo(1, 9);
+  });
+
   it("views through the Scene's Layer Camera until a camera is possessed, and moves it on sceneCamera", () => {
     const { handle } = playHandle(sharedEngine());
     const layerCamera = handle.scene.getCameraByName("playLayerCamera");
@@ -6033,6 +6087,35 @@ describe("Play createEngine view", () => {
     handles.push(plain);
     plain.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
     expect(RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, plain.scene).anisotropicFilteringLevel).toBe(2);
+  });
+
+  it("draws a Pixel-Perfect 2D editor view at device pixels, at its own level, in whole device pixels per texel", () => {
+    const engine = sharedEngine();
+    // Engine Settings' level 1 maps CSS pixels to the backbuffer, as every editor view starts.
+    let hardwareScaling = 1;
+    vi.spyOn(engine, "getHardwareScalingLevel").mockImplementation(() => hardwareScaling);
+    vi.spyOn(engine, "setHardwareScalingLevel").mockImplementation((level) => { hardwareScaling = level; });
+    const setSize = vi.spyOn(engine, "setSize");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    Object.assign(canvas, { clientWidth: 400, clientHeight: 300, style: {}, ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
+    const handle = createEngine(canvas, { sharedEngine: engine, editor: true, viewportMode: "2d" });
+    handles.push(handle);
+    const view = () => engine.views!.find((entry) => entry.target === canvas)!;
+    handle.resize();
+    expect(setSize).toHaveBeenLastCalledWith(400, 300);
+    expect(view().customResize).toBeUndefined();
+    handle.editor!.setPixelPerfect({ pixelsPerUnit: 100 });
+    expect(setSize).toHaveBeenLastCalledWith(800, 600);
+    expect(view().customResize).toBeTypeOf("function");
+    expect(canvas.style.imageRendering).toBe("pixelated");
+    expect(hardwareScaling).toBe(1);
+    // One texel per CSS pixel is two device pixels: 600 rows show 3 world units.
+    expect(handle.editor!.camera.pixelsPerTexel()).toBe(2);
+    expect(handle.editor!.camera.orthoHalfHeight()).toBe(1.5);
+    handle.editor!.setPixelPerfect(null);
+    expect(setSize).toHaveBeenLastCalledWith(400, 300);
+    expect(view().customResize).toBeUndefined();
+    expect(canvas.style.imageRendering).toBe("");
   });
 
   it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {

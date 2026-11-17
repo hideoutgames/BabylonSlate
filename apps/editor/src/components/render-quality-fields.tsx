@@ -530,6 +530,11 @@ export function RenderQualityFields({
               </SelectGroup>
             </SelectContent>
           </Select>
+          {pixelatedUpscaling(settings) ? (
+            <FieldDescription data-testid="quality-antialiasing-pixelated">
+              Upscaling is Pixelated: the world draws without anti-aliasing.
+            </FieldDescription>
+          ) : null}
         </Field>
         {postProcessingEffects.map(({ field, label, hint }) => (
           <Field key={field} className="settings-field">

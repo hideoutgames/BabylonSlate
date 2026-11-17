@@ -106,6 +106,8 @@ export function buildNewAssetResult(options: {
   skeletonGuid?: string | null;
   /** A new Class's starting components (Create Actor), in place of its parent's defaults. */
   classComponents?: import("@haptic/core").SerializedComponent[];
+  /** A new Scene's camera framing (`projectSceneCameraFraming`): a Pixel Art Optimized project's design resolution. */
+  sceneCameraFraming?: import("@haptic/core").SceneCameraFraming | null;
 }): ImportResult {
   const { type, name, guid, parentClass } = options;
   if (type === "DataDefinition" || type === "DataTree") {
@@ -126,7 +128,7 @@ export function buildNewAssetResult(options: {
   }
 
   if (type === "Scene") {
-    const payload = createDefaultScene() as unknown as Record<string, unknown>;
+    const payload = createDefaultScene("3d", options.sceneCameraFraming) as unknown as Record<string, unknown>;
     payload.name = name;
     return {
       type: "Scene",

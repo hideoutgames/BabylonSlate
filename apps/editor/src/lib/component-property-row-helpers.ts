@@ -44,6 +44,8 @@ export type ComponentPropertyContext = {
   areaEmissionStatus?: (guid: string) => string | undefined;
   /** The project's custom easing curves (`class:<ClassId>`), which curve rows list after the built-in curves. */
   customEasingCurves?: readonly CustomEasingCurveRef[];
+  /** The project's pixel-matched camera framing (`projectPixelMatchedLens`): Orthographic Size says what it resolves to. */
+  pixelMatchedCamera?: import("./pixel-matched-camera-status").PixelMatchedCameraLens | null;
 };
 
 export function rowId(actorId: string, componentId: string, key: string): string {

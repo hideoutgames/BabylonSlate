@@ -1,5 +1,5 @@
 import { VIEW_BLEND_CAMERA_NAME } from "./view-blend";
-import type { Camera } from "@babylonjs/core/Cameras/camera";
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import type { Light } from "@babylonjs/core/Lights/light";
 import { Quaternion, Vector3, type Matrix } from "@babylonjs/core/Maths/math.vector";
@@ -11,6 +11,7 @@ import {
   AUTHORED_LIGHT_PREFIX,
   applyAuthoredCameraProperties,
   createPlayLight,
+  scenePixelMatchedLens,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredLightProperties,
@@ -215,8 +216,19 @@ export function snapPlayCameraToPixelGrid(
       ? binding.pixelsPerUnit
       : 100;
   const { x, y } = camera.position;
-  const snappedX = snapToPixelGrid(x, ppu);
-  const snappedY = snapToPixelGrid(y, ppu);
+  const matched = scenePixelMatchedLens(scene);
+  const top = camera.orthoTop, bottom = camera.orthoBottom, left = camera.orthoLeft;
+  let snappedX: number, snappedY: number;
+  if (matched?.output && camera.mode === Camera.ORTHOGRAPHIC_CAMERA && top !== null && bottom !== null && left !== null && matched.output.height > 0) {
+    // Pixel-matched: the view's left and bottom edges sit on the design-pixel grid (or the texel grid, zoomed out),
+    // so texel edges fall between pixels even when the output is an odd number of pixels across.
+    const grid = Math.min((top - bottom) / matched.output.height, 1 / ppu);
+    snappedX = Math.round((x + left) / grid) * grid - left;
+    snappedY = Math.round((y + bottom) / grid) * grid - bottom;
+  } else {
+    snappedX = snapToPixelGrid(x, ppu);
+    snappedY = snapToPixelGrid(y, ppu);
+  }
   camera.position.x = snappedX;
   camera.position.y = snappedY;
   // The snap moved the camera off its written pose; an unchanged pose must be rewritten.

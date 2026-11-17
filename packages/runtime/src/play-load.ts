@@ -27,6 +27,7 @@ export function runtimeOptionsFromLoadControl(
   | "renderSettings"
   | "focusNavigation"
   | "pixelsPerUnit"
+  | "pixelMatchedCameras"
   | "texturePixelSizes"
   | "project"
   | "environment"
@@ -116,6 +117,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.extensionLibraries?.length ? { extensionLibraries: msg.extensionLibraries } : {}),
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,
+    ...(msg.pixelMatchedCameras ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: msg.texturePixelSizes,
     ...(msg.materialParameterCatalog !== undefined ? { materialParameterCatalog: msg.materialParameterCatalog } : {}),
     ...(msg.particleParameterCatalog !== undefined ? { particleParameterCatalog: msg.particleParameterCatalog } : {}),

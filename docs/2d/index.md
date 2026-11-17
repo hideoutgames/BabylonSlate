@@ -36,13 +36,19 @@ Each Sprite and Tilemap has a **Shading Mode**:
 | Setting | Description |
 | --- | --- |
 | Pixels Per Unit | Texture pixels per world unit. Default 100, so a 100-pixel tile is one unit wide. Sizes tilemaps and 2D text; each Sprite has its own value. |
-| Pixel-Perfect Mode | Frames the 2D editor view 1:1. Play and exported games snap the game camera to the pixel grid. |
+| Pixel-Perfect Mode | Draws the 2D editor view at your screen's own pixels, with every texture pixel on whole screen pixels. Play and exported games snap the game camera to the pixel grid. |
 | Nearest Texture Filtering | Samples every Material texture with nearest-neighbour filtering, in 3D too. Only available while **Pixel-Perfect Mode** is on. |
 | Sorting Layers | Named draw layers, ordered back to front. Default **Background**, **Default**, **Foreground** and **UI**. |
 
 Sprites, tiles and 2D images always sample their textures with nearest-neighbour filtering, so pixel art stays crisp. Materials blend neighbouring texels unless a [Texture Sample](../scripting/material/texture-sample.md)'s **Filter** is **Nearest**.
 
 To give a whole project the pixel-art look, turn on **Pixel-Perfect Mode** and then **Nearest Texture Filtering**. Every Material texture then draws each texel as a hard-edged square, on 3D models as well, in the editor, Play and exported games. The change shows at once, so you can compare both looks and turn it off again.
+
+While **Nearest Texture Filtering** is on, images you import get the **Pixel Art** usage unless their file name names another one (such as a normal map or a LUT). Pixel Art textures keep their exact source pixels: they are never compressed or scaled down. You can change the usage in the Texture's **Inspector**. See [Importing Assets](../editor/importing.md).
+
+### The 2D editor view with Pixel-Perfect Mode
+
+While **Pixel-Perfect Mode** is on, the **Scene** viewport in 2D draws at your screen's own pixels, as a [Scene Layer](../scenes/scene-layers.md) tab does, so the browser never smooths it. At the start one texture pixel covers one screen pixel at your display scale (two on a high-density screen). Pinch and the mouse wheel zoom smoothly. When the zoom comes close to a whole size (each texture pixel covering 1, 2, 3 or more screen pixels, or zoomed out each screen pixel showing 2, 3 or more texture pixels), the view settles on it and every texture pixel is the same size; keep zooming to move on. Between those sizes texture pixels can differ by one screen pixel, but they stay sharp. With **Pixel-Perfect Mode** off, or in 3D, the viewport draws as before.
 
 ## Draw order
 
@@ -59,6 +65,10 @@ Sprite, Tilemap layers and Particle components each have a **Sorting Layer** and
 A 2D game can look through the scene's **Layer Camera**: set **Default Camera** to **None** in **Scene Settings**, then set **Layer Camera Location**, **Layer Camera Width** and **Layer Camera Height**. Scripts move, turn and zoom it through [Get Scene Camera Manager](../scripting/class/get-scene-camera-manager.md) and **Get Layer Camera**.
 
 A camera actor works too. The camera in a new 2D scene is the Default Camera and is already orthographic; **Orthographic Size** is half the view height in world units (default 5). See [Cameras](../graphics/cameras.md).
+
+With **Pixel-Perfect Mode** and **Nearest Texture Filtering** on, Play pixel-matches these cameras: **Pixels Per Unit** fixes the scale, the size or zoom picks a whole number of design pixels per texture pixel, and a window wider or taller than the design resolution shows more of the scene instead of stretching it. See [Pixel-matched cameras](../graphics/cameras.md#pixel-matched-cameras).
+
+In such a project, new scenes start framing the design resolution at one design pixel per texel: **Orthographic Size** is half the design height in units and the Layer Camera's **Width** and **Height** are the design size in units. A Camera component you add later starts at **Orthographic Size** 5; its **Inspector** row shows the pixel scale that picks, so set it to half the design height in units for one pixel per texel.
 
 ## 2D physics
 

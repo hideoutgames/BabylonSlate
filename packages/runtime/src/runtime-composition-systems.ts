@@ -150,6 +150,7 @@ export function createBehaviourTrees(rt: RuntimeComposition): BehaviourTreeRunti
 export function createCamera(rt: RuntimeComposition, options: RuntimeDriverOptions): RuntimeCamera {
   return new RuntimeCamera({
     traceDebugDraw: options.traceDebugDraw,
+    pixelMatchedCameras: options.pixelMatchedCameras === true,
     world: () => rt.world,
     playScene: () => rt.playScene,
     frameId: () => rt.frameId,

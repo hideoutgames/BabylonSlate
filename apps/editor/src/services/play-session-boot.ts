@@ -150,6 +150,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
     pixelsPerUnit: options.pixelsPerUnit,
+    pixelMatchedCameras: options.pixelMatchedCameras,
     collisionPresets: options.collisionPresets,
     texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
     audioAssetGuids: options.audioAssetGuids ?? [...(options.audioLibrary?.audio.keys() ?? [])],
