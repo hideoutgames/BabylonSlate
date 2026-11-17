@@ -49,6 +49,8 @@ export interface CreateRepositoryInput {
  * repository and branch pickers, Publish and Release Pushed Locks.
  */
 export interface HostApi {
+  /** Who the credential signs in as (its login or username): one request, so a refused or expired sign-in shows. */
+  user(): Promise<HostApiResult<string>>;
   repositories(): Promise<HostApiResult<HostRepository[]>>;
   /**
    * The signed-in user first, then their organizations (GitLab: groups they
@@ -218,16 +220,22 @@ function gitHubRepository(entry: Json): HostRepository | null {
 
 function gitHubApi(source: CredentialSource, http: HttpClient): HostApi {
   const get = client(source, http, "application/vnd.github+json");
+  const user = async (): Promise<HostApiResult<string>> => {
+    const body = objectOf(await get(`${GITHUB_API_ORIGIN}/user`));
+    if (!isOk(body)) return body;
+    const login = str(body.value, "login");
+    return login ? ok(login) : err({ kind: "http", message: "Invalid host response" });
+  };
   const repo = (path: string) => `${GITHUB_API_ORIGIN}/repos/${path.split("/").map(encodeURIComponent).join("/")}`;
   const branches = (path: string) =>
     paged(get, (page) => `${repo(path)}/branches?per_page=${PAGE_SIZE}&page=${page}`, (entry) => str(entry, "name") || null, MAX_LIST_PAGES);
   return {
     repositories: () => paged(get, (page) => `${GITHUB_API_ORIGIN}/user/repos?per_page=${PAGE_SIZE}&sort=updated&page=${page}`, gitHubRepository, MAX_LIST_PAGES),
+    user,
     async owners() {
-      const user = objectOf(await get(`${GITHUB_API_ORIGIN}/user`));
-      if (!isOk(user)) return user;
-      const login = str(user.value, "login");
-      if (!login) return err({ kind: "http", message: "Invalid host response" });
+      const signedIn = await user();
+      if (!isOk(signedIn)) return signedIn;
+      const login = signedIn.value;
       const organizations = await paged(get, (page) => `${GITHUB_API_ORIGIN}/user/orgs?per_page=${PAGE_SIZE}&page=${page}`, (entry) => {
         const name = str(entry, "login");
         return name ? { name, kind: "organization" as const, id: "" } : null;
@@ -283,13 +291,19 @@ function gitLabApi(credential: HostCredential, source: CredentialSource, http: H
   };
   const branches = (path: string) =>
     paged(get, (page) => `${project(path)}/repository/branches?per_page=${PAGE_SIZE}&page=${page}`, (entry) => str(entry, "name") || null, MAX_LIST_PAGES);
+  const user = async (): Promise<HostApiResult<string>> => {
+    const body = objectOf(await get(`${base}/user`));
+    if (!isOk(body)) return body;
+    const username = str(body.value, "username");
+    return username ? ok(username) : err({ kind: "http", message: "Invalid host response" });
+  };
   return {
     repositories: () => paged(get, (page) => `${base}/projects?membership=true&order_by=last_activity_at&per_page=${PAGE_SIZE}&page=${page}`, repository, MAX_LIST_PAGES),
+    user,
     async owners() {
-      const user = objectOf(await get(`${base}/user`));
-      if (!isOk(user)) return user;
-      const username = str(user.value, "username");
-      if (!username) return err({ kind: "http", message: "Invalid host response" });
+      const signedIn = await user();
+      if (!isOk(signedIn)) return signedIn;
+      const username = signedIn.value;
       const groups = await paged(get, (page) => `${base}/groups?min_access_level=${GITLAB_DEVELOPER_ACCESS}&per_page=${PAGE_SIZE}&page=${page}`, (entry) => {
         const name = str(entry, "full_path");
         const id = typeof entry.id === "number" || typeof entry.id === "string" ? String(entry.id) : "";

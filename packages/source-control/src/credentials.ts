@@ -83,6 +83,8 @@ export interface CredentialSource {
   current(): Promise<HostCredential | null>;
   /** A replacement for `refused` after a 401, or null when there is none. */
   renew(refused: HostCredential): Promise<HostCredential | null>;
+  /** The host refused `credential` with a 401 that renewal could not answer: it no longer works. */
+  refused?(credential: HostCredential): void;
 }
 
 /** A credential that is never renewed, such as one just returned by sign-in. */
@@ -118,9 +120,12 @@ export function authorizedHttp<
         headers: { ...request.headers, Authorization: authorization(credential, scheme) },
         disableRedirects: true,
       });
-      if (response.status !== 401 || attempt > 0) return response;
-      const renewed = await source.renew(credential);
-      if (!renewed || renewed.token === credential.token) return response;
+      if (response.status !== 401) return response;
+      const renewed = attempt === 0 ? await source.renew(credential) : null;
+      if (!renewed || renewed.token === credential.token) {
+        source.refused?.(credential);
+        return response;
+      }
       credential = renewed;
     }
   };

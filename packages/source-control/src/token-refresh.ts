@@ -15,6 +15,8 @@ export interface RefreshingCredentialsOptions {
   clientId: (kind: CredentialKind) => string | null;
   /** After a refresh replaced or removed a credential. */
   onChange?: () => void;
+  /** The host refused a credential of `origin` that no refresh replaced (`CredentialSource.refused`). */
+  onRefused?: (origin: string, credential: HostCredential) => void;
 }
 
 interface RefreshedToken {
@@ -48,6 +50,7 @@ export class RefreshingCredentials {
     return {
       current: () => this.current(origin),
       renew: (refused) => this.refresh(origin, refused),
+      refused: (credential) => this.options.onRefused?.(origin, credential),
     };
   }
 

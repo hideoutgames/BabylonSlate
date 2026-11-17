@@ -62,6 +62,8 @@ export class FakeGitHost {
   interval = 0;
   /** Seconds a GitLab token lasts; GitLab grants come with a refresh token. */
   gitlabExpiresIn = 7200;
+  /** Seconds a GitHub token lasts, as a GitHub App with expiring user tokens grants them; null as an OAuth App's never expire. */
+  githubExpiresIn: number | null = null;
   /** Tokens the host now refuses with 401, as an expired or revoked token. */
   readonly refusedTokens = new Set<string>();
   /** GitLab refresh tokens still valid; each refresh spends its token and issues the next. */
@@ -90,7 +92,11 @@ export class FakeGitHost {
         if (error) return json(url.hostname === "gitlab.com" ? 400 : 200, { error });
         return url.hostname === "gitlab.com"
           ? this.gitlabGrant("fake-gitlab-token")
-          : json(200, { access_token: "fake-github-token", token_type: "bearer" });
+          : json(200, {
+            access_token: "fake-github-token",
+            token_type: "bearer",
+            ...(this.githubExpiresIn === null ? {} : { expires_in: this.githubExpiresIn, refresh_token: "fake-github-refresh" }),
+          });
       }
     }
     const token = request.headers.Authorization?.replace(/^Bearer /, "") ?? "";

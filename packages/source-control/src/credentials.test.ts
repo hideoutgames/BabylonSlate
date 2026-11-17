@@ -138,6 +138,27 @@ describe("authorizedHttp", () => {
     ]);
   });
 
+  it("reports a credential the host refused with a 401 that renewal could not answer, and only then", async () => {
+    const refused: string[] = [];
+    let status = 401;
+    const http = async () => ({ status, bodyText: "{}" });
+    const source = (renewed: HostCredential | null) => ({
+      current: async () => GITHUB,
+      renew: async () => renewed,
+      refused: (credential: HostCredential) => void refused.push(credential.token),
+    });
+    const request = { method: "GET", url: "https://github.com/org/repo.git/info/refs", headers: {} };
+    // No replacement: the one sent is refused.
+    expect((await authorizedHttp(source(null), http, "basic")(request)).status).toBe(401);
+    // A replacement the host refuses too: that one is.
+    expect((await authorizedHttp(source({ ...GITHUB, token: "gho_2" }), http, "basic")(request)).status).toBe(401);
+    status = 200;
+    await authorizedHttp(source(null), http, "basic")(request);
+    status = 403;
+    await authorizedHttp(source(null), http, "basic")(request);
+    expect(refused).toEqual(["gho_1", "gho_2"]);
+  });
+
   it("never sends a token to another origin; only github.com also reaches api.github.com", async () => {
     const { requests, http } = recorder();
     const gitea = tokenCredential("https://gitea.example.com", "t", "token");

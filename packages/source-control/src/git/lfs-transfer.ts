@@ -271,7 +271,7 @@ export class LfsTransfer {
           hash_algo: "sha256",
         }),
       });
-      if (response.status !== 200) throw statusError(response.status, "The LFS batch request");
+      if (response.status !== 200) throw statusError(response.status, "The LFS batch request", "lfs", true);
       const entries = parseBatch(response.bodyText);
       if (!entries) throw new SyncError("lfs", "The LFS server sent an unreadable batch response.");
       const wanted = new Set(chunk.map((object) => object.oid));
