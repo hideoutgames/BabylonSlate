@@ -45,12 +45,21 @@ The Layer Camera is an orthographic camera that looks along +Z at the scene's XY
 | Setting | Default | Description |
 | --- | --- | --- |
 | **Layer Camera Location** | 0, 0 | The point at the centre of the view when the scene starts. |
-| **Layer Camera Width**, **Layer Camera Height** | 16, 9 | The area the view frames, in world units. |
+| **Layer Camera Width**, **Layer Camera Height** | 16, 9 | The area the view frames, in world units. With [pixel-matched cameras](#pixel-matched-cameras), they pick the nearest whole pixel scale instead. |
 
 - The view keeps the whole Width × Height in view: on a wider or taller screen it shows more around it, never stretching it.
 - It draws content up to 500 units in front of and behind the XY plane.
 - In the 2D viewport, an orange outline shows the Layer Camera's view, centred on **Layer Camera Location**. It is hidden while the scene starts on a Default Camera actor.
 - Scripts can move, turn and zoom it. Each time the scene loads it starts again at **Layer Camera Location**, unturned, at zoom 1.
+
+## Pixel-matched cameras
+
+With **Pixel-Perfect Mode** and **Nearest Texture Filtering** both on (**Project Settings > Game > 2D**), as in a **Pixel Art Optimized** project, every orthographic camera in Play is pixel-matched: one texture pixel always covers a whole number of design pixels, so pixel art never shows uneven texels. Perspective cameras, and projects without both settings, are unchanged.
+
+- **Pixels Per Unit** sets the scale. At one design pixel per texel, a 640 × 360 design at 100 Pixels Per Unit shows 6.4 × 3.6 units.
+- **Orthographic Size**, or the Layer Camera's **Width × Height** and zoom, only pick the whole step nearest to what they would frame over the design resolution: 2, 3 or more design pixels per texel zoomed in, or 2, 3 or more texels per design pixel zoomed out. Scripts that change the size or zoom move in these steps.
+- The view is never stretched. With **Black Bars** it shows exactly the design resolution. Without them, on a wider window (such as 21:9) the view is wider than the design resolution, and on a taller one (such as 4:3) it is taller: the design area stays centred at the same scale and you see more of the scene on the extra sides, as [Scene Layers](../scenes/scene-layers.md) do. **Pixelated** upscaling extends by whole game pixels; **Smooth** keeps the design height or width and widens the other side to the window's shape.
+- The **Inspector** shows what **Orthographic Size** and **Layer Camera Height** resolve to. The 2D viewport's orange outline, camera previews and [Get Orthographic Size](../scripting/class/get-orthographic-size.md) use the same framing, and so do Project Cursor To Scene and Project Touch To Scene.
 
 ## Preview the game camera
 

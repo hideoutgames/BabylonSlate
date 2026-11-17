@@ -66,6 +66,8 @@ A 2D game can look through the scene's **Layer Camera**: set **Default Camera** 
 
 A camera actor works too. The camera in a new 2D scene is the Default Camera and is already orthographic; **Orthographic Size** is half the view height in world units (default 5). See [Cameras](../graphics/cameras.md).
 
+With **Pixel-Perfect Mode** and **Nearest Texture Filtering** on, Play pixel-matches these cameras: **Pixels Per Unit** fixes the scale, the size or zoom picks a whole number of design pixels per texture pixel, and a window wider or taller than the design resolution shows more of the scene instead of stretching it. See [Pixel-matched cameras](../graphics/cameras.md#pixel-matched-cameras).
+
 ## 2D physics
 
 A scene with **Physics World** set to **2D (Rapier)** simulates on the X/Y plane. Use a [Rigid Body](../components/rigid-body.md) and a [Collider](../components/collider.md) with a 2D shape (box2d, circle or capsule2d); a sprite's collision box can size a box2d Collider for you. Tilemap layers with **Collision** on become solid ground with no extra components. In 2D, physics nodes such as [Line Trace](../scripting/class/line-trace.md) use the X and Y of their vectors.

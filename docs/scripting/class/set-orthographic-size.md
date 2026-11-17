@@ -24,3 +24,4 @@ Sets half the height of an orthographic camera's view, in world units.
 
 - A larger size shows more of the scene. The width follows the aspect ratio of the view.
 - Only orthographic cameras use this value. Perspective cameras use their field of view.
+- With [pixel-matched cameras](../../graphics/cameras.md#pixel-matched-cameras), the view moves to the whole pixel scale nearest the size.
