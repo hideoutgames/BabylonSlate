@@ -708,19 +708,23 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
   }
 
   applySceneLayerResize(
-    frustumWidth: number,
-    frustumHeight: number,
+    outputWidth: number,
+    outputHeight: number,
     canvasWidth?: number,
     canvasHeight?: number,
     safeAreaInsets?: Partial<OverlaySafeAreaInsets>,
   ): void {
-    this.overlay.resize(frustumWidth, frustumHeight, canvasWidth, canvasHeight, safeAreaInsets);
+    this.overlay.resize(outputWidth, outputHeight, canvasWidth, canvasHeight, safeAreaInsets);
     // Two-finger drags are measured in the view's shorter side.
     if (canvasWidth !== undefined && canvasHeight !== undefined) this.resolver.setViewSize(canvasWidth, canvasHeight);
   }
 
   applySceneLayerFocusNavigate(reverse: boolean): void {
     this.overlay.focusNavigate(reverse);
+  }
+
+  applySceneLayerView(layerId: string, view: { width: number; height: number; center: readonly [number, number] }): void {
+    this.overlay.setMeasuredView(layerId, view);
   }
 
   applyDebugObserve(target: DebugObserveTarget | null, instanceId: string | null): void {

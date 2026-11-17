@@ -6,7 +6,6 @@ import {
   normalizeScene,
   normalizeSceneLayerSpawnList,
   normalizeScenePostProcessStack,
-  type SceneCameraBounds2D,
   type SceneLayerSpawnEntry,
   type ScenePostProcessEntry,
   type SerializedActor,
@@ -15,98 +14,51 @@ import {
 } from "./scene";
 import { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 import { DEFAULT_LAYER_CAMERA_STATE, type LayerCameraState } from "./layer-camera";
+import {
+  SCENE_LAYER_ANCHOR_ORIGIN,
+  createDefaultSceneLayerCanvasDesign,
+  normalizeSceneLayerCanvasDesign,
+  normalizeSceneLayerFrameDesign,
+  sceneLayerCanvasRect,
+  sceneLayerFitToAspect,
+  type SceneLayerAnchor,
+  type SceneLayerCanvasContext,
+  type SceneLayerCanvasDesign,
+  type SceneLayerContentBounds,
+  type SceneLayerFrameDesign,
+  type SceneLayerRect,
+} from "./scene-layer-canvas";
 
 export { normalizeSceneLayerSpawnList, type SceneLayerSpawnEntry };
 export { SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS } from "./engine-components";
 
-export const SCENE_LAYER_ANCHORS = [
-  "topLeft",
-  "topCenter",
-  "topRight",
-  "centerLeft",
-  "center",
-  "centerRight",
-  "bottomLeft",
-  "bottomCenter",
-  "bottomRight",
-] as const;
+export {
+  SCENE_LAYER_ANCHORS,
+  SCENE_LAYER_ANCHOR_LABELS,
+  parseSceneLayerAnchor,
+  type SceneLayerAnchor,
+} from "./scene-layer-canvas";
 
-export type SceneLayerAnchor = (typeof SCENE_LAYER_ANCHORS)[number];
-
-/**
- * How the SceneLayerActor Prefab sizes its orange frame: the default Scene
- * Layer canvas, the bounds of the content, or an authored pixel size.
- */
-export const SCENE_LAYER_ACTOR_SIZE_MODES = ["fullscreen", "desired", "custom"] as const;
-export type SceneLayerActorSizeMode = (typeof SCENE_LAYER_ACTOR_SIZE_MODES)[number];
-
-/** Editor-only SceneLayerActor Prefab frame, saved with the Class. */
-export interface SceneLayerActorDesign {
-  sizeMode: SceneLayerActorSizeMode;
-  /** Frame size in pixels for `custom`. */
-  customSizePx: { width: number; height: number };
-  /** Frame point that sits on the Prefab Root. */
-  rootAnchor: SceneLayerAnchor;
-}
-
-const SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX = { width: 400, height: 300 } as const;
+/** Editor-only SceneLayerActor Prefab frame, saved with the Class (`SerializedGraph.overlayDesign`). */
+export type SceneLayerActorDesign = SceneLayerFrameDesign;
 
 export function normalizeSceneLayerActorDesign(value: unknown): SceneLayerActorDesign {
-  const source = (value ?? {}) as Record<string, unknown>;
-  const size = (source.customSizePx ?? {}) as Record<string, unknown>;
-  const positive = (entry: unknown, fallback: number) =>
-    typeof entry === "number" && Number.isFinite(entry) && entry > 0 ? entry : fallback;
-  return {
-    sizeMode: (SCENE_LAYER_ACTOR_SIZE_MODES as readonly unknown[]).includes(source.sizeMode)
-      ? source.sizeMode as SceneLayerActorSizeMode
-      : "fullscreen",
-    customSizePx: {
-      width: positive(size.width, SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX.width),
-      height: positive(size.height, SCENE_LAYER_ACTOR_DEFAULT_CUSTOM_SIZE_PX.height),
-    },
-    rootAnchor: (SCENE_LAYER_ANCHORS as readonly unknown[]).includes(source.rootAnchor)
-      ? source.rootAnchor as SceneLayerAnchor
-      : "topRight",
-  };
+  return normalizeSceneLayerFrameDesign(value);
 }
 
 /**
- * The SceneLayerActor Prefab's orange frame in layer units: the default Scene
- * Layer canvas (Fullscreen) or `customSizePx` (Custom), hanging from the
- * Prefab Root at `rootAnchor`; or the content bounds wherever they are
- * (Desired, null without content).
+ * The SceneLayerActor Prefab's orange frame in layer units, by the same rule
+ * as a Scene Layer's canvas (`sceneLayerCanvasRect`): Fullscreen is the design
+ * resolution and Custom `customSizePx`, both over Pixels Per Unit and hanging
+ * from the Prefab Root at `rootAnchor`; Desired is the content bounds wherever
+ * they are (null without content).
  */
 export function sceneLayerActorFrameBounds(
   design: SceneLayerActorDesign,
-  pixelsPerUnit: number,
-  contentBounds: { minX: number; minY: number; maxX: number; maxY: number } | null,
-): { width: number; height: number; center: [number, number] } | null {
-  if (design.sizeMode === "desired") {
-    if (!contentBounds) return null;
-    return {
-      width: Math.max(contentBounds.maxX - contentBounds.minX, 1e-3),
-      height: Math.max(contentBounds.maxY - contentBounds.minY, 1e-3),
-      center: [(contentBounds.minX + contentBounds.maxX) / 2, (contentBounds.minY + contentBounds.maxY) / 2],
-    };
-  }
-  const { width, height } = design.sizeMode === "custom"
-    ? { width: design.customSizePx.width / pixelsPerUnit, height: design.customSizePx.height / pixelsPerUnit }
-    : SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
-  return { width, height, center: sceneLayerAnchoredFrameCenter(design.rootAnchor, width, height) };
-}
-
-/**
- * Centre of a `width` × `height` frame whose `anchor` point sits on the
- * origin (+X right, +Y up).
- */
-function sceneLayerAnchoredFrameCenter(
-  anchor: SceneLayerAnchor,
-  width: number,
-  height: number,
-): [number, number] {
-  const [x, y] = ANCHOR_ORIGIN[anchor];
-  // `+ 0` keeps a centred axis at 0 rather than -0.
-  return [(-x * width) / 2 + 0, (-y * height) / 2 + 0];
+  context: SceneLayerCanvasContext,
+  contentBounds: SceneLayerContentBounds | null,
+): SceneLayerRect | null {
+  return sceneLayerCanvasRect(design, context, contentBounds);
 }
 
 export const SCENE_LAYER_HIT_TESTS = [
@@ -121,9 +73,9 @@ export interface SceneLayerSettings {
   gravity: [number, number, number];
   fixedTimestepMs: number;
   postProcessStack: ScenePostProcessEntry[];
-  /** Orange editor outline / 2DAnchor design canvas. Default 32×18. */
-  layerBounds: SceneCameraBounds2D;
-  /** Where each instance's Layer Camera starts, and the centre of the orange outline. Default (0, 0). */
+  /** The design canvas (`sceneLayerCanvasRect`) and how Play scales it (`sceneLayerView`). Default Fullscreen, Root Center, Fit To Screen. */
+  canvas: SceneLayerCanvasDesign;
+  /** Where each instance's Layer Camera starts: its offset from the view the canvas sets. Default (0, 0). */
   cameraLocation: [number, number];
   /**
    * Each instance simulates in its own 2D physics world with `gravity`. Off
@@ -178,18 +130,13 @@ export function isSceneLayer3DActor(actor: {
   );
 }
 
-export const SCENE_LAYER_DEFAULT_LAYER_BOUNDS: SceneCameraBounds2D = {
-  width: 32,
-  height: 18,
-};
-
 export function createDefaultSceneLayerSettings(): SceneLayerSettings {
   const defaults = createDefaultSceneSettings("2d");
   return {
     gravity: [...defaults.gravity] as [number, number, number],
     fixedTimestepMs: defaults.fixedTimestepMs,
     postProcessStack: [],
-    layerBounds: { ...SCENE_LAYER_DEFAULT_LAYER_BOUNDS },
+    canvas: createDefaultSceneLayerCanvasDesign(),
     cameraLocation: [0, 0],
     physicsEnabled: false,
     tickOnPause: false,
@@ -215,20 +162,6 @@ function stripDeniedComponents(actor: SerializedActor): SerializedActor {
   };
 }
 
-function normalizeLayerBounds(value: unknown): SceneCameraBounds2D {
-  const source = (value ?? {}) as Record<string, unknown>;
-  return {
-    width:
-      typeof source.width === "number" && source.width > 0
-        ? source.width
-        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width,
-    height:
-      typeof source.height === "number" && source.height > 0
-        ? source.height
-        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
-  };
-}
-
 export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
   const source = (value ?? {}) as Record<string, unknown>;
   const scene = normalizeScene({
@@ -237,7 +170,6 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
   });
   const sourceSettings =
     (source.settings as Record<string, unknown> | undefined) ?? {};
-  const layerBounds = normalizeLayerBounds(sourceSettings.layerBounds);
   return {
     name: typeof source.name === "string" ? source.name : scene.name,
     settings: {
@@ -246,7 +178,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
       postProcessStack: normalizeScenePostProcessStack(
         sourceSettings.postProcessStack ?? scene.settings.postProcessStack,
       ),
-      layerBounds,
+      canvas: normalizeSceneLayerCanvasDesign(sourceSettings.canvas),
       cameraLocation: normalizeCameraLocation2D(sourceSettings.cameraLocation),
       physicsEnabled: sourceSettings.physicsEnabled === true,
       tickOnPause: sourceSettings.tickOnPause === true,
@@ -258,12 +190,6 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
   };
 }
 
-export function parseSceneLayerAnchor(value: unknown): SceneLayerAnchor {
-  return SCENE_LAYER_ANCHORS.includes(value as SceneLayerAnchor)
-    ? (value as SceneLayerAnchor)
-    : "center";
-}
-
 export function parseSceneLayerHitTest(
   value: unknown,
   fallback: SceneLayerHitTest = "ignore",
@@ -272,35 +198,6 @@ export function parseSceneLayerHitTest(
     ? (value as SceneLayerHitTest)
     : fallback;
 }
-
-/** Ortho half-height used by Play overlay cameras (frustum height 9). */
-const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
-const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
-  SCENE_LAYER_ORTHO_HALF_HEIGHT * 2;
-
-const ANCHOR_ORIGIN: Record<SceneLayerAnchor, readonly [number, number]> = {
-  topLeft: [-1, 1],
-  topCenter: [0, 1],
-  topRight: [1, 1],
-  centerLeft: [-1, 0],
-  center: [0, 0],
-  centerRight: [1, 0],
-  bottomLeft: [-1, -1],
-  bottomCenter: [0, -1],
-  bottomRight: [1, -1],
-};
-
-export const SCENE_LAYER_ANCHOR_LABELS: Record<SceneLayerAnchor, string> = {
-  topLeft: "Top Left",
-  topCenter: "Top Center",
-  topRight: "Top Right",
-  centerLeft: "Center Left",
-  center: "Center",
-  centerRight: "Center Right",
-  bottomLeft: "Bottom Left",
-  bottomCenter: "Bottom Center",
-  bottomRight: "Bottom Right",
-};
 
 export const SCENE_LAYER_HIT_TEST_LABELS: Record<SceneLayerHitTest, string> = {
   ignore: "Ignore",
@@ -357,87 +254,56 @@ export function parseOverlayPanelProperties(
   };
 }
 
-export function sceneLayerFrustumSize(aspect: number): {
-  width: number;
-  height: number;
-} {
-  const height = SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT;
-  const safeAspect =
-    Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
-  return { width: height * safeAspect, height };
-}
-
-/** The orange design canvas (Layer Width × Height), defaulted when unset or invalid. */
-export function sceneLayerOrthoBounds(bounds?: {
-  width?: number;
-  height?: number;
-} | null): { width: number; height: number } {
-  return {
-    width:
-      typeof bounds?.width === "number" && bounds.width > 0
-        ? bounds.width
-        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width,
-    height:
-      typeof bounds?.height === "number" && bounds.height > 0
-        ? bounds.height
-        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
-  };
-}
-
 /**
- * Play HUD ortho size: the design canvas widened or heightened to the
- * viewport aspect, so it stays whole and centred and its content keeps its
- * proportions. Anchors carry content out to the extra edges.
+ * A Scene's Layer Camera Width × Height widened or heightened to the viewport
+ * aspect, so it stays whole and centred and its content keeps its proportions.
  */
 export function sceneLayerViewBounds(
   bounds: { width?: number; height?: number } | null | undefined,
   aspect: number,
 ): { width: number; height: number } {
-  const design = sceneLayerOrthoBounds(bounds);
-  if (!Number.isFinite(aspect) || aspect <= 0) return design;
-  return aspect >= design.width / design.height
-    ? { width: design.height * aspect, height: design.height }
-    : { width: design.width, height: design.width / aspect };
+  const width = typeof bounds?.width === "number" && bounds.width > 0 ? bounds.width : 16;
+  const height = typeof bounds?.height === "number" && bounds.height > 0 ? bounds.height : 9;
+  return sceneLayerFitToAspect({ width, height }, aspect);
 }
 
 /**
  * A Play canvas pixel (Y down) in a Scene Layer's space (Y up): through the
- * view bounds, then the camera's zoom, roll and centre, as the compositor
- * draws and picks the layer.
+ * view (its size and, for a Scene Layer, its centre: `sceneLayerView`), then
+ * the camera's zoom, roll and location, as the compositor draws and picks the
+ * layer.
  */
 export function sceneLayerCanvasToLayer(
   canvasX: number,
   canvasY: number,
   canvasWidth: number,
   canvasHeight: number,
-  view: { width: number; height: number },
+  view: { width: number; height: number; center?: readonly [number, number] },
   camera: Readonly<LayerCameraState> = DEFAULT_LAYER_CAMERA_STATE,
 ): { x: number; y: number } {
   const viewX = (canvasX / Math.max(1, canvasWidth) - 0.5) * view.width / camera.zoom;
   const viewY = (0.5 - canvasY / Math.max(1, canvasHeight)) * view.height / camera.zoom;
-  if (camera.rotation === 0) return { x: camera.x + viewX, y: camera.y + viewY };
+  const x = camera.x + (view.center?.[0] ?? 0);
+  const y = camera.y + (view.center?.[1] ?? 0);
+  if (camera.rotation === 0) return { x: x + viewX, y: y + viewY };
   const radians = camera.rotation * Math.PI / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
-  return { x: camera.x + viewX * cos - viewY * sin, y: camera.y + viewX * sin + viewY * cos };
+  return { x: x + viewX * cos - viewY * sin, y: y + viewX * sin + viewY * cos };
 }
 
-function sceneLayerAnchorOrigin(
-  anchor: SceneLayerAnchor,
-  width: number,
-  height: number,
-): { x: number; y: number } {
-  const origin = ANCHOR_ORIGIN[anchor] ?? ANCHOR_ORIGIN.center;
+function sceneLayerAnchorPoint(anchor: SceneLayerAnchor, rect: SceneLayerRect): { x: number; y: number } {
+  const origin = SCENE_LAYER_ANCHOR_ORIGIN[anchor] ?? SCENE_LAYER_ANCHOR_ORIGIN.center;
   return {
-    x: origin[0] * (width / 2),
-    y: origin[1] * (height / 2),
+    x: rect.center[0] + origin[0] * (rect.width / 2),
+    y: rect.center[1] + origin[1] * (rect.height / 2),
   };
 }
 
 /**
- * Map a design-space XY from the orange layer bounds onto the Play frustum:
- * the anchor point moves to the matching frustum point and the actor keeps
- * its authored distance from it, so nothing is scaled.
+ * Map a design-space XY from the layer's canvas onto the view 2D Anchors use
+ * (`sceneLayerAnchorView`): the anchor point moves to the matching view point
+ * and the actor keeps its authored distance from it, so nothing is scaled.
  */
 export function sceneLayerRelativeAnchorWorldPosition(options: {
   anchor: SceneLayerAnchor;
@@ -445,29 +311,11 @@ export function sceneLayerRelativeAnchorWorldPosition(options: {
   authoredY: number;
   offsetX?: number;
   offsetY?: number;
-  layerWidth: number;
-  layerHeight: number;
-  frustumWidth: number;
-  frustumHeight: number;
+  canvas: SceneLayerRect;
+  view: SceneLayerRect;
 }): { x: number; y: number } {
-  const layerWidth =
-    options.layerWidth > 0
-      ? options.layerWidth
-      : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width;
-  const layerHeight =
-    options.layerHeight > 0
-      ? options.layerHeight
-      : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height;
-  const frustumWidth =
-    options.frustumWidth > 0 ? options.frustumWidth : layerWidth;
-  const frustumHeight =
-    options.frustumHeight > 0 ? options.frustumHeight : layerHeight;
-  const origin = sceneLayerAnchorOrigin(options.anchor, layerWidth, layerHeight);
-  const screen = sceneLayerAnchorOrigin(
-    options.anchor,
-    frustumWidth,
-    frustumHeight,
-  );
+  const origin = sceneLayerAnchorPoint(options.anchor, options.canvas);
+  const screen = sceneLayerAnchorPoint(options.anchor, options.view);
   const dx = options.authoredX + (options.offsetX ?? 0) - origin.x;
   const dy = options.authoredY + (options.offsetY ?? 0) - origin.y;
   return { x: screen.x + dx, y: screen.y + dy };
@@ -515,7 +363,7 @@ export function editorSceneToSceneLayer(
       gravity: scene.settings.gravity,
       fixedTimestepMs: scene.settings.fixedTimestepMs,
       postProcessStack: scene.settings.postProcessStack,
-      layerBounds: scene.settings.cameraBounds2D,
+      canvas: scene.settings.layerCanvas,
       cameraLocation: scene.settings.cameraLocation2D,
       physicsEnabled: scene.settings.layerPhysicsEnabled === true,
       tickOnPause: scene.settings.layerTickOnPause === true,
@@ -542,10 +390,10 @@ export function sceneLayerToEditorScene(
       gravity: layer.settings.gravity,
       fixedTimestepMs: layer.settings.fixedTimestepMs,
       postProcessStack: layer.settings.postProcessStack,
-      cameraBounds2D: { ...layer.settings.layerBounds },
       cameraLocation2D: [...layer.settings.cameraLocation],
       layerPhysicsEnabled: layer.settings.physicsEnabled,
       layerTickOnPause: layer.settings.tickOnPause,
+      layerCanvas: { ...layer.settings.canvas, customSizePx: { ...layer.settings.canvas.customSizePx } },
     },
     actors: layer.actors,
     folders: layer.folders,

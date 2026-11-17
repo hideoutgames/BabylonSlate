@@ -1,3 +1,4 @@
+import { sceneLayerDesignResolution } from "@haptic/core";
 import { createActorFromSerialized } from "@haptic/object-model";
 import { ActorRealization } from "./actor-realization";
 import type { RuntimeDriverOptions } from "./driver-types";
@@ -214,6 +215,7 @@ export function createOverlay(rt: RuntimeComposition, options: RuntimeDriverOpti
     render: rt.renderEmitter,
     audioParticles: rt.audioParticles,
     texturePixelSizes: options.texturePixelSizes ?? {},
+    designResolution: sceneLayerDesignResolution(options.renderSettings),
   }, {
     stopped: () => rt.stopped,
     saveBoundaryActive: () => rt.boundaries.saveBoundaryActive,

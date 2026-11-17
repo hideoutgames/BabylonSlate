@@ -7,6 +7,7 @@ import {
   normalizeSceneLayerActorDesign,
   requestEditorDrop,
   sceneLayerActorFrameBounds,
+  sceneLayerDesignResolution,
   type SceneLayerActorDesign,
   type SerializedGraph,
 } from "@haptic/core";
@@ -184,9 +185,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   };
   const [contentBounds, setContentBounds] = useState<{ minX: number; minY: number; maxX: number; maxY: number } | null>(null);
   const pixelsPerUnit = projectDocument?.settings.twoD.pixelsPerUnit ?? 100;
+  const resolution = sceneLayerDesignResolution(projectDocument?.settings.render);
   const frameBounds = useMemo(
-    () => overlayDesign ? sceneLayerActorFrameBounds(overlayDesign, pixelsPerUnit, contentBounds) : WORLD_PREFAB_FRAME,
-    [contentBounds, overlayDesign, pixelsPerUnit],
+    () => overlayDesign
+      ? sceneLayerActorFrameBounds(overlayDesign, { resolution: { width: resolution.width, height: resolution.height }, pixelsPerUnit }, contentBounds)
+      : WORLD_PREFAB_FRAME,
+    [contentBounds, overlayDesign, pixelsPerUnit, resolution.width, resolution.height],
   );
   const frameBoundsRef = useRef(frameBounds);
   frameBoundsRef.current = frameBounds;

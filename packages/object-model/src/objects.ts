@@ -6,7 +6,8 @@ import {
   normalizeSuppressedComponentSourceIds,
   type MaterialInstanceOverrides,
   type ScenePostProcessEntry,
-  SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
+  normalizeSceneLayerCanvasDesign,
+  type SceneLayerCanvasDesign,
   layerCameraStartState,
   supportsOverlayVisualStyle,
   type LayerCameraState,
@@ -537,7 +538,8 @@ export class SceneLayer extends EngineObject {
   zOrder: number;
   ownerSceneGuid: string | null;
   postProcessStack: ScenePostProcessEntry[];
-  layerBounds: { width: number; height: number };
+  /** Its asset's canvas: how its design canvas is sized and how Play scales it. */
+  canvas: SceneLayerCanvasDesign;
   /** Its actors and SceneLayerScript keep ticking while the game is paused, whatever their own Tick On Pause. */
   tickOnPause: boolean;
   /** Its Play camera: every instance starts on the asset's Camera Location and scripts move it. */
@@ -551,7 +553,7 @@ export class SceneLayer extends EngineObject {
     zOrder: number;
     ownerSceneGuid?: string | null;
     postProcessStack?: ScenePostProcessEntry[];
-    layerBounds?: { width: number; height: number };
+    canvas?: SceneLayerCanvasDesign;
     cameraLocation?: readonly [number, number] | null;
     tickOnPause?: boolean;
     variables?: Record<string, unknown>;
@@ -569,14 +571,7 @@ export class SceneLayer extends EngineObject {
     this.ownerSceneGuid = options.ownerSceneGuid ?? null;
     this.tickOnPause = options.tickOnPause === true;
     this.postProcessStack = normalizeScenePostProcessStack(options.postProcessStack);
-    this.layerBounds = {
-      width: options.layerBounds?.width && options.layerBounds.width > 0
-        ? options.layerBounds.width
-        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width,
-      height: options.layerBounds?.height && options.layerBounds.height > 0
-        ? options.layerBounds.height
-        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
-    };
+    this.canvas = normalizeSceneLayerCanvasDesign(options.canvas);
     this.camera = new LayerCamera(this, options.cameraLocation);
   }
 }

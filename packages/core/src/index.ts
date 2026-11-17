@@ -10,6 +10,7 @@ export {
   type EngineComponentPlacement,
 } from "./engine-components";
 export * from "./scene-layer";
+export * from "./scene-layer-canvas";
 export * from "./layer-camera";
 export * from "./scene-streaming";
 export * from "./scene-streaming-actor";

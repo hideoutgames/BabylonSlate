@@ -1,6 +1,5 @@
 import type { CommandMessage, ControlMessage } from "@haptic/bridge";
 import {
-  SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   identityTransform,
   isInteractiveUIControl2DClass,
   isOverlayLayoutClass,
@@ -9,9 +8,12 @@ import {
   isUIControl2DClass,
   overlayLayoutKey,
   parseSceneLayerAnchor,
+  sceneLayerAnchorView,
+  sceneLayerPlayCanvas,
   sceneLayerRelativeAnchorWorldPosition,
-  sceneLayerViewBounds,
+  sceneLayerView,
   type FocusNavigationSettings,
+  type SceneLayerRect,
   type OverlaySafeAreaInsets,
 } from "@haptic/core";
 import type { RawInputEvent, ResolvedInputTick } from "@haptic/input";
@@ -52,6 +54,8 @@ interface SceneLayerOverlayDeps {
   render: Pick<RenderCommandEmitter, "emitMeshAssignment">;
   audioParticles: Pick<AudioParticleEmitter, "emitAudio" | "emitParticles">;
   texturePixelSizes: Readonly<Record<string, { width: number; height: number }>>;
+  /** The project's design resolution in pixels (`sceneLayerDesignResolution`): a Fullscreen canvas's size. */
+  designResolution: { width: number; height: number };
 }
 
 interface SceneLayerOverlayHost {
@@ -99,8 +103,10 @@ export class SceneLayerOverlay {
   private canvasHeight = 1;
   /** Whether the host has reported the canvas size; Get Viewport Size reads 0 × 0 until it has. */
   private canvasReported = false;
-  /** Output width / height; unknown until the host first reports a size. */
-  private viewportAspect = Number.NaN;
+  /** The output in design pixels (`sceneLayerOutputDesignSize`); unknown until the host first reports a size. */
+  private outputDesignSize: { width: number; height: number } | null = null;
+  /** Desired layers' views as the compositor measured them (`sceneLayerView`). */
+  private readonly measuredViews = new Map<string, SceneLayerRect>();
   private spawnDepth = 0;
   private readonly deps: SceneLayerOverlayDeps;
   private readonly host: SceneLayerOverlayHost;
@@ -156,9 +162,41 @@ export class SceneLayerOverlay {
     return this.canvasReported ? this.canvasSize() : { width: 0, height: 0 };
   }
 
-  /** A layer's Play ortho extent: its Layer Width × Height widened to the output aspect, as the compositor draws it. */
-  viewBounds(layer: SceneLayer | undefined): { width: number; height: number } {
-    return sceneLayerViewBounds(layer?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS, this.viewportAspect);
+  /** A layer's design canvas in layer units (`sceneLayerPlayCanvas`); a Desired layer's is the Fullscreen canvas, its content being measured by the compositor. */
+  canvasRect(layer: Pick<SceneLayer, "canvas">): SceneLayerRect {
+    return sceneLayerPlayCanvas(layer.canvas, { resolution: this.deps.designResolution, pixelsPerUnit: this.host.pixelsPerUnit() }, null);
+  }
+
+  /** The output in design pixels over Pixels Per Unit, in layer units; null before the host reported a size. */
+  private screen(): { width: number; height: number } | null {
+    if (!this.outputDesignSize) return null;
+    const ppu = this.host.pixelsPerUnit() > 0 ? this.host.pixelsPerUnit() : 100;
+    return { width: this.outputDesignSize.width / ppu, height: this.outputDesignSize.height / ppu };
+  }
+
+  /**
+   * What a layer's camera frames at zoom 1 and Camera Location (0, 0) (`sceneLayerView`), as the compositor draws it.
+   * A Desired layer's is the one the compositor last measured, the Fullscreen canvas's until then.
+   */
+  viewBounds(layer: SceneLayer | undefined): SceneLayerRect {
+    if (!layer) {
+      const canvas = sceneLayerPlayCanvas({ sizeMode: "fullscreen", rootAnchor: "center", customSizePx: { width: 1, height: 1 } },
+        { resolution: this.deps.designResolution, pixelsPerUnit: this.host.pixelsPerUnit() }, null);
+      return sceneLayerView(canvas, { sizeMode: "fullscreen", rootAnchor: "center", scaling: "fitToScreen" }, this.screen());
+    }
+    const measured = layer.canvas.sizeMode === "desired" ? this.measuredViews.get(layer.guid) : undefined;
+    return measured ?? sceneLayerView(this.canvasRect(layer), layer.canvas, this.screen());
+  }
+
+  /** The compositor measured a Desired layer's content: its view for cursor projection and the safe area. */
+  setMeasuredView(layerId: string, view: SceneLayerRect): void {
+    const layer = this.deps.world.findSceneLayer(layerId);
+    if (!layer || layer.canvas.sizeMode !== "desired") return;
+    const previous = this.measuredViews.get(layerId);
+    if (previous && previous.width === view.width && previous.height === view.height &&
+      previous.center[0] === view.center[0] && previous.center[1] === view.center[1]) return;
+    this.measuredViews.set(layerId, { width: view.width, height: view.height, center: [view.center[0], view.center[1]] });
+    this.applyLayouts();
   }
 
   /** Spawn, anchor and assign a Scene Layer's created actors in bounded passes. */
@@ -273,18 +311,19 @@ export class SceneLayerOverlay {
     this.host.publishSnapshot();
   }
 
+  /** The output in design pixels (`sceneLayerOutputDesignSize`), the Play canvas in pixels and its safe-area insets. */
   resize(
-    frustumWidth: number,
-    frustumHeight: number,
+    outputWidth: number,
+    outputHeight: number,
     canvasWidth?: number,
     canvasHeight?: number,
     safeAreaInsets?: Partial<OverlaySafeAreaInsets>,
   ): void {
-    const width = Number(frustumWidth);
-    const height = Number(frustumHeight);
+    const width = Number(outputWidth);
+    const height = Number(outputHeight);
     if (!Number.isFinite(width) || width <= 0) return;
     if (!Number.isFinite(height) || height <= 0) return;
-    this.viewportAspect = width / height;
+    this.outputDesignSize = { width, height };
     if (typeof canvasWidth === "number" && canvasWidth > 0) {
       this.canvasWidth = canvasWidth;
     }
@@ -391,6 +430,7 @@ export class SceneLayerOverlay {
 
   /** Drop a removed layer's layout, virtualization and focus state. */
   forget(layerGuid: string): void {
+    this.measuredViews.delete(layerGuid);
     this.layout.remove(layerGuid);
     this.virtualization.remove(layerGuid);
     this.focus.refresh();
@@ -503,18 +543,17 @@ export class SceneLayerOverlay {
       y: actor.transform.position.y,
     };
     const layer = this.deps.world.findSceneLayer(actor.sceneLayerId!);
-    const bounds = layer?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
-    const view = this.viewBounds(layer);
+    const canvas = layer ? this.canvasRect(layer) : this.viewBounds(undefined);
+    // Anchors use the canvas's own view, never a measured Desired one: they would move what it measured.
+    const view = layer ? sceneLayerAnchorView(canvas, sceneLayerView(canvas, layer.canvas, this.screen()), layer.canvas) : canvas;
     const pos = sceneLayerRelativeAnchorWorldPosition({
       anchor: parseSceneLayerAnchor(anchorComp.getVariable("anchor")),
       authoredX: authored.x,
       authoredY: authored.y,
       offsetX: Number(anchorComp.getVariable("offsetX")) || 0,
       offsetY: Number(anchorComp.getVariable("offsetY")) || 0,
-      layerWidth: bounds.width,
-      layerHeight: bounds.height,
-      frustumWidth: view.width,
-      frustumHeight: view.height,
+      canvas,
+      view,
     });
     actor.transform.position.x = pos.x;
     actor.transform.position.y = pos.y;

@@ -17,8 +17,9 @@ Select an actor in a Scene Layer, then choose **Add Component > Overlay > 2D Anc
 ## Notes
 
 - Scene Layers only.
-- Layer units are the units of **Layer Width** and **Layer Height** in the Scene Layer's settings.
-- When the screen is wider or taller than **Layer Width** × **Layer Height**, the anchor point moves to that screen edge or corner and the actor keeps its distance from it, at its original size.
+- Layer units are pixels divided by **Pixels Per Unit**, as the Scene Layer's canvas is ([Canvas size and scaling](../scenes/scene-layers.md#canvas-size-and-scaling)).
+- When the screen is wider or taller than the canvas, the anchor point moves to that screen edge or corner and the actor keeps its distance from it, at its original size.
+- On a **Desired** canvas, or a **Custom** canvas at **True Pixel Size**, the canvas is all the layer shows, so anchors leave actors where they are.
 - Anchors use the layer's default view. When a script moves, turns or zooms the [layer camera](../scenes/scene-layers.md#move-the-layer-camera), anchored actors move with the rest of the layer.
 - An actor that holds only a 2D Anchor is an anchor helper. It has no position of its own, no Transform and no visual, and it anchors its parent actor. A helper with no parent does nothing.
 - When an actor and one of its ancestors both have an anchor, the topmost anchor applies and the rest of the branch follows it.
