@@ -1,3 +1,5 @@
+import { wholePixelScale } from "@haptic/core";
+
 /**
  * Pixel-Perfect Mode in a 2D editor view. The view draws at device pixels (`EditorTools.setPixelPerfect`) and zooms
  * smoothly; near a whole number of device pixels per texture pixel (1, 2, 3… zoomed in, 1/2, 1/3… zoomed out) it
@@ -27,13 +29,6 @@ export function pixelZoomDetent(scale: number, band = PIXEL_ZOOM_DETENT): number
   if (!(scale > 0) || !Number.isFinite(scale)) return 1;
   const level = wholePixelScale(scale);
   return Math.abs(scale / level - 1) <= band ? level : scale;
-}
-
-/** The whole scale nearest `scale`: an integer from 1 up, or a whole fraction 1/n below 1 (1 when not positive). */
-export function wholePixelScale(scale: number): number {
-  if (!(scale > 0) || !Number.isFinite(scale)) return 1;
-  if (scale >= 1) return Math.max(1, Math.round(scale));
-  return 1 / Math.max(1, Math.round(1 / scale));
 }
 
 /**

@@ -7,6 +7,8 @@ import {
   projectContentRoot,
 } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import type { IndexedAsset, ImportResult } from "@haptic/assets";
+import type { SerializedScene } from "@haptic/core";
 import { createExtensionAsset, createPickerAsset, createProjectAsset } from "./create-project-asset";
 import { extensionAssetTypes } from "./extension-asset-types";
 
@@ -232,6 +234,19 @@ describe("createProjectAsset", () => {
       }),
     ).rejects.toThrow(/at most 16 levels/);
     expect(createAsset).not.toHaveBeenCalled();
+  });
+
+  it("frames a new Scene's camera as the project's scene camera framing says", async () => {
+    const createAsset = vi.fn(async (_rootId: string, _path: string, result: ImportResult) => ({ header: { payload: result.payload } }) as unknown as IndexedAsset);
+    const scene = async (sceneCameraFraming?: { orthographicSize: number; cameraBounds2D: { width: number; height: number } }) => {
+      createAsset.mockClear();
+      await createProjectAsset({ registry: { createAsset }, rootId: "project", folderRelative: "", type: "Scene", name: "Level", sceneCameraFraming });
+      const payload = createAsset.mock.calls[0]![2].payload as unknown as SerializedScene;
+      const camera = payload.actors.flatMap((actor) => actor.components).find((component) => component.classId === "CameraComponent")!;
+      return { bounds: payload.settings.cameraBounds2D, orthographicSize: camera.properties.orthographicSize };
+    };
+    expect(await scene({ orthographicSize: 1.8, cameraBounds2D: { width: 6.4, height: 3.6 } })).toEqual({ bounds: { width: 6.4, height: 3.6 }, orthographicSize: 1.8 });
+    expect(await scene()).toEqual({ bounds: { width: 16, height: 9 }, orthographicSize: 5 });
   });
 });
 

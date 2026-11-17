@@ -27,6 +27,7 @@ import {
   documentKindForAssetType,
   CONTENT_BROWSER_ID,
   nearestTextureFiltering,
+  projectSceneCameraFraming,
   type DocumentKind,
 } from "@haptic/core";
 import { Button } from "@haptic/ui/components/button";
@@ -644,6 +645,7 @@ function ContentBrowserWorkspaceBody({
     menuProps: newAssetMenuProps,
     dialogProps: newAssetDialogProps,
   } = useContentBrowserNewAssetFlow({
+    sceneCameraFraming: projectDocument ? projectSceneCameraFraming(projectDocument.settings) : null,
     newAssetOpen,
     setNewAssetOpen,
     newAssetType,

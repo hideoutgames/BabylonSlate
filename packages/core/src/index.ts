@@ -70,6 +70,7 @@ export * from "./asset-folders";
 export * from "./material-parameter-assets";
 export * from "./material-parameter-value";
 export * from "./play-preview-aspect";
+export * from "./pixel-matched-camera";
 export * from "./nine-slice";
 export * from "./input-assets";
 export * from "./data-assets";

@@ -1,6 +1,7 @@
 import { useEffect, useState, type RefObject } from "react";
 import {
   isSceneLayerAnchorActor,
+  pixelMatchedCameras,
   sceneLayerCameraFrame,
   sceneLayerDesignResolution,
   type SceneLayerContentBounds,
@@ -180,6 +181,7 @@ export function useViewportEditorSync({
         pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
       },
       contentBounds: measureContent ? contentBounds : null,
+      pixelMatched: projectDocument ? pixelMatchedCameras(projectDocument.settings.twoD) : false,
     })
     : null;
   const cameraFrameKey = JSON.stringify(cameraFrame);
@@ -214,4 +216,12 @@ export function useViewportEditorSync({
         : null,
     );
   }, [projectDocument?.settings.twoD, viewportMode, engineEpoch, engineRef]);
+
+  // Camera previews and frustum guides frame orthographic cameras as Play draws them.
+  const pixelMatchedLensKey = projectDocument && pixelMatchedCameras(projectDocument.settings.twoD)
+    ? JSON.stringify({ design: sceneLayerDesignResolution(projectDocument.settings.render), pixelsPerUnit: projectDocument.settings.twoD.pixelsPerUnit })
+    : "null";
+  useEffect(() => {
+    engineRef.current?.setPixelMatchedCameras(JSON.parse(pixelMatchedLensKey));
+  }, [pixelMatchedLensKey, engineEpoch, engineRef]);
 }

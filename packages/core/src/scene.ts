@@ -12,11 +12,13 @@ import {
   SCENE_LAYER_FALLBACK_RESOLUTION,
   normalizeSceneLayerCanvasDesign,
   sceneLayerCanvasRect,
+  sceneLayerFitToAspect,
   type SceneLayerCanvasContext,
   type SceneLayerCanvasDesign,
   type SceneLayerContentBounds,
 } from "./scene-layer-canvas";
 import { normalizeTimelineClips, type SerializedTimelineClip } from "./timeline-clips";
+import { pixelMatchedDesignFrame } from "./pixel-matched-camera";
 
 
 /**
@@ -647,10 +649,12 @@ export function sceneDefaultCameraActor(scene: Pick<SerializedScene, "actors" | 
  * Layer's is its canvas (`sceneLayerCanvasRect`: the project's design
  * resolution and Pixels Per Unit in `layer.context`, the drawn content's
  * bounds for Desired, none without content) moved by its Camera Location.
+ * With `pixelMatched` (Pixel-Perfect Mode with Nearest Texture Filtering) a world Scene's is the design area its
+ * Layer Camera frames at the whole ratio its Width × Height picks (`pixelMatchedDesignFrame`).
  */
 export function sceneLayerCameraFrame(
   scene: Pick<SerializedScene, "actors" | "settings" | "overlayEditor">,
-  layer?: { context?: SceneLayerCanvasContext; contentBounds?: SceneLayerContentBounds | null },
+  layer?: { context?: SceneLayerCanvasContext; contentBounds?: SceneLayerContentBounds | null; pixelMatched?: boolean },
 ): { width: number; height: number; center: [number, number] } | null {
   const [x, y] = scene.settings.cameraLocation2D;
   if (scene.overlayEditor) {
@@ -662,6 +666,12 @@ export function sceneLayerCameraFrame(
     return canvas ? { width: canvas.width, height: canvas.height, center: [canvas.center[0] + x, canvas.center[1] + y] } : null;
   }
   if (sceneDefaultCameraActor(scene)) return null;
+  if (layer?.pixelMatched && layer.context) {
+    const design = layer.context.resolution;
+    const fitted = sceneLayerFitToAspect(scene.settings.cameraBounds2D, design.width / Math.max(1, design.height));
+    const frame = pixelMatchedDesignFrame(fitted.height, { design, pixelsPerUnit: layer.context.pixelsPerUnit });
+    return { width: frame.width, height: frame.height, center: [x, y] };
+  }
   return { ...scene.settings.cameraBounds2D, center: [x, y] };
 }
 

@@ -58,6 +58,8 @@ export async function createProjectAsset(options: {
   skeletonGuid?: string | null;
   /** A new Class's starting components (Create Actor). */
   classComponents?: import("@haptic/core").SerializedComponent[];
+  /** A new Scene's camera framing (`projectSceneCameraFraming`). */
+  sceneCameraFraming?: import("@haptic/core").SceneCameraFraming | null;
 }): Promise<IndexedAsset> {
   const { type, name } = options;
   const defaultDefinitionGuid = options.dataTree ? options.dataTree.defaultDefinitionGuid : options.defaultDefinitionGuid ?? null;
@@ -110,6 +112,7 @@ export async function createProjectAsset(options: {
     timelineAsset: options.timelineAsset,
     skeletonGuid: options.skeletonGuid,
     classComponents: type === "Class" ? options.classComponents : undefined,
+    sceneCameraFraming: type === "Scene" ? options.sceneCameraFraming : undefined,
   });
   if (type === "DataDefinition" || type === "DataTree" || linkedDefinition) {
     Object.assign(result, assetHeaderDependencyMetadata(type, result.payload, options.registry.list?.() ?? [], result.parentClass));

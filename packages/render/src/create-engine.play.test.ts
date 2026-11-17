@@ -92,6 +92,7 @@ import { DEFAULT_CAMERA_PREVIEW_FRAME_RATE } from "./editor-debug-overlay";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isSceneStaticMesh } from "./scene-static-meshes";
 import { sceneRenderingSettings, setSceneEffectsEnabled } from "./render-settings";
+import { setNearestTextures } from "./nearest-textures";
 import { managedRenderReservations } from "./managed-render-resources";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import * as waterMesh from "./water-mesh";
@@ -4788,6 +4789,33 @@ describe("Play createEngine view", () => {
     handle.applyCommand(output("pixelated", 1));
     loop.mock.calls[0]![0]();
     expect(upscale(handle.scene)).toBe(false);
+  });
+
+  it("pixel-matches orthographic cameras over the extended output with Pixel-Perfect Mode and Nearest Texture Filtering", () => {
+    const engine = sharedEngine();
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, pixelsPerUnit: 100, pixelPerfect: true, nearestTextures: true,
+      renderSettings: { customResolution: true, width: 640, height: 360, blackBars: false, upscaling: "pixelated" },
+    });
+    handles.push(handle);
+    // A 21:9 window: the framebuffer extends the design size to 854 x 360 design pixels.
+    handle.setSize(854, 360);
+    const layerCamera = handle.scene.getCameraByName("playLayerCamera")!;
+    // The default 16 x 9 Layer Camera is nearest three texels per design pixel: 854 x 360 pixels show 25.62 x 10.8 units.
+    handle.applyCommand({ type: "sceneCamera", camera: { x: 0, y: 0, rotation: 0, zoom: 1 }, bounds: { width: 16, height: 9 } });
+    expect([layerCamera.orthoTop, layerCamera.orthoRight]).toEqual([expect.closeTo(5.4, 9), expect.closeTo(12.81, 9)]);
+    // Zoom 2.8 on a 6.4 x 3.6 frame rounds to three design pixels per texel.
+    handle.applyCommand({ type: "sceneCamera", camera: { x: 0, y: 0, rotation: 0, zoom: 2.8 }, bounds: { width: 6.4, height: 3.6 } });
+    expect([layerCamera.orthoTop, layerCamera.orthoRight]).toEqual([expect.closeTo(0.6, 9), expect.closeTo(854 / 600, 9)]);
+    handle.applyCommand({ type: "spawn", slotId: 1, actorGuid: "cam", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 1, meshKind: "camera", meshAssetGuid: null, camera: { projectionMode: "orthographic", orthographicSize: 1 } });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    const camera = handle.scene.activeCamera!;
+    // Orthographic Size 1 frames 2 of the design's 3.6 units: two design pixels per texel.
+    expect([camera.orthoTop, camera.orthoRight]).toEqual([expect.closeTo(0.9, 9), expect.closeTo(2.135, 9)]);
+    // Without Nearest Texture Filtering the authored size frames the view again.
+    setNearestTextures(engine, false);
+    expect(camera.orthoTop).toBeCloseTo(1, 9);
   });
 
   it("views through the Scene's Layer Camera until a camera is possessed, and moves it on sceneCamera", () => {
