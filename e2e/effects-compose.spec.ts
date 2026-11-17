@@ -44,7 +44,7 @@ function keep(capture: Awaited<ReturnType<Proof>>) {
   writeFileSync(`${base}.json`, JSON.stringify({ variant, renderer, passes, texelsCovered, passList, tasks }, null, 2));
 }
 
-test("composes ambient occlusion, reflections and volumetric lighting in one pass", async ({ page }) => {
+test("composes ambient occlusion, reflections and volumetric lighting in one pass, and marches Screen-Space Shadows at half resolution",async ({ page }) => {
   test.setTimeout(600_000);
   for (const variant of VARIANTS) {
     const { result, errors } = await run(page, variant);
@@ -59,5 +59,8 @@ test("composes ambient occlusion, reflections and volumetric lighting in one pas
     const composes = result.tasks.filter((name) => name === "Scene Effects Compose").length;
     expect.soft(composes, `${variant} composes`).toBe(variant === "screen-shadows" ? 0 : 1);
     expect.soft(result.tasks.filter((name) => OLD_COMPOSES.includes(name)), variant).toEqual([]);
+    // Screen-Space Shadows march at half the 944 x 630 render size.
+    if (variant === "screen-shadows")
+      expect.soft([result.screenShadows?.width, result.screenShadows?.height], "half-resolution screen shadows").toEqual([472, 315]);
   }
 });
