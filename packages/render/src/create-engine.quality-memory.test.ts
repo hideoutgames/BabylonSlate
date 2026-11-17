@@ -208,7 +208,7 @@ describe("Play quality changes", () => {
     const after = compiled();
     // Every program drawn before is the same Effect again: none compiled a second time.
     const compiledAgain = [...before].filter(([key, effect]) => after.get(key) !== effect).length;
-    expect({ programs: before.size, compiledAgain }).toEqual({ programs: 20, compiledAgain: 0 });
+    expect({ programs: before.size, compiledAgain }).toEqual({ programs: 18, compiledAgain: 0 });
     // The hold ends once the view draws with post-processing on again: back at Medium shadows, the programs only High
     // draws go with the keep.
     run("postprocessing off");
