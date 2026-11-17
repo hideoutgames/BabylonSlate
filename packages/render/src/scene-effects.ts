@@ -146,10 +146,11 @@ export function planWithoutScreenEffects(plan: SceneEffectsPlan | null): SceneEf
  *   type, size and sample count (or the single-sample one of the scene colour's type that the next stage would resolve
  *   to). Kept when it is the chain's only stage: the plan would turn null and the view would draw straight to its
  *   output.
- * - Real-Time Reflections at strength 0, in Scene Linear only: the combine's multiplier is `clamp(pow(F · 0, 1))` = 0,
- *   so it writes `color · 1 + ssr · 0` into a half-float target, as the half-float source holds it. In Legacy Display
- *   the combine converts to linear and back (`pow` 2.2), which is not exact. Kept when an authored stack feeds the chain
- *   (its output can be smaller than the render size; the combine resamples it into a full-size half-float target), and
+ * - Real-Time Reflections at strength 0, in Scene Linear only: the compose's reflection multiplier is
+ *   `clamp(pow(F · 0, 1))` = 0, so its term writes `color · 1 + ssr · 0` into a half-float target, as the half-float
+ *   source holds it. In Legacy Display a compose of reflections alone converts to linear and back (`pow` 2.2), which is
+ *   not exact. Kept when an authored stack feeds the chain (its output can be smaller than the render size; the compose
+ *   resamples it into a full-size half-float target), and
  *   when its removal would leave the volumetric march the geometry pass alone, which a game's world view then seeds
  *   from the scene's depth instead of drawing (`SpatialEffectsGraph.seeded`), a different depth.
  * - Ambient occlusion is never left out: at strength 0 the march and blurs write 1, but the compose divides by

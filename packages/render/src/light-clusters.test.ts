@@ -3,7 +3,8 @@ import { Camera } from "@babylonjs/core/Cameras/camera";
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Plane } from "@babylonjs/core/Maths/math.plane";
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import {
   CLUSTER_COUNT,
   CLUSTER_HEADER_FLOATS,
@@ -62,12 +63,60 @@ function masksAt(words: Uint32Array, header: Float32Array, x: number, y: number,
   return [words[cluster * 2]!, words[cluster * 2 + 1]!];
 }
 
-function build(camera: Camera, lights: ClusterLight[]) {
+function build(camera: Camera, lights: ClusterLight[], view = camera.getViewMatrix()) {
   const masks = new Uint32Array(CLUSTER_COUNT * 2);
   const header = new Float32Array(CLUSTER_HEADER_FLOATS);
   buildLightClusters(masks, header, lights,
-    { view: camera.getViewMatrix(), projection: camera.getProjectionMatrix(), near: camera.minZ, far: camera.maxZ }, Vector3.Zero());
+    { view, projection: camera.getProjectionMatrix(), near: camera.minZ, far: camera.maxZ }, Vector3.Zero());
   return { masks, header };
+}
+
+/** A point or spot light's record: a sphere, no plane. */
+function sphere(kind: "point" | "spot", index: number, x: number, y: number, z: number, radius: number): ClusterLight {
+  return { kind, index, x, y, z, radius, nx: 0, ny: 0, nz: 0 };
+}
+
+const f = Math.fround;
+/** The shader's cluster lookup at (x, y, z) in float32, as the GPU rounds it: the cluster's word 1, or every light. */
+function rectMaskAt32(words: Uint32Array, m: Float32Array, x: number, y: number, z: number): number {
+  const dot = (a: number, b: number, c: number, d: number) => f(f(f(f(f(x * a) + f(y * b)) + f(z * c))) + d);
+  const clipX = dot(m[0]!, m[4]!, m[8]!, m[12]!), clipY = dot(m[1]!, m[5]!, m[9]!, m[13]!), clipW = dot(m[3]!, m[7]!, m[11]!, m[15]!);
+  const depth = dot(m[16]!, m[17]!, m[18]!, m[19]!);
+  const [near, logScale, enabled] = [m[20]!, m[21]!, m[22]!];
+  if (enabled < 0.5 || clipW <= 0 || depth < near) return 0xffffffff;
+  const ndcX = f(clipX / clipW), ndcY = f(clipY / clipW);
+  if (Math.abs(ndcX) > 1 || Math.abs(ndcY) > 1) return 0xffffffff;
+  const tx = Math.min(CLUSTER_TILES_X - 1, Math.max(0, Math.floor(f(f(f(ndcX * 0.5) + 0.5) * CLUSTER_TILES_X))));
+  const ty = Math.min(CLUSTER_TILES_Y - 1, Math.max(0, Math.floor(f(f(f(ndcY * 0.5) + 0.5) * CLUSTER_TILES_Y))));
+  const slice = Math.min(CLUSTER_SLICES - 1, Math.max(0, Math.floor(f(f(Math.log(f(depth / near))) * logScale))));
+  return words[((slice * CLUSTER_TILES_Y + ty) * CLUSTER_TILES_X + tx) * 2 + 1]!;
+}
+
+type Rect = { center: number[]; width: number[]; height: number[] };
+/**
+ * Whether the shader evaluates rect `rect` at (x, y, z), in float32: `hapticLtcEvaluate` returns exactly zero where
+ * dot(cross(c1 - c0, c3 - c0), P - c0) < 0, and only there is the light's contribution zero whatever the surface.
+ */
+function rectEvaluated32(rect: Rect, x: number, y: number, z: number): boolean {
+  const [c, w, h] = [rect.center.map(f), rect.width.map(f), rect.height.map(f)];
+  const c0 = [0, 1, 2].map((k) => f(f(c[k]! + w[k]!) - h[k]!));
+  const c1 = [0, 1, 2].map((k) => f(f(c[k]! - w[k]!) - h[k]!));
+  const c3 = [0, 1, 2].map((k) => f(f(c[k]! + w[k]!) + h[k]!));
+  const e1 = [0, 1, 2].map((k) => f(c1[k]! - c0[k]!));
+  const e3 = [0, 1, 2].map((k) => f(c3[k]! - c0[k]!));
+  const n = [f(f(e1[1]! * e3[2]!) - f(e1[2]! * e3[1]!)), f(f(e1[2]! * e3[0]!) - f(e1[0]! * e3[2]!)), f(f(e1[0]! * e3[1]!) - f(e1[1]! * e3[0]!))];
+  const d = [f(f(x) - c0[0]!), f(f(y) - c0[1]!), f(f(z) - c0[2]!)];
+  return f(f(f(n[0]! * d[0]!) + f(n[1]! * d[1]!)) + f(n[2]! * d[2]!)) >= 0;
+}
+
+/** Rect `index`'s cluster record, as the light block writes it: its float32 centre and cross(height, width). */
+function rectRecord(index: number, rect: Rect): ClusterLight {
+  const [w, h] = [rect.width, rect.height];
+  const [x, y, z] = rect.center.map(f) as [number, number, number];
+  return {
+    kind: "rect", index, x, y, z, radius: Infinity,
+    nx: h[1]! * w[2]! - h[2]! * w[1]!, ny: h[2]! * w[0]! - h[0]! * w[2]!, nz: h[0]! * w[1]! - h[1]! * w[0]!,
+  };
 }
 
 describe("light clusters", () => {
@@ -77,9 +126,9 @@ describe("light clusters", () => {
       const next = random(7);
       const lights: ClusterLight[] = [];
       for (let index = 0; index < 32; index++)
-        lights.push({ kind: "point", index, x: next() * 40 - 20, y: next() * 4, z: next() * 40 - 10, radius: 1 + next() * 6 });
+        lights.push(sphere("point", index, next() * 40 - 20, next() * 4, next() * 40 - 10, 1 + next() * 6));
       for (let index = 0; index < 16; index++)
-        lights.push({ kind: "spot", index, x: next() * 40 - 20, y: next() * 6, z: next() * 40 - 10, radius: 2 + next() * 10 });
+        lights.push(sphere("spot", index, next() * 40 - 20, next() * 6, next() * 40 - 10, 2 + next() * 10));
       const { masks, header } = build(camera, lights);
       let checked = 0, listed = 0, reaching = 0;
       for (let sample = 0; sample < 4000; sample++) {
@@ -103,24 +152,69 @@ describe("light clusters", () => {
       expect(listed).toBeLessThan(checked * lights.length * 0.5);
     });
 
-  it("lists no light behind the camera, and every rect light in every cluster", () => {
+  it("lists no light behind the camera", () => {
     const camera = view();
-    const { masks } = build(camera, [
-      { kind: "point", index: 3, x: 2, y: 9, z: -40, radius: 4 },
-      { kind: "rect", index: 2, x: 0, y: 0, z: 0, radius: Infinity },
-    ]);
-    for (let cluster = 0; cluster < CLUSTER_COUNT; cluster++) {
-      expect(masks[cluster * 2]).toBe(0);
-      expect(masks[cluster * 2 + 1]).toBe(1 << (16 + 2));
-    }
+    const { masks } = build(camera, [sphere("point", 3, 2, 9, -40, 4)]);
+    for (let cluster = 0; cluster < CLUSTER_COUNT; cluster++) expect(masks[cluster * 2]).toBe(0);
   });
+
+  it.each([["perspective", false, false], ["orthographic", true, false], ["mirrored perspective", false, true]] as const)(
+    "list a rect light wherever the shader evaluates it, under a %s view", (_name, orthographic, mirrored) => {
+      // The break: a cluster dropping a rect light at a position in front of its emitting side, where the shader lights
+      // it. A rect light in every cluster passes that, and fails the share of drops below.
+      const camera = view(orthographic);
+      const viewMatrix = mirrored
+        ? Matrix.ReflectionToRef(Plane.FromPositionAndNormal(new Vector3(0, -0.5, 0), new Vector3(0, 1, 0)), new Matrix()).multiply(camera.getViewMatrix())
+        : camera.getViewMatrix();
+      const next = random(orthographic ? 11 : mirrored ? 13 : 5);
+      let checked = 0, evaluated = 0, listed = 0, nearPlane = 0;
+      for (let round = 0; round < 12; round++) {
+        const rects: Rect[] = [];
+        for (let index = 0; index < 4; index++) {
+          const width = [next() * 4 - 2, next() * 4 - 2, next() * 4 - 2];
+          const height = [next() * 4 - 2, next() * 4 - 2, next() * 4 - 2];
+          rects.push({ center: [next() * 40 - 20, next() * 8 - 1, next() * 40 - 10], width, height });
+        }
+        const { masks, header } = build(camera, rects.map((rect, index) => rectRecord(index, rect)), viewMatrix);
+        for (let sample = 0; sample < 1500; sample++) {
+          let x = next() * 44 - 22, y = next() * 10 - 2, z = next() * 50 - 12;
+          // A third far away, in the last slice, which has no far end.
+          if (sample % 3 === 1) [x, y, z] = [x * 12, y * 12, z * 12 + 100];
+          if (sample % 3 === 0) {
+            // A position just off a rect's plane, on either side, where float32 rounding decides the side.
+            const rect = rects[sample % 4]!;
+            const [w, h] = [rect.width, rect.height];
+            const n = [h[1]! * w[2]! - h[2]! * w[1]!, h[2]! * w[0]! - h[0]! * w[2]!, h[0]! * w[1]! - h[1]! * w[0]!];
+            const length = Math.hypot(n[0]!, n[1]!, n[2]!);
+            const [a, b, t] = [next() * 20 - 10, next() * 20 - 10, (next() - 0.5) * 1e-4];
+            [x, y, z] = [0, 1, 2].map((k) => rect.center[k]! + a * w[k]! + b * h[k]! + (t * n[k]!) / length) as [number, number, number];
+            nearPlane++;
+          }
+          const mask = rectMaskAt32(masks, header, x, y, z);
+          if (mask === 0xffffffff) continue;
+          for (let index = 0; index < 4; index++) {
+            checked++;
+            const bit = (mask >>> (16 + index)) & 1;
+            listed += bit;
+            if (rectEvaluated32(rects[index]!, x, y, z)) {
+              evaluated++;
+              expect(bit, `rect ${index} lights (${x}, ${y}, ${z})`).toBe(1);
+            }
+          }
+        }
+      }
+      expect(checked).toBeGreaterThan(20000);
+      expect(nearPlane).toBeGreaterThan(5000);
+      // Conservative, but most positions behind a rect drop it.
+      expect(checked - listed).toBeGreaterThan((checked - evaluated) * 0.6);
+    });
 
   it("computes the slices' depths once per build, however many clusters its lights test", () => {
     // The break: a slice's depth computed (Math.exp) for every cluster tested against every light, thousands per build.
     const camera = view();
     const lights: ClusterLight[] = [];
-    for (let index = 0; index < 32; index++) lights.push({ kind: "point", index, x: (index % 8) * 4 - 14, y: 1, z: Math.floor(index / 8) * 6, radius: 8 });
-    for (let index = 0; index < 16; index++) lights.push({ kind: "spot", index, x: (index % 4) * 6 - 9, y: 2, z: Math.floor(index / 4) * 8, radius: 10 });
+    for (let index = 0; index < 32; index++) lights.push(sphere("point", index, (index % 8) * 4 - 14, 1, Math.floor(index / 8) * 6, 8));
+    for (let index = 0; index < 16; index++) lights.push(sphere("spot", index, (index % 4) * 6 - 9, 2, Math.floor(index / 4) * 8, 10));
     const exp = vi.spyOn(Math, "exp");
     const { masks } = build(camera, lights);
     expect(masks.some((word) => word !== 0)).toBe(true);
@@ -130,7 +224,7 @@ describe("light clusters", () => {
   it("disables the lookup without a view, so every light draws", () => {
     const masks = new Uint32Array(CLUSTER_COUNT * 2);
     const header = new Float32Array(CLUSTER_HEADER_FLOATS).fill(1);
-    buildLightClusters(masks, header, [{ kind: "point", index: 0, x: 0, y: 0, z: 0, radius: 1 }], null, Vector3.Zero());
+    buildLightClusters(masks, header, [sphere("point", 0, 0, 0, 0, 1)], null, Vector3.Zero());
     expect(header[22]).toBe(0);
   });
 });

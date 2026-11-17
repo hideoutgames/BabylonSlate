@@ -390,8 +390,8 @@ export class SceneShadowController {
    * to the camera, so materials drawn for it bind a map fitted to it as a scene
    * view there would fit one. Point and spot maps do not depend on the view and
    * stay shared. The maps follow every sync until the claim is released; each
-   * takes cascade tiles of the atlas and redraws in every pass the view draws (a reflection's: `drawViewMaps`, only
-   * when it changed).
+   * takes cascade tiles of the atlas and redraws, in a pass the view draws, only when it changed (a capture's:
+   * `applyViewRefresh`; a reflection's: `drawViewMaps`).
    */
   attachView(camera: Camera, cascades?: number): ViewShadows {
     if (this.scene.isDisposed) return { release: () => Promise.resolve() };
@@ -436,6 +436,14 @@ export class SceneShadowController {
       if (awaitsFirstDraw(generator) || refreshDue(map) || !shadowMapChanges(map).region.empty) due = true;
     });
     return due;
+  }
+  /**
+   * Applies the scene view's refresh policy to a High or Full Quality capture's own sun map (`attachView`), from its
+   * shadows task, with the capture's camera projecting as the map fits to it: the map's gate then passes only when it
+   * has not drawn or would draw differently from its last pass, as the scene view's maps' does.
+   */
+  applyViewRefresh(generator: ShadowGenerator): void {
+    this.refresh.apply(generator);
   }
   /**
    * Draws `camera`'s own sun maps that are due (`viewMapsDue`) now, outside any frame graph, before the pass that
@@ -495,7 +503,7 @@ export class SceneShadowController {
         fitLocalShadowDepth(entry.generator.getLight(), this.scene.activeCamera);
         this.refresh.apply(entry.generator);
       }
-    // A view's maps draw later in this frame, from its own pass; they redraw every time.
+    // A view's maps draw later in this frame, from its own pass, when their refresh policy finds them changed.
     this.views.forEachMap(({ generator }) => {
       if (generator instanceof CascadedShadowGenerator) {
         casterBounds ??= this.spatial.bounds();
