@@ -193,6 +193,7 @@ import {
   applyPainter2DCommand,
   applyUIControl2DCommand,
   applyText2DAppearCommand,
+  applyText2DLetterPosesCommand,
   applyOverlayVisualStyleCommand,
   applyComponentTransformsCommand,
   retainAssignMeshComponentTransforms,
@@ -2937,6 +2938,20 @@ function initializeEngine(
           }
         }
         applyText2DAppearCommand(binding, command);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setText2DLetterPoses") {
+        const pending = pendingOverlayAssign.get(command.slotId);
+        if (pending) {
+          const part = pending.parts?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2drichtext");
+          const texts = [part?.text2d, pending.primaryComponentId === command.componentId && pending.meshKind === "2drichtext" ? pending.text2d : undefined];
+          for (const text2d of texts) {
+            if (!text2d) continue;
+            if (command.poses.length) text2d.letterPoses = command.poses;
+            else delete text2d.letterPoses;
+          }
+        }
+        applyText2DLetterPosesCommand(binding, command);
         scheduler.invalidate("asset");
       }
       if (command.type === "setOverlayVisualStyle") {

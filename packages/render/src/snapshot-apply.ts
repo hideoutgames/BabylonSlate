@@ -97,6 +97,7 @@ export {
   applyComponentTransformsCommand,
   applyOverlayVisualStyleCommand,
   applyText2DAppearCommand,
+  applyText2DLetterPosesCommand,
   applyUIControl2DCommand,
   applyPainter2DCommand,
 } from "./snapshot-component-commands";

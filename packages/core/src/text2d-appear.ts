@@ -60,7 +60,37 @@ export type Text2DAppearProperties = {
   appearSoundOffset: number;
   /** Live normalized timeline position, independent of transition overshoot. */
   appearProgress?: number;
+  /** Live scripted letter poses, `TEXT2D_LETTER_POSE_STRIDE` numbers per reveal character; absent when none. */
+  letterPoses?: number[];
 };
+
+/** Offset X and Y in pixels (Y up), Scale X and Y, Rotation in degrees, Opacity. */
+export const TEXT2D_LETTER_POSE_STRIDE = 6;
+export type Text2DLetterPose = {
+  offsetX: number; offsetY: number; scaleX: number; scaleY: number; rotation: number; opacity: number;
+};
+const NO_LETTER_POSES: readonly number[] = [];
+
+/** Whole poses of finite numbers, or none: a malformed list poses nothing. */
+export function parseText2DLetterPoses(value: unknown): readonly number[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length % TEXT2D_LETTER_POSE_STRIDE !== 0) return NO_LETTER_POSES;
+  return value.every((entry) => typeof entry === "number" && Number.isFinite(entry)) ? value as number[] : NO_LETTER_POSES;
+}
+
+const letterPoseScratch: Text2DLetterPose = { offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1 };
+
+/** The pose of one reveal character, at rest when the list does not reach it. Returns a shared object: read it at once. */
+export function text2DLetterPoseAt(poses: readonly number[], index: number): Text2DLetterPose {
+  const at = index * TEXT2D_LETTER_POSE_STRIDE;
+  const posed = index >= 0 && at + TEXT2D_LETTER_POSE_STRIDE <= poses.length;
+  letterPoseScratch.offsetX = posed ? poses[at]! : 0;
+  letterPoseScratch.offsetY = posed ? poses[at + 1]! : 0;
+  letterPoseScratch.scaleX = posed ? poses[at + 2]! : 1;
+  letterPoseScratch.scaleY = posed ? poses[at + 3]! : 1;
+  letterPoseScratch.rotation = posed ? poses[at + 4]! : 0;
+  letterPoseScratch.opacity = posed ? Math.min(1, Math.max(0, poses[at + 5]!)) : 1;
+  return letterPoseScratch;
+}
 
 function parseText2DAppearModes(value: unknown): Text2DAppearMode[] {
   if (!Array.isArray(value)) return [];
@@ -100,6 +130,7 @@ export function parseText2DAppearProperties(value: unknown): Text2DAppearPropert
     appearSoundOffset: nonnegative(source.appearSoundOffset, 0),
     ...(typeof source.appearProgress === "number" && Number.isFinite(source.appearProgress)
       ? { appearProgress: normalized(source.appearProgress) } : {}),
+    ...(parseText2DLetterPoses(source.letterPoses).length ? { letterPoses: source.letterPoses as number[] } : {}),
   };
 }
 
