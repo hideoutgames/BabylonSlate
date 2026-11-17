@@ -726,8 +726,9 @@ void hapticCelAreaLight(vec3 P, vec3 N, vec3 V, int i, out vec3 diffuse, out vec
     specular = hapticLtcEvaluate(N, V, P, mat3(vec3(t1.x, 0.0, t1.y), vec3(0.0, 1.0, 0.0), vec3(t1.z, 0.0, t1.w)), c0, c1, c2, c3, layer);
   }
 }
-// The surface's display colour: the lights and the environment's irradiance on its display base colour.
-vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInfluence) {
+// The surface's display colour: the lights and the environment's irradiance on its display base colour. Its highlights
+// fade out as its \`roughness\` rises from one half (none at one).
+vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInfluence, float roughness) {
   // A Scene with its lights disabled draws its colour as it is.
   if (slateCelLight.z > 0.5) return base;
   vec3 dPdx = dFdx(P);
@@ -833,7 +834,9 @@ vec3 hapticCelLighting(vec3 P, vec3 N, vec3 V, vec3 base, float environmentInflu
     float rampOff = slateCelShift(hapticCelBrightness(result.off));
     light = mix(hapticCelSurfaceLight(result.off, slateCelRamp(rampOff, width), ambient), light, result.coverage);
   }
-  return light * base + slateCelStep(result.signal) * slateCelSpecular.x * slateCelTint(result.highlight);
+  // The Material's gloss scales the highlight's strength after its edge, never its shape.
+  float gloss = clamp(2.0 * (1.0 - roughness), 0.0, 1.0);
+  return light * base + slateCelStep(result.signal) * slateCelSpecular.x * gloss * slateCelTint(result.highlight);
 }
 #endif
 
@@ -895,7 +898,8 @@ vec3 hapticV = normalize(${input.cameraPosition} - hapticP);
 float hapticInfluence = clamp(${input.environmentInfluence}, 0.0, 1.0);
 #ifdef HAPTIC_CEL
 // CEL lights in display space; the Material's display conversion encodes this back to the same colour.
-${output.diffuseDirect} = hapticToLinear(max(hapticCelLighting(hapticP, hapticN, hapticV, slateCelTextureToDisplay(${input.baseColor}), hapticInfluence), vec3(0.0)));
+${output.diffuseDirect} = hapticToLinear(max(hapticCelLighting(hapticP, hapticN, hapticV, slateCelTextureToDisplay(${input.baseColor}), hapticInfluence,
+  clamp(${input.roughness}, 0.0, 1.0)), vec3(0.0)));
 #else
 float hapticNdotVUnclamped = dot(hapticN, hapticV);
 float hapticMetallic = clamp(${input.metallic}, 0.0, 1.0);

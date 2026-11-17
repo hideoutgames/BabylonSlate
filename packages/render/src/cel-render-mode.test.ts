@@ -155,7 +155,7 @@ describe("CEL render mode", () => {
       const scene = host();
       scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
       setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({}) });
-      const compiled = await defaultGraph(scene, `graph-${mode}`);
+      const compiled = await defaultGraph(scene, "graph-modes");
       const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
       mesh.material = compiled.material;
       await compiled.material.forceCompilationAsync(mesh);
@@ -171,6 +171,10 @@ describe("CEL render mode", () => {
     const pbr = await fragment("pbr");
     expect(pbr).not.toContain("hapticCelLighting");
     for (const name of pbrOnly) expect(pbr, name).toContain(name);
+    // CEL's highlights read the Material's Roughness: the same input the PBR program shades with.
+    const roughness = /hapticS\.roughness = clamp\((\w+), 0\.0, 1\.0\);/.exec(pbr)?.[1];
+    expect(roughness).toBeTruthy();
+    expect(cel).toMatch(new RegExp(`hapticCelLighting\\([^;]*clamp\\(${roughness}, 0\\.0, 1\\.0\\)\\)`));
   });
 
   it("binds a CEL program's settings once per Scene and frame, and again on a change", async () => {
