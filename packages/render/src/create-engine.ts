@@ -65,6 +65,9 @@ import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, programInventory, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
+import { invalidateBackbufferDepthStencil } from "./backbuffer-invalidate";
+import { engineGpuProbe, existingGpuProbe } from "./gpu-probe-engine";
+import { liveShadowAtlasEdge, shadowAtlasDrawCounts, shadowAtlasGeneration } from "./shadow-atlas";
 import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
 import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
@@ -96,7 +99,7 @@ import { engineCommandBus, markSessionTrail } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
-import { applyMaterialTextureAnisotropy, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
+import { applyMaterialTextureAnisotropy, followSceneRenderSettings, pinFullRenderQuality, sceneRenderingSettings, sceneWaterQualityDeviceClamp, sceneWaterQualityRevision, resolveSceneRenderingQuality, setSceneEffectsEnabled, setSceneFsrOutputDebug, allowSceneScreenShadows, sceneMultisampleCount } from "./render-settings";
 import { cookComplexCollisionMesh, environmentTextureContainer } from "@haptic/assets";
 import {
   isPublishedSnapshot,
@@ -353,6 +356,8 @@ export function createEngine(
   }
 }
 
+/** How long `renderreset idle` renders nothing. */
+const RENDER_RESET_IDLE_MS = 3000;
 /** Snapshot slots before the game runtime installs its layout (`SnapshotSampler.installLayout`). */
 const INITIAL_SNAPSHOT_CAPACITY = 256;
 /** Render-loop passes (about ten seconds at 60 Hz) that frame-phase timing outlives its last `renderDiagnostics()` read. */
@@ -787,7 +792,16 @@ function initializeEngine(
     if (worldLoading || pendingPresentations.size > 0 || hasPendingOwners() || performanceFeed.active || frameReportFeed.active ||
       presentedImageRequests.length > 0) scheduler.noteActivity();
   };
+  /** Debug (`backbufferdiscard`): whether Play invalidates the backbuffer's depth and stencil after its last draw of a frame. */
+  let backbufferDiscard = false;
+  /** Debug (`heldimage`): whether each frame Play presents directly is copied into its held image. */
+  let heldImage = true;
+  /** Debug (`renderreset idle`): until then the view renders nothing, so the GPU idles with no resource changed. */
+  let idleUntil = 0;
   const shouldRenderFrame = (now: number, loadingFrame?: boolean) => {
+    if (now < idleUntil) return false;
+    // Debug (`gpuprobe serial`): the probe renders its frames one at a time, each after the GPU finished the last.
+    if (existingGpuProbe(engine)?.holding) return false;
     noteFrameDemand();
     return (worldLoading || runtimeScalability?.canPresent !== false) && !rttPresent?.isPresenting() && ((loadingFrame ?? hasLoadingFrame()) || (hasReadyContent() &&
       (hasPendingOwners() ? scheduler.shouldRenderReadyOwners(now) : scheduler.shouldRender(now))));
@@ -830,6 +844,8 @@ function initializeEngine(
       // A session created with `presentViewsDirectly` presents directly (the editor's project Engine, the exported
       // player's and Preview Build's); an Engine this view created for itself keeps copying into its view canvas.
       allowDirect: () => directViewPresentationAllowed(engine),
+      // Debug (`heldimage off`): Play, which draws every frame, skips the copy of each presented frame.
+      holdsImage: () => heldImage || !options.playMode,
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
         acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);
@@ -1209,9 +1225,14 @@ function initializeEngine(
       "msaa.discard": discardsSamples(engine) ? "on" : "off",
       // Whether Play composites its Scene Layers (`scenelayers`).
       layers: layersHidden ? "hidden" : "shown",
-      // The live context's attribute, not the stored setting: the setting applies to the next Engine.
-      "presentation.preserve":
-        String((engine as unknown as { _gl?: WebGL2RenderingContext })._gl?.getContextAttributes()?.preserveDrawingBuffer ?? "unknown"),
+      // Where the effect chain's upscale ends (`fsrdebug output`): the output (the device's resolution) or the view's size.
+      "upscale.output": sceneRenderingSettings(scene).fsrOutputAtView ? "view" : "device",
+      // Whether a Scene Layer drawn over the world clears depth and stencil first (`layerdebug clears`).
+      "layers.clears": sceneLayerCompositor?.depthClears === false ? "off" : "on",
+      // Whether each frame Play presents directly is copied into its held image (`heldimage`).
+      "presentation.held": heldImage ? "on" : "off",
+      // Whether Play invalidates the backbuffer's depth and stencil at the end of each frame (`backbufferdiscard`).
+      "backbuffer.depth": backbufferDiscard ? "discarded" : "kept",
     };
   };
   // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
@@ -1964,7 +1985,7 @@ function initializeEngine(
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}),
       backbuffer: { width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
       drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
-      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
+      gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, gpuProbe: existingGpuProbe(engine)?.snapshot() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       layerWork: sceneLayerCompositor?.diagnostics() ?? [],
       frameAdmission: { ...scheduler.gateState(), worldLoading,
         pendingPresentations: pendingPresentations.size,
@@ -2240,6 +2261,7 @@ function initializeEngine(
       return;
     }
     frameWasLoading = loadingFrame;
+    existingGpuProbe(engine)?.frameStarted();
     stepViewBlend(frameStart);
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
@@ -2403,6 +2425,8 @@ function initializeEngine(
         scheduler.noteActivity();
         return;
       }
+      // Debug (`backbufferdiscard on`): the backbuffer's pass is still open here, after the frame's last draw into it.
+      if (backbufferDiscard && !rttPresent) invalidateBackbufferDepthStencil(engine);
       if (rttPresent) {
         const owners = [...frameOwners];
         const copyStart = profileReceipt ? performance.now() : 0;
@@ -2433,6 +2457,7 @@ function initializeEngine(
     presentationStats.drawn += 1;
     lastDrawCalls = readEngineDrawCalls(engine);
     publishDrawPassFrame(drawPasses);
+    existingGpuProbe(engine)?.frameDrawn();
     copyOverlayBatchStats(layerBatches.current, layerBatches.last);
     scheduler.noteRendered(frameStart, performance.now());
     // After `noteRendered`, so camera motion counts as activity (Half Rate When Idle) though the frame drew it.
@@ -3227,14 +3252,54 @@ function initializeEngine(
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
       if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
       if (command.type === "setDiscardSamplesDebug" && setDiscardSamples(engine, command.enabled)) scheduler.invalidate("asset");
+      if (command.type === "resetRenderingDebug") {
+        if (command.what === "graph") worldRenderer.rebuildGraph();
+        else if (command.what === "shadows") findSceneShadowController(scene)?.resetAllocations();
+        else idleUntil = performance.now() + RENDER_RESET_IDLE_MS;
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setSceneLayersDebug" && layersHidden === command.enabled) {
         layersHidden = !command.enabled;
         syncPlayComposition();
         scheduler.invalidate("asset");
       }
       if (command.type === "setGpuBusyProbeDebug") {
-        const probe = engineGpuBusyProbe(engine);
+        // Measured per rendered frame: a capped, held or skipped Engine frame submitted nothing of its own.
+        const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
+      }
+      if (command.type === "setBackbufferDiscardDebug" && options.playMode && backbufferDiscard !== command.enabled) {
+        backbufferDiscard = command.enabled;
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setHeldImageDebug" && heldImage !== command.enabled) {
+        heldImage = command.enabled;
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setLayerDebug" && sceneLayerCompositor && sceneLayerCompositor.depthClears !== command.enabled) {
+        sceneLayerCompositor.depthClears = command.enabled;
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "setFsrDebug" && setSceneFsrOutputDebug(scene, command.output)) scheduler.invalidate("asset");
+      if (command.type === "setGpuProbeDebug") {
+        if (command.action === "off") existingGpuProbe(engine)?.off();
+        else {
+          const probe = engineGpuProbe(engine);
+          // The shadow counters read the Scene of the view the command reached.
+          probe.setShadowSource(() => {
+            if (scene.isDisposed) return null;
+            const census = findSceneShadowController(scene)?.refreshCensus() ?? { maps: 0, continuous: 0 };
+            const drawn = shadowAtlasDrawCounts(scene);
+            return {
+              ...census, drawnMaps: drawn.maps, drawnTiles: drawn.tiles, drawnTexels: drawn.texels,
+              atlasEdge: liveShadowAtlasEdge(scene), atlasGeneration: shadowAtlasGeneration(scene),
+            };
+          });
+          if (command.action === "on") probe.on();
+          else probe.serial();
+          // The probe's frames render whatever else asks for none.
+          scheduler.invalidate("asset");
+        }
       }
       if (command.type === "setRenderTargetCapturesDebug") {
         renderTargetCaptures.setEveryFrameSuspended(!command.enabled);

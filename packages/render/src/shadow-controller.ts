@@ -188,6 +188,8 @@ export class SceneShadowController {
    * built until a later frame, so the old and the resized atlas never live in the same frame.
    */
   private atlasReleasedFrame = -1;
+  /** `resetAllocations` was called: the next sync releases every map and the atlas. */
+  private resetRequested = false;
   /** Per-map closures read their current owner; a local map can move between lights. */
   private readonly slots = new WeakMap<ShadowGenerator, ShadowMapSlot>();
   private readonly refresh = new ShadowMapRefresh();
@@ -693,6 +695,9 @@ export class SceneShadowController {
       budget,
       measure: (light) => cameraDistanceSquared(light, camera!),
     }, this.decisions);
+    // Read before the plan is applied, which clears each active entry's own flag.
+    const resetAll = this.resetRequested;
+    this.resetRequested = false;
     applyShadowAdmission(plan);
     const { planned, admitted, atlasEdge } = plan;
     // CSM freezes caster bounds; retained owners refresh them every sync.
@@ -724,6 +729,16 @@ export class SceneShadowController {
     // replacements; old and new sets must never overlap outside this envelope.
     // A local map that only lost camera admission stays allocated for reuse,
     // unless it is in an atlas of another edge: it serves no planned map there and would keep that atlas alive.
+    const engine = scene.getEngine();
+    if (resetAll) {
+      // `renderreset shadows`: every map goes, the views' own included, and the empty atlas with them. The planned maps
+      // wait `shadow atlas resizing` until a later Engine frame makes the atlas again, as for an atlas of another edge.
+      const held = liveShadowAtlasEdge(scene) !== 0;
+      for (const entry of this.entries.values()) release(entry);
+      if (this.views.yieldAtlasTiles()) changed = true;
+      releaseEmptyShadowAtlas(scene);
+      if (held && liveShadowAtlasEdge(scene) === 0) this.atlasReleasedFrame = engine.frameId;
+    }
     const heldEdge = liveShadowAtlasEdge(scene);
     const donors: Entry[] = [];
     for (const entry of this.entries.values()) {
@@ -749,7 +764,6 @@ export class SceneShadowController {
     // this frame; the maps planned into the new one wait `budget-limited` until a later Engine frame builds it, so the
     // two never live in the same frame. A GPU process that frees storage once the frame's commands finish would
     // otherwise hold both.
-    const engine = scene.getEngine();
     if (heldEdge !== 0 && heldEdge !== atlasEdge) {
       releaseEmptyShadowAtlas(scene);
       // An atlas a tile still holds stays, and the first new map's allocation fails on it, rather than every map
@@ -978,6 +992,31 @@ export class SceneShadowController {
       return casterBounds;
     }, atlasEdge)) changed = true;
     return changed;
+  }
+  /**
+   * Debug (`renderreset shadows`): the next admission releases every map, the views' own included, and the atlas with
+   * them; a later Engine frame makes the atlas and the maps again (`shadowAtlasGeneration` grows by one).
+   */
+  resetAllocations(): void {
+    this.resetRequested = true;
+    for (const entry of this.entries.values()) entry.resetAllocation = true;
+    markSceneReadinessDirty(this.scene, "shadowMap");
+  }
+  /**
+   * The maps held now, standby ones left out and the views' own included, and how many of them redraw every frame
+   * (the `gpuprobe` shadow counters).
+   */
+  refreshCensus(): { maps: number; continuous: number } {
+    const census = { maps: 0, continuous: 0 };
+    const count = (generator: ShadowGenerator) => {
+      const map = generator.getShadowMap();
+      if (!map) return;
+      census.maps += 1;
+      if (map.refreshRate !== RenderTargetTexture.REFRESHRATE_RENDER_ONCE) census.continuous += 1;
+    };
+    for (const entry of this.entries.values()) if (entry.generator && !entry.standby) count(entry.generator);
+    this.views.forEachMap(({ generator }) => count(generator));
+    return census;
   }
   /**
    * Switches one part of shadow drawing off or back on (`shadowdebug`); true when that changed it. Every map then

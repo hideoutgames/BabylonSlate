@@ -120,13 +120,13 @@ function host() {
     frame();
   };
   /** A view canvas in its own panel, admitted while it has a layout box (a hidden dock tab has none). */
-  const view = (target = new FakeCanvas(), options: { allowDirect?: () => boolean } = {}) => {
+  const view = (target = new FakeCanvas(), options: { allowDirect?: () => boolean; holdsImage?: () => boolean } = {}) => {
     const panel = target.parentNode ?? new FakeParent();
     if (!target.parentNode) panel.insertBefore(target, null);
     const registered = engine.registerView(target as unknown as HTMLCanvasElement, undefined, true);
     let copies = 0;
     const release = admitRegisteredViewFrames(engine, registered, () => target.clientWidth > 0, {
-      begin: () => { state.drew = false; }, canCopy: () => state.coherent, dirty: () => state.drew, allowDirect: options.allowDirect, copied: () => { copies++; },
+      begin: () => { state.drew = false; }, canCopy: () => state.coherent, dirty: () => state.drew, allowDirect: options.allowDirect, holdsImage: options.holdsImage, copied: () => { copies++; },
     });
     return { panel, target, view: registered, release, copies: () => copies };
   };
@@ -178,6 +178,29 @@ describe("direct view presentation", () => {
       expect(source.pixel).toBe(0xff8040);
       draw(0x40a0ff);
       expect([source.pixel, a.copies()]).toEqual([0x40a0ff, 2]);
+    } finally { a.release(); engine.dispose(); }
+  });
+
+  it("skips the held image copy while a view does not hold its image, and holds it again after", () => {
+    const blits = useFakeHeldImages();
+    const { engine, source, draw, view } = host();
+    let holds = true;
+    const a = view(new FakeCanvas(), { holdsImage: () => holds });
+    try {
+      draw(0xff8040);
+      expect(blits.count).toBe(1);
+      holds = false;
+      draw(0x40a0ff);
+      draw(0x10ff10);
+      // Shown as drawn, with no copy made.
+      expect([blits.count, source.pixel, source.style.visibility, a.copies()]).toEqual([1, 0x10ff10, "visible", 3]);
+      // The image held before the switch is gone: an incoherent frame cannot put a stale one back.
+      draw(0x0000ff, false);
+      expect([blits.count, source.pixel]).toEqual([1, 0x0000ff]);
+      holds = true;
+      draw(0xff8040);
+      draw(0x0000ff, false);
+      expect([blits.count, source.pixel]).toEqual([3, 0xff8040]);
     } finally { a.release(); engine.dispose(); }
   });
 

@@ -54,6 +54,7 @@ import {
   allowSceneScreenShadows,
   sceneRenderingSettings,
   setSceneEffectsEnabled,
+  setSceneFsrOutputDebug,
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { managedRenderReservations } from "./managed-render-resources";
@@ -543,6 +544,46 @@ it("renders a scaled view at its scale into own targets whose single output copy
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(ownSize()).toBeNull();
   expect(outputCopies()).toBe(0);
+  graph.dispose();
+});
+
+it("ends a scaled view's upscale at the view's size, one copy filling the output, and at the output under `fsrdebug output device`", async () => {
+  const options = new NullEngineOptions();
+  options.renderWidth = 80;
+  options.renderHeight = 64;
+  const { scene, camera } = host(new NullEngine(options));
+  // The backbuffer keeps 80 x 64 for Scene Layers; the world's view is 40 x 32 and renders at half of that.
+  setSceneOutputScale(scene, 0.5);
+  updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, upscaling: { ...DEFAULT_RENDER_EFFECTS.upscaling, enabled: true, renderScale: 0.5 } } });
+  const graph = new ForwardSceneFrameGraph(scene);
+  const owned = graph as unknown as { graph?: FrameGraph };
+  const upscaled = () => {
+    const task = owned.graph!.tasks.find((entry) => entry.name === "Scene Effects FSR Upscale") as unknown as { targetTexture: FrameGraphTextureHandle };
+    const size = owned.graph!.textureManager.getTextureDescription(task.targetTexture).size;
+    return [size.width, size.height];
+  };
+  const outputCopies = () => owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").map((task) => task.name);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // The default: upscaled and sharpened to the view's size, one copy filling the output.
+  expect(upscaled()).toEqual([40, 32]);
+  expect(outputCopies()).toEqual(["Scene post-process output"]);
+  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(setSceneFsrOutputDebug(scene, "device")).toBe(true);
+  expect(setSceneFsrOutputDebug(scene, "device")).toBe(false);
+  // The prepared graph is stale.
+  expect(graph.render(camera)).toMatchObject({ rendered: false });
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  // Upscaled to the output, whose sharpening writes it; no copy.
+  expect(upscaled()).toEqual([80, 64]);
+  expect(outputCopies()).toEqual([]);
+  expect(setSceneFsrOutputDebug(scene, "view")).toBe(true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(upscaled()).toEqual([40, 32]);
+  // A view as large as its output has nothing to end early.
+  setSceneOutputScale(scene, 1);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(upscaled()).toEqual([80, 64]);
+  expect(outputCopies()).toEqual([]);
   graph.dispose();
 });
 

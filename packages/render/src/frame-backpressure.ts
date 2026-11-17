@@ -12,6 +12,12 @@ export interface FrameBackpressureStats {
   inFlight: number;
   /** Engine frames whose render was skipped because `mode` frames were still queued. */
   skipped: number;
+  /**
+   * Rendered frames by how many markers were unfinished once each submitted its own (index 0 to 5, the last 5 or more),
+   * since the gate was made: the growth over a window says how deep the queue ran in it. Counted in every mode but
+   * "off", which submits none.
+   */
+  inFlightCounts?: number[];
 }
 
 /**
@@ -29,6 +35,9 @@ export class FrameBackpressure {
   private admitted = false;
   private skips = 0;
   private skippedFrame = -1;
+  private readonly depths = [0, 0, 0, 0, 0, 0];
+  /** The last Engine frame a view rendered in (`renderedThisFrame`). */
+  private renderedFrame = -1;
 
   private readonly submit: ((submitted: number) => FrameMarker | null) | null;
   private readonly frameId: () => number;
@@ -45,6 +54,12 @@ export class FrameBackpressure {
   }
 
   get mode(): FramesInFlight { return this.limit; }
+
+  /**
+   * Whether a view rendered in the Engine frame that is ending (read after this gate's own frame end): an Engine frame
+   * in which every view was capped, held or skipped submitted no GPU work of its own.
+   */
+  renderedThisFrame(): boolean { return this.renderedFrame === this.frameId(); }
 
   /**
    * Whether this Engine frame may render. Called by each view's loop that is about to render; a skip counts once per
@@ -69,9 +84,13 @@ export class FrameBackpressure {
   frameEnd(): void {
     if (!this.admitted) return;
     this.admitted = false;
+    this.renderedFrame = this.frameId();
     if (this.limit === "off" || !this.submit) return;
     const marker = this.submit(this.now());
-    if (marker) this.outstanding.push(marker);
+    if (!marker) return;
+    this.retire();
+    this.outstanding.push(marker);
+    this.depths[Math.min(this.outstanding.length, this.depths.length - 1)] += 1;
   }
 
   setMode(mode: FramesInFlight): void {
@@ -81,7 +100,7 @@ export class FrameBackpressure {
 
   stats(): FrameBackpressureStats {
     this.retire();
-    return { mode: this.limit, inFlight: this.outstanding.length, skipped: this.skips };
+    return { mode: this.limit, inFlight: this.outstanding.length, skipped: this.skips, inFlightCounts: [...this.depths] };
   }
 
   dispose(): void { this.drop(); }

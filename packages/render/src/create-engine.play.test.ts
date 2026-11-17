@@ -825,11 +825,11 @@ describe("Play createEngine view", () => {
     frame();
     await presented;
     expect(handle.renderDiagnostics().presentation!.drawn).toBe(1);
-    expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 0 });
+    expect(gate.stats()).toMatchObject({ mode: 2, inFlight: 3, skipped: 0 });
     // A loaded view's steady frames still wait for the queue.
     frame();
     expect(handle.renderDiagnostics().presentation!.drawn).toBe(1);
-    expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 1 });
+    expect(gate.stats()).toMatchObject({ mode: 2, inFlight: 3, skipped: 1 });
   });
 
   it("pauses Play's game time but keeps drawing while the world view holds for compiling effects", async () => {

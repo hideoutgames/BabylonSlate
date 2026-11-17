@@ -65,6 +65,22 @@ describe("SceneLayerCompositor", () => {
     expect(scene.autoClear).toBe(true);
   });
 
+  it("leaves depth and stencil uncleared before a layer drawn over the world only while its clears are switched off", () => {
+    const { compositor } = world();
+    const layer = compositor.create({
+      type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+    });
+    compositor.render();
+    expect(layer.scene.autoClearDepthAndStencil).toBe(true);
+    compositor.depthClears = false;
+    compositor.render();
+    // The colour beneath is never cleared; now neither are depth and stencil.
+    expect([layer.scene.autoClear, layer.scene.autoClearDepthAndStencil]).toEqual([false, false]);
+    compositor.depthClears = true;
+    compositor.render();
+    expect(layer.scene.autoClearDepthAndStencil).toBe(true);
+  });
+
   it("lists each layer's own renderer work in draw order, with its mesh count", () => {
     const { compositor } = world();
     const create = (layerId: string, zOrder: number) =>
@@ -561,6 +577,23 @@ describe("SceneLayerCompositor", () => {
     const removed = compositor.prepare("overlay", () => {});
     compositor.remove("overlay");
     await expect(removed).resolves.toBeUndefined();
+    await compositor.dispose();
+  });
+
+  it("keeps a layer's probes scoped to the changed visuals in the renderer a post-process rebuild makes", async () => {
+    const engine = adaptNullEngineFrameGraph(new NullEngine());
+    engines.push(engine);
+    const renderers: SceneRenderCoordinator[] = [];
+    const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: (_layer, _stack, renderer) => {
+      renderers.push(renderer); return { dispose() {} };
+    } });
+    compositor.create({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, postProcessStack: [{ materialGuid: "first", enabled: true }] });
+    compositor.setPostProcess("overlay", [{ materialGuid: "second", enabled: true }]);
+    expect(renderers).toHaveLength(2);
+    expect(renderers[1]).not.toBe(renderers[0]);
+    const scoped = (renderer: SceneRenderCoordinator) =>
+      (renderer as unknown as { graph: { scopedStrictProbes: boolean } }).graph.scopedStrictProbes;
+    expect(renderers.map(scoped)).toEqual([true, true]);
     await compositor.dispose();
   });
 

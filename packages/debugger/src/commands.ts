@@ -46,7 +46,13 @@ export const DEBUG_COMMAND_NAMES = [
   "shadowdebug",
   "discardsamples",
   "scenelayers",
+  "fsrdebug",
+  "layerdebug",
+  "heldimage",
+  "backbufferdiscard",
+  "renderreset",
   "gpubusy",
+  "gpuprobe",
   "framesinflight",
   "preservebuffer",
   "pause",
@@ -236,7 +242,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "shadowdebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), or the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles)",
+      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles), the sun cascades' depth clamp in the fragment stage (depthclamp; off, casters are clamped in the vertex stage instead), or the sun's far cascades drawn every frame (farcascades; off, they draw in every second frame)",
       parameters: [{ name: "part", type: "enum", enumValues: [...SHADOW_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as ShadowDebugPart, enabled = Boolean(args.enabled);
@@ -249,8 +255,64 @@ export function builtinCommands(): RegisteredCommand[] {
       "Discard multisampled colour and depth samples after a frame's last resolve of them (on), or keep them (off), to measure what storing them costs"),
     flagCommand("scenelayers", (host, enabled) => host.setSceneLayers?.(enabled),
       "Composite Play's Scene Layers (on) or hide them all (off), so the frame is drawn at the world's resolution alone, to measure what the layers and the device-resolution output cost"),
+    {
+      name: "fsrdebug",
+      tier: "debug",
+      category: "engine",
+      description: "Where Play's upscale ends: at the view's own size with one copy filling the output (output view, the default) or at the output (output device: under Scene Layers the device's resolution), to measure what upscaling and sharpening at the device's resolution would cost",
+      parameters: [{ name: "part", type: "enum", enumValues: ["output"] }, { name: "value", type: "enum", enumValues: ["device", "view"] }],
+      run(args, host) {
+        const output = args.value as "device" | "view";
+        if (!host.setFsrOutput) return fail("fsrdebug is unavailable here");
+        host.setFsrOutput(output);
+        return ok(`fsrdebug output ${output}`);
+      },
+    },
+    {
+      name: "layerdebug",
+      tier: "debug",
+      category: "engine",
+      description: "Clear depth and stencil before each Scene Layer drawn over the world (clears on, the default) or leave them (clears off), to measure what the clears cost; a layer whose meshes use depth may then draw differently",
+      parameters: [{ name: "part", type: "enum", enumValues: ["clears"] }, FLAG],
+      run(args, host) {
+        const enabled = Boolean(args.enabled);
+        if (!host.setLayerDebug) return fail("layerdebug is unavailable here");
+        host.setLayerDebug("clears", enabled);
+        return ok(`layerdebug clears ${enabled ? "on" : "off"}`);
+      },
+    },
+    flagCommand("backbufferdiscard", (host, enabled) => host.setBackbufferDiscard?.(enabled),
+      "Discard the backbuffer's depth and stencil at the end of each frame Play draws (on), so the GPU need not store them, or keep them (off, the default)"),
+    flagCommand("heldimage", (host, enabled) => host.setHeldImage?.(enabled),
+      "Copy each frame Play presents into its held image (on, the default) or skip the copy (off), to measure what it costs; off, a frame held back shows the view's last kept picture instead of the last frame"),
+    {
+      name: "renderreset",
+      tier: "debug",
+      category: "engine",
+      description: "Reset one part of the Play view's rendering with no setting changed, to see whether frame pacing follows it: rebuild its frame graph (graph), reallocate its shadow maps (shadows), or render nothing for 3 s (idle)",
+      parameters: [{ name: "what", type: "enum", enumValues: ["graph", "shadows", "idle"] }],
+      run(args, host) {
+        const what = args.what as "graph" | "shadows" | "idle";
+        if (!host.resetRendering) return fail("renderreset is unavailable here");
+        host.resetRendering(what);
+        return ok(`renderreset ${what}`);
+      },
+    },
     flagCommand("gpubusy", (host, enabled) => host.setGpuBusyProbe?.(enabled),
       "Start (on, restarting) or stop measuring GPU-busy time per frame with fences, independently of display pacing"),
+    {
+      name: "gpuprobe",
+      tier: "debug",
+      category: "engine",
+      description: "Probe what the GPU is given each frame: record every frame's passes, clears, blits and shadow map draws (on, restarting), stop and take the recorder off (off), or render a few frames one at a time with a fence after each stage and then a fixed synthetic load (serial)",
+      parameters: [{ name: "action", type: "enum", enumValues: ["on", "off", "serial"] }],
+      run(args, host) {
+        const action = args.action as "on" | "off" | "serial";
+        if (!host.setGpuProbe) return fail("gpuprobe is unavailable here");
+        host.setGpuProbe(action);
+        return ok(`gpuprobe ${action}`);
+      },
+    },
     {
       name: "framesinflight",
       tier: "debug",

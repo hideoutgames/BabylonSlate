@@ -9,6 +9,7 @@ import { FrameGraphCopyToTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Te
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { ScenePostProcessOwner } from "./scene-post-process-owner";
 import { SceneEffectsGraph } from "./scene-effects-graph";
+import { FrameGraphFsr1UpscaleTask } from "./fsr1-tasks";
 import { displayEncodingEffects, planWithoutScreenEffects, upscaledRenderSize, withoutIdleStages, type SceneEffectsPlan } from "./scene-effects";
 import { scaledOutputSize, sceneOutputScale } from "./scene-output-scale";
 import { liveSceneEffectsKey } from "./spatial-effects";
@@ -743,7 +744,13 @@ export class ForwardSceneFrameGraph {
       if (task instanceof FrameGraphObjectRendererTask) return "objects";
       return water.has(task) ? "water" : "other";
     };
-    for (const task of this.graph!.tasks) observeTaskDrawPass(task, engine, pass(task));
+    // The frame's tail starts where the view's output is first written at its full size: the FSR upscale (its sharpening
+    // writes the output), else the task that writes the output (the chain's last stage, or the output copy).
+    const effectTasks = this.effectsGraph?.tasks ?? [];
+    const tail = effectTasks.find((task) => task instanceof FrameGraphFsr1UpscaleTask)
+      ?? this.outputCopy
+      ?? (this.effectsGraph?.rendersToOutput ? effectTasks.at(-1) : undefined);
+    for (const task of this.graph!.tasks) observeTaskDrawPass(task, engine, pass(task), task === tail);
   }
 
   /** Prepared graph task names in record order, for diagnostics and tests. */
@@ -829,6 +836,12 @@ export class ForwardSceneFrameGraph {
     this.failure = undefined;
     this.failedOutput = undefined;
     this.markReadinessDirty("invalidate");
+  }
+
+  /** Debug (`renderreset graph`): the next preparation builds the graph again, with nothing changed. */
+  rebuildGraph(): void {
+    this.postProcessRevision += 1;
+    if (!this.pending) this.releaseGraph();
   }
 
   /** Steady-state frames skip the strict probe until a change marks it dirty. */
@@ -1610,6 +1623,10 @@ export class ForwardSceneFrameGraph {
         // backbuffer after that blit: no resolve and no output copy.
         const outlineOnOutput = !!this.preparedOutlineView && !effectsPlan && !this.postProcessGraph && !!this.ownScene &&
           presentsByBlit(this.ownScene, waterDemand > 0);
+        // A scene view whose backbuffer is larger than the view ends its chain at the view's size (`fsrdebug output
+        // device` ends it at the backbuffer's).
+        const chainAtView = sceneRenderingSettings(scene).fsrOutputAtView && !this.auxiliary && !output.color &&
+          (viewSize.width !== output.width || viewSize.height !== output.height);
         if (effectsPlan) {
           this.effectsGraph = new SceneEffectsGraph({
             frameGraph: this.graph,
@@ -1619,12 +1636,13 @@ export class ForwardSceneFrameGraph {
             authoredOutputTexture: this.postProcessGraph?.outputTexture,
             width: renderSize.width,
             height: renderSize.height,
-            outputWidth: output.width,
-            outputHeight: output.height,
+            outputWidth: chainAtView ? viewSize.width : output.width,
+            outputHeight: chainAtView ? viewSize.height : output.height,
             samples,
             geometryOverSceneDepth: this.seedsFromSceneDepth ? { authoredDepthTexture: this.postProcessGraph?.depthTexture ?? undefined } : undefined,
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
-            outputTarget: color,
+            // Ending at the view's size, the chain never writes the larger output: the output copy below fills it.
+            outputTarget: chainAtView ? undefined : color,
           });
         } else if (this.preparedOutlineView) {
           composeOutline(this.postProcessGraph?.outputTexture ?? (outlineOnOutput ? undefined : this.ownScene?.color) ?? color);

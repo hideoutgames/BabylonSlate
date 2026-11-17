@@ -62,8 +62,20 @@ export type ConsoleCommandHost = {
   setDiscardSamples?(enabled: boolean): void;
   /** `scenelayers`: composite Play's Scene Layers (on) or hide them all (off), to measure what drawing at the device's resolution for them costs. */
   setSceneLayers?(enabled: boolean): void;
+  /** `fsrdebug output`: end Play's upscale at the output (device) or at the view's own size (view). */
+  setFsrOutput?(output: "device" | "view"): void;
+  /** `backbufferdiscard`: invalidate the backbuffer's depth and stencil at the end of each frame Play draws (on), or keep them (off). */
+  setBackbufferDiscard?(enabled: boolean): void;
+  /** `heldimage`: copy each frame Play presents directly into its held image (on), or skip the copy (off). */
+  setHeldImage?(enabled: boolean): void;
+  /** `layerdebug clears`: clear depth and stencil before each Scene Layer drawn over the world (on), or leave them (off). */
+  setLayerDebug?(part: "clears", enabled: boolean): void;
+  /** `renderreset`: rebuild the Play view's frame graph, reallocate its shadow maps, or render nothing for 3 s. */
+  resetRendering?(what: "graph" | "shadows" | "idle"): void;
   /** Start (restart) or stop measuring GPU-busy time per frame; the Play view's diagnostics report it. */
   setGpuBusyProbe?(enabled: boolean): void;
+  /** `gpuprobe`: start (restart) or stop recording each frame's GL passes and shadow map draws, or run the serialised stage-fence frames. */
+  setGpuProbe?(action: "on" | "off" | "serial"): void;
   /** How many rendered frames the Engine may queue on the GPU; "off" lifts the limit (`framesinflight`). */
   setFramesInFlight?(mode: "off" | 2 | 3): void;
   /** Store whether the next project Engine keeps its drawing buffer (applies after an editor reload). */
