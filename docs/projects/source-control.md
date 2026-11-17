@@ -18,7 +18,7 @@ Accounts belong to this device, not to a project: each person signs in once on e
 
 | Section | What it holds |
 | --- | --- |
-| Accounts | **GitHub** and **GitLab** (gitlab.com). Each row shows the signed-in user with **Sign Out**, or **Sign In**. |
+| Accounts | **GitHub** and **GitLab** (gitlab.com). Each row shows the signed-in user with **Sign Out**, or **Sign In**. A sign-in the host no longer accepts shows **Sign-In Refused** or **Sign-In Expired** with **Sign In Again**. |
 | Self-Managed GitLab | Your own GitLab instance: enter its **Instance URL** and a personal access token in **Token**, then choose **Save Token**. Saved instances are listed with **Remove**. |
 | Other Git Hosts | Any other host, such as Gitea: enter its **Host URL** and an access token, then choose **Add Host**. Each saved host shows **Token Saved** with **Remove**. |
 
@@ -44,6 +44,8 @@ GitHub asks you to let Haptic access your repositories and read your organizatio
 The dialog shows how long the code stays valid. If the code expires or you deny access, choose **Try Again** for a new code. **Cancel** stops waiting.
 
 A GitLab sign-in renews itself in the background. If GitLab no longer accepts it, Haptic signs you out of GitLab on this device and the sign-in banner returns.
+
+Your sign-ins stay on this device when the app updates. When you open a project that uses source control, or **Engine Settings > Source Control**, Haptic asks each host once whether your saved sign-in still works. A sign-in can stop working when you revoke Haptic's access on the host, when the host's sign-in app changes, or when it expires: a GitHub App's sign-ins can expire after a few hours unless its token expiration is turned off. Haptic then shows the sign-in banner with **Sign In Again**, and **Engine Settings > Source Control** shows **Sign-In Refused** or **Sign-In Expired**. A token the host refuses shows **Token Refused**; remove it and save a new one.
 
 ## Clone a project
 
@@ -224,7 +226,7 @@ Keep the project in a folder that is a Git working copy whose top folder is the 
 
 Setting **Mode** back to **Off** asks first. Your locks stay until you release them.
 
-If you open a project in Integrated or Manual mode on a device that has no account for its host, a banner says **This project uses GitHub file locking.** (or the host's name) with **Sign In**. Until you sign in, Haptic doesn't check or take any locks, and can't pull or push. For a host that takes a token, **Sign In** opens **Engine Settings > Source Control**.
+If you open a project in Integrated or Manual mode on a device that has no account for its host, a banner says **This project uses GitHub file locking.** (or the host's name) with **Sign In**. Until you sign in, Haptic doesn't check or take any locks, and can't pull or push. For a host that takes a token, **Sign In** opens **Engine Settings > Source Control**. If the host refuses your saved sign-in, or it expired, the banner says **GitHub refused the saved sign-in.** or **The GitHub sign-in expired.** with **Sign In Again**; after you sign in, Haptic reads your changes and the remote again.
 
 ## Working with locks
 

@@ -111,8 +111,9 @@ export function authorizedHttp<
 >(source: CredentialSource, http: (request: Request) => Promise<Response>, scheme: "basic" | "bearer"): (request: Request) => Promise<Response> {
   return async (request: Request): Promise<Response> => {
     const origin = originOf(request.url);
-    let credential = await source.current();
-    if (!credential) throw new NoCredentialError(request.url);
+    const saved = await source.current();
+    if (!saved) throw new NoCredentialError(request.url);
+    let credential: HostCredential = saved;
     for (let attempt = 0; ; attempt += 1) {
       if (!origin || !credentialAllowsOrigin(credential, origin)) throw new CredentialOriginError(request.url);
       const response = await http({
@@ -121,7 +122,7 @@ export function authorizedHttp<
         disableRedirects: true,
       });
       if (response.status !== 401) return response;
-      const renewed = attempt === 0 ? await source.renew(credential) : null;
+      const renewed: HostCredential | null = attempt === 0 ? await source.renew(credential) : null;
       if (!renewed || renewed.token === credential.token) {
         source.refused?.(credential);
         return response;
