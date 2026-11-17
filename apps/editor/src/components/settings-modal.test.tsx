@@ -851,6 +851,21 @@ describe("SettingsModal project authoring", () => {
     expect(lastProjectRender.current).toMatchObject({ customResolution: true, blackBars: true, upscaling: "pixelated" });
   });
 
+  it("says FSR Upscaling and Anti-Aliasing stay off while Upscaling is Pixelated", () => {
+    showRenderingSections("scalability", "postProcessing");
+    lastProjectRender.current = { ...createEmptyProject("Demo").settings.render, customResolution: true, upscaling: "smooth" };
+    const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.queryByTestId("project-effects-upscaling-note")).toBeNull();
+    expect(screen.queryByTestId("quality-antialiasing-pixelated")).toBeNull();
+    lastProjectRender.current = { ...createEmptyProject("Demo").settings.render, customResolution: true, upscaling: "pixelated" };
+    view.rerender(<SettingsModal open onOpenChange={() => {}} scope="project" key="pixelated" />);
+    fireEvent.click(screen.getByTestId("settings-modal-category-rendering"));
+    expect(screen.getByTestId("project-effects-upscaling-note").textContent).toContain("Pixelated");
+    expect(screen.getByTestId("project-effects-upscaling").getAttribute("aria-describedby")).toContain("project-effects-upscaling-note");
+    expect(screen.getByTestId("quality-antialiasing-pixelated")).toBeTruthy();
+  });
+
   it("stages the pipeline preference until Done", async () => {
     showRenderingSections("pipeline");
     const view = render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
