@@ -143,14 +143,14 @@ describe("createCommandRegistry", () => {
     host.setShadowDebug = (part, enabled) => host.calls.push(`${part}:${enabled}`);
     const debug = createCommandRegistry({ includeDebug: true });
     const release = createCommandRegistry({ includeDebug: false });
-    for (const part of ["casters", "passes", "atlasfit"]) {
+    for (const part of ["casters", "passes", "atlasfit", "depthclamp", "farcascades"]) {
       expect(debug.execute(`shadowdebug ${part} off`, host)).toEqual({ success: true, output: `shadowdebug ${part} off` });
       expect(debug.execute(`shadowdebug ${part} on`, host)).toEqual({ success: true, output: `shadowdebug ${part} on` });
     }
     expect(debug.execute("shadowdebug sun off", host).success).toBe(false);
     expect(debug.execute("shadowdebug casters maybe", host).success).toBe(false);
     expect(release.execute("shadowdebug casters off", host).success).toBe(false);
-    expect(host.calls).toEqual(["casters", "passes", "atlasfit"].flatMap((part) => [`${part}:false`, `${part}:true`]));
+    expect(host.calls).toEqual(["casters", "passes", "atlasfit", "depthclamp", "farcascades"].flatMap((part) => [`${part}:false`, `${part}:true`]));
   });
 
   it("discards multisampled samples after their last resolve and keeps them again, in debug registries only", () => {
@@ -163,6 +163,74 @@ describe("createCommandRegistry", () => {
     expect(debug.execute("discardsamples maybe", host).success).toBe(false);
     expect(release.execute("discardsamples on", host).success).toBe(false);
     expect(host.calls).toEqual(["discard:true", "discard:false"]);
+  });
+
+  it("ends Play's upscale at the output or at the view's size, in debug registries only", () => {
+    const host = recordingHost();
+    host.setFsrOutput = (output) => host.calls.push(`fsr:${output}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const output of ["view", "device"]) expect(debug.execute(`fsrdebug output ${output}`, host)).toEqual({ success: true, output: `fsrdebug output ${output}` });
+    expect(debug.execute("fsrdebug output half", host).success).toBe(false);
+    expect(debug.execute("fsrdebug sharpen view", host).success).toBe(false);
+    expect(release.execute("fsrdebug output view", host).success).toBe(false);
+    expect(host.calls).toEqual(["fsr:view", "fsr:device"]);
+  });
+
+  it("switches the backbuffer's depth and stencil discard on and off, in debug registries only", () => {
+    const host = recordingHost();
+    host.setBackbufferDiscard = (enabled) => host.calls.push(`discard-depth:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("backbufferdiscard on", host)).toEqual({ success: true, output: "backbufferdiscard on" });
+    expect(debug.execute("backbufferdiscard off", host)).toEqual({ success: true, output: "backbufferdiscard off" });
+    expect(release.execute("backbufferdiscard on", host).success).toBe(false);
+    expect(host.calls).toEqual(["discard-depth:true", "discard-depth:false"]);
+  });
+
+  it("switches Play's held image copy off and on, in debug registries only", () => {
+    const host = recordingHost();
+    host.setHeldImage = (enabled) => host.calls.push(`held:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("heldimage off", host)).toEqual({ success: true, output: "heldimage off" });
+    expect(debug.execute("heldimage on", host)).toEqual({ success: true, output: "heldimage on" });
+    expect(release.execute("heldimage off", host).success).toBe(false);
+    expect(host.calls).toEqual(["held:false", "held:true"]);
+  });
+
+  it("switches the Scene Layers' depth and stencil clears off and on, in debug registries only", () => {
+    const host = recordingHost();
+    host.setLayerDebug = (part, enabled) => host.calls.push(`layer:${part}:${enabled}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    expect(debug.execute("layerdebug clears off", host)).toEqual({ success: true, output: "layerdebug clears off" });
+    expect(debug.execute("layerdebug clears on", host)).toEqual({ success: true, output: "layerdebug clears on" });
+    expect(debug.execute("layerdebug depth off", host).success).toBe(false);
+    expect(release.execute("layerdebug clears off", host).success).toBe(false);
+    expect(host.calls).toEqual(["layer:clears:false", "layer:clears:true"]);
+  });
+
+  it("resets one part of Play's rendering by name, in debug registries only", () => {
+    const host = recordingHost();
+    host.resetRendering = (what) => host.calls.push(`reset:${what}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const what of ["graph", "shadows", "idle"]) expect(debug.execute(`renderreset ${what}`, host)).toEqual({ success: true, output: `renderreset ${what}` });
+    expect(debug.execute("renderreset atlas", host).success).toBe(false);
+    expect(release.execute("renderreset graph", host).success).toBe(false);
+    expect(host.calls).toEqual(["reset:graph", "reset:shadows", "reset:idle"]);
+  });
+
+  it("starts, stops and serialises the GPU probes by name, in debug registries only", () => {
+    const host = recordingHost();
+    host.setGpuProbe = (action) => host.calls.push(`probe:${action}`);
+    const debug = createCommandRegistry({ includeDebug: true });
+    const release = createCommandRegistry({ includeDebug: false });
+    for (const action of ["on", "serial", "off"]) expect(debug.execute(`gpuprobe ${action}`, host)).toEqual({ success: true, output: `gpuprobe ${action}` });
+    expect(debug.execute("gpuprobe fences", host).success).toBe(false);
+    expect(release.execute("gpuprobe on", host).success).toBe(false);
+    expect(host.calls).toEqual(["probe:on", "probe:serial", "probe:off"]);
   });
 
   it("hides Play's Scene Layers and shows them again, in debug registries only", () => {

@@ -16,8 +16,8 @@ import { beginEngineDrawCallFrame } from "./draw-calls";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { Observable } from "@babylonjs/core/Misc/observable";
 import {
-  beginDrawPassFrame, DrawPassFrame, emptyDrawPasses, endDrawPassFrame, enterDrawPass, leaveDrawPass, observeTaskDrawPass,
-  publishDrawPassFrame, withDrawPass,
+  beginDrawPassFrame, DrawPassFrame, emptyDrawPasses, endDrawPassFrame, enterDrawPass, leaveDrawPass, markFrameTail, observeTaskDrawPass,
+  publishDrawPassFrame, setDrawPassStageListener, withDrawPass,
 } from "./draw-passes";
 import { ForwardSceneFrameGraph } from "./framegraph-forward-scene";
 import { timeParticleAnimation } from "./particle-animation-pass";
@@ -74,6 +74,41 @@ describe("DrawPassFrame", () => {
     expect(frame.last).toEqual(emptyDrawPasses());
     publishDrawPassFrame(frame);
     expect(frame.last).toEqual({ ...emptyDrawPasses(), other: 2, shadows: 4, captures: 10, objects: 8, post: 2 });
+  });
+
+  it("tells a stage listener the pass running at every boundary, and the tail from a tail task of the view's own graph only", () => {
+    const { engine } = counter();
+    const frame = new DrawPassFrame(engine);
+    const seen: string[] = [];
+    const sharpen = { onBeforeTaskExecute: new Observable<unknown>(), onAfterTaskExecute: new Observable<unknown>() };
+    observeTaskDrawPass(sharpen as unknown as FrameGraphTask, engine, "post", true);
+    setDrawPassStageListener((pass) => seen.push(pass));
+    try {
+      // Outside a frame nothing is told.
+      markFrameTail(engine);
+      beginDrawPassFrame(frame);
+      enterDrawPass(engine, "shadows");
+      leaveDrawPass(engine);
+      // A capture's own graph: its passes are the capture's, and its output copy is not the frame's tail.
+      withDrawPass(engine, "captures", () => {
+        enterDrawPass(engine, "objects");
+        markFrameTail(engine);
+        leaveDrawPass(engine);
+      });
+      // The tail is marked before the task's own pass opens.
+      sharpen.onBeforeTaskExecute.notifyObservers(sharpen);
+      sharpen.onAfterTaskExecute.notifyObservers(sharpen);
+      markFrameTail({});
+      endDrawPassFrame(frame);
+    } finally {
+      setDrawPassStageListener(null);
+    }
+    expect(seen).toEqual(["shadows", "other", "captures", "captures", "captures", "other", "tail", "post", "other"]);
+    // Without a listener a boundary tells nobody.
+    beginDrawPassFrame(frame);
+    enterDrawPass(engine, "objects");
+    endDrawPassFrame(frame);
+    expect(seen).toHaveLength(9);
   });
 
   it("starts every frame from zero, keeps the last published frame, and ignores passes outside a frame or on another Engine", () => {

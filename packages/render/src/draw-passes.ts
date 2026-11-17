@@ -104,17 +104,24 @@ export class DrawPassFrame {
       this.passes[depth] = pass;
       this.owners[depth] = owner;
     }
+    stageListener?.(this.passes[depth]!);
   }
 
   leave(): void {
     if (this.depth === 0) return;
     this.flush();
     this.depth -= 1;
+    stageListener?.(this.pass);
   }
 
   /** The pass running now: the one a draw made at this moment counts to. */
   get pass(): DrawPass {
     return this.passes[Math.min(this.depth, MAX_DEPTH - 1)]!;
+  }
+
+  /** Whether an owner pass (a capture, mirror, probe, water reflection or Scene Layer) is running. */
+  get inOwner(): boolean {
+    return this.owners[Math.min(this.depth, MAX_DEPTH - 1)]!;
   }
 
   /** Counts the draws, and on a timed frame the time, since the last read to the pass running now. */
@@ -142,6 +149,26 @@ export class DrawPassFrame {
 }
 
 let active: DrawPassFrame | undefined;
+
+/**
+ * Told the pass running now at every pass boundary of the attributed frame, and `"tail"` once the frame reaches its
+ * device-resolution tail (`markFrameTail`). Set only while the GPU probe's serialised frame renders
+ * (`gpu-frame-probe.ts`); null otherwise, so a frame pays one null check per boundary.
+ */
+let stageListener: ((pass: DrawPass | "tail") => void) | null = null;
+
+export function setDrawPassStageListener(listener: ((pass: DrawPass | "tail") => void) | null): void {
+  stageListener = listener;
+}
+
+/**
+ * The attributed frame on `engine` has reached its tail: the passes that write the view's output at its full size (the
+ * FSR upscale and sharpening, or the output copy) and what is drawn over it. A no-op outside an attributed frame and inside an owner pass, whose
+ * own graph writes its own output.
+ */
+export function markFrameTail(engine: object): void {
+  if (stageListener && active?.engine === engine && !active.inOwner) stageListener("tail");
+}
 
 /** Starts attributing `frame.engine`'s draws to `frame`; call right after the frame's draw counter reset. */
 export function beginDrawPassFrame(frame: DrawPassFrame): void {
@@ -193,9 +220,11 @@ const observed = new WeakSet<FrameGraphTask>();
  * it, so what those draw (the scene view's capture views, after its shadow maps) is not the task's. Babylon skips the
  * end when a pass throws; the next frame starts balanced.
  */
-export function observeTaskDrawPass(task: FrameGraphTask, engine: object, pass: DrawPass): void {
+export function observeTaskDrawPass(task: FrameGraphTask, engine: object, pass: DrawPass, tail = false): void {
   if (observed.has(task)) return;
   observed.add(task);
+  // Insert-first observers run in reverse order of their adding: the tail mark runs before the task's pass opens.
   task.onBeforeTaskExecute.add(() => enterDrawPass(engine, pass), undefined, true);
+  if (tail) task.onBeforeTaskExecute.add(() => markFrameTail(engine), undefined, true);
   task.onAfterTaskExecute.add(() => leaveDrawPass(engine), undefined, true);
 }

@@ -277,7 +277,12 @@ export function componentCastsShadows(classId: string, castShadows: unknown): bo
  * still bound and cleared, and lit surfaces still sample the maps, which hold no caster), and the map passes
  * themselves (`passes`: no layer is bound, cleared or drawn once it has drawn its first, and lit surfaces sample the
  * depth the maps last held), and the atlas sized to the level (`atlasfit`: off, the atlas is one power of two larger,
- * within the device's limit, and holds the same tiles, so its change is what the atlas's size alone costs).
+ * within the device's limit, and holds the same tiles, so its change is what the atlas's size alone costs), and the
+ * sun cascades' depth clamp in the fragment stage (`depthclamp`: off, casters in front of a cascade's near plane are
+ * clamped to it in the vertex stage, so no caster fragment writes its own depth; a triangle crossing the plane then
+ * draws slightly differently), and the sun's far cascades drawn in every frame the map draws (`farcascades`: off, the
+ * cascades after the first two are cleared and drawn only in every second Engine frame and keep their depth and the
+ * view they were drawn with in between, so a moving caster's far shadow may lag a frame).
  */
-export const SHADOW_DEBUG_PARTS = ["casters", "passes", "atlasfit"] as const;
+export const SHADOW_DEBUG_PARTS = ["casters", "passes", "atlasfit", "depthclamp", "farcascades"] as const;
 export type ShadowDebugPart = (typeof SHADOW_DEBUG_PARTS)[number];

@@ -34,6 +34,25 @@ function fixture() {
 }
 
 describe("GpuBusyProbe", () => {
+  it("measures only Engine frames that rendered, so a frame cap's empty frames do not read as frames of no GPU time", () => {
+    let now = 0;
+    let rendered = false;
+    const pending: Array<() => void> = [];
+    const gl = fakeGl();
+    const probe = createFenceGpuBusyProbe(gl.gl, () => now, (callback) => pending.push(callback), () => rendered);
+    probe.start();
+    // An empty frame submits no fence; the rendered one after it is measured from its own submission.
+    probe.frameEnd();
+    expect(pending).toHaveLength(0);
+    rendered = true;
+    now = 10;
+    probe.frameEnd();
+    gl.signal(0);
+    now = 40;
+    for (const callback of pending.splice(0)) callback();
+    expect(probe.stats()).toMatchObject({ frames: 1, medianMs: 30 });
+  });
+
   it("does nothing until started", () => {
     const { probe, pending } = fixture();
     probe.frameEnd();

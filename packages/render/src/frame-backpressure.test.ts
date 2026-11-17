@@ -28,11 +28,11 @@ describe("frame backpressure", () => {
     expect([run(), run()]).toEqual([true, true]);
     // Frames 1 and 2 still queued: frame 3 waits for frame 1, without blocking, once per Engine frame whatever its views.
     expect([run(2), run(2)]).toEqual([false, false]);
-    expect(gate.stats()).toEqual({ mode: 2, inFlight: 2, skipped: 2 });
+    expect(gate.stats()).toMatchObject({ mode: 2, inFlight: 2, skipped: 2 });
     queue[0]!.finished = true;
     expect(run()).toBe(true);
     expect(queue[0]!.disposed).toBe(true);
-    expect(gate.stats()).toEqual({ mode: 2, inFlight: 2, skipped: 2 });
+    expect(gate.stats()).toMatchObject({ mode: 2, inFlight: 2, skipped: 2 });
     // A skipped frame submitted no marker: only rendered frames are in flight.
     expect(queue).toHaveLength(3);
   });
@@ -49,7 +49,7 @@ describe("frame backpressure", () => {
     const submitted = queue.length;
     expect([run(), run(), run()]).toEqual([true, true, true]);
     expect(queue).toHaveLength(submitted);
-    expect(gate.stats()).toEqual({ mode: "off", inFlight: 0, skipped: 1 });
+    expect(gate.stats()).toMatchObject({ mode: "off", inFlight: 0, skipped: 1 });
   });
 
   it("renders a loading owner's presentation frame past the limit, and counts it in flight for the frames after it", () => {
@@ -57,12 +57,33 @@ describe("frame backpressure", () => {
     expect([run(), run(), run()]).toEqual([true, true, false]);
     expect(gate.admit(true)).toBe(true);
     gate.frameEnd();
-    expect(gate.stats()).toEqual({ mode: 2, inFlight: 3, skipped: 1 });
+    expect(gate.stats()).toMatchObject({ mode: 2, inFlight: 3, skipped: 1 });
     // Steady frames wait until fewer than two frames remain queued, the loading frame among them.
     queue[0]!.finished = true;
     expect(run()).toBe(false);
     queue[1]!.finished = true;
     expect(run()).toBe(true);
+  });
+
+  it("counts how deep the GPU queue ran as each rendered frame submitted its marker, finished frames retired first", () => {
+    const { gate, queue, run } = gpu();
+    run();
+    run();
+    run();
+    queue[0]!.finished = true;
+    run();
+    // One frame then two queued; the third skipped; after the first finished, two again.
+    expect(gate.stats().inFlightCounts).toEqual([0, 1, 2, 0, 0, 0]);
+  });
+
+  it("says whether a view rendered in the Engine frame that is ending", () => {
+    const { gate, run } = gpu();
+    run();
+    expect(gate.renderedThisFrame()).toBe(true);
+    // Two frames queued: the next one renders nothing.
+    run();
+    run();
+    expect(gate.renderedThisFrame()).toBe(false);
   });
 
   it("submits nothing for a frame no view rendered, and renders every frame without a marker source", () => {
@@ -71,6 +92,6 @@ describe("frame backpressure", () => {
     expect(queue).toHaveLength(0);
     const unmarked = new FrameBackpressure(null, () => 0);
     expect([unmarked.admit(), unmarked.admit(), unmarked.admit()]).toEqual([true, true, true]);
-    expect(unmarked.stats()).toEqual({ mode: 2, inFlight: 0, skipped: 0 });
+    expect(unmarked.stats()).toMatchObject({ mode: 2, inFlight: 0, skipped: 0 });
   });
 });
