@@ -626,8 +626,12 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float roughness = clamp(position.w / max(lightDistance, HAPTIC_EPSILON) + surface.roughness, 0.0, 1.0);
     specular += hapticSpecular(surface, N, V, L, NdotL, roughness) * radiance;
   }
-  for (int i = 0; i < ${HAPTIC_LIGHT_MAXIMUM.rect}; i++) {
-    if (i >= int(hapticCounts.w)) break;
+  // The rect lights of P's cluster, in record order: a cluster wholly behind a rect's emitting side drops it, where it
+  // adds exactly zero (\`hapticLtcEvaluate\`).
+  uint rects = hapticClusterLights(clusterMask.y >> 16, int(hapticCounts.w));
+  for (int r = 0; r < ${HAPTIC_LIGHT_MAXIMUM.rect}; r++) {
+    if (rects == 0u) break;
+    int i = hapticNextLight(rects);
     hapticArea area = hapticAreaLight(P, N, V, i, surface.roughness);
     vec3 color = hapticRect[i * 4 + 3].rgb;
     diffuse += color * area.diffuse;
