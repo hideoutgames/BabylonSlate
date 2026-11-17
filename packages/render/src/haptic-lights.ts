@@ -325,7 +325,7 @@ function sunShadowMap(scene: Scene, light: DirectionalLight): AtlasCascadedShado
   return shadow instanceof AtlasCascadedShadowGenerator ? shadow : null;
 }
 
-/** Writes `shadow`'s views from `first` on (`writeShadowViews`). */
+/** Writes `shadow`'s views from `first` on (`writeShadowViews`), its tiles in pages of `edge` texels. */
 function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerator | AtlasCascadedShadowGenerator, first: number, edge: number): void {
   const offset = scene.floatingOriginOffset;
   const quality = shadow.filteringQuality === ShadowGenerator.QUALITY_LOW ? 0 : shadow.filteringQuality === ShadowGenerator.QUALITY_MEDIUM ? 1 : 2;
@@ -363,7 +363,7 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
     }
     views[base + 27] = size;
     views[base + 28] = ratios[index]!;
-    views[base + 29] = 0;
+    views[base + 29] = tile.layer;
     views[base + 30] = 0;
     views[base + 31] = 0;
   }
@@ -371,7 +371,7 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
 
 /**
  * Writes the shadowed lights' views: per tile, the view-projection it was last drawn with, relative to the floating
- * origin (the block's positions are), the tile in atlas texture coordinates, the darkness, which stays neutral until
+ * origin (the block's positions are), the tile in its atlas page's texture coordinates and that page (the texture layer), the darkness, which stays neutral until
  * the map has drawn, the filter and its quality, and Contact Hardening's terms; the sun's first, from the map the rendering camera samples
  * (`sunShadowMap`), with its cascade choice (`hapticSunShadow`: its cascade count, blend factor, distance fade and
  * first view, always 0; the camera's view depth plane; its cascades' far ends and lengths in it), as last drawn.
@@ -379,6 +379,7 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
  */
 function writeShadowViews(scene: Scene, state: SceneLights): void {
   const offset = scene.floatingOriginOffset;
+  // The atlas's pages are its texture's layers.
   const edge = shadowAtlasTexture(scene).getRenderSize();
   state.sunShadow.fill(0);
   for (const { shadow, first } of state.shadowed) writeViews(scene, state, shadow, first, edge);

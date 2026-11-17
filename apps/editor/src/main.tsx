@@ -41,6 +41,8 @@ if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.se
     }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("spatialEffectsProof")) {
   void import("./testing/spatial-effects-proof").then(({ runSpatialEffectsProof }) => Object.assign(window, { __spatialEffectsProof: runSpatialEffectsProof }));
+} else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("shadowAtlasProof")) {
+  void import("./testing/shadow-atlas-proof").then(({ runShadowAtlasProof }) => Object.assign(window, { __shadowAtlasProof: runShadowAtlasProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("geometryPassLightingProof")) {
   void import("./testing/geometry-pass-lighting-proof").then(({ runGeometryPassLightingProof }) => Object.assign(window, { __geometryPassLightingProof: runGeometryPassLightingProof }));
 } else if (import.meta.env.VITE_TEST_MODE === "true" && new URLSearchParams(location.search).has("colorGradingProof")) {

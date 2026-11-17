@@ -83,9 +83,11 @@ export function hapticShadowGlsl(surface: boolean): string {
 // the world, so the softness holds across cascades and tiles),
 // each tap kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
 // with automatic bias compares each tap against the receiver's plane, from the position's change across the pixel
-// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform).
-float hapticShadowTap(vec4 tile, vec2 texel, float depth) {
-  return textureLod(hapticShadowAtlas, vec3(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), depth), 0.0);
+// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform). ESSL 3.00 has no \`textureLod\` for an array compare sampler:
+// zero gradients ask for level 0 explicitly, as \`textureLod\` did. An implicit level (\`texture\`) would leave it to
+// derivatives, which the light loop's divergent branches leave undefined.
+float hapticShadowTap(vec4 tile, float layer, vec2 texel, float depth) {
+  return textureGrad(hapticShadowAtlas, vec4(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), layer, depth), vec2(0.0), vec2(0.0));
 }
 
 ${surface ? `// The receiver plane's depth change per texel of a \`size\`-texel tile of the orthographic \`view\`, or none where a
@@ -105,10 +107,10 @@ vec2 hapticReceiverGradient(mat4 view, vec3 dPdx, vec3 dPdy, float size) {
 
 // A bilinear tap at \`tap\` texels compared at the receiver plane's depth there (\`gradient\` per texel from \`origin\`),
 // lowered by the plane's rise across the tap's footprint.
-float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradient, float maximum) {
+float hapticPlaneTap(vec4 tile, float layer, vec2 tap, vec2 origin, float depth, vec2 gradient, float maximum) {
   vec2 phase = fract(tap - 0.5);
   float bound = dot(max(gradient, 0.0), phase) + dot(max(-gradient, 0.0), 1.0 - phase);
-  return hapticShadowTap(tile, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
+  return hapticShadowTap(tile, layer, tap, clamp(depth + dot(gradient, tap - origin) - bound, 0.0, maximum));
 }
 
 // Contact Hardening (Babylon's computeShadowWithPCSS and computeShadowWithCSMPCSS) on a view's tile: the depth around the
@@ -124,8 +126,8 @@ float hapticPlaneTap(vec4 tile, vec2 tap, vec2 origin, float depth, vec2 gradien
 #ifndef HAPTIC_CEL
 ${poissonGlsl("hapticPoisson32", POISSON_32)}${poissonGlsl("hapticPoisson64", POISSON_64)}
 // The atlas's depth at a texel of the tile, read without compare (\`hapticShadowAtlasDepth\`).
-float hapticShadowDepth(vec4 tile, vec2 texel, float size) {
-  return texelFetch(hapticShadowAtlasDepth, ivec2(tile.xy / tile.w + clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5), 0).r;
+float hapticShadowDepth(vec4 tile, float layer, vec2 texel, float size) {
+  return texelFetch(hapticShadowAtlasDepth, ivec3(ivec2(tile.xy / tile.w + clamp(floor(texel), vec2(0.0), vec2(size - 1.0)) + 0.5), int(layer)), 0).r;
 }
 
 // Babylon's depth metric, (clip z + near) / (near + far), of a perspective view with planes \`range\` at an NDC depth,
@@ -135,7 +137,7 @@ float hapticDepthMetric(vec2 range, float ndc) {
   return (ndc * z + range.x) / (range.x + range.y);
 }
 
-float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float depth, vec2 texels, float size, vec2 gradient, float maximum) {
+float hapticContactLit(vec4 tile, float layer, vec4 shading, vec4 contact, vec4 clip, float depth, vec2 texels, float size, vec2 gradient, float maximum) {
   bool cascade = shading.z > 0.5;
   int quality = int(shading.y - 2.5);
   int searches = quality == 2 ? 32 : 16;
@@ -148,7 +150,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   for (int i = 0; i < 32; i++) {
     if (i >= searches) break;
     vec2 tap = texels + search * hapticPoisson32[i];
-    float stored = hapticShadowDepth(tile, tap, size);
+    float stored = hapticShadowDepth(tile, layer, tap, size);
     float blocker = cascade ? stored : hapticDepthMetric(contact.xy, stored * 2.0 - 1.0);
     float surface = receiver + dot(gradient, clamp(floor(tap), vec2(0.0), vec2(size - 1.0)) + 0.5 - texels);
     if (blocker < surface) {
@@ -166,7 +168,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
     if (i >= taps) break;
     vec2 offset = quality == 2 ? hapticPoisson64[i] : hapticPoisson32[min(i, 31)];
     offset = vec2(offset.x * turn.x - offset.y * turn.y, offset.y * turn.x + offset.x * turn.y);
-    lit += hapticPlaneTap(tile, texels + offset * radius, texels, depth, gradient, maximum);
+    lit += hapticPlaneTap(tile, layer, texels + offset * radius, texels, depth, gradient, maximum);
   }
   return mix(lit / float(taps), 1.0, min(distance, 1.0));
 }
@@ -182,6 +184,8 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   vec2 uv = ndc.xy * 0.5 + 0.5;
   float depth = ndc.z * 0.5 + 0.5;
   vec4 tile = hapticShadowViews[base + 4];
+  // The atlas page (the depth texture layer) the tile is in.
+  float layer = hapticShadowViews[base + 7].y;
   vec4 shading = hapticShadowViews[base + 5];
   // A cascade clamps its depth, as Babylon's cascaded PCF does.
   float maximum = shading.z > 0.5 ? 0.99999994 : 1.0;
@@ -191,7 +195,7 @@ float hapticContactLit(vec4 tile, vec4 shading, vec4 contact, vec4 clip, float d
   vec2 texels = uv * size;
 ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
 #ifndef HAPTIC_SHADOW_NARROW
-  if (shading.y > 2.5) return mix(shading.x, 1.0, hapticContactLit(tile, shading, hapticShadowViews[base + 6], clip, depth, texels, size, gradient, maximum));
+  if (shading.y > 2.5) return mix(shading.x, 1.0, hapticContactLit(tile, layer, shading, hapticShadowViews[base + 6], clip, depth, texels, size, gradient, maximum));
 #endif
   // Water and CEL (\`HAPTIC_SHADOW_NARROW\`) draw every filter, Contact Hardening's too, as low quality's four taps.
   float lit;
@@ -213,10 +217,10 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
     vec2 w1 = 1.0 + 2.0 * st;
     vec2 a = corner + (2.0 - st) / w0 - 1.0;
     vec2 b = corner + st / w1 + 1.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
-      + w1.x * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * w1.y * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
-      + w1.x * w1.y * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, layer, vec2(a.x, a.y), texels, depth, gradient, maximum)
+      + w1.x * w0.y * hapticPlaneTap(tile, layer, vec2(b.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * w1.y * hapticPlaneTap(tile, layer, vec2(a.x, b.y), texels, depth, gradient, maximum)
+      + w1.x * w1.y * hapticPlaneTap(tile, layer, vec2(b.x, b.y), texels, depth, gradient, maximum)) / 16.0;
   }
 #ifndef HAPTIC_SHADOW_NARROW
   else if (texelsWide < 6.0) {
@@ -225,22 +229,22 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
     vec2 a = corner + (3.0 - 2.0 * st) / w0 - 2.0;
     vec2 b = corner + (3.0 + st) / 7.0;
     vec2 c = corner + st / w2 + 2.0;
-    lit = (w0.x * w0.y * hapticPlaneTap(tile, vec2(a.x, a.y), texels, depth, gradient, maximum)
-      + 7.0 * w0.y * hapticPlaneTap(tile, vec2(b.x, a.y), texels, depth, gradient, maximum)
-      + w2.x * w0.y * hapticPlaneTap(tile, vec2(c.x, a.y), texels, depth, gradient, maximum)
-      + w0.x * 7.0 * hapticPlaneTap(tile, vec2(a.x, b.y), texels, depth, gradient, maximum)
-      + 49.0 * hapticPlaneTap(tile, vec2(b.x, b.y), texels, depth, gradient, maximum)
-      + w2.x * 7.0 * hapticPlaneTap(tile, vec2(c.x, b.y), texels, depth, gradient, maximum)
-      + w0.x * w2.y * hapticPlaneTap(tile, vec2(a.x, c.y), texels, depth, gradient, maximum)
-      + 7.0 * w2.y * hapticPlaneTap(tile, vec2(b.x, c.y), texels, depth, gradient, maximum)
-      + w2.x * w2.y * hapticPlaneTap(tile, vec2(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
+    lit = (w0.x * w0.y * hapticPlaneTap(tile, layer, vec2(a.x, a.y), texels, depth, gradient, maximum)
+      + 7.0 * w0.y * hapticPlaneTap(tile, layer, vec2(b.x, a.y), texels, depth, gradient, maximum)
+      + w2.x * w0.y * hapticPlaneTap(tile, layer, vec2(c.x, a.y), texels, depth, gradient, maximum)
+      + w0.x * 7.0 * hapticPlaneTap(tile, layer, vec2(a.x, b.y), texels, depth, gradient, maximum)
+      + 49.0 * hapticPlaneTap(tile, layer, vec2(b.x, b.y), texels, depth, gradient, maximum)
+      + w2.x * 7.0 * hapticPlaneTap(tile, layer, vec2(c.x, b.y), texels, depth, gradient, maximum)
+      + w0.x * w2.y * hapticPlaneTap(tile, layer, vec2(a.x, c.y), texels, depth, gradient, maximum)
+      + 7.0 * w2.y * hapticPlaneTap(tile, layer, vec2(b.x, c.y), texels, depth, gradient, maximum)
+      + w2.x * w2.y * hapticPlaneTap(tile, layer, vec2(c.x, c.y), texels, depth, gradient, maximum)) / 144.0;
   } else {
     vec2 w[4] = vec2[4](5.0 * st - 6.0, 11.0 * st - 28.0, -(11.0 * st + 17.0), -(5.0 * st + 1.0));
     vec2 o[4] = vec2[4]((4.0 * st - 5.0) / w[0] - 3.0, (4.0 * st - 16.0) / w[1] - 1.0, -(7.0 * st + 5.0) / w[2] + 1.0, -st / w[3] + 3.0);
     lit = 0.0;
     for (int j = 0; j < 4; j++)
       for (int i = 0; i < 4; i++)
-        lit += w[i].x * w[j].y * hapticPlaneTap(tile, corner + vec2(o[i].x, o[j].y), texels, depth, gradient, maximum);
+        lit += w[i].x * w[j].y * hapticPlaneTap(tile, layer, corner + vec2(o[i].x, o[j].y), texels, depth, gradient, maximum);
     lit /= 2704.0;
   }
 #endif
@@ -258,7 +262,7 @@ ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dP
   lit = clamp((lit - 0.5) * clamp(${CEL_SHADOW_EDGE_TEXELS.toFixed(1)} / max(footprint, 1e-6), ${CEL_SHADOW_MINIMUM_GAIN.toFixed(1)}, 64.0) + 1.0, 0.0, 1.0);
 #endif
   return mix(shading.x, 1.0, lit);
-` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, texels, depth));\n"}}
+` : "  return mix(shading.x, 1.0, hapticShadowTap(tile, layer, texels, depth));\n"}}
 
 // A point light's shadow (its record's \`shadow\`: first view, faces): the view of the cube face the position lies in,
 // in Babylon's order (+X, -X, -Y, +Y, +Z, -Z); the one view of a point light with a direction.

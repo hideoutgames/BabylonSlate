@@ -57,10 +57,14 @@ const MAX_PASS_TEXT = 160;
 type Rect = readonly [number, number, number, number];
 const rectText = (rect: Rect) => `${rect[0]},${rect[1]},${rect[2]}x${rect[3]}`;
 
-/** One pass of a frame: a run of work on one draw framebuffer. */
+/** One pass of a frame: a run of work on one draw framebuffer, and one layer of it where a layer is attached. */
 interface PassRecord {
   target: object | null;
-  /** Its framebuffer's id within the frame: D for the default one, F1, F2... by first appearance. */
+  layer: number;
+  /**
+   * Its framebuffer's id within the frame: D for the default one, F1, F2... by first appearance, with the attached
+   * layer of a layered attachment (`F2:1`).
+   */
   id: string;
   /** Viewports its work ran in, each once, in order. */
   viewports: string[];
@@ -108,6 +112,8 @@ export interface GlSignatureStats {
  */
 export class GlSignatureRecorder {
   private drawTarget: object | null = null;
+  /** The layer last attached to the draw framebuffer (`framebufferTextureLayer`), or -1. */
+  private drawLayer = -1;
   private viewportRect: Rect = [0, 0, 0, 0];
   private scissorRect: Rect = [0, 0, 0, 0];
   private scissorOn = false;
@@ -153,7 +159,18 @@ export class GlSignatureRecorder {
 
   /** `gl.bindFramebuffer`: only the draw binding moves passes; a read binding (a blit's or a read-back's source) does not. */
   bind(target: number, framebuffer: object | null): void {
-    if (target === FRAMEBUFFER || target === DRAW_FRAMEBUFFER) this.drawTarget = framebuffer;
+    if (target === FRAMEBUFFER || target === DRAW_FRAMEBUFFER) {
+      if (framebuffer !== this.drawTarget) this.drawLayer = -1;
+      this.drawTarget = framebuffer;
+    }
+  }
+
+  /**
+   * `gl.framebufferTextureLayer` on the draw framebuffer: work on another layer is another GPU render pass (ANGLE starts
+   * one per attachment), so the next work starts a pass of its own.
+   */
+  attachLayer(target: number, layer: number): void {
+    if (target === FRAMEBUFFER || target === DRAW_FRAMEBUFFER) this.drawLayer = layer;
   }
 
   viewport(x: number, y: number, width: number, height: number): void { this.viewportRect = [x, y, width, height]; }
@@ -262,8 +279,9 @@ export class GlSignatureRecorder {
     const current = this.passes[this.passes.length - 1];
     const fenced = this.fenced;
     this.fenced = false;
-    if (current && (current.target === this.drawTarget || this.passes.length >= MAX_FRAME_PASSES)) {
-      if (fenced && current.target === this.drawTarget) this.fenceSplits += 1;
+    const same = current && current.target === this.drawTarget && current.layer === this.drawLayer;
+    if (current && (same || this.passes.length >= MAX_FRAME_PASSES)) {
+      if (fenced && same) this.fenceSplits += 1;
       return current;
     }
     this.onPassStart?.();
@@ -274,7 +292,10 @@ export class GlSignatureRecorder {
       id = this.drawTarget === null ? "D" : `F${this.ids.size + (this.ids.has(null) ? 0 : 1)}`;
       this.ids.set(this.drawTarget, id);
     }
-    const pass: PassRecord = { target: this.drawTarget, id, viewports: [], ops: [], draws: 0, invalidates: 0 };
+    const pass: PassRecord = {
+      target: this.drawTarget, layer: this.drawLayer, id: this.drawLayer >= 0 ? `${id}:${this.drawLayer}` : id, viewports: [], ops: [], draws: 0,
+      invalidates: 0,
+    };
     this.passes.push(pass);
     return pass;
   }
@@ -330,6 +351,8 @@ export function installGlSignature(gl: WebGL2RenderingContext, recorder: GlSigna
     scissorTest: gl.isEnabled(gl.SCISSOR_TEST),
   });
   wrap("bindFramebuffer", (target: number, framebuffer: WebGLFramebuffer | null) => recorder.bind(target, framebuffer));
+  wrap("framebufferTextureLayer", (target: number, _attachment: number, _texture: WebGLTexture | null, _level: number, layer: number) =>
+    recorder.attachLayer(target, layer));
   wrap("viewport", (x: number, y: number, width: number, height: number) => recorder.viewport(x, y, width, height));
   wrap("scissor", (x: number, y: number, width: number, height: number) => recorder.scissor(x, y, width, height));
   wrap("enable", (capability: number) => recorder.setCapability(capability, true));

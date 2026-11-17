@@ -22,9 +22,12 @@ import { applyVertexDepthClamp } from "./shadow-vertex-clamp";
 
 /**
  * The light block's shadows (`HapticLightingBlock`) live in one depth-only texture per Scene, the shadow
- * atlas, whose tiles each hold one light's shadow. Each shadowed light keeps a Babylon shadow generator and its own
- * render target object, whose framebuffer is the atlas's: Babylon's caster drawing (depth wrappers, bones, morph targets,
- * instances, alpha test) is unchanged, drawn into the light's tile.
+ * atlas, whose tiles each hold one light's shadow. The atlas is a depth texture array: its edge is split into square
+ * pages (`shadowAtlasPageEdge`), one layer each, and a tile lies in one page. A pass binds only its tile's page, so on a
+ * tile-based GPU it loads and stores that page, never the whole atlas, and a page holding only the tiles a render draws
+ * is cleared whole (a clear load action) instead of tile by tile. Each shadowed light keeps a Babylon shadow generator
+ * and its own render target object, whose framebuffer is the atlas's: Babylon's caster drawing (depth wrappers, bones,
+ * morph targets, instances, alpha test) is unchanged, drawn into the light's tile.
  */
 
 /** Bytes per texel of the atlas: 32-bit depth, its only attachment. */
@@ -74,6 +77,16 @@ export function sunShadowAtlasEdge(
   return edge;
 }
 
+/**
+ * The page edge of an `edge`-texel atlas: half the edge (four pages), or the whole edge (one page) for an atlas made for a
+ * tile that wide (`sizes`, the tiles placed as it is made), which no other tile can share. Every other tile is at most
+ * half the edge (`cascadeTileSizes`, admission), so the pages hold exactly the tiles one quadtree over the whole edge
+ * would, in the same places.
+ */
+export function shadowAtlasPageEdge(edge: number, sizes: readonly number[] = []): number {
+  return edge > 1 && !sizes.some((size) => size >= edge) ? edge / 2 : edge;
+}
+
 type Atlas = { target: RenderTargetTexture; tiles: ShadowAtlasAllocator };
 const atlases = new WeakMap<Scene, Atlas>();
 const placeholders = new WeakMap<Scene, RenderTargetTexture>();
@@ -105,13 +118,13 @@ function disposeWithScene(scene: Scene, target: RenderTargetTexture, forget: () 
 }
 
 /**
- * A depth-only render target whose depth texture compares, as the light block samples it. The texture is its depth
- * attachment: without `generateDepthBuffer: false` Babylon's WebGL depth texture also allocates an unused depth
- * renderbuffer of the same size (64 MB at a 4096-texel atlas, 256 MB at 8192, 1 GiB at 16384), again each time the
- * atlas is made.
+ * A depth-only render target of `edge` texels in pages of `page` (a depth texture array, one layer per page) whose
+ * depth texture compares, as the light block samples it. The texture is its depth attachment: without
+ * `generateDepthBuffer: false` Babylon's WebGL depth texture also allocates an unused depth renderbuffer of the same
+ * size (64 MB at a 4096-texel atlas, 256 MB at 8192, 1 GiB at 16384), again each time the atlas is made.
  */
-function depthTarget(name: string, edge: number, scene: Scene): RenderTargetTexture {
-  const target = new RenderTargetTexture(name, edge, scene,
+function depthTarget(name: string, edge: number, page: number, scene: Scene): RenderTargetTexture {
+  const target = new RenderTargetTexture(name, { width: page, height: page, layers: (edge / page) ** 2 }, scene,
     { generateMipMaps: false, doNotChangeAspectRatio: true, noColorAttachment: true, generateDepthBuffer: false });
   const reverse = scene.getEngine().useReverseDepthBuffer;
   target.createDepthStencilTexture(reverse ? Constants.GREATER : Constants.LESS, true, false, 1, Constants.TEXTUREFORMAT_DEPTH32_FLOAT, name);
@@ -125,16 +138,22 @@ function depthTarget(name: string, edge: number, scene: Scene): RenderTargetText
  * an atlas it did not). A shadow allocation that fails disposes the textures it made, the atlas among them when that
  * tile was its first: the next tile makes it again.
  */
-function sceneAtlas(scene: Scene, edge: number): Atlas {
+function sceneAtlas(scene: Scene, edge: number, sizes: readonly number[]): Atlas {
+  const page = shadowAtlasPageEdge(edge, sizes);
   let atlas = atlases.get(scene);
   if (atlas && atlas.tiles.edge !== edge) {
     if (!atlas.tiles.empty) throw new Error(`The shadow atlas is ${atlas.tiles.edge} texels, not ${edge}, while it holds tiles.`);
     atlas.target.dispose();
     atlas = undefined;
   }
+  // An empty atlas paged for other tiles is made again; one holding tiles has no room for a tile its pages refuse.
+  if (atlas && atlas.tiles.pageEdge !== page && atlas.tiles.empty) {
+    atlas.target.dispose();
+    atlas = undefined;
+  }
   if (!atlas) {
-    const target = depthTarget("hapticShadowAtlas", edge, scene);
-    atlas = { target, tiles: new ShadowAtlasAllocator(edge) };
+    const target = depthTarget("hapticShadowAtlas", edge, page, scene);
+    atlas = { target, tiles: new ShadowAtlasAllocator(edge, page) };
     atlases.set(scene, atlas);
     generations.set(scene, shadowAtlasGeneration(scene) + 1);
     disposeWithScene(scene, target, () => atlases.delete(scene));
@@ -148,7 +167,7 @@ export function releaseEmptyShadowAtlas(scene: Scene): void {
   if (atlas?.tiles.empty) atlas.target.dispose();
 }
 
-/** The edge of the Scene's atlas while it exists, else 0. */
+/** The edge of the Scene's atlas while it exists, else 0: its pages together, not one page (its texture's own size). */
 export function liveShadowAtlasEdge(scene: Scene): number {
   return atlases.get(scene)?.tiles.edge ?? 0;
 }
@@ -164,15 +183,15 @@ export function shadowAtlasRenderTarget(scene: Scene): RenderTargetWrapper | nul
 }
 
 /**
- * What the light block samples its shadows from: the atlas once a light has a tile, else a one-texel depth target of
- * the same kind. No light samples the stand-in.
+ * What the light block samples its shadows from: the atlas once a light has a tile, else a one-texel, one-layer depth
+ * target of the same kind. No light samples the stand-in. Its render size is a page's edge.
  */
 export function shadowAtlasTexture(scene: Scene): RenderTargetTexture {
   const atlas = atlases.get(scene)?.target;
   if (atlas) return atlas;
   let placeholder = placeholders.get(scene);
   if (!placeholder) {
-    placeholder = depthTarget("hapticShadowAtlasPlaceholder", 1, scene);
+    placeholder = depthTarget("hapticShadowAtlasPlaceholder", 1, 1, scene);
     placeholders.set(scene, placeholder);
     disposeWithScene(scene, placeholder, () => placeholders.delete(scene));
   }
@@ -181,8 +200,8 @@ export function shadowAtlasTexture(scene: Scene): RenderTargetTexture {
 
 /**
  * A light's tiles as one render target: the atlas's framebuffer and depth texture, drawn one pass per tile (a sun's
- * cascades are layers) into the atlas's single layer. It never owns the atlas: disposing it leaves the framebuffer to
- * the atlas.
+ * cascades and a point light's faces are its layers), each bound to its tile's page of the atlas. It never owns the
+ * atlas: disposing it leaves the framebuffer to the atlas.
  */
 class AtlasTileTarget extends RenderTargetTexture {
   private readonly atlas: RenderTargetTexture;
@@ -210,8 +229,9 @@ class AtlasTileTarget extends RenderTargetTexture {
 
   override set is2DArray(_value: boolean) {}
 
-  override _bindFrameBuffer(faceIndex = 0): void {
-    super._bindFrameBuffer(faceIndex, 0);
+  // A pass draws into its tile's page: that layer of the atlas.
+  override _bindFrameBuffer(faceIndex = 0, layer = 0): void {
+    super._bindFrameBuffer(faceIndex, this.tiles[layer]!.layer);
   }
 
   override getSize() {
@@ -266,19 +286,28 @@ function filterReach(shadow: ShadowGenerator, size: number, correction: Vector3 
 }
 
 /**
- * Draws `map`'s passes into its tiles of an `edge`-texel atlas: each pass's viewport is its tile, set once the
- * framebuffer is bound (the object renderer sets the camera's before the bind), and each tile clears only its own depth
- * under a scissor. `drawing(pass)` runs as a pass starts, once Babylon's generator has set its view. Installed once the
+ * Draws `map`'s passes into its tiles of `placed`, an atlas: each pass binds its tile's page, its viewport is its tile,
+ * set once the framebuffer is bound (the object renderer sets the camera's before the bind), and its tile clears only
+ * its own depth under a scissor, unless the page holds only tiles this render draws: then the page's first pass clears
+ * the whole page (on a tile-based GPU a clear load action, nothing loaded) and its later passes none. `drawing(pass)`
+ * runs as a pass starts, once Babylon's generator has set its view. Installed once the
  * generator has set its own observers. A real pass of a map in the Scene's atlas (one that clears; readiness probes
  * emit the other render events) is recorded in the Scene's shadow change journal (`recordShadowMapPass`) with its
  * tiles' drawn views, and partial when it skipped a caster that was not ready (Babylon resets the refresh counter).
  */
 function drawIntoTiles(
-  map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShadow, atlas: RenderTargetTexture, edge: number, drawing: (pass: number) => void,
+  map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShadow, placed: Atlas, drawing: (pass: number) => void,
   deferral?: { defers(pass: number): boolean; drawn(pass: number): void },
 ): void {
   const scene = map.getScene()!;
-  const viewports = map.tiles.map((tile) => new Viewport(tile.x / edge, tile.y / edge, tile.size / edge, tile.size / edge));
+  const atlas = placed.target;
+  const page = placed.tiles.pageEdge;
+  const viewports = map.tiles.map((tile) => new Viewport(tile.x / page, tile.y / page, tile.size / page, tile.size / page));
+  const whole = new Viewport(0, 0, 1, 1);
+  const own = new Set(map.tiles);
+  // The pages this render clears whole, and those it has cleared.
+  const wholePages = new Set<number>();
+  const clearedPages = new Set<number>();
   const views: { view: Matrix; reach: number }[] = map.tiles.map(() => ({ view: Matrix.Identity(), reach: 0 }));
   let pass = 0;
   let cleared = false;
@@ -289,6 +318,15 @@ function drawIntoTiles(
   map.ignoreCameraViewport = false;
   map.onBeforeRenderObservable.add((layer) => {
     pass = layer;
+    if (layer === 0) {
+      // A render's first pass: the pages it clears whole hold only its tiles, each of which it draws.
+      wholePages.clear();
+      clearedPages.clear();
+      for (const tile of map.tiles) wholePages.add(tile.layer);
+      map.tiles.forEach((tile, index) => {
+        if (deferral?.defers(index) || !placed.tiles.holdsOnly(tile.layer, own)) wholePages.delete(tile.layer);
+      });
+    }
     scene.getEngine().setViewport(viewports[layer]!);
     deferring = deferral?.defers(layer) === true;
     if (deferring) {
@@ -313,6 +351,15 @@ function drawIntoTiles(
       const counts = shadowAtlasDrawCounts(scene) as ShadowAtlasDrawCounts;
       counts.tiles += 1;
       counts.texels += tile.size * tile.size;
+    }
+    if (wholePages.has(tile.layer)) {
+      // The page's first pass clears it whole, under a viewport over the page (a probe counts the texels it covers).
+      if (clearedPages.has(tile.layer)) return;
+      clearedPages.add(tile.layer);
+      engine.setViewport(whole);
+      engine.clear(null, false, true, false);
+      engine.setViewport(viewports[pass]!);
+      return;
     }
     engine.enableScissor(tile.x, tile.y, tile.size, tile.size);
     try {
@@ -362,9 +409,10 @@ export function createPrivateShadowAtlas(scene: Scene, edge: number): PrivateSha
   const blocked = entities._blockEntityCollection;
   entities._blockEntityCollection = true;
   try {
-    const target = depthTarget("hapticShadowAtlasPrivate", edge, scene);
+    const page = shadowAtlasPageEdge(edge);
+    const target = depthTarget("hapticShadowAtlasPrivate", edge, page, scene);
     disposeWithScene(scene, target, () => {});
-    return { target, tiles: new ShadowAtlasAllocator(edge) };
+    return { target, tiles: new ShadowAtlasAllocator(edge, page) };
   } finally {
     entities._blockEntityCollection = blocked;
   }
@@ -402,7 +450,7 @@ export function cascadeTileSizes(size: number, cascades: number, halved: number,
 
 /** Allocates tiles of `sizes` texels in the Scene's `edge`-texel atlas, or none when one does not fit. */
 function place(scene: Scene, sizes: readonly number[], edge: number): Placement | null {
-  const atlas = privateAtlas ?? sceneAtlas(scene, edge);
+  const atlas = privateAtlas ?? sceneAtlas(scene, edge, sizes);
   const tiles: ShadowAtlasTile[] = [];
   for (const size of sizes) {
     const tile = atlas.tiles.allocate(size);
@@ -559,7 +607,7 @@ export class AtlasShadowGenerator extends ShadowGenerator implements AtlasShadow
   protected override _initializeShadowMap(): void {
     super._initializeShadowMap();
     // Babylon's observer has set the pass's face (`_currentFaceIndex`) by now, so the view is that face's.
-    drawIntoTiles(this._shadowMap as AtlasTileTarget, this, this.placement.atlas.target, this.placement.atlas.tiles.edge, (face) => {
+    drawIntoTiles(this._shadowMap as AtlasTileTarget, this, this.placement.atlas, (face) => {
       this.views[face]!.copyFrom(this.getTransformMatrix());
       this.recordRange();
       this.drawn = true;
@@ -686,7 +734,7 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
       _viewSpaceFrustumsZ: number[]; _frustumLengths: number[]; _cascadeMinExtents: Vector3[]; _cascadeMaxExtents: Vector3[];
     };
     const cascadeDrawn: boolean[] = this.cascadeDrawn = [];
-    drawIntoTiles(this._shadowMap as AtlasTileTarget, this, this.placement.atlas.target, this.placement.atlas.tiles.edge, (cascade) => {
+    drawIntoTiles(this._shadowMap as AtlasTileTarget, this, this.placement.atlas, (cascade) => {
       this.views[cascade]!.copyFrom(this.getCascadeTransformMatrix(cascade)!);
       // The splits the cascades are drawn for, computed as the map binds.
       if (cascade === 0) {
