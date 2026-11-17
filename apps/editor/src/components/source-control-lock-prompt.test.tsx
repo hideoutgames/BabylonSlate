@@ -106,7 +106,16 @@ describe("SourceControlLockPrompt", () => {
     expect(screen.queryByTestId("source-control-lock-prompt")).toBeNull();
 
     act(() => dispatchPointerEvent(document.body, "pointerup", { pointerId: 7, pointerType: "mouse" }));
-    expect((await screen.findByTestId("source-control-lock-prompt")).textContent).toContain("Lock Hero.class.hasset?");
+    const prompt = await screen.findByTestId("source-control-lock-prompt");
+    expect(prompt.textContent).toContain("Lock Hero.class.hasset?");
+
+    // Pressing its own Lock button keeps it open for the click.
+    const lock = within(prompt).getByRole("button", { name: "Lock" });
+    act(() => dispatchPointerEvent(lock, "pointerdown", { pointerId: 8, pointerType: "mouse", buttons: 1 }));
+    expect([prompt.hasAttribute("data-open"), prompt.hasAttribute("data-closed")]).toEqual([true, false]);
+    act(() => dispatchPointerEvent(lock, "pointerup", { pointerId: 8, pointerType: "mouse" }));
+    fireEvent.click(lock);
+    await waitFor(() => expect(service.lockStateForPath(HERO)).toBe("mine"));
   });
 
   it("treats Escape as Don't Lock", async () => {

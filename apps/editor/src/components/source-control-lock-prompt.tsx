@@ -1,4 +1,4 @@
-import { useRef, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { LockIcon } from "lucide-react";
 import {
   AlertDialog,
@@ -64,7 +64,11 @@ export function SourceControlLockPrompt() {
   const { getOpenDocuments } = useDocumentActions();
   const waiting = sourceControl.lockPrompt;
   const pressed = useSyncExternalStore(subscribePointers, anyPointerPressed, () => false);
-  const open = waiting.length > 0 && !pressed;
+  // A press holds the prompt back only until it opens; once shown it stays
+  // open through presses on its own buttons, until it is answered.
+  const [shown, setShown] = useState(false);
+  const open = waiting.length > 0 && (shown || !pressed);
+  if (open !== shown) setShown(open);
   // Kept while the dialog fades out; the answer is for the files it lists.
   const paths = useRetainedValue(open ? waiting : null, NO_PATHS);
   const popupRef = useRef<HTMLDivElement>(null);
