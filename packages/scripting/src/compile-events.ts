@@ -52,7 +52,7 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.onPressEnd": "onPressEnd",
   "flow.event.textChanged": "onTextChanged",
   "flow.event.richTextLetterAppear": "onLetterAppear",
-  "flow.event.richTextDecorateLetters": "onDecorateLetters",
+  "flow.event.richTextUpdateLetters": "onUpdateLetters",
   "flow.event.richTextLetterShown": "onLetterShown",
   "flow.event.richTextAppearFinished": "onAppearFinished",
   "flow.event.richTextDisappearFinished": "onDisappearFinished",

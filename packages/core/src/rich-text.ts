@@ -18,7 +18,7 @@ export type RichTextEffects = {
   waveIntensity: number;
   hover: number;
   rotate: number;
-  /** `[fx=ClassName strength=2]`: Rich Text 2D Decorator Effect Classes by name, outermost first. Absent when none. */
+  /** `[fx=ClassName strength=2]`: Rich Text 2D Letter Effect Classes by name, outermost first. Absent when none. */
   custom?: readonly RichTextCustomEffect[];
 };
 
@@ -82,6 +82,9 @@ const WRAPPER_TAGS = new Set([
   "fx",
 ]);
 const VOID_TAGS = new Set(["img"]);
+
+/** Every tag name the parser draws itself; a Rich Text Decorator can never take one over. */
+export const RICH_TEXT_BUILT_IN_TAGS: ReadonlySet<string> = new Set([...WRAPPER_TAGS, ...VOID_TAGS]);
 
 type Frame = RichTextStyle & RichTextEffects;
 
@@ -414,6 +417,108 @@ export function parseRichText(
     index = close + 1;
   }
   return spans;
+}
+
+/** One custom tag a Rich Text Decorator turns into markup (`expandRichTextTags`). */
+export type RichTextTagDecoration = {
+  /** The tag name, lower-cased. */
+  tag: string;
+  /** What follows `=` in the opening tag; empty when nothing does. */
+  value: string;
+  /** The raw source between the opening tag and its closing tag; empty when it has none. */
+  content: string;
+  /** Every `key=value` of the opening tag, keys lower-cased. */
+  attrs: Readonly<Record<string, string>>;
+};
+
+/** Custom tags nest at most this many expansions deep; deeper ones stay as written. */
+export const RICH_TEXT_EXPANSION_MAX_DEPTH = 8;
+/** Expansion stops, leaving the rest as written, before its output or the markup it scanned passes this many characters. */
+export const RICH_TEXT_EXPANSION_MAX_LENGTH = 100_000;
+
+type ExpansionState = {
+  tags: ReadonlySet<string>;
+  decorate: (decoration: RichTextTagDecoration) => string | null;
+  /** Characters of markup the decorators returned so far. */
+  scanned: number;
+  /** A limit was reached: nothing more expands. */
+  stopped: boolean;
+};
+
+/** The `[`…`]` token at or after `from` the parser would read, as it reads it; null when there is none. */
+function nextTag(source: string, from: number): { open: number; close: number; tag: ParsedTag | null } | null {
+  const open = source.indexOf("[", from);
+  if (open < 0) return null;
+  const close = source.indexOf("]", open + 1);
+  if (close < 0) return null;
+  return { open, close, tag: parseTagInner(source.slice(open + 1, close)) };
+}
+
+/**
+ * Where the closing tag of the custom tag `name` opened before `from` is: the first later `[/name]` at the same
+ * nesting depth of that name, so nested same-name tags pair inner-first. Null when there is none.
+ */
+function matchingClose(source: string, name: string, from: number): { start: number; end: number } | null {
+  let depth = 1;
+  for (let token = nextTag(source, from); token; token = nextTag(source, token.close + 1)) {
+    if (token.tag?.name !== name) continue;
+    depth += token.tag.closing ? -1 : 1;
+    if (depth === 0) return { start: token.open, end: token.close + 1 };
+  }
+  return null;
+}
+
+function expandLevel(source: string, depth: number, limit: number, state: ExpansionState): string {
+  let out = "";
+  // Source before `copied` is in `out`; while nothing was replaced it stays 0 and the source itself is returned.
+  let copied = 0;
+  for (let token = nextTag(source, 0); token && !state.stopped;) {
+    const { open, close, tag } = token;
+    if (!tag || tag.closing || !state.tags.has(tag.name) || depth >= RICH_TEXT_EXPANSION_MAX_DEPTH) {
+      token = nextTag(source, close + 1);
+      continue;
+    }
+    const closing = matchingClose(source, tag.name, close + 1);
+    const markup = state.decorate({
+      tag: tag.name, value: tag.primary ?? "", content: closing ? source.slice(close + 1, closing.start) : "", attrs: tag.attrs,
+    });
+    // No markup leaves the opening tag as written; its content and closing tag are read on as usual.
+    if (markup === null) {
+      token = nextTag(source, close + 1);
+      continue;
+    }
+    state.scanned += markup.length;
+    const before = out.length + (open - copied);
+    const expanded = state.scanned > RICH_TEXT_EXPANSION_MAX_LENGTH ? "" : expandLevel(markup, depth + 1, limit - before, state);
+    if (state.scanned > RICH_TEXT_EXPANSION_MAX_LENGTH || state.stopped || before + expanded.length > limit) {
+      // This tag would pass a limit: it and everything after it stay as written.
+      state.stopped = true;
+      break;
+    }
+    out += source.slice(copied, open) + expanded;
+    copied = closing ? closing.end : close + 1;
+    token = nextTag(source, copied);
+  }
+  return copied === 0 ? source : out + source.slice(copied);
+}
+
+/**
+ * Replaces each custom tag (a tag whose lower-cased name is in `tags`) with the markup `decorate` returns for it. A
+ * custom tag spans from its opening tag through its matching closing tag (`matchingClose`), or is the opening tag
+ * alone when it has none. The returned markup is expanded on its own, so it may hold other custom tags, including
+ * ones from the raw `content` it was given, up to `RICH_TEXT_EXPANSION_MAX_DEPTH` expansions deep; deeper ones stay
+ * as written. `decorate` returning null leaves the opening tag as written. Built-in, unknown and stray closing tags
+ * pass through. Before the output, or the markup returned in total, would pass `RICH_TEXT_EXPANSION_MAX_LENGTH`
+ * characters, the outermost tag being expanded and everything after it stay as written. `source` itself comes back
+ * when nothing was replaced, without a scan when `tags` is empty.
+ */
+export function expandRichTextTags(
+  source: string,
+  tags: ReadonlySet<string>,
+  decorate: (decoration: RichTextTagDecoration) => string | null,
+): string {
+  if (tags.size === 0) return source;
+  return expandLevel(source, 0, RICH_TEXT_EXPANSION_MAX_LENGTH, { tags, decorate, scanned: 0, stopped: false });
 }
 
 /** The Class names the text's `[fx=ClassName]` tags apply, in first-use order. */

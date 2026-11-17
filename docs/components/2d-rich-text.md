@@ -64,7 +64,7 @@ Tags use square brackets and can nest. Close them with the same name, such as `[
 | `[wave=2]` | Moves letters up and down in a wave. The number is the speed. Add `intensity=2` to change the height. |
 | `[hover=1]` | Bobs each letter up and down. The number is the strength. |
 | `[rotate=45]` | Rocks each letter back and forth by up to that many degrees. |
-| `[fx=ClassName strength=2]` | Runs your own [Decorator Effect](#custom-appear-modes-and-effects) Class on the letters inside. Strength is optional and defaults to 1. Add the Class's own [keywords](#tag-keywords), such as `speed=3`. |
+| `[fx=ClassName strength=2]` | Runs your own [Letter Effect](#custom-appear-modes-and-effects) Class on the letters inside. Strength is optional and defaults to 1. Add the Class's own [keywords](#tag-keywords), such as `speed=3`. |
 
 ## Custom appear modes and effects
 
@@ -73,7 +73,7 @@ You can script how letters appear and animate with two kinds of [Class](../scrip
 | Parent class | Use | Event |
 | --- | --- | --- |
 | **RichText2DAppearMode** | A new way for letters to appear. Choose it in **Appear Modes**; it combines with the built-in modes and other custom modes. | [Event On Letter Appear](../scripting/class/event-on-letter-appear.md), once per letter with its **Alpha** from 0 to 1. |
-| **RichText2DDecoratorEffect** | A continuous effect like Shake or Rotate. Apply it with the `[fx=ClassName]` tag. | [Event On Decorate Letters](../scripting/class/event-on-decorate-letters.md), every tick with the tagged letters and **Delta Seconds**. It can read its own [tag keywords](#tag-keywords). |
+| **RichText2DLetterEffect** | A continuous effect like Shake or Rotate. Apply it with the `[fx=ClassName]` tag. | [Event On Update Letters](../scripting/class/event-on-update-letters.md), every tick with the tagged letters and **Delta Seconds**. It can read its own [tag keywords](#tag-keywords). |
 
 Read and change a letter with **Get** and **Set** nodes on these variables:
 
@@ -87,7 +87,7 @@ Read and change a letter with **Get** and **Set** nodes on these variables:
 | Opacity | From 0 (invisible) to 1 (fully visible), multiplied with the built-in Fade. |
 | Tint | A colour the letter is multiplied by, on top of the component's **Tint**. White leaves it unchanged. Only red, green and blue are used, each from 0 to 1; use Opacity for transparency. |
 
-- Appear modes run first, each from the letter at rest; decorator effects then change what the modes left.
+- Appear modes run first, each from the letter at rest; letter effects then change what the modes left.
 - A letter stays hidden until its reveal starts, as with the built-in modes.
 - Custom modes and effects run in Play only. The editor shows the letters at rest.
 - A tag that names a Class that does not exist, or one with another parent, does nothing.
@@ -95,14 +95,14 @@ Read and change a letter with **Get** and **Set** nodes on these variables:
 
 ## Tag keywords
 
-A Decorator Effect can take settings of its own from its tag, such as `[fx=Wave speed=2 height=4]…[/fx]`.
+A Letter Effect can take settings of its own from its tag, such as `[fx=Wave speed=2 height=4]…[/fx]`.
 
-1. In the Class, tap **+** next to **Functions** in the **Class** window and choose **Get Keys**, marked **RichText2DDecoratorEffect**. It overrides the function every Decorator Effect has.
+1. In the Class, tap **+** next to **Functions** in the **Class** window and choose **Get Keys**, marked **RichText2DLetterEffect**. It overrides the function every Letter Effect has.
 2. Return the keywords the Class reads from its **Keys** output, for example a **Make Array** of the strings `speed` and `height`.
-3. In [Event On Decorate Letters](../scripting/class/event-on-decorate-letters.md), read each value with [Get Tag Value](../scripting/class/get-tag-value.md). Values are text: turn them into numbers with a node such as [Parse Float](../scripting/class/parse-float.md).
+3. In [Event On Update Letters](../scripting/class/event-on-update-letters.md), read each value with [Get Tag Value](../scripting/class/get-tag-value.md). Values are text: turn them into numbers with a node such as [Parse Float](../scripting/class/parse-float.md).
 
 - Keywords are not case-sensitive. A keyword the tag does not set reads as an empty string.
-- Letters whose tags give different values of your keywords run in separate Event On Decorate Letters calls, so each call reads one set of values. Keywords the Class does not list are ignored and do not separate letters.
+- Letters whose tags give different values of your keywords run in separate Event On Update Letters calls, so each call reads one set of values. Keywords the Class does not list are ignored and do not separate letters.
 - **Get Keys** runs once when the text is built, and again only when the text or its Appear Modes change.
 - **Strength** stays a pin of the event; you can also list `strength` as a keyword to read it as text.
 

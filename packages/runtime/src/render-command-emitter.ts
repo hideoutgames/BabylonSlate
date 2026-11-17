@@ -62,7 +62,7 @@ interface RenderCommandEmitterHost {
   dynamicMeshes(): Pick<DynamicRuntimeMeshSync, "assign">;
   uiControls(): Pick<UIControls2DRuntime, "payload">;
   painters(): Pick<Painter2DRuntime, "payload">;
-  textAppear(): Pick<Text2DAppearRuntime, "progress" | "letterPoses">;
+  textAppear(): Pick<Text2DAppearRuntime, "progress" | "letterPoses" | "displayText">;
   materialParameters(): Pick<RuntimeMaterialParameters, "captureOverrides" | "resend">;
   emit(command: CommandMessage): void;
   /** The outlines the actor's 2D body casts 2D light shadows with, in its body's frame (`RuntimePhysicsWorlds.occluders2D`). */
@@ -101,6 +101,12 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
    */
   queueComponentTransforms(actor: Actor): void {
     this.state.dirtyComponentTransformActors.add(actor);
+  }
+
+  /** What a 2D Rich Text's assignment draws beyond its variables: its reveal, letter poses and expanded text. */
+  private richTextDraw(component: ActorComponent): RichTextDraw {
+    const textAppear = this.host.textAppear();
+    return { progress: textAppear.progress(component), poses: textAppear.letterPoses(component), text: textAppear.displayText(component) };
   }
 
   /** The component is one of the owner's Play renderables, so it has a native view. */
@@ -307,8 +313,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
                   componentsByGuid,
                   renderableIds,
                 ),
-                component.classId === "2DRichTextComponent" ? this.host.textAppear().progress(component) : undefined,
-                component.classId === "2DRichTextComponent" ? this.host.textAppear().letterPoses(component) : undefined,
+                component.classId === "2DRichTextComponent" ? this.richTextDraw(component) : undefined,
               ),
               ...(supportsOverlayVisualStyle(component.classId) ? { overlayStyle: parseOverlayVisualStyle(variables ?? Object.fromEntries(component.variables)) } : {}),
               ...(component.classId === "CableComponent" ? { cable: this.host.cables().assign(component) } : {}),
@@ -373,8 +378,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
             }
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp,
-          text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().progress(text2dComp) : 1,
-          text2dComp.classId === "2DRichTextComponent" ? this.host.textAppear().letterPoses(text2dComp) : undefined) } : {}),
+          text2dComp.classId === "2DRichTextComponent" ? this.richTextDraw(text2dComp) : undefined) } : {}),
         ...(camera ? { camera: this.cameraAssignPayload(camera) } : {}),
         ...(light ? { light: lightAssignPayload(light) } : {}),
         ...(overlayPanel ? { overlayPanel } : {}),
@@ -758,14 +762,18 @@ function text3dAssignPayload(
   });
 }
 
+/** A 2D Rich Text's reveal position, letter poses and the text it draws (`Text2DAppearRuntime.displayText`). */
+type RichTextDraw = { progress: number; poses: number[] | undefined; text: unknown };
+
+/** A 2D Text's or 2D Rich Text's assignment; a 2D Text, without `richText`, draws its text fully revealed. */
 function text2dAssignPayload(
   component: ActorComponent,
-  appearProgress = 1,
-  letterPoses?: number[],
+  richText?: RichTextDraw,
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text2d"]> {
+  const letterPoses = richText?.poses;
   const parsed = parseText2DProperties(
     {
-      text: component.getVariable("text"),
+      text: richText ? richText.text : component.getVariable("text"),
       materialGuid: component.getVariable("materialGuid"),
       materialUv: component.getVariable("materialUv"),
       fontAssetGuid:
@@ -814,7 +822,7 @@ function text2dAssignPayload(
     appearInterval: parsed.appearInterval,
     appearDuration: parsed.appearDuration,
     appearStart: parsed.appearStart,
-    appearProgress,
+    appearProgress: richText?.progress ?? 1,
     ...(letterPoses?.length ? { letterPoses } : {}),
   };
 }
@@ -840,8 +848,7 @@ function lightAssignPayload(component: ActorComponent): NonNullable<Extract<Comm
 function playMeshPartOf(
   component: ActorComponent,
   parentId = component.parentId,
-  textAppearProgress?: number,
-  textLetterPoses?: number[],
+  richText?: RichTextDraw,
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["parts"]>[number] {
   const assetGuid = component.assetGuid ?? component.getVariable("assetGuid");
   const { position, rotation, scale } = component.transform;
@@ -873,7 +880,7 @@ function playMeshPartOf(
       : {}),
     ...(component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
-      ? { text2d: text2dAssignPayload(component, textAppearProgress, textLetterPoses) }
+      ? { text2d: text2dAssignPayload(component, richText) }
       : {}),
     ...(component.classId === "SpriteComponent" ||
     component.classId === "TilemapComponent"

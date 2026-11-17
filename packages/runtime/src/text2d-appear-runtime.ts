@@ -6,6 +6,7 @@ import {
   RICH_TEXT_APPEAR_FINISHED_EVENT, RICH_TEXT_DISAPPEAR_FINISHED_EVENT, RICH_TEXT_LETTER_SHOWN_EVENT,
   type Actor, type ActorComponent, type World,
 } from "@haptic/object-model";
+import { RichTextDecorators, type RichTextDecorator } from "./rich-text-decorators";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { Text2DLetterScripts, type Text2DLetterScriptsHost } from "./text2d-letter-scripts";
 import { componentOwners } from "./world-component-index";
@@ -44,8 +45,12 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   private readonly states = new WeakMap<ActorComponent, AppearState>();
   private readonly dirty = new Set<ActorComponent>();
   private sounds: Text2DAppearSoundEvent[] = [];
-  /** Scripted Appear Modes and Decorator Effects, which follow the reveal this runtime owns. */
-  readonly letters = new Text2DLetterScripts();
+  /** Scripted Appear Modes and Letter Effects, which follow the reveal this runtime owns. */
+  readonly letters = new Text2DLetterScripts((component) => this.properties(component));
+  /** The loaded Rich Text Decorators and the text each 2D Rich Text draws with their tags expanded. */
+  private readonly decorators = new RichTextDecorators({
+    withTag: (self, values, run) => this.letters.withTag(self, values, run),
+  });
 
   bind(host: Text2DAppearHost): void {
     this.host = host;
@@ -54,6 +59,39 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
 
   progress(component: ActorComponent): number {
     return this.state(component).progress;
+  }
+
+  /**
+   * The text a 2D Rich Text draws: its authored text with the custom tags of the loaded Rich Text Decorators expanded.
+   * The authored text itself while no Decorator is loaded or it has no custom tag.
+   */
+  displayText(component: ActorComponent): unknown {
+    const text = component.getVariable("text");
+    return this.decorators.active ? this.decorators.text(component, text) : text;
+  }
+
+  /** A 2D Rich Text's properties as drawn (`displayText`): what its reveal, sound and letter scripts follow. */
+  properties(component: ActorComponent): Text2DProperties {
+    const variables = Object.fromEntries(component.variables);
+    if (this.decorators.active) variables.text = this.decorators.text(component, variables.text);
+    return parseText2DProperties(variables, { rich: true });
+  }
+
+  /**
+   * A script load's Rich Text Decorators replace the previous ones and every live 2D Rich Text of `world` is expanded
+   * again; returns those whose drawn text changed, which their owner sends again.
+   */
+  loadDecorators(world: World, decorators: ReadonlyMap<string, RichTextDecorator>): ActorComponent[] {
+    const changed = this.decorators.load(decorators, this.richTexts(world));
+    for (const component of changed) this.textChanged(component);
+    return changed;
+  }
+
+  /** Refresh Text: runs `component`'s Decorators again; whether its drawn text changed, so its owner sends it again. */
+  refreshText(component: ActorComponent): boolean {
+    if (!this.decorators.refresh(component)) return false;
+    this.textChanged(component);
+    return true;
   }
 
   /** The scripted letter poses the renderer holds; undefined while every letter is at rest. */
@@ -148,10 +186,24 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
     if (owner) for (const component of owner.components) this.remove(component);
   }
 
+  /** The drawn text changed without a variable write: the letter scripts read it again (the reveal on `refresh`). */
+  private textChanged(component: ActorComponent): void {
+    this.letters.invalidate(component);
+  }
+
+  private *richTexts(world: World): Iterable<ActorComponent> {
+    for (const actor of componentOwners(world, "2DRichTextComponent")) {
+      if (actor.destroyed) continue;
+      for (const component of actor.components) {
+        if (component.classId === "2DRichTextComponent" && !component.destroyed) yield component;
+      }
+    }
+  }
+
   private state(component: ActorComponent): AppearState {
     let state = this.states.get(component);
     if (!state) {
-      const properties = parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
+      const properties = this.properties(component);
       state = { progress: properties.appearStart === "revealed" ? 1 : 0,
         direction: properties.appearStart === "play" ? 1 : 0, duration: this.duration(component), sound: null,
         shown: null, events: null };
@@ -167,7 +219,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   }
 
   private duration(component: ActorComponent): number {
-    const properties = parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
+    const properties = this.properties(component);
     return text2DAppearDuration(countText2DRevealCharacters(properties), properties);
   }
 
@@ -178,7 +230,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   }
 
   private setSound(component: ActorComponent, state: AppearState, clock: number): void {
-    const plan = text2DAppearSoundPlan(parseText2DProperties(Object.fromEntries(component.variables), { rich: true }));
+    const plan = text2DAppearSoundPlan(this.properties(component));
     const looping = state.sound?.looping === true;
     if (looping && !(plan?.loop && plan.assetGuid === state.sound?.plan.assetGuid)) {
       this.stopSound(component, state);
@@ -237,7 +289,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   private startShown(component: ActorComponent, state: AppearState, properties?: Text2DProperties): void {
     state.shown = null;
     if (state.progress >= 1 || !this.host?.handlesComponentEvent(component, RICH_TEXT_LETTER_SHOWN_EVENT.exportName)) return;
-    const parsed = properties ?? parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
+    const parsed = properties ?? this.properties(component);
     const letters = text2DShownLetters(parsed);
     if (letters.length === 0) return;
     const clock = state.progress * state.duration;
@@ -250,7 +302,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   /** An edit during a forward reveal keeps its schedule unless the text or its letter timing changed. */
   private refreshShown(component: ActorComponent, state: AppearState): void {
     const shown = state.shown!;
-    const properties = parseText2DProperties(Object.fromEntries(component.variables), { rich: true });
+    const properties = this.properties(component);
     if (properties.text === shown.text && text2DLetterStart(1, properties) === shown.interval && properties.appearModes.length > 0) {
       shown.clock = state.progress * state.duration;
     } else {

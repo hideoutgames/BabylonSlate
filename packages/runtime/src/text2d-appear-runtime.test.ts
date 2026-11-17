@@ -292,7 +292,7 @@ describe("2D rich text appearance runtime", () => {
     } finally { runtime.stop(); }
   });
 
-  it("runs custom Appear Modes per letter as the reveal moves and Decorator Effects every tick on the tagged letters", async () => {
+  it("runs custom Appear Modes per letter as the reveal moves and Letter Effects every tick on the tagged letters", async () => {
     const commands: CommandMessage[] = [];
     const layer = createDefaultSceneLayer();
     layer.actors = [createActor("label", "Label", { classId: "SceneLayerActor", components: [
@@ -313,10 +313,10 @@ describe("2D rich text appearance runtime", () => {
             ctx.setVariableOn(letter, "offset", { x: ctx.getVariableFrom(letter, "index"), y: 10 * alpha });
             ctx.setVariableOn(letter, "opacity", ctx.getVariableFrom(letter, "character") === "A" ? 0.5 : 1);
           }` },
-        { assetGuid: "tilt", classId: "Tilt", parentClassId: "RichText2DDecoratorEffect", anchors: [],
-          entryPoints: [{ name: "onDecorateLetters", event: "onDecorateLetters", isAsync: false }],
+        { assetGuid: "tilt", classId: "Tilt", parentClassId: "RichText2DLetterEffect", anchors: [],
+          entryPoints: [{ name: "onUpdateLetters", event: "onUpdateLetters", isAsync: false }],
           // Adds to what the Appear Mode left: Rotation is the tag Strength, Scale X grows with Delta Seconds.
-          source: `export function onDecorateLetters(ctx) {
+          source: `export function onUpdateLetters(ctx) {
             for (const letter of ctx.args.letters) {
               ctx.setVariableOn(letter, "rotation", ctx.args.strength);
               ctx.setVariableOn(letter, "scale", { x: 1 + ctx.args.deltaSeconds, y: 1 });
@@ -393,7 +393,7 @@ describe("2D rich text appearance runtime", () => {
     } finally { runtime.stop(); }
   });
 
-  it("groups a Decorator Effect's letters by the values of the keys its Get Keys declares, called once per build", async () => {
+  it("groups a Letter Effect's letters by the values of the keys its Get Keys declares, called once per build", async () => {
     const commands: CommandMessage[] = [];
     const layer = createDefaultSceneLayer();
     const markup = "[fx=Wave speed=2 height=4 mood=a]AB[/fx][fx=Wave speed=2 height=4 mood=b]C[/fx][fx=Wave speed=3 HEIGHT=4]D[/fx]";
@@ -404,17 +404,17 @@ describe("2D rich text appearance runtime", () => {
       playScene: createDefaultScene(), sceneLayerLibrary: { labels: layer }, onCommand: (command) => commands.push(command) });
     try {
       await runtime.loadScripts([
-        { assetGuid: "wave", classId: "Wave", parentClassId: "RichText2DDecoratorEffect", anchors: [],
+        { assetGuid: "wave", classId: "Wave", parentClassId: "RichText2DLetterEffect", anchors: [],
           // A Class function is an entry point without an event, exported under its compiled name.
-          entryPoints: [{ name: "onDecorateLetters", event: "onDecorateLetters", isAsync: false }, { name: "Get_Keys", isAsync: false }],
-          // Declares Speed and Height (Mood is not); counts its calls; reads a tag value outside any decorate call.
+          entryPoints: [{ name: "onUpdateLetters", event: "onUpdateLetters", isAsync: false }, { name: "Get_Keys", isAsync: false }],
+          // Declares Speed and Height (Mood is not); counts its calls; reads a tag value outside any update call.
           source: `
           export function Get_Keys(ctx) {
             ctx.self.setVariable("calls", Number(ctx.self.getVariable("calls") ?? 0) + 1);
             ctx.self.setVariable("outside", ctx.getRichTextTagValue("speed"));
             return { Keys: ["Speed", "height", "speed", 7] };
           }
-          export function onDecorateLetters(ctx) {
+          export function onUpdateLetters(ctx) {
             for (const letter of ctx.args.letters) {
               ctx.setVariableOn(letter, "rotation", Number(ctx.getRichTextTagValue("SPEED")));
               ctx.setVariableOn(letter, "offset", { x: Number(ctx.getRichTextTagValue("height")), y: ctx.args.letters.length });

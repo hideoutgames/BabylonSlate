@@ -7,7 +7,8 @@ import {
 import {
   ENGINE_CLASS_SCRIPT_APIS,
   GAME_SUBSYSTEM_CLASS_ID,
-  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_CLASS_ID,
+  RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
   TICKABLE_OBJECT_INTERFACE_GUID,
   isCreatableObjectChain,
   SCENE_SUBSYSTEM_CLASS_ID,
@@ -48,11 +49,11 @@ export const GET_GAME_INSTANCE_NODE_ID = "gameInstance.get";
 
 /**
  * Catalog getters and the lineages whose graphs may use them: the Game Instance getters (their implicit Self is the
- * Game Instance or a subsystem) and Get Tag Value (Self is the Decorator Effect decorating letters). Add Node and
- * paste both follow this.
+ * Game Instance or a subsystem) and Get Tag Value (Self is the Letter Effect updating letters or the Decorator
+ * decorating a tag). Add Node and paste both follow this.
  */
 const LINEAGE_FUNCTION_NODE_BASES: Readonly<Record<string, readonly string[]>> = {
-  "richText.getTagValue": [RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID],
+  "richText.getTagValue": [RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID, RICH_TEXT_2D_DECORATOR_CLASS_ID],
   "gameInstance.getSceneLoadingProgress": ["GameInstance", GAME_SUBSYSTEM_CLASS_ID],
   "gameInstance.getSceneReference": [
     "GameInstance",
@@ -125,7 +126,7 @@ export const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.sceneSaved": "Event On Scene Saved",
   "flow.event.editorShutdown": "Event On Editor Shutdown",
   "flow.event.richTextLetterAppear": "Event On Letter Appear",
-  "flow.event.richTextDecorateLetters": "Event On Decorate Letters",
+  "flow.event.richTextUpdateLetters": "Event On Update Letters",
   "bt.event.activate": "Event On Activate",
   "bt.event.tick": "Event On Tick",
   "bt.event.abort": "Event On Abort",

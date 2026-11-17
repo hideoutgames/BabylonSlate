@@ -10,7 +10,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Call Parent Event](call-parent-event.md) | Runs the parent class's version of an event that this graph overrides. |
 | [Event Begin Play](event-begin-play.md) | Runs once when an actor or one of its components starts playing. |
 | [Event Custom](event-custom.md) | Defines an event of your own that other graphs can call by name. |
-| [Event On Decorate Letters](event-on-decorate-letters.md) | Runs every tick on a Rich Text 2D Decorator Effect with the letters inside its tag. |
+| [Event On Update Letters](event-on-update-letters.md) | Runs every tick on a Rich Text 2D Letter Effect with the letters inside its tag. |
 | [Event On Editor Begin Play](event-on-editor-begin-play.md) | Runs when the editor loads an Editor Utility Object. |
 | [Event On Actor Destroyed](event-on-actor-destroyed.md) | Runs when the actor this graph belongs to is destroyed. |
 | [Event On Appear Finished](event-on-appear-finished.md) | Runs when a 2D Rich Text finishes revealing forwards. |
@@ -876,7 +876,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 
 | Node | Description |
 | --- | --- |
-| [Get Tag Value](get-tag-value.md) | Returns the value a Decorator Effect's `[fx]` tag gives one of its keywords. |
+| [Get Tag Value](get-tag-value.md) | Returns the value a Letter Effect's `[fx]` tag gives one of its keywords. |
 
 ## Render
 

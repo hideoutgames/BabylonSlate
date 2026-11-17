@@ -14,7 +14,7 @@ import {
   type SerializedTransform,
 } from "@haptic/core";
 import {
-  engineScriptApiFor, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+  engineScriptApiFor, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
   RICH_TEXT_2D_LETTER_CLASS_ID, RICH_TEXT_GET_KEYS_FUNCTION, type EngineScriptFunction,
 } from "@haptic/object-model";
 import {
@@ -52,7 +52,7 @@ const FEATURE_TEST_SCENE_LAYER_NAMES = {
   cameraRig: "FT_UICameraRig",
   /** Rich Text 2D Appear Mode: each letter's Opacity and Tint follow its reveal Alpha. */
   richTextMode: "FT_RichTextRiseMode",
-  /** Rich Text 2D Decorator Effect: tilts the letters inside its `[fx]` tag by the tag's own `tilt` keyword. */
+  /** Rich Text 2D Letter Effect: tilts the letters inside its `[fx]` tag by the tag's own `tilt` keyword. */
   richTextEffect: "FT_RichTextTiltEffect",
   /** The HUD's rich text: notes when its reveal finishes (Event On Appear Finished). */
   richTextLabel: "FT_UIRichText",
@@ -110,7 +110,7 @@ interface LayerRefs {
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
-  /** Class ids of the custom Appear Mode and Decorator Effect the rich text uses, and the rich text's own Class. */
+  /** Class ids of the custom Appear Mode and Letter Effect the rich text uses, and the rich text's own Class. */
   richText: { mode: string; effect: string; label: PlacedClass };
   icons: Record<"camera" | "audio" | "particles" | "point_light" | "spot_light" | "navmesh" | "default", string>;
   classes: Record<"listItem" | "gridItem" | "cardA" | "cardB" | "switcher" | "clickButton" | "pitCounter" | "cameraRig", PlacedClass>;
@@ -357,7 +357,7 @@ function addHeader(refs: LayerRefs, add: AddActor): void {
   ], { parentId: "ft-ui-safe-area" }));
 }
 
-/** The `tilt` keyword the Decorator Effect declares with Get Keys and reads with Get Tag Value. */
+/** The `tilt` keyword the Letter Effect declares with Get Keys and reads with Get Tag Value. */
 const TILT_KEY = "tilt";
 
 function richTextMarkup(imageGuid: string, effectClassId: string): string {
@@ -385,7 +385,7 @@ function letterVariableNode(id: string, propertyKey: string, x: number, y: numbe
 }
 
 /**
- * The custom Appear Mode and Decorator Effect the HUD's rich text names, and the rich text's own Class, whose
+ * The custom Appear Mode and Letter Effect the HUD's rich text names, and the rich text's own Class, whose
  * Event On Appear Finished sets Revealed once its reveal (Play On Start) ends.
  */
 async function saveRichTextClasses(ctx: FeatureTestContext, refs: ClassBase): Promise<LayerRefs["richText"]> {
@@ -415,23 +415,23 @@ async function saveRichTextClasses(ctx: FeatureTestContext, refs: ClassBase): Pr
   const getKeys = {
     id: "ft-ui-fn-get-keys", kind: "function" as const, name: RICH_TEXT_GET_KEYS_FUNCTION.name,
     pins: RICH_TEXT_GET_KEYS_FUNCTION.pins.map((pin) => ({ ...pin })),
-    overrides: { classId: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, name: RICH_TEXT_GET_KEYS_FUNCTION.name },
+    overrides: { classId: RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID, name: RICH_TEXT_GET_KEYS_FUNCTION.name },
   };
   const keysPin = RICH_TEXT_GET_KEYS_FUNCTION.pins.find((pin) => pin.direction === "out" && pin.typeId !== "exec")!.name;
   const effect = await ctx.saveClass({
-    folder: FOLDER, name: NAMES.richTextEffect, parentClass: RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+    folder: FOLDER, name: NAMES.richTextEffect, parentClass: RICH_TEXT_2D_LETTER_EFFECT_CLASS_ID,
     graph: classGraph({
       members: [getKeys],
       nodes: [
-        gNode("decorate", "flow.event.richTextDecorateLetters", 0, 0),
+        gNode("update", "flow.event.richTextUpdateLetters", 0, 0),
         gNode("each", "flow.forEach", 320, 0),
         gNode("tilt-value", "richText.getTagValue", 320, 200, { "default:key": TILT_KEY }),
         gNode("tilt-number", "string.parseFloat", 560, 200),
         letterVariableNode("set-rotation", "rotation", 800, 0),
       ],
       edges: [
-        gExec("decorate", "each"),
-        gWire("decorate", "letters", "each", "array"),
+        gExec("update", "each"),
+        gWire("update", "letters", "each", "array"),
         gWire("each", "loopBody", "set-rotation", "execIn"),
         gWire("each", "element", "set-rotation", "target"),
         gWire("tilt-value", "value", "tilt-number", "in"),
