@@ -113,7 +113,7 @@ if (boundary <= 1.0) {
 `;
   }
   const code = VOLUME_SHADOW_CODE;
-  header += `${HAPTIC_LIGHTS_GLSL}uniform highp sampler2DShadow ${HAPTIC_SHADOW_ATLAS};\n`;
+  header += `${HAPTIC_LIGHTS_GLSL}uniform highp sampler2DArrayShadow ${HAPTIC_SHADOW_ATLAS};\n`;
   // A slot's shadow (\`volumeShadow\`: kind, views, first view): a spot light's view, a point light's faces or the
   // sun's cascades, as the block draws them, at a position of the march (world space; the block's are rebased). On a
   // line of their own: Babylon splits a line's statements, which would end a comment after the uniforms at its first

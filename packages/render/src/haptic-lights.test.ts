@@ -46,6 +46,8 @@ import { shadowAllocationCheckpoint } from "./shadow-map-factory";
 
 /** An atlas edge for the tests that place tiles themselves. */
 const EDGE = 2048;
+/** Its pages' edge: four pages, a texture layer each. */
+const PAGE = EDGE / 2;
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -382,10 +384,13 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // The first four views are the sun's; the third spot casts no shadow.
     expect(views()).toEqual([4, 5, -1]);
     expect(read("hapticShadowViews", 4 * VIEW, 16)).toEqual([...first!.getTransformMatrix().m].map(Math.fround));
-    const texel = 1 / EDGE;
-    expect(read("hapticShadowViews", 4 * VIEW + 16, 8)).toEqual([0, 0, 0.5, texel, 0, 2, 0, 0].map(Math.fround));
+    // Each fills one of the atlas's four pages: its tile in that page's coordinates, and the page (the texture layer).
+    const texel = 1 / PAGE;
+    expect(read("hapticShadowViews", 4 * VIEW + 16, 8)).toEqual([0, 0, 1, texel, 0, 2, 0, 0].map(Math.fround));
+    expect(read("hapticShadowViews", 4 * VIEW + 29, 1)).toEqual([0]);
     // Contact Hardening at medium quality, and the planes of its perspective view and the light's size.
-    expect(read("hapticShadowViews", 5 * VIEW + 16, 8)).toEqual([0.5, 0, 0.5, texel, 0.25, 4, 0, 0].map(Math.fround));
+    expect(read("hapticShadowViews", 5 * VIEW + 16, 8)).toEqual([0, 0, 1, texel, 0.25, 4, 0, 0].map(Math.fround));
+    expect(read("hapticShadowViews", 5 * VIEW + 29, 1)).toEqual([1]);
     read("hapticShadowViews", 5 * VIEW + 24, 4).forEach((value, index) => expect(value).toBeCloseTo([0.5, 20, 0, 0.08][index]!, 4));
     // A light's or the Scene's shadows switched off sample none.
     spots[0]!.shadowEnabled = false;
@@ -398,7 +403,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect([createAtlasShadowGenerator(spots[2]!, EDGE / 2, EDGE), createAtlasShadowGenerator(spots[2]!, EDGE / 2, EDGE)].every(Boolean)).toBe(true);
     expect(createAtlasShadowGenerator(spots[2]!, EDGE / 4, EDGE)).toBeNull();
     first!.dispose();
-    expect(createAtlasShadowGenerator(spots[0]!, EDGE / 2, EDGE)!.tile).toEqual({ x: 0, y: 0, size: EDGE / 2 });
+    expect(createAtlasShadowGenerator(spots[0]!, EDGE / 2, EDGE)!.tile).toEqual({ layer: 0, x: 0, y: 0, size: EDGE / 2 });
   });
 
   it("writes the shadowed sun's cascades as views, and how the block chooses between them, as they were last drawn", () => {
@@ -418,9 +423,9 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(read("hapticDirectional", 7, 1)).toEqual([1]);
     expect(read("hapticSunShadow", 0, 4).map((value) => Math.round(value * 1000) / 1000)).toEqual([3, 20, 0.1, 0]);
     // Each cascade a tile, its depth clamped.
-    const texel = Math.fround(1 / EDGE);
+    const texel = Math.fround(1 / PAGE);
     expect([0, 1, 2].map((view) => read("hapticShadowViews", view * VIEW + 16, 8))).toEqual([
-      [0, 0, 0.25, texel, 0, 2, 1, 0], [0.25, 0, 0.25, texel, 0, 2, 1, 0], [0, 0.25, 0.25, texel, 0, 2, 1, 0],
+      [0, 0, 0.5, texel, 0, 2, 1, 0], [0.5, 0, 0.5, texel, 0, 2, 1, 0], [0, 0.5, 0.5, texel, 0, 2, 1, 0],
     ]);
     // Drawn, the views and splits are the ones the cascades were drawn with, and the block takes them at once.
     scene.incrementRenderId();
@@ -490,13 +495,13 @@ describe("HapticLightingBlock and the HapticLights block", () => {
       [...buffer._bufferData.subarray(buffer._uniformLocations[name]! + from, buffer._uniformLocations[name]! + from + length)];
     const tiles = () => [0, 1].map((view) => read("hapticShadowViews", view * VIEW + 16, 2));
     const scene0 = tiles();
-    expect(scene0).toEqual([[0, 0], [0.25, 0]]);
+    expect(scene0).toEqual([[0, 0], [0.5, 0]]);
     const update = vi.spyOn(buffer, "update");
     scene.activeCamera = capture;
-    expect(tiles()).toEqual(own.tiles.map((tile) => [tile.x / EDGE, tile.y / EDGE]));
+    expect(tiles()).toEqual(own.tiles.map((tile) => [tile.x / PAGE, tile.y / PAGE]));
     // The spot light's view keeps its place.
     expect(read("hapticSpot", 12, 1)).toEqual([4]);
-    expect(read("hapticShadowViews", 4 * VIEW + 16, 2)).toEqual([lamp.tile.x / EDGE, lamp.tile.y / EDGE]);
+    expect(read("hapticShadowViews", 4 * VIEW + 16, 2)).toEqual([lamp.tile.x / PAGE, lamp.tile.y / PAGE]);
     scene.activeCamera = main;
     expect(tiles()).toEqual(scene0);
     expect(update).toHaveBeenCalledTimes(2);
@@ -523,7 +528,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     // The scene view's two cascades.
     expect(drawn[0]).toBe(2);
     const spotView = () => [read("hapticSpot", 12, 1), read("hapticShadowViews", 4 * VIEW + 16, 2)];
-    const lampView = [[4], [lamp.tile.x / EDGE, lamp.tile.y / EDGE]];
+    const lampView = [[4], [lamp.tile.x / PAGE, lamp.tile.y / PAGE]];
     expect(spotView()).toEqual(lampView);
     // While the reflection draws, the block holds no sun cascades: the sun's shadow factor is 1 (lit), and the sun still
     // marks itself shadowed, so no light define changes. The spot light keeps its shadow view.
@@ -551,7 +556,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const generator = createAtlasShadowGenerator(spot, EDGE / 2, EDGE)!;
     const atlas = shadowAtlasTexture(scene);
     expect(atlas).not.toBe(released);
-    expect(generator.tile).toEqual({ x: 0, y: 0, size: EDGE / 2 });
+    expect(generator.tile).toEqual({ layer: 0, x: 0, y: 0, size: EDGE / 2 });
     expect(generator.getShadowMap()!.renderTarget).toBe(atlas.renderTarget);
     scene.dispose();
     expect(atlas.getInternalTexture()).toBeNull();

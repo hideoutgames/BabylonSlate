@@ -91,6 +91,12 @@ function prepareShadowLayers(generator: ShadowGenerator): void {
   map.render();
 }
 
+/** The edge of what the light block samples: its pages' edge times their count along an edge (the stand-in's is 1). */
+function atlasTextureEdge(scene: Scene): number {
+  const texture = shadowAtlasTexture(scene);
+  return texture.getRenderSize() * Math.sqrt(texture.getRenderLayers());
+}
+
 /** Ends the Engine frame, as the render loop does after each frame it draws. */
 function endFrame(scene: Scene): void {
   const engine = scene.getEngine();
@@ -173,13 +179,15 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     const generator = sun.getShadowGenerator() as AtlasCascadedShadowGenerator;
     const camera = scene.activeCamera!;
-    // The tiles a render cleared, by cascade: each tile clears under its own scissor.
-    const scissors: number[][] = [];
-    vi.spyOn(engine, "enableScissor").mockImplementation((x, y) => { scissors.push([x, y]); });
+    // The tiles a render cleared, by cascade: each is alone in its page, which its pass clears whole.
+    const passes: number[] = [];
+    let pass = -1;
+    generator.getShadowMap()!.onBeforeRenderObservable.add((layer) => { pass = layer; });
+    vi.spyOn(engine, "clear").mockImplementation(() => { passes.push(pass); });
     const cleared = () => {
-      scissors.length = 0;
+      passes.length = 0;
       prepareShadowLayers(generator);
-      return scissors.map(([x, y]) => generator.tiles.findIndex((tile) => tile.x === x && tile.y === y));
+      return [...passes];
     };
     const views = () => generator.drawnViews.map((view) => view.m.join());
     const frame = (id: number) => { (engine as unknown as { _frameId: number })._frameId = id; };
@@ -210,6 +218,46 @@ describe("shared shadow lifecycle", () => {
     controller.setDebug("farcascades", true);
     frame(5);
     expect(cleared()).toEqual([0, 1, 2, 3]);
+  });
+
+  it("draws each pass into its tile's page, clearing a page whole when it holds only the tiles the render draws", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ maxLocalLights: 2 }) });
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    controller.register(lamp, true);
+    controller.sync();
+    const generator = lamp.getShadowGenerator() as AtlasShadowGenerator;
+    // Medium's 4096 atlas is four 2048 pages: four 1024 faces fill the first, the last two take half of the second.
+    expect(atlasTextureEdge(scene)).toBe(4096);
+    expect(shadowAtlasTexture(scene).getRenderLayers()).toBe(4);
+    expect(generator.tiles.map((tile) => tile.layer)).toEqual([0, 0, 0, 0, 1, 1]);
+    let pass = -1;
+    generator.getShadowMap()!.onBeforeRenderObservable.add((layer) => { pass = layer; });
+    const bound: number[] = [];
+    const bind = engine.bindFramebuffer.bind(engine);
+    vi.spyOn(engine, "bindFramebuffer").mockImplementation((target, face, width, height, full, lod, layer) => {
+      if (target === shadowAtlasTexture(scene).renderTarget) bound.push(layer ?? 0);
+      bind(target, face, width, height, full, lod, layer);
+    });
+    const clears: string[] = [];
+    let scissored = false;
+    vi.spyOn(engine, "enableScissor").mockImplementation(() => { scissored = true; });
+    vi.spyOn(engine, "disableScissor").mockImplementation(() => { scissored = false; });
+    vi.spyOn(engine, "clear").mockImplementation(() => { clears.push(`${pass}${scissored ? " tile" : " page"}`); });
+    const render = () => {
+      bound.length = clears.length = 0;
+      prepareShadowLayers(generator);
+      return { bound: [...bound], clears: [...clears] };
+    };
+    // Its own pages: each cleared whole by its first pass, nothing loaded of another light's.
+    expect(render()).toEqual({ bound: [0, 0, 0, 0, 1, 1], clears: ["0 page", "4 page"] });
+    // A spot light's tile joins the second page: the faces there clear only their own tiles.
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
+    controller.register(spot, true);
+    controller.sync();
+    expect((spot.getShadowGenerator() as AtlasShadowGenerator).tile.layer).toBe(1);
+    expect(render().clears).toEqual(["0 page", "4 tile", "5 tile"]);
   });
 
   it("gives a level's first cascade its larger tile and its last cascades tiles of half the edge, never the first two and never below the floor", () => {
@@ -277,7 +325,7 @@ describe("shared shadow lifecycle", () => {
     controller.sync();
     const medium = spot.getShadowGenerator();
     expect(medium).toBeInstanceOf(AtlasShadowGenerator);
-    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(4096);
+    expect(atlasTextureEdge(scene)).toBe(4096);
     expect(controller.metrics().bytes).toBe(shadowAtlasBytes(scene));
     // High's byte budget holds an atlas of 8192: the map is rebuilt in it, from the frame after the old atlas went.
     updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "high", cascades: 1, maxLocalLights: 1 }) });
@@ -287,13 +335,13 @@ describe("shared shadow lifecycle", () => {
     const high = spot.getShadowGenerator() as AtlasShadowGenerator;
     expect(high).toBeInstanceOf(AtlasShadowGenerator);
     expect(high).not.toBe(medium);
-    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+    expect(atlasTextureEdge(scene)).toBe(8192);
     expect(high.tile.size).toBe(2048);
     // With the last map the atlas goes.
     controller.register(spot, false);
     controller.sync();
     expect(shadowAtlasBytes(scene)).toBe(0);
-    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(1);
+    expect(atlasTextureEdge(scene)).toBe(1);
   });
   it("frees the atlas of a changed edge in one frame and makes the new one in a later frame, never in the same one", () => {
     const { scene, controller } = fixture();
@@ -306,7 +354,7 @@ describe("shared shadow lifecycle", () => {
       this: RenderTargetTexture, ...args: Parameters<typeof makeDepth>
     ) {
       if (this.name === "hapticShadowAtlas") {
-        const edge = this.getRenderSize();
+        const edge = this.getRenderSize() * Math.sqrt(this.getRenderLayers());
         events.push(`frame ${engine.frameId}: make ${edge}`);
         this.onDisposeObservable.addOnce(() => events.push(`frame ${engine.frameId}: free ${edge}`));
       }
@@ -364,7 +412,7 @@ describe("shared shadow lifecycle", () => {
     controller.register(spot, true);
     controller.sync();
     // The 8192 sun grows the atlas to 16384; the spot light's map stands by there once the camera leaves its reach.
-    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(16384);
+    expect(atlasTextureEdge(scene)).toBe(16384);
     camera.position.x = 1000;
     endFrame(scene);
     controller.sync();
@@ -380,7 +428,7 @@ describe("shared shadow lifecycle", () => {
     endFrame(scene);
     controller.sync();
     expect(controller.diagnostics([spot])[0]!.status).toBe("active");
-    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+    expect(atlasTextureEdge(scene)).toBe(8192);
   });
   it("excludes collider display segments without excluding authored meshes below the collider", () => {
     const { scene, controller } = fixture();
@@ -469,7 +517,7 @@ describe("shared shadow lifecycle", () => {
       // The first cascade keeps the map size: twice it would be the whole atlas.
       expect(tileSizes(controller.generator(sun))).toEqual([8192, 8192, 8192, 4096]);
       expect(tileSizes(controller.generator(spot))).toEqual([2048]);
-      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(16384);
+      expect(atlasTextureEdge(scene)).toBe(16384);
       expect(controller.metrics().bytes).toBe(1024 * MIB);
       // The 768 MiB past High's own 8192 atlas bring their own room.
       expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 1024 * MIB, shadowExemptBytes: 768 * MIB, limit: 1792 * MIB });
@@ -479,7 +527,7 @@ describe("shared shadow lifecycle", () => {
       expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 0, shadowExemptBytes: 0 });
       endFrame(scene);
       controller.sync();
-      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+      expect(atlasTextureEdge(scene)).toBe(8192);
       expect(tileSizes(controller.generator(spot))).toEqual([2048]);
       expect(managedRenderReservations(engine)).toMatchObject({ shadowBytes: 256 * MIB, shadowExemptBytes: 0, limit: 1024 * MIB });
     });
@@ -495,7 +543,7 @@ describe("shared shadow lifecycle", () => {
       const sun = new DirectionalLight("sun", Vector3.Down(), scene);
       controller.register(sun, true);
       controller.sync();
-      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+      expect(atlasTextureEdge(scene)).toBe(8192);
       expect(controller.limits()).toEqual(["shadow map reduced by shadow atlas space"]);
       expect(captureShadowDiagnostics(scene).lights[0]).toMatchObject({
         requestedMapSize: 8192, allocationDownsized: true, generator: { mapSize: 4096, tiles: [4096, 4096, 4096, 2048] },
@@ -520,7 +568,7 @@ describe("shared shadow lifecycle", () => {
       expect([controller.generator(spot), controller.generator(sun), shadowAtlasBytes(scene)]).toEqual([null, null, 0]);
       expect(controller.diagnostics([sun])[0]).toMatchObject({ status: "budget-limited", allocationError: "out of memory" });
       controller.sync();
-      expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+      expect(atlasTextureEdge(scene)).toBe(8192);
       expect(tileSizes(controller.generator(sun))).toEqual([4096, 4096, 4096, 2048]);
       expect(tileSizes(controller.generator(spot))).toEqual([2048]);
       expect(controller.diagnostics([sun])[0]).toMatchObject({
@@ -1612,6 +1660,7 @@ describe("shared shadow lifecycle", () => {
         framebuffer = resource;
       },
       framebufferTexture2D: vi.fn(),
+      framebufferTextureLayer: vi.fn(),
       framebufferRenderbuffer: vi.fn(),
       checkFramebufferStatus: () => 0x8cd5,
     };
@@ -1928,7 +1977,7 @@ describe("view sun shadow maps", () => {
     controller.sync();
     const high = sun.getShadowGenerator(capture);
     expect(high).toBeInstanceOf(AtlasCascadedShadowGenerator);
-    expect(shadowAtlasTexture(scene).getRenderSize()).toBe(8192);
+    expect(atlasTextureEdge(scene)).toBe(8192);
     expect(tileSizes(high)).toEqual(tileSizes(sun.getShadowGenerator()));
     // The sun's shadow off: both maps go in the same sync, and the atlas with its last tile.
     controller.register(sun, false);
