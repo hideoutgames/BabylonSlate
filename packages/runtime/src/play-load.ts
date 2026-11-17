@@ -117,7 +117,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.extensionLibraries?.length ? { extensionLibraries: msg.extensionLibraries } : {}),
     focusNavigation: msg.focusNavigation,
     pixelsPerUnit: msg.pixelsPerUnit,
-    pixelMatchedCameras: msg.pixelMatchedCameras === true,
+    ...(msg.pixelMatchedCameras ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: msg.texturePixelSizes,
     ...(msg.materialParameterCatalog !== undefined ? { materialParameterCatalog: msg.materialParameterCatalog } : {}),
     ...(msg.particleParameterCatalog !== undefined ? { particleParameterCatalog: msg.particleParameterCatalog } : {}),

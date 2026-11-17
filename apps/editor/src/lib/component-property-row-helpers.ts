@@ -42,6 +42,8 @@ export type ComponentPropertyContext = {
   focusTargets?: readonly { value: string; label: string }[];
   /** Why an assigned emission Texture cannot light its emitter yet. */
   areaEmissionStatus?: (guid: string) => string | undefined;
+  /** The project's pixel-matched camera framing (`projectPixelMatchedLens`): Orthographic Size says what it resolves to. */
+  pixelMatchedCamera?: import("./pixel-matched-camera-status").PixelMatchedCameraLens | null;
 };
 
 export function rowId(actorId: string, componentId: string, key: string): string {

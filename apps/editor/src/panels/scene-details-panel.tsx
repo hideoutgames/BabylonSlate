@@ -110,6 +110,7 @@ import { useRetainedValue } from "../lib/use-retained-value";
 import type { ComponentPropertyUpdate } from "../lib/component-property-row-helpers";
 import { particleParameterOverrideRows } from "../lib/particle-parameter-override-rows";
 import { particleSystemGuidsOf, useParticleSystemParameters } from "../lib/use-particle-system-parameters";
+import { projectPixelMatchedLens } from "../lib/pixel-matched-camera-status";
 import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
@@ -627,6 +628,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     fontHasMsdfPng,
     fontPixelSize,
     physicsWorld: scene.settings.physicsWorld,
+    pixelMatchedCamera: projectPixelMatchedLens(projectDocument),
     onPickAsset: setAssetPick,
     areaEmissionStatus,
     actorLabel: (targetId) => actorDisplayNames.get(targetId),
