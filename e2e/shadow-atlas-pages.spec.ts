@@ -21,12 +21,12 @@ test("the shadow atlas's pages draw and sample every shadowed light's map, filte
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?test=1&shadowAtlasProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __shadowAtlasProof?: unknown }).__shadowAtlasProof === "function");
-  const { captures, renderer } = await page.evaluate(() => (window as unknown as { __shadowAtlasProof: Proof }).__shadowAtlasProof());
+  const { captures, sampling, renderer } = await page.evaluate(() => (window as unknown as { __shadowAtlasProof: Proof }).__shadowAtlasProof());
   const hashes = captures.map(({ filter, frame }) => ({ filter, sha256: createHash("sha256").update(Uint8Array.from(frame)).digest("hex") }));
-  const summary = { renderer, hashes, maps: captures[0]!.maps, cascadeEnds: captures[0]!.cascadeEnds };
+  const summary = { renderer, sampling, hashes, maps: captures[0]!.maps, cascadeEnds: captures[0]!.cascadeEnds };
   await testInfo.attach("shadow-atlas-proof", { body: JSON.stringify(summary), contentType: "application/json" });
   console.log(`shadow atlas proof ${JSON.stringify(summary)}`);
-  if (process.env.HAPTIC_SHADOW_ATLAS_PROOF_OUT) writeFileSync(process.env.HAPTIC_SHADOW_ATLAS_PROOF_OUT, JSON.stringify({ renderer, captures }));
+  if (process.env.HAPTIC_SHADOW_ATLAS_PROOF_OUT) writeFileSync(process.env.HAPTIC_SHADOW_ATLAS_PROOF_OUT, JSON.stringify({ renderer, sampling, captures }));
   expect(errors).toEqual([]);
   for (const capture of captures) {
     // The sun's four cascades, the spot light's tile and the point light's six faces.

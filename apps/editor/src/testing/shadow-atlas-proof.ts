@@ -42,6 +42,8 @@ export async function runShadowAtlasProof() {
   document.getElementById("root")!.append(canvas);
   const engine = new Engine(canvas, false, { preserveDrawingBuffer: true, stencil: true });
   engine.setSize(canvas.width, canvas.height);
+  const sampling: Record<string, number> = {};
+  const stopRecording = recordShadowSampling(engine, sampling);
   const scene = new Scene(engine);
   try {
     scene.clearColor = new Color4(0.02, 0.03, 0.05, 1);
@@ -139,10 +141,34 @@ export async function runShadowAtlasProof() {
     const captures = [await capture("pcf"), await capture("pcss")];
     graph.dispose();
     await graph.whenReleased();
-    return { captures, renderer: engine.getGlInfo().renderer };
+    return { captures, sampling, renderer: engine.getGlInfo().renderer };
   } finally {
+    stopRecording();
     scene.dispose();
     engine.dispose();
     canvas.remove();
   }
+}
+
+/**
+ * Records how the driver's translation samples the atlas: in every shader compiled from now on that declares it, the
+ * distinct translated lines comparing against a texture (ANGLE's `WEBGL_debug_shaders`; on D3D11 `SampleCmp` or
+ * `SampleCmpLevelZero`), with how many shaders hold each. Read at compile time, as Babylon deletes its shaders once a
+ * program links. Empty where the extension is missing. The returned function stops recording.
+ */
+function recordShadowSampling(engine: Engine, lines: Record<string, number>): () => void {
+  const gl = engine._gl as WebGL2RenderingContext;
+  const debug = gl.getExtension("WEBGL_debug_shaders");
+  if (!debug) return () => {};
+  const own = gl as unknown as { compileShader: WebGL2RenderingContext["compileShader"] };
+  const compile = gl.compileShader;
+  own.compileShader = (shader: WebGLShader) => {
+    compile.call(gl, shader);
+    if (!(gl.getShaderSource(shader) ?? "").includes("hapticShadowAtlas")) return;
+    const found = new Set<string>();
+    for (const line of debug.getTranslatedShaderSource(shader).split("\n"))
+      if (/SampleCmp|sample_compare/.test(line)) found.add(line.trim());
+    for (const line of found) lines[line] = (lines[line] ?? 0) + 1;
+  };
+  return () => { delete (gl as unknown as Record<string, unknown>).compileShader; };
 }

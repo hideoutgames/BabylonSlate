@@ -83,10 +83,11 @@ export function hapticShadowGlsl(surface: boolean): string {
 // the world, so the softness holds across cascades and tiles),
 // each tap kept a texel inside the view's tile so a neighbouring tile never bleeds in. A sun cascade
 // with automatic bias compares each tap against the receiver's plane, from the position's change across the pixel
-// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform). ESSL 3.00 has no \`textureLod\` for an array compare sampler;
-// the atlas has a single level, so the implicit level reads that level as an explicit 0 did.
+// (\`dPdx\`, \`dPdy\`, taken where control flow is uniform). ESSL 3.00 has no \`textureLod\` for an array compare sampler:
+// zero gradients ask for level 0 explicitly, as \`textureLod\` did. An implicit level (\`texture\`) would leave it to
+// derivatives, which this non-uniform control flow does not define.
 float hapticShadowTap(vec4 tile, float layer, vec2 texel, float depth) {
-  return texture(hapticShadowAtlas, vec4(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), layer, depth));
+  return textureGrad(hapticShadowAtlas, vec4(clamp(tile.xy + texel * tile.w, tile.xy + tile.w, tile.xy + tile.z - tile.w), layer, depth), vec2(0.0), vec2(0.0));
 }
 
 ${surface ? `// The receiver plane's depth change per texel of a \`size\`-texel tile of the orthographic \`view\`, or none where a
