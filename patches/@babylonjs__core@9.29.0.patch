@@ -80,6 +80,18 @@ index e33593b25e62a6cb9f47cd552ee314d4b0805236..22f10c03a1f446614259761612624a31
          gl.bindFramebuffer(gl.READ_FRAMEBUFFER, rtWrapper._MSAAFramebuffer);
          gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rtWrapper._framebuffer);
          for (let i = 0; i < count; i++) {
+diff --git a/Engines/renderTargetWrapper.js b/Engines/renderTargetWrapper.js
+--- a/Engines/renderTargetWrapper.js
++++ b/Engines/renderTargetWrapper.js
+@@ -460,7 +460,7 @@ export class RenderTargetWrapper {
+                 const size = {
+                     width: this.width,
+                     height: this.height,
+-                    layers: this.is2DArray || this.is3D ? this.texture?.depth : undefined,
++                    layers: this.is2DArray || this.is3D ? (this.texture?.depth ?? this.layers) : undefined, // Haptic: a depth-only layered target (the shadow atlas) keeps its layers through a context restore.
+                 };
+                 rtw = this._engine.createRenderTargetTexture(size, options);
+             }
 diff --git a/Engines/thinEngine.pure.d.ts b/Engines/thinEngine.pure.d.ts
 index 24b6329cb60c28f279e16018f9a3f5566d8c30b5..82cfaba9ce0c12d963c3b5074fe5149494fa0b33 100644
 --- a/Engines/thinEngine.pure.d.ts
