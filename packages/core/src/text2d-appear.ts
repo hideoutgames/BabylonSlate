@@ -4,7 +4,10 @@ import {
   type RichTextEffects,
   type RichTextStyle,
 } from "./rich-text";
-import { EASING_CURVES, EASING_CURVE_LABELS, sampleEasingCurve } from "./easing";
+import {
+  CLASS_REF_PREFIX, EASING_CURVES, EASING_CURVE_LABELS, isCustomEasingCurveRef, sampleEasingCurve,
+  type ClassRef, type CustomEasingCurveRef,
+} from "./easing";
 
 export const ENGINE_TEXT2D_APPEAR_MODE_ENUM_ID = "engine:Text2DAppearMode";
 export const ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID = "engine:Text2DAppearTransition";
@@ -17,26 +20,28 @@ export const TEXT2D_APPEAR_MODE_LABELS: Record<Text2DAppearMode, string> = {
   fade: "Fade", scale: "Scale", slide: "Slide", instant: "Instant",
 };
 
-/** A Rich Text 2D Appear Mode Class in the Appear Modes list, by Class id. */
-export const TEXT2D_CUSTOM_APPEAR_MODE_PREFIX = "class:";
-export type Text2DCustomAppearMode = `class:${string}`;
+/** A Rich Text 2D Appear Mode Class in the Appear Modes list, by Class id (`CLASS_REF_PREFIX`). */
+export type Text2DCustomAppearMode = ClassRef;
 export type Text2DAppearModeEntry = Text2DAppearMode | Text2DCustomAppearMode;
 
 export function text2DCustomAppearMode(classId: string): Text2DCustomAppearMode {
-  return `${TEXT2D_CUSTOM_APPEAR_MODE_PREFIX}${classId}`;
+  return `${CLASS_REF_PREFIX}${classId}`;
 }
 
 /** The Class id of a custom Appear Modes entry, or null for a built-in mode. */
 export function text2DCustomAppearModeClassId(entry: unknown): string | null {
-  if (typeof entry !== "string" || !entry.startsWith(TEXT2D_CUSTOM_APPEAR_MODE_PREFIX)) return null;
-  return entry.slice(TEXT2D_CUSTOM_APPEAR_MODE_PREFIX.length).trim() || null;
+  if (typeof entry !== "string" || !entry.startsWith(CLASS_REF_PREFIX)) return null;
+  return entry.slice(CLASS_REF_PREFIX.length).trim() || null;
 }
 
 export const TEXT2D_APPEAR_TRANSITIONS = [
   "instant", ...EASING_CURVES,
 ] as const;
-export type Text2DAppearTransition = (typeof TEXT2D_APPEAR_TRANSITIONS)[number];
-export const TEXT2D_APPEAR_TRANSITION_LABELS: Record<Text2DAppearTransition, string> = {
+/** A member of the Appear Transition enum. */
+export type Text2DAppearTransitionMember = (typeof TEXT2D_APPEAR_TRANSITIONS)[number];
+/** An Appear Transition member or a custom easing curve. */
+export type Text2DAppearTransition = Text2DAppearTransitionMember | CustomEasingCurveRef;
+export const TEXT2D_APPEAR_TRANSITION_LABELS: Record<Text2DAppearTransitionMember, string> = {
   instant: "Instant", ...EASING_CURVE_LABELS,
 };
 
@@ -125,10 +130,10 @@ function parseText2DAppearModes(value: unknown): Text2DAppearModeEntry[] {
   }))];
 }
 
+/** A member, or a well-formed custom easing curve kept whether or not it is baked; anything else is Cubic Out. */
 function parseText2DAppearTransition(value: unknown): Text2DAppearTransition {
-  return TEXT2D_APPEAR_TRANSITIONS.includes(value as Text2DAppearTransition)
-    ? value as Text2DAppearTransition
-    : "cubicOut";
+  if (TEXT2D_APPEAR_TRANSITIONS.includes(value as Text2DAppearTransitionMember)) return value as Text2DAppearTransitionMember;
+  return isCustomEasingCurveRef(value) ? value : "cubicOut";
 }
 
 function nonnegative(value: unknown, fallback: number): number {
@@ -160,7 +165,7 @@ export function parseText2DAppearProperties(value: unknown): Text2DAppearPropert
   };
 }
 
-/** Named easing on a normalized input; Back and Elastic preserve their overshoot. */
+/** Named or custom easing on a normalized input; Back and Elastic preserve their overshoot. */
 export function sampleText2DAppearTransition(transition: Text2DAppearTransition, value: number): number {
   const t = normalized(value);
   return transition === "instant" ? (t === 0 ? 0 : 1) : sampleEasingCurve(transition, t);
@@ -195,10 +200,11 @@ export function text2DCharacterReveal(
   const start = Math.max(0, characterIndex) * nonnegative(properties.appearInterval, DEFAULT_TEXT2D_APPEAR_INTERVAL);
   const duration = characterDuration(properties);
   if (duration === 0) return elapsed >= start ? 1 : 0;
-  return sampleText2DAppearTransition(
-    properties.appearTransition ?? "cubicOut",
-    (elapsed - start) / duration,
-  );
+  // A letter that has not started is hidden and one that has finished is shown, whatever a custom curve's ends are.
+  const local = (elapsed - start) / duration;
+  if (!(local > 0)) return 0;
+  if (local >= 1) return 1;
+  return sampleText2DAppearTransition(properties.appearTransition ?? "cubicOut", local);
 }
 
 type FormattedStyle = { style: RichTextStyle; effects: RichTextEffects };

@@ -15,6 +15,7 @@ import { CurveEditor, PanelFrame, PropertyGrid, type CurveEditorHandle, type Pro
 import { useDocumentActions, useOpenDocument } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useKeybindChord, useKeybindCommand } from "../context/keybind-context";
+import { useProjectCustomEasingCurves } from "../lib/use-custom-easing-curves";
 
 const KIND_BY_DOCUMENT: Record<string, CurveKind> = {
   "float-curve": "float",
@@ -57,6 +58,7 @@ export function CurveAssetEditorPanel(_props: IDockviewPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<CurveEditorHandle>(null);
   const fitChord = useKeybindChord("viewport.frameSelection");
+  const customEasingCurves = useProjectCustomEasingCurves();
   useKeybindCommand("viewport.frameSelection", () => editorRef.current?.fit(), { scopeRef: panelRef });
   return (
     <PanelFrame data-testid="curve-asset-editor-panel">
@@ -68,6 +70,7 @@ export function CurveAssetEditorPanel(_props: IDockviewPanelProps) {
           aria-label={label}
           value={asset.curve}
           fitShortcut={fitChord}
+          customEasingCurves={customEasingCurves}
           onChange={(curve) => commit({ ...asset, curve: curve as CurveAssetPayload["curve"] })}
           data-testid="curve-asset-editor"
         />

@@ -53,6 +53,7 @@ import { ProjectRichTextAppearModesField } from "../components/rich-text-appear-
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { particleParameterOverrideRows } from "../lib/particle-parameter-override-rows";
 import { particleSystemGuidsOf, useParticleSystemParameters } from "../lib/use-particle-system-parameters";
+import { useProjectCustomEasingCurves } from "../lib/use-custom-easing-curves";
 
 const MODEL_KINDS = ["model"] as const;
 
@@ -96,6 +97,7 @@ function usePrefabRowContext(props: PrefabDetailsSharedProps): {
   } = props;
   const { assetRegistry, registryEpoch } = useRegistryState();
   const areaEmissionStatus = useAreaEmissionStatus();
+  const customEasingCurves = useProjectCustomEasingCurves();
   // Open Class and Model tabs override saved content in these rows.
   const modelDocuments = useOpenDocumentsOfKinds(MODEL_KINDS);
   // Kept across renders, so a gizmo drag does not walk every Class again.
@@ -128,6 +130,7 @@ function usePrefabRowContext(props: PrefabDetailsSharedProps): {
       actorVariableNames: () => saveGameVariableNames(actorClassId, classGraphs, parentOf),
       componentVariableNames: (classId) => saveGameVariableNames(classId, classGraphs, parentOf),
       sceneLayerClasses: sceneLayerClasses,
+      customEasingCurves,
       focusTargets: components.filter((entry) => isFocusTargetClass(entry.classId)).map((entry, index) => ({ value: entry.id, label: `${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}` })),
     },
   };

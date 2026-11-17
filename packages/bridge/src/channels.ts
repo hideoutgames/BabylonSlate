@@ -862,6 +862,12 @@ export type CommandMessage =
    * from where it was to the new camera over `seconds`, shaped by an Easing Curve member (`curve`).
    */
   | { type: "possessCamera"; slotId: number | null; blend?: { seconds: number; curve: string } }
+  /**
+   * Replaces the renderer realm's custom easing curves (`setCustomEasingCurves` in core): each Class deriving from
+   * Custom Easing Curve, by Class id, as `CUSTOM_EASING_CURVE_SAMPLES` values baked when scripts loaded. Sent on every
+   * script load and replacement, empty when there are none.
+   */
+  | { type: "setCustomEasingCurves"; curves: Record<string, number[]> }
   | { type: "sceneLoading"; sceneAssetGuid: string; sceneLoadId: number }
   | { type: "sceneStreamLoading"; actorGuid: string; streamLoadId: number }
   /** A blocking Scene load or asset load holds the simulation; the host pauses render game time to match. */

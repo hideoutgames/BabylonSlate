@@ -114,6 +114,8 @@ describe("formatting", () => {
     expect(formatTimelineValue("asset", null)).toBe("None");
     expect(timelineKeyShape("float", "auto")).toBe("circle");
     expect(timelineKeyShape("float", "quadIn")).toBe("hourglass");
+    // A custom easing curve is an easing too.
+    expect(timelineKeyShape("float", "class:Snap")).toBe("hourglass");
     expect(timelineKeyShape("bool", "linear")).toBe("square");
   });
 });

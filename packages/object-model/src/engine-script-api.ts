@@ -9,7 +9,7 @@ import {
   SCENE_LAYER_SWITCHER_SCRIPT_API,
 } from "./scene-layer-switcher-api";
 import { TIMELINE_CLIP_SCRIPT_API } from "./timeline-clip-api";
-import { RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, RICH_TEXT_2D_LETTER_CLASS_ID } from "./ids";
+import { CUSTOM_EASING_CURVE_CLASS_ID, RICH_TEXT_2D_APPEAR_MODE_CLASS_ID, RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID, RICH_TEXT_2D_LETTER_CLASS_ID } from "./ids";
 import { LAYER_CAMERA_SCRIPT_API, SCENE_CAMERA_MANAGER_SCRIPT_API } from "./camera-script-api";
 
 export type EngineScriptPin = {
@@ -174,6 +174,21 @@ export const RICH_TEXT_GET_KEYS_FUNCTION: EngineOverridableFunction = {
     { name: "exec", typeId: "exec", direction: "in" },
     { name: "then", typeId: "exec", direction: "out" },
     { name: "Keys", typeId: "string", direction: "out", container: "array" },
+  ],
+};
+
+/**
+ * The Evaluate a Custom Easing Curve overrides: Value at Alpha 0 to 1. The engine samples it when scripts load and
+ * eases from that table, so it never runs while the curve is in use.
+ */
+export const CUSTOM_EASING_CURVE_EVALUATE_FUNCTION: EngineOverridableFunction = {
+  name: "Evaluate",
+  description: "The curve's Value at Alpha 0 to 1. Sampled once when scripts load.",
+  pins: [
+    { name: "exec", typeId: "exec", direction: "in" },
+    { name: "then", typeId: "exec", direction: "out" },
+    { name: "Alpha", typeId: "float", direction: "in" },
+    { name: "Value", typeId: "float", direction: "out" },
   ],
 };
 
@@ -431,6 +446,7 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     nativeEvents: [RICH_TEXT_DECORATE_LETTERS_EVENT],
     overridableFunctions: [RICH_TEXT_GET_KEYS_FUNCTION],
   },
+  { classId: CUSTOM_EASING_CURVE_CLASS_ID, overridableFunctions: [CUSTOM_EASING_CURVE_EVALUATE_FUNCTION] },
   SCENE_CAMERA_MANAGER_SCRIPT_API,
   ...OVERLAY_LAYOUT_CLASSES.map((classId): EngineClassScriptApi => ({ classId, variables: [
     ...overlayContainerScriptVariables(classId),

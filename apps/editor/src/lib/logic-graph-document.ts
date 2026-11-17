@@ -24,6 +24,7 @@ import {
 } from "@haptic/anim-graph";
 import {
   ENGINE_ENUMS,
+  enumAcceptsCustomEasingCurves,
   ENGINE_STRUCTS,
   mergeEngineTypeSchemas,
   type EnumMember,
@@ -31,6 +32,7 @@ import {
   type TypeSchemas,
 } from "@haptic/scripting";
 import { asEnumAsset, asStructureAsset } from "./type-asset-payload";
+import { projectCustomEasingCurves } from "./custom-easing-curves";
 import { walkAncestry } from "@haptic/editor-kit";
 import {
   compareClassIds,
@@ -901,7 +903,10 @@ function enumEntryFromPayload(
   return { guid: parsed.guid, name: parsed.name, members: parsed.members };
 }
 
-/** Closed Data Definition/Structure/Enum headers, open documents, and the engine registry. */
+/**
+ * Closed Data Definition/Structure/Enum headers, open documents, and the engine registry, with the project's custom
+ * easing curves (Class assets) after the members of the engine enums that accept them.
+ */
 export function collectGraphTypeAssets(options: {
   assets: ReadonlyArray<{
     path?: string;
@@ -909,6 +914,7 @@ export function collectGraphTypeAssets(options: {
       type: string;
       guid?: string;
       name: string;
+      parentClass?: string | null;
       payload?: Record<string, unknown>;
     };
   }>;
@@ -927,11 +933,16 @@ export function collectGraphTypeAssets(options: {
       fields: [...entry.fields],
     });
   }
+  // The project's custom easing curves follow the members of the enums that accept them (Make, Switch and Select).
+  const customCurves = projectCustomEasingCurves(options.assets);
   for (const entry of ENGINE_ENUMS) {
+    const custom = enumAcceptsCustomEasingCurves(entry.id)
+      ? customCurves.map((name, index) => ({ name, value: entry.members.length + index }))
+      : [];
     enums.set(entry.id, {
       guid: entry.id,
       name: entry.name,
-      members: [...entry.members],
+      members: [...entry.members, ...custom],
     });
   }
   const open = new Map(options.openDocuments.filter((doc) => doc.ref.kind === "data-definition" && doc.ref.path && doc.content != null)

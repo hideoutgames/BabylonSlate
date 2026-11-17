@@ -19,6 +19,9 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import {
+  CUSTOM_EASING_CURVE_CLASS_ID,
+  RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
+  RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
   subsystemBaseClassIdOf,
   type SubsystemClassHierarchy,
 } from "@haptic/object-model";
@@ -175,11 +178,13 @@ function rootsFromIndex(input: ExportRootInput, { sortedAssets }: ClosureIndex):
   // Commands are discoverable from catalog metadata, but their resources
   // remain deferred until the command runs.
   for (const asset of sortedAssets) if (asset.consoleCommand || (asset.type === "Class" && asset.parentClass && hierarchy.ancestry(asset.parentClass).includes("DebugCommand"))) startupRefs.push(asset.guid);
-  // Rich Text names its custom Appear Modes and Decorator Effects by Class id, in a list entry or a text tag.
+  // Rich Text names its custom Appear Modes and Decorator Effects by Class id, in a list entry or a text tag; a custom
+  // easing curve is named by Class id (`class:<ClassId>`) wherever a curve is stored, and is baked when scripts load.
   for (const asset of sortedAssets) {
     if (asset.type !== "Class" || !asset.parentClass) continue;
     const ancestry = hierarchy.ancestry(asset.parentClass);
-    if (ancestry.includes("RichText2DAppearMode") || ancestry.includes("RichText2DDecoratorEffect")) startupRefs.push(asset.guid);
+    if (ancestry.includes(RICH_TEXT_2D_APPEAR_MODE_CLASS_ID) || ancestry.includes(RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID) ||
+      ancestry.includes(CUSTOM_EASING_CURVE_CLASS_ID)) startupRefs.push(asset.guid);
   }
   for (const ref of [input.gameInstanceClass, input.audioMixerGuid, input.saveGameDefinitionGuid, ...(input.renderAssetGuids ?? [])]) {
     if (ref?.trim()) startupRefs.push(ref.trim());

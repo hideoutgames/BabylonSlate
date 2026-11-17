@@ -114,6 +114,7 @@ import {
   MATERIAL_DOCUMENT_KINDS,
   useOpenDocumentsOfKinds,
 } from "../lib/use-open-documents-of-kinds";
+import { projectCustomEasingCurves } from "../lib/custom-easing-curves";
 
 const NO_SEARCH_ITEMS: SearchDialogItem[] = [];
 const PREFAB_KINDS = ["prefab"] as const;
@@ -239,9 +240,10 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       classEntries: gameInstanceClassEntries(assets),
       sceneLayerClasses: subclassClassEntries("SceneLayerActor", assets),
       projectComponentItems: projectAddComponentItems(assets),
+      customEasingCurves: projectCustomEasingCurves(assets),
     };
   }, [assetRegistry, registryEpoch]);
-  const { parentOf, pickerAssets, environmentPickerAssets, classEntries, sceneLayerClasses, projectComponentItems } = registryViews;
+  const { parentOf, pickerAssets, environmentPickerAssets, classEntries, sceneLayerClasses, projectComponentItems, customEasingCurves } = registryViews;
   // An open Material tab's unsaved domain wins over its saved header.
   const materialDocuments = useOpenDocumentsOfKinds(MATERIAL_DOCUMENT_KINDS);
   const materialDomains = useMemo(() => {
@@ -635,6 +637,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     componentVariableNames: (classId) => saveGameVariableNames(classId, classSaveGraphs, parentOf),
     sceneLayerClasses,
     focusTargets,
+    customEasingCurves,
     onPickActor: (componentId) => setConstraintTargetPick({ actorId: owner.id, componentId }),
   });
   /** One actor's rows for one of its components, built as a single selection builds them. */

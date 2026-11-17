@@ -306,6 +306,11 @@ describe("nativeEventStubs", () => {
     }
   });
 
+  it("offers a Custom Easing Curve no events: the engine only calls its Evaluate", () => {
+    expect(nativeEventStubs({ parentClass: "CustomEasingCurve" })).toEqual([]);
+    expect(isScriptCatalogNodeAllowed("flow.event.init", { parentClass: "CustomEasingCurve" })).toBe(false);
+  });
+
   it("offers Get Tag Value only in Decorator Effect graphs, where its tag is", () => {
     expect(isScriptCatalogNodeAllowed("richText.getTagValue", { parentClass: "RichText2DDecoratorEffect" })).toBe(true);
     for (const other of ["Actor", "Object", "SceneLayerActor", "RichText2DAppearMode", "FunctionLibrary"]) {

@@ -17,7 +17,7 @@ import {
   VEC4,
   enumRef,
 } from "@haptic/scripting";
-import { enumGuidOf, enumMembersOf, titleCaseEnumMember } from "./enum";
+import { enumGuidOf, enumMemberPinName, enumMembersOf } from "./enum";
 
 const SELECT_OPTION_PIN_PREFIX = "option:";
 const SELECT_SEARCH_ALIASES = ["?:", "condition ? a : b"] as const;
@@ -109,7 +109,7 @@ export const selectNodes: NodeDefinition[] = [
         ...enumMembersOf(properties).map((member) =>
           pin(
             selectOptionPinId(member.name),
-            titleCaseEnumMember(member.name),
+            enumMemberPinName(enumGuidOf(properties), member.name),
             "in",
             RESOLVING_WILDCARD,
             "data",

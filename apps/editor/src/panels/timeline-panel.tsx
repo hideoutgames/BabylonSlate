@@ -115,6 +115,7 @@ import {
   type TrackKeyRef,
 } from "../lib/timeline-track-edits";
 import { TIMELINE_EASE_SHORTCUTS, TIMELINE_EASING_CURVES, timelineInterpolationLabel } from "../lib/timeline-interpolation";
+import { useProjectCustomEasingCurves } from "../lib/use-custom-easing-curves";
 import { applyTimelineCurve, timelineCurveChannels, timelineCurveKind, timelineTrackCurve } from "../lib/timeline-curves";
 import { useTimelineClip, useTimelinePropertyContext } from "../context/use-timeline-clip";
 import {
@@ -190,6 +191,7 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
   const sceneEditing = useOptionalSceneEditing();
   const selectedActorIds = sceneEditing?.selectedActorIds ?? [];
   const { assetRegistry } = useRegistryState();
+  const customCurves = useProjectCustomEasingCurves();
   const property = useTimelinePropertyContext();
   const playhead = tools.timelinePlayhead;
   const rawTime = useTimelinePlayheadTime(playhead);
@@ -596,9 +598,16 @@ function ClipTimeline({ scene, clip, commitClip, tools, proxies = false }: {
           testId: `timeline-key-menu-interp-${value}`, onSelect: () => setInterpolation(value) })),
         ...TIMELINE_EASE_SHORTCUTS.map((entry) => ({ id: `interp-${entry.value}`, label: entry.label,
           testId: `timeline-key-menu-interp-${entry.value}`, onSelect: () => setInterpolation(entry.value) })),
-        { type: "submenu", id: "more-curves", label: "More Curves", items: TIMELINE_EASING_CURVES.map((curve) => ({
-          id: `curve-${curve}`, label: timelineInterpolationLabel(curve), testId: `timeline-key-menu-curve-${curve}`,
-          onSelect: () => setInterpolation(curve) })) },
+        { type: "submenu", id: "more-curves", label: "More Curves", items: [
+          ...TIMELINE_EASING_CURVES.map((curve) => ({
+            id: `curve-${curve}`, label: timelineInterpolationLabel(curve), testId: `timeline-key-menu-curve-${curve}`,
+            onSelect: () => setInterpolation(curve) })),
+          // The project's custom easing curves, after the built-in ones.
+          ...(customCurves.length ? [{ type: "separator", id: "custom-curves-separator" } satisfies ContextMenuItem] : []),
+          ...customCurves.map((curve) => ({
+            id: `curve-${curve}`, label: timelineInterpolationLabel(curve), testId: `timeline-key-menu-curve-${curve}`,
+            onSelect: () => setInterpolation(curve) })),
+        ] },
       ] },
       ...editItems,
       { type: "separator", id: "delete-separator" },
@@ -893,6 +902,7 @@ function TimelineCurves({ clip, rows, rowId, setRowId, snap, commitClip, touch }
   const selected = tracks.find((row) => row.id === rowId) ?? null;
   const track = selected?.track;
   const kind = track ? timelineCurveKind(track.valueType) : null;
+  const customCurves = useProjectCustomEasingCurves();
   return <div className="flex min-h-0 flex-1" data-testid="timeline-curves">
     <div className="w-[264px] shrink-0 border-r">
       {tracks.length ? <TreeView
@@ -920,6 +930,7 @@ function TimelineCurves({ clip, rows, rowId, setRowId, snap, commitClip, touch }
           aria-label={selected!.label}
           value={timelineTrackCurve(track)}
           channels={timelineCurveChannels(track.valueType)}
+          customEasingCurves={customCurves}
           constraints={{
             timeRange: [0, clip.length],
             ...(snap ? { timeSnap: 1 / clip.frameRate } : {}),

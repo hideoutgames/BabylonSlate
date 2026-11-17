@@ -2,6 +2,7 @@ import {
   TIMELINE_CLIP_ASSET_CLIP_ID,
   createDefaultTimelineClipAsset,
   createTimelineClip,
+  customEasingCurve,
   defaultTimelineProxyPreview,
   timelineClipAssetSummaries,
   type SerializedTimelineClipAsset,
@@ -33,6 +34,7 @@ import {
 } from "@haptic/scripting-nodes";
 import { actor, comp, instanceComponents, meshComp, requireRef, tf, type FeatureTestContext, type Vec3 } from "./context";
 import { classGraph, gChain, gNode, gWire, getVar, printString, setVar, varMember } from "./graph";
+import { FEATURE_TEST_EASING_CURVE_CLASS } from "./scripting";
 
 /**
  * Timeline showcase. `FT_Timeline` (created before any scene binds a clip to
@@ -171,8 +173,10 @@ export function placeTimelinePavilion(ctx: FeatureTestContext, scene: Serialized
         keys: [key("door-0", 0, closed), key("door-1", 1, open), key("door-2", 2.5, open), key("door-3", 3.5, closed)],
       }] },
       { id: "ft-timeline-object-lamp", actorId: lamp.id, tracks: [
+        // The lamp brightens along the project's custom easing curve.
         { id: "ft-timeline-track-lamp-intensity", target: { kind: "component", componentId: "ft-world-timeline-lamp-light", property: "intensity" }, valueType: "float",
-          keys: [key("lamp-i0", 0, LAMP.intensity), key("lamp-i1", 1, LAMP.bright), key("lamp-i2", 2.5, LAMP.bright), key("lamp-i3", 3.5, LAMP.intensity)] },
+          keys: [{ ...key("lamp-i0", 0, LAMP.intensity), Interpolation: customEasingCurve(FEATURE_TEST_EASING_CURVE_CLASS) },
+            key("lamp-i1", 1, LAMP.bright), key("lamp-i2", 2.5, LAMP.bright), key("lamp-i3", 3.5, LAMP.intensity)] },
         { id: "ft-timeline-track-lamp-color", target: { kind: "component", componentId: "ft-world-timeline-lamp-light", property: "color" }, valueType: "color",
           keys: [key("lamp-c0", 0, WARM), key("lamp-c1", 1, COOL), key("lamp-c2", 3.5, WARM)] },
       ] },

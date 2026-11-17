@@ -8,7 +8,7 @@ It is always the first document tab and cannot be closed. Press <kbd>Alt</kbd>+<
 
 - **Folders** on the left shows the folder tree. Drag the divider (**Resize Folders**) to change its width. With **Filter** set, the tree lists only assets of the ticked types; every folder still shows.
 - The asset grid on the right shows the selected folder. Double-tap an asset to open it, or a folder to go into it.
-- Each tile shows the asset's name and, below it, its type. A Class shows what it derives from instead: **Actor** for anything based on Actor, **Subsystem**, **Game Instance**, **Component**, **Function Library**, **Editor Function Library**, **Debug Command**, **Editor Utility Object**, **Behaviour Tree Task**, **Behaviour Tree Decorator**, **Behaviour Tree Service**, **Behaviour Tree Composite**, **Rich Text Appear Mode** or **Rich Text Decorator Effect**; any other Class shows **Object**.
+- Each tile shows the asset's name and, below it, its type. A Class shows what it derives from instead: **Actor** for anything based on Actor, **Subsystem**, **Game Instance**, **Component**, **Function Library**, **Editor Function Library**, **Debug Command**, **Editor Utility Object**, **Behaviour Tree Task**, **Behaviour Tree Decorator**, **Behaviour Tree Service**, **Behaviour Tree Composite**, **Rich Text Appear Mode**, **Rich Text Decorator Effect** or **Easing Curve**; any other Class shows **Object**.
 - On a phone, choose the folder button above the grid to open **Folders**.
 
 The toolbar above the grid has:

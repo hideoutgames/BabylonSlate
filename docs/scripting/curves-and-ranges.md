@@ -53,6 +53,7 @@ Each key has a **Time**, a **Value**, an **Interpolation** and two tangents, **A
 | **Auto** | A smooth curve shaped by the neighbouring keys. It stays flat at a peak or a dip, so it does not overshoot them. |
 | **Custom** | A smooth curve shaped by the tangents. A tangent is a slope in value per second; Vector and Color keys have one per channel. |
 | An easing curve, such as **Quad In** or **Bounce Out** | The same shape as that [easing curve](class/index.md#tween) in Tween nodes. |
+| A custom easing curve, listed as its Class name followed by **(Custom)** | The shape of your own [custom easing curve](#custom-easing-curves). |
 
 A **Vector Curve Key** also has **Axes**: the axes it sets, added up from X 1, Y 2 and Z 4. The default, 7, sets all three. A key that sets fewer leaves the other axes to their own keys, so each axis can have keys at different times and with its own interpolation. Between the curve's first and last key, an axis outside its own keys holds its nearest value; **Before** and **After** apply to the whole curve.
 
@@ -88,13 +89,39 @@ In the curve plot:
 - Right-drag (or drag with one finger on touch) to pan, and pinch or Ctrl/Cmd-scroll to zoom. Editing keys leaves the view where it is; choose **Fit** to frame every key again.
 - **Auto** and **Custom** keys show tangent handles. Drag a handle to set the key's slope; an **Auto** key becomes **Custom** and keeps its shape until you move the handle. With several keys selected, every selected **Auto** or **Custom** key on that channel takes the same slope.
 - With a mouse, hover over the plot to read each channel's value at that time.
-- Below the plot, edit the selected key's **Time**, **Value** and **Interpolation** (the easing curves are grouped under **Ease**), and the curve's **Before** and **After**. With several keys selected, a field shows **Mixed Values** where they differ; a value or interpolation you set applies to all of them, and **Time** moves them together.
+- Below the plot, edit the selected key's **Time**, **Value** and **Interpolation** (the easing curves, then your custom easing curves, are grouped under **Ease**), and the curve's **Before** and **After**. With several keys selected, a field shows **Mixed Values** where they differ; a value or interpolation you set applies to all of them, and **Time** moves them together.
 
 Each drag, and each other change, is one step in **Undo**. Data Tree grids and the Play **Inspector** show the same previews.
 
 ## Curve assets
 
 When many classes should share one curve, make a **Float Curve**, **Vector Curve** or **Color Curve** asset instead of a curve variable. Scripts read it through a read-only **Curve Object**: [Get Float Curve Object](class/get-float-curve-object.md) turns the asset into the object, and nodes such as [Get Value At Time](class/get-value-at-time-float-curve.md) read it. See [Curve](../assets/curve.md).
+
+## Custom easing curves
+
+When none of the built-in easing curves has the shape you want, script your own:
+
+1. Create a [Class](classes.md) with **CustomEasingCurve** as its parent.
+2. In the Class, tap **+** next to **Functions** and choose **Evaluate**.
+3. Build the curve in **Evaluate**. It receives **Alpha**, from 0 to 1, and returns the curve's **Value** there. For example, multiply **Alpha** by itself for a curve that starts slowly and speeds up.
+
+The curve is then listed after the built-in curves, as its Class name followed by **(Custom)**, wherever you choose an easing curve:
+
+- **Curve** on Tween nodes and on [Ease](class/ease.md), and **Blend Function** on [Possess Camera With Blend](class/possess-camera-with-blend.md).
+- A curve key's **Interpolation**, in the curve editor, on [Curve](../assets/curve.md) assets and in the [Timeline](../scenes/timeline.md).
+- **Appear Transition** on [2D Rich Text](../components/2d-rich-text.md).
+- Any **Easing Curve**, **Curve Interpolation** or **Text 2D Appear Transition** value, such as a pin, a variable, a Structure field or a **Make**, **Switch** or **Select** node.
+
+A Class whose parent is your curve, and which does not override **Evaluate**, has the same shape as its parent.
+
+How the curve runs:
+
+- Haptic calls **Evaluate** 129 times, at evenly spaced **Alpha** values, when scripts load at the start of Play. Anything that eases along the curve blends between those samples; **Evaluate** never runs while the curve is in use. The curve is fixed for the session, and a script hot reload samples it again.
+- The curve's values at **Alpha** 0 and 1 are its own: it need not start at 0 or end at 1. A tween and a camera blend still finish exactly at their target, and a 2D Rich Text letter is hidden until it starts appearing and fully shown once it has.
+- **Evaluate** runs on its own object of the Class, which starts with the Class's variable defaults and is not part of any scene.
+- A sample that is not a number reads as Linear at that point. An **Evaluate** that waits, for example on a Delay, makes the whole curve Linear, and so does a curve whose Class no longer exists. A setting that names a missing Class keeps it and shows its name with **(Custom)**, so you can see and change it.
+
+Editor previews do not run scripts: the curve editor, curve previews and the Timeline's preview in the viewport draw a custom curve as Linear until you play in the editor, and from then on with the samples of the latest Play session.
 
 ## Nodes
 

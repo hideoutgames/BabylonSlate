@@ -21,6 +21,8 @@ export const RICH_TEXT_2D_LETTER_CLASS_ID = "RichText2DLetter";
 export const RICH_TEXT_2D_APPEAR_MODE_CLASS_ID = "RichText2DAppearMode";
 /** Base of Classes that script a continuous letter effect, applied with the `[fx=ClassName]` tag. */
 export const RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID = "RichText2DDecoratorEffect";
+/** Base of Classes that script an easing curve by overriding Evaluate; listed as `<Class> (Custom)` with the built-in curves. */
+export const CUSTOM_EASING_CURVE_CLASS_ID = "CustomEasingCurve";
 
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
@@ -56,6 +58,7 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTComposite",
   RICH_TEXT_2D_APPEAR_MODE_CLASS_ID,
   RICH_TEXT_2D_DECORATOR_EFFECT_CLASS_ID,
+  CUSTOM_EASING_CURVE_CLASS_ID,
 ] as const;
 
 /**

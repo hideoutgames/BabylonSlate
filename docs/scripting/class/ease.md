@@ -23,5 +23,5 @@ Blends between two numbers along an easing curve.
 
 ## Notes
 
-- **Alpha** 0 returns **A** and 1 returns **B**; it is clamped to 0 to 1.
+- **Alpha** is clamped to 0 to 1. With a built-in curve, **Alpha** 0 returns **A** and 1 returns **B**; a [custom easing curve](../curves-and-ranges.md#custom-easing-curves) can start and end elsewhere.
 - Back and Elastic curves can overshoot **A** and **B**.

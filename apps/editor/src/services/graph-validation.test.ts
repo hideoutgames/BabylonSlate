@@ -2610,6 +2610,26 @@ describe("scriptPaletteNodes", () => {
     ]);
   });
 
+  it("keeps a custom easing curve on Make and Select of a curve enum, even once its Class is gone, and resets other non-members", () => {
+    const curves = { name: "Easing Curve", members: [{ name: "linear", value: 0 }, { name: "class:Snap", value: 31 }] };
+    const team = { name: "Team", members: [{ name: "Red", value: 1 }] };
+    const node = (id: string, type: string, data: Record<string, unknown>) => ({ id, type, position: { x: 0, y: 0 }, data });
+    const hydrated = hydrateSerializedGraphForEditor({
+      nodes: [
+        node("make", "enum.make", { enumGuid: "engine:EasingCurve", value: "class:Deleted" }),
+        node("select", "enum.select", { enumGuid: "engine:EasingCurve", "default:index": "class:Deleted" }),
+        node("sw", "enum.switch", { enumGuid: "engine:EasingCurve" }),
+        node("team", "enum.make", { enumGuid: "enum-team", value: "class:Deleted" }),
+      ],
+      edges: [],
+    }, registry, { enums: { "engine:EasingCurve": curves, "enum-team": team } });
+    expect(hydrated.nodes[0]?.data.value).toBe("class:Deleted");
+    expect(hydrated.nodes[1]?.data["default:index"]).toBe("class:Deleted");
+    expect((hydrated.nodes[2]?.data.__pins as Array<{ id: string; name: string }>).map((pin) => pin.name))
+      .toEqual(["exec", "value", "Linear", "Snap (Custom)", "Default"]);
+    expect(hydrated.nodes[3]?.data.value).toBe("Red");
+  });
+
   it("keeps the last Switch enum guid after disconnect", () => {
     const graph: SerializedGraph = {
       nodes: [

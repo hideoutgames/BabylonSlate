@@ -111,7 +111,7 @@ While a clip is selected, the **Inspector** edits it instead of the actor select
 
 Below a track or an actor's row, **Values** shows the value at the playhead: the track's property, or every track of the actor. Editing a value there sets a key at the playhead, replacing the key already on that frame, whether **Auto Key** is on or not; a change made in the viewport but not yet keyed shows here, and editing it keys it.
 
-**Interpolation** offers **Constant**, **Linear**, **Auto**, **Ease In**, **Ease Out**, **Ease In Out** and every other easing curve. Enum and Asset values are set on the property itself, then keyed.
+**Interpolation** offers **Constant**, **Linear**, **Auto**, **Ease In**, **Ease Out**, **Ease In Out**, every other easing curve and your [custom easing curves](../scripting/curves-and-ranges.md#custom-easing-curves), each listed as its Class name followed by **(Custom)**; the key menu lists the custom ones under **More Curves**. The viewport preview draws a custom curve as Linear until you play. Enum and Asset values are set on the property itself, then keyed.
 
 
 ## Play clips in the game

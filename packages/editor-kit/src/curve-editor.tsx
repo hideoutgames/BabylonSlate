@@ -12,7 +12,10 @@ import {
   type Ref,
 } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, Maximize2Icon, PlusIcon, Trash2Icon } from "lucide-react";
-import { CURVE_EXTRAPOLATIONS, EASING_CURVE_LABELS, MIN_CURVE_KEY_GAP, type CurveExtrapolation, type CurveInterpolation } from "@haptic/core";
+import {
+  CURVE_EXTRAPOLATIONS, EASING_CURVE_LABELS, MIN_CURVE_KEY_GAP, customEasingCurveLabel,
+  type CurveExtrapolation, type CurveInterpolation, type CustomEasingCurveRef,
+} from "@haptic/core";
 import { Button } from "@haptic/ui/components/button";
 import {
   Select,
@@ -92,6 +95,12 @@ export interface CurveEditorProps {
   /** Chord shown on the window layout's **Fit** button; the host binds it. */
   fitShortcut?: string;
   ref?: Ref<CurveEditorHandle>;
+  /**
+   * The project's custom easing curves (`class:<ClassId>`), offered after the built-in curves under **Ease** as
+   * `<Class> (Custom)`. The editor reads no project assets, so the host passes them. Until a Play session has baked
+   * them, the plot draws them as Linear.
+   */
+  customEasingCurves?: readonly CustomEasingCurveRef[];
   /** Prefix for the editor's test ids. */
   "data-testid"?: string;
 }
@@ -146,8 +155,10 @@ function interpolationLabel(value: CurveInterpolation): string {
   if (value === "linear") return "Linear";
   if (value === "auto") return "Auto";
   if (value === "custom") return "Custom";
-  return EASING_CURVE_LABELS[value];
+  return customEasingCurveLabel(value) ?? EASING_CURVE_LABELS[value as keyof typeof EASING_CURVE_LABELS] ?? String(value);
 }
+
+const NO_CUSTOM_EASING_CURVES: readonly CustomEasingCurveRef[] = [];
 
 const BASIC_INTERPOLATIONS: readonly CurveInterpolation[] = ["constant", "linear", "auto", "custom"];
 const EASE_INTERPOLATIONS = INTERPOLATION_OPTIONS.filter((option) => !BASIC_INTERPOLATIONS.includes(option));
@@ -201,6 +212,7 @@ export function CurveEditor({
   layout = "inline",
   fitShortcut,
   ref,
+  customEasingCurves = NO_CUSTOM_EASING_CURVES,
   "data-testid": testId = "curve-editor",
 }: CurveEditorProps) {
   const isWindow = layout === "window";
@@ -1343,6 +1355,7 @@ export function CurveEditor({
       mixed={differs((key) => key.interpolation)}
       disabled={disabled}
       compact={isWindow}
+      customEasingCurves={customEasingCurves}
       onChange={setInterpolation}
       data-testid={`${testId}-interpolation`}
     />
@@ -1468,10 +1481,14 @@ function KeyBarField({ label, width, accent, children }: { label: string; width:
   );
 }
 
-/** Interpolation picker: Constant, Linear, Auto and Custom, then the easing curves under **Ease**. */
-function InterpolationSelect({ "aria-label": ariaLabel, value, mixed, disabled, compact, onChange, "data-testid": testId }: {
+/**
+ * Interpolation picker: Constant, Linear, Auto and Custom, then the easing curves under **Ease**, the project's custom
+ * easing curves last (and the selected one, when its Class is gone).
+ */
+function InterpolationSelect({ "aria-label": ariaLabel, value, mixed, disabled, compact, customEasingCurves, onChange, "data-testid": testId }: {
   "aria-label": string;
   value: CurveInterpolation;
+  customEasingCurves: readonly CustomEasingCurveRef[];
   /** The selected keys differ; the trigger reads Mixed until one is chosen. */
   mixed?: boolean;
   disabled?: boolean;
@@ -1480,6 +1497,8 @@ function InterpolationSelect({ "aria-label": ariaLabel, value, mixed, disabled, 
   onChange: (value: CurveInterpolation) => void;
   "data-testid"?: string;
 }) {
+  const stored = !mixed && customEasingCurveLabel(value) !== null && !customEasingCurves.includes(value as CustomEasingCurveRef);
+  const customOptions = stored ? [...customEasingCurves, value as CustomEasingCurveRef] : customEasingCurves;
   return (
     <Select value={value} disabled={disabled} onValueChange={(next) => { if (next != null) onChange(next as CurveInterpolation); }}>
       <SelectTrigger aria-label={ariaLabel} size="sm" className={cn("w-full min-w-0 flex-1", !compact && "pointer-coarse:min-h-11")} data-testid={testId}>
@@ -1493,6 +1512,7 @@ function InterpolationSelect({ "aria-label": ariaLabel, value, mixed, disabled, 
         <SelectGroup>
           <SelectLabel>Ease</SelectLabel>
           {EASE_INTERPOLATIONS.map((option) => <SelectItem key={option} value={option}>{interpolationLabel(option)}</SelectItem>)}
+          {customOptions.map((option) => <SelectItem key={option} value={option}>{interpolationLabel(option)}</SelectItem>)}
         </SelectGroup>
       </SelectContent>
     </Select>

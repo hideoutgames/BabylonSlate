@@ -13,6 +13,8 @@ function registry(): ClassRegistry {
     { name: "State", type: "struct", typeClassId: "stats", defaultValue: { Score: 0, Target: null } },
     { name: "Note", type: "string", defaultValue: "" },
     { name: "Tags", type: "struct:engine:TagContainer", defaultValue: { Tags: [] } },
+    { name: "Ease", type: "enum", typeClassId: "engine:EasingCurve", defaultValue: "linear" },
+    { name: "Mode", type: "enum", typeClassId: "mode", defaultValue: "walk" },
   ] });
   return registry;
 }
@@ -46,6 +48,7 @@ function fixture() {
       return material instanceof MaterialObject ? materialParameters.captureOverrides(material) : null;
     },
     structFields: type => type === "stats" ? [{ name: "Score", type: "int" }, { name: "Target", type: "object", typeClassId: "Actor" }] : null,
+    enumMembers: type => type === "engine:EasingCurve" ? ["linear", "quadIn"] : type === "mode" ? ["walk"] : null,
   };
   return { input, world, actors, materialParameters };
 }
@@ -153,6 +156,18 @@ describe("complete simulation scene capture", () => {
     hero.setVariable("State", { Score: 0, Target: null });
     hero.components[0]!.setVariable("materialGuid", "not-authored");
     expect(captureSimulationScene(input)).toMatchObject({ ok: false, code: "resource" });
+  });
+
+  it("keeps a custom easing curve in a curve Enum variable, whether or not its Class exists, and in no other Enum", () => {
+    const { input, actors } = fixture();
+    const hero = actors[0]!;
+    hero.setVariable("Ease", "class:Gone");
+    expect(complete(captureSimulationScene(input)).scene.actors[0]!.properties?.Ease).toBe("class:Gone");
+    hero.setVariable("Ease", "class:");
+    expect(captureSimulationScene(input)).toMatchObject({ ok: false, code: "value", path: "hero.properties.Ease" });
+    hero.setVariable("Ease", "linear");
+    hero.setVariable("Mode", "class:Gone");
+    expect(captureSimulationScene(input)).toMatchObject({ ok: false, code: "value", path: "hero.properties.Mode" });
   });
 
   it("bounds serialized bytes and node work", () => {

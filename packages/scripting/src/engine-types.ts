@@ -1,6 +1,6 @@
 import { SCALABILITY_ENUMS, SCALABILITY_STRUCTS } from "./scalability-types";
 import { ASSET_REGISTRY_ENUMS, ASSET_REGISTRY_STRUCTS } from "./asset-registry-types";
-import { ENGINE_EASING_CURVE_ENUM_ID, EASING_CURVES, ENGINE_TWEEN_SPACE_ENUM_ID, TWEEN_SPACES } from "@haptic/core";
+import { ENGINE_EASING_CURVE_ENUM_ID, EASING_CURVES, ENGINE_TWEEN_SPACE_ENUM_ID, TWEEN_SPACES, customEasingCurveLabel, isCustomEasingCurveRef } from "@haptic/core";
 export { ENGINE_EASING_CURVE_ENUM_ID, ENGINE_TWEEN_SPACE_ENUM_ID } from "@haptic/core";
 import {
   ASSET_LOAD_HANDLE_STATES, ASSET_LOAD_PRIORITIES, ASSET_LOAD_STATES,
@@ -136,6 +136,30 @@ export type EngineStruct = {
   name: string;
   fields: StructField[];
 };
+
+/** The engine enums whose values may also name a custom easing curve (`class:<ClassId>`). */
+const CUSTOM_EASING_CURVE_ENUM_IDS: ReadonlySet<string> = new Set([
+  ENGINE_EASING_CURVE_ENUM_ID, ENGINE_CURVE_INTERPOLATION_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID,
+]);
+
+/** Whether values of enum `enumId` may name a custom easing curve besides its members: Easing Curve, Curve Interpolation and Text 2D Appear Transition. */
+export function enumAcceptsCustomEasingCurves(enumId: string | null | undefined): boolean {
+  return typeof enumId === "string" && CUSTOM_EASING_CURVE_ENUM_IDS.has(enumId);
+}
+
+/**
+ * Whether `value` is valid for enum `enumId` without being one of its members: a well-formed custom easing curve on
+ * one of the three enums that accept them. Validation that rejects non-members asks this, and keeps such a value even
+ * when its Class no longer exists (it then samples as Linear).
+ */
+export function isCustomEasingCurveEnumValue(enumId: string | null | undefined, value: unknown): boolean {
+  return enumAcceptsCustomEasingCurves(enumId) && isCustomEasingCurveRef(value);
+}
+
+/** How a list names a value of enum `enumId` that is a custom easing curve (`<Class> (Custom)`); null for anything else. */
+export function customEasingCurveEnumLabel(enumId: string | null | undefined, value: unknown): string | null {
+  return isCustomEasingCurveEnumValue(enumId, value) ? customEasingCurveLabel(value) : null;
+}
 
 /** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [

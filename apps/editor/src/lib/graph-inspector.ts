@@ -1,5 +1,8 @@
-import { INPUT_KEYS, declaredValueUnit, normalizeTag, normalizeTagContainer } from "@haptic/core";
+import {
+  ENGINE_CURVE_INTERPOLATION_ENUM_ID, INPUT_KEYS, declaredValueUnit, isCustomEasingCurveRef, normalizeTag, normalizeTagContainer,
+} from "@haptic/core";
 import { dataGraphMetadata, dataGraphNodeTitle, isDataGraphNode, type DataGraphAssetEntry } from "./data-graph";
+import { projectCustomEasingCurves } from "./custom-easing-curves";
 import type {
   ParameterRow,
   PinListRow,
@@ -25,7 +28,9 @@ import {
   INT,
   STRING,
   colorRgbToPinDefault,
+  customEasingCurveEnumLabel,
   defaultJsValue,
+  enumAcceptsCustomEasingCurves,
   curveKindForStruct,
   hydrateStructInstance,
   isDevelopmentOnlyNode,
@@ -111,10 +116,16 @@ function memberNamesFromUnknown(members: unknown): string[] | null {
   return names;
 }
 
+/**
+ * Member names by enum guid: project Enum assets and open Enum documents, then the engine enums. The enums that
+ * accept custom easing curves (Easing Curve, Curve Interpolation, Text 2D Appear Transition) list the project's after
+ * their members, as `class:<ClassId>`.
+ */
 export function collectEnumMemberNames(
   documents: ReadonlyArray<{ content: unknown }>,
   assets: ReadonlyArray<{
-    header: { guid: string; type: string; payload?: Record<string, unknown> };
+    path?: string;
+    header: { guid: string; type: string; name?: string; parentClass?: string | null; payload?: Record<string, unknown> };
   }> = [],
 ): Record<string, string[]> {
   const result: Record<string, string[]> = {};
@@ -133,12 +144,20 @@ export function collectEnumMemberNames(
     const names = memberNamesFromUnknown(record.members);
     if (names) result[record.guid] = names;
   }
+  const customCurves = projectCustomEasingCurves(assets);
   for (const entry of ENGINE_ENUMS) {
     if (!result[entry.id]) {
       result[entry.id] = entry.members.map((member) => member.name);
+      if (enumAcceptsCustomEasingCurves(entry.id)) result[entry.id]!.push(...customCurves);
     }
   }
   return result;
+}
+
+/** How an enum value reads in a list: Input Key labels, `<Class> (Custom)` for a custom easing curve, else Title Case. */
+export function enumMemberLabel(enumGuid: string, name: string): string {
+  if (enumGuid === "engine:Key") return INPUT_KEYS.find((key) => key.key === name)?.label ?? name;
+  return customEasingCurveEnumLabel(enumGuid, name) ?? humanizePropertyLabel(name);
 }
 
 type PinDefaultMapping = NonNullable<
@@ -170,7 +189,7 @@ function rangeStructRow(id: string, label: string, structId: string, value: unkn
 }
 
 /** A built-in curve Structure as one expanding curve row (`CurveValueField`). */
-function curveStructRow(id: string, label: string, structId: string, value: unknown, onChange: (value: CurveEditorValue) => void): PropertyRow | undefined {
+function curveStructRow(id: string, label: string, structId: string, value: unknown, onChange: (value: CurveEditorValue) => void, enumMembers?: Readonly<Record<string, readonly string[]>>): PropertyRow | undefined {
   const curveKind = curveKindForStruct(structId);
   if (!curveKind) return undefined;
   const curve = value && typeof value === "object" && Array.isArray((value as CurveEditorValue).Keys)
@@ -179,13 +198,15 @@ function curveStructRow(id: string, label: string, structId: string, value: unkn
   return {
     kind: "value-curve", id, label, curveKind, value: curve,
     defaultValue: { Keys: [], Before: "constant", After: "constant" },
+    // The project's custom easing curves, listed after the Curve Interpolation members (`collectEnumMemberNames`).
+    customEasingCurves: (enumMembers?.[ENGINE_CURVE_INTERPOLATION_ENUM_ID] ?? []).filter(isCustomEasingCurveRef),
     onChange,
   };
 }
 
 /** The dedicated row of a built-in range or curve Structure, if `structId` is one. */
-function builtInStructRow(id: string, label: string, structId: string, value: unknown, onChange: (value: unknown) => void, unit?: string): PropertyRow | undefined {
-  return rangeStructRow(id, label, structId, value, onChange, unit) ?? curveStructRow(id, label, structId, value, onChange);
+function builtInStructRow(id: string, label: string, structId: string, value: unknown, onChange: (value: unknown) => void, unit?: string, enumMembers?: Readonly<Record<string, readonly string[]>>): PropertyRow | undefined {
+  return rangeStructRow(id, label, structId, value, onChange, unit) ?? curveStructRow(id, label, structId, value, onChange, enumMembers);
 }
 
 function flattenStructFieldRows(
@@ -212,7 +233,7 @@ function flattenStructFieldRows(
       continue;
     }
     const range = type.kind === "structRef"
-      ? builtInStructRow(`${labelPrefix}:${field.name}`, label, type.guid, fieldValue, (next) => onChange({ ...instance, [field.name]: next }), field.unit)
+      ? builtInStructRow(`${labelPrefix}:${field.name}`, label, type.guid, fieldValue, (next) => onChange({ ...instance, [field.name]: next }), field.unit, mapping?.enumMembers)
       : undefined;
     if (range) {
       rows.push(range);
@@ -455,12 +476,9 @@ function pushPinDefaultRows(
           label: entry.name,
           value: current,
           defaultValue: pinDefaultAsString(typeDefault) || first,
-          options: options.map((name) => ({
-            value: name,
-            label: entry.type.kind === "enumRef" && entry.type.guid === "engine:Key"
-              ? INPUT_KEYS.find((key) => key.key === name)?.label ?? name
-              : humanizePropertyLabel(name),
-          })),
+          options: options.map((name) => ({ value: name, label: enumMemberLabel(entry.type.kind === "enumRef" ? entry.type.guid : "", name) })),
+          // Labels are final: a custom easing curve shows its Class name as written.
+          verbatim: true,
           onChange: (value) => onPatch({ [key]: value }),
         });
         break;
@@ -533,7 +551,7 @@ function pushPinDefaultRows(
           });
           break;
         }
-        const range = builtInStructRow(entry.pinId, entry.name, entry.type.guid, entry.value, (next) => onPatch({ [key]: next }), entry.unit);
+        const range = builtInStructRow(entry.pinId, entry.name, entry.type.guid, entry.value, (next) => onPatch({ [key]: next }), entry.unit, mappingNames?.enumMembers);
         if (range) {
           rows.push(range);
           break;
@@ -604,7 +622,7 @@ export function variableDefaultPropertyRows(
   };
   if (type.kind === "structRef" && type.guid === "engine:InputType") return [inputTypeRow(value, onChange, options?.assetEntries, label)];
   if (type.kind === "structRef" && (rangeKindForStruct(type.guid) || curveKindForStruct(type.guid))) {
-    const row = builtInStructRow(pinId, label, type.guid, value, onChange, options?.unit);
+    const row = builtInStructRow(pinId, label, type.guid, value, onChange, options?.unit, options?.enumMembers);
     return row ? [row] : [];
   }
   if (type.kind === "structRef" && type.guid !== "engine:TagContainer") {
@@ -723,12 +741,9 @@ export function enumNodePropertyRows(
       label: "Value",
       value: current,
       defaultValue: members[0] ?? "",
-      options: members.map((name) => ({
-        value: name,
-        label: guid === "engine:Key"
-          ? INPUT_KEYS.find((key) => key.key === name)?.label ?? name
-          : humanizePropertyLabel(name),
-      })),
+      options: (members.includes(current) || !current ? members : [...members, current])
+        .map((name) => ({ value: name, label: enumMemberLabel(guid, name) })),
+      verbatim: true,
       onChange: (value) => onPatch({ value }),
     });
   }

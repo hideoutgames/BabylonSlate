@@ -1300,6 +1300,15 @@ describe("collectExportReachability subsystem roots", () => {
     expect(result).toMatchObject({ ok: true, value: { guids: ["rise", "scene", "tilt", "tilt-leaf"] } });
   });
 
+  it("packs every custom easing curve Class, which curves name only by Class id", () => {
+    const result = subsystemClosure([
+      { guid: "smooth", name: "Smooth", parentClass: "CustomEasingCurve" },
+      { guid: "smoother", name: "Smoother", parentClass: "Smooth" },
+      { guid: "plain", name: "Plain", parentClass: "Object" },
+    ]);
+    expect(result).toMatchObject({ ok: true, value: { guids: ["scene", "smooth", "smoother"] } });
+  });
+
   it("packs subsystem classes from enabled plugins only", () => {
     const result = subsystemClosure(
       [

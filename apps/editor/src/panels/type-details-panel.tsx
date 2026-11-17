@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { carriesLoadingPolicy } from "@haptic/core";
 import {
@@ -47,7 +47,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
-  const { assetRegistry } = useRegistryState();
+  const { assetRegistry, registryEpoch } = useRegistryState();
   const typeDocuments = useOpenDocumentsOfKinds(TYPE_KINDS);
   const { selectedMemberId } = useTypeAssetEditing();
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
@@ -57,10 +57,10 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   const kind = doc?.ref.kind;
   const selectedIndex = parseMemberIndex(selectedMemberId);
-  const typeCatalog = collectGraphTypeAssets({
-    assets: assetRegistry?.list() ?? [],
-    openDocuments: typeDocuments,
-  });
+  const typeCatalog = useMemo(() => {
+    void registryEpoch;
+    return collectGraphTypeAssets({ assets: assetRegistry?.list() ?? [], openDocuments: typeDocuments });
+  }, [assetRegistry, registryEpoch, typeDocuments]);
   const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
   const typeAssets = typeAssetPickerEntries(typeCatalog);
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
@@ -69,10 +69,10 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
     type: asset.header.type,
     path: asset.path,
   }));
-  const enumMembers = collectEnumMemberNames(
-    typeDocuments,
-    assetRegistry?.list() ?? [],
-  );
+  const enumMembers = useMemo(() => {
+    void registryEpoch;
+    return collectEnumMemberNames(typeDocuments, assetRegistry?.list() ?? []);
+  }, [assetRegistry, registryEpoch, typeDocuments]);
 
   /** `mergeKey` groups one scrub's edits into one undo entry. */
   const commit = (next: Record<string, unknown>, mergeKey?: string) => {

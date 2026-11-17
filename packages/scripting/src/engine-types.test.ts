@@ -3,9 +3,24 @@ import { parseText2DAppearProperties, text2DCharacterReveal } from "@haptic/core
 import { mergeEngineTypeSchemas } from "./type-defaults";
 import {
   ENGINE_STRUCTS,
+  customEasingCurveEnumLabel,
+  isCustomEasingCurveEnumValue,
 } from "./engine-types";
 
 describe("engine type registry", () => {
+  it("accepts a custom easing curve as a value of exactly the three curve enums, and labels it there only", () => {
+    for (const enumId of ["engine:EasingCurve", "engine:CurveInterpolation", "engine:Text2DAppearTransition"]) {
+      expect(isCustomEasingCurveEnumValue(enumId, "class:Snap"), enumId).toBe(true);
+      expect(isCustomEasingCurveEnumValue(enumId, "class:"), enumId).toBe(false);
+      expect(isCustomEasingCurveEnumValue(enumId, "quadIn"), enumId).toBe(false);
+      expect(customEasingCurveEnumLabel(enumId, "class:Snap"), enumId).toBe("Snap (Custom)");
+    }
+    for (const enumId of ["engine:Text2DAppearMode", "engine:TweenSpace", "my-enum", undefined]) {
+      expect(isCustomEasingCurveEnumValue(enumId, "class:Snap"), String(enumId)).toBe(false);
+      expect(customEasingCurveEnumLabel(enumId, "class:Snap"), String(enumId)).toBeNull();
+    }
+  });
+
   it("offers appearance choices that preserve serialized values and drive the selected transition", () => {
     const schemas = mergeEngineTypeSchemas();
     const choice = (id: string, name: string) => schemas.enums[id]?.members.find((member) => member.name === name)?.name;

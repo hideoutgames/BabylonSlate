@@ -637,6 +637,21 @@ describe("collectGraphTypeAssets", () => {
     expect(catalog.structures.some((entry) => entry.guid === "engine:HitResult")).toBe(true);
   });
 
+  it("lists the project's custom easing curves after the members of the curve enums, for Make, Switch and Select", () => {
+    const catalog = collectGraphTypeAssets({
+      assets: [
+        { path: "assets/Snap.class.hasset", header: { type: "Class", guid: "snap", name: "Snap", parentClass: "CustomEasingCurve" } },
+        { path: "assets/Hero.class.hasset", header: { type: "Class", guid: "hero", name: "Hero", parentClass: "Actor" } },
+      ],
+      openDocuments: [],
+    });
+    const members = (guid: string) => catalog.enums.find((entry) => entry.guid === guid)!.members;
+    expect(members("engine:EasingCurve").slice(-2)).toEqual([{ name: "bounceInOut", value: 30 }, { name: "class:Snap", value: 31 }]);
+    expect(members("engine:CurveInterpolation").at(-1)?.name).toBe("class:Snap");
+    expect(members("engine:Text2DAppearTransition").at(-1)?.name).toBe("class:Snap");
+    expect(members("engine:Text2DAppearMode").some((member) => member.name.startsWith("class:"))).toBe(false);
+  });
+
   it("merges Structure and Enum assets with open documents", () => {
     const catalog = collectGraphTypeAssets({
       assets: [

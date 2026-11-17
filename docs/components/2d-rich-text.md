@@ -16,7 +16,7 @@ Rich Text has every setting of [2D Text](2d-text.md), plus the settings that rev
 | --- | --- |
 | Appear Modes | A list of Fade, Scale, Slide and your own [custom modes](#custom-appear-modes-and-effects), each at most once. Custom modes are listed as their Class name followed by **(Custom)**. Instant replaces the rest. An empty list is Off, and the text shows at once. Default Off. |
 | Appear Start | Fully Revealed (default), Hidden or Play On Start. Sets the state at the start of Play. The editor always shows the full text. |
-| Appear Transition | The curve each character follows, such as Linear, Cubic Out (default) or Bounce Out, or Instant. |
+| Appear Transition | The curve each character follows, such as Linear, Cubic Out (default) or Bounce Out, or Instant. Your [custom easing curves](../scripting/curves-and-ranges.md#custom-easing-curves) follow, listed as their Class name followed by **(Custom)**. |
 | Time Between Characters | Seconds between one character starting and the next. 0 starts them together. Default 0.1. |
 | Character Reveal Duration | Seconds each character takes to appear. Default 0.3. |
 | Appear Sound | Plays a sound while the text appears. Off by default. The three settings below show only while it is on. |

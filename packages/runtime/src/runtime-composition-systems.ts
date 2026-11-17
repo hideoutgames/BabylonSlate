@@ -1,5 +1,5 @@
 import type { TilemapPayload, TilesetPayload } from "@haptic/assets";
-import { multiplyQuats, rotatorToQuat, ScalabilitySession } from "@haptic/core";
+import { multiplyQuats, rotatorToQuat, ScalabilitySession, setCustomEasingCurves } from "@haptic/core";
 import type { AnimRootMotionDelta } from "@haptic/anim-graph";
 import { World, type Actor, type ClassRegistry, type WorldInputProvider } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
@@ -178,6 +178,11 @@ export function createScriptRuntime(rt: RuntimeComposition, options: RuntimeDriv
     deleteAnchors: (label) => { rt.anchors.delete(label); },
     bindUserCommand: (def) => rt.bindUserCommand(def),
     reportLog: (message, severity, category) => rt.reportLog(message, severity, category),
+    customEasingCurvesBaked: (curves) => {
+      // This realm samples them (tweens, Ease, letter scripts); the renderer's realm gets its own copy.
+      setCustomEasingCurves(curves);
+      rt.emit({ type: "setCustomEasingCurves", curves });
+    },
   });
 }
 

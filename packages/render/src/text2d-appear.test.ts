@@ -3,7 +3,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { installAssetBytes } from "@haptic/assets";
 import { installTextureBytes } from "./mesh-assets";
 import { afterEach, expect, it, vi } from "vitest";
-import { identityTransform, parseText2DProperties } from "@haptic/core";
+import { identityTransform, parseText2DProperties, setCustomEasingCurves } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { unlitBinding } from "./unlit-material-blocks";
 import { isUnlitMaterial } from "./unlit-material";
@@ -146,6 +146,22 @@ it("reveals all characters simultaneously with zero interval and reverses the sa
   }
   updateText2DAppear(root, 0);
   expect(root.getChildMeshes().every((child) => child.visibility === 0)).toBe(true);
+});
+
+it("reveals along a custom Appear Transition from the curves this realm holds, and as Linear before they arrive", () => {
+  const { scene } = host();
+  const root = createText2DMesh(scene, "custom", {
+    text: "AB", appearModes: ["fade"], appearTransition: "class:Half", appearInterval: 0, appearDuration: 1,
+  }, undefined, { rich: true, metrics });
+  updateText2DAppear(root, 0.5);
+  expect(root.getChildMeshes().map((child) => child.visibility)).toEqual([0.5, 0.5]);
+  try {
+    // Half the Alpha: 0.25 half way.
+    setCustomEasingCurves({ Half: Array.from({ length: 129 }, (_, index) => index / 256) });
+    updateText2DAppear(root, 0.25);
+    updateText2DAppear(root, 0.5);
+    expect(root.getChildMeshes().map((child) => child.visibility)).toEqual([0.25, 0.25]);
+  } finally { setCustomEasingCurves({}); }
 });
 
 it("targets one text component, keeps atlas identity, and retains progress when its visual is recreated", () => {

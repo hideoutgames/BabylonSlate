@@ -2,6 +2,7 @@ import {
   createActor,
   createDefaultSceneLayer,
   createTimelineClip,
+  customEasingCurve,
   text2DCustomAppearMode,
   type AxisBinding,
   type PainterCommand,
@@ -27,7 +28,7 @@ import {
 import { classGraph, fnGraph, gChain, getVar, gExec, gNode, gWire, printString, setVar, varMember, type GraphNode } from "./graph";
 import { FEATURE_TEST_MATERIAL_NAMES, featureTestMaterialAssetGuid } from "./materials";
 import { ownedActorProbeScript } from "./scene-scripts";
-import { featureTestCameraShakes } from "./scripting";
+import { FEATURE_TEST_EASING_CURVE_CLASS, featureTestCameraShakes } from "./scripting";
 import { withFeatureTestHudPulse } from "./timeline";
 
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
@@ -450,7 +451,7 @@ async function saveRichTextClasses(ctx: FeatureTestContext, refs: ClassBase): Pr
     ui("prefab-markup", "2DRichTextComponent", {
       ...text(refs, richTextMarkup(refs.icons.camera, effect.classId), 18, [900, 26.4], { alignment: "center" }),
       appearModes: ["fade", "slide", text2DCustomAppearMode(mode.classId)],
-      appearTransition: "cubicOut",
+      appearTransition: customEasingCurve(FEATURE_TEST_EASING_CURVE_CLASS),
       appearInterval: 0.03,
       appearDuration: 0.25,
       appearStart: "play",
@@ -984,7 +985,8 @@ async function saveCameraRig(ctx: FeatureTestContext): Promise<PlacedClass> {
       cameraVariableNode("zoom", "get", "zoom", 480, 300),
       cameraVariableNode("rotation", "get", "rotation", 720, 300),
       gNode("pan", "tween.layerCameraLocation", 240, 0, { ...seconds, "default:b": { x: 0, y: -0.6 } }),
-      gNode("zoom-in", "tween.layerCameraZoom", 480, 0, { ...seconds, "default:b": 1.15 }),
+      // Zoom eases along the project's custom easing curve.
+      gNode("zoom-in", "tween.layerCameraZoom", 480, 0, { ...seconds, "default:curve": customEasingCurve(FEATURE_TEST_EASING_CURVE_CLASS), "default:b": 1.15 }),
       gNode("turn", "tween.layerCameraRotation", 720, 0, { ...seconds, "default:b": 4 }),
       cameraVariableNode("reset-rotation", "set", "rotation", 960, 0, { "default:value": 0 }),
       cameraVariableNode("reset-zoom", "set", "zoom", 1200, 0, { "default:value": 1 }),

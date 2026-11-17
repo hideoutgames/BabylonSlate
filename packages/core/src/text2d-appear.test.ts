@@ -14,6 +14,7 @@ import {
   text2DShownLetters,
 } from "./text2d-appear";
 import { createRichText2DComponent, createText2DComponent, parseText2DProperties } from "./text2d";
+import { setCustomEasingCurves } from "./easing";
 
 describe("rich text appear properties", () => {
   it("preserves existing visible text while authoring reveal settings only for rich text", () => {
@@ -122,6 +123,23 @@ describe("appear easing", () => {
       expect(sampleText2DAppearTransition(transition, 1), transition).toBe(1);
       expect(sampleText2DAppearTransition(transition, NaN), transition).toBe(0);
     }
+  });
+
+  it("keeps a custom easing curve and reveals each letter from its table, hidden before it starts and shown once done", () => {
+    const custom = parseText2DAppearProperties({ appearModes: ["fade"], appearTransition: "class:Raised" });
+    expect(custom.appearTransition).toBe("class:Raised");
+    expect(parseText2DAppearProperties({ appearModes: ["fade"], appearTransition: "class:" }).appearTransition).toBe("cubicOut");
+    // Not baked: Linear. Letters start at 0, 0.1 and 0.2 s of a 0.5 s reveal, each for 0.3 s.
+    expect(text2DCharacterReveal(0.5, 1, 3, custom)).toBeCloseTo(0.5);
+    try {
+      // From 0.5 at Alpha 0 to 1 at Alpha 1.
+      setCustomEasingCurves({ Raised: Array.from({ length: 129 }, (_, index) => 0.5 + index / 256) });
+      expect(text2DCharacterReveal(0.5, 1, 3, custom)).toBe(0.75);
+      expect(text2DCharacterReveal(0.5, 2, 3, custom)).toBeCloseTo(0.5 + 1 / 12);
+      expect(text2DCharacterReveal(0.2, 2, 3, custom)).toBe(0);
+      expect(text2DCharacterReveal(0.8, 0, 3, custom)).toBe(1);
+      expect(sampleText2DAppearTransition("class:Raised", 0)).toBe(0.5);
+    } finally { setCustomEasingCurves({}); }
   });
 
   it("samples the selected curve instead of treating all transitions as linear", () => {

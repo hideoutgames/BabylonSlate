@@ -28,6 +28,7 @@ import { shouldSpawnScriptedActor } from "./play-load";
 import type { SceneStreams } from "./scene-streams";
 import { compiledScriptKey, compiledScriptSourceLabel, type CompiledScript, type ScriptHost } from "./script-host";
 import type { AnchorEntry } from "./stack-map";
+import { bakeCustomEasingCurves, EVALUATE_EXPORT } from "./custom-easing-curves";
 
 interface ScriptRuntimeOptions {
   /** Class id for the session Game Instance singleton. */
@@ -39,7 +40,9 @@ interface ScriptRuntimeOptions {
 interface ScriptRuntimeHost {
   world(): World;
   stopped(): boolean;
-  scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "classTicks" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor">;
+  scriptHost(): Pick<ScriptHost, "replaceScripts" | "hooksFor" | "classTicks" | "invokeEvent" | "invokeGameShutdownEvent" | "bindInterfaceHandlers" | "scriptsFor" | "invokeEngineFunction" | "releaseObject">;
+  /** The custom easing curves baked from the loaded Classes, by Class id: every load, empty when there are none. */
+  customEasingCurvesBaked(curves: Record<string, number[]>): void;
   /** Live streamed Scenes, whose classes keep their sources on replacement. */
   streams(): Pick<SceneStreams, "scenes">;
   registerAnchors(label: string, anchors: readonly AnchorEntry[]): void;
@@ -159,6 +162,7 @@ export class ScriptRuntime {
         this.host.registerAnchors(guid, anchors.sort((a, b) => a.line - b.line || a.column - b.column));
       this.applyGameInstanceClassDefaults();
       this.installSubsystems();
+      this.bakeCustomEasingCurves();
       // Read the owners again: objects created while the modules loaded must bind the new handlers too.
       for (const owner of this.liveScriptOwners()) this.host.scriptHost().bindInterfaceHandlers(owner);
     });
@@ -311,6 +315,25 @@ export class ScriptRuntime {
       return;
     }
     for (const subsystem of subsystems) this.host.scriptHost().bindInterfaceHandlers(subsystem);
+  }
+
+  /**
+   * Bake every loaded custom easing curve (`bakeCustomEasingCurves`) and hand the tables on. Runs with
+   * `installSubsystems`, after the classes registered and before any Begin Play on a first load, and again on every
+   * replacement; the only time Evaluate runs.
+   */
+  private bakeCustomEasingCurves(): void {
+    const world = this.host.world();
+    const scripts = this.host.scriptHost();
+    this.host.customEasingCurvesBaked(bakeCustomEasingCurves({
+      classes: () => world.classRegistry,
+      createInstance: (classId) => world.createObject({ classId }),
+      evaluate: (self, args) => scripts.invokeEngineFunction(self, EVALUATE_EXPORT, args),
+      release: (self) => {
+        self.destroyed = true;
+        scripts.releaseObject(self);
+      },
+    }));
   }
 
   /**

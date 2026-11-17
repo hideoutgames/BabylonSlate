@@ -2,7 +2,7 @@ import type { Camera } from "@babylonjs/core/Cameras/camera";
 import { UniversalCamera } from "@babylonjs/core/Cameras/universalCamera";
 import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
-import { sampleEasingCurve, type EasingCurve } from "@haptic/core";
+import { sampleEasingCurve, type EasingCurveRef } from "@haptic/core";
 
 /** The temporary camera a Possess Camera With Blend views through until the blend ends. */
 export const VIEW_BLEND_CAMERA_NAME = "playViewBlend";
@@ -42,10 +42,10 @@ export class ViewBlend {
   private readonly scene: Scene;
   private readonly from: ViewPose;
   private readonly seconds: number;
-  private readonly curve: EasingCurve;
+  private readonly curve: EasingCurveRef;
   private elapsed = 0;
 
-  constructor(scene: Scene, from: ViewPose, seconds: number, curve: EasingCurve) {
+  constructor(scene: Scene, from: ViewPose, seconds: number, curve: EasingCurveRef) {
     this.scene = scene;
     this.from = from;
     this.seconds = seconds;

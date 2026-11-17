@@ -2,6 +2,7 @@ import { normalizeScene } from "@haptic/core";
 import type { MaterialParameterValue, SceneSettings, SerializedActor, SerializedComponent, SerializedScene, SerializedTransform, Transform } from "@haptic/core";
 import { Actor, ActorComponent, EngineObject, engineScriptApiFor, sceneActorProvenance, sceneComponentProvenance, type VariableDef, type World } from "@haptic/object-model";
 import { defaultComponentAuthoringProperties } from "./component-authoring";
+import { isCustomEasingCurveEnumValue } from "@haptic/scripting";
 
 export interface SimulationCaptureIdentity {
   generation: number;
@@ -233,7 +234,7 @@ export function captureSimulationScene(input: SimulationSceneCaptureInput): Simu
         if (field.type === "enum") {
           const members = field.typeClassId ? input.enumMembers?.(field.typeClassId) : null;
           if (!members) fail("resource", path, `Enum ${field.typeClassId ?? "(unspecified)"} has no prepared authoring schema.`);
-          if (typeof value !== "string" || !members.includes(value)) fail("value", path, "The reflected Enum value has no authored member.");
+          if (typeof value !== "string" || (!members.includes(value) && !isCustomEasingCurveEnumValue(field.typeClassId, value))) fail("value", path, "The reflected Enum value has no authored member.");
         }
         if (field.type === "tag" && (typeof value !== "number" || value < 0 || value > 0xffffffff)) fail("value", path, "The reflected Tag ID is invalid.");
         if (["float", "int", "tag"].includes(field.type) && (typeof value !== "number" || (field.type !== "float" && !Number.isInteger(value)))) fail("value", path, "A reflected numeric variable has an invalid value.");

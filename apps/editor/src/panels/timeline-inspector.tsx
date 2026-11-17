@@ -26,7 +26,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { useRegistryState } from "../context/document-context";
 import { useTimelineClip, useTimelinePropertyContext } from "../context/use-timeline-clip";
 import { sceneActorDisplayNames } from "../lib/scene-actor-names";
-import { TIMELINE_INTERPOLATION_OPTIONS, timelineInterpolationLabel } from "../lib/timeline-interpolation";
+import { timelineInterpolationOptions } from "../lib/timeline-interpolation";
+import { useProjectCustomEasingCurves } from "../lib/use-custom-easing-curves";
 import { formatTimelineValue, timelinePropertyLabels, timelineTrackLabel } from "../lib/timeline-rows";
 import { renameClip } from "../lib/timeline-clip-edits";
 import { useTimelinePlayheadTime, type TimelinePlayhead } from "../lib/timeline-playhead";
@@ -187,6 +188,7 @@ export function TimelineInspectorContent({ showClip = true }: { showClip?: boole
   const { scene, clip, commitClip, commitScene, tools } = useTimelineClip();
   const property = useTimelinePropertyContext();
   const { assetRegistry } = useRegistryState();
+  const customCurves = useProjectCustomEasingCurves();
   if (!scene || !clip) return null;
   const assetName = (guid: string) => assetRegistry?.getByGuid?.(guid)?.header.name;
   const actorNames = sceneActorDisplayNames(scene);
@@ -246,10 +248,8 @@ export function TimelineInspectorContent({ showClip = true }: { showClip?: boole
       valueRow(track.valueType, "timeline-key-value", "Value", key.Value, (value) => commitClip(setTimelineKeyValue(clip, ref, value)), assetName),
     ];
     if (INTERPOLATED_VALUE_TYPES.has(track.valueType)) {
-      const options = TIMELINE_INTERPOLATION_OPTIONS.some((option) => option.value === key.Interpolation)
-        ? [...TIMELINE_INTERPOLATION_OPTIONS]
-        : [...TIMELINE_INTERPOLATION_OPTIONS, { value: key.Interpolation, label: timelineInterpolationLabel(key.Interpolation) }];
-      rows.push({ kind: "enum", id: "timeline-key-interpolation", label: "Interpolation", value: key.Interpolation, options,
+      const options = timelineInterpolationOptions(customCurves, key.Interpolation);
+      rows.push({ kind: "enum", id: "timeline-key-interpolation", label: "Interpolation", value: key.Interpolation, options, verbatim: true,
         onChange: (value) => commitClip(setTimelineKeyInterpolation(clip, [ref], value as TimelineKey["Interpolation"])) });
     }
     grids.push({ title: "Key", rows, testId: "timeline-inspector-key" });
@@ -258,7 +258,8 @@ export function TimelineInspectorContent({ showClip = true }: { showClip?: boole
     const values = new Set(interpolated.map((entry) => entry.key.Interpolation));
     const rows: PropertyRow[] = interpolated.length ? [{
       kind: "enum", id: "timeline-keys-interpolation", label: "Interpolation",
-      value: values.size === 1 ? [...values][0]! : "", mixed: values.size > 1, options: [...TIMELINE_INTERPOLATION_OPTIONS],
+      value: values.size === 1 ? [...values][0]! : "", mixed: values.size > 1, verbatim: true,
+      options: timelineInterpolationOptions(customCurves, values.size === 1 ? [...values][0] : undefined),
       onChange: (value) => commitClip(setTimelineKeyInterpolation(clip, interpolated, value as TimelineKey["Interpolation"])),
     }] : [];
     grids.push({ title: `${selectedCount} Keys`, rows, testId: "timeline-inspector-keys" });

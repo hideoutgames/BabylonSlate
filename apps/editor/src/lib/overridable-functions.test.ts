@@ -30,6 +30,28 @@ describe("collectOverridableFunctionRows", () => {
     expect(rows("Hero")).toEqual([]);
   });
 
+  it("offers a Custom Easing Curve Class, and its children, the engine's Evaluate to override", () => {
+    const parents: Record<string, string> = { Snap: "CustomEasingCurve", Snappier: "Snap" };
+    const rows = (classId: string) => collectOverridableFunctionRows({
+      classId, parentOf: (id) => parents[id] ?? null, parentGraphs: withEngineClassGraphs({}),
+    });
+    expect(rows("Snap")).toEqual([{
+      id: "function:CustomEasingCurve:Evaluate",
+      kind: "function",
+      name: "Evaluate",
+      description: "Parent · CustomEasingCurve",
+      overwritten: false,
+      pins: [
+        { name: "exec", typeId: "exec", direction: "in" },
+        { name: "then", typeId: "exec", direction: "out" },
+        { name: "Alpha", typeId: "float", direction: "in" },
+        { name: "Value", typeId: "float", direction: "out" },
+      ],
+      overrides: { classId: "CustomEasingCurve", name: "Evaluate" },
+    }]);
+    expect(rows("Snappier").map((row) => row.name)).toEqual(["Evaluate"]);
+  });
+
   it("lists interface methods and parent overridable functions", () => {
     const rows = collectOverridableFunctionRows({
       classId: "Hero",

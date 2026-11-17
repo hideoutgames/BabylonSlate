@@ -1,4 +1,4 @@
-import { EASING_CURVES, sampleEasingCurve, type EasingCurve } from "./easing";
+import { EASING_CURVES, isCustomEasingCurveRef, sampleEasingCurve, type CustomEasingCurveRef, type EasingCurve } from "./easing";
 import type { Rng } from "./math-rng";
 
 /**
@@ -15,7 +15,8 @@ export const CURVE_INTERPOLATIONS = [
   "constant", "linear", "auto", "custom",
   ...EASING_CURVES.filter((curve) => curve !== "linear"),
 ] as const;
-export type CurveInterpolation = "constant" | "linear" | "auto" | "custom" | EasingCurve;
+/** A `CURVE_INTERPOLATIONS` member, or a custom easing curve (`class:<ClassId>`), which is not one of the enum's indexes. */
+export type CurveInterpolation = "constant" | "linear" | "auto" | "custom" | EasingCurve | CustomEasingCurveRef;
 
 export const CURVE_EXTRAPOLATIONS = ["constant", "linear", "cycle", "oscillate"] as const;
 export type CurveExtrapolation = (typeof CURVE_EXTRAPOLATIONS)[number];
@@ -104,11 +105,12 @@ function compose(kind: ValueKind, read: (index: number) => number): AnyValue {
   }
 }
 
+/** A member name or index, or a well-formed custom easing curve (kept whether or not it is baked); anything else is Auto. */
 export function parseCurveInterpolation(value: unknown): CurveInterpolation {
   if (typeof value === "number" && Number.isInteger(value)) return CURVE_INTERPOLATIONS[value] ?? "auto";
-  return typeof value === "string" && (CURVE_INTERPOLATIONS as readonly string[]).includes(value)
-    ? value as CurveInterpolation
-    : "auto";
+  if (typeof value !== "string") return "auto";
+  if ((CURVE_INTERPOLATIONS as readonly string[]).includes(value)) return value as CurveInterpolation;
+  return isCustomEasingCurveRef(value) ? value : "auto";
 }
 
 export function parseCurveExtrapolation(value: unknown): CurveExtrapolation {

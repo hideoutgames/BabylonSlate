@@ -11,7 +11,7 @@ import {
 } from "@haptic/core";
 import type { StructField } from "./type-assets";
 import { defaultValueForMember, mergeEngineTypeSchemas, structInstanceDefaultWithSchema, type StructSchema, type TypeSchemas } from "./type-defaults";
-import { ENGINE_STRUCTS } from "./engine-types";
+import { ENGINE_STRUCTS, isCustomEasingCurveEnumValue } from "./engine-types";
 import { projectStoredDataDefault } from "./data-default-projection";
 
 export interface DataValidationIssue {
@@ -293,7 +293,8 @@ function validateFieldValue(
     case "enum": {
       const schema = schemaEntry(schemas.enums, field.typeClassId);
       if (!schema) issue(issues, "missing-enum", path, "Choose an existing Enum for this field.");
-      else valid = typeof value === "string" && schema.members.some((member) => member.name === value);
+      else valid = typeof value === "string" &&
+        (schema.members.some((member) => member.name === value) || isCustomEasingCurveEnumValue(field.typeClassId, value));
       break;
     }
     case "class": valid = typeof value === "string"; break;

@@ -1,6 +1,6 @@
 import {
   cloneTweenValue, interpolateTweenValue, parseEasingCurve, sampleEasingCurve,
-  type EasingCurve, type TweenValue, type TweenValueType,
+  type EasingCurveRef, type TweenValue, type TweenValueType,
 } from "@haptic/core";
 import { ActorComponent, type EngineObject } from "@haptic/object-model";
 import { TickWait } from "./tick-wait";
@@ -32,7 +32,7 @@ export type TweenRequest = {
 type ActiveTween = TweenRequest & {
   a: TweenValue;
   b: TweenValue;
-  curve: EasingCurve;
+  curve: EasingCurveRef;
   elapsed: number;
   started: boolean;
   resolve(completed: boolean): void;

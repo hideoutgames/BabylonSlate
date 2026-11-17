@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { buildDataTreeIndex, type DataTreeEntry } from "@haptic/core";
-import { createDataEntryForDefinition, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, curveKindForStruct, rangeKindForStruct, reconcileDataEntry, type StructField } from "@haptic/scripting";
+import { createDataEntryForDefinition, customEasingCurveEnumLabel, dataEntryNeedsDefinitionApply, dataEntryStructuralIssue, curveKindForStruct, rangeKindForStruct, reconcileDataEntry, type StructField } from "@haptic/scripting";
 import { normalizeTag, type TagContainer } from "@haptic/core";
 import { AssetPicker, ContextMenuOverlay, CurvePreview, NestedMenu, NumberField, PanelFrame, PropertySectionTitle, SearchInput, SearchDropdown, TOUCH_ROW_HEIGHT, TREE_ROW_HEIGHT, TagPicker, TreeView, TypeVisualIcon, WindowedList, formatRangeSummary, humanizePropertyLabel, normalizeRangeFieldValue, resolveTypeVisual, tagDisplayName, useContextMenu, useTags, useTouchUi, type CurveEditorValue, type NestedMenuItem, type RangeFieldValue, type TreeViewNode } from "@haptic/editor-kit";
 import { ArrowUpIcon, BetweenHorizontalStartIcon, ChevronDownIcon, DatabaseIcon, ListPlusIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
@@ -20,6 +20,11 @@ import { IconActionButton } from "../components/icon-action-button";
 import { QUIET_ROW_ACTION } from "../lib/row-action-classes";
 import { usePhoneTouchSizing } from "../shell/use-platform-layout";
 import { useRetainedValue } from "../lib/use-retained-value";
+
+/** An Enum cell value as the grid shows it: a custom easing curve as `<Class> (Custom)`, else Title Case. */
+function dataEnumLabel(field: Pick<StructField, "typeClassId">, name: string): string {
+  return customEasingCurveEnumLabel(field.typeClassId, name) ?? humanizePropertyLabel(name);
+}
 
 const TOUCH_ACTION = "pointer-coarse:min-h-11";
 const TOUCH_ICON_ACTION = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
@@ -99,7 +104,7 @@ function parseCell(text: string, field: StructField, enums: Record<string, strin
     throw new Error(`${label}: Enter True or False.`);
   }
   if (field.typeId === "enum") {
-    const value = (enums[field.typeClassId ?? ""] ?? []).find((entry) => entry === text.trim() || humanizePropertyLabel(entry) === text.trim());
+    const value = (enums[field.typeClassId ?? ""] ?? []).find((entry) => entry === text.trim() || dataEnumLabel(field, entry) === text.trim());
     if (value !== undefined) return value;
     throw new Error(`${label}: Choose an existing Enum value.`);
   }
@@ -149,8 +154,8 @@ function DataEntryCell({ field, value, label, editable, enums, onChange, preview
     if (event.key === "Escape") { event.currentTarget.value = typeof value === "string" ? value : ""; event.currentTarget.blur(); }
     if (event.key === "Enter") event.currentTarget.blur();
   }} />;
-  if (field.typeId === "enum") return <SearchDropdown title={label} items={(enums[field.typeClassId ?? ""] ?? []).map((name) => ({ id: name, label: humanizePropertyLabel(name) }))} onSelect={onChange}>
-    <Button size="xs" variant="ghost" aria-label={label} className="w-full justify-start gap-1 px-1 font-normal pointer-coarse:h-11"><span className="min-w-0 flex-1 truncate text-left">{humanizePropertyLabel(String(value ?? "Choose"))}</span><ChevronDownIcon className="size-3 text-muted-foreground" /></Button>
+  if (field.typeId === "enum") return <SearchDropdown title={label} items={(enums[field.typeClassId ?? ""] ?? []).map((name) => ({ id: name, label: dataEnumLabel(field, name) }))} onSelect={onChange}>
+    <Button size="xs" variant="ghost" aria-label={label} className="w-full justify-start gap-1 px-1 font-normal pointer-coarse:h-11"><span className="min-w-0 flex-1 truncate text-left">{dataEnumLabel(field, String(value ?? "Choose"))}</span><ChevronDownIcon className="size-3 text-muted-foreground" /></Button>
   </SearchDropdown>;
   return <span title={preview} className="block truncate px-1 text-muted-foreground">{preview}</span>;
 }

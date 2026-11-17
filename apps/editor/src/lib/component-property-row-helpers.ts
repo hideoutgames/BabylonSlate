@@ -1,4 +1,4 @@
-import { componentCastsShadows, defaultCastShadows, parseSkyboxFaces, parseSurfaceShadingMode, type CollisionPreset, type SerializedComponent, type SkyboxFaceKey } from "@haptic/core";
+import { componentCastsShadows, defaultCastShadows, parseSkyboxFaces, parseSurfaceShadingMode, type CollisionPreset, type CustomEasingCurveRef, type SerializedComponent, type SkyboxFaceKey } from "@haptic/core";
 import type { ModelMaterialSlot } from "@haptic/assets";
 import { assetRowIdentity, type ClassPickerEntry, type PropertyRow } from "@haptic/editor-kit";
 
@@ -42,6 +42,8 @@ export type ComponentPropertyContext = {
   focusTargets?: readonly { value: string; label: string }[];
   /** Why an assigned emission Texture cannot light its emitter yet. */
   areaEmissionStatus?: (guid: string) => string | undefined;
+  /** The project's custom easing curves (`class:<ClassId>`), which curve rows list after the built-in curves. */
+  customEasingCurves?: readonly CustomEasingCurveRef[];
 };
 
 export function rowId(actorId: string, componentId: string, key: string): string {
