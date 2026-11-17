@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { runGeometryPassLightingProof } from "../apps/editor/src/testing/geometry-pass-lighting-proof";
 import { SOFTWARE_GL_ARGS } from "./software-gl";
 
-// HAPTIC_RENDER_NATIVE_GPU=1 runs it on the machine's GPU outside CI (with the perf-gpu project's arguments).
+// HAPTIC_RENDER_NATIVE_GPU=1 runs it on the machine's GPU outside CI: `--config playwright.perf.config.ts --project perf-gpu`.
 const SOFTWARE_GL = process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || Boolean(process.env.CI);
 if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 
