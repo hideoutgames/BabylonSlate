@@ -1235,6 +1235,8 @@ export type CommandMessage =
    * device's resolution under Scene Layers), or at the view's own size with one copy filling the output.
    */
   | { type: "setFsrDebug"; output: "device" | "view" }
+  /** Debug: whether Play invalidates the backbuffer's depth and stencil after its last draw of each frame (the `backbufferdiscard` console command). */
+  | { type: "setBackbufferDiscardDebug"; enabled: boolean }
   /** Debug: whether each frame Play presents directly is copied into its held image (the `heldimage` console command). */
   | { type: "setHeldImageDebug"; enabled: boolean }
   /** Debug: whether a Scene Layer drawn over the world clears depth and stencil before it draws (the `layerdebug` console command). */

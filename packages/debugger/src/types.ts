@@ -64,6 +64,8 @@ export type ConsoleCommandHost = {
   setSceneLayers?(enabled: boolean): void;
   /** `fsrdebug output`: end Play's upscale at the output (device) or at the view's own size (view). */
   setFsrOutput?(output: "device" | "view"): void;
+  /** `backbufferdiscard`: invalidate the backbuffer's depth and stencil at the end of each frame Play draws (on), or keep them (off). */
+  setBackbufferDiscard?(enabled: boolean): void;
   /** `heldimage`: copy each frame Play presents directly into its held image (on), or skip the copy (off). */
   setHeldImage?(enabled: boolean): void;
   /** `layerdebug clears`: clear depth and stencil before each Scene Layer drawn over the world (on), or leave them (off). */

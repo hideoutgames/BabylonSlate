@@ -173,6 +173,7 @@ function fingerprintAfter(
   let fsrOutput = "device";
   let layerClears = "on";
   let heldImage = "on";
+  let backbufferDepth = "kept";
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
   for (const line of commands) {
@@ -188,6 +189,7 @@ function fingerprintAfter(
     else if (name === "fsrdebug") fsrOutput = second!;
     else if (name === "layerdebug") layerClears = second!;
     else if (name === "heldimage") heldImage = first!;
+    else if (name === "backbufferdiscard") backbufferDepth = first === "on" ? "discarded" : "kept";
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
   }
@@ -205,6 +207,7 @@ function fingerprintAfter(
     "upscale.output": fsrOutput,
     "layers.clears": layerClears,
     "presentation.held": heldImage,
+    "backbuffer.depth": backbufferDepth,
   };
 }
 
@@ -1125,7 +1128,7 @@ describe("Profile", () => {
     expect(FEATURE_TEST_PROFILE_SCENES).toEqual([{ name: "main", path: "assets/main.scene.hasset" }]);
     const plan = featureTestProfilePlan(SESSION);
     expect(plan.views.map((view) => [view.name, view.enter, view.steps.map((step) => step.label)])).toEqual([
-      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden", "FSR to view size", "layer clears off", "held image off"]],
+      ["light", ['possess "Profile Light Camera"'], ["MSAA off", "discard samples", "scene layers hidden", "FSR to view size", "layer clears off", "held image off", "backbuffer depth discarded"]],
       ["heavy", ['possess "Profile Heavy Camera"'], [
         "shadows off", "shadow casters off", "shadow passes off", "shadows medium", "shadows medium big atlas", "shadow filter low",
         "geometry effects off", "post off", "resolution 1.0",
@@ -1147,7 +1150,7 @@ describe("Profile", () => {
     ]);
     // Toggles come back to the session's own value.
     const other = featureTestProfilePlan({ postProcessing: false, captures: false, discard: true, layers: false, framesInFlight: 3, frameCap: 30 });
-    expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !/^((shadow|fsr|layer)debug|heldimage)/.test(entry.restore[0]!))
+    expect(other.views.flatMap((view) => view.steps).filter((entry) => entry.restore && !/^((shadow|fsr|layer)debug|heldimage|backbufferdiscard)/.test(entry.restore[0]!))
       .map((entry) => entry.restore)).toEqual([["discardsamples on"], ["scenelayers off"], ["postprocessing off"], ["rendertargets off"]]);
     const sequence = featureTestProfileSequence(SESSION);
     const probe = featureTestProfileStateSequence(SESSION);

@@ -65,6 +65,7 @@ import { installPlayViewCulling } from "./play-view-culling";
 import { openFirstDrawStats, programInventory, trackFirstDraws } from "./first-draw-stats";
 import { engineGpuBusyProbe, existingGpuBusyProbe } from "./gpu-busy-probe";
 import { engineFrameBackpressure } from "./frame-backpressure";
+import { invalidateBackbufferDepthStencil } from "./backbuffer-invalidate";
 import { engineGpuProbe, existingGpuProbe } from "./gpu-probe-engine";
 import { liveShadowAtlasEdge, shadowAtlasDrawCounts, shadowAtlasGeneration } from "./shadow-atlas";
 import { HELD_FRAME_LABELS, HELD_FRAME_OTHER, HeldFrameReasons } from "./held-frames";
@@ -791,6 +792,8 @@ function initializeEngine(
     if (worldLoading || pendingPresentations.size > 0 || hasPendingOwners() || performanceFeed.active || frameReportFeed.active ||
       presentedImageRequests.length > 0) scheduler.noteActivity();
   };
+  /** Debug (`backbufferdiscard`): whether Play invalidates the backbuffer's depth and stencil after its last draw of a frame. */
+  let backbufferDiscard = false;
   /** Debug (`heldimage`): whether each frame Play presents directly is copied into its held image. */
   let heldImage = true;
   /** Debug (`renderreset idle`): until then the view renders nothing, so the GPU idles with no resource changed. */
@@ -1227,6 +1230,8 @@ function initializeEngine(
       "layers.clears": sceneLayerCompositor?.depthClears === false ? "off" : "on",
       // Whether each frame Play presents directly is copied into its held image (`heldimage`).
       "presentation.held": heldImage ? "on" : "off",
+      // Whether Play invalidates the backbuffer's depth and stencil at the end of each frame (`backbufferdiscard`).
+      "backbuffer.depth": backbufferDiscard ? "discarded" : "kept",
     };
   };
   // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
@@ -2417,6 +2422,8 @@ function initializeEngine(
         scheduler.noteActivity();
         return;
       }
+      // Debug (`backbufferdiscard on`): the backbuffer's pass is still open here, after the frame's last draw into it.
+      if (backbufferDiscard && !rttPresent) invalidateBackbufferDepthStencil(engine);
       if (rttPresent) {
         const owners = [...frameOwners];
         const copyStart = profileReceipt ? performance.now() : 0;
@@ -3257,6 +3264,10 @@ function initializeEngine(
         // Measured per rendered frame: a capped, held or skipped Engine frame submitted nothing of its own.
         const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
+      }
+      if (command.type === "setBackbufferDiscardDebug" && options.playMode && backbufferDiscard !== command.enabled) {
+        backbufferDiscard = command.enabled;
+        scheduler.invalidate("asset");
       }
       if (command.type === "setHeldImageDebug" && heldImage !== command.enabled) {
         heldImage = command.enabled;

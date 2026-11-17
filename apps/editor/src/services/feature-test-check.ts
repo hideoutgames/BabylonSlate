@@ -408,6 +408,8 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
           { label: "layer clears off", commands: ["layerdebug clears off"], restore: ["layerdebug clears on"], fields: ["layers.clears"] },
           // No copy of each presented frame into the held image: what that device-resolution blit costs.
           { label: "held image off", commands: ["heldimage off"], restore: ["heldimage on"], fields: ["presentation.held"] },
+          // The backbuffer's depth and stencil invalidated after the frame's last draw: what storing them costs.
+          { label: "backbuffer depth discarded", commands: ["backbufferdiscard on"], restore: ["backbufferdiscard off"], fields: ["backbuffer.depth"] },
         ],
       },
       {
