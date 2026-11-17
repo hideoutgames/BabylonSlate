@@ -45,7 +45,7 @@ The dialog shows how long the code stays valid. If the code expires or you deny 
 
 A GitLab sign-in renews itself in the background. If GitLab no longer accepts it, Haptic signs you out of GitLab on this device and the sign-in banner returns.
 
-Your sign-ins stay on this device when the app updates. When you open a project that uses source control, or **Engine Settings > Source Control**, Haptic asks each host once whether your saved sign-in still works. A sign-in can stop working when you revoke Haptic's access on the host, when the host's sign-in app changes, or when it expires: a GitHub App's sign-ins can expire after a few hours unless its token expiration is turned off. Haptic then shows the sign-in banner with **Sign In Again**, and **Engine Settings > Source Control** shows **Sign-In Refused** or **Sign-In Expired**. A token the host refuses shows **Token Refused**; remove it and save a new one.
+Your sign-ins stay on this device when the app updates. When you open a project that uses source control, or **Engine Settings > Source Control**, Haptic asks each host once whether your saved sign-in still works. A sign-in can stop working when you revoke Haptic's access on the host, when the host's sign-in app changes, or when the host gave it an expiry that has passed. Haptic renews GitLab sign-ins itself, but not GitHub ones. Haptic then shows the sign-in banner with **Sign In Again**, and **Engine Settings > Source Control** shows **Sign-In Refused** or **Sign-In Expired**. A token the host refuses shows **Token Refused**; remove it and save a new one.
 
 ## Clone a project
 

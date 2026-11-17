@@ -51,8 +51,8 @@ describe("GitLab sign-in refresh", () => {
     };
     // An OAuth App's token does not expire.
     expect([(await signInToGitHub()).refreshToken, (await signInToGitHub()).expiresAt]).toEqual([undefined, undefined]);
-    // A GitHub App's user token may: its expiry is kept, so the device can tell it lapsed. It is never refreshed
-    // (that takes the app's client secret), so no refresh token is kept.
+    // A GitHub App's user token may: its expiry is kept, so the device can tell it lapsed. GitHub tokens are never
+    // refreshed, so no refresh token is kept.
     host.githubExpiresIn = 8 * 3600;
     const expiring = await signInToGitHub();
     expect([expiring.refreshToken, expiring.expiresAt]).toEqual([undefined, time.now() + 8 * HOUR]);

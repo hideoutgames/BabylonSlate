@@ -208,9 +208,9 @@ async function signedInCredential(
 ): Promise<DeviceSignInResult<HostCredential>> {
   const config = DEVICE_SIGN_IN_HOSTS[host];
   const credential: HostCredential = { origin: config.origin, username: credentialUsername(host), token, kind: host };
-  // GitLab sign-in tokens expire, and their refresh token renews them. A GitHub token expires only when the app is a
-  // GitHub App with expiring user tokens (an OAuth App's never do): its expiry is kept so the device can tell it
-  // lapsed, but not its refresh token, since renewing it takes the app's client secret.
+  // GitLab sign-in tokens expire, and their refresh token renews them. A GitHub token carries an expiry only when the
+  // app is a GitHub App with expiring user tokens (an OAuth App's never do): its expiry is kept so the device can tell
+  // it lapsed, but not its refresh token: GitHub tokens are never refreshed.
   const refreshToken = stringField(grant, "refresh_token");
   const expiresIn = grant?.expires_in;
   if (typeof expiresIn === "number" && expiresIn > 0 && (host === "github" || refreshToken)) {
