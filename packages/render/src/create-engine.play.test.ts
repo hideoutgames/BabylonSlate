@@ -4764,6 +4764,32 @@ describe("Play createEngine view", () => {
     expect(sizes.at(-1)).toMatchObject({ outputWidth: 650, outputHeight: 400 });
   });
 
+  it("keeps FSR off while the session's output is Upscaling Pixelated, and follows a live output change", () => {
+    const effects = { ...DEFAULT_RENDER_EFFECTS, upscaling: { enabled: true, renderScale: 0.67, sharpness: 0.2 } };
+    const pixelated = { customResolution: true, width: 640, height: 360, blackBars: true, upscaling: "pixelated" as const, effects };
+    const upscale = (scene: Scene) => sceneRenderingSettings(scene).effectsPlan?.upscale != null;
+    const fixed = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(), playMode: true, renderSettings: pixelated,
+    });
+    handles.push(fixed);
+    expect(upscale(fixed.scene)).toBe(false);
+    const engine = sharedEngine();
+    const loop = vi.spyOn(engine, "runRenderLoop");
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
+      sharedEngine: engine, playMode: true, renderSettings: { ...pixelated, upscaling: "smooth" },
+    });
+    handles.push(handle);
+    expect(upscale(handle.scene)).toBe(true);
+    const output = (upscaling: "smooth" | "pixelated", revision: number): CommandMessage => ({
+      type: "setScalability",
+      transaction: { revision, settings: { render: normalizeRenderProjectSettings({ ...pixelated, upscaling }), frameCap: 60 }, overrides: {} },
+    });
+    // Transactions apply at the next frame boundary.
+    handle.applyCommand(output("pixelated", 1));
+    loop.mock.calls[0]![0]();
+    expect(upscale(handle.scene)).toBe(false);
+  });
+
   it("views through the Scene's Layer Camera until a camera is possessed, and moves it on sceneCamera", () => {
     const { handle } = playHandle(sharedEngine());
     const layerCamera = handle.scene.getCameraByName("playLayerCamera");

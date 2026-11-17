@@ -914,7 +914,10 @@ function initializeEngine(
     apply: options.playMode && !presentRtt ? (level) => {
       worldLevel = level;
       syncPlayOutput();
-    } : fullQuality ? () => {} : undefined,
+    } : (level) => {
+      // A device-pixel view (a Scene Layer tab, a Pixel-Perfect 2D view) never writes the Engine-wide level.
+      if (!deviceView()) engine.setHardwareScalingLevel(level);
+    },
     targetFrameMs:
       options.frameCap && options.frameCap > 0
         ? 1000 / options.frameCap
@@ -1832,6 +1835,8 @@ function initializeEngine(
         const next = enabled && registeredView !== null && !options.playMode;
         if (next !== devicePixels) {
           devicePixels = next;
+          // Back at the Engine's level: the one this view's quality last asked for.
+          if (!next && engine.getHardwareScalingLevel() !== scaling.getLevel()) engine.setHardwareScalingLevel(scaling.getLevel());
           // A backbuffer floored from fractional device pixels is stretched by under a pixel: never smoothed.
           if (canvas.style) canvas.style.imageRendering = next ? "pixelated" : "";
           resize();
@@ -2213,11 +2218,12 @@ function initializeEngine(
         const { quality, shadows, ...visual } = transaction.overrides;
         state.runtimeOverrides = visual;
         state.qualityOverrides = { ...quality, ...(shadows ? { shadows } : {}) };
-        setSceneRenderSettings(scene);
+        const output = transaction.settings.render;
+        // The session's output decides Upscaling Pixelated, which keeps FSR and anti-aliasing off.
+        setSceneRenderSettings(scene, { ...state.project, customResolution: output.customResolution, upscaling: output.upscaling });
         outlineHost.refreshSettings();
         applyRenderingQuality();
         scheduler.setFrameCap(transaction.settings.frameCap);
-        const output = transaction.settings.render;
         if (["width", "height", "customResolution", "blackBars", "upscaling"].some((key) => output[key as keyof RenderProjectSettings] !== appliedOutput[key as keyof RenderProjectSettings])) {
           const wasPixelated = pixelatedUpscaling(playOutput);
           playOutput = output;
@@ -2555,7 +2561,7 @@ function initializeEngine(
       // The scaling level is Engine-wide: only the sole rendering view drives
       // it, so sibling views on a shared Engine cannot ratchet it against
       // each other.
-      if (sole) scaling.noteFramePressure(lastPressureSample);
+      if (sole && !deviceView()) scaling.noteFramePressure(lastPressureSample);
       if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;
