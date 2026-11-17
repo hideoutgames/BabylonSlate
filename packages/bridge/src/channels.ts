@@ -773,6 +773,7 @@ export type CommandMessage =
           appearDuration?: number;
           appearStart?: import("@haptic/core").Text2DProperties["appearStart"];
           appearProgress?: number;
+          letterPoses?: number[];
           text: string;
           materialGuid?: string | null;
           materialUv?: "text" | "glyph";
@@ -822,6 +823,7 @@ export type CommandMessage =
         appearDuration?: number;
         appearStart?: import("@haptic/core").Text2DProperties["appearStart"];
         appearProgress?: number;
+        letterPoses?: number[];
         text: string;
         materialGuid?: string | null;
         materialUv?: "text" | "glyph";
@@ -1030,6 +1032,13 @@ export type CommandMessage =
       slotId: number;
       componentId: string;
       progress: number;
+    }
+  /** Scripted Rich Text letter poses (`TEXT2D_LETTER_POSE_STRIDE` numbers per reveal character); empty puts every letter at rest. */
+  | {
+      type: "setText2DLetterPoses";
+      slotId: number;
+      componentId: string;
+      poses: number[];
     }
   | {
       type: "setOverlayVisualStyle";

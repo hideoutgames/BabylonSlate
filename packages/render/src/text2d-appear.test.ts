@@ -7,7 +7,7 @@ import { identityTransform, parseText2DProperties } from "@haptic/core";
 import { createTestEngine } from "./test-support/test-engine";
 import { unlitBinding } from "./unlit-material-blocks";
 import { isUnlitMaterial } from "./unlit-material";
-import { createText2DMesh, updateText2DAppear } from "./text2d-mesh";
+import { createText2DMesh, updateText2DAppear, updateText2DLetterPoses } from "./text2d-mesh";
 import { applyAssignMaterial, applyAssignMesh, applyComponentTransformsCommand, applyOverlayVisualStyleCommand, applyText2DAppearCommand, createSnapshotSceneBinding, createPlayMesh, playComponentMeshName, retirePlaySlot, type AssignMeshPart } from "./snapshot-apply";
 import { overlayVisualStyle } from "./overlay-visual-style";
 import type { GlyphMetricsProvider } from "./text2d-layout";
@@ -60,6 +60,41 @@ it("reveals formatted glyphs, images and underlines together while preserving st
   expect(children.every((child) => child.visibility === 1)).toBe(true);
   expect(image!.scaling.x).toBe(1);
   expect(image!.position.y).toBeCloseTo(rest[1]!.y);
+});
+
+it("poses scripted letters on top of the reveal and returns them to rest when the poses clear", () => {
+  const { scene } = host();
+  const root = createText2DMesh(scene, "scripted", {
+    text: "A[fx=Tilt]B[/fx]", size: 32, appearModes: ["fade", "class:Rise"], appearTransition: "linear",
+    appearInterval: 0, appearDuration: 1, appearStart: "hidden",
+  }, undefined, { rich: true, metrics });
+  const [a, b] = root.getChildMeshes();
+  updateText2DAppear(root, 0.5);
+  const rest = (mesh: typeof a) => ({ x: mesh!.position.x, y: mesh!.position.y, scaleX: mesh!.scaling.x, scaleY: mesh!.scaling.y, rotation: mesh!.rotation.z });
+  const restA = rest(a), restB = rest(b);
+  // B: 50 px right and 25 px down at 100 px per unit, twice as wide, half as tall, a quarter turn, half opacity.
+  updateText2DLetterPoses(root, [0, 0, 1, 1, 0, 1, 50, -25, 2, 0.5, 90, 0.5]);
+  expect(rest(a)).toEqual(restA);
+  expect(a!.visibility).toBeCloseTo(0.5);
+  expect(b!.position.x).toBeCloseTo(restB.x + 0.5);
+  expect(b!.position.y).toBeCloseTo(restB.y - 0.25);
+  expect(b!.scaling.x).toBeCloseTo(restB.scaleX * 2);
+  expect(b!.scaling.y).toBeCloseTo(restB.scaleY * 0.5);
+  expect(b!.rotation.z).toBeCloseTo(restB.rotation + Math.PI / 2);
+  expect(b!.visibility).toBeCloseTo(0.25);
+  // The reveal moves on under the same poses.
+  updateText2DAppear(root, 1);
+  expect(b!.visibility).toBeCloseTo(0.5);
+  expect(b!.position.x).toBeCloseTo(restB.x + 0.5);
+  for (const cleared of [[1, 2, 3], []]) {
+    updateText2DLetterPoses(root, [0, 0, 1, 1, 0, 1, 50, -25, 2, 0.5, 90, 0.5]);
+    updateText2DLetterPoses(root, cleared);
+    expect(rest(b)).toEqual(restB);
+    expect(b!.visibility).toBe(1);
+  }
+  // A text that only tags letters, with no Appear Modes, still poses them, and starts from the poses it is built with.
+  const tagged = createText2DMesh(scene, "tagged", { text: "A[fx=Tilt]B[/fx]", size: 32, letterPoses: [0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 90, 1] }, undefined, { rich: true, metrics });
+  expect(tagged.getChildMeshes().map((mesh) => Number(mesh.rotation.z.toFixed(4)))).toEqual([0, Number((Math.PI / 2).toFixed(4))]);
 });
 
 it("reveals all characters simultaneously with zero interval and reverses the same poses", () => {

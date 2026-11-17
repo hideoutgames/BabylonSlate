@@ -118,6 +118,8 @@ export const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.sceneOpen": "Event On Scene Open",
   "flow.event.sceneSaved": "Event On Scene Saved",
   "flow.event.editorShutdown": "Event On Editor Shutdown",
+  "flow.event.richTextLetterAppear": "Event On Letter Appear",
+  "flow.event.richTextDecorateLetters": "Event On Decorate Letters",
   "bt.event.activate": "Event On Activate",
   "bt.event.tick": "Event On Tick",
   "bt.event.abort": "Event On Abort",

@@ -13,7 +13,9 @@ import {
   normalizeMaterialInstanceOverrides,
   parseMapDefaultEntries,
   renderTargetAssetGuidsFromGraph,
+  richTextCustomEffectNames,
   richTextImageGuids,
+  text2DCustomAppearModeClassId,
   type DataFieldSnapshot,
   type GraphClassMember,
   type SerializedGraph,
@@ -143,7 +145,7 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "2DTextureComponent": ["textureGuid", "assetGuid"],
   "2DPanelComponent": ["textureGuid", "materialGuid"],
   "2DTextComponent": ["fontAssetGuid", "materialGuid"],
-  "2DRichTextComponent": ["fontAssetGuid", "materialGuid"],
+  "2DRichTextComponent": ["fontAssetGuid", "materialGuid", "appearSoundAssetGuid"],
   "2DJoystickComponent": ["backgroundMaterialGuid", "joystickMaterialGuid", "backgroundTextureGuid", "joystickTextureGuid"],
 };
 
@@ -314,6 +316,13 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
       if (classId === "FoliageComponent") for (const batch of rows(properties.batches)) { add(batch.modelGuid); add(batch.materialGuid); }
       if (classId === "2DTextComponent" || classId === "2DRichTextComponent") {
         if (typeof properties.text === "string") addMany(richTextImageGuids(properties.text));
+      }
+      if (classId === "2DRichTextComponent") {
+        // Custom Appear Modes are chosen from the project's Classes; an `[fx]` tag is typed, so its name stays a soft reference.
+        for (const mode of Array.isArray(properties.appearModes) ? properties.appearModes as unknown[] : []) {
+          addClass(text2DCustomAppearModeClassId(mode) ?? undefined);
+        }
+        if (typeof properties.text === "string") for (const name of richTextCustomEffectNames(properties.text)) addClass(name, false);
       }
       if (classId.startsWith("2D")) {
         for (const part of ["background", "track", "fill", "thumb", "handle", "selection", "indicator", "check", "arrow", "button", "popup", "item"]) {

@@ -4,7 +4,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { CommandMessage } from "@haptic/bridge";
 import { parseOverlayVisualStyle, type Transform } from "@haptic/core";
 import { shouldFreezeStaticWorldMatrix } from "./scene-loader";
-import { updateText2DAppear } from "./text2d-mesh";
+import { updateText2DAppear, updateText2DLetterPoses } from "./text2d-mesh";
 import { uiControl2DMesh } from "./ui-controls2d-mesh";
 import { updatePainter2DMesh } from "./painter2d-mesh";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
@@ -233,6 +233,32 @@ export function applyText2DAppearCommand(binding: SnapshotSceneBinding, command:
   const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
   updateVisualTextAppear(live, command.componentId, progress);
   if (prepared !== live) updateVisualTextAppear(prepared, command.componentId, progress);
+}
+
+/** Scripted letter poses follow the reveal sample onto the live and prepared visuals, and into a later rebuild. */
+export function applyText2DLetterPosesCommand(binding: SnapshotSceneBinding, command: Extract<CommandMessage, { type: "setText2DLetterPoses" }>): void {
+  const part = binding.meshParts.get(command.slotId)?.find((entry) => entry.componentId === command.componentId && entry.meshKind === "2drichtext");
+  const primary = binding.primaryComponentIds.get(command.slotId) === command.componentId && binding.meshKinds.get(command.slotId) === "2drichtext";
+  if (!part && !primary) return;
+  // Stored as the runtime's next assignment carries them: absent when every letter is at rest.
+  const record = (text2d: { letterPoses?: number[] } | undefined) => {
+    if (!text2d) return;
+    if (command.poses.length) text2d.letterPoses = command.poses;
+    else delete text2d.letterPoses;
+  };
+  record(part?.text2d);
+  const assignment = visualAssignments.get(binding)?.get(command.slotId);
+  record(assignment?.parts?.find((entry) => entry.componentId === command.componentId)?.text2d);
+  if (primary) {
+    record(binding.text2dProps.get(command.slotId));
+    if (assignment?.primaryComponentId === command.componentId) record(assignment.text2d);
+  }
+  const live = binding.meshes.get(command.slotId);
+  const prepared = pendingVisualReplacements.get(binding)?.get(command.slotId);
+  for (const root of prepared && prepared !== live ? [live, prepared] : [live]) {
+    const mesh = root && !root.isDisposed() ? playVisualComponents.get(root)?.get(command.componentId) : undefined;
+    if (mesh && !mesh.isDisposed()) updateText2DLetterPoses(mesh, command.poses);
+  }
 }
 
 /** State changes keep pointer capture, compiled materials and texture leases alive. */

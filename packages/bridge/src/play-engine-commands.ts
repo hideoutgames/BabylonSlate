@@ -6,6 +6,7 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setPainter2D",
   "setUIControl2D",
   "setText2DAppear",
+  "setText2DLetterPoses",
   "setOverlayVisualStyle",
   "setComponentTransforms",
   "dynamicMeshUpdate",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseRichText,
   parseRichTextColor,
+  richTextCustomEffectNames,
   richTextImageGuids,
   type ParseRichTextDefaults,
 } from "./rich-text";
@@ -104,6 +105,22 @@ describe("parseRichText", () => {
     const wave = spans.find((span) => span.kind === "text" && span.text === "W");
     expect(wave?.effects.waveSpeed).toBe(3);
     expect(wave?.effects.waveIntensity).toBe(1);
+  });
+});
+
+describe("custom effect tags", () => {
+  it("applies fx Classes by name with a strength, nests them and leaves the built-in effects alone", () => {
+    const spans = parseRichText("a[fx=Bounce]b[fx=Wobble strength=2.5]c[fx=Bounce strength=x]d[/fx][/fx][shake=2]e[/shake][/fx]f[fx]g[/fx]", defaults);
+    expect(spans.map((span) => span.kind === "text" ? [span.text, span.effects.custom ?? null, span.effects.shake] : null)).toEqual([
+      ["a", null, 0],
+      ["b", [{ name: "Bounce", strength: 1 }], 0],
+      // A repeated name keeps its place and a strength that is not a number is 1, so "d" continues the run of "c".
+      ["cd", [{ name: "Bounce", strength: 1 }, { name: "Wobble", strength: 2.5 }], 0],
+      ["e", [{ name: "Bounce", strength: 1 }], 2],
+      // A tag without a Class name applies nothing.
+      ["fg", null, 0],
+    ]);
+    expect(richTextCustomEffectNames("[fx=Wobble]a[/fx][fx=Bounce]b[fx=Wobble]c[/fx][/fx]")).toEqual(["Wobble", "Bounce"]);
   });
 });
 
