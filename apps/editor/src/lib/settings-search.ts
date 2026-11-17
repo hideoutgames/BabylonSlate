@@ -30,6 +30,7 @@ function category(categoryId: string, sections: readonly SearchSection[]): Setti
 export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
   ...category("general", [
     ["project", "Project", [
+      ["Autosave", "settings-autosave"],
       ["Autosave Interval", "settings-autosave-interval"],
     ]],
     ["scripting", "Scripting", [

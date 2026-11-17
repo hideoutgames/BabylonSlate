@@ -339,11 +339,21 @@ export function useProjectSave({
     runSaveAll({ approveMigrations: true, reportLocked: purpose }), [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
+    // Auto-Save off: nothing saves on its own, and an interval already waiting
+    // is dropped (turning it off is itself a settings change that lands here).
+    // Turning it on again lands here too and starts a new interval.
+    const autoSaveOff = () => projectDocumentRef.current?.settings.autoSave === false;
+    if (autoSaveOff()) {
+      cancelDebouncedSave();
+      return;
+    }
     if (saveDebounceRef.current || autoSavePausedRef.current) return;
     const interval =
       projectDocumentRef.current?.settings.autoSaveIntervalMs ?? 120_000;
     saveDebounceRef.current = setTimeout(() => {
       saveDebounceRef.current = null;
+      // Turned off another way meanwhile (a reloaded project.json).
+      if (autoSaveOff()) return;
       // A game covers the editor: the save waits for it, then a fresh interval.
       if (editorQuiet()) {
         autoSaveDeferredRef.current = true;
@@ -368,7 +378,7 @@ export function useProjectSave({
         },
       );
     }, interval);
-  }, [projectService, saveProject, projectDocumentRef]);
+  }, [cancelDebouncedSave, projectService, saveProject, projectDocumentRef]);
 
   const setAutoSavePaused = useCallback((paused: boolean) => {
     if (autoSavePausedRef.current === paused) return;

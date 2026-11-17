@@ -43,6 +43,7 @@ const {
   pluginDescriptors,
   applyPluginOverrides,
   projectTwoD,
+  projectGeneral,
   extensionState,
 } = vi.hoisted(() => {
   const lastProjectRender = { current: null as import("@haptic/core").RenderProjectSettings | null };
@@ -71,6 +72,7 @@ const {
     pluginDescriptors: [] as PluginDescriptor[],
     applyPluginOverrides: vi.fn(async () => undefined),
     projectTwoD: { current: null as Partial<import("@haptic/core").TwoDProjectSettings> | null },
+    projectGeneral: { current: null as Partial<import("@haptic/core").ProjectSettings> | null },
     extensionState: {
       entries: [] as import("@haptic/assets").ExtensionDescriptor[],
       overrides: {} as Record<string, { enabled: boolean }>,
@@ -115,6 +117,7 @@ vi.mock("../context/document-context", async () => {
       projectDocument.settings.exportPresets = projectExportPresets.current;
     }
     if (projectTwoD.current) projectDocument.settings.twoD = { ...projectDocument.settings.twoD, ...projectTwoD.current };
+    if (projectGeneral.current) Object.assign(projectDocument.settings, projectGeneral.current);
     projectDocument.settings.extensionOverrides = extensionState.overrides;
     projectDocument.settings.extensionSettings = extensionState.values;
     const snapshot = { entries: extensionState.entries, commands: [], assetTypes: [], diagnostics: [] };
@@ -318,6 +321,20 @@ it("hides unrelated settings when search has no matching section", () => {
   });
   fireEvent.click(screen.getByRole("button", { name: /Autosave Interval/ }));
   expect(screen.getByTestId("settings-autosave-interval")).toBeTruthy();
+});
+
+it.each([true, false])("offers the Auto-Save switch, with its interval usable only while it is on (on: %s)", (autoSave) => {
+  projectGeneral.current = { autoSave };
+  try {
+    render(<SettingsModal open onOpenChange={() => {}} scope="project" />);
+    const toggle = screen.getByRole("switch", { name: "Auto-Save" });
+    expect(toggle.getAttribute("aria-checked")).toBe(String(autoSave));
+    expect((screen.getByTestId("settings-autosave-interval") as HTMLInputElement).disabled).toBe(!autoSave);
+    fireEvent.click(toggle);
+    expect(updateProjectSettings).toHaveBeenLastCalledWith({ autoSave: !autoSave });
+  } finally {
+    projectGeneral.current = null;
+  }
 });
 
 it("finds the Garbage Collection Interval and saves a whole number of ticks", () => {

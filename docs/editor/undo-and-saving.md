@@ -39,9 +39,9 @@ The status bar shows the state: **All Changes Saved**, **2 Unsaved Documents**, 
 
 ## Auto-save
 
-Haptic saves automatically a set time after you start editing. Change the interval with **Project Settings > General > Auto-Save Interval (Seconds)** (default 120, at least 1).
+Haptic saves automatically a set time after you start editing. Change the interval with **Project Settings > General > Auto-Save Interval (Seconds)** (default 120, at least 1). To save only when you choose **Save All**, turn off **Auto-Save** in the same section; turning it on again starts a new interval.
 
-If an auto-save fails or pauses, the status bar shows **Auto-Save Failed — Use Save All**. Choose **Save All** to save your changes yourself.
+If an auto-save fails or pauses, the status bar shows **Auto-Save Failed — Use Save All**. Choose **Save All** to save your changes yourself. Auto-save skips a file someone else has locked with source control, without asking; **Save All** tells you about it ([Source Control](../projects/source-control.md#working-with-locks)).
 
 **Compile On Save** (on by default, in the same section) compiles your scripts each time you save.
 
